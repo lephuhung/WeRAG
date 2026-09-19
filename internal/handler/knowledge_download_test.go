@@ -391,3 +391,11 @@ func TestBatchDownloadKnowledgePreservesFolderPaths(t *testing.T) {
 	require.Len(t, reader.File, 1)
 	require.Equal(t, "docs/spec/design.md", reader.File[0].Name)
 }
+
+func (s *downloadShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *downloadShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

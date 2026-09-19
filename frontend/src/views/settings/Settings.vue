@@ -184,6 +184,9 @@
         <div v-if="currentSection === 'members'" class="section">
           <TenantMembers />
         </div>
+        <div v-if="currentSection === 'orgs'" class="section">
+          <TenantOrgs />
+        </div>
 
         <!-- 发布集成 -->
         <div v-if="isIntegrationSection(currentSection)" class="section">
@@ -231,6 +234,7 @@ import SandboxSettings from './SandboxSettings.vue'
 import SkillSettings from './SkillSettings.vue'
 import WeKnoraCloudSettings from './WeKnoraCloudSettings.vue'
 import TenantMembers from './TenantMembers.vue'
+import TenantOrgs from './TenantOrgs.vue'
 import SystemSettings from '@/views/system/SystemSettings.vue'
 import RuntimeQueues from '@/views/system/RuntimeQueues.vue'
 import PlatformAPIKeys from '@/views/system/PlatformAPIKeys.vue'
@@ -375,6 +379,7 @@ const navItems = computed(() => {
     { key: 'envvars', icon: 'key', label: t('envVarSettings.title') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
+    { key: 'orgs', icon: 'root-list', label: t('tenantOrg.title') },
     ...integrationItems,
   ]
   // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
@@ -402,7 +407,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant', 'members', 'chathistory', 'memory']),
+      items: pickItems(['tenant', 'members', 'orgs', 'chathistory', 'memory']),
     },
     {
       key: 'models_runtime',

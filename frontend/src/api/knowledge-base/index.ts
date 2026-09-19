@@ -84,6 +84,12 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: 'document' | 'faq';
+  // Three-scope model: 'tenant' (default) is readable by every member
+  // of the owning workspace; 'org' requires org_id and restricts reads
+  // to org members + tenant Admin/Owner; 'public' is readable by every
+  // tenant (create/manage restricted server-side to Owner/SystemAdmin).
+  visibility?: 'tenant' | 'org' | 'public';
+  org_id?: number;
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -161,6 +167,16 @@ export function updateKnowledgeBase(id: string, data: {
   }
 }) {
   return put(`/api/v1/knowledge-bases/${id}`, data);
+}
+
+// updateKnowledgeBaseVisibility changes the KB scope. Route is tenant
+// Admin+; the service additionally requires Owner/SystemAdmin for
+// 'public' and validates org_id belongs to the same tenant for 'org'.
+export function updateKnowledgeBaseVisibility(id: string, data: {
+  visibility: 'tenant' | 'org' | 'public';
+  org_id?: number;
+}) {
+  return put(`/api/v1/knowledge-bases/${id}/visibility`, data);
 }
 
 /** Opt-in automatic generation of the knowledge-base description. */

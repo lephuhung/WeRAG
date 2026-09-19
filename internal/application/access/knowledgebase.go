@@ -70,9 +70,19 @@ func (a *KBAccess) WithGrant(ctx context.Context) context.Context {
 	return context.WithValue(types.WithCaller(ctx, caller), types.KBGrantsContextKey, grants)
 }
 
-// KBShareLookup resolves organization sharing with the caller role cap.
+// KBShareLookup is the KB-access lookup bundle: organization sharing
+// with the caller role cap, plus the visibility-scope and tenant-org
+// membership reads the three-scope model (tenant/org/public) needs.
+// The KB share service implements all of it; a nil lookup disables
+// share, scope and org resolution alike (fail-closed).
 type KBShareLookup interface {
 	CheckTenantKBPermission(context.Context, string, uint64, types.TenantRole) (types.OrgMemberRole, bool, error)
+	// GetKBScope returns the scope of one KB; nil when it does not exist.
+	GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error)
+	// OrgMemberRole returns the user's role inside the tenant org —
+	// false when the user is not a member or the org does not belong to
+	// tenantID.
+	OrgMemberRole(ctx context.Context, tenantID uint64, orgID uint64, userID string) (types.TenantOrgRole, bool, error)
 }
 
 // SharedAgentLookup verifies access to a particular shared agent.
@@ -114,8 +124,50 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 			EffectiveTenantID: kb.TenantID, Permission: permission, operationPermission: required,
 		}, nil
 	}
+	scope := kbScopeOf(kb)
 	if kb.TenantID == request.Caller.TenantID {
+		if scope.Visibility == types.KBVisibilityPublic {
+			// Public corpus content is platform-sensitive: only the owning
+			// tenant's Owner, system admins and tenant-level API keys may
+			// write; every other tenant member reads.
+			role := types.OrgRoleViewer
+			if request.Caller.Role.HasPermission(types.TenantRoleOwner) ||
+				types.IsSystemAdminFromContext(ctx) {
+				role = types.OrgRoleAdmin
+			} else if request.Caller.UserID == "" {
+				if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+					role = types.OrgRoleAdmin
+				}
+			}
+			if !role.HasPermission(required) {
+				return nil, ErrForbidden
+			}
+			return grant(role)
+		}
+		if scope.Visibility == types.KBVisibilityOrg {
+			// Org-scoped KBs restrict same-tenant access to org members
+			// (viewer), org managers (editor) and tenant Admin/Owner,
+			// system admins and tenant-level API keys (admin).
+			role := CallerOrgGrant(ctx, request.Caller, scope, shares)
+			if role == "" || !role.HasPermission(required) {
+				return nil, ErrForbidden
+			}
+			return grant(role)
+		}
 		return grant(types.OrgRoleAdmin)
+	}
+	switch scope.Visibility {
+	case types.KBVisibilityOrg:
+		// Org-scoped KBs never cross the tenant boundary — shares and
+		// shared-agent fallbacks do not apply to them.
+		return nil, ErrForbidden
+	case types.KBVisibilityPublic:
+		// Public KBs are readable by every tenant's callers; writes
+		// stay with the owning tenant.
+		if required == types.OrgRoleViewer {
+			return grant(types.OrgRoleViewer)
+		}
+		return nil, ErrForbidden
 	}
 	if shares != nil {
 		permissions := NewKBSharePermissions(ctx, shares, request.Caller.TenantID, request.Caller.Role)

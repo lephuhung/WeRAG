@@ -39,6 +39,29 @@
               <p class="form-tip">{{ $t('knowledgeEditor.basic.typeDescription') }}</p>
             </div>
 
+            <!-- 可见范围：tenant / org / public。public 只对 Owner 与系统管理员开放。 -->
+            <div class="form-item">
+              <label class="form-label">{{ $t('knowledgeEditor.visibility.label') }}</label>
+              <t-radio-group v-model="formData.visibility" :disabled="!canEditVisibility">
+                <t-radio-button value="tenant">{{ $t('knowledgeEditor.visibility.tenant') }}</t-radio-button>
+                <t-radio-button value="org" :disabled="orgOptions.length === 0 && formData.visibility !== 'org'">
+                  {{ $t('knowledgeEditor.visibility.org') }}
+                </t-radio-button>
+                <t-radio-button v-if="canPickPublic" value="public">
+                  {{ $t('knowledgeEditor.visibility.public') }}
+                </t-radio-button>
+              </t-radio-group>
+              <p class="form-tip">{{ visibilityTip }}</p>
+              <t-select
+                v-if="formData.visibility === 'org'"
+                v-model="formData.orgId"
+                :options="orgOptions"
+                :placeholder="$t('knowledgeEditor.visibility.orgPlaceholder')"
+                :disabled="!canEditVisibility"
+                class="org-select"
+              />
+            </div>
+
             <!-- 索引策略 (紧跟类型选择) -->
             <div v-if="!isFAQ" class="form-item">
               <label class="form-label required">{{ $t('knowledgeEditor.indexing.title') }}</label>
@@ -498,6 +521,7 @@ import { useModalShell } from '@/composables/useModalShell'
 import SettingsModalShell from '@/components/SettingsModalShell.vue'
 import {
   createKnowledgeBase,
+  updateKnowledgeBaseVisibility,
   getKnowledgeBaseById,
   listKnowledgeFiles,
   updateKnowledgeBase,
@@ -506,6 +530,7 @@ import {
   type KnowledgeBaseProfile,
 } from '@/api/knowledge-base'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
+import { listOrgs } from '@/api/tenant/orgs'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { selectInitialModelId } from '@/utils/modelDefaults'
 import { copyWithToast } from '@/utils/clipboard'
@@ -527,6 +552,44 @@ import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
 const authStore = useAuthStore()
+
+// Org-scope options: orgs of the current tenant. Loaded lazily when the
+// editor mounts; failures degrade to an empty select (the backend
+// still validates org_id on submit).
+const tenantOrgs = ref<Array<{ id: number; name: string }>>([])
+const orgOptions = computed(() =>
+  tenantOrgs.value.map((o) => ({ label: o.name, value: o.id })))
+const loadTenantOrgs = async () => {
+  try {
+    const res: any = await listOrgs()
+    tenantOrgs.value = res?.data || []
+  } catch {
+    tenantOrgs.value = []
+  }
+}
+void loadTenantOrgs()
+
+// 'public' is platform-sensitive: Owner of the owning workspace or a
+// system admin only (mirrors validateKBVisibility / SetKnowledgeBaseVisibility).
+const canPickPublic = computed(() =>
+  authStore.isSystemAdmin || authStore.hasRole('owner'))
+// Visibility changes are a scope mutation: tenant Admin+ can pick
+// tenant/org; org binding changes also stay Admin+ on update.
+const canEditVisibility = computed(() => {
+  if (editorMode.value === 'create') return true
+  return authStore.isSystemAdmin || authStore.hasRole('admin')
+})
+const initialVisibility = ref<{ visibility: string; orgId: number } | null>(null)
+const visibilityTip = computed(() => {
+  switch (formData.value?.visibility) {
+    case 'org':
+      return t('knowledgeEditor.visibility.orgTip')
+    case 'public':
+      return t('knowledgeEditor.visibility.publicTip')
+    default:
+      return t('knowledgeEditor.visibility.tenantTip')
+  }
+})
 const chatResources = useChatResourcesStore()
 const editorResources = useEditorResourcesStore()
 const { t } = useI18n()
@@ -774,6 +837,9 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
     type,
     name: '',
     description: '',
+    // Three-scope model: tenant (default) / org (needs orgId) / public.
+    visibility: 'tenant' as 'tenant' | 'org' | 'public',
+    orgId: 0 as number,
     faqConfig: {
       indexMode: 'question_only',
       questionIndexMode: 'separate'
@@ -915,6 +981,10 @@ const loadKBData = async (
     generatedProfile.value = (kb as any).generated_profile || null
     kbCreatorId.value = (kb as any).creator_id || ''
     kbTenantId.value = Number((kb as any).tenant_id || 0)
+    initialVisibility.value = {
+      visibility: (kb.visibility === 'org' || kb.visibility === 'public') ? kb.visibility : 'tenant',
+      orgId: Number(kb.org_id || 0),
+    }
 
     // 设置表单数据
     const kbType = (kb.type as 'document' | 'faq') || 'document'
@@ -922,6 +992,8 @@ const loadKBData = async (
       type: kbType,
       name: kb.name || '',
       description: kb.description || '',
+      visibility: (kb.visibility === 'org' || kb.visibility === 'public') ? kb.visibility : 'tenant',
+      orgId: Number(kb.org_id || 0),
       faqConfig: {
         indexMode: kb.faq_config?.index_mode || 'question_only',
         questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
@@ -1296,6 +1368,7 @@ const buildSubmitData = () => {
     name: formData.value.name,
     description: formData.value.description,
     type: formData.value.type,
+    visibility: formData.value.visibility || 'tenant',
     chunking_config: {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
@@ -1316,6 +1389,9 @@ const buildSubmitData = () => {
     },
     embedding_model_id: formData.value.modelConfig.embeddingModelId,
     summary_model_id: formData.value.modelConfig.llmModelId
+  }
+  if (data.visibility === 'org') {
+    data.org_id = formData.value.orgId || 0
   }
 
   // Vector-store binding. Only attach the field when the user actively
@@ -1528,6 +1604,19 @@ const doSubmit = async () => {
         description: data.description,
         config: updateConfig
       })
+
+      // 1b. Visibility/scope changes go through a dedicated endpoint —
+      // the service re-checks role vs target scope (public → Owner+).
+      const nextVis = data.visibility || 'tenant'
+      const nextOrg = data.visibility === 'org' ? (data.org_id || 0) : 0
+      if (initialVisibility.value &&
+          (initialVisibility.value.visibility !== nextVis || initialVisibility.value.orgId !== nextOrg)) {
+        await updateKnowledgeBaseVisibility(kbId, {
+          visibility: nextVis,
+          org_id: nextOrg || undefined,
+        })
+        initialVisibility.value = { visibility: nextVis, orgId: nextOrg }
+      }
 
       // 2. 更新完整配置（模型、分块、多模态、存储引擎、知识图谱等）
       const config: KBModelConfigRequest = {

@@ -75,6 +75,7 @@ type TenantInvitationService interface {
 	CreateShareLink(
 		ctx context.Context,
 		tenantID uint64,
+		orgID uint64,
 		role types.TenantRole,
 		invitedBy *string,
 		message string,

@@ -227,3 +227,11 @@ func TestKBHandlerEnforcesAccessWhenRouteRBACIsDisabled(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/kb", nil))
 	require.Equal(t, http.StatusForbidden, w.Code)
 }
+
+func (s *handlerKBShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *handlerKBShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

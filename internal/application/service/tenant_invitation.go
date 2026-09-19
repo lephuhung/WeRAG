@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -88,7 +89,8 @@ type tenantInvitationService struct {
 	repo      interfaces.TenantInvitationRepository
 	memberSvc interfaces.TenantMemberService
 	audit     interfaces.AuditLogService // optional; nil ⇒ no audit, business ops still succeed
-	now       func() time.Time           // injection seam for tests
+	orgRepo   interfaces.TenantOrgRepository
+	now       func() time.Time // injection seam for tests
 }
 
 // NewTenantInvitationService wires the dependencies. memberSvc is
@@ -99,11 +101,13 @@ func NewTenantInvitationService(
 	repo interfaces.TenantInvitationRepository,
 	memberSvc interfaces.TenantMemberService,
 	audit interfaces.AuditLogService,
+	orgRepo interfaces.TenantOrgRepository,
 ) interfaces.TenantInvitationService {
 	return &tenantInvitationService{
 		repo:      repo,
 		memberSvc: memberSvc,
 		audit:     audit,
+		orgRepo:   orgRepo,
 		now:       time.Now,
 	}
 }
@@ -504,6 +508,7 @@ func generateShareLinkToken() (string, error) {
 func (s *tenantInvitationService) CreateShareLink(
 	ctx context.Context,
 	tenantID uint64,
+	orgID uint64,
 	role types.TenantRole,
 	invitedBy *string,
 	message string,
@@ -514,6 +519,15 @@ func (s *tenantInvitationService) CreateShareLink(
 	if err := rejectAPIKeyOwnerAssignment(ctx, role); err != nil {
 		return nil, "", err
 	}
+	if orgID != 0 {
+		if s.orgRepo == nil {
+			return nil, "", apperrors.NewServiceUnavailableError("org repository unavailable")
+		}
+		org, err := s.orgRepo.GetOrgByID(ctx, orgID)
+		if err != nil || org == nil || org.TenantID != tenantID {
+			return nil, "", apperrors.NewBadRequestError("org not found in this workspace")
+		}
+	}
 	token, err := generateShareLinkToken()
 	if err != nil {
 		return nil, "", err
@@ -521,6 +535,7 @@ func (s *tenantInvitationService) CreateShareLink(
 	now := s.now()
 	inv := &types.TenantInvitation{
 		TenantID:      tenantID,
+		OrgID:         orgID,
 		InviteeUserID: "", // share-link rows have no specific invitee
 		Token:         token,
 		InvitedBy:     invitedBy,
@@ -595,6 +610,7 @@ func (s *tenantInvitationService) AcceptByToken(
 		if errors.Is(err, ErrMembershipAlreadyExists) {
 			existing, getErr := s.memberSvc.GetMembership(ctx, newUserID, inv.TenantID)
 			if getErr == nil && existing != nil {
+				s.enrolInviteeIntoOrg(ctx, inv, newUserID)
 				s.reconcilePendingInvitation(ctx, inv.TenantID, newUserID)
 				return existing, nil
 			}
@@ -613,6 +629,7 @@ func (s *tenantInvitationService) AcceptByToken(
 			"share-link %d accepted_count bump failed (membership still created): %v",
 			inv.ID, incErr)
 	}
+	s.enrolInviteeIntoOrg(ctx, inv, newUserID)
 	// A user may have received a direct invitation and then joined through
 	// a share link first. Close that direct invitation now so its notification
 	// cannot be accepted a second time and produce a misleading audit event.
@@ -629,4 +646,36 @@ func (s *tenantInvitationService) AcceptByToken(
 		Details:      detailsFor(inv.ID, inv.Role),
 	})
 	return member, nil
+}
+
+// enrolInviteeIntoOrg adds the invitee to the share-link's bound org
+// (inv.OrgID != 0). The org must still belong to the invitation's
+// tenant; a deleted/moved org degrades to tenant-only membership.
+// Duplicate membership is idempotent. Failures are logged, not
+// returned — the tenant membership is already committed and must not
+// be rolled back by a secondary enrolment failure.
+func (s *tenantInvitationService) enrolInviteeIntoOrg(
+	ctx context.Context,
+	inv *types.TenantInvitation,
+	userID string,
+) {
+	if inv.OrgID == 0 || s.orgRepo == nil {
+		return
+	}
+	org, err := s.orgRepo.GetOrgByID(ctx, inv.OrgID)
+	if err != nil || org == nil || org.TenantID != inv.TenantID {
+		logger.Warnf(ctx,
+			"share-link %d bound org %d no longer valid for tenant %d: %v",
+			inv.ID, inv.OrgID, inv.TenantID, err)
+		return
+	}
+	if err := s.orgRepo.AddMember(ctx, &types.TenantOrgMember{
+		OrgID:  inv.OrgID,
+		UserID: userID,
+		Role:   types.TenantOrgRoleMember,
+	}); err != nil && !errors.Is(err, apprepo.ErrTenantOrgMemberExists) {
+		logger.Warnf(ctx,
+			"share-link %d org %d enrolment failed for user %s: %v",
+			inv.ID, inv.OrgID, userID, err)
+	}
 }

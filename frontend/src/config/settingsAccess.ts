@@ -34,6 +34,10 @@ export const SETTINGS_SECTION_MIN_ROLE: Record<string, SettingsRoleKey> = {
   browserconnection: 'viewer',
   tenant: 'viewer',
   members: 'viewer',
+  // Tenant orgs: the roster is viewer-visible like members; org CRUD /
+  // member management is enforced server-side (tenant Admin+ or org
+  // manager) since an org manager may hold only Viewer at tenant level.
+  orgs: 'viewer',
   mymemory: 'viewer',
   memory: 'admin',
   // Every member fills in their own environment variables; the workspace-wide

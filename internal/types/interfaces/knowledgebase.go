@@ -74,6 +74,15 @@ type KnowledgeBaseService interface {
 		id string, name string, description string, config *types.KnowledgeBaseConfig,
 	) (*types.KnowledgeBase, error)
 
+	// SetKnowledgeBaseVisibility changes the KB scope (tenant/org/public).
+	// Only callers of the owning tenant may invoke it; the service
+	// re-checks the caller's role against the target visibility
+	// (public requires the tenant Owner or a system admin; org requires
+	// tenant Admin+; narrowing to tenant requires tenant Admin+).
+	SetKnowledgeBaseVisibility(ctx context.Context,
+		id string, visibility types.KBVisibility, orgID *uint64,
+	) (*types.KnowledgeBase, error)
+
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
 	//   - ctx: Context information
@@ -195,6 +204,29 @@ type KnowledgeBaseRepository interface {
 	//   - List of knowledge base objects
 	//   - Possible errors such as database errors, etc.
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// GetKBScopeByID returns the lightweight access-scope projection
+	// (tenant, visibility, org binding) of one knowledge base. Returns
+	// nil without error when the KB does not exist.
+	GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error)
+
+	// ListVisibleKnowledgeBases lists the non-temporary KBs of tenantID
+	// that a caller may see: all 'tenant'- and 'public'-visibility KBs
+	// plus 'org'-visibility KBs bound to one of memberOrgIDs. When
+	// bypassOrgFilter is true (tenant Admin/Owner, system admin), org
+	// KBs are included without the membership filter.
+	ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error)
+
+	// ListPublicKnowledgeBasesExcept lists non-temporary public KBs not
+	// owned by tenantID — the cross-tenant catalog every authenticated
+	// caller can read.
+	ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// ListForeignKnowledgeBasesByTenantID lists the non-temporary KBs of
+	// tenantID that are visible to callers outside that tenant —
+	// 'tenant' and 'public' visibility; 'org' KBs stay private to the
+	// owning tenant's org members.
+	ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:

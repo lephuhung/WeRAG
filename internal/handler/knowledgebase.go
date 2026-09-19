@@ -788,6 +788,55 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	})
 }
 
+// UpdateKnowledgeBaseVisibilityRequest changes the KB scope.
+// visibility = tenant | org | public; org_id is required for "org".
+type UpdateKnowledgeBaseVisibilityRequest struct {
+	Visibility types.KBVisibility `json:"visibility" binding:"required"`
+	OrgID      *uint64            `json:"org_id"`
+}
+
+// UpdateKnowledgeBaseVisibility godoc
+// @Summary      修改知识库可见范围
+// @Description  切换知识库 tenant/org/public 可见范围；org 必须携带 org_id
+// @Tags         知识库
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                                true  "知识库ID"
+// @Param        request  body      UpdateKnowledgeBaseVisibilityRequest true  "可见范围请求"
+// @Success      200      {object}  map[string]interface{}               "更新后的知识库"
+// @Failure      400      {object}  errors.AppError                      "请求参数错误"
+// @Security     Bearer
+// @Router       /knowledge-bases/{id}/visibility [put]
+func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
+	ctx := c.Request.Context()
+	kb, id, _, _, err := h.validateAndGetKnowledgeBase(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	_ = kb
+
+	var req UpdateKnowledgeBaseVisibilityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.OrgID)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		c.Error(apperrors.NewInternalServerError(err.Error()))
+		return
+	}
+	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, callerTenantID), nil),
+	})
+}
+
 // GenerateKnowledgeBaseProfile godoc
 // @Summary      生成知识库描述
 // @Description  基于文档画像聚合，立即重新生成知识库的 AI 描述（不覆盖手写描述）

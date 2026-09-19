@@ -184,6 +184,9 @@
               <div class="invite-banner__title">
                 {{ $t('inviteRegister.bannerTitle', { tenant: inviteLookup.tenant_name || '' }) }}
               </div>
+              <div v-if="inviteLookup.org_name" class="invite-banner__hint">
+                {{ $t('inviteRegister.bannerOrg', { org: inviteLookup.org_name }) }}
+              </div>
               <div class="invite-banner__hint">
                 {{ $t('inviteRegister.bannerHintLogin') }}
               </div>
@@ -267,6 +270,9 @@
             <div class="invite-banner__text">
               <div class="invite-banner__title">
                 {{ $t('inviteRegister.bannerTitle', { tenant: inviteLookup.tenant_name || '' }) }}
+              </div>
+              <div v-if="inviteLookup.org_name" class="invite-banner__hint">
+                {{ $t('inviteRegister.bannerOrg', { org: inviteLookup.org_name }) }}
               </div>
               <div class="invite-banner__hint">
                 {{ $t('inviteRegister.bannerHint') }}

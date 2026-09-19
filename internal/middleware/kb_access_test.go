@@ -571,3 +571,11 @@ func TestRequireKBAccess_InvalidAgentSourceTenantID(t *testing.T) {
 	require.True(t, c.IsAborted())
 	require.NotEmpty(t, c.Errors)
 }
+
+func (s *stubKBShareForGuard) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *stubKBShareForGuard) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

@@ -167,3 +167,11 @@ func TestCatalogSharedAgentFileRequiresCurrentSelectionOrExactArtifactBinding(t 
 	agents.agent = nil
 	check(false)
 }
+
+func (s catalogFileShares) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s catalogFileShares) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

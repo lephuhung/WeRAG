@@ -91,6 +91,84 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 	return kbs, nil
 }
 
+// GetKBScopeByID returns the access-scope projection of one KB without
+// loading the full row.
+func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
+	var scope types.KBScope
+	err := r.db.WithContext(ctx).Model(&types.KnowledgeBase{}).
+		Select("tenant_id", "visibility", "org_id").
+		Where("id = ?", id).
+		Take(&scope).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !scope.Visibility.IsValid() {
+		scope.Visibility = types.KBVisibilityTenant
+	}
+	return &scope, nil
+}
+
+// ListVisibleKnowledgeBases returns the non-temporary KBs of tenantID
+// visible to a caller holding org memberships memberOrgIDs. Org-scoped
+// KBs are included only for members (or unconditionally when
+// bypassOrgFilter is set by tenant Admin/Owner and system admins).
+func (r *knowledgeBaseRepository) ListVisibleKnowledgeBases(
+	ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	q := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND is_temporary = ?", tenantID, false)
+	if bypassOrgFilter {
+		q = q.Where("visibility IN ?", []string{
+			string(types.KBVisibilityTenant), string(types.KBVisibilityOrg), string(types.KBVisibilityPublic)})
+	} else if len(memberOrgIDs) > 0 {
+		q = q.Where("(visibility IN ? OR (visibility = ? AND org_id IN ?))",
+			[]string{string(types.KBVisibilityTenant), string(types.KBVisibilityPublic)},
+			string(types.KBVisibilityOrg), memberOrgIDs)
+	} else {
+		q = q.Where("visibility IN ?", []string{
+			string(types.KBVisibilityTenant), string(types.KBVisibilityPublic)})
+	}
+	if err := q.Order("created_at DESC").Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
+// ListPublicKnowledgeBasesExcept lists public KBs owned by other
+// tenants — the cross-tenant readable catalog.
+func (r *knowledgeBaseRepository) ListPublicKnowledgeBasesExcept(
+	ctx context.Context, tenantID uint64,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id <> ? AND is_temporary = ? AND visibility = ?",
+			tenantID, false, string(types.KBVisibilityPublic)).
+		Order("created_at DESC").Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
+// ListForeignKnowledgeBasesByTenantID lists tenantID's KBs that callers
+// outside the tenant may see (shared-agent context): everything except
+// org-scoped KBs, which never cross the tenant boundary.
+func (r *knowledgeBaseRepository) ListForeignKnowledgeBasesByTenantID(
+	ctx context.Context, tenantID uint64,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND is_temporary = ? AND visibility <> ?",
+			tenantID, false, string(types.KBVisibilityOrg)).
+		Order("created_at DESC").Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
 // userKBPinRow mirrors the user_kb_pins table. Kept local to the
 // repository because it never escapes the package; callers see the
 // higher-level map[kb_id]pinned_at returned by ListUserKBPinIDs.

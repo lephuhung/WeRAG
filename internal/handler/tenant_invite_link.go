@@ -88,7 +88,7 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 		invitedBy = &caller
 	}
 
-	inv, _, err := h.invitationService.CreateShareLink(ctx, tenantID, req.Role, invitedBy, req.Message)
+	inv, _, err := h.invitationService.CreateShareLink(ctx, tenantID, 0, req.Role, invitedBy, req.Message)
 	if err != nil {
 		if errors.Is(err, service.ErrAPIKeyCannotAssignOwner) {
 			c.Error(apperrors.NewForbiddenError(err.Error()))

@@ -163,6 +163,8 @@ const (
 	AuditActionKBCreated        AuditAction = "kb.created"
 	AuditActionKBUpdated        AuditAction = "kb.updated"
 	AuditActionKBDeleted        AuditAction = "kb.deleted"
+	AuditActionOrgCreated       AuditAction = "org.created"
+	AuditActionOrgDeleted       AuditAction = "org.deleted"
 	AuditActionKBDuplicated     AuditAction = "kb.duplicated"
 	AuditActionKBCloneStarted   AuditAction = "kb.clone_started"
 	AuditActionKBCloneCompleted AuditAction = "kb.clone_completed"

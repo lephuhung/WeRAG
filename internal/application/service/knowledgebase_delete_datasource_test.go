@@ -229,3 +229,19 @@ func (r *deleteErrDSRepo) Delete(_ context.Context, id string) error {
 	}
 	return r.kbDeleteDSRepo.Delete(context.Background(), id)
 }
+
+func (r *kbDeleteKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (r *kbDeleteKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *kbDeleteKBRepo) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *kbDeleteKBRepo) ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}

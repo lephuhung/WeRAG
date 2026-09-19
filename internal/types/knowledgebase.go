@@ -55,6 +55,44 @@ const (
 	FAQQuestionIndexModeSeparate FAQQuestionIndexMode = "separate"
 )
 
+// KBVisibility controls who can read/search a knowledge base.
+type KBVisibility string
+
+const (
+	// KBVisibilityTenant is the default: every member of the owning
+	// tenant can read; tenant roles decide write access.
+	KBVisibilityTenant KBVisibility = "tenant"
+	// KBVisibilityOrg restricts reads to members of the org referenced
+	// by OrgID plus tenant Admin/Owner and system admins. Org-scoped
+	// KBs never cross the tenant boundary: organization shares and
+	// shared-agent access do not apply to them.
+	KBVisibilityOrg KBVisibility = "org"
+	// KBVisibilityPublic is readable/searchable by every authenticated
+	// user of every tenant. Writes still belong to the owning tenant
+	// (and platform admins).
+	KBVisibilityPublic KBVisibility = "public"
+)
+
+// IsValid checks if the visibility value is a known constant.
+func (v KBVisibility) IsValid() bool {
+	switch v {
+	case KBVisibilityTenant, KBVisibilityOrg, KBVisibilityPublic:
+		return true
+	default:
+		return false
+	}
+}
+
+// KBScope is the lightweight access-scope projection of a knowledge
+// base — just the columns the permission layer needs, without loading
+// the full row (configs, strategies, generated profile).
+type KBScope struct {
+	TenantID   uint64
+	Visibility KBVisibility
+	// OrgID is the bound tenant org when Visibility is 'org'; 0 otherwise.
+	OrgID uint64
+}
+
 // KnowledgeBase represents a knowledge base entity
 type KnowledgeBase struct {
 	// Unique identifier of the knowledge base
@@ -75,6 +113,14 @@ type KnowledgeBase struct {
 	// Nullable for backward compatibility with rows created before the
 	// RBAC migration backfilled the column to the workspace Owner.
 	CreatorID string `yaml:"creator_id"              json:"creator_id"              gorm:"type:varchar(36);index"`
+	// Visibility controls the read/search scope of this knowledge base.
+	// See KBVisibility constants. Rows predating migration 000107 read
+	// back as 'tenant' via the column default.
+	Visibility KBVisibility `yaml:"visibility"           json:"visibility"              gorm:"type:varchar(16);not null;default:'tenant'"`
+	// OrgID binds the knowledge base to a tenant org when Visibility is
+	// 'org'. Must reference a tenant_orgs row of the same tenant; nil
+	// for all other visibilities.
+	OrgID *uint64 `yaml:"org_id"                  json:"org_id,omitempty"       gorm:"index"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"         gorm:"type:json"`
 	// Image processing configuration
@@ -740,6 +786,12 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	}
 	if kb.Type == "" {
 		kb.Type = KnowledgeBaseTypeDocument
+	}
+	if !kb.Visibility.IsValid() {
+		kb.Visibility = KBVisibilityTenant
+	}
+	if kb.Visibility != KBVisibilityOrg {
+		kb.OrgID = nil
 	}
 	// Clear type-specific configs that don't belong
 	if kb.Type != KnowledgeBaseTypeFAQ {

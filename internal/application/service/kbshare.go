@@ -20,6 +20,9 @@ var (
 	ErrNotKBOwner            = errors.New("only knowledge base owner can share")
 	// ErrOrgRoleCannotShare: only editors and admins (in tenant's org role) may share KBs to that org; viewers cannot
 	ErrOrgRoleCannotShare = errors.New("only editors and admins can share knowledge bases to this organization")
+	// ErrShareVisibilityUnsupported: org-scoped and public KBs cannot be
+	// shared through cross-tenant organization shares.
+	ErrShareVisibilityUnsupported = errors.New("knowledge bases with org or public visibility cannot be shared to organizations")
 )
 
 // kbShareService implements KBShareService.
@@ -41,6 +44,9 @@ type kbShareService struct {
 	kgRepo    interfaces.KnowledgeRepository
 	chunkRepo interfaces.ChunkRepository
 	audit     interfaces.AuditLogService
+	// tenantOrgRepo resolves tenant-org membership for org-scoped KB
+	// visibility. Nil in tests that do not exercise org KBs.
+	tenantOrgRepo interfaces.TenantOrgRepository
 }
 
 // NewKBShareService creates a new knowledge base share service
@@ -51,15 +57,43 @@ func NewKBShareService(
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
 	audit interfaces.AuditLogService,
+	tenantOrgRepo interfaces.TenantOrgRepository,
 ) interfaces.KBShareService {
 	return &kbShareService{
-		shareRepo: shareRepo,
-		orgRepo:   orgRepo,
-		kbRepo:    kbRepo,
-		kgRepo:    kgRepo,
-		chunkRepo: chunkRepo,
-		audit:     audit,
+		shareRepo:     shareRepo,
+		orgRepo:       orgRepo,
+		kbRepo:        kbRepo,
+		kgRepo:        kgRepo,
+		chunkRepo:     chunkRepo,
+		audit:         audit,
+		tenantOrgRepo: tenantOrgRepo,
 	}
+}
+
+// GetKBScope resolves the visibility scope of one KB for the access
+// layer. A missing KB yields nil so callers can treat it as not found.
+func (s *kbShareService) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return s.kbRepo.GetKBScopeByID(ctx, kbID)
+}
+
+// OrgMemberRole resolves a user's role inside a tenant org. Returns
+// false when the user is not a member or the org belongs to another
+// tenant (defense against cross-tenant org_id confusion).
+func (s *kbShareService) OrgMemberRole(
+	ctx context.Context, tenantID uint64, orgID uint64, userID string,
+) (types.TenantOrgRole, bool, error) {
+	if s.tenantOrgRepo == nil || orgID == 0 || userID == "" {
+		return "", false, nil
+	}
+	org, err := s.tenantOrgRepo.GetOrgByID(ctx, orgID)
+	if err != nil || org == nil || org.TenantID != tenantID {
+		return "", false, err
+	}
+	member, err := s.tenantOrgRepo.GetMember(ctx, orgID, userID)
+	if err != nil || member == nil {
+		return "", false, err
+	}
+	return member.Role, true, nil
 }
 
 // applyTenantRoleCap applies the third dimension of the cap: a caller
@@ -85,6 +119,13 @@ func (s *kbShareService) ShareKnowledgeBase(ctx context.Context, kbID string, or
 	}
 	if kb.TenantID != tenantID {
 		return nil, ErrNotKBOwner
+	}
+	// Org-scoped KBs are bound to a tenant org and must never cross the
+	// tenant boundary via cross-tenant sharing; public KBs are already
+	// readable by every tenant so sharing them is meaningless — and a
+	// share grant would wrongly give foreign tenants write access.
+	if kb.Visibility == types.KBVisibilityOrg || kb.Visibility == types.KBVisibilityPublic {
+		return nil, ErrShareVisibilityUnsupported
 	}
 
 	_, err = s.orgRepo.GetByID(ctx, orgID)

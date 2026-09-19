@@ -1004,3 +1004,11 @@ func TestRetrieveFromStores_IterativePattern_NoInternalRace(t *testing.T) {
 		assert.Equal(t, 50, g.BaseParams[0].TopK, "BaseParams TopK must stay immutable")
 	}
 }
+
+func (s *fakeKBShareForAuth) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *fakeKBShareForAuth) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

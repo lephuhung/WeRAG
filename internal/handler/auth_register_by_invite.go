@@ -34,6 +34,8 @@ type registerByInviteRequest struct {
 type invitationLookupResponse struct {
 	TenantID   uint64           `json:"tenant_id"`
 	TenantName string           `json:"tenant_name,omitempty"`
+	OrgID      uint64           `json:"org_id,omitempty"`
+	OrgName    string           `json:"org_name,omitempty"`
 	Role       types.TenantRole `json:"role"`
 	ExpiresAt  string           `json:"expires_at"`
 }
@@ -98,6 +100,12 @@ func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 	}
 	if tenant, terr := h.tenantService.GetTenantByID(ctx, inv.TenantID); terr == nil && tenant != nil {
 		resp.TenantName = tenant.Name
+	}
+	if inv.OrgID != 0 && h.tenantOrgRepo != nil {
+		resp.OrgID = inv.OrgID
+		if org, oerr := h.tenantOrgRepo.GetOrgByID(ctx, inv.OrgID); oerr == nil && org != nil {
+			resp.OrgName = org.Name
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

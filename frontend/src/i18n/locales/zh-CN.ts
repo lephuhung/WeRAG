@@ -237,6 +237,37 @@ export default {
       revokeConfirm: '撤销后，所有还未注册的人都无法再使用此链接；如需重发请生成新链接。'
     }
   },
+  tenantOrg: {
+    title: '组织管理',
+    sectionDescription: '组织是空间内的分组，用于限定组织知识库的可见范围。',
+    create: '新建组织',
+    createTitle: '新建组织',
+    editTitle: '编辑组织',
+    nameLabel: '组织名称',
+    namePlaceholder: '请输入组织名称',
+    descriptionLabel: '描述',
+    members: '成员',
+    membersTitle: '{org} 的成员',
+    memberCount: '{count} 名成员',
+    empty: '尚未创建组织。',
+    roleLabel: '角色',
+    role: { member: '成员', manager: '管理员' },
+    addMember: '添加成员',
+    addMemberPlaceholder: '选择空间成员',
+    makeManager: '设为管理员',
+    makeMember: '设为成员',
+    inviteLink: '邀请链接',
+    inviteTitle: '邀请加入 {org}',
+    inviteRole: '空间角色',
+    inviteMessage: '邀请留言',
+    generateLink: '生成链接',
+    inviteHint: '通过此链接注册的账号将同时加入空间和该组织。',
+    linkCopied: '链接已复制',
+    loadFailed: '加载组织失败',
+    saveFailed: '保存失败',
+    deleteFailed: '删除失败',
+    deleteConfirm: '确定删除组织 "{name}" 吗？组织知识库将保留但不再限定范围。',
+  },
   tenantMember: {
     title: '成员管理',
     sectionDescription: '邀请伙伴加入当前空间并分配角色。只有 Owner 可以新增或移除成员。',
@@ -3950,6 +3981,16 @@ export default {
     attachmentStillProcessing: '附件 {name} 仍在解析，请稍候'
   },
   knowledgeEditor: {
+    visibility: {
+      label: '可见范围',
+      tenant: '空间知识库',
+      org: '组织知识库',
+      public: '公开知识库',
+      orgPlaceholder: '选择所属组织',
+      tenantTip: '当前空间成员可按角色读写。',
+      orgTip: '仅组织成员和空间管理员可见。',
+      publicTip: '所有登录用户可搜索；仅空间 Owner 和系统管理员可管理。',
+    },
     titleCreate: '新建知识库',
     titleEdit: '知识库设置',
     advanced: {
@@ -4791,6 +4832,8 @@ export default {
     create: '新建知识库',
     subtitle: '管理和组织您的知识库，支持文档型和问答型知识库',
     sharedToOrgs: '已共享给 {count} 个空间',
+    visibilityPublic: '公开知识库：所有登录用户可搜索',
+    visibilityOrg: '组织知识库：仅组织成员可见',
     uninitializedBanner: '部分知识库尚未初始化，需要先在设置中配置模型信息才能添加知识文档',
     features: {
       knowledgeGraph: '知识图谱',
@@ -5177,6 +5220,7 @@ export default {
   inviteRegister: {
     bannerTitle: '您被邀请加入「{tenant}」',
     bannerHint: '填写下方信息完成注册，注册成功后将自动加入该团队。',
+    bannerOrg: '同时将加入组织「{org}」',
     bannerHintLogin: '登录后将自动加入该团队。',
     loading: '正在校验邀请链接…',
     invalidTitle: '邀请链接无效或已撤销',

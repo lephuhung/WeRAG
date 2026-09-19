@@ -133,6 +133,12 @@ type KBShareService interface {
 	// Get source tenant for cross-tenant embedding
 	GetKBSourceTenant(ctx context.Context, kbID string) (uint64, error)
 
+	// KB visibility-scope lookups (tenant/org/public model). Implemented
+	// over the KB and tenant-org repositories; consumed by the access
+	// package's ResolveKB / KBPermissions.
+	GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error)
+	OrgMemberRole(ctx context.Context, tenantID uint64, orgID uint64, userID string) (types.TenantOrgRole, bool, error)
+
 	// Count shares for knowledge bases
 	CountSharesByKnowledgeBaseIDs(ctx context.Context, kbIDs []string) (map[string]int64, error)
 	// CountByOrganizations returns share counts per organization (for sidebar); excludes deleted KBs

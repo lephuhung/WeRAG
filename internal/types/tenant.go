@@ -338,11 +338,11 @@ type ParserEngineConfig struct {
 	// PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API),
 	// or an OpenAI-compatible VLM OCR endpoint (vLLM /chat/completions)
 	// when PaddleOCRVLEndpoint ends in /v1 or PaddleOCRVLAPI is "openai".
-	PaddleOCRVLEndpoint            string `json:"paddleocr_vl_endpoint,omitempty"` // e.g. http://paddleocr-vl:8080 or http://vllm-ocr:8001/v1
-	PaddleOCRVLAPI                 string `json:"paddleocr_vl_api,omitempty"`      // auto (default), layout, openai
-	PaddleOCRVLModel               string `json:"paddleocr_vl_model,omitempty"`    // openai mode: served model name
-	PaddleOCRVLAPIKey              string `json:"paddleocr_vl_api_key,omitempty"`  // openai mode: optional bearer token
-	PaddleOCRVLPrompt              string `json:"paddleocr_vl_prompt,omitempty"`   // openai mode: optional OCR prompt
+	PaddleOCRVLEndpoint string `json:"paddleocr_vl_endpoint,omitempty"` // e.g. http://paddleocr-vl:8080 or http://vllm-ocr:8001/v1
+	PaddleOCRVLAPI      string `json:"paddleocr_vl_api,omitempty"`      // auto (default), layout, openai
+	PaddleOCRVLModel    string `json:"paddleocr_vl_model,omitempty"`    // openai mode: served model name
+	PaddleOCRVLAPIKey   string `json:"paddleocr_vl_api_key,omitempty"`  // openai mode: optional bearer token
+	PaddleOCRVLPrompt   string `json:"paddleocr_vl_prompt,omitempty"`   // openai mode: optional OCR prompt
 	// openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs +
 	// skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.
 	PaddleOCRVLVllmXargs           string `json:"paddleocr_vl_vllm_xargs,omitempty"`

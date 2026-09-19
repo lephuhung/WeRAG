@@ -29,11 +29,28 @@ type kbBatchLookup func(ctx context.Context, ids []string) ([]*types.KnowledgeBa
 func checkAgentKBScopeShareable(
 	ctx context.Context, lookup kbBatchLookup, before, after *types.CustomAgent, userID string,
 ) error {
+	previous := types.NewSharedAgentKBScope(before)
+	next := types.NewSharedAgentKBScope(after)
+
+	// Org-scoped KBs never cross the tenant boundary, so they can never
+	// be exposed through a shared agent — not even by admins. This runs
+	// before the canShareAnyKB bypass on purpose. Mode=all agents are
+	// covered at read time (SharedAgentIncludesKB denies org KBs).
+	if ids := next.IDs(); len(ids) > 0 {
+		kbs, err := lookup(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, kb := range kbs {
+			if kb != nil && kb.Visibility == types.KBVisibilityOrg {
+				return ErrAgentKBScopeNotShareable
+			}
+		}
+	}
+
 	if canShareAnyKB(ctx) {
 		return nil
 	}
-	previous := types.NewSharedAgentKBScope(before)
-	next := types.NewSharedAgentKBScope(after)
 	if next.IsAll() {
 		if previous.IsAll() {
 			return nil

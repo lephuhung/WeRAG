@@ -36,6 +36,11 @@ const SYSTEM_GLOBAL_AUDIT_ACTION_LABELS_EN: Record<string, string> = {
   'system.queue_task_run_now': 'Queue task run now',
   'system.queue_task_cancelled': 'Queue task cancelled',
   'system.queue_archived_purged': 'All failed tasks cleared',
+  'model.created': 'Model created',
+  'model.updated': 'Model updated',
+  'model.deleted': 'Model deleted',
+  'model.credentials_updated': 'Model credentials updated',
+  'model.credentials_cleared': 'Model credential cleared',
 }
 
 const KB_ACTIVITY_ACTION_LABELS_EN: Record<string, string> = {

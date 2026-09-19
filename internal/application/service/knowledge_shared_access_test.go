@@ -226,3 +226,11 @@ func TestResolveKBReadTenantPreservesServiceBoundary(t *testing.T) {
 	require.NoError(t, err, "a service execution context already scoped to the KB remains usable")
 	require.Equal(t, uint64(2), tenant)
 }
+
+func (s *fakeKBShareService) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *fakeKBShareService) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

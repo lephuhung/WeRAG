@@ -184,3 +184,11 @@ func TestSharedAgentBatchUsesGrantInsteadOfSourceTenantOwnership(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rows)
 }
+
+func (s *callerScopeShares) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *callerScopeShares) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

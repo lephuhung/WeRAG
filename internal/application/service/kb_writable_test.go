@@ -54,3 +54,11 @@ func TestKBWritableIDs(t *testing.T) {
 	ingest := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityIngest)}}
 	require.Equal(t, []string{"own"}, kbWritableIDs(apiKey(ingest), shares, targets, true))
 }
+
+func (s writableShareLookup) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s writableShareLookup) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

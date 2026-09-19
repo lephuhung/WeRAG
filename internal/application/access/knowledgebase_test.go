@@ -14,6 +14,9 @@ type shareLookup struct {
 	err        error
 	caller     uint64
 	role       types.TenantRole
+	scope      *types.KBScope
+	orgRole    types.TenantOrgRole
+	orgMember  bool
 }
 
 func (s *shareLookup) CheckTenantKBPermission(
@@ -279,4 +282,127 @@ func TestResolveKBMissingIdentityResourceAndAPIKeyScope(t *testing.T) {
 	)
 	_, err = ResolveKB(ctx, KBRequest{Caller: types.Caller{TenantID: 1}}, kb, types.OrgRoleViewer, nil, nil)
 	require.Error(t, err, "API key scope must apply even to owned KBs")
+}
+
+func (s *shareLookup) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return s.scope, nil
+}
+
+func (s *shareLookup) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return s.orgRole, s.orgMember, nil
+}
+
+func TestResolveKBVisibilityMatrix(t *testing.T) {
+	orgID := uint64(7)
+	for _, tt := range []struct {
+		name       string
+		visibility types.KBVisibility
+		orgID      *uint64
+		kbTenant   uint64
+		caller     types.Caller
+		sysAdmin   bool
+		orgRole    types.TenantOrgRole
+		orgMember  bool
+		required   types.OrgMemberRole
+		want       types.OrgMemberRole
+		wantErr    error
+	}{
+		// --- org-scoped, same tenant ---
+		{name: "org member reads",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:  types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			orgRole: types.TenantOrgRoleMember, orgMember: true,
+			required: types.OrgRoleViewer, want: types.OrgRoleViewer},
+		{name: "org member cannot write",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:  types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			orgRole: types.TenantOrgRoleMember, orgMember: true,
+			required: types.OrgRoleEditor, wantErr: ErrForbidden},
+		{name: "org manager writes",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:  types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleContributor},
+			orgRole: types.TenantOrgRoleManager, orgMember: true,
+			required: types.OrgRoleEditor, want: types.OrgRoleEditor},
+		{name: "non-member same tenant denied",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u2", Role: types.TenantRoleContributor},
+			required: types.OrgRoleViewer, wantErr: ErrForbidden},
+		{name: "tenant admin bypasses org membership",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u3", Role: types.TenantRoleAdmin},
+			required: types.OrgRoleEditor, want: types.OrgRoleAdmin},
+		{name: "system admin bypasses org membership",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u4", Role: types.TenantRoleViewer},
+			sysAdmin: true,
+			required: types.OrgRoleEditor, want: types.OrgRoleAdmin},
+		// --- org-scoped, cross tenant: always denied ---
+		{name: "org KB invisible across tenants",
+			visibility: types.KBVisibilityOrg, orgID: &orgID, kbTenant: 2,
+			caller:  types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			orgRole: types.TenantOrgRoleMember, orgMember: true,
+			required: types.OrgRoleViewer, wantErr: ErrForbidden},
+		// --- public, same tenant ---
+		{name: "public KB member reads",
+			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			required: types.OrgRoleViewer, want: types.OrgRoleViewer},
+		{name: "public KB member cannot write",
+			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleContributor},
+			required: types.OrgRoleEditor, wantErr: ErrForbidden},
+		{name: "public KB owner writes",
+			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
+			required: types.OrgRoleEditor, want: types.OrgRoleAdmin},
+		{name: "public KB system admin writes",
+			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			sysAdmin: true,
+			required: types.OrgRoleEditor, want: types.OrgRoleAdmin},
+		// --- public, cross tenant ---
+		{name: "public KB foreign tenant reads",
+			visibility: types.KBVisibilityPublic, kbTenant: 2,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			required: types.OrgRoleViewer, want: types.OrgRoleViewer},
+		{name: "public KB foreign tenant cannot write",
+			visibility: types.KBVisibilityPublic, kbTenant: 2,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
+			required: types.OrgRoleEditor, wantErr: ErrForbidden},
+		// --- tenant-scoped unchanged ---
+		{name: "tenant KB member gets admin in own tenant",
+			visibility: types.KBVisibilityTenant, kbTenant: 1,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			required: types.OrgRoleEditor, want: types.OrgRoleAdmin},
+		{name: "tenant KB foreign denied without share",
+			visibility: types.KBVisibilityTenant, kbTenant: 2,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleViewer},
+			required: types.OrgRoleViewer, wantErr: ErrForbidden},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			kb := &types.KnowledgeBase{
+				ID: "kb", TenantID: tt.kbTenant,
+				Visibility: tt.visibility, OrgID: tt.orgID,
+			}
+			shares := &shareLookup{orgRole: tt.orgRole, orgMember: tt.orgMember}
+			// any:false keeps the shared-agent read fallback out of the
+			// matrix — visibility branches return before it anyway.
+			agents := &agentLookup{any: false}
+			ctx := context.Background()
+			if tt.sysAdmin {
+				ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
+			}
+			grant, err := ResolveKB(ctx,
+				KBRequest{Caller: tt.caller}, kb, tt.required, shares, agents)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.Nil(t, grant)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, grant.Permission)
+			require.Equal(t, tt.caller.TenantID, grant.Caller.TenantID)
+			require.Equal(t, kb.TenantID, grant.EffectiveTenantID)
+		})
+	}
 }

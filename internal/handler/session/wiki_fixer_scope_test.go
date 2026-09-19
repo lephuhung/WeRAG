@@ -207,3 +207,11 @@ func TestResolveBuiltinWikiFixerTenantScope_FallsBackOnLookupOrPermissionErrors(
 		require.Zero(t, effectiveTenantID)
 	})
 }
+
+func (s *wikiFixerKBShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *wikiFixerKBShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

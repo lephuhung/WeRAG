@@ -44,7 +44,7 @@ func NewKBSharePermissions(
 // Permission caches both grants and failures so multiple documents/chunks in a
 // KB observe the same decision, without repeating the membership queries.
 func (p *KBSharePermissions) Permission(kbID string) (types.OrgMemberRole, bool, error) {
-	if kbID == "" || p.tenantID == 0 || p.lookup == nil {
+	if p == nil || kbID == "" || p.tenantID == 0 || p.lookup == nil {
 		return "", false, nil
 	}
 	result, ok := p.results[kbID]
@@ -57,6 +57,9 @@ func (p *KBSharePermissions) Permission(kbID string) (types.OrgMemberRole, bool,
 
 // Check tests the required role against the cached organization permission.
 func (p *KBSharePermissions) Check(kbID string, required types.OrgMemberRole) (bool, error) {
+	if p == nil {
+		return false, nil
+	}
 	role, shared, err := p.Permission(kbID)
 	return err == nil && shared && role.IsValid() && required.IsValid() && role.HasPermission(required), err
 }

@@ -63,6 +63,11 @@ type KBPermissions struct {
 	ctx    context.Context
 	caller types.Caller
 	shares *KBSharePermissions
+	// lookup resolves KB visibility scopes and tenant-org membership.
+	// Kept even when share expansion is disabled so 'public' and 'org'
+	// semantics still apply to userless principals (API keys).
+	lookup KBShareLookup
+	scopes map[string]*types.KBScope
 }
 
 // NewKBPermissions resolves reads for one caller and operation.
@@ -72,7 +77,38 @@ func NewKBPermissions(ctx context.Context, shares KBShareLookup) *KBPermissions 
 		ctx:    ctx,
 		caller: caller,
 		shares: NewKBSharePermissions(ctx, shares, caller.TenantID, caller.Role),
+		lookup: shares,
+		scopes: make(map[string]*types.KBScope),
 	}
+}
+
+// WithoutShareExpansion keeps scope/org lookups but drops organization
+// share grants. Entry points that must not widen a userless principal
+// (kbReadPermissions) use this instead of dropping the whole lookup.
+func (p *KBPermissions) WithoutShareExpansion() *KBPermissions {
+	p.shares = nil
+	return p
+}
+
+// scopeOf resolves and caches the visibility scope of one KB. A nil
+// result means "unknown" — callers treat it as tenant-visibility so
+// missing lookups fail closed.
+func (p *KBPermissions) scopeOf(kbID string) *types.KBScope {
+	if p.lookup == nil {
+		return nil
+	}
+	if s, ok := p.scopes[kbID]; ok {
+		return s
+	}
+	s, err := p.lookup.GetKBScope(p.ctx, kbID)
+	if err != nil {
+		// Lookup failures fail closed: cache a nil so one broken read
+		// does not repeatedly hit the store during a fan-out.
+		p.scopes[kbID] = nil
+		return nil
+	}
+	p.scopes[kbID] = s
+	return s
 }
 
 // Check combines caller ownership, exact grants and organization sharing.
@@ -83,11 +119,52 @@ func (p *KBPermissions) Check(kbID string, ownerTenantID uint64, required types.
 	if err := types.AuthorizeTenantAPIKeyKnowledgeBases(p.ctx, kbID); err != nil {
 		return false, err
 	}
-	if (p.caller.TenantID == ownerTenantID && required == types.OrgRoleViewer) ||
-		HasKBGrant(p.ctx, kbID, ownerTenantID, required) {
+	tenantID := ownerTenantID
+	visibility := types.KBVisibilityTenant
+	var orgID uint64
+	if scope := p.scopeOf(kbID); scope != nil {
+		if scope.TenantID != 0 {
+			tenantID = scope.TenantID
+		}
+		visibility = scope.Visibility
+		orgID = scope.OrgID
+	}
+	sameTenant := p.caller.TenantID != 0 && p.caller.TenantID == tenantID
+
+	switch visibility {
+	case types.KBVisibilityOrg:
+		// Org-scoped KBs never cross the tenant boundary. Inside the
+		// tenant, org members read; org managers additionally write;
+		// tenant Admin/Owner, system admins and tenant-level API keys
+		// administer.
+		if !sameTenant {
+			return false, nil
+		}
+		scope := &types.KBScope{TenantID: tenantID, Visibility: visibility, OrgID: orgID}
+		if CallerOrgGrant(p.ctx, p.caller, scope, p.lookup) == "" {
+			return false, nil
+		}
+		if required == types.OrgRoleViewer {
+			return true, nil
+		}
+		return HasKBGrant(p.ctx, kbID, tenantID, required), nil
+	case types.KBVisibilityPublic:
+		// Every tenant's callers may read public KBs; writes belong to
+		// the owning tenant and still need an upstream grant.
+		if required == types.OrgRoleViewer {
+			return p.caller.TenantID != 0, nil
+		}
+		if !sameTenant {
+			return false, nil
+		}
+		return HasKBGrant(p.ctx, kbID, tenantID, required), nil
+	}
+
+	if (sameTenant && required == types.OrgRoleViewer) ||
+		HasKBGrant(p.ctx, kbID, tenantID, required) {
 		return true, nil
 	}
-	if p.caller.TenantID == 0 || p.caller.TenantID == ownerTenantID {
+	if p.caller.TenantID == 0 || sameTenant {
 		return false, nil
 	}
 	return p.shares.Check(kbID, required)

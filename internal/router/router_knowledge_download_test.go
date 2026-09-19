@@ -151,3 +151,11 @@ func TestBatchKnowledgeDownloadRejectsReadOnlySharedKB(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
 }
+
+func (s *downloadKBShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *downloadKBShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

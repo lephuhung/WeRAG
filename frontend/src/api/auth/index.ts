@@ -498,6 +498,8 @@ export interface InviteLookup {
   tenant_name?: string
   role: string
   expires_at: string
+  org_id?: number
+  org_name?: string
 }
 
 export interface InviteLookupResponse {

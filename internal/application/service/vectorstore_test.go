@@ -830,6 +830,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     tenant_id INTEGER NOT NULL,
     creator_id VARCHAR(36),
     type VARCHAR(32) NOT NULL DEFAULT 'document',
+    visibility VARCHAR(16) NOT NULL DEFAULT 'tenant',
+    org_id INTEGER NULL,
     chunking_config TEXT NOT NULL DEFAULT '{}',
     image_processing_config TEXT NOT NULL DEFAULT '{}',
     embedding_model_id VARCHAR(64) NOT NULL,
@@ -1196,4 +1198,20 @@ func TestBatchResolveStoreView_Empty(t *testing.T) {
 	got, err := svc.BatchResolveStoreView(ctx, 1, nil)
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+func (r *realKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *realKBRepo) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *realKBRepo) ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
 }

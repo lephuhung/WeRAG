@@ -748,3 +748,7 @@ func TestIngestItem_URLCreationMetadataAttachFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "attach datasource metadata")
 }
+
+func (s *processSyncKBService) SetKnowledgeBaseVisibility(ctx context.Context, id string, visibility types.KBVisibility, orgID *uint64) (*types.KnowledgeBase, error) {
+	return nil, nil
+}

@@ -47,6 +47,9 @@ type AuthHandler struct {
 	// fixtures — the share-link endpoints respond 503 rather than
 	// blocking the rest of the auth surface.
 	invitationSvc interfaces.TenantInvitationService
+	// tenantOrgRepo resolves org names for org-bound share-link lookups
+	// (POST /auth/invitations/lookup). Optional; nil just omits org_name.
+	tenantOrgRepo interfaces.TenantOrgRepository
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -65,6 +68,7 @@ func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService, tenantService interfaces.TenantService,
 	systemSettingSvc interfaces.SystemSettingService,
 	invitationSvc interfaces.TenantInvitationService,
+	tenantOrgRepo interfaces.TenantOrgRepository,
 ) *AuthHandler {
 	// Boot-time guard: a nil-or-empty Auth section silently disables the
 	// invite_only gate (see Register below). Emit a loud one-shot log
@@ -82,6 +86,7 @@ func NewAuthHandler(configInfo *config.Config,
 		tenantService:    tenantService,
 		systemSettingSvc: systemSettingSvc,
 		invitationSvc:    invitationSvc,
+		tenantOrgRepo:    tenantOrgRepo,
 	}
 }
 

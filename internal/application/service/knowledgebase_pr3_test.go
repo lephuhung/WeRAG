@@ -604,3 +604,19 @@ func copyTaskTestContext(t *testing.T, repo *fakeKBRepo, dst string) context.Con
 	require.NoError(t, err)
 	return ctx
 }
+
+func (r *fakeKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (r *fakeKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *fakeKBRepo) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *fakeKBRepo) ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}

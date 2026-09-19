@@ -11,11 +11,14 @@ import (
 
 // Service reads accept exact upstream grants. Otherwise cross-tenant reads
 // require a user and organization permission resolved for the original caller.
+// Scope/org lookups stay enabled for userless principals so 'public' and
+// 'org' visibility still apply to API-key and integration callers.
 func kbReadPermissions(ctx context.Context, shares access.KBShareLookup) *access.KBPermissions {
+	p := access.NewKBPermissions(ctx, shares)
 	if types.CallerFromContext(ctx).UserID == "" {
-		shares = nil
+		return p.WithoutShareExpansion()
 	}
-	return access.NewKBPermissions(ctx, shares)
+	return p
 }
 
 // kbWritableIDs returns the target KBs the caller may modify: those of its own
@@ -51,6 +54,26 @@ func kbWritableIDs(
 		}
 		seen[target.KnowledgeBaseID] = true
 		writable := caller.TenantID != 0 && target.TenantID == caller.TenantID
+		if writable {
+			if shares != nil {
+				if scope, err := shares.GetKBScope(ctx, target.KnowledgeBaseID); err == nil && scope != nil {
+					switch scope.Visibility {
+					case types.KBVisibilityOrg:
+						// Org-scoped KBs additionally require org authority:
+						// org managers and tenant admins may write; plain
+						// members are read-only even inside their own tenant.
+						writable = access.CallerOrgGrant(ctx, caller, scope, shares).
+							HasPermission(types.OrgRoleEditor)
+					case types.KBVisibilityPublic:
+						// Public corpus writes stay with the owning tenant's
+						// Owner, system admins and tenant-level API keys.
+						_, isKey := types.TenantAPIKeyScopeFromContext(ctx)
+						writable = isKey || types.IsSystemAdminFromContext(ctx) ||
+							caller.Role.HasPermission(types.TenantRoleOwner)
+					}
+				}
+			}
+		}
 		if !writable {
 			writable, _ = permissions.Check(target.KnowledgeBaseID, types.OrgRoleEditor)
 		}

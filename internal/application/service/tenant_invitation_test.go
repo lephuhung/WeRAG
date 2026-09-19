@@ -220,7 +220,7 @@ func newInvitationSvc() (
 ) {
 	invRepo := newFakeInvitationRepo()
 	memberSvc, _ := newServiceWithRepo()
-	svc := NewTenantInvitationService(invRepo, memberSvc, nil)
+	svc := NewTenantInvitationService(invRepo, memberSvc, nil, nil)
 	return svc, invRepo, memberSvc
 }
 
@@ -446,7 +446,7 @@ func TestInvitationService_CountPending(t *testing.T) {
 func TestInvitationService_CreateShareLink_PersistsToken(t *testing.T) {
 	svc, repo, _ := newInvitationSvc()
 	inv, plain, err := svc.CreateShareLink(
-		context.Background(), 1, types.TenantRoleContributor, nil, "")
+		context.Background(), 1, 0, types.TenantRoleContributor, nil, "")
 	if err != nil {
 		t.Fatalf("create-share-link: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestInvitationService_CreateShareLink_PersistsToken(t *testing.T) {
 func TestInvitationService_CreateShareLink_RejectsInvalidRole(t *testing.T) {
 	svc, _, _ := newInvitationSvc()
 	_, _, err := svc.CreateShareLink(
-		context.Background(), 1, types.TenantRole("magician"), nil, "")
+		context.Background(), 1, 0, types.TenantRole("magician"), nil, "")
 	if !errors.Is(err, ErrInvalidTenantRole) {
 		t.Fatalf("want ErrInvalidTenantRole, got %v", err)
 	}
@@ -484,7 +484,7 @@ func TestInvitationService_CreateShareLink_APIKeyCannotAssignOwner(t *testing.T)
 		Capabilities: types.StringArray{string(types.APIKeyCapabilityManageMembers)},
 	})
 
-	_, _, err := svc.CreateShareLink(ctx, 1, types.TenantRoleOwner, nil, "")
+	_, _, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleOwner, nil, "")
 	if !errors.Is(err, ErrAPIKeyCannotAssignOwner) {
 		t.Fatalf("want ErrAPIKeyCannotAssignOwner, got %v", err)
 	}
@@ -502,7 +502,7 @@ func TestInvitationService_LookupByToken_RejectsUnknownToken(t *testing.T) {
 
 func TestInvitationService_LookupByToken_RejectsExpired(t *testing.T) {
 	svc, repo, _ := newInvitationSvc()
-	_, plain, err := svc.CreateShareLink(context.Background(), 1, types.TenantRoleViewer, nil, "")
+	_, plain, err := svc.CreateShareLink(context.Background(), 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestInvitationService_LookupByToken_RejectsExpired(t *testing.T) {
 func TestInvitationService_AcceptByToken_HappyPath(t *testing.T) {
 	svc, repo, memberSvc := newInvitationSvc()
 	ctx := context.Background()
-	_, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleAdmin, nil, "")
+	_, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleAdmin, nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestInvitationService_AcceptByToken_HappyPath(t *testing.T) {
 func TestInvitationService_AcceptByToken_AllowsMultipleUsers(t *testing.T) {
 	svc, _, memberSvc := newInvitationSvc()
 	ctx := context.Background()
-	_, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleViewer, nil, "")
+	_, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -565,7 +565,7 @@ func TestInvitationService_AcceptByToken_ReconcilesDirectInvitation(t *testing.T
 	if err != nil {
 		t.Fatalf("create direct invitation: %v", err)
 	}
-	_, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleViewer, nil, "")
+	_, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create share link: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestInvitationService_AcceptByToken_ReconcilesDirectInvitationForExistingMe
 	if err != nil {
 		t.Fatalf("create direct invitation: %v", err)
 	}
-	_, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleViewer, nil, "")
+	_, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create share link: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestInvitationService_AcceptByToken_ReconcilesDirectInvitationForExistingMe
 func TestInvitationService_AcceptByToken_RevokedTokenRejected(t *testing.T) {
 	svc, _, _ := newInvitationSvc()
 	ctx := context.Background()
-	inv, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleViewer, nil, "")
+	inv, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -636,7 +636,7 @@ func TestInvitationService_AcceptByToken_RevokedTokenRejected(t *testing.T) {
 func TestInvitationService_AcceptByToken_RequiresUserID(t *testing.T) {
 	svc, _, _ := newInvitationSvc()
 	ctx := context.Background()
-	_, plain, err := svc.CreateShareLink(ctx, 1, types.TenantRoleViewer, nil, "")
+	_, plain, err := svc.CreateShareLink(ctx, 1, 0, types.TenantRoleViewer, nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

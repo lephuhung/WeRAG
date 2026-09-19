@@ -82,3 +82,11 @@ func TestKBSharePermissionsMissingLookupAndInvalidRolesDeny(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, allowed)
 }
+
+func (s permissionLookupFunc) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s permissionLookupFunc) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
+	return "", false, nil
+}

@@ -246,6 +246,18 @@
                         <t-icon name="share" size="14px" />
                       </div>
                     </t-tooltip>
+                    <t-tooltip v-if="kb.visibility === 'public'"
+                      :content="$t('knowledgeList.visibilityPublic')" placement="top">
+                      <div class="feature-badge visibility-public">
+                        <t-icon name="internet" size="14px" />
+                      </div>
+                    </t-tooltip>
+                    <t-tooltip v-else-if="kb.visibility === 'org'"
+                      :content="$t('knowledgeList.visibilityOrg')" placement="top">
+                      <div class="feature-badge visibility-org">
+                        <t-icon name="root-list" size="14px" />
+                      </div>
+                    </t-tooltip>
                   </div>
                 </div>
                 <div v-if="!authStore.isLiteMode && showKbOriginBadge(kb)" class="bottom-right">
@@ -316,6 +328,12 @@
                       :content="$t('knowledgeList.features.questionGeneration')" placement="top">
                       <div class="feature-badge question">
                         <t-icon name="help-circle" size="14px" />
+                      </div>
+                    </t-tooltip>
+                    <t-tooltip v-if="kb.visibility === 'public'"
+                      :content="$t('knowledgeList.visibilityPublic')" placement="top">
+                      <div class="feature-badge visibility-public">
+                        <t-icon name="internet" size="14px" />
                       </div>
                     </t-tooltip>
                   </div>
@@ -2159,6 +2177,24 @@ const handleUploadFinishedEvent = (event: Event) => {
   }
 
   &.shared {
+    background: color-mix(in srgb, var(--td-brand-color) 8%, transparent);
+    color: var(--td-brand-color);
+
+    &:hover {
+      background: color-mix(in srgb, var(--td-brand-color) 12%, transparent);
+    }
+  }
+
+  &.visibility-public {
+    background: color-mix(in srgb, var(--td-warning-color) 10%, transparent);
+    color: var(--td-warning-color);
+
+    &:hover {
+      background: color-mix(in srgb, var(--td-warning-color) 15%, transparent);
+    }
+  }
+
+  &.visibility-org {
     background: color-mix(in srgb, var(--td-brand-color) 8%, transparent);
     color: var(--td-brand-color);
 

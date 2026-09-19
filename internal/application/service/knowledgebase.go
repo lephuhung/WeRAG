@@ -52,6 +52,7 @@ type knowledgeBaseService struct {
 	audit           interfaces.AuditLogService
 	resourceCatalog interfaces.ResourceCatalog
 	wikiRepo        interfaces.WikiPageRepository
+	tenantOrgRepo   interfaces.TenantOrgRepository
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -76,6 +77,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	audit interfaces.AuditLogService,
 	resourceCatalog interfaces.ResourceCatalog,
 	wikiRepo interfaces.WikiPageRepository,
+	tenantOrgRepo interfaces.TenantOrgRepository,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
 		repo:            repo,
@@ -99,6 +101,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		audit:           audit,
 		resourceCatalog: resourceCatalog,
 		wikiRepo:        wikiRepo,
+		tenantOrgRepo:   tenantOrgRepo,
 	}
 }
 
@@ -140,6 +143,9 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	if err := s.validateKBVisibility(ctx, kb); err != nil {
+		return nil, err
+	}
 	applyTenantDefaultStorageProvider(ctx, kb)
 	if err := s.applyAndValidateStorageBackend(ctx, kb); err != nil {
 		return nil, err
@@ -293,6 +299,121 @@ func (s *knowledgeBaseService) validateVectorStoreBinding(
 	}
 }
 
+// validateKBVisibility enforces the scope model at creation time:
+//   - public KBs may only be created by the owning tenant's Owner or a
+//     system admin / platform API key (public corpus is platform-facing);
+//   - org KBs must reference an org inside the same tenant, and the
+//     creator must be a tenant Admin/Owner, system admin or a manager of
+//     that org;
+//   - tenant KBs (the default) keep the existing RBAC — no extra check.
+func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *types.KnowledgeBase) error {
+	switch kb.Visibility {
+	case types.KBVisibilityPublic:
+		kb.OrgID = nil
+		if !canManagePublicKB(ctx) {
+			return apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được tạo knowledge base công khai")
+		}
+	case types.KBVisibilityOrg:
+		if kb.OrgID == nil || *kb.OrgID == 0 {
+			return apperrors.NewBadRequestError("org_id is required when visibility is 'org'")
+		}
+		org, err := s.tenantOrgRepo.GetOrgByID(ctx, *kb.OrgID)
+		if err != nil || org == nil || org.TenantID != kb.TenantID {
+			return apperrors.NewBadRequestError("org not found in this workspace")
+		}
+		caller := types.CallerFromContext(ctx)
+		if caller.Role.HasPermission(types.TenantRoleAdmin) || types.IsSystemAdminFromContext(ctx) {
+			return nil
+		}
+		if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.UserID == "" {
+			return nil
+		}
+		member, err := s.tenantOrgRepo.GetMember(ctx, *kb.OrgID, caller.UserID)
+		if err != nil || member == nil || member.Role != types.TenantOrgRoleManager {
+			return apperrors.NewForbiddenError("chỉ quản trị viên của tổ chức mới được tạo knowledge base cho tổ chức đó")
+		}
+	default:
+		kb.Visibility = types.KBVisibilityTenant
+		kb.OrgID = nil
+	}
+	return nil
+}
+
+// canManagePublicKB reports whether the caller may create or manage a
+// public-visibility KB: the owning tenant's Owner, a system admin, or a
+// platform API key. Tenant members below Owner stay read-only on the
+// public corpus.
+func canManagePublicKB(ctx context.Context) bool {
+	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
+		return scope.IsPlatform()
+	}
+	return types.IsSystemAdminFromContext(ctx) ||
+		types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
+}
+
+// SetKnowledgeBaseVisibility changes a KB's scope. Only principals of the
+// owning tenant reach this — visibility is scope-defining, so shared-KB
+// editors of foreign tenants must not widen or narrow another tenant's KB.
+func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
+	ctx context.Context, id string, visibility types.KBVisibility, orgID *uint64,
+) (*types.KnowledgeBase, error) {
+	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if kb == nil {
+		return nil, apperrors.NewNotFoundError("knowledge base not found")
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID == 0 || caller.TenantID != kb.TenantID {
+		return nil, apperrors.NewForbiddenError("không thể đổi phạm vi của knowledge base thuộc workspace khác")
+	}
+	if !visibility.IsValid() {
+		return nil, apperrors.NewBadRequestError("invalid visibility")
+	}
+	switch visibility {
+	case types.KBVisibilityPublic:
+		if !canManagePublicKB(ctx) {
+			return nil, apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được công khai knowledge base")
+		}
+		orgID = nil
+	case types.KBVisibilityOrg:
+		if orgID == nil || *orgID == 0 {
+			return nil, apperrors.NewBadRequestError("org_id is required when visibility is 'org'")
+		}
+		org, err := s.tenantOrgRepo.GetOrgByID(ctx, *orgID)
+		if err != nil || org == nil || org.TenantID != kb.TenantID {
+			return nil, apperrors.NewBadRequestError("org not found in this workspace")
+		}
+		if !caller.Role.HasPermission(types.TenantRoleAdmin) && !types.IsSystemAdminFromContext(ctx) {
+			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
+				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được gán knowledge base cho tổ chức")
+			}
+		}
+	default:
+		// Narrowing to tenant scope is an Admin+ decision — an org manager
+		// must not silently detach their org's KB into tenant scope.
+		if !caller.Role.HasPermission(types.TenantRoleAdmin) && !types.IsSystemAdminFromContext(ctx) {
+			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
+				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được đổi phạm vi knowledge base")
+			}
+		}
+		orgID = nil
+	}
+	kb.Visibility = visibility
+	kb.OrgID = orgID
+	kb.EnsureDefaults()
+	kb.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
+		return nil, err
+	}
+	recordKBActivity(ctx, s.audit, kb.TenantID, kb.ID, types.AuditActionKBUpdated,
+		"knowledge_base", kb.ID, types.AuditOutcomeSuccess, map[string]any{
+			"visibility": string(visibility), "org_id": orgID,
+		})
+	return kb, nil
+}
+
 // GetKnowledgeBaseByID retrieves a knowledge base by its ID
 func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id string) (*types.KnowledgeBase, error) {
 	if id == "" {
@@ -353,7 +474,25 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
 	tenantID := types.MustTenantIDFromContext(ctx)
 
-	kbs, err := s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
+	// Visibility widening: the caller sees tenant+public KBs of their own
+	// workspace, org KBs of the orgs they belong to (all orgs for
+	// Admin+/API-key principals), plus public KBs of every other tenant.
+	caller := types.CallerFromContext(ctx)
+	bypassOrgFilter := caller.Role.HasPermission(types.TenantRoleAdmin) ||
+		types.IsSystemAdminFromContext(ctx)
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.UserID == "" {
+		bypassOrgFilter = true
+	}
+	var memberOrgIDs []uint64
+	if !bypassOrgFilter && s.tenantOrgRepo != nil {
+		memberOrgIDs, _ = s.tenantOrgRepo.ListOrgIDsForUser(ctx, tenantID, caller.UserID)
+	}
+	kbs, err := s.repo.ListVisibleKnowledgeBases(ctx, tenantID, memberOrgIDs, bypassOrgFilter)
+	if err == nil {
+		if pubs, perr := s.repo.ListPublicKnowledgeBasesExcept(ctx, tenantID); perr == nil {
+			kbs = append(kbs, pubs...)
+		}
+	}
 	if err != nil {
 		for _, kb := range kbs {
 			kb.EnsureDefaults()
@@ -415,7 +554,16 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 
 // ListKnowledgeBasesByTenantID returns all knowledge bases for the given tenant (e.g. for shared agent context).
 func (s *knowledgeBaseService) ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
-	kbs, err := s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
+	// This method also lists a shared agent's source-tenant KBs for a
+	// foreign caller — org-scoped KBs must never cross that boundary.
+	caller := types.CallerFromContext(ctx)
+	var kbs []*types.KnowledgeBase
+	var err error
+	if caller.TenantID != 0 && caller.TenantID == tenantID {
+		kbs, err = s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
+	} else {
+		kbs, err = s.repo.ListForeignKnowledgeBasesByTenantID(ctx, tenantID)
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
@@ -1305,6 +1453,12 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 	targetKB.DeletedAt.Valid = false
 	targetKB.DeletedAt.Time = time.Time{}
 	targetKB.IsTemporary = false
+	// Scope is never inherited: duplicating a public or org KB must not
+	// mint a new privileged-scope KB for the caller. The copy is a plain
+	// tenant KB; a privileged caller can re-scope it afterwards through
+	// SetKnowledgeBaseVisibility.
+	targetKB.Visibility = types.KBVisibilityTenant
+	targetKB.OrgID = nil
 	targetKB.IsPinned = false
 	targetKB.PinnedAt = nil
 	targetKB.KnowledgeCount = 0

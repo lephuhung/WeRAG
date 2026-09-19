@@ -55,6 +55,11 @@ func (s SharedAgentKBScope) Allows(kbID string, tenantID uint64) bool {
 }
 
 // SharedAgentIncludesKB also binds an "all" selection to the agent's tenant.
+// Org-scoped knowledge bases never leave their tenant, so an agent share —
+// which exists precisely to cross tenants — can never expose them.
 func SharedAgentIncludesKB(agent *CustomAgent, kb *KnowledgeBase) bool {
-	return kb != nil && NewSharedAgentKBScope(agent).Allows(kb.ID, kb.TenantID)
+	if kb == nil || kb.Visibility == KBVisibilityOrg {
+		return false
+	}
+	return NewSharedAgentKBScope(agent).Allows(kb.ID, kb.TenantID)
 }

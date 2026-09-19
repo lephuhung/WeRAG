@@ -456,3 +456,19 @@ func TestFormatModelInUseMessage(t *testing.T) {
 		formatModelInUseMessage(0, 0, true),
 	)
 }
+
+func (r *stubKBRepoForModelDelete) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *stubKBRepoForModelDelete) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *stubKBRepoForModelDelete) ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
