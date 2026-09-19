@@ -9,8 +9,15 @@ export type SettingsRoleKey = 'viewer' | 'contributor' | 'admin' | 'owner'
  */
 export const SETTINGS_SECTION_MIN_ROLE: Record<string, SettingsRoleKey> = {
   general: 'viewer',
+  // ollama / weknoracloud are model-platform surfaces (probe, download,
+  // provider credentials) — gated to SystemAdmin via
+  // SYSTEM_ADMIN_SETTINGS_SECTIONS below; the role entries remain only as
+  // documentation of the previous tenant-level policy.
   ollama: 'admin',
   weknoracloud: 'admin',
+  // models stays viewer: tenants still browse the catalog to bind model
+  // IDs to KBs/agents — every mutation control inside the page is
+  // SystemAdmin-gated (ModelSettings.vue).
   models: 'viewer',
   websearch: 'admin',
   chathistory: 'admin',
@@ -36,11 +43,12 @@ export const SETTINGS_SECTION_MIN_ROLE: Record<string, SettingsRoleKey> = {
 
 /**
  * A management-labelled avatar shortcut has a stricter threshold than the
- * corresponding read-only Settings page.
+ * corresponding read-only Settings page. `models` is absent on purpose:
+ * model management is SystemAdmin-only, and the avatar menu gates that
+ * entry on authStore.isSystemAdmin directly (UserMenu.vue).
  */
 export const SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE = {
   members: 'owner',
-  models: 'admin',
   skills: 'admin',
 } as const satisfies Record<string, SettingsRoleKey>
 
@@ -49,4 +57,8 @@ export const SYSTEM_ADMIN_SETTINGS_SECTIONS = new Set([
   'runtime-queues',
   'platform-api-keys',
   'system-audit-log',
+  // Model platform surfaces: every operation on these pages (Ollama
+  // probe/download, WeKnoraCloud credentials) is SystemAdmin-only.
+  'ollama',
+  'weknoracloud',
 ])

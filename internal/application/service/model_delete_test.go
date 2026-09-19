@@ -141,6 +141,7 @@ func (s *stubModelRepoForDelete) ClearDefaultByType(context.Context, uint, types
 
 func TestDeleteModel_RejectsWhenReferenced(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "model-in-use"
 
 	svc := NewModelService(
@@ -150,7 +151,7 @@ func TestDeleteModel_RejectsWhenReferenced(t *testing.T) {
 			{ID: "kb-2", Name: "Engineering", Bindings: []types.ModelUsageBinding{types.ModelUsageBindingVLMModel}},
 		}},
 		&stubAgentRepoForModelDelete{},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -171,6 +172,7 @@ func TestDeleteModel_RejectsWhenReferenced(t *testing.T) {
 
 func TestDeleteModel_RejectsWhenUsedByAgent(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "agent-model"
 
 	svc := NewModelService(
@@ -180,7 +182,7 @@ func TestDeleteModel_RejectsWhenUsedByAgent(t *testing.T) {
 			{ID: "agent-1", Name: "Support", Bindings: []types.ModelUsageBinding{types.ModelUsageBindingChatModel}},
 			{ID: "agent-2", Name: "Writer", Bindings: []types.ModelUsageBinding{types.ModelUsageBindingFollowUpModel}},
 		}},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -197,6 +199,7 @@ func TestDeleteModel_RejectsWhenUsedByAgent(t *testing.T) {
 
 func TestDeleteModel_SucceedsWhenUnreferenced(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "free-model"
 	deleted := false
 
@@ -211,7 +214,7 @@ func TestDeleteModel_SucceedsWhenUnreferenced(t *testing.T) {
 		},
 		&stubKBRepoForModelDelete{},
 		&stubAgentRepoForModelDelete{},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	require.NoError(t, svc.DeleteModel(ctx, modelID))
@@ -223,7 +226,7 @@ func TestGetModelUsageDetails_NormalizesEmptyCollections(t *testing.T) {
 		&stubModelRepoForDelete{},
 		&stubKBRepoForModelDelete{},
 		&stubAgentRepoForModelDelete{},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	details, err := svc.(*modelService).getModelUsageDetails(context.Background(), 1, "unused-model")
@@ -237,6 +240,7 @@ func TestGetModelUsageDetails_NormalizesEmptyCollections(t *testing.T) {
 
 func TestDeleteModel_DoesNotDeleteWhenUsageLookupFails(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "lookup-failure"
 	wantErr := errors.New("usage lookup failed")
 	deleted := false
@@ -251,7 +255,7 @@ func TestDeleteModel_DoesNotDeleteWhenUsageLookupFails(t *testing.T) {
 		},
 		&stubKBRepoForModelDelete{usageErr: wantErr},
 		&stubAgentRepoForModelDelete{},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -261,6 +265,7 @@ func TestDeleteModel_DoesNotDeleteWhenUsageLookupFails(t *testing.T) {
 
 func TestDeleteModel_ReportsUntruncatedTotalsWhenListsAreCapped(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "popular-embedding"
 	kbTotal := int64(80)
 	agentTotal := int64(12)
@@ -280,7 +285,7 @@ func TestDeleteModel_ReportsUntruncatedTotalsWhenListsAreCapped(t *testing.T) {
 				{ID: "agent-1", Name: "Support", Bindings: []types.ModelUsageBinding{types.ModelUsageBindingChatModel}},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -335,6 +340,7 @@ func (s *stubTenantServiceForModelDelete) GetWeKnoraCloudCredentials(context.Con
 
 func TestDeleteModel_RejectsWhenUsedByMemory(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "memory-embed"
 
 	svc := NewModelService(
@@ -348,6 +354,7 @@ func TestDeleteModel_RejectsWhenUsedByMemory(t *testing.T) {
 				MemoryConfig: &types.MemoryConfig{Enabled: true, EmbeddingModelID: modelID},
 			},
 		},
+		nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -367,6 +374,7 @@ func TestDeleteModel_RejectsWhenUsedByMemory(t *testing.T) {
 // stop silently instead of the delete being refused.
 func TestDeleteModel_RejectsWhenUsedByMemoryExtraction(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "memory-extract"
 
 	svc := NewModelService(
@@ -382,6 +390,7 @@ func TestDeleteModel_RejectsWhenUsedByMemoryExtraction(t *testing.T) {
 				},
 			},
 		},
+		nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)
@@ -397,6 +406,7 @@ func TestDeleteModel_RejectsWhenUsedByMemoryExtraction(t *testing.T) {
 
 func TestDeleteModel_ReportsAllMemoryBindings(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 	modelID := "shared-memory-model"
 
 	svc := NewModelService(
@@ -412,6 +422,7 @@ func TestDeleteModel_ReportsAllMemoryBindings(t *testing.T) {
 				},
 			},
 		},
+		nil,
 	)
 
 	err := svc.DeleteModel(ctx, modelID)

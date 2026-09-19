@@ -10,8 +10,14 @@ import {
 test('management shortcuts are stricter than read-only settings pages', () => {
   assert.equal(SETTINGS_SECTION_MIN_ROLE.members, 'viewer')
   assert.equal(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.members, 'owner')
+  // models stays viewer-readable (catalog browsing for KB binding) while
+  // management is SystemAdmin-only — no role entry, the avatar menu checks
+  // isSystemAdmin directly.
   assert.equal(SETTINGS_SECTION_MIN_ROLE.models, 'viewer')
-  assert.equal(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.models, 'admin')
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE, 'models'),
+    false,
+  )
 })
 
 test('the skill catalog is admin-only like the sandbox it installs into', () => {
@@ -33,6 +39,13 @@ test('personal skill environment variables are visible to every member', () => {
 test('system administration settings stay explicitly system-admin-only', () => {
   assert.deepEqual(
     [...SYSTEM_ADMIN_SETTINGS_SECTIONS],
-    ['system-global', 'runtime-queues', 'platform-api-keys', 'system-audit-log'],
+    [
+      'system-global',
+      'runtime-queues',
+      'platform-api-keys',
+      'system-audit-log',
+      'ollama',
+      'weknoracloud',
+    ],
   )
 })

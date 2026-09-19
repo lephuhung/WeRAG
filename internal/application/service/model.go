@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,9 @@ type modelService struct {
 	ollamaService *ollama.OllamaService
 	pooler        embedding.EmbedderPooler
 	tenantService interfaces.TenantService
+	// audit is optional — nil disables durable audit but keeps the
+	// business operations working (same contract as tenantMemberService).
+	audit interfaces.AuditLogService
 }
 
 // NewModelService creates a new model service instance
@@ -40,6 +44,7 @@ func NewModelService(repo interfaces.ModelRepository,
 	ollamaService *ollama.OllamaService,
 	pooler embedding.EmbedderPooler,
 	tenantService interfaces.TenantService,
+	audit interfaces.AuditLogService,
 ) interfaces.ModelService {
 	return &modelService{
 		repo:          repo,
@@ -48,7 +53,79 @@ func NewModelService(repo interfaces.ModelRepository,
 		ollamaService: ollamaService,
 		pooler:        pooler,
 		tenantService: tenantService,
+		audit:         audit,
 	}
+}
+
+// requireModelConfigAuthority gates catalog mutations to system
+// administrators (and platform API keys). Model definitions are platform
+// infrastructure: tenants bind existing model IDs, they do not author them.
+// This is the service-layer backstop for the RequireSystemAdmin route
+// guards — it also covers internal callers that bypass HTTP middleware.
+func requireModelConfigAuthority(ctx context.Context) error {
+	if !types.CanManageModelConfig(ctx) {
+		return apperrors.NewForbiddenError(
+			"only system administrators can manage model configuration")
+	}
+	return nil
+}
+
+// emitAudit is the per-mutation audit hook. Best-effort: a nil audit
+// service or a write failure never fails the business operation.
+func (s *modelService) emitAudit(ctx context.Context, entry *types.AuditLog) {
+	if s.audit == nil {
+		return
+	}
+	_ = s.audit.Log(ctx, entry)
+}
+
+// auditTenantID picks the feed a model mutation belongs to: built-in
+// models live in the shared catalog (tenant_id=10000), so their changes
+// are platform-scope and surface in the system audit feed (tenant_id=0);
+// tenant models are recorded against the owning workspace.
+func auditTenantID(m *types.Model) uint64 {
+	if m != nil && m.IsBuiltin {
+		return 0
+	}
+	if m == nil {
+		return 0
+	}
+	return m.TenantID
+}
+
+func (s *modelService) auditModelMutation(
+	ctx context.Context, action types.AuditAction, m *types.Model, details map[string]any,
+) {
+	if details == nil {
+		details = map[string]any{}
+	}
+	if m != nil {
+		details["model_id"] = m.ID
+		details["name"] = m.Name
+		details["type"] = string(m.Type)
+		details["is_builtin"] = m.IsBuiltin
+	}
+	raw, err := json.Marshal(details)
+	if err != nil {
+		raw = nil
+	}
+	s.emitAudit(ctx, &types.AuditLog{
+		TenantID:    auditTenantID(m),
+		ActorUserID: auditActor(ctx),
+		ActorRole:   auditActorRole(ctx),
+		Action:      action,
+		TargetType:  "model",
+		TargetID:    modelIDOrEmpty(m),
+		Outcome:     types.AuditOutcomeSuccess,
+		Details:     types.JSON(raw),
+	})
+}
+
+func modelIDOrEmpty(m *types.Model) string {
+	if m == nil {
+		return ""
+	}
+	return m.ID
 }
 
 // decryptAppSecret 解密 AppSecret（如果为空或 cryptoSvc 为空则原样返回）
@@ -99,6 +176,10 @@ func (s *modelService) resolveWeKnoraCloudCredentials(ctx context.Context, param
 func (s *modelService) CreateModel(ctx context.Context, model *types.Model) error {
 	logger.Infof(ctx, "Creating model: %s, type: %s, source: %s", model.Name, model.Type, model.Source)
 
+	if err := requireModelConfigAuthority(ctx); err != nil {
+		return err
+	}
+
 	// Handle remote models (e.g., OpenAI, Azure)
 	if model.Source == types.ModelSourceRemote {
 		logger.Info(ctx, "Remote model detected, setting status to active")
@@ -115,6 +196,7 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 		}
 
 		logger.Infof(ctx, "Remote model created successfully: %s", model.ID)
+		s.auditModelMutation(ctx, types.AuditActionModelCreated, model, nil)
 		return nil
 	}
 
@@ -152,6 +234,7 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 	}()
 
 	logger.Infof(ctx, "Model creation initiated successfully: %s", model.ID)
+	s.auditModelMutation(ctx, types.AuditActionModelCreated, model, nil)
 	return nil
 }
 
@@ -228,8 +311,13 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	logger.Info(ctx, "Start updating model")
 	logger.Infof(ctx, "Updating model ID: %s, name: %s", model.ID, model.Name)
 
-	// Built-in models are platform-wide. Tenant administrators may view them,
-	// but only a system administrator may change their shared configuration.
+	if err := requireModelConfigAuthority(ctx); err != nil {
+		return err
+	}
+
+	// Built-in models are platform-wide; model configuration is
+	// platform-owned entirely, so requireModelConfigAuthority above covers
+	// both builtin and tenant-owned rows.
 	tenantID := types.MustTenantIDFromContext(ctx)
 	existingModel, err := s.repo.GetByID(ctx, tenantID, model.ID)
 	if err != nil {
@@ -239,10 +327,6 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 		return err
 	}
 	if existingModel != nil && existingModel.IsBuiltin {
-		if !types.IsSystemAdminFromContext(ctx) {
-			logger.Warnf(ctx, "Non-system-admin attempted to update builtin model: %s", model.ID)
-			return apperrors.NewForbiddenError("only system administrators can update builtin models")
-		}
 		// A UI edit is an explicit runtime override. Clear YAML ownership so
 		// the startup reconciler does not silently replace the saved values.
 		model.TenantID = existingModel.TenantID
@@ -261,6 +345,7 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	}
 
 	logger.Infof(ctx, "Model updated successfully: %s", model.ID)
+	s.auditModelMutation(ctx, types.AuditActionModelUpdated, model, nil)
 	return nil
 }
 
@@ -272,6 +357,9 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 func (s *modelService) UpdateModelCredentials(
 	ctx context.Context, id string, apiKey, appSecret *string,
 ) (*types.Model, error) {
+	if err := requireModelConfigAuthority(ctx); err != nil {
+		return nil, err
+	}
 	tenantID := types.MustTenantIDFromContext(ctx)
 	existing, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -280,21 +368,17 @@ func (s *modelService) UpdateModelCredentials(
 	if existing == nil {
 		return nil, ErrModelNotFound
 	}
-	if existing.IsBuiltin && !types.IsSystemAdminFromContext(ctx) {
-		return nil, apperrors.NewForbiddenError(
-			"only system administrators can modify builtin model credentials")
-	}
 
-	changed := false
+	changedFields := make([]string, 0, 2)
 	if apiKey != nil && *apiKey != "" && *apiKey != existing.Parameters.APIKey {
 		existing.Parameters.APIKey = *apiKey
-		changed = true
+		changedFields = append(changedFields, "api_key")
 	}
 	if appSecret != nil && *appSecret != "" && *appSecret != existing.Parameters.AppSecret {
 		existing.Parameters.AppSecret = *appSecret
-		changed = true
+		changedFields = append(changedFields, "app_secret")
 	}
-	if !changed {
+	if len(changedFields) == 0 {
 		return existing, nil
 	}
 	if existing.IsBuiltin {
@@ -305,11 +389,17 @@ func (s *modelService) UpdateModelCredentials(
 		return nil, err
 	}
 	logger.Infof(ctx, "Model credentials updated: id=%s", id)
+	// Audit only field names — secret values never leave this function.
+	s.auditModelMutation(ctx, types.AuditActionModelCredentialsUpdated, existing,
+		map[string]any{"fields": changedFields})
 	return existing, nil
 }
 
 // ClearModelCredential removes a single credential field. Idempotent.
 func (s *modelService) ClearModelCredential(ctx context.Context, id, field string) error {
+	if err := requireModelConfigAuthority(ctx); err != nil {
+		return err
+	}
 	tenantID := types.MustTenantIDFromContext(ctx)
 	existing, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -317,10 +407,6 @@ func (s *modelService) ClearModelCredential(ctx context.Context, id, field strin
 	}
 	if existing == nil {
 		return ErrModelNotFound
-	}
-	if existing.IsBuiltin && !types.IsSystemAdminFromContext(ctx) {
-		return apperrors.NewForbiddenError(
-			"only system administrators can modify builtin model credentials")
 	}
 
 	changed := false
@@ -348,6 +434,8 @@ func (s *modelService) ClearModelCredential(ctx context.Context, id, field strin
 		return err
 	}
 	logger.Infof(ctx, "Model credential cleared by user: id=%s field=%s", id, field)
+	s.auditModelMutation(ctx, types.AuditActionModelCredentialsCleared, existing,
+		map[string]any{"field": field})
 	return nil
 }
 
@@ -355,6 +443,10 @@ func (s *modelService) ClearModelCredential(ctx context.Context, id, field strin
 func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 	logger.Info(ctx, "Start deleting model")
 	logger.Infof(ctx, "Deleting model ID: %s", id)
+
+	if err := requireModelConfigAuthority(ctx); err != nil {
+		return err
+	}
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
@@ -410,6 +502,7 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 	}
 
 	logger.Infof(ctx, "Model deleted successfully: %s", id)
+	s.auditModelMutation(ctx, types.AuditActionModelDeleted, existingModel, nil)
 	return nil
 }
 

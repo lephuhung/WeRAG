@@ -193,6 +193,19 @@ func IsSystemAdminFromContext(ctx context.Context) bool {
 	return v
 }
 
+// CanManageModelConfig reports whether the caller may create or modify
+// model definitions (catalog entries and their credentials). Model config
+// is platform-owned: only system administrators — and platform API keys,
+// mirroring the RequireSystemAdmin route guard — may write it. Tenant
+// roles and tenant-scoped keys (even full-access) never qualify; tenants
+// consume the catalog by binding existing model IDs.
+func CanManageModelConfig(ctx context.Context) bool {
+	if scope, ok := TenantAPIKeyScopeFromContext(ctx); ok {
+		return scope.IsPlatform()
+	}
+	return IsSystemAdminFromContext(ctx)
+}
+
 // SessionTenantIDFromContext extracts the session-owner tenant ID from ctx.
 // Falls back to TenantIDFromContext when the session key is absent.
 func SessionTenantIDFromContext(ctx context.Context) (uint64, bool) {

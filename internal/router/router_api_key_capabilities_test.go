@@ -361,7 +361,8 @@ func TestTenantInfrastructureRoutesDeclareSpecificCapabilities(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/tenants", types.APIKeyCapabilityManageTenantSettings},
 		{http.MethodGet, "/api/v1/models", types.APIKeyCapabilityManageModels},
-		{http.MethodDelete, "/api/v1/models/:id", types.APIKeyCapabilityManageModels},
+		{http.MethodGet, "/api/v1/models/:id", types.APIKeyCapabilityManageModels},
+		{http.MethodGet, "/api/v1/models/providers", types.APIKeyCapabilityManageModels},
 		{http.MethodPost, "/api/v1/evaluation", types.APIKeyCapabilityRunEvaluations},
 		{http.MethodGet, "/api/v1/system/info", types.APIKeyCapabilityManageVectorStores},
 		{http.MethodGet, "/api/v1/mcp-services", types.APIKeyCapabilityManageMCPServices},
@@ -386,6 +387,59 @@ func TestTenantInfrastructureRoutesDeclareSpecificCapabilities(t *testing.T) {
 			}
 			if !policyHasCapability(policy, tc.cap) {
 				t.Fatalf("policy capabilities = %#v, want %s", policy.Capabilities, tc.cap)
+			}
+		})
+	}
+}
+
+// Model configuration is platform-owned: every catalog mutation, credential
+// write, and model probe/download endpoint must be reachable only by a
+// platform API key carrying system_models_manage — never by a tenant-scoped
+// key, even a full-access one.
+func TestModelWriteRoutesRequirePlatformKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	g := &rbacGuards{}
+	v1 := gin.New().Group("/api/v1")
+
+	RegisterModelRoutes(v1, &handler.ModelHandler{}, &handler.ModelCredentialsHandler{}, g)
+	RegisterInitializationRoutes(v1, &handler.InitializationHandler{}, g)
+	RegisterWeKnoraCloudRoutes(v1, &handler.WeKnoraCloudHandler{}, g)
+
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/models"},
+		{http.MethodPost, "/api/v1/models/:id/debug"},
+		{http.MethodPut, "/api/v1/models/:id"},
+		{http.MethodDelete, "/api/v1/models/:id"},
+		{http.MethodPut, "/api/v1/models/:id/credentials"},
+		{http.MethodDelete, "/api/v1/models/:id/credentials/:field"},
+		{http.MethodGet, "/api/v1/initialization/ollama/status"},
+		{http.MethodGet, "/api/v1/initialization/ollama/models"},
+		{http.MethodPost, "/api/v1/initialization/ollama/models/check"},
+		{http.MethodPost, "/api/v1/initialization/ollama/models/download"},
+		{http.MethodGet, "/api/v1/initialization/ollama/download/progress/:taskId"},
+		{http.MethodGet, "/api/v1/initialization/ollama/download/tasks"},
+		{http.MethodPost, "/api/v1/initialization/remote/check"},
+		{http.MethodPost, "/api/v1/initialization/embedding/test"},
+		{http.MethodPost, "/api/v1/initialization/rerank/check"},
+		{http.MethodPost, "/api/v1/initialization/asr/check"},
+		{http.MethodPost, "/api/v1/initialization/multimodal/test"},
+		{http.MethodPost, "/api/v1/initialization/extract/text-relation"},
+		{http.MethodPost, "/api/v1/initialization/extract/fabri-tag"},
+		{http.MethodPost, "/api/v1/initialization/extract/fabri-text"},
+		{http.MethodPost, "/api/v1/weknoracloud/credentials"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			policy := mustLookupAPIKeyPolicy(t, g, tc.method, tc.path)
+			if !policy.PlatformOnly {
+				t.Fatalf("model write/probe route must be platform-key only: %#v", policy)
+			}
+			if !policyHasCapability(policy, types.APIKeyCapabilitySystemModelsManage) {
+				t.Fatalf("policy capabilities = %#v, want system_models_manage", policy.Capabilities)
 			}
 		})
 	}

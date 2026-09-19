@@ -43,6 +43,12 @@ export const SYSTEM_GLOBAL_AUDIT_ACTIONS = [
   'system.queue_task_run_now',
   'system.queue_task_cancelled',
   'system.queue_archived_purged',
+  // Platform-owned model catalog mutations (mirrors AuditActionModel* in Go).
+  'model.created',
+  'model.updated',
+  'model.deleted',
+  'model.credentials_updated',
+  'model.credentials_cleared',
 ] as const
 
 /** Knowledge-base activity feed (KB settings → activity). */

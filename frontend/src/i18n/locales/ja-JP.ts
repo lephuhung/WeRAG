@@ -4453,7 +4453,12 @@ export default {
           'system.queue_task_deleted': '失敗タスクのレコード削除',
           'system.queue_task_run_now': 'キュータスクの即時実行',
           'system.queue_task_cancelled': 'キュータスクの中止',
-          'system.queue_archived_purged': '失敗タスクの一括削除'
+          'system.queue_archived_purged': '失敗タスクの一括削除',
+          'model.created': 'モデルを作成',
+          'model.updated': 'モデルを更新',
+          'model.deleted': 'モデルを削除',
+          'model.credentials_updated': 'モデル認証情報を更新',
+          'model.credentials_cleared': 'モデル認証情報をクリア'
         },
         outcome: {
           success: '成功',
@@ -7403,7 +7408,8 @@ export default {
       settingsManage: 'システム設定の管理',
       runtimeRead: 'ランタイムの読み取り',
       runtimeManage: 'ランタイムの管理',
-      auditRead: 'システム監査の読み取り'
+      auditRead: 'システム監査の読み取り',
+      modelsManage: 'モデルの管理'
     },
     capabilityHints: {
       tenantsRead: 'すべてのワークスペースの一覧表示、検索、詳細確認を行います。',
@@ -7412,7 +7418,8 @@ export default {
       settingsManage: 'プラットフォームのランタイム設定を更新・リセットします。',
       runtimeRead: 'タスクキューとタスクの詳細を確認します。',
       runtimeManage: 'ランタイムタスクの再試行、実行、キャンセル、削除を行います。',
-      auditRead: 'プラットフォームの監査イベントを読み取ります。'
+      auditRead: 'プラットフォームの監査イベントを読み取ります。',
+      modelsManage: 'モデル定義と認証情報の作成・更新・削除、モデルプローブとダウンロードの実行。'
     },
     createdTitle: 'プラットフォームAPIキーを作成しました',
     createdDescription: 'このキーを今すぐコピーして保管してください。完全な値は再表示されません。',

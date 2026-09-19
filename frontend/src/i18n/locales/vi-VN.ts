@@ -4446,7 +4446,12 @@ export default {
           'system.queue_task_deleted': 'Failed task record cleared',
           'system.queue_task_run_now': 'Queue task run now',
           'system.queue_task_cancelled': 'Queue task cancelled',
-          'system.queue_archived_purged': 'All failed tasks cleared'
+          'system.queue_archived_purged': 'All failed tasks cleared',
+          'model.created': 'Đã tạo model',
+          'model.updated': 'Đã cập nhật model',
+          'model.deleted': 'Đã xoá model',
+          'model.credentials_updated': 'Đã cập nhật credentials của model',
+          'model.credentials_cleared': 'Đã xoá credential của model'
         },
         outcome: {
           success: 'Thành công',
@@ -7403,7 +7408,8 @@ export default {
       settingsManage: 'Manage system settings',
       runtimeRead: 'Read runtime',
       runtimeManage: 'Manage runtime',
-      auditRead: 'Read system audit'
+      auditRead: 'Read system audit',
+      modelsManage: 'Quản lý model'
     },
     capabilityHints: {
       tenantsRead: 'List, search, and inspect every workspace.',
@@ -7412,7 +7418,8 @@ export default {
       settingsManage: 'Update and reset platform runtime settings.',
       runtimeRead: 'Inspect task queues and task details.',
       runtimeManage: 'Retry, run, cancel, or delete runtime tasks.',
-      auditRead: 'Read platform audit events.'
+      auditRead: 'Read platform audit events.',
+      modelsManage: 'Tạo, cập nhật, xoá định nghĩa model và credentials; chạy probe và tải model.'
     },
     createdTitle: 'Platform API key created',
     createdDescription: 'Copy and store this key now. The full value will not be shown again.',

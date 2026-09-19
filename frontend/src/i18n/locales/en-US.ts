@@ -4453,7 +4453,12 @@ export default {
           'system.queue_task_deleted': 'Failed task record cleared',
           'system.queue_task_run_now': 'Queue task run now',
           'system.queue_task_cancelled': 'Queue task cancelled',
-          'system.queue_archived_purged': 'All failed tasks cleared'
+          'system.queue_archived_purged': 'All failed tasks cleared',
+          'model.created': 'Model created',
+          'model.updated': 'Model updated',
+          'model.deleted': 'Model deleted',
+          'model.credentials_updated': 'Model credentials updated',
+          'model.credentials_cleared': 'Model credential cleared'
         },
         outcome: {
           success: 'Success',
@@ -7404,7 +7409,8 @@ export default {
       settingsManage: 'Manage system settings',
       runtimeRead: 'Read runtime',
       runtimeManage: 'Manage runtime',
-      auditRead: 'Read system audit'
+      auditRead: 'Read system audit',
+      modelsManage: 'Manage models'
     },
     capabilityHints: {
       tenantsRead: 'List, search, and inspect every workspace.',
@@ -7413,7 +7419,8 @@ export default {
       settingsManage: 'Update and reset platform runtime settings.',
       runtimeRead: 'Inspect task queues and task details.',
       runtimeManage: 'Retry, run, cancel, or delete runtime tasks.',
-      auditRead: 'Read platform audit events.'
+      auditRead: 'Read platform audit events.',
+      modelsManage: 'Create, update, and delete model definitions and credentials; run model probes and downloads.'
     },
     createdTitle: 'Platform API key created',
     createdDescription: 'Copy and store this key now. The full value will not be shown again.',

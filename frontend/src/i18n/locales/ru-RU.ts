@@ -154,7 +154,8 @@ export default {
       settingsManage: 'Изменение настроек платформы.',
       runtimeRead: 'Просмотр очередей и задач.',
       runtimeManage: 'Повтор, запуск, отмена и удаление задач.',
-      auditRead: 'Чтение системного журнала аудита.'
+      auditRead: 'Чтение системного журнала аудита.',
+      modelsManage: 'Создание, изменение и удаление определений и учётных данных моделей, запуск проверок и загрузок моделей.'
     },
     capabilities: {
       tenantsRead: 'Просмотр пространств',
@@ -163,7 +164,8 @@ export default {
       settingsManage: 'Управление системными настройками',
       runtimeRead: 'Просмотр очередей',
       runtimeManage: 'Управление очередями',
-      auditRead: 'Просмотр аудита'
+      auditRead: 'Просмотр аудита',
+      modelsManage: 'Управление моделями'
     }
   },
   tenantInvitation: {
@@ -3157,7 +3159,12 @@ export default {
           'system.queue_task_deleted': 'Удалена запись о сбойной задаче',
           'system.queue_task_run_now': 'Задача очереди запущена сейчас',
           'system.queue_task_cancelled': 'Задача очереди отменена',
-          'system.queue_archived_purged': 'Очищены все сбойные задачи'
+          'system.queue_archived_purged': 'Очищены все сбойные задачи',
+          'model.created': 'Модель создана',
+          'model.updated': 'Модель обновлена',
+          'model.deleted': 'Модель удалена',
+          'model.credentials_updated': 'Учётные данные модели обновлены',
+          'model.credentials_cleared': 'Учётные данные модели очищены'
         },
         columns: {
           time: 'Время',

@@ -144,6 +144,19 @@ const (
 	// detail payload records the queue and how many records were removed.
 	AuditActionSystemQueueArchivedPurged AuditAction = "system.queue_archived_purged"
 
+	// Model lifecycle actions. Emitted by modelService on every catalog
+	// mutation. Model config is platform-owned (SystemAdmin / platform keys
+	// only), but the row is recorded against the model's tenant so workspace
+	// audit feeds still show what changed in their catalog; built-in models
+	// (shared catalog) log to tenant_id=0 — the system feed. Details carry
+	// {model_id, name, type, is_builtin} and, for credential events, only
+	// the field names touched — never the secret values.
+	AuditActionModelCreated            AuditAction = "model.created"
+	AuditActionModelUpdated            AuditAction = "model.updated"
+	AuditActionModelDeleted            AuditAction = "model.deleted"
+	AuditActionModelCredentialsUpdated AuditAction = "model.credentials_updated"
+	AuditActionModelCredentialsCleared AuditAction = "model.credentials_cleared"
+
 	// Knowledge-base activity actions. These rows use scope_type=knowledge_base
 	// and scope_id=<kb id>; TargetType/TargetID identify the concrete child
 	// resource when the operation is about a document, tag, data source, or share.

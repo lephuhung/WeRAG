@@ -256,11 +256,10 @@ const showTenantIdentityLine = computed(() => {
 const canManageMembers = computed(() =>
   authStore.canAccessAllTenants || authStore.hasRole(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.members),
 )
-const canManageModels = computed(() =>
-  authStore.canAccessAllTenants ||
-  authStore.isSystemAdmin ||
-  authStore.hasRole(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.models),
-)
+// Model management is SystemAdmin-only — there is no tenant role that can
+// author model configuration, so the shortcut does not consult the
+// workspace role table at all.
+const canManageModels = computed(() => authStore.isSystemAdmin)
 const canManageSkills = computed(() =>
   authStore.canAccessAllTenants ||
   authStore.isSystemAdmin ||

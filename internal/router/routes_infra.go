@@ -6,37 +6,43 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// Models are tenant-wide infrastructure (LLM credentials, embeddings,
-// rerankers); Viewer+ for reads, Admin+ for any mutation. Credential
-// subresource writes are also Admin+ since secrets are tenant-scoped.
+// Models are platform-owned infrastructure: the catalog (LLM credentials,
+// embeddings, rerankers) is defined once and consumed by every tenant.
+// Reads stay Viewer+ so tenants can browse the catalog and bind model IDs
+// to their KBs/agents; every mutation is SystemAdmin-only, mirrored on the
+// API-key axis by the platform-only system_models_manage capability.
 func RegisterModelRoutes(
 	r *gin.RouterGroup,
 	handler *handler.ModelHandler,
 	credHandler *handler.ModelCredentialsHandler,
 	g *rbacGuards,
 ) {
-	// 模型路由组。空间级基础设施：仅完全访问（Owner）API key 可访问。
+	// 模型路由组。读路径：空间级基础设施，manage_models / full-access key 可读；
+	// 写路径：platform key + system_models_manage capability（见下方 With()）。
 	models := g.apiKeyGroup(r.Group("/models"), apiKeyManageModels(apiKeyFullAccess()))
+	// 平台级写策略：仅 platform API key 且显式持有 system_models_manage。
+	modelWrites := models.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage))
 	{
 		// 获取模型厂商列表 — Viewer+
 		models.GET("/providers", g.Viewer(), handler.ListModelProviders)
-		// 创建模型 — Admin+
-		models.POST("", g.Admin(), handler.CreateModel)
+		// 创建模型 — SystemAdmin
+		modelWrites.POST("", g.SystemAdmin(), handler.CreateModel)
 		// 获取模型列表 — Viewer+
 		models.GET("", g.Viewer(), handler.ListModels)
-		// 调试已保存模型会发起真实上游调用并产生费用 — Admin+
-		models.POST("/:id/debug", g.Admin(), handler.DebugModel)
+		// 调试已保存模型会发起真实上游调用并产生费用 — SystemAdmin
+		modelWrites.POST("/:id/debug", g.SystemAdmin(), handler.DebugModel)
 		// 获取单个模型 — Viewer+
 		models.GET("/:id", g.Viewer(), handler.GetModel)
-		// 更新模型 — Admin+；内置模型仍由服务层额外限定为 SystemAdmin。
-		models.PUT("/:id", g.AdminOrSystemAdmin(), handler.UpdateModel)
-		// 删除模型 — Admin+
-		models.DELETE("/:id", g.Admin(), handler.DeleteModel)
-		// Per-field credential subresource (see internal/handler/model_credentials.go) — Admin+
-		models.PUT("/:id/credentials", g.AdminOrSystemAdmin(), credHandler.Put)
-		models.DELETE("/:id/credentials/:field", g.AdminOrSystemAdmin(), credHandler.DeleteField)
+		// 更新模型 — SystemAdmin（含 tenant-owned 与 builtin）。
+		modelWrites.PUT("/:id", g.SystemAdmin(), handler.UpdateModel)
+		// 删除模型 — SystemAdmin
+		modelWrites.DELETE("/:id", g.SystemAdmin(), handler.DeleteModel)
+		// Per-field credential subresource (see internal/handler/model_credentials.go) — SystemAdmin
+		modelWrites.PUT("/:id/credentials", g.SystemAdmin(), credHandler.Put)
+		modelWrites.DELETE("/:id/credentials/:field", g.SystemAdmin(), credHandler.DeleteField)
 	}
 }
 
@@ -103,26 +109,27 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	g.apiKeyRoute(r, http.MethodPut, "/initialization/config/:kbId",
 		apiKeyManageKnowledgeBases(apiKeyFullAccess()), g.OwnedKBOrAdminFromKbIDParam(), g.KBAccessWrite("kbId"), handler.UpdateKBConfig)
 
-	// Ollama / 远程 API / 抽取等系统级检测/下载操作。这些不绑某个 KB，
-	// 会改空间级模型配置或拉远端模型；JWT 侧只读探测 Viewer+、变更 Admin+。
-	// 对 API key 均为空间级：full-access key 可用，scoped key 需要 manage_models。
-	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/status", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.CheckOllamaStatus)
-	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/models", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.ListOllamaModels)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/ollama/models/check", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.CheckOllamaModels)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/ollama/models/download", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.DownloadOllamaModel)
-	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/progress/:taskId", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.GetDownloadProgress)
-	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/tasks", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.ListDownloadTasks)
+	// Ollama / 远程 API / 抽取等模型平台级探测/下载操作。这些不绑某个 KB，
+	// 会直接调用上游模型、消耗配额并探测模型基础设施 —— 一律 SystemAdmin；
+	// API key 侧仅 platform key + system_models_manage capability 可过。
+	modelPlatform := apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)
+	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/status", modelPlatform, g.SystemAdmin(), handler.CheckOllamaStatus)
+	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/models", modelPlatform, g.SystemAdmin(), handler.ListOllamaModels)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/ollama/models/check", modelPlatform, g.SystemAdmin(), handler.CheckOllamaModels)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/ollama/models/download", modelPlatform, g.SystemAdmin(), handler.DownloadOllamaModel)
+	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/progress/:taskId", modelPlatform, g.SystemAdmin(), handler.GetDownloadProgress)
+	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/tasks", modelPlatform, g.SystemAdmin(), handler.ListDownloadTasks)
 
-	// 远程API相关接口
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/remote/check", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.CheckRemoteModel)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/embedding/test", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.TestEmbeddingModel)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/rerank/check", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.CheckRerankModel)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/asr/check", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.CheckASRModel)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/multimodal/test", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.TestMultimodalFunction)
+	// 远程API相关接口 —— SystemAdmin（调用外部模型 provider，属于平台级探测）。
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/remote/check", modelPlatform, g.SystemAdmin(), handler.CheckRemoteModel)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/embedding/test", modelPlatform, g.SystemAdmin(), handler.TestEmbeddingModel)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/rerank/check", modelPlatform, g.SystemAdmin(), handler.CheckRerankModel)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/asr/check", modelPlatform, g.SystemAdmin(), handler.CheckASRModel)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/multimodal/test", modelPlatform, g.SystemAdmin(), handler.TestMultimodalFunction)
 
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/text-relation", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.ExtractTextRelations)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/fabri-tag", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.FabriTag)
-	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/fabri-text", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.FabriText)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/text-relation", modelPlatform, g.SystemAdmin(), handler.ExtractTextRelations)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/fabri-tag", modelPlatform, g.SystemAdmin(), handler.FabriTag)
+	g.apiKeyRoute(r, http.MethodPost, "/initialization/extract/fabri-text", modelPlatform, g.SystemAdmin(), handler.FabriText)
 }
 
 // RegisterMCPServiceRoutes registers MCP service routes.
@@ -335,9 +342,10 @@ func RegisterDataSourceRoutes(
 
 // RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud 初始化路由
 // RegisterWeKnoraCloudRoutes registers the WeKnoraCloud credential
-// management endpoints. SaveCredentials persists external SaaS keys
-// for the tenant (Admin+), Status is a low-risk readiness probe (Viewer+).
+// management endpoints. SaveCredentials persists external SaaS model
+// credentials — platform-owned, SystemAdmin-only like /models writes.
+// Status is a low-risk readiness probe (Viewer+).
 func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraCloudHandler, g *rbacGuards) {
-	g.apiKeyRoute(r, http.MethodPost, "/weknoracloud/credentials", apiKeyManageModels(apiKeyFullAccess()), g.Admin(), handler.SaveCredentials)
+	g.apiKeyRoute(r, http.MethodPost, "/weknoracloud/credentials", apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage), g.SystemAdmin(), handler.SaveCredentials)
 	g.apiKeyRoute(r, http.MethodGet, "/models/weknoracloud/status", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.Status)
 }

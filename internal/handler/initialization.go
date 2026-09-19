@@ -646,19 +646,13 @@ func (h *InitializationHandler) getKnowledgeBaseForInitialization(ctx context.Co
 	return kb, nil
 }
 
-// canUpdateTenantModels mirrors the PUT /models/:id guard: rewriting a stored
-// model changes every KB and agent that uses it, so initializing a KB must not
-// let a KB creator do what the model settings page reserves for admins.
+// canUpdateTenantModels reports whether the caller may author model
+// definitions through the legacy inline-initialization payload. Model
+// configuration is platform-owned, so this now mirrors the /models write
+// guards: system administrators and platform API keys only. Tenants pick
+// existing catalog models via PUT /initialization/config/:kbId instead.
 func (h *InitializationHandler) canUpdateTenantModels(ctx context.Context) bool {
-	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
-		return scope.FullAccess || scope.HasCapability(types.APIKeyCapabilityManageModels)
-	}
-	if types.CallerFromContext(ctx).Role.HasPermission(types.TenantRoleAdmin) || types.IsSystemAdminFromContext(ctx) {
-		return true
-	}
-	// Same rollout switch as the route guards: role checks only log while
-	// RBAC enforcement is off.
-	return h.config == nil || !h.config.Tenant.IsRBACEnforced()
+	return types.CanManageModelConfig(ctx)
 }
 
 func (h *InitializationHandler) validateInitializationConfigs(ctx context.Context, req *InitializationRequest) error {
@@ -828,6 +822,16 @@ func (h *InitializationHandler) processInitializationModels(
 	descriptors := buildModelDescriptors(req)
 	var processedModels []*types.Model
 
+	// Inline model definitions author catalog rows — a platform-level
+	// write. Non-system-admin callers must bind existing model IDs through
+	// PUT /initialization/config/:kbId instead. Checked once up front so a
+	// partially-processed request can never mutate some descriptors and
+	// then fail on a later one.
+	if len(descriptors) > 0 && !h.canUpdateTenantModels(ctx) {
+		return nil, errors.NewForbiddenError(
+			"inline model configuration requires a system administrator; bind existing models via model IDs instead")
+	}
+
 	for _, descriptor := range descriptors {
 		model := descriptor.toModel()
 		// Stamp the KB's tenant before insert: toModel() carries no tenant and
@@ -849,9 +853,6 @@ func (h *InitializationHandler) processInitializationModels(
 		}
 
 		if existingModel != nil {
-			if !h.canUpdateTenantModels(ctx) {
-				return nil, errors.NewForbiddenError("修改已有模型配置需要空间管理员权限")
-			}
 			existingModel.Name = model.Name
 			existingModel.Source = model.Source
 			existingModel.Description = model.Description

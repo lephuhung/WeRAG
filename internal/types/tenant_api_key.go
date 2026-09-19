@@ -162,6 +162,12 @@ const (
 	APIKeyCapabilitySystemRuntimeRead    APIKeyCapability = "system_runtime_read"
 	APIKeyCapabilitySystemRuntimeManage  APIKeyCapability = "system_runtime_manage"
 	APIKeyCapabilitySystemAuditRead      APIKeyCapability = "system_audit_read"
+	// APIKeyCapabilitySystemModelsManage lets a platform key create, update
+	// and delete model definitions (tenant catalog + built-in) — the
+	// platform-side mirror of RequireSystemAdmin on /models mutations.
+	// Tenant-scoped keys never carry it; NormalizeAPIKeyScopeType keeps
+	// scope enforcement in the gate.
+	APIKeyCapabilitySystemModelsManage APIKeyCapability = "system_models_manage"
 )
 
 // NormalizeAPIKeyCapability maps an input capability string to a known
@@ -218,6 +224,8 @@ func NormalizeAPIKeyCapability(c APIKeyCapability) APIKeyCapability {
 		return APIKeyCapabilitySystemRuntimeManage
 	case APIKeyCapabilitySystemAuditRead:
 		return APIKeyCapabilitySystemAuditRead
+	case APIKeyCapabilitySystemModelsManage:
+		return APIKeyCapabilitySystemModelsManage
 	default:
 		return ""
 	}

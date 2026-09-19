@@ -819,8 +819,15 @@ func validateTenantAPIKeyRequest(
 		if strings.TrimSpace(cap) == "" {
 			continue
 		}
-		if types.NormalizeAPIKeyCapability(types.APIKeyCapability(cap)) == "" {
+		normalized := types.NormalizeAPIKeyCapability(types.APIKeyCapability(cap))
+		if normalized == "" {
 			return errors.NewValidationError("capabilities contains an unknown capability")
+		}
+		// system_* capabilities are platform-control-plane grants; the route
+		// gate would still deny a tenant-scoped key (PlatformOnly), but
+		// storing an unusable grant only misleads operators.
+		if strings.HasPrefix(string(normalized), "system_") {
+			return errors.NewValidationError("system_* capabilities require a platform API key")
 		}
 	}
 	return validateTenantAPIKeyKnowledgeBaseIDs(ctx, kbService, tenantID, req.KnowledgeBaseIDs)

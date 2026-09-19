@@ -40,6 +40,13 @@ func (s *stubTenantStampModelService) UpdateModel(ctx context.Context, model *ty
 	return nil
 }
 
+// sysAdminCtx satisfies the platform-level model-config authority check in
+// processInitializationModels — these tests exercise tenant stamping, not
+// authorization (covered by TestInitializationExistingModelUpdateRequiresModelAuthority).
+func sysAdminCtx() context.Context {
+	return context.WithValue(context.Background(), types.SystemAdminContextKey, true)
+}
+
 func newTenantStampRequest() *InitializationRequest {
 	req := &InitializationRequest{}
 	req.LLM.Source = "remote"
@@ -58,7 +65,7 @@ func TestProcessInitializationModelsStampsKBTenantOnCreatedModels(t *testing.T) 
 	h := &InitializationHandler{modelService: stub}
 	kb := &types.KnowledgeBase{ID: "kb-1", TenantID: 10042}
 
-	models, err := h.processInitializationModels(context.Background(), kb, "kb-1", newTenantStampRequest())
+	models, err := h.processInitializationModels(sysAdminCtx(), kb, "kb-1", newTenantStampRequest())
 	if err != nil {
 		t.Fatalf("processInitializationModels: %v", err)
 	}
@@ -93,7 +100,7 @@ func TestProcessInitializationModelsKeepsExistingModelTenant(t *testing.T) {
 		SummaryModelID: "m-existing", // LLM slot reuses; embedding slot creates
 	}
 
-	models, err := h.processInitializationModels(context.Background(), kb, "kb-1", newTenantStampRequest())
+	models, err := h.processInitializationModels(sysAdminCtx(), kb, "kb-1", newTenantStampRequest())
 	if err != nil {
 		t.Fatalf("processInitializationModels: %v", err)
 	}

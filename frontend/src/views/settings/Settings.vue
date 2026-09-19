@@ -293,9 +293,11 @@ type NavGroup = {
 // - chathistory 页面唯一的「启用消息索引」开关 PUT /tenants/kv/chat-history-config
 //   后端走 g.Admin()。给 viewer/contributor 看到入口、点开开关、保存时
 //   403，体验很差，所以入口本身归 admin。
-// - models 列表 viewer 可读，页面内的「+ 添加模型 / 编辑 / 删除」按钮在
-//   ModelSettings.vue 里另用 hasRole('admin') 自己 gate，所以入口保留
-//   viewer 是合理的（contributor 也能浏览模型列表）。
+// - models 列表 viewer 可读（KB/agent 绑定需要浏览 catalog），页面内的
+//   「+ 添加模型 / 编辑 / 删除 / 调试」按钮在 ModelSettings.vue 里另用
+//   authStore.isSystemAdmin 自己 gate——模型配置归平台所有。
+// - ollama / weknoracloud 整页都是平台级模型操作（探测/下载/凭证），
+//   通过 SYSTEM_ADMIN_SETTINGS_SECTIONS 归 SystemAdmin。
 const SYSTEM_ADMIN_SECTIONS = SYSTEM_ADMIN_SETTINGS_SECTIONS
 
 const normalizeSettingsSection = (section: string) => {

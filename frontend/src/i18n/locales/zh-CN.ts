@@ -154,7 +154,8 @@ export default {
       settingsManage: '更新和重置平台级运行设置。',
       runtimeRead: '查看任务队列和任务详情。',
       runtimeManage: '重试、立即执行、取消或删除运行时任务。',
-      auditRead: '读取平台级审计日志。'
+      auditRead: '读取平台级审计日志。',
+      modelsManage: '创建、更新、删除模型定义与凭证，并执行模型探测与下载。'
     },
     capabilities: {
       tenantsRead: '查看空间',
@@ -163,7 +164,8 @@ export default {
       settingsManage: '管理系统设置',
       runtimeRead: '查看运行时',
       runtimeManage: '管理运行时',
-      auditRead: '查看系统审计'
+      auditRead: '查看系统审计',
+      modelsManage: '管理模型'
     }
   },
   tenantInvitation: {
@@ -3160,7 +3162,12 @@ export default {
           'system.queue_task_deleted': '清除失败任务记录',
           'system.queue_task_run_now': '立即执行队列任务',
           'system.queue_task_cancelled': '终止队列任务',
-          'system.queue_archived_purged': '清除全部失败任务'
+          'system.queue_archived_purged': '清除全部失败任务',
+          'model.created': '模型已创建',
+          'model.updated': '模型已更新',
+          'model.deleted': '模型已删除',
+          'model.credentials_updated': '模型凭证已更新',
+          'model.credentials_cleared': '模型凭证已清除'
         },
         columns: {
           time: '时间',

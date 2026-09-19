@@ -56,7 +56,8 @@ export interface APIPrincipalTestToken {
 //  - 'manage_kbs': manage the KB lifecycle (create/copy/duplicate/update/delete + config)
 //  - 'manage_agents': create/update/delete/copy agents
 //  - 'message_history': search/read tenant chat-history metadata
-//  - 'manage_models': manage tenant model definitions, checks, and credentials
+//  - 'manage_models': read the tenant-visible model catalog (model writes are platform-owned)
+//  - 'system_models_manage': platform keys only — manage model definitions, credentials, probes
 //  - 'manage_mcp_services': manage MCP services, credentials, tool policies, and OAuth state
 //  - 'manage_datasources': manage data-source connectors and sync jobs
 //  - 'manage_channels': manage embed and IM channels
@@ -92,6 +93,7 @@ export type TenantAPIKeyCapability =
   | 'system_runtime_read'
   | 'system_runtime_manage'
   | 'system_audit_read'
+  | 'system_models_manage'
 
 export interface TenantAPIKey {
   id: number

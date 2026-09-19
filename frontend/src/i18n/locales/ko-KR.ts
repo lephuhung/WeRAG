@@ -154,7 +154,8 @@ export default {
       settingsManage: '플랫폼 설정을 변경합니다.',
       runtimeRead: '작업 큐와 상세 정보를 조회합니다.',
       runtimeManage: '작업을 재시도, 실행, 취소 또는 삭제합니다.',
-      auditRead: '플랫폼 감사 로그를 조회합니다.'
+      auditRead: '플랫폼 감사 로그를 조회합니다.',
+      modelsManage: '모델 정의와 자격 증명을 생성·수정·삭제하고 모델 프로브와 다운로드를 실행합니다.'
     },
     capabilities: {
       tenantsRead: '워크스페이스 조회',
@@ -163,7 +164,8 @@ export default {
       settingsManage: '시스템 설정 관리',
       runtimeRead: '런타임 조회',
       runtimeManage: '런타임 관리',
-      auditRead: '시스템 감사 조회'
+      auditRead: '시스템 감사 조회',
+      modelsManage: '모델 관리'
     }
   },
   tenantInvitation: {
@@ -3157,7 +3159,12 @@ export default {
           'system.queue_task_deleted': '실패 작업 기록 삭제',
           'system.queue_task_run_now': '큐 작업 즉시 실행',
           'system.queue_task_cancelled': '큐 작업 취소',
-          'system.queue_archived_purged': '실패 작업 모두 지우기'
+          'system.queue_archived_purged': '실패 작업 모두 지우기',
+          'model.created': '모델 생성됨',
+          'model.updated': '모델 수정됨',
+          'model.deleted': '모델 삭제됨',
+          'model.credentials_updated': '모델 자격 증명 업데이트됨',
+          'model.credentials_cleared': '모델 자격 증명 삭제됨'
         },
         columns: {
           time: '시간',

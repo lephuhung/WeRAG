@@ -331,9 +331,9 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 
 // canRunGraphExtract 对应后端 POST /initialization/extract/{fabri-tag,fabri-text,
-// text-relation} 的 g.Admin() 守卫——这三个都是会调用大模型 + 写库的 admin
-// 工具。Contributor 看到按钮点了只会撞 403。
-const canRunGraphExtract = computed(() => authStore.hasRole('admin'))
+// text-relation} 的 g.SystemAdmin() 守卫——这三个都是调用模型 provider 的平台级
+// 探测工具。非 SystemAdmin 看到按钮点了只会撞 403。
+const canRunGraphExtract = computed(() => authStore.isSystemAdmin)
 
 interface GraphExtractConfig {
   enabled: boolean

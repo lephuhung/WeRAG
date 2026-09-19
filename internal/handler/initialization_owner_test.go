@@ -60,8 +60,10 @@ func TestInitializationAllowsOwnKB(t *testing.T) {
 	}
 }
 
-// Rewriting an already-stored model needs the same authority as PUT
-// /models/:id; creating the KB's first models does not.
+// Inline model definitions in the legacy initialization payload author
+// catalog rows — a platform-level write. Only system administrators (and
+// platform API keys) may use it; tenant roles and tenant-scoped keys bind
+// existing models via PUT /initialization/config/:kbId instead.
 func TestInitializationExistingModelUpdateRequiresModelAuthority(t *testing.T) {
 	enforced := true
 	stored := &types.Model{ID: "m-existing", Type: types.ModelTypeKnowledgeQA, TenantID: 42}
@@ -69,8 +71,18 @@ func TestInitializationExistingModelUpdateRequiresModelAuthority(t *testing.T) {
 	caller := func(role types.TenantRole) context.Context {
 		return types.WithCaller(context.Background(), types.Caller{TenantID: 42, UserID: "u", Role: role})
 	}
+	sysAdmin := func() context.Context {
+		return context.WithValue(caller(types.TenantRoleViewer), types.SystemAdminContextKey, true)
+	}
 	scopedKey := func(capability types.APIKeyCapability) context.Context {
 		scope := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(capability)}}
+		return types.WithTenantAPIKeyScope(caller(types.TenantRoleViewer), scope)
+	}
+	platformKey := func() context.Context {
+		scope := types.TenantAPIKeyScope{
+			ScopeType:    types.APIKeyScopePlatform,
+			Capabilities: types.StringArray{string(types.APIKeyCapabilitySystemModelsManage)},
+		}
 		return types.WithTenantAPIKeyScope(caller(types.TenantRoleViewer), scope)
 	}
 
@@ -80,9 +92,12 @@ func TestInitializationExistingModelUpdateRequiresModelAuthority(t *testing.T) {
 		allowed bool
 	}{
 		{"contributor", caller(types.TenantRoleContributor), false},
-		{"admin", caller(types.TenantRoleAdmin), true},
+		{"admin", caller(types.TenantRoleAdmin), false},
+		{"owner", caller(types.TenantRoleOwner), false},
+		{"system admin", sysAdmin(), true},
+		{"platform key", platformKey(), true},
 		{"scoped key without manage_models", scopedKey(types.APIKeyCapabilityManageKnowledgeBases), false},
-		{"scoped key with manage_models", scopedKey(types.APIKeyCapabilityManageModels), true},
+		{"scoped key with manage_models", scopedKey(types.APIKeyCapabilityManageModels), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
