@@ -20,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -96,6 +97,7 @@ func NewChunkExtractTask(
 	knowledgeID string,
 	attempt int,
 	chunkIndex int,
+	legalDoc *vietnamese_legal.LegalDocContext,
 ) (bool, error) {
 	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
 		logger.Warn(ctx, "NEO4J is not enabled, skip chunk extract task")
@@ -108,6 +110,7 @@ func NewChunkExtractTask(
 		KnowledgeID: knowledgeID,
 		Attempt:     attempt,
 		ChunkIndex:  chunkIndex,
+		LegalDoc:    legalDoc,
 	}
 	langfuse.InjectTracing(ctx, &taskPayload)
 	payload, err := json.Marshal(taskPayload)
@@ -316,6 +319,7 @@ func (s *ChunkExtractService) Handle(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var processOverrides *types.KnowledgeProcessOverrides
+	var knowledgeTitle, knowledgeFileName string
 	knowledgeID := p.KnowledgeID
 	if knowledgeID == "" {
 		knowledgeID = chunk.KnowledgeID
@@ -323,6 +327,7 @@ func (s *ChunkExtractService) Handle(ctx context.Context, t *asynq.Task) error {
 	if knowledgeID != "" && s.knowledgeRepo != nil {
 		if k, kerr := s.knowledgeRepo.GetKnowledgeByIDOnly(ctx, knowledgeID); kerr == nil && k != nil {
 			processOverrides, _ = k.ProcessOverrides()
+			knowledgeTitle, knowledgeFileName = k.Title, k.FileName
 		}
 	}
 	extractCfg := ResolveProcessConfig(kb, processOverrides).ExtractConfig
@@ -339,23 +344,57 @@ func (s *ChunkExtractService) Handle(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	template := &types.PromptTemplateStructured{
-		Description: types.AppendCustomPromptInstructions(
-			s.template.Description, extractCfg.CustomInstructions, "graph_extraction"),
-		Tags: extractCfg.Tags,
-		Examples: []types.GraphData{
-			{
-				Text:     extractCfg.Text,
-				Node:     extractCfg.Nodes,
-				Relation: extractCfg.Relations,
-			},
-		},
+	// Resolve the document-level legal context. New tasks carry it in the
+	// payload (computed once at enqueue time); legacy in-flight tasks get a
+	// per-chunk fallback detection from chunk content + legal metadata.
+	legalDoc := p.LegalDoc
+	if legalDoc == nil {
+		hasLegalMeta := false
+		if dm, derr := chunk.DocumentMetadata(); derr == nil && dm != nil {
+			hasLegalMeta = dm.Legal != nil
+		}
+		headerText := ""
+		if chunk.StartAt == 0 || p.ChunkIndex == 0 {
+			headerText = chunk.Content
+		}
+		legalDoc = vietnamese_legal.BuildLegalDocContext(
+			headerText, knowledgeTitle, knowledgeFileName, hasLegalMeta)
 	}
-	extractor := chatpipeline.NewExtractor(chatModel, template)
-	graph, err := extractor.Extract(ctx, chunk.Content)
-	if err != nil {
-		handleErr = err
-		return err
+
+	var graph *types.GraphData
+	if legalDoc.IsLegal {
+		// Vietnamese legal path: AIRAG-style closed-ontology prompt +
+		// deterministic canonicalization (no doc-level LLM resolve pass).
+		graph, err = chatpipeline.NewLegalGraphExtractor(chatModel).Extract(
+			ctx, legalDoc, chunk.Content, extractCfg.CustomInstructions)
+		if err != nil {
+			handleErr = err
+			return err
+		}
+		// The header chunk's task owns CAN_CU injection — edges from the
+		// preamble legal bases to the document root are only added once.
+		includeCanCu := chunk.StartAt == 0 || p.ChunkIndex == 0
+		graph = chatpipeline.PostProcessLegalGraph(ctx, graph, legalDoc, includeCanCu)
+		graphOut["legal_extraction"] = true
+	} else {
+		template := &types.PromptTemplateStructured{
+			Description: types.AppendCustomPromptInstructions(
+				s.template.Description, extractCfg.CustomInstructions, "graph_extraction"),
+			Tags: extractCfg.Tags,
+			Examples: []types.GraphData{
+				{
+					Text:     extractCfg.Text,
+					Node:     extractCfg.Nodes,
+					Relation: extractCfg.Relations,
+				},
+			},
+		}
+		extractor := chatpipeline.NewExtractor(chatModel, template)
+		graph, err = extractor.Extract(ctx, chunk.Content)
+		if err != nil {
+			handleErr = err
+			return err
+		}
 	}
 
 	chunk, err = s.chunkRepo.GetChunkByID(ctx, p.TenantID, p.ChunkID)

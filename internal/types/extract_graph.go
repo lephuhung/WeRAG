@@ -17,6 +17,7 @@ type PromptTemplateStructured struct {
 
 type GraphNode struct {
 	Name       string   `json:"name,omitempty"`
+	Type       string   `json:"type,omitempty"`
 	Chunks     []string `json:"chunks,omitempty"`
 	Attributes []string `json:"attributes,omitempty"`
 }

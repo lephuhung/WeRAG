@@ -1,5 +1,7 @@
 package types
 
+import "github.com/Tencent/WeKnora/internal/vietnamese_legal"
+
 // Worker-pool names are part of the runtime observability API. Each pool is
 // backed by an independent asynq.Server, so concurrency is hard-isolated
 // between pools instead of being only a weighted dequeue preference.
@@ -294,6 +296,11 @@ type ExtractChunkPayload struct {
 	// knowledge's text-chunk set, used as the subspan name suffix
 	// ("postprocess.graph.chunk[3]") so the timeline preserves order.
 	ChunkIndex int `json:"chunk_index,omitempty"`
+	// LegalDoc carries the document-level legal context (canonical root
+	// name, số hiệu, issuing agency, preamble CAN_CU) computed once at
+	// enqueue time so every per-chunk task canonicalizes to the same
+	// identity. nil for non-legal documents and legacy in-flight tasks.
+	LegalDoc *vietnamese_legal.LegalDocContext `json:"legal_doc,omitempty"`
 }
 
 // DocumentProcessPayload represents the document process task payload

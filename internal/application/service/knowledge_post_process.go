@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 )
@@ -189,6 +190,32 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	}
 
 	graphChunks := selectGraphChunks(textChunks)
+
+	// Legal graph context: computed ONCE here so every per-chunk graph task
+	// shares the same canonical document identity (số hiệu → root node,
+	// issuing agency, preamble CAN_CU). headerText is the content of the
+	// chunk whose StartAt == 0; hasLegalMeta is true when any chunk already
+	// carries legal subdivision metadata from the chunker tier.
+	var legalDoc *vietnamese_legal.LegalDocContext
+	if len(graphChunks) > 0 {
+		headerText := ""
+		headerStart := -1
+		hasLegalMeta := false
+		for _, c := range textChunks {
+			if c == nil {
+				continue
+			}
+			if dm, derr := c.DocumentMetadata(); derr == nil && dm != nil && dm.Legal != nil {
+				hasLegalMeta = true
+			}
+			if c.StartAt >= 0 && (headerStart < 0 || c.StartAt < headerStart) {
+				headerStart = c.StartAt
+				headerText = c.Content
+			}
+		}
+		legalDoc = vietnamese_legal.BuildLegalDocContext(
+			headerText, knowledge.Title, knowledge.FileName, hasLegalMeta)
+	}
 
 	// 3. Compute the enrichment subtask count up front so we can flip to
 	//    "finalizing" with the right counter BEFORE spawning any subtasks.
@@ -416,7 +443,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 			len(graphChunks), len(textChunks))
 		for i, chunk := range graphChunks {
 			ok, err := NewChunkExtractTask(ctx, s.taskEnqueuer, payload.TenantID, chunk.ID, kb.SummaryModelID,
-				payload.KnowledgeID, attempt, i)
+				payload.KnowledgeID, attempt, i, legalDoc)
 			if err != nil {
 				logger.Errorf(ctx, "[KnowledgePostProcess] Failed to create chunk extract task for %s: %v", chunk.ID, err)
 			}
