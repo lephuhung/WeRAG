@@ -123,7 +123,7 @@ func TestProfileDocument_LineStatistics(t *testing.T) {
 func TestSelectStrategy_HeadingDoc(t *testing.T) {
 	doc := "# A\nbody\n## B\nbody\n## C\nbody\n## D\nbody"
 	p := ProfileDocument(doc)
-	chain := SelectStrategy(p)
+	chain := SelectStrategy(p, doc)
 	if chain[0] != TierHeading {
 		t.Errorf("expected heading tier first, got %v", chain)
 	}
@@ -133,7 +133,7 @@ func TestSelectStrategy_HeuristicDoc(t *testing.T) {
 	doc := strings.Repeat("Kapitel 1: Foo\nbody body body\n\n", 1) +
 		strings.Repeat("Kapitel 2: Bar\nbody body body\n\n", 1)
 	p := ProfileDocument(doc)
-	chain := SelectStrategy(p)
+	chain := SelectStrategy(p, doc)
 	// no markdown headings → heuristic must come first (heading tier skipped)
 	if chain[0] != TierHeuristic {
 		t.Errorf("expected heuristic tier first, got %v", chain)
@@ -143,7 +143,7 @@ func TestSelectStrategy_HeuristicDoc(t *testing.T) {
 func TestSelectStrategy_PlainDoc(t *testing.T) {
 	doc := "just a paragraph of plain text without any structure indicators at all here"
 	p := ProfileDocument(doc)
-	chain := SelectStrategy(p)
+	chain := SelectStrategy(p, doc)
 	if chain[0] != TierLegacy {
 		t.Errorf("expected legacy tier first for unstructured doc, got %v", chain)
 	}
@@ -152,7 +152,7 @@ func TestSelectStrategy_PlainDoc(t *testing.T) {
 func TestSelectStrategy_AlwaysFallsBackToLegacy(t *testing.T) {
 	for _, doc := range []string{"", "simple", "# H1\nbody"} {
 		p := ProfileDocument(doc)
-		chain := SelectStrategy(p)
+		chain := SelectStrategy(p, doc)
 		if chain[len(chain)-1] != TierLegacy {
 			t.Errorf("chain must end with legacy, got %v for doc=%q", chain, doc)
 		}

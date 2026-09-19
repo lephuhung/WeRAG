@@ -10,34 +10,86 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 const paddleOCRVLTimeout = 1000 * time.Second // large scanned PDFs can take a while
 
-// PaddleOCRVLReader calls a self-hosted PaddleOCR-VL pipeline service
-// (the full document-parsing API, not the bare VLM inference server).
+// PaddleOCRVLReader calls a self-hosted OCR service. Two wire protocols are
+// supported, selected per-tenant:
 //
-// Flow: POST {endpoint}/layout-parsing with base64 file → synchronous JSON
-// response containing per-page markdown + inline base64 images.
+//   - "layout" (PaddleX pipeline server, default): POST {endpoint}/layout-parsing
+//     with base64 file → synchronous JSON with per-page markdown + inline
+//     base64 images.
+//   - "openai" (OpenAI-compatible vision OCR, e.g. a vLLM serving of
+//     SenOCR-Vi or Unlimited-OCR): PDFs are delegated to the docreader service
+//     which renders each page and calls {endpoint}/chat/completions per page
+//     (engine "openai_ocr" on the docreader side); standalone image files are
+//     OCR'd directly here with a single chat-completions call.
+//
+// Mode is auto-detected: an endpoint whose path ends in "/v1" selects
+// "openai"; anything else selects "layout". paddleocr_vl_api overrides it.
 type PaddleOCRVLReader struct {
-	endpoint string
-	useSeal  bool
-	useChart bool
+	endpoint     string
+	apiMode      string
+	ocrModel     string
+	ocrAPIKey    string
+	ocrPrompt    string
+	ocrVllmXargs string
+	useSeal      bool
+	useChart     bool
+	remote       interfaces.DocReader
 }
 
 // NewPaddleOCRVLReader creates a reader from ParserEngineOverrides.
-func NewPaddleOCRVLReader(overrides map[string]string) *PaddleOCRVLReader {
+// remote is the docreader client used for OpenAI-mode PDF rendering (may be nil).
+func NewPaddleOCRVLReader(overrides map[string]string, remote interfaces.DocReader) *PaddleOCRVLReader {
 	return &PaddleOCRVLReader{
-		endpoint: strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"),
-		useSeal:  parseBoolOr(overrides["paddleocr_vl_use_seal_recognition"], true),
-		useChart: parseBoolOr(overrides["paddleocr_vl_use_chart_recognition"], false),
+		endpoint:     strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"),
+		apiMode:      resolvePaddleOCRVLAPIMode(overrides),
+		ocrModel:     strings.TrimSpace(overrides["paddleocr_vl_model"]),
+		ocrAPIKey:    overrides["paddleocr_vl_api_key"],
+		ocrPrompt:    overrides["paddleocr_vl_prompt"],
+		ocrVllmXargs: strings.TrimSpace(overrides["paddleocr_vl_vllm_xargs"]),
+		useSeal:      parseBoolOr(overrides["paddleocr_vl_use_seal_recognition"], true),
+		useChart:     parseBoolOr(overrides["paddleocr_vl_use_chart_recognition"], false),
+		remote:       remote,
 	}
+}
+
+// resolvePaddleOCRVLAPIMode picks the wire protocol: an explicit
+// paddleocr_vl_api=layout|openai wins; otherwise a "/v1"-suffixed endpoint
+// (OpenAI convention) selects openai and anything else selects layout.
+func resolvePaddleOCRVLAPIMode(overrides map[string]string) string {
+	switch strings.ToLower(strings.TrimSpace(overrides["paddleocr_vl_api"])) {
+	case "layout", "paddlex":
+		return "layout"
+	case "openai", "vllm":
+		return "openai"
+	}
+	if strings.HasSuffix(strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"), "/v1") {
+		return "openai"
+	}
+	return "layout"
+}
+
+func isImageFileType(req *types.ReadRequest) bool {
+	ft := strings.ToLower(strings.TrimPrefix(req.FileType, "."))
+	if ft == "" {
+		ft = strings.TrimPrefix(strings.ToLower(filepath.Ext(req.FileName)), ".")
+	}
+	switch ft {
+	case "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp":
+		return true
+	}
+	return false
 }
 
 func (c *PaddleOCRVLReader) Read(ctx context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
@@ -46,6 +98,10 @@ func (c *PaddleOCRVLReader) Read(ctx context.Context, req *types.ReadRequest) (*
 	}
 	if err := utils.ValidateURLForSSRF(c.endpoint); err != nil {
 		return &types.ReadResult{Error: fmt.Sprintf("PaddleOCR-VL endpoint blocked by SSRF policy: %v", err)}, nil
+	}
+
+	if c.apiMode == "openai" {
+		return c.readOpenAI(ctx, req)
 	}
 
 	content := req.FileContent
@@ -265,6 +321,159 @@ func (c *PaddleOCRVLReader) processImages(
 	return refs, mdContent
 }
 
+// readOpenAI routes an OpenAI-compatible OCR endpoint (vLLM /chat/completions).
+// PDFs are delegated to the docreader's openai_ocr engine which renders each
+// page with pdfium and OCRs per page; standalone images are OCR'd here with a
+// single chat-completions call.
+func (c *PaddleOCRVLReader) readOpenAI(ctx context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+	if isImageFileType(req) {
+		md, err := c.openAIOCRImage(ctx, req.FileContent)
+		if err != nil {
+			return &types.ReadResult{Error: fmt.Sprintf("OCR request failed: %v", err)}, nil
+		}
+		return &types.ReadResult{
+			MarkdownContent: md,
+			ImageRefs:       []types.ImageRef{},
+			Metadata:        map[string]string{"conversion_engine": "openai_ocr"},
+		}, nil
+	}
+
+	if c.remote == nil {
+		return &types.ReadResult{Error: "docreader service unavailable; required for OpenAI OCR of PDF files"}, nil
+	}
+	// paddleocr_vl_vllm_xargs defaults off: SenOCR-Vi / PaddleOCR-VL endpoints
+	// run no NGram logits processor, so Unlimited-OCR's per-request extras
+	// would be meaningless. Set it to 1 only for engines that still serve
+	// Unlimited-OCR.
+	xargs := c.ocrVllmXargs
+	if xargs == "" {
+		xargs = "0"
+	}
+	overrides := map[string]string{
+		"openai_ocr_url":        c.endpoint,
+		"openai_ocr_model":      c.ocrModel,
+		"openai_ocr_api_key":    c.ocrAPIKey,
+		"openai_ocr_prompt":     c.ocrPrompt,
+		"openai_ocr_vllm_xargs": xargs,
+	}
+	res, err := c.remote.Read(ctx, &types.ReadRequest{
+		FileContent:           req.FileContent,
+		FileName:              req.FileName,
+		FileType:              req.FileType,
+		URL:                   req.URL,
+		Title:                 req.Title,
+		RequestID:             req.RequestID,
+		ParserEngine:          "openai_ocr",
+		ParserEngineOverrides: overrides,
+	})
+	if err != nil {
+		return &types.ReadResult{Error: fmt.Sprintf("docreader openai_ocr failed: %v", err)}, nil
+	}
+	if res.Metadata == nil {
+		res.Metadata = map[string]string{}
+	}
+	res.Metadata["conversion_engine"] = "openai_ocr"
+	return res, nil
+}
+
+// openAIOCRImage sends one image through an OpenAI-compatible
+// /chat/completions endpoint and returns the extracted text.
+func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (string, error) {
+	if len(image) == 0 {
+		return "", fmt.Errorf("empty image content")
+	}
+	prompt := c.ocrPrompt
+	if prompt == "" {
+		// "OCR:" is the PaddleOCR-VL task prompt SenOCR-Vi was trained with;
+		// generic VLM endpoints can override via paddleocr_vl_prompt.
+		prompt = "OCR:"
+	}
+	mime := "image/png"
+	if len(image) > 2 && image[0] == 0xFF && image[1] == 0xD8 {
+		mime = "image/jpeg"
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"model": c.ocrModel,
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "image_url", "image_url": map[string]any{
+						"url": fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(image)),
+					}},
+					map[string]any{"type": "text", "text": prompt},
+				},
+			},
+		},
+		"temperature": 0.0,
+	})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.ocrAPIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.ocrAPIKey)
+	}
+	resp, err := (&http.Client{Timeout: 300 * time.Second}).Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("OCR endpoint returned %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", fmt.Errorf("invalid OCR response: %w", err)
+	}
+	if len(parsed.Choices) == 0 {
+		return "", fmt.Errorf("OCR response has no choices")
+	}
+	var text string
+	if err := json.Unmarshal(parsed.Choices[0].Message.Content, &text); err != nil {
+		var parts []struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(parsed.Choices[0].Message.Content, &parts); err != nil {
+			return "", fmt.Errorf("unrecognized OCR response content")
+		}
+		for _, p := range parts {
+			text += p.Text
+		}
+	}
+	return stripOCRMarkup(text), nil
+}
+
+// stripOCRMarkup removes detector-style markup some OCR VLMs emit:
+// Unlimited-OCR wraps regions as <|det|>LABEL [x1,y1,x2,y2]<|/det|>TEXT and
+// may leave stray special tokens (<|im_end|>, <|ref|>…). Mirrors the
+// docreader-side _strip_ocr_markup.
+var (
+	ocrDetBlockPattern     = regexp.MustCompile(`(?s)<\|det\|>.*?<\|/det\|>`)
+	ocrSpecialTokenPattern = regexp.MustCompile(`<\|[^|]*?\|>`)
+	ocrMultiBlankPattern   = regexp.MustCompile(`\n{3,}`)
+)
+
+func stripOCRMarkup(text string) string {
+	if !strings.Contains(text, "<|") {
+		return text
+	}
+	text = ocrDetBlockPattern.ReplaceAllString(text, "")
+	text = ocrSpecialTokenPattern.ReplaceAllString(text, "")
+	return strings.TrimSpace(ocrMultiBlankPattern.ReplaceAllString(text, "\n\n"))
+}
+
 // PingPaddleOCRVL checks whether a self-hosted PaddleOCR-VL service is reachable.
 func PingPaddleOCRVL(endpoint string) (bool, string) {
 	endpoint = strings.TrimRight(endpoint, "/")
@@ -278,9 +487,12 @@ func PingPaddleOCRVL(endpoint string) (bool, string) {
 		Timeout:      5 * time.Second,
 		MaxRedirects: 5,
 	})
-	// The pipeline only exposes POST /layout-parsing; an empty GET should still
-	// produce a routed HTTP response (e.g. 404/405) when the service is up.
-	resp, err := client.Get(endpoint + "/layout-parsing")
+	path := "/layout-parsing"
+	if strings.HasSuffix(endpoint, "/v1") {
+		// OpenAI-compatible OCR endpoint (e.g. vLLM): GET /v1/models.
+		path = "/models"
+	}
+	resp, err := client.Get(endpoint + path)
 	if err != nil {
 		return false, fmt.Sprintf("PaddleOCR-VL 服务不可达: %v", err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -1280,6 +1281,9 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	// file-processing path: parser/OCR output may embed raw <table> blocks that
 	// the chunker cannot split. Fenced code examples are left untouched.
 	clean = docparser.NormalizeHTMLTables(clean)
+	// Same scattered-glyph repair as the file path — pasted Vietnamese legal
+	// text often carries the same PDF extraction artefacts.
+	clean = vietnamese_legal.FixScatteredVietnamese(clean)
 
 	// Manual content is markdown - chunk directly with Go chunker
 	chunkCfg := buildSplitterConfigFromChunking(eff.ChunkingConfig)
@@ -1309,6 +1313,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 				Start:         c.Start,
 				End:           c.End,
 				ParentIndex:   c.ParentIndex,
+				Legal:         c.Legal,
 			}
 		}
 		parentChunks := make([]types.ParsedParentChunk, len(pcResult.Parents))
@@ -1326,6 +1331,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 				Seq:           c.Seq,
 				Start:         c.Start,
 				End:           c.End,
+				Legal:         c.Legal,
 			}
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -486,6 +487,15 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		// Wire up ParentChunkID for child chunks
 		if hasParentChild && chunkData.ParentIndex >= 0 && chunkData.ParentIndex < len(parentDBChunks) {
 			textChunk.ParentChunkID = parentDBChunks[chunkData.ParentIndex].ID
+		}
+
+		// Persist legal metadata (Điều/Khoản/Điểm markers) produced by the
+		// vietnamese_legal chunking tier into Chunk.Metadata so retrieval can
+		// resolve section references exactly.
+		if chunkData.Legal != nil {
+			if err := textChunk.SetDocumentMetadata(&types.DocumentChunkMetadata{Legal: chunkData.Legal}); err != nil {
+				logger.Warnf(ctx, "Failed to set legal metadata for chunk %s: %v", textChunk.ID, err)
+			}
 		}
 
 		chunks[idx].ChunkID = textChunk.ID
@@ -1852,6 +1862,11 @@ func (s *knowledgeService) processQuestionGenerationForKnowledge(ctx context.Con
 		meta := &types.DocumentChunkMetadata{
 			GeneratedQuestions: generatedQuestions, GeneratedQuestionsRevision: chunk.ContentRevision,
 		}
+		// SetDocumentMetadata rewrites the whole Metadata blob — carry the
+		// legal metadata written at ingestion across.
+		if existing, err := chunk.DocumentMetadata(); err == nil && existing != nil {
+			meta.Legal = existing.Legal
+		}
 		if err := chunk.SetDocumentMetadata(meta); err != nil {
 			chunkMetadataSetFailed++
 			logger.Warnf(ctx, "Failed to set document metadata for chunk %s: %v", chunk.ID, err)
@@ -2188,6 +2203,9 @@ func (s *knowledgeService) processQuestionGenerationForChunks(ctx context.Contex
 		meta := &types.DocumentChunkMetadata{
 			GeneratedQuestions: generatedQuestions, GeneratedQuestionsRevision: chunk.ContentRevision,
 		}
+		if existing, err := chunk.DocumentMetadata(); err == nil && existing != nil {
+			meta.Legal = existing.Legal
+		}
 		if err := chunk.SetDocumentMetadata(meta); err != nil {
 			logger.Warnf(ctx, "Failed to set document metadata for chunk %s: %v", chunk.ID, err)
 			continue
@@ -2370,6 +2388,9 @@ func (s *knowledgeService) RegenerateChunkQuestions(
 	}
 	meta := &types.DocumentChunkMetadata{
 		GeneratedQuestions: generated, GeneratedQuestionsRevision: chunk.ContentRevision,
+	}
+	if existing, err := chunk.DocumentMetadata(); err == nil && existing != nil {
+		meta.Legal = existing.Legal
 	}
 	if err := chunk.SetDocumentMetadata(meta); err != nil {
 		return nil, err
@@ -3702,6 +3723,10 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		convertResult.MarkdownContent = chunker.NormalizeLineEndings(convertResult.MarkdownContent)
 		if convertResult.MarkdownContent != "" {
 			convertResult.MarkdownContent = docparser.NormalizeHTMLTables(convertResult.MarkdownContent)
+			// Repair scattered per-glyph spacing and strip CÔNG BÁO
+			// furniture so downstream chunking sees the legal structure
+			// (self-gates on Vietnamese diacritics; non-VN text untouched).
+			convertResult.MarkdownContent = vietnamese_legal.FixScatteredVietnamese(convertResult.MarkdownContent)
 		}
 	}
 
@@ -3762,6 +3787,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 				Start:         c.Start,
 				End:           c.End,
 				ParentIndex:   c.ParentIndex,
+				Legal:         c.Legal,
 			}
 		}
 		parentChunks := make([]types.ParsedParentChunk, len(pcResult.Parents))
@@ -3781,6 +3807,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 				Seq:           c.Seq,
 				Start:         c.Start,
 				End:           c.End,
+				Legal:         c.Legal,
 			}
 		}
 		logger.Infof(ctx, "Split document into %d chunks for knowledge %s", len(chunks), knowledge.ID)

@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -78,6 +79,9 @@ type TemporaryDocumentChunk struct {
 	Start         int    `json:"start"`
 	End           int    `json:"end"`
 	TokenCount    int    `json:"token_count"`
+	// Legal carries Vietnamese legal metadata when the vietnamese_legal
+	// chunking tier produced this chunk; nil otherwise.
+	Legal *vietnamese_legal.LegalMetadata `json:"legal,omitempty"`
 }
 
 type TemporaryDocumentImage struct {

@@ -21,6 +21,10 @@ const (
 	StrategyHeuristic = "heuristic"
 	StrategyRecursive = "recursive"
 	StrategyLegacy    = "legacy"
+	// StrategyVietnameseLegal forces the Vietnamese legal tier: splitting at
+	// Phần/Chương/Mục/Điều boundaries with Khoản-aware sub-splitting and
+	// Điều/Khoản/Điểm metadata on every chunk.
+	StrategyVietnameseLegal = "vietnamese_legal"
 )
 
 // Split chunks text using the strategy configured in cfg. When cfg.Strategy
@@ -178,6 +182,13 @@ func splitParentChild(text string, parentCfg, childCfg SplitterConfig, withDiagn
 			sub.Start += parent.Start
 			sub.End += parent.Start
 			sub.ContextHeader = mergeBreadcrumbs(parent.ContextHeader, sub.ContextHeader)
+			// A child re-split inside a legal parent rarely re-derives its
+			// own structure (a single Điều section has < 3 Điều headings) —
+			// inherit the parent's legal metadata so Điều/Khoản resolution
+			// still works on the indexed child.
+			if sub.Legal == nil {
+				sub.Legal = parent.Legal
+			}
 			children = append(children, ChildChunk{Chunk: sub, ParentIndex: parentIndex})
 			childSeq++
 		}
@@ -272,6 +283,11 @@ func mergeBreadcrumbs(parent, child string) string {
 // so callers don't pay for an unused profiling pass.
 func resolveChainWithProfile(text string, cfg SplitterConfig) ([]StrategyTier, *DocProfile) {
 	switch cfg.Strategy {
+	case StrategyVietnameseLegal:
+		// Legal tier first; the generic tiers stay as fallbacks so a
+		// document that turns out not to carry Điều structure still
+		// chunks sensibly instead of erroring.
+		return []StrategyTier{TierVietnameseLegal, TierHeading, TierHeuristic, TierLegacy}, nil
 	case StrategyHeading:
 		return []StrategyTier{TierHeading, TierLegacy}, nil
 	case StrategyHeuristic:
@@ -288,7 +304,7 @@ func resolveChainWithProfile(text string, cfg SplitterConfig) ([]StrategyTier, *
 		fallthrough
 	default:
 		profile := ProfileDocument(text)
-		return SelectStrategy(profile), profile
+		return SelectStrategy(profile, text), profile
 	}
 }
 
@@ -303,6 +319,8 @@ func resolveChainWithProfile(text string, cfg SplitterConfig) ([]StrategyTier, *
 // profile compute one on demand.
 func runTier(tier StrategyTier, text string, cfg SplitterConfig, profile *DocProfile) []Chunk {
 	switch tier {
+	case TierVietnameseLegal:
+		return splitByVietnameseLegal(text, cfg, profile)
 	case TierHeading:
 		return splitByHeadings(text, cfg, profile)
 	case TierHeuristic:
@@ -359,5 +377,10 @@ var splitByHeadings = func(text string, cfg SplitterConfig, _ *DocProfile) []Chu
 
 // splitByHeuristics is overridden by heuristic_splitter.go. profile may be nil.
 var splitByHeuristics = func(text string, cfg SplitterConfig, _ *DocProfile) []Chunk {
+	return SplitText(text, cfg)
+}
+
+// splitByVietnameseLegal is overridden by vietnamese_legal.go. profile may be nil.
+var splitByVietnameseLegal = func(text string, cfg SplitterConfig, _ *DocProfile) []Chunk {
 	return SplitText(text, cfg)
 }

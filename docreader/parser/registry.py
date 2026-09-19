@@ -16,6 +16,10 @@ from docreader.parser.opendataloader_parser import (
     opendataloader_available,
 )
 from docreader.parser.pdf_parser import PDFParser
+from docreader.parser.vietnamese_legal_parser import (
+    VietnameseLegalPDFParser,
+    vietnamese_legal_available,
+)
 from docreader.parser.xmind_parser import XMindParser
 
 logger = logging.getLogger(__name__)
@@ -203,6 +207,23 @@ def _build_default_registry() -> ParserEngineRegistry:
             overrides, quick=True
         ),
         unavailable_hint="请安装 opendataloader-pdf 与 Java 11+",
+    )
+
+    reg.register(
+        "vietnamese_legal",
+        {"pdf": VietnameseLegalPDFParser},
+        description="Vietnamese legal PDF (per-page OCR routing, page markers)",
+        check_available=vietnamese_legal_available,
+    )
+
+    reg.register(
+        "openai_ocr",
+        {"pdf": VietnameseLegalPDFParser},
+        description=(
+            "OpenAI-compatible VLM OCR for PDFs (vLLM /chat/completions); "
+            "endpoint pinned per request via openai_ocr_url overrides"
+        ),
+        check_available=vietnamese_legal_available,
     )
 
     # NOTE: Engine listing is managed by Go-side engine registry

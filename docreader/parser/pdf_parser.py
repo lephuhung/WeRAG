@@ -1474,6 +1474,64 @@ class PDFParser(BaseParser):
                 file_name=self.file_name, file_type=self.file_type
             ).parse_into_text(content)
 
+    def _reclassify_page(self, cls: str, plain_text: str) -> str:
+        """Hook: adjust a page's text/scanned classification after extraction.
+
+        Called right after the geometry-based ``_classify_page``. Subclasses
+        may reclassify a "text" page as "scanned" when its embedded text
+        layer is untrustworthy (e.g. corrupt Vietnamese font mappings).
+        """
+        return cls
+
+    def _page_marker(self, page_index: int) -> str:
+        """Hook: prefix emitted before a page's block in the assembled output.
+
+        The default emits nothing. Subclasses (e.g. vietnamese_legal) use it
+        to insert ``<!-- page N -->`` markers for downstream page attribution.
+        """
+        return ""
+
+    def _assemble_blocks(
+        self,
+        page_count: int,
+        classes: list,
+        texts: list,
+        embedded: dict,
+        vector_clips: dict,
+        base_name: str,
+    ) -> tuple:
+        """Build per-page markdown blocks in reading order.
+
+        Returns ``(blocks, embedded_count, vector_figure_count)``. A page that
+        produces no block contributes nothing (its marker is not emitted).
+        """
+        embedded_count = 0
+        vector_figure_count = 0
+        blocks = []
+        for i in range(page_count):
+            if classes[i] == "scanned":
+                page_filename = f"{base_name}_page_{i+1}.jpg"
+                block = f"![{page_filename}](images/{page_filename})"
+            else:
+                parts = []
+                stripped = texts[i].strip()
+                if stripped:
+                    parts.append(stripped)
+                vector_figure_count += len(vector_clips.get(i, []))
+                page_images = list(embedded.get(i, []))
+                page_images.sort(key=lambda item: item[2], reverse=True)
+                for ref_path, _b64, _y in page_images:
+                    fname = os.path.basename(ref_path)
+                    parts.append(f"![{fname}]({ref_path})")
+                    embedded_count += 1
+                block = "\n\n".join(parts)
+            marker = self._page_marker(i)
+            if block:
+                blocks.append(marker + block)
+            elif marker.strip():
+                blocks.append(marker.strip())
+        return blocks, embedded_count, vector_figure_count
+
     def _route(self, content: bytes) -> Document:
         # Serialize all pdfium work: see _PDFIUM_LOCK. Holding it for the whole
         # route (both the text pass and the render pass) is what prevents the
@@ -1505,6 +1563,9 @@ class PDFParser(BaseParser):
                     plain = _extract_page_text(page)
                     ratio = _page_image_area_ratio(page, pdfium_r)
                     cls = _classify_page(ratio, len(plain.strip()))
+                    # Subclass hook (e.g. vietnamese_legal reclassifies
+                    # corrupt Vietnamese text layers as scanned).
+                    cls = self._reclassify_page(cls, plain)
                     # Layout reconstruction only pays off (and is only spent) on
                     # native text pages; scanned pages are rendered, not read.
                     if cls == "text" and LAYOUT_ORDERING:
@@ -1575,25 +1636,9 @@ class PDFParser(BaseParser):
             _close_pdfium_resource(pdf)
 
         # Assemble markdown in reading order.
-        embedded_count = 0
-        vector_figure_count = 0
-        blocks = []
-        for i in range(page_count):
-            if classes[i] == "scanned":
-                page_filename = f"{base_name}_page_{i+1}.jpg"
-                blocks.append(f"![{page_filename}](images/{page_filename})")
-            else:
-                stripped = texts[i].strip()
-                if stripped:
-                    blocks.append(stripped)
-                vector_figure_count += len(vector_clips.get(i, []))
-                page_images = list(embedded.get(i, []))
-                page_images.sort(key=lambda item: item[2], reverse=True)
-                for ref_path, _b64, _y in page_images:
-                    fname = os.path.basename(ref_path)
-                    blocks.append(f"![{fname}]({ref_path})")
-                    embedded_count += 1
-
+        blocks, embedded_count, vector_figure_count = self._assemble_blocks(
+            page_count, classes, texts, embedded, vector_clips, base_name
+        )
         content_text = "\n\n".join(blocks).strip()
 
         metadata = {

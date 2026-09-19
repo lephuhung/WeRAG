@@ -1,6 +1,10 @@
 package types
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
+)
 
 // ReadRequest is the unified transport-agnostic request for document reading.
 // Set FileContent for file mode, URL for URL mode.
@@ -87,6 +91,11 @@ type ParsedChunk struct {
 	// >= 0 means this is a child chunk referencing the parent at this index
 	// in the ParentChunks slice of ProcessChunksOptions.
 	ParentIndex int
+
+	// Legal carries Vietnamese legal-document metadata (Điều/Khoản/Điểm
+	// markers, heading path) produced by the vietnamese_legal chunking tier.
+	// nil for all other tiers and non-legal documents.
+	Legal *vietnamese_legal.LegalMetadata
 }
 
 // EmbeddingContent returns the text that should be sent to the embedding

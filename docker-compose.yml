@@ -378,6 +378,7 @@ services:
         condition: service_healthy
     networks:
       - WeKnora-network
+      - airag_hrag_network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -488,6 +489,19 @@ services:
       - DOCREADER_PDF_MIN_CHART_REGION_CHARS=${DOCREADER_PDF_MIN_CHART_REGION_CHARS:-}
       - DOCREADER_PDF_MAX_CHART_REGION_AREA=${DOCREADER_PDF_MAX_CHART_REGION_AREA:-}
       - DOCREADER_PDF_MAX_FIGURE_HEIGHT_RATIO=${DOCREADER_PDF_MAX_FIGURE_HEIGHT_RATIO:-}
+      # ========== vietnamese_legal engine: OCR endpoint ==========
+      # OpenAI-compatible endpoint (vLLM SenOCR-Vi / PaddleOCR-VL-class OCR).
+      # Empty = emit scanned-page image refs for the Go-side OCR/VLM path instead.
+      - DOCREADER_VN_OCR_URL=${DOCREADER_VN_OCR_URL:-}
+      - DOCREADER_VN_OCR_MODEL=${DOCREADER_VN_OCR_MODEL:-}
+      - DOCREADER_VN_OCR_API_KEY=${DOCREADER_VN_OCR_API_KEY:-}
+      - DOCREADER_VN_OCR_PROMPT=${DOCREADER_VN_OCR_PROMPT:-}
+      - DOCREADER_VN_OCR_MAX_TOKENS=${DOCREADER_VN_OCR_MAX_TOKENS:-}
+      - DOCREADER_VN_OCR_CONCURRENCY=${DOCREADER_VN_OCR_CONCURRENCY:-}
+      - DOCREADER_VN_OCR_TIMEOUT=${DOCREADER_VN_OCR_TIMEOUT:-}
+      - DOCREADER_VN_OCR_VLLM_XARGS=${DOCREADER_VN_OCR_VLLM_XARGS:-}
+      - DOCREADER_VN_OCR_DETECT_BROKEN_VN=${DOCREADER_VN_OCR_DETECT_BROKEN_VN:-}
+      - DOCREADER_VN_OCR_VN_TONE_MIN_RATIO=${DOCREADER_VN_OCR_VN_TONE_MIN_RATIO:-}
     healthcheck:
       test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
       interval: 30s
@@ -496,6 +510,7 @@ services:
       start_period: 60s
     networks:
       - WeKnora-network
+      - airag_hrag_network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -1022,9 +1037,33 @@ services:
     profiles:
       - full
 
+  # OpenAI-compatible adapter for AIRAG's embed-rerank service (custom
+  # /embed + /rerank API). Enable with `--profile airag-models`; requires the
+  # external airag_hrag_network with hrag-embed-rerank running.
+  airag-model-adapter:
+    image: ${AIRAG_BACKEND_IMAGE:-airag-backend:v2phase2}
+    container_name: hrag-openai-adapter
+    command: ["uvicorn", "openai_adapter:app", "--host", "0.0.0.0", "--port", "8090", "--app-dir", "/adapter"]
+    volumes:
+      - ./docker/adapters/openai_embed_rerank.py:/adapter/openai_adapter.py:ro
+    environment:
+      - UPSTREAM_URL=${AIRAG_EMBED_RERANK_URL:-http://hrag-embed-rerank:8090}
+      - ADAPTER_API_KEY=${AIRAG_ADAPTER_API_KEY:-}
+    ports:
+      - "${AIRAG_ADAPTER_PORT:-8090}:8090"
+    networks:
+      - airag_hrag_network
+    restart: unless-stopped
+    profiles:
+      - airag-models
+
 networks:
   WeKnora-network:
     driver: bridge
+  # External: AIRAG model services (vllm-ocr :8001, embed-rerank :8090,
+  # vllm-memory :8001) that this stack reuses for OCR/embed/rerank.
+  airag_hrag_network:
+    external: true
 
 volumes:
   postgres-data:

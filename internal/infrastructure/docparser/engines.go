@@ -240,7 +240,9 @@ type paddleOCRVLEngine struct{}
 
 func (e *paddleOCRVLEngine) Name() string { return PaddleOCRVLEngineName }
 
-func (e *paddleOCRVLEngine) Description() string { return "PaddleOCR-VL self-hosted service" }
+func (e *paddleOCRVLEngine) Description() string {
+	return "Self-hosted OCR service (PaddleOCR-VL pipeline, or OpenAI-compatible VLM OCR when the endpoint ends in /v1)"
+}
 
 func (e *paddleOCRVLEngine) FileTypes(_ bool) []string {
 	return []string{"pdf", "jpg", "jpeg", "png", "bmp", "tiff"}
@@ -255,7 +257,7 @@ func (e *paddleOCRVLEngine) CheckAvailable(_ bool, overrides map[string]string) 
 }
 
 func (e *paddleOCRVLEngine) NewReader(_ context.Context, deps ReaderDeps) (interfaces.DocReader, error) {
-	return NewPaddleOCRVLReader(deps.Overrides), nil
+	return NewPaddleOCRVLReader(deps.Overrides, deps.Remote), nil
 }
 
 // ---------------------------------------------------------------------------

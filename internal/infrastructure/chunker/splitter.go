@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // Chunk represents a piece of split text with position tracking.
@@ -29,6 +30,10 @@ type Chunk struct {
 	Seq           int
 	Start         int
 	End           int
+	// Legal carries Vietnamese legal-document metadata (heading path,
+	// Điều/Khoản/Điểm markers). Only the vietnamese_legal tier populates it;
+	// all other tiers leave it nil.
+	Legal *vietnamese_legal.LegalMetadata
 }
 
 // EmbeddingContent returns the text that should be fed to the embedding

@@ -7,6 +7,8 @@ package chunker
 import (
 	"math"
 	"strings"
+
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // DocProfile holds the document-level signals used to choose a chunking tier.
@@ -208,20 +210,34 @@ func matchHeading(line string, counts *map[int]int) bool {
 type StrategyTier string
 
 const (
-	TierHeading   StrategyTier = "heading"
-	TierHeuristic StrategyTier = "heuristic"
-	TierLegacy    StrategyTier = "legacy"
+	TierVietnameseLegal StrategyTier = "vietnamese_legal"
+	TierHeading         StrategyTier = "heading"
+	TierHeuristic       StrategyTier = "heuristic"
+	TierLegacy          StrategyTier = "legacy"
 )
 
 // SelectStrategy returns the ordered tier chain to attempt for this document.
 // The first tier is the primary choice; subsequent tiers are fallbacks if
 // validation rejects the previous output. The "legacy" tier is appended as
 // a final safety net so callers always receive at least one chunk-set.
-func SelectStrategy(p *DocProfile) []StrategyTier {
+//
+// text is the document body; it is only used for the Vietnamese legal
+// structure probe (cheap regex scan, no allocation beyond match offsets).
+// Pass "" to skip legal auto-detection.
+func SelectStrategy(p *DocProfile, text string) []StrategyTier {
 	if p == nil {
 		return []StrategyTier{TierLegacy}
 	}
 	var chain []StrategyTier
+
+	// Tier 0 candidate: Vietnamese legal structure (Điều N. headings).
+	// Docling-style parsers do not emit "Điều 17." as markdown headings, so
+	// the generic tiers below never see the legal backbone — probe the raw
+	// text directly. Validation still gates the tier, and heading/heuristic
+	// remain in the chain as fallbacks.
+	if text != "" && vietnamese_legal.HasLegalStructure(text) {
+		chain = append(chain, TierVietnameseLegal)
+	}
 
 	// Tier 1 candidate: Markdown heading-aware
 	if p.MdHeadingTotal >= 3 && p.HeadingDensity() > 0.005 && p.DominantHeadingLevel() > 0 {

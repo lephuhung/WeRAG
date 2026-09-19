@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/textconv"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // FAQChunkMetadata 定义 FAQ 条目在 Chunk.Metadata 中的结构
@@ -57,6 +58,11 @@ type DocumentChunkMetadata struct {
 	GeneratedQuestions []GeneratedQuestion `json:"generated_questions,omitempty"`
 	// GeneratedQuestionsRevision ties the questions to Chunk.ContentRevision.
 	GeneratedQuestionsRevision int `json:"generated_questions_revision,omitempty"`
+	// Legal carries Vietnamese legal-document metadata (Điều/Khoản/Điểm
+	// markers, heading path) when the chunk was produced by the
+	// vietnamese_legal chunking tier. Nested under "legal" so it cannot
+	// collide with the generated_questions namespace.
+	Legal *vietnamese_legal.LegalMetadata `json:"legal,omitempty"`
 }
 
 // IsQuestionCurrent reports whether a generated question was authored for the

@@ -129,8 +129,12 @@ func publicAttr(expression *regexp.Regexp, tag string) string {
 }
 
 var (
-	refTagRE       = regexp.MustCompile(`(?i)<ref\s+id\s*=\s*"([^"]+)"\s*/?>`)
-	refCandidateRE = regexp.MustCompile(`(?is)<ref(?:\s|$)[^>]*(?:>|$)`)
+	// Smaller chat models occasionally emit [ref id="cN"/> or [ref id="cN"]
+	// (square brackets) instead of the specified <ref id="cN"/> — tolerate
+	// both open/close brackets so malformed-but-unambiguous citations still
+	// resolve instead of leaking as literal text.
+	refTagRE       = regexp.MustCompile(`(?i)[<\[]ref\s+id\s*=\s*"([^"]+)"\s*/?[>\]]`)
+	refCandidateRE = regexp.MustCompile(`(?is)[<\[]ref(?:\s|$)[^>\]]*(?:[>\]]|$)`)
 	modelKBTagRE   = regexp.MustCompile(`(?is)<kb(?:\s|$)[^>]*(?:>|$)`)
 	modelWebTagRE  = regexp.MustCompile(`(?is)<web(?:\s|$)[^>]*(?:>|$)`)
 )
@@ -222,7 +226,7 @@ func (d *citationStreamExpander) Feed(chunk string) string {
 	d.pending = ""
 	var out strings.Builder
 	for data != "" {
-		idx := strings.Index(data, "<")
+		idx := strings.IndexAny(data, "<[")
 		if idx < 0 {
 			out.WriteString(data)
 			break
@@ -230,6 +234,27 @@ func (d *citationStreamExpander) Feed(chunk string) string {
 		out.WriteString(data[:idx])
 		data = data[idx:]
 		lower := strings.ToLower(data)
+		if data[0] == '[' {
+			// Bracket-variant citations ([ref id="cN"/> or [ref id="cN"]):
+			// hold partial tags, expand complete ones, pass other '['
+			// text through untouched (markdown links etc.).
+			if isBracketRefPending(lower) {
+				d.pending = data
+				break
+			}
+			if isBracketRefStart(lower) {
+				end := strings.IndexAny(data, ">]")
+				tag := data[:end+1]
+				if refTagRE.MatchString(tag) {
+					out.WriteString(d.registry.ExpandText(tag))
+				}
+				data = data[end+1:]
+				continue
+			}
+			out.WriteByte('[')
+			data = data[1:]
+			continue
+		}
 		if isSourceTagPending(lower) && !strings.Contains(data, ">") {
 			d.pending = data
 			break
@@ -264,6 +289,39 @@ func (d *citationStreamExpander) Feed(chunk string) string {
 
 func isRefTagStart(value string) bool {
 	return isNamedTagStart(value, "ref")
+}
+
+// isBracketRefStart mirrors isNamedTagStart for the square-bracket variant
+// "[ref": true when value begins with "[ref" followed by whitespace or a
+// terminator. "[ref]" without attributes is deliberately not a start so a
+// literal [ref] in normal text survives.
+func isBracketRefStart(value string) bool {
+	const prefix = "[ref"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	if len(value) == len(prefix) {
+		return true
+	}
+	next := value[len(prefix)]
+	return next == ' ' || next == '\t' || next == '\r' || next == '\n' || next == '>'
+}
+
+// isBracketRefPending reports whether a '['-leading fragment could still
+// become a bracket citation tag: either it is a proper prefix of "[ref" or
+// it has matched "[ref" without a closing terminator arriving yet.
+func isBracketRefPending(value string) bool {
+	if !strings.HasPrefix(value, "[") {
+		return false
+	}
+	rest := value[1:]
+	if len(rest) < len("ref") {
+		return strings.HasPrefix("ref", rest)
+	}
+	if !strings.HasPrefix(rest, "ref") {
+		return false
+	}
+	return !strings.ContainsAny(value, ">]")
 }
 
 func isNamedTagStart(value, name string) bool {

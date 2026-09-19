@@ -125,6 +125,30 @@ func TestStreamExpanderHoldsSplitReferenceAndDropsUnknown(t *testing.T) {
 	require.Equal(t, " y", expander.Feed(`b url="https://forged" /> y`))
 }
 
+func TestBracketReferenceVariantsExpand(t *testing.T) {
+	registry := newSourceRegistry()
+	registry.RegisterChunk(ChunkReference{ChunkID: "chunk-1", DocumentTitle: "Doc"})
+	expander := newCitationStreamExpander(registry)
+
+	// Complete bracket tag in one feed.
+	require.Equal(t,
+		"claim <kb doc=\"Doc\" chunk_id=\"chunk-1\" /> done",
+		expander.Feed(`claim [ref id="c1"/> done`),
+	)
+	// Split across feeds, ']' terminator.
+	require.Equal(t, "x ", expander.Feed(`x [ref id=`))
+	require.Equal(t,
+		`<kb doc="Doc" chunk_id="chunk-1" /> y`,
+		expander.Feed(`"c1"] y`),
+	)
+	// Unknown handles still fail closed.
+	require.Equal(t, "x  y", registry.ExpandText(`x [ref id="c999"/> y`))
+	// Literal bracket text survives untouched.
+	require.Equal(t, "a [ref] b [link](u) c", registry.ExpandText(`a [ref] b [link](u) c`))
+	require.Equal(t, "see [note] end", expander.Feed("see [note] end"))
+	require.Empty(t, expander.Flush())
+}
+
 func TestEncodeMessagesCompactsCanonicalCitationsFromHistory(t *testing.T) {
 	registry := newSourceRegistry()
 	messages := []chat.Message{{

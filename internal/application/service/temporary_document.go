@@ -22,6 +22,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -385,6 +386,9 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	content = common.CleanInvalidUTF8(content)
 	content = chunker.NormalizeLineEndings(content)
 	content = docparser.NormalizeHTMLTables(content)
+	// Repair scattered per-glyph spacing so the legal chunker tier can see
+	// Điều/Chương structure in pasted/attached Vietnamese legal text.
+	content = vietnamese_legal.FixScatteredVietnamese(content)
 	lang := chunker.DetectLanguage(content)
 	cfg := chunker.DefaultConfig()
 	cfg.Strategy = chunker.StrategyAuto
@@ -396,6 +400,7 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 		chunks = append(chunks, types.TemporaryDocumentChunk{
 			Seq: part.Seq, Content: part.Content, ContextHeader: part.ContextHeader,
 			Start: part.Start, End: part.End, TokenCount: chunker.ApproxTokenCount(part.EmbeddingContent(), lang),
+			Legal: part.Legal,
 		})
 	}
 	chunksJSON, _ := json.Marshal(chunks)

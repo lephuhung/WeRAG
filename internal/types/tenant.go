@@ -335,8 +335,17 @@ type ParserEngineConfig struct {
 	ODLHybridFallback   *bool  `json:"odl_hybrid_fallback,omitempty"`
 	ODLMarkdownWithHTML *bool  `json:"odl_markdown_with_html,omitempty"`
 
-	// PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API).
-	PaddleOCRVLEndpoint            string `json:"paddleocr_vl_endpoint,omitempty"` // e.g. http://paddleocr-vl:8080
+	// PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API),
+	// or an OpenAI-compatible VLM OCR endpoint (vLLM /chat/completions)
+	// when PaddleOCRVLEndpoint ends in /v1 or PaddleOCRVLAPI is "openai".
+	PaddleOCRVLEndpoint            string `json:"paddleocr_vl_endpoint,omitempty"` // e.g. http://paddleocr-vl:8080 or http://vllm-ocr:8001/v1
+	PaddleOCRVLAPI                 string `json:"paddleocr_vl_api,omitempty"`      // auto (default), layout, openai
+	PaddleOCRVLModel               string `json:"paddleocr_vl_model,omitempty"`    // openai mode: served model name
+	PaddleOCRVLAPIKey              string `json:"paddleocr_vl_api_key,omitempty"`  // openai mode: optional bearer token
+	PaddleOCRVLPrompt              string `json:"paddleocr_vl_prompt,omitempty"`   // openai mode: optional OCR prompt
+	// openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs +
+	// skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.
+	PaddleOCRVLVllmXargs           string `json:"paddleocr_vl_vllm_xargs,omitempty"`
 	PaddleOCRVLUseSealRecognition  *bool  `json:"paddleocr_vl_use_seal_recognition,omitempty"`
 	PaddleOCRVLUseChartRecognition *bool  `json:"paddleocr_vl_use_chart_recognition,omitempty"`
 
@@ -453,6 +462,21 @@ func (c *ParserEngineConfig) ToOverridesMap() map[string]string {
 	}
 	if c.PaddleOCRVLEndpoint != "" {
 		m["paddleocr_vl_endpoint"] = c.PaddleOCRVLEndpoint
+	}
+	if c.PaddleOCRVLAPI != "" {
+		m["paddleocr_vl_api"] = c.PaddleOCRVLAPI
+	}
+	if c.PaddleOCRVLModel != "" {
+		m["paddleocr_vl_model"] = c.PaddleOCRVLModel
+	}
+	if c.PaddleOCRVLAPIKey != "" {
+		m["paddleocr_vl_api_key"] = c.PaddleOCRVLAPIKey
+	}
+	if c.PaddleOCRVLPrompt != "" {
+		m["paddleocr_vl_prompt"] = c.PaddleOCRVLPrompt
+	}
+	if c.PaddleOCRVLVllmXargs != "" {
+		m["paddleocr_vl_vllm_xargs"] = c.PaddleOCRVLVllmXargs
 	}
 	if c.PaddleOCRVLUseSealRecognition != nil {
 		m["paddleocr_vl_use_seal_recognition"] = fmt.Sprintf("%v", *c.PaddleOCRVLUseSealRecognition)
