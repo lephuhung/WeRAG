@@ -30,6 +30,7 @@ const settingsStore = useSettingsStore()
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
   'zh-CN': zhCNConfig,
+  'vi-VN': enUSConfig,
   'ko-KR': koKRConfig,
   'ja-JP': jaJPConfig,
   'ru-RU': ruRUConfig,

@@ -1920,6 +1920,145 @@ const koEmbedPublish = {
   },
 } as const
 
+const viEmbedPublish = {
+  embedPublish: {
+    title: 'Nhúng trang web',
+    description: 'Nhúng Trợ lý AI vào trang web của bạn để khách truy cập có thể trò chuyện qua cửa sổ trang hoặc nút nổi góc dưới.',
+    create: 'Tạo kênh nhúng mới',
+    empty: 'Chưa có kênh nhúng nào',
+    unnamed: 'Kênh chưa đặt tên',
+    loading: 'Đang tải...',
+    awaitingToken: 'Đang chờ trang máy chủ cung cấp token…',
+    defaultChatTitle: 'Trợ lý AI',
+    newChat: 'Cuộc trò chuyện mới',
+    preview: 'Xem trước',
+    previewIframeHint: 'Mô phỏng giao diện nhúng iframe hiển thị trên trang bên ngoài.',
+    previewWidgetHint: 'Hiển thị tiện ích trò chuyện nổi trên trang web mẫu.',
+    previewMockPage: 'Trang web mẫu',
+    previewLoading: 'Đang tải bản xem trước…',
+    channelDisabled: 'Kênh nhúng đã bị tắt. Kích hoạt lại trong Trình chỉnh sửa Trợ lý → Nhúng trang web',
+    invalidChannel: 'Kênh nhúng không hợp lệ',
+    sessionFailed: 'Không thể khởi tạo phiên trò chuyện. Vui lòng thử lại sau',
+    missingChannel: 'Thiếu kênh nhúng hoặc token',
+    loadError: 'Tải dữ liệu thất bại',
+  },
+  common: {
+    loading: 'Đang tải...',
+    confirm: 'Xác nhận',
+    cancel: 'Hủy',
+    close: 'Đóng',
+    copy: 'Sao chép',
+    copied: 'Đã sao chép',
+  },
+  error: {
+    tokenNotFound: 'Không tìm thấy token đăng nhập. Vui lòng đăng nhập lại',
+    invalidImageLink: 'Liên kết hình ảnh không hợp lệ',
+    streamFailed: 'Kết nối luồng thất bại',
+  },
+  chat: {
+    suggestedQuestions: 'Gợi ý câu hỏi',
+    suggestedQuestionsLoading: 'Đang tải...',
+    followUpQuestions: 'Câu hỏi tiếp theo',
+    followUpQuestionsLoading: 'Đang tải câu hỏi gợi ý',
+    thinkingAlt: 'Đang suy nghĩ',
+    conversationTime: {
+      today: 'Hôm nay {time}',
+      yesterday: 'Hôm qua {time}',
+      thisYear: '{day}/{month} {time}',
+      otherYear: '{day}/{month}/{year} {time}',
+    },
+    preparingAnswer: 'Đang chuẩn bị câu trả lời…',
+    connectingModelAndGeneratingAnswer: 'Đang kết nối mô hình và tạo câu trả lời…',
+    modelStillResponding: 'Mô hình phản hồi lâu hơn bình thường. Vẫn đang chờ…',
+    referencesTitle: 'Tham khảo {count} nguồn liên quan',
+    referencesDocCount: 'Tham khảo {count} tài liệu',
+    referencesWebCount: 'Tham khảo {count} kết quả web',
+    referencesDocAndWebCount: 'Tham khảo {docCount} tài liệu và {webCount} kết quả web',
+    referencesDrawerTitle: 'Nguồn tham khảo',
+    referencesDrawerTitleWeb: 'Nguồn Web',
+    referencesDrawerTitleDocs: 'Nguồn tài liệu tri thức',
+    referencesDrawerTitleTools: 'Kết quả công cụ',
+    referencesDrawerTitleMixed: 'Nguồn tham khảo',
+    referencesDrawerWebSection: 'Web',
+    referencesDrawerDocsSection: 'Tài liệu cơ sở tri thức',
+    referencesDrawerToolsSection: 'Công cụ',
+    referencesDrawerEmpty: 'Không có nguồn tham khảo nào',
+    navigateToDocument: 'Xem chi tiết tài liệu',
+    refreshSuggestedQuestions: 'Đổi câu hỏi khác',
+    imageTooMany: 'Chỉ có thể tải lên tối đa 5 hình ảnh',
+    imageTypeSizeError: 'Chỉ hỗ trợ JPG/PNG/GIF/WEBP và mỗi tệp không quá 10MB',
+    imageReadFailed: 'Không thể đọc hình ảnh',
+  },
+  input: {
+    placeholder: 'Nhập câu hỏi trực tiếp cho mô hình...',
+    stopGeneration: 'Dừng tạo',
+    send: 'Gửi',
+    webSearch: {
+      label: 'Tìm kiếm Web',
+      toggleOn: 'Bật tìm kiếm web',
+      toggleOff: 'Tắt tìm kiếm web',
+      agentDisabled: 'Tìm kiếm web chưa được kích hoạt cho Trợ lý này',
+    },
+    imageUpload: {
+      label: 'Tải lên hình ảnh',
+      tooltip: 'Tải lên hình ảnh',
+      agentDisabled: 'Tải lên hình ảnh chưa được kích hoạt cho Trợ lý này',
+    },
+    messages: {
+      webSearchEnabled: 'Đã bật tìm kiếm web',
+      webSearchDisabled: 'Đã tắt tìm kiếm web',
+      stopSuccess: 'Đã dừng tạo phản hồi',
+      stopFailed: 'Không thể dừng. Vui lòng thử lại.',
+    },
+  },
+  agentStream: {
+    mcpOAuth: {
+      waiting: 'Đang chờ xác thực · {target}',
+      waitingStatus: 'Đang chờ xác thực',
+      targetWithTool: '{service} › {tool}',
+      titleWithService: 'OAuth · {service}',
+      titleWithTool: 'OAuth · {service} › {tool}',
+      authorize: 'Xác thực',
+      skip: 'Bỏ qua',
+      countdownShort: '{seconds}s',
+      authorizedTag: 'Đã xác thực',
+      timedOutTag: 'Hết thời gian xác thực',
+      canceledTag: 'Đã hủy',
+      authorizedToast: 'Xác thực thành công, đang tiếp tục',
+      startFailed: 'Khởi tạo xác thực thất bại',
+      resumeFailed: 'Không thể tiếp tục thực thi, vui lòng thử lại',
+      skipFailed: 'Không thể bỏ qua, vui lòng thử lại',
+    },
+    mcp: {
+      discoverTools: 'Khám phá công cụ MCP',
+      listServers: 'Danh sách dịch vụ MCP',
+      listTools: 'Danh sách công cụ MCP',
+      searchTools: 'Tìm kiếm công cụ MCP',
+      describeTool: 'Đọc định nghĩa công cụ',
+      callTool: 'Gọi công cụ MCP',
+      showing: 'Hiển thị {count} trên {total}',
+      moreAvailable: 'Còn các kết quả khác',
+      empty: 'Không có dữ liệu để hiển thị',
+      parameters: 'Tham số',
+      expand: 'Mở rộng mô tả',
+      collapse: 'Thu gọn',
+      required: 'Bắt buộc',
+      fullSchema: 'Định nghĩa tham số đầy đủ',
+      failed: 'Thao tác MCP thất bại',
+      result: 'Kết quả',
+      status: {
+        not_loaded: 'Chưa tải',
+        loading: 'Đang tải',
+        ready: 'Sẵn sàng',
+        needs_auth: 'Cần xác thực',
+        error: 'Lỗi kết nối',
+        disabled: 'Đã tắt',
+        unavailable: 'Không khả dụng',
+      },
+    },
+  },
+} as const
+
 const ruEmbedPublish = {
   embedPublish: {
     title: 'Встраивание на веб-страницу',
@@ -2059,7 +2198,7 @@ const ruEmbedPublish = {
   },
 } as const
 
-export const SUPPORTED_LOCALES = ['zh-CN', 'en-US', 'ko-KR', 'ja-JP', 'ru-RU'] as const
+export const SUPPORTED_LOCALES = ['zh-CN', 'en-US', 'vi-VN', 'ko-KR', 'ja-JP', 'ru-RU'] as const
 export type EmbedLocale = (typeof SUPPORTED_LOCALES)[number]
 
 /** Isolated from the main app `locale` key so embed preview never hijacks admin UI language. */
@@ -2069,12 +2208,13 @@ export const EMBED_LOCALE_STORAGE_KEY = 'weknora-embed-locale'
 export function normalizeEmbedLocale(raw: string): EmbedLocale {
   const s = raw.trim().toLowerCase()
   if (s.startsWith('en')) return 'en-US'
+  if (s.startsWith('vi')) return 'vi-VN'
   if (s.startsWith('ko')) return 'ko-KR'
   if (s.startsWith('ja')) return 'ja-JP'
   if (s.startsWith('ru')) return 'ru-RU'
   if (s.startsWith('zh')) return 'zh-CN'
   const exact = SUPPORTED_LOCALES.find((l) => l.toLowerCase() === s)
-  return exact || 'zh-CN'
+  return exact || 'en-US'
 }
 
 export function readEmbedLocaleFromUrl(): string {
@@ -2084,7 +2224,7 @@ export function readEmbedLocaleFromUrl(): string {
 
 function resolveBrowserEmbedLocale(): EmbedLocale {
   const nav = typeof navigator !== 'undefined' ? navigator.language : ''
-  return nav ? normalizeEmbedLocale(nav) : 'zh-CN'
+  return nav ? normalizeEmbedLocale(nav) : 'en-US'
 }
 
 function resolveInitialEmbedLocale(): EmbedLocale {
@@ -2108,6 +2248,7 @@ const locale = resolveInitialEmbedLocale()
 export const EMBED_MESSAGES = {
   'zh-CN': messages['zh-CN'],
   'en-US': messages['en-US'],
+  'vi-VN': deepMerge(messages['en-US'], viEmbedPublish),
   'ko-KR': deepMerge(messages['en-US'], koEmbedPublish),
   'ja-JP': messages['ja-JP'],
   'ru-RU': deepMerge(messages['en-US'], ruEmbedPublish),

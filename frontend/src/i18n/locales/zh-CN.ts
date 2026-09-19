@@ -2746,6 +2746,7 @@ export default {
   language: {
     zhCN: '简体中文',
     enUS: 'English',
+    viVN: '越南语',
     ruRU: 'Русский',
     koKR: '한국어',
     jaJP: '日本語',
