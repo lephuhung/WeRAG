@@ -39,6 +39,31 @@ type Config struct {
 	// against window.location.origin — fine for typical single-origin
 	// deployments. Sourced from FRONTEND_BASE_URL env at startup.
 	FrontendBaseURL string `yaml:"frontend_base_url" json:"frontend_base_url"`
+	// PeopleSearch configures the external MongoDB person-record store used
+	// by the people_lookup agent tool (AIRAG port). Env prefix PEOPLE_*.
+	PeopleSearch *PeopleSearchConfig `yaml:"people_search" json:"people_search"`
+}
+
+// PeopleSearchConfig holds the external MongoDB connection for people
+// lookups. Disabled unless explicitly enabled — the tool is never registered
+// when Enabled is false.
+type PeopleSearchConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// URI is a full mongodb:// connection string and wins over the
+	// host/port/credential fields when set.
+	URI        string `yaml:"uri" json:"uri"`
+	Host       string `yaml:"host" json:"host"`
+	Port       int    `yaml:"port" json:"port"`
+	User       string `yaml:"user" json:"user"`
+	Password   string `yaml:"password" json:"-"`
+	Database   string `yaml:"database" json:"database"`
+	AuthSource string `yaml:"auth_source" json:"auth_source"`
+	// QueryTimeoutMS bounds each per-collection query (AIRAG QUERY_MAX_MS).
+	// Default 5000.
+	QueryTimeoutMS int `yaml:"query_timeout_ms" json:"query_timeout_ms"`
+	// PerSchemaLimit caps documents read from one collection per lookup.
+	// Default 10.
+	PerSchemaLimit int `yaml:"per_schema_limit" json:"per_schema_limit"`
 }
 
 // AgentConfig represents the global agent settings.
@@ -592,6 +617,7 @@ func LoadConfig() (*Config, error) {
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyAuthAndTenantDefaults(&cfg)
 	applyAuditDefaults(&cfg)
+	applyPeopleSearchEnvOverrides(&cfg)
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -950,6 +976,75 @@ func applyAuditDefaults(cfg *Config) {
 		if n, err := strconv.Atoi(value); err == nil && n >= 0 {
 			cfg.Audit.RetentionDays = n
 		}
+	}
+}
+
+// applyPeopleSearchEnvOverrides wires the PEOPLE_* env vars into the
+// people_search section. The section is created when any var is set so a
+// deployment can configure the MongoDB lookup entirely through the
+// environment (the docker-compose .env path).
+func applyPeopleSearchEnvOverrides(cfg *Config) {
+	get := func(k string) string { return strings.TrimSpace(os.Getenv(k)) }
+	if cfg.PeopleSearch == nil {
+		// Create the section only when at least one PEOPLE_* var is present —
+		// otherwise people search stays nil/disabled.
+		present := false
+		for _, k := range []string{
+			"PEOPLE_SEARCH_ENABLED", "PEOPLE_MONGO_URI", "PEOPLE_MONGO_HOST",
+			"PEOPLE_MONGO_USER", "PEOPLE_MONGO_PASSWORD", "PEOPLE_MONGO_DATABASE",
+		} {
+			if get(k) != "" {
+				present = true
+				break
+			}
+		}
+		if !present {
+			return
+		}
+		cfg.PeopleSearch = &PeopleSearchConfig{}
+	}
+	ps := cfg.PeopleSearch
+	if v := get("PEOPLE_SEARCH_ENABLED"); v != "" {
+		ps.Enabled = strings.EqualFold(v, "true")
+	}
+	if v := get("PEOPLE_MONGO_URI"); v != "" {
+		ps.URI = v
+	}
+	if v := get("PEOPLE_MONGO_HOST"); v != "" {
+		ps.Host = v
+	}
+	if v := get("PEOPLE_MONGO_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			ps.Port = n
+		}
+	}
+	if v := get("PEOPLE_MONGO_USER"); v != "" {
+		ps.User = v
+	}
+	if v := get("PEOPLE_MONGO_PASSWORD"); v != "" {
+		ps.Password = v
+	}
+	if v := get("PEOPLE_MONGO_DATABASE"); v != "" {
+		ps.Database = v
+	}
+	if v := get("PEOPLE_MONGO_AUTH_SOURCE"); v != "" {
+		ps.AuthSource = v
+	}
+	if v := get("PEOPLE_MONGO_QUERY_TIMEOUT_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			ps.QueryTimeoutMS = n
+		}
+	}
+	if v := get("PEOPLE_MONGO_PER_SCHEMA_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			ps.PerSchemaLimit = n
+		}
+	}
+	if ps.QueryTimeoutMS <= 0 {
+		ps.QueryTimeoutMS = 5000
+	}
+	if ps.PerSchemaLimit <= 0 {
+		ps.PerSchemaLimit = 10
 	}
 }
 

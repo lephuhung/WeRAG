@@ -1,6 +1,16 @@
 # Port AIRAG Abbreviation & People Search — Native Implementation
 
-**Status:** Proposed
+> **Status: IMPLEMENTED.** Migrations `000108` (postgres) / `000027` (sqlite),
+> `abbreviations` model + repository + service + REST `/api/v1/abbreviations`,
+> `internal/vietnamese_legal/abbreviation` + `internal/vietnamese_legal/people`,
+> agent tools `resolve_abbreviation` (always on) + `people_lookup`
+> (PEOPLE_SEARCH_ENABLED + Admin role gate), config `people_search` /
+> `PEOPLE_*` env. Divergences from the draft below: `resolve_abbreviation`
+> is registered unconditionally rather than via `AllowedTools`; the
+> `people_lookup` advanced criteria arrive as flat `name/dob/address/phone`
+> params instead of a `criteria` object; per-collection timeouts use a
+> context deadline (mongo-driver v2 has no `SetMaxTime`).
+
 **Phụ thuộc:** `AIRAG_REFACTOR_SPEC.md` §4 (file layout), §10 (abbreviation resolution)
 **Repo nguồn (reference, sẽ bị stop):** `lephuhung/AIRAG` (`/home/AIRAG`)
 **Repo đích:** WeRAG (WeKnora-derived)

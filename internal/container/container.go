@@ -96,6 +96,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
 	"github.com/tencent/vectordatabase-sdk-go/tcvectordb"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
@@ -187,6 +188,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewMemoryRepository))
 	must(container.Provide(repository.NewTaskPendingOpsRepository))
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
+	must(container.Provide(repository.NewAbbreviationRepository))
 
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
@@ -227,6 +229,30 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewSpanTracker))
 	must(container.Provide(service.NewChunkService))
 	must(container.Provide(service.NewKnowledgeTagService))
+	// Global Vietnamese abbreviation dictionary (AIRAG port) — feeds both the
+	// /abbreviations API and the resolve_abbreviation agent tool.
+	must(container.Provide(service.NewAbbreviationService))
+	// People lookup against the external MongoDB store. Always constructed;
+	// the service reports Enabled()=false and the agent tool is never
+	// registered when the people_search config section is absent/disabled.
+	must(container.Provide(func(cfg *config.Config) *people.Service {
+		var pc people.Config
+		if cfg.PeopleSearch != nil {
+			pc = people.Config{
+				Enabled:        cfg.PeopleSearch.Enabled,
+				URI:            cfg.PeopleSearch.URI,
+				Host:           cfg.PeopleSearch.Host,
+				Port:           cfg.PeopleSearch.Port,
+				User:           cfg.PeopleSearch.User,
+				Password:       cfg.PeopleSearch.Password,
+				Database:       cfg.PeopleSearch.Database,
+				AuthSource:     cfg.PeopleSearch.AuthSource,
+				QueryTimeout:   time.Duration(cfg.PeopleSearch.QueryTimeoutMS) * time.Millisecond,
+				PerSchemaLimit: int64(cfg.PeopleSearch.PerSchemaLimit),
+			}
+		}
+		return people.NewService(pc)
+	}))
 	must(container.Provide(embedding.NewBatchEmbedder))
 	must(container.Provide(service.NewModelService))
 	must(container.Provide(service.NewDatasetService))
@@ -535,6 +561,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
+	must(container.Provide(handler.NewAbbreviationHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))

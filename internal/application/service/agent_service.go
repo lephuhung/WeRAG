@@ -24,6 +24,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
 	"gorm.io/gorm"
 )
 
@@ -117,6 +118,8 @@ type agentService struct {
 	sandboxResolver      sandbox.TenantSandboxResolver
 	sandboxPinner        *SessionSandboxPinner
 	sandboxPolicy        WorkspaceSandboxPolicy
+	abbreviationService  interfaces.AbbreviationService
+	peopleService        *people.Service
 }
 
 // NewAgentService creates a new agent service
@@ -145,6 +148,8 @@ func NewAgentService(
 	sandboxPolicy WorkspaceSandboxPolicy,
 	browserSkill *browserskill.Manager,
 	userRepo interfaces.UserRepository,
+	abbreviationService interfaces.AbbreviationService,
+	peopleService *people.Service,
 ) interfaces.AgentService {
 	return &agentService{
 		browserSkill:         browserSkill,
@@ -171,6 +176,8 @@ func NewAgentService(
 		sandboxResolver:      sandboxResolver,
 		sandboxPinner:        sandboxPinner,
 		sandboxPolicy:        sandboxPolicy,
+		abbreviationService:  abbreviationService,
+		peopleService:        peopleService,
 	}
 }
 
@@ -1045,6 +1052,15 @@ func (s *agentService) registerTools(
 		}
 	}
 
+	// ---- AIRAG-ported tools: abbreviation dictionary + people lookup ----
+	// Neither is in AvailableToolDefinitions: resolve_abbreviation is a
+	// read/suggest surface over the global dictionary (always safe), and
+	// people_lookup returns PII so it is granted by role, never by a
+	// tenant-editable tool checkbox. Strip both from any stored allowlist
+	// first so a stale config cannot resurrect them.
+	allowedTools = withoutString(allowedTools, tools.ToolResolveAbbreviation)
+	allowedTools = withoutString(allowedTools, tools.ToolPeopleLookup)
+
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
 
@@ -1154,6 +1170,24 @@ func (s *agentService) registerTools(
 			}
 			registry.RegisterTool(toolToRegister)
 		}
+	}
+
+	// resolve_abbreviation rides on every agent: the dictionary is global,
+	// expansion is read-only, and suggestions stay inactive until an admin
+	// approves them.
+	if s.abbreviationService != nil {
+		registry.RegisterTool(tools.NewResolveAbbreviationTool(s.abbreviationService))
+	}
+	// people_lookup is PII. It is registered only when the deployment
+	// enabled PEOPLE_SEARCH_* AND the caller is a tenant admin or system
+	// admin — mirroring AIRAG's superadmin gate. There is no human-approval
+	// channel for native tools (the approval gate is MCP-only), so the role
+	// check is the gate; do not weaken it.
+	if s.peopleService != nil && s.peopleService.Enabled() &&
+		(types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin) ||
+			types.IsSystemAdminFromContext(ctx)) {
+		registry.RegisterTool(tools.NewPeopleLookupTool(s.peopleService))
+		logger.Infof(ctx, "Registered people_lookup tool (admin caller)")
 	}
 
 	logger.Infof(ctx, "Registered %d tools", len(registry.ListTools()))
