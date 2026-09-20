@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
@@ -44,20 +45,24 @@ type builtinModelsFile struct {
 	BuiltinModels []BuiltinModelEntry `yaml:"builtin_models"`
 }
 
-// builtinModelEnvPattern matches ${NAME} placeholders. Mirrors the pattern in
-// internal/config/config.go so YAML interpolation behaves identically to the
-// main config.yaml flow.
-var builtinModelEnvPattern = regexp.MustCompile(`\${([^}]+)}`)
+// builtinModelEnvPattern matches ${NAME} and ${NAME:-default} placeholders.
+// Mirrors the pattern in internal/config/config.go so YAML interpolation
+// behaves identically to the main config.yaml flow.
+var builtinModelEnvPattern = regexp.MustCompile(`\${([^}:]+)(?::-([^}]*))?}`)
 
 // interpolateBuiltinModelEnv substitutes ${NAME} occurrences with the
-// corresponding os.Getenv value. Unset vars are left as the literal ${NAME}
-// so misconfiguration surfaces visibly in downstream provider calls instead
-// of failing silently with an empty token.
+// corresponding os.Getenv value, or the declared default for ${NAME:-default}
+// when the var is unset. ${NAME} without a default is left as the literal
+// ${NAME} so misconfiguration surfaces visibly in downstream provider calls
+// instead of failing silently with an empty token.
 func interpolateBuiltinModelEnv(s string) string {
 	return builtinModelEnvPattern.ReplaceAllStringFunc(s, func(m string) string {
-		name := m[2 : len(m)-1]
-		if v := os.Getenv(name); v != "" {
+		sub := builtinModelEnvPattern.FindStringSubmatch(m)
+		if v := os.Getenv(sub[1]); v != "" {
 			return v
+		}
+		if strings.Contains(m, ":-") {
+			return sub[2]
 		}
 		return m
 	})

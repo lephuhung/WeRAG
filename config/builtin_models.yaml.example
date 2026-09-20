@@ -6,9 +6,11 @@
 #
 # How values reach the file
 # -------------------------
-# Any string field can reference an env var with ${NAME}. Unset env vars are
-# left as the literal ${NAME} so misconfiguration surfaces clearly in upstream
-# API calls instead of producing a silent empty token. Non-string fields
+# Any string field can reference an env var with ${NAME}, or ${NAME:-default}
+# to declare a fallback used when the var is unset. Unset env vars without a
+# default are left as the literal ${NAME} so misconfiguration surfaces clearly
+# in upstream API calls instead of producing a silent empty token.
+# Non-string fields
 # (type, source, is_default, dimension, truncate_prompt_tokens) must stay
 # literal because YAML parses them as their target type.
 #

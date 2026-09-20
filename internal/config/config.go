@@ -547,14 +547,18 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("error reading config file content: %w", err)
 	}
 
-	// 替换${ENV_VAR}格式的环境变量引用
-	re := regexp.MustCompile(`\${([^}]+)}`)
+	// 替换${ENV_VAR}格式的环境变量引用，支持 ${ENV_VAR:-default} 默认值语法
+	re := regexp.MustCompile(`\${([^}:]+)(?::-([^}]*))?}`)
 	result := re.ReplaceAllStringFunc(string(configFileContent), func(match string) string {
-		// 提取环境变量名称（去掉${}部分）
-		envVar := match[2 : len(match)-1]
-		// 获取环境变量值，如果不存在则保持原样
+		// 提取环境变量名称（去掉${}部分）与可选默认值
+		sub := re.FindStringSubmatch(match)
+		envVar := sub[1]
+		// 获取环境变量值；未设置时使用 :- 默认值，无默认值则保持原样
 		if value := os.Getenv(envVar); value != "" {
 			return value
+		}
+		if strings.Contains(match, ":-") {
+			return sub[2]
 		}
 		return match
 	})

@@ -3,9 +3,12 @@ builtin_models:
     type: KnowledgeQA
     source: remote
     is_default: true
-    name: ${LLM_MODEL_NAME}
+    name: ${LLM_MODEL_NAME:-gpt-4o-mini}
     parameters:
-      base_url: ${LLM_BASE_URL}
+      # Defaults resolve to OpenAI's public endpoint; override via .env
+      # (LLM_BASE_URL / LLM_MODEL_NAME / LLM_PROVIDER). Only LLM_API_KEY has
+      # no default — a chat request without it fails upstream auth.
+      base_url: ${LLM_BASE_URL:-api.openai.com/v1}
       api_key: ${LLM_API_KEY}
-      provider: openai
+      provider: ${LLM_PROVIDER:-openai}
       context_window: 128000
