@@ -3,7 +3,6 @@
  * field shape. Covers: basic info, indexing strategy toggles, wiki config,
  * auto-tag/profile configs, and chunking. FAQ config + vector-store binding
  * + multimodal/ASR/graph extraction stay in the Vue app until ported.
- *
  * Data flow mirrors the Vue editor: load the full KB row (the GET returns
  * every config block), edit a local draft, then PUT through
  * updateKnowledgeBase with only the blocks the user touched.
@@ -12,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
+import { Toggle } from "@/components/settings/toggle";
 import { useT } from "@/lib/i18n";
 import {
   getKnowledgeBase,
@@ -401,20 +401,7 @@ function ToggleRow({ label, checked, onChange }: {
   return (
     <div className="flex items-center justify-between gap-8 py-4">
       <span className="title-sm">{label}</span>
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-primary" : "bg-hairline-strong"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface-card transition-transform ${
-            checked ? "translate-x-[22px]" : "translate-x-0.5"
-          }`}
-        />
-      </button>
+      <Toggle checked={checked} onChange={onChange} label={label} />
     </div>
   );
 }

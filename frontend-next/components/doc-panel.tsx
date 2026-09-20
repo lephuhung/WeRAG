@@ -7,15 +7,17 @@ import {
   type KnowledgeDoc,
 } from "@/lib/api/knowledge";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
+import { Markdown } from "@/components/markdown";
+import { renderFileIconSvg } from "@/components/files/file-icon";
 import { IconDoc } from "@/components/icons";
 
 const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
-  parsed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
-  indexed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
+  completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
   processing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  parsing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  pending: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  finalizing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  pending: { label: "Pending", cls: "text-muted", dot: "#a8a29e" },
   failed: { label: "Failed", cls: "text-error", dot: "#dc2626" },
+  cancelled: { label: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
 };
 
 type ChunkRow = { id?: string; content?: string };
@@ -49,7 +51,7 @@ export function DocPanel({
     };
   }, [doc]);
 
-  const st = doc ? (STATUS_STYLE[doc.status ?? ""] ?? STATUS_STYLE.processing) : null;
+  const st = doc ? (STATUS_STYLE[doc.parse_status ?? doc.status ?? ""] ?? STATUS_STYLE.pending) : null;
   const name = doc ? (doc.title || doc.file_name || doc.id) : "";
 
   const download = async () => {
@@ -69,13 +71,17 @@ export function DocPanel({
   };
 
   return (
-    <SlidePanel open={doc !== null} onClose={onClose} label="Document" width="w-[520px]">
+    <SlidePanel open={doc !== null} onClose={onClose} label="Document" width="w-[560px]">
       <SlidePanelHeader title={name} subtitle="Extracted chunks" onClose={onClose}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
-          <IconDoc className="h-4 w-4" />
-        </div>
+        {doc && (
+          <span
+            className="w-[30px] shrink-0"
+            dangerouslySetInnerHTML={{
+              __html: renderFileIconSvg(doc.file_name ?? name, doc.file_type, doc.profile?.doc_type),
+            }}
+          />
+        )}
       </SlidePanelHeader>
-
       {doc && st && (
         <>
           {/* meta */}
@@ -94,8 +100,9 @@ export function DocPanel({
               />
               {st.label}
             </span>
-            <span className="caption ml-auto text-muted">
-              {doc.chunk_count ? `${doc.chunk_count} chunks` : ""} {doc.updated_at ?? ""}
+            <span className="caption ml-auto whitespace-nowrap text-muted">
+              {doc.chunk_count ? `${doc.chunk_count} chunks · ` : ""}
+              {fmtShortDate(doc.updated_at ?? "")}
             </span>
           </div>
 
@@ -108,12 +115,9 @@ export function DocPanel({
             )}
             <div className="flex flex-col gap-4">
               {(chunks ?? []).map((p, i) => (
-                <p
-                  key={i}
-                  className="whitespace-pre-wrap text-[15px] leading-[1.8] text-body"
-                >
-                  {p}
-                </p>
+                <div key={i} className="max-w-[640px]">
+                  <Markdown text={p} />
+                </div>
               ))}
             </div>
 
@@ -132,4 +136,11 @@ export function DocPanel({
       )}
     </SlidePanel>
   );
+}
+/* Compact header timestamp — RFC3339 too long for the meta row. */
+function fmtShortDate(v?: string): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
 }

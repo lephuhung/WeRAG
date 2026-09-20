@@ -214,8 +214,8 @@ export default function SystemUsers() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="caption-uppercase flex items-center gap-4 border-b border-hairline px-5 py-3 text-muted-soft">
+      <div className="card overflow-x-auto">
+        <div className="caption-uppercase flex min-w-[1180px] items-center gap-4 border-b border-hairline px-5 py-3 text-muted-soft">
           <span className="flex-1">User</span>
           <span className="w-56">Workspaces</span>
           <span className="w-56">Organizations</span>
@@ -226,7 +226,7 @@ export default function SystemUsers() {
         {users.map((u, i) => (
           <div
             key={u.id}
-            className={`flex items-center gap-4 px-5 py-3.5 ${i > 0 ? "border-t border-hairline" : ""}`}
+            className={`flex min-w-[1180px] items-center gap-4 px-5 py-3.5 ${i > 0 ? "border-t border-hairline" : ""}`}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-medium text-ink">
@@ -308,40 +308,34 @@ export default function SystemUsers() {
             <span className="caption w-32 text-muted">
               {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
             </span>
-            <span className="flex w-56 justify-end gap-1.5">
-              {u.is_system_admin ? (
-                // The backend rejects self-revoke and last-admin revoke —
-                // hide the button for the caller's own row.
-                u.id !== meId && (
-                  <button
-                    className="btn btn-tertiary text-[13px] text-error!"
-                    onClick={() => setRevoking(u)}
-                    disabled={busy}
-                  >
-                    Revoke superadmin
-                  </button>
-                )
-              ) : (
+            <span className="flex w-36 flex-col items-end gap-1.5">
+              {!(u.is_system_admin && u.id === meId) && (
                 <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() => setPromoting(u)}
+                  className={`btn btn-outline btn-sm ${u.is_system_admin ? "text-error" : ""}`}
+                  onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
                   disabled={busy}
-                  title="Grant global system-admin rights (SuperAdmin)"
+                  title={
+                    u.is_system_admin
+                      ? "Revoke global system-admin rights"
+                      : "Grant global system-admin rights"
+                  }
                 >
-                  Make superadmin
+                  {u.is_system_admin ? "Revoke superadmin" : "Make superadmin"}
                 </button>
               )}
-              <button
-                className="btn btn-outline btn-sm"
-                onClick={() => {
-                  setNewPassword("");
-                  setResetting(u);
-                }}
-                disabled={u.id === meId}
-                title={u.id === meId ? "Use Settings → Security for your own password" : ""}
-              >
-                Reset password
-              </button>
+              {!u.is_system_admin && (
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setNewPassword("");
+                    setResetting(u);
+                  }}
+                  disabled={u.id === meId}
+                  title={u.id === meId ? "Use Settings → Security for your own password" : ""}
+                >
+                  Reset password
+                </button>
+              )}
             </span>
           </div>
         ))}

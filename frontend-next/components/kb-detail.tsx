@@ -13,18 +13,23 @@ import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { IconChat, IconDoc, IconPlus, IconSearch, IconSettings } from "@/components/icons";
+import { renderFileIconSvg } from "@/components/files/file-icon";
 
+/* Backend field is parse_status (types.Knowledge.go ParseStatus); values
+ * are pending/processing/finalizing/completed/failed/cancelled. The port
+ * previously read a phantom `status` field so every document fell through
+ * to "Processing". */
 const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
-  parsed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
-  indexed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
+  completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
   processing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  parsing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  pending: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  finalizing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  pending: { label: "Pending", cls: "text-muted", dot: "#a8a29e" },
   failed: { label: "Failed", cls: "text-error", dot: "#dc2626" },
+  cancelled: { label: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
 };
 
 function statusStyle(status?: string) {
-  return STATUS_STYLE[status ?? ""] ?? STATUS_STYLE.processing;
+  return STATUS_STYLE[status ?? ""] ?? STATUS_STYLE.pending;
 }
 
 function docName(d: KnowledgeDoc) {
@@ -88,9 +93,8 @@ export function KbDetail({ kbId }: { kbId: string }) {
             <p className="body-sm mt-2 max-w-[560px] text-body">{kb?.description ?? ""}</p>
             {error && <p className="caption mt-2 text-error">{error}</p>}
             <div className="caption mt-3 flex items-center gap-4 text-muted">
-              <span>{kb?.document_count ?? docs?.length ?? "—"} documents</span>
-              <span>{(kb?.chunk_count ?? 0).toLocaleString()} chunks</span>
-              {kb?.updated_at && <span>Updated {kb.updated_at}</span>}
+              <span>{kb?.knowledge_count ?? kb?.document_count ?? docs?.length ?? "—"} documents</span>
+              {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
             </div>
           </div>
           <div className="flex gap-3">
@@ -111,9 +115,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
       </div>
 
       {/* split panes: left documents, right wiki/graph */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-10 pb-8 lg:grid-cols-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-10 pb-8 lg:grid-cols-3">
         {/* left — documents as cards */}
-        <section className="flex min-h-0 flex-col">
+        <section className="flex min-h-0 flex-col lg:col-span-1">
           <div className="mb-4 flex shrink-0 items-center justify-between">
             <div className="relative w-full max-w-[300px]">
               <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
@@ -127,9 +131,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
             <div className="caption text-muted">{filtered.length} files</div>
           </div>
 
-          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1 xl:grid-cols-2">
+          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1">
             {filtered.map((d) => {
-              const st = statusStyle(d.status);
+              const st = statusStyle(d.parse_status ?? d.status);
               return (
                 <button
                   key={d.id}
@@ -137,16 +141,51 @@ export function KbDetail({ kbId }: { kbId: string }) {
                   className="card card-hover p-4 text-left"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
-                      <IconDoc className="h-4 w-4" />
-                    </div>
+                    <span
+                      className="w-[30px] shrink-0"
+                      dangerouslySetInnerHTML={{
+                        __html: renderFileIconSvg(d.file_name ?? d.title ?? "", d.file_type, d.profile?.doc_type),
+                      }}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[14px] font-medium text-ink">
                         {docName(d)}
                       </div>
-                      <div className="caption mt-0.5 text-muted">{docExt(d)}</div>
+                      {/* type badges: profile.doc_type first, ext + size as remaining line */}
+                      <div className="caption mt-1 flex flex-wrap items-center gap-1.5 text-muted">
+                        {d.profile?.doc_type && (
+                          <span className="badge-pill">{d.profile.doc_type}</span>
+                        )}
+                        <span>{docExt(d)}</span>
+                        {d.file_size ? (
+                          <span className="text-muted-soft">· {fmtBytes(d.file_size)}</span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
+                  {/* summary — description wins over profile.gist when both exist */}
+                  {(d.description || d.profile?.gist) && (
+                    <p className="body-sm mt-2 line-clamp-3 text-body">
+                      {d.description || d.profile?.gist}
+                    </p>
+                  )}
+                  {d.profile?.topics && d.profile.topics.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {d.profile.topics.slice(0, 4).map((topic) => (
+                        <span
+                          key={topic}
+                          className="inline-block rounded-full bg-surface-strong px-2 py-0.5 text-[11px] text-muted"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                      {d.profile.topics.length > 4 && (
+                        <span className="caption text-muted-soft">
+                          +{d.profile.topics.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="caption mt-3 flex items-center justify-between border-t border-hairline pt-3">
                     <span className={`flex items-center gap-1.5 font-medium ${st.cls}`}>
                       <span
@@ -155,7 +194,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
                       />
                       {st.label}
                     </span>
-                    <span className="text-muted">{d.updated_at ?? ""}</span>
+                    <span className="whitespace-nowrap">{fmtShortDate(d.updated_at)}</span>
                   </div>
                 </button>
               );
@@ -173,8 +212,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
           )}
         </section>
 
-        {/* right — wiki / graph switchable pane */}
-        <section className="card flex min-h-0 flex-col overflow-hidden">
+        <section className="card flex min-h-0 flex-col overflow-hidden lg:col-span-2">
           <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-3">
             <div className="flex items-center gap-1 rounded-full bg-surface-strong p-1">
               {(
@@ -231,4 +269,20 @@ export function KbDetail({ kbId }: { kbId: string }) {
       />
     </div>
   );
+}	
+/* Compact header timestamp — RFC3339 is too long for the stats row. */
+function fmtShortDate(v?: string): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
+}
+
+/* Human file size for the metadata row. */
+function fmtBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }

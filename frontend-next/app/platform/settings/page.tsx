@@ -7,7 +7,7 @@
  */
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +19,9 @@ import {
   type SettingsNavItem,
 } from "@/components/settings/nav-config";
 import { GeneralSettings } from "@/components/settings/general-settings";
+import { McpServicesPanel } from "@/components/settings/mcp-services";
 import { TenantInfo } from "@/components/settings/tenant-info";
+import { ApiKeysSection } from "@/components/settings/api-keys";
 
 export default function SettingsPage() {
   return (
@@ -89,6 +91,8 @@ function SettingsBody() {
                 <GeneralSettings />
               ) : active === "tenant" ? (
                 <TenantInfo />
+              ) : active === "api-keys" ? (
+                <ApiKeysSection />
               ) : (
                 <SectionStub section={active} />
               )}
@@ -97,6 +101,23 @@ function SettingsBody() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* MCP settings — the panel itself is a slide-over because the service
+ * editor is a full modal flow in the Vue app too. */
+function McpSection() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <p className="caption mb-3 text-muted">
+        Register external Model-Context-Protocol servers once; agents pick them via the mention picker.
+      </p>
+      <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>
+        Manage services
+      </button>
+      <McpServicesPanel open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 

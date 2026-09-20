@@ -20,7 +20,7 @@ import {
   type WikiPageRevision,
   type WikiRevisionListResponse,
 } from "@/lib/api/wiki";
-import { renderChatMarkdown } from "@/lib/markdown";
+import { Markdown } from "@/components/markdown";
 import { useT } from "@/lib/i18n";
 import { IconDoc } from "@/components/icons";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
@@ -86,12 +86,10 @@ export function WikiBrowser({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* intro */}
       {index?.intro && (
-        <div
-          className="chat-markdown mb-4 shrink-0 text-[14px] text-body"
-          dangerouslySetInnerHTML={{ __html: renderChatMarkdown(index.intro) }}
-        />
+        <div className="mb-4 shrink-0">
+          <Markdown text={index.intro} />
+        </div>
       )}
       {error && <p className="caption text-error">{error}</p>}
       {loading && <p className="caption text-muted">Loading wiki…</p>}
@@ -119,8 +117,8 @@ export function WikiBrowser({
                   const kids = childrenOf(it.slug);
                   const isOpen = expanded.has(it.slug);
                   return (
-                    <div key={it.slug}>
-                      <div className="flex items-center gap-1">
+                    <div key={it.slug} className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1">
                         <button
                           onClick={() => toggle(it.slug)}
                           className={`flex h-5 w-5 shrink-0 items-center justify-center text-muted transition-transform ${
@@ -140,7 +138,7 @@ export function WikiBrowser({
                         </button>
                         <button
                           onClick={() => setOpenSlug(it.slug)}
-                          className="truncate py-1.5 text-left text-[14px] text-body hover:text-ink"
+                          className="min-w-0 flex-1 truncate py-1.5 text-left text-[14px] text-body hover:text-ink"
                         >
                           {it.title}
                           {kids.length > 0 && (
@@ -264,9 +262,9 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
   };
 
   return (
-    <SlidePanel open onClose={onClose} label={page?.title ?? title} width="w-[640px]">
+    <SlidePanel open onClose={onClose} label={page?.title ?? title} width="w-[700px]">
       <SlidePanelHeader title={page?.title ?? title} onClose={onClose} />
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-8 py-6">
         {error && <p className="caption text-error">{error}</p>}
         {/* meta row */}
         {page && (
@@ -309,11 +307,10 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
             onChange={(e) => setDraftContent(e.target.value)}
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto pr-2">
-            <div
-              className="chat-markdown"
-              dangerouslySetInnerHTML={{ __html: renderChatMarkdown(page?.content ?? "") }}
-            />
+          <div className="min-h-0 flex-1 overflow-y-auto pr-3">
+            <div className="max-w-[560px]">
+              <Markdown text={page?.content ?? ""} />
+            </div>
           </div>
         )}
 

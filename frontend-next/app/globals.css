@@ -55,6 +55,28 @@
   --shadow-soft-drop: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
+/* Dark mode. `general-settings.tsx` toggles `html.dark`; these overrides
+   swap the same token names so every surface/text/hairline utility flips
+   together without needing dark: variants across components. */
+html.dark {
+  --color-canvas: #171412;
+  --color-canvas-soft: #1c1917;
+  --color-surface-card: #1c1917;
+  --color-surface-strong: #292524;
+  --color-ink: #f5f5f4;
+  --color-body: #d6d3d1;
+  --color-body-strong: #fafaf9;
+  --color-muted: #a8a29e;
+  --color-muted-soft: #78716c;
+  --color-on-primary: #f5f5f4;
+  --color-hairline: #292524;
+  --color-hairline-soft: #1c1917;
+  --color-hairline-strong: #44403c;
+  --color-primary: #f5f5f4;
+  --color-primary-active: #e7e5e4;
+  color-scheme: dark;
+}
+
 @layer base {
   html,
   body {
@@ -65,7 +87,7 @@
     background: var(--color-canvas);
     color: var(--color-body);
     font-family: var(--font-sans);
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1.5;
     letter-spacing: 0.16px;
     -webkit-font-smoothing: antialiased;
@@ -78,101 +100,101 @@
 }
 
 @layer components {
-  /* ---------- display type (weight 300 always) ---------- */
+  /* ---------- display type (weight 300 always) ----------
+   * Scale reduced ~15% per user request; ratios preserved. */
   .display-mega {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 64px;
+    font-size: 52px;
     line-height: 1.05;
-    letter-spacing: -1.92px;
+    letter-spacing: -1.4px;
     color: var(--color-ink);
   }
   .display-xl {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 48px;
+    font-size: 40px;
     line-height: 1.08;
-    letter-spacing: -0.96px;
+    letter-spacing: -0.8px;
     color: var(--color-ink);
   }
   .display-lg {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 36px;
-    line-height: 1.17;
-    letter-spacing: -0.36px;
+    font-size: 30px;
+    line-height: 1.18;
+    letter-spacing: -0.3px;
     color: var(--color-ink);
   }
   .display-md {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 32px;
-    line-height: 1.13;
-    letter-spacing: -0.32px;
+    font-size: 27px;
+    line-height: 1.15;
+    letter-spacing: -0.27px;
     color: var(--color-ink);
   }
   .display-sm {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 24px;
-    line-height: 1.2;
+    font-size: 20px;
+    line-height: 1.25;
     color: var(--color-ink);
   }
   .title-md {
-    font-size: 20px;
+    font-size: 17px;
     font-weight: 500;
-    line-height: 1.35;
+    line-height: 1.4;
     color: var(--color-ink);
   }
   .title-sm {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 500;
-    line-height: 1.44;
-    letter-spacing: 0.18px;
+    line-height: 1.45;
+    letter-spacing: 0.1px;
     color: var(--color-ink);
   }
   .body-sm {
-    font-size: 15px;
-    line-height: 1.47;
-    letter-spacing: 0.15px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    letter-spacing: 0.1px;
   }
   .caption {
-    font-size: 14px;
+    font-size: 12.5px;
     line-height: 1.5;
   }
   .caption-uppercase {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     line-height: 1.4;
-    letter-spacing: 0.96px;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
   }
 
   @media (max-width: 640px) {
     .display-mega {
-      font-size: 32px;
-      letter-spacing: -0.6px;
+      font-size: 30px;
+      letter-spacing: -0.5px;
     }
     .display-xl {
-      font-size: 32px;
+      font-size: 28px;
     }
   }
   @media (min-width: 641px) and (max-width: 1024px) {
     .display-mega {
-      font-size: 48px;
+      font-size: 40px;
     }
   }
-
   /* ---------- buttons ---------- */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    height: 40px;
-    padding: 10px 20px;
+    height: 36px;
+    padding: 8px 18px;
     border-radius: 9999px;
-    font-size: 15px;
+    font-size: 13.5px;
     font-weight: 500;
     line-height: 1;
     cursor: pointer;
@@ -210,9 +232,9 @@
     color: var(--color-muted);
   }
   .btn-sm {
-    height: 32px;
-    padding: 6px 14px;
-    font-size: 14px;
+    height: 30px;
+    padding: 5px 12px;
+    font-size: 12.5px;
   }
 
   /* ---------- surfaces ---------- */
@@ -231,12 +253,12 @@
   .badge-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     background: var(--color-surface-strong);
     color: var(--color-ink);
     border-radius: 9999px;
-    padding: 4px 10px;
-    font-size: 12px;
+    padding: 3px 9px;
+    font-size: 11px;
     font-weight: 600;
     line-height: 1.4;
     letter-spacing: 0.96px;
@@ -245,16 +267,22 @@
 
   .input {
     width: 100%;
-    height: 44px;
+    /* single-line height; textareas override with h-auto + min-h-* */
+    height: 40px;
     background: var(--color-surface-card);
     color: var(--color-ink);
     border: 1px solid var(--color-hairline-strong);
     border-radius: var(--radius-md2);
-    padding: 12px 16px;
-    font-size: 16px;
-    letter-spacing: 0.16px;
+    padding: 10px 14px;
+    font-size: 14px;
+    letter-spacing: 0.1px;
     outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  textarea.input {
+    height: auto;
+    line-height: 1.5;
+    resize: vertical;
   }
   .input::placeholder {
     color: var(--color-muted-soft);
@@ -282,9 +310,9 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 8px 12px;
+    padding: 7px 12px;
     border-radius: var(--radius-md2);
-    font-size: 15px;
+    font-size: 13.5px;
     font-weight: 500;
     color: var(--color-body);
     transition: background-color 0.15s ease, color 0.15s ease;
@@ -300,7 +328,7 @@
 
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
-    font-size: 15px;
+    font-size: 13.5px;
     line-height: 1.75;
     color: var(--color-body);
     overflow-wrap: break-word;

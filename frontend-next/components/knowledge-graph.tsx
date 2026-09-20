@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getWikiGraph, type WikiGraphData } from "@/lib/api/wiki";
 
 const TYPE_STYLE: Record<string, { fill: string; ring: string; label: string }> = {
@@ -16,6 +16,45 @@ export function KnowledgeGraph({ kbId }: { kbId: string }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [graph, setGraph] = useState<WikiGraphData | null>(null);
   const [error, setError] = useState("");
+  /* Pan + zoom: scale is applied around the SVG centre; pan in viewBox
+   * units so it stays consistent across browsers. Buttons in the toolbar
+   * inc/dec; drag on the background pans. */
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 3;
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+
+  const zoomBy = (factor: number) => {
+    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)));
+  };
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const onSvgPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onSvgPointerMove = (ev: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dx = ev.clientX - dragRef.current.x;
+    const dy = ev.clientY - dragRef.current.y;
+    dragRef.current = { x: ev.clientX, y: ev.clientY };
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  };
+  const onSvgPointerUp = () => {
+    dragRef.current = null;
+  };
+
+  const onWheel = (ev: React.WheelEvent) => {
+    // Trackpad pinch sends ctrlKey; plain wheel scrolls yell out-of-context.
+    if (!ev.ctrlKey && !ev.metaKey && Math.abs(ev.deltaY) < 8) return;
+    ev.preventDefault();
+    zoomBy(ev.deltaY > 0 ? 0.9 : 1.1);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -78,57 +117,79 @@ export function KnowledgeGraph({ kbId }: { kbId: string }) {
         </p>
       )}
 
+      {/* zoom toolbar */}
+      <div className="caption flex shrink-0 items-center gap-1.5 px-5 pt-3 text-muted">
+        <button className="btn btn-outline btn-sm" onClick={() => zoomBy(1.2)} title="Zoom in" aria-label="Zoom in">
+          +
+        </button>
+        <button className="btn btn-outline btn-sm" onClick={() => zoomBy(1 / 1.2)} title="Zoom out" aria-label="Zoom out">
+          −
+        </button>
+        <button className="btn btn-tertiary btn-sm" onClick={resetView}>Reset</button>
+        <span className="ml-1 text-muted-soft">{Math.round(zoom * 100)}%</span>
+        <span className="ml-auto text-muted-soft">Drag to pan · Ctrl+scroll to zoom</span>
+      </div>
+
       <svg
         viewBox="0 0 720 520"
         preserveAspectRatio="xMidYMid meet"
-        className="min-h-0 w-full flex-1"
+        className="min-h-0 w-full flex-1 touch-none"
+        onPointerDown={onSvgPointerDown}
+        onPointerMove={onSvgPointerMove}
+        onPointerUp={onSvgPointerUp}
+        onPointerLeave={onSvgPointerUp}
+        onWheel={onWheel}
       >
-        {/* edges */}
-        {edges.map((e, i) => {
-          const a = byId[e.source];
-          const b = byId[e.target];
-          const active = hovered !== null && (e.source === hovered || e.target === hovered);
-          return (
-            <line
-              key={i}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={active ? "#0c0a09" : "#d6d3d1"}
-              strokeWidth={active ? 1.6 : 1}
-            />
-          );
-        })}
-
-        {/* nodes */}
-        {nodes.map((n) => {
-          const s = TYPE_STYLE[n.type] ?? FALLBACK_STYLE;
-          const dim = hovered !== null && !connected(n.slug);
-          return (
-            <g
-              key={n.slug}
-              opacity={dim ? 0.3 : 1}
-              onMouseEnter={() => setHovered(n.slug)}
-              onMouseLeave={() => setHovered(null)}
-              style={{ cursor: "pointer", transition: "opacity .15s ease" }}
-            >
-              <circle cx={n.x} cy={n.y} r={14} fill="transparent" />
-              <circle cx={n.x} cy={n.y} r={8} fill={s.fill} stroke={s.ring} strokeWidth={1} />
-              <text
-                x={n.x}
-                y={n.y + 24}
-                textAnchor="middle"
-                fontSize={12}
-                fill={hovered === n.slug ? "#0c0a09" : "#777169"}
-                fontWeight={hovered === n.slug ? 500 : 400}
-                style={{ fontFamily: "var(--font-sans)", letterSpacing: "0.15px" }}
+        <g
+          transform={`translate(${pan.x} ${pan.y}) scale(${zoom}) translate(${(720 / 2) * (1 - zoom)} ${(520 / 2) * (1 - zoom)})`}
+        >
+          {/* edges */}
+          {edges.map((e, i) => {
+            const a = byId[e.source];
+            const b = byId[e.target];
+            const active = hovered !== null && (e.source === hovered || e.target === hovered);
+            return (
+              <line
+                key={i}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={active ? "#0c0a09" : "#d6d3d1"}
+                strokeWidth={active ? 1.6 : 1}
+              />
+            );
+          })}
+  
+          {/* nodes */}
+          {nodes.map((n) => {
+            const s = TYPE_STYLE[n.type] ?? FALLBACK_STYLE;
+            const dim = hovered !== null && !connected(n.slug);
+            return (
+              <g
+                key={n.slug}
+                opacity={dim ? 0.3 : 1}
+                onMouseEnter={() => setHovered(n.slug)}
+                onMouseLeave={() => setHovered(null)}
+                style={{ cursor: "pointer", transition: "opacity .15s ease" }}
               >
-                {n.title.length > 18 ? `${n.title.slice(0, 18)}…` : n.title}
-              </text>
-            </g>
-          );
-        })}
+                <circle cx={n.x} cy={n.y} r={14} fill="transparent" />
+                <circle cx={n.x} cy={n.y} r={8} fill={s.fill} stroke={s.ring} strokeWidth={1} />
+                <text
+                  x={n.x}
+                  y={n.y + 24}
+                  textAnchor="middle"
+                  fontSize={12}
+                  fill={hovered === n.slug ? "#0c0a09" : "#777169"}
+                  fontWeight={hovered === n.slug ? 500 : 400}
+                  style={{ fontFamily: "var(--font-sans)", letterSpacing: "0.15px" }}
+                >
+                  {n.title.length > 18 ? `${n.title.slice(0, 18)}…` : n.title}
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </svg>
 
       {/* legend */}

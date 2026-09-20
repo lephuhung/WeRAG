@@ -117,6 +117,10 @@ export type KnowledgeBaseRow = {
   id: string;
   name: string;
   description?: string;
+  /* Backend actually sends knowledge_count (types.KnowledgeBase json tag);
+   * document_count is a legacy alias kept so the ported Next surfaces keep
+   * compiling while migrating to the real name. */
+  knowledge_count?: number;
   document_count?: number;
   chunk_count?: number;
   updated_at?: string;
@@ -381,11 +385,39 @@ export type KnowledgeDoc = {
   id: string;
   title?: string;
   file_name?: string;
+  /* Real backend field (types.Knowledge json:parse_status):
+   * pending/processing/finalizing/completed/failed/cancelled. The phantom
+   * `status` alias is kept for callers written against the old shape. */
+  parse_status?: string;
   status?: string;
+  knowledge_base_id?: string;
+  type?: string;
+  source?: string;
+  channel?: string;
+  /* Model-written summary/description block. Description is the full
+   * summary; Profile is the structured companion card (gist, topics,
+   * doc_type, typical_question). summary_status tracks async generation:
+   * none/pending/processing/completed/failed. */
+  description?: string;
+  profile?: {
+    gist?: string;
+    topics?: string[];
+    doc_type?: string;
+    typical_question?: string;
+  };
+  summary_status?: string;
+  enable_status?: string;
+  /* File metadata from ingestion */
+  file_type?: string;
+  file_size?: number;
+  folder_path?: string;
+  custom_metadata?: Record<string, unknown>;
   updated_at?: string;
+  created_at?: string;
+  processed_at?: string | null;
   chunk_count?: number;
+  tags?: Array<{ id?: string; tag_seq_id?: number; name: string }>;
 };
-
 export interface ListKnowledgeFilesParams {
   page: number;
   page_size: number;

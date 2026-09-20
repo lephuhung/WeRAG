@@ -35,8 +35,7 @@ export default function KnowledgeBaseList() {
       id: k.id,
       name: k.name,
       description: k.description ?? "",
-      docs: k.document_count ?? 0,
-      chunks: k.chunk_count ?? 0,
+      docs: k.knowledge_count ?? k.document_count ?? 0,
       updatedAt: k.updated_at ?? "",
       orb: ORBS[i % ORBS.length],
     }));
@@ -74,7 +73,6 @@ export default function KnowledgeBaseList() {
         {kbs === null && (
           <p className="caption mb-6 text-muted-soft">Loading knowledge bases…</p>
         )}
-        {error && <p className="caption mb-6 text-error">{error}</p>}
         {kbs !== null && kbs.length === 0 && !error && (
           <p className="caption mb-6 text-muted-soft">No knowledge bases yet.</p>
         )}
@@ -84,22 +82,21 @@ export default function KnowledgeBaseList() {
             <Link
               key={kb.id}
               href={`/platform/knowledge-bases/${kb.id}`}
-              className="card card-hover group relative overflow-hidden p-6"
+              className="card card-hover group relative min-w-0 overflow-hidden p-6"
             >
               <Orb color={kb.orb} size={220} className="-right-16 -top-16 opacity-50" />
-              <div className="relative">
+              <div className="relative min-w-0">
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-strong text-ink">
                   <IconBook className="h-5 w-5" />
                 </div>
-                <h2 className="title-md">{kb.name}</h2>
+                <h2 className="title-md truncate">{kb.name}</h2>
                 <p className="body-sm mt-1.5 line-clamp-2 text-body">{kb.description}</p>
                 <div className="caption mt-5 flex items-center gap-4 text-muted">
                   <span className="flex items-center gap-1.5">
                     <IconDoc className="h-3.5 w-3.5" />
-                    {kb.docs} docs
+                    {kb.docs} documents
                   </span>
-                  <span>{kb.chunks.toLocaleString()} chunks</span>
-                  <span className="ml-auto">{kb.updatedAt}</span>
+                  <span className="ml-auto whitespace-nowrap">{fmtShortDate(kb.updatedAt)}</span>
                 </div>
               </div>
             </Link>
@@ -117,4 +114,13 @@ export default function KnowledgeBaseList() {
       </div>
     </div>
   );
+}
+
+/* Compact card timestamp: locale date for recent items, ISO date otherwise.
+ * The raw RFC3339 string from the API is too long for the card footer. */
+function fmtShortDate(v?: string): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
 }

@@ -45,6 +45,7 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "viewer" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "viewer" },
+      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "viewer" },
       { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "viewer" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "admin" },
     ],
