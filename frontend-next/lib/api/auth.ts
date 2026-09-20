@@ -364,21 +364,6 @@ export async function updateMyPreferences(
   }
 }
 
-export async function getCurrentTenant(): Promise<{
-  success: boolean;
-  data?: TenantInfo;
-  message?: string;
-}> {
-  try {
-    return await apiGet("/api/v1/auth/tenant");
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "Failed to load workspace",
-    };
-  }
-}
-
 export async function refreshToken(
   refreshTokenValue: string,
 ): Promise<{ success: boolean; data?: { token: string; refreshToken: string }; message?: string }> {

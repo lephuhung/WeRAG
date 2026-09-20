@@ -611,18 +611,6 @@ export async function listAgentShares(
   }
 }
 
-export async function updateAgentSharePermission(
-  agentId: string,
-  shareId: string,
-  req: UpdateSharePermissionRequest,
-): Promise<ApiResponse<void>> {
-  try {
-    return await apiPut(`/api/v1/agents/${agentId}/shares/${shareId}`, req);
-  } catch (error) {
-    return fail(error, "Failed to update share permission");
-  }
-}
-
 export async function removeAgentShare(
   agentId: string,
   shareId: string,

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useAuth } from "@/lib/auth";
@@ -150,6 +150,23 @@ function ChatBody({ id }: { id: string }) {
     if (!t || busy) return;
     setError(null);
     setBusy(true);
+
+    // No backend session exists for /platform/chat/new — the backend 404s on
+    // unknown session ids, so create one first and re-enter through the ?q=
+    // auto-send flow (same path the creatChat page uses).
+    if (id === "new") {
+      try {
+        const res = await createSession({});
+        const sid = res.data?.id;
+        if (!sid) throw new Error("Failed to create session");
+        router.replace(`/platform/chat/${sid}?q=${encodeURIComponent(t)}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to create session");
+        setBusy(false);
+      }
+      return;
+    }
+
     const asstId = `a${Date.now()}`;
 
     // Web images upload as temporary documents (VLM reads them in background);

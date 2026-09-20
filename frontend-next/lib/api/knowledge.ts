@@ -341,10 +341,6 @@ export function generateKnowledgeBaseProfile(id: string) {
   return apiPost(`/api/v1/knowledge-bases/${id}/profile/generate`, {});
 }
 
-export function rebuildKBIndex(kbId: string) {
-  return apiPost(`/api/v1/knowledge-bases/${kbId}/rebuild-index`, {});
-}
-
 export function deleteKnowledgeBase(id: string) {
   return apiDel(`/api/v1/knowledge-bases/${id}`);
 }

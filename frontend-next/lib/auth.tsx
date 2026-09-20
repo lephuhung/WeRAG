@@ -90,6 +90,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         setTenant(res.data.tenant ?? null);
         setMemberships(res.data.memberships ?? []);
+        /* Seed the X-Tenant-ID override from the session tenant when nothing
+         * is stored. Without this, weknora_selected_tenant_id stays empty
+         * after login and the header is never sent — every request silently
+         * scopes to the JWT tenant even after the user "switches". Matches
+         * Vue's effective-tenant fallback (selectedTenantId || tenant.id). */
+        const sessionTenantId = res.data.tenant?.id;
+        if (sessionTenantId != null) {
+          try {
+            if (!localStorage.getItem(TENANT_KEY)) {
+              const sid = String(sessionTenantId);
+              localStorage.setItem(TENANT_KEY, sid);
+              setSelectedTenantId(sid);
+            }
+          } catch {
+            /* private mode */
+          }
+        }
         /* The account's saved UI language wins over this browser's
          * localStorage; persist=false so applying it doesn't echo a
          * preferences write back to the server. */
@@ -150,6 +167,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setTenant(null);
     setMemberships([]);
+    setSelectedTenantId(null);
+    try {
+      localStorage.removeItem(TENANT_KEY);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const setSelectedTenant = useCallback((id: string | null) => {
