@@ -12,6 +12,7 @@ import { WikiBrowser } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
+import { UploadModal } from "@/components/knowledge/upload-modal";
 import { IconChat, IconDoc, IconPlus, IconSearch, IconSettings } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 
@@ -52,7 +53,17 @@ export function KbDetail({ kbId }: { kbId: string }) {
   const [q, setQ] = useState("");
   const [wikiQ, setWikiQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [error, setError] = useState("");
+
+  const reloadDocs = () => {
+    listKnowledgeFiles(kbId, { page: 1, page_size: 100 })
+      .then((res) => {
+        const data = res.data;
+        setDocs(Array.isArray(data) ? data : (data?.items ?? []));
+      })
+      .catch(() => setDocs([]));
+  };
 
   useEffect(() => {
     let alive = true;
@@ -101,7 +112,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
             <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
               <IconSettings className="h-4 w-4" /> Settings
             </button>
-            <button className="btn btn-outline">
+            <button className="btn btn-outline" onClick={() => setUploadOpen(true)}>
               <IconPlus className="h-4 w-4" /> Upload files
             </button>
             <Link
@@ -201,7 +212,10 @@ export function KbDetail({ kbId }: { kbId: string }) {
             })}
 
             {/* upload card */}
-            <button className="flex min-h-[104px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink">
+            <button
+              onClick={() => setUploadOpen(true)}
+              className="flex min-h-[104px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
+            >
               <span className="flex items-center gap-2 text-[14px] font-medium">
                 <IconPlus className="h-4 w-4" /> Upload
               </span>
@@ -266,6 +280,12 @@ export function KbDetail({ kbId }: { kbId: string }) {
         onSaved={() => {
           getKnowledgeBase(kbId).then((row) => setKb(row ?? null)).catch(() => {});
         }}
+      />
+      <UploadModal
+        kbId={kbId}
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => reloadDocs()}
       />
     </div>
   );

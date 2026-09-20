@@ -21,6 +21,7 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
 const LOCALES: { id: Locale; label: string }[] = [
   { id: "en", label: "EN" },
   { id: "vi", label: "VI" },
+  { id: "zh", label: "ZH" },
 ];
 
 export function Header() {

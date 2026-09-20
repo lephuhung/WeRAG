@@ -78,3 +78,12 @@ export function listAuditLog(
   const tail = auditLogQueryString(params);
   return apiGet(`/api/v1/tenants/${tenantId}/audit-log${tail ? `?${tail}` : ""}`);
 }
+
+/* Platform-wide system audit log (SystemAdmin only).
+ * Backend: GET /api/v1/system/admin/audit-log */
+export function listSystemAuditLog(
+  params: ListAuditLogParams = {},
+): Promise<ListAuditLogResponse> {
+  const tail = auditLogQueryString(params);
+  return apiGet(`/api/v1/system/admin/audit-log${tail ? `?${tail}` : ""}`);
+}

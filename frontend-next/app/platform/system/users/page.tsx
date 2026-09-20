@@ -215,135 +215,164 @@ export default function SystemUsers() {
       </div>
 
       <div className="card overflow-x-auto">
-        <div className="caption-uppercase flex min-w-[1180px] items-center gap-4 border-b border-hairline px-5 py-3 text-muted-soft">
-          <span className="flex-1">User</span>
-          <span className="w-56">Workspaces</span>
-          <span className="w-56">Organizations</span>
-          <span className="w-24">Status</span>
-          <span className="w-32">Created</span>
-          <span className="w-56 text-right">{t("users.actions")}</span>
-        </div>
-        {users.map((u, i) => (
-          <div
-            key={u.id}
-            className={`flex min-w-[1180px] items-center gap-4 px-5 py-3.5 ${i > 0 ? "border-t border-hairline" : ""}`}
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-medium text-ink">
-                {initials(u.username)}
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-[14px] font-medium text-ink">
-                  {u.username}
-                  {u.is_system_admin ? (
-                    <span className="badge-pill ml-2 bg-surface-dark text-on-dark">
-                      {t("users.superadmin")}
-                    </span>
+        <table className="w-full min-w-[1180px] border-collapse text-left">
+          <thead>
+            <tr className="caption-uppercase border-b border-hairline text-muted-soft">
+              <th className="px-5 py-3 font-medium">User</th>
+              <th className="w-64 px-5 py-3 font-medium">Workspaces</th>
+              <th className="w-72 px-5 py-3 font-medium">Organizations</th>
+              <th className="w-28 px-5 py-3 font-medium">Status</th>
+              <th className="w-32 px-5 py-3 font-medium">Created</th>
+              <th className="w-48 px-5 py-3 font-medium text-right">{t("users.actions")}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-hairline">
+            {users.map((u) => (
+              <tr key={u.id} className="transition-colors hover:bg-surface-strong/20">
+                <td className="px-5 py-3.5 align-middle">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-medium text-ink">
+                      {initials(u.username)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+                        <span className="truncate">{u.username}</span>
+                        {u.is_system_admin ? (
+                          <span className="badge-pill shrink-0 bg-surface-dark text-on-dark">
+                            {t("users.superadmin")}
+                          </span>
+                        ) : (
+                          <span className="badge-pill shrink-0">User</span>
+                        )}
+                        {u.id === meId && (
+                          <span className="caption shrink-0 text-muted-soft">(you)</span>
+                        )}
+                      </div>
+                      <div className="caption truncate text-muted">{u.email}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-5 py-3.5 align-middle">
+                  {u.memberships && u.memberships.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      {u.memberships.map((m) => (
+                        <div
+                          key={m.tenant_id}
+                          className="flex items-center justify-between gap-2"
+                        >
+                          <span
+                            className="caption max-w-[150px] truncate text-body"
+                            title={m.tenant_name}
+                          >
+                            {m.tenant_name}
+                          </span>
+                          <select
+                            className="input h-6 w-auto shrink-0 px-1.5 py-0 text-[12px]"
+                            value={m.role}
+                            disabled={busy}
+                            onChange={(e) =>
+                              changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
+                            }
+                          >
+                            {WORKSPACE_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <span className="badge-pill ml-2">User</span>
+                    <span className="caption text-muted-soft">—</span>
                   )}
-                  {u.id === meId && (
-                    <span className="caption ml-2 text-muted-soft">(you)</span>
+                </td>
+                <td className="px-5 py-3.5 align-middle">
+                  {u.org_memberships && u.org_memberships.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      {u.org_memberships.map((o) => (
+                        <div
+                          key={`${o.org_id}-${o.tenant_id}`}
+                          className="flex items-center justify-between gap-2"
+                          title={`${o.org_name} (${o.tenant_name})`}
+                        >
+                          <span className="caption max-w-[180px] truncate text-body">
+                            {o.org_name}
+                            <span className="text-muted-soft"> ({o.tenant_name})</span>
+                          </span>
+                          <select
+                            className="input h-6 w-auto shrink-0 px-1.5 py-0 text-[12px]"
+                            value={o.role}
+                            disabled={busy}
+                            onChange={(e) =>
+                              changeOrgRole(o.org_id, o.tenant_id, e.target.value as OrgMemberRole)
+                            }
+                          >
+                            {ORG_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="caption text-muted-soft">—</span>
                   )}
-                </div>
-                <div className="caption truncate text-muted">{u.email}</div>
-              </div>
-            </div>
-            <span className="caption w-56 text-muted">
-              {u.memberships && u.memberships.length > 0
-                ? u.memberships.map((m) => (
-                    <span key={m.tenant_id} className="mr-2 inline-flex items-center gap-1">
-                      <span className="truncate">{m.tenant_name}</span>
-                      <select
-                        className="input h-6 w-auto px-1 py-0 text-[12px]"
-                        value={m.role}
+                </td>
+                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                  <span className="caption text-muted">
+                    {u.is_active ? "Active" : "Disabled"}
+                  </span>
+                </td>
+                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                  <span className="caption text-muted">
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                  </span>
+                </td>
+                <td className="px-5 py-3.5 align-middle text-right whitespace-nowrap">
+                  <div className="flex flex-col items-end gap-1.5">
+                    {!(u.is_system_admin && u.id === meId) && (
+                      <button
+                        className={`btn btn-outline btn-sm ${u.is_system_admin ? "text-error" : ""}`}
+                        onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
                         disabled={busy}
-                        onChange={(e) =>
-                          changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
+                        title={
+                          u.is_system_admin
+                            ? "Revoke global system-admin rights"
+                            : "Grant global system-admin rights"
                         }
                       >
-                        {WORKSPACE_ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  ))
-                : "—"}
-            </span>
-            <span className="caption w-56 text-muted">
-              {u.org_memberships && u.org_memberships.length > 0
-                ? u.org_memberships.map((o) => (
-                    <span
-                      key={`${o.org_id}-${o.tenant_id}`}
-                      className="mr-2 inline-flex items-center gap-1"
-                      title={`via ${o.tenant_name}`}
-                    >
-                      <span className="truncate">
-                        {o.org_name}
-                        <span className="text-muted-soft"> ({o.tenant_name})</span>
-                      </span>
-                      <select
-                        className="input h-6 w-auto px-1 py-0 text-[12px]"
-                        value={o.role}
-                        disabled={busy}
-                        onChange={(e) =>
-                          changeOrgRole(o.org_id, o.tenant_id, e.target.value as OrgMemberRole)
-                        }
+                        {u.is_system_admin ? "Revoke superadmin" : "Make superadmin"}
+                      </button>
+                    )}
+                    {!u.is_system_admin && (
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => {
+                          setNewPassword("");
+                          setResetting(u);
+                        }}
+                        disabled={u.id === meId}
+                        title={u.id === meId ? "Use Settings → Security for your own password" : ""}
                       >
-                        {ORG_ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  ))
-                : "—"}
-            </span>
-            <span className="caption w-24 text-muted">
-              {u.is_active ? "Active" : "Disabled"}
-            </span>
-            <span className="caption w-32 text-muted">
-              {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
-            </span>
-            <span className="flex w-36 flex-col items-end gap-1.5">
-              {!(u.is_system_admin && u.id === meId) && (
-                <button
-                  className={`btn btn-outline btn-sm ${u.is_system_admin ? "text-error" : ""}`}
-                  onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
-                  disabled={busy}
-                  title={
-                    u.is_system_admin
-                      ? "Revoke global system-admin rights"
-                      : "Grant global system-admin rights"
-                  }
-                >
-                  {u.is_system_admin ? "Revoke superadmin" : "Make superadmin"}
-                </button>
-              )}
-              {!u.is_system_admin && (
-                <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() => {
-                    setNewPassword("");
-                    setResetting(u);
-                  }}
-                  disabled={u.id === meId}
-                  title={u.id === meId ? "Use Settings → Security for your own password" : ""}
-                >
-                  Reset password
-                </button>
-              )}
-            </span>
-          </div>
-        ))}
-        {users.length === 0 && (
-          <div className="px-5 py-12 text-center text-[14px] text-muted">
-            No users match this filter.
-          </div>
-        )}
+                        Reset password
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
+                  No users match this filter.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* add admin / create user */}

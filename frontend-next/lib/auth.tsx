@@ -95,10 +95,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
          * after login and the header is never sent — every request silently
          * scopes to the JWT tenant even after the user "switches". Matches
          * Vue's effective-tenant fallback (selectedTenantId || tenant.id). */
-        const sessionTenantId = res.data.tenant?.id;
-        if (sessionTenantId != null) {
+        const sessionTenantId = res.data.tenant?.id ?? res.data.user?.tenant_id;
+        if (sessionTenantId != null && Number(sessionTenantId) > 0) {
           try {
-            if (!localStorage.getItem(TENANT_KEY)) {
+            const current = localStorage.getItem(TENANT_KEY);
+            if (!current || current === "undefined" || current === "null") {
               const sid = String(sessionTenantId);
               localStorage.setItem(TENANT_KEY, sid);
               setSelectedTenantId(sid);
@@ -136,11 +137,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         message?: string;
         token?: string;
         refresh_token?: string;
+        active_tenant?: { id?: number | string };
+        tenant?: { id?: number | string };
+        user?: { tenant_id?: number | string };
       };
       if (!res.ok || !data.success || !data.token) {
         return data.message ?? "Sign in failed";
       }
       setTokens(data.token, data.refresh_token ?? "");
+      const tenantId =
+        data.active_tenant?.id ?? data.tenant?.id ?? data.user?.tenant_id;
+      if (tenantId && Number(tenantId) > 0) {
+        localStorage.setItem(TENANT_KEY, String(tenantId));
+        setSelectedTenantId(String(tenantId));
+      }
       await refreshMe();
       return null;
     },

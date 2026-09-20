@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { listSessions, type SessionRow } from "@/lib/api/chat";
 import { getCurrentUser } from "@/lib/api/auth";
 import { useT } from "@/lib/i18n";
+import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import {
   IconAgent,
   IconArtifact,
@@ -26,7 +27,8 @@ const NAV = [
   { href: "/platform/organizations", labelKey: "nav.organizations", icon: IconOrg, match: ["/platform/organizations"] },
 ] as const;
 
-function isActive(pathname: string, match: readonly string[]) {
+function isActive(pathname: string | null, match: readonly string[]) {
+  if (!pathname) return false;
   return match.some((m) => pathname === m || pathname.startsWith(m + "/"));
 }
 
@@ -46,6 +48,7 @@ function bucketOf(row: SessionRow): string {
 export function Sidebar() {
   const pathname = usePathname();
   const { t } = useT();
+  const palette = useCommandPalette();
   const [live, setLive] = useState<SessionRow[] | null>(null);
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
 
@@ -75,6 +78,25 @@ export function Sidebar() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    const handleTitleUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<{ sessionId?: string; id?: string; title: string }>;
+      const targetId = customEvent.detail?.sessionId || customEvent.detail?.id;
+      if (!targetId || !customEvent.detail?.title) return;
+      setLive((prev) =>
+        prev
+          ? prev.map((item) =>
+              item.id === targetId ? { ...item, title: customEvent.detail.title } : item
+            )
+          : prev
+      );
+    };
+    window.addEventListener("weknora:session-title-updated", handleTitleUpdated);
+    return () => {
+      window.removeEventListener("weknora:session-title-updated", handleTitleUpdated);
+    };
+  }, []);
+
   const groups: Array<{ bucket: string; items: Array<{ id: string; title: string }> }> =
     (() => {
       const buckets: Record<string, Array<{ id: string; title: string }>> = {};
@@ -99,7 +121,10 @@ export function Sidebar() {
       </div>
 
       <div className="px-4 pb-3">
-        <button className="card flex w-full items-center gap-2 px-3 py-2 text-[14px] text-muted-soft">
+        <button
+          onClick={() => palette.open()}
+          className="card flex w-full items-center gap-2 px-3 py-2 text-[14px] text-muted-soft transition-colors hover:border-ink hover:text-ink"
+        >
           <IconSearch className="h-4 w-4" />
           <span className="flex-1 text-left">{t("nav.search")}</span>
           <kbd className="caption rounded border border-hairline px-1.5 py-0.5 text-[11px] text-muted">
@@ -145,7 +170,7 @@ export function Sidebar() {
         {isSystemAdmin && (
           <Link
             href="/platform/system"
-            className={`nav-item ${pathname.startsWith("/platform/system") ? "active" : ""}`}
+            className={`nav-item ${pathname?.startsWith("/platform/system") ? "active" : ""}`}
           >
             <IconPulse className="h-[18px] w-[18px]" />
             {t("nav.system")}
@@ -156,7 +181,7 @@ export function Sidebar() {
         )}
         <Link
           href="/platform/settings"
-          className={`nav-item ${pathname.startsWith("/platform/settings") ? "active" : ""}`}
+          className={`nav-item ${pathname?.startsWith("/platform/settings") ? "active" : ""}`}
         >
           <IconSettings className="h-[18px] w-[18px]" />
           {t("nav.settings")}

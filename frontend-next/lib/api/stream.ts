@@ -21,7 +21,14 @@ export type StreamChunk = {
   type?: string;
   content?: string;
   done?: boolean;
-  data?: { title?: string; session_id?: string; query?: string; request_id?: string };
+  data?: {
+    title?: string;
+    session_id?: string;
+    query?: string;
+    request_id?: string;
+    thought?: string;
+    [key: string]: unknown;
+  };
   session_id?: string;
   assistant_message_id?: string;
   knowledge_references?: Array<{
@@ -29,6 +36,16 @@ export type StreamChunk = {
     knowledge_id?: string;
     chunk_id?: string;
   }>;
+  // Reasoning and Tool properties
+  tool_name?: string;
+  tool_call_id?: string;
+  tool_data?: Record<string, unknown>;
+  tool_input?: unknown;
+  tool_output?: unknown;
+  reasoning_content?: string;
+  thought?: string;
+  pending?: boolean;
+  success?: boolean;
 };
 
 export type MentionedItem = {
@@ -78,10 +95,20 @@ export type EmbedStreamParams = StreamParams & {
 
 function readTokens(): { token: string | null; refreshToken: string | null; tenantId: string | null } {
   try {
+    const rawTid = localStorage.getItem("weknora_selected_tenant_id");
+    const validTid =
+      rawTid &&
+      rawTid.trim() !== "" &&
+      rawTid !== "undefined" &&
+      rawTid !== "null" &&
+      !Number.isNaN(Number(rawTid)) &&
+      Number(rawTid) > 0
+        ? rawTid.trim()
+        : null;
     return {
       token: localStorage.getItem("weknora_token"),
       refreshToken: localStorage.getItem("weknora_refresh_token"),
-      tenantId: localStorage.getItem("weknora_selected_tenant_id"),
+      tenantId: validTid,
     };
   } catch {
     return { token: null, refreshToken: null, tenantId: null };

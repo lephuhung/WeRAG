@@ -52,11 +52,25 @@ export function clearTokens() {
   }
 }
 
+function isValidTenantId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  const trimmed = id.trim();
+  if (!trimmed || trimmed === "undefined" || trimmed === "null") return false;
+  const n = Number(trimmed);
+  return !Number.isNaN(n) && n > 0;
+}
+
 function selectedTenantHeader(skip: boolean): Record<string, string> {
   if (skip) return {};
   try {
     const id = localStorage.getItem(TENANT_KEY);
-    return id ? { "X-Tenant-ID": id } : {};
+    if (!isValidTenantId(id)) {
+      if (id === "undefined" || id === "null") {
+        localStorage.removeItem(TENANT_KEY);
+      }
+      return {};
+    }
+    return { "X-Tenant-ID": id!.trim() };
   } catch {
     return {};
   }

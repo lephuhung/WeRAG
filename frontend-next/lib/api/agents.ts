@@ -148,6 +148,9 @@ export interface CustomAgent {
   updated_at?: string;
 }
 
+export type AgentRow = CustomAgent;
+
+
 export interface CreateAgentRequest {
   name: string;
   description?: string;

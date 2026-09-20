@@ -22,7 +22,7 @@ export function SystemTabs() {
           key={tab.href}
           href={tab.href}
           className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-            pathname.startsWith(tab.href)
+            Boolean(pathname?.startsWith(tab.href))
               ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
               : "text-muted hover:text-ink"
           }`}

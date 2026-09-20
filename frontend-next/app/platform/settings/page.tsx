@@ -22,6 +22,12 @@ import { GeneralSettings } from "@/components/settings/general-settings";
 import { McpServicesPanel } from "@/components/settings/mcp-services";
 import { TenantInfo } from "@/components/settings/tenant-info";
 import { ApiKeysSection } from "@/components/settings/api-keys";
+import { ModelsSettings } from "@/components/settings/models-settings";
+import { OllamaSettings } from "@/components/settings/ollama-settings";
+import { WebSearchSettings } from "@/components/settings/web-search-settings";
+import { StorageSettings } from "@/components/settings/storage-settings";
+import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
+import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
 
 export default function SettingsPage() {
   return (
@@ -89,10 +95,24 @@ function SettingsBody() {
             <div className="card p-8">
               {active === "general" ? (
                 <GeneralSettings />
+              ) : active === "envvars" ? (
+                <EnvVarsSettings />
               ) : active === "tenant" ? (
                 <TenantInfo />
               ) : active === "api-keys" ? (
                 <ApiKeysSection />
+              ) : active === "models" ? (
+                <ModelsSettings />
+              ) : active === "ollama" ? (
+                <OllamaSettings />
+              ) : active === "websearch" ? (
+                <WebSearchSettings />
+              ) : active === "storage" ? (
+                <StorageSettings />
+              ) : active === "vectorstore" ? (
+                <VectorStoreSettings />
+              ) : active === "mcp" ? (
+                <McpSection />
               ) : (
                 <SectionStub section={active} />
               )}

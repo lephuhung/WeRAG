@@ -122,6 +122,7 @@ export type KnowledgeBaseRow = {
    * compiling while migrating to the real name. */
   knowledge_count?: number;
   document_count?: number;
+  doc_count?: number;
   chunk_count?: number;
   updated_at?: string;
   created_at?: string;
@@ -589,6 +590,33 @@ export function downloadKnowledge(id: string): Promise<Blob> {
   return apiDownload(`/api/v1/knowledge/${id}/download`);
 }
 
+export function previewKnowledgeFile(id: string): Promise<Blob> {
+  return apiDownload(`/api/v1/knowledge/${id}/preview`);
+}
+
+export interface KnowledgeSemanticSearchResult {
+  id?: string;
+  chunk_id?: string;
+  chunk_index: number;
+  knowledge_id: string;
+  knowledge_base_id: string;
+  knowledge_title?: string;
+  knowledge_filename?: string;
+  kb_name?: string;
+  content: string;
+  matched_content?: string;
+  match_type?: "vector" | "keyword" | string;
+  score: number;
+}
+
+export function knowledgeSemanticSearch(data: {
+  query: string;
+  knowledge_base_ids?: string[];
+  knowledge_ids?: string[];
+}): Promise<{ success: boolean; data?: KnowledgeSemanticSearchResult[] }> {
+  return apiPost("/api/v1/knowledge-search", data);
+}
+
 /* ZIP download reusing the login + tenant headers — never put credentials
  * in the download URL. POST + body per the backend route; 5-minute budget
  * for large batches. */
@@ -602,10 +630,6 @@ export function batchDownloadKnowledge(
     { ids },
     { timeoutMs: 300_000, signal },
   );
-}
-
-export function previewKnowledgeFile(id: string): Promise<Blob> {
-  return apiDownload(`/api/v1/knowledge/${id}/preview`);
 }
 
 /** @param idsQueryString - query string with ids (e.g. ids=xxx&ids=yyy) */
@@ -868,14 +892,6 @@ export function searchKnowledge(
     query.set("agent_source_tenant_id", options.agent_source_tenant_id);
   if (options?.recent) query.set("recent", "true");
   return apiGet(`/api/v1/knowledge/search?${query.toString()}`);
-}
-
-export function knowledgeSemanticSearch(data: {
-  query: string;
-  knowledge_base_ids?: string[];
-  knowledge_ids?: string[];
-}) {
-  return apiPost("/api/v1/knowledge-search", data);
 }
 
 export function batchReparseKnowledge(

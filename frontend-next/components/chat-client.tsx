@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
+import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
@@ -11,15 +12,40 @@ import { useAttachments } from "@/components/use-attachments";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
 import { IconDoc } from "@/components/icons";
+import { ThinkingDisplay } from "@/components/chat/thinking-display";
+import { ToolResultCard, type ToolEventItem } from "@/components/chat/tool-result-card";
 
 type UiMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  thinking?: string;
+  toolEvents?: ToolEventItem[];
   streaming?: boolean;
+  isError?: boolean;
   assistantMessageId?: string;
   references?: Array<{ knowledge_title?: string; knowledge_id?: string; chunk_id?: string }>;
 };
+
+function parseThinkAndContent(
+  accText: string,
+  explicitThinking = "",
+): { thinking?: string; content: string } {
+  const thinkCloseTag = "</think>";
+  if (accText.includes("<think>") && accText.includes(thinkCloseTag)) {
+    const index = accText.lastIndexOf(thinkCloseTag);
+    const inTag = accText.substring(0, index).replace("<think>", "").trim();
+    const rest = accText.substring(index + thinkCloseTag.length).trim();
+    const combinedThinking = [explicitThinking, inTag].filter(Boolean).join("\n").trim();
+    return { thinking: combinedThinking || undefined, content: rest };
+  }
+  if (accText.includes("<think>")) {
+    const inTag = accText.replace("<think>", "").trim();
+    const combinedThinking = [explicitThinking, inTag].filter(Boolean).join("\n").trim();
+    return { thinking: combinedThinking || undefined, content: "" };
+  }
+  return { thinking: explicitThinking || undefined, content: accText };
+}
 
 function fileToDataUri(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -39,6 +65,8 @@ function ChatBody({ id }: { id: string }) {
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
 
+  const [session, setSession] = useState<SessionRow | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
@@ -60,25 +88,51 @@ function ChatBody({ id }: { id: string }) {
   const accRef = useRef("");
   const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
 
-  // History: GET /api/v1/messages/:sessionId/load?limit=30 — same shape as Vue getMessageList.
-  // History: GET /api/v1/messages/:sessionId/load?limit=30 — same shape as Vue
-  // getMessageList. The trailing assistant message carrying is_completed=false
-  // is an in-flight turn: re-attach via continue-stream (GET
-  // /sessions/continue-stream) instead of rendering it as a frozen bubble.
+  // History and session details:
+  // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
+  // and hydrate input state (agent, model, KBs) from last_request_state.
   useEffect(() => {
-    if (id === "new") return;
+    if (id === "new") {
+      setSession(null);
+      setSessionTitle(null);
+      return;
+    }
     let alive = true;
+
+    getSession(id)
+      .then((res) => {
+        if (!alive || !res.data) return;
+        setSession(res.data);
+        if (res.data.title) {
+          setSessionTitle(res.data.title);
+        }
+        if (res.data.last_request_state) {
+          ctx.hydrateSessionState(res.data.last_request_state);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load session details:", err);
+      });
+
     listMessages(id, 30)
       .then((res) => {
         if (!alive) return;
         const rows = res.data ?? [];
         setMessages(
-          rows.map((m, i) => ({
-            id: m.id ?? `h${i}`,
-            role: m.role === "user" ? "user" : "assistant",
-            content: m.content ?? "",
-            assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
-          })),
+          rows.map((m, i) => {
+            const rawContent = m.content ?? "";
+            const parsed =
+              m.role === "assistant"
+                ? parseThinkAndContent(rawContent)
+                : { thinking: undefined, content: rawContent };
+            return {
+              id: m.id ?? `h${i}`,
+              role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+              content: parsed.content,
+              thinking: parsed.thinking,
+              assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
+            };
+          }),
         );
         const last = rows[rows.length - 1];
         if (alive && last && last.role !== "user" && last.is_completed === false && last.id) {
@@ -86,19 +140,35 @@ function ChatBody({ id }: { id: string }) {
           const inflightId = last.id;
           const applyChunk = (c: StreamChunk) => {
             const kind = c.response_type ?? c.type;
-            if (kind === "session_title" || kind === "agent_query") return;
+            if (kind === "session_title") {
+              const newTitle = c.content || c.data?.title;
+              if (newTitle) {
+                setSessionTitle(newTitle);
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(
+                    new CustomEvent("weknora:session-title-updated", {
+                      detail: { sessionId: id, title: newTitle },
+                    }),
+                  );
+                }
+              }
+              return;
+            }
+            if (kind === "agent_query") return;
             if (kind === "references" && c.knowledge_references?.length) {
               const refs = c.knowledge_references;
               srcSetRef.current = refs;
               return;
             }
             accRef.current += c.content ?? "";
+            const parsed = parseThinkAndContent(accRef.current);
             setMessages((m) =>
               m.map((msg) =>
                 msg.assistantMessageId === inflightId
                   ? {
                       ...msg,
-                      content: accRef.current,
+                      content: parsed.content,
+                      thinking: parsed.thinking ?? msg.thinking,
                       references: srcSetRef.current ?? msg.references,
                     }
                   : msg,
@@ -113,6 +183,7 @@ function ChatBody({ id }: { id: string }) {
             })
             .finally(() => {
               if (!alive) return;
+              setBusy(false);
               setMessages((m) =>
                 m.map((msg) =>
                   msg.assistantMessageId === inflightId ? { ...msg, streaming: false } : msg,
@@ -174,7 +245,6 @@ function ChatBody({ id }: { id: string }) {
     const imageAttachmentIds: string[] = [];
     for (const file of s.imageFiles) {
       try {
-        const { uploadTemporaryAttachment } = await import("@/lib/api/attachments");
         const up = await uploadTemporaryAttachment(
           id,
           file,
@@ -191,7 +261,6 @@ function ChatBody({ id }: { id: string }) {
     const localOnes = s.attachments.filter((a) => !a.documentId);
     if (localOnes.length > 0) {
       try {
-        const { uploadTemporaryAttachment } = await import("@/lib/api/attachments");
         await Promise.all(
           localOnes.map(async (a) => {
             const up = await uploadTemporaryAttachment(
@@ -217,11 +286,29 @@ function ChatBody({ id }: { id: string }) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let acc = "";
-    // Mirror useChatStreamHandler.processStreamChunk (normal RAG path):
-    // only response_type=answer appends to content; references attach to the message.
+    let thinkingAcc = "";
+    let toolEventsList: ToolEventItem[] = [];
+
+    // Mirror useChatStreamHandler.processStreamChunk:
+    // handle thinking, tool execution, answer content and references.
     const applyChunk = (c: StreamChunk) => {
       const kind = c.response_type ?? c.type;
-      if (kind === "session_title" || kind === "agent_query") {
+      if (kind === "session_title") {
+        const newTitle = c.content || c.data?.title;
+        if (newTitle) {
+          setSessionTitle(newTitle);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("weknora:session-title-updated", {
+                detail: { sessionId: id, title: newTitle },
+              }),
+            );
+          }
+        }
+        if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
+        return;
+      }
+      if (kind === "agent_query") {
         if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
         return;
       }
@@ -231,13 +318,102 @@ function ChatBody({ id }: { id: string }) {
         return;
       }
       if (kind === "error") {
-        setError(c.content || "Stream failed");
+        const msg = c.content || "Stream failed";
+        setError(msg);
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === asstId
+              ? {
+                  ...msg,
+                  content: msg.content || `⚠️ ${msg}`,
+                  isError: true,
+                  streaming: false,
+                }
+              : msg,
+          ),
+        );
         return;
       }
       if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
+
+      // 1. Thinking / Reasoning chunks
+      const thoughtText = c.reasoning_content ?? c.thought ?? (c.data?.thought as string | undefined);
+      if (kind === "thinking" || thoughtText) {
+        thinkingAcc += thoughtText ?? c.content ?? "";
+        const snapThinking = thinkingAcc;
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === asstId
+              ? { ...msg, thinking: snapThinking, assistantMessageId: c.assistant_message_id ?? msg.assistantMessageId }
+              : msg,
+          ),
+        );
+        return;
+      }
+
+      // 2. Tool call events
+      if (kind === "tool_call") {
+        const callId = c.tool_call_id || c.id || `tool-${Date.now()}-${Math.random()}`;
+        const existingIdx = toolEventsList.findIndex((t) => t.id === callId);
+        const item: ToolEventItem = {
+          id: callId,
+          tool_name: c.tool_name,
+          title: (c.data?.title as string) || c.tool_name,
+          input: c.tool_data ?? c.tool_input,
+          status: "pending",
+        };
+        if (existingIdx >= 0) {
+          toolEventsList[existingIdx] = { ...toolEventsList[existingIdx], ...item };
+        } else {
+          toolEventsList.push(item);
+        }
+        const snapTools = [...toolEventsList];
+        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, toolEvents: snapTools } : msg)));
+        return;
+      }
+
+      // 3. Tool result events
+      if (kind === "tool_result") {
+        const callId = c.tool_call_id || c.id;
+        const existingIdx = toolEventsList.findIndex((t) => (callId ? t.id === callId : t.tool_name === c.tool_name));
+        const status = c.success === false ? "error" : "success";
+        const output = c.tool_output ?? c.content;
+        if (existingIdx >= 0) {
+          toolEventsList[existingIdx] = {
+            ...toolEventsList[existingIdx],
+            status,
+            output,
+            error: c.success === false ? (c.content || "Tool error") : undefined,
+          };
+        } else {
+          toolEventsList.push({
+            id: callId || `tool-${Date.now()}`,
+            tool_name: c.tool_name,
+            status,
+            output,
+            error: c.success === false ? (c.content || "Tool error") : undefined,
+          });
+        }
+        const snapTools = [...toolEventsList];
+        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, toolEvents: snapTools } : msg)));
+        return;
+      }
+
+      // 4. Regular answer content
       acc += c.content ?? "";
-      const snapshot = acc;
-      setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, content: snapshot, assistantMessageId: c.assistant_message_id ?? msg.assistantMessageId } : msg)));
+      const parsed = parseThinkAndContent(acc, thinkingAcc);
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === asstId
+            ? {
+                ...msg,
+                content: parsed.content,
+                thinking: parsed.thinking,
+                assistantMessageId: c.assistant_message_id ?? msg.assistantMessageId,
+              }
+            : msg,
+        ),
+      );
     };
 
     // Inline image payload is the embedded/base64-fallback path only.
@@ -299,7 +475,7 @@ function ChatBody({ id }: { id: string }) {
       mentionedItems: s.mentionedItems,
       webSearchEnabled: ctx.settings.webSearchEnabled,
       localBrowserEnabled: ctx.settings.localBrowserEnabled,
-      summaryModelId: canPickModel ? s.modelId || undefined : undefined,
+      summaryModelId: s.modelId || ctx.settings.selectedChatModelId || undefined,
       suggestionAttribution: attribution
         ? { suggestion_set_id: attribution.setId, question_id: attribution.questionId }
         : undefined,
@@ -310,7 +486,20 @@ function ChatBody({ id }: { id: string }) {
     })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
-        setError(e instanceof Error ? e.message : "Stream failed");
+        const msg = e instanceof Error ? e.message : "Stream failed";
+        setError(msg);
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === asstId
+              ? {
+                  ...msg,
+                  content: msg.content || `⚠️ ${msg}`,
+                  isError: true,
+                  streaming: false,
+                }
+              : msg,
+          ),
+        );
       })
       .finally(() => {
         setBusy(false);
@@ -344,7 +533,10 @@ function ChatBody({ id }: { id: string }) {
     setBusy(false);
   };
 
-  const title = id === "new" ? (initialQ ?? "New chat") : `Chat ${id.slice(0, 8)}`;
+  const title =
+    id === "new"
+      ? (initialQ ?? "New chat")
+      : (sessionTitle || session?.title?.trim() || "New chat");
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -367,10 +559,22 @@ function ChatBody({ id }: { id: string }) {
                   W
                 </div>
                 <div className="max-w-[85%] min-w-0 flex-1 pt-1.5">
+                  {m.thinking && (
+                    <ThinkingDisplay content={m.thinking} streaming={m.streaming && !m.content} />
+                  )}
+                  {m.toolEvents && m.toolEvents.length > 0 && (
+                    <div className="mb-3 space-y-1">
+                      {m.toolEvents.map((t) => (
+                        <ToolResultCard key={t.id} event={t} />
+                      ))}
+                    </div>
+                  )}
                   {m.content ? (
-                    <Markdown text={m.content} streaming={m.streaming} />
+                    <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : ""}>
+                      <Markdown text={m.content} streaming={m.streaming} />
+                    </div>
                   ) : (
-                    <p className="text-[15px] leading-relaxed text-body">{m.streaming ? "…" : ""}</p>
+                    <p className="text-[15px] leading-relaxed text-body">{m.streaming && !m.thinking ? "…" : ""}</p>
                   )}
                   {m.references && m.references.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">

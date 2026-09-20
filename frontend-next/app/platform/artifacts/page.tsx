@@ -5,13 +5,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconArtifact, IconSearch } from "@/components/icons";
+import { IconArtifact, IconExternal, IconSearch } from "@/components/icons";
 import {
   listArtifactLibrary,
   downloadArtifact,
   type ArtifactLibraryItem,
 } from "@/lib/api/chat";
 import { useT } from "@/lib/i18n";
+import { DocPreviewModal, type DocPreviewSource } from "@/components/doc-preview-modal";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -30,6 +31,7 @@ export default function Artifacts() {
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState("");
   const [error, setError] = useState("");
+  const [previewSource, setPreviewSource] = useState<DocPreviewSource | null>(null);
 
   const load = useCallback(async (nextPage: number) => {
     setError("");
@@ -63,6 +65,15 @@ export default function Artifacts() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Download failed");
     }
+  };
+
+  const openPreview = (a: ArtifactLibraryItem) => {
+    setPreviewSource({
+      title: a.file_name,
+      fileName: a.file_name,
+      sizeBytes: a.file_size,
+      fetchBlob: () => downloadArtifact(a.session_id, a.message_id, a.index),
+    });
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -125,12 +136,20 @@ export default function Artifacts() {
                     </div>
                   </div>
                   <span className="caption shrink-0 text-muted">{fmtBytes(a.file_size)}</span>
-                  <button
-                    className="btn btn-outline btn-sm shrink-0"
-                    onClick={() => void save(a)}
-                  >
-                    Download
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => openPreview(a)}
+                    >
+                      <IconExternal className="h-3.5 w-3.5" /> Preview
+                    </button>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => void save(a)}
+                    >
+                      Download
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -158,6 +177,11 @@ export default function Artifacts() {
           </>
         )}
       </div>
+
+      <DocPreviewModal
+        source={previewSource}
+        onClose={() => setPreviewSource(null)}
+      />
     </div>
   );
 }

@@ -119,7 +119,7 @@ function tenantRequestHeaders(): Record<string, string> {
     const selectedTenantId = (
       localStorage.getItem("weknora_selected_tenant_id") || ""
     ).trim();
-    if (selectedTenantId) {
+    if (selectedTenantId && /^\d+$/.test(selectedTenantId)) {
       // Always attach when a selected tenant is set. Same rationale as
       // api-client.ts / stream.ts: the
       // "selectedTenantId === defaultTenantId → skip" short-circuit silently

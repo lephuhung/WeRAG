@@ -41,9 +41,21 @@ export function renderChatMarkdown(raw: string): string {
   const withoutThink = raw.includes("<think>")
     ? raw.replace(/<think>[\s\S]*?(<\/think>|$)/, "").trim()
     : raw;
-  const html = marked.parse(withoutThink, { renderer, breaks: true, async: false }) as string;
+
+  // Pre-process wiki links [[slug|name]] to custom HTML tags (matches Vue renderMarkdown)
+  const withWikiLinks = withoutThink.replace(/\[\[([^\]\n]+)\]\]/g, (_, inner: string) => {
+    const pipeIdx = inner.indexOf("|");
+    const slug = pipeIdx > 0 ? inner.substring(0, pipeIdx).trim() : inner.trim();
+    const display =
+      pipeIdx > 0
+        ? inner.substring(pipeIdx + 1).trim()
+        : (slug.split("/").length > 1 ? slug.split("/").slice(1).join("/") : slug);
+    return `<a href="#" class="wiki-content-link" data-slug="${escapeHtml(slug)}">${escapeHtml(display)}</a>`;
+  });
+
+  const html = marked.parse(withWikiLinks, { renderer, breaks: true, async: false }) as string;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["pre", "code", "span", "table", "thead", "tbody", "tr", "th", "td"],
-    ADD_ATTR: ["class", "colspan", "rowspan"],
+    ADD_ATTR: ["class", "colspan", "rowspan", "data-slug"],
   });
 }

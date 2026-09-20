@@ -42,6 +42,20 @@ function LoginForm() {
       }
       localStorage.setItem("weknora_token", token);
       if (refreshToken) localStorage.setItem("weknora_refresh_token", refreshToken);
+      const rawPayload = data as {
+        active_tenant?: { id?: number | string };
+        tenant?: { id?: number | string };
+        user?: { tenant_id?: number | string };
+      };
+      const tenantId =
+        rawPayload?.active_tenant?.id ??
+        rawPayload?.tenant?.id ??
+        rawPayload?.user?.tenant_id;
+      if (tenantId && Number(tenantId) > 0) {
+        localStorage.setItem("weknora_selected_tenant_id", String(tenantId));
+      } else {
+        localStorage.removeItem("weknora_selected_tenant_id");
+      }
       router.push(searchParams.get("next") ?? "/platform/knowledge-bases");
     } catch {
       setError("Network error — is the backend reachable?");

@@ -171,7 +171,7 @@ export function Composer({
     if (failed) return;
     onSend({
       query: value.trim(),
-      modelId: canPickModel ? settings.selectedChatModelId : "",
+      modelId: settings.selectedChatModelId || "",
       mentionedItems: mentionItems,
       imageFiles: images.map((i) => i.file),
       attachments,

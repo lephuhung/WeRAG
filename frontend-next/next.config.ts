@@ -4,7 +4,6 @@ const backend = process.env.WERAG_BACKEND_URL ?? "http://localhost:18080";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  outputFileTracingRoot: __dirname,
   async rewrites() {
     // Dev + single-origin deploy parity with Vue (vite proxy + nginx):
     // /api/* and /files/* go to the Go backend.

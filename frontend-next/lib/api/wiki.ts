@@ -190,7 +190,7 @@ export function createWikiPage(kbId: string, data: Partial<WikiPage>) {
 }
 
 export function getWikiPage(kbId: string, slug: string) {
-  return apiGet<{ success: boolean; data?: WikiPage; message?: string }>(
+  return apiGet<WikiPage | { success?: boolean; data?: WikiPage; message?: string }>(
     `/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`,
   );
 }
@@ -208,7 +208,7 @@ export interface WikiPageUpdatePayload {
   version?: number;
 }
 export function updateWikiPage(kbId: string, slug: string, data: WikiPageUpdatePayload) {
-  return apiPut<{ success: boolean; data?: WikiPage; message?: string }>(
+  return apiPut<WikiPage | { success?: boolean; data?: WikiPage; message?: string }>(
     `/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`,
     data,
   );
@@ -250,7 +250,7 @@ export function listWikiRevisions(
   if (params?.limit !== undefined) query.set("limit", String(params.limit));
   if (params?.offset !== undefined) query.set("offset", String(params.offset));
   const qs = query.toString();
-  return apiGet<{ success: boolean; data?: WikiRevisionListResponse; message?: string }>(
+  return apiGet<WikiRevisionListResponse | { success?: boolean; data?: WikiRevisionListResponse; message?: string }>(
     `/api/v1/knowledgebase/${kbId}/wiki/revisions/${encodeSlugPath(slug)}${qs ? "?" + qs : ""}`,
   );
 }
@@ -265,7 +265,10 @@ export function getWikiRevision(kbId: string, slug: string, version: number) {
  * pre-revert state is snapshotted and version advances, so a revert is
  * itself revertable. */
 export function revertWikiPage(kbId: string, slug: string, version: number) {
-  return apiPost(`/api/v1/knowledgebase/${kbId}/wiki/revert`, { slug, version });
+  return apiPost<WikiPage | { success?: boolean; data?: WikiPage; message?: string }>(
+    `/api/v1/knowledgebase/${kbId}/wiki/revert`,
+    { slug, version },
+  );
 }
 
 export interface WikiIndexEntryDTO {

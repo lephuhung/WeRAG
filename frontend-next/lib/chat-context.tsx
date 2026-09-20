@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "@/lib/api-client";
+import type { SessionLastRequestState } from "@/lib/api/chat";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -167,6 +168,7 @@ type Ctx = {
   webSearchReady: boolean;
   selectedAgent: AgentSummary | null;
   isAgentStreamMode: boolean;
+  hydrateSessionState: (state?: SessionLastRequestState | null) => void;
   refresh: () => Promise<void>;
 };
 
@@ -349,6 +351,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
+  const hydrateSessionState = useCallback(
+    (state?: SessionLastRequestState | null) => {
+      if (!state) return;
+      update({
+        ...(typeof state.agent_enabled === "boolean" ? { isAgentEnabled: state.agent_enabled } : {}),
+        ...(state.agent_id ? { selectedAgentId: state.agent_id } : {}),
+        ...(state.model_id ? { selectedChatModelId: state.model_id } : {}),
+        ...(Array.isArray(state.knowledge_base_ids) ? { selectedKnowledgeBases: [...state.knowledge_base_ids] } : {}),
+        ...(Array.isArray(state.knowledge_ids) ? { selectedFiles: [...state.knowledge_ids] } : {}),
+        ...(Array.isArray(state.mcp_service_ids) ? { selectedMCPServices: [...state.mcp_service_ids] } : {}),
+        ...(Array.isArray(state.skill_names) ? { selectedSkills: [...state.skill_names] } : {}),
+        ...(typeof state.web_search_enabled === "boolean" ? { webSearchEnabled: state.web_search_enabled } : {}),
+        ...(typeof state.local_browser_enabled === "boolean" ? { localBrowserEnabled: state.local_browser_enabled } : {}),
+      });
+    },
+    [update],
+  );
+
   const selectedAgent = useMemo<AgentSummary | null>(() => {
     // Shared agents win on id collision (builtin ids exist in every tenant).
     if (settings.selectedAgentSourceTenantId) {
@@ -447,6 +467,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       webSearchReady,
       selectedAgent,
       isAgentStreamMode,
+      hydrateSessionState,
       refresh,
     }),
     [
@@ -466,6 +487,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       toggleWebSearch,
       toggleLocalBrowser,
       setModel,
+      hydrateSessionState,
       mentionItems,
       removeMention,
       fileNames,

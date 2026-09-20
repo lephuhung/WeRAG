@@ -85,17 +85,27 @@ export function WikiBrowser({
     table.filter((i) => i.parent_slug === slug);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
       {index?.intro && (
-        <div className="mb-4 shrink-0">
+        <div
+          className="mb-6 shrink-0"
+          onClick={(e) => {
+            const target = (e.target as HTMLElement).closest(".wiki-content-link") as HTMLElement | null;
+            if (target) {
+              e.preventDefault();
+              const s = target.getAttribute("data-slug");
+              if (s) setOpenSlug(s);
+            }
+          }}
+        >
           <Markdown text={index.intro} />
         </div>
       )}
-      {error && <p className="caption text-error">{error}</p>}
-      {loading && <p className="caption text-muted">Loading wiki…</p>}
+      {error && <p className="caption mb-4 text-error">{error}</p>}
+      {loading && <p className="caption mb-4 text-muted">Loading wiki…</p>}
 
       {/* tree */}
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="flex min-h-0 flex-1 flex-col">
         {(index?.groups ?? []).map((g) => {
           /* group-level search filter */
           const items = g.items.filter(
@@ -173,23 +183,31 @@ export function WikiBrowser({
         )}
       </div>
 
-      {item && (
+      {openSlug && (
         <WikiPageView
           kbId={kbId}
-          slug={item.slug}
-          title={item.title}
+          slug={openSlug}
+          title={item?.title ?? openSlug}
           onClose={() => setOpenSlug(null)}
+          onNavigate={(nextSlug) => setOpenSlug(nextSlug)}
         />
       )}
     </div>
   );
 }
 
-export function WikiPageView({ kbId, slug, title, onClose }: {
+export function WikiPageView({
+  kbId,
+  slug,
+  title,
+  onClose,
+  onNavigate,
+}: {
   kbId: string;
   slug: string;
   title: string;
   onClose: () => void;
+  onNavigate?: (slug: string) => void;
 }) {
   const { t } = useT();
   const [page, setPage] = useState<WikiPage | null>(null);
@@ -204,15 +222,33 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
 
   useEffect(() => {
     let alive = true;
+    setLoading(true);
+    setError("");
     setPage(null);
     setRevisions(null);
     getWikiPage(kbId, slug)
       .then((res) => {
         if (!alive) return;
-        if (res.data) setPage(res.data);
-        else setError("Page not found");
+        const pageData = (res as any)?.data ?? res;
+        if (pageData && (pageData.slug || pageData.id)) {
+          setPage(pageData as WikiPage);
+        } else {
+          setError("Page not found");
+        }
       })
-      .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : "Failed to load page"));
+      .catch((e: unknown) => {
+        if (alive) {
+          setError(e instanceof Error ? e.message : "Failed to load page");
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      alive = false;
+    };
   }, [kbId, slug]);
 
   const startEdit = () => {
@@ -231,7 +267,10 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
         content: draftContent,
         version: draftVersion,
       });
-      if (res.data) setPage(res.data);
+      const pageData = (res as any)?.data ?? res;
+      if (pageData && (pageData.slug || pageData.id)) {
+        setPage(pageData as WikiPage);
+      }
       setEditing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -244,7 +283,8 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
     setShowHistory(true);
     try {
       const res = await listWikiRevisions(kbId, slug, { limit: 50 });
-      setRevisions(res.data?.revisions ?? []);
+      const revList = (res as any)?.data?.revisions ?? (res as any)?.revisions ?? [];
+      setRevisions(revList);
     } catch {
       setRevisions([]);
     }
@@ -255,7 +295,8 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
       await revertWikiPage(kbId, slug, version);
       setShowHistory(false);
       const res = await getWikiPage(kbId, slug);
-      setPage(res.data ?? null);
+      const pageData = (res as any)?.data ?? res;
+      setPage((pageData as WikiPage) ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Revert failed");
     }
@@ -307,10 +348,42 @@ export function WikiPageView({ kbId, slug, title, onClose }: {
             onChange={(e) => setDraftContent(e.target.value)}
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto pr-3">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto pr-3"
+            onClick={(e) => {
+              const target = (e.target as HTMLElement).closest(".wiki-content-link") as HTMLElement | null;
+              if (target) {
+                e.preventDefault();
+                const s = target.getAttribute("data-slug");
+                if (s && onNavigate) onNavigate(s);
+              }
+            }}
+          >
             <div className="max-w-[560px]">
               <Markdown text={page?.content ?? ""} />
             </div>
+
+            {page?.in_links && page.in_links.length > 0 && (
+              <div className="mt-8 border-t border-hairline pt-4">
+                <div className="caption font-medium text-muted">Linked from</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {page.in_links.map((link) => (
+                    <a
+                      key={link}
+                      href="#"
+                      className="wiki-content-link caption"
+                      data-slug={link}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigate?.(link);
+                      }}
+                    >
+                      {link.split("/").length > 1 ? link.split("/").slice(1).join("/") : link}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

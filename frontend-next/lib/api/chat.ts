@@ -6,6 +6,19 @@ import { apiDel, apiDownload, apiGet, apiPost, apiPut } from "@/lib/api-client";
 
 // ---- sessions ---------------------------------------------------------------
 
+export type SessionLastRequestState = {
+  agent_id?: string;
+  agent_enabled?: boolean;
+  model_id?: string;
+  knowledge_base_ids?: string[];
+  knowledge_ids?: string[];
+  tag_ids?: string[];
+  mcp_service_ids?: string[];
+  skill_names?: string[];
+  local_browser_enabled?: boolean;
+  web_search_enabled?: boolean;
+};
+
 export type SessionRow = {
   id: string;
   title?: string;
@@ -13,6 +26,7 @@ export type SessionRow = {
   created_at?: string;
   updated_at?: string;
   is_pinned?: boolean;
+  last_request_state?: SessionLastRequestState;
 };
 
 type SessionListResponse = {

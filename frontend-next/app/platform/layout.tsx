@@ -3,21 +3,27 @@ import { RequireAuth } from "@/components/require-auth";
 import { Sidebar } from "@/components/sidebar";
 import { AuthProvider } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
+import { CommandPaletteProvider } from "@/components/command-palette/command-palette-context";
+import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
     <I18nProvider>
       <AuthProvider>
         <RequireAuth>
-          <div className="flex h-screen min-h-0 w-full bg-canvas">
-            <Sidebar />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <Header />
-              <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
+          <CommandPaletteProvider>
+            <div className="flex h-screen min-h-0 w-full bg-canvas">
+              <Sidebar />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <Header />
+                <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
+              </div>
             </div>
-          </div>
+            <GlobalCommandPalette />
+          </CommandPaletteProvider>
         </RequireAuth>
       </AuthProvider>
     </I18nProvider>
   );
 }
+
