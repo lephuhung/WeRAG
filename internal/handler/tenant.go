@@ -1824,9 +1824,9 @@ func (h *TenantHandler) GetTenantMemoryConfig(c *gin.Context) {
 	}
 	data := tenant.MemoryConfig
 	if data == nil {
-		// Memory is off until an admin turns it on: the feature retains what
-		// users say across sessions, so it must not arrive enabled by default.
-		data = &types.MemoryConfig{}
+		// Unset means the product default: memory is on for the workspace.
+		// An explicit admin save — including enabled=false — wins.
+		data = types.DefaultMemoryConfig()
 	}
 	data.Normalize()
 	c.JSON(http.StatusOK, gin.H{
