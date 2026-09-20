@@ -1367,7 +1367,15 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 	key := secutils.SanitizeForLog(c.Param("key"))
 
 	switch key {
-	case "web-search-config", "parser-engine-config", "storage-engine-config":
+	case "parser-engine-config":
+		// Parser engines are provider infrastructure (endpoints, API
+		// keys, model parameters) — same authority axis as the model
+		// catalog: system admins and platform keys only.
+		if !canManageParserEngineConfig(ctx) {
+			c.Error(errors.NewForbiddenError("parser engine configuration requires system administrator access"))
+			return
+		}
+	case "web-search-config", "storage-engine-config":
 		if !dto.CanViewIntegrationSecrets(ctx) {
 			c.Error(errors.NewForbiddenError("integration configuration requires admin access"))
 			return
@@ -1398,6 +1406,18 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("unsupported key"))
 		return
 	}
+}
+
+// canManageParserEngineConfig reports whether the caller may change
+// parser/provider engine configuration (endpoints, credentials, model
+// parameters). It mirrors the model-catalog authority axis: system
+// admins on JWT, or platform API keys carrying system_models_manage.
+// Tenant roles — including Owner — never qualify.
+func canManageParserEngineConfig(ctx context.Context) bool {
+	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
+		return scope.IsPlatform() && scope.HasCapability(types.APIKeyCapabilitySystemModelsManage)
+	}
+	return types.IsSystemAdminFromContext(ctx)
 }
 
 // updateTenantWebSearchConfigInternal updates tenant's web search config

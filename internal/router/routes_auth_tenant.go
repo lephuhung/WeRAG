@@ -250,8 +250,12 @@ func RegisterSystemRoutes(
 		systemRoutes.With(apiKeyAny()).GET("/capabilities", g.Viewer(), handler.GetDeploymentCapabilities)
 		systemRoutes.GET("/info", g.Viewer(), handler.GetSystemInfo)
 		systemRoutes.GET("/parser-engines", g.Viewer(), handler.ListParserEngines)
-		systemRoutes.POST("/parser-engines/check", g.Admin(), handler.CheckParserEngines)
-		systemRoutes.POST("/docreader/reconnect", g.Admin(), handler.ReconnectDocReader)
+		// Parser-engine probes and infra reconnects exercise provider
+		// endpoints/credentials — platform-only, same as model probes.
+		systemRoutes.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)).POST(
+			"/parser-engines/check", g.SystemAdmin(), handler.CheckParserEngines)
+		systemRoutes.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)).POST(
+			"/docreader/reconnect", g.SystemAdmin(), handler.ReconnectDocReader)
 		systemRoutes.GET("/storage-engine-status", g.Viewer(), handler.GetStorageEngineStatus)
 		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
 		systemRoutes.POST("/sandbox-check", g.Admin(), handler.CheckSandboxConfig)

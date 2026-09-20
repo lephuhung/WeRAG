@@ -53,10 +53,11 @@ func (s *stubTenantService) GetWeKnoraCloudCredentials(context.Context) *types.W
 	return nil
 }
 
-func newTenantHandlerTestEngine(t *testing.T, role types.TenantRole, tenant *types.Tenant) *gin.Engine {
+func newTenantHandlerTestEngine(t *testing.T, role types.TenantRole, tenant *types.Tenant, sysAdmin ...bool) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	h := &TenantHandler{service: &stubTenantService{tenant: tenant}}
+	admin := len(sysAdmin) > 0 && sysAdmin[0]
 
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
@@ -65,6 +66,9 @@ func newTenantHandlerTestEngine(t *testing.T, role types.TenantRole, tenant *typ
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, tenant.ID)
 		ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
 		ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenant)
+		if admin {
+			ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
+		}
 		c.Request = c.Request.WithContext(ctx)
 		c.Set(types.TenantIDContextKey.String(), tenant.ID)
 		c.Next()
@@ -162,9 +166,27 @@ func TestGetTenantKVViewerAllowedForNonSecretKey(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestPutTenantParserConfigAdminPreservesRedactedSecrets(t *testing.T) {
+// Parser engine config is provider infrastructure — only system
+// admins (or platform keys) may write it; tenant Owner/Admin are denied.
+func TestPutTenantParserConfigAdminForbidden(t *testing.T) {
 	tenant := secretTenantFixture()
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleAdmin, tenant)
+	for _, role := range []types.TenantRole{types.TenantRoleAdmin, types.TenantRoleOwner} {
+		t.Run(string(role), func(t *testing.T) {
+			engine := newTenantHandlerTestEngine(t, role, tenant)
+			body := `{"mineru_api_key":"new-secret","mineru_endpoint":"https://example.com/mineru"}`
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/tenants/kv/parser-engine-config", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			engine.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusForbidden, rec.Code)
+			assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.MinerUAPIKey)
+		})
+	}
+}
+
+func TestPutTenantParserConfigSystemAdminPreservesRedactedSecrets(t *testing.T) {
+	tenant := secretTenantFixture()
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant, true)
 
 	body := `{"mineru_api_key":"***","mineru_endpoint":"https://example.com/mineru"}`
 	rec := httptest.NewRecorder()
