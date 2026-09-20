@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { listMessages } from "@/lib/api/chat";
-import { stopSession } from "@/lib/api/chat";
-import { streamChat, type StreamChunk } from "@/lib/api/stream";
+import { useRouter, useSearchParams } from "next/navigation";
+import { listMessages, stopSession, forkSession } from "@/lib/api/chat";
+import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments } from "@/components/use-attachments";
+import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
 import { IconDoc } from "@/components/icons";
 
@@ -22,7 +22,7 @@ type UiMessage = {
 };
 
 function fileToDataUri(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = reject;
@@ -49,22 +49,77 @@ function ChatBody({ id }: { id: string }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const sentInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Pending follow-up attribution: set when a suggestion chip is clicked,
+  // consumed (and cleared) by the very next send — mirrors the Vue
+  // pendingSuggestionAttribution / pendingSuggestionKnowledgeBaseIds pair.
+  const pendingAttribution = useRef<{ setId: string; questionId: string } | null>(null);
+  const pendingKbIds = useRef<string[]>([]);
+  const router = useRouter();
   const attachments = useAttachments(id === "new" ? undefined : id);
+  // Continue-stream scratch refs (reset per attach attempt).
+  const accRef = useRef("");
+  const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
 
   // History: GET /api/v1/messages/:sessionId/load?limit=30 — same shape as Vue getMessageList.
+  // History: GET /api/v1/messages/:sessionId/load?limit=30 — same shape as Vue
+  // getMessageList. The trailing assistant message carrying is_completed=false
+  // is an in-flight turn: re-attach via continue-stream (GET
+  // /sessions/continue-stream) instead of rendering it as a frozen bubble.
   useEffect(() => {
     if (id === "new") return;
     let alive = true;
     listMessages(id, 30)
       .then((res) => {
-        if (!alive || !res.data?.length) return;
+        if (!alive) return;
+        const rows = res.data ?? [];
         setMessages(
-          res.data.map((m, i) => ({
+          rows.map((m, i) => ({
             id: m.id ?? `h${i}`,
             role: m.role === "user" ? "user" : "assistant",
             content: m.content ?? "",
+            assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
           })),
         );
+        const last = rows[rows.length - 1];
+        if (alive && last && last.role !== "user" && last.is_completed === false && last.id) {
+          setBusy(true);
+          const inflightId = last.id;
+          const applyChunk = (c: StreamChunk) => {
+            const kind = c.response_type ?? c.type;
+            if (kind === "session_title" || kind === "agent_query") return;
+            if (kind === "references" && c.knowledge_references?.length) {
+              const refs = c.knowledge_references;
+              srcSetRef.current = refs;
+              return;
+            }
+            accRef.current += c.content ?? "";
+            setMessages((m) =>
+              m.map((msg) =>
+                msg.assistantMessageId === inflightId
+                  ? {
+                      ...msg,
+                      content: accRef.current,
+                      references: srcSetRef.current ?? msg.references,
+                    }
+                  : msg,
+              ),
+            );
+          };
+          accRef.current = last.content ?? "";
+          continueStream({ sessionId: id, messageId: inflightId, onChunk: applyChunk })
+            .catch(() => {
+              /* the turn may simply be finished server-side — history next
+               * open re-reads it complete */
+            })
+            .finally(() => {
+              if (!alive) return;
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.assistantMessageId === inflightId ? { ...msg, streaming: false } : msg,
+                ),
+              );
+            });
+        }
       })
       .catch(() => {
         /* keep empty — no seed fallback so failures stay visible */
@@ -206,13 +261,20 @@ function ChatBody({ id }: { id: string }) {
     ];
 
     attachments.clear();
+    // Follow-up attribution anchors this single turn to the clicked
+    // suggestion (recorded pre-click) and keeps KB-backed retrieval scoped
+    // to the suggestion's KBs; model-backed suggestions widen nothing.
+    const attribution = pendingAttribution.current;
+    pendingAttribution.current = null;
+    const kbIdsOverride = pendingKbIds.current;
+    pendingKbIds.current = [];
     streamChat({
       sessionId: id === "new" ? "new" : id,
       query: t,
       agentEnabled: Boolean(agentId),
       agentId,
       agentSourceTenantId: ctx.settings.selectedAgentSourceTenantId ?? undefined,
-      knowledgeBaseIds: [...kbIdSet],
+      knowledgeBaseIds: kbIdsOverride.length > 0 ? kbIdsOverride : [...kbIdSet],
       knowledgeIds: [...fileIdSet],
       tagIds: [...tagIds],
       mcpServiceIds: [...mcpIds],
@@ -221,6 +283,9 @@ function ChatBody({ id }: { id: string }) {
       webSearchEnabled: ctx.settings.webSearchEnabled,
       localBrowserEnabled: ctx.settings.localBrowserEnabled,
       summaryModelId: canPickModel ? s.modelId || undefined : undefined,
+      suggestionAttribution: attribution
+        ? { suggestion_set_id: attribution.setId, question_id: attribution.questionId }
+        : undefined,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       images: inlineImages,
       signal: ctrl.signal,
@@ -305,6 +370,54 @@ function ChatBody({ id }: { id: string }) {
                         </span>
                       ))}
                     </div>
+                  )}
+                  {!m.streaming && m.assistantMessageId && (
+                    <div className="caption mt-2 flex items-center gap-3 text-muted-soft">
+                      <button
+                        className="transition-colors hover:text-ink"
+                        onClick={() => void navigator.clipboard.writeText(m.content)}
+                      >
+                        Copy
+                      </button>
+                      {id !== "new" && (
+                        <button
+                          className="transition-colors hover:text-ink"
+                          onClick={() => {
+                            void forkSession(id, { message_id: m.assistantMessageId! })
+                              .then((res) => {
+                                const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
+                                const sessionId = newId && typeof newId === "object" && "session" in newId
+                                  ? newId.session?.id
+                                  : (newId as { id?: string } | undefined)?.id;
+                                if (sessionId ?? sessionId) void 0;
+                                if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
+                              })
+                              .catch(() => undefined);
+                          }}
+                        >
+                          Fork
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {id !== "new" && (
+                    <FollowUpSuggestions
+                      sessionId={id}
+                      messageId={m.assistantMessageId ?? null}
+                      enabled={!m.streaming}
+                      onAsk={(text, attribution, kbIds) => {
+                        pendingAttribution.current = attribution;
+                        pendingKbIds.current = kbIds;
+                        setInput(text);
+                        void send({
+                          query: text,
+                          attachments: [],
+                          imageFiles: [],
+                          mentionedItems: [],
+                          modelId: "",
+                        });
+                      }}
+                    />
                   )}
                 </div>
               </div>

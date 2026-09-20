@@ -1,66 +1,112 @@
+/* Ported from frontend/src/views/settings/Settings.vue.
+ * Left nav groups come from nav-config.ts (role-gated); the URL contract is
+ * `?section=<key>` with the same legacy aliases as the Vue app
+ * (normalizeSection). Panel bodies are ported per-section under
+ * components/settings/; sections without a ported body render a stub
+ * instead of being hidden, so nothing is silently missing.
+ */
 "use client";
 
-import { useState } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useT } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
+import {
+  SETTINGS_NAV_GROUPS,
+  SECTION_ROUTES,
+  canSeeSection,
+  normalizeSection,
+  type SettingsNavItem,
+} from "@/components/settings/nav-config";
+import { GeneralSettings } from "@/components/settings/general-settings";
+import { TenantInfo } from "@/components/settings/tenant-info";
 
-const SECTIONS = [
-  { id: "general", label: "General" },
-  { id: "models", label: "Models" },
-  { id: "retrieval", label: "Retrieval" },
-  { id: "members", label: "Members" },
-  { id: "api", label: "API keys" },
-];
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsBody />
+    </Suspense>
+  );
+}
 
-export default function Settings() {
-  const [active, setActive] = useState("general");
+function SettingsBody() {
+  const { t } = useT();
+  const router = useRouter();
+  const params = useSearchParams();
+  const auth = useAuth();
+
+  const active = normalizeSection(params.get("section"));
+
+  const currentRole =
+    auth.memberships.find(
+      (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
+    )?.role ?? "";
+  const isSystemAdmin = auth.user?.is_system_admin === true;
+
+  const setActive = (key: string) => {
+    if (SECTION_ROUTES[key]) {
+      router.push(SECTION_ROUTES[key]);
+      return;
+    }
+    router.replace(`/platform/settings?section=${key}`);
+  };
+
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1200px] px-12 py-12">
-        <div className="caption-uppercase mb-3 text-muted">Workspace</div>
-        <h1 className="display-xl mb-10">Settings</h1>
-
         <div className="flex gap-10">
-          {/* section list */}
-          <div className="w-[220px] shrink-0">
-            {SECTIONS.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setActive(s.id)}
-                className={`nav-item mb-0.5 ${active === s.id ? "active" : ""}`}
-              >
-                {s.label}
-              </button>
-            ))}
+          {/* section nav */}
+          <div className="w-[240px] shrink-0">
+            {SETTINGS_NAV_GROUPS.map((group) => {
+              const items = group.items.filter((it) =>
+                canSeeSection(it, currentRole, isSystemAdmin),
+              );
+              if (items.length === 0) return null;
+              return (
+                <div key={group.key} className="mb-6">
+                  <div className="caption-uppercase mb-2 px-3 text-muted-soft">
+                    {t(group.labelKey as never)}
+                  </div>
+                  {items.map((it) => (
+                    <button
+                      key={it.key}
+                      onClick={() => setActive(it.key)}
+                      className={`nav-item mb-0.5 ${active === it.key ? "active" : ""}`}
+                    >
+                      <span className="truncate">{it.labelKey ? t(it.labelKey as never) : it.fallbackLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           {/* panel */}
           <div className="min-w-0 flex-1">
             <div className="card p-8">
-              <h2 className="title-md mb-6">
-                {SECTIONS.find((s) => s.id === active)?.label}
-              </h2>
-              <div className="flex max-w-[480px] flex-col gap-5">
-                <label className="block">
-                  <span className="caption mb-1.5 block text-muted">Workspace name</span>
-                  <input className="input" defaultValue="WeRAG" />
-                </label>
-                <label className="block">
-                  <span className="caption mb-1.5 block text-muted">Description</span>
-                  <input className="input" placeholder="Optional description" />
-                </label>
-                <label className="block">
-                  <span className="caption mb-1.5 block text-muted">Default language</span>
-                  <input className="input" defaultValue="English" />
-                </label>
-                <div className="mt-2 flex gap-3">
-                  <button className="btn btn-primary">Save changes</button>
-                  <button className="btn btn-outline">Cancel</button>
-                </div>
-              </div>
+              {active === "general" ? (
+                <GeneralSettings />
+              ) : active === "tenant" ? (
+                <TenantInfo />
+              ) : (
+                <SectionStub section={active} />
+              )}
             </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/* Placeholder for sections whose bodies are still being ported from the Vue
+ * app — deliberately visible rather than hidden, so unported functionality
+ * is never silently absent. */
+function SectionStub({ section }: { section: string }) {
+  return (
+    <p className="caption text-muted">
+      {`"${section}" settings section is being ported from the Vue app — not yet available.`}
+    </p>
   );
 }

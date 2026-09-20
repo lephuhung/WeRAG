@@ -8,10 +8,11 @@ import {
   type KnowledgeBaseRow,
   type KnowledgeDoc,
 } from "@/lib/api/knowledge";
-import { getWikiIndex, type WikiIndexGroup } from "@/lib/api/wiki";
+import { WikiBrowser } from "@/components/wiki/wiki-browser";
+import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
-import { IconChat, IconDoc, IconPlus, IconSearch } from "@/components/icons";
+import { IconChat, IconDoc, IconPlus, IconSearch, IconSettings } from "@/components/icons";
 
 const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
   parsed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
@@ -42,9 +43,10 @@ export function KbDetail({ kbId }: { kbId: string }) {
   const [pane, setPane] = useState<PaneTab>("wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
-  const [groups, setGroups] = useState<WikiIndexGroup[] | null>(null);
   const [openDoc, setOpenDoc] = useState<KnowledgeDoc | null>(null);
   const [q, setQ] = useState("");
+  const [wikiQ, setWikiQ] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -59,13 +61,6 @@ export function KbDetail({ kbId }: { kbId: string }) {
         setDocs(Array.isArray(data) ? data : (data?.items ?? []));
       })
       .catch(() => alive && setDocs([]));
-    getWikiIndex(kbId)
-      .then((res: unknown) => {
-        if (!alive) return;
-        const r = res as { groups?: WikiIndexGroup[]; data?: { groups?: WikiIndexGroup[] } };
-        setGroups(r.groups ?? r.data?.groups ?? []);
-      })
-      .catch(() => alive && setGroups([]));
     return () => {
       alive = false;
     };
@@ -99,6 +94,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
             </div>
           </div>
           <div className="flex gap-3">
+            <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
+              <IconSettings className="h-4 w-4" /> Settings
+            </button>
             <button className="btn btn-outline">
               <IconPlus className="h-4 w-4" /> Upload files
             </button>
@@ -199,38 +197,21 @@ export function KbDetail({ kbId }: { kbId: string }) {
               ))}
             </div>
             <span className="caption text-muted-soft">
-              {pane === "wiki"
-                ? `${groups?.length ?? 0} sections`
-                : "Entities & relations"}
+              {pane === "wiki" ? "Wiki pages" : "Entities & relations"}
             </span>
           </div>
-
           {pane === "wiki" ? (
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {(groups ?? []).map((g, i) => (
-                <div key={g.type} className={i > 0 ? "mt-5" : ""}>
-                  <div className="mb-1 flex items-center gap-2 text-[15px] font-medium text-ink">
-                    <IconDoc className="h-4 w-4 text-muted" />
-                    {g.type}
-                    <span className="caption text-muted-soft">{g.total}</span>
-                  </div>
-                  <div className="ml-6 border-l border-hairline pl-4">
-                    {g.items.map((c) => (
-                      <div
-                        key={c.slug ?? c.title}
-                        className="cursor-pointer py-1.5 text-[14px] text-body hover:text-ink"
-                      >
-                        {c.title}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {groups !== null && groups.length === 0 && (
-                <p className="caption text-muted-soft">
-                  No wiki pages yet — they are generated after documents are indexed.
-                </p>
-              )}
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="caption flex items-center gap-2 border-b border-hairline px-5 py-2">
+                <IconDoc className="h-4 w-4 text-muted-soft" />
+                <input
+                  className="bg-transparent text-[13px] outline-none placeholder:text-muted-soft"
+                  placeholder="Search wiki pages…"
+                  value={wikiQ}
+                  onChange={(e) => setWikiQ(e.target.value)}
+                />
+              </div>
+              <WikiBrowser kbId={kbId} q={wikiQ} />
             </div>
           ) : (
             <KnowledgeGraph kbId={kbId} />
@@ -240,6 +221,14 @@ export function KbDetail({ kbId }: { kbId: string }) {
 
       {/* document slide-in panel */}
       <DocPanel doc={openDoc} onClose={() => setOpenDoc(null)} />
+      <KbSettingsModal
+        kbId={kbId}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => {
+          getKnowledgeBase(kbId).then((row) => setKb(row ?? null)).catch(() => {});
+        }}
+      />
     </div>
   );
 }

@@ -190,7 +190,9 @@ export function createWikiPage(kbId: string, data: Partial<WikiPage>) {
 }
 
 export function getWikiPage(kbId: string, slug: string) {
-  return apiGet(`/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`);
+  return apiGet<{ success: boolean; data?: WikiPage; message?: string }>(
+    `/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`,
+  );
 }
 
 /* Partial update: absent fields keep their stored value. `version` is the
@@ -205,17 +207,13 @@ export interface WikiPageUpdatePayload {
   aliases?: string[];
   version?: number;
 }
-
 export function updateWikiPage(kbId: string, slug: string, data: WikiPageUpdatePayload) {
-  return apiPut(`/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`, data);
+  return apiPut<{ success: boolean; data?: WikiPage; message?: string }>(
+    `/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`,
+    data,
+  );
 }
 
-export function deleteWikiPage(kbId: string, slug: string) {
-  return apiDel(`/api/v1/knowledgebase/${kbId}/wiki/pages/${encodeSlugPath(slug)}`);
-}
-
-/** One immutable snapshot of a superseded page version. `content` is only
- * populated when fetching a single revision. */
 export interface WikiPageRevision {
   id: string;
   tenant_id: number;
@@ -252,7 +250,7 @@ export function listWikiRevisions(
   if (params?.limit !== undefined) query.set("limit", String(params.limit));
   if (params?.offset !== undefined) query.set("offset", String(params.offset));
   const qs = query.toString();
-  return apiGet(
+  return apiGet<{ success: boolean; data?: WikiRevisionListResponse; message?: string }>(
     `/api/v1/knowledgebase/${kbId}/wiki/revisions/${encodeSlugPath(slug)}${qs ? "?" + qs : ""}`,
   );
 }
