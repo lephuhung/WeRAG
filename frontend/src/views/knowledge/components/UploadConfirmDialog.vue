@@ -199,13 +199,16 @@
                     />
                     <div v-if="hasPdf" class="kb-settings-block">
                       <div class="settings-group">
-                        <div class="setting-row">
+                        <div class="setting-row setting-row-vertical">
                           <div class="setting-info">
                             <label>{{ t('uploadConfirm.pdfForceScanned.label') }}</label>
                             <p class="desc">{{ t('uploadConfirm.pdfForceScanned.description') }}</p>
                           </div>
-                          <div class="setting-control">
-                            <t-switch v-model="uiState.pdfForceScanned" size="medium" />
+                          <div class="setting-control setting-control-full">
+                            <t-radio-group v-model="pdfScanMode">
+                              <t-radio value="auto">{{ t('uploadConfirm.pdfForceScanned.auto') }}</t-radio>
+                              <t-radio value="scanned">{{ t('uploadConfirm.pdfForceScanned.force') }}</t-radio>
+                            </t-radio-group>
                           </div>
                         </div>
                       </div>
@@ -835,6 +838,15 @@ const batchFileExts = computed(() => {
 })
 
 const hasPdf = computed(() => batchFileExts.value.includes('pdf'))
+
+// Radio-mode wrapper over the pdfForceScanned flag so "auto" is an explicit,
+// visible default rather than an unchecked switch users must reason about.
+const pdfScanMode = computed({
+  get: () => (uiState.value.pdfForceScanned ? 'scanned' : 'auto'),
+  set: (value: string) => {
+    uiState.value.pdfForceScanned = value === 'scanned'
+  },
+})
 
 const chunkingStrategyOptions = computed(() => [
   { label: t('knowledgeEditor.chunking.strategies.auto.label'), value: 'auto' },

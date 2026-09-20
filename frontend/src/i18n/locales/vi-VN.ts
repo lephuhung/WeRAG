@@ -853,8 +853,10 @@ export default {
     vlmModelSelectRequired: 'Multimodal is enabled. Please select a VLM model.',
     asrModelSelectRequired: 'Speech recognition is enabled. Please select an ASR model.',
     pdfForceScanned: {
-      label: 'Force scanned PDF parsing',
-      description: 'Useful for web-print, scanned, or image-heavy PDFs. Every page will be rendered as an image and processed via OCR/VLM. May increase processing time and model costs.'
+      label: 'Nhận diện trang PDF scan/text',
+      description: 'Hệ thống tự phân loại từng trang là text hay bản scan. Chỉ bật chế độ scan khi nhận diện tự động sai — mọi trang sẽ được render thành ảnh và xử lý qua OCR/VLM, tốn thêm thời gian và chi phí model.',
+      auto: 'Tự động (khuyến nghị)',
+      force: 'Bắt buộc chế độ scan',
     },
     continueAdd: 'Add more',
     destinationLabel: 'Upload location',

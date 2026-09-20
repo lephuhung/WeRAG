@@ -6772,8 +6772,10 @@ export default {
     reparseHint: '이전 파싱 설정을 사용하며 여기서 조정할 수 있습니다',
     manualCharCount: '{count}자',
     pdfForceScanned: {
-      label: '스캔 PDF로 파싱',
-      description: '웹 인쇄, 스캔본, 이미지 위주 PDF에 적합합니다. 모든 페이지를 이미지로 렌더링한 뒤 OCR/VLM으로 처리합니다. 처리 시간과 모델 호출 비용이 늘어날 수 있습니다.'
+      label: 'PDF 페이지 유형 감지',
+      description: '각 페이지를 자동으로 텍스트/스캔으로 분류합니다. 자동 판별이 잘못될 때만 스캔 강제를 켜세요. 모든 페이지를 이미지로 렌더링해 OCR/VLM 처리하므로 시간과 비용이 늘어날 수 있습니다.',
+      auto: '자동 감지(권장)',
+      force: '스캔 문서로 강제 파싱',
     }
   },
   knowledgeBase: {

@@ -36,6 +36,76 @@ def _make_image_only_pdf(num_pages: int = 2) -> bytes:
     return buf.getvalue()
 
 
+def _make_searchable_image_pdf(invisible: bool = True) -> bytes:
+    """One-page PDF: partial-page image + an embedded text layer.
+
+    The image covers ~38% of the page area (below SCAN_IMAGE_AREA_RATIO) so
+    the geometry classifier calls it "text"; the Tr 3 render mode marks the
+    text layer as an invisible OCR overlay, the signature of a searchable-
+    image scan. ``invisible=False`` writes a normal visible text layer.
+    """
+    from pypdf import PdfWriter
+    from pypdf.generic import (
+        DecodedStreamObject,
+        DictionaryObject,
+        NameObject,
+        NumberObject,
+    )
+
+    img_buf = io.BytesIO()
+    Image.new("RGB", (64, 64), "gray").save(img_buf, format="JPEG")
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+
+    img = DecodedStreamObject()
+    img.set_data(img_buf.getvalue())
+    img.update(
+        {
+            NameObject("/Type"): NameObject("/XObject"),
+            NameObject("/Subtype"): NameObject("/Image"),
+            NameObject("/Width"): NumberObject(64),
+            NameObject("/Height"): NumberObject(64),
+            NameObject("/ColorSpace"): NameObject("/DeviceRGB"),
+            NameObject("/BitsPerComponent"): NumberObject(8),
+            NameObject("/Filter"): NameObject("/DCTDecode"),
+        }
+    )
+    img_ref = writer._add_object(img)
+
+    font_ref = writer._add_object(
+        DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+    )
+
+    tr = b"3 Tr" if invisible else b"0 Tr"
+    ops = (
+        b"q 612 0 0 300 0 0 cm /Im0 Do Q\n"
+        b"BT " + tr + b" /F1 12 Tf 72 700 Td "
+        b"(embedded searchable ocr layer text) Tj ET\n"
+    )
+    content = DecodedStreamObject()
+    content.set_data(ops)
+    content_ref = writer._add_object(content)
+
+    page[NameObject("/Contents")] = content_ref
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/XObject"): DictionaryObject({NameObject("/Im0"): img_ref}),
+            NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref}),
+        }
+    )
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
 class ClassifyPageTest(unittest.TestCase):
     def test_full_page_image_is_scanned_even_with_text(self):
         # Scanned newspaper: image covers the page, embedded OCR text exists.
@@ -431,6 +501,34 @@ class PDFRouterIntegrationTest(unittest.TestCase):
             PDFParser(file_name="broken.pdf", file_type="pdf").parse_into_text(
                 b"not a pdf"
             )
+
+
+class InvisibleTextLayerScanTest(unittest.TestCase):
+    """Searchable-image scans: invisible OCR overlay + image -> scanned route."""
+
+    def test_invisible_text_layer_routes_to_scanned(self):
+        pdf_bytes = _make_searchable_image_pdf(invisible=True)
+        doc = PDFParser(file_name="searchable.pdf", file_type="pdf").parse_into_text(
+            pdf_bytes
+        )
+
+        self.assertEqual(doc.metadata["image_source_type"], "scanned_pdf")
+        self.assertEqual(doc.metadata["scanned_page_count"], 1)
+        self.assertEqual(doc.metadata["text_page_count"], 0)
+        self.assertIn("images/searchable_page_1.jpg", doc.images)
+        self.assertIn("![searchable_page_1.jpg](images/searchable_page_1.jpg)", doc.content)
+        # The hidden overlay text must not leak into the markdown.
+        self.assertNotIn("embedded searchable ocr layer text", doc.content)
+
+    def test_visible_text_layer_stays_text(self):
+        pdf_bytes = _make_searchable_image_pdf(invisible=False)
+        doc = PDFParser(file_name="native.pdf", file_type="pdf").parse_into_text(
+            pdf_bytes
+        )
+
+        self.assertEqual(doc.metadata["text_page_count"], 1)
+        self.assertEqual(doc.metadata["scanned_page_count"], 0)
+        self.assertIn("embedded searchable ocr layer text", doc.content)
 
 
 class ForceScannedTest(unittest.TestCase):

@@ -859,8 +859,10 @@ export default {
     vlmModelSelectRequired: 'マルチモーダルが有効です。VLMモデルを選択してください。',
     asrModelSelectRequired: '音声認識が有効です。ASRモデルを選択してください。',
     pdfForceScanned: {
-      label: 'スキャンPDFとして強制解析',
-      description: 'Web印刷、スキャン、画像が多いPDFに有効です。全ページを画像としてレンダリングし、OCR／VLMで処理します。処理時間とモデル費用が増える場合があります。'
+      label: 'PDFページ種別の検出',
+      description: '各ページは自動でテキスト／スキャンに分類されます。自動判定が外れる場合のみスキャン強制を有効にしてください。全ページを画像化してOCR／VLM処理するため時間とコストが増えます。',
+      auto: '自動検出（推奨）',
+      force: 'スキャンとして強制解析',
     },
     continueAdd: '続けて追加',
     destinationLabel: 'アップロード先',

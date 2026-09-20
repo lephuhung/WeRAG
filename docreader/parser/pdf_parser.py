@@ -79,6 +79,12 @@ SCAN_MIN_CHARS_PER_PAGE = _env_int("DOCREADER_PDF_SCAN_MIN_CHARS", 10)
 # A near-empty-text page is only rendered as an image if it actually contains
 # some image content (avoids rendering genuinely blank pages).
 _LOW_TEXT_IMAGE_RATIO = 0.1
+# Pages whose whole text layer is invisible (render-mode 3) are "searchable
+# image" scans: the visible content is the image, the text is just an OCR
+# overlay of whatever quality the producer embedded. Route them through the
+# scanned path so the page is rendered and OCR'd fresh instead of trusting
+# the hidden layer — this removes the main case that needed pdf_force_scanned.
+DETECT_INVISIBLE_TEXT_SCAN = _env_bool("DOCREADER_PDF_INVISIBLE_TEXT_SCAN", True)
 
 # --- Embedded figure extraction (text pages) ------------------------------
 # Native pages can embed figures/charts. We surface them as image references so
@@ -177,26 +183,45 @@ def _classify_page(image_area_ratio: float, text_len: int) -> str:
     return "text"
 
 
-def _page_image_area_ratio(page, raw) -> float:
-    """Return the fraction of the page area covered by image objects.
+def _page_object_stats(page, raw) -> tuple:
+    """One pass over page objects collecting scan-classification signals.
 
+    Returns ``(image_area_ratio, text_obj_count, invisible_text_obj_count)``.
     Overlapping images can push the ratio above 1.0; callers only compare it
     against a threshold so that is harmless.
     """
     width, height = page.get_size()
     page_area = float(width) * float(height)
-    if page_area <= 0:
-        return 0.0
-
     image_area = 0.0
-    for obj in page.get_objects():
-        try:
-            if obj.type == raw.FPDF_PAGEOBJ_IMAGE:
-                left, bottom, right, top = obj.get_bounds()
-                image_area += abs((right - left) * (top - bottom))
-        except Exception:
-            continue
-    return image_area / page_area
+    text_obj_count = 0
+    invisible_text_obj_count = 0
+    try:
+        for obj in page.get_objects():
+            try:
+                if obj.type == raw.FPDF_PAGEOBJ_IMAGE:
+                    left, bottom, right, top = obj.get_bounds()
+                    image_area += abs((right - left) * (top - bottom))
+                elif obj.type == raw.FPDF_PAGEOBJ_TEXT:
+                    text_obj_count += 1
+                    try:
+                        if (
+                            raw.FPDFTextObj_GetTextRenderMode(obj.raw)
+                            == raw.FPDF_TEXTRENDERMODE_INVISIBLE
+                        ):
+                            invisible_text_obj_count += 1
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+    except Exception:
+        pass
+    ratio = image_area / page_area if page_area > 0 else 0.0
+    return ratio, text_obj_count, invisible_text_obj_count
+
+
+def _page_image_area_ratio(page, raw) -> float:
+    """Return the fraction of the page area covered by image objects."""
+    return _page_object_stats(page, raw)[0]
 
 
 def _extract_page_text(page) -> str:
@@ -627,6 +652,19 @@ def _point_in_boxes(x: float, y: float, boxes: list) -> bool:
         if x0 <= x <= x1 and y0 <= y <= y1:
             return True
     return False
+
+
+def _text_layer_fully_invisible(page, raw) -> bool:
+    """True when the page has text objects and every one renders invisibly.
+
+    "Searchable image" scans carry the OCR result as a render-mode-3 overlay:
+    pdfium extracts a plausible text layer, but no visible text is actually
+    drawn — the pixels are the image. A page with mixed visible and invisible
+    objects returns False and stays on the text path (invisible glyphs are
+    filtered later by ``FILTER_HIDDEN_TEXT``).
+    """
+    _ratio, text_objs, invisible = _page_object_stats(page, raw)
+    return text_objs > 0 and invisible == text_objs
 
 
 def _page_chars(textpage, page, raw) -> tuple:
@@ -1561,8 +1599,21 @@ class PDFParser(BaseParser):
                 page = pdf[i]
                 try:
                     plain = _extract_page_text(page)
-                    ratio = _page_image_area_ratio(page, pdfium_r)
+                    ratio, text_objs, invisible_objs = _page_object_stats(
+                        page, pdfium_r
+                    )
                     cls = _classify_page(ratio, len(plain.strip()))
+                    # "Searchable image" scans: a fully invisible text layer
+                    # over real image content means the pixels are the source
+                    # of truth — render + OCR instead of trusting the overlay.
+                    if (
+                        cls == "text"
+                        and DETECT_INVISIBLE_TEXT_SCAN
+                        and ratio >= _LOW_TEXT_IMAGE_RATIO
+                        and text_objs > 0
+                        and invisible_objs == text_objs
+                    ):
+                        cls = "scanned"
                     # Subclass hook (e.g. vietnamese_legal reclassifies
                     # corrupt Vietnamese text layers as scanned).
                     cls = self._reclassify_page(cls, plain)

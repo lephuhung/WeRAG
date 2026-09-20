@@ -6774,8 +6774,10 @@ export default {
     reparseHint: '将沿用上次解析的配置，可在此调整',
     manualCharCount: '{count} 个字符',
     pdfForceScanned: {
-      label: '按扫描件解析 PDF',
-      description: '适用于网页打印、扫描件、图片型 PDF。开启后会逐页 OCR，解析更完整但耗时和模型调用更多。'
+      label: 'PDF 页面类型识别',
+      description: '系统默认逐页自动识别文本页与扫描页；仅在自动识别出错时才使用强制扫描模式——届时每页都会渲染成图片并走 OCR/VLM，耗时与模型调用更多。',
+      auto: '自动识别（推荐）',
+      force: '强制按扫描件解析',
     }
   },
   knowledgeBase: {

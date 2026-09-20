@@ -156,6 +156,8 @@ sequenceDiagram
 
 **核心设计：逐页路由（per-page routing）**。对每页独立分类为 `"text"` 或 `"scanned"`（`_classify_page`）：主信号是**图片面积覆盖率**（页面上 image 对象包围盒面积 / 页面面积，阈值 `DOCREADER_PDF_SCAN_IMAGE_RATIO=0.5`）——扫描页本质是一整张覆盖全页的大图，即使带有（往往低质量的）嵌入 OCR 文本层；次信号是文本层字符数 < `DOCREADER_PDF_SCAN_MIN_CHARS`（10）且存在一定图片内容。这一设计对齐 MinerU / Docling / DeepDoc 的路由思路，避免信任劣质文本层产生乱码 RAG 内容。
 
+此外还有一条兜底信号：**整页文本层全部不可见（render-mode 3）且页面含图片内容**时也判为扫描页——这是「可搜索图片」型扫描件的典型特征（图片承载可见内容，隐藏文本只是嵌入的 OCR 覆盖层），几何面积分类会漏判这类页面。可用 `DOCREADER_PDF_INVISIBLE_TEXT_SCAN=false` 关闭。
+
 处理流程（`_route_locked`，三个 Pass）：
 
 1. **Pass 1 文本抽取 + 分类**：text 页走文本层。若 `DOCREADER_PDF_LAYOUT_ORDERING=true`（默认）且 pdfium 纯文本不"良构"（`_plain_is_well_formed`），则做**几何版面重建**：glyph 级抽取（过滤隐藏文本 render-mode 3、页外字形——防隐藏文本 prompt injection）、XY-cut 递归切列（多栏按列线性化）、边栏/竖排水印列剔除（arXiv 侧栏）、按字间距推断词间空格（`WORD_GAP_WIDTH_RATIO`）、按行高相对页面中位数把大字号行升级为 Markdown 标题（`DETECT_HEADINGS`）。若重建结果看起来破碎（`_should_prefer_plain` 一系列启发式）回退纯文本。随后 `_postprocess_pdf_text` 清理：U+FFFE 等占位符、arXiv 水印行、页码行、矢量图表泄漏进文本层的坐标轴/图例碎屑（`STRIP_CHART_TEXT_DEBRIS`）。text 页上检测到 `Figure N` caption 时，还会把 caption 上方的**矢量图区域渲染成 JPEG**（`RENDER_VECTOR_FIGURES`）并以 `![...](images/...)` 注入 caption 前。
