@@ -1,7 +1,20 @@
+# Frontend Rule: `frontend/` is frozen — port to `frontend-next/`
+
+The Vue front-end in `frontend/` is **legacy and frozen for the UI migration to `frontend-next/` (Next.js)**.
+
+## Rules for all agents
+
+- **NEVER modify, fix, refactor, or add UI code in `frontend/`** (the Vue front-end). Treat it as read-only reference.
+- **ALL UI changes, bug fixes, and new features MUST be implemented in `frontend-next/`**.
+- When porting a feature, review the corresponding Vue implementation in `frontend/` to understand the behavior/design, then reimplement it in `frontend-next/` using its stack and conventions (Next.js/React, TypeScript, Tailwind).
+- **i18n convention for `frontend-next/`**: only **2 locales — `en` and `vi`** (`lib/i18n.tsx`). Do NOT port the other Vue locales (`zh-CN`, `ja-JP`, `ko-KR`, `ru-RU`) or the vue-i18n machinery; when porting a feature, translate its UI strings into the `en` and `vi` dictionaries only.
+- Exceptions (read-only actions on `frontend/` are allowed): reading code for reference, running/building it to compare behavior, and extracting assets (images, icons, i18n strings).
+- Non-UI shared code (backend `internal/`, `cmd/`, etc.) is unaffected by this rule.
+<!-- gitnexus:end -->
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **WeRAG** (73661 symbols, 401944 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **WeRAG** (76270 symbols, 414645 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
