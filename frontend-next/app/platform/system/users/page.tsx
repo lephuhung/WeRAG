@@ -11,8 +11,12 @@ import {
   promoteUserToSystemAdmin,
   resetUserPassword,
   revokeSystemAdmin,
+  updateSystemOrgTenantRole,
+  updateSystemUserRole,
+  type OrgMemberRole,
   type SystemAdminUser,
 } from "@/lib/api/system";
+import type { TenantRole } from "@/lib/api/tenants";
 import { ApiError } from "@/lib/api-client";
 
 const initials = (name: string) =>
@@ -149,6 +153,17 @@ export default function SystemUsers() {
     });
   };
 
+  const WORKSPACE_ROLES: TenantRole[] = ["owner", "admin", "contributor", "viewer"];
+  const ORG_ROLES: OrgMemberRole[] = ["admin", "editor", "viewer"];
+
+  const changeWorkspaceRole = (u: SystemAdminUser, tenantId: number, role: TenantRole) => {
+    void run(() => updateSystemUserRole(tenantId, u.id, role));
+  };
+
+  const changeOrgRole = (orgId: string, tenantId: number, role: OrgMemberRole) => {
+    void run(() => updateSystemOrgTenantRole(orgId, tenantId, role));
+  };
+
   if (allowed === null) {
     return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">Loading…</div>;
   }
@@ -167,7 +182,7 @@ export default function SystemUsers() {
   const adminCount = users.filter((u) => u.is_system_admin).length;
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
+    <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">
           <span className="font-medium text-ink">{total}</span> users ·{" "}
@@ -203,6 +218,7 @@ export default function SystemUsers() {
         <div className="caption-uppercase flex items-center gap-4 border-b border-hairline px-5 py-3 text-muted-soft">
           <span className="flex-1">User</span>
           <span className="w-56">Workspaces</span>
+          <span className="w-56">Organizations</span>
           <span className="w-24">Status</span>
           <span className="w-32">Created</span>
           <span className="w-56 text-right">{t("users.actions")}</span>
@@ -235,7 +251,55 @@ export default function SystemUsers() {
             </div>
             <span className="caption w-56 text-muted">
               {u.memberships && u.memberships.length > 0
-                ? u.memberships.map((m) => `${m.tenant_name} (${m.role})`).join(", ")
+                ? u.memberships.map((m) => (
+                    <span key={m.tenant_id} className="mr-2 inline-flex items-center gap-1">
+                      <span className="truncate">{m.tenant_name}</span>
+                      <select
+                        className="input h-6 w-auto px-1 py-0 text-[12px]"
+                        value={m.role}
+                        disabled={busy}
+                        onChange={(e) =>
+                          changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
+                        }
+                      >
+                        {WORKSPACE_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  ))
+                : "—"}
+            </span>
+            <span className="caption w-56 text-muted">
+              {u.org_memberships && u.org_memberships.length > 0
+                ? u.org_memberships.map((o) => (
+                    <span
+                      key={`${o.org_id}-${o.tenant_id}`}
+                      className="mr-2 inline-flex items-center gap-1"
+                      title={`via ${o.tenant_name}`}
+                    >
+                      <span className="truncate">
+                        {o.org_name}
+                        <span className="text-muted-soft"> ({o.tenant_name})</span>
+                      </span>
+                      <select
+                        className="input h-6 w-auto px-1 py-0 text-[12px]"
+                        value={o.role}
+                        disabled={busy}
+                        onChange={(e) =>
+                          changeOrgRole(o.org_id, o.tenant_id, e.target.value as OrgMemberRole)
+                        }
+                      >
+                        {ORG_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  ))
                 : "—"}
             </span>
             <span className="caption w-24 text-muted">
@@ -254,7 +318,7 @@ export default function SystemUsers() {
                     onClick={() => setRevoking(u)}
                     disabled={busy}
                   >
-                    Revoke admin
+                    Revoke superadmin
                   </button>
                 )
               ) : (
@@ -262,8 +326,9 @@ export default function SystemUsers() {
                   className="btn btn-outline btn-sm"
                   onClick={() => setPromoting(u)}
                   disabled={busy}
+                  title="Grant global system-admin rights (SuperAdmin)"
                 >
-                  Make admin
+                  Make superadmin
                 </button>
               )}
               <button

@@ -43,6 +43,14 @@ type SystemHandler struct {
 	documentReader   interfaces.DocumentReader
 	tenantSvc        interfaces.TenantService
 	userSvc          interfaces.UserService
+	// memberSvc lets system admins adjust a user's per-workspace role
+	// (owner/admin/contributor/viewer) without holding Owner inside that
+	// tenant — the route group already enforces SystemAdmin.
+	memberSvc interfaces.TenantMemberService
+	// orgSvc lets system admins list each workspace's organization
+	// memberships and adjust tenant-level org roles (admin/editor/viewer)
+	// without the operator's tenant holding org-admin itself.
+	orgSvc           interfaces.OrganizationService
 	systemSettingSvc interfaces.SystemSettingService
 	apiKeySvc        interfaces.TenantAPIKeyService
 	// auditSvc is optional — when nil, emitAdminAudit no-ops so unit
@@ -74,6 +82,8 @@ func NewSystemHandler(cfg *config.Config,
 	documentReader interfaces.DocumentReader,
 	tenantSvc interfaces.TenantService,
 	userSvc interfaces.UserService,
+	memberSvc interfaces.TenantMemberService,
+	orgSvc interfaces.OrganizationService,
 	systemSettingSvc interfaces.SystemSettingService,
 	apiKeySvc interfaces.TenantAPIKeyService,
 	auditSvc interfaces.AuditLogService,
@@ -88,6 +98,8 @@ func NewSystemHandler(cfg *config.Config,
 		documentReader:     documentReader,
 		tenantSvc:          tenantSvc,
 		userSvc:            userSvc,
+		memberSvc:          memberSvc,
+		orgSvc:             orgSvc,
 		systemSettingSvc:   systemSettingSvc,
 		apiKeySvc:          apiKeySvc,
 		auditSvc:           auditSvc,
@@ -1520,12 +1532,25 @@ func (h *SystemHandler) ListSystemAdmins(c *gin.Context) {
 	})
 }
 
+// SystemUserOrgMembership is one organization membership of one of the
+// user's workspaces. Organization membership is tenant-keyed
+// (organization_tenant_members), so a user reaches an org through their
+// workspace — the row records which tenant carries which org role.
+type SystemUserOrgMembership struct {
+	OrgID      string              `json:"org_id"`
+	OrgName    string              `json:"org_name"`
+	TenantID   uint64              `json:"tenant_id"`
+	TenantName string              `json:"tenant_name"`
+	Role       types.OrgMemberRole `json:"role"`
+}
+
 // SystemUserItem is one row of the system-admin user list: the plain
 // UserInfo plus the user's tenant memberships so the management UI can
 // show which workspaces the account belongs to and at what role.
 type SystemUserItem struct {
 	*types.UserInfo
-	Memberships []types.Membership `json:"memberships"`
+	Memberships    []types.Membership         `json:"memberships"`
+	OrgMemberships []SystemUserOrgMembership `json:"org_memberships"`
 }
 
 // ListSystemUsersResponse defines the response for listing every user.
@@ -1578,16 +1603,176 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 
 	infos := make([]*SystemUserItem, 0, len(users))
 	for _, u := range users {
-		infos = append(infos, &SystemUserItem{
+		memberships := h.userSvc.BuildLoginMemberships(ctx, u, nil)
+		item := &SystemUserItem{
 			UserInfo:    u.ToUserInfo(),
-			Memberships: h.userSvc.BuildLoginMemberships(ctx, u, nil),
-		})
+			Memberships: memberships,
+		}
+		// Resolve org memberships through each workspace the user belongs
+		// to. Org roles are tenant-keyed, so the same user can appear in an
+		// org under different roles via different workspaces.
+		if h.orgSvc != nil {
+			for _, m := range memberships {
+				orgs, err := h.orgSvc.ListTenantOrganizations(ctx, m.TenantID)
+				if err != nil {
+					logger.Warnf(ctx, "ListSystemUsers: orgs of tenant %d failed: %v", m.TenantID, err)
+					continue
+				}
+				for _, org := range orgs {
+					member, err := h.orgSvc.GetTenantMember(ctx, org.ID, m.TenantID)
+					if err != nil {
+						continue
+					}
+					item.OrgMemberships = append(item.OrgMemberships, SystemUserOrgMembership{
+						OrgID:      org.ID,
+						OrgName:    org.Name,
+						TenantID:   m.TenantID,
+						TenantName: m.TenantName,
+						Role:       member.Role,
+					})
+				}
+			}
+		}
+		infos = append(infos, item)
 	}
 
 	c.JSON(http.StatusOK, ListSystemUsersResponse{
 		Total: total,
 		Users: infos,
 	})
+}
+
+// UpdateSystemUserRole godoc
+// @Summary      Update a user's workspace role
+// @Description  Change a user's role inside any tenant (SystemAdmin only).
+// @Description  Unlike PUT /tenants/:id/members/:user_id this does not require
+// @Description  the caller to be Owner of the target tenant — the route group
+// @Description  already gates on SystemAdmin. The "last owner" invariant is
+// @Description  still enforced by the service layer.
+// @Tags         System Admin
+// @Accept       json
+// @Produce      json
+// @Param        tenant_id  path  string                  true  "Tenant ID"
+// @Param        user_id    path  string                  true  "User ID"
+// @Param        request    body  updateMemberRoleRequest true  "Target role"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}  "Invalid tenant_id or role"
+// @Failure      403  {object}  map[string]interface{}  "Forbidden: not a system admin"
+// @Failure      404  {object}  map[string]interface{}  "Membership not found"
+// @Failure      409  {object}  map[string]interface{}  "Would demote the last owner"
+// @Router       /system/admin/tenants/{tenant_id}/members/{user_id} [put]
+func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+
+	tenantID, err := strconv.ParseUint(strings.TrimSpace(c.Param("tenant_id")), 10, 64)
+	if err != nil || tenantID == 0 {
+		c.Error(apperrors.NewValidationError("invalid tenant_id"))
+		return
+	}
+	userID := strings.TrimSpace(c.Param("user_id"))
+	if userID == "" {
+		c.Error(apperrors.NewValidationError("user_id is required"))
+		return
+	}
+
+	var req updateMemberRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		return
+	}
+
+	if err := h.memberSvc.UpdateRole(ctx, userID, tenantID, req.Role); err != nil {
+		switch {
+		case errors.Is(err, service.ErrMembershipNotFound):
+			c.Error(apperrors.NewNotFoundError("membership not found"))
+		case errors.Is(err, service.ErrLastOwner):
+			c.Error(apperrors.NewConflictError(err.Error()))
+		case errors.Is(err, service.ErrInvalidTenantRole):
+			c.Error(apperrors.NewValidationError(err.Error()))
+		default:
+			logger.Errorf(ctx, "UpdateSystemUserRole failed: user=%s tenant=%d err=%v",
+				userID, tenantID, err)
+			c.Error(apperrors.NewInternalServerError("failed to update member role").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// updateOrgMemberRoleRequest is the JSON body for
+// PUT /system/admin/organizations/:org_id/members/:tenant_id.
+type updateOrgMemberRoleRequest struct {
+	Role types.OrgMemberRole `json:"role" binding:"required"`
+}
+
+// UpdateSystemOrgTenantRole godoc
+// @Summary      Update a tenant's organization role
+// @Description  Change a workspace's role inside an organization
+// @Description  (admin/editor/viewer) — SystemAdmin only. Organization
+// @Description  membership is tenant-keyed, so this affects every user of
+// @Description  that workspace. Unlike PUT /organizations/:id/members/:tenant_id
+// @Description  the caller's own tenant need not be org-admin; the org's owner
+// @Description  tenant still cannot have its role changed.
+// @Tags         System Admin
+// @Accept       json
+// @Produce      json
+// @Param        org_id     path  string                     true  "Organization ID"
+// @Param        tenant_id  path  string                     true  "Tenant ID"
+// @Param        request    body  updateOrgMemberRoleRequest true  "Target role"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}  "Invalid tenant_id or role"
+// @Failure      403  {object}  map[string]interface{}  "Forbidden: not a system admin"
+// @Failure      404  {object}  map[string]interface{}  "Organization or membership not found"
+// @Failure      409  {object}  map[string]interface{}  "Cannot change owner tenant role"
+// @Router       /system/admin/organizations/{org_id}/members/{tenant_id} [put]
+func (h *SystemHandler) UpdateSystemOrgTenantRole(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+
+	orgID := strings.TrimSpace(c.Param("org_id"))
+	if orgID == "" {
+		c.Error(apperrors.NewValidationError("org_id is required"))
+		return
+	}
+	tenantID, err := strconv.ParseUint(strings.TrimSpace(c.Param("tenant_id")), 10, 64)
+	if err != nil || tenantID == 0 {
+		c.Error(apperrors.NewValidationError("invalid tenant_id"))
+		return
+	}
+
+	var req updateOrgMemberRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of admin/editor/viewer"))
+		return
+	}
+
+	if err := h.orgSvc.UpdateTenantMemberRoleAsAdmin(ctx, orgID, tenantID, req.Role); err != nil {
+		switch {
+		case errors.Is(err, service.ErrOrgNotFound):
+			c.Error(apperrors.NewNotFoundError("organization not found"))
+		case errors.Is(err, service.ErrTenantNotInOrg):
+			c.Error(apperrors.NewNotFoundError("tenant is not a member of this organization"))
+		case errors.Is(err, service.ErrCannotChangeOwnerRole):
+			c.Error(apperrors.NewConflictError(err.Error()))
+		case errors.Is(err, service.ErrInvalidRole):
+			c.Error(apperrors.NewValidationError(err.Error()))
+		default:
+			logger.Errorf(ctx, "UpdateSystemOrgTenantRole failed: org=%s tenant=%d err=%v",
+				orgID, tenantID, err)
+			c.Error(apperrors.NewInternalServerError("failed to update organization member role").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // ResetUserPasswordRequest defines the system-administrator password-reset

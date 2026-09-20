@@ -3,7 +3,12 @@
  * $httpStatus — request() in api-client.ts reproduces both.
  */
 import { apiDel, apiGet, apiPatch, apiPost, apiPut, apiUpload, type ApiError } from "@/lib/api-client";
-import type { CreatedTenantAPIKey, TenantAPIKey, TenantAPIKeyCapability } from "./tenants";
+import type {
+  CreatedTenantAPIKey,
+  TenantAPIKey,
+  TenantAPIKeyCapability,
+  TenantRole,
+} from "./tenants";
 import {
   auditLogQueryString,
   type AuditLog,
@@ -311,7 +316,18 @@ export function checkStorageEngine(
 export interface SystemUserMembership {
   tenant_id: number;
   tenant_name: string;
-  role: string;
+  role: TenantRole;
+}
+
+/** Organization membership of one of the user's workspaces. Org roles are
+ * tenant-keyed (admin/editor/viewer) — a user reaches an org through their
+ * workspace, so the row records which tenant carries which role. */
+export interface SystemUserOrgMembership {
+  org_id: string;
+  org_name: string;
+  tenant_id: number;
+  tenant_name: string;
+  role: OrgMemberRole;
 }
 
 export interface SystemAdminUser {
@@ -322,6 +338,7 @@ export interface SystemAdminUser {
   is_active: boolean;
   is_system_admin: boolean;
   memberships?: SystemUserMembership[];
+  org_memberships?: SystemUserOrgMembership[];
   created_at: string;
   updated_at: string;
 }
@@ -382,6 +399,32 @@ export function listSystemUsers(params?: {
   if (params?.q) qs.set("q", params.q);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiGet(`/api/v1/system/admin/users${suffix}`);
+}
+
+/* PUT /api/v1/system/admin/tenants/:tenant_id/members/:user_id — change a
+ * user's role inside any workspace (SystemAdmin only; does not require the
+ * caller to be Owner of that tenant). The backend still rejects demoting
+ * the last owner. */
+export function updateSystemUserRole(
+  tenantId: number,
+  userId: string,
+  role: TenantRole,
+): Promise<{ success: boolean }> {
+  return apiPut(`/api/v1/system/admin/tenants/${tenantId}/members/${userId}`, { role });
+}
+
+export type OrgMemberRole = "admin" | "editor" | "viewer";
+
+/* PUT /api/v1/system/admin/organizations/:org_id/members/:tenant_id —
+ * change a workspace's role inside an organization (SystemAdmin only).
+ * Org membership is tenant-keyed, so this applies to every user of that
+ * workspace; the org's owner tenant cannot have its role changed. */
+export function updateSystemOrgTenantRole(
+  orgId: string,
+  tenantId: number,
+  role: OrgMemberRole,
+): Promise<{ success: boolean }> {
+  return apiPut(`/api/v1/system/admin/organizations/${orgId}/members/${tenantId}`, { role });
 }
 
 export interface ResetUserPasswordRequest {

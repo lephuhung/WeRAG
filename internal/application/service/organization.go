@@ -464,6 +464,34 @@ func (s *organizationService) UpdateTenantMemberRole(ctx context.Context, orgID 
 	return s.orgRepo.UpdateTenantMemberRole(ctx, orgID, memberTenantID, role)
 }
 
+// UpdateTenantMemberRoleAsAdmin updates the role for a (org, tenant)
+// membership on behalf of a system administrator. It skips the
+// IsTenantOrgAdmin check on the operator — the route group already enforces
+// SystemAdmin — but keeps the owner-tenant protection and membership
+// invariants identical to the tenant-scoped path.
+func (s *organizationService) UpdateTenantMemberRoleAsAdmin(ctx context.Context, orgID string, memberTenantID uint64, role types.OrgMemberRole) error {
+	if !role.IsValid() {
+		return ErrInvalidRole
+	}
+
+	org, err := s.orgRepo.GetByID(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, repository.ErrOrganizationNotFound) {
+			return ErrOrgNotFound
+		}
+		return err
+	}
+	if s.isOwnerTenant(ctx, org, memberTenantID) {
+		return ErrCannotChangeOwnerRole
+	}
+
+	err = s.orgRepo.UpdateTenantMemberRole(ctx, orgID, memberTenantID, role)
+	if errors.Is(err, repository.ErrOrgMemberNotFound) {
+		return ErrTenantNotInOrg
+	}
+	return err
+}
+
 // ListTenantMembers lists all tenant memberships for an organization.
 func (s *organizationService) ListTenantMembers(ctx context.Context, orgID string) ([]*types.OrganizationTenantMember, error) {
 	return s.orgRepo.ListTenantMembers(ctx, orgID)

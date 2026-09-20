@@ -28,6 +28,12 @@ type OrganizationService interface {
 	AddTenantMember(ctx context.Context, orgID string, tenantID uint64, representativeUserID string, role types.OrgMemberRole) error
 	RemoveTenantMember(ctx context.Context, orgID string, memberTenantID uint64, operatorUserID string, operatorTenantID uint64) error
 	UpdateTenantMemberRole(ctx context.Context, orgID string, memberTenantID uint64, role types.OrgMemberRole, operatorUserID string, operatorTenantID uint64) error
+	// UpdateTenantMemberRoleAsAdmin changes a tenant's org role on behalf of
+	// a system administrator. Unlike UpdateTenantMemberRole it does not
+	// require the operator's own tenant to hold org-admin — authorization is
+	// the SystemAdmin flag enforced at the route group. The org's owner
+	// tenant is still protected from role changes.
+	UpdateTenantMemberRoleAsAdmin(ctx context.Context, orgID string, memberTenantID uint64, role types.OrgMemberRole) error
 	ListTenantMembers(ctx context.Context, orgID string) ([]*types.OrganizationTenantMember, error)
 	GetTenantMember(ctx context.Context, orgID string, tenantID uint64) (*types.OrganizationTenantMember, error)
 

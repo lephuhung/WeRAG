@@ -298,6 +298,14 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.GET("/users", handler.ListSystemUsers)
 		adminRoutes.POST("/users/reset-password", handler.ResetUserPassword)
 		adminRoutes.POST("/users/create", handler.CreateSystemUser)
+		// Workspace-role management for any tenant — the SystemAdmin
+		// group gate replaces the per-tenant Owner requirement of the
+		// /tenants/:id/members/:user_id route.
+		adminRoutes.PUT("/tenants/:tenant_id/members/:user_id", handler.UpdateSystemUserRole)
+		// Organization-level roles are tenant-keyed — a workspace is admin/
+		// editor/viewer of an org, which propagates to its users. Same
+		// SystemAdmin-only pattern as the tenant membership route above.
+		adminRoutes.PUT("/organizations/:org_id/members/:tenant_id", handler.UpdateSystemOrgTenantRole)
 		adminRoutes.GET("/api-keys", handler.ListPlatformAPIKeys)
 		adminRoutes.POST("/api-keys", handler.CreatePlatformAPIKey)
 		adminRoutes.DELETE("/api-keys/:key_id", handler.DeletePlatformAPIKey)
