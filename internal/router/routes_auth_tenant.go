@@ -292,6 +292,10 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.POST("/promote", handler.PromoteUserToSystemAdmin)
 		adminRoutes.POST("/revoke", handler.RevokeSystemAdmin)
 		adminRoutes.GET("/list", handler.ListSystemAdmins)
+		// GET /users lists every account (admins + regular users) for the
+		// user-management UI; /list above is the admins-only subset kept
+		// for the compact admin-picker views.
+		adminRoutes.GET("/users", handler.ListSystemUsers)
 		adminRoutes.POST("/users/reset-password", handler.ResetUserPassword)
 		adminRoutes.POST("/users/create", handler.CreateSystemUser)
 		adminRoutes.GET("/api-keys", handler.ListPlatformAPIKeys)

@@ -1520,6 +1520,76 @@ func (h *SystemHandler) ListSystemAdmins(c *gin.Context) {
 	})
 }
 
+// SystemUserItem is one row of the system-admin user list: the plain
+// UserInfo plus the user's tenant memberships so the management UI can
+// show which workspaces the account belongs to and at what role.
+type SystemUserItem struct {
+	*types.UserInfo
+	Memberships []types.Membership `json:"memberships"`
+}
+
+// ListSystemUsersResponse defines the response for listing every user.
+type ListSystemUsersResponse struct {
+	Total int64             `json:"total"`
+	Users []*SystemUserItem `json:"users"`
+}
+
+// ListSystemUsers godoc
+// @Summary      List all users
+// @Description  Retrieve a paginated list of every user account — system
+// @Description  admins and regular users alike (SystemAdmin only). Supports
+// @Description  `offset`/`limit` (default 50, max 200) and an optional `q`
+// @Description  username/email filter.
+// @Tags         System Admin
+// @Produce      json
+// @Param        offset query int    false "Page offset" default(0)
+// @Param        limit  query int    false "Page size (max 200)" default(50)
+// @Param        q      query string false "Filter by username or email"
+// @Success      200  {object}  ListSystemUsersResponse  "Users retrieved successfully"
+// @Failure      403  {object}  map[string]interface{}  "Forbidden: not a system admin"
+// @Router       /system/admin/users [get]
+func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+
+	offset := 0
+	limit := 50
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	// Cap so a client can't ask for the entire table.
+	if limit > 200 {
+		limit = 200
+	}
+	query := c.Query("q")
+
+	users, total, err := h.userSvc.ListUsers(ctx, offset, limit, query)
+	if err != nil {
+		logger.Errorf(ctx, "Error listing users: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list users"})
+		return
+	}
+
+	infos := make([]*SystemUserItem, 0, len(users))
+	for _, u := range users {
+		infos = append(infos, &SystemUserItem{
+			UserInfo:    u.ToUserInfo(),
+			Memberships: h.userSvc.BuildLoginMemberships(ctx, u, nil),
+		})
+	}
+
+	c.JSON(http.StatusOK, ListSystemUsersResponse{
+		Total: total,
+		Users: infos,
+	})
+}
+
 // ResetUserPasswordRequest defines the system-administrator password-reset
 // payload. Email is intentionally the only user-facing identifier: the UI is
 // an operator tool and emails are easier to verify than UUIDs. The password is

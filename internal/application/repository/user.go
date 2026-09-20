@@ -133,23 +133,35 @@ func (r *userRepository) DeleteUser(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.User{}).Error
 }
 
-// ListUsers lists users with pagination
-func (r *userRepository) ListUsers(ctx context.Context, offset, limit int) ([]*types.User, error) {
+// ListUsers lists every user (any role, any active state) with pagination
+// and an optional username/email ILIKE filter. Returns the total count
+// alongside the page so the system-admin UI can paginate without a second
+// roundtrip. Ordered created_at DESC, id ASC — same stable ordering as
+// ListSystemAdmins.
+func (r *userRepository) ListUsers(ctx context.Context, offset, limit int, query string) ([]*types.User, int64, error) {
 	var users []*types.User
-	query := r.db.WithContext(ctx).Order("created_at DESC")
+	var total int64
 
+	base := r.db.WithContext(ctx).Model(&types.User{})
+	if query != "" {
+		pattern := "%" + query + "%"
+		base = base.Where("username ILIKE ? OR email ILIKE ?", pattern, pattern)
+	}
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	q := base.Order("created_at DESC, id ASC")
 	if limit > 0 {
-		query = query.Limit(limit)
+		q = q.Limit(limit)
 	}
-
 	if offset > 0 {
-		query = query.Offset(offset)
+		q = q.Offset(offset)
 	}
-
-	if err := query.Find(&users).Error; err != nil {
-		return nil, err
+	if err := q.Find(&users).Error; err != nil {
+		return nil, 0, err
 	}
-	return users, nil
+	return users, total, nil
 }
 
 // ListSystemAdmins lists users where is_system_admin = true.

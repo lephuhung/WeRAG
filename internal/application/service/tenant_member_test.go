@@ -293,8 +293,8 @@ func (r *cleanupUserRepo) UpdateUser(_ context.Context, user *types.User) error 
 	return nil
 }
 func (r *cleanupUserRepo) DeleteUser(context.Context, string) error { return nil }
-func (r *cleanupUserRepo) ListUsers(context.Context, int, int) ([]*types.User, error) {
-	return nil, nil
+func (r *cleanupUserRepo) ListUsers(context.Context, int, int, string) ([]*types.User, int64, error) {
+	return nil, 0, nil
 }
 func (r *cleanupUserRepo) ListSystemAdmins(context.Context, int, int) ([]*types.User, int64, error) {
 	return nil, 0, nil

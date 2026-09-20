@@ -603,6 +603,14 @@ func (s *userService) ListSystemAdmins(
 	return s.userRepo.ListSystemAdmins(ctx, offset, limit)
 }
 
+// ListUsers lists every user for the system-admin user-management
+// endpoint. Thin pass-through — the handler enforces SystemAdmin gating.
+func (s *userService) ListUsers(
+	ctx context.Context, offset, limit int, query string,
+) ([]*types.User, int64, error) {
+	return s.userRepo.ListUsers(ctx, offset, limit, query)
+}
+
 // RevokeSystemAdmin removes system-admin privileges through the
 // repository's transactional guard so concurrent revokes cannot remove
 // the final administrator.

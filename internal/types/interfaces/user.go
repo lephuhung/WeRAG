@@ -89,6 +89,10 @@ type UserService interface {
 	// callers pass offset/limit to page through results. Used by the
 	// /api/v1/system/admin/list endpoint, gated to SystemAdmin callers.
 	ListSystemAdmins(ctx context.Context, offset, limit int) ([]*types.User, int64, error)
+	// ListUsers lists every user (admins and regular users alike) for the
+	// system-admin user-management endpoint. query optionally filters on
+	// username/email. Returns the page plus the total count.
+	ListUsers(ctx context.Context, offset, limit int, query string) ([]*types.User, int64, error)
 	// AdminCreateUser provisions a new local user on behalf of a
 	// SystemAdmin. When req.Password is nil, a random password is generated
 	// and returned exactly once as the second result. provisioning is
@@ -124,8 +128,10 @@ type UserRepository interface {
 	UpdateUser(ctx context.Context, user *types.User) error
 	// DeleteUser deletes a user
 	DeleteUser(ctx context.Context, id string) error
-	// ListUsers lists users with pagination
-	ListUsers(ctx context.Context, offset, limit int) ([]*types.User, error)
+	// ListUsers lists users with pagination. query optionally filters on
+	// username/email (ILIKE). Returns the page plus the total count for
+	// pagination metadata — mirrors ListSystemAdmins. SystemAdmin only.
+	ListUsers(ctx context.Context, offset, limit int, query string) ([]*types.User, int64, error)
 	// ListSystemAdmins lists users where is_system_admin = true.
 	// Walks the partial-friendly idx_users_is_system_admin index. Returns
 	// the slice plus the total count for pagination metadata. Used by

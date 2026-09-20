@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
   createSystemUser,
-  listSystemAdmins,
+  listSystemUsers,
   promoteUserToSystemAdmin,
   resetUserPassword,
   revokeSystemAdmin,
@@ -28,7 +28,9 @@ type AddMode = "create" | "promote";
 export default function SystemUsers() {
   const { t } = useT();
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [meId, setMeId] = useState("");
   const [users, setUsers] = useState<SystemAdminUser[]>([]);
+  const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,17 +42,29 @@ export default function SystemUsers() {
   const [resetting, setResetting] = useState<SystemAdminUser | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [revoking, setRevoking] = useState<SystemAdminUser | null>(null);
+  const [promoting, setPromoting] = useState<SystemAdminUser | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (query: string) => {
     try {
-      const res = await listSystemAdmins({ limit: 200 });
-      setUsers(res.admins ?? []);
+      const res = await listSystemUsers({ limit: 200, q: query || undefined });
+      setUsers(res.users ?? []);
+      setTotal(res.total ?? 0);
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : "Failed to load administrators");
+      else setError(e instanceof Error ? e.message : "Failed to load users");
     }
   }, []);
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!allowed) return;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => void load(q.trim()), 250);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [q, allowed, load]);
 
   useEffect(() => {
     let alive = true;
@@ -62,8 +76,8 @@ export default function SystemUsers() {
           setAllowed(false);
           return;
         }
+        setMeId(me.data.user.id ?? "");
         setAllowed(true);
-        await load();
       } catch {
         if (alive) setAllowed(false);
       }
@@ -71,18 +85,14 @@ export default function SystemUsers() {
     return () => {
       alive = false;
     };
-  }, [load]);
-
-  const rows = users.filter(
-    (u) => q === "" || `${u.username} ${u.email}`.toLowerCase().includes(q.toLowerCase()),
-  );
+  }, []);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
     try {
       await fn();
-      await load();
+      await load(q.trim());
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Operation failed");
@@ -132,6 +142,13 @@ export default function SystemUsers() {
     });
   };
 
+  const submitPromote = () => {
+    if (!promoting) return;
+    void run(() => promoteUserToSystemAdmin({ user_id: promoting.id })).then((ok) => {
+      if (ok) setPromoting(null);
+    });
+  };
+
   if (allowed === null) {
     return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">Loading…</div>;
   }
@@ -147,11 +164,14 @@ export default function SystemUsers() {
     );
   }
 
+  const adminCount = users.filter((u) => u.is_system_admin).length;
+
   return (
     <div className="mx-auto w-full max-w-[1100px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">
-          <span className="font-medium text-ink">{users.length}</span> system administrators
+          <span className="font-medium text-ink">{total}</span> users ·{" "}
+          {adminCount} system {adminCount === 1 ? "administrator" : "administrators"}
         </span>
         <button
           className="btn btn-primary btn-sm ml-auto"
@@ -182,11 +202,12 @@ export default function SystemUsers() {
       <div className="card overflow-hidden">
         <div className="caption-uppercase flex items-center gap-4 border-b border-hairline px-5 py-3 text-muted-soft">
           <span className="flex-1">User</span>
-          <span className="w-28">Status</span>
-          <span className="w-40">Created</span>
+          <span className="w-56">Workspaces</span>
+          <span className="w-24">Status</span>
+          <span className="w-32">Created</span>
           <span className="w-56 text-right">{t("users.actions")}</span>
         </div>
-        {rows.map((u, i) => (
+        {users.map((u, i) => (
           <div
             key={u.id}
             className={`flex items-center gap-4 px-5 py-3.5 ${i > 0 ? "border-t border-hairline" : ""}`}
@@ -198,42 +219,70 @@ export default function SystemUsers() {
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-medium text-ink">
                   {u.username}
-                  <span className="badge-pill ml-2 bg-surface-dark text-on-dark">
-                    {t("users.superadmin")}
-                  </span>
+                  {u.is_system_admin ? (
+                    <span className="badge-pill ml-2 bg-surface-dark text-on-dark">
+                      {t("users.superadmin")}
+                    </span>
+                  ) : (
+                    <span className="badge-pill ml-2">User</span>
+                  )}
+                  {u.id === meId && (
+                    <span className="caption ml-2 text-muted-soft">(you)</span>
+                  )}
                 </div>
                 <div className="caption truncate text-muted">{u.email}</div>
               </div>
             </div>
-            <span className="caption w-28 text-muted">
+            <span className="caption w-56 text-muted">
+              {u.memberships && u.memberships.length > 0
+                ? u.memberships.map((m) => `${m.tenant_name} (${m.role})`).join(", ")
+                : "—"}
+            </span>
+            <span className="caption w-24 text-muted">
               {u.is_active ? "Active" : "Disabled"}
             </span>
-            <span className="caption w-40 text-muted">
+            <span className="caption w-32 text-muted">
               {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
             </span>
             <span className="flex w-56 justify-end gap-1.5">
+              {u.is_system_admin ? (
+                // The backend rejects self-revoke and last-admin revoke —
+                // hide the button for the caller's own row.
+                u.id !== meId && (
+                  <button
+                    className="btn btn-tertiary text-[13px] text-error!"
+                    onClick={() => setRevoking(u)}
+                    disabled={busy}
+                  >
+                    Revoke admin
+                  </button>
+                )
+              ) : (
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setPromoting(u)}
+                  disabled={busy}
+                >
+                  Make admin
+                </button>
+              )}
               <button
                 className="btn btn-outline btn-sm"
                 onClick={() => {
                   setNewPassword("");
                   setResetting(u);
                 }}
+                disabled={u.id === meId}
+                title={u.id === meId ? "Use Settings → Security for your own password" : ""}
               >
                 Reset password
-              </button>
-              <button
-                className="btn btn-tertiary text-[13px] text-error!"
-                onClick={() => setRevoking(u)}
-                disabled={busy}
-              >
-                Revoke
               </button>
             </span>
           </div>
         ))}
-        {rows.length === 0 && (
+        {users.length === 0 && (
           <div className="px-5 py-12 text-center text-[14px] text-muted">
-            No system administrators match this filter.
+            No users match this filter.
           </div>
         )}
       </div>
@@ -370,6 +419,28 @@ export default function SystemUsers() {
           </button>
           <button className="btn btn-primary" onClick={submitRevoke} disabled={busy}>
             Revoke
+          </button>
+        </div>
+      </Modal>
+
+      {/* promote confirm */}
+      <Modal
+        open={promoting !== null}
+        title="Promote to system administrator"
+        onClose={() => setPromoting(null)}
+        width="w-[420px]"
+      >
+        <p className="body-sm mb-6 text-body">
+          Grant system-admin rights to{" "}
+          <span className="font-medium text-ink">{promoting?.username}</span> ({promoting?.email})?
+          They will be able to manage all tenants and platform settings.
+        </p>
+        <div className="flex justify-end gap-3">
+          <button className="btn btn-outline" onClick={() => setPromoting(null)}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn btn-primary" onClick={submitPromote} disabled={busy}>
+            Promote
           </button>
         </div>
       </Modal>

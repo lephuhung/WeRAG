@@ -308,6 +308,12 @@ export function checkStorageEngine(
 
 // ---- system admin management ---------------------------------------------------------
 
+export interface SystemUserMembership {
+  tenant_id: number;
+  tenant_name: string;
+  role: string;
+}
+
 export interface SystemAdminUser {
   id: string;
   username: string;
@@ -315,6 +321,7 @@ export interface SystemAdminUser {
   avatar?: string;
   is_active: boolean;
   is_system_admin: boolean;
+  memberships?: SystemUserMembership[];
   created_at: string;
   updated_at: string;
 }
@@ -354,6 +361,27 @@ export function listSystemAdmins(params?: {
   if (params?.limit != null) qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiGet(`/api/v1/system/admin/list${suffix}`);
+}
+
+export interface ListSystemUsersResponse {
+  total: number;
+  users: SystemAdminUser[];
+}
+
+/* GET /api/v1/system/admin/users — every account (admins + regular
+ * users), not just the admin subset. `q` filters username/email
+ * server-side. Returns {total, users[]} directly. SystemAdmin only. */
+export function listSystemUsers(params?: {
+  offset?: number;
+  limit?: number;
+  q?: string;
+}): Promise<ListSystemUsersResponse> {
+  const qs = new URLSearchParams();
+  if (params?.offset != null) qs.set("offset", String(params.offset));
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.q) qs.set("q", params.q);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiGet(`/api/v1/system/admin/users${suffix}`);
 }
 
 export interface ResetUserPasswordRequest {
