@@ -67,12 +67,16 @@ func NewMemoryService(
 	}
 }
 
-// workspaceConfig loads the workspace memory switch. A missing tenant or an
-// unset column yields a zero-value config, which is disabled.
+// workspaceConfig loads the workspace memory switch. A failed lookup yields
+// a zero-value config, which stays disabled rather than failing open; a
+// tenant that never saved a config gets the product default, which is on.
 func (s *Service) workspaceConfig(ctx context.Context, tenantID uint64) *types.MemoryConfig {
 	tenant, err := s.tenantRepo.GetTenantByID(ctx, tenantID)
-	if err != nil || tenant == nil || tenant.MemoryConfig == nil {
+	if err != nil || tenant == nil {
 		return &types.MemoryConfig{}
+	}
+	if tenant.MemoryConfig == nil {
+		return types.DefaultMemoryConfig()
 	}
 	cfg := *tenant.MemoryConfig
 	cfg.Normalize()

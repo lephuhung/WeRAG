@@ -120,6 +120,12 @@ func (s *sessionService) restrictTagScopesToAgentScope(
 // selection. A request-level override may choose another valid model for this
 // request, but it must not make an unconfigured or stale agent appear usable.
 //
+// The request-level override is honored only for callers allowed to manage
+// model config (system admins and platform API keys). Response-mode models are
+// platform-owned assignments; regular members and tenant admins pick a mode,
+// not a model, so their summary_model_id is dropped the same way a shared
+// agent's is.
+//
 // Without an agent, the legacy KB / session / system fallback remains
 // available for non-agent callers.
 func (s *sessionService) resolveChatModelID(
@@ -134,8 +140,9 @@ func (s *sessionService) resolveChatModelID(
 	configuredAgentModelID := ""
 	// A shared agent runs in its owner's workspace, where an override could
 	// pick any of the owner's models rather than the one the agent was
-	// configured with.
-	if req.SharedAgentReadOnly {
+	// configured with. A caller without model-config rights cannot override
+	// the model a response mode was assigned either.
+	if req.SharedAgentReadOnly || !types.CanManageModelConfig(ctx) {
 		summaryModelID = ""
 	}
 

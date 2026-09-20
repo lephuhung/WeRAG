@@ -21,7 +21,11 @@ var (
 	ErrAgentNotFound       = errors.New("agent not found")
 	ErrCannotModifyBuiltin = errors.New("cannot modify built-in agent basic info")
 	ErrCannotDeleteBuiltin = errors.New("cannot delete built-in agent")
-	ErrAgentNameRequired   = errors.New("agent name is required")
+	// ErrBuiltinModelManagedByAdmin rejects a change to a built-in agent's
+	// model_id from anyone without model-config rights: the model behind each
+	// response mode is a platform-level assignment owned by system admins.
+	ErrBuiltinModelManagedByAdmin = errors.New("built-in agent model is managed by system administrators")
+	ErrAgentNameRequired          = errors.New("agent name is required")
 )
 
 const (
@@ -374,6 +378,18 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	existingAgent, err := s.repo.GetAgentByID(ctx, agent.ID, tenantID)
 	if err != nil && !errors.Is(err, repository.ErrCustomAgentNotFound) {
 		return nil, err
+	}
+
+	// The model behind a built-in response mode is a platform assignment:
+	// only system admins (or platform keys) may change it. Tenant admins keep
+	// the rest of the config surface — an update that leaves model_id
+	// untouched is never blocked by this check.
+	currentModelID := defaultAgent.Config.ModelID
+	if existingAgent != nil {
+		currentModelID = existingAgent.Config.ModelID
+	}
+	if agent.Config.ModelID != currentModelID && !types.CanManageModelConfig(ctx) {
+		return nil, ErrBuiltinModelManagedByAdmin
 	}
 
 	if existingAgent != nil {

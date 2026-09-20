@@ -413,6 +413,8 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 			c.Error(errors.NewNotFoundError("Agent not found"))
 		case service.ErrCannotModifyBuiltin:
 			c.Error(errors.NewForbiddenError("Cannot modify built-in agent"))
+		case service.ErrBuiltinModelManagedByAdmin:
+			c.Error(errors.NewForbiddenError(err.Error()))
 		case service.ErrAgentNameRequired:
 			c.Error(errors.NewBadRequestError(err.Error()))
 		case service.ErrAgentKBScopeNotShareable:

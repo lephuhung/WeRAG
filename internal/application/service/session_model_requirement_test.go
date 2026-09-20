@@ -116,6 +116,8 @@ func TestResolveChatModelIDRejectsNonChatSummaryModelOverride(t *testing.T) {
 	assert.Equal(t, "agent-chat", modelID)
 }
 
+// The request-level model override is honored only for callers allowed to
+// manage model config — system admins and platform API keys.
 func TestResolveChatModelIDUsesValidSummaryModelOverride(t *testing.T) {
 	svc := &sessionService{
 		modelService: &stubModelService{
@@ -141,11 +143,38 @@ func TestResolveChatModelIDUsesValidSummaryModelOverride(t *testing.T) {
 		},
 		SummaryModelID: "override-chat",
 	}
+	ctx := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
+
+	modelID, err := svc.resolveChatModelID(ctx, req, nil, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "override-chat", modelID)
+}
+
+// Members and tenant admins pick a response mode, not a model: their
+// summary_model_id is dropped and the mode's configured model wins.
+func TestResolveChatModelIDIgnoresOverrideForNonAdmin(t *testing.T) {
+	svc := &sessionService{
+		modelService: &stubModelService{
+			modelsByID: map[string]*types.Model{
+				"agent-chat":    {ID: "agent-chat", Type: types.ModelTypeKnowledgeQA},
+				"override-chat": {ID: "override-chat", Type: types.ModelTypeKnowledgeQA},
+			},
+		},
+	}
+	req := &types.QARequest{
+		Session: &types.Session{},
+		CustomAgent: &types.CustomAgent{
+			ID:     "agent-1",
+			Config: types.CustomAgentConfig{ModelID: "agent-chat"},
+		},
+		SummaryModelID: "override-chat",
+	}
 
 	modelID, err := svc.resolveChatModelID(context.Background(), req, nil, nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, "override-chat", modelID)
+	assert.Equal(t, "agent-chat", modelID)
 }
 
 func TestResolveChatModelIDWikiFixerFallsBackToKnowledgeBaseModel(t *testing.T) {

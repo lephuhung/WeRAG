@@ -16,36 +16,38 @@ import (
 
 // RegisterCustomAgentRoutes registers custom agent routes.
 //
-// Mutating routes use OwnedAgentOrAdmin: the original creator can edit
-// their agent, otherwise Admin+ is required. Built-in agents
-// (IsBuiltin=true) have an empty creator and are always Admin+. Reads
-// are Viewer+, copy is Contributor+ (the copy is owned by the caller).
+// Agents bind models, prompts, tools and retrieval scope, so authoring them
+// is platform configuration: every mutating route (create, update, delete,
+// copy) is SystemAdmin-only. Tenant members — including tenant admins —
+// consume agents as response modes; they never author them. Reads stay
+// Viewer+ so users can pick a mode in the composer.
 func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler, g *rbacGuards) {
 	agents := g.apiKeyGroup(r.Group("/agents"), apiKeyFullAccess())
 	// agentsRead are the agent read endpoints. They stay full-access only for
 	// plain scoped keys (agent config can carry sensitive model/MCP bindings),
 	// but read_agents, chat, or manage_agents may read them.
 	agentsRead := agents.With(apiKeyReadAgents(apiKeyManageAgents(apiKeyChat(apiKeyFullAccess()))))
-	// agentsWrite are the agent authoring endpoints. Owner by default, but a
-	// key granted manage_agents may author agents without full Owner.
+	// agentsWrite are the agent authoring endpoints. SystemAdmin-only on the
+	// JWT side; on the API-key axis RequireSystemAdmin admits platform keys,
+	// so manage_agents is effectively a platform capability now.
 	agentsWrite := agents.With(apiKeyManageAgents(apiKeyFullAccess()))
 	{
 		// Get placeholder definitions (must be before /:id to avoid conflict) — Viewer+
 		agentsRead.GET("/placeholders", g.Viewer(), agentHandler.GetPlaceholders)
 		// List smart-reasoning agent type presets (rag-qa / wiki-qa / hybrid / custom) — Viewer+
 		agentsRead.GET("/type-presets", g.Viewer(), agentHandler.GetAgentTypePresets)
-		// Create custom agent — Contributor+
-		agentsWrite.POST("", g.Contributor(), agentHandler.CreateAgent)
+		// Create custom agent — SystemAdmin
+		agentsWrite.POST("", g.SystemAdmin(), agentHandler.CreateAgent)
 		// List all agents (including built-in) — Viewer+
 		agentsRead.GET("", g.Viewer(), agentHandler.ListAgents)
 		// Get agent by ID — Viewer+
 		agentsRead.GET("/:id", g.Viewer(), agentHandler.GetAgent)
-		// Update agent — creator OR Admin+
-		agentsWrite.PUT("/:id", g.OwnedAgentOrAdmin(), agentHandler.UpdateAgent)
-		// Delete agent — creator OR Admin+
-		agentsWrite.DELETE("/:id", g.OwnedAgentOrAdmin(), agentHandler.DeleteAgent)
-		// Copy agent — Contributor+ (copy is owned by the caller)
-		agentsWrite.POST("/:id/copy", g.Contributor(), agentHandler.CopyAgent)
+		// Update agent — SystemAdmin
+		agentsWrite.PUT("/:id", g.SystemAdmin(), agentHandler.UpdateAgent)
+		// Delete agent — SystemAdmin
+		agentsWrite.DELETE("/:id", g.SystemAdmin(), agentHandler.DeleteAgent)
+		// Copy agent — SystemAdmin (a copy is still an authored agent)
+		agentsWrite.POST("/:id/copy", g.SystemAdmin(), agentHandler.CopyAgent)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	g.apiKeyRoute(r, http.MethodGet, "/agents/:id/suggested-questions",

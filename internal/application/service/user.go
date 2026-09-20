@@ -653,6 +653,16 @@ func (s *userService) UpdateUserPreferences(
 			merged.LastActiveTenantID = &v
 		}
 	}
+	if patch.Language != nil {
+		// Free-form locale tag — different frontends use different codes
+		// ("vi" vs "vi-VN"), so the value is stored as sent and each client
+		// maps it onto its own supported locales. Empty string clears.
+		value := strings.TrimSpace(*patch.Language)
+		merged.Language = nil
+		if value != "" {
+			merged.Language = &value
+		}
+	}
 
 	user.Preferences = merged
 	user.UpdatedAt = time.Now()

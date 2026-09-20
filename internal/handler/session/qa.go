@@ -227,6 +227,15 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		request.SummaryModelID = ""
 	}
 
+	// Response-mode models are platform-owned assignments: members and tenant
+	// admins pick a mode in the composer, not a model. Only callers allowed to
+	// manage model config (system admins, platform API keys) may override the
+	// model a request runs on; everyone else's summary_model_id is dropped
+	// before it can reach model resolution or the stored message.
+	if !types.CanManageModelConfig(ctx) {
+		request.SummaryModelID = ""
+	}
+
 	if request.LocalBrowserEnabled && (customAgent == nil || !customAgent.IsAgentMode()) {
 		return nil, nil, errors.NewBadRequestError("Local browser requires an agent with tool calling enabled")
 	}

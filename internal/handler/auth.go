@@ -696,6 +696,10 @@ type updateMyPreferencesRequest struct {
 	// login, not here. Nil = field omitted from the PATCH and stays
 	// untouched.
 	LastActiveTenantID *uint64 `json:"last_active_tenant_id"`
+	// Language stores the user's UI locale choice so it follows the account
+	// across devices. Empty string clears it back to the browser/default
+	// locale.
+	Language *string `json:"language" binding:"omitempty,max=35"`
 }
 
 // UpdateMyPreferences godoc
@@ -731,6 +735,7 @@ func (h *AuthHandler) UpdateMyPreferences(c *gin.Context) {
 	patch := types.UserPreferences{
 		LastActiveTenantID:        req.LastActiveTenantID,
 		BrowserSearchInstructions: req.BrowserSearchInstructions,
+		Language:                  req.Language,
 	}
 	prefs, err := h.userService.UpdateUserPreferences(ctx, user.ID, patch)
 	if err != nil {

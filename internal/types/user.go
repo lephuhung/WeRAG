@@ -49,6 +49,11 @@ type UserPreferences struct {
 	// UI hides self-service password rotation until the user sets a known
 	// password via ChangePassword (which clears this flag).
 	OidcOnlyLogin *bool `json:"oidc_only_login,omitempty"`
+
+	// Language is the UI locale this user last picked (e.g. "en", "vi").
+	// Persisted so the choice follows the account across browsers and
+	// devices instead of living in one browser's localStorage.
+	Language *string `json:"language,omitempty"`
 }
 
 // Value implements driver.Valuer so GORM persists UserPreferences as

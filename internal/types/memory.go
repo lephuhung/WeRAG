@@ -331,8 +331,8 @@ func (MemoryItem) TableName() string { return "memory_items" }
 // tenants. It is deliberately small: everything a workspace admin can decide
 // fits in four fields.
 type MemoryConfig struct {
-	// Enabled defaults to false. Memory retains user statements across
-	// sessions, so a workspace admin has to turn it on deliberately.
+	// Enabled is on for workspaces that never saved a config (see
+	// DefaultMemoryConfig); once an admin saves, the stored value wins.
 	Enabled bool `json:"enabled"`
 	// WriteMode is MemoryWriteExplicitOnly or MemoryWriteAuto.
 	WriteMode string `json:"write_mode"`
@@ -538,6 +538,17 @@ func (c *MemoryConfig) AutoExtractEnabled() bool {
 // MemoryEnabled reports whether the workspace switch is on.
 func (c *MemoryConfig) MemoryEnabled() bool {
 	return c != nil && c.Enabled
+}
+
+// DefaultMemoryConfig is the configuration a workspace runs before an admin
+// has saved one: memory is on for every member out of the box. An admin can
+// still turn it off per workspace — an explicit save, including
+// enabled=false, wins over this default — and each member keeps a personal
+// opt-out on top via their own memory switch.
+func DefaultMemoryConfig() *MemoryConfig {
+	cfg := &MemoryConfig{Enabled: true}
+	cfg.Normalize()
+	return cfg
 }
 
 // MemoryItemKey derives the conflict-detection key for a stored memory.
