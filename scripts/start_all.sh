@@ -1,7 +1,7 @@
 #!/bin/bash
 # 该脚本用于按需启动/停止Ollama和docker-compose服务
 
-# 设置颜色
+# Settings 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -97,7 +97,7 @@ detect_compose_cmd() {
 	return 1
 }
 
-# 检查并创建.env文件
+# 检查并Create .env文件
 check_env_file() {
     log_info "检查环境变量配置..."
     if [ ! -f "$PROJECT_ROOT/.env" ]; then
@@ -113,7 +113,7 @@ check_env_file() {
         log_info ".env 文件已存在"
     fi
     
-    # 检查必要的环境变量是否已设置
+    # 检查必要的环境变量是否已Settings 
     source "$PROJECT_ROOT/.env"
     local missing_vars=()
     
@@ -593,7 +593,7 @@ check_environment() {
         log_info "可通过以下命令拉取: $0 -p 或 docker pull $sandbox_image"
     fi
 
-    # 检查磁盘空间
+    # 检查磁盘Tenant workspace
     log_info "检查磁盘空间..."
     df -h | grep -E "(Filesystem|/$)"
     
@@ -627,7 +627,7 @@ check_environment() {
     return 0
 }
 
-# 解析命令行参数
+# 解析命令行Parameters 
 START_OLLAMA=false
 START_DOCKER=false
 STOP_SERVICES=false
@@ -638,7 +638,7 @@ PULL_IMAGES=false
 NO_PULL=false
 CONTAINER_NAME=""
 
-# 没有参数时默认启动所有服务
+# 没有Parameters 时默认启动所有服务
 if [ $# -eq 0 ]; then
     START_OLLAMA=true
     START_DOCKER=true

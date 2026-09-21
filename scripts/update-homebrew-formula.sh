@@ -2,13 +2,13 @@
 set -euo pipefail
 
 #
-# 更新 Homebrew Formula 中的版本号和 sha256
+# Update version and sha256 in Homebrew Formula
 #
-# 用法:
+# Usage:
 #   ./scripts/update-homebrew-formula.sh v0.2.0
 #
-# 会自动从 GitHub Releases 下载 .sha256 文件来填充 Formula。
-# 在 CI 中被 release-lite workflow 调用。
+# Automatically downloads .sha256 files from GitHub Releases to populate the Formula.
+# Invoked by release-lite workflow in CI.
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

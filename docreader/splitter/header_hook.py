@@ -38,9 +38,9 @@ class HeaderTrackerHook(BaseModel):
         )
 
 
-# 初始化表头Hook配置（提供默认配置：支持Markdown表格、代码块）
+# Initialization 表头HookConfiguration （提供默认Configuration ：支持Markdown表格、代码块）
 DEFAULT_CONFIGS = [
-    # 代码块配置（```开头，```结尾）
+    # 代码块Configuration （```开头，```结尾）
     # HeaderTrackerHook(
     #     # 代码块开始（支持语言指定）
     #     start_pattern=r"^\s*```(\w+).*(?!```$)",
@@ -50,7 +50,7 @@ DEFAULT_CONFIGS = [
     #     priority=20,  # 代码块优先级高于表格
     #     case_sensitive=True,
     # ),
-    # Markdown表格配置（表头带下划线）
+    # Markdown表格Configuration （表头带下划线）
     HeaderTrackerHook(
         # 表头行 + 分隔行
         start_pattern=r"^\s*(?:\|[^|\n]*)+[\r\n]+\s*(?:\|\s*:?-{3,}:?\s*)+\|?[\r\n]+$",
@@ -207,7 +207,7 @@ class HeaderTracker(BaseModel):
 
     def get_headers(self) -> str:
         """获取当前所有活跃表头的拼接文本（按优先级排序）"""
-        # 按优先级降序排列表头
+        # 按优先级降序排List 头
         sorted_headers = sorted(self.active_headers.items(), key=lambda x: -x[0])
         return (
             "\n".join([header for _, header in sorted_headers])

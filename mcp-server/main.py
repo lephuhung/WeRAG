@@ -113,7 +113,7 @@ async def main():
     """主函数"""
     args = parse_arguments()
 
-    # 设置环境
+    # Settings 环境
     setup_environment()
 
     # 检查依赖
@@ -128,7 +128,7 @@ async def main():
         print("环境检查完成。", file=sys.stderr)
         return
 
-    # 设置日志级别
+    # Settings 日志级别
     if args.verbose:
         import logging
 

@@ -7,7 +7,8 @@
  */
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -28,6 +29,16 @@ import { WebSearchSettings } from "@/components/settings/web-search-settings";
 import { StorageSettings } from "@/components/settings/storage-settings";
 import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
 import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
+import { TenantMembers } from "@/components/settings/tenant-members";
+import { TenantOrgs } from "@/components/settings/tenant-orgs";
+import { MemoryPersonalSettings } from "@/components/settings/memory-personal-settings";
+import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
+import { SkillsSettings } from "@/components/settings/skills-settings";
+import { SandboxSettings } from "@/components/settings/sandbox-settings";
+import { BrowserConnectionSettings } from "@/components/settings/browser-connection-settings";
+import { ChatHistorySettings } from "@/components/settings/chat-history-settings";
+import { WeKnoraCloudSettings } from "@/components/settings/weknora-cloud-settings";
+import { ParserEngineSettings } from "@/components/settings/parser-engine-settings";
 
 export default function SettingsPage() {
   return (
@@ -51,6 +62,12 @@ function SettingsBody() {
     )?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
 
+  useEffect(() => {
+    if (SECTION_ROUTES[active]) {
+      router.replace(SECTION_ROUTES[active]);
+    }
+  }, [active, router]);
+
   const setActive = (key: string) => {
     if (SECTION_ROUTES[key]) {
       router.push(SECTION_ROUTES[key]);
@@ -59,10 +76,36 @@ function SettingsBody() {
     router.replace(`/platform/settings?section=${key}`);
   };
 
-
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1200px] px-12 py-12">
+        {isSystemAdmin && (
+          <div className="mb-8 flex flex-col gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="badge-pill bg-primary/20 text-primary font-semibold text-[11px] uppercase tracking-wider">
+                  SuperAdmin
+                </span>
+                <span className="text-[14px] font-medium text-ink">System Administration Center</span>
+              </div>
+              <p className="caption mt-0.5 text-muted">
+                System engines, models, storage, and extensions are managed in the Card-based administration portal.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link href="/platform/system/services" className="btn btn-outline btn-sm text-[12px]">
+                Engines
+              </Link>
+              <Link href="/platform/system/models" className="btn btn-outline btn-sm text-[12px]">
+                Models
+              </Link>
+              <Link href="/platform/system/extensions" className="btn btn-primary btn-sm text-[12px]">
+                Extensions & MCP
+              </Link>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-10">
           {/* section nav */}
           <div className="w-[240px] shrink-0">
@@ -97,20 +140,40 @@ function SettingsBody() {
                 <GeneralSettings />
               ) : active === "envvars" ? (
                 <EnvVarsSettings />
+              ) : active === "mymemory" ? (
+                <MemoryPersonalSettings />
+              ) : active === "browserconnection" ? (
+                <BrowserConnectionSettings />
               ) : active === "tenant" ? (
                 <TenantInfo />
+              ) : active === "members" ? (
+                <TenantMembers />
               ) : active === "api-keys" ? (
                 <ApiKeysSection />
+              ) : active === "orgs" ? (
+                <TenantOrgs />
+              ) : active === "chathistory" ? (
+                <ChatHistorySettings />
+              ) : active === "memory" ? (
+                <MemoryWorkspaceSettings />
               ) : active === "models" ? (
                 <ModelsSettings />
               ) : active === "ollama" ? (
                 <OllamaSettings />
+              ) : active === "weknoracloud" ? (
+                <WeKnoraCloudSettings />
               ) : active === "websearch" ? (
                 <WebSearchSettings />
               ) : active === "storage" ? (
                 <StorageSettings />
               ) : active === "vectorstore" ? (
                 <VectorStoreSettings />
+              ) : active === "parser" ? (
+                <ParserEngineSettings />
+              ) : active === "sandbox" ? (
+                <SandboxSettings />
+              ) : active === "skills" ? (
+                <SkillsSettings />
               ) : active === "mcp" ? (
                 <McpSection />
               ) : (

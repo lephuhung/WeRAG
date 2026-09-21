@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/knowledge";
 import { searchMessages, type MessageSearchGroupItem } from "@/lib/api/chat";
 import { listAgents, type AgentRow } from "@/lib/api/agents";
+import { useAuth } from "@/lib/auth";
 
 interface CommandItem {
   id: string;
@@ -37,6 +38,8 @@ interface CommandItem {
 export function GlobalCommandPalette() {
   const { isOpen, close } = useCommandPalette();
   const router = useRouter();
+  const { user } = useAuth();
+  const isSystemAdmin = user?.is_system_admin === true;
 
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -64,11 +67,15 @@ export function GlobalCommandPalette() {
       listKnowledgeBases()
         .then((res) => setAllKbs(res ?? []))
         .catch(() => {});
-      listAgents()
-        .then((res) => setAllAgents(res.data ?? []))
-        .catch(() => {});
+      if (isSystemAdmin) {
+        listAgents()
+          .then((res) => setAllAgents(res.data ?? []))
+          .catch(() => {});
+      } else {
+        setAllAgents([]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, isSystemAdmin]);
 
   // Debounced search when query changes
   useEffect(() => {
@@ -133,17 +140,21 @@ export function GlobalCommandPalette() {
         router.push("/platform/knowledge-bases");
       },
     },
-    {
-      id: "quick-agents",
-      category: "quick",
-      title: "Agents",
-      subtitle: "Configure autonomous AI assistants",
-      icon: <IconAgent className="h-4 w-4" />,
-      onSelect: () => {
-        close();
-        router.push("/platform/agents");
-      },
-    },
+    ...(isSystemAdmin
+      ? [
+          {
+            id: "quick-agents",
+            category: "quick" as const,
+            title: "Agents",
+            subtitle: "Configure autonomous AI assistants",
+            icon: <IconAgent className="h-4 w-4" />,
+            onSelect: () => {
+              close();
+              router.push("/platform/system/agents");
+            },
+          },
+        ]
+      : []),
     {
       id: "quick-artifacts",
       category: "quick",
@@ -212,7 +223,7 @@ export function GlobalCommandPalette() {
         }))
     : [];
 
-  const matchedAgents: CommandItem[] = q
+  const matchedAgents: CommandItem[] = isSystemAdmin && q
     ? allAgents
         .filter((a) => a.name.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q))
         .slice(0, 4)
@@ -225,7 +236,7 @@ export function GlobalCommandPalette() {
           icon: <IconAgent className="h-4 w-4" />,
           onSelect: () => {
             close();
-            router.push(`/platform/agents`);
+            router.push(`/platform/system/agents`);
           },
         }))
     : [];

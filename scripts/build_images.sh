@@ -1,7 +1,7 @@
 #!/bin/bash
 # 该脚本用于从源码构建WeKnora的所有Docker镜像
 
-# 设置颜色
+# Settings 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -362,13 +362,13 @@ clean_images() {
     docker stop $(docker ps -q --filter "ancestor=wechatopenai/weknora-docreader:latest" 2>/dev/null) 2>/dev/null || true
     docker stop $(docker ps -q --filter "ancestor=wechatopenai/weknora-ui:latest" 2>/dev/null) 2>/dev/null || true
     
-    # 删除相关容器
+    # Delete 相关容器
     log_info "删除相关容器..."
     docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-app:latest" 2>/dev/null) 2>/dev/null || true
     docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-docreader:latest" 2>/dev/null) 2>/dev/null || true
     docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-ui:latest" 2>/dev/null) 2>/dev/null || true
     
-    # 删除镜像
+    # Delete 镜像
     log_info "删除本地镜像..."
     docker rmi wechatopenai/weknora-app:latest 2>/dev/null || true
     docker rmi wechatopenai/weknora-docreader:latest 2>/dev/null || true
@@ -388,7 +388,7 @@ clean_images() {
     return 0
 }
 
-# 解析命令行参数
+# 解析命令行Parameters 
 BUILD_ALL=false
 BUILD_APP=false
 BUILD_DOCREADER=false
@@ -396,7 +396,7 @@ BUILD_FRONTEND=false
 BUILD_SANDBOX=false
 CLEAN_IMAGES=false
 
-# 没有参数时默认构建所有镜像
+# 没有Parameters 时默认构建所有镜像
 if [ $# -eq 0 ]; then
     BUILD_ALL=true
 fi

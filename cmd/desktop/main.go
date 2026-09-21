@@ -156,7 +156,7 @@ func main() {
 		_ = os.Chdir(resPath)
 	} else if _, err := os.Stat(filepath.Join("config", "config.yaml")); os.IsNotExist(err) {
 		// wails build 生成绑定时 cwd 多为 cmd/desktop，LoadConfig 默认找 ./config/config.yaml；
-		// 仓库实际配置在 <repo>/config/，向上两级即可。
+		// 仓库实际Configuration 在 <repo>/config/，向上两级即可。
 		repoRoot := filepath.Clean(filepath.Join("..", ".."))
 		if _, err := os.Stat(filepath.Join(repoRoot, "config", "config.yaml")); err == nil {
 			_ = os.Chdir(repoRoot)

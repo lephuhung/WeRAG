@@ -16,7 +16,7 @@ import (
 // has not yet expired are kept out by the role check, matching the
 // rest of the RBAC matrix in this file.
 func RegisterChunkerDebugRoutes(r *gin.RouterGroup, g *rbacGuards) {
-	g.apiKeyRoute(r, http.MethodPost, "/chunker/preview", apiKeyRetrieve(apiKeyIngest(apiKeyFullAccess())), g.Member(), handler.PreviewChunking)
+	g.apiKeyRoute(r, http.MethodPost, "/chunker/preview", apiKeyRetrieve(apiKeyIngest(apiKeyFullAccess())), g.Owner(), handler.PreviewChunking)
 }
 
 // RegisterChunkRoutes 注册分块相关的路由
@@ -37,20 +37,20 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 		chunkRead.GET("/by-id/:id", g.Member(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
 		chunkRead.GET("/:knowledge_id/:id/revisions", g.Member(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListChunkRevisions)
 		// Delete 分块 — KB owner OR Admin+，且对父 KB 有 write 权限
-		chunks.DELETE("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
+		chunks.DELETE("/:knowledge_id/:id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
 		// Delete 知识下的所有分块 — KB owner OR Admin+，且对父 KB 有 write 权限
-		chunks.DELETE("/:knowledge_id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
+		chunks.DELETE("/:knowledge_id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
 		// Update 分块信息 — KB owner OR Admin+，且对父 KB 有 write 权限
-		chunks.PUT("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
-		chunks.POST("/:knowledge_id/:id/revert", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.RevertChunk)
+		chunks.PUT("/:knowledge_id/:id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
+		chunks.POST("/:knowledge_id/:id/revert", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.RevertChunk)
 		// Delete 单个生成的问题（通过分块 id） — 与其它 chunk mutation 一致：
 		// KB owner OR Admin+。早期这里因为链路 (chunk_id -> knowledge_id ->
 		// kb -> creator_id) 还没接通，被临时降级成 Contributor，导致一个
 		// 「能编辑所有 chunk 的同样规则在这条路由上反而更宽松」的不一致。
 		// 现在通过 KBCreatorLookupFromChunkIDParam 把那一跳补上，统一矩阵。
-		chunks.DELETE("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
-		chunks.PUT("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.UpsertGeneratedQuestion)
-		chunks.POST("/by-id/:id/questions/regenerate", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.RegenerateGeneratedQuestions)
+		chunks.DELETE("/by-id/:id/questions", g.Owner(), g.KBAccessWriteFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
+		chunks.PUT("/by-id/:id/questions", g.Owner(), g.KBAccessWriteFromChunkIDParam("id"), handler.UpsertGeneratedQuestion)
+		chunks.POST("/by-id/:id/questions/regenerate", g.Owner(), g.KBAccessWriteFromChunkIDParam("id"), handler.RegenerateGeneratedQuestions)
 	}
 }
 
@@ -70,21 +70,21 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 	kb := g.apiKeyGroup(r.Group("/knowledge-bases/:id/knowledge"), apiKeyIngest(apiKeyFullAccess()))
 	kbRead := kb.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{
-		// Upload: any tenant member may ingest documents into the tenant's
-		// own KBs. KBAccessWrite keeps foreign (granted, viewer-level) KBs
-		// out — grants are read-only, so a grantee tenant's member cannot
-		// write into the owner's KB.
-		kb.POST("/file", g.Member(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromFile)
-		kb.POST("/url", g.Member(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromURL)
-		kb.POST("/manual", g.Member(), g.KBAccessWrite("id"), handler.CreateManualKnowledge)
+		// Upload: only the tenant owner may ingest documents — members are
+		// read-only consumers of KB content. KBAccessWrite keeps foreign
+		// (granted, viewer-level) KBs out — grants are read-only, so a
+		// grantee tenant's member cannot write into the owner's KB.
+		kb.POST("/file", g.Owner(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromFile)
+		kb.POST("/url", g.Owner(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromURL)
+		kb.POST("/manual", g.Owner(), g.KBAccessWrite("id"), handler.CreateManualKnowledge)
 		kbRead.GET("", g.Member(), g.KBAccessRead("id"), handler.ListKnowledge)
 		// 原始文件下载沿用单文件下载的 Member + write 权限边界。
 		kbRead.POST("/batch-download", g.Member(), g.KBAccessWrite("id"), handler.BatchDownloadKnowledge)
 		kbRead.GET("/folders", g.Member(), g.KBAccessRead("id"), handler.ListKnowledgeFolders)
-		kb.PUT("/folders", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.RenameKnowledgeFolder)
+		kb.PUT("/folders", g.Owner(), g.KBAccessWrite("id"), handler.RenameKnowledgeFolder)
 		// Clearing all contents under a KB is a destructive op; gate
 		// behind Admin instead of Contributor.
-		kb.With(apiKeyFullAccess()).DELETE("", g.Admin(), g.KBAccessWrite("id"), handler.ClearKnowledgeBaseContents)
+		kb.With(apiKeyFullAccess()).DELETE("", g.Owner(), g.KBAccessWrite("id"), handler.ClearKnowledgeBaseContents)
 	}
 
 	// 知识路由组（URL :id is a knowledge id; the guard walks it to the parent KB）
@@ -109,12 +109,12 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kRead.GET("/:id", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledge)
 		kRead.GET("/:id/stages", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
 		kRead.GET("/:id/spans", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
-		k.DELETE("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
-		k.PUT("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
-		k.POST("/:id/regenerate-summary", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.RegenerateKnowledgeSummary)
-		k.PUT("/manual/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
-		k.POST("/:id/reparse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
-		k.POST("/:id/cancel-parse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
+		k.DELETE("/:id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
+		k.PUT("/:id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
+		k.POST("/:id/regenerate-summary", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.RegenerateKnowledgeSummary)
+		k.PUT("/manual/:id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
+		k.POST("/:id/reparse", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
+		k.POST("/:id/cancel-parse", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
 		// Downloading exposes the original source file, so it has a stricter
 		// boundary than viewing parsed content or previewing it: members need
 		// write-level access to the KB (own tenant), and read-only grantees
@@ -123,7 +123,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// machine-principal authorization to the API-key gate.
 		kRead.GET("/:id/download", g.Member(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
 		kRead.GET("/:id/preview", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
-		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
+		k.PUT("/image/:id/:chunk_id", g.Owner(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
 		kRead.GET("/search", g.Member(), handler.SearchKnowledge)
 		kRead.GET("/move/progress/:task_id", g.Member(), handler.GetKnowledgeMoveProgress)
 		// Batch / cross-KB content writes: JWT Admin+, or an API key
@@ -131,11 +131,11 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// operation to a single (move: source+target) KB and rejects any KB
 		// or knowledge id outside the key's allow-list, so a scoped ingest key
 		// can only touch KBs it is already permitted to write.
-		k.PUT("/tags", g.Admin(), handler.UpdateKnowledgeTagBatch)
-		k.POST("/batch-reparse", g.Admin(), handler.BatchReparseKnowledge)
-		k.POST("/batch-delete", g.Admin(), handler.BatchDeleteKnowledge)
-		k.POST("/folder", g.Admin(), handler.MoveKnowledgeToFolder)
-		k.POST("/move", g.Admin(), handler.MoveKnowledge)
+		k.PUT("/tags", g.Owner(), handler.UpdateKnowledgeTagBatch)
+		k.POST("/batch-reparse", g.Owner(), handler.BatchReparseKnowledge)
+		k.POST("/batch-delete", g.Owner(), handler.BatchDeleteKnowledge)
+		k.POST("/folder", g.Owner(), handler.MoveKnowledgeToFolder)
+		k.POST("/move", g.Owner(), handler.MoveKnowledge)
 	}
 }
 
@@ -161,19 +161,19 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacG
 		faqRead.GET("/entries", g.Member(), g.KBAccessRead("id"), handler.ListEntries)
 		faqRead.GET("/entries/export", g.Member(), g.KBAccessRead("id"), handler.ExportEntries)
 		faqRead.GET("/entries/:entry_id", g.Member(), g.KBAccessRead("id"), handler.GetEntry)
-		faq.POST("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpsertEntries)
-		faq.POST("/entry", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateEntry)
-		faq.PUT("/entries/:entry_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntry)
-		faq.POST("/entries/:entry_id/similar-questions", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.AddSimilarQuestions)
+		faq.POST("/entries", g.Owner(), g.KBAccessWrite("id"), handler.UpsertEntries)
+		faq.POST("/entry", g.Owner(), g.KBAccessWrite("id"), handler.CreateEntry)
+		faq.PUT("/entries/:entry_id", g.Owner(), g.KBAccessWrite("id"), handler.UpdateEntry)
+		faq.POST("/entries/:entry_id/similar-questions", g.Owner(), g.KBAccessWrite("id"), handler.AddSimilarQuestions)
 		// Unified batch update API - supports is_enabled, is_recommended, tag_id
-		faq.PUT("/entries/fields", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryFieldsBatch)
-		faq.PUT("/entries/tags", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryTagBatch)
-		faq.DELETE("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.DeleteEntries)
+		faq.PUT("/entries/fields", g.Owner(), g.KBAccessWrite("id"), handler.UpdateEntryFieldsBatch)
+		faq.PUT("/entries/tags", g.Owner(), g.KBAccessWrite("id"), handler.UpdateEntryTagBatch)
+		faq.DELETE("/entries", g.Owner(), g.KBAccessWrite("id"), handler.DeleteEntries)
 		// Search is a read route: scoped API keys may call it with retrieve
 		// even though POST is otherwise an unsafe method.
 		faqRead.POST("/search", g.Member(), g.KBAccessRead("id"), handler.SearchFAQ)
 		// FAQ import result display status
-		faq.PUT("/import/last-result/display", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateLastImportResultDisplayStatus)
+		faq.PUT("/import/last-result/display", g.Owner(), g.KBAccessWrite("id"), handler.UpdateLastImportResultDisplayStatus)
 	}
 	// FAQ import progress route (outside of knowledge-base scope) — Viewer+.
 	// Scoped API keys that can ingest (they start the import) or retrieve may
@@ -205,7 +205,7 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 	kbManagement := kb.With(apiKeyManageKnowledgeBases(apiKeyFullAccess()))
 	{
 		// Create Knowledge Base — JWT Admin+；API key 需 manage_kbs 或 full-access。
-		kbManagement.POST("", g.Admin(), handler.CreateKnowledgeBase)
+		kbManagement.POST("", g.Owner(), handler.CreateKnowledgeBase)
 		// 获取Knowledge BaseList  — Viewer+ for JWT callers; retrieve-capable API keys pass via the gate.
 		kb.GET("", g.Member(), handler.ListKnowledgeBases)
 		// 获取Knowledge BaseDetails  — Viewer+ 且对 KB 有 read 权限
@@ -218,14 +218,14 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// handler 内再按 permission/所有者租户做最终判定 —— 尤其 DeleteKnowledgeBase
 		// 以调用者「自身」租户(c.Keys，未被 KBAccess 改写)校验 kb.TenantID，
 		// 把Delete 锁死为「所有者租户 + Admin」，共享 editor 无法Delete 源 KB。
-		kbManagement.PUT("/:id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBase)
+		kbManagement.PUT("/:id", g.Owner(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBase)
 		// 可见范围切换 — tenant Admin+；service 层再细分（public 仅 Owner/系统管理员，
 		// org 需校验 org 归属与成员角色）。跨租户共享 editor 无权改范围。
-		kbManagement.PUT("/:id/visibility", g.Admin(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBaseVisibility)
+		kbManagement.PUT("/:id/visibility", g.Owner(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBaseVisibility)
 		// 立即重新生成Knowledge Base AI 描述 — 与Update Knowledge Base同档鉴权；同步执行一次小模型调用。
-		kbManagement.POST("/:id/profile/generate", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"),
+		kbManagement.POST("/:id/profile/generate", g.Owner(), g.KBAccessWrite("id"),
 			handler.GenerateKnowledgeBaseProfile)
-		kbManagement.DELETE("/:id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.DeleteKnowledgeBase)
+		kbManagement.DELETE("/:id", g.Owner(), g.KBAccessWrite("id"), handler.DeleteKnowledgeBase)
 		// 置顶/取消置顶Knowledge Base — Create 者本人 OR Admin+ 且对 KB 有 write 权限
 		// Pin state is now per-(user, kb) (migration 000050). Anyone with
 		// at least Viewer-level read access to the KB — including users
@@ -243,10 +243,10 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// 的 KBAccessRead，故源/目标 KB 的租户归属与 allow-list 校验在 handler 内完成
 		// （requireTenantAPIKeyKnowledgeBases 会把 source_id/target_id 兜进 allow-list）。
 		// 副本归调用者所有，不需要原 KB 的所有权。
-		kbManagement.POST("/copy", g.Admin(), handler.CopyKnowledgeBase)
+		kbManagement.POST("/copy", g.Owner(), handler.CopyKnowledgeBase)
 		// Create Knowledge Base副本 — 产出新 KB，与 create 同档：JWT Contributor+，API key 需 manage_kbs 或 full-access；
 		// 且对源 KB 有 read 权限（KBAccessRead 会对限定 key 兜住源 KB）。只Create 新的 KB Settings 记录，不复制内容/索引/分享。
-		kbManagement.POST("/:id/duplicate", g.Admin(), g.KBAccessRead("id"), handler.DuplicateKnowledgeBase)
+		kbManagement.POST("/:id/duplicate", g.Owner(), g.KBAccessRead("id"), handler.DuplicateKnowledgeBase)
 		// 获取Knowledge Base复制进度 — Viewer+；只读。manage_kbs（发起 copy 的 key）或
 		// retrieve 均可轮询；任务按租户隔离（requireTaskProgressTenant），key 只能
 		// 查本租户任务。
@@ -265,7 +265,7 @@ func RegisterKnowledgeBaseActivityRoutes(r *gin.RouterGroup, auditHandler *handl
 		return
 	}
 	r.GET("/knowledge-bases/:id/activity",
-		g.OwnedKBOrAdmin(), g.KBAccessRead("id"), auditHandler.ListKnowledgeBaseActivity)
+		g.Owner(), g.KBAccessRead("id"), auditHandler.ListKnowledgeBaseActivity)
 }
 
 // RegisterKnowledgeTagRoutes 注册Knowledge Base标签相关路由。
@@ -288,9 +288,9 @@ func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandl
 		// for the duration of the handler — so the handler no longer
 		// needs its own effectiveCtxForKB helper.
 		kbTagsRead.GET("", g.Member(), g.KBAccessRead("id"), tagHandler.ListTags)
-		kbTags.POST("", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.CreateTag)
-		kbTags.PUT("/:tag_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.UpdateTag)
-		kbTags.DELETE("/:tag_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.DeleteTag)
+		kbTags.POST("", g.Owner(), g.KBAccessWrite("id"), tagHandler.CreateTag)
+		kbTags.PUT("/:tag_id", g.Owner(), g.KBAccessWrite("id"), tagHandler.UpdateTag)
+		kbTags.DELETE("/:tag_id", g.Owner(), g.KBAccessWrite("id"), tagHandler.DeleteTag)
 	}
 }
 
@@ -309,22 +309,22 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 	{
 		// Page CRUD
 		wikiRead.GET("/pages", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.ListPages)
-		wiki.POST("/pages", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.CreatePage)
-		wiki.PUT("/move-page", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.MovePage)
+		wiki.POST("/pages", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.CreatePage)
+		wiki.PUT("/move-page", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.MovePage)
 		wikiRead.GET("/pages/*slug", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.GetPage)
-		wiki.PUT("/pages/*slug", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdatePage)
-		wiki.DELETE("/pages/*slug", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.DeletePage)
+		wiki.PUT("/pages/*slug", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.UpdatePage)
+		wiki.DELETE("/pages/*slug", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.DeletePage)
 
 		// Revision history (slug is a catch-all like /pages; revert carries
 		// the slug in the body for the same reason move-page does)
 		wikiRead.GET("/revisions/*slug", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.ListRevisions)
-		wiki.POST("/revert", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.RevertPage)
+		wiki.POST("/revert", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.RevertPage)
 
 		// Folder tree (directory nodes)
 		wikiRead.GET("/folders", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.ListFolders)
-		wiki.POST("/folders", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.CreateFolder)
-		wiki.PUT("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateFolder)
-		wiki.DELETE("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.DeleteFolder)
+		wiki.POST("/folders", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.CreateFolder)
+		wiki.PUT("/folders/:folder_id", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateFolder)
+		wiki.DELETE("/folders/:folder_id", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.DeleteFolder)
 
 		// Special pages
 		wikiRead.GET("/index", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.GetIndex)
@@ -335,12 +335,12 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 
 		// Search and maintenance
 		wikiRead.GET("/search", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.SearchPages)
-		wiki.POST("/rebuild-links", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.RebuildLinks)
+		wiki.POST("/rebuild-links", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.RebuildLinks)
 		wikiRead.GET("/lint", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.Lint)
-		wiki.POST("/auto-fix", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.AutoFix)
+		wiki.POST("/auto-fix", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.AutoFix)
 
 		// Issues
 		wikiRead.GET("/issues", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.ListIssues)
-		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateIssueStatus)
+		wiki.PUT("/issues/:issue_id/status", g.Owner(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateIssueStatus)
 	}
 }

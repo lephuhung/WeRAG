@@ -1,7 +1,7 @@
 #!/bin/bash
-# 检查开发环境配置
+# 检查开发环境Configuration 
 
-# 设置颜色
+# Settings 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -72,7 +72,7 @@ check_var() {
     fi
 }
 
-# 数据库配置
+# 数据库Configuration 
 log_info "数据库配置:"
 check_var "DB_DRIVER"
 check_var "DB_HOST"

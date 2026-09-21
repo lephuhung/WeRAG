@@ -313,7 +313,7 @@ export default function EmbedPage() {
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="mb-5 flex justify-end">
-                <div className="max-w-[80%] rounded-[16px] bg-primary px-4 py-2.5 text-[15px] leading-relaxed text-on-primary">
+                <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[15px] leading-relaxed text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
                   {m.content}
                 </div>
               </div>

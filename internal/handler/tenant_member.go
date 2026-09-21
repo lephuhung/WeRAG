@@ -19,8 +19,11 @@ import (
 )
 
 // TenantMemberHandler exposes /tenants/:id/members CRUD. The route layer
-// enforces RBAC (Viewer for list, Owner for any mutation) — see
-// router.RegisterTenantRoutes — so we don't re-check role here.
+// enforces RBAC (Member for list, Admin for mutations) — see
+// router.RegisterTenantRoutes. On top of that, only Owner (or a system
+// admin) may assign the owner role or mutate an existing owner's
+// membership: admins manage members but cannot transfer or seize
+// ownership.
 //
 // Tenant scoping: the auth middleware resolves the caller's role against
 // the *active* tenant (JWT / X-Tenant-ID switch / API-key). The URL :id
@@ -50,6 +53,15 @@ func NewTenantMemberHandler(
 		memberService: memberService,
 		userService:   userService,
 	}
+}
+
+// callerCanManageOwners reports whether the authenticated caller may assign
+// the owner role or mutate an existing owner's membership. Admins pass the
+// route-level member-management gate but must not escalate to or tamper
+// with ownership; system admins bypass tenant roles entirely.
+func callerCanManageOwners(ctx context.Context) bool {
+	return types.IsSystemAdminFromContext(ctx) ||
+		types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
 }
 
 // addMemberRequest is the JSON body for POST /tenants/:id/members.
@@ -206,6 +218,10 @@ func (h *TenantMemberHandler) AddMember(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
+	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
+		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+		return
+	}
 
 	user, err := h.userService.GetUserByEmail(ctx, strings.TrimSpace(req.Email))
 	if err != nil {
@@ -339,6 +355,23 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
+	if !callerCanManageOwners(ctx) {
+		if req.Role == types.TenantRoleOwner {
+			c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+			return
+		}
+		current, err := h.memberService.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
+			c.Error(apperrors.NewInternalServerError("failed to load membership").WithDetails(err.Error()))
+			return
+		}
+		if current != nil && current.Role == types.TenantRoleOwner {
+			c.Error(apperrors.NewForbiddenError("only workspace owners can change an owner's role"))
+			return
+		}
+	}
+
 	if err := h.memberService.UpdateRole(ctx, userID, tenantID, req.Role); err != nil {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
@@ -380,6 +413,19 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 	if userID == "" {
 		c.Error(apperrors.NewValidationError("user_id is required"))
 		return
+	}
+
+	if !callerCanManageOwners(ctx) {
+		current, err := h.memberService.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
+			c.Error(apperrors.NewInternalServerError("failed to load membership").WithDetails(err.Error()))
+			return
+		}
+		if current != nil && current.Role == types.TenantRoleOwner {
+			c.Error(apperrors.NewForbiddenError("only workspace owners can remove an owner"))
+			return
+		}
 	}
 
 	if err := h.memberService.RemoveMember(ctx, userID, tenantID); err != nil {

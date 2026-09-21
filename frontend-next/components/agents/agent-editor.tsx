@@ -161,8 +161,8 @@ export function AgentEditorModal({
 
       const res = agent
         ? await updateAgent(agent.id, {
-            name: isBuiltin ? agent.name : trimmedName,
-            description: isBuiltin ? agent.description : draft.description,
+            name: trimmedName,
+            description: draft.description,
             config: configPayload,
           })
         : await createAgent({
@@ -198,7 +198,9 @@ export function AgentEditorModal({
         {isBuiltin && (
           <div className="flex items-start gap-2.5 rounded-[10px] border border-hairline bg-surface-strong/60 p-3 text-[12px] text-muted">
             <span className="badge-pill bg-primary/10 text-primary shrink-0">built-in</span>
-            <span>{t("agentEditor.builtinHint")}</span>
+            <span>
+              {t("agentEditor.builtinHint")}
+            </span>
           </div>
         )}
 
@@ -241,9 +243,9 @@ export function AgentEditorModal({
               <input
                 className="input w-full"
                 value={draft.name}
-                disabled={readOnly || isBuiltin}
+                disabled={readOnly}
                 onChange={(e) => patch("name", e.target.value)}
-                autoFocus={!isBuiltin && !readOnly}
+                autoFocus={!readOnly}
               />
             </label>
             <label className="block">
@@ -251,7 +253,7 @@ export function AgentEditorModal({
               <textarea
                 className="input w-full h-auto min-h-[56px] resize-y"
                 value={draft.description}
-                disabled={readOnly || isBuiltin}
+                disabled={readOnly}
                 onChange={(e) => patch("description", e.target.value)}
               />
             </label>

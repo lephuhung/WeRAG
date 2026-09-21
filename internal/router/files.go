@@ -643,7 +643,7 @@ func servePresignedPreview(
 	// any valid key past the Admin check. Deny API keys explicitly first.
 	r.GET("/api/v1/files/presigned-preview",
 		middleware.DenyAPIKeyPrincipal(),
-		middleware.RequireRole(types.TenantRoleAdmin, cfg),
+		middleware.RequireRole(types.TenantRoleOwner, cfg),
 		func(c *gin.Context) {
 			ctx := c.Request.Context()
 			filePath, ok := requireFilePathQuery(c)

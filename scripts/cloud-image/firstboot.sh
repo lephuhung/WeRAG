@@ -31,7 +31,7 @@ fi
 
 # cleanup.sh 不再保留 .env, 这里从 .env.example 拷贝模板再做替换。
 # 这样保证 firstboot 之前不会有任何含明文默认密码的 .env 让 weknora.service
-# 抢先把 postgres 数据卷用错的密码初始化掉。
+# 抢先把 postgres 数据卷用错的密码Initialization 掉。
 if [[ ! -f "${ENV_FILE}" ]]; then
   if [[ -f "${ENV_TEMPLATE}" ]]; then
     echo "creating ${ENV_FILE} from ${ENV_TEMPLATE}"

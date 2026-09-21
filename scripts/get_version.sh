@@ -2,7 +2,7 @@
 # 统一的版本信息获取脚本
 # 支持本地构建和CI构建环境
 
-# 设置默认值
+# Settings 默认值
 VERSION="unknown"
 EDITION="${EDITION:-standard}"
 COMMIT_ID="unknown"
@@ -37,7 +37,7 @@ if command -v go >/dev/null 2>&1; then
     GO_VERSION=$(go version 2>/dev/null || echo "unknown")
 fi
 
-# 根据参数输出不同格式
+# 根据Parameters 输出不同格式
 case "${1:-env}" in
     "env")
         # 输出环境变量格式，对包含空格的值进行转义
@@ -60,7 +60,7 @@ case "${1:-env}" in
 EOF
         ;;
     "docker-args")
-        # 输出Docker构建参数格式
+        # 输出Docker构建Parameters 格式
         echo "--build-arg VERSION_ARG=$VERSION"
         echo "--build-arg COMMIT_ID_ARG=$COMMIT_ID"
         echo "--build-arg BUILD_TIME_ARG=$BUILD_TIME"

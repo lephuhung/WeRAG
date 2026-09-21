@@ -94,14 +94,14 @@ services:
       # > Accept-Language 请求头 > 内置默认值 (zh-CN)。留空则跟随请求方 Accept-Language。
       - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-}
       # Docker 沙箱默认关闭：本机 docker.sock 等同宿主机 root。
-      # 系统管理员也可在「设置 → 系统设置」打开（立即生效）。未落库时读本变量。
+      # 系统管理员也可在「Settings  → 系统Settings 」打开（立即生效）。未落库时读本变量。
       - WEKNORA_SANDBOX_DOCKER_ENABLED=${WEKNORA_SANDBOX_DOCKER_ENABLED:-false}
       # gin 信任的代理 CIDR（逗号分隔）；显式设为空字符串则禁用代理信任。
       # 默认信任 loopback + 私网段（容器网络内 nginx 已覆盖）
       # - WEKNORA_TRUSTED_PROXIES=${WEKNORA_TRUSTED_PROXIES:-}
       # 启动时自动执行数据库迁移；设为 false 禁用，默认启用
       - AUTO_MIGRATE=${AUTO_MIGRATE:-true}
-      # IM 渠道图片/文件外链的外部可达 URL。IM 显示知识库图片需二选一：
+      # IM 渠道图片/文件外链的外部可达 URL。IM 显示Knowledge Base图片需二选一：
       # 存储后端公网可达（如 MINIO_ENDPOINT 设为公网），或设本变量走 <APP_EXTERNAL_URL>/r/<token>（需 nginx 代理 /r/）。
       # 默认 MinIO 内网部署 / local 后端需设本变量。
       # - APP_EXTERNAL_URL=${APP_EXTERNAL_URL:-}
@@ -117,24 +117,24 @@ services:
       - COS_TEMP_BUCKET_NAME=${COS_TEMP_BUCKET_NAME:-}
       - COS_TEMP_REGION=${COS_TEMP_REGION:-}
 
-      # 认证 / 空间 / RBAC / 审计
+      # 认证 / Tenant workspace / RBAC / 审计
       # 禁止新用户注册（生产建议 true）
       - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
       # 开启后密码必须包含大小写字母、数字和特殊字符，特殊字符包含：!@#$%^&*()_+-=[]{}|;:,.<>?
       - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED=${WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED:-false}
-      # 公开注册后的默认空间策略：create_personal（默认，自动创建个人空间）/ tenantless
+      # 公开注册后的默认Tenant workspace策略：create_personal（默认，自动Create 个人Tenant workspace）/ tenantless
       - WEKNORA_AUTH_DEFAULT_TENANT_MODE=${WEKNORA_AUTH_DEFAULT_TENANT_MODE:-create_personal}
-      # 是否允许普通用户登录后主动创建空间（默认 true；false 仅能邀请加入，超管不受影响）
+      # 是否允许普通用户登录后主动Create Tenant workspace（默认 true；false 仅能邀请加入，超管不受影响）
       - WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED=${WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED:-true}
-      # 启用跨空间访问（需配合用户的 CanAccessAllTenants 权限；默认 false
+      # 启用跨Tenant workspace访问（需配合用户的 CanAccessAllTenants 权限；默认 false
       - WEKNORA_TENANT_ENABLE_CROSS_TENANT_ACCESS=${WEKNORA_TENANT_ENABLE_CROSS_TENANT_ACCESS:-false}
-      # 新建空间默认存储配额（GB，默认 10）
+      # 新建Tenant workspace默认存储配额（GB，默认 10）
       - WEKNORA_TENANT_DEFAULT_STORAGE_QUOTA_GB=${WEKNORA_TENANT_DEFAULT_STORAGE_QUOTA_GB:-10}
-      # 空间邀请链接 TTL（Go duration，默认 168h=7 天）
+      # Tenant workspace邀请链接 TTL（Go duration，默认 168h=7 天）
       - WEKNORA_INVITATION_TTL=${WEKNORA_INVITATION_TTL:-168h}
       # 审计日志保留天数（0 禁用清理，默认 90）
       - WEKNORA_AUDIT_RETENTION_DAYS=${WEKNORA_AUDIT_RETENTION_DAYS:-90}
-      # 数据库设置
+      # 数据库Settings 
       - DB_DRIVER=${DB_DRIVER:-postgres}
       - DB_HOST=${DB_HOST:-postgres}
       - DB_PORT=${DB_PORT:-5432}
@@ -158,7 +158,7 @@ services:
       - LANGFUSE_REQUEST_TIMEOUT=${LANGFUSE_REQUEST_TIMEOUT:-}
       - LANGFUSE_SAMPLE_RATE=${LANGFUSE_SAMPLE_RATE:-}
       - LANGFUSE_DEBUG=${LANGFUSE_DEBUG:-}
-      # 向量库 / 检索引擎
+      # Vector Database / 检索引擎
       - RETRIEVE_DRIVER=${RETRIEVE_DRIVER:-postgres}
       - ELASTICSEARCH_ADDR=${ELASTICSEARCH_ADDR:-}
       - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-}
@@ -175,7 +175,7 @@ services:
       - MILVUS_USERNAME=${MILVUS_USERNAME:-}
       - MILVUS_PASSWORD=${MILVUS_PASSWORD:-}
       - MILVUS_DB_NAME=${MILVUS_DB_NAME:-}
-      # 多向量库并行检索超时（秒，RETRIEVE_DRIVER 含多个驱动时生效）
+      # 多Vector Database并行检索超时（秒，RETRIEVE_DRIVER 含多个驱动时生效）
       - MULTI_STORE_RETRIEVE_TIMEOUT_SEC=${MULTI_STORE_RETRIEVE_TIMEOUT_SEC:-}
       # ========== OpenSearch（RETRIEVE_DRIVER=opensearch）==========
       - OPENSEARCH_ADDR=${OPENSEARCH_ADDR:-}
@@ -282,20 +282,20 @@ services:
       # Redis TLS（托管 Redis 加密传输；REDIS_USE_TLS=true 时生效，详见 .env.example）
       - REDIS_TLS_SERVER_NAME=${REDIS_TLS_SERVER_NAME:-}
       - REDIS_TLS_INSECURE_SKIP_VERIFY=${REDIS_TLS_INSECURE_SKIP_VERIFY:-}
-      # Redis 频道命名空间后缀（多部署共享同一 Redis 时隔离用）
+      # Redis 频道命名Tenant workspace后缀（多部署共享同一 Redis 时隔离用）
       - WEKNORA_REDIS_NAMESPACE=${WEKNORA_REDIS_NAMESPACE:-}
       # Asynq 客户端 Redis 读写超时（毫秒，默认 500）
       - WEKNORA_REDIS_OP_TIMEOUT_MS=${WEKNORA_REDIS_OP_TIMEOUT_MS:-}
-      # 知识图谱唯一开关是 NEO4J_ENABLE（见下方）。ENABLE_GRAPH_RAG 自 v0.1.6 起已被
+      # 知识Graph唯一开关是 NEO4J_ENABLE（见下方）。ENABLE_GRAPH_RAG 自 v0.1.6 起已被
       # NEO4J_ENABLE 取代，Go 主应用不再读取，此处不再透传。
       - NEO4J_ENABLE=${NEO4J_ENABLE:-}
       - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
       - NEO4J_USERNAME=${NEO4J_USERNAME:-neo4j}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       # 数据库中 API Key 等敏感字段落盘加密的 AES-256 主密钥（必须为 32 字节）。
-      # 加密范围：tenants.api_key、模型 API key、向量库凭证、web search provider key、
+      # 加密范围：tenants.api_key、模型 API key、Vector Database凭证、web search provider key、
       # WeKnoraCloud.AppSecret 等。缺失或长度不对时，已加密字段无法解密（UI 显示为空，
-      # 需重新填写）。生产环境必须显式设置且妥善保管，丢失则所有加密数据不可恢复。
+      # 需重新填写）。生产环境必须显式Settings 且妥善保管，丢失则所有加密数据不可恢复。
       # （TENANT_AES_KEY / CRYPTO_MASTER_KEY / CRYPTO_SALT 已废弃：v0.4.0 起加密统一
       #   改用 SYSTEM_AES_KEY，Go 主应用不再读取这三个变量。）
       - SYSTEM_AES_KEY=${SYSTEM_AES_KEY:-}
@@ -324,7 +324,7 @@ services:
       - WEKNORA_DOCUMENT_PROCESS_TIMEOUT=${WEKNORA_DOCUMENT_PROCESS_TIMEOUT:-}
       # 单次 DocReader RPC 超时（默认 30m，须小于上一项）
       - WEKNORA_DOCREADER_CALL_TIMEOUT=${WEKNORA_DOCREADER_CALL_TIMEOUT:-}
-      # 知识库巡检回收（回收卡在 processing 的脏数据；false 禁用，不建议）
+      # Knowledge Base巡检回收（回收卡在 processing 的脏数据；false 禁用，不建议）
       - WEKNORA_HOUSEKEEPING_ENABLED=${WEKNORA_HOUSEKEEPING_ENABLED:-}
       - WEKNORA_CHAT_ATTACHMENT_TTL_HOURS=${WEKNORA_CHAT_ATTACHMENT_TTL_HOURS:-24}
       - WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC=${WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC:-60}
@@ -336,10 +336,10 @@ services:
       # MCP 工具人工审批失败时是否放行（true 放行 / 默认 fail-close 拒绝）
       - WEKNORA_AGENT_TOOL_APPROVAL_FAIL_OPEN=${WEKNORA_AGENT_TOOL_APPROVAL_FAIL_OPEN:-}
       # Tenant / RBAC（详见 docs/RBAC说明.md 与 .env.example 注释）
-      # - WEKNORA_TENANT_ENABLE_RBAC: 是否启用空间角色强制鉴权（true / false），默认 true
-      # - WEKNORA_TENANT_MAX_OWNED_PER_USER: 单个非超管自助创建空间的上限
+      # - WEKNORA_TENANT_ENABLE_RBAC: 是否启用Tenant workspace角色强制鉴权（true / false），默认 true
+      # - WEKNORA_TENANT_MAX_OWNED_PER_USER: 单个非超管自助Create Tenant workspace的上限
       #   >0 强制限额；=0 走 handler 默认；<0 关闭限额（不建议共享部署使用）
-      # - WEKNORA_TENANT_AUTO_CREATE_API_KEY: 创建空间时自动生成 full_access API Key 并在响应中返回 token
+      # - WEKNORA_TENANT_AUTO_CREATE_API_KEY: Create Tenant workspace时自动生成 full_access API Key 并在响应中返回 token
       #   （兼容旧版默认下发 API Key 行为，破坏性变更回退开关；true / false，默认 false）
       - WEKNORA_TENANT_ENABLE_RBAC=${WEKNORA_TENANT_ENABLE_RBAC:-}
       - WEKNORA_TENANT_MAX_OWNED_PER_USER=${WEKNORA_TENANT_MAX_OWNED_PER_USER:-}
@@ -384,7 +384,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   # Sandbox 镜像：仅用于 build/pull，非常驻。Docker 沙箱默认关闭，需
-  # WEKNORA_SANDBOX_DOCKER_ENABLED=true 并挂载 docker.sock 后，app 才会按会话创建容器。
+  # WEKNORA_SANDBOX_DOCKER_ENABLED=true 并挂载 docker.sock 后，app 才会按会话Create 容器。
   sandbox:
     image: wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-sandbox
@@ -433,7 +433,7 @@ services:
       # true 时强制要求客户端证书（mTLS）
       - GRPC_MTLS_REQUIRE_CLIENT_CERT=${GRPC_MTLS_REQUIRE_CLIENT_CERT:-false}
       - GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:-}
-      # ========== gRPC 服务参数 ==========
+      # ========== gRPC 服务Parameters  ==========
       - DOCREADER_GRPC_MAX_WORKERS=${DOCREADER_GRPC_MAX_WORKERS:-4}
       - DOCREADER_GRPC_MAX_FILE_SIZE_MB=${DOCREADER_GRPC_MAX_FILE_SIZE_MB:-${MAX_FILE_SIZE_MB:-50}}
       - DOCREADER_GRPC_PORT=${DOCREADER_GRPC_PORT:-50051}
@@ -533,7 +533,7 @@ services:
       - WeKnora-network
     restart: unless-stopped
 
-  # 修改的PostgreSQL配置
+  # 修改的PostgreSQLConfiguration 
   postgres:
     image: paradedb/paradedb:v0.22.6-pg17
     container_name: WeKnora-postgres
@@ -732,7 +732,7 @@ services:
   # Stream Load partial_columns）。本 compose 使用 4.1 官方稳定 tag。
   #
   # 端口说明：
-  #   - 9030 (FE MySQL)：WeKnora 主链路读写、SQL 查询都走此端口。
+  #   - 9030 (FE MySQL)：WeKnora 主链路读写、SQL Query 都走此端口。
   #   - 8030 (FE HTTP)：Stream Load partial update 入口。
   #   - 8040 (BE)     ：BE 心跳与数据传输；FE 会把 stream load 重定向到 BE。
   #
@@ -796,7 +796,7 @@ services:
   # Langfuse 自建可观测栈 (opt-in via `--profile langfuse`)
   #
   # 为了最小化资源占用，Langfuse 会复用 WeKnora 已有的 postgres 和 redis：
-  #   - postgres：在 WeKnora-postgres 中创建独立的 "langfuse" 数据库
+  #   - postgres：在 WeKnora-postgres 中Create 独立的 "langfuse" 数据库
   #   - redis  ：复用 WeKnora-redis 的 DB 1（WeKnora 自己用 DB 0）
   # 需要新增的只有 Langfuse 应用自身 + ClickHouse（OLAP）+ 专用 MinIO（事件/媒体 S3）。
   #
@@ -810,7 +810,7 @@ services:
   # 相关默认密码已写成占位符，生产部署务必用 openssl rand 重新生成！
   # ---------------------------------------------------------------------------
 
-  # 一次性初始化脚本：在已有的 WeKnora-postgres 里创建 langfuse 数据库（幂等，数据库已存在则跳过）
+  # 一次性Initialization 脚本：在已有的 WeKnora-postgres 里Create  langfuse 数据库（幂等，数据库已存在则跳过）
   # 复用 WeKnora-postgres 的 ParadeDB 镜像，避免多拉一个 postgres 镜像
   langfuse-db-init:
     image: paradedb/paradedb:v0.22.6-pg17
@@ -830,7 +830,7 @@ services:
         # 先刷新现有库的 collation（镜像 ICU 2.36 与宿主 2.41 不匹配时必须做），否则 CREATE DATABASE 会失败
         psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
         psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
-        # 幂等创建：已存在则跳过；不存在则从 template0 克隆（template0 永远不会有 collation 漂移）
+        # 幂等Create ：已存在则跳过；不存在则从 template0 克隆（template0 永远不会有 collation 漂移）
         if psql -h postgres -U ${DB_USER} -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${LANGFUSE_DB_NAME:-langfuse}'" | grep -q 1; then
           echo "[langfuse-db-init] database '${LANGFUSE_DB_NAME:-langfuse}' already exists, skipping."
         else
@@ -874,7 +874,7 @@ services:
     container_name: WeKnora-langfuse-minio
     restart: unless-stopped
     entrypoint: sh
-    # 启动前创建 `langfuse` 桶，Langfuse 开箱即用
+    # 启动前Create  `langfuse` 桶，Langfuse 开箱即用
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-langfuseminio}
@@ -902,7 +902,7 @@ services:
     container_name: WeKnora-langfuse-worker
     restart: unless-stopped
     depends_on: &langfuse-depends-on
-      # 复用 WeKnora 已有的 postgres/redis，需要先完成 langfuse 数据库的创建
+      # 复用 WeKnora 已有的 postgres/redis，需要先完成 langfuse 数据库的Create 
       langfuse-db-init:
         condition: service_completed_successfully
       redis:
@@ -995,7 +995,7 @@ services:
         fi
     environment:
       <<: *langfuse-env
-      # 可选：首次启动时自动创建组织、项目和管理员（填了就不用在 UI 上手动注册）
+      # 可选：首次启动时自动Create 组织、项目和管理员（填了就不用在 UI 上手动注册）
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
       LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}

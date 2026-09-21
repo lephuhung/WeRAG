@@ -1,14 +1,13 @@
 /* Ported from frontend/src/config/settingsAccess.ts + Settings.vue navGroups.
- * Role model matches frontend/src/stores/auth.ts: viewer < contributor < admin
- * < owner, and SYSTEM_ADMIN_SECTIONS gate on the platform-wide system-admin
- * flag. Server-side guards stay authoritative; this only hides UI entries.
+ * Role model matches internal/types/tenant_member.go: member < admin < owner,
+ * and SYSTEM_ADMIN_SECTIONS gate on the platform-wide system-admin flag.
+ * Server-side guards stay authoritative; this only hides UI entries.
  */
 
-export type SettingsRoleKey = "viewer" | "contributor" | "admin" | "owner" | "system";
+export type SettingsRoleKey = "member" | "admin" | "owner" | "system";
 
 const ROLE_LEVEL: Record<string, number> = {
-  viewer: 10,
-  contributor: 20,
+  member: 10,
   admin: 30,
   owner: 40,
 };
@@ -34,19 +33,21 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     key: "account",
     labelKey: "settingsNav.groups.account",
     items: [
-      { key: "general", labelKey: "settingsNav.general", fallbackLabel: "General", minRole: "viewer" },
-      { key: "envvars", labelKey: "settingsNav.envvars", fallbackLabel: "Environment variables", minRole: "viewer" },
-      { key: "mymemory", labelKey: "settingsNav.mymemory", fallbackLabel: "My memory", minRole: "viewer" },
+      { key: "general", labelKey: "settingsNav.general", fallbackLabel: "General", minRole: "member" },
+      { key: "envvars", labelKey: "settingsNav.envvars", fallbackLabel: "Environment variables", minRole: "member" },
+      { key: "mymemory", labelKey: "settingsNav.mymemory", fallbackLabel: "My memory", minRole: "member" },
+      { key: "browserconnection", fallbackLabel: "Browser connection", minRole: "member" },
     ],
   },
   {
     key: "workspace",
     labelKey: "settingsNav.groups.workspace",
     items: [
-      { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "viewer" },
-      { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "viewer" },
-      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "viewer" },
-      { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "viewer" },
+      { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
+      { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "member" },
+      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "member" },
+      { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "member" },
+      { key: "chathistory", fallbackLabel: "Chat history", minRole: "admin" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "admin" },
     ],
   },
@@ -54,7 +55,7 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     key: "models_runtime",
     labelKey: "settingsNav.groups.models",
     items: [
-      { key: "models", labelKey: "settingsNav.models", fallbackLabel: "Models", minRole: "viewer" },
+      { key: "models", labelKey: "settingsNav.models", fallbackLabel: "Models", minRole: "member" },
       { key: "ollama", fallbackLabel: "Ollama", minRole: "system" },
       { key: "weknoracloud", fallbackLabel: "WeRAG Cloud", minRole: "system" },
     ],
@@ -103,6 +104,16 @@ export const SECTION_ROUTES: Record<string, string> = {
   "system-services": "/platform/system/services",
   "system-logs": "/platform/system/logs",
   "system-models": "/platform/system/models",
+  "system-extensions": "/platform/system/extensions",
+  ollama: "/platform/system/models?tab=ollama",
+  weknoracloud: "/platform/system/models?tab=weknoracloud",
+  parser: "/platform/system/services?category=parser",
+  vectorstore: "/platform/system/services?category=vector",
+  storage: "/platform/system/services?category=storage",
+  websearch: "/platform/system/services?category=websearch",
+  sandbox: "/platform/system/services?category=sandbox",
+  skills: "/platform/system/extensions?tab=skills",
+  mcp: "/platform/system/extensions?tab=mcp",
 };
 
 /* Legacy ?section= values from the Vue app → Next nav keys. */

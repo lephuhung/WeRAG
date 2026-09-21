@@ -348,7 +348,7 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		}
 	default:
 		// Narrowing to tenant scope is an Admin+ decision.
-		if !caller.Role.HasPermission(types.TenantRoleAdmin) && !types.IsSystemAdminFromContext(ctx) {
+		if !caller.Role.HasPermission(types.TenantRoleOwner) && !types.IsSystemAdminFromContext(ctx) {
 			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
 				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được đổi phạm vi knowledge base")
 			}

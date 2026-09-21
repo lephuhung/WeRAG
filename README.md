@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <img src="./docs/images/logo.png" alt="WeKnora Logo" height="120"/>
+    <img src="./docs/images/logo.png" alt="Tra cứu tài liệu" height="120"/>
   </picture>
 </p>
 

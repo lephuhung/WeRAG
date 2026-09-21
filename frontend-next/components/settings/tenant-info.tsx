@@ -82,7 +82,7 @@ export function TenantInfo() {
 
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const effectiveRole = isSystemAdmin ? "owner" : (currentRole ?? "");
-  const canEditTenant = ({ viewer: 10, contributor: 20, admin: 30, owner: 40 }[effectiveRole] ?? 0) >= 40;
+  const canEditTenant = ({ member: 10, admin: 30, owner: 40 }[effectiveRole] ?? 0) >= 40;
   const activeTenantMatch = info && Number(info.id) === Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const canLeave = activeTenantMatch && effectiveRole && effectiveRole !== "owner" ? true
     : ownerSnapshot.ready && ownerSnapshot.count > 1;

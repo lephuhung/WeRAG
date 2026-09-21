@@ -278,6 +278,10 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
+	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
+		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+		return
+	}
 
 	user, err := h.userService.GetUserByEmail(ctx, strings.TrimSpace(req.Email))
 	if err != nil {

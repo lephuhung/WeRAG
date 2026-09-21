@@ -15,6 +15,8 @@
  * X-Embed-Visitor) and never send Bearer or X-Tenant-ID.
  */
 
+import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+
 export type StreamChunk = {
   id?: string;
   response_type?: string;
@@ -31,11 +33,7 @@ export type StreamChunk = {
   };
   session_id?: string;
   assistant_message_id?: string;
-  knowledge_references?: Array<{
-    knowledge_title?: string;
-    knowledge_id?: string;
-    chunk_id?: string;
-  }>;
+  knowledge_references?: KnowledgeReferenceItem[];
   // Reasoning and Tool properties
   tool_name?: string;
   tool_call_id?: string;
@@ -135,11 +133,12 @@ async function refreshTokenNow(refreshToken: string): Promise<string> {
   return token;
 }
 
-function buildChatBody(params: StreamParams, agentId: string | undefined, isEmbed: boolean) {
+function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: boolean) {
+  const agentEnabled = params.agentEnabled !== undefined ? params.agentEnabled : isAgentChat;
   return {
     query: params.query,
-    agent_enabled: params.agentEnabled !== undefined ? params.agentEnabled : Boolean(agentId),
-    ...(agentId ? { agent_id: agentId } : {}),
+    agent_enabled: agentEnabled,
+    ...(params.agentId ? { agent_id: params.agentId } : {}),
     ...(params.agentSourceTenantId
       ? { agent_source_tenant_id: Number(params.agentSourceTenantId) || params.agentSourceTenantId }
       : {}),
@@ -155,10 +154,10 @@ function buildChatBody(params: StreamParams, agentId: string | undefined, isEmbe
       : {}),
     ...(params.summaryModelId ? { summary_model_id: params.summaryModelId } : {}),
     // MCP/skills only ride the agent pipeline — same guard as the Vue sender.
-    ...(agentId && params.mcpServiceIds?.length
+    ...(isAgentChat && params.mcpServiceIds?.length
       ? { mcp_service_ids: params.mcpServiceIds }
       : {}),
-    ...(agentId && params.skillNames?.length ? { skill_names: params.skillNames } : {}),
+    ...(isAgentChat && params.skillNames?.length ? { skill_names: params.skillNames } : {}),
     ...(params.attachmentIds?.length ? { attachment_ids: params.attachmentIds } : {}),
     ...(params.attachmentUploads?.length
       ? { attachment_uploads: params.attachmentUploads }
@@ -177,23 +176,45 @@ async function readSSE(res: Response, onChunk: (c: StreamChunk) => void) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+
+  const dispatchFrame = (frame: string) => {
+    const lines = frame.split(/\r?\n/);
+    let data = "";
+    for (const line of lines) {
+      if (line.startsWith("data:")) {
+        const text = line.replace(/^data:\s?/, "");
+        data = data ? `${data}\n${text}` : text;
+      }
+    }
+    if (!data || data === "[DONE]") return;
+    try {
+      const parsed = JSON.parse(data) as StreamChunk;
+      onChunk(parsed);
+    } catch (err) {
+      console.warn("[readSSE] Failed to parse JSON frame:", err, "raw data:", data);
+    }
+  };
+
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
-    const frames = buf.split("\n\n");
-    buf = frames.pop() ?? "";
-    for (const frame of frames) {
-      for (const line of frame.split("\n")) {
-        const text = line.startsWith("data:") ? line.slice(5).trim() : "";
-        if (!text || text === "[DONE]") continue;
-        try {
-          onChunk(JSON.parse(text) as StreamChunk);
-        } catch {
-          /* keep-alive comment or partial frame */
-        }
+
+    // Split on double line break (\r\n\r\n or \n\n)
+    let boundaryMatch: RegExpExecArray | null;
+    const boundaryRegex = /\r?\n\r?\n/;
+    while ((boundaryMatch = boundaryRegex.exec(buf)) !== null) {
+      const frame = buf.slice(0, boundaryMatch.index);
+      buf = buf.slice(boundaryMatch.index + boundaryMatch[0].length);
+      if (frame.trim()) {
+        dispatchFrame(frame);
       }
     }
+  }
+
+  // Flush any trailing event frame remaining after stream closes
+  if (buf.trim()) {
+    dispatchFrame(buf);
   }
 }
 
@@ -211,12 +232,11 @@ async function openChatStream(
   embed: EmbedStreamParams | null,
 ) {
   const { tenantId } = readTokens();
-  // Backend AgentQA 400s when agent_enabled=true without a resolvable
-  // agent_id (qa.go sanity gate). Vue's default is builtin-quick-answer
-  // (RAG pipeline): the agent id decides the endpoint, not a bare flag.
-  const agentId =
-    params.agentId && params.agentId !== "builtin-quick-answer" ? params.agentId : undefined;
-  const endpoint = agentId ? "agent-chat" : "knowledge-chat";
+  const isAgentChat =
+    params.agentEnabled === true &&
+    Boolean(params.agentId) &&
+    params.agentId !== "builtin-quick-answer";
+  const endpoint = isAgentChat ? "agent-chat" : "knowledge-chat";
   const url = embed
     ? `/api/v1/embed/${encodeURIComponent(embed.channelId)}/${endpoint}/${encodeURIComponent(params.sessionId)}`
     : `/api/v1/${endpoint}/${encodeURIComponent(params.sessionId)}`;
@@ -232,7 +252,7 @@ async function openChatStream(
       ...(embed?.sessionSig ? { "X-Embed-Session": embed.sessionSig } : {}),
       ...(embed?.visitorId ? { "X-Embed-Visitor": embed.visitorId } : {}),
     },
-    body: JSON.stringify(buildChatBody(params, agentId, Boolean(embed))),
+    body: JSON.stringify(buildChatBody(params, isAgentChat, Boolean(embed))),
     signal: params.signal,
   });
   if (res.status === 401) throw streamError(res);

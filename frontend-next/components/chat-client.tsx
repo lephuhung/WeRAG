@@ -11,9 +11,11 @@ import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments } from "@/components/use-attachments";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconDoc } from "@/components/icons";
+import { IconDoc, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
-import { ToolResultCard, type ToolEventItem } from "@/components/chat/tool-result-card";
+import { type ToolEventItem } from "@/components/chat/tool-result-card";
+import { RagPipelineProgress } from "@/components/chat/rag-pipeline-progress";
+import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 
 type UiMessage = {
   id: string;
@@ -24,7 +26,7 @@ type UiMessage = {
   streaming?: boolean;
   isError?: boolean;
   assistantMessageId?: string;
-  references?: Array<{ knowledge_title?: string; knowledge_id?: string; chunk_id?: string }>;
+  references?: KnowledgeReferenceItem[];
 };
 
 function parseThinkAndContent(
@@ -54,6 +56,179 @@ function fileToDataUri(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function UserMessageBubble({
+  content,
+  onCopy,
+  onFork,
+  onEdit,
+}: {
+  content: string;
+  onCopy?: () => void;
+  onFork?: () => void;
+  onEdit?: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    onCopy?.();
+  };
+
+  return (
+    <div className="group mb-6 flex flex-col items-end">
+      <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-relaxed text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
+        {content}
+      </div>
+      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+            title="Chỉnh sửa câu hỏi"
+            aria-label="Chỉnh sửa câu hỏi"
+          >
+            <IconEdit className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+          title={copied ? "Đã sao chép" : "Sao chép câu hỏi"}
+          aria-label="Sao chép câu hỏi"
+        >
+          {copied ? (
+            <IconCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <IconCopy className="h-3.5 w-3.5" />
+          )}
+        </button>
+        {onFork && (
+          <button
+            type="button"
+            onClick={onFork}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+            title="Tạo nhánh từ câu hỏi này"
+            aria-label="Tạo nhánh từ câu hỏi này"
+          >
+            <IconFork className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BotMessageActions({
+  content,
+  canFork,
+  onFork,
+  onRegenerate,
+}: {
+  content: string;
+  canFork?: boolean;
+  onFork?: () => void;
+  onRegenerate?: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="mt-2.5 flex items-center gap-1.5 text-muted-soft">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+        title={copied ? "Đã sao chép" : "Sao chép câu trả lời"}
+        aria-label="Sao chép câu trả lời"
+      >
+        {copied ? (
+          <IconCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <IconCopy className="h-3.5 w-3.5" />
+        )}
+      </button>
+
+      {canFork && onFork && (
+        <button
+          type="button"
+          onClick={onFork}
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+          title="Tạo nhánh hội thoại mới"
+          aria-label="Tạo nhánh hội thoại mới"
+        >
+          <IconFork className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      {onRegenerate && (
+        <button
+          type="button"
+          onClick={onRegenerate}
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
+          title="Tạo lại câu trả lời"
+          aria-label="Tạo lại câu trả lời"
+        >
+          <IconRefresh className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CompactReferencesList({
+  references,
+  onSelectRef,
+}: {
+  references: KnowledgeReferenceItem[];
+  onSelectRef?: (ref: KnowledgeReferenceItem, index: number) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const maxInitial = 5;
+  const hasMore = references.length > maxInitial;
+  const displayed = showAll ? references : references.slice(0, maxInitial);
+  const remaining = references.length - maxInitial;
+
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      {displayed.map((r, i) => (
+        <button
+          key={r.chunk_id ?? r.id ?? `${r.knowledge_id || "ref"}-${i}`}
+          type="button"
+          onClick={() => onSelectRef?.(r, i)}
+          title={r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Tài liệu"}
+          className="group flex max-w-[220px] items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-body transition-all hover:border-primary/40 hover:bg-surface-strong/60 hover:text-ink cursor-pointer select-none text-left"
+        >
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-strong group-hover:bg-primary/15 group-hover:text-primary text-[10px] font-semibold text-ink transition-colors">
+            {i + 1}
+          </span>
+          <IconDoc className="h-3 w-3 shrink-0 text-muted group-hover:text-primary transition-colors" />
+          <span className="truncate">{r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Nguồn"}</span>
+        </button>
+      ))}
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="flex items-center gap-1 rounded-full border border-hairline bg-surface-strong/70 px-2.5 py-1 text-[12px] font-medium text-body hover:bg-surface-strong hover:text-ink transition-colors select-none cursor-pointer"
+          title={showAll ? "Thu gọn bớt nguồn" : `Xem thêm ${remaining} nguồn khác`}
+        >
+          <span>{showAll ? "Thu gọn" : `+${remaining}`}</span>
+        </button>
+      )}
+    </div>
+  );
 }
 
 function ChatBody({ id }: { id: string }) {
@@ -88,10 +263,29 @@ function ChatBody({ id }: { id: string }) {
   const accRef = useRef("");
   const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
 
+  // References slide-out panel (drawer)
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerRefs, setDrawerRefs] = useState<KnowledgeReferenceItem[]>([]);
+  const [activeRefKey, setActiveRefKey] = useState<string | null>(null);
+
+  const handleOpenDrawer = (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index = 0) => {
+    setDrawerRefs(refs);
+    if (activeItem) {
+      setActiveRefKey(activeItem.chunk_id || activeItem.id || `${activeItem.knowledge_id || "ref"}-${index}`);
+    } else {
+      setActiveRefKey(null);
+    }
+    setDrawerOpen(true);
+  };
+
   // History and session details:
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
   // and hydrate input state (agent, model, KBs) from last_request_state.
   useEffect(() => {
+    sentInitial.current = false;
+    setMessages([]);
+    setError(null);
+    setBusy(false);
     if (id === "new") {
       setSession(null);
       setSessionTitle(null);
@@ -114,26 +308,50 @@ function ChatBody({ id }: { id: string }) {
         console.error("Failed to load session details:", err);
       });
 
+    // If there is an initial query waiting to be auto-sent on mount,
+    // skip initial listMessages to prevent race condition wiping out optimistic message.
+    if (initialQ && !sentInitial.current) {
+      return () => {
+        alive = false;
+      };
+    }
+
     listMessages(id, 30)
       .then((res) => {
         if (!alive) return;
         const rows = res.data ?? [];
-        setMessages(
-          rows.map((m, i) => {
+        setMessages((prev) => {
+          const streamingMsgs = prev.filter((m) => m.streaming);
+          const mapped: UiMessage[] = rows.map((m, i) => {
             const rawContent = m.content ?? "";
             const parsed =
               m.role === "assistant"
                 ? parseThinkAndContent(rawContent)
                 : { thinking: undefined, content: rawContent };
+            const refs = (m as { knowledge_references?: KnowledgeReferenceItem[] }).knowledge_references;
             return {
               id: m.id ?? `h${i}`,
               role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
               content: parsed.content,
               thinking: parsed.thinking,
+              references: refs?.length ? refs : undefined,
               assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
             };
-          }),
-        );
+          });
+          if (streamingMsgs.length > 0) {
+            const nonStreamingRows = mapped.filter(
+              (m) =>
+                !streamingMsgs.some(
+                  (s) =>
+                    s.id === m.id ||
+                    (s.assistantMessageId &&
+                      (s.assistantMessageId === m.assistantMessageId || s.assistantMessageId === m.id)),
+                ),
+            );
+            return [...nonStreamingRows, ...streamingMsgs];
+          }
+          return mapped;
+        });
         const last = rows[rows.length - 1];
         if (alive && last && last.role !== "user" && last.is_completed === false && last.id) {
           setBusy(true);
@@ -222,20 +440,26 @@ function ChatBody({ id }: { id: string }) {
     setError(null);
     setBusy(true);
 
-    // No backend session exists for /platform/chat/new — the backend 404s on
-    // unknown session ids, so create one first and re-enter through the ?q=
-    // auto-send flow (same path the creatChat page uses).
-    if (id === "new") {
+    let activeSessionId = id;
+    if (activeSessionId === "new") {
       try {
         const res = await createSession({});
         const sid = res.data?.id;
         if (!sid) throw new Error("Failed to create session");
-        router.replace(`/platform/chat/${sid}?q=${encodeURIComponent(t)}`);
+        activeSessionId = sid;
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", `/platform/chat/${sid}`);
+          window.dispatchEvent(
+            new CustomEvent("weknora:session-created", {
+              detail: { sessionId: sid },
+            }),
+          );
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create session");
         setBusy(false);
+        return;
       }
-      return;
     }
 
     const asstId = `a${Date.now()}`;
@@ -246,7 +470,7 @@ function ChatBody({ id }: { id: string }) {
     for (const file of s.imageFiles) {
       try {
         const up = await uploadTemporaryAttachment(
-          id,
+          activeSessionId,
           file,
           ctx.settings.selectedAgentId || undefined,
           ctx.settings.selectedAgentSourceTenantId ?? undefined,
@@ -264,7 +488,7 @@ function ChatBody({ id }: { id: string }) {
         await Promise.all(
           localOnes.map(async (a) => {
             const up = await uploadTemporaryAttachment(
-              id,
+              activeSessionId,
               a.file,
               ctx.settings.selectedAgentId || undefined,
               ctx.settings.selectedAgentSourceTenantId ?? undefined,
@@ -293,6 +517,13 @@ function ChatBody({ id }: { id: string }) {
     // handle thinking, tool execution, answer content and references.
     const applyChunk = (c: StreamChunk) => {
       const kind = c.response_type ?? c.type;
+      const incomingAsstId = c.assistant_message_id;
+      if (incomingAsstId) {
+        setAssistantMessageId(incomingAsstId);
+      }
+      const matchAssistant = (msg: UiMessage) =>
+        msg.id === asstId || (Boolean(incomingAsstId) && msg.assistantMessageId === incomingAsstId);
+
       if (kind === "session_title") {
         const newTitle = c.content || c.data?.title;
         if (newTitle) {
@@ -300,66 +531,106 @@ function ChatBody({ id }: { id: string }) {
           if (typeof window !== "undefined") {
             window.dispatchEvent(
               new CustomEvent("weknora:session-title-updated", {
-                detail: { sessionId: id, title: newTitle },
+                detail: { sessionId: activeSessionId, title: newTitle },
               }),
             );
           }
         }
-        if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
+        if (incomingAsstId) {
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === asstId ? { ...msg, assistantMessageId: incomingAsstId } : msg,
+            ),
+          );
+        }
         return;
       }
       if (kind === "agent_query") {
-        if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
+        if (incomingAsstId) {
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === asstId ? { ...msg, assistantMessageId: incomingAsstId } : msg,
+            ),
+          );
+        }
         return;
       }
-      if (kind === "references" && c.knowledge_references?.length) {
-        const refs = c.knowledge_references;
-        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, references: refs } : msg)));
-        return;
-      }
-      if (kind === "error") {
-        const msg = c.content || "Stream failed";
-        setError(msg);
+
+      const streamRefs =
+        c.knowledge_references ??
+        (c.data as { references?: KnowledgeReferenceItem[] } | undefined)?.references ??
+        (c.data as { knowledge_references?: KnowledgeReferenceItem[] } | undefined)?.knowledge_references;
+
+      if ((kind === "references" || streamRefs) && streamRefs && streamRefs.length > 0) {
         setMessages((m) =>
           m.map((msg) =>
-            msg.id === asstId
+            matchAssistant(msg)
+              ? { ...msg, references: streamRefs, assistantMessageId: incomingAsstId ?? msg.assistantMessageId }
+              : msg,
+          ),
+        );
+        if (kind === "references") return;
+      }
+      if (kind === "error") {
+        const errorText = c.content || (c.data?.error as string) || "Stream failed";
+        console.error("[applyChunk] Error event received:", errorText, c);
+        setError(errorText);
+        setMessages((m) =>
+          m.map((msg) =>
+            matchAssistant(msg)
               ? {
                   ...msg,
-                  content: msg.content || `⚠️ ${msg}`,
+                  content: msg.content || `⚠️ ${errorText}`,
                   isError: true,
                   streaming: false,
+                  assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
                 }
               : msg,
           ),
         );
         return;
       }
-      if (c.assistant_message_id) setAssistantMessageId(c.assistant_message_id);
 
       // 1. Thinking / Reasoning chunks
-      const thoughtText = c.reasoning_content ?? c.thought ?? (c.data?.thought as string | undefined);
-      if (kind === "thinking" || thoughtText) {
+      const thoughtText =
+        c.reasoning_content ??
+        c.thought ??
+        (c.data?.thought as string | undefined) ??
+        (kind === "thinking" ? c.content : undefined);
+      if (kind === "thinking") {
         thinkingAcc += thoughtText ?? c.content ?? "";
         const snapThinking = thinkingAcc;
         setMessages((m) =>
           m.map((msg) =>
-            msg.id === asstId
-              ? { ...msg, thinking: snapThinking, assistantMessageId: c.assistant_message_id ?? msg.assistantMessageId }
+            matchAssistant(msg)
+              ? {
+                  ...msg,
+                  thinking: snapThinking,
+                  assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
+                }
               : msg,
           ),
         );
         return;
       }
+      if (thoughtText) {
+        thinkingAcc += thoughtText;
+      }
 
       // 2. Tool call events
       if (kind === "tool_call") {
-        const callId = c.tool_call_id || c.id || `tool-${Date.now()}-${Math.random()}`;
+        const toolName = c.tool_name || (c.data?.tool_name as string) || "";
+        const callId =
+          c.tool_call_id ||
+          (c.data?.tool_call_id as string) ||
+          (c.data?.event_id as string) ||
+          `tool-${toolName}-${Date.now()}`;
         const existingIdx = toolEventsList.findIndex((t) => t.id === callId);
         const item: ToolEventItem = {
           id: callId,
-          tool_name: c.tool_name,
-          title: (c.data?.title as string) || c.tool_name,
-          input: c.tool_data ?? c.tool_input,
+          tool_name: toolName,
+          title: (c.data?.title as string) || toolName,
+          input: c.tool_data ?? c.tool_input ?? c.data?.arguments ?? c.data,
           status: "pending",
         };
         if (existingIdx >= 0) {
@@ -368,48 +639,87 @@ function ChatBody({ id }: { id: string }) {
           toolEventsList.push(item);
         }
         const snapTools = [...toolEventsList];
-        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, toolEvents: snapTools } : msg)));
+        setMessages((m) =>
+          m.map((msg) =>
+            matchAssistant(msg)
+              ? {
+                  ...msg,
+                  toolEvents: snapTools,
+                  assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
+                }
+              : msg,
+          ),
+        );
         return;
       }
 
       // 3. Tool result events
       if (kind === "tool_result") {
-        const callId = c.tool_call_id || c.id;
-        const existingIdx = toolEventsList.findIndex((t) => (callId ? t.id === callId : t.tool_name === c.tool_name));
-        const status = c.success === false ? "error" : "success";
-        const output = c.tool_output ?? c.content;
+        const toolName = c.tool_name || (c.data?.tool_name as string) || "";
+        const callId = c.tool_call_id || (c.data?.tool_call_id as string) || (c.data?.event_id as string);
+        const existingIdx = toolEventsList.findIndex((t) =>
+          callId ? t.id === callId : t.tool_name === toolName,
+        );
+        const success = c.success !== false && c.data?.success !== false;
+        const output = c.tool_output ?? c.content ?? c.data;
         if (existingIdx >= 0) {
           toolEventsList[existingIdx] = {
             ...toolEventsList[existingIdx],
-            status,
+            status: success ? "success" : "error",
             output,
-            error: c.success === false ? (c.content || "Tool error") : undefined,
+            error: !success ? (c.content || (c.data?.error as string) || "Tool error") : undefined,
           };
         } else {
           toolEventsList.push({
-            id: callId || `tool-${Date.now()}`,
-            tool_name: c.tool_name,
-            status,
+            id: callId || `tool-${toolName}-${Date.now()}`,
+            tool_name: toolName,
+            status: success ? "success" : "error",
             output,
-            error: c.success === false ? (c.content || "Tool error") : undefined,
+            error: !success ? (c.content || (c.data?.error as string) || "Tool error") : undefined,
           });
         }
         const snapTools = [...toolEventsList];
-        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, toolEvents: snapTools } : msg)));
+        setMessages((m) =>
+          m.map((msg) =>
+            matchAssistant(msg)
+              ? {
+                  ...msg,
+                  toolEvents: snapTools,
+                  assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
+                }
+              : msg,
+          ),
+        );
         return;
       }
 
-      // 4. Regular answer content
+      // 4. Complete event
+      if (kind === "complete" || kind === "stop") {
+        setMessages((m) =>
+          m.map((msg) =>
+            matchAssistant(msg)
+              ? {
+                  ...msg,
+                  streaming: false,
+                  assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
+                }
+              : msg,
+          ),
+        );
+        return;
+      }
+
+      // 5. Regular answer content
       acc += c.content ?? "";
       const parsed = parseThinkAndContent(acc, thinkingAcc);
       setMessages((m) =>
         m.map((msg) =>
-          msg.id === asstId
+          matchAssistant(msg)
             ? {
                 ...msg,
                 content: parsed.content,
-                thinking: parsed.thinking,
-                assistantMessageId: c.assistant_message_id ?? msg.assistantMessageId,
+                thinking: parsed.thinking || (thinkingAcc || undefined),
+                assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
               }
             : msg,
         ),
@@ -444,10 +754,10 @@ function ChatBody({ id }: { id: string }) {
       else if (item.type === "mcp") mcpIds.add(item.id);
       else if (item.type === "skill") skillSet.add(item.skill_name ?? item.id);
     }
-    const agentId =
-      ctx.settings.selectedAgentId && ctx.settings.selectedAgentId !== "builtin-quick-answer"
-        ? ctx.settings.selectedAgentId
-        : undefined;
+    const selectedAgentId = ctx.settings.selectedAgentId || "builtin-quick-answer";
+    const isAgentMode =
+      selectedAgentId === "builtin-smart-reasoning" ||
+      (selectedAgentId !== "builtin-quick-answer" && ctx.settings.isAgentEnabled);
     const attachmentIds = [
       ...s.attachments.map((a) => a.documentId).filter((x): x is string => Boolean(x)),
       ...imageAttachmentIds,
@@ -462,10 +772,10 @@ function ChatBody({ id }: { id: string }) {
     const kbIdsOverride = pendingKbIds.current;
     pendingKbIds.current = [];
     streamChat({
-      sessionId: id === "new" ? "new" : id,
+      sessionId: activeSessionId,
       query: t,
-      agentEnabled: Boolean(agentId),
-      agentId,
+      agentEnabled: isAgentMode,
+      agentId: selectedAgentId,
       agentSourceTenantId: ctx.settings.selectedAgentSourceTenantId ?? undefined,
       knowledgeBaseIds: kbIdsOverride.length > 0 ? kbIdsOverride : [...kbIdSet],
       knowledgeIds: [...fileIdSet],
@@ -486,14 +796,15 @@ function ChatBody({ id }: { id: string }) {
     })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
-        const msg = e instanceof Error ? e.message : "Stream failed";
-        setError(msg);
+        const errorText = e instanceof Error ? e.message : "Stream failed";
+        console.error("[streamChat] Error:", e);
+        setError(errorText);
         setMessages((m) =>
           m.map((msg) =>
             msg.id === asstId
               ? {
                   ...msg,
-                  content: msg.content || `⚠️ ${msg}`,
+                  content: msg.content || `⚠️ ${errorText}`,
                   isError: true,
                   streaming: false,
                 }
@@ -505,6 +816,9 @@ function ChatBody({ id }: { id: string }) {
         setBusy(false);
         setAssistantMessageId(null);
         setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, streaming: false } : msg)));
+        if (id === "new" && activeSessionId !== "new") {
+          router.replace(`/platform/chat/${activeSessionId}`);
+        }
       });
   };
 
@@ -512,10 +826,13 @@ function ChatBody({ id }: { id: string }) {
   useEffect(() => {
     if (initialQ && !sentInitial.current) {
       sentInitial.current = true;
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/platform/chat/${id}`);
+      }
       void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQ]);
+  }, [initialQ, id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -545,81 +862,97 @@ function ChatBody({ id }: { id: string }) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[760px] px-6 py-10">
-          {messages.map((m) =>
+        <div className="mx-auto max-w-[1040px] px-6 py-8">
+          {messages.map((m, index) =>
             m.role === "user" ? (
-              <div key={m.id} className="mb-6 flex justify-end">
-                <div className="max-w-[75%] rounded-[16px] bg-primary px-5 py-3 text-[15px] leading-relaxed text-on-primary">
-                  {m.content}
-                </div>
-              </div>
+              <UserMessageBubble
+                key={m.id}
+                content={m.content}
+                onEdit={() => setInput(m.content)}
+                onFork={
+                  id !== "new"
+                    ? () => {
+                        void forkSession(id, { message_id: m.id })
+                          .then((res) => {
+                            const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
+                            const sessionId =
+                              newId && typeof newId === "object" && "session" in newId
+                                ? newId.session?.id
+                                : (newId as { id?: string } | undefined)?.id;
+                            if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
+                          })
+                          .catch(() => undefined);
+                      }
+                    : undefined
+                }
+              />
             ) : (
               <div key={m.id} className="mb-6 flex gap-4">
                 <div className="display-sm mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px]">
                   W
                 </div>
-                <div className="max-w-[85%] min-w-0 flex-1 pt-1.5">
+                <div className="w-full min-w-0 flex-1 pt-1.5">
+                  <RagPipelineProgress
+                    events={m.toolEvents}
+                    references={m.references}
+                    isStreaming={m.streaming}
+                    hasAnswer={Boolean(m.content)}
+                    isCompleted={!m.streaming}
+                    onViewReferences={() => handleOpenDrawer(m.references || [])}
+                  />
                   {m.thinking && (
                     <ThinkingDisplay content={m.thinking} streaming={m.streaming && !m.content} />
-                  )}
-                  {m.toolEvents && m.toolEvents.length > 0 && (
-                    <div className="mb-3 space-y-1">
-                      {m.toolEvents.map((t) => (
-                        <ToolResultCard key={t.id} event={t} />
-                      ))}
-                    </div>
                   )}
                   {m.content ? (
                     <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : ""}>
                       <Markdown text={m.content} streaming={m.streaming} />
                     </div>
                   ) : (
-                    <p className="text-[15px] leading-relaxed text-body">{m.streaming && !m.thinking ? "…" : ""}</p>
+                    <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.toolEvents || m.toolEvents.length === 0) ? "…" : ""}</p>
                   )}
                   {m.references && m.references.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {m.references.map((r, i) => (
-                        <span
-                          key={r.chunk_id ?? `${r.knowledge_id}-${i}`}
-                          className="flex items-center gap-2 rounded-full border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-body"
-                        >
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-surface-strong text-[10px] font-semibold text-ink">
-                            {i + 1}
-                          </span>
-                          <IconDoc className="h-3.5 w-3.5 text-muted" />
-                          {r.knowledge_title ?? r.knowledge_id ?? "source"}
-                        </span>
-                      ))}
-                    </div>
+                    <CompactReferencesList
+                      references={m.references}
+                      onSelectRef={(r, i) => handleOpenDrawer(m.references || [], r, i)}
+                    />
                   )}
-                  {!m.streaming && m.assistantMessageId && (
-                    <div className="caption mt-2 flex items-center gap-3 text-muted-soft">
-                      <button
-                        className="transition-colors hover:text-ink"
-                        onClick={() => void navigator.clipboard.writeText(m.content)}
-                      >
-                        Copy
-                      </button>
-                      {id !== "new" && (
-                        <button
-                          className="transition-colors hover:text-ink"
-                          onClick={() => {
-                            void forkSession(id, { message_id: m.assistantMessageId! })
-                              .then((res) => {
-                                const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
-                                const sessionId = newId && typeof newId === "object" && "session" in newId
-                                  ? newId.session?.id
-                                  : (newId as { id?: string } | undefined)?.id;
-                                if (sessionId ?? sessionId) void 0;
-                                if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
-                              })
-                              .catch(() => undefined);
-                          }}
-                        >
-                          Fork
-                        </button>
-                      )}
-                    </div>
+                  {!m.streaming && (m.assistantMessageId || m.content) && (
+                    <BotMessageActions
+                      content={m.content}
+                      canFork={id !== "new" && Boolean(m.assistantMessageId)}
+                      onFork={() => {
+                        if (!m.assistantMessageId) return;
+                        void forkSession(id, { message_id: m.assistantMessageId })
+                          .then((res) => {
+                            const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
+                            const sessionId =
+                              newId && typeof newId === "object" && "session" in newId
+                                ? newId.session?.id
+                                : (newId as { id?: string } | undefined)?.id;
+                            if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
+                          })
+                          .catch(() => undefined);
+                      }}
+                      onRegenerate={
+                        !busy
+                          ? () => {
+                              const prevUser = messages
+                                .slice(0, index)
+                                .reverse()
+                                .find((msg) => msg.role === "user");
+                              if (prevUser) {
+                                void send({
+                                  query: prevUser.content,
+                                  attachments: [],
+                                  imageFiles: [],
+                                  mentionedItems: [],
+                                  modelId: "",
+                                });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   )}
                   {id !== "new" && (
                     <FollowUpSuggestions
@@ -697,6 +1030,12 @@ function ChatBody({ id }: { id: string }) {
         </div>
       </div>
 
+      <ReferencesDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        references={drawerRefs}
+        activeKey={activeRefKey}
+      />
     </div>
   );
 }

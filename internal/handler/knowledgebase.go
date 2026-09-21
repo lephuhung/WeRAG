@@ -949,7 +949,7 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		}
 		if err := middleware.EvaluateOwnershipOrRole(c.Request.Context(),
 			h.cfg,
-			types.TenantRoleAdmin,
+			types.TenantRoleOwner,
 			func() (string,
 				error,
 			) {

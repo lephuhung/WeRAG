@@ -63,7 +63,7 @@ export function ApiKeysSection() {
     load();
   }, [load]);
 
-  const isOwner = ({ viewer: 10, contributor: 20, admin: 30, owner: 40 }[
+  const isOwner = ({ member: 10, admin: 30, owner: 40 }[
     auth.memberships.find(
       (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
     )?.role ?? ""

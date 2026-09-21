@@ -7,7 +7,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 )
 
-// Wails「生成绑定」阶段使用 -tags bindings 单独编译本文件，不启动 Gin/数据库，避免依赖本机 Postgres。
+// Wails bindings generation phase compiles this file separately with -tags bindings, without starting Gin/Database, to avoid dependency on local Postgres.
 func main() {
 	app := NewApp()
 	_ = wails.Run(&options.App{

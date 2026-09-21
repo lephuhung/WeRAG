@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cleanup.sh - 在制作云镜像前清理私密数据。
-# 警告: 本脚本会删除 SSH 公钥、清空数据库与日志，最后会自动关机。
-# 执行后请直接在云控制台「制作镜像 / 创建快照 / 创建 AMI」，不要再 SSH 进来。
+# 警告: 本脚本会Delete  SSH 公钥、清空数据库与日志，最后会自动关机。
+# 执行后请直接在云控制台「制作镜像 / Create 快照 / Create  AMI」，不要再 SSH 进来。
 set -euo pipefail
 
 WEKNORA_DIR="${WEKNORA_DIR:-/opt/WeKnora}"
@@ -32,7 +32,7 @@ if [[ -d "${WEKNORA_DIR}" ]]; then
   rm -rf "${WEKNORA_DIR}/data"/* "${WEKNORA_DIR}/logs"/* 2>/dev/null || true
   # 故意不在这里重建 .env: 让镜像里 .env 缺失, 任何在 firstboot 之前
   # 起来的 docker compose 都会因找不到 .env 而失败, 避免明文默认密码
-  # (postgres123!@# 之类) 把 postgres 数据卷初始化坏。
+  # (postgres123!@# 之类) 把 postgres 数据卷Initialization 坏。
   # firstboot.sh 自己会从 .env.example 拷贝并替换密钥。
   rm -f "${WEKNORA_DIR}/.env" "${WEKNORA_DIR}/.firstboot.done"
 fi

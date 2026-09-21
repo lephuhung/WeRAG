@@ -61,7 +61,7 @@ func (h *KnowledgeHandler) requireKBOwnershipOrAdmin(c *gin.Context, kbID string
 	evalErr := middleware.EvaluateOwnershipOrRole(
 		c.Request.Context(),
 		h.cfg,
-		types.TenantRoleAdmin,
+		types.TenantRoleOwner,
 		func() (string, error) { return resolveKBCreatorByKBID(c, h.kbService, kbID) },
 	)
 	if evalErr == nil {

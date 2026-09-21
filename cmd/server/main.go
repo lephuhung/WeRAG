@@ -3,7 +3,7 @@
 //
 // @title           WeKnora API
 // @version         1.0
-// @description     WeKnora 知识库管理系统 API 文档
+// @description     WeKnora Knowledge Base Management System API Documentation
 // @termsOfService  http://swagger.io/terms/
 //
 // @contact.name   WeKnora Github
@@ -14,12 +14,12 @@
 // @securityDefinitions.apikey Bearer
 // @in header
 // @name Authorization
-// @description 用户登录认证：输入 Bearer {token} 格式的 JWT 令牌
+// @description User login authentication: enter JWT token in Bearer {token} format
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name X-API-Key
-// @description API Key 认证：空间 Key 固定访问所属空间；平台 Key 调用空间接口时需同时传 X-Tenant-ID
+// @description API Key authentication: Tenant Key accesses the corresponding workspace; Platform Key requires X-Tenant-ID header when invoking workspace APIs
 package main
 
 import (

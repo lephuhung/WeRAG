@@ -284,6 +284,20 @@ html.dark {
     line-height: 1.5;
     resize: vertical;
   }
+  select.input {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23777169' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 16px 16px;
+    padding-right: 38px;
+    cursor: pointer;
+  }
+  html.dark select.input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
   .input::placeholder {
     color: var(--color-muted-soft);
   }
@@ -328,8 +342,8 @@ html.dark {
 
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
-    font-size: 13.5px;
-    line-height: 1.75;
+    font-size: 14px;
+    line-height: 1.7;
     color: var(--color-body);
     overflow-wrap: break-word;
   }
@@ -443,3 +457,41 @@ html.dark {
     border-top: 1px solid var(--color-hairline);
   }
 }
+
+@keyframes shimmerSweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+
+.animate-shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-muted-soft) 0%,
+    var(--color-muted-soft) 35%,
+    var(--color-ink) 50%,
+    var(--color-muted-soft) 65%,
+    var(--color-muted-soft) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmerSweep 1.8s linear infinite;
+  display: inline-block;
+  will-change: background-position;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer-text {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: var(--color-ink);
+    color: var(--color-ink);
+  }
+}
+

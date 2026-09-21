@@ -85,10 +85,10 @@ export function WikiBrowser({
     table.filter((i) => i.parent_slug === slug);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3.5">
       {index?.intro && (
         <div
-          className="mb-6 shrink-0"
+          className="mb-4 shrink-0 text-[12px] [&_h1]:text-[14px] [&_h1]:font-semibold [&_h2]:text-[13px] [&_h2]:font-medium [&_p]:text-[12px] [&_p]:leading-relaxed text-body border-b border-hairline pb-3"
           onClick={(e) => {
             const target = (e.target as HTMLElement).closest(".wiki-content-link") as HTMLElement | null;
             if (target) {
@@ -101,8 +101,8 @@ export function WikiBrowser({
           <Markdown text={index.intro} />
         </div>
       )}
-      {error && <p className="caption mb-4 text-error">{error}</p>}
-      {loading && <p className="caption mb-4 text-muted">Loading wiki…</p>}
+      {error && <p className="caption mb-3 text-error">{error}</p>}
+      {loading && <p className="caption mb-3 text-muted">Loading wiki…</p>}
 
       {/* tree */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -116,13 +116,13 @@ export function WikiBrowser({
           );
           if (q && items.length === 0) return null;
           return (
-            <div key={g.type} className="mb-5">
-              <div className="mb-1 flex items-center gap-2 text-[15px] font-medium text-ink">
-                <IconDoc className="h-4 w-4 text-muted" />
+            <div key={g.type} className="mb-3.5">
+              <div className="mb-1 flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                <IconDoc className="h-3.5 w-3.5 text-muted" />
                 <span className="capitalize">{g.type}</span>
-                <span className="caption text-muted-soft">{g.total}</span>
+                <span className="text-[11px] text-muted-soft">{g.total}</span>
               </div>
-              <div className="ml-6 border-l border-hairline pl-4">
+              <div className="ml-5 border-l border-hairline pl-3">
                 {items.map((it) => {
                   const kids = childrenOf(it.slug);
                   const isOpen = expanded.has(it.slug);
@@ -131,14 +131,14 @@ export function WikiBrowser({
                       <div className="flex min-w-0 items-center gap-1">
                         <button
                           onClick={() => toggle(it.slug)}
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center text-muted transition-transform ${
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-transform ${
                             kids.length ? "hover:text-ink" : "invisible"
                           }`}
                           aria-label="Toggle subtree"
                         >
                           <svg
                             viewBox="0 0 12 12"
-                            className={`h-3 w-3 ${isOpen ? "rotate-90" : ""}`}
+                            className={`h-2.5 w-2.5 ${isOpen ? "rotate-90" : ""}`}
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.4"
@@ -148,21 +148,21 @@ export function WikiBrowser({
                         </button>
                         <button
                           onClick={() => setOpenSlug(it.slug)}
-                          className="min-w-0 flex-1 truncate py-1.5 text-left text-[14px] text-body hover:text-ink"
+                          className="min-w-0 flex-1 truncate py-0.5 text-left text-[12.5px] text-body hover:text-ink"
                         >
                           {it.title}
                           {kids.length > 0 && (
-                            <span className="caption ml-1.5 text-muted-soft">{kids.length}</span>
+                            <span className="text-[11px] ml-1.5 text-muted-soft">{kids.length}</span>
                           )}
                         </button>
                       </div>
                       {isOpen && kids.length > 0 && (
-                        <div className="ml-5">
+                        <div className="ml-4">
                           {kids.map((k) => (
                             <button
                               key={k.slug}
                               onClick={() => setOpenSlug(k.slug)}
-                              className="block w-full truncate py-1 text-left caption text-body hover:text-ink"
+                              className="block w-full truncate py-0.5 text-left text-[11.5px] text-body hover:text-ink"
                             >
                               {k.title}
                             </button>
@@ -182,6 +182,7 @@ export function WikiBrowser({
           </p>
         )}
       </div>
+
 
       {openSlug && (
         <WikiPageView

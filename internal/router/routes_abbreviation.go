@@ -22,7 +22,7 @@ func RegisterAbbreviationRoutes(r *gin.RouterGroup, h *handler.AbbreviationHandl
 		// POST creates an inactive suggestion — safe for any signed-in user.
 		abbr.POST("", g.Member(), h.CreateAbbreviation)
 		// PATCH flips is_active (approval) or edits content — admin only.
-		abbr.PATCH("/:id", g.Admin(), h.UpdateAbbreviation)
-		abbr.DELETE("/:id", g.Admin(), h.DeleteAbbreviation)
+		abbr.PATCH("/:id", g.Owner(), h.UpdateAbbreviation)
+		abbr.DELETE("/:id", g.Owner(), h.DeleteAbbreviation)
 	}
 }

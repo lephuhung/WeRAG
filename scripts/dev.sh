@@ -1,7 +1,7 @@
 #!/bin/bash
 # 开发环境启动脚本 - 只启动基础设施，app 和 frontend 需要手动在本地运行
 
-# 设置颜色
+# Settings 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -89,7 +89,7 @@ show_help() {
 # 读取时去掉行尾 \r，兼容 Windows 风格(CRLF)换行符，
 # 否则 bash source 会把残留的 \r 当成命令导致 "...: $'\r': command not found"。
 # 注意：不能用 source <(sed ...)——macOS 自带 Bash 3.2 对 process substitution
-# 的 source 不会把变量导入当前 shell；必须落到可 seek 的临时文件再 source。
+# 的 source 不会把变量导入当前 shell；必须落到可 seek 的Temporary files再 source。
 _source_env_file() {
     local src="$1"
     local tmp
@@ -206,7 +206,7 @@ start_services() {
         return 0
     fi
     
-    # 解析 profile 参数
+    # 解析 profile Parameters 
     shift  # 移除 "start" 命令本身
     # 默认启动基础设施（postgres / redis / docreader）+ langfuse，
     # 其余可选服务通过 --minio / --qdrant / --neo4j / --dex / --full 按需开启。
@@ -503,7 +503,7 @@ start_app() {
     fi
     mkdir -p "$LOCAL_STORAGE_BASE_DIR"
     
-    # 确保必要的环境变量已设置
+    # 确保必要的环境变量已Settings 
     if [ -z "$DB_DRIVER" ]; then
         log_error "DB_DRIVER 环境变量未设置，请检查 .env 文件"
         return 1

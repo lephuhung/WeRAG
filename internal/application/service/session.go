@@ -65,7 +65,7 @@ func loadSessionForRead(
 	tenantID uint64,
 	ownerID, sessionID string,
 ) (*types.Session, error) {
-	isAdmin := types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
+	isAdmin := types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
 
 	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
 	if err == nil {
@@ -346,9 +346,9 @@ func (s *sessionService) ListSessions(
 	// Owner/admin can observe sessions that are otherwise isolated per key,
 	// visitor, or IM identity; everyone else stays scoped to their own principal.
 	if types.SessionListSourceRequiresAdmin(query.Source) {
-		if !types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin) {
+		if !types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner) {
 			return nil, apperrors.NewForbiddenError(
-				"listing channel sessions requires tenant admin or owner role",
+				"listing channel sessions requires tenant owner role",
 			)
 		}
 		query.UserID = ""

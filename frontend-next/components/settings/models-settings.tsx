@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconSettings } from "@/components/icons";
+import { useAuth } from "@/lib/auth";
 import {
   listModels,
   createModel,
@@ -20,6 +22,8 @@ const MODEL_TYPES = [
 ] as const;
 
 export function ModelsSettings() {
+  const auth = useAuth();
+  const isSystemAdmin = auth.user?.is_system_admin === true;
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [activeType, setActiveType] = useState<string>("KnowledgeQA");
   const [busy, setBusy] = useState(false);
@@ -125,13 +129,25 @@ export function ModelsSettings() {
             Configure LLMs, embedding models, and rerankers used by your knowledge bases and agents.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={() => setModalOpen(true)}
-        >
-          <IconPlus className="h-4 w-4" /> Add model
-        </button>
+        <div className="flex items-center gap-2">
+          {isSystemAdmin && (
+            <Link
+              href="/platform/system/models"
+              className="btn btn-outline btn-sm text-xs"
+            >
+              Manage in System Models
+            </Link>
+          )}
+          {isSystemAdmin && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setModalOpen(true)}
+            >
+              <IconPlus className="h-4 w-4" /> Add model
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="card mb-4 p-4 text-error text-xs">{error}</div>}

@@ -84,12 +84,12 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
-# 可选: 配置 Docker Hub 加速器, 解决直连 registry-1.docker.io 超时的场景
+# 可选: Configuration  Docker Hub 加速器, 解决直连 registry-1.docker.io 超时的场景
 # (典型: 中国大陆云主机 / 内网受限环境)。仅在用户显式传入时才动 daemon.json。
 if [[ -n "${DOCKER_REGISTRY_MIRROR}" ]]; then
   echo "[prepare] 1.5/6 配置 Docker Hub 加速器: ${DOCKER_REGISTRY_MIRROR}"
   mkdir -p /etc/docker
-  # 已存在的 daemon.json 走 python 合并, 避免覆盖用户其它配置
+  # 已存在的 daemon.json 走 python 合并, 避免覆盖用户其它Configuration 
   if [[ -s /etc/docker/daemon.json ]] && command -v python3 >/dev/null 2>&1; then
     python3 - "$DOCKER_REGISTRY_MIRROR" <<'PY'
 import json, sys, pathlib
@@ -130,7 +130,7 @@ trap 'rm -rf "${tmp}"' EXIT
 tarball_url="${WEKNORA_GH_PROXY}${WEKNORA_REPO}/archive/${WEKNORA_REF}.tar.gz"
 echo "[prepare]   tarball: ${tarball_url}"
 curl -fsSL "${tarball_url}" -o "${tmp}/repo.tar.gz"
-# 仅解压需要的路径, 显著加速且省空间
+# 仅解压需要的路径, 显著加速且省Tenant workspace
 tar -xzf "${tmp}/repo.tar.gz" -C "${tmp}" \
   --wildcards \
   '*/docker-compose.yml' \
@@ -181,7 +181,7 @@ docker compose up -d
 echo "[prepare] 4.5/6 预拉 sandbox 镜像 (Agent Skills 用, 非常驻)"
 docker compose --profile full pull sandbox || true
 
-# 其他向量库 / 可观测组件 (qdrant, milvus, weaviate, doris, neo4j, langfuse-*, minio, dex)
+# 其他Vector Database / 可观测组件 (qdrant, milvus, weaviate, doris, neo4j, langfuse-*, minio, dex)
 # 不预拉, 体积可省 5-15GB. 用户如需启用:
 #   cd /opt/WeKnora && docker compose --profile <name> up -d
 

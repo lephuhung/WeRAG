@@ -26,7 +26,7 @@ if [ "${SKIP_FRONTEND:-}" != "1" ]; then
     if [ -f frontend/package.json ]; then
         echo ">> Building frontend..."
         (cd frontend && npm ci --prefer-offline && npm run build)
-        # Lite 后端从 ./web 提供 SPA（见 internal/router serveFrontendStatic），与 package-lite.sh 一致须用 dist 更新 web
+        # Lite 后端从 ./web 提供 SPA（见 internal/router serveFrontendStatic），与 package-lite.sh 一致须用 dist Update  web
         echo ">> Sync frontend/dist -> web/"
         rm -rf web
         cp -r frontend/dist web
@@ -61,7 +61,7 @@ export EDITION=lite
 # 官方做法：见 https://protobuf.dev/reference/go/faq#namespace-conflict
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
 
-# 获取版本号并配置 LDFLAGS
+# 获取版本号并Configuration  LDFLAGS
 eval "$(./scripts/get_version.sh env)"
 LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
 
@@ -74,7 +74,7 @@ mkdir -p dist
 rm -rf "${DIST_DIR}"
 cp -R "cmd/desktop/build/bin/${APP_BUNDLE}" "dist/"
 
-# 将配置文件和初始数据库迁移脚本塞进 .app 内部资源里
+# 将Configuration 文件和初始数据库迁移脚本塞进 .app 内部资源里
 RESOURCES_DIR="${DIST_DIR}/Contents/Resources"
 mkdir -p "${RESOURCES_DIR}/config"
 mkdir -p "${RESOURCES_DIR}/migrations/sqlite"
@@ -94,7 +94,7 @@ if [ -d web ]; then
 fi
 
 # 注意：Wails build 生成的二进制文件工作目录默认是 app 的 Contents/MacOS 目录
-# 后续可能需要调整代码中对配置文件的路径读取逻辑。
+# 后续可能需要调整代码中对Configuration 文件的路径读取逻辑。
 
 echo ""
 echo "=== Done ==="

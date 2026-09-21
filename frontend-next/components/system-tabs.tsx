@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { useT } from "@/lib/i18n";
 
 const TABS = [
-  { href: "/platform/system/overview", labelKey: "system.overview" },
-  { href: "/platform/system/services", labelKey: "system.services" },
-  { href: "/platform/system/models", labelKey: "system.models" },
-  { href: "/platform/system/users", labelKey: "system.users" },
-  { href: "/platform/system/logs", labelKey: "system.logs" },
+  { href: "/platform/system/overview", label: "Overview" },
+  { href: "/platform/system/services", label: "Engines" },
+  { href: "/platform/system/models", label: "Models" },
+  { href: "/platform/system/extensions", label: "Extensions" },
+  { href: "/platform/system/agents", label: "Agents" },
+  { href: "/platform/system/users", label: "Users" },
+  { href: "/platform/system/logs", label: "Logs" },
 ] as const;
 
 export function SystemTabs() {
@@ -27,7 +29,7 @@ export function SystemTabs() {
               : "text-muted hover:text-ink"
           }`}
         >
-          {t(tab.labelKey)}
+          {tab.label}
         </Link>
       ))}
     </div>

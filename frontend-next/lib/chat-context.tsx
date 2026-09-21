@@ -226,7 +226,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (agentsRes?.data) setAgents(agentsRes.data);
       if (sharedRes?.data) setSharedAgents(sharedRes.data.filter((s) => s.agent && !s.disabled_by_me));
       setKnowledgeBases([...own, ...shared]);
-      if (modelsRes?.data) setModels(modelsRes.data);
+      if (modelsRes?.data) {
+        setModels(modelsRes.data);
+        const mList = modelsRes.data;
+        setSettings((prev) => {
+          if (prev.selectedChatModelId && mList.some((m) => m.id === prev.selectedChatModelId)) {
+            return prev;
+          }
+          let pick = "";
+          try {
+            pick = localStorage.getItem(LAST_MODEL_KEY) || "";
+          } catch {
+            /* ignore */
+          }
+          if (pick && mList.some((m) => m.id === pick)) {
+            const next = { ...prev, selectedChatModelId: pick };
+            persist(next);
+            return next;
+          }
+          const defaultModel = mList.find((m) => m.type === "KnowledgeQA" || m.type === "knowledgeqa") || mList[0];
+          if (defaultModel?.id) {
+            const next = { ...prev, selectedChatModelId: defaultModel.id };
+            persist(next);
+            return next;
+          }
+          return prev;
+        });
+      }
       if (mcpRes?.data) setMcpServices(mcpRes.data);
       if (skillsRes?.data) setSkills(skillsRes.data);
       setWebSearchReady(Boolean(providersRes?.data?.some((p) => p.is_default)));
@@ -327,14 +353,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const selectAgent = useCallback(
     (id: string, sourceTenantId?: string | null) => {
       // Mirrors settings.selectAgent: switching agent resets the per-turn websearch flag.
+      const isQuickAnswer = id === BUILTIN_QUICK_ANSWER_ID;
+      const targetAgent = agents.find((a) => a.id === id);
+      const agentModelId = targetAgent?.config?.model_id;
       update({
         selectedAgentId: id,
         selectedAgentSourceTenantId: sourceTenantId ? String(sourceTenantId) : null,
         webSearchEnabled: false,
-        isAgentEnabled: id !== BUILTIN_QUICK_ANSWER_ID,
+        isAgentEnabled: !isQuickAnswer,
+        ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
       });
     },
-    [update],
+    [agents, update],
   );
   const toggleWebSearch = useCallback((on: boolean) => update({ webSearchEnabled: on }), [update]);
   const toggleLocalBrowser = useCallback((on: boolean) => update({ localBrowserEnabled: on }), [update]);

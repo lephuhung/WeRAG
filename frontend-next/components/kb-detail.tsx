@@ -8,25 +8,36 @@ import {
   type KnowledgeBaseRow,
   type KnowledgeDoc,
 } from "@/lib/api/knowledge";
-import { WikiBrowser } from "@/components/wiki/wiki-browser";
+import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { UploadModal } from "@/components/knowledge/upload-modal";
-import { IconChat, IconDoc, IconPlus, IconSearch, IconSettings } from "@/components/icons";
+import {
+  IconChat,
+  IconDoc,
+  IconGraph,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+} from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
+import { useT, type LocaleKey } from "@/lib/i18n";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
  * previously read a phantom `status` field so every document fell through
  * to "Processing". */
-const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
-  completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
-  processing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  finalizing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  pending: { label: "Pending", cls: "text-muted", dot: "#a8a29e" },
-  failed: { label: "Failed", cls: "text-error", dot: "#dc2626" },
-  cancelled: { label: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
+const STATUS_STYLE: Record<
+  string,
+  { labelKey: LocaleKey; fallback: string; cls: string; dot: string }
+> = {
+  completed: { labelKey: "status.indexed", fallback: "Indexed", cls: "text-success", dot: "#16a34a" },
+  processing: { labelKey: "status.processing", fallback: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  finalizing: { labelKey: "status.processing", fallback: "Processing", cls: "text-muted", dot: "#a8a29e" },
+  pending: { labelKey: "status.pending", fallback: "Pending", cls: "text-muted", dot: "#a8a29e" },
+  failed: { labelKey: "status.failed", fallback: "Failed", cls: "text-error", dot: "#dc2626" },
+  cancelled: { labelKey: "status.cancelled", fallback: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
 };
 
 function statusStyle(status?: string) {
@@ -43,13 +54,15 @@ function docExt(d: KnowledgeDoc) {
   return dot >= 0 ? name.slice(dot + 1).toUpperCase() : "FILE";
 }
 
-type PaneTab = "wiki" | "graph";
+type MainTab = "docs-wiki" | "graph";
 
 export function KbDetail({ kbId }: { kbId: string }) {
-  const [pane, setPane] = useState<PaneTab>("wiki");
+  const { t } = useT();
+  const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
   const [openDoc, setOpenDoc] = useState<KnowledgeDoc | null>(null);
+  const [selectedWikiSlug, setSelectedWikiSlug] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [wikiQ, setWikiQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -88,9 +101,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* header */}
-      <div className="shrink-0 px-10 pt-8 pb-6">
-        <div className="caption mb-5 flex items-center gap-2 text-muted">
+      {/* Header */}
+      <div className="shrink-0 px-10 pt-7 pb-4">
+        <div className="caption mb-4 flex items-center gap-2 text-muted">
           <Link href="/platform/knowledge-bases" className="hover:text-ink">
             Knowledge bases
           </Link>
@@ -101,9 +114,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="display-lg">{kb?.name ?? "Knowledge base"}</h1>
-            <p className="body-sm mt-2 max-w-[560px] text-body">{kb?.description ?? ""}</p>
+            <p className="body-sm mt-1.5 max-w-[560px] text-body">{kb?.description ?? ""}</p>
             {error && <p className="caption mt-2 text-error">{error}</p>}
-            <div className="caption mt-3 flex items-center gap-4 text-muted">
+            <div className="caption mt-2.5 flex items-center gap-4 text-muted">
               <span>{kb?.knowledge_count ?? kb?.document_count ?? docs?.length ?? "—"} documents</span>
               {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
             </div>
@@ -123,156 +136,225 @@ export function KbDetail({ kbId }: { kbId: string }) {
             </Link>
           </div>
         </div>
+
+        {/* Page Main Navigation Tabs */}
+        <div className="mt-5 flex items-center gap-1 rounded-full bg-surface-strong p-1 w-fit">
+          <button
+            onClick={() => setActiveTab("docs-wiki")}
+            className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
+              activeTab === "docs-wiki"
+                ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                : "text-muted hover:text-ink"
+            }`}
+          >
+            <IconDoc className="h-4 w-4" />
+            <span>Tài liệu & Wiki</span>
+            {docs !== null && (
+              <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted">
+                {docs.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("graph")}
+            className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
+              activeTab === "graph"
+                ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                : "text-muted hover:text-ink"
+            }`}
+          >
+            <IconGraph className="h-4 w-4" />
+            <span>Knowledge graph</span>
+          </button>
+        </div>
       </div>
 
-      {/* split panes: left documents, right wiki/graph */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-10 pb-8 lg:grid-cols-3">
-        {/* left — documents as cards */}
-        <section className="flex min-h-0 flex-col lg:col-span-1">
-          <div className="mb-4 flex shrink-0 items-center justify-between">
-            <div className="relative w-full max-w-[300px]">
-              <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
-              <input
-                className="input h-10 pl-10 text-[14px]"
-                placeholder="Search documents…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-            <div className="caption text-muted">{filtered.length} files</div>
-          </div>
-
-          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1">
-            {filtered.map((d) => {
-              const st = statusStyle(d.parse_status ?? d.status);
-              return (
-                <button
-                  key={d.id}
-                  onClick={() => setOpenDoc(d)}
-                  className="card card-hover p-4 text-left"
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      className="w-[30px] shrink-0"
-                      dangerouslySetInnerHTML={{
-                        __html: renderFileIconSvg(d.file_name ?? d.title ?? "", d.file_type, d.profile?.doc_type),
-                      }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-medium text-ink">
-                        {docName(d)}
-                      </div>
-                      {/* type badges: profile.doc_type first, ext + size as remaining line */}
-                      <div className="caption mt-1 flex flex-wrap items-center gap-1.5 text-muted">
-                        {d.profile?.doc_type && (
-                          <span className="badge-pill">{d.profile.doc_type}</span>
-                        )}
-                        <span>{docExt(d)}</span>
-                        {d.file_size ? (
-                          <span className="text-muted-soft">· {fmtBytes(d.file_size)}</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  {/* summary — description wins over profile.gist when both exist */}
-                  {(d.description || d.profile?.gist) && (
-                    <p className="body-sm mt-2 line-clamp-3 text-body">
-                      {d.description || d.profile?.gist}
-                    </p>
-                  )}
-                  {d.profile?.topics && d.profile.topics.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {d.profile.topics.slice(0, 4).map((topic) => (
-                        <span
-                          key={topic}
-                          className="inline-block rounded-full bg-surface-strong px-2 py-0.5 text-[11px] text-muted"
-                        >
-                          {topic}
-                        </span>
-                      ))}
-                      {d.profile.topics.length > 4 && (
-                        <span className="caption text-muted-soft">
-                          +{d.profile.topics.length - 4}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="caption mt-3 flex items-center justify-between border-t border-hairline pt-3">
-                    <span className={`flex items-center gap-1.5 font-medium ${st.cls}`}>
-                      <span
-                        className="inline-block h-1.5 w-1.5 rounded-full"
-                        style={{ background: st.dot }}
-                      />
-                      {st.label}
-                    </span>
-                    <span className="whitespace-nowrap">{fmtShortDate(d.updated_at)}</span>
-                  </div>
-                </button>
-              );
-            })}
-
-            {/* upload card */}
-            <button
-              onClick={() => setUploadOpen(true)}
-              className="flex min-h-[104px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
-            >
-              <span className="flex items-center gap-2 text-[14px] font-medium">
-                <IconPlus className="h-4 w-4" /> Upload
-              </span>
-            </button>
-          </div>
-          {docs !== null && filtered.length === 0 && (
-            <p className="caption mt-2 text-muted-soft">No documents found.</p>
-          )}
-        </section>
-
-        <section className="card flex min-h-0 flex-col overflow-hidden lg:col-span-2">
-          <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-3">
-            <div className="flex items-center gap-1 rounded-full bg-surface-strong p-1">
-              {(
-                [
-                  { id: "wiki", label: "Wiki" },
-                  { id: "graph", label: "Knowledge graph" },
-                ] as { id: PaneTab; label: string }[]
-              ).map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setPane(t.id)}
-                  className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-                    pane === t.id
-                      ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-                      : "text-muted hover:text-ink"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <span className="caption text-muted-soft">
-              {pane === "wiki" ? "Wiki pages" : "Entities & relations"}
-            </span>
-          </div>
-          {pane === "wiki" ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="caption flex items-center gap-2 border-b border-hairline px-5 py-2">
-                <IconDoc className="h-4 w-4 text-muted-soft" />
+      {/* Main Content Area */}
+      <div className="flex min-h-0 flex-1 px-10 pb-6">
+        {activeTab === "docs-wiki" ? (
+          /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
+          <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
+            {/* Left: Wiki Section (increased width) */}
+            <section className="card flex min-h-0 flex-col overflow-hidden w-full lg:w-[440px] xl:w-[480px] shrink-0">
+              {/* Wiki Search & Header */}
+              <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
+                <div className="flex items-center gap-2 font-medium text-[13.5px] text-ink">
+                  <IconDoc className="h-4 w-4 text-muted" />
+                  <span>Wiki</span>
+                </div>
+                <span className="text-[11.5px] text-muted-soft">Mục lục tri thức</span>
+              </div>
+              <div className="caption flex items-center gap-2 border-b border-hairline px-4 py-2">
+                <IconSearch className="h-3.5 w-3.5 text-muted-soft shrink-0" />
                 <input
-                  className="bg-transparent text-[13px] outline-none placeholder:text-muted-soft"
+                  className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-muted-soft"
                   placeholder="Search wiki pages…"
                   value={wikiQ}
                   onChange={(e) => setWikiQ(e.target.value)}
                 />
               </div>
-              <WikiBrowser kbId={kbId} q={wikiQ} />
-            </div>
-          ) : (
-            <KnowledgeGraph kbId={kbId} />
-          )}
-        </section>
+              {/* Wiki Browser Tree */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <WikiBrowser kbId={kbId} q={wikiQ} />
+              </div>
+            </section>
+
+            {/* Right: Document Cards Grid */}
+            <section className="flex min-h-0 flex-1 flex-col min-w-0">
+              {/* Document Search and Action Bar */}
+              <div className="mb-3.5 flex shrink-0 items-center justify-between gap-4">
+                <div className="relative w-full max-w-[320px]">
+                  <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-soft" />
+                  <input
+                    className="input h-9 pl-9 text-[13px]"
+                    placeholder="Search documents…"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="caption text-muted">{filtered.length} files</span>
+                  <button
+                    onClick={() => setUploadOpen(true)}
+                    className="btn btn-outline btn-sm h-8"
+                  >
+                    <IconPlus className="h-3.5 w-3.5" /> Upload
+                  </button>
+                </div>
+              </div>
+
+              {/* Cards Grid: 5 cards per row on desktop */}
+              <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                {filtered.map((d) => {
+                  const st = statusStyle(d.parse_status ?? d.status);
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => setOpenDoc(d)}
+                      className="card card-hover flex flex-col justify-between p-3 text-left transition-all hover:border-ink/20"
+                    >
+                      <div>
+                        <div className="flex items-start gap-2">
+                          <span
+                            className="w-[26px] shrink-0 mt-0.5"
+                            dangerouslySetInnerHTML={{
+                              __html: renderFileIconSvg(
+                                d.file_name ?? d.title ?? "",
+                                d.file_type,
+                                d.profile?.doc_type,
+                              ),
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-medium text-ink" title={docName(d)}>
+                              {docName(d)}
+                            </div>
+                            <div className="caption mt-0.5 flex flex-wrap items-center gap-1 text-muted">
+                              {d.profile?.doc_type && (
+                                <span className="badge-pill text-[10px] py-0 px-1">{d.profile.doc_type}</span>
+                              )}
+                              <span className="text-[11px]">{docExt(d)}</span>
+                              {d.file_size ? (
+                                <span className="text-muted-soft text-[11px]">· {fmtBytes(d.file_size)}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Shortened summary / gist: 1 line */}
+                        {(d.description || d.profile?.gist) && (
+                          <p
+                            className="mt-1.5 text-[11.5px] line-clamp-1 text-muted leading-normal"
+                            title={d.description || d.profile?.gist}
+                          >
+                            {d.description || d.profile?.gist}
+                          </p>
+                        )}
+
+                        {/* Topics */}
+                        {d.profile?.topics && d.profile.topics.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {d.profile.topics.slice(0, 2).map((topic) => (
+                              <span
+                                key={topic}
+                                className="inline-block max-w-[85px] truncate rounded-full bg-surface-strong px-1.5 py-0.2 text-[9.5px] text-muted"
+                                title={topic}
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                            {d.profile.topics.length > 2 && (
+                              <span className="text-[9.5px] text-muted-soft self-center">
+                                +{d.profile.topics.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Status & Date */}
+                      <div className="mt-2.5 flex items-center justify-between border-t border-hairline pt-2 text-[11px] text-muted">
+                        <span className={`flex items-center gap-1.5 font-medium ${st.cls}`}>
+                          <span
+                            className="inline-block h-1.5 w-1.5 rounded-full"
+                            style={{ background: st.dot }}
+                          />
+                          {t(st.labelKey) || st.fallback}
+                        </span>
+                        <span className="whitespace-nowrap text-muted-soft text-[10.5px]">
+                          {fmtShortDate(d.updated_at)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {docs !== null && docs.length === 0 && (
+                <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-hairline p-8 text-center">
+                  <IconDoc className="mb-2 h-8 w-8 text-muted-soft" />
+                  <p className="body-sm font-medium text-ink">Chưa có tài liệu nào</p>
+                  <p className="caption mt-1 text-muted">Tải lên tài liệu để hệ thống bắt đầu xử lý và xây dựng wiki.</p>
+                  <button onClick={() => setUploadOpen(true)} className="btn btn-primary btn-sm mt-4">
+                    <IconPlus className="h-3.5 w-3.5" /> Tải lên tài liệu
+                  </button>
+                </div>
+              )}
+
+              {docs !== null && docs.length > 0 && filtered.length === 0 && (
+                <div className="mt-8 flex flex-col items-center justify-center text-center">
+                  <p className="body-md text-muted">Không tìm thấy tài liệu phù hợp.</p>
+                  <p className="caption mt-1 text-muted-soft">Thử tìm kiếm với từ khóa khác.</p>
+                </div>
+              )}
+            </section>
+
+          </div>
+        ) : (
+          /* TAB 2: Full Knowledge Graph */
+          <section className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+            <KnowledgeGraph
+              kbId={kbId}
+              onSelectSlug={(slug) => setSelectedWikiSlug(slug)}
+            />
+          </section>
+        )}
       </div>
 
-      {/* document slide-in panel */}
+      {/* Slide-in Panels & Modals */}
       <DocPanel doc={openDoc} onClose={() => setOpenDoc(null)} />
+
+      {selectedWikiSlug && (
+        <WikiPageView
+          kbId={kbId}
+          slug={selectedWikiSlug}
+          title={selectedWikiSlug}
+          onClose={() => setSelectedWikiSlug(null)}
+          onNavigate={(nextSlug) => setSelectedWikiSlug(nextSlug)}
+        />
+      )}
+
       <KbSettingsModal
         kbId={kbId}
         open={settingsOpen}
@@ -289,7 +371,8 @@ export function KbDetail({ kbId }: { kbId: string }) {
       />
     </div>
   );
-}	
+}
+
 /* Compact header timestamp — RFC3339 is too long for the stats row. */
 function fmtShortDate(v?: string): string {
   if (!v) return "";

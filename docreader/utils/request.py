@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from logging import LogRecord
 from typing import Optional
 
-# 配置日志
+# Configuration 日志
 logger = logging.getLogger(__name__)
 
 # 定义上下文变量
@@ -57,7 +57,7 @@ def init_logging_request_id():
         # 添加请求ID过滤器
         handler.addFilter(RequestIdFilter())
 
-        # 更新格式化器以包含请求ID，调整格式使其更紧凑整齐
+        # Update 格式化器以包含请求ID，调整格式使其更紧凑整齐
         formatter = logging.Formatter(
             fmt="%(asctime)s.%(msecs)03d [%(request_id)s] %(levelname)-5s %(name)-20s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",

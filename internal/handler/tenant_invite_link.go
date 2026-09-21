@@ -81,6 +81,10 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
+	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
+		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+		return
+	}
 
 	caller, _ := types.UserIDFromContext(ctx)
 	var invitedBy *string

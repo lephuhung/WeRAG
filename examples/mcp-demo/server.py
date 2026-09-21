@@ -33,7 +33,7 @@ logger = logging.getLogger("mcp-demo")
 
 mcp = MCPServer("weknora-mcp-demo", version="0.1.0")
 
-# 与 website-docs/sample-data/ 配套的演示语料，方便 Agent 调用后对照知识库答案。
+# 与 website-docs/sample-data/ 配套的演示语料，方便 Agent 调用后对照Knowledge Base答案。
 DEMO_POLICIES: dict[str, str] = {
     "warranty": "智能家居中控 Pro 整机保修 24 个月，电池类配件 12 个月；人为拆解、进水不在保修范围。",
     "offline_voice": "若语音走云端识别，断外网后仅支持 App 与本地触摸屏；配置本地语音包后可继续使用基础指令。",

@@ -1,6 +1,6 @@
-# 开发环境配置 - 只启动基础设施服务，app 和 frontend 在本地运行
+# Development environment configuration - starts infrastructure services only, app and frontend run locally
 services:
-  # 只启动依赖的基础设施服务
+  # Start dependent infrastructure services only
   postgres:
     image: paradedb/paradedb:v0.22.6-pg17
     container_name: WeKnora-postgres-dev
@@ -224,7 +224,7 @@ services:
       - neo4j
       - full
 
-  # Sandbox 镜像：仅用于 build/pull，非常驻服务；本地 app 执行 Skills 时按需 docker run 该镜像，用毕即释
+  # Sandbox image: used only for build/pull, non-persistent service; local app executes docker run on-demand when running Skills, released when done
   sandbox:
     image: wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-sandbox-dev
@@ -247,31 +247,31 @@ services:
     volumes:
       - docreader-tmp-dev:/tmp/docreader
     environment:
-      # ========== 基础 ==========
+      # ========== Basics ==========
       - TZ=${TZ:-Asia/Shanghai}
       - LOG_LEVEL=${LOG_LEVEL:-}
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
-      # docreader 对外 HTTP 抓取的 SSRF 白名单（逗号分隔；与 app 共用同名变量）
+      # docreader outbound HTTP scraping SSRF whitelist (comma-separated; shares same variable name as app)
       - SSRF_WHITELIST=${SSRF_WHITELIST:-}
       - SSRF_WHITELIST_EXTRA=${SSRF_WHITELIST_EXTRA:-}
-      # ========== gRPC 服务端 TLS / 认证 ==========
+      # ========== gRPC Server TLS / Authentication ==========
       - GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-false}
       - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
       - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}
       - GRPC_TLS_CA=${GRPC_TLS_CA:-}
       - GRPC_TLS_SERVER_NAME=${GRPC_TLS_SERVER_NAME:-}
-      # true 时强制要求客户端证书（mTLS）
+      # When true, enforces client certificate (mTLS)
       - GRPC_MTLS_REQUIRE_CLIENT_CERT=${GRPC_MTLS_REQUIRE_CLIENT_CERT:-false}
       - GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:-}
-      # ========== gRPC 服务参数 ==========
+      # ========== gRPC Service Parameters ==========
       - DOCREADER_GRPC_MAX_WORKERS=${DOCREADER_GRPC_MAX_WORKERS:-4}
       - DOCREADER_GRPC_MAX_FILE_SIZE_MB=${DOCREADER_GRPC_MAX_FILE_SIZE_MB:-${MAX_FILE_SIZE_MB:-50}}
       - DOCREADER_GRPC_PORT=${DOCREADER_GRPC_PORT:-50051}
-      # ========== 解析通用 ==========
+      # ========== General Parsing ==========
       - DOCREADER_DOCX_MAX_PAGES=${DOCREADER_DOCX_MAX_PAGES:-0}
       - DOCREADER_MARKITDOWN_MAX_WORKERS=${DOCREADER_MARKITDOWN_MAX_WORKERS:-1}
-      # 出站 HTTP/HTTPS 代理（抓取网页 / 远程图片时）
+      # Outbound HTTP/HTTPS proxy (when scraping web pages / remote images)
       - DOCREADER_EXTERNAL_HTTP_PROXY=${DOCREADER_EXTERNAL_HTTP_PROXY:-}
       - DOCREADER_EXTERNAL_HTTPS_PROXY=${DOCREADER_EXTERNAL_HTTPS_PROXY:-}
       # ========== OpenDataLoader hybrid ==========
@@ -281,41 +281,41 @@ services:
       - DOCREADER_ODL_HYBRID_MODE=${DOCREADER_ODL_HYBRID_MODE:-auto}
       - DOCREADER_ODL_HYBRID_FALLBACK=${DOCREADER_ODL_HYBRID_FALLBACK:-false}
       - DOCREADER_ODL_MARKDOWN_WITH_HTML=${DOCREADER_ODL_MARKDOWN_WITH_HTML:-false}
-      # ========== PDF 渲染 ==========
+      # ========== PDF Rendering ==========
       - DOCREADER_PDF_RENDER_MAX_WORKERS=${DOCREADER_PDF_RENDER_MAX_WORKERS:-1}
-      # 单个 PDF 内部扫描页渲染并行进程数（pdfium 非线程安全）。留空走代码默认 min(4,cpu)，
-      # 避免在低核容器上过度并行（写死数值会覆盖 CPU 感知逻辑）。
+      # Parallel processes for rendering scanned pages inside a single PDF (pdfium is not thread-safe). Empty defaults to code default min(4,cpu),
+      # avoids over-parallelization on low-core containers (hardcoded value overrides CPU-sensing logic).
       - DOCREADER_PDF_RENDER_PARALLELISM=${DOCREADER_PDF_RENDER_PARALLELISM:-}
       - DOCREADER_PDF_RENDER_DPI=${DOCREADER_PDF_RENDER_DPI:-200}
-      # JPEG 质量（代码默认 85；compose 此前误写 90，已对齐）
+      # JPEG quality (code default 85; compose previously mistyped 90, aligned)
       - DOCREADER_PDF_JPEG_QUALITY=${DOCREADER_PDF_JPEG_QUALITY:-85}
-      # 渲染页图最大长边像素（防超大页撑爆 gRPC 消息上限；密集中文建议 >=1600）
+      # Max long edge pixels for rendered page image (prevents huge pages from exceeding gRPC message size; dense text recommended >=1600)
       - DOCREADER_PDF_RENDER_MAX_EDGE=${DOCREADER_PDF_RENDER_MAX_EDGE:-2000}
-      # 强制 PDF 全页按扫描件解析（文本层差但可 OCR 时；速度/成本上升）
+      # Force PDF full page scan parsing (when text layer is poor but OCR is possible; increases latency/cost)
       - DOCREADER_PDF_FORCE_SCANNED=${DOCREADER_PDF_FORCE_SCANNED:-false}
-      # ========== PDF 版式 / 文本调优 ==========
-      # glyph 间距超过 median 字宽的多少倍时插空格（默认 0.4）
+      # ========== PDF Layout / Text Tuning ==========
+      # Insert space when glyph spacing exceeds N times median character width (default 0.4)
       - DOCREADER_PDF_WORD_GAP_WIDTH_RATIO=${DOCREADER_PDF_WORD_GAP_WIDTH_RATIO:-0.4}
-      # 丢弃窄边栏（arXiv 侧栏）的页宽比例阈值（默认 0.12）
+      # Page width ratio threshold for discarding narrow sidebars (e.g. arXiv sidebar) (default 0.12)
       - DOCREADER_PDF_MARGIN_COL_WIDTH_RATIO=${DOCREADER_PDF_MARGIN_COL_WIDTH_RATIO:-0.12}
       - DOCREADER_PDF_MIN_HEADING_LINE_CHARS=${DOCREADER_PDF_MIN_HEADING_LINE_CHARS:-8}
-      # 清理 U+FFFE/软连字符、剥离矢量图轴文字、图表区按 JPEG 渲染
+      # Clean U+FFFE/soft hyphens, strip vector chart axis text, render chart areas as JPEG
       - DOCREADER_PDF_SANITIZE_TEXT=${DOCREADER_PDF_SANITIZE_TEXT:-true}
       - DOCREADER_PDF_STRIP_CHART_DEBRIS=${DOCREADER_PDF_STRIP_CHART_DEBRIS:-true}
       - DOCREADER_PDF_RENDER_VECTOR_FIGURES=${DOCREADER_PDF_RENDER_VECTOR_FIGURES:-true}
       - DOCREADER_PDF_DETECT_HEADINGS=${DOCREADER_PDF_DETECT_HEADINGS:-}
       - DOCREADER_PDF_LAYOUT_ORDERING=${DOCREADER_PDF_LAYOUT_ORDERING:-}
       - DOCREADER_PDF_FILTER_HIDDEN_TEXT=${DOCREADER_PDF_FILTER_HIDDEN_TEXT:-}
-      # 扫描件判定：图片面积占比 >= 此值视为扫描页（默认留空走代码默认）
+      # Scan page determination: image area ratio >= this value treated as scanned page (empty defaults to code default)
       - DOCREADER_PDF_SCAN_IMAGE_RATIO=${DOCREADER_PDF_SCAN_IMAGE_RATIO:-}
       - DOCREADER_PDF_SCAN_MIN_CHARS=${DOCREADER_PDF_SCAN_MIN_CHARS:-}
-      # 嵌入图片抽取
+      # Embedded image extraction
       - DOCREADER_PDF_EXTRACT_EMBEDDED_IMAGES=${DOCREADER_PDF_EXTRACT_EMBEDDED_IMAGES:-}
       - DOCREADER_PDF_EMBED_MIN_PIXELS=${DOCREADER_PDF_EMBED_MIN_PIXELS:-}
       - DOCREADER_PDF_EMBED_MIN_AREA_RATIO=${DOCREADER_PDF_EMBED_MIN_AREA_RATIO:-}
       - DOCREADER_PDF_EMBED_REPEAT_PAGE_FRAC=${DOCREADER_PDF_EMBED_REPEAT_PAGE_FRAC:-}
       - DOCREADER_PDF_EMBED_MAX_IMAGES=${DOCREADER_PDF_EMBED_MAX_IMAGES:-}
-      # 图表区识别
+      # Chart region recognition
       - DOCREADER_PDF_MIN_CHART_REGION_AREA=${DOCREADER_PDF_MIN_CHART_REGION_AREA:-}
       - DOCREADER_PDF_MIN_CHART_REGION_CHARS=${DOCREADER_PDF_MIN_CHART_REGION_CHARS:-}
       - DOCREADER_PDF_MAX_CHART_REGION_AREA=${DOCREADER_PDF_MAX_CHART_REGION_AREA:-}
@@ -366,20 +366,20 @@ services:
       - full
 
   # ---------------------------------------------------------------------------
-  # Langfuse 自建栈（dev 对称版）
+  # Langfuse self-hosted stack (dev symmetric version)
   #
-  # 用法：
+  # Usage:
   #   docker compose -f docker-compose.dev.yml --profile langfuse up -d
   #
-  # 本地 app (go run) 需要的环境变量：
+  # Environment variables required by local app (go run):
   #   export LANGFUSE_HOST=http://localhost:3000
   #   export LANGFUSE_PUBLIC_KEY=pk-lf-xxx
   #   export LANGFUSE_SECRET_KEY=sk-lf-xxx
   #
-  # 复用 dev 已有的 postgres（独立 langfuse 数据库）和 redis（DB 1），
-  # 新增：clickhouse、minio、web、worker + 一次性 db-init，和生产版结构一致。
+  # Reuse postgres (isolated langfuse database) and redis (DB 1) from dev environment,
+  # Added: clickhouse, minio, web, worker + one-shot db-init, matching production architecture.
   # ---------------------------------------------------------------------------
-  # 复用 dev 已有的 ParadeDB 镜像，不额外拉 postgres 镜像
+  # Reuse existing ParadeDB image from dev, no extra postgres image pull required
   langfuse-db-init:
     image: paradedb/paradedb:v0.22.6-pg17
     container_name: WeKnora-langfuse-db-init-dev
@@ -397,7 +397,7 @@ services:
         # 先刷新现有库的 collation（镜像 ICU 2.36 与宿主 2.41 不匹配时必须做），否则 CREATE DATABASE 会失败
         psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
         psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
-        # 幂等创建：已存在则跳过；不存在则从 template0 克隆（template0 永远不会有 collation 漂移）
+        # 幂等Create ：已存在则跳过；不存在则从 template0 克隆（template0 永远不会有 collation 漂移）
         if psql -h postgres -U ${DB_USER} -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${LANGFUSE_DB_NAME:-langfuse}'" | grep -q 1; then
           echo "[langfuse-db-init] database '${LANGFUSE_DB_NAME:-langfuse}' already exists, skipping."
         else
@@ -475,8 +475,8 @@ services:
       langfuse-minio:
         condition: service_healthy
     # wrapper entrypoint 把 DB_PASSWORD / REDIS_PASSWORD URL 编码后再拼 URL，
-    # 避免密码含 '@' / '#' 等字符导致 Prisma P1013 解析失败。
-    # 注意：compose 覆盖 entrypoint 会清空镜像默认 CMD，所以末尾写死原始命令。
+    # 避免Password含 '@' / '#' 等字符导致 Prisma P1013 解析失败。
+    # 注意：compose 覆盖 entrypoint 会清空镜像Default CMD，所以末尾写死原始命令。
     entrypoint:
       - /bin/sh
       - -ec

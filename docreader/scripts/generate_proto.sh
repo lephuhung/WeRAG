@@ -1,19 +1,19 @@
 #!/bin/bash
 set -ex
 
-# 设置目录
+# Set directory
 PROTO_DIR="docreader/proto"
 PYTHON_OUT="docreader/proto"
 GO_OUT="docreader/proto"
 
-# 生成Python代码
+# Generate Python code
 python3 -m grpc_tools.protoc -I${PROTO_DIR} \
     --python_out=${PYTHON_OUT} \
     --pyi_out=${PYTHON_OUT} \
     --grpc_python_out=${PYTHON_OUT} \
     ${PROTO_DIR}/docreader.proto
 
-# 生成Go代码（仅在 protoc-gen-go 可用时执行）
+# Generate Go code (only executed if protoc-gen-go is available)
 if command -v protoc-gen-go &> /dev/null; then
     protoc -I${PROTO_DIR} --go_out=${GO_OUT} \
         --go_opt=paths=source_relative \
@@ -24,12 +24,12 @@ else
     echo "protoc-gen-go not found, skipping Go code generation"
 fi
 
-# 修复Python导入问题（MacOS兼容版本）
+# Fix Python import issue (MacOS compatible version)
 if [ "$(uname)" == "Darwin" ]; then
-    # MacOS版本
+    # MacOS version
     sed -i '' 's/import docreader_pb2/from docreader.proto import docreader_pb2/g' ${PYTHON_OUT}/docreader_pb2_grpc.py
 else
-    # Linux版本
+    # Linux version
     sed -i 's/import docreader_pb2/from docreader.proto import docreader_pb2/g' ${PYTHON_OUT}/docreader_pb2_grpc.py
 fi
 

@@ -309,6 +309,12 @@ const en = {
   "apiKeys.createdBody": "Copy the token now — it is shown only once.",
   "apiKeys.nameLabel": "Key name",
   "apiKeys.capabilities": "Capabilities",
+  "status.indexed": "Indexed",
+  "status.processing": "Processing",
+  "status.pending": "Pending",
+  "status.failed": "Failed",
+  "status.cancelled": "Cancelled",
+  "indexed": "Indexed",
 };
 const vi: Record<keyof typeof en, string> = {
   "nav.chat": "Chat",
@@ -613,6 +619,12 @@ const vi: Record<keyof typeof en, string> = {
   "apiKeys.createdBody": "Sao chép token ngay — chỉ hiển thị một lần.",
   "apiKeys.nameLabel": "Tên key",
   "apiKeys.capabilities": "Quyền năng",
+  "status.indexed": "Đã lập chỉ mục",
+  "status.processing": "Đang xử lý",
+  "status.pending": "Đang chờ",
+  "status.failed": "Thất bại",
+  "status.cancelled": "Đã hủy",
+  "indexed": "Đã lập chỉ mục",
 };
 
 const zh: Record<keyof typeof en, string> = {
@@ -917,6 +929,12 @@ const zh: Record<keyof typeof en, string> = {
   "apiKeys.createdBody": "请立即复制并妥善保存此令牌 — 它仅显示一次。",
   "apiKeys.nameLabel": "密钥名称",
   "apiKeys.capabilities": "权限功能",
+  "status.indexed": "已建立索引",
+  "status.processing": "处理中",
+  "status.pending": "等待中",
+  "status.failed": "失败",
+  "status.cancelled": "已取消",
+  "indexed": "已建立索引",
 };
 
 const dicts: Record<Locale, Record<string, string>> = { en, vi, zh };

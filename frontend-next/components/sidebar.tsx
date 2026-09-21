@@ -7,6 +7,7 @@ import { listSessions, type SessionRow } from "@/lib/api/chat";
 import { getCurrentUser } from "@/lib/api/auth";
 import { useT } from "@/lib/i18n";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   IconAgent,
   IconArtifact,
@@ -23,7 +24,6 @@ const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
   { href: "/platform/knowledge-bases", labelKey: "nav.knowledgeBases", icon: IconBook, match: ["/platform/knowledge-bases"] },
   { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"] },
-  { href: "/platform/agents", labelKey: "nav.agents", icon: IconAgent, match: ["/platform/agents"] },
   { href: "/platform/organizations", labelKey: "nav.organizations", icon: IconOrg, match: ["/platform/organizations"] },
 ] as const;
 
@@ -83,17 +83,51 @@ export function Sidebar() {
       const customEvent = e as CustomEvent<{ sessionId?: string; id?: string; title: string }>;
       const targetId = customEvent.detail?.sessionId || customEvent.detail?.id;
       if (!targetId || !customEvent.detail?.title) return;
-      setLive((prev) =>
-        prev
-          ? prev.map((item) =>
-              item.id === targetId ? { ...item, title: customEvent.detail.title } : item
-            )
-          : prev
-      );
+      setLive((prev) => {
+        if (!prev) return prev;
+        const exists = prev.some((item) => item.id === targetId);
+        if (exists) {
+          return prev.map((item) =>
+            item.id === targetId ? { ...item, title: customEvent.detail.title } : item
+          );
+        }
+        const now = new Date().toISOString();
+        return [
+          {
+            id: targetId,
+            title: customEvent.detail.title,
+            created_at: now,
+            updated_at: now,
+          },
+          ...prev,
+        ];
+      });
     };
+
+    const handleSessionCreated = (e: Event) => {
+      const customEvent = e as CustomEvent<{ sessionId?: string; id?: string; title?: string }>;
+      const targetId = customEvent.detail?.sessionId || customEvent.detail?.id;
+      if (!targetId) return;
+      setLive((prev) => {
+        if (!prev || prev.some((item) => item.id === targetId)) return prev;
+        const now = new Date().toISOString();
+        return [
+          {
+            id: targetId,
+            title: customEvent.detail?.title || "New chat",
+            created_at: now,
+            updated_at: now,
+          },
+          ...prev,
+        ];
+      });
+    };
+
     window.addEventListener("weknora:session-title-updated", handleTitleUpdated);
+    window.addEventListener("weknora:session-created", handleSessionCreated);
     return () => {
       window.removeEventListener("weknora:session-title-updated", handleTitleUpdated);
+      window.removeEventListener("weknora:session-created", handleSessionCreated);
     };
   }, []);
 
@@ -115,8 +149,12 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas">
       <div className="flex h-16 items-center px-5">
-        <Link href="/platform/knowledge-bases" className="display-sm tracking-tight">
-          WeRAG
+        <Link
+          href="/platform/knowledge-bases"
+          className="flex items-center gap-2.5 transition-opacity hover:opacity-85"
+        >
+          <BrandLogo size={32} priority />
+          <span className="display-sm tracking-tight text-ink">WeRAG</span>
         </Link>
       </div>
 

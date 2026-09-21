@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Agent 配置功能测试脚本
+# Agent Configuration 功能测试脚本
 
 set -e
 
@@ -15,7 +15,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 配置
+# Configuration 
 API_BASE_URL="http://localhost:8080"
 KB_ID="kb-00000001"  # 修改为你的知识库ID
 TENANT_ID="1"
@@ -26,7 +26,7 @@ echo "  知识库ID: ${KB_ID}"
 echo "  空间ID: ${TENANT_ID}"
 echo ""
 
-# 测试 1：获取当前配置
+# 测试 1：获取当前Configuration 
 echo -e "${YELLOW}测试 1: 获取当前配置${NC}"
 echo "GET ${API_BASE_URL}/api/v1/initialization/config/${KB_ID}"
 RESPONSE=$(curl -s -X GET "${API_BASE_URL}/api/v1/initialization/config/${KB_ID}")
@@ -34,11 +34,11 @@ echo "响应:"
 echo "$RESPONSE" | jq '.data.agent' || echo "$RESPONSE"
 echo ""
 
-# 测试 2：保存 Agent 配置
+# 测试 2：保存 Agent Configuration 
 echo -e "${YELLOW}测试 2: 保存 Agent 配置${NC}"
 echo "POST ${API_BASE_URL}/api/v1/initialization/initialize/${KB_ID}"
 
-# 准备测试数据（需要包含完整的配置）
+# 准备测试数据（需要包含完整的Configuration ）
 TEST_DATA='{
   "llm": {
     "source": "local",
@@ -91,7 +91,7 @@ echo ""
 # 等待一下，确保数据已保存
 sleep 1
 
-# 测试 3：验证配置已保存
+# 测试 3：验证Configuration 已保存
 echo -e "${YELLOW}测试 3: 验证配置已保存${NC}"
 echo "GET ${API_BASE_URL}/api/v1/initialization/config/${KB_ID}"
 RESPONSE=$(curl -s -X GET "${API_BASE_URL}/api/v1/initialization/config/${KB_ID}")
@@ -100,7 +100,7 @@ AGENT_CONFIG=$(echo "$RESPONSE" | jq '.data.agent')
 echo "Agent 配置:"
 echo "$AGENT_CONFIG" | jq '.'
 
-# 检查配置是否正确
+# 检查Configuration 是否正确
 ENABLED=$(echo "$AGENT_CONFIG" | jq -r '.enabled')
 MAX_ITER=$(echo "$AGENT_CONFIG" | jq -r '.maxIterations')
 TEMP=$(echo "$AGENT_CONFIG" | jq -r '.temperature')
@@ -115,7 +115,7 @@ else
 fi
 echo ""
 
-# 测试 4：使用 Tenant API 获取配置
+# 测试 4：使用 Tenant API 获取Configuration 
 echo -e "${YELLOW}测试 4: 使用 Tenant API 获取配置${NC}"
 echo "GET ${API_BASE_URL}/api/v1/tenants/${TENANT_ID}/agent-config"
 RESPONSE=$(curl -s -X GET "${API_BASE_URL}/api/v1/tenants/${TENANT_ID}/agent-config")

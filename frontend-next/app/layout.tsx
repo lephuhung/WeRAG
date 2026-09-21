@@ -20,8 +20,12 @@ const displaySerif = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "WeRAG",
-  description: "WeRAG — knowledge base & RAG platform",
+  title: "WeRAG - Tra cứu tài liệu AI",
+  description: "WeRAG — Tra cứu tài liệu AI & Hệ thống khai thác tri thức thông minh",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

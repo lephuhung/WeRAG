@@ -90,6 +90,8 @@ export function clearSessionMessages(id: string) {
   return apiDel(`/api/v1/sessions/${id}/messages`);
 }
 
+import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+
 // ---- messages ---------------------------------------------------------------
 
 export type ChatMessage = {
@@ -98,6 +100,7 @@ export type ChatMessage = {
   content?: string;
   created_at?: string;
   is_completed?: boolean;
+  knowledge_references?: KnowledgeReferenceItem[];
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {

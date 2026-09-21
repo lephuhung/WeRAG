@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { IconPlus, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
-import { useAuth } from "@/lib/auth";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
 import { AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
@@ -55,11 +54,7 @@ export function Composer({
   placeholder?: string;
 }) {
   const ctx = useChatContext();
-  const { settings, mentionItems, models, webSearchReady, toggleWebSearch, setModel, selectedAgent } = ctx;
-  const { user } = useAuth();
-  // Chat users pick a response mode, not a model: the model behind each mode
-  // is a platform assignment, so the picker stays a system-admin surface.
-  const canPickModel = user?.is_system_admin === true;
+  const { settings, mentionItems, webSearchReady, toggleWebSearch, selectedAgent } = ctx;
   useAgentModelSync();
 
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -68,7 +63,6 @@ export function Composer({
   const [mentionAnchor, setMentionAnchor] = useState(0);
   const [mentionItemsCount, setMentionItemsCount] = useState(0);
   const [agentOpen, setAgentOpen] = useState(false);
-  const [modelOpen, setModelOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -78,7 +72,6 @@ export function Composer({
   const closePopups = () => {
     setMentionOpen(false);
     setAgentOpen(false);
-    setModelOpen(false);
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -144,14 +137,6 @@ export function Composer({
       submit();
     }
   };
-
-  const chatModels = models.filter((m) => !m.type || m.type === "KnowledgeQA" || m.type === "VLLM");
-  const modelLabel = (() => {
-    const found = models.find((m) => m.id === settings.selectedChatModelId);
-    if (found) return found.display_name || found.name;
-    if (!settings.selectedChatModelId) return "Select model";
-    return "Custom model";
-  })();
 
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
   const websearchOn = settings.webSearchEnabled;
@@ -244,7 +229,7 @@ export function Composer({
           onKeyDown={onKeyDown}
           rows={Math.min(6, Math.max(1, value.split("\n").length))}
           placeholder={placeholder}
-          className="max-h-[160px] w-full flex-1 resize-none bg-transparent py-2 text-[16px] leading-relaxed text-ink outline-none placeholder:text-muted-soft"
+          className="max-h-[160px] w-full flex-1 resize-none bg-transparent py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-muted-soft"
         />
         <MentionPicker
           open={mentionOpen}
@@ -298,37 +283,6 @@ export function Composer({
         </button>
 
         <div className="relative ml-auto flex items-center gap-2">
-          {canPickModel && (
-          <div className="relative">
-            <button
-              onClick={() => { closePopups(); setModelOpen(true); }}
-              className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-full border border-hairline-strong px-3 text-[13px] text-body hover:border-ink hover:text-ink"
-              title="Chat model (summary_model_id)"
-            >
-              <span className="truncate">{modelLabel}</span>
-            </button>
-            {modelOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
-                <div className="card absolute bottom-full right-0 z-50 mb-2 max-h-[280px] w-[280px] overflow-y-auto p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                  {chatModels.length === 0 && <div className="caption px-3 py-3 text-muted">No chat models</div>}
-                  {chatModels.map((m) => (
-                    <button
-                      key={m.id ?? m.name}
-                      onClick={() => { setModel(m.id ?? ""); setModelOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[14px] transition-colors hover:bg-surface-strong ${
-                        (m.id ?? "") === settings.selectedChatModelId ? "bg-surface-strong font-medium text-ink" : "text-body"
-                      }`}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{m.display_name || m.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          )}
-
           {showStop ? (
             <button onClick={onStop} className="btn btn-outline mb-0.5 h-9 shrink-0" title="Stop generation">
               ■ Stop

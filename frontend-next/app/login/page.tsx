@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Orb } from "@/components/orb";
+import { BrandLogo } from "@/components/brand-logo";
 
 function LoginForm() {
   const router = useRouter();
@@ -71,8 +72,10 @@ function LoginForm() {
       <Orb color="peach" size={320} className="right-[20%] top-[-120px]" />
 
       <div className="relative w-full max-w-[400px]">
-        <div className="display-lg mb-2 text-center">WeRAG</div>
-        <p className="body-sm mb-10 text-center text-muted">Sign in to your knowledge workspace</p>
+        <div className="mb-6 flex justify-center">
+          <BrandLogo size={68} priority />
+        </div>
+        <p className="body-sm mb-8 text-center text-muted">Sign in to your knowledge workspace</p>
 
         <form className="card p-8" onSubmit={submit}>
           <label className="mb-4 block">
@@ -112,7 +115,7 @@ function LoginForm() {
         </form>
 
         <p className="caption mt-8 text-center text-muted-soft">
-          WeRAG — retrieval-augmented knowledge platform
+          Tra cứu tài liệu — retrieval-augmented knowledge platform
         </p>
       </div>
     </div>

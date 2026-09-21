@@ -129,5 +129,102 @@ export const IconTrash = ({ className }: P) => (
   </svg>
 );
 
+export const IconEdit = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
+export const IconEye = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const IconCopy = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect width="13" height="13" x="9" y="9" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+export const IconCode = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <polyline points="16 18 22 12 16 6" />
+    <polyline points="8 6 2 12 8 18" />
+  </svg>
+);
+
+export const IconPower = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M12 2v10" />
+    <path d="M18.4 6.6a9 9 0 1 1-12.77.01" />
+  </svg>
+);
+
+export const IconDocReader = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <polyline points="10 9 9 9 8 9" />
+  </svg>
+);
+
+export const IconParserEngine = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="m3 15 2 2 4-4" />
+  </svg>
+);
+
+export const IconStorageEngine = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <ellipse cx="12" cy="5" rx="9" ry="3" />
+    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+  </svg>
+);
+
+export const IconCheck = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+export const IconGraph = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+  </svg>
+);
+
+export const IconFork = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <line x1="6" y1="3" x2="6" y2="15" />
+    <circle cx="18" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M18 9a9 9 0 0 1-9 9" />
+  </svg>
+);
+
+export const IconBookmark = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+  </svg>
+);
+
+
+
+
+
+
 
 

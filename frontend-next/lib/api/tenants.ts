@@ -302,8 +302,8 @@ export async function searchTenants(params: SearchTenantsParams = {}): Promise<S
 
 // ---- members --------------------------------------------------------------------
 
-/* TenantRole mirrors internal/types/tenant_member.go's four-role enum. */
-export type TenantRole = "owner" | "admin" | "contributor" | "viewer";
+/* TenantRole mirrors internal/types/tenant_member.go's three-role enum. */
+export type TenantRole = "owner" | "admin" | "member";
 
 export type TenantMemberStatus = "active" | "invited" | "suspended";
 

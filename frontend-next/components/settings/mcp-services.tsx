@@ -164,7 +164,7 @@ export function McpServicesPanel({ open, onClose }: { open: boolean; onClose: ()
   );
 }
 
-function McpServiceForm({ service, onClose, onSaved }: {
+export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;
   onClose: () => void;
   onSaved: (saved?: MCPService) => void;
@@ -366,7 +366,7 @@ function McpServiceForm({ service, onClose, onSaved }: {
 }
 
 /* Per-tool enable + approval toggles (port of the tools tab of the Vue drawer). */
-function McpToolsPanel({ service, onClose }: { service: MCPService; onClose: () => void }) {
+export function McpToolsPanel({ service, onClose }: { service: MCPService; onClose: () => void }) {
   const { t } = useT();
   const [tools, setTools] = useState<MCPTool[]>([]);
   const [loading, setLoading] = useState(true);

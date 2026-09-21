@@ -11,9 +11,7 @@ import {
   promoteUserToSystemAdmin,
   resetUserPassword,
   revokeSystemAdmin,
-  updateSystemOrgTenantRole,
   updateSystemUserRole,
-  type OrgMemberRole,
   type SystemAdminUser,
 } from "@/lib/api/system";
 import type { TenantRole } from "@/lib/api/tenants";
@@ -153,15 +151,10 @@ export default function SystemUsers() {
     });
   };
 
-  const WORKSPACE_ROLES: TenantRole[] = ["owner", "admin", "contributor", "viewer"];
-  const ORG_ROLES: OrgMemberRole[] = ["admin", "editor", "viewer"];
+  const WORKSPACE_ROLES: TenantRole[] = ["owner", "admin", "member"];
 
   const changeWorkspaceRole = (u: SystemAdminUser, tenantId: number, role: TenantRole) => {
     void run(() => updateSystemUserRole(tenantId, u.id, role));
-  };
-
-  const changeOrgRole = (orgId: string, tenantId: number, role: OrgMemberRole) => {
-    void run(() => updateSystemOrgTenantRole(orgId, tenantId, role));
   };
 
   if (allowed === null) {
@@ -215,12 +208,11 @@ export default function SystemUsers() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-collapse text-left">
+        <table className="w-full min-w-[900px] border-collapse text-left">
           <thead>
             <tr className="caption-uppercase border-b border-hairline text-muted-soft">
               <th className="px-5 py-3 font-medium">User</th>
-              <th className="w-64 px-5 py-3 font-medium">Workspaces</th>
-              <th className="w-72 px-5 py-3 font-medium">Organizations</th>
+              <th className="w-[380px] px-5 py-3 font-medium">Workspaces</th>
               <th className="w-28 px-5 py-3 font-medium">Status</th>
               <th className="w-32 px-5 py-3 font-medium">Created</th>
               <th className="w-48 px-5 py-3 font-medium text-right">{t("users.actions")}</th>
@@ -261,13 +253,13 @@ export default function SystemUsers() {
                           className="flex items-center justify-between gap-2"
                         >
                           <span
-                            className="caption max-w-[150px] truncate text-body"
+                            className="caption max-w-[220px] truncate text-body"
                             title={m.tenant_name}
                           >
                             {m.tenant_name}
                           </span>
                           <select
-                            className="input h-6 w-auto shrink-0 px-1.5 py-0 text-[12px]"
+                            className="input h-6 w-[92px] shrink-0 px-1.5 py-0 text-[12px]"
                             value={m.role}
                             disabled={busy}
                             onChange={(e) =>
@@ -275,40 +267,6 @@ export default function SystemUsers() {
                             }
                           >
                             {WORKSPACE_ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="caption text-muted-soft">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 align-middle">
-                  {u.org_memberships && u.org_memberships.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      {u.org_memberships.map((o) => (
-                        <div
-                          key={`${o.org_id}-${o.tenant_id}`}
-                          className="flex items-center justify-between gap-2"
-                          title={`${o.org_name} (${o.tenant_name})`}
-                        >
-                          <span className="caption max-w-[180px] truncate text-body">
-                            {o.org_name}
-                            <span className="text-muted-soft"> ({o.tenant_name})</span>
-                          </span>
-                          <select
-                            className="input h-6 w-auto shrink-0 px-1.5 py-0 text-[12px]"
-                            value={o.role}
-                            disabled={busy}
-                            onChange={(e) =>
-                              changeOrgRole(o.org_id, o.tenant_id, e.target.value as OrgMemberRole)
-                            }
-                          >
-                            {ORG_ROLES.map((r) => (
                               <option key={r} value={r}>
                                 {r}
                               </option>
@@ -366,7 +324,7 @@ export default function SystemUsers() {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
+                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
                   No users match this filter.
                 </td>
               </tr>

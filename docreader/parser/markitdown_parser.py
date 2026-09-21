@@ -28,7 +28,7 @@ class StdMarkitdownParser(BaseParser):
     """
 
     def __init__(self, *args, **kwargs):
-        # 这里的 super() 会调用 BaseParser 的初始化，确保 self.file_type 被正确赋值
+        # 这里的 super() 会调用 BaseParser 的Initialization ，确保 self.file_type 被正确赋值
         super().__init__(*args, **kwargs)
         self.markitdown = MarkItDown()
 

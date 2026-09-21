@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Document Page Gradient 1 (Back) -->
+    <linearGradient id="docGradBack" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0369a1" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Document Page Gradient 2 (Middle) -->
+    <linearGradient id="docGradMid" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Document Page Gradient 3 (Front) -->
+    <linearGradient id="docGradFront" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+
+    <!-- Lens Rim Gradient -->
+    <linearGradient id="lensRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="50%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#1e40af" />
+    </linearGradient>
+
+    <!-- Lens Glass Gradient -->
+    <radialGradient id="lensGlass" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.45" />
+      <stop offset="60%" stop-color="#0284c7" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.75" />
+    </radialGradient>
+
+    <!-- Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Squircle Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect width="510" height="510" x="1" y="1" rx="111" fill="none" stroke="#38bdf8" stroke-opacity="0.15" stroke-width="2" />
+
+  <!-- Background Layer 1: Back Document Sheet -->
+  <rect x="120" y="130" width="210" height="270" rx="20" fill="url(#docGradBack)" opacity="0.6" transform="rotate(-6 120 130)" filter="url(#softShadow)" />
+
+  <!-- Background Layer 2: Middle Document Sheet -->
+  <rect x="145" y="115" width="220" height="280" rx="22" fill="url(#docGradMid)" opacity="0.85" transform="rotate(-2 145 115)" filter="url(#softShadow)" />
+
+  <!-- Main Layer 3: Front Document Sheet -->
+  <g filter="url(#softShadow)">
+    <path d="M 170 100 
+             L 330 100 
+             A 24 24 0 0 1 347 107
+             L 383 143 
+             A 24 24 0 0 1 390 160 
+             L 390 380 
+             A 24 24 0 0 1 366 404 
+             L 194 404 
+             A 24 24 0 0 1 170 380 
+             Z" 
+          fill="#0c1322" 
+          stroke="url(#docGradFront)" 
+          stroke-width="5" />
+
+    <!-- Folded Dog-Ear Corner -->
+    <path d="M 330 100 
+             L 330 144 
+             A 16 16 0 0 0 346 160 
+             L 390 160 
+             Z" 
+          fill="url(#docGradFront)" 
+          opacity="0.9" />
+
+    <!-- Subtle Document Text Lines -->
+    <rect x="205" y="150" width="85" height="8" rx="4" fill="#38bdf8" opacity="0.5" />
+    <rect x="205" y="174" width="130" height="7" rx="3.5" fill="#38bdf8" opacity="0.3" />
+    <rect x="205" y="196" width="100" height="7" rx="3.5" fill="#38bdf8" opacity="0.2" />
+  </g>
+
+  <!-- Magnifying Search Lens & AI Retrieval Engine -->
+  <g filter="url(#softShadow)">
+    <!-- Lens Glow Background -->
+    <circle cx="270" cy="275" r="92" fill="#06b6d4" opacity="0.12" filter="url(#glow)" />
+
+    <!-- Lens Glass Interior -->
+    <circle cx="270" cy="275" r="82" fill="url(#lensGlass)" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.4" />
+
+    <!-- Lens Rim Outer Ring -->
+    <circle cx="270" cy="275" r="82" fill="none" stroke="url(#lensRim)" stroke-width="12" />
+
+    <!-- Lens Handle -->
+    <path d="M 330 335 L 400 405" stroke="url(#lensRim)" stroke-width="18" stroke-linecap="round" />
+    <path d="M 333 338 L 397 402" stroke="#67e8f9" stroke-width="8" stroke-linecap="round" opacity="0.7" />
+
+    <!-- Inner AI Neural Spark / Semantic Retrieval Network -->
+    <g filter="url(#glow)">
+      <!-- Connections -->
+      <line x1="270" y1="275" x2="235" y2="245" stroke="#67e8f9" stroke-width="3" stroke-dasharray="4 2" opacity="0.8" />
+      <line x1="270" y1="275" x2="305" y2="240" stroke="#38bdf8" stroke-width="3" stroke-dasharray="4 2" opacity="0.8" />
+      <line x1="270" y1="275" x2="245" y2="305" stroke="#34d399" stroke-width="3" stroke-dasharray="4 2" opacity="0.8" />
+      <line x1="270" y1="275" x2="295" y2="305" stroke="#67e8f9" stroke-width="3" stroke-dasharray="4 2" opacity="0.8" />
+      <line x1="235" y1="245" x2="305" y2="240" stroke="#0ea5e9" stroke-width="2" opacity="0.5" />
+
+      <!-- Center Master Node (Answer Core) -->
+      <circle cx="270" cy="275" r="13" fill="#ffffff" />
+      <circle cx="270" cy="275" r="18" fill="#38bdf8" opacity="0.4" />
+
+      <!-- Satellite Knowledge Nodes (Retrieved Chunks) -->
+      <circle cx="235" cy="245" r="7" fill="#67e8f9" />
+      <circle cx="305" cy="240" r="8" fill="#38bdf8" />
+      <circle cx="245" cy="305" r="6" fill="#34d399" />
+      <circle cx="295" cy="305" r="6.5" fill="#67e8f9" />
+
+      <!-- Sparkle Stars -->
+      <path d="M 230 220 Q 230 226 224 226 Q 230 226 230 232 Q 230 226 236 226 Q 230 226 230 220 Z" fill="#67e8f9" />
+      <path d="M 315 285 Q 315 289 311 289 Q 315 289 315 293 Q 315 289 319 289 Q 315 289 315 285 Z" fill="#34d399" />
+    </g>
+  </g>
+</svg>

@@ -30,6 +30,11 @@ var versionedSQLiteTables = []string{
 	"mcp_endpoints",
 	"message_artifacts",
 	"abbreviations", // 000027 (sqlite) / 000108 (versioned)
+	"tenant_skills",
+	"tenant_skill_snapshots",
+	"tenant_user_env_vars",
+	"tenant_skill_catalog",
+	"mcp_metadata", // 000030 (sqlite) / 000092 (versioned)
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -47,9 +52,10 @@ var versionedSQLiteColumns = map[string][]string{
 	"embed_channels":     {"allow_memory"},                                                     // 000060
 	"mcp_oauth_tokens":   {"principal_type", "principal_id"},                                   // 000064
 	"mcp_tool_approvals": {"enabled"},                                                          // 000091
+	"mcp_services":        {"usage_instructions"},                                              // 000092
 }
 
-const expectedSQLiteMigrationVersion = 28
+const expectedSQLiteMigrationVersion = 30
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

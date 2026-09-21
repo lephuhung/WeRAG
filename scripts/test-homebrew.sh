@@ -4,7 +4,7 @@ set -euo pipefail
 #
 # 本地测试 Homebrew Formula
 #
-# 流程：打包 → 创建本地 tap → 写入 Formula → brew install → 验证
+# 流程：打包 → Create 本地 tap → 写入 Formula → brew install → 验证
 #
 # 用法:
 #   ./scripts/test-homebrew.sh                    # 完整测试（含前端构建）
