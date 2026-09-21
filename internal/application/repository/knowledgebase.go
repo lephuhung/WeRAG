@@ -111,27 +111,17 @@ func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string)
 	return &scope, nil
 }
 
-// ListVisibleKnowledgeBases returns the non-temporary KBs of tenantID
-// visible to a caller holding org memberships memberOrgIDs. Org-scoped
-// KBs are included only for members (or unconditionally when
-// bypassOrgFilter is set by tenant Admin/Owner and system admins).
+// ListVisibleKnowledgeBases returns the non-temporary KBs of tenantID:
+// tenant- and public-scoped rows. Cross-tenant visibility comes from
+// kb_access_grants, resolved by the service layer.
 func (r *knowledgeBaseRepository) ListVisibleKnowledgeBases(
-	ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool,
+	ctx context.Context, tenantID uint64,
 ) ([]*types.KnowledgeBase, error) {
 	var kbs []*types.KnowledgeBase
 	q := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND is_temporary = ?", tenantID, false)
-	if bypassOrgFilter {
-		q = q.Where("visibility IN ?", []string{
-			string(types.KBVisibilityTenant), string(types.KBVisibilityOrg), string(types.KBVisibilityPublic)})
-	} else if len(memberOrgIDs) > 0 {
-		q = q.Where("(visibility IN ? OR (visibility = ? AND org_id IN ?))",
-			[]string{string(types.KBVisibilityTenant), string(types.KBVisibilityPublic)},
-			string(types.KBVisibilityOrg), memberOrgIDs)
-	} else {
-		q = q.Where("visibility IN ?", []string{
+		Where("tenant_id = ? AND is_temporary = ?", tenantID, false).
+		Where("visibility IN ?", []string{
 			string(types.KBVisibilityTenant), string(types.KBVisibilityPublic)})
-	}
 	if err := q.Order("created_at DESC").Find(&kbs).Error; err != nil {
 		return nil, err
 	}
@@ -154,15 +144,13 @@ func (r *knowledgeBaseRepository) ListPublicKnowledgeBasesExcept(
 }
 
 // ListForeignKnowledgeBasesByTenantID lists tenantID's KBs that callers
-// outside the tenant may see (shared-agent context): everything except
-// org-scoped KBs, which never cross the tenant boundary.
+// outside the tenant may see: tenant- and public-scoped rows.
 func (r *knowledgeBaseRepository) ListForeignKnowledgeBasesByTenantID(
 	ctx context.Context, tenantID uint64,
 ) ([]*types.KnowledgeBase, error) {
 	var kbs []*types.KnowledgeBase
 	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND is_temporary = ? AND visibility <> ?",
-			tenantID, false, string(types.KBVisibilityOrg)).
+		Where("tenant_id = ? AND is_temporary = ?", tenantID, false).
 		Order("created_at DESC").Find(&kbs).Error; err != nil {
 		return nil, err
 	}

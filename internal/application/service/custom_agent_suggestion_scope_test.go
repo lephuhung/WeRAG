@@ -63,18 +63,21 @@ func (s *suggestionKBService) GetKnowledgeBasesByIDsOnly(
 	return result, nil
 }
 
-type suggestionKBShareService struct {
-	interfaces.KBShareService
+type suggestionKBGrantService struct {
+	interfaces.KBAccessGrantService
 	allowed map[string]bool
 }
 
-func (s *suggestionKBShareService) CheckTenantKBPermission(
+func (s *suggestionKBGrantService) ApprovedKBPermission(
 	_ context.Context,
 	kbID string,
 	_ uint64,
-	_ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
-	return types.OrgRoleViewer, s.allowed[kbID], nil
+) (types.KBPermission, bool, error) {
+	return types.KBPermissionViewer, s.allowed[kbID], nil
+}
+
+func (s *suggestionKBGrantService) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 func TestResolveSuggestionTagScopes_UsesSourceTenantForSharedKB(t *testing.T) {
@@ -94,7 +97,7 @@ func TestResolveSuggestionTagScopes_UsesSourceTenantForSharedKB(t *testing.T) {
 		kbService: &suggestionKBService{kbs: map[string]*types.KnowledgeBase{
 			kbID: {ID: kbID, TenantID: sourceTenant},
 		}},
-		kbShareService: &suggestionKBShareService{allowed: map[string]bool{kbID: true}},
+		kbAccessGrantService: &suggestionKBGrantService{allowed: map[string]bool{kbID: true}},
 	}
 
 	resolved, err := svc.resolveSuggestionTagScopes(
@@ -173,26 +176,24 @@ func TestReadableSuggestionKnowledgeIDs(t *testing.T) {
 
 	assert.Equal(t, []string{"own-doc"}, svc.readableSuggestionKnowledgeIDs(caller, ids))
 
-	sharedRun := access.WithSharedAgent(caller, &types.CustomAgent{
-		ID: "agent", TenantID: 84,
-		Config: types.CustomAgentConfig{KBSelectionMode: "selected", KnowledgeBases: []string{"agent-kb"}},
-	})
-	assert.Equal(t, []string{"own-doc", "scoped-doc"}, svc.readableSuggestionKnowledgeIDs(sharedRun, ids))
+	// An approved tenant grant on "agent-kb" behaves like the upstream
+	// resolved access: the grant is injected as an exact KBAccess context
+	// grant, the same way the KB routes pin it after authorization.
+	grant := &access.KBAccess{
+		KnowledgeBase:     &types.KnowledgeBase{ID: "agent-kb", TenantID: 84},
+		Caller:            types.CallerFromContext(caller),
+		EffectiveTenantID: 84,
+		Permission:        types.KBPermissionViewer,
+	}
+	grantedRun := grant.Context(caller)
+	assert.Equal(t, []string{"own-doc", "scoped-doc"}, svc.readableSuggestionKnowledgeIDs(grantedRun, ids))
 
-	// Follow-up generation moves execution into the agent's workspace; with
-	// the caller pinned, its documents still need the agent's grant.
-	followUp := types.WithExecutionTenant(sharedRun, 84)
+	// Follow-up generation moves execution into the granting tenant's
+	// workspace; with the caller pinned, its documents still need the grant.
+	followUp := types.WithExecutionTenant(grantedRun, 84)
 	assert.Equal(t, []string{"own-doc", "scoped-doc"}, svc.readableSuggestionKnowledgeIDs(followUp, ids))
 	uncaptured := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
 	assert.Equal(t, []string{"own-doc"},
 		svc.readableSuggestionKnowledgeIDs(types.WithExecutionTenant(uncaptured, 84), ids),
-		"execution in the agent's workspace does not make its documents the caller's")
-}
-
-func (s *suggestionKBShareService) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *suggestionKBShareService) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
+		"execution in the granting tenant's workspace does not make its documents the caller's")
 }

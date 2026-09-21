@@ -231,7 +231,7 @@ func (s *cosFileService) SaveBytes(ctx context.Context, data []byte, tenantID ui
 	ext := filepath.Ext(safeName)
 	reader := bytes.NewReader(data)
 
-	// 如果请求写入临时桶且临时桶已配置
+	// 如果请求写入临时桶且临时桶已Configuration
 	if temp && s.tempClient != nil {
 		objectName := fmt.Sprintf("exports/%d/%s%s", tenantID, uuid.New().String(), ext)
 		_, err := s.tempClient.Object.Put(ctx, objectName, reader, nil)

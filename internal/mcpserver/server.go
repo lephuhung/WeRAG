@@ -42,18 +42,18 @@ var errNoEndpoint = errors.New("mcp endpoint missing from request context")
 // Server wires the tool catalog onto an mcp-go server and exposes it as an
 // http.Handler.
 type Server struct {
-	kbService        interfaces.KnowledgeBaseService
-	knowledgeService interfaces.KnowledgeService
-	chunkService     interfaces.ChunkService
-	wikiService      interfaces.WikiPageService
-	sessionService   interfaces.SessionService
-	messageService   interfaces.MessageService
-	agentService     interfaces.CustomAgentService
-	kbShareService   interfaces.KBShareService
-	tenantService    interfaces.TenantService
-	endpointRepo     interfaces.MCPEndpointRepository
-	db               *gorm.DB
-	cfg              *config.Config
+	kbService            interfaces.KnowledgeBaseService
+	knowledgeService     interfaces.KnowledgeService
+	chunkService         interfaces.ChunkService
+	wikiService          interfaces.WikiPageService
+	sessionService       interfaces.SessionService
+	messageService       interfaces.MessageService
+	agentService         interfaces.CustomAgentService
+	kbAccessGrantService interfaces.KBAccessGrantService
+	tenantService        interfaces.TenantService
+	endpointRepo         interfaces.MCPEndpointRepository
+	db                   *gorm.DB
+	cfg                  *config.Config
 
 	limiter   *ratelimit.Limiter
 	lastTouch sync.Map // endpoint id -> time.Time of the last last_used_at write
@@ -71,7 +71,7 @@ func NewServer(
 	sessionService interfaces.SessionService,
 	messageService interfaces.MessageService,
 	agentService interfaces.CustomAgentService,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	tenantService interfaces.TenantService,
 	endpointRepo interfaces.MCPEndpointRepository,
 	db *gorm.DB,
@@ -79,19 +79,19 @@ func NewServer(
 	redisClient *redis.Client,
 ) *Server {
 	s := &Server{
-		kbService:        kbService,
-		knowledgeService: knowledgeService,
-		chunkService:     chunkService,
-		wikiService:      wikiService,
-		sessionService:   sessionService,
-		messageService:   messageService,
-		agentService:     agentService,
-		kbShareService:   kbShareService,
-		tenantService:    tenantService,
-		endpointRepo:     endpointRepo,
-		db:               db,
-		cfg:              cfg,
-		limiter:          ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
+		kbService:            kbService,
+		knowledgeService:     knowledgeService,
+		chunkService:         chunkService,
+		wikiService:          wikiService,
+		sessionService:       sessionService,
+		messageService:       messageService,
+		agentService:         agentService,
+		kbAccessGrantService: kbAccessGrantService,
+		tenantService:        tenantService,
+		endpointRepo:         endpointRepo,
+		db:                   db,
+		cfg:                  cfg,
+		limiter:              ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
 	}
 	// The local fallback map only grows without periodic eviction; the server
 	// lives for the whole process so the cleanup goroutine never stops.

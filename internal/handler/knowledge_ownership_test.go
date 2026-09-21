@@ -24,9 +24,9 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 	}{
 		{name: "admin", role: types.TenantRoleAdmin},
 		{name: "owner", role: types.TenantRoleOwner},
-		{name: "API key", role: types.TenantRoleViewer, apiKey: true},
-		{name: "cross tenant superuser", role: types.TenantRoleViewer, superuser: true},
-		{name: "RBAC disabled", role: types.TenantRoleContributor, disabled: true},
+		{name: "API key", role: types.TenantRoleMember, apiKey: true},
+		{name: "cross tenant superuser", role: types.TenantRoleMember, superuser: true},
+		{name: "RBAC disabled", role: types.TenantRoleMember, disabled: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newKBLookupCtx(t, 1, "kb")
@@ -123,7 +123,7 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 			r := gin.New()
 			r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 				ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
-				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleContributor)
+				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 				ctx = context.WithValue(ctx, types.UserIDContextKey, "user")
 				c.Request = c.Request.WithContext(ctx)
 				c.Next()

@@ -7,9 +7,8 @@ import (
 
 func deploymentCapabilitiesFromRouter(params RouterParams) handler.DeploymentCapabilitiesData {
 	return handler.BuildDeploymentCapabilities(handler.Edition, handler.DeploymentFeatureAvailability{
-		Organizations: params.OrganizationHandler != nil,
-		Agents:        params.CustomAgentHandler != nil,
-		IM:            params.IMHandler != nil,
+		Agents: params.CustomAgentHandler != nil,
+		IM:     params.IMHandler != nil,
 		// Match RegisterEmbedChannelRoutes: management routes depend on handler only.
 		Embed: params.EmbedChannelHandler != nil,
 		// Match RegisterMCPEndpointRoutes / RegisterMCPServerRoutes.

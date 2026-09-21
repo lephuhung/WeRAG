@@ -33,7 +33,7 @@ func (p *LongCatProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 LongCat provider 配置
+// ValidateConfig 验证 LongCat provider Configuration
 func (p *LongCatProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for LongCat provider")

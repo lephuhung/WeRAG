@@ -202,9 +202,9 @@ func TestPatchEmbedChatPayloadInjectsAgentID(t *testing.T) {
 	if payload["query"] != "hello" {
 		t.Fatalf("query = %v, want preserved client field", payload["query"])
 	}
-	if _, ok := payload[types.AgentSourceTenantIDParam]; ok {
+	if _, ok := payload["agent_source_tenant_id"]; ok {
 		t.Fatalf("agent_source_tenant_id = %v, want dropped so the channel agent stays local",
-			payload[types.AgentSourceTenantIDParam])
+			payload["agent_source_tenant_id"])
 	}
 	if payload["web_search_enabled"] != false {
 		t.Fatalf("web_search_enabled = %v, want false", payload["web_search_enabled"])

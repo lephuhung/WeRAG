@@ -47,13 +47,13 @@ func (h *IMHandler) WeChatGetQRCode(c *gin.Context) {
 //
 // WeChatPollQRCodeStatus godoc
 // @Summary      轮询微信二维码状态
-// @Description  查询指定二维码是否已被扫描/确认/过期；confirmed 时返回凭证
+// @Description  Query 指定二维码是否已被扫描/确认/过期；confirmed 时返回凭证
 // @Tags         IM 渠道
 // @Accept       json
 // @Produce      json
 // @Param        request  body      map[string]interface{}  true  "{qrcode: string}"
 // @Success      200      {object}  map[string]interface{}  "扫码状态"
-// @Failure      400      {object}  map[string]interface{}  "请求参数错误"
+// @Failure      400      {object}  map[string]interface{}  "请求Parameters 错误"
 // @Failure      500      {object}  map[string]interface{}  "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth

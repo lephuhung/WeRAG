@@ -38,7 +38,7 @@ func (p *NovitaProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Novita provider 配置
+// ValidateConfig 验证 Novita provider Configuration
 func (p *NovitaProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Novita provider")

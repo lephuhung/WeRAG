@@ -239,18 +239,18 @@ const (
 	TypeFAQImport                = "faq:import"                 // FAQ导入任务（包含dry run模式）
 	TypeQuestionGeneration       = "question:generation"        // 问题生成任务
 	TypeSummaryGeneration        = "summary:generation"         // 摘要生成任务
-	TypeKBClone                  = "kb:clone"                   // 知识库复制任务
-	TypeIndexDelete              = "index:delete"               // 索引删除任务
-	TypeKBDelete                 = "kb:delete"                  // 知识库删除任务
-	TypeKnowledgeListDelete      = "knowledge:list_delete"      // 批量删除知识任务
+	TypeKBClone                  = "kb:clone"                   // Knowledge Base复制任务
+	TypeIndexDelete              = "index:delete"               // 索引Delete 任务
+	TypeKBDelete                 = "kb:delete"                  // Knowledge BaseDelete 任务
+	TypeKnowledgeListDelete      = "knowledge:list_delete"      // 批量Delete 知识任务
 	TypeKnowledgeListReparse     = "knowledge:list_reparse"     // 批量重解析知识任务
 	TypeKnowledgeMove            = "knowledge:move"             // 知识移动任务
 	TypeDataTableSummary         = "datatable:summary"          // 表格摘要任务
 	TypeImageMultimodal          = "image:multimodal"           // 图片多模态处理任务（OCR + VLM Caption）
 	TypeKnowledgePostProcess     = "knowledge:post_process"     // 知识后处理任务（统一调度）
-	TypeKnowledgeAutoTag         = "knowledge:auto_tag"         // 文档自动关联知识库已有标签
-	TypeKnowledgeBaseProfile     = "kb:profile"                 // 知识库描述（画像）生成任务
-	TypeManualProcess            = "manual:process"             // 手工知识更新任务（cleanup + 重新索引）
+	TypeKnowledgeAutoTag         = "knowledge:auto_tag"         // 文档自动关联Knowledge Base已有标签
+	TypeKnowledgeBaseProfile     = "kb:profile"                 // Knowledge Base描述（画像）生成任务
+	TypeManualProcess            = "manual:process"             // 手工知识Update 任务（cleanup + 重新索引）
 	TypeDataSourceSync           = "datasource:sync"            // 数据源同步任务
 	TypeWikiIngest               = "wiki:ingest"                // Wiki 页面同步任务
 	TypeWikiFinalize             = "wiki:finalize"              // Wiki KB 级收尾任务（防抖：索引重建/死链清理/交叉链接）
@@ -492,8 +492,8 @@ type KnowledgeMoveProgress struct {
 	Failed     int               `json:"failed"`     // 失败数
 	Message    string            `json:"message"`    // 状态消息
 	Error      string            `json:"error"`      // 错误信息
-	CreatedAt  int64             `json:"created_at"` // 任务创建时间
-	UpdatedAt  int64             `json:"updated_at"` // 最后更新时间
+	CreatedAt  int64             `json:"created_at"` // 任务Create 时间
+	UpdatedAt  int64             `json:"updated_at"` // 最后Update 时间
 }
 
 // ManualProcessPayload represents the manual knowledge processing task payload.
@@ -584,6 +584,6 @@ type KBCloneProgress struct {
 	Processed int               `json:"processed"`  // 已处理数
 	Message   string            `json:"message"`    // 状态消息
 	Error     string            `json:"error"`      // 错误信息
-	CreatedAt int64             `json:"created_at"` // 任务创建时间
-	UpdatedAt int64             `json:"updated_at"` // 最后更新时间
+	CreatedAt int64             `json:"created_at"` // 任务Create 时间
+	UpdatedAt int64             `json:"updated_at"` // 最后Update 时间
 }

@@ -28,7 +28,7 @@ const (
 
 var batchDownloadSlots = make(chan struct{}, maxConcurrentBatchDownloads)
 
-// BatchDownloadKnowledgeRequest 指定同一知识库中需要下载的文档。
+// BatchDownloadKnowledgeRequest 指定同一Knowledge Base中需要下载的文档。
 type BatchDownloadKnowledgeRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1,max=200,dive,required,max=128"`
 }
@@ -40,12 +40,12 @@ type knowledgeDownloadEntry struct {
 
 // BatchDownloadKnowledge godoc
 // @Summary 批量下载知识文件
-// @Description 将同一知识库的最多 200 个文档打包为 ZIP，原始内容合计不超过 512 MiB。无原文件的条目会被跳过；无权访问、跨库或读取失败时不返回残缺压缩包。
+// @Description 将同一Knowledge Base的最多 200 个文档打包为 ZIP，原始内容合计不超过 512 MiB。无原文件的条目会被跳过；无权访问、跨库或读取失败时不返回残缺压缩包。
 // @Tags 知识管理
 // @Accept json
 // @Produce application/zip
-// @Param id path string true "知识库ID"
-// @Param request body BatchDownloadKnowledgeRequest true "文档ID列表"
+// @Param id path string true "Knowledge BaseID"
+// @Param request body BatchDownloadKnowledgeRequest true "文档IDList "
 // @Success 200 {file} file "ZIP 压缩包"
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
@@ -66,7 +66,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 
 	kbID := c.Param("id")
 	grant, err := resolveHandlerKBAccessFor(
-		c, kbID, h.kbService, h.kbShareService, h.agentShareService, types.OrgRoleEditor,
+		c, kbID, h.kbService, h.kbAccessGrantService, types.KBPermissionEditor,
 	)
 	if err != nil {
 		_ = c.Error(err)
@@ -92,7 +92,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 		}
 	}
 	entries := make([]knowledgeDownloadEntry, 0, len(ids))
-	// 在读取任何文件之前检查整批文档，防止混入其他知识库或租户的 ID。
+	// 在读取任何文件之前检查整批文档，防止混入其他Knowledge Base或租户的 ID。
 	for _, id := range ids {
 		item := byID[id]
 		if item == nil {
@@ -115,7 +115,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 	}
 	defer releaseBatchDownloadSlot()
 
-	// 先在临时文件中完整生成压缩包，避免读取失败时向用户返回残缺 ZIP。
+	// 先在Temporary files中完整生成压缩包，避免读取失败时向用户返回残缺 ZIP。
 	archive, err := os.CreateTemp("", "weknora-download-*.zip")
 	if err != nil {
 		_ = c.Error(errors.NewInternalServerError("无法创建下载压缩包，请稍后重试"))

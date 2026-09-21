@@ -39,7 +39,7 @@ func (p *QianfanProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证百度千帆 provider 配置
+// ValidateConfig 验证百度千帆 provider Configuration
 func (p *QianfanProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for Qianfan provider")

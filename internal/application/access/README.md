@@ -7,15 +7,15 @@ codes, RBAC rollout behavior, and response projection at their existing boundari
 | Entry point | Shared rule | Additional boundary |
 | --- | --- | --- |
 | Resource mutations with URL/body KB selectors | `CheckOwnershipOrRole`: creator or sufficient tenant role | API-key capabilities, KB scope and tenant visibility remain separate checks |
-| KB/document detail and content routes | `ResolveKB`: own tenant, organization share, then read-only shared agent | Tenant role/ownership guards and API-key capabilities |
-| Shared documents, chunks, search targets and suggestions | `KBSharePermissions`: organization grants only | Existing user requirements and caller-specific filtering/error behavior |
-| FAQ and tag service reads | `resolveKBReadTenant`: execution tenant or organization share | Direct cross-tenant calls require a user; no implicit agent fallback |
-| KB list, document search and batch restoration with `agent_id` | Shared-agent lookup, then `SharedAgentKBScope` | API-key intersection; dynamic list/search selections also apply capability filtering |
-| Wiki fixer source tenant | Organization Editor permission | Built-in fixer only; exactly one KB |
-| Message file shared-KB fallback | Organization Viewer permission | Persisted message reference, exact resource handle, KB/resource owner match |
+| KB/document detail and content routes | `ResolveKB`: own tenant, public visibility, or an approved tenant grant | Tenant role/ownership guards and API-key capabilities |
+| Shared documents, chunks, search targets and suggestions | `KBGrantPermissions`: approved tenant grants only | Existing user requirements and caller-specific filtering/error behavior |
+| FAQ and tag service reads | `resolveKBReadTenant`: execution tenant or approved grant | Direct cross-tenant calls require a user; no implicit agent fallback |
+| KB list, document search and batch restoration with `agent_id` | Caller's own agent only; foreign-tenant KBs via `KBGrantPermissions` | API-key intersection; dynamic list/search selections also apply capability filtering |
+| Wiki fixer source tenant | Approved tenant grant on the source KB | Built-in fixer only; exactly one KB |
+| Message file shared-KB fallback | Approved tenant grant (viewer) | Persisted message reference, exact resource handle, KB/resource owner match |
 | KB file proxy | `ResolveKBFile`: exact Viewer grant and current explicit KB binding | Owner tenant and exports namespace; original uploads retain their separate download permission |
-| Message file proxy | `ResolveMessageFile`: session ownership and exact persisted output reference | Current shared-agent or organization-KB permission for source-owned resources |
-| Message artifact download | `ResolveMessageArtifact`: session ownership and persisted artifact index | Session-owned output remains accessible; source-owned output rechecks current sharing |
+| Message file proxy | `ResolveMessageFile`: session ownership and exact persisted output reference | Current tenant grant for foreign-tenant resources |
+| Message artifact download | `ResolveMessageArtifact`: session ownership and persisted artifact index | Session-owned output remains accessible; source-owned output rechecks current grants |
 | FAQ and tag mutations | `RequireKBWrite`: exact Editor operation grant | API-key ingest capability and KB scope; tenant-role/creator checks remain at the admission boundary |
 
 ## Ownership and write roles
@@ -48,42 +48,34 @@ execution tenant cannot turn a Viewer grant into Editor or expose another KB.
 HTTP adapters retain Gin's caller keys for existing handlers.
 
 Service reads use `KBPermissions` to check caller ownership, exact upstream
-grants, then organization shares for the original caller. This check also applies
+grants, then approved tenant grants for the original caller. This check also applies
 to documents/chunks returned by the initial tenant-scoped batch query, not just
 rows found during cross-tenant expansion. Search preflight, result enrichment,
 FAQ/tag reads, search targets and suggestion scopes follow the same boundary.
-General document search enumerates the caller's own/shared KBs; its execution
+General document search enumerates the caller's own/granted KBs; its execution
 tenant is not a new identity.
 
-After authorizing a shared agent, `WithSharedAgent` carries its configured,
-source-tenant-bound read scope into the pipeline. An arbitrary execution switch
-cannot substitute for that grant. `logger.CloneContext` preserves the caller and
-resource grants for detached work within the operation. Context grants contain
-immutable snapshots; deriving a context does not mutate a sibling search branch.
-They are not persisted as authority for subsequent requests. API-key scope is
-reapplied when consuming any grant.
+Agents resolve to the caller's own tenant only — there is no cross-tenant shared
+agent fallback. `logger.CloneContext` preserves the caller and resource grants
+for detached work within the operation. Context grants contain immutable
+snapshots; deriving a context does not mutate a sibling search branch. They are
+not persisted as authority for subsequent requests. API-key scope is reapplied
+when consuming any grant.
 
-## Organization shares
+## Tenant access grants
 
-`KBSharePermissions` fixes the caller tenant and role for one operation and caches
+`KBGrantPermissions` fixes the caller tenant and role for one operation and caches
 the granular decision per KB. Reading many documents/chunks from one KB therefore
-queries its membership once. Both denied decisions and errors are cached within
+queries its grant once. Both denied decisions and errors are cached within
 that operation. The next request creates a new resolver and observes revocations.
 The resolver is not a process-wide cache and is not shared between goroutines.
 
-The share service remains responsible for the role cap across share permission,
-organization membership and caller tenant role. The resolver returns lookup errors
+Cross-tenant access to a non-public KB requires a live `approved` row in
+`kb_access_grants` keyed by `(kb_id, grantee_tenant_id)`. Grants carry viewer
+permission only — they never authorize writes. The resolver returns lookup errors
 so strict search preflight can report an infrastructure failure while best-effort
-result expansion can omit inaccessible rows. `ResolveKB` retains its independent
-read-only agent fallback when organization resolution cannot grant access.
-
-## Shared-agent KB scope
-
-A scope is created only after looking up an accessible shared agent. `all` means
-all KBs in that agent's tenant; `selected` means its explicit nonempty ID set.
-`none`, unknown modes and empty selections authorize no KBs. A nil/empty ID slice
-never implicitly grants an entire tenant. Specifying an agent does not permit
-falling back to a different shared agent.
+result expansion can omit inaccessible rows. Revoking a grant takes effect on the
+next request, including message/file paths that re-resolve authorization.
 
 These rules do not replace message/session ownership, persisted file-reference
 validation, resource binding, Agent tool search-target restrictions, or embed/IM
@@ -124,14 +116,14 @@ resource ID; chunk/wiki text is never authorization evidence. Historical files
 without explicit bindings fail closed and need a trusted migration. A same-tenant
 path or handle prefix cannot replace a KB binding. Message evidence comes from
 persisted content, references, images, artifacts and tool results; tool arguments
-do not prove that the message returned a file. The organization-shared KB
+do not prove that the message returned a file. The granted-KB
 fallback also checks the catalog for an independent live KB/file binding;
-retrieval text and a currently shared KB ID alone are insufficient.
+retrieval text and a currently granted KB ID alone are insufficient.
 
-Source-owned shared-agent files also require the current live agent share.
-KB sources need an explicit live KB binding allowed by the agent's current
-`all`/`selected` selection and the caller's API-key KB scope; `none`, unknown
-modes, removed KB selections and deleted sources fail closed. Independently
+Foreign-tenant source files also require a current live approved grant on the
+source KB plus an explicit live KB binding, and the caller's API-key KB scope is
+reapplied. Revoked grants, removed KB selections and deleted sources fail
+closed. Independently
 generated artifacts remain accessible when explicitly bound to the exact
 authorized message as an artifact. Mentioning a file in message text or the
 artifact list does not create that binding. Caller-owned artifacts retain their
@@ -279,7 +271,7 @@ These are separate follow-ups, not capabilities provided by this package:
 4. **Finish service-layer migration.** Apply explicit operation grants to the
    remaining KB configuration/duplicate/delete, wiki and resource-administration
    service methods, preserving their existing route admission policies. Keep
-   user/organization membership, embed, IM and signed-resource contracts separate.
+   user/tenant membership, embed, IM and signed-resource contracts separate.
 5. **Trusted legacy file migration.** Backfill historical file bindings from
    verified provenance, not arbitrary chunk/wiki mentions. Unbound historical
    files now fail closed; request-path text fallback has been removed. Migrate

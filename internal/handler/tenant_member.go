@@ -86,11 +86,11 @@ func parseTenantIDFromPath(c *gin.Context) (uint64, bool) {
 }
 
 // ListMembers godoc
-// @Summary      列出空间成员
-// @Description  分页返回当前空间内 active 成员（含每位成员的角色、邮箱、头像）；支持 q 按邮箱/用户名筛选
-// @Tags         空间成员
+// @Summary      列出Tenant workspace成员
+// @Description  分页返回当前Tenant workspace内 active 成员（含每位成员的角色、邮箱、头像）；支持 q 按邮箱/用户名筛选
+// @Tags         Tenant workspace成员
 // @Produce      json
-// @Param        id         path   string  true   "空间 ID"
+// @Param        id         path   string  true   "Tenant workspace ID"
 // @Param        q          query  string  false  "按邮箱/用户名模糊筛选"
 // @Param        page       query  int     false  "页码（从 1 起）"  default(1)
 // @Param        page_size  query  int     false  "每页数量（最大 100）"  default(20)
@@ -163,26 +163,26 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 }
 
 // AddMember godoc
-// @Summary      直接添加空间成员（直加路径）
+// @Summary      直接添加Tenant workspace成员（直加路径）
 // @Description
 //
-//	Owner 通过 email 直接把用户作为 active 成员添加进当前空间。
+//	Owner 通过 email 直接把用户作为 active 成员添加进当前Tenant workspace。
 //
-//	这是【直加路径】，被加入的用户没有任何确认机会就出现在空间里——
+//	这是【直加路径】，被加入的用户没有任何确认机会就出现在Tenant workspace里——
 //	保留它是为了三类不需要走邀请确认的场景：
 //	  1. 自动化脚本 / 平台运维 / 数据迁移；
-//	  2. 跨空间超管 (CanAccessAllTenants) 的批量编排；
+//	  2. 跨Tenant workspace超管 (CanAccessAllTenants) 的批量编排；
 //	  3. 对接外部 IdP 时由身份源单向同步成员。
 //
 //	所有由 UI 触发的「邀请伙伴加入」交互应改走
-//	POST /tenants/:id/invitations，那条路径会先创建 pending 行，让被邀请
+//	POST /tenants/:id/invitations，那条路径会先Create  pending 行，让被邀请
 //	人在 /me/invitations 主动接受后再写 tenant_members 行（PR #1303 后续）。
 //	这条路径与 invitations 路径共存而不互相替代。
 //
-// @Tags         空间成员
+// @Tags         Tenant workspace成员
 // @Accept       json
 // @Produce      json
-// @Param        id        path  string                 true  "空间 ID"
+// @Param        id        path  string                 true  "Tenant workspace ID"
 // @Param        request   body  addMemberRequest       true  "邀请请求"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
@@ -203,7 +203,7 @@ func (h *TenantMemberHandler) AddMember(c *gin.Context) {
 	// gives the client a better error message than the generic service
 	// sentinel-mapped 400.
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
 
@@ -306,12 +306,12 @@ func addMemberAndRespond(
 }
 
 // UpdateMemberRole godoc
-// @Summary      修改空间成员角色
-// @Description  Owner 修改某位成员在当前空间内的角色；不能将最后一位 Owner 降级
-// @Tags         空间成员
+// @Summary      修改Tenant workspace成员角色
+// @Description  Owner 修改某位成员在当前Tenant workspace内的角色；不能将最后一位 Owner 降级
+// @Tags         Tenant workspace成员
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                  true  "空间 ID"
+// @Param        id       path  string                  true  "Tenant workspace ID"
 // @Param        user_id  path  string                  true  "用户 ID"
 // @Param        request  body  updateMemberRoleRequest true  "目标角色"
 // @Success      200  {object}  map[string]interface{}
@@ -335,7 +335,7 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
 
@@ -361,11 +361,11 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 }
 
 // RemoveMember godoc
-// @Summary      移除空间成员
-// @Description  Owner 将某位成员从当前空间中移除（软删除 tenant_members 行）；不能移除最后一位 Owner
-// @Tags         空间成员
+// @Summary      移除Tenant workspace成员
+// @Description  Owner 将某位成员从当前Tenant workspace中移除（软Delete  tenant_members 行）；不能移除最后一位 Owner
+// @Tags         Tenant workspace成员
 // @Produce      json
-// @Param        id       path  string  true  "空间 ID"
+// @Param        id       path  string  true  "Tenant workspace ID"
 // @Param        user_id  path  string  true  "用户 ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -400,15 +400,15 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 }
 
 // LeaveTenant godoc
-// @Summary      退出当前空间
-// @Description  调用方主动退出当前空间。等价于以自己的 user_id 调 RemoveMember，
+// @Summary      退出当前Tenant workspace
+// @Description  调用方主动退出当前Tenant workspace。等价于以自己的 user_id 调 RemoveMember，
 //
 //	但不需要 Owner 权限——非 Owner 也可以自助离开。最后一位 Owner 仍然不能离开
 //	（需先把其他成员提升为 Owner），由服务层 ErrLastOwner 拦截。
 //
-// @Tags         空间成员
+// @Tags         Tenant workspace成员
 // @Produce      json
-// @Param        id  path  string  true  "空间 ID"
+// @Param        id  path  string  true  "Tenant workspace ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/leave [post]

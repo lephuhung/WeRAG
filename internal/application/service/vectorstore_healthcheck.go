@@ -275,7 +275,7 @@ func testWeaviateConnection(ctx context.Context, config types.ConnectionConfig) 
 }
 
 // testDorisConnection 通过 MySQL 协议（database/sql + go-sql-driver）
-// Ping Doris FE 并查询 @@version。
+// Ping Doris FE 并Query  @@version。
 //
 // Doris 的 @@version 形如 "5.7.99 Doris-4.1.0"——前半段是 MySQL 协议
 // 兼容性表达式，"Doris-" 之后才是真实版本号。统一只返回 "4.1.0" 这类

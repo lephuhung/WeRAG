@@ -160,10 +160,6 @@ type AgentConfig struct {
 	// picked, already checked to be inside KnowledgeBases (runtime only;
 	// rendered into runtime_context as a retrieval hint).
 	QuestionOrigin *QuestionOrigin `json:"-"`
-	// SharedAgentReadOnly prevents a shared agent from mutating resources in
-	// its source workspace. It is set from the verified share relation, never
-	// inferred from a client-provided tenant ID.
-	SharedAgentReadOnly bool `json:"-"`
 	// WritableKBIDs are the SearchTargets KBs this caller may modify (its own
 	// workspace's, or shared to it as editor+). Search targets only need read
 	// access, so tools that write (wiki pages and issues) are limited to this

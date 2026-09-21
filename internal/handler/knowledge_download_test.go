@@ -59,15 +59,19 @@ func (s *downloadKBStub) GetKnowledgeBaseByID(context.Context, string) (*types.K
 	return s.kb, nil
 }
 
-type downloadShareStub struct {
-	interfaces.KBShareService
-	permission types.OrgMemberRole
+type downloadGrantStub struct {
+	interfaces.KBAccessGrantService
+	permission types.KBPermission
 }
 
-func (s *downloadShareStub) CheckTenantKBPermission(
-	context.Context, string, uint64, types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
+func (s *downloadGrantStub) ApprovedKBPermission(
+	context.Context, string, uint64,
+) (types.KBPermission, bool, error) {
 	return s.permission, true, nil
+}
+
+func (s *downloadGrantStub) GetKBScope(context.Context, string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 func runBatchDownload(
@@ -75,7 +79,7 @@ func runBatchDownload(
 	svc *downloadKnowledgeStub,
 	ids []string,
 	kb *types.KnowledgeBase,
-	share interfaces.KBShareService,
+	grants interfaces.KBAccessGrantService,
 	scope *types.TenantAPIKeyScope,
 ) *httptest.ResponseRecorder {
 	t.Helper()
@@ -83,7 +87,7 @@ func runBatchDownload(
 	router := gin.New()
 	router.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 		ctx := types.WithCaller(c.Request.Context(), types.Caller{
-			TenantID: 7, UserID: "user-1", Role: types.TenantRoleContributor,
+			TenantID: 7, UserID: "user-1", Role: types.TenantRoleMember,
 		})
 		ctx = types.WithExecutionTenant(ctx, 7)
 		if scope != nil {
@@ -95,9 +99,9 @@ func runBatchDownload(
 		c.Next()
 	})
 	h := &KnowledgeHandler{
-		kgService:      svc,
-		kbService:      &downloadKBStub{kb: kb},
-		kbShareService: share,
+		kgService:            svc,
+		kbService:            &downloadKBStub{kb: kb},
+		kbAccessGrantService: grants,
 	}
 	router.POST("/knowledge-bases/:id/knowledge/batch-download", h.BatchDownloadKnowledge)
 	body, err := json.Marshal(BatchDownloadKnowledgeRequest{IDs: ids})
@@ -152,7 +156,7 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 		ids    []string
 		item   *types.Knowledge
 		kb     *types.KnowledgeBase
-		share  interfaces.KBShareService
+		grants interfaces.KBAccessGrantService
 		scope  *types.TenantAPIKeyScope
 		status int
 	}{
@@ -189,8 +193,8 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 		},
 		{
 			name: "共享只读", ids: []string{"a"}, status: 403,
-			kb:    &types.KnowledgeBase{ID: "kb-1", TenantID: 8},
-			share: &downloadShareStub{permission: types.OrgRoleViewer},
+			kb:     &types.KnowledgeBase{ID: "kb-1", TenantID: 8},
+			grants: &downloadGrantStub{permission: types.KBPermissionViewer},
 		},
 		{
 			name: "密钥无此库权限", ids: []string{"a"}, status: 403,
@@ -204,7 +208,7 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 			if tc.item != nil {
 				svc.items = []*types.Knowledge{tc.item}
 			}
-			w := runBatchDownload(t, svc, tc.ids, tc.kb, tc.share, tc.scope)
+			w := runBatchDownload(t, svc, tc.ids, tc.kb, tc.grants, tc.scope)
 			require.Equal(t, tc.status, w.Code, w.Body.String())
 			require.Empty(t, svc.opened)
 			require.NotContains(t, w.Header().Get("Content-Type"), "zip")
@@ -269,7 +273,7 @@ func TestBatchDownloadKnowledgeAllowsSharedEditor(t *testing.T) {
 	}
 	w := runBatchDownload(t, svc, []string{"a"},
 		&types.KnowledgeBase{ID: "kb-1", TenantID: 8},
-		&downloadShareStub{permission: types.OrgRoleEditor}, nil)
+		&downloadGrantStub{permission: types.KBPermissionEditor}, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, []string{"a"}, svc.opened)
 }
@@ -390,12 +394,4 @@ func TestBatchDownloadKnowledgePreservesFolderPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reader.File, 1)
 	require.Equal(t, "docs/spec/design.md", reader.File[0].Name)
-}
-
-func (s *downloadShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *downloadShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

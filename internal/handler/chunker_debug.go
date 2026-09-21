@@ -115,7 +115,7 @@ type PreviewChunkingResponse struct {
 // @Produce      json
 // @Param        request  body      handler.PreviewChunkingRequest   true  "{text, chunking_config}"
 // @Success      200      {object}  handler.PreviewChunkingResponse  "分块结果"
-// @Failure      400      {object}  map[string]interface{}           "请求参数错误"
+// @Failure      400      {object}  map[string]interface{}           "请求Parameters 错误"
 // @Failure      413      {object}  map[string]interface{}           "文本超过预览限制"
 // @Failure      504      {object}  map[string]interface{}           "分块超时"
 // @Security     Bearer

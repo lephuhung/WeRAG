@@ -56,7 +56,7 @@ func (p *MoonshotProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Moonshot provider 配置
+// ValidateConfig 验证 Moonshot provider Configuration
 func (p *MoonshotProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for Moonshot provider")

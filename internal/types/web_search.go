@@ -19,8 +19,8 @@ type WebSearchConfig struct {
 	MaxResults        int      `json:"max_results"`        // 最大搜索结果数
 	IncludeDate       bool     `json:"include_date"`       // 是否包含日期
 	CompressionMethod string   `json:"compression_method"` // 压缩方法：none, summary, extract, rag
-	Blacklist         []string `json:"blacklist"`          // 黑名单规则列表
-	// RAG压缩相关配置
+	Blacklist         []string `json:"blacklist"`          // 黑名单规则List
+	// RAG压缩相关Configuration
 	EmbeddingModelID   string `json:"embedding_model_id,omitempty"`  // 嵌入模型ID（用于RAG压缩）
 	EmbeddingDimension int    `json:"embedding_dimension,omitempty"` // 嵌入维度（用于RAG压缩）
 	RerankModelID      string `json:"rerank_model_id,omitempty"`     // 重排模型ID（用于RAG压缩）

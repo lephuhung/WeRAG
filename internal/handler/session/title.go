@@ -18,7 +18,7 @@ import (
 // @Param        session_id  path      string                true  "会话ID"
 // @Param        request     body      GenerateTitleRequest  true  "生成请求"
 // @Success      200         {object}  map[string]interface{}  "生成的标题"
-// @Failure      400         {object}  errors.AppError         "请求参数错误"
+// @Failure      400         {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/title [post]

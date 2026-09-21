@@ -31,7 +31,7 @@ var columns = []string{
 }
 
 // columnsForRetrieve 是 Retrieve 时 SELECT 的列序，
-// 不包含 embedding（向量本身查询结果中无需返回，省带宽）。
+// 不包含 embedding（向量本身Query 结果中无需返回，省带宽）。
 var columnsForRetrieve = []string{
 	fieldID, fieldContent, fieldSourceID, fieldSourceType,
 	fieldChunkID, fieldKnowledgeID, fieldKnowledgeBaseID, fieldTagID,
@@ -46,8 +46,8 @@ var columnsForCopy = []string{
 	fieldIsEnabled, fieldEmbedding,
 }
 
-// whereCond 表示一个 WHERE 子条件：clause 是参数化 SQL 片段（带 ? 占位），
-// args 是对应顺序的参数值。所有用户输入字段（IDs）必须通过 args 传入，
+// whereCond 表示一个 WHERE 子条件：clause 是Parameters 化 SQL 片段（带 ? 占位），
+// args 是对应顺序的Parameters 值。所有用户输入字段（IDs）必须通过 args 传入，
 // 严禁拼到 clause 字符串里。
 type whereCond struct {
 	clause string
@@ -103,7 +103,7 @@ func (w *whereBuilder) addNotIn(field string, values []string) {
 	})
 }
 
-// build 返回 WHERE 子句（不含 "WHERE " 前缀）和参数数组。
+// build 返回 WHERE 子句（不含 "WHERE " 前缀）和Parameters 数组。
 // 没有任何条件时返回 ("1 = 1", nil)，方便调用方无脑拼接。
 func (w *whereBuilder) build() (string, []any) {
 	if len(w.conds) == 0 {
@@ -226,7 +226,7 @@ func (e errInvalidEmbedding) Error() string {
 // embeddingLiteral 把 []float32 转为 Doris ARRAY<FLOAT> 字面量字符串：
 // "[1.23,4.56,...]"。
 //
-// 为何不用占位符：go-sql-driver/mysql 不支持 ARRAY 类型的参数绑定，
+// 为何不用占位符：go-sql-driver/mysql 不支持 ARRAY 类型的Parameters 绑定，
 // Doris 端也只接受字面量形式。这里用 strconv.FormatFloat（'g' + bitSize=32）
 // 而不是 fmt.Sprintf("%f", v)，原因有二：
 //  1. fmt 在某些 locale 下会用千分位分隔符，破坏 SQL 语法；

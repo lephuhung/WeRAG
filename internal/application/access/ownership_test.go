@@ -15,19 +15,19 @@ func TestCheckOwnershipOrRoleSkipsLookupWhenGateAlreadyResolved(t *testing.T) {
 		request OwnershipRequest
 		skipped bool
 	}{
-		{name: "API key", request: OwnershipRequest{APIKey: true, Role: types.TenantRoleViewer, Enforce: true}},
+		{name: "API key", request: OwnershipRequest{APIKey: true, Role: types.TenantRoleMember, Enforce: true}},
 		{name: "admin", request: OwnershipRequest{Role: types.TenantRoleAdmin, Enforce: true}},
 		{name: "owner role", request: OwnershipRequest{Role: types.TenantRoleOwner, Enforce: true}},
 		{
 			name: "cross tenant superuser",
 			request: OwnershipRequest{
-				Role:                 types.TenantRoleViewer,
+				Role:                 types.TenantRoleMember,
 				CrossTenantSuperuser: true,
 				Enforce:              true,
 			},
 		},
 
-		{name: "enforcement disabled", request: OwnershipRequest{Role: types.TenantRoleViewer}, skipped: true},
+		{name: "enforcement disabled", request: OwnershipRequest{Role: types.TenantRoleMember}, skipped: true},
 		{name: "role before rollout", request: OwnershipRequest{Role: types.TenantRoleAdmin}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCheckOwnershipOrRoleResolvesCreator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			calls := 0
 			decision, err := CheckOwnershipOrRole(
-				OwnershipRequest{UserID: tt.user, Role: types.TenantRoleContributor, Enforce: true},
+				OwnershipRequest{UserID: tt.user, Role: types.TenantRoleMember, Enforce: true},
 				types.TenantRoleAdmin,
 				func() (string, error) {
 					calls++

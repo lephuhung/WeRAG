@@ -19,19 +19,19 @@ func TestTransferAdmissionRequiresIndependentGrants(t *testing.T) {
 	_, err := WithKBTransfer(ctx, source, target, KBTransferMove, "task", false)
 	require.ErrorIs(t, err, ErrForbidden)
 	request := KBRequest{Caller: types.CallerFromContext(ctx)}
-	sourceRead, err := ResolveKB(ctx, request, source, types.OrgRoleViewer, nil, nil)
+	sourceRead, err := ResolveKB(ctx, request, source, types.KBPermissionViewer, nil)
 	require.NoError(t, err)
-	targetRead, err := ResolveKB(ctx, request, target, types.OrgRoleViewer, nil, nil)
+	targetRead, err := ResolveKB(ctx, request, target, types.KBPermissionViewer, nil)
 	require.NoError(t, err)
 	reads := targetRead.WithGrant(sourceRead.WithGrant(ctx))
 	_, err = WithKBTransfer(reads, source, target, KBTransferClone, "task", false)
 	require.ErrorIs(t, err, ErrForbidden, "owner read projection must not authorize target replacement")
-	targetWrite, err := ResolveKB(ctx, request, target, types.OrgRoleEditor, nil, nil)
+	targetWrite, err := ResolveKB(ctx, request, target, types.KBPermissionEditor, nil)
 	require.NoError(t, err)
 	cloneCtx, err := WithKBTransfer(targetWrite.WithGrant(reads), source, target, KBTransferClone, "task", false)
 	require.NoError(t, err)
 	require.NoError(t, RequireKBTransfer(logger.CloneContext(cloneCtx), source, target, KBTransferClone))
-	require.False(t, HasKBGrant(cloneCtx, source.ID, 1, types.OrgRoleEditor))
+	require.False(t, HasKBGrant(cloneCtx, source.ID, 1, types.KBPermissionEditor))
 	_, err = WithKBTransfer(targetWrite.WithGrant(reads), source, target, KBTransferMove, "task", false)
 	require.ErrorIs(t, err, ErrForbidden)
 }
@@ -49,7 +49,7 @@ func TestTransferTaskScopeIsExactAndDoesNotCreateCaller(t *testing.T) {
 		RequireKBTransfer(ctx, source, &types.KnowledgeBase{ID: "third", TenantID: 7}, KBTransferMove),
 		ErrForbidden,
 	)
-	require.False(t, HasKBGrant(ctx, "third", 7, types.OrgRoleViewer))
+	require.False(t, HasKBGrant(ctx, "third", 7, types.KBPermissionViewer))
 	_, err = WithKBTransferTask(
 		ctx,
 		source,

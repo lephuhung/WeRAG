@@ -38,7 +38,7 @@ func (p *GeminiProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Gemini provider 配置
+// ValidateConfig 验证 Gemini provider Configuration
 func (p *GeminiProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Google Gemini provider")

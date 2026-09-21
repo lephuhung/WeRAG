@@ -134,6 +134,50 @@ func GetBuiltinAgentWithContext(ctx context.Context, id string, tenantID uint64)
 // verbatim, so switching the UI language left the cards in Chinese (or
 // whichever language was seeded). YAML already has per-locale copy; this
 // applies it on the read path.
+func isDefaultBuiltinName(id, name string) bool {
+	builtinAgentEntriesMu.RLock()
+	entry, ok := builtinAgentEntries[id]
+	builtinAgentEntriesMu.RUnlock()
+	if !ok || entry == nil {
+		factory, ok := BuiltinAgentRegistry[id]
+		if ok && factory != nil {
+			def := factory(0)
+			if def != nil && def.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	for _, loc := range entry.I18n {
+		if loc.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func isDefaultBuiltinDesc(id, desc string) bool {
+	builtinAgentEntriesMu.RLock()
+	entry, ok := builtinAgentEntries[id]
+	builtinAgentEntriesMu.RUnlock()
+	if !ok || entry == nil {
+		factory, ok := BuiltinAgentRegistry[id]
+		if ok && factory != nil {
+			def := factory(0)
+			if def != nil && def.Description == desc {
+				return true
+			}
+		}
+		return false
+	}
+	for _, loc := range entry.I18n {
+		if loc.Description == desc {
+			return true
+		}
+	}
+	return false
+}
+
 func ApplyBuiltinAgentLocalization(ctx context.Context, agent *CustomAgent) {
 	if agent == nil {
 		return
@@ -142,10 +186,10 @@ func ApplyBuiltinAgentLocalization(ctx context.Context, agent *CustomAgent) {
 	if localized == nil {
 		return
 	}
-	if localized.Name != "" {
+	if localized.Name != "" && (agent.Name == "" || isDefaultBuiltinName(agent.ID, agent.Name)) {
 		agent.Name = localized.Name
 	}
-	if localized.Description != "" {
+	if localized.Description != "" && (agent.Description == "" || isDefaultBuiltinDesc(agent.ID, agent.Description)) {
 		agent.Description = localized.Description
 	}
 	agent.Avatar = localized.Avatar

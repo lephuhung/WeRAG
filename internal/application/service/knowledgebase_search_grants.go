@@ -42,13 +42,13 @@ func (s *knowledgeBaseService) fetchKnowledgeDataWithShared(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	permissions := kbReadPermissions(ctx, s.kbShareService)
+	permissions := kbReadPermissions(ctx, s.kbAccessGrantService)
 	knowledgeMap := make(map[string]*types.Knowledge, len(rows))
 	appendAllowed := func(k *types.Knowledge) {
 		if k == nil {
 			return
 		}
-		allowed, err := permissions.Check(k.KnowledgeBaseID, k.TenantID, types.OrgRoleViewer)
+		allowed, err := permissions.Check(k.KnowledgeBaseID, k.TenantID, types.KBPermissionViewer)
 		if err == nil && allowed {
 			knowledgeMap[k.ID] = k
 		}
@@ -71,7 +71,8 @@ func (s *knowledgeBaseService) fetchKnowledgeDataWithShared(ctx context.Context,
 	return knowledgeMap, nil
 }
 
-// listChunksByIDWithShared fetches chunks by IDs, including chunks from shared KBs the user has access to.
+// listChunksByIDWithShared fetches chunks by IDs, including chunks from granted
+// KBs the caller's tenant has access to.
 func (s *knowledgeBaseService) listChunksByIDWithShared(ctx context.Context,
 	tenantID uint64,
 	chunkIDs []string,
@@ -80,14 +81,14 @@ func (s *knowledgeBaseService) listChunksByIDWithShared(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	permissions := kbReadPermissions(ctx, s.kbShareService)
+	permissions := kbReadPermissions(ctx, s.kbAccessGrantService)
 	chunks := make([]*types.Chunk, 0, len(rows))
 	foundSet := make(map[string]bool)
 	appendAllowed := func(c *types.Chunk) {
 		if c == nil || foundSet[c.ID] {
 			return
 		}
-		allowed, err := permissions.Check(c.KnowledgeBaseID, c.TenantID, types.OrgRoleViewer)
+		allowed, err := permissions.Check(c.KnowledgeBaseID, c.TenantID, types.KBPermissionViewer)
 		if err == nil && allowed {
 			chunks = append(chunks, c)
 			foundSet[c.ID] = true

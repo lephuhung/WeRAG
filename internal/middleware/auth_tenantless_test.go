@@ -32,7 +32,7 @@ func TestTenantOptionalAPISurface(t *testing.T) {
 
 func TestResolveFirstMembershipTarget(t *testing.T) {
 	members := newFakeMemberService()
-	members.seedActive("tenantless-user", 42, types.TenantRoleViewer)
+	members.seedActive("tenantless-user", 42, types.TenantRoleMember)
 	tenants := &fakeTenantService{tenant: &types.Tenant{ID: 42}}
 
 	got := resolveFirstMembershipTarget(

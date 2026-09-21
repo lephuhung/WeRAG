@@ -11,8 +11,8 @@ import (
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
-// LLM 调用超时配置。仅作为"上层未设置 deadline 时"的兜底，避免 hung 请求
-// 永久阻塞 worker。如果上层 ctx 已经设置了 deadline（无论比默认更短还是更长），
+// LLM 调用超时Configuration 。仅作为"上层未Settings  deadline 时"的兜底，避免 hung 请求
+// 永久阻塞 worker。如果上层 ctx 已经Settings 了 deadline（无论比默认更短还是更长），
 // 都会原样尊重，不再叠加默认超时。可通过环境变量覆盖：
 //   - WEKNORA_LLM_CHAT_TIMEOUT_SECONDS    非流式调用兜底超时（默认 600s）
 //   - WEKNORA_LLM_STREAM_TIMEOUT_SECONDS  流式调用兜底超时（默认 1800s）
@@ -35,7 +35,7 @@ func envDurationSeconds(key string, fallback time.Duration) time.Duration {
 }
 
 // withLLMTimeout 仅在上层 ctx 没有 deadline 时附加一个兜底超时；
-// 如果上层已显式设置 deadline（无论更短或更长），则原样返回，
+// 如果上层已显式Settings  deadline（无论更短或更长），则原样返回，
 // 让调用方对自己的超时策略拥有最终决定权。
 func withLLMTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {

@@ -67,7 +67,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		})
 	}
 
-	// 验证用户查询的安全性
+	// 验证用户Query 的安全性
 	safeQuery, isValid := utils.ValidateInput(chatManage.Query)
 	if !isValid {
 		pipelineWarn(ctx, "IntoChatMessage", "invalid_query", map[string]interface{}{

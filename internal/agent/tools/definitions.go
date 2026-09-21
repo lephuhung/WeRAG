@@ -119,7 +119,7 @@ func DefaultAllowedTools() []string {
 		ToolReadDocument,
 		ToolListDocuments,
 		// Looking up what this user asked before is only ever a read of their
-		// own history, and it is what lets "上次你给我的那个配置" resolve at all
+		// own history, and it is what lets "上次你给我的那个Configuration " resolve at all
 		// without stuffing every past conversation into the context window.
 		ToolSearchConversations,
 		// ToolSearchMemory is deliberately absent here and from

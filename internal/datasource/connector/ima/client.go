@@ -188,7 +188,7 @@ func (c *client) callAPIAt(
 		// Business-level errors.
 		// 110030 (无权限) is mapped to ErrInvalidCredentials so the service marks
 		// the source in `error` state and stops scheduling until re-authenticated.
-		// 110021 (限频) is retried. Everything else — including 110001 (参数非法),
+		// 110021 (限频) is retried. Everything else — including 110001 (Parameters 非法),
 		// which is a bug on our side rather than a credential problem — surfaces
 		// verbatim so the user sees IMA's own message.
 		if code := env.statusCode(); code != 0 {

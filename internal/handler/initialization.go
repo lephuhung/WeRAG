@@ -36,7 +36,7 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-// DownloadTask 下载任务信息
+// DownloadTask download task information
 type DownloadTask struct {
 	ID        string     `json:"id"`
 	ModelName string     `json:"modelName"`
@@ -53,7 +53,7 @@ var (
 	tasksMutex    sync.RWMutex
 )
 
-// InitializationHandler 初始化处理器
+// InitializationHandler Initialization 处理器
 type InitializationHandler struct {
 	config           *config.Config
 	tenantService    interfaces.TenantService
@@ -67,7 +67,7 @@ type InitializationHandler struct {
 	storageResolver  interfaces.StorageBackendResolver
 }
 
-// NewInitializationHandler 创建初始化处理器
+// NewInitializationHandler Create Initialization 处理器
 func NewInitializationHandler(
 	config *config.Config,
 	tenantService interfaces.TenantService,
@@ -94,14 +94,14 @@ func NewInitializationHandler(
 	}
 }
 
-// KBModelConfigRequest 知识库模型配置请求（简化版，只传模型ID）
+// KBModelConfigRequest Knowledge Base模型Configuration 请求（简化版，只传模型ID）
 type KBModelConfigRequest struct {
 	LLMModelID       string           `json:"llmModelId"       binding:"required"`
 	EmbeddingModelID string           `json:"embeddingModelId"` // optional when RAG indexing is disabled
 	VLMConfig        *types.VLMConfig `json:"vlm_config"`
 	ASRConfig        *types.ASRConfig `json:"asr_config"`
 
-	// 文档分块配置
+	// 文档分块Configuration
 	DocumentSplitting struct {
 		ChunkSize         int                      `json:"chunkSize"`
 		ChunkOverlap      int                      `json:"chunkOverlap"`
@@ -121,16 +121,16 @@ type KBModelConfigRequest struct {
 		TableMetadataInstructions *string   `json:"tableMetadataInstructions,omitempty"`
 	} `json:"documentSplitting"`
 
-	// 多模态配置（仅模型相关；存储引擎在 storageProvider 中配置）
+	// 多模态Configuration （仅模型相关；存储引擎在 storageProvider 中Configuration ）
 	Multimodal struct {
 		Enabled bool `json:"enabled"`
 	} `json:"multimodal"`
 
-	// 存储引擎选择（"local" | "minio" | "cos"），影响文档上传与文档内图片存储，参数从全局设置读取
+	// 存储引擎选择（"local" | "minio" | "cos"），影响文档上传与文档内图片存储，Parameters 从全局Settings 读取
 	StorageProvider  string `json:"storageProvider"`
 	StorageBackendID string `json:"storageBackendId"`
 
-	// 知识图谱配置
+	// 知识GraphConfiguration
 	NodeExtract struct {
 		Enabled            bool                  `json:"enabled"`
 		Text               string                `json:"text"`
@@ -140,7 +140,7 @@ type KBModelConfigRequest struct {
 		CustomInstructions string                `json:"customInstructions"`
 	} `json:"nodeExtract"`
 
-	// 问题生成配置
+	// 问题生成Configuration
 	QuestionGeneration struct {
 		Enabled            bool   `json:"enabled"`
 		QuestionCount      int    `json:"questionCount"`
@@ -148,7 +148,7 @@ type KBModelConfigRequest struct {
 	} `json:"questionGeneration"`
 }
 
-// InitializationRequest 初始化请求结构
+// InitializationRequest Initialization 请求结构
 type InitializationRequest struct {
 	LLM struct {
 		Source    string `json:"source" binding:"required"`
@@ -223,16 +223,16 @@ type InitializationRequest struct {
 }
 
 // UpdateKBConfig godoc
-// @Summary      更新知识库配置
-// @Description  根据知识库ID更新模型和分块配置
-// @Tags         初始化
+// @Summary      Update Knowledge BaseConfiguration
+// @Description  根据Knowledge BaseIDUpdate 模型和分块Configuration
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Param        kbId     path      string               true  "知识库ID"
-// @Param        request  body      KBModelConfigRequest true  "配置请求"
-// @Success      200      {object}  map[string]interface{}  "更新成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
-// @Failure      404      {object}  errors.AppError         "知识库不存在"
+// @Param        kbId     path      string               true  "Knowledge BaseID"
+// @Param        request  body      KBModelConfigRequest true  "Configuration 请求"
+// @Success      200      {object}  map[string]interface{}  "Update 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Failure      404      {object}  errors.AppError         "Knowledge Base不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/config/{kbId} [put]
@@ -247,7 +247,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	// 获取知识库信息
+	// 获取Knowledge Base信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil || kb == nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
@@ -275,7 +275,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		}
 	}
 
-	// 从数据库获取模型详情并验证
+	// 从数据库获取模型Details 并验证
 	llmModel, err := h.modelService.GetModelByID(ctx, req.LLMModelID)
 	if err != nil || llmModel == nil {
 		logger.Error(ctx, "LLM model not found")
@@ -293,13 +293,13 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		}
 	}
 
-	// 更新知识库的模型ID
+	// Update Knowledge Base的模型ID
 	kb.SummaryModelID = req.LLMModelID
 	if req.EmbeddingModelID != "" {
 		kb.EmbeddingModelID = req.EmbeddingModelID
 	}
 
-	// 处理多模态模型配置
+	// 处理多模态模型Configuration
 	kb.VLMConfig = types.VLMConfig{}
 	if req.VLMConfig != nil && req.Multimodal.Enabled && req.VLMConfig.ModelID != "" {
 		vllmModel, err := h.modelService.GetModelByID(ctx, req.VLMConfig.ModelID)
@@ -314,7 +314,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		kb.VLMConfig.ModelID = ""
 	}
 
-	// 处理ASR语音识别配置
+	// 处理ASR语音识别Configuration
 	kb.ASRConfig = types.ASRConfig{}
 	if req.ASRConfig != nil && req.ASRConfig.Enabled && req.ASRConfig.ModelID != "" {
 		asrModel, err := h.modelService.GetModelByID(ctx, req.ASRConfig.ModelID)
@@ -327,7 +327,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		}
 	}
 
-	// 更新文档分块配置
+	// Update 文档分块Configuration
 	if req.DocumentSplitting.ChunkSize > 0 {
 		kb.ChunkingConfig.ChunkSize = req.DocumentSplitting.ChunkSize
 	}
@@ -361,7 +361,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		kb.ChunkingConfig.TableMetadataInstructions = strings.TrimSpace(*req.DocumentSplitting.TableMetadataInstructions)
 	}
 
-	// 更新多模态配置
+	// Update 多模态Configuration
 	if req.Multimodal.Enabled {
 		// VLM model already set above
 	} else {
@@ -385,7 +385,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	// 更新知识图谱配置
+	// Update 知识GraphConfiguration
 	if req.NodeExtract.Enabled {
 		// 转换 Nodes 和 Relations 为指针类型
 		nodes := make([]*types.GraphNode, len(req.NodeExtract.Nodes))
@@ -416,7 +416,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	// 更新问题生成配置
+	// Update 问题生成Configuration
 	if req.QuestionGeneration.Enabled {
 		questionCount := req.QuestionGeneration.QuestionCount
 		if questionCount <= 0 {
@@ -442,7 +442,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	// 保存更新后的知识库
+	// 保存Update 后的Knowledge Base
 	if err := h.kbRepository.UpdateKnowledgeBase(ctx, kb); err != nil {
 		logger.Error(ctx, "Failed to update knowledge base", err)
 		c.Error(errors.NewInternalServerError("更新知识库失败: " + err.Error()))
@@ -457,7 +457,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 
 // kbSettingsAccess reports whether the caller's workspace owns kb. Another
 // workspace may change KB settings only through an admin share: the frontend
-// offers KB settings to share admins alone, and OrgRoleEditor edits content,
+// offers KB settings to share admins alone, and KBPermissionEditor edits content,
 // not settings. KBAccessWrite on the route also admits share editors, so the
 // grant's effective share permission is checked here.
 func kbSettingsAccess(c *gin.Context, kb *types.KnowledgeBase) (bool, error) {
@@ -466,7 +466,7 @@ func kbSettingsAccess(c *gin.Context, kb *types.KnowledgeBase) (bool, error) {
 	}
 	grant, ok := middleware.KBAccessFromContext(c)
 	if !ok || grant.KnowledgeBase == nil || grant.KnowledgeBase.ID != kb.ID ||
-		!grant.Permission.HasPermission(types.OrgRoleAdmin) {
+		!grant.Permission.HasPermission(types.KBPermissionAdmin) {
 		return false, errors.NewForbiddenError("修改共享知识库的设置需要管理员共享权限")
 	}
 	return false, nil
@@ -545,15 +545,15 @@ func (h *InitializationHandler) applyKBStorageBinding(
 }
 
 // InitializeByKB godoc
-// @Summary      初始化知识库配置
-// @Description  根据知识库ID执行完整配置更新
-// @Tags         初始化
+// @Summary      Initialization Knowledge BaseConfiguration
+// @Description  根据Knowledge BaseID执行完整Configuration Update
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Param        kbId     path      string  true  "知识库ID"
-// @Param        request  body      handler.InitializationRequest  true  "初始化请求"
-// @Success      200      {object}  map[string]interface{}  "初始化成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        kbId     path      string  true  "Knowledge BaseID"
+// @Param        request  body      handler.InitializationRequest  true  "Initialization 请求"
+// @Success      200      {object}  map[string]interface{}  "Initialization 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/initialize/{kbId} [post]
@@ -1019,7 +1019,7 @@ func extractModelIDs(processedModels []*types.Model) (embeddingModelID, llmModel
 // CheckOllamaStatus godoc
 // @Summary      检查Ollama服务状态
 // @Description  检查Ollama服务是否可用
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Ollama状态"
@@ -1070,12 +1070,12 @@ func (h *InitializationHandler) CheckOllamaStatus(c *gin.Context) {
 // CheckOllamaModels godoc
 // @Summary      检查Ollama模型状态
 // @Description  检查指定的Ollama模型是否已安装
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{models=[]string}  true  "模型名称列表"
+// @Param        request  body      object{models=[]string}  true  "模型名称List "
 // @Success      200      {object}  map[string]interface{}   "模型状态"
-// @Failure      400      {object}  errors.AppError          "请求参数错误"
+// @Failure      400      {object}  errors.AppError          "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/models/check [post]
@@ -1132,12 +1132,12 @@ func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
 // DownloadOllamaModel godoc
 // @Summary      下载Ollama模型
 // @Description  异步下载指定的Ollama模型
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      object{modelName=string}  true  "模型名称"
-// @Success      200      {object}  map[string]interface{}    "下载任务信息"
-// @Failure      400      {object}  errors.AppError           "请求参数错误"
+// @Success      200      {object}  map[string]interface{}    "Download task information"
+// @Failure      400      {object}  errors.AppError           "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/models/download [post]
@@ -1206,7 +1206,7 @@ func (h *InitializationHandler) DownloadOllamaModel(c *gin.Context) {
 	}
 	tasksMutex.RUnlock()
 
-	// 创建下载任务
+	// Create 下载任务
 	taskID := uuid.New().String()
 	task := &DownloadTask{
 		ID:        taskID,
@@ -1244,7 +1244,7 @@ func (h *InitializationHandler) DownloadOllamaModel(c *gin.Context) {
 // GetDownloadProgress godoc
 // @Summary      获取下载进度
 // @Description  获取Ollama模型下载任务的进度
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        taskId  path      string  true  "任务ID"
@@ -1279,10 +1279,10 @@ func (h *InitializationHandler) GetDownloadProgress(c *gin.Context) {
 // ListDownloadTasks godoc
 // @Summary      列出下载任务
 // @Description  列出所有Ollama模型下载任务
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "任务列表"
+// @Success      200  {object}  map[string]interface{}  "任务List "
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/download/tasks [get]
@@ -1303,10 +1303,10 @@ func (h *InitializationHandler) ListDownloadTasks(c *gin.Context) {
 // ListOllamaModels godoc
 // @Summary      列出Ollama模型
 // @Description  列出已安装的Ollama模型
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "模型列表"
+// @Success      200  {object}  map[string]interface{}  "模型List "
 // @Failure      500  {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1325,7 +1325,7 @@ func (h *InitializationHandler) ListOllamaModels(c *gin.Context) {
 		}
 	}
 
-	// 使用 ListModelsDetailed 获取包含大小等详细信息的模型列表
+	// 使用 ListModelsDetailed 获取包含大小等详细信息的模型List
 	models, err := h.ollamaService.ListModelsDetailed(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -1347,7 +1347,7 @@ func (h *InitializationHandler) downloadModelAsync(ctx context.Context,
 ) {
 	logger.Infof(ctx, "Starting async download for model, task: %s", taskID)
 
-	// 更新任务状态为下载中
+	// Update 任务状态为下载中
 	h.updateTaskStatus(taskID, "downloading", 0.0, "开始下载模型")
 
 	// 执行下载，带进度回调
@@ -1387,7 +1387,7 @@ func (h *InitializationHandler) pullModelWithProgress(ctx context.Context,
 		return nil
 	}
 
-	// 创建下载请求
+	// Create 下载请求
 	pullReq := &api.PullRequest{
 		Name: modelName,
 	}
@@ -1419,7 +1419,7 @@ func (h *InitializationHandler) pullModelWithProgress(ctx context.Context,
 	return nil
 }
 
-// updateTaskStatus 更新任务状态
+// updateTaskStatus Update 任务状态
 func (h *InitializationHandler) updateTaskStatus(
 	taskID, status string, progress float64, message string,
 ) {
@@ -1439,14 +1439,14 @@ func (h *InitializationHandler) updateTaskStatus(
 }
 
 // GetCurrentConfigByKB godoc
-// @Summary      获取知识库配置
-// @Description  根据知识库ID获取当前配置信息
-// @Tags         初始化
+// @Summary      获取Knowledge BaseConfiguration
+// @Description  根据Knowledge BaseID获取当前Configuration 信息
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
-// @Param        kbId  path      string  true  "知识库ID"
-// @Success      200   {object}  map[string]interface{}  "配置信息"
-// @Failure      404   {object}  errors.AppError         "知识库不存在"
+// @Param        kbId  path      string  true  "Knowledge BaseID"
+// @Success      200   {object}  map[string]interface{}  "Configuration 信息"
+// @Failure      404   {object}  errors.AppError         "Knowledge Base不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/config/{kbId} [get]
@@ -1456,7 +1456,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 
 	logger.Info(ctx, "Getting configuration for knowledge base")
 
-	// 获取指定知识库信息
+	// Get specified Knowledge Base信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil {
 		// Mirror getKnowledgeBaseForInitialization above: missing /
@@ -1476,7 +1476,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 		return
 	}
 
-	// 根据知识库的模型ID获取特定模型
+	// 根据Knowledge Base的模型ID获取特定模型
 	var models []*types.Model
 	modelIDs := []string{
 		kb.EmbeddingModelID,
@@ -1498,7 +1498,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 		}
 	}
 
-	// 检查知识库是否有文件
+	// 检查Knowledge Base是否有文件
 	knowledgeList, err := h.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx,
 		kbIdStr, &types.Pagination{
 			Page:     1,
@@ -1506,7 +1506,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 		}, types.KnowledgeListFilter{})
 	hasFiles := err == nil && knowledgeList != nil && knowledgeList.Total > 0
 
-	// 构建配置响应
+	// 构建Configuration 响应
 	config := h.buildConfigResponse(ctx, models, kb, hasFiles)
 
 	logger.Info(ctx, "Knowledge base configuration retrieved successfully")
@@ -1516,7 +1516,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	})
 }
 
-// buildConfigResponse 构建配置响应数据
+// buildConfigResponse 构建Configuration 响应数据
 func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models []*types.Model,
 	kb *types.KnowledgeBase, hasFiles bool,
 ) map[string]interface{} {
@@ -1588,7 +1588,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 		}
 	}
 
-	// 判断多模态是否启用：有VLM模型ID或有存储配置（兼容新旧字段）
+	// 判断多模态是否启用：有VLM模型ID或有存储Configuration （兼容新旧字段）
 	storageProvider := kb.GetStorageProvider()
 	hasMultimodal := (kb.VLMConfig.IsEnabled() ||
 		kb.StorageConfig.SecretID != "" || kb.StorageConfig.BucketName != "" ||
@@ -1615,7 +1615,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 		}
 	}
 
-	// 如果没有Rerank模型，设置rerank为disabled
+	// 如果没有Rerank模型，Settings rerank为disabled
 	if config["rerank"] == nil {
 		config["rerank"] = map[string]interface{}{
 			"enabled":   false,
@@ -1627,7 +1627,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 		}
 	}
 
-	// 添加知识库的文档分割配置
+	// 添加Knowledge Base的文档分割Configuration
 	if kb != nil {
 		ds := map[string]interface{}{
 			"chunkSize":    kb.ChunkingConfig.ChunkSize,
@@ -1648,7 +1648,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 		}
 		config["documentSplitting"] = ds
 
-		// 添加多模态的存储配置信息（优先读新字段，兼容旧 cos_config）
+		// 添加多模态的存储Configuration 信息（优先读新字段，兼容旧 cos_config）
 		effectiveProvider := kb.GetStorageProvider()
 		if kb.StorageConfig.SecretID != "" || (effectiveProvider != "" && effectiveProvider != "local") {
 			if config["multimodal"] == nil {
@@ -1840,7 +1840,7 @@ func (h *InitializationHandler) buildTestModel(
 	}
 }
 
-// resolveTenantWeKnoraCloudCreds 从当前空间上下文里取出 WeKnoraCloud 凭证，
+// resolveTenantWeKnoraCloudCreds 从当前Tenant workspace上下文里取出 WeKnoraCloud 凭证，
 // 供测试连接端点补齐 appID/appSecret。与 service.resolveWeKnoraCloudCredentials
 // 对应，但因为 handler 还没有被注入 tenantService（历史原因），暂时从
 // TenantInfoFromContext 读取，等效果相同。
@@ -1859,12 +1859,12 @@ func (h *InitializationHandler) resolveTenantWeKnoraCloudCreds(ctx context.Conte
 // CheckRemoteModel godoc
 // @Summary      检查远程模型
 // @Description  检查远程API模型连接是否正常
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      RemoteModelCheckRequest  true  "模型检查请求"
 // @Success      200      {object}  map[string]interface{}   "检查结果"
-// @Failure      400      {object}  errors.AppError          "请求参数错误"
+// @Failure      400      {object}  errors.AppError          "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/remote/check [post]
@@ -1916,12 +1916,12 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 // TestEmbeddingModel godoc
 // @Summary      测试Embedding模型
 // @Description  测试Embedding接口是否可用并返回向量维度
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.ModelTestRequest  true  "Embedding测试请求"
 // @Success      200      {object}  map[string]interface{}  "测试结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/embedding/test [post]
@@ -2084,12 +2084,12 @@ func (h *InitializationHandler) checkRerankModelConnection(
 // CheckRerankModel godoc
 // @Summary      检查Rerank模型
 // @Description  检查Rerank模型连接和功能是否正常
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.ModelTestRequest  true  "Rerank检查请求"
 // @Success      200      {object}  map[string]interface{}  "检查结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/rerank/check [post]
@@ -2146,12 +2146,12 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 // CheckASRModel godoc
 // @Summary      检查ASR模型
 // @Description  检查ASR（语音识别）模型连接是否正常，通过发送一段静默音频测试 /v1/audio/transcriptions 端点
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.ModelTestRequest  true  "ASR检查请求"
 // @Success      200      {object}  map[string]interface{}  "检查结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/asr/check [post]
@@ -2250,7 +2250,7 @@ type testMultimodalForm struct {
 
 	StorageType string `form:"storage_type"`
 
-	// COS 配置
+	// COS Configuration
 	COSSecretID   string `form:"cos_secret_id"`
 	COSSecretKey  string `form:"cos_secret_key"`
 	COSRegion     string `form:"cos_region"`
@@ -2258,11 +2258,11 @@ type testMultimodalForm struct {
 	COSAppID      string `form:"cos_app_id"`
 	COSPathPrefix string `form:"cos_path_prefix"`
 
-	// MinIO 配置（当存储为 minio 时）
+	// MinIO Configuration （当存储为 minio 时）
 	MinioBucketName string `form:"minio_bucket_name"`
 	MinioPathPrefix string `form:"minio_path_prefix"`
 
-	// 文档切分配置（字符串后续自行解析，以避免类型绑定失败）
+	// 文档切分Configuration （字符串后续自行解析，以避免类型绑定失败）
 	ChunkSize     string `form:"chunk_size"`
 	ChunkOverlap  string `form:"chunk_overlap"`
 	SeparatorsRaw string `form:"separators"`
@@ -2271,7 +2271,7 @@ type testMultimodalForm struct {
 // TestMultimodalFunction godoc
 // @Summary      测试多模态功能
 // @Description  上传图片测试多模态处理功能
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        image             formData  file    true   "测试图片"
@@ -2281,7 +2281,7 @@ type testMultimodalForm struct {
 // @Param        vlm_interface_type formData string  false  "VLM接口类型"
 // @Param        storage_type      formData  string  true   "存储类型(cos/minio)"
 // @Success      200               {object}  map[string]interface{}  "测试结果"
-// @Failure      400               {object}  errors.AppError         "请求参数错误"
+// @Failure      400               {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/multimodal/test [post]
@@ -2343,7 +2343,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	maxSizeMB := utils.GetMaxFileSizeMB()
 	maxSize := maxSizeMB * 1024 * 1024
 	// 上限必须在 multipart 解析之前生效：FormFile 会先把整个 body 缓冲下来
-	// （超出内存部分落临时文件），之后的 header.Size 检查看到的已是收完的上传。
+	// （超出内存部分落Temporary files），之后的 header.Size 检查看到的已是收完的上传。
 	// nginx 的 location /api/ 仍是 MAX_FILE_SIZE；这里是直连 app 时的同一道上限。
 	limitUploadBody(c, maxSize)
 
@@ -2375,7 +2375,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	}
 	logger.Infof(ctx, "Processing image: %s", utils.SanitizeForLog(header.Filename))
 
-	// 解析文档分割配置
+	// 解析文档分割Configuration
 	chunkSizeInt32, err := strconv.ParseInt(req.ChunkSize, 10, 32)
 	if err != nil {
 		logger.Error(ctx, "Failed to parse chunk size", err)
@@ -2506,12 +2506,12 @@ type TextRelationExtractionResponse struct {
 // ExtractTextRelations godoc
 // @Summary      提取文本关系
 // @Description  从文本中提取实体和关系
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      TextRelationExtractionRequest  true  "提取请求"
 // @Success      200      {object}  map[string]interface{}         "提取结果"
-// @Failure      400      {object}  errors.AppError                "请求参数错误"
+// @Failure      400      {object}  errors.AppError                "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/extract/text-relation [post]
@@ -2607,12 +2607,12 @@ type FabriTextResponse struct {
 // FabriText godoc
 // @Summary      生成示例文本
 // @Description  根据标签生成示例文本
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Param        request  body      FabriTextRequest  true  "生成请求"
 // @Success      200      {object}  map[string]interface{}  "生成的文本"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /initialization/extract/fabri-text [post]
@@ -2685,7 +2685,7 @@ var tagOptions = []string{
 // FabriTag godoc
 // @Summary      生成随机标签
 // @Description  随机生成一组标签
-// @Tags         初始化
+// @Tags         Initialization
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "生成的标签"

@@ -108,10 +108,10 @@ type ProviderInfo struct {
 	DefaultURLs  map[types.ModelType]string // 按模型类型区分的默认 BaseURL
 	ModelTypes   []types.ModelType          // 支持的模型类型
 	RequiresAuth bool                       // 是否需要 API key
-	ExtraFields  []ExtraFieldConfig         // 额外配置字段
+	ExtraFields  []ExtraFieldConfig         // 额外Configuration 字段
 }
 
-// GetDefaultURL 获取指定模型类型的默认 URL
+// GetDefaultURL Get specified 模型类型的默认 URL
 func (p ProviderInfo) GetDefaultURL(modelType types.ModelType) string {
 	if url, ok := p.DefaultURLs[modelType]; ok {
 		return url
@@ -123,7 +123,7 @@ func (p ProviderInfo) GetDefaultURL(modelType types.ModelType) string {
 	return ""
 }
 
-// ExtraFieldConfig 定义提供者的额外配置字段
+// ExtraFieldConfig 定义提供者的额外Configuration 字段
 type ExtraFieldConfig struct {
 	Key         string `json:"key"`
 	Label       string `json:"label"`
@@ -137,7 +137,7 @@ type ExtraFieldConfig struct {
 	} `json:"options,omitempty"`
 }
 
-// Config 表示模型提供者的配置
+// Config 表示模型提供者的Configuration
 type Config struct {
 	Provider  ProviderName   `json:"provider"`
 	BaseURL   string         `json:"base_url"`
@@ -151,7 +151,7 @@ type Provider interface {
 	// Info 返回服务商的元数据
 	Info() ProviderInfo
 
-	// ValidateConfig 验证服务商的配置
+	// ValidateConfig 验证服务商的Configuration
 	ValidateConfig(config *Config) error
 }
 

@@ -38,7 +38,7 @@ func (p *ModelScopeProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 ModelScope provider 配置
+// ValidateConfig 验证 ModelScope provider Configuration
 func (p *ModelScopeProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for ModelScope provider")

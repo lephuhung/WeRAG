@@ -130,7 +130,7 @@ func (h *MCPOAuthHandler) AuthorizeURL(c *gin.Context) {
 // @Description  接收授权服务器回调并完成 code 交换，随后重定向回前端
 // @Tags         MCP服务
 // @Param        code   query  string  false  "授权码"
-// @Param        state  query  string  false  "状态参数"
+// @Param        state  query  string  false  "状态Parameters "
 // @Param        error  query  string  false  "授权错误码"
 // @Success      302
 // @Router       /mcp-services/oauth/callback [get]
@@ -172,7 +172,7 @@ func (h *MCPOAuthHandler) Callback(c *gin.Context) {
 // Status reports whether the current user has authorized this service.
 //
 // Status godoc
-// @Summary      查询 MCP OAuth 授权状态
+// @Summary      Query  MCP OAuth 授权状态
 // @Description  返回当前用户的 OAuth Token 生命周期状态；传 authorization_attempt 时只检查本次授权流程
 // @Tags         MCP服务
 // @Produce      json
@@ -223,7 +223,7 @@ func (h *MCPOAuthHandler) Status(c *gin.Context) {
 //
 // Revoke godoc
 // @Summary      撤销 MCP OAuth 授权
-// @Description  删除当前用户对指定 MCP 服务的 OAuth 令牌
+// @Description  Delete 当前用户对指定 MCP 服务的 OAuth 令牌
 // @Tags         MCP服务
 // @Produce      json
 // @Param        id   path  string  true  "MCP 服务 ID"

@@ -213,10 +213,10 @@ func (s *knowledgeBaseService) authorizeKBAccess(
 	}
 
 	requestTenantID := types.CallerFromContext(ctx).TenantID
-	permissions := access.NewKBPermissions(ctx, s.kbShareService)
+	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
 
 	for _, kb := range kbs {
-		hasPermission, permErr := permissions.Check(kb.ID, kb.TenantID, types.OrgRoleViewer)
+		hasPermission, permErr := permissions.Check(kb.ID, kb.TenantID, types.KBPermissionViewer)
 		if permErr != nil {
 			logger.ErrorWithFields(ctx, permErr, map[string]interface{}{
 				"caller_tenant_id": requestTenantID,

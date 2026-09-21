@@ -131,15 +131,13 @@ type rbacGuards struct {
 	chunkKBCreatorFromID middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
 	wikiKBCreator        middleware.CreatorLookup
 
-	// Services for the KB-access guard (own / org-shared / via shared
-	// agent). Captured here so route lines can reference g.KBAccess()
-	// without having to plumb the services through every Register*
-	// function.
-	kbService         middleware.KBLookup
-	knowledgeService  middleware.KnowledgeLookup
-	chunkService      middleware.ChunkLookup
-	kbShareService    interfaces.KBShareService
-	agentShareService interfaces.AgentShareService
+	// Services for the KB-access guard (own / granted / public). Captured
+	// here so route lines can reference g.KBAccess() without having to
+	// plumb the services through every Register* function.
+	kbService        middleware.KBLookup
+	knowledgeService middleware.KnowledgeLookup
+	chunkService     middleware.ChunkLookup
+	kbGrantService   interfaces.KBAccessGrantService
 
 	// apiKeyAuthorizer is the single source of truth for which routes an
 	// X-API-Key principal may call. Routes opt in via the apiKeyGroup
@@ -160,8 +158,7 @@ func newRBACGuards(
 	kbService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
-	kbShareService interfaces.KBShareService,
-	agentShareService interfaces.AgentShareService,
+	kbGrantService interfaces.KBAccessGrantService,
 ) *rbacGuards {
 	g := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	if kbHandler != nil {
@@ -184,20 +181,15 @@ func newRBACGuards(
 	g.kbService = kbService
 	g.knowledgeService = knowledgeService
 	g.chunkService = chunkService
-	g.kbShareService = kbShareService
-	g.agentShareService = agentShareService
+	g.kbGrantService = kbGrantService
 	return g
 }
 
 // Role-only guards — pure RequireRole convenience wrappers, named after
 // the matrix entries so route lines stay readable.
 
-func (g *rbacGuards) Viewer() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleViewer, g.cfg)
-}
-
-func (g *rbacGuards) Contributor() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleContributor, g.cfg)
+func (g *rbacGuards) Member() gin.HandlerFunc {
+	return middleware.RequireRole(types.TenantRoleMember, g.cfg)
 }
 
 func (g *rbacGuards) Admin() gin.HandlerFunc {
@@ -322,10 +314,6 @@ func apiKeyRunEvaluations(base middleware.APIKeyRoutePolicy) middleware.APIKeyRo
 
 func apiKeyManageMembers(base middleware.APIKeyRoutePolicy) middleware.APIKeyRoutePolicy {
 	return base.WithCapability(types.APIKeyCapabilityManageMembers)
-}
-
-func apiKeyManageSpaces(base middleware.APIKeyRoutePolicy) middleware.APIKeyRoutePolicy {
-	return base.WithCapability(types.APIKeyCapabilityManageSpaces)
 }
 
 func apiKeyManageTenantSettings(base middleware.APIKeyRoutePolicy) middleware.APIKeyRoutePolicy {
@@ -556,10 +544,9 @@ func (g *rbacGuards) PathTenantMatch() gin.HandlerFunc {
 func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromParam(param),
-		types.OrgRoleViewer,
+		types.KBPermissionViewer,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }
@@ -570,10 +557,9 @@ func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
 func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromParam(param),
-		types.OrgRoleEditor,
+		types.KBPermissionEditor,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }
@@ -585,10 +571,9 @@ func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
-		types.OrgRoleViewer,
+		types.KBPermissionViewer,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }
@@ -598,10 +583,9 @@ func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerF
 func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
-		types.OrgRoleEditor,
+		types.KBPermissionEditor,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }
@@ -612,10 +596,9 @@ func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.Handler
 func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
-		types.OrgRoleViewer,
+		types.KBPermissionViewer,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }
@@ -626,10 +609,9 @@ func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc 
 func (g *rbacGuards) KBAccessWriteFromChunkIDParam(param string) gin.HandlerFunc {
 	return middleware.RequireKBAccess(
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
-		types.OrgRoleEditor,
+		types.KBPermissionEditor,
 		g.kbService,
-		g.kbShareService,
-		g.agentShareService,
+		g.kbGrantService,
 		g.cfg,
 	)
 }

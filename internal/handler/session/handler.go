@@ -27,9 +27,8 @@ type Handler struct {
 	config               *config.Config                  // Application configuration
 	knowledgebaseService interfaces.KnowledgeBaseService // Service for managing knowledge bases
 	customAgentService   interfaces.CustomAgentService   // Service for managing custom agents
-	tenantService        interfaces.TenantService        // Service for loading tenant (shared agent context)
-	agentShareService    interfaces.AgentShareService    // Service for resolving shared agents (KB scope in retrieval)
-	kbShareService       interfaces.KBShareService       // Service for resolving shared KB permissions
+	tenantService        interfaces.TenantService        // Service for loading tenant (cross-tenant run context)
+	kbAccessGrantService interfaces.KBAccessGrantService // Service for resolving granted KB permissions
 	fileService          interfaces.FileService          // Service for file storage (image uploads)
 	resourceCatalog      interfaces.ResourceCatalog
 	storageResolver      interfaces.StorageBackendResolver
@@ -77,8 +76,7 @@ func NewHandler(
 	knowledgebaseService interfaces.KnowledgeBaseService,
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
-	agentShareService interfaces.AgentShareService,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	fileService interfaces.FileService,
 	resourceCatalog interfaces.ResourceCatalog,
 	storageResolver interfaces.StorageBackendResolver,
@@ -110,8 +108,7 @@ func NewHandler(
 		knowledgebaseService:  knowledgebaseService,
 		customAgentService:    customAgentService,
 		tenantService:         tenantService,
-		agentShareService:     agentShareService,
-		kbShareService:        kbShareService,
+		kbAccessGrantService:  kbAccessGrantService,
 		fileService:           fileService,
 		resourceCatalog:       resourceCatalog,
 		storageResolver:       storageResolver,
@@ -142,14 +139,14 @@ func NewHandler(
 }
 
 // CreateSession godoc
-// @Summary      创建会话
-// @Description  创建新的对话会话
+// @Summary      Create 会话
+// @Description  Create 新的对话会话
 // @Tags         会话
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CreateSessionRequest  true  "会话创建请求"
-// @Success      201      {object}  map[string]interface{}  "创建的会话"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      CreateSessionRequest  true  "会话Create 请求"
+// @Success      201      {object}  map[string]interface{}  "Create 的会话"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions [post]
@@ -211,13 +208,13 @@ func (h *Handler) CreateSession(c *gin.Context) {
 }
 
 // GetSession godoc
-// @Summary      获取会话详情
-// @Description  根据ID获取会话详情
+// @Summary      获取会话Details
+// @Description  根据ID获取会话Details
 // @Tags         会话
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "会话详情"
+// @Success      200  {object}  map[string]interface{}  "会话Details "
 // @Failure      404  {object}  errors.AppError         "会话不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -258,8 +255,8 @@ func (h *Handler) GetSession(c *gin.Context) {
 }
 
 // GetSessionsByTenant godoc
-// @Summary      获取会话列表
-// @Description  获取当前空间的会话列表，支持分页、关键字搜索、按来源/Agent 筛选
+// @Summary      获取会话List
+// @Description  获取当前Tenant workspace的会话List ，支持分页、关键字搜索、按来源/Agent 筛选
 // @Tags         会话
 // @Accept       json
 // @Produce      json
@@ -268,8 +265,8 @@ func (h *Handler) GetSession(c *gin.Context) {
 // @Param        keyword    query     string  false  "标题模糊搜索"
 // @Param        source     query     string  false  "来源过滤：web / embed / api / feishu / wechat / slack / ...（api、embed、IM 渠道需 Admin+）"
 // @Param        agent_id   query     string  false  "按 Agent 过滤（仅对 IM 会话生效）"
-// @Success      200        {object}  map[string]interface{}  "会话列表"
-// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Success      200        {object}  map[string]interface{}  "会话List "
+// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions [get]
@@ -310,14 +307,14 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 }
 
 // UpdateSession godoc
-// @Summary      更新会话
-// @Description  更新会话属性
+// @Summary      Update 会话
+// @Description  Update 会话属性
 // @Tags         会话
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string         true  "会话ID"
 // @Param        request  body      types.Session  true  "会话信息"
-// @Success      200      {object}  map[string]interface{}  "更新后的会话"
+// @Success      200      {object}  map[string]interface{}  "Update 后的会话"
 // @Failure      404      {object}  errors.AppError         "会话不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -381,13 +378,13 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 }
 
 // DeleteSession godoc
-// @Summary      删除会话
-// @Description  删除指定的会话
+// @Summary      Delete 会话
+// @Description  Delete 指定的会话
 // @Tags         会话
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
 // @Failure      404  {object}  errors.AppError         "会话不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -426,13 +423,13 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 
 // ClearSessionMessages godoc
 // @Summary      清空会话消息
-// @Description  删除会话中的所有消息，同时清除 LLM 上下文和聊天历史知识库条目。会话本身保留。
+// @Description  Delete 会话中的所有消息，同时清除 LLM 上下文和聊天历史Knowledge Base条目。会话本身保留。
 // @Tags         会话
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "会话ID"
 // @Success      200  {object}  map[string]interface{}  "清空成功"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404  {object}  errors.AppError         "会话不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -474,14 +471,14 @@ type batchDeleteRequest struct {
 }
 
 // BatchDeleteSessions godoc
-// @Summary      批量删除会话
-// @Description  根据ID列表批量删除对话会话，或设置 delete_all=true 删除当前空间的所有会话
+// @Summary      批量Delete 会话
+// @Description  根据IDList 批量Delete 对话会话，或Settings  delete_all=true Delete 当前Tenant workspace的所有会话
 // @Tags         会话
 // @Accept       json
 // @Produce      json
-// @Param        request  body      batchDeleteRequest  true  "批量删除请求"
-// @Success      200      {object}  map[string]interface{}  "删除结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      batchDeleteRequest  true  "批量Delete 请求"
+// @Success      200      {object}  map[string]interface{}  "Delete 结果"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/batch [delete]

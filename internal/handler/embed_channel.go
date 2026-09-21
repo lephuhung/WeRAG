@@ -699,7 +699,8 @@ func patchEmbedChatPayload(body io.Reader, ch *types.EmbedChannel, agentMode boo
 	payload["agent_id"] = ch.AgentID
 	// The channel's agent belongs to the channel's workspace; a visitor-supplied
 	// source workspace would switch it to another workspace's share of that ID.
-	delete(payload, types.AgentSourceTenantIDParam)
+	delete(payload, "agent_source_tenant_id")
+
 	payload["knowledge_base_ids"] = []string{}
 	// Visitors are anonymous and run as Viewer of the whole channel workspace.
 	// Explicit targets (documents, tags, @mentions) and a model override are

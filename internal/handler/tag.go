@@ -70,17 +70,17 @@ func (h *TagHandler) getChunksBySeqIDs(ctx context.Context, tenantID uint64, seq
 }
 
 // ListTags godoc
-// @Summary      获取标签列表
-// @Description  获取知识库下的所有标签及统计信息
+// @Summary      获取标签List
+// @Description  获取Knowledge Base下的所有标签及统计信息
 // @Tags         标签管理
 // @Accept       json
 // @Produce      json
-// @Param        id         path      string  true   "知识库ID"
+// @Param        id         path      string  true   "Knowledge BaseID"
 // @Param        page       query     int     false  "页码"
 // @Param        page_size  query     int     false  "每页数量"
 // @Param        keyword    query     string  false  "关键词搜索"
-// @Success      200        {object}  map[string]interface{}  "标签列表"
-// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Success      200        {object}  map[string]interface{}  "标签List "
+// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags [get]
@@ -117,15 +117,15 @@ type createTagRequest struct {
 }
 
 // CreateTag godoc
-// @Summary      创建标签
-// @Description  在知识库下创建新标签
+// @Summary      Create 标签
+// @Description  在Knowledge Base下Create 新标签
 // @Tags         标签管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "知识库ID"
+// @Param        id       path      string  true  "Knowledge BaseID"
 // @Param        request  body      object{name=string,color=string,sort_order=int}  true  "标签信息"
-// @Success      200      {object}  map[string]interface{}  "创建的标签"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Success      200      {object}  map[string]interface{}  "Create 的标签"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags [post]
@@ -163,16 +163,16 @@ type updateTagRequest struct {
 }
 
 // UpdateTag godoc
-// @Summary      更新标签
-// @Description  更新标签信息
+// @Summary      Update 标签
+// @Description  Update 标签信息
 // @Tags         标签管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "知识库ID"
+// @Param        id       path      string  true  "Knowledge BaseID"
 // @Param        tag_id   path      string  true  "标签ID (UUID或seq_id)"
-// @Param        request  body      object  true  "标签更新信息"
-// @Success      200      {object}  map[string]interface{}  "更新后的标签"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      object  true  "标签Update 信息"
+// @Success      200      {object}  map[string]interface{}  "Update 后的标签"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags/{tag_id} [put]
@@ -208,18 +208,18 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 }
 
 // DeleteTag godoc
-// @Summary      删除标签
-// @Description  删除标签，可使用force=true强制删除被引用的标签，content_only=true仅删除标签下的内容而保留标签本身
+// @Summary      Delete 标签
+// @Description  Delete 标签，可使用force=true强制Delete 被引用的标签，content_only=true仅Delete 标签下的内容而保留标签本身
 // @Tags         标签管理
 // @Accept       json
 // @Produce      json
-// @Param        id            path      string              true   "知识库ID"
+// @Param        id            path      string              true   "Knowledge BaseID"
 // @Param        tag_id        path      string              true   "标签ID (UUID或seq_id)"
-// @Param        force         query     bool                false  "强制删除"
-// @Param        content_only  query     bool                false  "仅删除内容，保留标签"
-// @Param        body          body      DeleteTagRequest    false  "删除选项"
-// @Success      200           {object}  map[string]interface{}  "删除成功"
-// @Failure      400           {object}  errors.AppError         "请求参数错误"
+// @Param        force         query     bool                false  "强制Delete "
+// @Param        content_only  query     bool                false  "仅Delete 内容，保留标签"
+// @Param        body          body      DeleteTagRequest    false  "Delete 选项"
+// @Success      200           {object}  map[string]interface{}  "Delete 成功"
+// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags/{tag_id} [delete]

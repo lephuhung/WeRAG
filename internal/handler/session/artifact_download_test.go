@@ -73,10 +73,52 @@ func (f *fakeArtifactFileService) GetFile(_ context.Context, url string) (io.Rea
 type artifactCatalogStub struct {
 	interfaces.ResourceCatalog
 	resource *types.StoredResource
+	boundKB  string
 }
 
 func (s *artifactCatalogStub) ResolvePath(context.Context, string) (string, *types.StoredResource, error) {
 	return s.resource.PhysicalPath, s.resource, nil
+}
+
+func (s *artifactCatalogStub) IsReferencedByKnowledgeBase(
+	_ context.Context, _ uint64, kbID, _ string,
+) (bool, error) {
+	return s.boundKB != "" && kbID == s.boundKB, nil
+}
+
+type artifactKBsStub struct {
+	interfaces.KnowledgeBaseService
+	kbs map[string]*types.KnowledgeBase
+}
+
+func (s *artifactKBsStub) GetKnowledgeBasesByIDsOnly(
+	_ context.Context, ids []string,
+) ([]*types.KnowledgeBase, error) {
+	out := make([]*types.KnowledgeBase, 0, len(ids))
+	for _, id := range ids {
+		if kb := s.kbs[id]; kb != nil {
+			out = append(out, kb)
+		}
+	}
+	return out, nil
+}
+
+type artifactGrantStub struct {
+	interfaces.KBAccessGrantService
+	granted map[string]bool
+}
+
+func (s *artifactGrantStub) ApprovedKBPermission(
+	_ context.Context, kbID string, _ uint64,
+) (types.KBPermission, bool, error) {
+	if s.granted[kbID] {
+		return types.KBPermissionViewer, true, nil
+	}
+	return "", false, nil
+}
+
+func (s *artifactGrantStub) GetKBScope(context.Context, string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 type artifactTenantStub struct {
@@ -227,10 +269,10 @@ func TestDownloadMessageArtifact_SessionNotOwnedReturns404(t *testing.T) {
 	}
 }
 
-func TestDownloadMessageArtifact_SourceStorageAndShareRevocation(t *testing.T) {
+func TestDownloadMessageArtifact_SourceStorageAndGrantRevocation(t *testing.T) {
 	const ref = "resource://AbCdEfGhIjKlMnOpQrStUv"
 	const physical = "local://7/exports/report.pdf"
-	shares := &resolveAgentShareStub{agent: &types.CustomAgent{ID: "agent", TenantID: 7}}
+	grants := &artifactGrantStub{granted: map[string]bool{"kb-shared": true}}
 	ownerFiles := &fakeArtifactFileService{url: physical, data: []byte("PDF-BYTES")}
 	globalFiles := &fakeArtifactFileService{}
 	h := &Handler{
@@ -242,15 +284,26 @@ func TestDownloadMessageArtifact_SourceStorageAndShareRevocation(t *testing.T) {
 		messageService: &stubMessageServiceForArtifacts{
 			getMessage: func(context.Context, string, string) (*types.Message, error) {
 				return &types.Message{
-					ID: "msg-1", AgentID: "agent", AgentTenantID: 7,
+					ID: "msg-1", Role: "assistant",
 					Artifacts: types.MessageArtifacts{{URL: ref, FileName: "report.pdf"}},
+					KnowledgeReferences: types.References{{
+						KnowledgeBaseID: "kb-shared",
+						Content:         "see " + ref,
+					}},
 				}, nil
 			},
 		},
-		agentShareService: shares,
-		resourceCatalog: &artifactCatalogStub{resource: &types.StoredResource{
-			TenantID: 7, PhysicalPath: physical, StorageBackendID: "backend-7",
-		}},
+		kbAccessGrantService: grants,
+		knowledgebaseService: &artifactKBsStub{
+			kbs: map[string]*types.KnowledgeBase{"kb-shared": {ID: "kb-shared", TenantID: 7}},
+		},
+		resourceCatalog: &artifactCatalogStub{
+			resource: &types.StoredResource{
+				TenantID: 7, Handle: "AbCdEfGhIjKlMnOpQrStUv",
+				PhysicalPath: physical, StorageBackendID: "backend-7",
+			},
+			boundKB: "kb-shared",
+		},
 		tenantService:   &artifactTenantStub{t: t},
 		storageResolver: &artifactStorageStub{t: t, file: ownerFiles},
 		fileService:     globalFiles,
@@ -269,7 +322,7 @@ func TestDownloadMessageArtifact_SourceStorageAndShareRevocation(t *testing.T) {
 		w.Header().Get("Cache-Control") != "private, no-store" {
 		t.Fatalf("status=%d body=%q cache=%q", w.Code, w.Body.String(), w.Header().Get("Cache-Control"))
 	}
-	shares.agent = nil
+	delete(grants.granted, "kb-shared")
 	w = request()
 	if w.Code != http.StatusNotFound || ownerFiles.calls != 1 || globalFiles.calls != 0 {
 		t.Fatalf(

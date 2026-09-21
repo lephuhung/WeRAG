@@ -181,7 +181,7 @@ func Logger() gin.HandlerFunc {
 			requestBody = readRequestBody(c)
 		}
 
-		// 创建响应体捕获器
+		// Create 响应体捕获器
 		responseBody := &bytes.Buffer{}
 		responseWriter := &loggerResponseBodyWriter{
 			ResponseWriter: c.Writer,

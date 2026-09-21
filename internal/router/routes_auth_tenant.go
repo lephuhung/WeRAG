@@ -10,7 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// RegisterTenantRoutes 注册空间相关的路由
+// RegisterTenantRoutes 注册Tenant workspace相关的路由
 //
 // Tenant-internal RBAC for /tenants/:id:
 //   - GET   /:id          Viewer+ (read tenant settings)
@@ -57,17 +57,17 @@ func RegisterTenantRoutes(
 		apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
 		g.CrossTenant(), handler.SearchTenants)
 
-	// 空间路由组
+	// Tenant workspace路由组
 	tenantRoutes := r.Group("/tenants")
 	{
-		// 创建空间对所有已登录用户开放：用户可以为自己再开一个工作区，
-		// handler 内部会调 EnsureOwner 把调用者写成新空间的 Owner。
-		// 跨空间超管走同一个端点，但能携带 storage_quota / status 等
+		// Create Tenant workspace对所有已登录用户开放：用户可以为自己再开一个工作区，
+		// handler 内部会调 EnsureOwner 把调用者写成新Tenant workspace的 Owner。
+		// 跨Tenant workspace超管走同一个端点，但能携带 storage_quota / status 等
 		// 全字段（见 handler.CreateTenant 内部分支）。
-		// 安全说明：这里不挂 g.CrossTenant()，因为 self-service 创建
-		// 不需要跨空间特权；handler 也不读写 X-Tenant-ID 指向的现有
-		// 空间，所以越过 PathTenantMatch 守卫不会扩大攻击面。
-		// 创建空间不对 API key 开放（注册在原始 group，默认拒绝）。
+		// 安全说明：这里不挂 g.CrossTenant()，因为 self-service Create
+		// 不需要跨Tenant workspace特权；handler 也不读写 X-Tenant-ID 指向的现有
+		// Tenant workspace，所以越过 PathTenantMatch 守卫不会扩大攻击面。
+		// Create Tenant workspace不对 API key 开放（注册在原始 group，默认拒绝）。
 		g.apiKeyRoute(tenantRoutes, http.MethodPost, "",
 			apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), handler.CreateTenant)
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "", apiKeyManageTenantSettings(apiKeyFullAccess()), handler.ListTenants)
@@ -77,7 +77,7 @@ func RegisterTenantRoutes(
 		// config key, not a tenant ID, so these stay outside the
 		// PathTenantMatch group. Tenant-level surface: full-access keys may
 		// call it, and scoped keys need manage_tenant_settings.
-		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Viewer(), handler.GetTenantKV)
+		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Member(), handler.GetTenantKV)
 		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UpdateTenantKV)
 
 		// Per-tenant endpoints share PathTenantMatch at the group level.
@@ -89,7 +89,7 @@ func RegisterTenantRoutes(
 		{
 			g.apiKeyRoute(tenantByID, http.MethodGet, "",
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
-				g.Viewer(), handler.GetTenant)
+				g.Member(), handler.GetTenant)
 			g.apiKeyRoute(tenantByID, http.MethodPut, "",
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Owner(), handler.UpdateTenant)
 			g.apiKeyRoute(tenantByID, http.MethodDelete, "",
@@ -109,11 +109,11 @@ func RegisterTenantRoutes(
 			// their own; the service still rejects when it would leave
 			// the tenant without an Owner.
 			if memberHandler != nil {
-				g.apiKeyRoute(tenantByID, http.MethodGet, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.Viewer(), memberHandler.ListMembers)
+				g.apiKeyRoute(tenantByID, http.MethodGet, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.Member(), memberHandler.ListMembers)
 				g.apiKeyRoute(tenantByID, http.MethodPost, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.AddMember)
 				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.UpdateMemberRole)
 				g.apiKeyRoute(tenantByID, http.MethodDelete, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.RemoveMember)
-				tenantByID.POST("/leave", g.Viewer(), memberHandler.LeaveTenant)
+				tenantByID.POST("/leave", g.Member(), memberHandler.LeaveTenant)
 			}
 
 			// Tenant invitation flow. The UI-driven "Invite Member"
@@ -126,7 +126,7 @@ func RegisterTenantRoutes(
 			// mirrors memberHandler above for environments built
 			// without the invitation dependency wired.
 			if invitationHandler != nil {
-				g.apiKeyRoute(tenantByID, http.MethodGet, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.Viewer(), invitationHandler.ListTenantInvitations)
+				g.apiKeyRoute(tenantByID, http.MethodGet, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.Member(), invitationHandler.ListTenantInvitations)
 				g.apiKeyRoute(tenantByID, http.MethodPost, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), invitationHandler.CreateInvitation)
 				g.apiKeyRoute(tenantByID, http.MethodDelete, "/invitations/:inv_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), invitationHandler.RevokeInvitation)
 				// Share-link create lives under /invite-links so the URL
@@ -171,7 +171,7 @@ func RegisterMyInvitationRoutes(r *gin.RouterGroup, invitationHandler *handler.T
 		me.GET("/invitations/pending-count", invitationHandler.CountMyPendingInvitations)
 		me.POST("/invitations/:inv_id/accept", invitationHandler.AcceptMyInvitation)
 		me.POST("/invitations/:inv_id/decline", invitationHandler.DeclineMyInvitation)
-		// 已登录用户用共享链接 token 加入空间（对应 register-by-invite，但不建新账号）。
+		// 已登录用户用共享链接 token 加入Tenant workspace（对应 register-by-invite，但不建新账号）。
 		me.POST("/invitations/accept-by-token", invitationHandler.AcceptMyInvitationByToken)
 	}
 }
@@ -247,16 +247,16 @@ func RegisterSystemRoutes(
 ) {
 	systemRoutes := g.apiKeyGroup(r.Group("/system"), apiKeyManageVectorStores(apiKeyFullAccess()))
 	{
-		systemRoutes.With(apiKeyAny()).GET("/capabilities", g.Viewer(), handler.GetDeploymentCapabilities)
-		systemRoutes.GET("/info", g.Viewer(), handler.GetSystemInfo)
-		systemRoutes.GET("/parser-engines", g.Viewer(), handler.ListParserEngines)
+		systemRoutes.With(apiKeyAny()).GET("/capabilities", g.Member(), handler.GetDeploymentCapabilities)
+		systemRoutes.GET("/info", g.Member(), handler.GetSystemInfo)
+		systemRoutes.GET("/parser-engines", g.Member(), handler.ListParserEngines)
 		// Parser-engine probes and infra reconnects exercise provider
 		// endpoints/credentials — platform-only, same as model probes.
 		systemRoutes.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)).POST(
 			"/parser-engines/check", g.SystemAdmin(), handler.CheckParserEngines)
 		systemRoutes.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)).POST(
 			"/docreader/reconnect", g.SystemAdmin(), handler.ReconnectDocReader)
-		systemRoutes.GET("/storage-engine-status", g.Viewer(), handler.GetStorageEngineStatus)
+		systemRoutes.GET("/storage-engine-status", g.Member(), handler.GetStorageEngineStatus)
 		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
 		systemRoutes.POST("/sandbox-check", g.Admin(), handler.CheckSandboxConfig)
 	}
@@ -302,10 +302,6 @@ func RegisterSystemAdminRoutes(
 		// group gate replaces the per-tenant Owner requirement of the
 		// /tenants/:id/members/:user_id route.
 		adminRoutes.PUT("/tenants/:tenant_id/members/:user_id", handler.UpdateSystemUserRole)
-		// Organization-level roles are tenant-keyed — a workspace is admin/
-		// editor/viewer of an org, which propagates to its users. Same
-		// SystemAdmin-only pattern as the tenant membership route above.
-		adminRoutes.PUT("/organizations/:org_id/members/:tenant_id", handler.UpdateSystemOrgTenantRole)
 		adminRoutes.GET("/api-keys", handler.ListPlatformAPIKeys)
 		adminRoutes.POST("/api-keys", handler.CreatePlatformAPIKey)
 		adminRoutes.DELETE("/api-keys/:key_id", handler.DeletePlatformAPIKey)

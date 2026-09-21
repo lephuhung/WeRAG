@@ -30,7 +30,7 @@ func (s *acceptByTokenInvitationSvc) AcceptByToken(_ context.Context, _ string, 
 	if s.member != nil {
 		return s.member, nil
 	}
-	return &types.TenantMember{TenantID: 42, Role: types.TenantRoleViewer, Status: types.TenantMemberStatusActive}, nil
+	return &types.TenantMember{TenantID: 42, Role: types.TenantRoleMember, Status: types.TenantMemberStatusActive}, nil
 }
 
 // acceptByTokenUserSvc returns a user with the configured home tenant so
@@ -183,7 +183,7 @@ func TestAcceptMyInvitationByTokenIdempotent(t *testing.T) {
 	users := &acceptByTokenUserSvc{homeTenant: 42}
 	h := &TenantInvitationHandler{
 		invitationService: &acceptByTokenInvitationSvc{
-			member: &types.TenantMember{TenantID: 42, Role: types.TenantRoleContributor, Status: types.TenantMemberStatusActive},
+			member: &types.TenantMember{TenantID: 42, Role: types.TenantRoleMember, Status: types.TenantMemberStatusActive},
 		},
 		userService:   users,
 		tenantService: &acceptByTokenTenantSvc{},
@@ -209,7 +209,7 @@ func TestAcceptMyInvitationByTokenIdempotent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp.Data.Membership.Role != string(types.TenantRoleContributor) {
+	if resp.Data.Membership.Role != string(types.TenantRoleMember) {
 		t.Fatalf("role=%s, want contributor (existing membership preserved)", resp.Data.Membership.Role)
 	}
 	// homeTenant is already 42, so the adoption branch must not fire.

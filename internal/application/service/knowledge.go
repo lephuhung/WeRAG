@@ -46,29 +46,29 @@ var (
 // knowledgeService implements the knowledge service interface
 // service 实现知识服务接口
 type knowledgeService struct {
-	config          *config.Config
-	retrieveEngine  interfaces.RetrieveEngineRegistry
-	ownership       retriever.TenantStoreOwnership
-	repo            interfaces.KnowledgeRepository
-	kbService       interfaces.KnowledgeBaseService
-	tenantRepo      interfaces.TenantRepository
-	tenantService   interfaces.TenantService
-	documentReader  interfaces.DocumentReader
-	chunkService    interfaces.ChunkService
-	chunkRepo       interfaces.ChunkRepository
-	tagRepo         interfaces.KnowledgeTagRepository
-	tagService      interfaces.KnowledgeTagService
-	fileSvc         interfaces.FileService
-	storageResolver interfaces.StorageBackendResolver
-	resourceCatalog interfaces.ResourceCatalog
-	modelService    interfaces.ModelService
-	task            interfaces.TaskEnqueuer
-	taskInspector   interfaces.TaskInspector
-	graphEngine     interfaces.RetrieveGraphRepository
-	redisClient     *redis.Client
-	kbShareService  interfaces.KBShareService
-	imageResolver   *docparser.ImageResolver
-	taskPendingRepo interfaces.TaskPendingOpsRepository
+	config               *config.Config
+	retrieveEngine       interfaces.RetrieveEngineRegistry
+	ownership            retriever.TenantStoreOwnership
+	repo                 interfaces.KnowledgeRepository
+	kbService            interfaces.KnowledgeBaseService
+	tenantRepo           interfaces.TenantRepository
+	tenantService        interfaces.TenantService
+	documentReader       interfaces.DocumentReader
+	chunkService         interfaces.ChunkService
+	chunkRepo            interfaces.ChunkRepository
+	tagRepo              interfaces.KnowledgeTagRepository
+	tagService           interfaces.KnowledgeTagService
+	fileSvc              interfaces.FileService
+	storageResolver      interfaces.StorageBackendResolver
+	resourceCatalog      interfaces.ResourceCatalog
+	modelService         interfaces.ModelService
+	task                 interfaces.TaskEnqueuer
+	taskInspector        interfaces.TaskInspector
+	graphEngine          interfaces.RetrieveGraphRepository
+	redisClient          *redis.Client
+	kbAccessGrantService interfaces.KBAccessGrantService
+	imageResolver        *docparser.ImageResolver
+	taskPendingRepo      interfaces.TaskPendingOpsRepository
 
 	// In-memory fallbacks for Lite mode (no Redis)
 	memFAQProgress      sync.Map // taskID -> *types.FAQImportProgress
@@ -112,7 +112,7 @@ func NewKnowledgeService(
 	retrieveEngine interfaces.RetrieveEngineRegistry,
 	ownership retriever.TenantStoreOwnership,
 	redisClient *redis.Client,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	imageResolver *docparser.ImageResolver,
 	wikiRepo interfaces.WikiPageRepository,
 	wikiService interfaces.WikiPageService,
@@ -121,33 +121,33 @@ func NewKnowledgeService(
 	audit interfaces.AuditLogService,
 ) (interfaces.KnowledgeService, error) {
 	return &knowledgeService{
-		config:          config,
-		repo:            repo,
-		kbService:       kbService,
-		tenantRepo:      tenantRepo,
-		tenantService:   tenantService,
-		documentReader:  documentReader,
-		chunkService:    chunkService,
-		chunkRepo:       chunkRepo,
-		tagRepo:         tagRepo,
-		tagService:      tagService,
-		fileSvc:         fileSvc,
-		storageResolver: storageResolver,
-		resourceCatalog: resourceCatalog,
-		modelService:    modelService,
-		task:            task,
-		taskInspector:   taskInspector,
-		graphEngine:     graphEngine,
-		retrieveEngine:  retrieveEngine,
-		ownership:       ownership,
-		redisClient:     redisClient,
-		kbShareService:  kbShareService,
-		imageResolver:   imageResolver,
-		wikiRepo:        wikiRepo,
-		wikiService:     wikiService,
-		taskPendingRepo: taskPendingRepo,
-		spanTracker:     spanTracker,
-		audit:           audit,
+		config:               config,
+		repo:                 repo,
+		kbService:            kbService,
+		tenantRepo:           tenantRepo,
+		tenantService:        tenantService,
+		documentReader:       documentReader,
+		chunkService:         chunkService,
+		chunkRepo:            chunkRepo,
+		tagRepo:              tagRepo,
+		tagService:           tagService,
+		fileSvc:              fileSvc,
+		storageResolver:      storageResolver,
+		resourceCatalog:      resourceCatalog,
+		modelService:         modelService,
+		task:                 task,
+		taskInspector:        taskInspector,
+		graphEngine:          graphEngine,
+		retrieveEngine:       retrieveEngine,
+		ownership:            ownership,
+		redisClient:          redisClient,
+		kbAccessGrantService: kbAccessGrantService,
+		imageResolver:        imageResolver,
+		wikiRepo:             wikiRepo,
+		wikiService:          wikiService,
+		taskPendingRepo:      taskPendingRepo,
+		spanTracker:          spanTracker,
+		audit:                audit,
 	}, nil
 }
 
@@ -453,11 +453,11 @@ func (s *knowledgeService) updateKnowledgeUnlessSourceReplaced(ctx context.Conte
 // checkStorageEngineConfigured verifies that the knowledge base has a storage engine configured
 // (either at the KB level or via the tenant default).
 //
-// 内部版兜底语义：当 KB 与空间都未配置 storage provider 时，如果服务实例持有
+// 内部版兜底语义：当 KB 与Tenant workspace都未Configuration  storage provider 时，如果服务实例持有
 // 全局 FileService（由容器按 STORAGE_TYPE 注入，默认 local），允许直接落到该
 // 全局 fileSvc 上，不再硬性阻断。这与 resolveFileService / resolveFileServiceForPath
 // 在 provider 为空时回退到 s.fileSvc 的行为保持一致，避免上层闸门和下游解析口径不一。
-// 仅当 KB/空间/全局三处都拿不到任何可用 FileService 时才报错。
+// 仅当 KB/Tenant workspace/全局三处都拿不到任何可用 FileService 时才报错。
 func (s *knowledgeService) checkStorageEngineConfigured(ctx context.Context, kb *types.KnowledgeBase) error {
 	provider := kb.GetStorageProvider()
 	if provider == "" {
@@ -821,7 +821,7 @@ func (s *knowledgeService) GetKnowledgeBatchWithSharedAccess(ctx context.Context
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	permissions := kbReadPermissions(ctx, s.kbShareService)
+	permissions := kbReadPermissions(ctx, s.kbAccessGrantService)
 	rows, err := s.repo.GetKnowledgeBatch(ctx, tenantID, ids)
 	if err != nil {
 		return nil, err
@@ -832,7 +832,7 @@ func (s *knowledgeService) GetKnowledgeBatchWithSharedAccess(ctx context.Context
 		if k == nil || foundSet[k.ID] {
 			return
 		}
-		allowed, err := permissions.Check(k.KnowledgeBaseID, k.TenantID, types.OrgRoleViewer)
+		allowed, err := permissions.Check(k.KnowledgeBaseID, k.TenantID, types.KBPermissionViewer)
 		if err == nil && allowed {
 			ownList = append(ownList, k)
 			foundSet[k.ID] = true
@@ -1088,21 +1088,19 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, keyword string, 
 		}
 	}
 
-	// Shared knowledge bases (document type only). Plan 3 of #1303 keys
-	// the share lookup on (tenantID, callerTenantRole); userID is no
-	// longer load-bearing for org-share access.
-	if s.kbShareService != nil {
-		if caller.UserID != "" {
-			callerTenantRole := caller.Role
-			sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, tenantID, callerTenantRole)
-			if err == nil {
-				for _, info := range sharedList {
-					if info != nil && info.KnowledgeBase != nil && info.KnowledgeBase.Type == types.KnowledgeBaseTypeDocument {
-						scopes = append(scopes, types.KnowledgeSearchScope{
-							TenantID: info.SourceTenantID,
-							KBID:     info.KnowledgeBase.ID,
-						})
-					}
+	// Knowledge bases granted to this tenant via approved kb_access_grants.
+	// Grants are viewer-only and scoped to document search scopes keyed by
+	// the owning tenant so chunk queries hit the right partition.
+	if s.kbAccessGrantService != nil && caller.UserID != "" {
+		granted, err := s.kbAccessGrantService.ListOutgoing(ctx, caller,
+			[]types.GrantStatus{types.GrantStatusApproved})
+		if err == nil {
+			for _, g := range granted {
+				if g != nil && g.KBID != "" && g.OwnerTenantID != 0 {
+					scopes = append(scopes, types.KnowledgeSearchScope{
+						TenantID: g.OwnerTenantID,
+						KBID:     g.KBID,
+					})
 				}
 			}
 		}

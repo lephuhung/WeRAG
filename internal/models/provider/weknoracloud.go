@@ -37,7 +37,7 @@ func (p *WeKnoraCloudProvider) Info() ProviderInfo {
 }
 
 func (p *WeKnoraCloudProvider) ValidateConfig(config *Config) error {
-	// AppID/AppSecret 通过专用初始化接口写入，此处仅做结构校验。
+	// AppID/AppSecret 通过专用Initialization 接口写入，此处仅做结构校验。
 	// 其中 AppSecret 字段当前实际承载上游 API Key。
 	return nil
 }

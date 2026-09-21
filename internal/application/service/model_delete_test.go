@@ -461,7 +461,7 @@ func (r *stubKBRepoForModelDelete) GetKBScopeByID(ctx context.Context, id string
 	return nil, nil
 }
 
-func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

@@ -55,19 +55,19 @@ type ChunkFlags int
 
 const (
 	// ChunkFlagRecommended 表示可推荐状态（1 << 0 = 1）
-	// 当设置此标志时，该 Chunk 可以被推荐给用户
+	// 当Settings 此标志时，该 Chunk 可以被推荐给用户
 	ChunkFlagRecommended ChunkFlags = 1 << 0
 	// 未来可扩展更多标志位：
 	// ChunkFlagPinned ChunkFlags = 1 << 1  // 置顶
 	// ChunkFlagHot    ChunkFlags = 1 << 2  // 热门
 )
 
-// HasFlag 检查是否设置了指定标志
+// HasFlag 检查是否Settings 了指定标志
 func (f ChunkFlags) HasFlag(flag ChunkFlags) bool {
 	return f&flag != 0
 }
 
-// SetFlag 设置指定标志
+// SetFlag Settings 指定标志
 func (f ChunkFlags) SetFlag(flag ChunkFlags) ChunkFlags {
 	return f | flag
 }

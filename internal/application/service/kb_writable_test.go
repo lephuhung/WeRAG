@@ -8,17 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writableShareLookup mimics CheckTenantKBPermission: editor shares are capped
-// at viewer for a tenant Viewer caller.
-type writableShareLookup map[string]types.OrgMemberRole
+// writableGrantLookup mimics ApprovedKBPermission: it reports the stored
+// grant permission for foreign KBs. Tenant access grants never make a KB
+// writable — even an editor grant — so the permission value is irrelevant
+// to writability; it only exercises that the lookup result is ignored for
+// writes.
+type writableGrantLookup map[string]types.KBPermission
 
-func (l writableShareLookup) CheckTenantKBPermission(
-	_ context.Context, kbID string, _ uint64, role types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
+func (l writableGrantLookup) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (l writableGrantLookup) ApprovedKBPermission(
+	_ context.Context, kbID string, _ uint64,
+) (types.KBPermission, bool, error) {
 	permission, ok := l[kbID]
-	if ok && role == types.TenantRoleViewer {
-		permission = types.OrgRoleViewer
-	}
 	return permission, ok, nil
 }
 
@@ -29,36 +33,27 @@ func TestKBWritableIDs(t *testing.T) {
 		{KnowledgeBaseID: "shared-viewer", TenantID: 7},
 		{KnowledgeBaseID: "agent-scope", TenantID: 7},
 	}
-	shares := writableShareLookup{"shared-editor": types.OrgRoleEditor, "shared-viewer": types.OrgRoleViewer}
+	grants := writableGrantLookup{"shared-editor": types.KBPermissionEditor, "shared-viewer": types.KBPermissionViewer}
 	caller := func(role types.TenantRole, userID string) context.Context {
 		return types.WithCaller(context.Background(), types.Caller{TenantID: 42, UserID: userID, Role: role})
 	}
 	apiKey := func(scope types.TenantAPIKeyScope) context.Context {
-		return types.WithTenantAPIKeyScope(caller(types.TenantRoleViewer, "system-42"), scope)
+		return types.WithTenantAPIKeyScope(caller(types.TenantRoleMember, "system-42"), scope)
 	}
 
-	require.Equal(t, []string{"own", "shared-editor"},
-		kbWritableIDs(caller(types.TenantRoleContributor, "u"), shares, targets, true))
-	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleContributor, ""), shares, targets, true),
-		"callers without a user do not expand through org shares")
+	// Members upload into their own tenant's KBs; foreign KBs stay read-only
+	// even when a grant exists — grants carry viewer semantics only.
+	require.Equal(t, []string{"own"},
+		kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, true))
+	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, ""), grants, targets, true),
+		"callers without a user do not expand through tenant grants")
 
-	// A tenant Viewer (also the IM / embed / MCP endpoint principals) is
-	// read-only, like on the HTTP write routes; with RBAC enforcement off the
-	// role check only logs, but a share never grants a Viewer more than read.
-	require.Empty(t, kbWritableIDs(caller(types.TenantRoleViewer, "u"), shares, targets, true))
-	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleViewer, "u"), shares, targets, false))
+	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, true))
+	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, false))
 
 	// Scoped API keys write only with the ingest capability.
 	chatOnly := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityChat)}}
-	require.Empty(t, kbWritableIDs(apiKey(chatOnly), shares, targets, true))
+	require.Empty(t, kbWritableIDs(apiKey(chatOnly), grants, targets, true))
 	ingest := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityIngest)}}
-	require.Equal(t, []string{"own"}, kbWritableIDs(apiKey(ingest), shares, targets, true))
-}
-
-func (s writableShareLookup) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s writableShareLookup) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
+	require.Equal(t, []string{"own"}, kbWritableIDs(apiKey(ingest), grants, targets, true))
 }

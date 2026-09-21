@@ -56,13 +56,13 @@ type createInviteLinkRequest struct {
 
 // CreateInviteLink godoc
 // @Summary      生成共享邀请链接
-// @Description  生成一条多次使用的共享邀请链接：谁拿到链接谁就能注册并加入当前空间。
+// @Description  生成一条多次使用的共享邀请链接：谁拿到链接谁就能注册并加入当前Tenant workspace。
 // @Description  链接持续有效，直到过期或被撤销。
-// @Tags         空间邀请
+// @Tags         Tenant workspace邀请
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                   true  "空间 ID"
-// @Param        request  body  createInviteLinkRequest  true  "共享链接配置"
+// @Param        id       path  string                   true  "Tenant workspace ID"
+// @Param        request  body  createInviteLinkRequest  true  "共享链接Configuration "
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/invite-links [post]
@@ -78,7 +78,7 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 		return
 	}
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 		invitedBy = &caller
 	}
 
-	inv, _, err := h.invitationService.CreateShareLink(ctx, tenantID, 0, req.Role, invitedBy, req.Message)
+	inv, _, err := h.invitationService.CreateShareLink(ctx, tenantID, req.Role, invitedBy, req.Message)
 	if err != nil {
 		if errors.Is(err, service.ErrAPIKeyCannotAssignOwner) {
 			c.Error(apperrors.NewForbiddenError(err.Error()))

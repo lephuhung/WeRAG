@@ -20,25 +20,25 @@ func RegisterModelRoutes(
 	credHandler *handler.ModelCredentialsHandler,
 	g *rbacGuards,
 ) {
-	// 模型路由组。读路径：空间级基础设施，manage_models / full-access key 可读；
+	// 模型路由组。读路径：Tenant workspace级基础设施，manage_models / full-access key 可读；
 	// 写路径：platform key + system_models_manage capability（见下方 With()）。
 	models := g.apiKeyGroup(r.Group("/models"), apiKeyManageModels(apiKeyFullAccess()))
 	// 平台级写策略：仅 platform API key 且显式持有 system_models_manage。
 	modelWrites := models.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage))
 	{
-		// 获取模型厂商列表 — Viewer+
-		models.GET("/providers", g.Viewer(), handler.ListModelProviders)
-		// 创建模型 — SystemAdmin
+		// 获取模型厂商List  — Viewer+
+		models.GET("/providers", g.Member(), handler.ListModelProviders)
+		// Create 模型 — SystemAdmin
 		modelWrites.POST("", g.SystemAdmin(), handler.CreateModel)
-		// 获取模型列表 — Viewer+
-		models.GET("", g.Viewer(), handler.ListModels)
+		// 获取模型List  — Viewer+
+		models.GET("", g.Member(), handler.ListModels)
 		// 调试已保存模型会发起真实上游调用并产生费用 — SystemAdmin
 		modelWrites.POST("/:id/debug", g.SystemAdmin(), handler.DebugModel)
 		// 获取单个模型 — Viewer+
-		models.GET("/:id", g.Viewer(), handler.GetModel)
-		// 更新模型 — SystemAdmin（含 tenant-owned 与 builtin）。
+		models.GET("/:id", g.Member(), handler.GetModel)
+		// Update 模型 — SystemAdmin（含 tenant-owned 与 builtin）。
 		modelWrites.PUT("/:id", g.SystemAdmin(), handler.UpdateModel)
-		// 删除模型 — SystemAdmin
+		// Delete 模型 — SystemAdmin
 		modelWrites.DELETE("/:id", g.SystemAdmin(), handler.DeleteModel)
 		// Per-field credential subresource (see internal/handler/model_credentials.go) — SystemAdmin
 		modelWrites.PUT("/:id/credentials", g.SystemAdmin(), credHandler.Put)
@@ -57,11 +57,11 @@ func RegisterSandboxConfigRoutes(
 ) {
 	configs := g.apiKeyGroup(r.Group("/sandbox-configs"), apiKeyFullAccess())
 	{
-		configs.GET("", g.Viewer(), h.List)
+		configs.GET("", g.Member(), h.List)
 		configs.PUT("/workspace-policy", g.Admin(), h.SetWorkspacePolicy)
 		configs.POST("/templates/query", g.Admin(), h.QueryTemplates)
 		configs.POST("", g.Admin(), h.Create)
-		configs.GET("/:id", g.Viewer(), h.Get)
+		configs.GET("/:id", g.Member(), h.Get)
 		configs.PUT("/:id", g.Admin(), h.Update)
 		configs.DELETE("/:id", g.Admin(), h.Delete)
 		configs.GET("/:id/sandboxes", g.Admin(), h.Inventory)
@@ -92,16 +92,16 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 	evaluationRoutes := g.apiKeyGroup(r.Group("/evaluation"), apiKeyRunEvaluations(apiKeyFullAccess()))
 	{
 		evaluationRoutes.POST("", g.Admin(), handler.Evaluation)
-		evaluationRoutes.GET("", g.Viewer(), handler.GetEvaluationResult)
+		evaluationRoutes.GET("", g.Member(), handler.GetEvaluationResult)
 	}
 }
 
 func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler, g *rbacGuards) {
-	// 初始化接口
+	// Initialization 接口
 	// GetCurrentConfigByKB 是只读，Viewer+ 即可（KB 受限 key 可读其范围内的 KB）。
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/config/:kbId",
-		apiKeyRetrieve(apiKeyFullAccess()), g.Viewer(), g.KBAccessRead("kbId"), handler.GetCurrentConfigByKB)
-	// InitializeByKB / UpdateKBConfig 都是改 KB 的核心模型/storage 配置 —
+		apiKeyRetrieve(apiKeyFullAccess()), g.Member(), g.KBAccessRead("kbId"), handler.GetCurrentConfigByKB)
+	// InitializeByKB / UpdateKBConfig 都是改 KB 的核心模型/storage Configuration  —
 	// 跟 PUT /knowledge-bases/:id 同等敏感，挂同款 OwnedKB 矩阵 + KBAccessWrite
 	//（API-key 主体短路 Owned* 守卫，KB allow-list 只能靠 KBAccess 兜底）。
 	g.apiKeyRoute(r, http.MethodPost, "/initialization/initialize/:kbId",
@@ -158,9 +158,9 @@ func RegisterMCPServiceRoutes(
 		// Create MCP service — Admin+
 		mcpServices.POST("", g.Admin(), handler.CreateMCPService)
 		// List MCP services — Viewer+
-		mcpServices.GET("", g.Viewer(), handler.ListMCPServices)
+		mcpServices.GET("", g.Member(), handler.ListMCPServices)
 		// Get MCP service by ID — Viewer+
-		mcpServices.GET("/:id", g.Viewer(), handler.GetMCPService)
+		mcpServices.GET("/:id", g.Member(), handler.GetMCPService)
 		// Update MCP service — Admin+
 		mcpServices.PUT("/:id", g.Admin(), handler.UpdateMCPService)
 		// Delete MCP service — Admin+
@@ -168,28 +168,28 @@ func RegisterMCPServiceRoutes(
 		// Test MCP service connection — Admin+ (probes external infra)
 		mcpServices.POST("/:id/test", g.Admin(), handler.TestMCPService)
 		// Get MCP service tools — Viewer+
-		mcpServices.GET("/:id/tools", g.Viewer(), handler.GetMCPServiceTools)
-		mcpServices.GET("/:id/metadata", g.Viewer(), handler.GetMCPMetadata)
+		mcpServices.GET("/:id/tools", g.Member(), handler.GetMCPServiceTools)
+		mcpServices.GET("/:id/metadata", g.Member(), handler.GetMCPMetadata)
 		// Refresh writes a principal-scoped OAuth snapshot for the caller
 		// (Viewer+), or a tenant-wide snapshot for static auth (Admin+ in the
 		// handler). GET /tools remains Viewer+ and does not persist.
-		mcpServices.POST("/:id/metadata/refresh", g.Viewer(), handler.RefreshMCPMetadata)
+		mcpServices.POST("/:id/metadata/refresh", g.Member(), handler.RefreshMCPMetadata)
 		mcpServices.POST("/:id/usage-instructions/generate", g.Admin(), handler.GenerateMCPUsageInstructions)
 		// Get MCP service resources — Viewer+
-		mcpServices.GET("/:id/resources", g.Viewer(), handler.GetMCPServiceResources)
+		mcpServices.GET("/:id/resources", g.Member(), handler.GetMCPServiceResources)
 		// Per-field credential subresource: secrets never travel via the main
 		// PUT body. See internal/handler/mcp_credentials.go for the contract. — Admin+
 		mcpServices.PUT("/:id/credentials", g.Admin(), credHandler.Put)
 		mcpServices.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
 		// MCP tool human approval (issue #1173) — Viewer+ to read, Admin+ to set policy
-		mcpServices.GET("/:id/tool-approvals", g.Viewer(), handler.ListMCPToolApprovals)
+		mcpServices.GET("/:id/tool-approvals", g.Member(), handler.ListMCPToolApprovals)
 		mcpServices.PUT("/:id/tool-approvals/:tool_name", g.Admin(), handler.SetMCPToolApproval)
 		// Per-user OAuth authorization flow. Viewer+ may authorize/inspect/
 		// revoke their own token; the callback is the separate public route
 		// registered above.
-		mcpServices.POST("/:id/oauth/authorize-url", g.Viewer(), oauthHandler.AuthorizeURL)
-		mcpServices.GET("/:id/oauth/status", g.Viewer(), oauthHandler.Status)
-		mcpServices.DELETE("/:id/oauth/token", g.Viewer(), oauthHandler.Revoke)
+		mcpServices.POST("/:id/oauth/authorize-url", g.Member(), oauthHandler.AuthorizeURL)
+		mcpServices.GET("/:id/oauth/status", g.Member(), oauthHandler.Status)
+		mcpServices.DELETE("/:id/oauth/token", g.Member(), oauthHandler.Revoke)
 	}
 
 	// /agent tool-approval + OAuth resolution are interactive human flows;
@@ -201,11 +201,11 @@ func RegisterMCPServiceRoutes(
 		// caller initiated — restricting it to Admin+ blocks the only
 		// people who actually have context to approve, so the gate is
 		// kept at "anyone in the tenant" instead.
-		agentTool.POST("/tool-approvals/:pending_id", g.Viewer(), handler.ResolveToolApproval)
+		agentTool.POST("/tool-approvals/:pending_id", g.Member(), handler.ResolveToolApproval)
 		// Resume an agent run paused on an in-conversation MCP OAuth prompt.
 		// Same tenant-member (Viewer+) gating rationale as tool-approvals.
-		agentTool.POST("/mcp-oauth-resolutions/:pending_id", g.Viewer(), oauthHandler.ResolveMCPOAuth)
-		agentTool.POST("/mcp-oauth-resolutions/:pending_id/cancel", g.Viewer(), oauthHandler.CancelMCPOAuth)
+		agentTool.POST("/mcp-oauth-resolutions/:pending_id", g.Member(), oauthHandler.ResolveMCPOAuth)
+		agentTool.POST("/mcp-oauth-resolutions/:pending_id/cancel", g.Member(), oauthHandler.CancelMCPOAuth)
 	}
 }
 
@@ -214,7 +214,7 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 	// Web search providers — Viewer+ (read-only listing of provider catalog).
 	webSearch := r.Group("/web-search")
 	{
-		webSearch.GET("/providers", g.Viewer(), webSearchHandler.GetProviders)
+		webSearch.GET("/providers", g.Member(), webSearchHandler.GetProviders)
 	}
 }
 
@@ -234,13 +234,13 @@ func RegisterWebSearchProviderRoutes(
 	providers := g.apiKeyGroup(r.Group("/web-search-providers"), apiKeyManageWebSearch(apiKeyFullAccess()))
 	{
 		// List available provider types (metadata for UI forms) — Viewer+
-		providers.GET("/types", g.Viewer(), h.ListProviderTypes)
+		providers.GET("/types", g.Member(), h.ListProviderTypes)
 		// Test with raw credentials (no persistence) — Admin+
 		providers.POST("/test", g.Admin(), h.TestProviderRaw)
 		// CRUD
 		providers.POST("", g.Admin(), h.CreateProvider)
-		providers.GET("", g.Viewer(), h.ListProviders)
-		providers.GET("/:id", g.Viewer(), h.GetProvider)
+		providers.GET("", g.Member(), h.ListProviders)
+		providers.GET("/:id", g.Member(), h.GetProvider)
 		providers.PUT("/:id", g.Admin(), h.UpdateProvider)
 		providers.DELETE("/:id", g.Admin(), h.DeleteProvider)
 		// Per-field credential subresource — Admin+
@@ -260,13 +260,13 @@ func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler
 	stores := g.apiKeyGroup(r.Group("/vector-stores"), apiKeyManageVectorStores(apiKeyFullAccess()))
 	{
 		// List available engine types (metadata for UI forms) — Viewer+
-		stores.GET("/types", g.Viewer(), h.ListStoreTypes)
+		stores.GET("/types", g.Member(), h.ListStoreTypes)
 		// Test with raw credentials (no persistence) — Admin+
 		stores.POST("/test", g.Admin(), h.TestStoreRaw)
 		// CRUD
 		stores.POST("", g.Admin(), h.CreateStore)
-		stores.GET("", g.Viewer(), h.ListStores)
-		stores.GET("/:id", g.Viewer(), h.GetStore)
+		stores.GET("", g.Member(), h.ListStores)
+		stores.GET("/:id", g.Member(), h.GetStore)
 		stores.PUT("/:id", g.Admin(), h.UpdateStore)
 		stores.DELETE("/:id", g.Admin(), h.DeleteStore)
 		// Test existing saved or env store — Admin+
@@ -278,11 +278,11 @@ func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler
 func RegisterStorageBackendRoutes(r *gin.RouterGroup, h *handler.StorageBackendHandler, g *rbacGuards) {
 	backends := g.apiKeyGroup(r.Group("/storage-backends"), apiKeyManageStorageBackends(apiKeyFullAccess()))
 	{
-		backends.GET("/types", g.Viewer(), h.Types)
+		backends.GET("/types", g.Member(), h.Types)
 		backends.POST("/test", g.Admin(), h.TestRaw)
 		backends.POST("", g.Admin(), h.Create)
-		backends.GET("", g.Viewer(), h.List)
-		backends.GET("/:id", g.Viewer(), h.Get)
+		backends.GET("", g.Member(), h.List)
+		backends.GET("/:id", g.Member(), h.Get)
 		backends.PUT("/:id", g.Admin(), h.Update)
 		backends.DELETE("/:id", g.Admin(), h.Delete)
 		backends.POST("/:id/test", g.Admin(), h.TestByID)
@@ -306,15 +306,15 @@ func RegisterDataSourceRoutes(
 	ds := g.apiKeyGroup(r.Group("/datasource"), apiKeyManageDataSources(apiKeyFullAccess()))
 	{
 		// Get available connector types — Viewer+
-		ds.GET("/types", g.Viewer(), handler.GetAvailableConnectors)
+		ds.GET("/types", g.Member(), handler.GetAvailableConnectors)
 
 		// Validate credentials without persistence (for "Test Connection" button) — Admin+
 		ds.POST("/validate-credentials", g.Admin(), handler.ValidateCredentials)
 
 		// CRUD operations
 		ds.POST("", g.Admin(), handler.CreateDataSource)
-		ds.GET("", g.Viewer(), handler.ListDataSources)
-		ds.GET("/:id", g.Viewer(), handler.GetDataSource)
+		ds.GET("", g.Member(), handler.ListDataSources)
+		ds.GET("/:id", g.Member(), handler.GetDataSource)
 		ds.PUT("/:id", g.Admin(), handler.UpdateDataSource)
 		ds.DELETE("/:id", g.Admin(), handler.DeleteDataSource)
 
@@ -335,17 +335,17 @@ func RegisterDataSourceRoutes(
 		ds.POST("/:id/resume", g.Admin(), handler.ResumeDataSource)
 
 		// Sync logs — Viewer+ (read-only audit trail)
-		ds.GET("/:id/logs", g.Viewer(), handler.GetSyncLogs)
-		ds.GET("/logs/:log_id", g.Viewer(), handler.GetSyncLog)
+		ds.GET("/:id/logs", g.Member(), handler.GetSyncLogs)
+		ds.GET("/logs/:log_id", g.Member(), handler.GetSyncLog)
 	}
 }
 
-// RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud 初始化路由
+// RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud Initialization 路由
 // RegisterWeKnoraCloudRoutes registers the WeKnoraCloud credential
 // management endpoints. SaveCredentials persists external SaaS model
 // credentials — platform-owned, SystemAdmin-only like /models writes.
 // Status is a low-risk readiness probe (Viewer+).
 func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraCloudHandler, g *rbacGuards) {
 	g.apiKeyRoute(r, http.MethodPost, "/weknoracloud/credentials", apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage), g.SystemAdmin(), handler.SaveCredentials)
-	g.apiKeyRoute(r, http.MethodGet, "/models/weknoracloud/status", apiKeyManageModels(apiKeyFullAccess()), g.Viewer(), handler.Status)
+	g.apiKeyRoute(r, http.MethodGet, "/models/weknoracloud/status", apiKeyManageModels(apiKeyFullAccess()), g.Member(), handler.Status)
 }

@@ -41,7 +41,7 @@ func (p *SiliconFlowProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证硅基流动 provider 配置
+// ValidateConfig 验证硅基流动 provider Configuration
 func (p *SiliconFlowProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for SiliconFlow provider")

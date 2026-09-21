@@ -75,8 +75,8 @@ func (h *MessageHandler) resolveResourceRewriter(c *gin.Context) (*storageurl.Re
 // @Param        limit          query     int     false  "返回数量"  default(20)
 // @Param        before_time    query     string  false  "在此时间之前的消息（RFC3339Nano格式）"
 // @Param        resource_urls  query     string  false  "文件引用形式，public 返回可加载直链"  Enums(handle, public)  default(handle)
-// @Success      200            {object}  map[string]interface{}  "消息列表"
-// @Failure      400          {object}  errors.AppError         "请求参数错误"
+// @Success      200            {object}  map[string]interface{}  "消息List "
+// @Failure      400          {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /messages/{session_id}/load [get]
@@ -178,14 +178,14 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 }
 
 // DeleteMessage godoc
-// @Summary      删除消息
-// @Description  从会话中删除指定消息
+// @Summary      Delete 消息
+// @Description  从会话中Delete 指定消息
 // @Tags         消息
 // @Accept       json
 // @Produce      json
 // @Param        session_id  path      string  true  "会话ID"
 // @Param        id          path      string  true  "消息ID"
-// @Success      200         {object}  map[string]interface{}  "删除成功"
+// @Success      200         {object}  map[string]interface{}  "Delete 成功"
 // @Failure      500         {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -240,7 +240,7 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 // @Produce      json
 // @Param        request  body      SearchMessagesRequest  true  "搜索请求"
 // @Success      200      {object}  map[string]interface{}  "搜索结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /messages/search [post]
@@ -299,8 +299,8 @@ type SearchMessagesRequest struct {
 }
 
 // GetChatHistoryKBStats godoc
-// @Summary      获取聊天历史知识库统计
-// @Description  获取聊天历史知识库的统计信息（已索引消息数、知识库大小等）
+// @Summary      获取聊天历史Knowledge Base统计
+// @Description  获取聊天历史Knowledge Base的统计信息（已索引消息数、Knowledge Base大小等）
 // @Tags         消息
 // @Accept       json
 // @Produce      json

@@ -310,7 +310,7 @@ type ParserEngineConfig struct {
 	MinerUEndpoint        string             `json:"mineru_endpoint"` // MinerU 自建服务端点
 	MinerUAPIKey          string             `json:"mineru_api_key"`  // MinerU 云 API Key
 
-	// MinerU 自建解析参数
+	// MinerU 自建解析Parameters
 	MinerUModel         string `json:"mineru_model,omitempty"`          // backend: pipeline, vlm-*, hybrid-*
 	MinerUVLMServerURL  string `json:"mineru_vlm_server_url,omitempty"` // vLLM 服务器地址 (vlm-http-client / hybrid-http-client)
 	MinerUEnableFormula *bool  `json:"mineru_enable_formula,omitempty"`
@@ -321,7 +321,7 @@ type ParserEngineConfig struct {
 	MinerUEnableOCR *bool  `json:"mineru_enable_ocr,omitempty"`
 	MinerULanguage  string `json:"mineru_language,omitempty"`
 
-	// MinerU 云 API 解析参数
+	// MinerU 云 API 解析Parameters
 	MinerUCloudModel         string `json:"mineru_cloud_model,omitempty"` // model_version: pipeline, vlm, MinerU-HTML
 	MinerUCloudEnableFormula *bool  `json:"mineru_cloud_enable_formula,omitempty"`
 	MinerUCloudEnableTable   *bool  `json:"mineru_cloud_enable_table,omitempty"`
@@ -651,7 +651,7 @@ type TenantSandboxConfig struct {
 	// SandboxType is cube, e2b, or docker; disabled is the hidden policy row.
 	SandboxType string `json:"sandbox_type,omitempty"`
 
-	// ── 通用配置（跨后端生效）──────────────────────────────────
+	// ── 通用Configuration （跨后端生效）──────────────────────────────────
 
 	// DefaultTimeoutSec is the per-execution timeout in seconds. 0 uses the
 	// program's built-in default.
@@ -708,7 +708,7 @@ type TenantSandboxConfig struct {
 	// outbound egress allowed, inbound public access closed.
 	Network *SandboxNetworkPolicy `json:"network,omitempty"`
 
-	// ── 后端专属配置（同一时刻只有一个生效，由 SandboxType 决定）───
+	// ── 后端专属Configuration （同一时刻只有一个生效，由 SandboxType 决定）───
 
 	Cube   *CubeSandboxConfig   `json:"cube,omitempty"`
 	E2B    *E2BSandboxConfig    `json:"e2b,omitempty"`

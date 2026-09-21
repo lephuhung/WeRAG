@@ -320,7 +320,7 @@ func createWeaviateEngine(store types.VectorStore) (interfaces.RetrieveEngineSer
 	return retriever.NewKVHybridRetrieveEngine(repo, types.WeaviateRetrieverEngineType), nil
 }
 
-// createDorisEngine 创建 Apache Doris 检索引擎服务。
+// createDorisEngine Create  Apache Doris 检索引擎服务。
 //
 // Doris 同时使用两个端口：
 //   - MySQL 协议（默认 9030）走 database/sql 做主链路读写；

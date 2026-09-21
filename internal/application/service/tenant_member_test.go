@@ -347,7 +347,7 @@ func TestTenantMemberService_RemoveMember_ClearsStaleHomeAndRevokesTokens(t *tes
 	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
-	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleContributor, nil); err != nil {
+	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleMember, nil); err != nil {
 		t.Fatalf("seed contributor: %v", err)
 	}
 	if err := svc.RemoveMember(ctx, "contrib", 7); err != nil {
@@ -384,7 +384,7 @@ func TestTenantMemberService_RemoveMember_RevokesTokensEvenWhenHomeUnchanged(t *
 	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
-	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleContributor, nil); err != nil {
+	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleMember, nil); err != nil {
 		t.Fatalf("seed contributor: %v", err)
 	}
 	if err := svc.RemoveMember(ctx, "contrib", 7); err != nil {
@@ -427,10 +427,10 @@ func TestTenantMemberService_AddMember_APIKeyCannotAssignOwner(t *testing.T) {
 func TestTenantMemberService_AddMember_RejectsDuplicate(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleContributor, nil); err != nil {
+	if _, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleMember, nil); err != nil {
 		t.Fatalf("first AddMember: %v", err)
 	}
-	_, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleContributor, nil)
+	_, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleMember, nil)
 	if !errors.Is(err, ErrMembershipAlreadyExists) {
 		t.Fatalf("want ErrMembershipAlreadyExists, got %v", err)
 	}
@@ -445,7 +445,7 @@ func TestTenantMemberService_AddMember_MapsDuplicateKeyRace(t *testing.T) {
 	svc, repo := newServiceWithRepo()
 	repo.failCreate = errors.New(
 		"ERROR: duplicate key value violates unique constraint \"idx_tenant_members_user_tenant_unique\"")
-	_, err := svc.AddMember(context.Background(), "u_race", 1, types.TenantRoleContributor, nil)
+	_, err := svc.AddMember(context.Background(), "u_race", 1, types.TenantRoleMember, nil)
 	if !errors.Is(err, ErrMembershipAlreadyExists) {
 		t.Fatalf("want ErrMembershipAlreadyExists on duplicate-key race, got %v", err)
 	}
@@ -567,7 +567,7 @@ func TestTenantMemberService_RemoveMember_AllowsContributorRemoval(t *testing.T)
 	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
-	if _, err := svc.AddMember(ctx, "contrib", 1, types.TenantRoleContributor, nil); err != nil {
+	if _, err := svc.AddMember(ctx, "contrib", 1, types.TenantRoleMember, nil); err != nil {
 		t.Fatalf("seed contributor: %v", err)
 	}
 	if err := svc.RemoveMember(ctx, "contrib", 1); err != nil {
@@ -602,10 +602,10 @@ func TestTenantMemberService_UpdateRole_AtomicDemoteRejectsSecondLastOwner(t *te
 			Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive,
 		})
 	}
-	if err := svc.UpdateRole(ctx, "a", tenantID, types.TenantRoleViewer); err != nil {
+	if err := svc.UpdateRole(ctx, "a", tenantID, types.TenantRoleMember); err != nil {
 		t.Fatalf("first demote should succeed, got %v", err)
 	}
-	if err := svc.UpdateRole(ctx, "b", tenantID, types.TenantRoleViewer); !errors.Is(err, ErrLastOwner) {
+	if err := svc.UpdateRole(ctx, "b", tenantID, types.TenantRoleMember); !errors.Is(err, ErrLastOwner) {
 		t.Fatalf("second demote must hit ErrLastOwner, got %v", err)
 	}
 }
@@ -636,9 +636,9 @@ func TestTenantRole_HasPermission(t *testing.T) {
 	}{
 		{types.TenantRoleOwner, types.TenantRoleAdmin, true},
 		{types.TenantRoleAdmin, types.TenantRoleOwner, false},
-		{types.TenantRoleContributor, types.TenantRoleViewer, true},
-		{types.TenantRoleViewer, types.TenantRoleContributor, false},
-		{types.TenantRole("bogus"), types.TenantRoleViewer, false},
+		{types.TenantRoleMember, types.TenantRoleMember, true},
+		{types.TenantRoleMember, types.TenantRoleAdmin, false},
+		{types.TenantRole("bogus"), types.TenantRoleMember, false},
 	}
 	for _, c := range cases {
 		if got := c.caller.HasPermission(c.required); got != c.want {

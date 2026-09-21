@@ -70,7 +70,7 @@ func MCPEndpointAuth(svc interfaces.MCPEndpointService, tenantSvc interfaces.Ten
 			Principal:   types.MCPEndpointPrincipal(ep.TenantID, ep.ID),
 			TenantID:    ep.TenantID,
 			Tenant:      tenant,
-			Role:        types.TenantRoleViewer,
+			Role:        types.TenantRoleMember,
 			APIKeyScope: &scope,
 			Extra:       map[types.ContextKey]any{types.MCPEndpointContextKey: ep},
 		})

@@ -263,7 +263,7 @@ type FeishuCursor struct {
 // Added by feat/datasource-feishu-drive. These are independent of the wiki
 // types above and do not affect the wiki connector.
 
-// DriveFile represents a file/folder in Feishu Drive (云空间). Returned by
+// DriveFile represents a file/folder in Feishu Drive (云Tenant workspace). Returned by
 // GET /open-apis/drive/v1/files?folder_token=xxx. The list API returns
 // modified_time directly (verified), so no batch_query/metas call is needed for
 // incremental detection - see ADR-0002.
@@ -274,7 +274,7 @@ type DriveFile struct {
 	ParentToken  string `json:"parent_token"`
 	URL          string `json:"url"`
 	CreatedTime  string `json:"created_time"`  // unix seconds string
-	ModifiedTime string `json:"modified_time"` // unix seconds string - 等价知识库 obj_edit_time
+	ModifiedTime string `json:"modified_time"` // unix seconds string - 等价Knowledge Base obj_edit_time
 	OwnerID      string `json:"owner_id"`
 	// ShortcutInfo is populated only for type=="shortcut". target_type can only
 	// be doc/sheet/mindnote/bitable/file/docx (Feishu does not allow shortcuts to

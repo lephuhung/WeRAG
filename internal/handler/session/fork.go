@@ -43,7 +43,7 @@ type ForkSessionRequest struct {
 // @Param        session_id  path      string              true  "源会话 ID"
 // @Param        request     body      ForkSessionRequest  true  "分叉请求"
 // @Success      200         {object}  map[string]interface{}  "新会话"
-// @Failure      400         {object}  errors.AppError         "请求参数错误 / 分叉点角色不支持"
+// @Failure      400         {object}  errors.AppError         "请求Parameters 错误 / 分叉点角色不支持"
 // @Failure      404         {object}  errors.AppError         "会话或消息不存在"
 // @Failure      409         {object}  errors.AppError         "源会话正在生成中"
 // @Security     Bearer

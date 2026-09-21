@@ -452,9 +452,9 @@ func mentionedItemsToRaw(items types.MentionedItems) []interface{} {
 // @Param        session_id  path  string  true  "会话 ID"
 // @Param        request     body  SteerMessageRequest  true  "追加消息"
 // @Success      200  {object}  map[string]interface{}  "queued | new_run"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404  {object}  errors.AppError         "会话不存在"
-// @Failure      503  {object}  errors.AppError         "活 turn 查询失败，可重试"
+// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/steer [post]
@@ -607,7 +607,7 @@ func (h *Handler) SteerMessage(c *gin.Context) {
 // @Success      200  {object}  map[string]interface{}  "queued | new_run"
 // @Failure      400  {object}  errors.AppError
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn 查询失败，可重试"
+// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/steer/{steer_id}/inject [post]
@@ -680,13 +680,13 @@ func (h *Handler) PromoteSteerMessage(c *gin.Context) {
 
 // ListSteerMessages godoc
 // @Summary      列出当前运行中尚未消费的排队消息
-// @Description  刷新页面后用来恢复输入框上方的队列。没有正在运行的 turn 时返回空列表。
+// @Description  刷新页面后用来恢复输入框上方的队列。没有正在运行的 turn 时返回空List 。
 // @Tags         问答
 // @Produce      json
 // @Param        id  path  string  true  "会话 ID"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn 查询失败，可重试"
+// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/steer [get]
@@ -731,15 +731,15 @@ func (h *Handler) ListSteerMessages(c *gin.Context) {
 }
 
 // DeleteSteerMessage godoc
-// @Summary      删除一条排队中的消息
-// @Description  从当前运行的排队列表里去掉一条，不再注入也不再作为 follow-up 发出。
+// @Summary      Delete 一条排队中的消息
+// @Description  从当前运行的排队List 里去掉一条，不再注入也不再作为 follow-up 发出。
 // @Tags         问答
 // @Produce      json
 // @Param        id        path  string  true  "会话 ID"
 // @Param        steer_id  path  string  true  "排队消息 ID"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn 查询失败，可重试"
+// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/steer/{steer_id} [delete]

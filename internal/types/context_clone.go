@@ -25,16 +25,15 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// principal in the same workspace, so all of this has to survive; a
 	// detached goroutine that loses its tenant reads another tenant's rows or
 	// none at all.
-	TenantIDContextKey:         true,
-	CallerContextKey:           true,
-	KBGrantsContextKey:         true,
-	KBTransferContextKey:       true,
-	SharedAgentGrantContextKey: true,
-	TenantInfoContextKey:       true,
-	UserContextKey:             true,
-	UserIDContextKey:           true,
-	PrincipalContextKey:        true,
-	SystemAdminContextKey:      true,
+	TenantIDContextKey:    true,
+	CallerContextKey:      true,
+	KBGrantsContextKey:    true,
+	KBTransferContextKey:  true,
+	TenantInfoContextKey:  true,
+	UserContextKey:        true,
+	UserIDContextKey:      true,
+	PrincipalContextKey:   true,
+	SystemAdminContextKey: true,
 	// TenantRoleContextKey: the caller's resolved role in the active tenant
 	// (PR 2 #1303). Must survive for the same reason as TenantIDContextKey —
 	// any handler that does `ctx := logger.CloneContext(c.Request.Context())`
@@ -50,7 +49,7 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 
 	// Session scope. SessionTenantID re-scopes session/message lookups, while
 	// SandboxTenantID keys the session→sandbox binding to the session owner
-	// even when a shared agent borrowed another tenant. Dropping the latter
+	// even when an agent run borrowed another tenant. Dropping the latter
 	// would silently re-key every binding onto the borrowed tenant, because
 	// setupSSEStream builds its async context through CloneContext, and
 	// abandon a paused MicroVM that keeps billing.

@@ -33,7 +33,7 @@ func IsWeKnoraCloudDocReaderAddr(addr string) bool {
 	return strings.TrimSuffix(strings.TrimSpace(addr), "/") == strings.TrimRight(provider.WeKnoraCloudBaseURL, "/")+"/api/v1/doc/reader"
 }
 
-// SaveCredentials 仅保存 APPID/APPSECRET 凭证，不自动创建模型
+// SaveCredentials 仅保存 APPID/APPSECRET 凭证，不自动Create 模型
 func (s *weKnoraCloudService) SaveCredentials(ctx context.Context, appID, appSecret string) error {
 	if appID == "" {
 		return fmt.Errorf("app_id is required")
@@ -118,7 +118,7 @@ func (s *weKnoraCloudService) CheckStatus(ctx context.Context) (*types.WeKnoraCl
 	return &types.WeKnoraCloudStatusResult{HasModels: true, NeedsReinit: false}, nil
 }
 
-// updateTenantCredentials 更新空间的 WeKnoraCloud 凭证
+// updateTenantCredentials Update Tenant workspace的 WeKnoraCloud 凭证
 func (s *weKnoraCloudService) updateTenantCredentials(ctx context.Context, tenantID uint64, appID, appSecret string) error {
 	if s.tenantRepo == nil {
 		return fmt.Errorf("tenant repository is required")

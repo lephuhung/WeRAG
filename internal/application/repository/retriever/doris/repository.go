@@ -18,10 +18,10 @@ const (
 	envDorisTablePrefix  = "DORIS_TABLE_PREFIX"
 )
 
-// NewDorisRetrieveEngineRepository 创建 Doris 检索引擎仓储。
+// NewDorisRetrieveEngineRepository Create  Doris 检索引擎仓储。
 //
-// 参数：
-//   - db：MySQL 协议的 *sql.DB 实例。调用方负责 SetMaxOpenConns 等参数。
+// Parameters ：
+//   - db：MySQL 协议的 *sql.DB 实例。调用方负责 SetMaxOpenConns 等Parameters 。
 //   - feHTTPBase：Stream Load 用的 FE HTTP 基地址（含 scheme），例如 "http://doris-fe:8030"。
 //   - username/password：MySQL 与 Stream Load 共用的凭据。
 //   - database：目标数据库名（既用于 MySQL DSN，也用于 Stream Load URL 路径）。
@@ -68,7 +68,7 @@ func (r *dorisRepository) Support() []types.RetrieverType {
 	return []types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType}
 }
 
-// EstimateStorageSize 估算给定 IndexInfo 列表的存储字节数。
+// EstimateStorageSize 估算给定 IndexInfo List 的存储字节数。
 //
 // 参考 Qdrant 的算法：payload 字段长度 + 向量字节 + HNSW 邻居 + 元数据。
 func (r *dorisRepository) EstimateStorageSize(_ context.Context,
@@ -231,21 +231,21 @@ func dedupeRowsByID(rows []*DorisVectorEmbedding) []*DorisVectorEmbedding {
 	return out
 }
 
-// DeleteByChunkIDList 用 chunk_id 列删除。dimension 用于定位具体表。
+// DeleteByChunkIDList 用 chunk_id 列Delete 。dimension 用于定位具体表。
 func (r *dorisRepository) DeleteByChunkIDList(ctx context.Context,
 	chunkIDList []string, dimension int, _ string,
 ) error {
 	return r.deleteByField(ctx, fieldChunkID, chunkIDList, dimension)
 }
 
-// DeleteByKnowledgeIDList 用 knowledge_id 列删除。
+// DeleteByKnowledgeIDList 用 knowledge_id 列Delete 。
 func (r *dorisRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int, _ string,
 ) error {
 	return r.deleteByField(ctx, fieldKnowledgeID, knowledgeIDList, dimension)
 }
 
-// DeleteBySourceIDList 用 source_id 列删除。
+// DeleteBySourceIDList 用 source_id 列Delete 。
 func (r *dorisRepository) DeleteBySourceIDList(ctx context.Context,
 	sourceIDList []string, dimension int, _ string,
 ) error {
@@ -293,7 +293,7 @@ func (r *dorisRepository) Retrieve(ctx context.Context,
 	return nil, fmt.Errorf("invalid retriever type: %v", params.RetrieverType)
 }
 
-// VectorRetrieve 对查询向量先做单位化，再调用 inner_product_approximate 做
+// VectorRetrieve 对Query 向量先做单位化，再调用 inner_product_approximate 做
 // ANN 搜索；对单位向量而言，inner product 与 cosine similarity 等价，
 // 因此 score 仍然保持“越大越相似”的语义。
 func (r *dorisRepository) VectorRetrieve(ctx context.Context,
@@ -413,7 +413,7 @@ func (r *dorisRepository) KeywordsRetrieve(ctx context.Context,
 	return buildRetrieveResult(all, types.KeywordsRetrieverType), nil
 }
 
-// CopyIndices 把源知识库的 chunk 复制到目标知识库，避免重新生成 embedding。
+// CopyIndices 把源Knowledge Base的 chunk 复制到目标Knowledge Base，避免重新生成 embedding。
 //
 // 与 Qdrant 的实现完全镜像：
 //   - 分页扫描源表
@@ -577,7 +577,7 @@ func translateSourceID(originalSourceID, sourceChunkID, targetChunkID string) st
 	}
 }
 
-// scanRetrieveRows 把 Retrieve 阶段的 rows 反序列化为 IndexWithScore 列表。
+// scanRetrieveRows 把 Retrieve 阶段的 rows 反序列化为 IndexWithScore List 。
 //
 // 分两路：
 //   - 列数 == columnsForRetrieve+1：第 N+1 列是 score（向量检索路径）
@@ -626,7 +626,7 @@ func scanRetrieveRows(rows *sql.Rows, matchType types.MatchType) ([]*types.Index
 	return out, rows.Err()
 }
 
-// scanCopyRows 反序列化 CopyIndices 的分页查询结果。
+// scanCopyRows 反序列化 CopyIndices 的分页Query 结果。
 //
 // 与 scanRetrieveRows 不同，这里需要 embedding 字段（去复制原始向量）。
 // Doris 的 ARRAY<FLOAT> 通过 mysql 协议返回的是字符串字面量 "[1,2,3]"。
@@ -664,7 +664,7 @@ func scanCopyRows(rows *sql.Rows) ([]*DorisVectorEmbedding, error) {
 	return out, rows.Err()
 }
 
-// buildRetrieveResult 把 IndexWithScore 列表包装成 RetrieveResult。
+// buildRetrieveResult 把 IndexWithScore List 包装成 RetrieveResult。
 func buildRetrieveResult(results []*types.IndexWithScore, retrieverType types.RetrieverType) []*types.RetrieveResult {
 	return []*types.RetrieveResult{{
 		Results:             results,

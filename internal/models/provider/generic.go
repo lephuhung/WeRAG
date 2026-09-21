@@ -19,7 +19,7 @@ func (p *GenericProvider) Info() ProviderInfo {
 		Name:        ProviderGeneric,
 		DisplayName: "自定义 (OpenAI兼容接口)",
 		Description: "Generic API endpoint (OpenAI-compatible)",
-		DefaultURLs: map[types.ModelType]string{}, // 需要用户自行配置填写
+		DefaultURLs: map[types.ModelType]string{}, // 需要用户自行Configuration 填写
 		ModelTypes: []types.ModelType{
 			types.ModelTypeKnowledgeQA,
 			types.ModelTypeEmbedding,
@@ -31,7 +31,7 @@ func (p *GenericProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证通用 provider 配置
+// ValidateConfig 验证通用 provider Configuration
 func (p *GenericProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for generic provider")

@@ -89,7 +89,7 @@ type CustomAgent struct {
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
 
 	// CreatorName 由 list handler 在返回前批量回填，作用同 KnowledgeBase.CreatorName：
-	// 让前端列表卡片区分「我创建」与「同空间其他成员创建」。不落库，内建 agent / 老数据
+	// 让前端List 卡片区分「我Create 」与「同Tenant workspace其他成员Create 」。不落库，内建 agent / 老数据
 	// 仍可能为空。
 	CreatorName string `yaml:"-" json:"creator_name,omitempty" gorm:"-"`
 }
@@ -585,7 +585,7 @@ type SuggestedQuestion struct {
 	Question string `json:"question"`
 	// 来源类型: "agent_config", "faq", "document", "wiki"
 	Source string `json:"source"`
-	// 来源知识库ID（仅 faq/document/wiki 来源时有值）
+	// 来源Knowledge BaseID（仅 faq/document/wiki 来源时有值）
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
 	// 来源文档ID（仅 faq/document 来源时有值）
 	KnowledgeID string `json:"knowledge_id,omitempty"`

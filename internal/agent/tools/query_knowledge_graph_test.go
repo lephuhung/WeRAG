@@ -183,6 +183,6 @@ func TestQueryKnowledgeGraph_ReportsConfiguredEntityAndRelationTypes(t *testing.
 	assert.ElementsMatch(t, []string{"属于", "审批", "管理"}, graphConfig["relations"])
 }
 
-func (s *stubKnowledgeBaseService) SetKnowledgeBaseVisibility(ctx context.Context, id string, visibility types.KBVisibility, orgID *uint64) (*types.KnowledgeBase, error) {
+func (s *stubKnowledgeBaseService) SetKnowledgeBaseVisibility(ctx context.Context, id string, visibility types.KBVisibility) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

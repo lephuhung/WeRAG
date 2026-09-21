@@ -87,11 +87,11 @@ func (r *SandboxCheckResponse) skip(name, reason string) {
 
 // CheckSandboxConfig tests a sandbox configuration without persisting it.
 // @Summary      测试沙箱连通性
-// @Description  使用当前填写的参数测试沙箱后端，不保存配置；deep=true 会执行临时脚本，远端后端还会创建并销毁一个沙箱
+// @Description  使用当前填写的Parameters 测试沙箱后端，不保存Configuration ；deep=true 会执行临时脚本，远端后端还会Create 并销毁一个沙箱
 // @Tags         系统
 // @Accept       json
 // @Produce      json
-// @Param        body  body  SandboxCheckRequest  true  "沙箱配置"
+// @Param        body  body  SandboxCheckRequest  true  "沙箱Configuration "
 // @Success      200   {object}  SandboxCheckResponse
 // @Router       /system/sandbox-check [post]
 func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {

@@ -12,31 +12,15 @@ import (
 
 func allDeploymentFeaturesAvailable() handler.DeploymentFeatureAvailability {
 	return handler.DeploymentFeatureAvailability{
-		Organizations: true,
-		Agents:        true,
-		IM:            true,
-		Embed:         true,
-		API:           true,
-		MCP:           true,
-		WebSearch:     true,
-		VectorStore:   true,
-		Storage:       true,
-		Sandbox:       true,
-	}
-}
-
-func TestBuildDeploymentCapabilitiesHidesOrganizationsInLite(t *testing.T) {
-	result := handler.BuildDeploymentCapabilities("lite", allDeploymentFeaturesAvailable())
-
-	organization := result.Capabilities["organizations"]
-	if organization.Supported {
-		t.Fatal("organizations should be unsupported in lite edition")
-	}
-	if organization.Reason != "not_supported_in_lite" {
-		t.Fatalf("organization reason = %q, want not_supported_in_lite", organization.Reason)
-	}
-	if !result.Capabilities["agents"].Supported {
-		t.Fatal("agents should remain supported in lite edition")
+		Agents:      true,
+		IM:          true,
+		Embed:       true,
+		API:         true,
+		MCP:         true,
+		WebSearch:   true,
+		VectorStore: true,
+		Storage:     true,
+		Sandbox:     true,
 	}
 }
 

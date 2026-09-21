@@ -43,7 +43,7 @@ func tokenize(text string) []string {
 }
 
 // bigrams pairs adjacent CJK ideographs. A single Chinese character matches far
-// too much on its own ("数" appears in 数据, 数量, 参数), so scoring counts
+// too much on its own ("数" appears in 数据, 数量, Parameters ), so scoring counts
 // two-character sequences as well and weights them higher.
 func bigrams(tokens []string) []string {
 	var pairs []string

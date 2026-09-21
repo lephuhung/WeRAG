@@ -141,12 +141,12 @@ func (h *WebSearchProviderHandler) ListProviders(c *gin.Context) {
 // GetProvider retrieves a single web search provider by ID.
 //
 // GetProvider godoc
-// @Summary      获取网络搜索 Provider 详情
-// @Description  根据 ID 获取指定 provider 配置
+// @Summary      获取网络搜索 Provider Details
+// @Description  根据 ID Get specified  provider Configuration
 // @Tags         网络搜索
 // @Produce      json
 // @Param        id   path      string                          true  "Provider ID"
-// @Success      200  {object}  types.WebSearchProviderEntity   "Provider 详情"
+// @Success      200  {object}  types.WebSearchProviderEntity   "Provider Details "
 // @Failure      404  {object}  map[string]interface{}          "Provider 不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -176,15 +176,15 @@ func (h *WebSearchProviderHandler) GetProvider(c *gin.Context) {
 // UpdateProvider updates a web search provider.
 //
 // UpdateProvider godoc
-// @Summary      更新网络搜索 Provider
-// @Description  更新指定 provider 的名称/描述/参数/是否默认
+// @Summary      Update 网络搜索 Provider
+// @Description  Update 指定 provider 的名称/描述/Parameters /是否默认
 // @Tags         网络搜索
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                          true  "Provider ID"
-// @Param        request  body      handler.UpdateProviderRequest   true  "更新字段"
-// @Success      200      {object}  types.WebSearchProviderEntity   "更新后的 Provider"
-// @Failure      400      {object}  map[string]interface{}          "请求参数错误"
+// @Param        request  body      handler.UpdateProviderRequest   true  "Update 字段"
+// @Success      200      {object}  types.WebSearchProviderEntity   "Update 后的 Provider"
+// @Failure      400      {object}  map[string]interface{}          "请求Parameters 错误"
 // @Failure      404      {object}  map[string]interface{}          "Provider 不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -272,8 +272,8 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 // DeleteProvider deletes a web search provider.
 //
 // DeleteProvider godoc
-// @Summary      删除网络搜索 Provider
-// @Description  删除指定 provider 配置
+// @Summary      Delete 网络搜索 Provider
+// @Description  Delete 指定 provider Configuration
 // @Tags         网络搜索
 // @Produce      json
 // @Param        id   path      string                  true  "Provider ID"
@@ -312,10 +312,10 @@ func (h *WebSearchProviderHandler) DeleteProvider(c *gin.Context) {
 //
 // ListProviderTypes godoc
 // @Summary      获取网络搜索 Provider 类型元数据
-// @Description  返回 UI 表单需要的 provider 类型及参数定义
+// @Description  返回 UI 表单需要的 provider 类型及Parameters 定义
 // @Tags         网络搜索
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "provider 类型列表"
+// @Success      200  {object}  map[string]interface{}  "provider 类型List "
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/types [get]
@@ -380,7 +380,7 @@ type TestProviderRequest struct {
 // @Produce      json
 // @Param        request  body      handler.TestProviderRequest  true  "{provider, parameters}"
 // @Success      200      {object}  map[string]interface{}  "测试结果"
-// @Failure      400      {object}  map[string]interface{}  "请求参数错误"
+// @Failure      400      {object}  map[string]interface{}  "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/test [post]

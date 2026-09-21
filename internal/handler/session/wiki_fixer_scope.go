@@ -13,8 +13,6 @@ type wikiFixerKBLookup interface {
 	GetKnowledgeBaseByIDOnly(ctx context.Context, id string) (*types.KnowledgeBase, error)
 }
 
-type wikiFixerKBSharePermission = access.KBShareLookup
-
 func (h *Handler) resolveWikiFixerTenantScope(
 	ctx context.Context,
 	agent *types.CustomAgent,
@@ -29,7 +27,7 @@ func (h *Handler) resolveWikiFixerTenantScope(
 		callerTenantRole,
 		kbIDs,
 		h.knowledgebaseService,
-		h.kbShareService,
+		h.kbAccessGrantService,
 	)
 }
 
@@ -40,33 +38,36 @@ func resolveBuiltinWikiFixerTenantScope(
 	callerTenantRole types.TenantRole,
 	kbIDs []string,
 	kbLookup wikiFixerKBLookup,
-	kbShare wikiFixerKBSharePermission,
+	kbGrants access.KBGrantLookup,
 ) (*types.CustomAgent, uint64) {
 	if agent == nil || agent.ID != types.BuiltinWikiFixerID {
 		return agent, 0
 	}
-	if currentTenantID == 0 || len(kbIDs) != 1 || kbLookup == nil || kbShare == nil {
+	if currentTenantID == 0 || len(kbIDs) != 1 || kbLookup == nil || kbGrants == nil {
 		return agent, 0
 	}
 
 	kbID := kbIDs[0]
 	kb, err := kbLookup.GetKnowledgeBaseByIDOnly(ctx, kbID)
 	if err != nil {
-		logger.Warnf(ctx, "wiki fixer: failed to resolve KB %s for shared scope: %v", secutils.SanitizeForLog(kbID), err)
+		logger.Warnf(ctx, "wiki fixer: failed to resolve KB %s for granted scope: %v", secutils.SanitizeForLog(kbID), err)
 		return agent, 0
 	}
 	if kb == nil {
-		logger.Warnf(ctx, "wiki fixer: KB %s not found for shared scope", secutils.SanitizeForLog(kbID))
+		logger.Warnf(ctx, "wiki fixer: KB %s not found for granted scope", secutils.SanitizeForLog(kbID))
 		return agent, 0
 	}
 	if kb.TenantID == 0 || kb.TenantID == currentTenantID {
 		return agent, 0
 	}
 
-	permissions := access.NewKBSharePermissions(ctx, kbShare, currentTenantID, callerTenantRole)
-	allowed, err := permissions.Check(kb.ID, types.OrgRoleEditor)
+	// Tenant access grants are viewer-only, so a foreign-tenant KB never
+	// satisfies the editor check below; the branch stays correct if write
+	// grants are ever introduced.
+	permissions := access.NewKBGrantPermissions(ctx, kbGrants, currentTenantID)
+	allowed, err := permissions.Check(kb.ID, types.KBPermissionEditor)
 	if err != nil {
-		logger.Warnf(ctx, "wiki fixer: failed to check shared KB %s permission: %v", secutils.SanitizeForLog(kb.ID), err)
+		logger.Warnf(ctx, "wiki fixer: failed to check granted KB %s permission: %v", secutils.SanitizeForLog(kb.ID), err)
 		return agent, 0
 	}
 	if !allowed {
@@ -94,6 +95,6 @@ func resolveBuiltinWikiFixerTenantScope(
 	scopedAgent.Config.ModelID = ""
 	scopedAgent.Config.RerankModelID = ""
 	scopedAgent.Config.VLMModelID = ""
-	logger.Infof(ctx, "wiki fixer: using shared KB source tenant %d for KB %s", kb.TenantID, secutils.SanitizeForLog(kb.ID))
+	logger.Infof(ctx, "wiki fixer: using granted KB source tenant %d for KB %s", kb.TenantID, secutils.SanitizeForLog(kb.ID))
 	return &scopedAgent, kb.TenantID
 }

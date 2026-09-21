@@ -33,7 +33,7 @@ type SuggestionEventRequest struct {
 
 // Ensure godoc
 // @Summary      确保生成回答后推荐问题
-// @Description  对已完成的助手消息异步生成或重新生成推荐问题；相同配置快照会复用持久化结果
+// @Description  对已完成的助手消息异步生成或重新生成推荐问题；相同Configuration 快照会复用持久化结果
 // @Tags         会话
 // @Accept       json
 // @Produce      json

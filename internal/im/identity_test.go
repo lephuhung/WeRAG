@@ -33,8 +33,8 @@ func TestWithIMIdentity(t *testing.T) {
 
 	// Non-empty UserID is the gate the shared-KB resolution relies on; without
 	// it Organization-shared KBs are silently skipped on the IM path.
-	if role := types.TenantRoleFromContext(ctx); role != types.TenantRoleViewer {
-		t.Fatalf("TenantRole = %v, want %v", role, types.TenantRoleViewer)
+	if role := types.TenantRoleFromContext(ctx); role != types.TenantRoleMember {
+		t.Fatalf("TenantRole = %v, want %v", role, types.TenantRoleMember)
 	}
 
 	principal, ok := types.PrincipalFromContext(ctx)

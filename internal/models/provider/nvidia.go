@@ -42,7 +42,7 @@ func (p *NvidiaProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证NVIDIA provider 配置
+// ValidateConfig 验证NVIDIA provider Configuration
 func (p *NvidiaProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for NVIDIA")

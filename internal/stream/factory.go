@@ -14,7 +14,7 @@ const (
 	TypeRedis  = "redis"
 )
 
-// NewStreamManager 创建流管理器
+// NewStreamManager Create 流管理器
 func NewStreamManager() (interfaces.StreamManager, error) {
 	switch os.Getenv("STREAM_MANAGER_TYPE") {
 	case TypeRedis:

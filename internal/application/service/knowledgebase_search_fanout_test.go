@@ -784,21 +784,24 @@ func TestRetrieveFromStores_PerGroupTimeout(t *testing.T) {
 // authorizeKBAccess — per-KB authorization on multi-KB search scope
 // ---------------------------------------------------------------------------
 
-// fakeKBShareForAuth implements just enough of KBShareService for the
-// authorizeKBAccess test matrix. Only CheckTenantKBPermission is exercised;
+// fakeKBGrantForAuth implements just enough of KBAccessGrantService for the
+// authorizeKBAccess test matrix. Only ApprovedKBPermission is exercised;
 // the embedded interface keeps the type assignable.
-type fakeKBShareForAuth struct {
-	// allowed maps kbID → tenantID → allowed. Mirrors the Plan 3 (#1303)
-	// per-tenant permission model.
+type fakeKBGrantForAuth struct {
+	// allowed maps kbID → grantee tenantID → allowed.
 	allowed map[string]map[uint64]bool
 	err     error
-	interfaces.KBShareService
+	interfaces.KBAccessGrantService
 }
 
-func (f *fakeKBShareForAuth) CheckTenantKBPermission(
-	_ context.Context, kbID string, callerTenantID uint64, _ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
-	return types.OrgRoleViewer, f.allowed[kbID][callerTenantID], f.err
+func (f *fakeKBGrantForAuth) ApprovedKBPermission(
+	_ context.Context, kbID string, granteeTenantID uint64,
+) (types.KBPermission, bool, error) {
+	return types.KBPermissionViewer, f.allowed[kbID][granteeTenantID], f.err
+}
+
+func (f *fakeKBGrantForAuth) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 func ctxWithTenantForAuth(tenantID uint64) context.Context {
@@ -807,7 +810,7 @@ func ctxWithTenantForAuth(tenantID uint64) context.Context {
 
 func TestAuthorizeKBAccess_SameTenantAllPass(t *testing.T) {
 	t.Parallel()
-	s := &knowledgeBaseService{kbShareService: &fakeKBShareForAuth{}}
+	s := &knowledgeBaseService{kbAccessGrantService: &fakeKBGrantForAuth{}}
 	kbs := []*types.KnowledgeBase{
 		{ID: "kb-1", TenantID: 7},
 		{ID: "kb-2", TenantID: 7},
@@ -818,12 +821,12 @@ func TestAuthorizeKBAccess_SameTenantAllPass(t *testing.T) {
 
 func TestAuthorizeKBAccess_ForeignTenantWithShare_OK(t *testing.T) {
 	t.Parallel()
-	share := &fakeKBShareForAuth{
+	share := &fakeKBGrantForAuth{
 		allowed: map[string]map[uint64]bool{
 			"kb-foreign": {7: true},
 		},
 	}
-	s := &knowledgeBaseService{kbShareService: share}
+	s := &knowledgeBaseService{kbAccessGrantService: share}
 	kbs := []*types.KnowledgeBase{
 		{ID: "kb-own", TenantID: 7},
 		{ID: "kb-foreign", TenantID: 99},
@@ -834,12 +837,12 @@ func TestAuthorizeKBAccess_ForeignTenantWithShare_OK(t *testing.T) {
 
 func TestAuthorizeKBAccess_ForeignTenantNoShare_NotFound(t *testing.T) {
 	t.Parallel()
-	share := &fakeKBShareForAuth{
+	share := &fakeKBGrantForAuth{
 		allowed: map[string]map[uint64]bool{
 			// kb-foreign explicitly NOT in allowed map
 		},
 	}
-	s := &knowledgeBaseService{kbShareService: share}
+	s := &knowledgeBaseService{kbAccessGrantService: share}
 	kbs := []*types.KnowledgeBase{
 		{ID: "kb-foreign", TenantID: 99},
 	}
@@ -853,8 +856,8 @@ func TestAuthorizeKBAccess_ForeignTenantNoShare_NotFound(t *testing.T) {
 
 func TestAuthorizeKBAccess_PermissionLookupError_500(t *testing.T) {
 	t.Parallel()
-	share := &fakeKBShareForAuth{err: stderrors.New("share infra down")}
-	s := &knowledgeBaseService{kbShareService: share}
+	share := &fakeKBGrantForAuth{err: stderrors.New("share infra down")}
+	s := &knowledgeBaseService{kbAccessGrantService: share}
 	kbs := []*types.KnowledgeBase{{ID: "kb-foreign", TenantID: 99}}
 	err := s.authorizeKBAccess(ctxWithTenantForAuth(7), kbs)
 	require.Error(t, err)
@@ -865,7 +868,7 @@ func TestAuthorizeKBAccess_PermissionLookupError_500(t *testing.T) {
 
 func TestAuthorizeKBAccess_EmptyKBs_OK(t *testing.T) {
 	t.Parallel()
-	s := &knowledgeBaseService{kbShareService: &fakeKBShareForAuth{}}
+	s := &knowledgeBaseService{kbAccessGrantService: &fakeKBGrantForAuth{}}
 	err := s.authorizeKBAccess(ctxWithTenantForAuth(7), nil)
 	require.NoError(t, err)
 }
@@ -1003,12 +1006,4 @@ func TestRetrieveFromStores_IterativePattern_NoInternalRace(t *testing.T) {
 	for _, g := range groups {
 		assert.Equal(t, 50, g.BaseParams[0].TopK, "BaseParams TopK must stay immutable")
 	}
-}
-
-func (s *fakeKBShareForAuth) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *fakeKBShareForAuth) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

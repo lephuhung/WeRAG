@@ -46,7 +46,7 @@ func TestKBFilesRequireExactGrantAndBinding(t *testing.T) {
 		Caller:            types.CallerFromContext(base),
 		KnowledgeBase:     &types.KnowledgeBase{ID: "kb", TenantID: 2},
 		EffectiveTenantID: 2,
-		Permission:        types.OrgRoleViewer,
+		Permission:        types.KBPermissionViewer,
 	}
 	ctx := grant.Context(base)
 	bindings := &fileBinding{allowed: true}
@@ -75,25 +75,45 @@ func TestKBFilesRequireExactGrantAndBinding(t *testing.T) {
 func TestMessageFilesRequireReferenceAndRecheckRevocation(t *testing.T) {
 	const ref = "resource://AbCdEfGhIjKlMnOpQrStUv"
 	messages := &fileMessages{
-		message: &types.Message{ID: "message", AgentID: "agent", AgentTenantID: 2, Role: "assistant"},
+		// The caller's own agent produced the reply; the referenced resource
+		// lives in the granted KB's tenant, so the grant check decides.
+		message: &types.Message{ID: "message", AgentID: "agent", AgentTenantID: 1, Role: "assistant"},
 	}
-	agents := &agentLookup{agent: &types.CustomAgent{ID: "agent", TenantID: 2}}
 	catalog := artifactFileCatalog{
-		fileCatalog{&types.StoredResource{TenantID: 2, PhysicalPath: "local://2/exports/a.png"}},
+		fileCatalog{&types.StoredResource{
+			Handle: "AbCdEfGhIjKlMnOpQrStUv", TenantID: 2, PhysicalPath: "local://2/exports/a.png",
+		}},
+	}
+	grants := &grantLookup{grants: map[string]types.KBPermission{}}
+	binding := &fileBinding{allowed: true}
+	authorizer := MessageKBGrantAuthorizer{
+		GrantGuard: grants,
+		KBs:        messageFileKBs{kb: &types.KnowledgeBase{ID: "shared", TenantID: 2}},
+		Bindings:   binding,
 	}
 	ctx := types.WithExecutionTenant(callerContext(), 2)
-	_, err := ResolveMessageFile(ctx, "session", "message", ref, messages, agents, catalog, MessageKBShareAuthorizer{})
+	_, err := ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden)
 	messages.message.Content = "![image](" + ref + "x)"
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, agents, catalog, MessageKBShareAuthorizer{})
+	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden, "a longer handle is not the requested handle")
 	messages.message.Content = "![image](" + ref + ")"
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, agents, catalog, MessageKBShareAuthorizer{})
+	// Referenced content alone is not enough for a foreign-tenant resource —
+	// the retrieval evidence must also name a granted KB.
+	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
+	require.ErrorIs(t, err, ErrForbidden)
+	messages.message.KnowledgeReferences = types.References{
+		{KnowledgeBaseID: "shared", Content: ref},
+	}
+	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
+	require.ErrorIs(t, err, ErrForbidden, "evidence without a live grant stays denied")
+	grants.grants["shared/1"] = types.KBPermissionViewer
+	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), messages.tenant, "session lookup must use the caller")
-	agents.agent = nil
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, agents, catalog, MessageKBShareAuthorizer{})
-	require.ErrorIs(t, err, ErrForbidden, "historical references cannot bypass share revocation")
+	delete(grants.grants, "shared/1")
+	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
+	require.ErrorIs(t, err, ErrForbidden, "historical references cannot bypass grant revocation")
 }
 
 func TestMessageArtifactsKeepSessionOwnershipSeparateFromAgentOutput(t *testing.T) {
@@ -104,12 +124,12 @@ func TestMessageArtifactsKeepSessionOwnershipSeparateFromAgentOutput(t *testing.
 		Artifacts:     types.MessageArtifacts{{URL: ref, FileName: "report.pdf"}},
 	}
 	catalog := fileCatalog{&types.StoredResource{TenantID: 1, PhysicalPath: "local://1/exports/report.pdf"}}
-	file, err := ResolveMessageArtifact(callerContext(), message, 0, nil, catalog, MessageKBShareAuthorizer{})
+	file, err := ResolveMessageArtifact(callerContext(), message, 0, catalog, MessageKBGrantAuthorizer{})
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), file.OwnerTenantID)
 	catalog.resource.TenantID = 2
 	catalog.resource.PhysicalPath = "local://2/exports/report.pdf"
-	_, err = ResolveMessageArtifact(callerContext(), message, 0, nil, catalog, MessageKBShareAuthorizer{})
+	_, err = ResolveMessageArtifact(callerContext(), message, 0, catalog, MessageKBGrantAuthorizer{})
 	require.ErrorIs(t, err, ErrForbidden)
 }
 
@@ -129,24 +149,24 @@ func TestMessageSharedKBFilesRequireLiveBinding(t *testing.T) {
 		Handle: "AbCdEfGhIjKlMnOpQrStUv", TenantID: 2, PhysicalPath: "local://2/exports/a.png",
 	}}
 	binding := &fileBinding{allowed: true}
-	shares := &shareLookup{permission: types.OrgRoleViewer}
-	authorizer := MessageKBShareAuthorizer{
-		ShareGuard: shares, KBs: messageFileKBs{kb: &types.KnowledgeBase{ID: "shared", TenantID: 2}}, Bindings: binding,
+	grants := &grantLookup{grants: map[string]types.KBPermission{"shared/1": types.KBPermissionViewer}}
+	authorizer := MessageKBGrantAuthorizer{
+		GrantGuard: grants, KBs: messageFileKBs{kb: &types.KnowledgeBase{ID: "shared", TenantID: 2}}, Bindings: binding,
 	}
-	_, err := AuthorizeMessageFile(callerContext(), message, ref, nil, catalog, authorizer)
+	_, err := AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
 	require.NoError(t, err)
 	require.Equal(t, "shared", binding.kb)
 	require.Equal(t, uint64(2), binding.tenant)
 	binding.allowed = false
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, nil, catalog, authorizer)
+	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden, "retrieval text alone must not authorize an unrelated same-tenant resource")
 	binding.allowed = true
 	binding.err = errors.New("binding lookup unavailable")
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, nil, catalog, authorizer)
+	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden)
 	binding.err = nil
 	authorizer.Bindings = nil
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, nil, catalog, authorizer)
+	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden, "missing live lookup must fail closed")
 }
 

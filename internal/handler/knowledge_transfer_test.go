@@ -40,7 +40,7 @@ func transferHandlerRouter(scope *types.TenantAPIKeyScope) *gin.Engine {
 	r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 		ctx := types.WithCaller(
 			c.Request.Context(),
-			types.Caller{TenantID: 7, UserID: "user", Role: types.TenantRoleContributor},
+			types.Caller{TenantID: 7, UserID: "user", Role: types.TenantRoleMember},
 		)
 		ctx = types.WithExecutionTenant(ctx, 7)
 		if scope != nil {

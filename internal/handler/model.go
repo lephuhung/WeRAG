@@ -52,14 +52,14 @@ type CreateModelRequest struct {
 }
 
 // CreateModel godoc
-// @Summary      创建模型
-// @Description  创建新的模型配置
+// @Summary      Create 模型
+// @Description  Create 新的模型Configuration
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CreateModelRequest  true  "模型信息"
-// @Success      201      {object}  map[string]interface{}  "创建的模型"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Success      201      {object}  map[string]interface{}  "Create 的模型"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models [post]
@@ -123,13 +123,13 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 }
 
 // GetModel godoc
-// @Summary      获取模型详情
-// @Description  根据ID获取模型详情
+// @Summary      获取模型Details
+// @Description  根据ID获取模型Details
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "模型ID"
-// @Success      200  {object}  map[string]interface{}  "模型详情"
+// @Success      200  {object}  map[string]interface{}  "模型Details "
 // @Failure      404  {object}  errors.AppError         "模型不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -168,13 +168,13 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 }
 
 // ListModels godoc
-// @Summary      获取模型列表
-// @Description  获取当前空间的所有模型
+// @Summary      获取模型List
+// @Description  获取当前Tenant workspace的所有模型
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "模型列表"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "模型List "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models [get]
@@ -545,14 +545,14 @@ type UpdateModelRequest struct {
 }
 
 // UpdateModel godoc
-// @Summary      更新模型
-// @Description  更新模型配置信息
+// @Summary      Update 模型
+// @Description  Update 模型Configuration 信息
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string              true  "模型ID"
-// @Param        request  body      UpdateModelRequest  true  "更新信息"
-// @Success      200      {object}  map[string]interface{}  "更新后的模型"
+// @Param        request  body      UpdateModelRequest  true  "Update 信息"
+// @Success      200      {object}  map[string]interface{}  "Update 后的模型"
 // @Failure      404      {object}  errors.AppError         "模型不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -660,14 +660,14 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 }
 
 // DeleteModel godoc
-// @Summary      删除模型
-// @Description  删除指定的模型
+// @Summary      Delete 模型
+// @Description  Delete 指定的模型
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "模型ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
-// @Failure      400  {object}  errors.AppError         "模型仍被知识库、智能体或长期记忆引用"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
+// @Failure      400  {object}  errors.AppError         "模型仍被Knowledge Base、智能体或长期记忆引用"
 // @Failure      404  {object}  errors.AppError         "模型不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -736,13 +736,13 @@ func modelTypeToFrontend(mt types.ModelType) string {
 }
 
 // ListModelProviders godoc
-// @Summary      获取模型厂商列表
-// @Description  根据模型类型获取支持的厂商列表及配置信息
+// @Summary      获取模型厂商List
+// @Description  根据模型类型获取支持的厂商List 及Configuration 信息
 // @Tags         模型管理
 // @Accept       json
 // @Produce      json
 // @Param        model_type  query     string  false  "模型类型 (chat, embedding, rerank, vllm)"
-// @Success      200         {object}  map[string]interface{}  "厂商列表"
+// @Success      200         {object}  map[string]interface{}  "厂商List "
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models/providers [get]

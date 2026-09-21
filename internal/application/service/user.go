@@ -350,7 +350,7 @@ func (s *userService) buildMembershipsForUser(
 	if len(rows) == 0 {
 		return []types.Membership{}
 	}
-	// 收集需要批量查询名称的 tenant id（跳过 activeTenant 因为它已经在手）。
+	// 收集需要批量Query 名称的 tenant id（跳过 activeTenant 因为它已经在手）。
 	needsLookup := make([]uint64, 0, len(rows))
 	for _, m := range rows {
 		if m == nil || m.Status != types.TenantMemberStatusActive {
@@ -406,7 +406,7 @@ func (s *userService) buildMembershipsForUser(
 // from users.tenant_id would re-surface workspaces the user was removed
 // from (#2586).
 //
-// The fallback role is intentionally TenantRoleViewer (least privilege):
+// The fallback role is intentionally TenantRoleMember (least privilege):
 // the login response only feeds UI rendering, and the backend re-derives
 // the real role from tenant_members on every request. If membership data
 // is temporarily unavailable, showing a Viewer UI is preferable to
@@ -428,7 +428,7 @@ func synthFallbackMembership(user *types.User, activeTenant *types.Tenant) []typ
 	return []types.Membership{{
 		TenantID:   user.TenantID,
 		TenantName: name,
-		Role:       types.TenantRoleViewer,
+		Role:       types.TenantRoleMember,
 	}}
 }
 

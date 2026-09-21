@@ -29,11 +29,11 @@ func NewMemoryHandler(memoryService interfaces.MemoryService) *MemoryHandler {
 }
 
 // GetSettings godoc
-// @Summary      获取我的记忆设置
-// @Description  返回合并后的记忆开关状态（空间级 + 个人级）与记忆条数
+// @Summary      获取我的记忆Settings
+// @Description  返回合并后的记忆开关状态（Tenant workspace级 + 个人级）与记忆条数
 // @Tags         长期记忆
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "记忆设置"
+// @Success      200  {object}  map[string]interface{}  "记忆Settings "
 // @Security     Bearer
 // @Router       /memory/settings [get]
 func (h *MemoryHandler) GetSettings(c *gin.Context) {
@@ -51,13 +51,13 @@ type updateMemorySettingsRequest struct {
 }
 
 // UpdateSettings godoc
-// @Summary      更新我的记忆设置
+// @Summary      Update 我的记忆Settings
 // @Description  开启或关闭当前用户自己的长期记忆
 // @Tags         长期记忆
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "设置"
-// @Success      200      {object}  map[string]interface{}  "更新后的设置"
+// @Param        request  body      object  true  "Settings "
+// @Success      200      {object}  map[string]interface{}  "Update 后的Settings "
 // @Security     Bearer
 // @Router       /memory/settings [put]
 func (h *MemoryHandler) UpdateSettings(c *gin.Context) {
@@ -91,7 +91,7 @@ func (h *MemoryHandler) UpdateSettings(c *gin.Context) {
 // @Param        status  query     string  false  "状态过滤"  Enums(active, superseded, archived, pending)
 // @Param        limit   query     int     false  "每页条数"  default(50)
 // @Param        offset  query     int     false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "记忆列表"
+// @Success      200     {object}  map[string]interface{}  "记忆List "
 // @Security     Bearer
 // @Router       /memory/items [get]
 func (h *MemoryHandler) ListItems(c *gin.Context) {
@@ -145,7 +145,7 @@ func memoryListPaging(c *gin.Context) (limit, offset int) {
 // @Produce      json
 // @Param        limit   query     int  false  "每页条数"  default(50)
 // @Param        offset  query     int  false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "主题列表"
+// @Success      200     {object}  map[string]interface{}  "主题List "
 // @Security     Bearer
 // @Router       /memory/topics [get]
 func (h *MemoryHandler) ListTopics(c *gin.Context) {
@@ -184,11 +184,11 @@ func (h *MemoryHandler) PromoteTopic(c *gin.Context) {
 
 // DeleteTopic godoc
 // @Summary      停止跟踪一个主题
-// @Description  删除尚未提升的主题计数，并记住这次拒绝，之后不会再自动记为长期关注
+// @Description  Delete 尚未提升的主题计数，并记住这次拒绝，之后不会再自动记为长期关注
 // @Tags         长期记忆
 // @Produce      json
 // @Param        id   path      string  true  "主题 ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
 // @Security     Bearer
 // @Router       /memory/topics/{id} [delete]
 func (h *MemoryHandler) DeleteTopic(c *gin.Context) {
@@ -207,7 +207,7 @@ func (h *MemoryHandler) DeleteTopic(c *gin.Context) {
 // @Produce      json
 // @Param        limit   query     int  false  "每页条数"  default(50)
 // @Param        offset  query     int  false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "文档列表"
+// @Success      200     {object}  map[string]interface{}  "文档List "
 // @Security     Bearer
 // @Router       /memory/documents [get]
 func (h *MemoryHandler) ListDocuments(c *gin.Context) {
@@ -227,11 +227,11 @@ func (h *MemoryHandler) ListDocuments(c *gin.Context) {
 
 // DeleteDocument godoc
 // @Summary      停止用某份文档做个性化检索
-// @Description  删除一条文档亲和度计数，之后检索不再因为这份文档而加权
+// @Description  Delete 一条文档亲和度计数，之后检索不再因为这份文档而加权
 // @Tags         长期记忆
 // @Produce      json
 // @Param        id   path      string  true  "亲和度 ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
 // @Security     Bearer
 // @Router       /memory/documents/{id} [delete]
 func (h *MemoryHandler) DeleteDocument(c *gin.Context) {
@@ -287,7 +287,7 @@ type updateMemoryItemRequest struct {
 // @Produce      json
 // @Param        id       path      string  true  "记忆ID"
 // @Param        request  body      object  true  "记忆内容"
-// @Success      200      {object}  map[string]interface{}  "更新后的记忆"
+// @Success      200      {object}  map[string]interface{}  "Update 后的记忆"
 // @Security     Bearer
 // @Router       /memory/items/{id} [put]
 func (h *MemoryHandler) UpdateItem(c *gin.Context) {
@@ -306,12 +306,12 @@ func (h *MemoryHandler) UpdateItem(c *gin.Context) {
 }
 
 // DeleteItem godoc
-// @Summary      删除一条记忆
-// @Description  永久删除一条记忆
+// @Summary      Delete 一条记忆
+// @Description  永久Delete 一条记忆
 // @Tags         长期记忆
 // @Produce      json
 // @Param        id  path      string  true  "记忆ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
 // @Security     Bearer
 // @Router       /memory/items/{id} [delete]
 func (h *MemoryHandler) DeleteItem(c *gin.Context) {
@@ -365,7 +365,7 @@ func (h *MemoryHandler) RejectItem(c *gin.Context) {
 
 // Clear godoc
 // @Summary      清空我的记忆
-// @Description  永久删除当前用户的全部记忆
+// @Description  永久Delete 当前用户的全部记忆
 // @Tags         长期记忆
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "清空成功"

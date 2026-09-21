@@ -11,10 +11,10 @@ type Caller struct {
 	Role     TenantRole
 }
 
-// Normalize defaults an invalid tenant role to Viewer.
+// Normalize defaults an invalid tenant role to Member.
 func (caller Caller) Normalize() Caller {
 	if !caller.Role.IsValid() {
-		caller.Role = TenantRoleViewer
+		caller.Role = TenantRoleMember
 	}
 	return caller
 }

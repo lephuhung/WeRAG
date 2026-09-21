@@ -331,13 +331,13 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	// 幂等性处理：清理旧的chunks和索引数据，避免重复数据
 	logger.Infof(ctx, "Cleaning up existing chunks and index data for knowledge: %s", knowledge.ID)
 
-	// 删除旧的chunks
+	// Delete 旧的chunks
 	if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, knowledge.TenantID, knowledge.ID); err != nil {
 		logger.Warnf(ctx, "Failed to delete existing chunks (may not exist): %v", err)
 		// 不返回错误，继续处理（可能没有旧数据）
 	}
 
-	// 删除旧的索引数据 — only when vector/keyword indexing is enabled
+	// Delete 旧的索引数据 — only when vector/keyword indexing is enabled
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
 		ctx, s.retrieveEngine, s.ownership, tenantInfo.ID, kb.VectorStoreID)
@@ -350,7 +350,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
-	// 删除知识图谱数据（如果存在）
+	// Delete 知识Graph数据（如果存在）
 	namespace := types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID}
 	if err := s.graphEngine.DelGraph(ctx, []types.NameSpace{namespace}); err != nil {
 		logger.Warnf(ctx, "Failed to delete existing graph data (may not exist): %v", err)
@@ -415,7 +415,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	imageChunkCount := 0
 	for _, chunkData := range chunks {
 		if len(chunkData.Images) > 0 {
-			// 为每个图片的OCR和Caption分别创建一个Chunk
+			// 为每个图片的OCR和Caption分别Create 一个Chunk
 			imageChunkCount += len(chunkData.Images) * 2
 		}
 		if int(chunkData.Seq) > maxSeq {
@@ -467,7 +467,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			continue
 		}
 
-		// 创建主文本Chunk
+		// Create 主文本Chunk
 		textChunk := &types.Chunk{
 			ID:              uuid.New().String(),
 			TenantID:        knowledge.TenantID,
@@ -516,7 +516,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
-	// 设置文本Chunk之间的前后关系 (skip if parent-child, children don't need prev/next links)
+	// Settings 文本Chunk之间的前后关系 (skip if parent-child, children don't need prev/next links)
 	if !hasParentChild {
 		for i, chunk := range textChunks {
 			if i > 0 {
@@ -3405,7 +3405,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return err
 	}
 
-	// 检查是否正在删除 / 已被用户取消 - 如果是则直接退出
+	// 检查是否正在Delete  / 已被用户取消 - 如果是则直接退出
 	if knowledge.ParseStatus == types.ParseStatusDeleting {
 		logger.Infof(ctx, "Knowledge is being deleted, aborting processing: %s", payload.KnowledgeID)
 		return nil
@@ -3440,7 +3440,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		logger.Warnf(ctx, "Unexpected parse status: %s for knowledge: %s", knowledge.ParseStatus, payload.KnowledgeID)
 	}
 
-	// 获取知识库信息
+	// 获取Knowledge Base信息
 	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KnowledgeBaseID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get knowledge base: %v", err)
@@ -3501,7 +3501,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	}
 	ctx = withAttempt(ctx, attempt)
 
-	// 检查多模态配置（仅对文件导入）
+	// 检查多模态Configuration （仅对文件导入）
 	if payload.FilePath != "" && !payload.EnableMultimodel && IsImageType(payload.FileType) {
 		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 			WithField("error", ErrImageNotParse).Errorf("processDocument image without enable multimodel")
@@ -3512,7 +3512,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
-	// 检查音频ASR配置（仅对文件导入）
+	// 检查音频ASRConfiguration （仅对文件导入）
 	if payload.FilePath != "" && IsAudioType(payload.FileType) && !eff.ASRConfig.IsASREnabled() {
 		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 			Errorf("processDocument audio without ASR model configured")

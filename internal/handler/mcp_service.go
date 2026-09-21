@@ -61,14 +61,14 @@ func (h *MCPServiceHandler) mcpServiceResponses(
 }
 
 // CreateMCPService godoc
-// @Summary      创建MCP服务
-// @Description  创建新的MCP服务配置
+// @Summary      Create MCP服务
+// @Description  Create 新的MCP服务Configuration
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.MCPService  true  "MCP服务配置"
-// @Success      200      {object}  map[string]interface{}  "创建的MCP服务"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      types.MCPService  true  "MCP服务Configuration "
+// @Success      200      {object}  map[string]interface{}  "Create 的MCP服务"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services [post]
@@ -119,13 +119,13 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 }
 
 // ListMCPServices godoc
-// @Summary      获取MCP服务列表
-// @Description  获取当前空间的所有MCP服务（含已保存工具目录数量）
+// @Summary      获取MCP服务List
+// @Description  获取当前Tenant workspace的所有MCP服务（含已保存工具目录数量）
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "MCP服务列表"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "MCP服务List "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services [get]
@@ -153,13 +153,13 @@ func (h *MCPServiceHandler) ListMCPServices(c *gin.Context) {
 }
 
 // GetMCPService godoc
-// @Summary      获取MCP服务详情
-// @Description  根据ID获取MCP服务详情
+// @Summary      获取MCP服务Details
+// @Description  根据ID获取MCP服务Details
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "MCP服务详情"
+// @Success      200  {object}  map[string]interface{}  "MCP服务Details "
 // @Failure      404  {object}  errors.AppError         "服务不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -192,15 +192,15 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 }
 
 // UpdateMCPService godoc
-// @Summary      更新MCP服务
-// @Description  更新MCP服务配置
+// @Summary      Update MCP服务
+// @Description  Update MCP服务Configuration
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "MCP服务ID"
-// @Param        request  body      object  true  "更新字段"
-// @Success      200      {object}  map[string]interface{}  "更新后的MCP服务"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      object  true  "Update 字段"
+// @Success      200      {object}  map[string]interface{}  "Update 后的MCP服务"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id} [put]
@@ -403,13 +403,13 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 }
 
 // DeleteMCPService godoc
-// @Summary      删除MCP服务
-// @Description  删除指定的MCP服务
+// @Summary      Delete MCP服务
+// @Description  Delete 指定的MCP服务
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
 // @Failure      500  {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -446,7 +446,7 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
 // @Success      200  {object}  map[string]interface{}  "测试结果"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/test [post]
@@ -484,13 +484,13 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 }
 
 // GetMCPServiceTools godoc
-// @Summary      获取MCP服务工具列表
-// @Description  获取MCP服务提供的工具列表
+// @Summary      获取MCP服务工具List
+// @Description  获取MCP服务提供的工具List
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "工具列表"
+// @Success      200  {object}  map[string]interface{}  "工具List "
 // @Failure      500  {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -520,13 +520,13 @@ func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 }
 
 // GetMCPServiceResources godoc
-// @Summary      获取MCP服务资源列表
-// @Description  获取MCP服务提供的资源列表
+// @Summary      获取MCP服务资源List
+// @Description  获取MCP服务提供的资源List
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "资源列表"
+// @Success      200  {object}  map[string]interface{}  "资源List "
 // @Failure      500  {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -592,16 +592,16 @@ type setMCPToolApprovalBody struct {
 // for backwards compatibility with the original approval-only endpoint.
 //
 // SetMCPToolApproval godoc
-// @Summary      设置 MCP 工具策略
-// @Description  为指定 MCP 服务下的某个工具更新启用状态和/或人工审批要求。至少提供 require_approval 或 enabled 之一；省略的字段保持原值。
+// @Summary      Settings  MCP 工具策略
+// @Description  为指定 MCP 服务下的某个工具Update 启用状态和/或人工审批要求。至少提供 require_approval 或 enabled 之一；省略的字段保持原值。
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id         path      string                  true  "MCP 服务 ID"
 // @Param        tool_name  path      string                  true  "工具名"
 // @Param        request    body      map[string]interface{}  true  "{require_approval?: bool, enabled?: bool}"
-// @Success      200        {object}  map[string]interface{}  "更新结果"
-// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Success      200        {object}  map[string]interface{}  "Update 结果"
+// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404        {object}  errors.AppError         "MCP 服务或工具不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -660,7 +660,7 @@ type resolveToolApprovalBody struct {
 // @Param        pending_id  path      string                  true  "待审批记录 ID"
 // @Param        request     body      map[string]interface{}  true  "{decision: \"approve\"|\"reject\", reason?: string, modified_args?: object}"
 // @Success      200         {object}  map[string]interface{}  "审批结果"
-// @Failure      400         {object}  errors.AppError         "请求参数错误"
+// @Failure      400         {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404         {object}  errors.AppError         "待审批记录不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth

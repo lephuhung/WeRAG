@@ -74,7 +74,7 @@ func TestRequireRole_AllowsAboveMin(t *testing.T) {
 }
 
 func TestRequireRole_RejectsBelowMin(t *testing.T) {
-	w := rbacTestHarness(types.TenantRoleContributor, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("Contributor must NOT clear Admin gate, got %d", w.Code)
@@ -85,7 +85,7 @@ func TestRequireRoleOrSystemAdmin_AllowsSystemAdminBelowTenantRole(t *testing.T)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleViewer)
+		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleMember)
 		ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
@@ -101,7 +101,7 @@ func TestRequireRoleOrSystemAdmin_AllowsSystemAdminBelowTenantRole(t *testing.T)
 }
 
 func TestRequireRoleOrSystemAdmin_RejectsOrdinaryViewer(t *testing.T) {
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireRoleOrSystemAdmin(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("ordinary Viewer must not clear Admin-or-SystemAdmin gate, got %d", w.Code)
@@ -111,7 +111,7 @@ func TestRequireRoleOrSystemAdmin_RejectsOrdinaryViewer(t *testing.T) {
 func TestRequireRole_FailOpenWhenRBACDisabled(t *testing.T) {
 	// EnableRBAC=false: the middleware should log but not block, so the
 	// downstream handler still runs. This is the rollout-safety guarantee.
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireRole(types.TenantRoleOwner, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("EnableRBAC=false must let Viewer through Owner gate, got %d", w.Code)
@@ -121,7 +121,7 @@ func TestRequireRole_FailOpenWhenRBACDisabled(t *testing.T) {
 func TestRequireRole_NilConfigFailsOpen(t *testing.T) {
 	// Defensive: nil config must not panic and must fail open (no enforcement
 	// configured = behave like the legacy path).
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireRole(types.TenantRoleAdmin, nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("nil config must fail open, got %d", w.Code)
@@ -141,7 +141,7 @@ func TestRequireRole_CrossTenantSuperuserBypass(t *testing.T) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		ctx := c.Request.Context()
-		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 		ctx = context.WithValue(ctx, types.UserIDContextKey, "su1")
 		ctx = context.WithValue(ctx, types.UserContextKey, &types.User{
 			ID: "su1", CanAccessAllTenants: true,
@@ -183,7 +183,7 @@ func TestRequireOwnershipOrRole_AdminBypassesLookup(t *testing.T) {
 
 func TestRequireOwnershipOrRole_CreatorAllowed(t *testing.T) {
 	lookup := func(c *gin.Context) (string, error) { return "u1", nil }
-	w := rbacTestHarness(types.TenantRoleContributor, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("creator must clear ownership gate, got %d", w.Code)
@@ -194,7 +194,7 @@ func TestRequireOwnershipOrRole_NonCreatorContributorRejected(t *testing.T) {
 	// Contributor editing someone else's resource is the exact case the
 	// matrix targets: only the original creator OR Admin+ may proceed.
 	lookup := func(c *gin.Context) (string, error) { return "someone-else", nil }
-	w := rbacTestHarness(types.TenantRoleContributor, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("non-creator Contributor must hit 403, got %d", w.Code)
@@ -207,7 +207,7 @@ func TestRequireOwnershipOrRole_LegacyEmptyCreatorTreatedAsTenantOwned(t *testin
 	// role check decides.
 	lookup := func(c *gin.Context) (string, error) { return "", nil }
 	// Contributor on a tenant-owned row -> rejected, only Admin+ can mutate.
-	w := rbacTestHarness(types.TenantRoleContributor, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("Contributor on legacy tenant-owned row should hit 403, got %d", w.Code)
@@ -220,7 +220,7 @@ func TestRequireOwnershipOrRole_LookupErrorReturns503(t *testing.T) {
 	// briefly couldn't verify ownership". Failing open here would mean
 	// any DB hiccup on the creator query becomes a free pass.
 	lookup := func(c *gin.Context) (string, error) { return "", errors.New("boom") }
-	w := rbacTestHarness(types.TenantRoleContributor, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("lookup error must surface as 503, got %d", w.Code)
@@ -240,7 +240,7 @@ func TestRequireOwnershipOrRole_NotFoundPassesThroughTo404(t *testing.T) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		ctx := c.Request.Context()
-		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleContributor)
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 		ctx = context.WithValue(ctx, types.UserIDContextKey, "u1")
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
@@ -272,7 +272,7 @@ func TestRequireOwnershipOrRole_SkipsLookupWhenRBACDisabled(t *testing.T) {
 		calls++
 		return "someone-else", nil
 	}
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("fail-open should let the request through, got %d", w.Code)
@@ -322,7 +322,7 @@ func TestRequireOwnershipOrRole_FailOpenWhenRBACDisabled(t *testing.T) {
 	// the request through. This preserves today's "anyone in the tenant
 	// can edit anything" behaviour while we ship the schema.
 	lookup := func(c *gin.Context) (string, error) { return "someone-else", nil }
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("EnableRBAC=false must let Viewer non-creator through, got %d", w.Code)
@@ -334,7 +334,7 @@ func TestRequireOwnershipOrRole_FailOpenOnLookupErrorWhenRBACDisabled(t *testing
 	// otherwise turning RBAC off wouldn't actually unblock anything that
 	// needs the lookup.
 	lookup := func(c *gin.Context) (string, error) { return "", errors.New("boom") }
-	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+	w := rbacTestHarness(types.TenantRoleMember, "u1",
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("EnableRBAC=false + lookup error must fail open, got %d", w.Code)

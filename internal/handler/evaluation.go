@@ -31,13 +31,13 @@ type EvaluationRequest struct {
 
 // Evaluation godoc
 // @Summary      执行评估
-// @Description  对知识库进行评估测试
+// @Description  对Knowledge Base进行评估测试
 // @Tags         评估
 // @Accept       json
 // @Produce      json
-// @Param        request  body      EvaluationRequest  true  "评估请求参数"
+// @Param        request  body      EvaluationRequest  true  "评估请求Parameters "
 // @Success      200      {object}  map[string]interface{}  "评估任务"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /evaluation/ [post]
@@ -100,7 +100,7 @@ type GetEvaluationRequest struct {
 // @Produce      json
 // @Param        task_id  query     string  true  "评估任务ID"
 // @Success      200      {object}  map[string]interface{}  "评估结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /evaluation/ [get]

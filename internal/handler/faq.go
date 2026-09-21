@@ -59,22 +59,22 @@ type updateLastFAQImportResultDisplayStatusRequest struct {
 }
 
 // ListEntries godoc
-// @Summary      获取FAQ条目列表
-// @Description  获取知识库下的FAQ条目列表，支持分页和筛选
+// @Summary      获取FAQ条目List
+// @Description  获取Knowledge Base下的FAQ条目List ，支持分页和筛选
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id           path      string  true   "知识库ID"
+// @Param        id           path      string  true   "Knowledge BaseID"
 // @Param        page         query     int     false  "页码"
 // @Param        page_size    query     int     false  "每页数量"
 // @Param        tag_id       query     int     false  "标签ID筛选(seq_id)，兼容旧版单标签"
 // @Param        tag_ids      query     string  false  "标签UUID筛选，逗号分隔（OR语义）"
 // @Param        keyword      query     string  false  "关键词搜索"
 // @Param        search_field query     string  false  "搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案), 默认搜索全部"
-// @Param        sort_order   query     string  false  "排序方式: asc(按更新时间正序), 默认按更新时间倒序"
+// @Param        sort_order   query     string  false  "排序方式: asc(按Update 时间正序), 默认按Update 时间倒序"
 // @Param        is_enabled   query     bool    false  "启用状态筛选；不传时返回全部"
-// @Success      200        {object}  map[string]interface{}  "FAQ列表"
-// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Success      200        {object}  map[string]interface{}  "FAQList "
+// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [get]
@@ -143,17 +143,17 @@ func parseOptionalFAQEnabled(c *gin.Context) (*bool, error) {
 }
 
 // UpsertEntries godoc
-// @Summary      批量更新/插入FAQ条目
-// @Description  异步批量更新或插入FAQ条目。支持 dry_run 模式（设置 dry_run=true），异步验证不实际导入。
-// @Description  dry_run 模式是异步操作，返回 task_id，通过 /faq/import/progress/{task_id} 查询进度和结果。
-// @Description  验证内容包括：1) 条目基本格式 2) 重复问题（批次内和知识库已有） 3) 内容安全检查。
+// @Summary      批量Update /插入FAQ条目
+// @Description  异步批量Update 或插入FAQ条目。支持 dry_run 模式（Settings  dry_run=true），异步验证不实际导入。
+// @Description  dry_run 模式是异步操作，返回 task_id，通过 /faq/import/progress/{task_id} Query 进度和结果。
+// @Description  验证内容包括：1) 条目基本格式 2) 重复问题（批次内和Knowledge Base已有） 3) 内容安全检查。
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                    true  "知识库ID"
+// @Param        id       path      string                    true  "Knowledge BaseID"
 // @Param        request  body      types.FAQBatchUpsertPayload  true  "批量操作请求"
 // @Success      200      {object}  map[string]interface{}    "任务ID"
-// @Failure      400      {object}  errors.AppError           "请求参数错误"
+// @Failure      400      {object}  errors.AppError           "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [post]
@@ -184,15 +184,15 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 }
 
 // CreateEntry godoc
-// @Summary      创建单个FAQ条目
-// @Description  同步创建单个FAQ条目
+// @Summary      Create 单个FAQ条目
+// @Description  同步Create 单个FAQ条目
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                true  "知识库ID"
+// @Param        id       path      string                true  "Knowledge BaseID"
 // @Param        request  body      types.FAQEntryPayload true  "FAQ条目"
-// @Success      200      {object}  map[string]interface{}  "创建的FAQ条目"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Success      200      {object}  map[string]interface{}  "Create 的FAQ条目"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entry [post]
@@ -221,16 +221,16 @@ func (h *FAQHandler) CreateEntry(c *gin.Context) {
 }
 
 // UpdateEntry godoc
-// @Summary      更新FAQ条目
-// @Description  更新指定的FAQ条目
+// @Summary      Update FAQ条目
+// @Description  Update 指定的FAQ条目
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id        path      string                true  "知识库ID"
+// @Param        id        path      string                true  "Knowledge BaseID"
 // @Param        entry_id  path      int                   true  "FAQ条目ID(seq_id)"
 // @Param        request   body      types.FAQEntryPayload true  "FAQ条目"
-// @Success      200       {object}  map[string]interface{}  "更新成功"
-// @Failure      400       {object}  errors.AppError         "请求参数错误"
+// @Success      200       {object}  map[string]interface{}  "Update 成功"
+// @Failure      400       {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/{entry_id} [put]
@@ -265,15 +265,15 @@ func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 }
 
 // UpdateEntryTagBatch godoc
-// @Summary      批量更新FAQ标签
-// @Description  批量更新FAQ条目的标签
+// @Summary      批量Update FAQ标签
+// @Description  批量Update FAQ条目的标签
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "知识库ID"
-// @Param        request  body      object  true  "标签更新请求"
-// @Success      200      {object}  map[string]interface{}  "更新成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        id       path      string  true  "Knowledge BaseID"
+// @Param        request  body      object  true  "标签Update 请求"
+// @Success      200      {object}  map[string]interface{}  "Update 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/tags [put]
@@ -298,15 +298,15 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 }
 
 // UpdateEntryFieldsBatch godoc
-// @Summary      批量更新FAQ字段
-// @Description  批量更新FAQ条目的多个字段（is_enabled, is_recommended, tag_id）
+// @Summary      批量Update FAQ字段
+// @Description  批量Update FAQ条目的多个字段（is_enabled, is_recommended, tag_id）
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                        true  "知识库ID"
-// @Param        request  body      types.FAQEntryFieldsBatchUpdate  true  "字段更新请求"
-// @Success      200      {object}  map[string]interface{}        "更新成功"
-// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Param        id       path      string                        true  "Knowledge BaseID"
+// @Param        request  body      types.FAQEntryFieldsBatchUpdate  true  "字段Update 请求"
+// @Success      200      {object}  map[string]interface{}        "Update 成功"
+// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/fields [put]
@@ -331,15 +331,15 @@ func (h *FAQHandler) UpdateEntryFieldsBatch(c *gin.Context) {
 }
 
 // DeleteEntries godoc
-// @Summary      批量删除FAQ条目
-// @Description  批量删除指定的FAQ条目
+// @Summary      批量Delete FAQ条目
+// @Description  批量Delete 指定的FAQ条目
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "知识库ID"
-// @Param        request  body      object{ids=[]int}  true  "要删除的FAQ ID列表(seq_id)"
-// @Success      200      {object}  map[string]interface{}  "删除成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        id       path      string  true  "Knowledge BaseID"
+// @Param        request  body      object{ids=[]int}  true  "要Delete 的FAQ IDList (seq_id)"
+// @Success      200      {object}  map[string]interface{}  "Delete 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [delete]
@@ -371,10 +371,10 @@ func (h *FAQHandler) DeleteEntries(c *gin.Context) {
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                true  "知识库ID"
+// @Param        id       path      string                true  "Knowledge BaseID"
 // @Param        request  body      types.FAQSearchRequest  true  "搜索请求"
 // @Success      200      {object}  map[string]interface{}  "搜索结果"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/search [post]
@@ -415,10 +415,10 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 // @Accept       json
 // @Produce      text/csv
 // @Produce      application/json
-// @Param        id      path      string  true   "知识库ID"
+// @Param        id      path      string  true   "Knowledge BaseID"
 // @Param        format  query     string  false  "导出格式：csv（默认）或 json"
 // @Success      200     {file}    file    "导出文件"
-// @Failure      400     {object}  errors.AppError  "请求参数错误"
+// @Failure      400     {object}  errors.AppError  "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/export [get]
@@ -456,15 +456,15 @@ func (h *FAQHandler) ExportEntries(c *gin.Context) {
 }
 
 // GetEntry godoc
-// @Summary      获取FAQ条目详情
-// @Description  根据ID获取单个FAQ条目的详情
+// @Summary      获取FAQ条目Details
+// @Description  根据ID获取单个FAQ条目的Details
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id        path      string  true  "知识库ID"
+// @Param        id        path      string  true  "Knowledge BaseID"
 // @Param        entry_id  path      int     true  "FAQ条目ID(seq_id)"
-// @Success      200       {object}  map[string]interface{}  "FAQ条目详情"
-// @Failure      400       {object}  errors.AppError         "请求参数错误"
+// @Success      200       {object}  map[string]interface{}  "FAQ条目Details "
+// @Failure      400       {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404       {object}  errors.AppError         "条目不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -526,16 +526,16 @@ func (h *FAQHandler) GetImportProgress(c *gin.Context) {
 }
 
 // UpdateLastImportResultDisplayStatus godoc
-// @Summary      更新FAQ最后一次导入结果显示状态
-// @Description  更新FAQ知识库导入结果统计卡片的显示或隐藏状态
+// @Summary      Update FAQ最后一次导入结果显示状态
+// @Description  Update FAQKnowledge Base导入结果统计卡片的显示或隐藏状态
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id      path      string                                         true  "知识库ID"
-// @Param        request body      updateLastFAQImportResultDisplayStatusRequest  true  "状态更新请求"
-// @Success      200     {object}  map[string]interface{}                         "更新成功"
-// @Failure      400     {object}  errors.AppError                                "请求参数错误"
-// @Failure      404     {object}  errors.AppError                                "知识库不存在或无导入记录"
+// @Param        id      path      string                                         true  "Knowledge BaseID"
+// @Param        request body      updateLastFAQImportResultDisplayStatusRequest  true  "状态Update 请求"
+// @Success      200     {object}  map[string]interface{}                         "Update 成功"
+// @Failure      400     {object}  errors.AppError                                "请求Parameters 错误"
+// @Failure      404     {object}  errors.AppError                                "Knowledge Base不存在或无导入记录"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/import/last-result/display [put]
@@ -567,11 +567,11 @@ func (h *FAQHandler) UpdateLastImportResultDisplayStatus(c *gin.Context) {
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id        path      string                      true  "知识库ID"
+// @Param        id        path      string                      true  "Knowledge BaseID"
 // @Param        entry_id  path      int                         true  "FAQ条目ID(seq_id)"
-// @Param        request   body      addSimilarQuestionsRequest  true  "相似问列表"
-// @Success      200       {object}  map[string]interface{}      "更新后的FAQ条目"
-// @Failure      400       {object}  errors.AppError             "请求参数错误"
+// @Param        request   body      addSimilarQuestionsRequest  true  "相似问List "
+// @Success      200       {object}  map[string]interface{}      "Update 后的FAQ条目"
+// @Failure      400       {object}  errors.AppError             "请求Parameters 错误"
 // @Failure      404       {object}  errors.AppError             "条目不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth

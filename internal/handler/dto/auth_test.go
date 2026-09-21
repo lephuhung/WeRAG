@@ -16,7 +16,7 @@ func TestAuthLoginResponse_ViewerOmitsActiveTenantSecrets(t *testing.T) {
 		ActiveTenant: tenant,
 		Memberships: []types.Membership{{
 			TenantID: tenant.ID,
-			Role:     types.TenantRoleViewer,
+			Role:     types.TenantRoleMember,
 		}},
 	})
 	body, err := json.Marshal(resp)
@@ -51,7 +51,7 @@ func TestAuthOIDCCallbackResponse_ViewerOmitsTenantSecrets(t *testing.T) {
 		Tenant:  tenant,
 		Memberships: []types.Membership{{
 			TenantID: tenant.ID,
-			Role:     types.TenantRoleViewer,
+			Role:     types.TenantRoleMember,
 		}},
 	})
 	body, err := json.Marshal(resp)

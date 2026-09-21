@@ -22,7 +22,7 @@ type AliyunReranker struct {
 	customHeaders map[string]string
 }
 
-// SetCustomHeaders 设置用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+// SetCustomHeaders Settings 用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
 func (r *AliyunReranker) SetCustomHeaders(headers map[string]string) {
 	r.customHeaders = headers
 }

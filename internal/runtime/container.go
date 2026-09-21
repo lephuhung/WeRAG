@@ -10,7 +10,7 @@ import (
 // 所有服务和组件都通过它进行注册和解析
 var container *dig.Container
 
-// init 初始化依赖注入容器
+// init Initialization 依赖注入容器
 // 在程序启动时自动调用
 func init() {
 	container = dig.New()

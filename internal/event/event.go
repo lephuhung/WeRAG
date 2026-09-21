@@ -15,11 +15,11 @@ type EventType string
 
 const (
 	// Query processing events
-	EventQueryReceived   EventType = "query.received"   // 用户查询到达
-	EventQueryValidated  EventType = "query.validated"  // 查询验证完成
-	EventQueryPreprocess EventType = "query.preprocess" // 查询预处理
-	EventQueryRewrite    EventType = "query.rewrite"    // 查询改写
-	EventQueryRewritten  EventType = "query.rewritten"  // 查询改写完成
+	EventQueryReceived   EventType = "query.received"   // 用户Query 到达
+	EventQueryValidated  EventType = "query.validated"  // Query 验证完成
+	EventQueryPreprocess EventType = "query.preprocess" // Query 预处理
+	EventQueryRewrite    EventType = "query.rewrite"    // Query 改写
+	EventQueryRewritten  EventType = "query.rewritten"  // Query 改写完成
 
 	// Retrieval events
 	EventRetrievalStart    EventType = "retrieval.start"    // 检索开始
@@ -42,7 +42,7 @@ const (
 	EventChatStream   EventType = "chat.stream"   // 聊天流式输出
 
 	// Agent events
-	EventAgentQuery    EventType = "agent.query"    // Agent 查询开始
+	EventAgentQuery    EventType = "agent.query"    // Agent Query 开始
 	EventAgentPlan     EventType = "agent.plan"     // Agent 计划生成
 	EventAgentStep     EventType = "agent.step"     // Agent 步骤执行
 	EventAgentTool     EventType = "agent.tool"     // Agent 工具调用
@@ -85,7 +85,7 @@ const (
 	EventUserMessageInjected EventType = "user_message_injected"
 
 	// Session events
-	EventSessionTitle EventType = "session_title" // 会话标题更新
+	EventSessionTitle EventType = "session_title" // 会话标题Update
 
 	// Control events
 	EventStop EventType = "stop" // 停止对话生成
@@ -93,7 +93,7 @@ const (
 
 // Event represents an event in the system
 type Event struct {
-	ID        string                 // 事件ID (自动生成UUID，用于流式更新追踪)
+	ID        string                 // 事件ID (自动生成UUID，用于流式Update 追踪)
 	Type      EventType              // 事件类型
 	SessionID string                 // 会话ID
 	Data      interface{}            // 事件数据

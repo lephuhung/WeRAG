@@ -82,7 +82,7 @@ func newTenantHandlerTestEngine(t *testing.T, role types.TenantRole, tenant *typ
 
 func TestListTenantsViewerDoesNotLeakSecrets(t *testing.T) {
 	tenant := secretTenantFixture()
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant)
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/tenants", nil)
@@ -96,7 +96,7 @@ func TestListTenantsViewerDoesNotLeakSecrets(t *testing.T) {
 
 func TestGetTenantViewerDoesNotLeakSecrets(t *testing.T) {
 	tenant := secretTenantFixture()
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant)
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/tenants/42", nil)
@@ -107,7 +107,7 @@ func TestGetTenantViewerDoesNotLeakSecrets(t *testing.T) {
 
 func TestGetTenantKVViewerForbiddenForSecretKeys(t *testing.T) {
 	tenant := secretTenantFixture()
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant)
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant)
 
 	for _, key := range []string{"web-search-config", "parser-engine-config", "storage-engine-config"} {
 		t.Run(key, func(t *testing.T) {
@@ -158,7 +158,7 @@ func secretTenantFixture() *types.Tenant {
 func TestGetTenantKVViewerAllowedForNonSecretKey(t *testing.T) {
 	tenant := secretTenantFixture()
 	tenant.RetrievalConfig = &types.RetrievalConfig{}
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant)
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/tenants/kv/retrieval-config", nil)
@@ -186,7 +186,7 @@ func TestPutTenantParserConfigAdminForbidden(t *testing.T) {
 
 func TestPutTenantParserConfigSystemAdminPreservesRedactedSecrets(t *testing.T) {
 	tenant := secretTenantFixture()
-	engine := newTenantHandlerTestEngine(t, types.TenantRoleViewer, tenant, true)
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant, true)
 
 	body := `{"mineru_api_key":"***","mineru_endpoint":"https://example.com/mineru"}`
 	rec := httptest.NewRecorder()

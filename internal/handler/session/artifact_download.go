@@ -196,8 +196,8 @@ func (h *Handler) DownloadMessageArtifact(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("file service unavailable"))
 		return
 	}
-	file, err := access.ResolveMessageArtifact(ctx, msg, index, h.agentShareService, h.resourceCatalog,
-		access.MessageKBShareAuthorizer{ShareGuard: h.kbShareService, KBs: h.knowledgebaseService})
+	file, err := access.ResolveMessageArtifact(ctx, msg, index, h.resourceCatalog,
+		access.MessageKBGrantAuthorizer{GrantGuard: h.kbAccessGrantService, KBs: h.knowledgebaseService})
 	if err != nil {
 		_ = c.Error(errors.NewNotFoundError("artifact not accessible"))
 		return

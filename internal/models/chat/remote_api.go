@@ -29,16 +29,16 @@ type RemoteAPIChat struct {
 	provider  provider.ProviderName
 	appID     string
 	appSecret string
-	// customHeaders 为用户在模型配置中指定的自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+	// customHeaders 为用户在模型Configuration 中指定的自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
 	customHeaders map[string]string
 
-	// adapter 承载所有 provider 特定行为（thinking / 参数特判 / endpoint / 鉴权 / 消息变换）。
+	// adapter 承载所有 provider 特定行为（thinking / Parameters 特判 / endpoint / 鉴权 / 消息变换）。
 	adapter providerAdapter
 	// thinkingOverride 来自 extra_config.thinking_control，非 nil 时覆盖 adapter.Thinking()。
 	thinkingOverride ThinkingStrategy
 }
 
-// NewRemoteAPIChat 创建远程 API 聊天实例
+// NewRemoteAPIChat Create 远程 API 聊天实例
 func NewRemoteAPIChat(chatConfig *ChatConfig) (*RemoteAPIChat, error) {
 	if chatConfig.BaseURL != "" {
 		if err := secutils.ValidateURLForSSRF(chatConfig.BaseURL); err != nil {
@@ -175,8 +175,8 @@ func (c *RemoteAPIChat) logRequest(ctx context.Context, req any, isStream bool) 
 
 // Chat 进行非流式聊天
 func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
-	// 仅在调用方未设置 deadline 时附加一个兜底超时，防止 hung 请求永久阻塞 worker；
-	// 调用方若显式设置了更短或更长的 deadline，都会被原样尊重。
+	// 仅在调用方未Settings  deadline 时附加一个兜底超时，防止 hung 请求永久阻塞 worker；
+	// 调用方若显式Settings 了更短或更长的 deadline，都会被原样尊重。
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultChatTimeout)
 	defer cancel()
 
@@ -275,7 +275,7 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 
 // ChatStream 进行流式聊天
 func (c *RemoteAPIChat) ChatStream(ctx context.Context, messages []Message, opts *ChatOptions) (<-chan types.StreamResponse, error) {
-	// 仅在调用方未设置 deadline 时附加兜底超时；流式调用默认超时更长，
+	// 仅在调用方未Settings  deadline 时附加兜底超时；流式调用默认超时更长，
 	// 因为带思考/推理的模型可能数十秒甚至几分钟才产出首 token。
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultStreamTimeout)
 

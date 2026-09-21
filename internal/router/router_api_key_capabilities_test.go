@@ -558,69 +558,6 @@ func TestTenantMemberRoutesDeclareManageMembersCapability(t *testing.T) {
 	}
 }
 
-func TestOrganizationRoutesDeclareManageSpacesCapability(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	g := &rbacGuards{}
-	v1 := gin.New().Group("/api/v1")
-
-	RegisterOrganizationRoutes(v1, &handler.OrganizationHandler{}, g)
-
-	cases := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodPost, "/api/v1/organizations"},
-		{http.MethodGet, "/api/v1/organizations"},
-		{http.MethodPost, "/api/v1/organizations/join"},
-		{http.MethodGet, "/api/v1/organizations/search"},
-		{http.MethodPut, "/api/v1/organizations/:id"},
-		{http.MethodPost, "/api/v1/organizations/:id/invite-code"},
-		{http.MethodGet, "/api/v1/organizations/:id/members"},
-		{http.MethodPut, "/api/v1/organizations/:id/members/:tenant_id"},
-		{http.MethodGet, "/api/v1/shared-knowledge-bases"},
-		{http.MethodGet, "/api/v1/shared-agents"},
-		{http.MethodPost, "/api/v1/shared-agents/disabled"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
-			policy := mustLookupAPIKeyPolicy(t, g, tc.method, tc.path)
-			if !policy.RequireFullAccess {
-				t.Fatal("policy should require full access without a matching capability")
-			}
-			if !policyHasCapability(policy, types.APIKeyCapabilityManageSpaces) {
-				t.Fatalf("policy capabilities = %#v, want manage_spaces", policy.Capabilities)
-			}
-		})
-	}
-
-	// KB/agent share management is open to full-access keys (tenant-wide
-	// authority) but never via a capability.
-	shareRoutes := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodPost, "/api/v1/knowledge-bases/:id/shares"},
-		{http.MethodGet, "/api/v1/knowledge-bases/:id/shares"},
-		{http.MethodPut, "/api/v1/knowledge-bases/:id/shares/:share_id"},
-		{http.MethodDelete, "/api/v1/knowledge-bases/:id/shares/:share_id"},
-		{http.MethodPost, "/api/v1/agents/:id/shares"},
-		{http.MethodGet, "/api/v1/agents/:id/shares"},
-		{http.MethodDelete, "/api/v1/agents/:id/shares/:share_id"},
-	}
-	for _, tc := range shareRoutes {
-		t.Run("share "+tc.method+" "+tc.path, func(t *testing.T) {
-			policy := mustLookupAPIKeyPolicy(t, g, tc.method, tc.path)
-			if !policy.RequireFullAccess {
-				t.Fatal("share route should require full access for API keys")
-			}
-			if len(policy.Capabilities) != 0 {
-				t.Fatalf("share route must not be granted by any capability: %#v", policy.Capabilities)
-			}
-		})
-	}
-}
-
 func TestChunkerPreviewRouteRequiresRetrieveOrIngestCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	g := &rbacGuards{}

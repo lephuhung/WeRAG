@@ -160,15 +160,19 @@ const (
 	// Knowledge-base activity actions. These rows use scope_type=knowledge_base
 	// and scope_id=<kb id>; TargetType/TargetID identify the concrete child
 	// resource when the operation is about a document, tag, data source, or share.
-	AuditActionKBCreated        AuditAction = "kb.created"
-	AuditActionKBUpdated        AuditAction = "kb.updated"
-	AuditActionKBDeleted        AuditAction = "kb.deleted"
-	AuditActionOrgCreated       AuditAction = "org.created"
-	AuditActionOrgDeleted       AuditAction = "org.deleted"
-	AuditActionKBDuplicated     AuditAction = "kb.duplicated"
-	AuditActionKBCloneStarted   AuditAction = "kb.clone_started"
-	AuditActionKBCloneCompleted AuditAction = "kb.clone_completed"
-	AuditActionKBCloneFailed    AuditAction = "kb.clone_failed"
+	AuditActionKBCreated AuditAction = "kb.created"
+	AuditActionKBUpdated AuditAction = "kb.updated"
+	AuditActionKBDeleted AuditAction = "kb.deleted"
+	// KB access-grant lifecycle actions (tenant-to-tenant read grants,
+	// replacing the removed Organization share model).
+	AuditActionKBAccessRequested AuditAction = "kb.access_requested"
+	AuditActionKBAccessApproved  AuditAction = "kb.access_approved"
+	AuditActionKBAccessRejected  AuditAction = "kb.access_rejected"
+	AuditActionKBAccessRevoked   AuditAction = "kb.access_revoked"
+	AuditActionKBDuplicated      AuditAction = "kb.duplicated"
+	AuditActionKBCloneStarted    AuditAction = "kb.clone_started"
+	AuditActionKBCloneCompleted  AuditAction = "kb.clone_completed"
+	AuditActionKBCloneFailed     AuditAction = "kb.clone_failed"
 
 	AuditActionKnowledgeCreated        AuditAction = "knowledge.created"
 	AuditActionKnowledgeUpdated        AuditAction = "knowledge.updated"
@@ -193,10 +197,7 @@ const (
 	AuditActionDataSourcePaused        AuditAction = "datasource.paused"
 	AuditActionDataSourceResumed       AuditAction = "datasource.resumed"
 
-	AuditActionKBShareAdded             AuditAction = "kb.share_added"
-	AuditActionKBSharePermissionChanged AuditAction = "kb.share_permission_changed"
-	AuditActionKBShareRemoved           AuditAction = "kb.share_removed"
-	AuditActionWikiContentChanged       AuditAction = "wiki.content_changed"
+	AuditActionWikiContentChanged AuditAction = "wiki.content_changed"
 
 	AuditActionFAQImportStarted   AuditAction = "faq.import_started"
 	AuditActionFAQImportCompleted AuditAction = "faq.import_completed"

@@ -28,23 +28,22 @@ func (s *downloadKnowledgeLookup) GetKnowledgeByIDOnly(_ context.Context, id str
 	return nil, apprepo.ErrKnowledgeNotFound
 }
 
-type downloadKBShareStub struct {
-	interfaces.KBShareService
-	permission types.OrgMemberRole
-	source     uint64
+type downloadKBGrantStub struct {
+	interfaces.KBAccessGrantService
+	permission types.KBPermission
+	granted    bool
 }
 
-func (s *downloadKBShareStub) CheckTenantKBPermission(
+func (s *downloadKBGrantStub) ApprovedKBPermission(
 	_ context.Context,
 	_ string,
 	_ uint64,
-	_ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
-	return s.permission, true, nil
+) (types.KBPermission, bool, error) {
+	return s.permission, s.granted, nil
 }
 
-func (s *downloadKBShareStub) GetKBSourceTenant(_ context.Context, _ string) (uint64, error) {
-	return s.source, nil
+func (s *downloadKBGrantStub) GetKBScope(context.Context, string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 func newKnowledgeDownloadRouteTestEngine(
@@ -52,7 +51,7 @@ func newKnowledgeDownloadRouteTestEngine(
 	role types.TenantRole,
 	knowledge *types.Knowledge,
 	kb *types.KnowledgeBase,
-	share interfaces.KBShareService,
+	grants interfaces.KBAccessGrantService,
 ) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -62,7 +61,7 @@ func newKnowledgeDownloadRouteTestEngine(
 		cfg:              &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}},
 		knowledgeService: &downloadKnowledgeLookup{knowledge: knowledge},
 		kbService:        &stubWikiKBLookup{kbs: map[string]*types.KnowledgeBase{kb.ID: kb}},
-		kbShareService:   share,
+		kbGrantService:   grants,
 	}
 
 	r := gin.New()
@@ -78,52 +77,52 @@ func newKnowledgeDownloadRouteTestEngine(
 	return r
 }
 
-func TestKnowledgeDownloadRejectsTenantViewer(t *testing.T) {
+func TestKnowledgeDownloadRejectsForeignKBWithoutGrant(t *testing.T) {
 	engine := newKnowledgeDownloadRouteTestEngine(
 		t,
-		types.TenantRoleViewer,
-		&types.Knowledge{ID: "knowledge-own", KnowledgeBaseID: "kb-own", TenantID: 1},
-		&types.KnowledgeBase{ID: "kb-own", TenantID: 1},
+		types.TenantRoleMember,
+		&types.Knowledge{ID: "knowledge-foreign", KnowledgeBaseID: "kb-foreign", TenantID: 2},
+		&types.KnowledgeBase{ID: "kb-foreign", TenantID: 2},
 		nil,
 	)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/knowledge-own/download", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/knowledge-foreign/download", nil)
 	engine.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
 }
 
-func TestKnowledgeDownloadRejectsReadOnlySharedKB(t *testing.T) {
+func TestKnowledgeDownloadRejectsReadOnlyGrantedKB(t *testing.T) {
 	engine := newKnowledgeDownloadRouteTestEngine(
 		t,
-		types.TenantRoleContributor,
-		&types.Knowledge{ID: "knowledge-shared", KnowledgeBaseID: "kb-shared", TenantID: 2},
-		&types.KnowledgeBase{ID: "kb-shared", TenantID: 2},
-		&downloadKBShareStub{permission: types.OrgRoleViewer, source: 2},
+		types.TenantRoleMember,
+		&types.Knowledge{ID: "knowledge-granted", KnowledgeBaseID: "kb-granted", TenantID: 2},
+		&types.KnowledgeBase{ID: "kb-granted", TenantID: 2},
+		&downloadKBGrantStub{permission: types.KBPermissionViewer, granted: true},
 	)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/knowledge-shared/download", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/knowledge-granted/download", nil)
 	engine.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
 }
 
-func TestBatchKnowledgeDownloadRejectsTenantViewer(t *testing.T) {
+func TestBatchKnowledgeDownloadRejectsForeignKBWithoutGrant(t *testing.T) {
 	engine := newKnowledgeDownloadRouteTestEngine(
 		t,
-		types.TenantRoleViewer,
-		&types.Knowledge{ID: "knowledge-own", KnowledgeBaseID: "kb-own", TenantID: 1},
-		&types.KnowledgeBase{ID: "kb-own", TenantID: 1},
+		types.TenantRoleMember,
+		&types.Knowledge{ID: "knowledge-foreign", KnowledgeBaseID: "kb-foreign", TenantID: 2},
+		&types.KnowledgeBase{ID: "kb-foreign", TenantID: 2},
 		nil,
 	)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/knowledge-bases/kb-own/knowledge/batch-download",
-		bytes.NewBufferString(`{"ids":["knowledge-own"]}`),
+		"/api/v1/knowledge-bases/kb-foreign/knowledge/batch-download",
+		bytes.NewBufferString(`{"ids":["knowledge-foreign"]}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	engine.ServeHTTP(rec, req)
@@ -131,31 +130,23 @@ func TestBatchKnowledgeDownloadRejectsTenantViewer(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
 }
 
-func TestBatchKnowledgeDownloadRejectsReadOnlySharedKB(t *testing.T) {
+func TestBatchKnowledgeDownloadRejectsReadOnlyGrantedKB(t *testing.T) {
 	engine := newKnowledgeDownloadRouteTestEngine(
 		t,
-		types.TenantRoleContributor,
-		&types.Knowledge{ID: "knowledge-shared", KnowledgeBaseID: "kb-shared", TenantID: 2},
-		&types.KnowledgeBase{ID: "kb-shared", TenantID: 2},
-		&downloadKBShareStub{permission: types.OrgRoleViewer, source: 2},
+		types.TenantRoleMember,
+		&types.Knowledge{ID: "knowledge-granted", KnowledgeBaseID: "kb-granted", TenantID: 2},
+		&types.KnowledgeBase{ID: "kb-granted", TenantID: 2},
+		&downloadKBGrantStub{permission: types.KBPermissionViewer, granted: true},
 	)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/knowledge-bases/kb-shared/knowledge/batch-download",
-		bytes.NewBufferString(`{"ids":["knowledge-shared"]}`),
+		"/api/v1/knowledge-bases/kb-granted/knowledge/batch-download",
+		bytes.NewBufferString(`{"ids":["knowledge-granted"]}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	engine.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
-}
-
-func (s *downloadKBShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *downloadKBShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

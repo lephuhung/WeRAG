@@ -144,12 +144,6 @@ const (
 	// members and invitations. It does not include API key management,
 	// tenant deletion, or ownership transfer.
 	APIKeyCapabilityManageMembers APIKeyCapability = "manage_members"
-	// APIKeyCapabilityManageSpaces lets a key manage organization/space
-	// collaboration surfaces such as space membership and join flows. It does
-	// not grant KB/agent share management: share management is reserved for
-	// full-access keys (and JWT) and scoped keys stay default-deny. This
-	// capability never lifts it.
-	APIKeyCapabilityManageSpaces APIKeyCapability = "manage_spaces"
 	// APIKeyCapabilityManageTenantSettings lets a key read and update
 	// tenant-scoped integration settings exposed under /tenants, such as API
 	// principal mode, request headers, and tenant KV. It does not include API
@@ -206,8 +200,6 @@ func NormalizeAPIKeyCapability(c APIKeyCapability) APIKeyCapability {
 		return APIKeyCapabilityRunEvaluations
 	case APIKeyCapabilityManageMembers:
 		return APIKeyCapabilityManageMembers
-	case APIKeyCapabilityManageSpaces:
-		return APIKeyCapabilityManageSpaces
 	case APIKeyCapabilityManageTenantSettings:
 		return APIKeyCapabilityManageTenantSettings
 	case APIKeyCapabilitySystemTenantsRead:

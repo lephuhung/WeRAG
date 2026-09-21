@@ -15,7 +15,7 @@ func TestCanViewIntegrationSecretsAdminRole(t *testing.T) {
 }
 
 func TestCanViewIntegrationSecretsViewerDenied(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleMember)
 	if CanViewIntegrationSecrets(ctx) {
 		t.Fatal("viewer should not view integration secrets")
 	}
@@ -25,7 +25,7 @@ func TestCanViewIntegrationSecretsScopedAPIKeyWithManageTenantSettings(t *testin
 	ctx := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{
 		Capabilities: types.StringArray{string(types.APIKeyCapabilityManageTenantSettings)},
 	})
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 	if !CanViewIntegrationSecrets(ctx) {
 		t.Fatal("manage_tenant_settings API key should view integration secrets")
 	}
@@ -35,7 +35,7 @@ func TestCanViewIntegrationSecretsScopedAPIKeyWithoutCapabilityDenied(t *testing
 	ctx := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{
 		Capabilities: types.StringArray{string(types.APIKeyCapabilityChat)},
 	})
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 	if CanViewIntegrationSecrets(ctx) {
 		t.Fatal("chat-only API key should not view integration secrets")
 	}

@@ -76,7 +76,7 @@ func (m *DocumentChunkMetadata) IsQuestionCurrent(question GeneratedQuestion, ch
 	return m != nil && m.GeneratedQuestionsRevision == chunkRevision
 }
 
-// GetQuestionStrings 返回问题内容字符串列表（兼容旧代码）
+// GetQuestionStrings 返回问题内容字符串List （兼容旧代码）
 func (m *DocumentChunkMetadata) GetQuestionStrings() []string {
 	if m == nil || len(m.GeneratedQuestions) == 0 {
 		return nil
@@ -100,7 +100,7 @@ func (c *Chunk) DocumentMetadata() (*DocumentChunkMetadata, error) {
 	return &meta, nil
 }
 
-// SetDocumentMetadata 设置 Chunk 的文档元数据
+// SetDocumentMetadata Settings  Chunk 的文档元数据
 func (c *Chunk) SetDocumentMetadata(meta *DocumentChunkMetadata) error {
 	if c == nil {
 		return nil
@@ -149,7 +149,7 @@ func (m *FAQChunkMetadata) Normalize() *FAQChunkMetadata {
 	}
 }
 
-// SanitizeStrings 对字符串列表进行基础清理（TrimSpace + 去重）
+// SanitizeStrings 对字符串List 进行基础清理（TrimSpace + 去重）
 func SanitizeStrings(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -187,7 +187,7 @@ func (c *Chunk) FAQMetadata() (*FAQChunkMetadata, error) {
 	return &meta, nil
 }
 
-// SetFAQMetadata 设置 Chunk 的 FAQ 元数据
+// SetFAQMetadata Settings  Chunk 的 FAQ 元数据
 // DB 存储原始数据，ContentHash 基于归一化数据计算
 func (c *Chunk) SetFAQMetadata(meta *FAQChunkMetadata) error {
 	if c == nil {
@@ -304,7 +304,7 @@ type FAQExportEntry struct {
 	IsRecommended     bool           `json:"is_recommended"`
 }
 
-// FAQEntryPayload 用于创建/更新 FAQ 条目的 payload
+// FAQEntryPayload 用于Create /Update  FAQ 条目的 payload
 type FAQEntryPayload struct {
 	// ID 可选，用于数据迁移时指定 seq_id（必须小于自增起始值 100000000）
 	ID                *int64          `json:"id,omitempty"`
@@ -346,7 +346,7 @@ type FAQFailedEntry struct {
 	Answers           []string `json:"answers,omitempty"`            // 答案
 	AnswerAll         bool     `json:"answer_all,omitempty"`         // 是否全部回复
 	IsDisabled        bool     `json:"is_disabled,omitempty"`        // 是否停用
-	// 部分失败详情（当 IsPartialFailure 为 true 时）
+	// 部分失败Details （当 IsPartialFailure 为 true 时）
 	RemovedSimilarQuestions  []string `json:"removed_similar_questions,omitempty"`  // 被移除的相似问及原因
 	RemovedNegativeQuestions []string `json:"removed_negative_questions,omitempty"` // 被移除的反例及原因
 }
@@ -375,23 +375,23 @@ type FAQDryRunResult struct {
 	Total         int              `json:"total"`             // 总条目数
 	SuccessCount  int              `json:"success_count"`     // 验证通过的条目数
 	FailedCount   int              `json:"failed_count"`      // 验证失败的条目数
-	FailedEntries []FAQFailedEntry `json:"failed_entries"`    // 失败条目详情
+	FailedEntries []FAQFailedEntry `json:"failed_entries"`    // 失败条目Details
 }
 
-// FAQSearchRequest FAQ检索请求参数
+// FAQSearchRequest FAQ检索请求Parameters
 type FAQSearchRequest struct {
 	QueryText            string  `json:"query_text"             binding:"required"`
 	VectorThreshold      float64 `json:"vector_threshold"`
 	MatchCount           int     `json:"match_count"`
-	FirstPriorityTagIDs  []int64 `json:"first_priority_tag_ids"`  // 第一优先级标签ID列表，限定命中范围，优先级最高
-	SecondPriorityTagIDs []int64 `json:"second_priority_tag_ids"` // 第二优先级标签ID列表，限定命中范围，优先级低于第一优先级
+	FirstPriorityTagIDs  []int64 `json:"first_priority_tag_ids"`  // 第一优先级标签IDList ，限定命中范围，优先级最高
+	SecondPriorityTagIDs []int64 `json:"second_priority_tag_ids"` // 第二优先级标签IDList ，限定命中范围，优先级低于第一优先级
 	OnlyRecommended      bool    `json:"only_recommended"`        // 是否仅返回推荐的条目
 }
 
 // UntaggedTagName is the default tag name for entries without a tag
 const UntaggedTagName = "未分类"
 
-// FAQEntryFieldsUpdate 单个FAQ条目的字段更新
+// FAQEntryFieldsUpdate 单个FAQ条目的字段Update
 type FAQEntryFieldsUpdate struct {
 	IsEnabled     *bool  `json:"is_enabled,omitempty"`
 	IsRecommended *bool  `json:"is_recommended,omitempty"`
@@ -399,16 +399,16 @@ type FAQEntryFieldsUpdate struct {
 	// 后续可扩展更多字段
 }
 
-// FAQEntryFieldsBatchUpdate 批量更新FAQ条目字段的请求
+// FAQEntryFieldsBatchUpdate 批量Update FAQ条目字段的请求
 // 支持两种模式：
-// 1. 按条目ID更新：使用 ByID 字段
-// 2. 按Tag更新：使用 ByTag 字段，将该Tag下所有条目应用相同的更新
+// 1. 按条目IDUpdate ：使用 ByID 字段
+// 2. 按TagUpdate ：使用 ByTag 字段，将该Tag下所有条目应用相同的Update
 type FAQEntryFieldsBatchUpdate struct {
-	// ByID 按条目ID更新，key为条目ID (seq_id)
+	// ByID 按条目IDUpdate ，key为条目ID (seq_id)
 	ByID map[int64]FAQEntryFieldsUpdate `json:"by_id,omitempty"`
-	// ByTag 按Tag批量更新，key为TagID (seq_id)
+	// ByTag 按Tag批量Update ，key为TagID (seq_id)
 	ByTag map[int64]FAQEntryFieldsUpdate `json:"by_tag,omitempty"`
-	// ExcludeIDs 在ByTag操作中需要排除的ID列表 (seq_id)
+	// ExcludeIDs 在ByTag操作中需要排除的IDList  (seq_id)
 	ExcludeIDs []int64 `json:"exclude_ids,omitempty"`
 }
 
@@ -440,14 +440,14 @@ type FAQImportProgress struct {
 	FailedCount        int                 `json:"failed_count"`                   // 失败的条目数
 	PartialFailedCount int                 `json:"partial_failed_count,omitempty"` // 部分失败的条目数（相似问/反例被移除）
 	SkippedCount       int                 `json:"skipped_count,omitempty"`        // 跳过的条目数（如重复等）
-	FailedEntries      []FAQFailedEntry    `json:"failed_entries,omitempty"`       // 失败条目详情（少量时直接返回）
+	FailedEntries      []FAQFailedEntry    `json:"failed_entries,omitempty"`       // 失败条目Details （少量时直接返回）
 	FailedEntriesURL   string              `json:"failed_entries_url,omitempty"`   // 失败条目CSV下载URL（大量时返回URL）
 	SuccessEntries     []FAQSuccessEntry   `json:"success_entries,omitempty"`      // 成功条目简单信息（少量时直接返回）
 	ValidEntryIndices  []int               `json:"valid_entry_indices,omitempty"`  // 验证通过的条目索引（用于重试时跳过验证）
 	MergeEntryIndices  []int               `json:"merge_entry_indices,omitempty"`  // 需要合并的条目索引（内部使用，用于重试时跳过识别）
-	MergedCount        int                 `json:"merged_count,omitempty"`         // 合并更新的条目数
+	MergedCount        int                 `json:"merged_count,omitempty"`         // 合并Update 的条目数
 	AddedCount         int                 `json:"added_count,omitempty"`          // 新增的条目数
-	MergeDetails       []FAQMergeDetail    `json:"merge_details,omitempty"`        // 合并详情
+	MergeDetails       []FAQMergeDetail    `json:"merge_details,omitempty"`        // 合并Details
 	Message            string              `json:"message"`                        // Status message
 	Error              string              `json:"error"`                          // Error message if failed
 	CreatedAt          int64               `json:"created_at"`                     // Task creation timestamp
@@ -478,7 +478,7 @@ type FAQImportResult struct {
 	FailedCount        int `json:"failed_count"`         // 完全失败的条目数
 	PartialFailedCount int `json:"partial_failed_count"` // 部分失败的条目数（相似问/反例被移除但已导入）
 	SkippedCount       int `json:"skipped_count"`        // 跳过的条目数（如重复等）
-	MergedCount        int `json:"merged_count"`         // 合并更新的条目数
+	MergedCount        int `json:"merged_count"`         // 合并Update 的条目数
 	AddedCount         int `json:"added_count"`          // 新增的条目数
 
 	// 导入模式和时间信息
@@ -486,7 +486,7 @@ type FAQImportResult struct {
 	ImportedAt time.Time `json:"imported_at"` // 导入完成时间
 	TaskID     string    `json:"task_id"`     // 导入任务ID
 
-	// 失败详情URL（失败条目较多时提供下载链接）
+	// 失败Details URL（失败条目较多时提供下载链接）
 	FailedEntriesURL string `json:"failed_entries_url,omitempty"` // 失败条目CSV下载URL
 
 	// 显示控制
@@ -532,7 +532,7 @@ func ParseFAQImportMetadata(k *Knowledge) (*FAQImportMetadata, error) {
 	return &metadata, nil
 }
 
-// normalizeQuestionStrings 对问题列表进行归一化处理
+// normalizeQuestionStrings 对问题List 进行归一化处理
 // 包括全角转半角、去除末尾标点、合并空格等，同时去重
 func normalizeQuestionStrings(values []string) []string {
 	if len(values) == 0 {
@@ -717,7 +717,7 @@ func parseURL(raw string) (domain, path string) {
 	// 分离域名和路径
 	slashIdx := strings.Index(u, "/")
 	if slashIdx == -1 {
-		// 没有路径，整个是域名（可能带查询参数）
+		// 没有路径，整个是域名（可能带Query Parameters ）
 		queryIdx := strings.Index(u, "?")
 		if queryIdx != -1 {
 			domain = u[:queryIdx]
@@ -730,7 +730,7 @@ func parseURL(raw string) (domain, path string) {
 	domain = u[:slashIdx]
 	path = u[slashIdx:]
 
-	// 移除查询参数和片段
+	// 移除Query Parameters 和片段
 	if queryIdx := strings.Index(path, "?"); queryIdx != -1 {
 		path = path[:queryIdx]
 	}
@@ -769,8 +769,8 @@ func toHalfWidth(s string) string {
 	return builder.String()
 }
 
-// NormalizeQueryText 对搜索查询文本进行归一化处理
-// 与 NormalizeQuestion 相同的处理逻辑，用于搜索时对查询文本进行归一化
+// NormalizeQueryText 对搜索Query 文本进行归一化处理
+// 与 NormalizeQuestion 相同的处理逻辑，用于搜索时对Query 文本进行归一化
 func NormalizeQueryText(q string) string {
 	return NormalizeQuestion(q)
 }

@@ -17,7 +17,7 @@ func RequireKBWrite(ctx context.Context, kb *types.KnowledgeBase) error {
 		!scope.HasCapability(types.APIKeyCapabilityIngest) {
 		return ErrForbidden
 	}
-	if !HasKBGrant(ctx, kb.ID, kb.TenantID, types.OrgRoleEditor) {
+	if !HasKBGrant(ctx, kb.ID, kb.TenantID, types.KBPermissionEditor) {
 		return ErrForbidden
 	}
 	return nil
@@ -37,7 +37,7 @@ func WithKBTaskWrite(ctx context.Context, kb *types.KnowledgeBase, expectedTenan
 		caller:     types.CallerFromContext(ctx),
 		kbID:       kb.ID,
 		tenantID:   expectedTenant,
-		permission: types.OrgRoleEditor,
+		permission: types.KBPermissionEditor,
 		task:       true,
 	}
 	// A worker gets exactly one scope, without inheriting another task's KBs.

@@ -13,25 +13,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type callerScopeShares struct {
-	interfaces.KBShareService
+// callerScopeGrants records the grantee tenant of every grant lookup so the
+// test can prove checks always run against the original caller — never the
+// execution tenant of a shared execution context. Tenant 2 holds an
+// approved grant on the third tenant's "onward" KB; caller tenant 1 does
+// not, and must not inherit it.
+type callerScopeGrants struct {
+	interfaces.KBAccessGrantService
 	callers []uint64
 }
 
-func (s *callerScopeShares) CheckTenantKBPermission(
+func (s *callerScopeGrants) ApprovedKBPermission(
 	_ context.Context,
 	kbID string,
-	caller uint64,
-	_ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
-	s.callers = append(s.callers, caller)
-	// Tenant 2 has access to a third tenant's KB; caller 1 does not.
-	return types.OrgRoleViewer, kbID == "onward" && caller == 2, nil
+	grantee uint64,
+) (types.KBPermission, bool, error) {
+	s.callers = append(s.callers, grantee)
+	return types.KBPermissionViewer, kbID == "onward" && grantee == 2, nil
+}
+
+func (s *callerScopeGrants) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 func TestSharedExecutionFiltersDocumentsChunksAndSearchScope(t *testing.T) {
-	shares := &callerScopeShares{}
-	svc, db := newKnowledgeSharedAccessService(t, shares)
+	grants := &callerScopeGrants{}
+	svc, db := newKnowledgeSharedAccessService(t, grants)
 	require.NoError(t, db.AutoMigrate(&types.Chunk{}))
 	kbs := []*types.KnowledgeBase{
 		{ID: "own", TenantID: 1},
@@ -57,21 +64,21 @@ func TestSharedExecutionFiltersDocumentsChunksAndSearchScope(t *testing.T) {
 		)
 	}
 	search := &knowledgeBaseService{
-		kgRepo:         svc.repo,
-		chunkRepo:      repository.NewChunkRepository(db),
-		kbShareService: shares,
+		kgRepo:               svc.repo,
+		chunkRepo:            repository.NewChunkRepository(db),
+		kbAccessGrantService: grants,
 	}
 	kbService := &suggestionKBService{kbs: make(map[string]*types.KnowledgeBase)}
 	for _, kb := range kbs {
 		kbService.kbs[kb.ID] = kb
 	}
-	session := &sessionService{knowledgeBaseService: kbService, knowledgeService: svc, kbShareService: shares}
+	session := &sessionService{knowledgeBaseService: kbService, knowledgeService: svc, kbAccessGrantService: grants}
 	base := newSharedAccessContext()
 	grant := &access.KBAccess{
 		KnowledgeBase:     kbs[1],
 		Caller:            types.CallerFromContext(base),
 		EffectiveTenantID: 2,
-		Permission:        types.OrgRoleViewer,
+		Permission:        types.KBPermissionViewer,
 	}
 	for _, execution := range []uint64{1, 2, 3} {
 		ctx := logger.CloneContext(types.WithExecutionTenant(grant.Context(base), execution))
@@ -96,7 +103,7 @@ func TestSharedExecutionFiltersDocumentsChunksAndSearchScope(t *testing.T) {
 		require.ElementsMatch(t, []string{"own", "granted"}, got)
 		require.NoError(t, search.authorizeKBAccess(ctx, kbs[:2]))
 		require.Error(t, search.authorizeKBAccess(ctx, kbs[2:3]), "execution tenant is not ownership")
-		require.Error(t, search.authorizeKBAccess(ctx, kbs[3:]), "source tenant shares are not inherited")
+		require.Error(t, search.authorizeKBAccess(ctx, kbs[3:]), "owner tenant grants are not inherited")
 		targets, err := session.buildSearchTargets(
 			ctx,
 			execution,
@@ -111,12 +118,12 @@ func TestSharedExecutionFiltersDocumentsChunksAndSearchScope(t *testing.T) {
 			got = append(got, target.KnowledgeBaseID)
 		}
 		require.ElementsMatch(t, []string{"own", "granted"}, got)
-		_, err = resolveKBReadTenant(ctx, kbs[1], shares)
+		_, err = resolveKBReadTenant(ctx, kbs[1], grants)
 		require.NoError(t, err, "FAQ/tag reads accept the exact upstream grant")
-		_, err = resolveKBReadTenant(ctx, kbs[2], shares)
+		_, err = resolveKBReadTenant(ctx, kbs[2], grants)
 		require.Error(t, err, "FAQ/tag reads cannot access another KB in the execution tenant")
 	}
-	for _, caller := range shares.callers {
+	for _, caller := range grants.callers {
 		require.Equal(t, uint64(1), caller)
 	}
 }
@@ -159,36 +166,15 @@ func TestDocumentSearchListsCallerTenantAfterExecutionSwitch(t *testing.T) {
 	require.Equal(t, uint64(2), types.MustTenantIDFromContext(ctx), "search must not mutate the parent context")
 }
 
-func TestSharedAgentBatchUsesGrantInsteadOfSourceTenantOwnership(t *testing.T) {
-	svc, db := newKnowledgeSharedAccessService(t, &callerScopeShares{})
-	for _, kbID := range []string{"selected", "private"} {
-		seedKnowledge(t, db, &types.Knowledge{ID: kbID, TenantID: 2, KnowledgeBaseID: kbID, Type: "file"})
-	}
-	agent := &types.CustomAgent{
-		TenantID: 2,
-		Config:   types.CustomAgentConfig{KBSelectionMode: "selected", KnowledgeBases: []string{"selected"}},
-	}
-	ctx := logger.CloneContext(access.WithSharedAgent(newSharedAccessContext(), agent))
-	rows, err := svc.GetKnowledgeBatchWithSharedAccess(ctx, 2, []string{"selected", "private"})
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "selected", rows[0].ID)
-	ctx = types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{KnowledgeBaseIDs: types.StringArray{"private"}})
+func TestAPIKeyScopeDenialSurfacesAsForbidden(t *testing.T) {
+	ctx := types.WithTenantAPIKeyScope(
+		newSharedAccessContext(),
+		types.TenantAPIKeyScope{KnowledgeBaseIDs: types.StringArray{"private"}},
+	)
 	search := &knowledgeBaseService{}
 	app, ok := apperrors.IsAppError(
 		search.authorizeKBAccess(ctx, []*types.KnowledgeBase{{ID: "selected", TenantID: 2}}),
 	)
 	require.True(t, ok)
 	require.Equal(t, apperrors.ErrForbidden, app.Code, "API-key scope denial must not become a lookup failure")
-	rows, err = svc.GetKnowledgeBatchWithSharedAccess(ctx, 2, []string{"selected", "private"})
-	require.NoError(t, err)
-	require.Empty(t, rows)
-}
-
-func (s *callerScopeShares) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *callerScopeShares) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

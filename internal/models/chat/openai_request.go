@@ -93,12 +93,12 @@ func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatComplet
 	return openaiMessages
 }
 
-// BuildChatCompletionRequest 构建标准聊天请求参数（导出供子类使用）。
+// BuildChatCompletionRequest 构建标准聊天请求Parameters （导出供子类使用）。
 //
-// 采样参数（temperature / top_p / penalties）按 opts 直接映射。完成预算经
+// 采样Parameters （temperature / top_p / penalties）按 opts 直接映射。完成预算经
 // CompletionBudget 收成一个值，再按供应商只写入 max_tokens 或
 // max_completion_tokens 之一（二者互斥，见 #3014）。其余供应商特判
-// （o-series / GPT-5 采样参数、Moonshot 固定温度等）仍由
+// （o-series / GPT-5 采样Parameters 、Moonshot 固定温度等）仍由
 // providerAdapter.ShapeRequest 在事后施加，见 provider.go。
 func (c *RemoteAPIChat) BuildChatCompletionRequest(
 	messages []Message, opts *ChatOptions, isStream bool,

@@ -17,10 +17,10 @@ type SSEReader struct {
 	scanner *bufio.Scanner
 }
 
-// NewSSEReader 创建 SSE 读取器
+// NewSSEReader Create  SSE 读取器
 func NewSSEReader(reader io.Reader) *SSEReader {
 	scanner := bufio.NewScanner(reader)
-	// 设置更大的缓冲区以处理长行（思维链内容可能很长）
+	// Settings 更大的缓冲区以处理长行（思维链内容可能很长）
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 1024*1024)
 	return &SSEReader{scanner: scanner}

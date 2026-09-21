@@ -33,7 +33,7 @@ type LKEAPReranker struct {
 	client    *lkeap.Client
 }
 
-// NewLKEAPReranker 创建 LKEAP rerank 客户端。
+// NewLKEAPReranker Create  LKEAP rerank 客户端。
 func NewLKEAPReranker(config *RerankerConfig) (*LKEAPReranker, error) {
 	secretID := strings.TrimSpace(config.APIKey)
 	secretKey := strings.TrimSpace(config.AppSecret)

@@ -13,7 +13,7 @@ func adminContext() context.Context {
 
 func viewerContext() context.Context {
 	ctx := context.Background()
-	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 }
 
 func ownerContext() context.Context {

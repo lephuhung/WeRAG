@@ -34,7 +34,7 @@ func (p *QiniuProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证七牛云 provider 配置
+// ValidateConfig 验证七牛云 provider Configuration
 func (p *QiniuProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for Qiniu provider")

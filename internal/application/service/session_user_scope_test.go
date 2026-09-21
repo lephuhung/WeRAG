@@ -32,7 +32,7 @@ func testAPISessionScopeContext(tenantID uint64, externalUserID string) context.
 func testAPITenantKeyScopeContext(tenantID uint64, keyID uint64) context.Context {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, tenantID)
 	ctx = context.WithValue(ctx, types.UserIDContextKey, "system-1")
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 	ctx = types.WithPrincipal(ctx, types.Principal{
 		Type: types.PrincipalAPITenant,
 		ID:   "1",
@@ -437,7 +437,7 @@ func TestGetSessionAllowsIMRuntimeToReadIMSession(t *testing.T) {
 	ctx := context.WithValue(
 		testSessionScopeContext(1, "system-1"),
 		types.TenantRoleContextKey,
-		types.TenantRoleViewer,
+		types.TenantRoleMember,
 	)
 	ctx = types.WithPrincipal(ctx, types.Principal{
 		Type: types.PrincipalIMUser,
@@ -471,7 +471,7 @@ func TestGetSessionAllowsEmbedRuntimeToReadOwnEmbedSession(t *testing.T) {
 	ctx := context.WithValue(
 		testSessionScopeContext(1, "system-1"),
 		types.TenantRoleContextKey,
-		types.TenantRoleViewer,
+		types.TenantRoleMember,
 	)
 	ctx = types.WithPrincipal(ctx, principal)
 
@@ -499,7 +499,7 @@ func TestGetSessionDeniesEmbedRuntimeFromReadingForeignEmbedSession(t *testing.T
 	ctx := context.WithValue(
 		testSessionScopeContext(1, "system-1"),
 		types.TenantRoleContextKey,
-		types.TenantRoleViewer,
+		types.TenantRoleMember,
 	)
 	ctx = types.WithPrincipal(ctx, types.EmbedSessionPrincipal(1, "ch-1", "sess-attacker"))
 

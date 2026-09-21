@@ -15,13 +15,13 @@ import (
 
 // GetMCPMetadata godoc
 // @Summary      读取已保存的 MCP 工具目录
-// @Description  只读数据库，不连接上游。未同步时 data 为 null；连接配置变更后 stale 为 true。OAuth 目录按当前授权主体隔离。
+// @Description  只读数据库，不连接上游。未同步时 data 为 null；连接Configuration 变更后 stale 为 true。OAuth 目录按当前授权主体隔离。
 // @Tags         MCP服务
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "MCP服务ID"
 // @Success      200  {object}  map[string]interface{}  "目录快照"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      401  {object}  errors.AppError         "OAuth 目录缺少授权主体"
 // @Failure      404  {object}  errors.AppError         "服务不存在"
 // @Security     Bearer
@@ -41,7 +41,7 @@ func (h *MCPServiceHandler) GetMCPMetadata(c *gin.Context) { h.mcpMetadata(c, fa
 // @Failure      401  {object}  errors.AppError         "OAuth 目录缺少授权主体"
 // @Failure      403  {object}  errors.AppError         "静态认证目录需要管理员刷新"
 // @Failure      404  {object}  errors.AppError         "服务不存在"
-// @Failure      409  {object}  errors.AppError         "刷新期间连接配置已变更"
+// @Failure      409  {object}  errors.AppError         "刷新期间连接Configuration 已变更"
 // @Failure      503  {object}  errors.AppError         "元数据存储不可用"
 // @Security     Bearer
 // @Security     ApiKeyAuth

@@ -30,7 +30,7 @@ func (r *dorisRepository) getTableName(dimension int) string {
 }
 
 // ensureTable 保证目标维度对应的表已经存在；
-// 不存在则用 CREATE TABLE IF NOT EXISTS 创建，并在创建后轮询 ANN 索引就绪。
+// 不存在则用 CREATE TABLE IF NOT EXISTS Create ，并在Create 后轮询 ANN 索引就绪。
 //
 // 该方法在每次 Save / BatchSave 之前调用，结果缓存在 initializedTables 中，
 // 同一进程内同一 dimension 只会真正打一次 SHOW TABLES + DDL。
@@ -128,8 +128,8 @@ func (r *dorisRepository) createTable(ctx context.Context, tableName string, dim
 //   - DUPLICATE KEY(id)：兼容当前 Doris/SelectDB 对 ANN 索引的表模型要求。
 //     WeKnora 在 Go 端用 delete + insert 保持按 id 替换的写入语义。
 //   - INVERTED 索引覆盖所有过滤字段 + 中文分词的 content 全文索引。
-//   - ANN 索引使用 HNSW + inner_product；Doris 写入/查询前会对向量单位化，
-//     因此整体仍保持与其他向量库一致的 cosine 相似度语义。
+//   - ANN 索引使用 HNSW + inner_product；Doris 写入/Query 前会对向量单位化，
+//     因此整体仍保持与其他Vector Database一致的 cosine 相似度语义。
 //
 // 注意：DDL 中 dimension / buckets / replication 三个数值字段是 Go 端格式化拼接的，
 // 不存在 SQL 注入风险（来源都是受控的 IndexConfig int）。
@@ -179,7 +179,7 @@ PROPERTIES(
 
 // waitANNReady 轮询 SHOW INDEX，等待 ANN 索引进入 FINISHED 状态。
 //
-// Doris 的 ANN 索引在建表后会异步构建，期间查询会退化为 brute-force（结果对，速度慢）。
+// Doris 的 ANN 索引在建表后会异步构建，期间Query 会退化为 brute-force（结果对，速度慢）。
 // 此处仅做"尽力而为"的等待：到点未就绪只记 warning，不阻塞写入。
 func (r *dorisRepository) waitANNReady(ctx context.Context, tableName string) error {
 	deadline := time.Now().Add(annReadyTimeout)

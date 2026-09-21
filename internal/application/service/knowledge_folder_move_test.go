@@ -49,7 +49,7 @@ func folderMoveContext() context.Context {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 1,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)

@@ -11,7 +11,7 @@ const (
 	VolcengineChatBaseURL = "https://ark.cn-beijing.volces.com/api/v3"
 	// VolcengineEmbeddingBaseURL 火山引擎 Ark Multimodal Embedding API BaseURL
 	VolcengineEmbeddingBaseURL = "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
-	// VolcengineRerankBaseURL 火山引擎知识库托管 Rerank API BaseURL
+	// VolcengineRerankBaseURL 火山引擎Knowledge Base托管 Rerank API BaseURL
 	VolcengineRerankBaseURL = "https://api-knowledgebase.mlp.cn-beijing.volces.com"
 )
 
@@ -44,7 +44,7 @@ func (p *VolcengineProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证火山引擎 provider 配置
+// ValidateConfig 验证火山引擎 provider Configuration
 func (p *VolcengineProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Volcengine Ark provider")

@@ -44,7 +44,7 @@ func (p *GPUStackProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 GPUStack provider 配置
+// ValidateConfig 验证 GPUStack provider Configuration
 func (p *GPUStackProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for GPUStack provider")

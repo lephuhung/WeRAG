@@ -45,14 +45,14 @@ type invitedRegistrationInvitationService struct {
 }
 
 func (s *invitedRegistrationInvitationService) LookupByToken(context.Context, string) (*types.TenantInvitation, error) {
-	return &types.TenantInvitation{TenantID: 42, Role: types.TenantRoleViewer}, nil
+	return &types.TenantInvitation{TenantID: 42, Role: types.TenantRoleMember}, nil
 }
 
 func (s *invitedRegistrationInvitationService) AcceptByToken(context.Context, string, string) (*types.TenantMember, error) {
 	if s.acceptErr != nil {
 		return nil, s.acceptErr
 	}
-	return &types.TenantMember{TenantID: 42, Role: types.TenantRoleViewer}, nil
+	return &types.TenantMember{TenantID: 42, Role: types.TenantRoleMember}, nil
 }
 
 type invitedRegistrationTenantService struct {

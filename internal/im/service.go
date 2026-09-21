@@ -425,7 +425,7 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 		principalID := fmt.Sprintf("%d:%s:%s:%s", tenantID, channelID, msg.Platform, msg.UserID)
 		ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalIMUser, ID: principalID})
 	}
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 	// IM bots have no live client that can complete an in-conversation MCP OAuth
 	// prompt, so mark the context non-interactive: the agent emits a one-shot
 	// authorization notice (surfaced in the reply) instead of blocking until the

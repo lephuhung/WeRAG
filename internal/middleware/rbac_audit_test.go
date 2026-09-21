@@ -79,7 +79,7 @@ func auditableHarness(
 
 func TestRequireRole_RejectFiresAuditHook(t *testing.T) {
 	audit := &stubDenyAudit{}
-	w := auditableHarness(t, types.TenantRoleContributor, "u1", 7, audit,
+	w := auditableHarness(t, types.TenantRoleMember, "u1", 7, audit,
 		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
@@ -89,7 +89,7 @@ func TestRequireRole_RejectFiresAuditHook(t *testing.T) {
 	}
 	got := audit.calls[0]
 	if got.tenantID != 7 || got.actorUserID != "u1" ||
-		got.actorRole != string(types.TenantRoleContributor) ||
+		got.actorRole != string(types.TenantRoleMember) ||
 		got.required != types.TenantRoleAdmin {
 		t.Fatalf("audit hook payload mismatch: %+v", got)
 	}
@@ -100,7 +100,7 @@ func TestRequireRole_DormantModeDoesNotFireAuditHook(t *testing.T) {
 	// durable audit must NOT fire either — the dormant rollout window
 	// would otherwise generate audit noise for non-rejections.
 	audit := &stubDenyAudit{}
-	w := auditableHarness(t, types.TenantRoleViewer, "u1", 7, audit,
+	w := auditableHarness(t, types.TenantRoleMember, "u1", 7, audit,
 		RequireRole(types.TenantRoleOwner, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 in dormant mode, got %d", w.Code)
@@ -118,7 +118,7 @@ func TestRequireOwnershipOrRole_RejectFiresAuditHook(t *testing.T) {
 	lookup := func(_ *gin.Context) (string, error) {
 		return "someone-else", nil // creator != caller, role too low
 	}
-	w := auditableHarness(t, types.TenantRoleContributor, "u1", 7, audit,
+	w := auditableHarness(t, types.TenantRoleMember, "u1", 7, audit,
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
@@ -131,7 +131,7 @@ func TestRequireOwnershipOrRole_RejectFiresAuditHook(t *testing.T) {
 func TestRequireRole_NilAuditServiceDoesNotPanic(t *testing.T) {
 	// AuditServiceProvider(nil) is a deliberate no-op; the rbac path
 	// must degrade to "log to stderr only" rather than crashing.
-	w := auditableHarness(t, types.TenantRoleContributor, "u1", 7, nil,
+	w := auditableHarness(t, types.TenantRoleMember, "u1", 7, nil,
 		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 even with nil audit service, got %d", w.Code)
@@ -178,7 +178,7 @@ func TestOwnershipAuditOnlyRecordsPolicyDenials(t *testing.T) {
 				}
 				return tt.creator, tt.lookupErr
 			}
-			w := auditableHarness(t, types.TenantRoleContributor, "u1", 7, audit,
+			w := auditableHarness(t, types.TenantRoleMember, "u1", 7, audit,
 				RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(!tt.disabled)))
 			if w.Code != tt.status || len(audit.calls) != tt.auditCalls {
 				t.Fatalf(

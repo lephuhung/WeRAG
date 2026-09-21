@@ -377,31 +377,41 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 			kbIDSet[kb.ID] = true
 		}
 
-		// For shared agents (session tenant != agent tenant), only use the agent
-		// tenant's own KBs. Including the current user's shared KBs would leak
-		// unrelated KBs from other organisations into the agent's retrieval scope.
+		// If the resolved agent belongs to a different tenant than the session
+		// (an anomaly — agents resolve to the caller's own tenant), only use the
+		// agent tenant's own KBs. Including the current user's granted KBs would
+		// leak unrelated KBs from other tenants into the agent's retrieval scope.
 		isSharedAgent := sessionTenantID != 0 && sessionTenantID != customAgent.TenantID
 		sharedSkipped := 0
 		if !isSharedAgent {
-			tenantID := types.MustTenantIDFromContext(ctx)
 			userIDVal := ctx.Value(types.UserIDContextKey)
 			if userIDVal != nil {
-				if userID, ok := userIDVal.(string); ok && userID != "" && s.kbShareService != nil {
-					callerTenantRole := types.TenantRoleFromContext(ctx)
-					sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, tenantID, callerTenantRole)
+				if userID, ok := userIDVal.(string); ok && userID != "" && s.kbAccessGrantService != nil {
+					caller := types.CallerFromContext(ctx)
+					granted, err := s.kbAccessGrantService.ListOutgoing(ctx, caller,
+						[]types.GrantStatus{types.GrantStatusApproved})
 					if err != nil {
-						logger.Warnf(ctx, "Failed to list shared knowledge bases: %v", err)
+						logger.Warnf(ctx, "Failed to list granted knowledge bases: %v", err)
 					} else {
-						for _, info := range sharedList {
-							if info == nil || info.KnowledgeBase == nil || kbIDSet[info.KnowledgeBase.ID] {
-								continue
+						grantIDs := make([]string, 0, len(granted))
+						for _, g := range granted {
+							if g != nil && g.KBID != "" && !kbIDSet[g.KBID] {
+								grantIDs = append(grantIDs, g.KBID)
 							}
-							if !accept(info.KnowledgeBase) {
-								sharedSkipped++
-								continue
+						}
+						grantKBs, kerr := s.knowledgeBaseService.GetKnowledgeBasesByIDsOnly(ctx, grantIDs)
+						if kerr == nil {
+							for _, kb := range grantKBs {
+								if kb == nil || kbIDSet[kb.ID] {
+									continue
+								}
+								if !accept(kb) {
+									sharedSkipped++
+									continue
+								}
+								kbIDs = append(kbIDs, kb.ID)
+								kbIDSet[kb.ID] = true
 							}
-							kbIDs = append(kbIDs, info.KnowledgeBase.ID)
-							kbIDSet[info.KnowledgeBase.ID] = true
 						}
 					}
 				}
@@ -457,7 +467,7 @@ func (s *sessionService) buildSearchTargets(
 	fullKBSet := make(map[string]bool)
 
 	// First pass: batch-fetch KBs, then resolve tenant per ID (tenant scope already set by caller)
-	permissions := kbReadPermissions(ctx, s.kbShareService)
+	permissions := kbReadPermissions(ctx, s.kbAccessGrantService)
 	kbIDsToFetch := append([]string(nil), knowledgeBaseIDs...)
 	for kbID := range tagIDsByKB {
 		kbIDsToFetch = append(kbIDsToFetch, kbID)
@@ -484,7 +494,7 @@ func (s *sessionService) buildSearchTargets(
 		kbTenantMap[kbID] = caller.TenantID
 		if kb != nil {
 			kbTenantMap[kbID] = 0
-			if allowed, err := permissions.Check(kbID, kb.TenantID, types.OrgRoleViewer); err == nil && allowed {
+			if allowed, err := permissions.Check(kbID, kb.TenantID, types.KBPermissionViewer); err == nil && allowed {
 				kbTenantMap[kbID] = kb.TenantID
 			}
 		}
@@ -736,7 +746,7 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 		// retrieval stage short-circuited the pipeline (ErrSearchNothing or a
 		// hard error). The early returns below (fallback / stage_failed) would
 		// otherwise skip EndRetrievalProgress, leaving the "knowledge_search"
-		// tool_call pending — so the frontend keeps spinning on "正在检索知识库"
+		// tool_call pending — so the frontend keeps spinning on "正在检索Knowledge Base"
 		// forever even though the fallback answer has already streamed.
 		if retrievalProgress != nil && chatpipeline.ShouldCloseRetrievalProgress(eventType, lastRetrievalStage, err) {
 			chatpipeline.EndRetrievalProgress(stageCtx, chatManage, retrievalProgress, retrievalStart, err)

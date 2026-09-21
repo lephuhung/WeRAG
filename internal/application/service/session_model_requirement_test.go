@@ -231,8 +231,8 @@ func TestResolveChatModelIDWikiFixerFallsBackToAvailableModel(t *testing.T) {
 	assert.Equal(t, "system-chat", modelID)
 }
 
-// A shared agent executes in its owner's workspace; the override would pick
-// any of the owner's models there, so the configured model is used instead.
+// A caller without model-config rights cannot override the agent's
+// configured model — the configured model wins.
 func TestResolveChatModelIDIgnoresOverrideForSharedAgents(t *testing.T) {
 	svc := &sessionService{
 		modelService: &stubModelService{
@@ -248,8 +248,7 @@ func TestResolveChatModelIDIgnoresOverrideForSharedAgents(t *testing.T) {
 			ID:     "agent-1",
 			Config: types.CustomAgentConfig{ModelID: "agent-chat"},
 		},
-		SummaryModelID:      "owner-other-model",
-		SharedAgentReadOnly: true,
+		SummaryModelID: "owner-other-model",
 	}
 
 	modelID, err := svc.resolveChatModelID(context.Background(), req, nil, nil)

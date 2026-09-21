@@ -26,8 +26,8 @@ type FunctionDef struct {
 
 // ChatOptions 聊天选项
 type ChatOptions struct {
-	Temperature float64 `json:"temperature"` // 温度参数
-	TopP        float64 `json:"top_p"`       // Top P 参数
+	Temperature float64 `json:"temperature"` // 温度Parameters
+	TopP        float64 `json:"top_p"`       // Top P Parameters
 	Seed        int     `json:"seed"`        // 随机种子
 	// MaxTokens and MaxCompletionTokens are aliases for one completion budget.
 	// Callers may set either; CompletionBudget() prefers MaxCompletionTokens.
@@ -38,7 +38,7 @@ type ChatOptions struct {
 	FrequencyPenalty    float64         `json:"frequency_penalty"`             // 频率惩罚
 	PresencePenalty     float64         `json:"presence_penalty"`              // 存在惩罚
 	Thinking            *bool           `json:"thinking"`                      // 是否启用思考
-	Tools               []Tool          `json:"tools,omitempty"`               // 可用工具列表
+	Tools               []Tool          `json:"tools,omitempty"`               // 可用工具List
 	ToolChoice          string          `json:"tool_choice,omitempty"`         // "auto", "required", "none", or specific tool
 	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"` // 是否允许并行工具调用（默认 nil 表示由模型决定）
 	Format              json.RawMessage `json:"format,omitempty"`              // 响应格式定义
@@ -148,7 +148,7 @@ type ChatConfig struct {
 }
 
 // ConfigFromModel 根据 types.Model 构造 ChatConfig。
-// 保证生产路径（service 层根据 DB 中的模型配置拉起实例）和测试路径
+// 保证生产路径（service 层根据 DB 中的模型Configuration 拉起实例）和测试路径
 // （handler 层根据前端表单临时拉起实例）走完全相同的字段映射，避免重复样板。
 // appID / appSecret 是已经解密/解析好的 WeKnoraCloud 凭证，调用方负责传入。
 func ConfigFromModel(m *types.Model, appID, appSecret string) *ChatConfig {
@@ -170,7 +170,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) *ChatConfig {
 	}
 }
 
-// NewChat 创建聊天实例
+// NewChat Create 聊天实例
 func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, error) {
 	var c Chat
 	var err error
@@ -189,7 +189,7 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	return wrapChatConcurrency(c, config.MaxConcurrency, err)
 }
 
-// NewRemoteChat 根据 provider 创建远程聊天实例。
+// NewRemoteChat 根据 provider Create 远程聊天实例。
 // Anthropic 走独立的 Messages 协议实现；其余 OpenAI 兼容供应商统一由
 // RemoteAPIChat 处理，provider 特定行为在构造时通过 providerAdapter 解析。
 func NewRemoteChat(config *ChatConfig) (Chat, error) {

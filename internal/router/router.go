@@ -25,31 +25,30 @@ import (
 	_ "github.com/Tencent/WeKnora/docs" // swagger docs
 )
 
-// RouterParams 路由参数
+// RouterParams 路由Parameters
 type RouterParams struct {
 	dig.In
 
-	Config                       *config.Config
-	FileService                  interfaces.FileService
-	UserService                  interfaces.UserService
-	KBService                    interfaces.KnowledgeBaseService
-	KnowledgeService             interfaces.KnowledgeService
-	ChunkService                 interfaces.ChunkService
-	SessionService               interfaces.SessionService
-	MessageService               interfaces.MessageService
-	ModelService                 interfaces.ModelService
-	EvaluationService            interfaces.EvaluationService
-	KBShareService               interfaces.KBShareService
-	AgentShareService            interfaces.AgentShareService
-	KBHandler                    *handler.KnowledgeBaseHandler
-	KnowledgeHandler             *handler.KnowledgeHandler
-	TenantHandler                *handler.TenantHandler
-	TenantService                interfaces.TenantService
-	TenantAPIKeyService          interfaces.TenantAPIKeyService
-	TenantMemberService          interfaces.TenantMemberService
-	TenantMemberHandler          *handler.TenantMemberHandler
-	TenantInvitationHandler      *handler.TenantInvitationHandler
-	TenantOrgHandler             *handler.TenantOrgHandler
+	Config                  *config.Config
+	FileService             interfaces.FileService
+	UserService             interfaces.UserService
+	KBService               interfaces.KnowledgeBaseService
+	KnowledgeService        interfaces.KnowledgeService
+	ChunkService            interfaces.ChunkService
+	SessionService          interfaces.SessionService
+	MessageService          interfaces.MessageService
+	ModelService            interfaces.ModelService
+	EvaluationService       interfaces.EvaluationService
+	KBAccessGrantService    interfaces.KBAccessGrantService
+	KBHandler               *handler.KnowledgeBaseHandler
+	KnowledgeHandler        *handler.KnowledgeHandler
+	TenantHandler           *handler.TenantHandler
+	TenantService           interfaces.TenantService
+	TenantAPIKeyService     interfaces.TenantAPIKeyService
+	TenantMemberService     interfaces.TenantMemberService
+	TenantMemberHandler     *handler.TenantMemberHandler
+	TenantInvitationHandler *handler.TenantInvitationHandler
+
 	AuditLogHandler              *handler.AuditLogHandler
 	AuditLogService              interfaces.AuditLogService
 	ChunkHandler                 *handler.ChunkHandler
@@ -80,7 +79,7 @@ type RouterParams struct {
 	CustomAgentHandler           *handler.CustomAgentHandler
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
-	OrganizationHandler          *handler.OrganizationHandler
+	KBAccessGrantHandler         *handler.KBAccessGrantHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -96,7 +95,7 @@ type RouterParams struct {
 	AbbreviationHandler          *handler.AbbreviationHandler
 }
 
-// NewRouter 创建新的路由
+// NewRouter Create 新的路由
 func NewRouter(params RouterParams) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
@@ -243,8 +242,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.KBService,
 			params.KnowledgeService,
 			params.ChunkService,
-			params.KBShareService,
-			params.AgentShareService,
+			params.KBAccessGrantService,
 		)
 
 		// API-key gate: single authority for X-API-Key principals. Runs
@@ -257,7 +255,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler, rbacGuards)
 		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, rbacGuards)
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
-		RegisterTenantOrgRoutes(v1, params.TenantOrgHandler, rbacGuards)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeBaseActivityRoutes(v1, params.AuditLogHandler, rbacGuards)
 		// KB-scoped image proxy: lets tenants render images embedded in
@@ -271,22 +268,19 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.StorageBackendResolver,
 			params.ResourceCatalog,
 		)
-		// Message-scoped image proxy: shared-agent replies belong to the
-		// caller's session but may reference resources stored in the agent's
-		// source workspace. Authorization is derived from the persisted message,
-		// never from a client-provided workspace ID. Replies produced by the
-		// caller's own agent over an org-shared KB fall back to the KB share
-		// relation instead (#3022).
+		// Message-scoped image proxy: replies may reference resources stored
+		// in a granted KB's workspace. Authorization is derived from the
+		// persisted message, never from a client-provided workspace ID;
+		// granted-KB evidence is the cross-tenant fallback.
 		serveMessageScopedFiles(
 			v1,
 			rbacGuards,
 			params.MessageService,
-			params.AgentShareService,
 			params.TenantService,
 			params.FileService,
 			params.StorageBackendResolver,
 			params.ResourceCatalog,
-			params.KBShareService,
+			params.KBAccessGrantService,
 			params.KBService,
 			params.KnowledgeService,
 		)
@@ -316,7 +310,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler, rbacGuards)
 		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, rbacGuards)
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
-		RegisterOrganizationRoutes(v1, params.OrganizationHandler, rbacGuards)
+		RegisterKBAccessGrantRoutes(v1, params.KBAccessGrantHandler, rbacGuards)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)

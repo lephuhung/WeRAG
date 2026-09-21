@@ -35,7 +35,7 @@ func TestMayWriteSharedMCPMetadata(t *testing.T) {
 	require.False(t, mayWriteSharedMCPMetadata(context.Background()))
 	require.False(t, mayWriteSharedMCPMetadata(types.WithCaller(
 		context.Background(),
-		types.Caller{Role: types.TenantRoleViewer},
+		types.Caller{Role: types.TenantRoleMember},
 	)))
 	require.True(t, mayWriteSharedMCPMetadata(types.WithCaller(
 		context.Background(),

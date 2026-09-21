@@ -40,7 +40,7 @@ func (p *LKEAPProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 LKEAP provider 配置
+// ValidateConfig 验证 LKEAP provider Configuration
 func (p *LKEAPProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for LKEAP provider")
@@ -52,7 +52,7 @@ func (p *LKEAPProvider) ValidateConfig(config *Config) error {
 }
 
 // IsLKEAPDeepSeekV3Model 检查是否为 DeepSeek V3.x 系列模型
-// V3.x 系列支持通过 Thinking 参数控制思维链开关
+// V3.x 系列支持通过 Thinking Parameters 控制思维链开关
 func IsLKEAPDeepSeekV3Model(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek-v3")
 }

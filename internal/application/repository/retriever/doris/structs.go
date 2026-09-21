@@ -17,7 +17,7 @@ import (
 //   - legacy：UNIQUE KEY(id) + cosine_distance ANN + Stream Load partial update
 //   - inner_product_duplicate：DUPLICATE KEY(id) + normalized inner product + delete/insert rewrite
 //
-// 该设置在 embedding 表创建后不可直接互换；切换模式前需要重建这些表。
+// 该Settings 在 embedding 表Create 后不可直接互换；切换模式前需要重建这些表。
 //
 // 与 Qdrant/Milvus/Weaviate 一样，initializedTables 缓存"已确保存在"的维度，
 // 避免每次写入都打 SHOW TABLES。
@@ -48,7 +48,7 @@ type dorisRepository struct {
 // DorisVectorEmbedding 是落到 Doris 表里的一行的领域模型。
 //
 // 字段顺序与 schema.go 中的 INSERT 列序保持一致，
-// 调整时需要同时更新 createInsert 与 columns。
+// 调整时需要同时Update  createInsert 与 columns。
 type DorisVectorEmbedding struct {
 	ID              string
 	Content         string

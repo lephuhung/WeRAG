@@ -36,7 +36,7 @@ func TestRequireRole_ShortCircuitsAPIKey(t *testing.T) {
 	// ladder; the short-circuit lets it through (the gate handles it).
 	w := apiKeyRBACHarness(
 		types.TenantAPIKeyScope{},
-		types.TenantRoleViewer,
+		types.TenantRoleMember,
 		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)),
 	)
 	if w.Code != http.StatusOK {
@@ -58,7 +58,7 @@ func TestRequireSystemAdmin_RejectsAPIKey(t *testing.T) {
 func TestRequireSystemAdmin_AllowsPlatformAPIKeyAfterRouteGate(t *testing.T) {
 	w := apiKeyRBACHarness(
 		types.TenantAPIKeyScope{ScopeType: types.APIKeyScopePlatform},
-		types.TenantRoleViewer,
+		types.TenantRoleMember,
 		RequireSystemAdmin(cfgRBAC(true)),
 	)
 	if w.Code != http.StatusOK {
@@ -82,7 +82,7 @@ func TestRequireOwnershipOrRole_ShortCircuitsAPIKey(t *testing.T) {
 			KnowledgeBaseIDs: types.StringArray{"kb-1"},
 			Capabilities:     types.StringArray{string(types.APIKeyCapabilityIngest)},
 		},
-		types.TenantRoleContributor,
+		types.TenantRoleMember,
 		RequireOwnershipOrRole(types.TenantRoleAdmin, lookup, cfgRBAC(true)),
 	)
 	if w.Code != http.StatusOK {
@@ -105,7 +105,7 @@ func TestEvaluateOwnershipOrRole_ShortCircuitsAPIKey(t *testing.T) {
 		Capabilities:     types.StringArray{string(types.APIKeyCapabilityIngest)},
 	})
 	// Synthesized Viewer role + a foreign creator would 403 a human caller.
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 
 	if err := EvaluateOwnershipOrRole(ctx, cfgRBAC(true),
 		types.TenantRoleAdmin, func() (string, error) {
@@ -119,7 +119,7 @@ func TestEvaluateOwnershipOrRole_ShortCircuitsAPIKey(t *testing.T) {
 // Sanity: a JWT Viewer with a foreign creator is still forbidden — the
 // short-circuit must be scoped to API-key principals only.
 func TestEvaluateOwnershipOrRole_JWTViewerStillDenied(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleViewer)
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleMember)
 	err := EvaluateOwnershipOrRole(ctx, cfgRBAC(true),
 		types.TenantRoleAdmin, func() (string, error) {
 			return "some-other-human-user", nil
@@ -135,7 +135,7 @@ func TestRequireRole_JWTViewerStillDenied(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleViewer)
+		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleMember)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	})

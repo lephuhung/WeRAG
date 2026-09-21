@@ -67,7 +67,7 @@ const (
 
 type CustomFormatter struct {
 	ForceColor bool   // 是否强制使用颜色，即使在非终端环境下
-	Template   string // 自定义日志格式模板，通过 LOG_FORMAT 环境变量配置，为空则使用内置默认格式
+	Template   string // 自定义日志格式模板，通过 LOG_FORMAT 环境变量Configuration ，为空则使用内置默认格式
 	// 模板占位符：%d=时间 %level=级别 %thread=goroutine %logger=caller %traceId=请求ID %msg=消息+结构化字段
 
 	// threadNeeded 缓存模板是否引用了 %thread，避免每条日志都调用一次 runtime.Stack。
@@ -227,12 +227,12 @@ func getGoroutineID() string {
 	return string(buf[:j])
 }
 
-// 初始化全局日志设置
+// Initialization 全局日志Settings
 func init() {
 	ConfigureFromEnv()
 }
 
-// ConfigureFromEnv 重新从环境变量应用日志配置。
+// ConfigureFromEnv 重新从环境变量应用日志Configuration 。
 // 这允许在 main() 中加载 .env 后，让 LOG_LEVEL / LOG_PATH 立即生效。
 func ConfigureFromEnv() {
 	loggerMu.Lock()
@@ -243,7 +243,7 @@ func ConfigureFromEnv() {
 		activeLogFile = nil
 	}
 
-	// 根据环境变量设置全局日志级别
+	// 根据环境变量Settings 全局日志级别
 	logLevel := getLogLevelFromEnv()
 	appLogger.SetLevel(logLevel)
 
@@ -268,7 +268,7 @@ func ConfigureFromEnv() {
 		forceColor = (fi.Mode() & os.ModeCharDevice) != 0
 	}
 
-	// 设置日志格式而不修改全局时区
+	// Settings 日志格式而不修改全局时区
 	tmpl := resolveLogFormatFromEnv()
 	appLogger.SetFormatter(&CustomFormatter{
 		ForceColor:   forceColor,
@@ -296,7 +296,7 @@ func SetOutput(w io.Writer) {
 	appLogger.SetOutput(w)
 }
 
-// SetLogLevel 设置日志级别
+// SetLogLevel Settings 日志级别
 func SetLogLevel(level LogLevel) {
 	var logLevel logrus.Level
 
@@ -318,9 +318,9 @@ func SetLogLevel(level LogLevel) {
 	appLogger.SetLevel(logLevel)
 }
 
-// getLogLevelFromEnv 从环境变量读取日志级别配置
+// getLogLevelFromEnv 从环境变量读取日志级别Configuration
 func getLogLevelFromEnv() logrus.Level {
-	// 从环境变量读取LOG_LEVEL配置
+	// 从环境变量读取LOG_LEVELConfiguration
 	logLevelStr := strings.ToLower(os.Getenv("LOG_LEVEL"))
 
 	switch logLevelStr {
@@ -335,7 +335,7 @@ func getLogLevelFromEnv() logrus.Level {
 	case "fatal":
 		return logrus.FatalLevel
 	default:
-		return logrus.DebugLevel // 无效配置时使用默认值
+		return logrus.DebugLevel // 无效Configuration 时使用默认值
 	}
 }
 

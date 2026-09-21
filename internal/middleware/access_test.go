@@ -117,7 +117,7 @@ func TestIsTenantAccessible_SuperuserPathRequiresFlag(t *testing.T) {
 func TestIsTenantAccessible_ActiveMembershipAllows(t *testing.T) {
 	user := &types.User{ID: "u1", TenantID: 1}
 	ms := newFakeMemberService()
-	ms.seedActive("u1", 99, types.TenantRoleContributor)
+	ms.seedActive("u1", 99, types.TenantRoleMember)
 	if !IsTenantAccessible(context.Background(), user, 99, ms, cfgCrossTenant(false)) {
 		t.Fatalf("active membership must allow even with flag off and no superuser")
 	}

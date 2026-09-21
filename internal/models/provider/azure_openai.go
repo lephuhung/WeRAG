@@ -46,7 +46,7 @@ func (p *AzureOpenAIProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Azure OpenAI provider 配置
+// ValidateConfig 验证 Azure OpenAI provider Configuration
 func (p *AzureOpenAIProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Azure OpenAI provider")

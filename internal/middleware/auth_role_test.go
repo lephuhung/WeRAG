@@ -147,11 +147,11 @@ func cfgWithRBAC(enabled bool) *config.Config {
 
 func TestResolveTenantRole_ActiveMembershipWins(t *testing.T) {
 	svc := newFakeMemberService()
-	svc.seedActive("u1", 10, types.TenantRoleContributor)
+	svc.seedActive("u1", 10, types.TenantRoleMember)
 
 	got, ok := resolveTenantRole(context.Background(), svc,
 		&types.User{ID: "u1", TenantID: 10}, 10, false, cfgWithRBAC(true))
-	if !ok || got != types.TenantRoleContributor {
+	if !ok || got != types.TenantRoleMember {
 		t.Fatalf("got (%v, %v), want (contributor, true)", got, ok)
 	}
 	if len(svc.addCalls) != 0 {

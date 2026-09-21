@@ -23,7 +23,7 @@ type OllamaChat struct {
 	ollamaService *ollama.OllamaService
 }
 
-// NewOllamaChat 创建 Ollama 聊天实例
+// NewOllamaChat Create  Ollama 聊天实例
 func NewOllamaChat(config *ChatConfig, ollamaService *ollama.OllamaService) (*OllamaChat, error) {
 	return &OllamaChat{
 		modelName:     config.ModelName,
@@ -85,12 +85,12 @@ func resolveImageForOllama(imageURL string) ollamaapi.ImageData {
 	return nil
 }
 
-// buildChatRequest 构建聊天请求参数
+// buildChatRequest 构建聊天请求Parameters
 func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isStream bool) *ollamaapi.ChatRequest {
-	// 设置流式标志
+	// Settings 流式标志
 	streamFlag := isStream
 
-	// 构建请求参数
+	// 构建请求Parameters
 	chatReq := &ollamaapi.ChatRequest{
 		Model:    c.modelName,
 		Messages: c.convertMessages(messages),
@@ -98,7 +98,7 @@ func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isS
 		Options:  make(map[string]interface{}),
 	}
 
-	// 添加可选参数
+	// 添加可选Parameters
 	if opts != nil {
 		chatReq.Options["temperature"] = opts.Temperature
 		if opts.TopP > 0 {
@@ -130,7 +130,7 @@ func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOpt
 		return nil, err
 	}
 
-	// 构建请求参数
+	// 构建请求Parameters
 	chatReq := c.buildChatRequest(messages, opts, false)
 
 	// 记录请求日志
@@ -143,7 +143,7 @@ func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOpt
 	// 使用 Ollama 客户端发送请求
 	err := c.ollamaService.Chat(ctx, chatReq, func(resp ollamaapi.ChatResponse) error {
 		responseContent = resp.Message.Content
-		// 当 Content 为空但 Thinking 有内容时（如推理模型未正确配置 thinking 参数），使用 Thinking 作为兜底
+		// 当 Content 为空但 Thinking 有内容时（如推理模型未正确Configuration  thinking Parameters ），使用 Thinking 作为兜底
 		if responseContent == "" && resp.Message.Thinking != "" {
 			responseContent = resp.Message.Thinking
 		}
@@ -187,13 +187,13 @@ func (c *OllamaChat) ChatStream(
 		return nil, err
 	}
 
-	// 构建请求参数
+	// 构建请求Parameters
 	chatReq := c.buildChatRequest(messages, opts, true)
 
 	// 记录请求日志
 	logger.GetLogger(ctx).Infof("发送流式聊天请求到模型 %s", c.modelName)
 
-	// 创建流式响应通道
+	// Create 流式响应通道
 	streamChan := make(chan types.StreamResponse)
 
 	// 启动goroutine处理流式响应

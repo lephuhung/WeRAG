@@ -1357,7 +1357,7 @@ func TopicLabelIsAnImprovement(canonical, incoming, proposed string) bool {
 //
 // A subject has to recur to be worth anything: it is counted, and only becomes
 // a memory once several conversations touch it. A label like
-// "v2.3版本orders接口分页参数默认值查询" can only ever match
+// "v2.3版本orders接口分页Parameters 默认值Query " can only ever match
 // itself, so it is counted once and then sits at one hit forever — the counting
 // mechanism is dead and nothing says so.
 //

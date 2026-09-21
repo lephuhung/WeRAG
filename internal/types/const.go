@@ -12,8 +12,6 @@ const (
 	KBGrantsContextKey ContextKey = "ResourceKBGrants"
 	// KBTransferContextKey carries one admitted resource pair.
 	KBTransferContextKey ContextKey = "ResourceKBTransfer"
-	// SharedAgentGrantContextKey carries an authorized agent read scope.
-	SharedAgentGrantContextKey ContextKey = "ResourceSharedAgentGrant"
 	// TenantInfoContextKey is the context key for tenant information
 	TenantInfoContextKey ContextKey = "TenantInfo"
 	// RequestIDContextKey is the context key for request ID

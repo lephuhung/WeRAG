@@ -31,36 +31,33 @@ const kbTaskCleanupTimeout = 5 * time.Second
 
 // knowledgeBaseService implements the knowledge base service interface
 type knowledgeBaseService struct {
-	repo            interfaces.KnowledgeBaseRepository
-	kgRepo          interfaces.KnowledgeRepository
-	chunkRepo       interfaces.ChunkRepository
-	shareRepo       interfaces.KBShareRepository
-	kbShareService  interfaces.KBShareService
-	modelService    interfaces.ModelService
-	retrieveEngine  interfaces.RetrieveEngineRegistry
-	ownership       retriever.TenantStoreOwnership
-	tenantRepo      interfaces.TenantRepository
-	fileSvc         interfaces.FileService
-	storageResolver interfaces.StorageBackendResolver
-	graphEngine     interfaces.RetrieveGraphRepository
-	asynqClient     interfaces.TaskEnqueuer
-	taskInspector   interfaces.TaskInspector
-	taskPendingRepo interfaces.TaskPendingOpsRepository
-	dsRepo          interfaces.DataSourceRepository
-	syncLogRepo     interfaces.SyncLogRepository
-	dsScheduler     *datasource.Scheduler
-	audit           interfaces.AuditLogService
-	resourceCatalog interfaces.ResourceCatalog
-	wikiRepo        interfaces.WikiPageRepository
-	tenantOrgRepo   interfaces.TenantOrgRepository
+	repo                 interfaces.KnowledgeBaseRepository
+	kgRepo               interfaces.KnowledgeRepository
+	chunkRepo            interfaces.ChunkRepository
+	kbAccessGrantService interfaces.KBAccessGrantService
+	modelService         interfaces.ModelService
+	retrieveEngine       interfaces.RetrieveEngineRegistry
+	ownership            retriever.TenantStoreOwnership
+	tenantRepo           interfaces.TenantRepository
+	fileSvc              interfaces.FileService
+	storageResolver      interfaces.StorageBackendResolver
+	graphEngine          interfaces.RetrieveGraphRepository
+	asynqClient          interfaces.TaskEnqueuer
+	taskInspector        interfaces.TaskInspector
+	taskPendingRepo      interfaces.TaskPendingOpsRepository
+	dsRepo               interfaces.DataSourceRepository
+	syncLogRepo          interfaces.SyncLogRepository
+	dsScheduler          *datasource.Scheduler
+	audit                interfaces.AuditLogService
+	resourceCatalog      interfaces.ResourceCatalog
+	wikiRepo             interfaces.WikiPageRepository
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
 func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
-	shareRepo interfaces.KBShareRepository,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	modelService interfaces.ModelService,
 	retrieveEngine interfaces.RetrieveEngineRegistry,
 	ownership retriever.TenantStoreOwnership,
@@ -77,31 +74,28 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	audit interfaces.AuditLogService,
 	resourceCatalog interfaces.ResourceCatalog,
 	wikiRepo interfaces.WikiPageRepository,
-	tenantOrgRepo interfaces.TenantOrgRepository,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
-		repo:            repo,
-		kgRepo:          kgRepo,
-		chunkRepo:       chunkRepo,
-		shareRepo:       shareRepo,
-		kbShareService:  kbShareService,
-		modelService:    modelService,
-		retrieveEngine:  retrieveEngine,
-		ownership:       ownership,
-		tenantRepo:      tenantRepo,
-		fileSvc:         fileSvc,
-		storageResolver: storageResolver,
-		graphEngine:     graphEngine,
-		asynqClient:     asynqClient,
-		taskInspector:   taskInspector,
-		taskPendingRepo: taskPendingRepo,
-		dsRepo:          dsRepo,
-		syncLogRepo:     syncLogRepo,
-		dsScheduler:     dsScheduler,
-		audit:           audit,
-		resourceCatalog: resourceCatalog,
-		wikiRepo:        wikiRepo,
-		tenantOrgRepo:   tenantOrgRepo,
+		repo:                 repo,
+		kgRepo:               kgRepo,
+		chunkRepo:            chunkRepo,
+		kbAccessGrantService: kbAccessGrantService,
+		modelService:         modelService,
+		retrieveEngine:       retrieveEngine,
+		ownership:            ownership,
+		tenantRepo:           tenantRepo,
+		fileSvc:              fileSvc,
+		storageResolver:      storageResolver,
+		graphEngine:          graphEngine,
+		asynqClient:          asynqClient,
+		taskInspector:        taskInspector,
+		taskPendingRepo:      taskPendingRepo,
+		dsRepo:               dsRepo,
+		syncLogRepo:          syncLogRepo,
+		dsScheduler:          dsScheduler,
+		audit:                audit,
+		resourceCatalog:      resourceCatalog,
+		wikiRepo:             wikiRepo,
 	}
 }
 
@@ -302,39 +296,15 @@ func (s *knowledgeBaseService) validateVectorStoreBinding(
 // validateKBVisibility enforces the scope model at creation time:
 //   - public KBs may only be created by the owning tenant's Owner or a
 //     system admin / platform API key (public corpus is platform-facing);
-//   - org KBs must reference an org inside the same tenant, and the
-//     creator must be a tenant Admin/Owner, system admin or a manager of
-//     that org;
 //   - tenant KBs (the default) keep the existing RBAC — no extra check.
 func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *types.KnowledgeBase) error {
 	switch kb.Visibility {
 	case types.KBVisibilityPublic:
-		kb.OrgID = nil
 		if !canManagePublicKB(ctx) {
 			return apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được tạo knowledge base công khai")
 		}
-	case types.KBVisibilityOrg:
-		if kb.OrgID == nil || *kb.OrgID == 0 {
-			return apperrors.NewBadRequestError("org_id is required when visibility is 'org'")
-		}
-		org, err := s.tenantOrgRepo.GetOrgByID(ctx, *kb.OrgID)
-		if err != nil || org == nil || org.TenantID != kb.TenantID {
-			return apperrors.NewBadRequestError("org not found in this workspace")
-		}
-		caller := types.CallerFromContext(ctx)
-		if caller.Role.HasPermission(types.TenantRoleAdmin) || types.IsSystemAdminFromContext(ctx) {
-			return nil
-		}
-		if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.UserID == "" {
-			return nil
-		}
-		member, err := s.tenantOrgRepo.GetMember(ctx, *kb.OrgID, caller.UserID)
-		if err != nil || member == nil || member.Role != types.TenantOrgRoleManager {
-			return apperrors.NewForbiddenError("chỉ quản trị viên của tổ chức mới được tạo knowledge base cho tổ chức đó")
-		}
 	default:
 		kb.Visibility = types.KBVisibilityTenant
-		kb.OrgID = nil
 	}
 	return nil
 }
@@ -355,7 +325,7 @@ func canManagePublicKB(ctx context.Context) bool {
 // owning tenant reach this — visibility is scope-defining, so shared-KB
 // editors of foreign tenants must not widen or narrow another tenant's KB.
 func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
-	ctx context.Context, id string, visibility types.KBVisibility, orgID *uint64,
+	ctx context.Context, id string, visibility types.KBVisibility,
 ) (*types.KnowledgeBase, error) {
 	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
@@ -376,32 +346,15 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		if !canManagePublicKB(ctx) {
 			return nil, apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được công khai knowledge base")
 		}
-		orgID = nil
-	case types.KBVisibilityOrg:
-		if orgID == nil || *orgID == 0 {
-			return nil, apperrors.NewBadRequestError("org_id is required when visibility is 'org'")
-		}
-		org, err := s.tenantOrgRepo.GetOrgByID(ctx, *orgID)
-		if err != nil || org == nil || org.TenantID != kb.TenantID {
-			return nil, apperrors.NewBadRequestError("org not found in this workspace")
-		}
-		if !caller.Role.HasPermission(types.TenantRoleAdmin) && !types.IsSystemAdminFromContext(ctx) {
-			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
-				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được gán knowledge base cho tổ chức")
-			}
-		}
 	default:
-		// Narrowing to tenant scope is an Admin+ decision — an org manager
-		// must not silently detach their org's KB into tenant scope.
+		// Narrowing to tenant scope is an Admin+ decision.
 		if !caller.Role.HasPermission(types.TenantRoleAdmin) && !types.IsSystemAdminFromContext(ctx) {
 			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
 				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được đổi phạm vi knowledge base")
 			}
 		}
-		orgID = nil
 	}
 	kb.Visibility = visibility
-	kb.OrgID = orgID
 	kb.EnsureDefaults()
 	kb.UpdatedAt = time.Now()
 	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
@@ -409,7 +362,7 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 	}
 	recordKBActivity(ctx, s.audit, kb.TenantID, kb.ID, types.AuditActionKBUpdated,
 		"knowledge_base", kb.ID, types.AuditOutcomeSuccess, map[string]any{
-			"visibility": string(visibility), "org_id": orgID,
+			"visibility": string(visibility),
 		})
 	return kb, nil
 }
@@ -474,23 +427,20 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
 	tenantID := types.MustTenantIDFromContext(ctx)
 
-	// Visibility widening: the caller sees tenant+public KBs of their own
-	// workspace, org KBs of the orgs they belong to (all orgs for
-	// Admin+/API-key principals), plus public KBs of every other tenant.
-	caller := types.CallerFromContext(ctx)
-	bypassOrgFilter := caller.Role.HasPermission(types.TenantRoleAdmin) ||
-		types.IsSystemAdminFromContext(ctx)
-	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.UserID == "" {
-		bypassOrgFilter = true
-	}
-	var memberOrgIDs []uint64
-	if !bypassOrgFilter && s.tenantOrgRepo != nil {
-		memberOrgIDs, _ = s.tenantOrgRepo.ListOrgIDsForUser(ctx, tenantID, caller.UserID)
-	}
-	kbs, err := s.repo.ListVisibleKnowledgeBases(ctx, tenantID, memberOrgIDs, bypassOrgFilter)
+	// The caller sees tenant+public KBs of their own workspace, plus
+	// public KBs of every other tenant and KBs granted to this tenant
+	// via approved kb_access_grants.
+	kbs, err := s.repo.ListVisibleKnowledgeBases(ctx, tenantID)
 	if err == nil {
 		if pubs, perr := s.repo.ListPublicKnowledgeBasesExcept(ctx, tenantID); perr == nil {
 			kbs = append(kbs, pubs...)
+		}
+		if s.kbAccessGrantService != nil {
+			if granted, gerr := s.kbAccessGrantService.GrantedKBIDs(ctx, tenantID); gerr == nil && len(granted) > 0 {
+				if grantedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, granted); kerr == nil {
+					kbs = append(kbs, grantedKBs...)
+				}
+			}
 		}
 	}
 	if err != nil {
@@ -918,10 +868,10 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	s.cleanupTasksForKnowledgeBase(kbCleanupCtx, id, nil, nil)
 	cancelKBCleanup()
 
-	// Step 1b: Remove all organization shares for this KB so org settings no longer show them
-	if s.shareRepo != nil {
-		if delErr := s.shareRepo.DeleteByKnowledgeBaseID(ctx, id); delErr != nil {
-			logger.Warnf(ctx, "Failed to delete KB shares for knowledge base %s: %v", id, delErr)
+	// Step 1b: Revoke all access grants for this KB so grantee tenants lose access.
+	if s.kbAccessGrantService != nil {
+		if delErr := s.kbAccessGrantService.DeleteAllForKB(ctx, id); delErr != nil {
+			logger.Warnf(ctx, "Failed to delete KB access grants for knowledge base %s: %v", id, delErr)
 		}
 	}
 
@@ -1453,12 +1403,11 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 	targetKB.DeletedAt.Valid = false
 	targetKB.DeletedAt.Time = time.Time{}
 	targetKB.IsTemporary = false
-	// Scope is never inherited: duplicating a public or org KB must not
+	// Scope is never inherited: duplicating a public KB must not
 	// mint a new privileged-scope KB for the caller. The copy is a plain
 	// tenant KB; a privileged caller can re-scope it afterwards through
 	// SetKnowledgeBaseVisibility.
 	targetKB.Visibility = types.KBVisibilityTenant
-	targetKB.OrgID = nil
 	targetKB.IsPinned = false
 	targetKB.PinnedAt = nil
 	targetKB.KnowledgeCount = 0

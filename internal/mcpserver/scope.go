@@ -22,7 +22,7 @@ func (s *Server) allowedKnowledgeBases(ctx context.Context, ep *types.MCPEndpoin
 	}
 	out := make([]*types.KnowledgeBase, 0, len(ep.KnowledgeBaseIDs))
 	for _, id := range ep.KnowledgeBaseIDs {
-		kb, err := s.authorizedKnowledgeBase(ctx, id, types.OrgRoleViewer)
+		kb, err := s.authorizedKnowledgeBase(ctx, id, types.KBPermissionViewer)
 		if err != nil {
 			logger.Warnf(ctx, "[mcpserver] endpoint %s references unavailable knowledge base %s: %v",
 				ep.ID, id, err)
@@ -37,7 +37,7 @@ func (s *Server) allowedKnowledgeBases(ctx context.Context, ep *types.MCPEndpoin
 // caller's permission on it (ownership or organization share). The returned
 // error is access.ErrForbidden / ErrNotFound for authorization failures.
 func (s *Server) authorizedKnowledgeBase(
-	ctx context.Context, kbID string, required types.OrgMemberRole,
+	ctx context.Context, kbID string, required types.KBPermission,
 ) (*types.KnowledgeBase, error) {
 	kb, err := s.kbService.GetKnowledgeBaseByIDOnly(ctx, strings.TrimSpace(kbID))
 	if err != nil || kb == nil {
@@ -50,10 +50,10 @@ func (s *Server) authorizedKnowledgeBase(
 }
 
 func (s *Server) resolveKB(
-	ctx context.Context, kb *types.KnowledgeBase, required types.OrgMemberRole,
+	ctx context.Context, kb *types.KnowledgeBase, required types.KBPermission,
 ) (*access.KBAccess, error) {
 	request := access.KBRequest{Caller: types.CallerFromContext(ctx)}
-	return access.ResolveKB(ctx, request, kb, required, s.kbShareService, nil)
+	return access.ResolveKB(ctx, request, kb, required, s.kbAccessGrantService)
 }
 
 // scopedKBContext authorizes one knowledge base at the required permission
@@ -69,12 +69,12 @@ func (s *Server) resolveKB(
 // resolve against the workspace that holds the data, mirroring the service
 // layer's withKBWriteTenantInfo.
 func (s *Server) scopedKBContext(
-	ctx context.Context, kb *types.KnowledgeBase, required types.OrgMemberRole,
+	ctx context.Context, kb *types.KnowledgeBase, required types.KBPermission,
 ) (context.Context, error) {
 	grant, err := s.resolveKB(ctx, kb, required)
 	if err != nil {
 		if errors.Is(err, access.ErrForbidden) || errors.Is(err, access.ErrUnauthorized) {
-			if required == types.OrgRoleViewer {
+			if required == types.KBPermissionViewer {
 				return ctx, fmt.Errorf("this endpoint is not allowed to read knowledge base %q", kb.ID)
 			}
 			return ctx, fmt.Errorf("this endpoint is not allowed to write to knowledge base %q", kb.ID)

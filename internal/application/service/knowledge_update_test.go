@@ -29,7 +29,7 @@ func TestUpdateKnowledgeExplicitEmptyDescriptionClearsSummary(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)
@@ -64,7 +64,7 @@ func TestUpdateKnowledgeOmittedDescriptionPreservesExisting(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)
@@ -98,7 +98,7 @@ func TestUpdateKnowledgeManualDescriptionSetsCompletedStatus(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)
@@ -134,7 +134,7 @@ func TestUpdateKnowledgeDescriptionOnlyDoesNotTouchMetadata(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)

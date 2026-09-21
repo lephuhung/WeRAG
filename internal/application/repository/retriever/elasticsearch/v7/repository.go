@@ -191,7 +191,7 @@ func (e *elasticsearchRepository) Support() []typesLocal.RetrieverType {
 	return []typesLocal.RetrieverType{typesLocal.KeywordsRetrieverType}
 }
 
-// EstimateStorageSize 估算存储空间大小
+// EstimateStorageSize 估算存储Tenant workspace大小
 func (e *elasticsearchRepository) EstimateStorageSize(ctx context.Context,
 	indexInfoList []*typesLocal.IndexInfo, params map[string]any,
 ) int64 {
@@ -1103,7 +1103,7 @@ func (e *elasticsearchRepository) querySourceBatch(ctx context.Context,
 		return nil, err
 	}
 
-	// 提取结果列表
+	// 提取结果List
 	hitsObj, ok := searchResult["hits"].(map[string]interface{})
 	if !ok {
 		log.Errorf("[ElasticsearchV7] Invalid search result format: 'hits' object missing")

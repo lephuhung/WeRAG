@@ -36,7 +36,7 @@ func (p *HunyuanProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证腾讯混元 provider 配置
+// ValidateConfig 验证腾讯混元 provider Configuration
 func (p *HunyuanProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Hunyuan provider")

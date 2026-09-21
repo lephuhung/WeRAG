@@ -284,7 +284,7 @@ func (s *Server) handleListDocuments(ctx context.Context, req mcp.CallToolReques
 	}
 	kb := kbs[0]
 	// Documents live under the knowledge base owner; run the listing there.
-	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleViewer)
+	ctx, err = s.scopedKBContext(ctx, kb, types.KBPermissionViewer)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -335,7 +335,7 @@ func (s *Server) handleReadDocument(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleViewer)
+	ctx, err = s.scopedKBContext(ctx, kb, types.KBPermissionViewer)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

@@ -52,7 +52,7 @@ func mcpCallContext(tenantID uint64, ep *types.MCPEndpoint) context.Context {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, tenantID)
 	ctx = context.WithValue(ctx, types.MCPEndpointContextKey, ep)
 	ctx = types.WithTenantAPIKeyScope(ctx, types.MCPEndpointScope(ep))
-	return types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: "mcp-" + ep.ID, Role: types.TenantRoleViewer})
+	return types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: "mcp-" + ep.ID, Role: types.TenantRoleMember})
 }
 
 func newScopeTestServer(kbs ...*types.KnowledgeBase) *Server {
@@ -106,16 +106,20 @@ func TestSelectKnowledgeBasesMatchesIDOrName(t *testing.T) {
 	}
 }
 
-type stubKBShareService struct {
-	interfaces.KBShareService
-	shared map[string]types.OrgMemberRole // kb id -> permission granted to any caller
+type stubKBGrantService struct {
+	interfaces.KBAccessGrantService
+	shared map[string]types.KBPermission // kb id -> permission granted to any caller tenant
 }
 
-func (s *stubKBShareService) CheckTenantKBPermission(
-	_ context.Context, kbID string, _ uint64, _ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
+func (s *stubKBGrantService) ApprovedKBPermission(
+	_ context.Context, kbID string, _ uint64,
+) (types.KBPermission, bool, error) {
 	perm, ok := s.shared[kbID]
 	return perm, ok, nil
+}
+
+func (s *stubKBGrantService) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 type stubTenantService struct {
@@ -154,7 +158,7 @@ func TestScopedKBContextEnablesWritesOnlyForAuthorizedKnowledgeBases(t *testing.
 	if err := access.RequireKBWrite(ctx, own); err == nil {
 		t.Fatal("no grant must exist before scopedKBContext runs")
 	}
-	scoped, err := srv.scopedKBContext(ctx, own, types.OrgRoleEditor)
+	scoped, err := srv.scopedKBContext(ctx, own, types.KBPermissionEditor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,14 +168,14 @@ func TestScopedKBContextEnablesWritesOnlyForAuthorizedKnowledgeBases(t *testing.
 	if got := types.MustTenantIDFromContext(scoped); got != 1 {
 		t.Fatalf("execution tenant = %d, want owner 1", got)
 	}
-	if _, err := srv.scopedKBContext(ctx, foreign, types.OrgRoleEditor); err == nil {
+	if _, err := srv.scopedKBContext(ctx, foreign, types.KBPermissionEditor); err == nil {
 		t.Fatal("foreign knowledge base must not receive a write grant")
 	}
 
 	readOnly := &types.MCPEndpoint{
 		ID: "ep2", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolSearchKnowledge},
 	}
-	roScoped, err := srv.scopedKBContext(mcpCallContext(1, readOnly), own, types.OrgRoleEditor)
+	roScoped, err := srv.scopedKBContext(mcpCallContext(1, readOnly), own, types.KBPermissionEditor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +187,7 @@ func TestScopedKBContextEnablesWritesOnlyForAuthorizedKnowledgeBases(t *testing.
 func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
 	shared := &types.KnowledgeBase{ID: "kb-shared", TenantID: 2, Name: "Shared"}
 	srv := newScopeTestServer(shared)
-	srv.kbShareService = &stubKBShareService{shared: map[string]types.OrgMemberRole{"kb-shared": types.OrgRoleEditor}}
+	srv.kbAccessGrantService = &stubKBGrantService{shared: map[string]types.KBPermission{"kb-shared": types.KBPermissionEditor}}
 	srv.tenantService = &stubTenantService{tenants: map[uint64]*types.Tenant{2: {ID: 2, Name: "Owner"}}}
 	srv.knowledgeService = &stubKnowledgeService{docs: map[string]*types.Knowledge{
 		"doc-shared": {ID: "doc-shared", TenantID: 2, KnowledgeBaseID: "kb-shared"},
@@ -195,7 +199,7 @@ func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
 	}
 	ctx := context.WithValue(mcpCallContext(1, ep), types.TenantInfoContextKey, &types.Tenant{ID: 1, Name: "Caller"})
 
-	// The shared knowledge base is visible through the organization share.
+	// The shared knowledge base is visible through the tenant access grant.
 	kbs, err := srv.allowedKnowledgeBases(ctx, ep)
 	if err != nil || len(kbs) != 1 {
 		t.Fatalf("shared knowledge base must be in scope: %v %v", knowledgeBaseIDs(kbs), err)
@@ -212,7 +216,7 @@ func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
 	}
 
 	// Writes run under the owner tenant with an editor grant and owner TenantInfo.
-	scoped, err := srv.scopedKBContext(ctx, kb, types.OrgRoleEditor)
+	scoped, err := srv.scopedKBContext(ctx, kb, types.KBPermissionEditor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,19 +227,19 @@ func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
 		t.Fatalf("tenant info must be swapped to the owner, got %+v", info)
 	}
 	if err := access.RequireKBWrite(scoped, kb); err != nil {
-		t.Fatalf("editor share must allow writes: %v", err)
+		t.Fatalf("editor grant must allow writes: %v", err)
 	}
 	if caller := types.CallerFromContext(scoped); caller.TenantID != 1 {
 		t.Fatalf("caller must stay the endpoint tenant, got %+v", caller)
 	}
 
-	// A viewer share must not mint a write grant.
-	srv.kbShareService = &stubKBShareService{shared: map[string]types.OrgMemberRole{"kb-shared": types.OrgRoleViewer}}
-	if _, err := srv.scopedKBContext(ctx, kb, types.OrgRoleEditor); err == nil {
-		t.Fatal("viewer share must not allow writes")
+	// A viewer grant must not mint a write grant.
+	srv.kbAccessGrantService = &stubKBGrantService{shared: map[string]types.KBPermission{"kb-shared": types.KBPermissionViewer}}
+	if _, err := srv.scopedKBContext(ctx, kb, types.KBPermissionEditor); err == nil {
+		t.Fatal("viewer grant must not allow writes")
 	}
-	if _, err := srv.scopedKBContext(ctx, kb, types.OrgRoleViewer); err != nil {
-		t.Fatalf("viewer share must allow reads: %v", err)
+	if _, err := srv.scopedKBContext(ctx, kb, types.KBPermissionViewer); err != nil {
+		t.Fatalf("viewer grant must allow reads: %v", err)
 	}
 }
 
@@ -278,12 +282,4 @@ func TestAskToolHasNoAgentParameter(t *testing.T) {
 	if add.Annotations.DestructiveHint == nil || !*add.Annotations.DestructiveHint {
 		t.Fatal("add_document must advertise a mutation")
 	}
-}
-
-func (s *stubKBShareService) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *stubKBShareService) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

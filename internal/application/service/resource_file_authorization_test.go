@@ -10,31 +10,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type catalogFileShares struct{}
+// catalogFileGrants grants the caller's tenant viewer access to the "shared"
+// KB and resolves that KB's owner tenant for the evidence path.
+type catalogFileGrants struct{}
 
-func (catalogFileShares) CheckTenantKBPermission(
+func (catalogFileGrants) ApprovedKBPermission(
 	_ context.Context,
 	kb string,
 	_ uint64,
-	_ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
-	return types.OrgRoleViewer, kb == "shared", nil
+) (types.KBPermission, bool, error) {
+	return types.KBPermissionViewer, kb == "shared", nil
 }
 
-func (catalogFileShares) GetKnowledgeBasesByIDsOnly(context.Context, []string) ([]*types.KnowledgeBase, error) {
+func (catalogFileGrants) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (catalogFileGrants) GetKnowledgeBasesByIDsOnly(context.Context, []string) ([]*types.KnowledgeBase, error) {
 	return []*types.KnowledgeBase{{ID: "shared", TenantID: 7}}, nil
-}
-
-type catalogFileAgent struct{ agent *types.CustomAgent }
-
-func (a *catalogFileAgent) GetSharedAgentForTenant(
-	context.Context,
-	uint64,
-	types.TenantRole,
-	string,
-	...uint64,
-) (*types.CustomAgent, error) {
-	return a.agent, nil
 }
 
 func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T) {
@@ -70,7 +63,7 @@ func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T)
 		KnowledgeBase:     &types.KnowledgeBase{ID: "shared", TenantID: 7},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleViewer,
+		Permission:        types.KBPermissionViewer,
 	}
 	lookup := catalog.(interfaces.KBResourceLookup)
 	message := &types.Message{
@@ -79,7 +72,7 @@ func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T)
 		Content:             text,
 		KnowledgeReferences: []*types.SearchResult{{KnowledgeBaseID: "shared", Content: text}},
 	}
-	shares := access.MessageKBShareAuthorizer{ShareGuard: catalogFileShares{}, KBs: catalogFileShares{}}
+	authorizer := access.MessageKBGrantAuthorizer{GrantGuard: catalogFileGrants{}, KBs: catalogFileGrants{}}
 	check := func(allowed bool) {
 		t.Helper()
 		for _, path := range []string{ref, physical} {
@@ -89,7 +82,7 @@ func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T)
 			} else {
 				require.ErrorIs(t, err, access.ErrForbidden)
 			}
-			_, err = access.AuthorizeMessageFile(ctx, message, path, nil, catalog, shares)
+			_, err = access.AuthorizeMessageFile(ctx, message, path, catalog, authorizer)
 			if allowed && path == ref {
 				require.NoError(t, err)
 			} else {
@@ -105,73 +98,4 @@ func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T)
 	check(true)
 	require.NoError(t, db.Where("id = ?", "shared").Delete(&types.KnowledgeBase{}).Error)
 	check(false)
-}
-
-func TestCatalogSharedAgentFileRequiresCurrentSelectionOrExactArtifactBinding(t *testing.T) {
-	catalog, db := newResourceCatalogForTest(t)
-	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{}))
-	ctx := newSharedAccessContext()
-	const physical = "local://7/exports/source.pdf"
-	ref, err := catalog.Register(ctx, 7, physical, interfaces.ResourceRegistration{})
-	require.NoError(t, err)
-	require.NoError(t, db.Create(&types.KnowledgeBase{ID: "private", TenantID: 7}).Error)
-	doc := &types.Knowledge{ID: "doc", TenantID: 7, KnowledgeBaseID: "private", Type: "file"}
-	require.NoError(t, db.Create(doc).Error)
-	require.NoError(t, catalog.Bind(ctx, ref, types.ResourceOwnerKnowledge, "doc", types.ResourceRelationSourceFile))
-	agents := &catalogFileAgent{agent: &types.CustomAgent{ID: "agent", TenantID: 7}}
-	message := &types.Message{
-		ID:            "message",
-		AgentID:       "agent",
-		AgentTenantID: 7,
-		Content:       ref + " " + physical,
-		Artifacts:     types.MessageArtifacts{{URL: ref}},
-	}
-	check := func(allowed bool) {
-		t.Helper()
-		for _, path := range []string{ref, physical} {
-			_, err := access.AuthorizeMessageFile(
-				ctx,
-				message,
-				path,
-				agents,
-				catalog,
-				access.MessageKBShareAuthorizer{},
-			)
-			if allowed {
-				require.NoError(t, err)
-			} else {
-				require.ErrorIs(t, err, access.ErrForbidden)
-			}
-		}
-	}
-	for _, mode := range []string{"none", "", "unknown", "selected", "all"} {
-		agents.agent.Config = types.CustomAgentConfig{KBSelectionMode: mode, KnowledgeBases: []string{"private"}}
-		check(mode == "selected" || mode == "all")
-	}
-	agents.agent.Config = types.CustomAgentConfig{KBSelectionMode: "selected", KnowledgeBases: []string{"other"}}
-	check(false)
-	agents.agent.Config.KnowledgeBases = []string{"private"}
-	scoped := types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{KnowledgeBaseIDs: types.StringArray{"other"}})
-	_, err = access.AuthorizeMessageFile(scoped, message, ref, agents, catalog, access.MessageKBShareAuthorizer{})
-	require.ErrorIs(t, err, access.ErrForbidden)
-	require.NoError(t, db.Delete(doc).Error)
-	check(false)
-	agents.agent.Config.KBSelectionMode = "none"
-	require.NoError(
-		t,
-		catalog.Bind(ctx, ref, types.ResourceOwnerMessage, "another-message", types.ResourceRelationArtifact),
-	)
-	check(false)
-	require.NoError(t, catalog.Bind(ctx, ref, types.ResourceOwnerMessage, "message", types.ResourceRelationArtifact))
-	check(true)
-	agents.agent = nil
-	check(false)
-}
-
-func (s catalogFileShares) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s catalogFileShares) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

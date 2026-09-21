@@ -147,7 +147,7 @@ func (w *weaviateRepository) ensureCollection(ctx context.Context, dimension int
 				"desiredCount": w.desiredShardCount,
 			}
 		}
-		//创建collection
+		//Create collection
 		if err = w.client.Schema().ClassCreator().WithClass(&classObj).Do(ctx); err != nil {
 			log.Errorf("[Weaviate] Failed to create collection: %v", err)
 			return fmt.Errorf("failed to create collection: %w", err)

@@ -44,7 +44,7 @@ func (p *ZhipuProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证智谱 AI provider 配置
+// ValidateConfig 验证智谱 AI provider Configuration
 func (p *ZhipuProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Zhipu AI")

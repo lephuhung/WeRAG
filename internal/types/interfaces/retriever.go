@@ -35,10 +35,10 @@ type RetrieveEngineRepository interface {
 	// DeleteBySourceIDList deletes the index info by source id list
 	DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int, knowledgeType string) error
 	// 复制索引数据
-	// sourceKnowledgeBaseID: 源知识库ID
+	// sourceKnowledgeBaseID: 源Knowledge BaseID
 	// sourceToTargetChunkIDMap: 源分块ID到目标分块ID的映射关系
-	// targetKnowledgeBaseID: 目标知识库ID
-	// params: 额外参数，如向量表示等
+	// targetKnowledgeBaseID: 目标Knowledge BaseID
+	// params: 额外Parameters ，如向量表示等
 	CopyIndices(
 		ctx context.Context,
 		sourceKnowledgeBaseID string,
@@ -120,10 +120,10 @@ type RetrieveEngineService interface {
 		indexInfoList []*types.IndexInfo,
 		retrieverTypes []types.RetrieverType,
 	) int64
-	// CopyIndices 从源知识库复制索引到目标知识库，免去重新计算嵌入向量的开销
-	// sourceKnowledgeBaseID: 源知识库ID
+	// CopyIndices 从源Knowledge Base复制索引到目标Knowledge Base，免去重新计算嵌入向量的开销
+	// sourceKnowledgeBaseID: 源Knowledge BaseID
 	// sourceToTargetChunkIDMap: 源分块ID到目标分块ID的映射关系，key为源分块ID，value为目标分块ID
-	// targetKnowledgeBaseID: 目标知识库ID
+	// targetKnowledgeBaseID: 目标Knowledge BaseID
 	CopyIndices(
 		ctx context.Context,
 		sourceKnowledgeBaseID string,

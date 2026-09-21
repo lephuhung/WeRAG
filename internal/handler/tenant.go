@@ -143,7 +143,7 @@ type tenantAPIKeyCreateRequest struct {
 	ExpiresAt        *int64   `json:"expires_at_unix"`
 }
 
-// tenantAPIKeyUpdateRequest 修改已创建 API Key 的配置，字段语义与创建接口一致。
+// tenantAPIKeyUpdateRequest 修改已Create  API Key 的Configuration ，字段语义与Create 接口一致。
 type tenantAPIKeyUpdateRequest struct {
 	Name             string   `json:"name"`
 	FullAccess       bool     `json:"full_access"`
@@ -209,18 +209,18 @@ func (h *TenantHandler) resolveMaxOwnedTenantsPerUser(ctx context.Context) int {
 }
 
 // CreateTenant godoc
-// @Summary      创建空间
-// @Description  创建新的空间。任意已登录用户均可调用以建立自己的新工作区，
-// @Description  调用方会被自动设为该空间的 Owner。跨空间超管仍可像以前一样
-// @Description  通过本接口创建任意空间。
+// @Summary      Create Tenant workspace
+// @Description  Create 新的Tenant workspace。任意已登录用户均可调用以建立自己的新工作区，
+// @Description  调用方会被自动设为该Tenant workspace的 Owner。跨Tenant workspace超管仍可像以前一样
+// @Description  通过本接口Create 任意Tenant workspace。
 // @Description  当 tenant.auto_create_api_key（或 WEKNORA_TENANT_AUTO_CREATE_API_KEY）
-// @Description  开启时，会自动创建一个 full_access API Key，并在响应体的 data.api_key 字段返回其明文 token。
-// @Tags         空间管理
+// @Description  开启时，会自动Create 一个 full_access API Key，并在响应体的 data.api_key 字段返回其明文 token。
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        request  body      handler.createTenantRequest  true  "空间信息"
-// @Success      201      {object}  map[string]interface{}  "创建的空间（可选含 api_key）"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      handler.createTenantRequest  true  "Tenant workspace信息"
+// @Success      201      {object}  map[string]interface{}  "Create 的Tenant workspace（可选含 api_key）"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Router       /tenants [post]
 func (h *TenantHandler) CreateTenant(c *gin.Context) {
@@ -526,15 +526,15 @@ func (h *TenantHandler) autoCreateTenantAPIKey(ctx context.Context) bool {
 }
 
 // GetTenant godoc
-// @Summary      获取空间详情
-// @Description  根据ID获取空间详情
-// @Tags         空间管理
+// @Summary      获取Tenant workspaceDetails
+// @Description  根据ID获取Tenant workspaceDetails
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "空间ID"
-// @Success      200  {object}  map[string]interface{}  "空间详情"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
-// @Failure      404  {object}  errors.AppError         "空间不存在"
+// @Param        id   path      int  true  "Tenant workspaceID"
+// @Success      200  {object}  map[string]interface{}  "Tenant workspaceDetails "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Failure      404  {object}  errors.AppError         "Tenant workspace不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/{id} [get]
@@ -567,15 +567,15 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 }
 
 // UpdateTenant godoc
-// @Summary      更新空间
-// @Description  更新空间信息
-// @Tags         空间管理
+// @Summary      Update Tenant workspace
+// @Description  Update Tenant workspace信息
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int           true  "空间ID"
-// @Param        request  body      types.Tenant  true  "空间信息"
-// @Success      200      {object}  map[string]interface{}  "更新后的空间"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        id       path      int           true  "Tenant workspaceID"
+// @Param        request  body      types.Tenant  true  "Tenant workspace信息"
+// @Success      200      {object}  map[string]interface{}  "Update 后的Tenant workspace"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Router       /tenants/{id} [put]
 func (h *TenantHandler) UpdateTenant(c *gin.Context) {
@@ -722,8 +722,8 @@ func (h *TenantHandler) CreateAPIKey(c *gin.Context) {
 	})
 }
 
-// UpdateAPIKey 修改已创建租户 API Key 的授权范围和其他可配置属性。
-// 路由层要求当前租户 Owner；字段校验与创建接口保持一致。
+// UpdateAPIKey 修改已Create 租户 API Key 的授权范围和其他可Configuration 属性。
+// 路由层要求当前租户 Owner；字段校验与Create 接口保持一致。
 func (h *TenantHandler) UpdateAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -833,8 +833,8 @@ func validateTenantAPIKeyRequest(
 	return validateTenantAPIKeyKnowledgeBaseIDs(ctx, kbService, tenantID, req.KnowledgeBaseIDs)
 }
 
-// validateTenantAPIKeyKnowledgeBaseIDs 校验白名单中的知识库真实存在且属于目标租户。
-// 入参是请求上下文、知识库服务、租户 ID 和待授权 ID；成功无返回值，失败返回可直接响应的应用错误。
+// validateTenantAPIKeyKnowledgeBaseIDs 校验白名单中的Knowledge Base真实存在且属于目标租户。
+// 入参是请求上下文、Knowledge Base服务、租户 ID 和待授权 ID；成功无返回值，失败返回可直接响应的应用错误。
 func validateTenantAPIKeyKnowledgeBaseIDs(
 	ctx context.Context,
 	kbService interfaces.KnowledgeBaseService,
@@ -849,8 +849,8 @@ func validateTenantAPIKeyKnowledgeBaseIDs(
 	)
 }
 
-// validateTenantAPIKeyKnowledgeBaseIDsWithLookup 将归属校验与大型知识库服务接口解耦，便于覆盖边界测试。
-// lookup 输入知识库 ID 并返回真实知识库；函数输出 nil 或可直接响应的校验错误。
+// validateTenantAPIKeyKnowledgeBaseIDsWithLookup 将归属校验与大型Knowledge Base服务接口解耦，便于覆盖边界测试。
+// lookup 输入Knowledge Base ID 并返回真实Knowledge Base；函数输出 nil 或可直接响应的校验错误。
 func validateTenantAPIKeyKnowledgeBaseIDsWithLookup(
 	ctx context.Context,
 	tenantID uint64,
@@ -891,14 +891,14 @@ func apiPrincipalConfigForResponse(cfg *types.APIPrincipalConfig) apiPrincipalCo
 }
 
 // GetAPIPrincipalConfig godoc
-// @Summary      获取空间 API Key 用户身份配置
-// @Description  返回 X-API-Key 请求如何映射为终端 Principal 的配置（Owner）
-// @Tags         空间管理
+// @Summary      获取Tenant workspace API Key 用户身份Configuration
+// @Description  返回 X-API-Key 请求如何映射为终端 Principal 的Configuration （Owner）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "空间ID"
-// @Success      200  {object}  map[string]interface{}  "API principal 配置"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Param        id   path      int  true  "Tenant workspaceID"
+// @Success      200  {object}  map[string]interface{}  "API principal Configuration "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      403  {object}  errors.AppError         "权限不足"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-config [get]
@@ -925,15 +925,15 @@ func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
 }
 
 // UpdateAPIPrincipalConfig godoc
-// @Summary      更新空间 API Key 用户身份配置
-// @Description  配置 X-API-Key 请求如何映射为终端 Principal（Owner）
-// @Tags         空间管理
+// @Summary      Update Tenant workspace API Key 用户身份Configuration
+// @Description  Configuration  X-API-Key 请求如何映射为终端 Principal（Owner）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int                           true  "空间ID"
-// @Param        request  body      handler.apiPrincipalConfigRequest  true  "API principal 配置"
-// @Success      200      {object}  map[string]interface{}        "更新后的配置"
-// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Param        id       path      int                           true  "Tenant workspaceID"
+// @Param        request  body      handler.apiPrincipalConfigRequest  true  "API principal Configuration "
+// @Success      200      {object}  map[string]interface{}        "Update 后的Configuration "
+// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError               "权限不足"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-config [put]
@@ -1014,14 +1014,14 @@ func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
 
 // CreateAPIPrincipalTestToken godoc
 // @Summary      生成 API Playground 测试 JWT
-// @Description  使用空间已保存的 HMAC 密钥签发短期外部用户 JWT（Owner）
-// @Tags         空间管理
+// @Description  使用Tenant workspace已保存的 HMAC 密钥签发短期外部用户 JWT（Owner）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int                                  true  "空间ID"
-// @Param        request  body      handler.apiPrincipalTestTokenRequest true  "测试 Token 参数"
+// @Param        id       path      int                                  true  "Tenant workspaceID"
+// @Param        request  body      handler.apiPrincipalTestTokenRequest true  "测试 Token Parameters "
 // @Success      200      {object}  map[string]interface{}               "短期 JWT"
-// @Failure      400      {object}  errors.AppError                      "请求参数错误"
+// @Failure      400      {object}  errors.AppError                      "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError                      "权限不足"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-test-token [post]
@@ -1117,14 +1117,14 @@ func validateAPIPrincipalExternalUserID(id string) error {
 }
 
 // DeleteTenant godoc
-// @Summary      删除空间
-// @Description  删除指定的空间
-// @Tags         空间管理
+// @Summary      Delete Tenant workspace
+// @Description  Delete 指定的Tenant workspace
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "空间ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Param        id   path      int  true  "Tenant workspaceID"
+// @Success      200  {object}  map[string]interface{}  "Delete 成功"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Router       /tenants/{id} [delete]
 func (h *TenantHandler) DeleteTenant(c *gin.Context) {
@@ -1160,12 +1160,12 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 }
 
 // ListTenants godoc
-// @Summary      获取空间列表
-// @Description  获取当前用户可访问的空间列表
-// @Tags         空间管理
+// @Summary      获取Tenant workspaceList
+// @Description  获取当前用户可访问的Tenant workspaceList
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "空间列表"
+// @Success      200  {object}  map[string]interface{}  "Tenant workspaceList "
 // @Failure      500  {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Router       /tenants [get]
@@ -1187,12 +1187,12 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 }
 
 // ListAllTenants godoc
-// @Summary      获取所有空间列表
-// @Description  获取系统中所有空间（需要跨空间访问权限）
-// @Tags         空间管理
+// @Summary      获取所有Tenant workspaceList
+// @Description  获取系统中所有Tenant workspace（需要跨Tenant workspace访问权限）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "所有空间列表"
+// @Success      200  {object}  map[string]interface{}  "所有Tenant workspaceList "
 // @Failure      403  {object}  errors.AppError         "权限不足"
 // @Security     Bearer
 // @Router       /tenants/all [get]
@@ -1224,13 +1224,13 @@ func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 }
 
 // SearchTenants godoc
-// @Summary      搜索空间
-// @Description  分页搜索空间（需要跨空间访问权限）
-// @Tags         空间管理
+// @Summary      搜索Tenant workspace
+// @Description  分页搜索Tenant workspace（需要跨Tenant workspace访问权限）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
 // @Param        keyword    query     string  false  "搜索关键词"
-// @Param        tenant_id  query     int     false  "空间ID筛选"
+// @Param        tenant_id  query     int     false  "Tenant workspaceID筛选"
 // @Param        page       query     int     false  "页码"  default(1)
 // @Param        page_size  query     int     false  "每页数量"  default(20)
 // @Success      200        {object}  map[string]interface{}  "搜索结果"
@@ -1297,13 +1297,13 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 }
 
 // GetTenantKV godoc
-// @Summary      获取空间KV配置
-// @Description  获取空间级别的KV配置（支持web-search-config、prompt-templates、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
-// @Tags         空间管理
+// @Summary      获取Tenant workspaceKVConfiguration
+// @Description  获取Tenant workspace级别的KVConfiguration （支持web-search-config、prompt-templates、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        key  path      string  true  "配置键名"
-// @Success      200  {object}  map[string]interface{}  "配置值"
+// @Param        key  path      string  true  "Configuration 键名"
+// @Success      200  {object}  map[string]interface{}  "Configuration 值"
 // @Failure      400  {object}  errors.AppError         "不支持的键"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1350,14 +1350,14 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 }
 
 // UpdateTenantKV godoc
-// @Summary      更新空间KV配置
-// @Description  更新空间级别的KV配置（支持web-search-config、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
-// @Tags         空间管理
+// @Summary      Update Tenant workspaceKVConfiguration
+// @Description  Update Tenant workspace级别的KVConfiguration （支持web-search-config、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Param        key      path      string  true  "配置键名"
-// @Param        request  body      object  true  "配置值"
-// @Success      200      {object}  map[string]interface{}  "更新成功"
+// @Param        key      path      string  true  "Configuration 键名"
+// @Param        request  body      object  true  "Configuration 值"
+// @Success      200      {object}  map[string]interface{}  "Update 成功"
 // @Failure      400      {object}  errors.AppError         "不支持的键"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1467,13 +1467,13 @@ func (h *TenantHandler) updateTenantWebSearchConfigInternal(c *gin.Context) {
 }
 
 // GetTenantWebSearchConfig godoc
-// @Summary      获取空间网络搜索配置
-// @Description  获取空间的网络搜索配置
-// @Tags         空间管理
+// @Summary      获取Tenant workspace网络搜索Configuration
+// @Description  获取Tenant workspace的网络搜索Configuration
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "网络搜索配置"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "网络搜索Configuration "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/web-search-config [get]
@@ -1619,13 +1619,13 @@ func (h *TenantHandler) updateTenantStorageEngineConfigInternal(c *gin.Context) 
 }
 
 // GetPromptTemplates godoc
-// @Summary      获取提示词模板
-// @Description  获取系统配置的提示词模板列表
-// @Tags         空间管理
+// @Summary      获取Prompt template
+// @Description  获取系统Configuration 的Prompt templateList
+// @Tags         Tenant workspace管理
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "提示词模板配置"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "Prompt templateConfiguration "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/prompt-templates [get]

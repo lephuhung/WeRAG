@@ -86,10 +86,6 @@ type TenantInvitation struct {
 	InvitedBy *string `json:"invited_by,omitempty" gorm:"type:varchar(36)"`
 	// Role the invitee will receive in tenant_members if they accept.
 	Role TenantRole `json:"role" gorm:"type:varchar(20);not null"`
-	// OrgID binds a share-link invitation to a tenant org (migration
-	// 000107). Zero means a plain tenant invite. When set, accepting the
-	// link also enrols the invitee into tenant_org_members of that org.
-	OrgID uint64 `json:"org_id,omitempty" gorm:"not null;default:0"`
 	// Status holds the lifecycle state. Default pending; mutated to
 	// accepted/declined/revoked/expired exactly once.
 	Status TenantInvitationStatus `json:"status" gorm:"type:varchar(20);not null;default:'pending'"`
@@ -131,24 +127,21 @@ func (inv *TenantInvitation) IsExpired(at time.Time) bool {
 // intentionally NOT serialised directly so we don't leak DeletedAt /
 // UpdatedAt and lock the DB schema into the public API.
 type TenantInvitationResponse struct {
-	ID            uint64     `json:"id"`
-	TenantID      uint64     `json:"tenant_id"`
-	TenantName    string     `json:"tenant_name,omitempty"`
-	InviteeUserID string     `json:"invitee_user_id"`
-	InviteeEmail  string     `json:"invitee_email,omitempty"`
-	InviteeName   string     `json:"invitee_name,omitempty"`
-	InvitedBy     *string    `json:"invited_by,omitempty"`
-	InviterEmail  string     `json:"inviter_email,omitempty"`
-	InviterName   string     `json:"inviter_name,omitempty"`
-	Role          TenantRole `json:"role"`
-	// OrgID mirrors TenantInvitation.OrgID so the UI can badge
-	// org-bound links; zero for plain tenant invites.
-	OrgID       uint64                 `json:"org_id,omitempty"`
-	Status      TenantInvitationStatus `json:"status"`
-	Message     string                 `json:"message,omitempty"`
-	ExpiresAt   time.Time              `json:"expires_at"`
-	RespondedAt *time.Time             `json:"responded_at,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
+	ID            uint64                 `json:"id"`
+	TenantID      uint64                 `json:"tenant_id"`
+	TenantName    string                 `json:"tenant_name,omitempty"`
+	InviteeUserID string                 `json:"invitee_user_id"`
+	InviteeEmail  string                 `json:"invitee_email,omitempty"`
+	InviteeName   string                 `json:"invitee_name,omitempty"`
+	InvitedBy     *string                `json:"invited_by,omitempty"`
+	InviterEmail  string                 `json:"inviter_email,omitempty"`
+	InviterName   string                 `json:"inviter_name,omitempty"`
+	Role          TenantRole             `json:"role"`
+	Status        TenantInvitationStatus `json:"status"`
+	Message       string                 `json:"message,omitempty"`
+	ExpiresAt     time.Time              `json:"expires_at"`
+	RespondedAt   *time.Time             `json:"responded_at,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
 	// InviteURL is set on share-link rows that are still pending.
 	// Composed by the handler from FrontendBaseURL + the row's plaintext
 	// token, so the management UI can render a "copy link" button per

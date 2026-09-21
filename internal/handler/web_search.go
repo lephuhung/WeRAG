@@ -18,11 +18,11 @@ func NewWebSearchHandler() *WebSearchHandler {
 // GetProviders returns the list of available web search provider types.
 //
 // GetProviders godoc
-// @Summary      获取可用网络搜索 Provider 列表
+// @Summary      获取可用网络搜索 Provider List
 // @Description  返回所有已注册的网络搜索 provider（含元数据）
 // @Tags         网络搜索
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "provider 列表"
+// @Success      200  {object}  map[string]interface{}  "provider List "
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search/providers [get]

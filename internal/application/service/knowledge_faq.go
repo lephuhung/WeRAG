@@ -33,7 +33,7 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 		return nil, err
 	}
 
-	effectiveTenantID, err := resolveKBReadTenant(ctx, kb, s.kbShareService)
+	effectiveTenantID, err := resolveKBReadTenant(ctx, kb, s.kbAccessGrantService)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 同一标准问的并发创建必须串行：下面的重复校验只看得到已落库的条目，
+	// 同一标准问的并发Create 必须串行：下面的重复校验只看得到已落库的条目，
 	// 拦不住还在索引中的兄弟请求（上游超时重试就会造出这种并发）。
 	releaseGuard, err := s.acquireFAQCreateGuard(ctx, tenantID, kb.ID, meta.StandardQuestion)
 	if err != nil {
@@ -170,7 +170,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// 创建chunk
+	// Create chunk
 	isEnabled := true
 	if payload.IsEnabled != nil {
 		isEnabled = *payload.IsEnabled
@@ -193,7 +193,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		TagID:           tagID, // 使用解析后的 TagID
 		Status:          int(types.ChunkStatusStored),
 	}
-	// 如果指定了 ID（用于数据迁移），设置 SeqID
+	// 如果指定了 ID（用于数据迁移），Settings  SeqID
 	if payload.ID != nil && *payload.ID > 0 {
 		chunk.SeqID = *payload.ID
 	}
@@ -207,13 +207,13 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, fmt.Errorf("failed to create chunk: %w", err)
 	}
 
-	// 索引chunk：交互式创建给索引步骤设硬上限，避免 embedding 抖动把请求拖长
+	// 索引chunk：交互式Create 给索引步骤设硬上限，避免 embedding 抖动把请求拖长
 	indexCtx, cancelIndex := context.WithTimeout(ctx, faqCreateIndexBudget)
 	indexErr := s.indexFAQChunks(indexCtx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, true, false)
 	cancelIndex()
 	if indexErr != nil {
-		// 如果索引失败，删除已创建的chunk。回滚失败会留下一条 stored 状态的
-		// 残留：它不出现在列表里，却会被重复校验命中，因此必须告警而非静默。
+		// 如果索引失败，Delete 已Create 的chunk。回滚失败会留下一条 stored 状态的
+		// 残留：它不出现在List 里，却会被重复校验命中，因此必须告警而非静默。
 		if delErr := s.chunkService.DeleteChunk(ctx, chunk.ID); delErr != nil {
 			logger.Errorf(ctx,
 				"CreateFAQEntry: rollback failed, chunk %s left in stored state: %v", chunk.ID, delErr)
@@ -221,7 +221,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, fmt.Errorf("failed to index chunk: %w", indexErr)
 	}
 
-	// 更新chunk状态为已索引
+	// Update chunk状态为已索引
 	chunk.Status = int(types.ChunkStatusIndexed)
 	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
 		return nil, fmt.Errorf("failed to update chunk status: %w", err)
@@ -242,7 +242,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 查询TagName
+	// Query TagName
 	if chunk.TagID != "" {
 		tag, tagErr := s.tagRepo.GetByID(ctx, tenantID, chunk.TagID)
 		if tagErr == nil && tag != nil {
@@ -278,7 +278,7 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 		return nil, werrors.NewNotFoundError("FAQ条目不存在")
 	}
 
-	// 验证chunk属于当前知识库
+	// 验证chunk属于当前Knowledge Base
 	if chunk.KnowledgeBaseID != kb.ID || chunk.TenantID != tenantID {
 		return nil, werrors.NewNotFoundError("FAQ条目不存在")
 	}
@@ -303,7 +303,7 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 查询TagName
+	// Query TagName
 	if chunk.TagID != "" {
 		tag, tagErr := s.tagRepo.GetByID(ctx, tenantID, chunk.TagID)
 		if tagErr == nil && tag != nil {
@@ -347,7 +347,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 获取旧的相似问列表，用于增量更新
+	// 获取旧的相似问List ，用于增量Update
 	var oldSimilarQuestions []string
 	var oldStandardQuestion string
 	var oldAnswers []string
@@ -417,14 +417,14 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 
 	// 增量索引优化：只对变化的内容进行索引操作
 	if questionIndexMode == types.FAQQuestionIndexModeSeparate && len(oldSimilarQuestions) > 0 {
-		// 分别索引模式下的增量更新
+		// 分别索引模式下的增量Update
 		if err := s.incrementalIndexFAQEntry(ctx, kb, faqKnowledge, chunk, embeddingModel,
 			oldStandardQuestion, oldSimilarQuestions, oldAnswers, meta); err != nil {
 			return nil, err
 		}
 	} else {
-		// Combined 模式或首次创建，使用全量索引
-		// 增量删除：只删除被移除的相似问索引
+		// Combined 模式或首次Create ，使用全量索引
+		// 增量Delete ：只Delete 被移除的相似问索引
 		oldSimilarQuestionCount := len(oldSimilarQuestions)
 		newSimilarQuestionCount := len(meta.SimilarQuestions)
 		if questionIndexMode == types.FAQQuestionIndexModeSeparate && oldSimilarQuestionCount > newSimilarQuestionCount {
@@ -465,7 +465,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 查询TagName
+	// Query TagName
 	if chunk.TagID != "" {
 		tag, tagErr := s.tagRepo.GetByID(ctx, tenantID, chunk.TagID)
 		if tagErr == nil && tag != nil {
@@ -1211,9 +1211,9 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 		entries = entries[:req.MatchCount]
 	}
 
-	// 批量查询TagName并补充到结果中
+	// 批量Query TagName并补充到结果中
 	if len(entries) > 0 {
-		// 收集所有需要查询的TagID (seq_id)
+		// 收集所有需要Query 的TagID (seq_id)
 		tagSeqIDs := make([]int64, 0)
 		tagSeqIDSet := make(map[int64]struct{})
 		for _, entry := range entries {
@@ -1225,7 +1225,7 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 			}
 		}
 
-		// 批量查询标签
+		// 批量Query 标签
 		if len(tagSeqIDs) > 0 {
 			tags, err := s.tagRepo.GetBySeqIDs(ctx, tenantID, tagSeqIDs)
 			if err != nil {
@@ -1347,7 +1347,7 @@ func (s *knowledgeService) ExportFAQEntries(ctx context.Context, kbID string) ([
 	return s.buildFAQCSV(chunks, tagMap), nil
 }
 
-// ExportFAQEntriesJSON 以 JSON 数组形式导出 FAQ 知识库下的全部条目，
+// ExportFAQEntriesJSON 以 JSON 数组形式导出 FAQ Knowledge Base下的全部条目，
 // 字段与 FAQEntryPayload 兼容，便于"导出 → 编辑 → 重新 append 导入"循环。
 func (s *knowledgeService) ExportFAQEntriesJSON(ctx context.Context, kbID string) ([]byte, error) {
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
@@ -1650,8 +1650,8 @@ func buildFAQChunkContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 	return builder.String()
 }
 
-// checkFAQQuestionDuplicate 检查标准问和相似问是否与知识库中其他条目重复
-// excludeChunkID 用于排除当前正在编辑的条目（更新时使用）
+// checkFAQQuestionDuplicate 检查标准问和相似问是否与Knowledge Base中其他条目重复
+// excludeChunkID 用于排除当前正在编辑的条目（Update 时使用）
 // 按照批量导入时的检查方式：先构建已存在问题集合，再统一检查
 func (s *knowledgeService) checkFAQQuestionDuplicate(
 	ctx context.Context,
@@ -1702,7 +1702,7 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 		negativeQuestionsSeen[q] = struct{}{}
 	}
 
-	// 4. 将标准问和所有相似问合并，用一条 DB 查询检查是否与其他条目冲突（替代全量扫描）
+	// 4. 将标准问和所有相似问合并，用一条 DB Query 检查是否与其他条目冲突（替代全量扫描）
 	allQuestions := make([]string, 0, 1+len(meta.SimilarQuestions))
 	allQuestions = append(allQuestions, meta.StandardQuestion)
 	allQuestions = append(allQuestions, meta.SimilarQuestions...)
@@ -1840,7 +1840,7 @@ func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payloa
 		return tag.ID, nil
 	}
 
-	// 如果提供了 tag_name，查找或创建标签
+	// 如果提供了 tag_name，查找或Create 标签
 	if payload.TagName != "" {
 		tag, err := s.tagService.FindOrCreateTagByName(ctx, kbID, payload.TagName)
 		if err != nil {
@@ -1903,7 +1903,7 @@ func buildFAQIndexContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 	return builder.String()
 }
 
-// buildFAQIndexInfoList 构建FAQ索引信息列表，支持分别索引模式
+// buildFAQIndexInfoList 构建FAQ索引信息List ，支持分别索引模式
 func (s *knowledgeService) buildFAQIndexInfoList(
 	ctx context.Context,
 	kb *types.KnowledgeBase,
@@ -1947,7 +1947,7 @@ func (s *knowledgeService) buildFAQIndexInfoList(
 		}, nil
 	}
 
-	// 分别索引模式：为每个问题创建独立的索引项
+	// 分别索引模式：为每个问题Create 独立的索引项
 	indexInfoList := make([]*types.IndexInfo, 0)
 
 	// 标准问索引项
@@ -1974,7 +1974,7 @@ func (s *knowledgeService) buildFAQIndexInfoList(
 		IsRecommended:   chunk.Flags.HasFlag(types.ChunkFlagRecommended),
 	})
 
-	// 每个相似问创建一个索引项
+	// 每个相似问Create 一个索引项
 	for i, similarQ := range meta.SimilarQuestions {
 		similarContent := similarQ
 		if indexMode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {

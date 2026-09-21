@@ -138,11 +138,9 @@ func (s *sessionService) resolveChatModelID(
 	customAgent := req.CustomAgent
 	session := req.Session
 	configuredAgentModelID := ""
-	// A shared agent runs in its owner's workspace, where an override could
-	// pick any of the owner's models rather than the one the agent was
-	// configured with. A caller without model-config rights cannot override
-	// the model a response mode was assigned either.
-	if req.SharedAgentReadOnly || !types.CanManageModelConfig(ctx) {
+	// A caller without model-config rights cannot override the model a
+	// response mode was assigned.
+	if !types.CanManageModelConfig(ctx) {
 		summaryModelID = ""
 	}
 

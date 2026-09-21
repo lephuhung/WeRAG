@@ -32,7 +32,7 @@ var (
 	errInvalidExternalUserToken = errors.New("invalid external user token")
 )
 
-// 无需认证的API列表
+// 无需认证的APIList
 var noAuthAPI = map[string][]string{
 	"/health":                 {"GET"},
 	"/api/v1/auth/register":   {"POST"},
@@ -62,7 +62,7 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/files/presigned": {"GET", "HEAD"},
 }
 
-// 检查请求是否在无需认证的API列表中
+// 检查请求是否在无需认证的APIList 中
 func isNoAuthAPI(path string, method string) bool {
 	for api, methods := range noAuthAPI {
 		// 如果以*结尾，按照前缀匹配，否则按照全路径匹配
@@ -115,7 +115,7 @@ func attachTenantlessUserContext(c *gin.Context, user *types.User) {
 // Auth 认证中间件。按顺序尝试三条通道：
 //
 //  1. 白名单（isNoAuthAPI）/ OPTIONS 预检 —— 直接放行；
-//  2. Bearer JWT —— 成功则走 authenticateJWTUser 完成空间/角色解析；
+//  2. Bearer JWT —— 成功则走 authenticateJWTUser 完成Tenant workspace/角色解析；
 //     校验失败不立即拒绝，继续尝试 X-API-Key（保持既有兼容行为：
 //     携带过期 JWT 但同时带有效 API key 的客户端仍可通过）；
 //  3. X-API-Key —— authenticateAPIKeyRequest。
@@ -137,7 +137,7 @@ func Auth(
 			return
 		}
 
-		// 检查请求是否在无需认证的API列表中
+		// 检查请求是否在无需认证的APIList 中
 		if isNoAuthAPI(c.Request.URL.Path, c.Request.Method) {
 			c.Next()
 			return
@@ -210,8 +210,8 @@ func authenticateJWTUser(
 	}
 
 	if targetTenantID == 0 {
-		// 无可用空间：身份级路由（/auth/me 等）放行为 tenantless 会话，
-		// 其余路由返回 TENANT_REQUIRED 让前端引导用户创建/加入空间。
+		// 无可用Tenant workspace：身份级路由（/auth/me 等）放行为 tenantless 会话，
+		// 其余路由返回 TENANT_REQUIRED 让前端引导用户Create /加入Tenant workspace。
 		if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
 			attachTenantlessUserContext(c, user)
 			return true
@@ -224,7 +224,7 @@ func authenticateJWTUser(
 		return false
 	}
 
-	// 获取空间信息（X-Tenant-ID 切换路径已在 resolveTargetTenant 内取到，
+	// 获取Tenant workspace信息（X-Tenant-ID 切换路径已在 resolveTargetTenant 内取到，
 	// 避免二次查库）。
 	if tenant == nil {
 		var err error
@@ -239,7 +239,7 @@ func authenticateJWTUser(
 		}
 	}
 
-	// 解析当前空间内的角色 (issue #1303)
+	// 解析当前Tenant workspace内的角色 (issue #1303)
 	role, ok := resolveTenantRole(ctx, memberService, user, targetTenantID, crossTenantSwitch, cfg)
 	if !ok {
 		// 强制 RBAC 时，缺少 active membership 即拒绝；fail-open 路径已在
@@ -299,8 +299,8 @@ func resolveTargetTenant(
 	}
 
 	if tenantHeader := c.GetHeader("X-Tenant-ID"); tenantHeader != "" {
-		// 解析目标空间ID。畸形 / 零值必须显式拒绝：静默忽略会让坏掉的
-		// 前端/SDK 悄悄写错空间，反而看不到问题。与 RequirePathTenantMatch
+		// 解析目标Tenant workspaceID。畸形 / 零值必须显式拒绝：静默忽略会让坏掉的
+		// 前端/SDK 悄悄写错Tenant workspace，反而看不到问题。与 RequirePathTenantMatch
 		// 中对 :id 的校验保持一致（非空、可解析、>0）。
 		parsedTenantID, err := strconv.ParseUint(tenantHeader, 10, 64)
 		if err != nil || parsedTenantID == 0 {
@@ -309,7 +309,7 @@ func resolveTargetTenant(
 			c.Abort()
 			return 0, nil, false, false
 		}
-		// 检查用户是否有权限访问目标空间：自家空间、跨空间超管、或
+		// 检查用户是否有权限访问目标Tenant workspace：自家Tenant workspace、跨Tenant workspace超管、或
 		// 有 active membership 行——三选一，由 IsTenantAccessible 统一判定。
 		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
@@ -319,7 +319,7 @@ func resolveTargetTenant(
 			c.Abort()
 			return 0, nil, false, false
 		}
-		// 验证目标空间是否存在
+		// 验证目标Tenant workspace是否存在
 		targetTenant, err := tenantService.GetTenantByID(ctx, parsedTenantID)
 		if err != nil || targetTenant == nil {
 			logger.Warnf(ctx, "Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
@@ -460,7 +460,7 @@ func attachPlatformAPIKeyAuthContext(c *gin.Context, key *types.TenantAPIKey) {
 		// This role context exists only for legacy guard compatibility after
 		// RequireRole short-circuits API-key principals; the key's real
 		// authority is its platform capabilities enforced by the APIKeyGate.
-		Role: types.TenantRoleViewer,
+		Role: types.TenantRoleMember,
 		APIKeyScope: &types.TenantAPIKeyScope{
 			KeyID:        key.ID,
 			Name:         key.Name,
@@ -535,7 +535,7 @@ func attachAPIKeyAuthContext(
 	// This role context exists only for legacy guard compatibility after
 	// RequireRole short-circuits API-key principals. The API key's real
 	// authority is FullAccess + Capabilities + KnowledgeBaseIDs.
-	apiKeyTenantRoleContext := types.TenantRoleViewer
+	apiKeyTenantRoleContext := types.TenantRoleMember
 	fullAccess := key != nil && key.FullAccess && !key.IsPlatform()
 	if fullAccess {
 		apiKeyTenantRoleContext = types.TenantRoleOwner
@@ -782,8 +782,8 @@ func resolveTenantRole(
 			user.ID, targetTenantID, statusInfo)
 	}
 
-	// 2. 跨空间超管直通：CanAccessAllTenants 用户切到别的空间时不强制要求 membership。
-	//    注意：这里只授予临时 Admin 角色，不写入 tenant_members，避免"看一眼别人空间"
+	// 2. 跨Tenant workspace超管直通：CanAccessAllTenants 用户切到别的Tenant workspace时不强制要求 membership。
+	//    注意：这里只授予临时 Admin 角色，不写入 tenant_members，避免"看一眼别人Tenant workspace"
 	//    意外升级为持久化所有权。
 	if crossTenantSwitch && user.CanAccessAllTenants {
 		logger.Infof(ctx,
@@ -792,9 +792,9 @@ func resolveTenantRole(
 		return types.TenantRoleAdmin, true
 	}
 
-	// 3. 孤儿空间自愈：仅当用户登录的是自己的 home tenant、且该空间尚无任何活跃成员时
-	//    允许自动晋升为 Owner。跨空间 switch / JWT 指向他人空间的场景一律不进入此分支，
-	//    防止越权获得他人空间的 Owner 权限。
+	// 3. 孤儿Tenant workspace自愈：仅当用户登录的是自己的 home tenant、且该Tenant workspace尚无任何活跃成员时
+	//    允许自动晋升为 Owner。跨Tenant workspace switch / JWT 指向他人Tenant workspace的场景一律不进入此分支，
+	//    防止越权获得他人Tenant workspace的 Owner 权限。
 	isHomeTenant := !crossTenantSwitch && targetTenantID == user.TenantID
 	if isHomeTenant {
 		hasAny, anyErr := memberService.HasAnyMembers(ctx, targetTenantID)
@@ -824,6 +824,6 @@ func resolveTenantRole(
 	logger.Warnf(ctx,
 		"[auth] resolveTenantRole step4 fail-open (EnableRBAC=false) -> Admin: user=%s tenant=%d",
 		user.ID, targetTenantID)
-	// fail-open 期间保持现有行为（每个登录用户在自己空间里都是"管理员"）。
+	// fail-open 期间保持现有行为（每个登录用户在自己Tenant workspace里都是"管理员"）。
 	return types.TenantRoleAdmin, true
 }

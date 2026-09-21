@@ -172,13 +172,13 @@ func IsSyntheticUserID(id string) bool {
 }
 
 // TenantRoleFromContext extracts the caller's TenantRole in the currently
-// active tenant. Returns TenantRoleViewer when the key is absent so that
+// active tenant. Returns TenantRoleMember when the key is absent so that
 // callers fail closed (least privilege) if the auth middleware did not
 // populate the role for some reason.
 func TenantRoleFromContext(ctx context.Context) TenantRole {
 	v, ok := ctx.Value(TenantRoleContextKey).(TenantRole)
 	if !ok || !v.IsValid() {
-		return TenantRoleViewer
+		return TenantRoleMember
 	}
 	return v
 }

@@ -122,7 +122,7 @@ func TestUpdateKnowledgeMetadataDoesNotReindexChunks(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)
@@ -162,7 +162,7 @@ func TestUpdateKnowledgeMetadataDoesNotLeaveTasklessPendingStatus(t *testing.T) 
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)
@@ -192,7 +192,7 @@ func TestUpdateKnowledgeUnchangedMetadataDoesNotRefreshSummary(t *testing.T) {
 		},
 		Caller:            types.CallerFromContext(ctx),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}).Context(
 		ctx,
 	)

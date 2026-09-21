@@ -274,19 +274,11 @@ func (h *Handler) terminalProvisionConfigID(ctx context.Context, c *gin.Context,
 	if agentID == "" {
 		return ""
 	}
-	agent, _, _ := h.resolveAgent(ctx, c, agentID, terminalTenantParam(c.Query("agent_source_tenant_id")))
+	agent, _ := h.resolveAgent(ctx, c, agentID)
 	if agent == nil {
 		return ""
 	}
 	return strings.TrimSpace(agent.Config.SandboxConfigID)
-}
-
-func terminalTenantParam(raw string) uint64 {
-	value, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
-	if err != nil || value == 0 {
-		return 0
-	}
-	return value
 }
 
 // terminalFlagParam parses an opt-in query flag. Anything other than an

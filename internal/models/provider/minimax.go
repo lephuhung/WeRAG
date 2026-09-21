@@ -36,7 +36,7 @@ func (p *MiniMaxProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 MiniMax provider 配置
+// ValidateConfig 验证 MiniMax provider Configuration
 func (p *MiniMaxProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for MiniMax provider")

@@ -325,14 +325,6 @@ func (s *sessionService) buildAgentConfig(
 		LLMCallTimeout:              customAgent.Config.LLMCallTimeout,
 		MaxCompletionTokens:         customAgent.Config.MaxCompletionTokens,
 		RetainRetrievalHistory:      customAgent.Config.RetainRetrievalHistory,
-		SharedAgentReadOnly:         req.SharedAgentReadOnly,
-	}
-	// An unset MCP mode means "all" at runtime, but the share scope and the
-	// agent UI both present it as none. A shared run must not hand receivers
-	// every MCP service (with the owner's credentials) that its owner believes
-	// is off.
-	if req.SharedAgentReadOnly && agentConfig.MCPSelectionMode == "" {
-		agentConfig.MCPSelectionMode = "none"
 	}
 
 	// Falls back to global configuration if no specific timeout is set for the agent.
@@ -379,9 +371,8 @@ func (s *sessionService) buildAgentConfig(
 	// Apply per-turn @Skill / @MCP scope. Each helper narrows the agent's
 	// whitelist to the mentioned items and records the pinned set used for the
 	// <must_use> hint, keeping all scope logic in one place per resource type.
-	isSharedAgent := req.SharedAgentReadOnly
 	applyPerRequestSkillScope(ctx, agentConfig, customAgent.Config.SkillsSelectionMode, req.SkillNames)
-	applyPerRequestMCPScope(ctx, agentConfig, customAgent.Config.MCPServices, isSharedAgent, req.MCPServiceIDs)
+	applyPerRequestMCPScope(ctx, agentConfig, customAgent.Config.MCPServices, false, req.MCPServiceIDs)
 
 	// Use custom agent's system prompt if specified
 	if systemPrompt, _ := s.cfg.ResolveCustomAgentPrompts(customAgent); systemPrompt != "" {
@@ -427,10 +418,8 @@ func (s *sessionService) buildAgentConfig(
 		return nil, fmt.Errorf("build search targets: %w", err)
 	}
 	agentConfig.SearchTargets = searchTargets
-	if !req.SharedAgentReadOnly {
-		roleEnforced := s.cfg != nil && s.cfg.Tenant.IsRBACEnforced()
-		agentConfig.WritableKBIDs = kbWritableIDs(ctx, s.kbShareService, searchTargets, roleEnforced)
-	}
+	roleEnforced := s.cfg != nil && s.cfg.Tenant.IsRBACEnforced()
+	agentConfig.WritableKBIDs = kbWritableIDs(ctx, s.kbAccessGrantService, searchTargets, roleEnforced)
 	agentConfig.QuestionOrigin = questionOriginInTargets(ctx, req.QuestionOrigin, searchTargets)
 	// Document tags are stored in knowledge_tag_relations, so document-KB tag
 	// scopes are resolved to concrete knowledge IDs before retrieval. Preserve
@@ -541,8 +530,9 @@ func applyPerRequestMCPScope(
 }
 
 // resolvePerRequestMCPScope selects authorized mentions for per-turn priority.
-// It does not modify the registration scope. Shared agents may only pin services
-// in the agent preset, and selectionMode "none" rejects all mentions.
+// It does not modify the registration scope. When the agent tenant differs from
+// the session tenant, only services in the agent preset may be pinned, and
+// selectionMode "none" rejects all mentions.
 func resolvePerRequestMCPScope(
 	mentioned, agentMCPs []string,
 	selectionMode string,
@@ -713,6 +703,34 @@ func targetsCoverDocument(targets types.SearchTargets, kbID, docID string) bool 
 			if slices.Contains(t.KnowledgeIDs, docID) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// agentRequiresRerankModel reports whether the agent can actually invoke the
+// search_knowledge tool this turn — only then does a rerank model become a
+// hard requirement. Wiki-first agents (wiki_search / wiki_read_page / …)
+// never call it and therefore don't need a rerank model configured, even
+// when knowledge bases are attached.
+//
+// When AllowedTools is empty the runtime falls back to
+// tools.DefaultAllowedTools(), which includes search_knowledge, so we treat
+// that case as requiring the reranker.
+func agentRequiresRerankModel(agent *types.CustomAgent) bool {
+	if agent == nil {
+		return false
+	}
+	if agent.Config.KBSelectionMode == "none" {
+		return false
+	}
+	allowed := agent.Config.AllowedTools
+	if len(allowed) == 0 {
+		allowed = tools.DefaultAllowedTools()
+	}
+	for _, t := range allowed {
+		if tools.SuccessorToolName(t) == tools.ToolSearchKnowledge {
+			return true
 		}
 	}
 	return false

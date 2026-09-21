@@ -37,7 +37,7 @@ func (p *RequestyProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Requesty provider 配置
+// ValidateConfig 验证 Requesty provider Configuration
 func (p *RequestyProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Requesty provider")

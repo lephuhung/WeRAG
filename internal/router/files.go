@@ -46,8 +46,7 @@ type getRouteRegistrar interface {
 
 type (
 	messageFileLookup        = access.MessageFileLookup
-	sharedAgentFileLookup    = access.SharedAgentFileLookup
-	messageKBShareAuthorizer = access.MessageKBShareAuthorizer
+	messageKBGrantAuthorizer = access.MessageKBGrantAuthorizer
 )
 
 // localStorageBaseDir resolves LOCAL_STORAGE_BASE_DIR with the container
@@ -336,7 +335,7 @@ func serveKBScopedFiles(
 	g.apiKeyRoute(r, http.MethodGet, "/knowledge-bases/:id/files",
 		apiKeyRetrieve(apiKeyFullAccess()),
 		middleware.AllowFileServeAPIKey(),
-		g.Viewer(),
+		g.Member(),
 		g.KBAccessRead("id"),
 		newKBScopedFileServeHandlerWithResources(
 			tenantService,
@@ -395,12 +394,11 @@ func newKBScopedFileServeHandlerWithResources(
 // readable without accepting a client-provided source workspace ID.
 func newMessageScopedFileServeHandler(
 	messageService messageFileLookup,
-	agentShareService sharedAgentFileLookup,
 	tenantService interfaces.TenantService,
 	globalFileService interfaces.FileService,
 	storageResolver interfaces.StorageBackendResolver,
 	resourceCatalog interfaces.ResourceCatalog,
-	kbShareAuth messageKBShareAuthorizer,
+	kbGrantAuth messageKBGrantAuthorizer,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		reference, ok := requireFilePathQuery(c)
@@ -408,7 +406,7 @@ func newMessageScopedFileServeHandler(
 			return
 		}
 		file, err := access.ResolveMessageFile(c.Request.Context(), c.Param("id"), c.Param("message_id"), reference,
-			messageService, agentShareService, resourceCatalog, kbShareAuth)
+			messageService, resourceCatalog, kbGrantAuth)
 		if fileAccessError(c, err) {
 			return
 		}
@@ -486,12 +484,11 @@ func serveMessageScopedFiles(
 	r *gin.RouterGroup,
 	g *rbacGuards,
 	messageService interfaces.MessageService,
-	agentShareService interfaces.AgentShareService,
 	tenantService interfaces.TenantService,
 	globalFileService interfaces.FileService,
 	storageResolver interfaces.StorageBackendResolver,
 	resourceCatalog interfaces.ResourceCatalog,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	kbService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 ) {
@@ -500,16 +497,15 @@ func serveMessageScopedFiles(
 		http.MethodGet,
 		"/sessions/:id/messages/:message_id/files",
 		apiKeyChat(apiKeyFullAccess()),
-		g.Viewer(),
+		g.Member(),
 		newMessageScopedFileServeHandler(
 			messageService,
-			agentShareService,
 			tenantService,
 			globalFileService,
 			storageResolver,
 			resourceCatalog,
-			messageKBShareAuthorizer{
-				ShareGuard: kbShareService,
+			messageKBGrantAuthorizer{
+				GrantGuard: kbAccessGrantService,
 				KBs:        kbService,
 				Knowledges: knowledgeService,
 			},

@@ -156,8 +156,8 @@ func isResourceNotFound(err error) bool {
 }
 
 // RequireKBAccess returns a gin.HandlerFunc that resolves KB access
-// (own / org-shared / via shared agent), enforces the minimum required
-// org-level permission, and on success stores the result under
+// (own tenant / granted to the caller's tenant / public), enforces the
+// minimum required permission, and on success stores the result under
 // KBAccessContextKey AND rewrites c.Request.Context() to carry the
 // effective tenant ID. Handlers downstream just read tenant from
 // context as before.
@@ -169,24 +169,23 @@ func isResourceNotFound(err error) bool {
 // gated route at once.
 //
 // Required permission semantics:
-//   - OrgRoleViewer -> read-only routes (the agent-share fallback path
-//     activates only at this level)
-//   - OrgRoleEditor -> mutating routes (org-shared editor or own KB)
-//   - OrgRoleAdmin  -> share-management routes (only the original
-//     sharer / KB owner / Org admin should pass)
+//   - KBPermissionViewer -> read-only routes (grants may satisfy these)
+//   - KBPermissionEditor -> mutating routes (own KB only; grants are
+//     read-only today)
+//   - KBPermissionAdmin  -> grant-management routes (only the owning
+//     tenant should pass)
 //
 // The EnableRBAC rollout switch does not apply here. It relaxes the role
 // checks inside a workspace, while ResolveKB always grants a KB's own
 // workspace, so a denial from it means another workspace's KB without a
-// share. Handlers behind this guard load KBs, chunks and wiki pages by ID
+// grant. Handlers behind this guard load KBs, chunks and wiki pages by ID
 // without a tenant filter, so letting a denial through would lift
 // workspace isolation for the whole rollout window.
 func RequireKBAccess(
 	resolveKBID KBIDResolver,
-	requiredPermission types.OrgMemberRole,
+	requiredPermission types.KBPermission,
 	kbService KBLookup,
-	kbShareService interfaces.KBShareService,
-	agentShareService interfaces.AgentShareService,
+	kbGrantService interfaces.KBAccessGrantService,
 	cfg *config.Config,
 ) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
@@ -205,7 +204,7 @@ func RequireKBAccess(
 			return
 		}
 
-		grant, err := resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbShareService, agentShareService)
+		grant, err := resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbGrantService)
 		switch {
 		case stderrors.Is(err, access.ErrUnauthorized):
 			_ = c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
@@ -217,10 +216,6 @@ func RequireKBAccess(
 			return
 		case stderrors.Is(err, access.ErrForbidden):
 			_ = c.Error(apperrors.NewForbiddenError("Permission denied to access this knowledge base"))
-			c.Abort()
-			return
-		case stderrors.Is(err, access.ErrInvalidAgentSource):
-			_ = c.Error(apperrors.NewBadRequestError("invalid agent_source_tenant_id"))
 			c.Abort()
 			return
 		case err != nil:
@@ -259,21 +254,16 @@ func KBAccessRequest(c *gin.Context) access.KBRequest {
 			caller.UserID, _ = userID.(string)
 		}
 	}
-	return access.KBRequest{
-		Caller:              caller,
-		AgentID:             c.Query("agent_id"),
-		AgentSourceTenantID: c.Query(types.AgentSourceTenantIDParam),
-	}
+	return access.KBRequest{Caller: caller}
 }
 
 func resolveKBAccess(
 	ctx context.Context,
 	c *gin.Context,
 	kbID string,
-	requiredPermission types.OrgMemberRole,
+	requiredPermission types.KBPermission,
 	kbService KBLookup,
-	kbShareService interfaces.KBShareService,
-	agentShareService interfaces.AgentShareService,
+	kbGrantService interfaces.KBAccessGrantService,
 ) (*KBAccess, error) {
 	request := KBAccessRequest(c)
 	if request.Caller.TenantID == 0 {
@@ -286,5 +276,5 @@ func resolveKBAccess(
 		}
 		return nil, err
 	}
-	return access.ResolveKB(ctx, request, kb, requiredPermission, kbShareService, agentShareService)
+	return access.ResolveKB(ctx, request, kb, requiredPermission, kbGrantService)
 }

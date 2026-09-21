@@ -63,7 +63,7 @@ func newKBRouteTestEngine(
 	r.Use(func(c *gin.Context) {
 		ctx := c.Request.Context()
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, callerTenantID)
-		role := types.TenantRoleViewer
+		role := types.TenantRoleMember
 		if apiKeyScope != nil {
 			ctx = types.WithTenantAPIKeyScope(ctx, *apiKeyScope)
 			if apiKeyScope.FullAccess {

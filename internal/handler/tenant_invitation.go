@@ -195,11 +195,11 @@ func (h *TenantInvitationHandler) hydrateTenants(c *gin.Context, invs []*types.T
 }
 
 // ListTenantInvitations godoc
-// @Summary      列出空间邀请
-// @Description  按空间列出待接受 / 历史邀请。query include_terminal=true 时附带 accepted/declined/revoked/expired。
-// @Tags         空间邀请
+// @Summary      列出Tenant workspace邀请
+// @Description  按Tenant workspace列出待接受 / 历史邀请。query include_terminal=true 时附带 accepted/declined/revoked/expired。
+// @Tags         Tenant workspace邀请
 // @Produce      json
-// @Param        id                path   string  true   "空间 ID"
+// @Param        id                path   string  true   "Tenant workspace ID"
 // @Param        include_terminal  query  bool    false  "是否包含终止态行（默认 false）"
 // @Param        page              query  int     false  "页码（从 1 起）"  default(1)
 // @Param        page_size         query  int     false  "每页数量"  default(20)
@@ -252,12 +252,12 @@ func (h *TenantInvitationHandler) ListTenantInvitations(c *gin.Context) {
 }
 
 // CreateInvitation godoc
-// @Summary      发出空间邀请
-// @Description  Owner 通过邮箱邀请已注册用户加入空间。开启 tenant.auto_accept_invitation 后被邀请人立即自动加入（响应为成员结构），否则需在 /me/invitations 接受后成为成员。
-// @Tags         空间邀请
+// @Summary      发出Tenant workspace邀请
+// @Description  Owner 通过邮箱邀请已注册用户加入Tenant workspace。开启 tenant.auto_accept_invitation 后被邀请人立即自动加入（响应为成员结构），否则需在 /me/invitations 接受后成为成员。
+// @Tags         Tenant workspace邀请
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                   true  "空间 ID"
+// @Param        id       path  string                   true  "Tenant workspace ID"
 // @Param        request  body  createInvitationRequest  true  "邀请请求"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
@@ -275,7 +275,7 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 		return
 	}
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
 
@@ -386,9 +386,9 @@ func (h *TenantInvitationHandler) autoAcceptInvitationAndRespond(
 // RevokeInvitation godoc
 // @Summary      撤销待接受邀请
 // @Description  Owner 取消一条还在 pending 的邀请；已 accepted/declined/revoked/expired 的行不可再撤销。
-// @Tags         空间邀请
+// @Tags         Tenant workspace邀请
 // @Produce      json
-// @Param        id      path  string  true  "空间 ID"
+// @Param        id      path  string  true  "Tenant workspace ID"
 // @Param        inv_id  path  string  true  "邀请 ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -578,14 +578,14 @@ func (h *TenantInvitationHandler) AcceptMyInvitation(c *gin.Context) {
 }
 
 // acceptInvitationByTokenRequest: POST /me/invitations/accept-by-token 的请求体。
-// 已登录用户用 token 加入空间（与 register-by-invite 不同，不创建新账号）。
+// 已登录用户用 token 加入Tenant workspace（与 register-by-invite 不同，不Create 新账号）。
 type acceptInvitationByTokenRequest struct {
 	Token string `json:"token" binding:"required"`
 }
 
 // AcceptMyInvitationByToken godoc
-// @Summary      通过共享链接加入空间
-// @Description  已登录用户用共享邀请链接 token 加入空间，不创建新账号；对已是成员的用户幂等。
+// @Summary      通过共享链接加入Tenant workspace
+// @Description  已登录用户用共享邀请链接 token 加入Tenant workspace，不Create 新账号；对已是成员的用户幂等。
 // @Tags         我的邀请
 // @Accept       json
 // @Produce      json
@@ -630,7 +630,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 		return
 	}
 
-	// 无租户用户将首个加入的空间设为默认空间（与 AcceptMyInvitation 同理）。
+	// 无租户用户将首个加入的Tenant workspace设为默认Tenant workspace（与 AcceptMyInvitation 同理）。
 	if user, userErr := h.userService.GetUserByID(ctx, caller); userErr == nil && user != nil && user.TenantID == 0 {
 		user.TenantID = member.TenantID
 		if updateErr := h.userService.UpdateUser(ctx, user); updateErr != nil {
@@ -641,7 +641,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 		}
 	}
 
-	// 供前端切换空间展示用。
+	// 供前端切换Tenant workspace展示用。
 	tenantName := ""
 	if tenant, terr := h.tenantService.GetTenantByID(ctx, member.TenantID); terr == nil && tenant != nil {
 		tenantName = tenant.Name
@@ -663,7 +663,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 
 // DeclineMyInvitation godoc
 // @Summary      拒绝邀请
-// @Description  当前登录用户拒绝一条 pending 邀请；不创建 tenant_members 行。
+// @Description  当前登录用户拒绝一条 pending 邀请；不Create  tenant_members 行。
 // @Tags         我的邀请
 // @Produce      json
 // @Param        inv_id  path  string  true  "邀请 ID"

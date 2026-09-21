@@ -108,7 +108,7 @@ func newDorisStreamLoadHTTPClient() *http.Client {
 //
 // 实现要点：
 //  1. 用 JSON 数组的 body 形式，header 加 strip_outer_array=true。
-//  2. 设置 partial_columns=true、merge_type=APPEND，触发 Doris 的 partial update 模式
+//  2. Settings  partial_columns=true、merge_type=APPEND，触发 Doris 的 partial update 模式
 //     (Doris 4.1 + UNIQUE KEY MoW 表的标准玩法)。
 //  3. 按 streamLoadMaxBatchBytes 自动拆批，避免单次过大。
 //  4. 处理 307：Doris 的 FE 会 redirect 到 BE，net/http 默认会跟随；
@@ -251,7 +251,7 @@ func chunkRows(rows []map[string]any, maxBytes int) [][]map[string]any {
 // 业务面方法：BatchUpdateChunkEnabledStatus / BatchUpdateChunkTagID
 // ---------------------------------------------------------------------------
 
-// BatchUpdateChunkEnabledStatus 批量更新 chunk 的 is_enabled 字段。
+// BatchUpdateChunkEnabledStatus 批量Update  chunk 的 is_enabled 字段。
 // legacy 模式走 Stream Load partial update；inner_product_duplicate 模式改为读整行后 replaceRows 写回。
 func (r *dorisRepository) BatchUpdateChunkEnabledStatus(ctx context.Context,
 	chunkStatusMap map[string]bool,
@@ -282,7 +282,7 @@ func (r *dorisRepository) BatchUpdateChunkEnabledStatus(ctx context.Context,
 	}, "rewrite is_enabled")
 }
 
-// BatchUpdateChunkTagID 批量更新 chunk 的 tag_id 字段。逻辑与 EnabledStatus 一致。
+// BatchUpdateChunkTagID 批量Update  chunk 的 tag_id 字段。逻辑与 EnabledStatus 一致。
 func (r *dorisRepository) BatchUpdateChunkTagID(ctx context.Context,
 	chunkTagMap map[string]string,
 ) error {
@@ -457,11 +457,11 @@ type rowLocation struct {
 	id    string
 }
 
-// lookupChunkRowKeys 查询给定的 chunkIDs 在所有 <base>_<dim> 表中的物理位置：
+// lookupChunkRowKeys Query 给定的 chunkIDs 在所有 <base>_<dim> 表中的物理位置：
 //   - key：chunk_id
 //   - value：[(table, id), ...]，因为同一 chunk 可能在多个维度的表里都有副本。
 //
-// 跨表查询使用 listEmbeddingTables 列出的所有匹配表；每张表执行一次
+// 跨表Query 使用 listEmbeddingTables 列出的所有匹配表；每张表执行一次
 // SELECT id, chunk_id FROM <table> WHERE chunk_id IN (?, ?, ...)。
 func (r *dorisRepository) lookupChunkRowKeys(ctx context.Context,
 	chunkIDs []string,

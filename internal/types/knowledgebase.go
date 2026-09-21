@@ -60,13 +60,9 @@ type KBVisibility string
 
 const (
 	// KBVisibilityTenant is the default: every member of the owning
-	// tenant can read; tenant roles decide write access.
+	// tenant can read; tenant roles decide write access. Members of
+	// other tenants read it only via an approved kb_access_grants row.
 	KBVisibilityTenant KBVisibility = "tenant"
-	// KBVisibilityOrg restricts reads to members of the org referenced
-	// by OrgID plus tenant Admin/Owner and system admins. Org-scoped
-	// KBs never cross the tenant boundary: organization shares and
-	// shared-agent access do not apply to them.
-	KBVisibilityOrg KBVisibility = "org"
 	// KBVisibilityPublic is readable/searchable by every authenticated
 	// user of every tenant. Writes still belong to the owning tenant
 	// (and platform admins).
@@ -76,7 +72,7 @@ const (
 // IsValid checks if the visibility value is a known constant.
 func (v KBVisibility) IsValid() bool {
 	switch v {
-	case KBVisibilityTenant, KBVisibilityOrg, KBVisibilityPublic:
+	case KBVisibilityTenant, KBVisibilityPublic:
 		return true
 	default:
 		return false
@@ -89,8 +85,6 @@ func (v KBVisibility) IsValid() bool {
 type KBScope struct {
 	TenantID   uint64
 	Visibility KBVisibility
-	// OrgID is the bound tenant org when Visibility is 'org'; 0 otherwise.
-	OrgID uint64
 }
 
 // KnowledgeBase represents a knowledge base entity
@@ -117,10 +111,6 @@ type KnowledgeBase struct {
 	// See KBVisibility constants. Rows predating migration 000107 read
 	// back as 'tenant' via the column default.
 	Visibility KBVisibility `yaml:"visibility"           json:"visibility"              gorm:"type:varchar(16);not null;default:'tenant'"`
-	// OrgID binds the knowledge base to a tenant org when Visibility is
-	// 'org'. Must reference a tenant_orgs row of the same tenant; nil
-	// for all other visibilities.
-	OrgID *uint64 `yaml:"org_id"                  json:"org_id,omitempty"       gorm:"index"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"         gorm:"type:json"`
 	// Image processing configuration
@@ -193,10 +183,10 @@ type KnowledgeBase struct {
 	IsProcessing bool `yaml:"is_processing"           json:"is_processing"           gorm:"-"`
 	// ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)
 	ProcessingCount int64 `yaml:"processing_count"        json:"processing_count"        gorm:"-"`
-	// ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database)
+	// ShareCount indicates the number of live tenant access grants on this knowledge base (not stored in database)
 	ShareCount int64 `yaml:"share_count"             json:"share_count"             gorm:"-"`
 	// CreatorName 是 CreatorID 对应用户的展示名（username / email 等），
-	// 仅在列表场景由 handler 批量回填，不落库；为空表示创建者无法解析（用户已删除、
+	// 仅在List 场景由 handler 批量回填，不落库；为空表示Create 者无法解析（用户已Delete 、
 	// CreatorID 为空的老数据等）。前端用它在卡片来源徽章上做 mine vs workspace 的二分。
 	CreatorName string `yaml:"-"                       json:"creator_name,omitempty"  gorm:"-"`
 }
@@ -641,11 +631,11 @@ type VLMConfig struct {
 // 新版本：Enabled && ModelID != ""
 // 老版本：ModelName != "" && BaseURL != ""
 func (c VLMConfig) IsEnabled() bool {
-	// 新版本配置
+	// 新版本Configuration
 	if c.Enabled && c.ModelID != "" {
 		return true
 	}
-	// 兼容老版本配置
+	// 兼容老版本Configuration
 	if c.ModelName != "" && c.BaseURL != "" {
 		return true
 	}
@@ -756,7 +746,7 @@ func (e *ExtractConfig) Scan(value interface{}) error {
 	return json.Unmarshal(b, e)
 }
 
-// FAQConfig 存储 FAQ 知识库的特有配置
+// FAQConfig 存储 FAQ Knowledge Base的特有Configuration
 type FAQConfig struct {
 	IndexMode         FAQIndexMode         `yaml:"index_mode"          json:"index_mode"`
 	QuestionIndexMode FAQQuestionIndexMode `yaml:"question_index_mode" json:"question_index_mode"`
@@ -779,7 +769,7 @@ func (f *FAQConfig) Scan(value interface{}) error {
 	return json.Unmarshal(b, f)
 }
 
-// EnsureDefaults 确保类型与配置具备默认值
+// EnsureDefaults 确保类型与Configuration 具备默认值
 func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb == nil {
 		return
@@ -789,9 +779,6 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	}
 	if !kb.Visibility.IsValid() {
 		kb.Visibility = KBVisibilityTenant
-	}
-	if kb.Visibility != KBVisibilityOrg {
-		kb.OrgID = nil
 	}
 	// Clear type-specific configs that don't belong
 	if kb.Type != KnowledgeBaseTypeFAQ {

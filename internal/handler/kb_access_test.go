@@ -14,21 +14,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type handlerKBShareStub struct {
-	interfaces.KBShareService
+type handlerKBGrantStub struct {
+	interfaces.KBAccessGrantService
 	calls  int
 	caller uint64
 }
 
-func (s *handlerKBShareStub) CheckTenantKBPermission(
+func (s *handlerKBGrantStub) ApprovedKBPermission(
 	_ context.Context,
 	_ string,
-	caller uint64,
-	_ types.TenantRole,
-) (types.OrgMemberRole, bool, error) {
+	grantee uint64,
+) (types.KBPermission, bool, error) {
 	s.calls++
-	s.caller = caller
-	return types.OrgRoleViewer, true, nil
+	s.caller = grantee
+	return types.KBPermissionViewer, true, nil
+}
+
+func (s *handlerKBGrantStub) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return nil, nil
 }
 
 type handlerKnowledgeAccessStub struct {
@@ -54,16 +57,16 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 				lookups++
 				return kb, nil
 			}}
-			shares := &handlerKBShareStub{}
+			grants := &handlerKBGrantStub{}
 			kg := &handlerKnowledgeAccessStub{
 				knowledge: &types.Knowledge{ID: "doc", KnowledgeBaseID: "kb", TenantID: 2},
 			}
-			h := &KnowledgeHandler{kbService: svc, kgService: kg, kbShareService: shares}
-			kbHandler := &KnowledgeBaseHandler{service: svc, kbShareService: shares}
+			h := &KnowledgeHandler{kbService: svc, kgService: kg, kbAccessGrantService: grants}
+			kbHandler := &KnowledgeBaseHandler{service: svc, kbAccessGrantService: grants}
 			r := gin.New()
 			r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 				ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
-				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 				c.Request = c.Request.WithContext(ctx)
 				if ginCallerKey {
 					c.Set(types.TenantIDContextKey.String(), uint64(1))
@@ -73,30 +76,29 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 			enabled := true
 			r.GET("/:id", middleware.RequireKBAccess(
 				middleware.KBIDFromParam("id"),
-				types.OrgRoleViewer,
+				types.KBPermissionViewer,
 				svc,
-				shares,
-				nil,
+				grants,
 				&config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}},
 			), func(c *gin.Context) {
 				_, _, effective, permission, err := kbHandler.validateAndGetKnowledgeBase(c)
 				require.NoError(t, err)
 				require.Equal(t, uint64(2), effective)
-				require.Equal(t, types.OrgRoleViewer, permission)
+				require.Equal(t, types.KBPermissionViewer, permission)
 				_, _, _, permission, err = h.validateKnowledgeBaseAccess(c)
 				require.NoError(t, err)
-				require.Equal(t, types.OrgRoleViewer, permission)
-				_, ctx, err := h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.OrgRoleViewer)
+				require.Equal(t, types.KBPermissionViewer, permission)
+				_, ctx, err := h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.KBPermissionViewer)
 				require.NoError(t, err)
 				require.Equal(t, uint64(2), types.MustTenantIDFromContext(ctx))
 				require.Equal(t, uint64(1), types.CallerFromContext(ctx).TenantID)
 				require.Equal(t, 1, lookups, "handlers must reuse the guarded KB")
-				require.Equal(t, 1, shares.calls, "handlers must reuse the permission decision")
+				require.Equal(t, 1, grants.calls, "handlers must reuse the permission decision")
 				// The effective tenant is 2, but the write must still be checked
 				// as caller 1 and rejected, not upgraded to resource ownership.
-				_, _, err = h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.OrgRoleEditor)
+				_, _, err = h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.KBPermissionEditor)
 				require.Error(t, err)
-				require.Equal(t, uint64(1), shares.caller)
+				require.Equal(t, uint64(1), grants.caller)
 				c.Status(http.StatusNoContent)
 			})
 			w := httptest.NewRecorder()
@@ -123,13 +125,13 @@ func TestKBHandlerDoesNotReuseGrantForAnotherResourceOrCaller(t *testing.T) {
 				KnowledgeBase: &types.KnowledgeBase{ID: "kb", TenantID: 2},
 				Caller: types.Caller{
 					TenantID: 1,
-					Role:     types.TenantRoleViewer,
-				}, EffectiveTenantID: 2, Permission: types.OrgRoleAdmin,
+					Role:     types.TenantRoleMember,
+				}, EffectiveTenantID: 2, Permission: types.KBPermissionAdmin,
 			})
 			svc := &stubKBOnlyService{getByID: func(context.Context, string) (*types.KnowledgeBase, error) {
 				return &types.KnowledgeBase{ID: tt.requestedID, TenantID: 2}, nil
 			}}
-			_, err := resolveHandlerKBAccess(c, tt.requestedID, svc, nil, nil)
+			_, err := resolveHandlerKBAccess(c, tt.requestedID, svc, nil)
 			require.Error(t, err)
 		})
 	}
@@ -147,64 +149,11 @@ func TestKBHandlerAPIKeyScopeStillAppliesToCachedGrant(t *testing.T) {
 		KnowledgeBase: &types.KnowledgeBase{ID: "kb", TenantID: 1},
 		Caller: types.Caller{
 			TenantID: 1,
-			Role:     types.TenantRoleViewer,
-		}, EffectiveTenantID: 1, Permission: types.OrgRoleAdmin,
+			Role:     types.TenantRoleMember,
+		}, EffectiveTenantID: 1, Permission: types.KBPermissionAdmin,
 	})
-	_, err := resolveHandlerKBAccess(c, "kb", nil, nil, nil)
+	_, err := resolveHandlerKBAccess(c, "kb", nil, nil)
 	require.Error(t, err)
-}
-
-type handlerAgentAccessStub struct {
-	interfaces.AgentShareService
-	anyCalls int
-}
-
-func (s *handlerAgentAccessStub) GetSharedAgentForTenant(
-	context.Context,
-	uint64,
-	types.TenantRole,
-	string,
-	...uint64,
-) (*types.CustomAgent, error) {
-	return &types.CustomAgent{TenantID: 2, Config: types.CustomAgentConfig{KBSelectionMode: "none"}}, nil
-}
-
-func (s *handlerAgentAccessStub) TenantCanAccessKBViaSomeSharedAgent(
-	context.Context,
-	uint64,
-	types.TenantRole,
-	*types.KnowledgeBase,
-) (bool, error) {
-	s.anyCalls++
-	return true, nil
-}
-
-func TestKBHandlersHonorExplicitAgentWithoutRouteGuard(t *testing.T) {
-	for _, query := range []string{"", "?agent_id=restricted"} {
-		t.Run(query, func(t *testing.T) {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest(http.MethodGet, "/kb"+query, nil)
-			c.Set(types.TenantIDContextKey.String(), uint64(1))
-			c.Params = gin.Params{{Key: "id", Value: "kb"}}
-			svc := &stubKBOnlyService{getByID: func(context.Context, string) (*types.KnowledgeBase, error) {
-				return &types.KnowledgeBase{ID: "kb", TenantID: 2}, nil
-			}}
-			agents := &handlerAgentAccessStub{}
-			h := &KnowledgeHandler{kbService: svc, agentShareService: agents}
-			kbHandler := &KnowledgeBaseHandler{service: svc, agentShareService: agents}
-			_, _, _, _, kbErr := kbHandler.validateAndGetKnowledgeBase(c)
-			_, _, _, _, knowledgeErr := h.validateKnowledgeBaseAccessWithKBID(c, "kb")
-			if query == "" {
-				require.NoError(t, kbErr)
-				require.NoError(t, knowledgeErr)
-				require.Equal(t, 2, agents.anyCalls)
-			} else {
-				require.Error(t, kbErr)
-				require.Error(t, knowledgeErr)
-				require.Zero(t, agents.anyCalls)
-			}
-		})
-	}
 }
 
 func TestKBHandlerEnforcesAccessWhenRouteRBACIsDisabled(t *testing.T) {
@@ -217,21 +166,13 @@ func TestKBHandlerEnforcesAccessWhenRouteRBACIsDisabled(t *testing.T) {
 		c.Next()
 	})
 	disabled := false
-	r.GET("/:id", middleware.RequireKBAccess(middleware.KBIDFromParam("id"), types.OrgRoleViewer,
-		svc, nil, nil, &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &disabled}}), func(c *gin.Context) {
-		_, err := resolveHandlerKBAccess(c, c.Param("id"), svc, nil, nil)
+	r.GET("/:id", middleware.RequireKBAccess(middleware.KBIDFromParam("id"), types.KBPermissionViewer,
+		svc, nil, &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &disabled}}), func(c *gin.Context) {
+		_, err := resolveHandlerKBAccess(c, c.Param("id"), svc, nil)
 		require.Error(t, err)
 		_ = c.Error(err)
 	})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/kb", nil))
 	require.Equal(t, http.StatusForbidden, w.Code)
-}
-
-func (s *handlerKBShareStub) GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error) {
-	return nil, nil
-}
-
-func (s *handlerKBShareStub) OrgMemberRole(ctx context.Context, tenantID, orgID uint64, userID string) (types.TenantOrgRole, bool, error) {
-	return "", false, nil
 }

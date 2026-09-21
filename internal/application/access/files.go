@@ -64,7 +64,7 @@ func ResolveKBFile(
 ) (FileAccess, error) {
 	var empty FileAccess
 	if grant == nil || grant.KnowledgeBase == nil || grant.KnowledgeBase.ID != kbID ||
-		grant.Caller != types.CallerFromContext(ctx) || !grant.Permission.HasPermission(types.OrgRoleViewer) {
+		grant.Caller != types.CallerFromContext(ctx) || !grant.Permission.HasPermission(types.KBPermissionViewer) {
 		return empty, ErrForbidden
 	}
 	if err := types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, kbID); err != nil {
@@ -130,9 +130,9 @@ func MessageReferencesFile(message *types.Message, reference string) bool {
 }
 
 // ResolveMessageFile loads the session-authorized message using the original
-// caller and rechecks its current sharing relationships on every request.
+// caller and rechecks its current grant relationships on every request.
 func ResolveMessageFile(ctx context.Context, sessionID, messageID, reference string, messages MessageFileLookup,
-	agents SharedAgentFileLookup, catalog FileCatalog, kbShares MessageKBShareAuthorizer,
+	catalog FileCatalog, kbGrants MessageKBGrantAuthorizer,
 ) (FileAccess, error) {
 	caller := types.CallerFromContext(ctx)
 	if caller.TenantID == 0 {
@@ -146,13 +146,13 @@ func ResolveMessageFile(ctx context.Context, sessionID, messageID, reference str
 	if err != nil || message == nil {
 		return FileAccess{}, ErrNotFound
 	}
-	return AuthorizeMessageFile(ctx, message, reference, agents, catalog, kbShares)
+	return AuthorizeMessageFile(ctx, message, reference, catalog, kbGrants)
 }
 
 // AuthorizeMessageFile also serves index-based artifact downloads after their
 // session/message lookup. It never accepts an unchecked client message.
-func AuthorizeMessageFile(ctx context.Context, message *types.Message, reference string, agents SharedAgentFileLookup,
-	catalog FileCatalog, kbShares MessageKBShareAuthorizer,
+func AuthorizeMessageFile(ctx context.Context, message *types.Message, reference string,
+	catalog FileCatalog, kbGrants MessageKBGrantAuthorizer,
 ) (FileAccess, error) {
 	caller := types.CallerFromContext(ctx)
 	if caller.TenantID == 0 {
@@ -175,46 +175,22 @@ func AuthorizeMessageFile(ctx context.Context, message *types.Message, reference
 	if message.Role == "user" && owner != caller.TenantID {
 		return FileAccess{}, ErrForbidden
 	}
-	if kbShares.Bindings == nil {
-		kbShares.Bindings, _ = catalog.(interfaces.KBResourceLookup)
+	if kbGrants.Bindings == nil {
+		kbGrants.Bindings, _ = catalog.(interfaces.KBResourceLookup)
 	}
 	kbAuthorized := false
 	if resource != nil && message.AgentTenantID != 0 && message.AgentTenantID != owner {
-		kbAuthorized = kbShares.resourceAccessibleViaSharedKB(ctx, message, resource, caller.TenantID, caller.Role)
+		kbAuthorized = kbGrants.resourceAccessibleViaGrantedKB(ctx, message, resource, caller.TenantID)
 		if !kbAuthorized {
 			return FileAccess{}, ErrForbidden
 		}
 	}
 	if owner != caller.TenantID && !kbAuthorized {
 		if message.AgentTenantID == 0 {
-			kbAuthorized = kbShares.resourceAccessibleViaSharedKB(ctx, message, resource, caller.TenantID, caller.Role)
+			kbAuthorized = kbGrants.resourceAccessibleViaGrantedKB(ctx, message, resource, caller.TenantID)
 		}
 		if !kbAuthorized {
-			if message.AgentID == "" || agents == nil {
-				return FileAccess{}, ErrForbidden
-			}
-			agent, err := agents.GetSharedAgentForTenant(ctx, caller.TenantID, caller.Role, message.AgentID, owner)
-			if err != nil || agent == nil || agent.TenantID != owner {
-				return FileAccess{}, ErrForbidden
-			}
-			bindings, ok := catalog.(interfaces.MessageFileBindingLookup)
-			if !ok {
-				return FileAccess{}, ErrForbidden
-			}
-			origins, err := bindings.GetMessageFileBindings(ctx, owner, reference, message.ID)
-			if err != nil || origins == nil {
-				return FileAccess{}, ErrForbidden
-			}
-			allowed := origins.MessageArtifact
-			scope := types.NewSharedAgentKBScope(agent)
-			for _, kbID := range origins.KnowledgeBaseIDs {
-				if scope.Allows(kbID, owner) && types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, kbID) == nil {
-					allowed = true
-				}
-			}
-			if !allowed {
-				return FileAccess{}, ErrForbidden
-			}
+			return FileAccess{}, ErrForbidden
 		}
 	}
 	if resource == nil {
@@ -228,9 +204,9 @@ func AuthorizeMessageFile(ctx context.Context, message *types.Message, reference
 
 // ResolveMessageArtifact selects a persisted artifact after session ownership
 // was checked. Session-owned output stays downloadable independently of the
-// agent; source-owned output still requires its current sharing permission.
-func ResolveMessageArtifact(ctx context.Context, message *types.Message, index int, agents SharedAgentFileLookup,
-	catalog FileCatalog, kbShares MessageKBShareAuthorizer,
+// agent; source-owned output still requires its current grant.
+func ResolveMessageArtifact(ctx context.Context, message *types.Message, index int,
+	catalog FileCatalog, kbGrants MessageKBGrantAuthorizer,
 ) (FileAccess, error) {
 	caller := types.CallerFromContext(ctx)
 	if caller.TenantID == 0 {
@@ -250,7 +226,7 @@ func ResolveMessageArtifact(ctx context.Context, message *types.Message, index i
 		file.Filename = artifact.FileName
 		return file, nil
 	}
-	file, err = AuthorizeMessageFile(ctx, message, artifact.URL, agents, catalog, kbShares)
+	file, err = AuthorizeMessageFile(ctx, message, artifact.URL, catalog, kbGrants)
 	file.Filename = artifact.FileName
 	return file, err
 }

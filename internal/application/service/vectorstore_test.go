@@ -1204,7 +1204,7 @@ func (r *realKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 	return nil, nil
 }
 
-func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64, memberOrgIDs []uint64, bypassOrgFilter bool) ([]*types.KnowledgeBase, error) {
+func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

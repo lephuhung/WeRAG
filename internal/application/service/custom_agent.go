@@ -40,14 +40,13 @@ const (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo           interfaces.CustomAgentRepository
-	chunkRepo      interfaces.ChunkRepository
-	kbService      interfaces.KnowledgeBaseService
-	kbShareService interfaces.KBShareService
-	wikiPageRepo   interfaces.WikiPageRepository
-	tagRepo        interfaces.KnowledgeTagRepository
-	knowledgeRepo  interfaces.KnowledgeRepository
-	agentShareRepo interfaces.AgentShareRepository
+	repo                 interfaces.CustomAgentRepository
+	chunkRepo            interfaces.ChunkRepository
+	kbService            interfaces.KnowledgeBaseService
+	kbAccessGrantService interfaces.KBAccessGrantService
+	wikiPageRepo         interfaces.WikiPageRepository
+	tagRepo              interfaces.KnowledgeTagRepository
+	knowledgeRepo        interfaces.KnowledgeRepository
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -55,21 +54,19 @@ func NewCustomAgentService(
 	repo interfaces.CustomAgentRepository,
 	chunkRepo interfaces.ChunkRepository,
 	kbService interfaces.KnowledgeBaseService,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	wikiPageRepo interfaces.WikiPageRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
 	knowledgeRepo interfaces.KnowledgeRepository,
-	agentShareRepo interfaces.AgentShareRepository,
 ) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo:           repo,
-		chunkRepo:      chunkRepo,
-		kbService:      kbService,
-		kbShareService: kbShareService,
-		wikiPageRepo:   wikiPageRepo,
-		tagRepo:        tagRepo,
-		knowledgeRepo:  knowledgeRepo,
-		agentShareRepo: agentShareRepo,
+		repo:                 repo,
+		chunkRepo:            chunkRepo,
+		kbService:            kbService,
+		kbAccessGrantService: kbAccessGrantService,
+		wikiPageRepo:         wikiPageRepo,
+		tagRepo:              tagRepo,
+		knowledgeRepo:        knowledgeRepo,
 	}
 }
 
@@ -311,9 +308,6 @@ func (s *customAgentService) UpdateAgent(
 		}
 		existingAgent.Avatar = *avatar
 	}
-	if err := s.checkSharedAgentKBScope(ctx, existingAgent, agent.Config); err != nil {
-		return nil, err
-	}
 	existingAgent.Config = agent.Config
 	existingAgent.UpdatedAt = time.Now()
 
@@ -336,36 +330,7 @@ func (s *customAgentService) UpdateAgent(
 	return existingAgent, nil
 }
 
-// checkSharedAgentKBScope keeps an edit from widening a shared agent's KB
-// scope beyond what the editor could share: the share was checked when it was
-// made, and receivers see the agent's current scope.
-func (s *customAgentService) checkSharedAgentKBScope(
-	ctx context.Context, existing *types.CustomAgent, config types.CustomAgentConfig,
-) error {
-	if s.agentShareRepo == nil || s.kbService == nil {
-		return nil
-	}
-	shares, err := s.agentShareRepo.ListByAgent(ctx, existing.ID)
-	if err != nil {
-		return err
-	}
-	shared := false
-	for _, share := range shares {
-		if share != nil && share.SourceTenantID == existing.TenantID {
-			shared = true
-			break
-		}
-	}
-	if !shared {
-		return nil
-	}
-	updated := *existing
-	updated.Config = config
-	userID, _ := types.UserIDFromContext(ctx)
-	return checkAgentKBScopeShareable(ctx, s.kbService.GetKnowledgeBasesByIDsOnly, existing, &updated, userID)
-}
-
-// updateBuiltinAgent updates a built-in agent's configuration (but not basic info)
+// updateBuiltinAgent updates a built-in agent's configuration and custom fields
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
 	// Persist locale-independent display fields (the YAML "default" locale) so
 	// read paths that skip builtin localization see a stable language.
@@ -393,7 +358,13 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	}
 
 	if existingAgent != nil {
-		// Update existing record - only update config, keep basic info unchanged
+		// Update existing record
+		if trimmed := strings.TrimSpace(agent.Name); trimmed != "" {
+			existingAgent.Name = trimmed
+		}
+		if agent.Description != "" {
+			existingAgent.Description = agent.Description
+		}
 		existingAgent.Config = agent.Config
 		existingAgent.UpdatedAt = time.Now()
 		existingAgent.EnsureDefaults()
@@ -416,10 +387,19 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	}
 
 	// Create new record for built-in agent with customized config
+	name := defaultAgent.Name
+	if trimmed := strings.TrimSpace(agent.Name); trimmed != "" {
+		name = trimmed
+	}
+	desc := defaultAgent.Description
+	if agent.Description != "" {
+		desc = agent.Description
+	}
+
 	newAgent := &types.CustomAgent{
 		ID:          defaultAgent.ID,
-		Name:        defaultAgent.Name,
-		Description: defaultAgent.Description,
+		Name:        name,
+		Description: desc,
 		Avatar:      defaultAgent.Avatar,
 		IsBuiltin:   true,
 		TenantID:    tenantID,
@@ -1157,14 +1137,14 @@ func (s *customAgentService) readableSuggestionKnowledgeIDs(ctx context.Context,
 	if len(knowledgeIDs) > maxSuggestionKnowledgeIDs {
 		knowledgeIDs = knowledgeIDs[:maxSuggestionKnowledgeIDs]
 	}
-	permissions := access.NewKBPermissions(ctx, s.kbShareService)
+	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
 	readable := make([]string, 0, len(knowledgeIDs))
 	for _, id := range knowledgeIDs {
 		knowledge, err := s.knowledgeRepo.GetKnowledgeByIDOnly(ctx, id)
 		if err != nil || knowledge == nil {
 			continue
 		}
-		ok, err := permissions.Check(knowledge.KnowledgeBaseID, knowledge.TenantID, types.OrgRoleViewer)
+		ok, err := permissions.Check(knowledge.KnowledgeBaseID, knowledge.TenantID, types.KBPermissionViewer)
 		if err == nil && ok {
 			readable = append(readable, id)
 		}
@@ -1210,13 +1190,13 @@ func (s *customAgentService) groupKBIDsByEffectiveTenant(
 			kbByID[kb.ID] = kb
 		}
 	}
-	permissions := access.NewKBPermissions(ctx, s.kbShareService)
+	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
 	for _, kbID := range kbIDs {
 		kb := kbByID[kbID]
 		if kb == nil {
 			continue
 		}
-		ok, err := permissions.Check(kbID, kb.TenantID, types.OrgRoleViewer)
+		ok, err := permissions.Check(kbID, kb.TenantID, types.KBPermissionViewer)
 		if err != nil || !ok {
 			continue
 		}

@@ -80,7 +80,7 @@ func TestBrowserSourceUnavailableDoesNotCreateFallbackEngine(t *testing.T) {
 }
 
 func TestBrowserSourceConfigPreservesOtherSelectionsAndResetsNextTurn(t *testing.T) {
-	svc := &sessionService{cfg: &config.Config{}, webSearchProviderRepo: &sharedAgentWebSearchRepo{}}
+	svc := &sessionService{cfg: &config.Config{}, webSearchProviderRepo: &emptyWebSearchProviderRepo{}}
 	req := &types.QARequest{
 		LocalBrowserEnabled: true, WebSearchEnabled: true,
 		Session: &types.Session{ID: "session", TenantID: 1},
@@ -113,7 +113,7 @@ func TestAgentPromptReferencesReachBothRuntimePaths(t *testing.T) {
 		AgentSystemPrompt: []config.PromptTemplate{{ID: "agent", Content: "Latest agent template"}},
 		SystemPrompt:      []config.PromptTemplate{{ID: "normal", Content: "Latest normal template"}},
 		ContextTemplate:   []config.PromptTemplate{{ID: "context", Content: "Latest {{contexts}}"}},
-	}}, webSearchProviderRepo: &sharedAgentWebSearchRepo{}}
+	}}, webSearchProviderRepo: &emptyWebSearchProviderRepo{}}
 	a := &types.CustomAgent{TenantID: 1, Config: types.CustomAgentConfig{
 		AgentMode: types.AgentModeSmartReasoning, SystemPromptID: "agent", ContextTemplateID: "context",
 	}}

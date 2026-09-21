@@ -125,7 +125,7 @@ type Session struct {
 	ForkBootstrap *ForkBootstrap `json:"-" gorm:"type:jsonb;column:fork_bootstrap"`
 
 	// // Strategy configuration
-	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // 关联的知识库ID
+	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // 关联的Knowledge BaseID
 	// MaxRounds         int                 `json:"max_rounds"`                           // 多轮保持轮数
 	// EnableRewrite     bool                `json:"enable_rewrite"`                       // 多轮改写开关
 	// FallbackStrategy  FallbackStrategy    `json:"fallback_strategy"`                    // 兜底策略
@@ -137,9 +137,9 @@ type Session struct {
 	// RerankTopK        int                 `json:"rerank_top_k"`                         // 排序TopK
 	// RerankThreshold   float64             `json:"rerank_threshold"`                     // 排序阈值
 	// SummaryModelID    string              `json:"summary_model_id"`                     // 总结模型ID
-	// SummaryParameters *SummaryConfig      `json:"summary_parameters" gorm:"type:json"`  // 总结模型参数
-	// AgentConfig       *SessionAgentConfig `json:"agent_config"       gorm:"type:jsonb"` // Agent 配置（会话级别，仅存储enabled和knowledge_bases）
-	// ContextConfig     *ContextConfig      `json:"context_config"     gorm:"type:jsonb"` // 上下文管理配置（可选）
+	// SummaryParameters *SummaryConfig      `json:"summary_parameters" gorm:"type:json"`  // 总结模型Parameters
+	// AgentConfig       *SessionAgentConfig `json:"agent_config"       gorm:"type:jsonb"` // Agent Configuration （会话级别，仅存储enabled和knowledge_bases）
+	// ContextConfig     *ContextConfig      `json:"context_config"     gorm:"type:jsonb"` // 上下文管理Configuration （可选）
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

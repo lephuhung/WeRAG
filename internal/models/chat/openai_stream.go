@@ -23,7 +23,7 @@ func (c *RemoteAPIChat) parseCompletionResponse(resp *openai.ChatCompletionRespo
 	choice := resp.Choices[0]
 
 	// 处理思考模型的输出：移除 <think></think> 标签包裹的思考过程
-	// 为设置了 Thinking=false 但模型仍返回思考内容的情况和部分不支持Thinking=false的思考模型(例如Miniax-M2.1)提供兜底策略
+	// 为Settings 了 Thinking=false 但模型仍返回思考内容的情况和部分不支持Thinking=false的思考模型(例如Miniax-M2.1)提供兜底策略
 	content := removeThinkingContent(choice.Message.Content)
 
 	usage := tokenUsageFromOpenAI(resp.Usage, c.provider)
@@ -487,7 +487,7 @@ func (c *RemoteAPIChat) processStreamDelta(
 	}
 }
 
-// processToolCallsDelta 处理 tool calls 的增量更新
+// processToolCallsDelta 处理 tool calls 的增量Update
 func (c *RemoteAPIChat) processToolCallsDelta(
 	ctx context.Context,
 	toolCalls []openai.ToolCall,

@@ -43,7 +43,7 @@ func (p *AliyunProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证阿里云 provider 配置
+// ValidateConfig 验证阿里云 provider Configuration
 func (p *AliyunProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Aliyun DashScope")
@@ -55,7 +55,7 @@ func (p *AliyunProvider) ValidateConfig(config *Config) error {
 }
 
 // IsQwenThinkingModel 检查模型名是否为支持思维链的 Qwen 模型
-// 支持思维链的模型需要特殊处理 enable_thinking 参数
+// 支持思维链的模型需要特殊处理 enable_thinking Parameters
 func IsQwenThinkingModel(modelName string) bool {
 	lowerName := strings.ToLower(modelName)
 	return strings.HasPrefix(lowerName, "qwen3") ||
@@ -70,7 +70,7 @@ func IsQwen3Model(modelName string) bool {
 }
 
 // IsDeepSeekModel 检查模型名是否为 DeepSeek 模型
-// DeepSeek 模型不支持 tool_choice 参数
+// DeepSeek 模型不支持 tool_choice Parameters
 func IsDeepSeekModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek")
 }

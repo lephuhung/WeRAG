@@ -47,9 +47,6 @@ type AuthHandler struct {
 	// fixtures — the share-link endpoints respond 503 rather than
 	// blocking the rest of the auth surface.
 	invitationSvc interfaces.TenantInvitationService
-	// tenantOrgRepo resolves org names for org-bound share-link lookups
-	// (POST /auth/invitations/lookup). Optional; nil just omits org_name.
-	tenantOrgRepo interfaces.TenantOrgRepository
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -68,7 +65,6 @@ func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService, tenantService interfaces.TenantService,
 	systemSettingSvc interfaces.SystemSettingService,
 	invitationSvc interfaces.TenantInvitationService,
-	tenantOrgRepo interfaces.TenantOrgRepository,
 ) *AuthHandler {
 	// Boot-time guard: a nil-or-empty Auth section silently disables the
 	// invite_only gate (see Register below). Emit a loud one-shot log
@@ -86,7 +82,6 @@ func NewAuthHandler(configInfo *config.Config,
 		tenantService:    tenantService,
 		systemSettingSvc: systemSettingSvc,
 		invitationSvc:    invitationSvc,
-		tenantOrgRepo:    tenantOrgRepo,
 	}
 }
 
@@ -176,9 +171,9 @@ func (h *SystemHandler) complexPasswordEnabled(ctx context.Context) bool {
 // @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.RegisterRequest  true  "注册请求参数"
+// @Param        request  body      types.RegisterRequest  true  "注册请求Parameters "
 // @Success      201      {object}  types.RegisterResponse
-// @Failure      400      {object}  errors.AppError  "请求参数错误"
+// @Failure      400      {object}  errors.AppError  "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError  "注册功能已禁用"
 // @Router       /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -188,7 +183,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// 当 auth.registration_mode=invite_only 时，public 注册被关闭。
 	// 优先级：DB system_settings > cfg.Auth.RegistrationMode > "self_serve"。
-	// SystemAdmin 通过「全局设置」UI 实时切换 self_serve / invite_only，立即
+	// SystemAdmin 通过「全局Settings 」UI 实时切换 self_serve / invite_only，立即
 	// 生效，不需要重启服务。历史变量 DISABLE_REGISTRATION=true 仍在 config
 	// 启动阶段被等价提升为 invite_only（applyAuthAndTenantDefaults），
 	// 作为 cfg-default 进入 resolveRegistrationMode。
@@ -262,7 +257,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.LoginRequest  true  "登录请求参数"
+// @Param        request  body      types.LoginRequest  true  "登录请求Parameters "
 // @Success      200      {object}  types.LoginResponse
 // @Failure      401      {object}  errors.AppError  "认证失败"
 // @Router       /auth/login [post]
@@ -312,13 +307,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 // GetOIDCAuthorizationURL godoc
 // @Summary      获取OIDC授权地址
-// @Description  根据后端OIDC配置生成第三方登录跳转地址
+// @Description  根据后端OIDCConfiguration 生成第三方登录跳转地址
 // @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        redirect_uri  query     string  true  "OIDC回调地址"
 // @Success      200           {object}  types.OIDCAuthURLResponse
-// @Failure      400           {object}  errors.AppError  "请求参数错误"
+// @Failure      400           {object}  errors.AppError  "请求Parameters 错误"
 // @Failure      403           {object}  errors.AppError  "OIDC未启用"
 // @Router       /auth/oidc/url [get]
 func (h *AuthHandler) GetOIDCAuthorizationURL(c *gin.Context) {
@@ -390,7 +385,7 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 }
 
 // GetOIDCConfig godoc
-// @Summary      获取OIDC登录配置
+// @Summary      获取OIDC登录Configuration
 // @Description  返回OIDC是否启用以及provider展示名称，供前端决定是否展示OIDC登录入口
 // @Tags         认证
 // @Accept       json
@@ -525,7 +520,7 @@ func urlQueryEscape(value string) string {
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "登出成功"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -616,7 +611,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 // GetCurrentUser godoc
 // @Summary      获取当前用户信息
-// @Description  获取当前登录用户的详细信息
+// @Description  Get current logged-in user的详细信息
 // @Tags         认证
 // @Accept       json
 // @Produce      json
@@ -703,15 +698,15 @@ type updateMyPreferencesRequest struct {
 }
 
 // UpdateMyPreferences godoc
-// @Summary      更新当前用户的个性化设置
+// @Summary      Update 当前用户的个性化Settings
 // @Description  按 PATCH 语义合并用户偏好（仅覆盖请求体里出现的字段，其余字段保持不变），
 // @Description  数据存放在 users.preferences (JSON)，跨设备/浏览器自动同步。
 // @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        request  body      updateMyPreferencesRequest  true  "Preferences patch"
-// @Success      200      {object}  map[string]interface{}      "更新后的偏好"
-// @Failure      400      {object}  errors.AppError             "请求参数错误"
+// @Success      200      {object}  map[string]interface{}      "Update 后的偏好"
+// @Failure      400      {object}  errors.AppError             "请求Parameters 错误"
 // @Failure      401      {object}  errors.AppError             "未授权"
 // @Security     Bearer
 // @Router       /auth/me/preferences [put]
@@ -759,7 +754,7 @@ func (h *AuthHandler) UpdateMyPreferences(c *gin.Context) {
 // @Produce      json
 // @Param        request  body      object{old_password=string,new_password=string}  true  "密码修改请求"
 // @Success      200      {object}  map[string]interface{}                           "修改成功"
-// @Failure      400      {object}  errors.AppError                                  "请求参数错误"
+// @Failure      400      {object}  errors.AppError                                  "请求Parameters 错误"
 // @Security     Bearer
 // @Router       /auth/change-password [post]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
@@ -825,12 +820,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 }
 
 // GetAuthConfig godoc
-// @Summary      获取认证配置
+// @Summary      获取认证Configuration
 // @Description  返回当前部署的注册模式与密码复杂度开关，供前端决定是否展示注册入口以及密码校验规则
 // @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "认证配置"
+// @Success      200  {object}  map[string]interface{}  "认证Configuration "
 // @Router       /auth/config [get]
 //
 // GetAuthConfig is intentionally a no-auth endpoint: the frontend reads
@@ -855,17 +850,17 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 }
 
 // SwitchTenant godoc
-// @Summary      切换激活空间
-// @Description  为当前用户在目标空间重新签发访问令牌；要求该用户在目标空间存在 active 成员关系（跨租户超级用户除外）。
-// @Description  成功换签会把目标空间写入「最近活跃租户」偏好，下次登录与 refresh 都落在该空间（refresh JWT 不含 tenant_id）。
+// @Summary      切换激活Tenant workspace
+// @Description  为当前用户在目标Tenant workspace重新签发访问令牌；要求该用户在目标Tenant workspace存在 active 成员关系（跨租户超级用户除外）。
+// @Description  成功换签会把目标Tenant workspace写入「最近活跃租户」偏好，下次登录与 refresh 都落在该Tenant workspace（refresh JWT 不含 tenant_id）。
 // @Description  该偏好是账号级的：一次换签会改变该用户所有设备的下次登录/refresh 落点。偏好写入失败则整次换签失败，不会发出新 token。
 // @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "切换请求"
 // @Success      200      {object}  types.LoginResponse
-// @Failure      400      {object}  errors.AppError  "参数错误"
-// @Failure      403      {object}  errors.AppError  "无该空间成员关系或偏好写入失败"
+// @Failure      400      {object}  errors.AppError  "Parameters 错误"
+// @Failure      403      {object}  errors.AppError  "无该Tenant workspace成员关系或偏好写入失败"
 // @Security     Bearer
 // @Router       /auth/switch-tenant [post]
 //
@@ -903,8 +898,8 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(resp))
 }
 
-// @Summary      自动初始化（Lite 桌面版）
-// @Description  Lite 版专用：首次启动时自动创建默认用户和空间并返回令牌，首次及后续启动均须通过桌面原生凭据认证，免除手动注册/登录流程
+// @Summary      自动Initialization （Lite 桌面版）
+// @Description  Lite 版专用：首次启动时自动Create 默认用户和Tenant workspace并返回令牌，首次及后续启动均须通过桌面原生凭据认证，免除手动注册/登录流程
 // @Tags         认证
 // @Accept       json
 // @Produce      json

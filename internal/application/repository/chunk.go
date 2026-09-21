@@ -233,7 +233,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 			}
 
 			// FAQ type: search based on searchField
-			// 根据数据库类型使用不同的 JSON 查询语法
+			// 根据数据库类型使用不同的 JSON Query 语法
 			isPostgres := db.Dialector.Name() == "postgres"
 
 			switch searchField {
@@ -737,7 +737,7 @@ func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
 	tenantID uint64,
 	knowledgeID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批查询1000条
+	const batchSize = 1000 // 每批Query 1000条
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -752,7 +752,7 @@ func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
 			return nil, err
 		}
 
-		// 如果没有查询到数据，说明已经查询完毕
+		// 如果没有Query 到数据，说明已经Query 完毕
 		if len(batchChunks) == 0 {
 			break
 		}
@@ -778,7 +778,7 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 	tenantID uint64,
 	kbID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批查询1000条
+	const batchSize = 1000 // 每批Query 1000条
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -794,7 +794,7 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 			return nil, err
 		}
 
-		// 如果没有查询到数据，说明已经查询完毕
+		// 如果没有Query 到数据，说明已经Query 完毕
 		if len(batchChunks) == 0 {
 			break
 		}
@@ -889,7 +889,7 @@ func (r *chunkRepository) ListAllFAQChunksForExport(
 	tenantID uint64,
 	knowledgeID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批查询1000条
+	const batchSize = 1000 // 每批Query 1000条
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -906,7 +906,7 @@ func (r *chunkRepository) ListAllFAQChunksForExport(
 			return nil, err
 		}
 
-		// 如果没有查询到数据，说明已经查询完毕
+		// 如果没有Query 到数据，说明已经Query 完毕
 		if len(batchChunks) == 0 {
 			break
 		}

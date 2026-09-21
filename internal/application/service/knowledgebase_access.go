@@ -10,42 +10,55 @@ import (
 )
 
 // Service reads accept exact upstream grants. Otherwise cross-tenant reads
-// require a user and organization permission resolved for the original caller.
-// Scope/org lookups stay enabled for userless principals so 'public' and
-// 'org' visibility still apply to API-key and integration callers.
-func kbReadPermissions(ctx context.Context, shares access.KBShareLookup) *access.KBPermissions {
-	p := access.NewKBPermissions(ctx, shares)
+// require a user and a tenant access grant resolved for the original caller.
+// Scope lookups stay enabled for userless principals so 'public' visibility
+// still applies to API-key and integration callers.
+func kbReadPermissions(ctx context.Context, lookup access.KBGrantLookup) *access.KBPermissions {
+	p := access.NewKBPermissions(ctx, lookup)
 	if types.CallerFromContext(ctx).UserID == "" {
-		return p.WithoutShareExpansion()
+		return p.WithoutGrantExpansion()
 	}
 	return p
 }
 
-// kbWritableIDs returns the target KBs the caller may modify: those of its own
-// workspace, and those shared to it with at least editor permission (capped by
-// the caller's tenant role). A read grant — a viewer share or a shared agent's
-// scope — never makes a KB writable.
+// kbWritableIDs returns the target KBs the caller may modify: only those of
+// its own workspace. Tenant access grants are viewer-only — a foreign grant
+// never makes a KB writable.
 //
 // The caller must also be allowed to write KB content at all, as on the HTTP
-// write routes: Contributor+ (a tenant Viewer, and the IM, embed and MCP
-// endpoint principals that run as Viewer, stay read-only), or for a scoped API
-// key the ingest capability, as in access.RequireKBWrite. roleEnforced mirrors
-// the RBAC rollout switch, under which role checks only log.
+// write routes: Member+, or for a scoped API key the ingest capability, as in
+// access.RequireKBWrite. roleEnforced mirrors the RBAC rollout switch, under
+// which role checks only log.
 func kbWritableIDs(
-	ctx context.Context, shares access.KBShareLookup, targets types.SearchTargets, roleEnforced bool,
+	ctx context.Context, lookup access.KBGrantLookup, targets types.SearchTargets, roleEnforced bool,
 ) []string {
 	caller := types.CallerFromContext(ctx)
 	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
 		if !scope.FullAccess && !scope.HasCapability(types.APIKeyCapabilityIngest) {
 			return nil
 		}
-	} else if roleEnforced && !caller.Role.HasPermission(types.TenantRoleContributor) {
+	} else if roleEnforced && !caller.Role.HasPermission(types.TenantRoleMember) {
 		return nil
 	}
-	if caller.UserID == "" {
-		shares = nil
+	var scopes map[string]*types.KBScope
+	scopeOf := func(kbID string) *types.KBScope {
+		if lookup == nil {
+			return nil
+		}
+		if scopes == nil {
+			scopes = make(map[string]*types.KBScope)
+		}
+		if s, ok := scopes[kbID]; ok {
+			return s
+		}
+		s, err := lookup.GetKBScope(ctx, kbID)
+		if err != nil {
+			scopes[kbID] = nil
+			return nil
+		}
+		scopes[kbID] = s
+		return s
 	}
-	permissions := access.NewKBSharePermissions(ctx, shares, caller.TenantID, caller.Role)
 	seen := make(map[string]bool, len(targets))
 	var ids []string
 	for _, target := range targets {
@@ -55,27 +68,13 @@ func kbWritableIDs(
 		seen[target.KnowledgeBaseID] = true
 		writable := caller.TenantID != 0 && target.TenantID == caller.TenantID
 		if writable {
-			if shares != nil {
-				if scope, err := shares.GetKBScope(ctx, target.KnowledgeBaseID); err == nil && scope != nil {
-					switch scope.Visibility {
-					case types.KBVisibilityOrg:
-						// Org-scoped KBs additionally require org authority:
-						// org managers and tenant admins may write; plain
-						// members are read-only even inside their own tenant.
-						writable = access.CallerOrgGrant(ctx, caller, scope, shares).
-							HasPermission(types.OrgRoleEditor)
-					case types.KBVisibilityPublic:
-						// Public corpus writes stay with the owning tenant's
-						// Owner, system admins and tenant-level API keys.
-						_, isKey := types.TenantAPIKeyScopeFromContext(ctx)
-						writable = isKey || types.IsSystemAdminFromContext(ctx) ||
-							caller.Role.HasPermission(types.TenantRoleOwner)
-					}
-				}
+			if scope := scopeOf(target.KnowledgeBaseID); scope != nil && scope.Visibility == types.KBVisibilityPublic {
+				// Public corpus writes stay with the owning tenant's
+				// Owner, system admins and tenant-level API keys.
+				_, isKey := types.TenantAPIKeyScopeFromContext(ctx)
+				writable = isKey || types.IsSystemAdminFromContext(ctx) ||
+					caller.Role.HasPermission(types.TenantRoleOwner)
 			}
-		}
-		if !writable {
-			writable, _ = permissions.Check(target.KnowledgeBaseID, types.OrgRoleEditor)
 		}
 		if writable {
 			ids = append(ids, target.KnowledgeBaseID)
@@ -84,9 +83,9 @@ func kbWritableIDs(
 	return ids
 }
 
-func resolveKBReadTenant(ctx context.Context, kb *types.KnowledgeBase, shares access.KBShareLookup) (uint64, error) {
+func resolveKBReadTenant(ctx context.Context, kb *types.KnowledgeBase, lookup access.KBGrantLookup) (uint64, error) {
 	if kb != nil {
-		allowed, err := kbReadPermissions(ctx, shares).Check(kb.ID, kb.TenantID, types.OrgRoleViewer)
+		allowed, err := kbReadPermissions(ctx, lookup).Check(kb.ID, kb.TenantID, types.KBPermissionViewer)
 		if err == nil && allowed {
 			return kb.TenantID, nil
 		}

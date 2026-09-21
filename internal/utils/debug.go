@@ -39,7 +39,7 @@ func CleanupStaleRunningTasks(ctx context.Context, redisClient *redis.Client, ke
 		return 0, nil
 	}
 
-	// 删除stale keys
+	// Delete stale keys
 	deleted, err := redisClient.Del(ctx, staleTasks...).Result()
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete stale keys: %w", err)

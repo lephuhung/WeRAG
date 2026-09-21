@@ -9,40 +9,40 @@ import (
 // TenantRole represents a user's role inside a single tenant.
 //
 // Tenant roles govern intra-tenant authority (who can create/edit/delete
-// resources, manage tenant settings, etc.) and are orthogonal to the
-// OrgMemberRole defined in organization.go, which governs cross-tenant
-// sharing. A user may therefore carry different TenantRole values in
-// different tenants (one TenantMember row per (user, tenant) pair).
+// resources, manage tenant settings, etc.). A user may carry different
+// TenantRole values in different tenants (one TenantMember row per
+// (user, tenant) pair).
 type TenantRole string
 
 const (
 	// TenantRoleOwner has full control over the tenant, including tenant
 	// deletion, ownership transfer, and managing tenant API keys.
 	TenantRoleOwner TenantRole = "owner"
-	// TenantRoleAdmin manages users, integrations, and tenant-scoped
-	// configuration such as model providers, vector stores, MCP services
-	// and IM channels, but cannot delete the tenant or change Owners.
+	// TenantRoleAdmin manages users, integrations, knowledge bases, access
+	// grants and tenant-scoped configuration such as model providers,
+	// vector stores, MCP services and IM channels, but cannot delete the
+	// tenant or change Owners.
 	TenantRoleAdmin TenantRole = "admin"
-	// TenantRoleContributor can create knowledge bases and agents, and edit
-	// the ones they created. They have read access to everything else in
-	// the tenant.
-	TenantRoleContributor TenantRole = "contributor"
-	// TenantRoleViewer has read-only access to tenant resources and can
-	// run agents that are explicitly marked as runnable by viewers.
-	TenantRoleViewer TenantRole = "viewer"
+	// TenantRoleMember can read tenant knowledge bases (own, public and
+	// granted to the tenant) and upload documents into the tenant's own
+	// knowledge bases. It cannot create or delete knowledge bases,
+	// configure agents, or manage tenant members.
+	TenantRoleMember TenantRole = "member"
 )
 
 // tenantRoleLevel maps each role to a numeric level used for hierarchy
 // comparisons. Higher means more privileged. Levels are spaced by 10 so
 // new roles can be inserted between existing ones if needed.
+//
+// The legacy contributor(20)/viewer(10) levels were merged into the
+// single member role by migration 000109.
 var tenantRoleLevel = map[TenantRole]int{
-	TenantRoleOwner:       40,
-	TenantRoleAdmin:       30,
-	TenantRoleContributor: 20,
-	TenantRoleViewer:      10,
+	TenantRoleOwner:  40,
+	TenantRoleAdmin:  30,
+	TenantRoleMember: 20,
 }
 
-// IsValid reports whether r is one of the four defined tenant roles.
+// IsValid reports whether r is one of the defined tenant roles.
 func (r TenantRole) IsValid() bool {
 	_, ok := tenantRoleLevel[r]
 	return ok
@@ -92,7 +92,7 @@ type TenantMember struct {
 	// TenantID references tenants.id.
 	TenantID uint64 `json:"tenant_id" gorm:"not null;index"`
 	// Role held by the user inside this tenant.
-	Role TenantRole `json:"role" gorm:"type:varchar(20);not null;default:'contributor'"`
+	Role TenantRole `json:"role" gorm:"type:varchar(20);not null;default:'member'"`
 	// Status controls whether this membership is honoured by the auth
 	// middleware; see TenantMemberStatus constants.
 	Status TenantMemberStatus `json:"status" gorm:"type:varchar(20);not null;default:'active'"`

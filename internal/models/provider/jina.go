@@ -35,7 +35,7 @@ func (p *JinaProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Jina AI provider 配置
+// ValidateConfig 验证 Jina AI provider Configuration
 func (p *JinaProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Jina AI provider")

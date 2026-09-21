@@ -153,7 +153,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTenantAPIKeyRepository))
 	must(container.Provide(repository.NewTenantMemberRepository))
 	must(container.Provide(repository.NewTenantInvitationRepository))
-	must(container.Provide(repository.NewTenantOrgRepository))
+	must(container.Provide(repository.NewKBAccessGrantRepository))
 	must(container.Provide(repository.NewAuditLogRepository))
 	must(container.Provide(repository.NewKnowledgeBaseRepository))
 	must(container.Provide(repository.NewKnowledgeRepository))
@@ -174,12 +174,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTenantSandboxConfigRepository))
 	must(container.Provide(repository.NewTenantSkillRepository))
 	must(container.Provide(repository.NewCustomAgentRepository))
-	must(container.Provide(repository.NewOrganizationRepository))
-	must(container.Provide(repository.NewKBShareRepository))
-	must(container.Provide(repository.NewAgentShareRepository))
 	must(container.Provide(repository.NewEmbedChannelRepository))
 	must(container.Provide(repository.NewMCPEndpointRepository))
-	must(container.Provide(repository.NewTenantDisabledSharedAgentRepository))
 	must(container.Provide(repository.NewUserResourceFavoriteRepository))
 	must(container.Provide(service.NewWebSearchStateService))
 	must(container.Provide(repository.NewDataSourceRepository))
@@ -218,13 +214,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewTenantAPIKeyService))
 	must(container.Provide(service.NewTenantMemberService))
 	must(container.Provide(service.NewTenantInvitationService))
-	must(container.Provide(service.NewTenantOrgService))
 	must(container.Provide(service.NewAuditLogService))
 	must(container.Provide(service.NewAuditLogRetentionRunner))
 	must(container.Provide(service.NewKnowledgeBaseService))
-	must(container.Provide(service.NewOrganizationService))
-	must(container.Provide(service.NewKBShareService)) // KBShareService must be registered before KnowledgeService and KnowledgeTagService
-	must(container.Provide(service.NewAgentShareService))
+	must(container.Provide(service.NewKBAccessGrantService)) // KBAccessGrantService must be registered before KnowledgeService and KnowledgeTagService
 	must(container.Provide(service.NewKnowledgeService))
 	must(container.Provide(service.NewSpanTracker))
 	must(container.Provide(service.NewChunkService))
@@ -522,7 +515,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTenantHandler))
 	must(container.Provide(handler.NewTenantMemberHandler))
 	must(container.Provide(handler.NewTenantInvitationHandler))
-	must(container.Provide(handler.NewTenantOrgHandler))
+	must(container.Provide(handler.NewKBAccessGrantHandler))
 	must(container.Provide(handler.NewAuditLogHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))
@@ -559,7 +552,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(func(s *service.TenantSkillService) *handler.SkillHandler {
 		return handler.NewSkillHandler(s, s)
 	}))
-	must(container.Provide(handler.NewOrganizationHandler))
+
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
 
@@ -1152,7 +1145,7 @@ func initRawFileService(_ *config.Config) (interfaces.FileService, error) {
 			os.Getenv("TOS_SECRET_KEY"),
 			os.Getenv("TOS_BUCKET_NAME"),
 			os.Getenv("TOS_PATH_PREFIX"),
-			os.Getenv("TOS_TEMP_BUCKET_NAME"), // 可选：临时桶名称（桶需配置生命周期规则自动过期）
+			os.Getenv("TOS_TEMP_BUCKET_NAME"), // 可选：临时桶名称（桶需Configuration 生命周期规则自动过期）
 			os.Getenv("TOS_TEMP_REGION"),      // 可选：临时桶 region，默认与主桶相同
 		)
 	case "s3":

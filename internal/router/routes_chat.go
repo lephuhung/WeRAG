@@ -25,10 +25,10 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler, 
 	chatMessages := messages.With(apiKeyChat(apiKeyFullAccess()))
 	historyMessages := messages.With(apiKeyMessageHistory(apiKeyFullAccess()))
 	{
-		historyMessages.POST("/search", g.Viewer(), handler.SearchMessages)
-		historyMessages.GET("/chat-history-stats", g.Viewer(), handler.GetChatHistoryKBStats)
-		chatMessages.GET("/:session_id/load", g.Viewer(), handler.LoadMessages)
-		chatMessages.DELETE("/:session_id/:id", g.Viewer(), handler.DeleteMessage)
+		historyMessages.POST("/search", g.Member(), handler.SearchMessages)
+		historyMessages.GET("/chat-history-stats", g.Member(), handler.GetChatHistoryKBStats)
+		chatMessages.GET("/:session_id/load", g.Member(), handler.LoadMessages)
+		chatMessages.DELETE("/:session_id/:id", g.Member(), handler.DeleteMessage)
 	}
 }
 
@@ -48,7 +48,7 @@ func RegisterSessionRoutes(
 	// Sessions are per-user chat state, not knowledge-base content. The
 	// chat capability lets a scoped key run the full conversation flow
 	// (create/manage its own sessions) without full tenant access.
-	sessions := g.apiKeyGroup(r.Group("/sessions", g.Viewer()), apiKeyChat(apiKeyFullAccess()))
+	sessions := g.apiKeyGroup(r.Group("/sessions", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		sessions.POST("", handler.CreateSession)
 		sessions.DELETE("/batch", handler.BatchDeleteSessions)
@@ -113,7 +113,7 @@ func RegisterSessionRoutes(
 	// Cross-session artifact library. Same guards as /sessions: the rows come
 	// from the caller's own sessions, and downloads go back through the
 	// per-session endpoint above.
-	artifacts := g.apiKeyGroup(r.Group("/artifacts", g.Viewer()), apiKeyChat(apiKeyFullAccess()))
+	artifacts := g.apiKeyGroup(r.Group("/artifacts", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		artifacts.GET("", handler.ListArtifactLibrary)
 	}
@@ -125,19 +125,19 @@ func RegisterSessionRoutes(
 func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
 	// These POST routes append messages and run generation, so a scoped key
 	// needs the explicit chat capability unless it has full tenant access.
-	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.Viewer()), apiKeyChat(apiKeyFullAccess()))
+	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		knowledgeChat.POST("/:session_id", handler.KnowledgeQA)
 	}
 
 	// Agent-based chat
-	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.Viewer()), apiKeyChat(apiKeyFullAccess()))
+	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		agentChat.POST("/:session_id", handler.AgentQA)
 	}
 
 	// 新增知识检索接口，不需要session_id
-	knowledgeSearch := g.apiKeyGroup(r.Group("/knowledge-search", g.Viewer()), apiKeyRetrieve(apiKeyFullAccess()))
+	knowledgeSearch := g.apiKeyGroup(r.Group("/knowledge-search", g.Member()), apiKeyRetrieve(apiKeyFullAccess()))
 	{
 		knowledgeSearch.POST("", handler.SearchKnowledge)
 	}

@@ -20,17 +20,17 @@ import (
 
 // knowledgeTagService implements KnowledgeTagService.
 type knowledgeTagService struct {
-	kbService      interfaces.KnowledgeBaseService
-	repo           interfaces.KnowledgeTagRepository
-	knowledgeRepo  interfaces.KnowledgeRepository
-	chunkRepo      interfaces.ChunkRepository
-	retrieveEngine interfaces.RetrieveEngineRegistry
-	ownership      retriever.TenantStoreOwnership
-	modelService   interfaces.ModelService
-	task           interfaces.TaskEnqueuer
-	kbShareService interfaces.KBShareService
-	tenantRepo     interfaces.TenantRepository
-	audit          interfaces.AuditLogService
+	kbService            interfaces.KnowledgeBaseService
+	repo                 interfaces.KnowledgeTagRepository
+	knowledgeRepo        interfaces.KnowledgeRepository
+	chunkRepo            interfaces.ChunkRepository
+	retrieveEngine       interfaces.RetrieveEngineRegistry
+	ownership            retriever.TenantStoreOwnership
+	modelService         interfaces.ModelService
+	task                 interfaces.TaskEnqueuer
+	kbAccessGrantService interfaces.KBAccessGrantService
+	tenantRepo           interfaces.TenantRepository
+	audit                interfaces.AuditLogService
 }
 
 // NewKnowledgeTagService creates a new tag service.
@@ -43,22 +43,22 @@ func NewKnowledgeTagService(
 	ownership retriever.TenantStoreOwnership,
 	modelService interfaces.ModelService,
 	task interfaces.TaskEnqueuer,
-	kbShareService interfaces.KBShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	tenantRepo interfaces.TenantRepository,
 	audit interfaces.AuditLogService,
 ) (interfaces.KnowledgeTagService, error) {
 	return &knowledgeTagService{
-		kbService:      kbService,
-		repo:           repo,
-		knowledgeRepo:  knowledgeRepo,
-		chunkRepo:      chunkRepo,
-		retrieveEngine: retrieveEngine,
-		ownership:      ownership,
-		modelService:   modelService,
-		task:           task,
-		kbShareService: kbShareService,
-		tenantRepo:     tenantRepo,
-		audit:          audit,
+		kbService:            kbService,
+		repo:                 repo,
+		knowledgeRepo:        knowledgeRepo,
+		chunkRepo:            chunkRepo,
+		retrieveEngine:       retrieveEngine,
+		ownership:            ownership,
+		modelService:         modelService,
+		task:                 task,
+		kbAccessGrantService: kbAccessGrantService,
+		tenantRepo:           tenantRepo,
+		audit:                audit,
 	}, nil
 }
 
@@ -82,7 +82,7 @@ func (s *knowledgeTagService) ListTags(
 		return nil, err
 	}
 
-	effectiveTenantID, err := resolveKBReadTenant(ctx, kb, s.kbShareService)
+	effectiveTenantID, err := resolveKBReadTenant(ctx, kb, s.kbAccessGrantService)
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +501,6 @@ func (s *knowledgeTagService) FindOrCreateTagByName(ctx context.Context, kbID st
 		return nil, err
 	}
 
-	// 创建新标签
+	// Create 新标签
 	return s.CreateTag(ctx, kbID, name, "", 0)
 }

@@ -34,7 +34,7 @@ func (p *MimoProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证小米 Mimo provider 配置
+// ValidateConfig 验证小米 Mimo provider Configuration
 func (p *MimoProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Mimo provider")

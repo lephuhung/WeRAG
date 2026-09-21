@@ -127,7 +127,7 @@ func newFAQWriteFixture(t *testing.T) *faqWriteFixture {
 		KnowledgeBase:     kb,
 		Caller:            types.CallerFromContext(base),
 		EffectiveTenantID: 7,
-		Permission:        types.OrgRoleEditor,
+		Permission:        types.KBPermissionEditor,
 	}
 	ctx := context.WithValue(grant.Context(base), types.TenantInfoContextKey, &types.Tenant{ID: 7})
 	for _, tag := range []*types.KnowledgeTag{

@@ -34,8 +34,6 @@ type registerByInviteRequest struct {
 type invitationLookupResponse struct {
 	TenantID   uint64           `json:"tenant_id"`
 	TenantName string           `json:"tenant_name,omitempty"`
-	OrgID      uint64           `json:"org_id,omitempty"`
-	OrgName    string           `json:"org_name,omitempty"`
 	Role       types.TenantRole `json:"role"`
 	ExpiresAt  string           `json:"expires_at"`
 }
@@ -52,7 +50,7 @@ type invitationLookupRequest struct {
 
 // LookupInvitationByToken godoc
 // @Summary      解析共享邀请链接 token
-// @Description  根据邀请链接中的 token 返回邀请上下文（空间名 / 角色 / 过期时间），
+// @Description  根据邀请链接中的 token 返回邀请上下文（Tenant workspace名 / 角色 / 过期时间），
 // @Description  供注册页展示。无认证；token 无效或被撤销返回 410。
 // @Description  使用 POST + body 而非 GET + path，避免 token 落入访问日志 / 浏览器历史 / tracing。
 // @Tags         认证
@@ -101,12 +99,6 @@ func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 	if tenant, terr := h.tenantService.GetTenantByID(ctx, inv.TenantID); terr == nil && tenant != nil {
 		resp.TenantName = tenant.Name
 	}
-	if inv.OrgID != 0 && h.tenantOrgRepo != nil {
-		resp.OrgID = inv.OrgID
-		if org, oerr := h.tenantOrgRepo.GetOrgByID(ctx, inv.OrgID); oerr == nil && org != nil {
-			resp.OrgName = org.Name
-		}
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    resp,
@@ -116,13 +108,13 @@ func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 // RegisterByInvite godoc
 // @Summary      使用共享链接注册
 // @Description  通过 Owner 生成的共享邀请链接 token 完成注册，绕过 invite_only 模式拦截。
-// @Description  注册者自填邮箱（与 token 不绑定）；注册成功后自动加入对应空间。
+// @Description  注册者自填邮箱（与 token 不绑定）；注册成功后自动加入对应Tenant workspace。
 // @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        request  body      registerByInviteRequest  true  "邀请注册请求"
 // @Success      201      {object}  types.LoginResponse
-// @Failure      400      {object}  apperrors.AppError  "请求参数错误"
+// @Failure      400      {object}  apperrors.AppError  "请求Parameters 错误"
 // @Failure      409      {object}  apperrors.AppError  "邮箱已注册"
 // @Failure      410      {object}  apperrors.AppError  "链接无效或已撤销"
 // @Router       /auth/register-by-invite [post]

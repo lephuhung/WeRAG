@@ -38,19 +38,15 @@ type runtimeKnowledgeCanceller interface {
 
 // SystemHandler handles system-related requests
 type SystemHandler struct {
-	cfg              *config.Config
-	neo4jDriver      neo4j.Driver
-	documentReader   interfaces.DocumentReader
-	tenantSvc        interfaces.TenantService
-	userSvc          interfaces.UserService
+	cfg            *config.Config
+	neo4jDriver    neo4j.Driver
+	documentReader interfaces.DocumentReader
+	tenantSvc      interfaces.TenantService
+	userSvc        interfaces.UserService
 	// memberSvc lets system admins adjust a user's per-workspace role
 	// (owner/admin/contributor/viewer) without holding Owner inside that
 	// tenant — the route group already enforces SystemAdmin.
-	memberSvc interfaces.TenantMemberService
-	// orgSvc lets system admins list each workspace's organization
-	// memberships and adjust tenant-level org roles (admin/editor/viewer)
-	// without the operator's tenant holding org-admin itself.
-	orgSvc           interfaces.OrganizationService
+	memberSvc        interfaces.TenantMemberService
 	systemSettingSvc interfaces.SystemSettingService
 	apiKeySvc        interfaces.TenantAPIKeyService
 	// auditSvc is optional — when nil, emitAdminAudit no-ops so unit
@@ -83,7 +79,6 @@ func NewSystemHandler(cfg *config.Config,
 	tenantSvc interfaces.TenantService,
 	userSvc interfaces.UserService,
 	memberSvc interfaces.TenantMemberService,
-	orgSvc interfaces.OrganizationService,
 	systemSettingSvc interfaces.SystemSettingService,
 	apiKeySvc interfaces.TenantAPIKeyService,
 	auditSvc interfaces.AuditLogService,
@@ -93,13 +88,13 @@ func NewSystemHandler(cfg *config.Config,
 	sandboxConfigSvc *service.TenantSandboxConfigService,
 ) *SystemHandler {
 	return &SystemHandler{
-		cfg:                cfg,
-		neo4jDriver:        neo4jDriver,
-		documentReader:     documentReader,
-		tenantSvc:          tenantSvc,
-		userSvc:            userSvc,
-		memberSvc:          memberSvc,
-		orgSvc:             orgSvc,
+		cfg:            cfg,
+		neo4jDriver:    neo4jDriver,
+		documentReader: documentReader,
+		tenantSvc:      tenantSvc,
+		userSvc:        userSvc,
+		memberSvc:      memberSvc,
+
 		systemSettingSvc:   systemSettingSvc,
 		apiKeySvc:          apiKeySvc,
 		auditSvc:           auditSvc,
@@ -322,7 +317,7 @@ var (
 
 // GetSystemInfo godoc
 // @Summary      获取系统信息
-// @Description  获取系统版本、构建信息和引擎配置
+// @Description  获取系统版本、构建信息和引擎Configuration
 // @Tags         系统
 // @Accept       json
 // @Produce      json
@@ -407,7 +402,7 @@ func (h *SystemHandler) getDocReaderConnInfo() (addr, transport string) {
 // @Summary      列出可用的文档解析引擎
 // @Tags         系统
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "解析引擎列表"
+// @Success      200  {object}  map[string]interface{}  "解析引擎List "
 // @Router       /system/parser-engines [get]
 func (h *SystemHandler) ListParserEngines(c *gin.Context) {
 	var overrides map[string]string
@@ -495,11 +490,11 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 
 // CheckParserEngines runs availability check with the given config overrides (e.g. current form values).
 // Used to test engine availability without saving; body shape matches ParserEngineConfig.
-// @Summary      使用当前参数检测解析引擎可用性
+// @Summary      使用当前Parameters 检测解析引擎可用性
 // @Tags         系统
 // @Accept       json
 // @Produce      json
-// @Param        body  body  object  true  "解析引擎配置（与保存接口同结构）"
+// @Param        body  body  object  true  "解析引擎Configuration （与保存接口同结构）"
 // @Success      200
 // @Router       /system/parser-engines/check [post]
 func (h *SystemHandler) CheckParserEngines(c *gin.Context) {
@@ -801,7 +796,7 @@ type GetStorageEngineStatusResponse struct {
 
 // GetStorageEngineStatus godoc
 // @Summary      获取存储引擎状态
-// @Description  返回 Local、MinIO、COS 各存储引擎的可用状态及说明，供全局设置与知识库选择使用
+// @Description  返回 Local、MinIO、COS 各存储引擎的可用状态及说明，供全局Settings 与Knowledge Base选择使用
 // @Tags         系统
 // @Produce      json
 // @Success      200  {object}  GetStorageEngineStatusResponse
@@ -916,11 +911,11 @@ type StorageCheckResponse struct {
 
 // CheckStorageEngine tests connectivity for a single storage engine using the provided config.
 // @Summary      测试存储引擎连通性
-// @Description  使用当前填写的参数测试 MinIO/COS 连通性，不保存配置
+// @Description  使用当前填写的Parameters 测试 MinIO/COS 连通性，不保存Configuration
 // @Tags         系统
 // @Accept       json
 // @Produce      json
-// @Param        body  body  StorageCheckRequest  true  "存储引擎配置"
+// @Param        body  body  StorageCheckRequest  true  "存储引擎Configuration "
 // @Success      200   {object}  StorageCheckResponse
 // @Router       /system/storage-engine-check [post]
 func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
@@ -1532,25 +1527,12 @@ func (h *SystemHandler) ListSystemAdmins(c *gin.Context) {
 	})
 }
 
-// SystemUserOrgMembership is one organization membership of one of the
-// user's workspaces. Organization membership is tenant-keyed
-// (organization_tenant_members), so a user reaches an org through their
-// workspace — the row records which tenant carries which org role.
-type SystemUserOrgMembership struct {
-	OrgID      string              `json:"org_id"`
-	OrgName    string              `json:"org_name"`
-	TenantID   uint64              `json:"tenant_id"`
-	TenantName string              `json:"tenant_name"`
-	Role       types.OrgMemberRole `json:"role"`
-}
-
 // SystemUserItem is one row of the system-admin user list: the plain
 // UserInfo plus the user's tenant memberships so the management UI can
 // show which workspaces the account belongs to and at what role.
 type SystemUserItem struct {
 	*types.UserInfo
-	Memberships    []types.Membership         `json:"memberships"`
-	OrgMemberships []SystemUserOrgMembership `json:"org_memberships"`
+	Memberships []types.Membership `json:"memberships"`
 }
 
 // ListSystemUsersResponse defines the response for listing every user.
@@ -1604,36 +1586,10 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 	infos := make([]*SystemUserItem, 0, len(users))
 	for _, u := range users {
 		memberships := h.userSvc.BuildLoginMemberships(ctx, u, nil)
-		item := &SystemUserItem{
+		infos = append(infos, &SystemUserItem{
 			UserInfo:    u.ToUserInfo(),
 			Memberships: memberships,
-		}
-		// Resolve org memberships through each workspace the user belongs
-		// to. Org roles are tenant-keyed, so the same user can appear in an
-		// org under different roles via different workspaces.
-		if h.orgSvc != nil {
-			for _, m := range memberships {
-				orgs, err := h.orgSvc.ListTenantOrganizations(ctx, m.TenantID)
-				if err != nil {
-					logger.Warnf(ctx, "ListSystemUsers: orgs of tenant %d failed: %v", m.TenantID, err)
-					continue
-				}
-				for _, org := range orgs {
-					member, err := h.orgSvc.GetTenantMember(ctx, org.ID, m.TenantID)
-					if err != nil {
-						continue
-					}
-					item.OrgMemberships = append(item.OrgMemberships, SystemUserOrgMembership{
-						OrgID:      org.ID,
-						OrgName:    org.Name,
-						TenantID:   m.TenantID,
-						TenantName: m.TenantName,
-						Role:       member.Role,
-					})
-				}
-			}
-		}
-		infos = append(infos, item)
+		})
 	}
 
 	c.JSON(http.StatusOK, ListSystemUsersResponse{
@@ -1681,7 +1637,7 @@ func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
 		return
 	}
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
 		return
 	}
 
@@ -1697,77 +1653,6 @@ func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
 			logger.Errorf(ctx, "UpdateSystemUserRole failed: user=%s tenant=%d err=%v",
 				userID, tenantID, err)
 			c.Error(apperrors.NewInternalServerError("failed to update member role").WithDetails(err.Error()))
-		}
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-// updateOrgMemberRoleRequest is the JSON body for
-// PUT /system/admin/organizations/:org_id/members/:tenant_id.
-type updateOrgMemberRoleRequest struct {
-	Role types.OrgMemberRole `json:"role" binding:"required"`
-}
-
-// UpdateSystemOrgTenantRole godoc
-// @Summary      Update a tenant's organization role
-// @Description  Change a workspace's role inside an organization
-// @Description  (admin/editor/viewer) — SystemAdmin only. Organization
-// @Description  membership is tenant-keyed, so this affects every user of
-// @Description  that workspace. Unlike PUT /organizations/:id/members/:tenant_id
-// @Description  the caller's own tenant need not be org-admin; the org's owner
-// @Description  tenant still cannot have its role changed.
-// @Tags         System Admin
-// @Accept       json
-// @Produce      json
-// @Param        org_id     path  string                     true  "Organization ID"
-// @Param        tenant_id  path  string                     true  "Tenant ID"
-// @Param        request    body  updateOrgMemberRoleRequest true  "Target role"
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]interface{}  "Invalid tenant_id or role"
-// @Failure      403  {object}  map[string]interface{}  "Forbidden: not a system admin"
-// @Failure      404  {object}  map[string]interface{}  "Organization or membership not found"
-// @Failure      409  {object}  map[string]interface{}  "Cannot change owner tenant role"
-// @Router       /system/admin/organizations/{org_id}/members/{tenant_id} [put]
-func (h *SystemHandler) UpdateSystemOrgTenantRole(c *gin.Context) {
-	ctx := logger.CloneContext(c.Request.Context())
-
-	orgID := strings.TrimSpace(c.Param("org_id"))
-	if orgID == "" {
-		c.Error(apperrors.NewValidationError("org_id is required"))
-		return
-	}
-	tenantID, err := strconv.ParseUint(strings.TrimSpace(c.Param("tenant_id")), 10, 64)
-	if err != nil || tenantID == 0 {
-		c.Error(apperrors.NewValidationError("invalid tenant_id"))
-		return
-	}
-
-	var req updateOrgMemberRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
-		return
-	}
-	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of admin/editor/viewer"))
-		return
-	}
-
-	if err := h.orgSvc.UpdateTenantMemberRoleAsAdmin(ctx, orgID, tenantID, req.Role); err != nil {
-		switch {
-		case errors.Is(err, service.ErrOrgNotFound):
-			c.Error(apperrors.NewNotFoundError("organization not found"))
-		case errors.Is(err, service.ErrTenantNotInOrg):
-			c.Error(apperrors.NewNotFoundError("tenant is not a member of this organization"))
-		case errors.Is(err, service.ErrCannotChangeOwnerRole):
-			c.Error(apperrors.NewConflictError(err.Error()))
-		case errors.Is(err, service.ErrInvalidRole):
-			c.Error(apperrors.NewValidationError(err.Error()))
-		default:
-			logger.Errorf(ctx, "UpdateSystemOrgTenantRole failed: org=%s tenant=%d err=%v",
-				orgID, tenantID, err)
-			c.Error(apperrors.NewInternalServerError("failed to update organization member role").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -2033,7 +1918,7 @@ func sameQueueWeights(left, right map[string]int) bool {
 
 // GetRuntimeQueues godoc
 // @Summary      获取解析任务队列运行时状态
-// @Description  返回各 asynq 队列的实时深度（pending/active/scheduled/retry 等）与 worker 并发配置，仅系统管理员可见
+// @Description  返回各 asynq 队列的实时深度（pending/active/scheduled/retry 等）与 worker 并发Configuration ，仅系统管理员可见
 // @Tags         系统管理
 // @Produce      json
 // @Success      200  {object}  RuntimeQueuesResponse

@@ -42,7 +42,7 @@ func (p *OpenAIProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 OpenAI provider 配置
+// ValidateConfig 验证 OpenAI provider Configuration
 func (p *OpenAIProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for OpenAI provider")
@@ -59,7 +59,7 @@ func (p *OpenAIProvider) ValidateConfig(config *Config) error {
 // 这些模型在 OpenAI Chat Completions API 中：
 //   - 不再支持 `max_tokens`，必须使用 `max_completion_tokens`；
 //   - 仅支持默认的 `temperature=1`、`top_p=1`，且不支持 `frequency_penalty` /
-//     `presence_penalty` 等采样参数（传非默认值会被拒绝）。
+//     `presence_penalty` 等采样Parameters （传非默认值会被拒绝）。
 //
 // 参考：
 //   - https://platform.openai.com/docs/api-reference/chat

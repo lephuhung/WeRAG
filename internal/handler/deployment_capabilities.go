@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/gin-gonic/gin"
@@ -39,7 +38,6 @@ type DeploymentCapabilitiesData struct {
 
 // DeploymentFeatureAvailability mirrors injected backend handlers/services.
 type DeploymentFeatureAvailability struct {
-	Organizations bool
 	Agents        bool
 	IM            bool
 	Embed         bool
@@ -65,11 +63,10 @@ func BuildDeploymentCapabilities(
 	edition string,
 	available DeploymentFeatureAvailability,
 ) DeploymentCapabilitiesData {
-	isLite := strings.EqualFold(strings.TrimSpace(edition), "lite")
-	organizations := supportedDeploymentCapability(available.Organizations && !isLite)
-	if isLite {
-		organizations.Reason = "not_supported_in_lite"
-	}
+	// Organizations were removed in favour of direct tenant-to-tenant KB
+	// access grants — report the key as permanently unsupported so legacy
+	// frontends hide the org UI instead of showing a broken screen.
+	organizations := DeploymentCapability{Supported: false, Reason: "feature_removed"}
 
 	sandboxDocker := DeploymentCapability{
 		Supported: available.Sandbox && available.SandboxDocker,

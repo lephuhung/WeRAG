@@ -182,15 +182,15 @@ func (h *IMHandler) ListAllIMChannels(c *gin.Context) {
 // UpdateIMChannel updates an IM channel.
 //
 // UpdateIMChannel godoc
-// @Summary      更新 IM 渠道
-// @Description  更新指定 IM 渠道的名称、模式、知识库、凭证或启用状态
+// @Summary      Update  IM 渠道
+// @Description  Update 指定 IM 渠道的名称、模式、Knowledge Base、凭证或启用状态
 // @Tags         IM 渠道
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                  true  "渠道 ID"
-// @Param        request  body      map[string]interface{}  true  "更新字段（name/mode/output_mode/knowledge_base_id/credentials/enabled）"
-// @Success      200      {object}  map[string]interface{}  "更新后的渠道"
-// @Failure      400      {object}  map[string]interface{}  "请求参数错误"
+// @Param        request  body      map[string]interface{}  true  "Update 字段（name/mode/output_mode/knowledge_base_id/credentials/enabled）"
+// @Success      200      {object}  map[string]interface{}  "Update 后的渠道"
+// @Failure      400      {object}  map[string]interface{}  "请求Parameters 错误"
 // @Failure      404      {object}  map[string]interface{}  "渠道不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -281,13 +281,13 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 // DeleteIMChannel deletes an IM channel.
 //
 // DeleteIMChannel godoc
-// @Summary      删除 IM 渠道
-// @Description  删除指定 IM 渠道
+// @Summary      Delete  IM 渠道
+// @Description  Delete 指定 IM 渠道
 // @Tags         IM 渠道
 // @Produce      json
 // @Param        id   path      string                  true  "渠道 ID"
 // @Success      200  {object}  map[string]interface{}  "success: true"
-// @Failure      400  {object}  map[string]interface{}  "请求参数错误"
+// @Failure      400  {object}  map[string]interface{}  "请求Parameters 错误"
 // @Failure      404  {object}  map[string]interface{}  "渠道不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -321,8 +321,8 @@ func (h *IMHandler) DeleteIMChannel(c *gin.Context) {
 // @Tags         IM 渠道
 // @Produce      json
 // @Param        id   path      string                  true  "渠道 ID"
-// @Success      200  {object}  map[string]interface{}  "更新后的渠道"
-// @Failure      400  {object}  map[string]interface{}  "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "Update 后的渠道"
+// @Failure      400  {object}  map[string]interface{}  "请求Parameters 错误"
 // @Failure      404  {object}  map[string]interface{}  "渠道不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -377,7 +377,7 @@ func writeIMCallbackACK(c *gin.Context, platform string) {
 // @Produce      json
 // @Param        channel_id  path      string                  true  "渠道 ID"
 // @Success      200         {object}  map[string]interface{}  "处理结果"
-// @Failure      400         {object}  map[string]interface{}  "请求参数错误"
+// @Failure      400         {object}  map[string]interface{}  "请求Parameters 错误"
 // @Failure      401         {object}  map[string]interface{}  "签名校验失败"
 // @Router       /im/callback/{channel_id} [get]
 // @Router       /im/callback/{channel_id} [post]

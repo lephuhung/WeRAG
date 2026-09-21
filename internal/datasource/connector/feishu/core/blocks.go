@@ -415,7 +415,7 @@ func (c *Client) readBitableRecords(ctx context.Context, embedToken string) ([][
 	var dataRows [][]string
 	truncated := false
 	// Use the Search-records endpoint (POST .../records/search). The legacy
-	// GET .../records is officially deprecated ("已不推荐使用，可使用[查询记录]替代").
+	// GET .../records is officially deprecated ("已不推荐使用，可使用[Query 记录]替代").
 	// An empty body queries the table's default view, paginated via page_token
 	// (we page to the end below), so a default view with a filter would omit the
 	// filtered-out records — acceptable for RAG, but not literally "all records".

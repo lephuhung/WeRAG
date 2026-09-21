@@ -37,7 +37,7 @@ func (p *OpenRouterProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 OpenRouter provider 配置
+// ValidateConfig 验证 OpenRouter provider Configuration
 func (p *OpenRouterProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for OpenRouter provider")

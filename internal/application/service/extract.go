@@ -497,9 +497,9 @@ func NewDataTableSummaryService(
 }
 
 // Handle implements the TaskHandler interface for table extraction
-// 整体流程：初始化 -> 准备资源 -> 加载数据 -> 生成摘要 -> 创建索引
+// 整体流程：Initialization  -> 准备资源 -> 加载数据 -> 生成摘要 -> Create 索引
 func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) error {
-	// 1. 解析任务并初始化上下文
+	// 1. 解析任务并Initialization 上下文
 	var payload DataTableSummaryPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		logger.Errorf(ctx, "failed to unmarshal table extract task payload: %v", err)
@@ -530,7 +530,7 @@ func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) err
 		return err
 	}
 
-	// 4. 索引到向量数据库
+	// 4. 索引到Vector Database
 	if err := s.indexToVectorDB(ctx, chunks, resources.retrieveEngine, resources.embeddingModel); err != nil {
 		s.cleanupOnFailure(ctx, resources, chunks, err)
 		return err
@@ -575,7 +575,7 @@ func (s *DataTableSummaryService) prepareResources(ctx context.Context, payload 
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
 
-	// 获取空间信息
+	// 获取Tenant workspace信息
 	tenantInfo, err := s.tenantService.GetTenantByID(ctx, payload.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get tenant: %v", err)
@@ -660,10 +660,10 @@ func (s *DataTableSummaryService) resolveFileServiceForKnowledge(ctx context.Con
 	return resolvedSvc
 }
 
-// processTableData 处理表格数据：加载 -> 分析 -> 生成摘要 -> 创建chunks
+// processTableData 处理表格数据：加载 -> 分析 -> 生成摘要 -> Create chunks
 // 思路：将数据处理的核心流程集中在一起，保持逻辑连贯性
 func (s *DataTableSummaryService) processTableData(ctx context.Context, resources *extractionResources) ([]*types.Chunk, error) {
-	// 创建DuckDB会话并加载数据
+	// Create DuckDB会话并加载数据
 	sessionID := fmt.Sprintf("table_summary_%s", resources.knowledge.ID)
 	fileSvc := s.resolveFileServiceForKnowledge(ctx, resources)
 	duckdbTool := tools.NewDataAnalysisTool(s.knowledgeBaseService, s.knowledgeService, s.tenantService, fileSvc, s.sqlDB, sessionID, s.storageResolver)
@@ -770,15 +770,15 @@ func (s *DataTableSummaryService) buildChunks(resources *extractionResources, ta
 	return chunks
 }
 
-// indexToVectorDB 将chunks索引到向量数据库
-// 思路：批量构建索引信息，统一索引，更新状态
+// indexToVectorDB 将chunks索引到Vector Database
+// 思路：批量构建索引信息，统一索引，Update 状态
 func (s *DataTableSummaryService) indexToVectorDB(
 	ctx context.Context,
 	chunks []*types.Chunk,
 	engine *retriever.CompositeRetrieveEngine,
 	embedder embedding.Embedder,
 ) error {
-	// 构建索引信息列表
+	// 构建索引信息List
 	indexInfoList := make([]*types.IndexInfo, 0, len(chunks))
 	for _, chunk := range chunks {
 		indexInfoList = append(indexInfoList, &types.IndexInfo{
@@ -805,7 +805,7 @@ func (s *DataTableSummaryService) indexToVectorDB(
 		return err
 	}
 
-	// 更新chunk状态为已索引
+	// Update chunk状态为已索引
 	for _, chunk := range chunks {
 		chunk.Status = int(types.ChunkStatusIndexed)
 	}
@@ -818,11 +818,11 @@ func (s *DataTableSummaryService) indexToVectorDB(
 }
 
 // cleanupOnFailure 索引失败时的清理工作
-// 思路：删除已创建的chunk和对应的向量索引，避免脏数据残留
+// 思路：Delete 已Create 的chunk和对应的向量索引，避免脏数据残留
 func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resources *extractionResources, chunks []*types.Chunk, indexErr error) {
 	logger.Warnf(ctx, "Starting cleanup due to failure: %v", indexErr)
 
-	// 1. 更新知识状态为失败
+	// 1. Update 知识状态为失败
 	before, after := *resources.knowledge, *resources.knowledge
 	after.ParseStatus = types.ParseStatusFailed
 	after.ErrorMessage = indexErr.Error()
@@ -837,7 +837,7 @@ func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resource
 		chunkIDs = append(chunkIDs, chunk.ID)
 	}
 
-	// 删除已创建的chunks
+	// Delete 已Create 的chunks
 	if len(chunkIDs) > 0 {
 		if err := s.chunkService.GetRepository().DeleteChunks(ctx, resources.knowledge.TenantID, chunkIDs); err != nil {
 			logger.Errorf(ctx, "Failed to delete chunks: %v", err)
@@ -846,7 +846,7 @@ func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resource
 		}
 	}
 
-	// 删除对应的向量索引
+	// Delete 对应的向量索引
 	if len(chunkIDs) > 0 {
 		if err := resources.retrieveEngine.DeleteBySourceIDList(
 			ctx, chunkIDs, resources.embeddingModel.GetDimensions(), types.KnowledgeBaseTypeDocument,

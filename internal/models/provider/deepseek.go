@@ -34,7 +34,7 @@ func (p *DeepSeekProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 DeepSeek provider 配置
+// ValidateConfig 验证 DeepSeek provider Configuration
 func (p *DeepSeekProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for DeepSeek provider")

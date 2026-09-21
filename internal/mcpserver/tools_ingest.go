@@ -75,7 +75,7 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	kb := kbs[0]
-	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleEditor)
+	ctx, err = s.scopedKBContext(ctx, kb, types.KBPermissionEditor)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -124,7 +124,7 @@ func (s *Server) handleUpdateDocument(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleEditor)
+	ctx, err = s.scopedKBContext(ctx, kb, types.KBPermissionEditor)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -160,7 +160,7 @@ func (s *Server) handleDeleteDocument(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleEditor)
+	ctx, err = s.scopedKBContext(ctx, kb, types.KBPermissionEditor)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

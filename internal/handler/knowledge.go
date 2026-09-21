@@ -28,13 +28,12 @@ import (
 
 // KnowledgeHandler processes HTTP requests related to knowledge resources
 type KnowledgeHandler struct {
-	cfg               *config.Config
-	kgService         interfaces.KnowledgeService
-	kbService         interfaces.KnowledgeBaseService
-	kbShareService    interfaces.KBShareService
-	agentShareService interfaces.AgentShareService
-	asynqClient       interfaces.TaskEnqueuer
-	spanRepo          repository.KnowledgeSpanRepository
+	cfg                  *config.Config
+	kgService            interfaces.KnowledgeService
+	kbService            interfaces.KnowledgeBaseService
+	kbAccessGrantService interfaces.KBAccessGrantService
+	asynqClient          interfaces.TaskEnqueuer
+	spanRepo             repository.KnowledgeSpanRepository
 }
 
 // NewKnowledgeHandler creates a new knowledge handler instance
@@ -42,19 +41,17 @@ func NewKnowledgeHandler(
 	cfg *config.Config,
 	kgService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
-	kbShareService interfaces.KBShareService,
-	agentShareService interfaces.AgentShareService,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 	asynqClient interfaces.TaskEnqueuer,
 	spanRepo repository.KnowledgeSpanRepository,
 ) *KnowledgeHandler {
 	return &KnowledgeHandler{
-		cfg:               cfg,
-		kgService:         kgService,
-		kbService:         kbService,
-		kbShareService:    kbShareService,
-		agentShareService: agentShareService,
-		asynqClient:       asynqClient,
-		spanRepo:          spanRepo,
+		cfg:                  cfg,
+		kgService:            kgService,
+		kbService:            kbService,
+		kbAccessGrantService: kbAccessGrantService,
+		asynqClient:          asynqClient,
+		spanRepo:             spanRepo,
 	}
 }
 
@@ -84,7 +81,7 @@ func (h *KnowledgeHandler) requireKBOwnershipOrAdmin(c *gin.Context, kbID string
 
 // validateKnowledgeBaseAccess validates access permissions to a knowledge base
 // using the ":id" URL path parameter. It delegates to validateKnowledgeBaseAccessWithKBID.
-func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
+func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.KnowledgeBase, string, uint64, types.KBPermission, error) {
 	kbID := secutils.SanitizeForLog(c.Param("id"))
 	return h.validateKnowledgeBaseAccessWithKBID(c, kbID)
 }
@@ -95,9 +92,9 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(
 	c *gin.Context,
 	kbID string,
-) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
+) (*types.KnowledgeBase, string, uint64, types.KBPermission, error) {
 	kbID = secutils.SanitizeForLog(kbID)
-	grant, err := resolveHandlerKBAccess(c, kbID, h.kbService, h.kbShareService, h.agentShareService)
+	grant, err := resolveHandlerKBAccess(c, kbID, h.kbService, h.kbAccessGrantService)
 	if err != nil {
 		return nil, kbID, 0, "", err
 	}
@@ -107,14 +104,13 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(
 func (h *KnowledgeHandler) validateKnowledgeBaseWriteAccessWithKBID(
 	c *gin.Context,
 	kbID string,
-) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
+) (*types.KnowledgeBase, string, uint64, types.KBPermission, error) {
 	grant, err := resolveHandlerKBAccessFor(
 		c,
 		kbID,
 		h.kbService,
-		h.kbShareService,
-		h.agentShareService,
-		types.OrgRoleEditor,
+		h.kbAccessGrantService,
+		types.KBPermissionEditor,
 	)
 	if err != nil {
 		return nil, kbID, 0, "", err
@@ -131,7 +127,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseWriteAccessWithKBID(
 func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 	c *gin.Context,
 	knowledgeID string,
-	requiredPermission types.OrgMemberRole,
+	requiredPermission types.KBPermission,
 ) (*types.Knowledge, context.Context, error) {
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
@@ -152,7 +148,7 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 		return knowledge, grant.Context(ctx), nil
 	}
 	kb := &types.KnowledgeBase{ID: knowledge.KnowledgeBaseID, TenantID: knowledge.TenantID}
-	grant, err := access.ResolveKB(ctx, request, kb, requiredPermission, h.kbShareService, h.agentShareService)
+	grant, err := access.ResolveKB(ctx, request, kb, requiredPermission, h.kbAccessGrantService)
 	if goerrors.Is(err, access.ErrForbidden) {
 		return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
 	}
@@ -233,20 +229,20 @@ func (h *KnowledgeHandler) enqueueKnowledgeListReparse(
 }
 
 // CreateKnowledgeFromFile godoc
-// @Summary      从文件创建知识
-// @Description  上传文件并创建知识条目
+// @Summary      从文件Create 知识
+// @Description  上传文件并Create 知识条目
 // @Tags         知识管理
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        id                path      string  true   "知识库ID"
+// @Param        id                path      string  true   "Knowledge BaseID"
 // @Param        file              formData  file    true   "上传的文件"
 // @Param        fileName          formData  string  false  "自定义文件名"
 // @Param        metadata          formData  string  false  "元数据JSON"
 // @Param        enable_multimodel formData  bool    false  "启用多模态处理"
-// @Param        tag_ids       formData  string  false  "分类ID列表，逗号分隔"
-// @Param        process_config    formData  string  false  "处理配置JSON（KnowledgeProcessOverrides）"
-// @Success      200               {object}  map[string]interface{}  "创建的知识"
-// @Failure      400               {object}  errors.AppError         "请求参数错误"
+// @Param        tag_ids       formData  string  false  "分类IDList ，逗号分隔"
+// @Param        process_config    formData  string  false  "处理Configuration JSON（KnowledgeProcessOverrides）"
+// @Success      200               {object}  map[string]interface{}  "Create 的知识"
+// @Failure      400               {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      409               {object}  map[string]interface{}  "文件重复"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -264,7 +260,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	ctx = types.WithExecutionTenant(c.Request.Context(), effectiveTenantID)
 
 	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
 		return
 	}
@@ -353,7 +349,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		}
 	}
 
-	// 获取分类ID列表（如果提供），逗号分隔，用于知识多标签分类管理
+	// 获取分类IDList （如果提供），逗号分隔，用于知识多标签分类管理
 	tagIDs := parseCommaSeparatedTagIDs(c.PostForm("tag_ids"))
 
 	channel := c.PostForm("channel")
@@ -387,15 +383,15 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 }
 
 // CreateKnowledgeFromURL godoc
-// @Summary      从URL创建知识
-// @Description  从指定URL抓取内容并创建知识条目。当提供 file_name/file_type 或 URL 路径含已知文件扩展名时，自动切换为文件下载模式
+// @Summary      从URLCreate 知识
+// @Description  从指定URL抓取内容并Create 知识条目。当提供 file_name/file_type 或 URL 路径含已知文件扩展名时，自动切换为文件下载模式
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "知识库ID"
+// @Param        id       path      string  true  "Knowledge BaseID"
 // @Param        request  body      object{url=string,file_name=string,file_type=string,enable_multimodel=bool,title=string,tag_ids=[]string}  true  "URL请求"
-// @Success      201      {object}  map[string]interface{}  "创建的知识"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Success      201      {object}  map[string]interface{}  "Create 的知识"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      409      {object}  map[string]interface{}  "URL重复"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -413,7 +409,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	ctx = types.WithExecutionTenant(c.Request.Context(), effectiveTenantID)
 
 	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
 		return
 	}
@@ -485,15 +481,15 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 }
 
 // CreateManualKnowledge godoc
-// @Summary      手工创建知识
+// @Summary      手工Create 知识
 // @Description  手工录入Markdown格式的知识内容
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                       true  "知识库ID"
+// @Param        id       path      string                       true  "Knowledge BaseID"
 // @Param        request  body      types.ManualKnowledgePayload true  "手工知识内容"
-// @Success      200      {object}  map[string]interface{}       "创建的知识"
-// @Failure      400      {object}  errors.AppError              "请求参数错误"
+// @Success      200      {object}  map[string]interface{}       "Create 的知识"
+// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/manual [post]
@@ -510,7 +506,7 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 	ctx = types.WithExecutionTenant(c.Request.Context(), effectiveTenantID)
 
 	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
 		return
 	}
@@ -544,14 +540,14 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 }
 
 // GetKnowledge godoc
-// @Summary      获取知识详情
-// @Description  根据ID获取知识条目详情
+// @Summary      获取知识Details
+// @Description  根据ID获取知识条目Details
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "知识ID"
-// @Success      200  {object}  map[string]interface{}  "知识详情"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Success      200  {object}  map[string]interface{}  "知识Details "
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      404  {object}  errors.AppError         "知识不存在"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -569,7 +565,7 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 	}
 
 	// Resolve knowledge and validate KB access (at least viewer)
-	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
+	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionViewer)
 	if err != nil {
 		c.Error(err)
 		return
@@ -614,7 +610,7 @@ func (h *KnowledgeHandler) GetKnowledgeSpans(c *gin.Context) {
 		return
 	}
 
-	knowledge, _, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
+	knowledge, _, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionViewer)
 	if err != nil {
 		c.Error(err)
 		return
@@ -858,12 +854,12 @@ func buildSpanTree(knowledgeID string, attempt int, rows []types.KnowledgeProces
 }
 
 // ListKnowledge godoc
-// @Summary      获取知识列表
-// @Description  获取知识库下的知识列表，支持分页和筛选
+// @Summary      获取知识List
+// @Description  获取Knowledge Base下的知识List ，支持分页和筛选
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id         path      string  true   "知识库ID"
+// @Param        id         path      string  true   "Knowledge BaseID"
 // @Param        page       query     int     false  "页码"
 // @Param        page_size  query     int     false  "每页数量"
 // @Param        tag_ids       query     string  false  "标签ID筛选，逗号分隔（OR语义）"
@@ -871,12 +867,12 @@ func buildSpanTree(knowledgeID string, attempt int, rows []types.KnowledgeProces
 // @Param        file_type     query     string  false  "文件类型筛选"
 // @Param        parse_status  query     string  false  "解析状态筛选 (pending/processing/completed/failed)"
 // @Param        source        query     string  false  "来源/渠道筛选 (web/api/feishu/notion/yuque/wechat/...，或 manual/url 按 type 过滤)"
-// @Param        start_time    query     string  false  "更新时间起点，RFC3339 格式"
-// @Param        end_time      query     string  false  "更新时间终点，RFC3339 格式"
-// @Param        folder_path      query     string  false  "文件夹路径筛选，空字符串表示知识库根目录；不传该参数则不按文件夹过滤"
+// @Param        start_time    query     string  false  "Update 时间起点，RFC3339 格式"
+// @Param        end_time      query     string  false  "Update 时间终点，RFC3339 格式"
+// @Param        folder_path      query     string  false  "文件夹路径筛选，空字符串表示Knowledge Base根目录；不传该Parameters 则不按文件夹过滤"
 // @Param        folder_recursive query     bool    false  "为 true 时同时返回子文件夹内的文档"
-// @Success      200        {object}  map[string]interface{}  "知识列表"
-// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Success      200        {object}  map[string]interface{}  "知识List "
+// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge [get]
@@ -979,14 +975,14 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 }
 
 // ListKnowledgeFolders godoc
-// @Summary      获取知识库文件夹目录树
-// @Description  返回知识库内由文件夹上传形成的目录树，包含每个文件夹的直接文档数与含子目录的总数
+// @Summary      获取Knowledge Base文件夹目录树
+// @Description  返回Knowledge Base内由文件夹上传形成的目录树，包含每个文件夹的直接文档数与含子目录的总数
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识库ID"
+// @Param        id   path      string  true  "Knowledge BaseID"
 // @Success      200  {object}  map[string]interface{}  "目录树"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/folders [get]
@@ -1029,13 +1025,13 @@ type MoveKnowledgeToFolderRequest struct {
 
 // MoveKnowledgeToFolder godoc
 // @Summary      移动知识到文件夹
-// @Description  批量修改知识条目所属文件夹。文件夹由路径推导而来，因此目标路径不存在时会自动创建；空路径表示知识库顶层。仅调整归类，不会重新解析文档
+// @Description  批量修改知识条目所属文件夹。文件夹由路径推导而来，因此目标路径不存在时会自动Create ；空路径表示Knowledge Base顶层。仅调整归类，不会重新解析文档
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        request  body      MoveKnowledgeToFolderRequest  true  "移动请求"
 // @Success      200      {object}  map[string]interface{}        "移动成功"
-// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError               "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1107,10 +1103,10 @@ type RenameKnowledgeFolderRequest struct {
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                        true  "知识库ID"
+// @Param        id       path      string                        true  "Knowledge BaseID"
 // @Param        request  body      RenameKnowledgeFolderRequest  true  "重命名请求"
 // @Success      200      {object}  map[string]interface{}        "重命名成功"
-// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError               "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1129,7 +1125,7 @@ func (h *KnowledgeHandler) RenameKnowledgeFolder(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("No permission to modify knowledge"))
 		return
 	}
@@ -1188,7 +1184,7 @@ func (h *KnowledgeHandler) requireKnowledgeWriteAccess(
 	if err != nil {
 		return "", 0, err
 	}
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		return "", 0, errors.NewForbiddenError("No permission to modify knowledge")
 	}
 	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
@@ -1224,15 +1220,15 @@ func (h *KnowledgeHandler) requireKnowledgeInKB(
 }
 
 // DeleteKnowledge godoc
-// @Summary      删除知识
-// @Description  根据ID异步删除知识条目。请求会被入队到与批量删除相同的异步管道（asynq）；
-// @Description  接口返回 200 仅表示任务已提交（响应 data.task_id 为任务 ID），实际删除由后台 worker 完成。
+// @Summary      Delete 知识
+// @Description  根据ID异步Delete 知识条目。请求会被入队到与批量Delete 相同的异步管道（asynq）；
+// @Description  接口返回 200 仅表示任务已提交（响应 data.task_id 为任务 ID），实际Delete 由后台 worker 完成。
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "知识ID"
 // @Success      200  {object}  map[string]interface{}  "任务已提交，返回 task_id"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id} [delete]
@@ -1248,7 +1244,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		return
 	}
 
-	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1294,14 +1290,14 @@ type BatchDeleteKnowledgeRequest struct {
 }
 
 // BatchDeleteKnowledge godoc
-// @Summary      批量删除知识
-// @Description  按 ID 列表批量删除单个知识库下的多个知识条目
+// @Summary      批量Delete 知识
+// @Description  按 ID List 批量Delete 单个Knowledge Base下的多个知识条目
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        request  body      BatchDeleteKnowledgeRequest  true  "批量删除请求"
-// @Success      200      {object}  map[string]interface{}       "删除成功"
-// @Failure      400      {object}  errors.AppError              "请求参数错误"
+// @Param        request  body      BatchDeleteKnowledgeRequest  true  "批量Delete 请求"
+// @Success      200      {object}  map[string]interface{}       "Delete 成功"
+// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError              "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1332,7 +1328,7 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("No permission to delete knowledge"))
 		return
 	}
@@ -1388,14 +1384,14 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 }
 
 // ClearKnowledgeBaseContents godoc
-// @Summary      清空知识库内容
-// @Description  删除知识库下的所有知识条目（异步任务）。知识库本身保留，仅清空其中的内容
+// @Summary      清空Knowledge Base内容
+// @Description  Delete Knowledge Base下的所有知识条目（异步任务）。Knowledge Base本身保留，仅清空其中的内容
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识库ID"
+// @Param        id   path      string  true  "Knowledge BaseID"
 // @Success      200  {object}  map[string]interface{}  "清空任务已提交"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      403  {object}  errors.AppError         "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1412,7 +1408,7 @@ func (h *KnowledgeHandler) ClearKnowledgeBaseContents(c *gin.Context) {
 
 	// Only owner (admin with matching tenant) can clear knowledge base contents
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
-	if kb.TenantID != tenantID || permission != types.OrgRoleAdmin {
+	if kb.TenantID != tenantID || permission != types.KBPermissionAdmin {
 		c.Error(errors.NewForbiddenError("Only knowledge base owner can clear contents"))
 		return
 	}
@@ -1470,7 +1466,7 @@ func (h *KnowledgeHandler) ClearKnowledgeBaseContents(c *gin.Context) {
 // @Produce      application/octet-stream
 // @Param        id   path      string  true  "知识ID"
 // @Success      200  {file}    file    "文件内容"
-// @Failure      400  {object}  errors.AppError  "请求参数错误"
+// @Failure      400  {object}  errors.AppError  "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/download [get]
@@ -1489,7 +1485,7 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	// Keep a handler-level Editor check in addition to the route guard. The
 	// original file is more sensitive than parsed-content reads and must not
 	// be downloadable through a read-only organization share.
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1514,13 +1510,13 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 
 // PreviewKnowledgeFile godoc
 // @Summary      预览知识文件
-// @Description  返回知识条目关联的原始文件，Content-Type 根据文件类型设置，用于浏览器内嵌预览
+// @Description  返回知识条目关联的原始文件，Content-Type 根据文件类型Settings ，用于浏览器内嵌预览
 // @Tags         知识管理
 // @Accept       json
 // @Produce      application/pdf,image/jpeg,image/png,text/plain
 // @Param        id   path      string  true  "知识ID"
 // @Success      200  {file}    file    "文件内容"
-// @Failure      400  {object}  errors.AppError  "请求参数错误"
+// @Failure      400  {object}  errors.AppError  "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/preview [get]
@@ -1533,7 +1529,7 @@ func (h *KnowledgeHandler) PreviewKnowledgeFile(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionViewer)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1554,23 +1550,22 @@ func (h *KnowledgeHandler) PreviewKnowledgeFile(c *gin.Context) {
 
 // GetKnowledgeBatchRequest defines parameters for batch knowledge retrieval
 type GetKnowledgeBatchRequest struct {
-	IDs                 []string `form:"ids" binding:"required"` // List of knowledge IDs
-	KBID                string   `form:"kb_id"`                  // Optional: scope to this KB (validates access and uses effective tenant for shared KB)
-	AgentID             string   `form:"agent_id"`               // Optional: when using a shared agent, use agent's tenant for retrieval (validates shared agent access)
-	AgentSourceTenantID uint64   `form:"agent_source_tenant_id"` // Optional source selector, verified against the share relation
+	IDs  []string `form:"ids" binding:"required"` // List of knowledge IDs
+	KBID string   `form:"kb_id"`                  // Optional: scope to this KB (validates access and uses effective tenant for shared KB)
+
 }
 
 // GetKnowledgeBatch godoc
 // @Summary      批量获取知识
-// @Description  根据ID列表批量获取知识条目。可选 kb_id：指定时按该知识库校验权限并用于共享知识库的空间解析；可选 agent_id：使用共享智能体时传此参数，后端按智能体所属空间查询（用于刷新后恢复共享知识库下的文件）
+// @Description  根据IDList 批量获取知识条目。可选 kb_id：指定时按该Knowledge Base校验权限并用于共享Knowledge Base的Tenant workspace解析；可选 agent_id：使用共享智能体时传此Parameters ，后端按智能体所属Tenant workspaceQuery （用于刷新后恢复共享Knowledge Base下的文件）
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        ids       query     []string  true   "知识ID列表"
-// @Param        kb_id     query     string   false  "可选，知识库ID（用于共享知识库时指定范围）"
-// @Param        agent_id  query     string   false  "可选，共享智能体ID（用于按智能体空间批量拉取文件详情）"
-// @Success      200       {object}  map[string]interface{}  "知识列表"
-// @Failure      400       {object}  errors.AppError        "请求参数错误"
+// @Param        ids       query     []string  true   "知识IDList "
+// @Param        kb_id     query     string   false  "可选，Knowledge BaseID（用于共享Knowledge Base时指定范围）"
+// @Param        agent_id  query     string   false  "可选，共享智能体ID（用于按智能体Tenant workspace批量拉取文件Details ）"
+// @Success      200       {object}  map[string]interface{}  "知识List "
+// @Failure      400       {object}  errors.AppError        "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/batch [get]
@@ -1589,30 +1584,6 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-	if _, parseErr := types.ParseAgentSourceTenantID(c.Query(types.AgentSourceTenantIDParam)); parseErr != nil {
-		c.Error(errors.NewBadRequestError(parseErr.Error()))
-		return
-	}
-
-	// A nil scope means no agent selector. Every resolved scope, including
-	// mode=all, binds results to the authorized agent's source tenant.
-	var agentScope *types.SharedAgentKBScope
-	if agentID := secutils.SanitizeForLog(req.AgentID); agentID != "" {
-		agent, err := resolveSharedAgentForRequest(c, agentID, h.agentShareService)
-		if err != nil {
-			_ = c.Error(err)
-			return
-		}
-		ctx = access.WithSharedAgent(ctx, agent)
-		scope := types.NewSharedAgentKBScope(agent)
-		agentScope = &scope
-		effectiveTenantID = agent.TenantID
-		if scope.IsEmpty() {
-			c.JSON(http.StatusOK, gin.H{"success": true, "data": []*types.Knowledge{}})
-			return
-		}
-	}
-
 	var knowledges []*types.Knowledge
 	var err error
 
@@ -1626,10 +1597,6 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 			_ = c.Error(accessErr)
 			return
 		}
-		if agentScope != nil && !agentScope.Allows(kbID, effID) {
-			c.Error(errors.NewForbiddenError("Knowledge base not accessible through this agent"))
-			return
-		}
 		scopeKBID = kbID
 		effectiveTenantID = effID
 		ctx = types.WithExecutionTenant(c.Request.Context(), effectiveTenantID)
@@ -1637,10 +1604,6 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 		logger.Infof(ctx, "Batch retrieving knowledge with kb_id, effective tenant ID: %d, IDs count: %d",
 			effectiveTenantID, len(req.IDs))
 
-		knowledges, err = h.kgService.GetKnowledgeBatch(ctx, effectiveTenantID, req.IDs)
-	} else if agentScope != nil {
-		// Keep the authorized agent's read scope and the original caller.
-		ctx = types.WithExecutionTenant(ctx, effectiveTenantID)
 		knowledges, err = h.kgService.GetKnowledgeBatch(ctx, effectiveTenantID, req.IDs)
 	} else {
 		knowledges, err = h.kgService.GetKnowledgeBatchWithSharedAccess(ctx, effectiveTenantID, req.IDs)
@@ -1651,14 +1614,11 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 		return
 	}
 
-	// Build the effective allowed-KB set from explicit kb_id, shared agent
-	// scope, and per-API-key KB restrictions.
+	// Build the effective allowed-KB set from explicit kb_id and
+	// per-API-key KB restrictions.
 	var allowedKBSet map[string]bool
 	if scopeKBID != "" {
 		allowedKBSet = map[string]bool{scopeKBID: true}
-	}
-	if agentScope != nil {
-		knowledges = filterKnowledgeByAgentScope(knowledges, *agentScope)
 	}
 
 	if apiKeySet := tenantAPIKeyAllowedKBSet(ctx); apiKeySet != nil {
@@ -1686,15 +1646,15 @@ type UpdateKnowledgeRequest struct {
 }
 
 // UpdateKnowledge godoc
-// @Summary      更新知识
-// @Description  部分更新知识条目（标题/描述/自定义元数据）；未传字段保持不变，显式传空 description 可清空摘要
+// @Summary      Update 知识
+// @Description  部分Update 知识条目（标题/描述/自定义元数据）；未传字段保持不变，显式传空 description 可清空摘要
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                   true  "知识ID"
-// @Param        request  body      UpdateKnowledgeRequest   true  "更新字段（均可选）"
-// @Success      200      {object}  map[string]interface{}  "更新成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      UpdateKnowledgeRequest   true  "Update 字段（均可选）"
+// @Success      200      {object}  map[string]interface{}  "Update 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id} [put]
@@ -1708,7 +1668,7 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1760,7 +1720,7 @@ func (h *KnowledgeHandler) RegenerateKnowledgeSummary(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1798,15 +1758,15 @@ func (h *KnowledgeHandler) RegenerateKnowledgeSummary(c *gin.Context) {
 }
 
 // UpdateManualKnowledge godoc
-// @Summary      更新手工知识
-// @Description  更新手工录入的Markdown知识内容
+// @Summary      Update 手工知识
+// @Description  Update 手工录入的Markdown知识内容
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                       true  "知识ID"
 // @Param        request  body      types.ManualKnowledgePayload true  "手工知识内容"
-// @Success      200      {object}  map[string]interface{}       "更新后的知识"
-// @Failure      400      {object}  errors.AppError              "请求参数错误"
+// @Success      200      {object}  map[string]interface{}       "Update 后的知识"
+// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/manual/{id} [put]
@@ -1821,7 +1781,7 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1856,14 +1816,14 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 
 // ReparseKnowledge godoc
 // @Summary      重新解析知识
-// @Description  删除知识中现有的文档内容并重新解析，使用异步任务方式处理
+// @Description  Delete 知识中现有的文档内容并重新解析，使用异步任务方式处理
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "知识ID"
-// @Param        body body      object  false  "可选的处理配置覆盖：{\"process_config\": KnowledgeProcessOverrides}"
+// @Param        body body      object  false  "可选的处理Configuration 覆盖：{\"process_config\": KnowledgeProcessOverrides}"
 // @Success      200  {object}  map[string]interface{}  "重新解析任务已提交"
-// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
 // @Failure      403  {object}  errors.AppError         "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -1880,7 +1840,7 @@ func (h *KnowledgeHandler) ReparseKnowledge(c *gin.Context) {
 	}
 
 	// Validate KB access with editor permission (reparse requires write access)
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1925,7 +1885,7 @@ func (h *KnowledgeHandler) ReparseKnowledge(c *gin.Context) {
 
 // CancelKnowledgeParse godoc
 // @Summary      取消知识解析
-// @Description  取消进行中的知识解析任务。当前已写入的 chunk / 索引保留，可通过 reparse 接口重新触发解析。已完成 / 已失败 / 删除中的知识不支持取消。
+// @Description  取消进行中的知识解析任务。当前已写入的 chunk / 索引保留，可通过 reparse 接口重新触发解析。已完成 / 已失败 / Delete 中的知识不支持取消。
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
@@ -1949,7 +1909,7 @@ func (h *KnowledgeHandler) CancelKnowledgeParse(c *gin.Context) {
 	}
 
 	// Editor permission — same gate as ReparseKnowledge / DeleteKnowledge.
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -1982,14 +1942,14 @@ type knowledgeTagBatchRequest struct {
 }
 
 // UpdateKnowledgeTagBatch godoc
-// @Summary      批量更新知识标签
-// @Description  批量更新知识条目的标签。可选 kb_id：指定时按该知识库校验编辑权限并用于共享知识库的空间解析
+// @Summary      批量Update 知识标签
+// @Description  批量Update 知识条目的标签。可选 kb_id：指定时按该Knowledge Base校验编辑权限并用于共享Knowledge Base的Tenant workspace解析
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "标签更新请求（updates 必填，kb_id 可选）"
-// @Success      200      {object}  map[string]interface{}  "更新成功"
-// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Param        request  body      object  true  "标签Update 请求（updates 必填，kb_id 可选）"
+// @Success      200      {object}  map[string]interface{}  "Update 成功"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/tags [put]
@@ -2018,7 +1978,7 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 			c.Error(err)
 			return
 		}
-		if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 			c.Error(errors.NewForbiddenError("No permission to update knowledge tags"))
 			return
 		}
@@ -2032,7 +1992,7 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 			break
 		}
 		if firstKnowledgeID != "" {
-			knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, firstKnowledgeID, types.OrgRoleEditor)
+			knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, firstKnowledgeID, types.KBPermissionEditor)
 			if err != nil {
 				c.Error(err)
 				return
@@ -2057,16 +2017,16 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 }
 
 // UpdateImageInfo godoc
-// @Summary      更新图像信息
-// @Description  更新知识分块的图像信息
+// @Summary      Update 图像信息
+// @Description  Update 知识分块的图像信息
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id        path      string  true  "知识ID"
 // @Param        chunk_id  path      string  true  "分块ID"
 // @Param        request   body      object{image_info=string}  true  "图像信息"
-// @Success      200       {object}  map[string]interface{}     "更新成功"
-// @Failure      400       {object}  errors.AppError            "请求参数错误"
+// @Success      200       {object}  map[string]interface{}     "Update 成功"
+// @Failure      400       {object}  errors.AppError            "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/image/{id}/{chunk_id} [put]
@@ -2087,7 +2047,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
 	if err != nil {
 		c.Error(err)
 		return
@@ -2174,71 +2134,6 @@ func (h *KnowledgeHandler) SearchKnowledge(c *gin.Context) {
 		}
 	}
 
-	agentID := c.Query("agent_id")
-	if agentID != "" {
-		agent, err := resolveSharedAgentForRequest(c, agentID, h.agentShareService)
-		if err != nil {
-			_ = c.Error(err)
-			return
-		}
-		sourceTenantID := agent.TenantID
-		ctx = access.WithSharedAgent(ctx, agent)
-		scope := types.NewSharedAgentKBScope(agent)
-		if scope.IsEmpty() {
-			c.JSON(http.StatusOK, gin.H{
-				"success":  true,
-				"data":     []interface{}{},
-				"has_more": false,
-				"total":    0,
-			})
-			return
-		}
-		var scopes []types.KnowledgeSearchScope
-		if !scope.IsAll() {
-			for _, kbID := range scope.IDs() {
-				if kbID != "" {
-					scopes = append(scopes, types.KnowledgeSearchScope{TenantID: sourceTenantID, KBID: kbID})
-				}
-			}
-		}
-		if scope.IsAll() {
-			kbs, err := h.kbService.ListKnowledgeBasesByTenantID(ctx, sourceTenantID)
-			if err != nil {
-				logger.ErrorWithFields(ctx, err, nil)
-				c.Error(errors.NewInternalServerError("Failed to list knowledge bases").WithDetails(err.Error()))
-				return
-			}
-			for _, kb := range filterKnowledgeBasesForSharedAgent(kbs, agent) {
-				if kb.Type == types.KnowledgeBaseTypeDocument {
-					scopes = append(scopes, types.KnowledgeSearchScope{TenantID: kb.TenantID, KBID: kb.ID})
-				}
-			}
-		}
-		scopes = filterKnowledgeSearchScopesForAPIKey(ctx, scopes)
-		if len(scopes) == 0 {
-			c.JSON(http.StatusOK, gin.H{
-				"success":  true,
-				"data":     []interface{}{},
-				"has_more": false,
-				"total":    0,
-			})
-			return
-		}
-		knowledges, hasMore, total, err := h.kgService.SearchKnowledgeForScopes(ctx, scopes, keyword, offset, limit, fileTypes)
-		if err != nil {
-			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to search knowledge").WithDetails(err.Error()))
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"success":  true,
-			"data":     knowledges,
-			"has_more": hasMore,
-			"total":    total,
-		})
-		return
-	}
-
 	if scopes, restricted := tenantAPIKeySearchScopes(ctx); restricted {
 		if len(scopes) == 0 {
 			c.JSON(http.StatusOK, gin.H{
@@ -2300,14 +2195,14 @@ type MoveKnowledgeResponse struct {
 // MoveKnowledge moves knowledge items from one knowledge base to another (async task).
 //
 // MoveKnowledge godoc
-// @Summary      移动知识到其他知识库
-// @Description  将一条或多条知识从源知识库移动到目标知识库（异步），返回任务 ID 用于查询进度
+// @Summary      移动知识到其他Knowledge Base
+// @Description  将一条或多条知识从源Knowledge Base移动到目标Knowledge Base（异步），返回任务 ID 用于Query 进度
 // @Tags         知识
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.MoveKnowledgeRequest  true  "{source_kb_id, target_kb_id, knowledge_ids}"
 // @Success      200      {object}  handler.MoveKnowledgeResponse  "任务信息"
-// @Failure      400      {object}  errors.AppError                "请求参数错误"
+// @Failure      400      {object}  errors.AppError                "请求Parameters 错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/move [post]
@@ -2376,11 +2271,11 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 	}
 
 	// Resolve explicit write grants independently for both body IDs.
-	if _, err := resolveHandlerKBAccessFor(c, req.SourceKBID, h.kbService, nil, nil, types.OrgRoleEditor); err != nil {
+	if _, err := resolveHandlerKBAccessFor(c, req.SourceKBID, h.kbService, h.kbAccessGrantService, types.KBPermissionEditor); err != nil {
 		_ = c.Error(err)
 		return
 	}
-	if _, err := resolveHandlerKBAccessFor(c, req.TargetKBID, h.kbService, nil, nil, types.OrgRoleEditor); err != nil {
+	if _, err := resolveHandlerKBAccessFor(c, req.TargetKBID, h.kbService, h.kbAccessGrantService, types.KBPermissionEditor); err != nil {
 		_ = c.Error(err)
 		return
 	}
@@ -2500,7 +2395,7 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 //
 // GetKnowledgeMoveProgress godoc
 // @Summary      获取知识移动进度
-// @Description  按任务 ID 查询移动进度
+// @Description  按任务 ID Query 移动进度
 // @Tags         知识
 // @Produce      json
 // @Param        task_id  path      string                       true  "移动任务 ID"
@@ -2581,13 +2476,13 @@ type batchReparseKnowledgeRequest struct {
 
 // BatchReparseKnowledge godoc
 // @Summary      批量重新解析知识
-// @Description  按 ID 列表批量重新解析单个知识库下的多个知识条目
+// @Description  按 ID List 批量重新解析单个Knowledge Base下的多个知识条目
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        request  body      batchReparseKnowledgeRequest  true  "批量重解析请求"
 // @Success      200      {object}  map[string]interface{}        "任务已提交"
-// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
 // @Failure      403      {object}  errors.AppError               "权限不足"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -2631,7 +2526,7 @@ func (h *KnowledgeHandler) BatchReparseKnowledge(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(errors.NewForbiddenError("no permission to reparse knowledge in this kb"))
 		return
 	}

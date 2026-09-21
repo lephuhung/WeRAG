@@ -869,9 +869,6 @@ func (s *agentService) registerTools(
 		allowedTools = tools.DefaultAllowedTools()
 		logger.Infof(ctx, "Using default allowed tools: %v", allowedTools)
 	}
-	if config.SharedAgentReadOnly {
-		allowedTools = withoutWikiWriteTools(allowedTools)
-	}
 
 	// ---- Capability detection from SearchTargets ----
 	var hasVectorKB bool
