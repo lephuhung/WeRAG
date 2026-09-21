@@ -25,7 +25,7 @@ func TestMCPServiceResponse_OmitsSecrets(t *testing.T) {
 			CustomHeaders: map[string]string{"X-Trace": "abc"},
 		},
 	}
-	body, err := json.Marshal(NewMCPServiceResponse(adminContext(), svc))
+	body, err := json.Marshal(NewMCPServiceResponse(ownerContext(), svc))
 	assert.NoError(t, err)
 	s := string(body)
 	assert.NotContains(t, s, "sk-real-api-key-do-not-leak",

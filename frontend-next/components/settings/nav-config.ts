@@ -44,18 +44,18 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     labelKey: "settingsNav.groups.workspace",
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
-      { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "member" },
-      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "member" },
-      { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "member" },
-      { key: "chathistory", fallbackLabel: "Chat history", minRole: "admin" },
-      { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "admin" },
+      { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
+      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "owner" },
+      { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "admin" },
+      { key: "chathistory", fallbackLabel: "Chat history", minRole: "owner" },
+      { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "owner" },
     ],
   },
   {
     key: "models_runtime",
     labelKey: "settingsNav.groups.models",
     items: [
-      { key: "models", labelKey: "settingsNav.models", fallbackLabel: "Models", minRole: "member" },
+      { key: "models", labelKey: "settingsNav.models", fallbackLabel: "Models", minRole: "owner" },
       { key: "ollama", fallbackLabel: "Ollama", minRole: "system" },
       { key: "weknoracloud", fallbackLabel: "WeRAG Cloud", minRole: "system" },
     ],
@@ -64,13 +64,15 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     key: "data_extensions",
     labelKey: "settingsNav.groups.data",
     items: [
-      { key: "websearch", labelKey: "settingsNav.websearch", fallbackLabel: "Web search", minRole: "admin" },
-      { key: "vectorstore", labelKey: "settingsNav.vectorstore", fallbackLabel: "Vector store engine", minRole: "admin" },
-      { key: "parser", labelKey: "settingsNav.parser", fallbackLabel: "Parser engine", minRole: "admin" },
-      { key: "storage", labelKey: "settingsNav.storage", fallbackLabel: "Storage engine", minRole: "admin" },
-      { key: "sandbox", labelKey: "settingsNav.sandbox", fallbackLabel: "Sandbox", minRole: "admin" },
-      { key: "skills", labelKey: "settingsNav.skills", fallbackLabel: "Skills", minRole: "admin" },
-      { key: "mcp", labelKey: "settingsNav.mcp", fallbackLabel: "MCP", minRole: "admin" },
+      /* These keys redirect to /platform/system/* (SECTION_ROUTES), which is
+       * platform-level — gate them on system admin, not tenant owner. */
+      { key: "websearch", labelKey: "settingsNav.websearch", fallbackLabel: "Web search", minRole: "system" },
+      { key: "vectorstore", labelKey: "settingsNav.vectorstore", fallbackLabel: "Vector store engine", minRole: "system" },
+      { key: "parser", labelKey: "settingsNav.parser", fallbackLabel: "Parser engine", minRole: "system" },
+      { key: "storage", labelKey: "settingsNav.storage", fallbackLabel: "Storage engine", minRole: "system" },
+      { key: "sandbox", labelKey: "settingsNav.sandbox", fallbackLabel: "Sandbox", minRole: "system" },
+      { key: "skills", labelKey: "settingsNav.skills", fallbackLabel: "Skills", minRole: "system" },
+      { key: "mcp", labelKey: "settingsNav.mcp", fallbackLabel: "MCP", minRole: "system" },
     ],
   },
   {

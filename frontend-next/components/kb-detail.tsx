@@ -23,6 +23,7 @@ import {
 } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { useTenantRole } from "@/lib/auth";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
@@ -58,6 +59,7 @@ type MainTab = "docs-wiki" | "graph";
 
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
+  const { isOwner } = useTenantRole();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
@@ -122,12 +124,16 @@ export function KbDetail({ kbId }: { kbId: string }) {
             </div>
           </div>
           <div className="flex gap-3">
-            <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
-              <IconSettings className="h-4 w-4" /> Settings
-            </button>
-            <button className="btn btn-outline" onClick={() => setUploadOpen(true)}>
-              <IconPlus className="h-4 w-4" /> Upload files
-            </button>
+            {isOwner && (
+              <>
+                <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
+                  <IconSettings className="h-4 w-4" /> Settings
+                </button>
+                <button className="btn btn-outline" onClick={() => setUploadOpen(true)}>
+                  <IconPlus className="h-4 w-4" /> Upload files
+                </button>
+              </>
+            )}
             <Link
               href={`/platform/knowledge-bases/${kbId}/creatChat`}
               className="btn btn-primary"
@@ -215,12 +221,14 @@ export function KbDetail({ kbId }: { kbId: string }) {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="caption text-muted">{filtered.length} files</span>
-                  <button
-                    onClick={() => setUploadOpen(true)}
-                    className="btn btn-outline btn-sm h-8"
-                  >
-                    <IconPlus className="h-3.5 w-3.5" /> Upload
-                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => setUploadOpen(true)}
+                      className="btn btn-outline btn-sm h-8"
+                    >
+                      <IconPlus className="h-3.5 w-3.5" /> Upload
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -316,9 +324,11 @@ export function KbDetail({ kbId }: { kbId: string }) {
                   <IconDoc className="mb-2 h-8 w-8 text-muted-soft" />
                   <p className="body-sm font-medium text-ink">Chưa có tài liệu nào</p>
                   <p className="caption mt-1 text-muted">Tải lên tài liệu để hệ thống bắt đầu xử lý và xây dựng wiki.</p>
-                  <button onClick={() => setUploadOpen(true)} className="btn btn-primary btn-sm mt-4">
-                    <IconPlus className="h-3.5 w-3.5" /> Tải lên tài liệu
-                  </button>
+                  {isOwner && (
+                    <button onClick={() => setUploadOpen(true)} className="btn btn-primary btn-sm mt-4">
+                      <IconPlus className="h-3.5 w-3.5" /> Tải lên tài liệu
+                    </button>
+                  )}
                 </div>
               )}
 

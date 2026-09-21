@@ -24,7 +24,7 @@ func TestModelResponse_OmitsSecrets(t *testing.T) {
 			Provider:  "openai",
 		},
 	}
-	body, err := json.Marshal(NewModelResponse(adminContext(), m))
+	body, err := json.Marshal(NewModelResponse(ownerContext(), m))
 	assert.NoError(t, err)
 	s := string(body)
 	assert.NotContains(t, s, "sk-real-api-key-do-not-leak")

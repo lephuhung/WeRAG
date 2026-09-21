@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconPlus, IconSearch } from "@/components/icons";
+import { IconChevronDown, IconPlus, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
@@ -153,6 +153,12 @@ export default function SystemUsers() {
 
   const WORKSPACE_ROLES: TenantRole[] = ["owner", "admin", "member"];
 
+  const ROLE_BADGE_STYLES: Record<TenantRole, string> = {
+    owner: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:border-amber-500/50",
+    admin: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:border-sky-500/50",
+    member: "border-hairline bg-surface-strong/70 text-body hover:border-hairline-strong",
+  };
+
   const changeWorkspaceRole = (u: SystemAdminUser, tenantId: number, role: TenantRole) => {
     void run(() => updateSystemUserRole(tenantId, u.id, role));
   };
@@ -207,15 +213,15 @@ export default function SystemUsers() {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse text-left">
+      <div className="card overflow-x-auto shadow-sm">
+        <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
-            <tr className="caption-uppercase border-b border-hairline text-muted-soft">
-              <th className="px-5 py-3 font-medium">User</th>
-              <th className="w-[380px] px-5 py-3 font-medium">Workspaces</th>
+            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
+              <th className="min-w-[260px] px-5 py-3 font-medium">User</th>
+              <th className="w-[340px] px-5 py-3 font-medium">Workspaces</th>
               <th className="w-28 px-5 py-3 font-medium">Status</th>
               <th className="w-32 px-5 py-3 font-medium">Created</th>
-              <th className="w-48 px-5 py-3 font-medium text-right">{t("users.actions")}</th>
+              <th className="w-[280px] px-5 py-3 font-medium text-right">{t("users.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
@@ -223,21 +229,23 @@ export default function SystemUsers() {
               <tr key={u.id} className="transition-colors hover:bg-surface-strong/20">
                 <td className="px-5 py-3.5 align-middle">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-medium text-ink">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-semibold text-ink border border-hairline">
                       {initials(u.username)}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
                         <span className="truncate">{u.username}</span>
                         {u.is_system_admin ? (
-                          <span className="badge-pill shrink-0 bg-surface-dark text-on-dark">
+                          <span className="badge-pill shrink-0 bg-surface-dark text-on-dark text-[10px] py-0.5 px-2">
                             {t("users.superadmin")}
                           </span>
                         ) : (
-                          <span className="badge-pill shrink-0">User</span>
+                          <span className="badge-pill shrink-0 bg-surface-strong text-muted-soft text-[10px] py-0.5 px-2">
+                            User
+                          </span>
                         )}
                         {u.id === meId && (
-                          <span className="caption shrink-0 text-muted-soft">(you)</span>
+                          <span className="caption shrink-0 text-muted-soft font-normal">(you)</span>
                         )}
                       </div>
                       <div className="caption truncate text-muted">{u.email}</div>
@@ -250,28 +258,38 @@ export default function SystemUsers() {
                       {u.memberships.map((m) => (
                         <div
                           key={m.tenant_id}
-                          className="flex items-center justify-between gap-2"
+                          className="flex items-center justify-between gap-2.5 rounded-lg border border-hairline/80 bg-surface-card/70 px-2.5 py-1.5 transition-colors hover:border-hairline-strong hover:bg-surface-strong/20"
                         >
-                          <span
-                            className="caption max-w-[220px] truncate text-body"
-                            title={m.tenant_name}
-                          >
-                            {m.tenant_name}
-                          </span>
-                          <select
-                            className="input h-6 w-[92px] shrink-0 px-1.5 py-0 text-[12px]"
-                            value={m.role}
-                            disabled={busy}
-                            onChange={(e) =>
-                              changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
-                            }
-                          >
-                            {WORKSPACE_ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-surface-strong text-[10px] font-semibold text-muted">
+                              {m.tenant_name.charAt(0).toUpperCase()}
+                            </span>
+                            <span
+                              className="caption font-medium text-ink truncate max-w-[170px]"
+                              title={m.tenant_name}
+                            >
+                              {m.tenant_name}
+                            </span>
+                          </div>
+                          <div className="relative shrink-0 inline-flex items-center">
+                            <select
+                              className={`h-6 appearance-none rounded-md border pl-2 pr-5 text-[11px] font-medium capitalize cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-brand/40 ${
+                                ROLE_BADGE_STYLES[m.role] ?? ROLE_BADGE_STYLES.member
+                              }`}
+                              value={m.role}
+                              disabled={busy}
+                              onChange={(e) =>
+                                changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
+                              }
+                            >
+                              {WORKSPACE_ROLES.map((r) => (
+                                <option key={r} value={r} className="bg-surface text-ink capitalize">
+                                  {r}
+                                </option>
+                              ))}
+                            </select>
+                            <IconChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 opacity-50" />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -280,7 +298,16 @@ export default function SystemUsers() {
                   )}
                 </td>
                 <td className="px-5 py-3.5 align-middle whitespace-nowrap">
-                  <span className="caption text-muted">
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                      u.is_active ? "text-emerald-700 dark:text-emerald-400" : "text-muted"
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        u.is_active ? "bg-emerald-500" : "bg-muted-soft"
+                      }`}
+                    />
                     {u.is_active ? "Active" : "Disabled"}
                   </span>
                 </td>
@@ -290,10 +317,14 @@ export default function SystemUsers() {
                   </span>
                 </td>
                 <td className="px-5 py-3.5 align-middle text-right whitespace-nowrap">
-                  <div className="flex flex-col items-end gap-1.5">
+                  <div className="flex items-center justify-end gap-2">
                     {!(u.is_system_admin && u.id === meId) && (
                       <button
-                        className={`btn btn-outline btn-sm ${u.is_system_admin ? "text-error" : ""}`}
+                        className={`btn btn-outline btn-sm h-7.5 px-3 text-xs font-medium transition-colors ${
+                          u.is_system_admin
+                            ? "text-error border-error/30 hover:border-error hover:bg-error/10"
+                            : "hover:bg-surface-strong/60"
+                        }`}
                         onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
                         disabled={busy}
                         title={
@@ -307,7 +338,7 @@ export default function SystemUsers() {
                     )}
                     {!u.is_system_admin && (
                       <button
-                        className="btn btn-outline btn-sm"
+                        className="btn btn-outline btn-sm h-7.5 px-3 text-xs font-medium transition-colors hover:bg-surface-strong/60"
                         onClick={() => {
                           setNewPassword("");
                           setResetting(u);

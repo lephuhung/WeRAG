@@ -62,11 +62,22 @@ function SettingsBody() {
     )?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
 
+  const visibleItems = SETTINGS_NAV_GROUPS.flatMap((g) => g.items).filter((it) =>
+    canSeeSection(it, currentRole, isSystemAdmin),
+  );
+  const activeItem = visibleItems.find((it) => it.key === active);
+
   useEffect(() => {
     if (SECTION_ROUTES[active]) {
       router.replace(SECTION_ROUTES[active]);
+      return;
     }
-  }, [active, router]);
+    // Hand-crafted ?section= values must not bypass the role gate — fall back
+    // to the first visible section instead of rendering the panel anyway.
+    if (!activeItem && visibleItems.length > 0 && active !== "general") {
+      router.replace(`/platform/settings?section=${visibleItems[0].key}`);
+    }
+  }, [active, activeItem, visibleItems.length, router]);
 
   const setActive = (key: string) => {
     if (SECTION_ROUTES[key]) {

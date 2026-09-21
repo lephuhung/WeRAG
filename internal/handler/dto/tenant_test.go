@@ -36,9 +36,9 @@ func TestTenantResponse_OwnerOmitsLegacyTenantAPIKey(t *testing.T) {
 	assert.Contains(t, s, "web_search_config")
 }
 
-func TestTenantResponse_AdminGetsRedactedIntegrationConfigs(t *testing.T) {
+func TestTenantResponse_OwnerGetsRedactedIntegrationConfigs(t *testing.T) {
 	tenant := sampleSecretTenant()
-	resp := NewTenantResponse(adminContext(), tenant)
+	resp := NewTenantResponse(ownerContext(), tenant)
 	require.NotNil(t, resp.WebSearchConfig)
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.WebSearchConfig.ProxyURL)
 	assert.Empty(t, resp.WebSearchConfig.APIKey)
@@ -46,6 +46,14 @@ func TestTenantResponse_AdminGetsRedactedIntegrationConfigs(t *testing.T) {
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.ParserEngineConfig.MinerUAPIKey)
 	require.NotNil(t, resp.StorageEngineConfig.MinIO)
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.StorageEngineConfig.MinIO.SecretAccessKey)
+}
+
+func TestTenantResponse_AdminOmitsIntegrationConfigs(t *testing.T) {
+	tenant := sampleSecretTenant()
+	resp := NewTenantResponse(adminContext(), tenant)
+	assert.Nil(t, resp.WebSearchConfig)
+	assert.Nil(t, resp.ParserEngineConfig)
+	assert.Nil(t, resp.StorageEngineConfig)
 }
 
 func TestTenantResponsesCrossTenant_RedactsEvenForOwnerContext(t *testing.T) {

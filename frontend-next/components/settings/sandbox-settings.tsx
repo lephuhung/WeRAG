@@ -22,7 +22,7 @@ export function SandboxSettings() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  const canManage = currentRole === "owner" || isSystemAdmin;
 
   const [configs, setConfigs] = useState<SandboxConfigRecord[]>([]);
   const [scriptsDisabled, setScriptsDisabled] = useState(false);

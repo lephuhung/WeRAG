@@ -145,7 +145,7 @@ func RegisterTenantRoutes(
 			// reads. nil-skip mirrors the memberHandler pattern above
 			// for environments wired without the audit dependency.
 			if auditLogHandler != nil {
-				tenantByID.GET("/audit-log", g.Admin(), auditLogHandler.ListTenantAuditLog)
+				tenantByID.GET("/audit-log", g.Owner(), auditLogHandler.ListTenantAuditLog)
 			}
 		}
 	}

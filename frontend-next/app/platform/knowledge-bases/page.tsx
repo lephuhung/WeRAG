@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
+import { useTenantRole } from "@/lib/auth";
 import { Orb } from "@/components/orb";
 import { IconBook, IconDoc, IconPlus, IconSearch } from "@/components/icons";
 
 export default function KnowledgeBaseList() {
+  const { isOwner } = useTenantRole();
   const [kbs, setKbs] = useState<KnowledgeBaseRow[] | null>(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
@@ -54,10 +56,12 @@ export default function KnowledgeBaseList() {
               Collections of documents indexed for retrieval-augmented chat.
             </p>
           </div>
-          <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
-            <IconPlus className="h-4 w-4" />
-            New knowledge base
-          </Link>
+          {isOwner && (
+            <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
+              <IconPlus className="h-4 w-4" />
+              New knowledge base
+            </Link>
+          )}
         </div>
 
         <div className="relative mb-8 max-w-[420px]">
@@ -102,14 +106,16 @@ export default function KnowledgeBaseList() {
             </Link>
           ))}
 
-          <Link
-            href="/platform/knowledge-bases/new"
-            className="flex min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
-          >
-            <span className="flex items-center gap-2 text-[15px] font-medium">
-              <IconPlus className="h-4 w-4" /> Create knowledge base
-            </span>
-          </Link>
+          {isOwner && (
+            <Link
+              href="/platform/knowledge-bases/new"
+              className="flex min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
+            >
+              <span className="flex items-center gap-2 text-[15px] font-medium">
+                <IconPlus className="h-4 w-4" /> Create knowledge base
+              </span>
+            </Link>
+          )}
         </div>
       </div>
     </div>

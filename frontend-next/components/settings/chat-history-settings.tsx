@@ -26,7 +26,7 @@ export function ChatHistorySettings() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canEdit = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  const canEdit = currentRole === "owner" || isSystemAdmin;
 
   const [config, setConfig] = useState<ChatHistoryConfig>({ enabled: false });
   const [stats, setStats] = useState<ChatHistoryKBStats | null>(null);

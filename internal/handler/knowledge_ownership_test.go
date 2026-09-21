@@ -22,7 +22,6 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 		role                        types.TenantRole
 		apiKey, superuser, disabled bool
 	}{
-		{name: "admin", role: types.TenantRoleAdmin},
 		{name: "owner", role: types.TenantRoleOwner},
 		{name: "API key", role: types.TenantRoleMember, apiKey: true},
 		{name: "cross tenant superuser", role: types.TenantRoleMember, superuser: true},
@@ -61,6 +60,7 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
+		role      types.TenantRole
 		kb        *types.KnowledgeBase
 		lookupErr error
 		status    int
@@ -77,6 +77,17 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 
 		{
 			name: "noncreator",
+			kb: &types.KnowledgeBase{
+				ID:        "kb",
+				TenantID:  1,
+				CreatorID: "other",
+			},
+			status: http.StatusForbidden,
+		},
+		{
+			// Admins no longer mutate knowledge bases — same as members.
+			name: "admin noncreator",
+			role: types.TenantRoleAdmin,
 			kb: &types.KnowledgeBase{
 				ID:        "kb",
 				TenantID:  1,
@@ -123,7 +134,11 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 			r := gin.New()
 			r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 				ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
-				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
+				role := tt.role
+				if role == "" {
+					role = types.TenantRoleMember
+				}
+				ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
 				ctx = context.WithValue(ctx, types.UserIDContextKey, "user")
 				c.Request = c.Request.WithContext(ctx)
 				c.Next()

@@ -217,3 +217,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
+/* Role of the current user inside the active workspace, plus the common
+ * permission booleans. Roles are the backend's `owner | admin | member`;
+ * a missing/unknown role means member-level (fail closed). */
+export function useTenantRole() {
+  const auth = useAuth();
+  const role =
+    auth.memberships.find(
+      (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
+    )?.role ?? "";
+  const isSystemAdmin = auth.user?.is_system_admin === true;
+  const isOwner = isSystemAdmin || role === "owner";
+  return { role, isSystemAdmin, isOwner, isAdminOrOwner: isOwner || role === "admin" };
+}

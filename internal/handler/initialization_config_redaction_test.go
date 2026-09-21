@@ -34,10 +34,10 @@ func TestBuildConfigResponse_ViewerOmitsModelBaseURL(t *testing.T) {
 	assert.NotContains(t, string(body), "sk-secret-do-not-leak")
 }
 
-func TestBuildConfigResponse_AdminKeepsModelBaseURL(t *testing.T) {
+func TestBuildConfigResponse_OwnerKeepsModelBaseURL(t *testing.T) {
 	h := &InitializationHandler{}
-	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleAdmin)
-	ctx = types.WithCaller(ctx, types.Caller{TenantID: 42, UserID: "u", Role: types.TenantRoleAdmin})
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleOwner)
+	ctx = types.WithCaller(ctx, types.Caller{TenantID: 42, UserID: "u", Role: types.TenantRoleOwner})
 	models := []*types.Model{{
 		Type: types.ModelTypeKnowledgeQA,
 		Name: "custom-llm",

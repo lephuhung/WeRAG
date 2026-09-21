@@ -7,10 +7,17 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-func TestCanViewIntegrationSecretsAdminRole(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleAdmin)
+func TestCanViewIntegrationSecretsOwnerRole(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleOwner)
 	if !CanViewIntegrationSecrets(ctx) {
-		t.Fatal("admin should view integration secrets")
+		t.Fatal("owner should view integration secrets")
+	}
+}
+
+func TestCanViewIntegrationSecretsAdminDenied(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleAdmin)
+	if CanViewIntegrationSecrets(ctx) {
+		t.Fatal("admin should not view integration secrets")
 	}
 }
 

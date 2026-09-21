@@ -119,9 +119,19 @@ func TestGetTenantKVViewerForbiddenForSecretKeys(t *testing.T) {
 	}
 }
 
-func TestGetTenantKVAdminReturnsRedactedSecrets(t *testing.T) {
+func TestGetTenantKVAdminForbiddenForSecretKeys(t *testing.T) {
 	tenant := secretTenantFixture()
 	engine := newTenantHandlerTestEngine(t, types.TenantRoleAdmin, tenant)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/tenants/kv/parser-engine-config", nil)
+	engine.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestGetTenantKVOwnerReturnsRedactedSecrets(t *testing.T) {
+	tenant := secretTenantFixture()
+	engine := newTenantHandlerTestEngine(t, types.TenantRoleOwner, tenant)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/tenants/kv/parser-engine-config", nil)

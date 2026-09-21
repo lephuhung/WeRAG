@@ -21,6 +21,7 @@ import {
   type WikiRevisionListResponse,
 } from "@/lib/api/wiki";
 import { Markdown } from "@/components/markdown";
+import { useTenantRole } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { IconDoc } from "@/components/icons";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
@@ -211,6 +212,7 @@ export function WikiPageView({
   onNavigate?: (slug: string) => void;
 }) {
   const { t } = useT();
+  const { isOwner } = useTenantRole();
   const [page, setPage] = useState<WikiPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -321,9 +323,11 @@ export function WikiPageView({
                   <button className="btn btn-outline btn-sm" onClick={showRevList}>
                     {t("wiki.history")}
                   </button>
-                  <button className="btn btn-primary btn-sm" onClick={startEdit}>
-                    {t("wiki.edit")}
-                  </button>
+                  {isOwner && (
+                    <button className="btn btn-primary btn-sm" onClick={startEdit}>
+                      {t("wiki.edit")}
+                    </button>
+                  )}
                 </>
               )}
               {editing && (
@@ -402,9 +406,11 @@ export function WikiPageView({
                       {r.created_at ? new Date(r.created_at).toLocaleString() : ""}
                     </div>
                   </div>
-                  <button className="btn btn-outline btn-sm" onClick={() => void revertTo(r.version)}>
-                    {t("wiki.revertTo")}
-                  </button>
+                  {isOwner && (
+                    <button className="btn btn-outline btn-sm" onClick={() => void revertTo(r.version)}>
+                      {t("wiki.revertTo")}
+                    </button>
+                  )}
                 </div>
               ))}
               {revisions !== null && revisions.length === 0 && (

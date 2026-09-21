@@ -50,7 +50,7 @@ func documentHandlerRouter() *gin.Engine {
 	r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 		ctx := types.WithCaller(
 			c.Request.Context(),
-			types.Caller{TenantID: 7, UserID: "user", Role: types.TenantRoleAdmin},
+			types.Caller{TenantID: 7, UserID: "user", Role: types.TenantRoleOwner},
 		)
 		ctx = types.WithExecutionTenant(ctx, 7)
 		c.Set(types.TenantIDContextKey.String(), uint64(7))
