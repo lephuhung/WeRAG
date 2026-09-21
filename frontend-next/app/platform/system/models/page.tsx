@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   createModel,
+  debugModel,
   deleteModel,
   listModels,
   ModelInUseError,
@@ -11,6 +12,7 @@ import {
   type ModelConfig,
 } from "@/lib/api/models";
 import { Modal } from "@/components/modal";
+import { RequireSystemAccess } from "@/components/require-system-access";
 import { IconEdit, IconPlus, IconPower, IconTrash } from "@/components/icons";
 import { OllamaSettings } from "@/components/settings/ollama-settings";
 import { WeKnoraCloudSettings } from "@/components/settings/weknora-cloud-settings";
@@ -208,9 +210,11 @@ function toUi(m: ModelConfig, i: number): UiModel {
 
 export default function SystemModelsPage() {
   return (
-    <Suspense fallback={null}>
-      <SystemModels />
-    </Suspense>
+    <RequireSystemAccess minRole="owner">
+      <Suspense fallback={null}>
+        <SystemModels />
+      </Suspense>
+    </RequireSystemAccess>
   );
 }
 
@@ -227,6 +231,8 @@ function SystemModels() {
   const [deleting, setDeleting] = useState<UiModel | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>(initialTab);
 
   useEffect(() => {
@@ -256,11 +262,13 @@ function SystemModels() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setActionError("");
+    setTestMsg(null);
     setModalOpen(true);
   };
 
   const openEdit = (m: UiModel) => {
     setEditing(m);
+    setTestMsg(null);
     setForm({
       name: m.name,
       provider: m.provider,
@@ -305,6 +313,20 @@ function SystemModels() {
       setActionError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    if (!editing?.id || testing) return;
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
+      setTestMsg(res.ok ? "Connection successful — model responded." : res.error || "Test failed");
+    } catch (e) {
+      setTestMsg(e instanceof Error ? e.message : "Test failed");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -624,10 +646,16 @@ function SystemModels() {
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </button>
+          {editing && (
+            <button className="btn btn-outline" onClick={() => void test()} disabled={testing}>
+              {testing ? "Testing…" : "Test connection"}
+            </button>
+          )}
           <button className="btn btn-outline" onClick={() => setModalOpen(false)}>
             Cancel
           </button>
         </div>
+        {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
       </Modal>
 
       {/* Delete Confirmation Modal */}

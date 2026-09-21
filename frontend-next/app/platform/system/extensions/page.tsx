@@ -21,13 +21,15 @@ import {
 } from "@/lib/api/mcp";
 import { McpServiceForm, McpToolsPanel } from "@/components/settings/mcp-services";
 import { SkillsSettings } from "@/components/settings/skills-settings";
-import { BrowserConnectionSettings } from "@/components/settings/browser-connection-settings";
+import { RequireSystemAccess } from "@/components/require-system-access";
 
 export default function SystemExtensionsPage() {
   return (
-    <Suspense fallback={null}>
-      <SystemExtensionsBody />
-    </Suspense>
+    <RequireSystemAccess>
+      <Suspense fallback={null}>
+        <SystemExtensionsBody />
+      </Suspense>
+    </RequireSystemAccess>
   );
 }
 
@@ -101,7 +103,6 @@ function SystemExtensionsBody() {
     { id: "all", label: "All Extensions" },
     { id: "mcp", label: "MCP Servers", count: mcpServices.length },
     { id: "skills", label: "Skill Catalog" },
-    { id: "browser", label: "Browser Bridge" },
   ];
 
   return (
@@ -331,21 +332,6 @@ function SystemExtensionsBody() {
           </div>
           <div className="card p-6">
             <SkillsSettings />
-          </div>
-        </div>
-      )}
-
-      {/* Browser Bridge Section */}
-      {(activeTab === "all" || activeTab === "browser") && (
-        <div className="mb-10">
-          <div className="mb-4">
-            <h3 className="text-[15px] font-semibold text-ink">Browser Extension & Bridge</h3>
-            <p className="caption text-muted">
-              Pair your browser extension to securely connect authenticated web sessions with WeRAG agents.
-            </p>
-          </div>
-          <div className="card p-6">
-            <BrowserConnectionSettings />
           </div>
         </div>
       )}

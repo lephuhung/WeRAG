@@ -36,7 +36,7 @@ export default function SystemAgents() {
   // Superadmin guard
   useEffect(() => {
     if (auth.ready && auth.user && !auth.user.is_system_admin) {
-      router.replace("/platform/knowledge-bases");
+      router.replace("/platform/system/workspace");
     }
   }, [auth.ready, auth.user, router]);
 

@@ -8,15 +8,13 @@
  */
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
 import { useT } from "@/lib/i18n";
 import {
-  listMCPServices,
   createMCPService,
   updateMCPService,
-  deleteMCPService,
   testMCPService,
   getMCPServiceTools,
   setMCPToolEnabled,
@@ -26,143 +24,6 @@ import {
   type MCPTestResult,
 } from "@/lib/api/mcp";
 import { Chip } from "@/components/settings/chips";
-
-export function McpServicesPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useT();
-  const [services, setServices] = useState<MCPService[]>([]);
-  const [loading, setLoading] = useState(open);
-  const [error, setError] = useState("");
-  const [editing, setEditing] = useState<MCPService | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [removing, setRemoving] = useState<MCPService | null>(null);
-  const [toolsFor, setToolsFor] = useState<MCPService | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    listMCPServices()
-      .then(setServices)
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load services"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    if (open) load();
-  }, [open, load]);
-
-  const toggle = async (s: MCPService) => {
-    const next = await updateMCPService(s.id, { enabled: !s.enabled });
-    setServices((prev) => prev.map((x) => (x.id === next.id ? next : x)));
-  };
-
-  return (
-    <SlidePanel open={open} onClose={onClose} label={t("mcp.title")} width="w-[600px]">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="mb-4 flex items-center justify-between px-5 pt-5">
-          <h2 className="title-md">{t("mcp.title")}</h2>
-          <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}>
-            {t("mcp.addService")}
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-          {error && <p className="caption mb-3 text-error">{error}</p>}
-          {loading && <p className="caption text-muted">…</p>}
-          {(services ?? []).map((s) => (
-            <div key={s.id} className="border-b border-hairline py-3.5">
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[14px] font-medium text-ink">{s.name}</span>
-                    <span className="badge-pill">{s.transport_type}</span>
-                    {s.is_builtin && (
-                      <span className="caption text-muted-soft">built-in</span>
-                    )}
-                  </div>
-                  <div className="caption mt-0.5 truncate text-muted">
-                    {s.description}
-                    {s.catalog && (
-                      <span className="ml-2">
-                        · {s.catalog.tool_count} tools{s.catalog.stale ? ` · ${t("mcp.stale")}` : ""}
-                      </span>
-                    )}
-                  </div>
-                  {s.url && !s.is_builtin && (
-                    <div className="caption mt-0.5 truncate text-muted-soft">{s.url}</div>
-                  )}
-                </div>
-                <button role="switch" aria-checked={s.enabled} onClick={() => void toggle(s)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${s.enabled ? "bg-primary" : "bg-hairline-strong"}`}
-                  aria-label={t("common.on")}
-                >
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface-card transition-transform ${
-                    s.enabled ? "translate-x-[22px]" : "translate-x-0.5"
-                  }`} />
-                </button>
-                <button className="btn btn-tertiary btn-sm text-[13px]" onClick={() => setToolsFor(s)}>
-                  {t("mcp.tools")}
-                </button>
-                <button className="btn btn-tertiary btn-sm text-[13px]" onClick={() => setEditing(s)}>
-                  {t("common.edit")}
-                </button>
-                {!s.is_builtin && (
-                  <button className="btn btn-tertiary btn-sm text-[13px] text-error" onClick={() => setRemoving(s)}>
-                    {t("common.delete")}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          {services !== null && services.length === 0 && !loading && !error && (
-            <p className="caption text-muted-soft">{t("mcp.empty")}</p>
-          )}
-        </div>
-      </div>
-
-      {(creating || editing) && (
-        <McpServiceForm
-          service={creating ? null : editing}
-          onClose={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
-          onSaved={() => {
-            setCreating(false);
-            setEditing(null);
-            load();
-          }}
-        />
-      )}
-
-      {toolsFor && (
-        <McpToolsPanel
-          service={toolsFor}
-          onClose={() => setToolsFor(null)}
-        />
-      )}
-
-      <Modal open={removing !== null} title={t("mcp.deleteTitle")} onClose={() => setRemoving(null)} width="w-[420px]">
-        <p className="body-sm text-body">
-          {t("mcp.deleteBody").replace("{name}", removing?.name ?? "")}
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <button className="btn btn-outline btn-sm" onClick={() => setRemoving(null)}>
-            {t("common.cancel")}
-          </button>
-          <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
-            onClick={() => {
-              void deleteMCPService(removing!.id).then(() => {
-                setRemoving(null);
-                load();
-              });
-            }}
-          >
-            {t("common.delete")}
-          </button>
-        </div>
-      </Modal>
-    </SlidePanel>
-  );
-}
 
 export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;

@@ -185,7 +185,7 @@ export function GlobalCommandPalette() {
       icon: <IconSettings className="h-4 w-4" />,
       onSelect: () => {
         close();
-        router.push("/platform/settings");
+        router.push("/platform/system/workspace");
       },
     },
     {

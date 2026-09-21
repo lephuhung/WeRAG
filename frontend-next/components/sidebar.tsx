@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { listSessions, type SessionRow } from "@/lib/api/chat";
-import { getCurrentUser } from "@/lib/api/auth";
+import { deleteSession, listSessions, type SessionRow } from "@/lib/api/chat";
 import { useT } from "@/lib/i18n";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import { BrandLogo } from "@/components/brand-logo";
+import { Modal } from "@/components/modal";
 import {
   IconAgent,
   IconArtifact,
@@ -15,9 +15,9 @@ import {
   IconChat,
   IconOrg,
   IconPlus,
-  IconPulse,
   IconSearch,
   IconSettings,
+  IconTrash,
 } from "@/components/icons";
 
 const NAV = [
@@ -47,22 +47,31 @@ function bucketOf(row: SessionRow): string {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { t } = useT();
   const palette = useCommandPalette();
   const [live, setLive] = useState<SessionRow[] | null>(null);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const [removing, setRemoving] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
-  useEffect(() => {
-    let alive = true;
-    getCurrentUser()
-      .then((res) => {
-        if (alive) setIsSystemAdmin(res.data?.user?.is_system_admin === true);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const confirmDelete = async () => {
+    if (!removing || deleting) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteSession(removing.id);
+      setLive((prev) => prev?.filter((s) => s.id !== removing.id) ?? prev);
+      if (pathname === `/platform/chat/${removing.id}`) {
+        router.push("/platform/creatChat");
+      }
+      setRemoving(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -193,11 +202,25 @@ export function Sidebar() {
               <Link
                 key={s.id}
                 href={`/platform/chat/${s.id}`}
-                className={`nav-item font-normal ${
+                className={`nav-item group font-normal ${
                   pathname === `/platform/chat/${s.id}` ? "active" : ""
                 }`}
               >
                 <span className="truncate">{s.title}</span>
+                <button
+                  type="button"
+                  title="Delete chat"
+                  aria-label="Delete chat"
+                  className="ml-auto hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDeleteError("");
+                    setRemoving({ id: s.id, title: s.title });
+                  }}
+                >
+                  <IconTrash className="h-3.5 w-3.5" />
+                </button>
               </Link>
             ))}
           </div>
@@ -205,26 +228,38 @@ export function Sidebar() {
       </div>
 
       <div className="border-t border-hairline px-3 py-3">
-        {isSystemAdmin && (
-          <Link
-            href="/platform/system"
-            className={`nav-item ${pathname?.startsWith("/platform/system") ? "active" : ""}`}
-          >
-            <IconPulse className="h-[18px] w-[18px]" />
-            {t("nav.system")}
-            <span className="ml-auto rounded-full border border-hairline-strong px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">
-              {t("nav.admin")}
-            </span>
-          </Link>
-        )}
         <Link
-          href="/platform/settings"
-          className={`nav-item ${pathname?.startsWith("/platform/settings") ? "active" : ""}`}
+          href="/platform/system"
+          className={`nav-item ${pathname?.startsWith("/platform/system") || pathname?.startsWith("/platform/settings") ? "active" : ""}`}
         >
           <IconSettings className="h-[18px] w-[18px]" />
           {t("nav.settings")}
         </Link>
       </div>
+
+      <Modal
+        open={removing !== null}
+        title="Delete chat"
+        onClose={() => setRemoving(null)}
+        width="w-[420px]"
+      >
+        <p className="body-sm text-body">
+          Delete &quot;{removing?.title}&quot;? This conversation will be permanently removed.
+        </p>
+        {deleteError && <p className="caption mt-3 text-error">{deleteError}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-outline btn-sm" onClick={() => setRemoving(null)}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-sm bg-[var(--color-error)] text-white"
+            disabled={deleting}
+            onClick={() => void confirmDelete()}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </Modal>
     </aside>
   );
 }

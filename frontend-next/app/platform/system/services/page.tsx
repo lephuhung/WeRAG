@@ -25,6 +25,7 @@ import {
   IconStorageEngine,
 } from "@/components/icons";
 import { Modal } from "@/components/modal";
+import { RequireSystemAccess } from "@/components/require-system-access";
 import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
 import { StorageSettings } from "@/components/settings/storage-settings";
 import { WebSearchSettings } from "@/components/settings/web-search-settings";
@@ -108,9 +109,11 @@ const DEFAULT_PARSER_CONFIG: ParserEngineConfig = {
 
 export default function SystemServicesPage() {
   return (
-    <Suspense fallback={null}>
-      <SystemServices />
-    </Suspense>
+    <RequireSystemAccess>
+      <Suspense fallback={null}>
+        <SystemServices />
+      </Suspense>
+    </RequireSystemAccess>
   );
 }
 

@@ -1,5 +1,21 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth";
 
 export default function System() {
-  redirect("/platform/system/overview");
+  const router = useRouter();
+  const auth = useAuth();
+
+  useEffect(() => {
+    if (!auth.ready) return;
+    router.replace(
+      auth.user?.is_system_admin
+        ? "/platform/system/overview"
+        : "/platform/system/workspace",
+    );
+  }, [auth.ready, auth.user, router]);
+
+  return null;
 }

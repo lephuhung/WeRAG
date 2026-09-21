@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconChevronDown, IconPlus, IconSearch } from "@/components/icons";
+import { IconPlus, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
   createSystemUser,
@@ -27,8 +28,51 @@ const initials = (name: string) =>
 
 type AddMode = "create" | "promote";
 
+const WORKSPACE_ROLES: TenantRole[] = ["member", "admin", "owner"];
+
+const ROLE_BADGE_STYLES: Record<TenantRole, string> = {
+  owner: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  admin: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  member: "border-hairline bg-surface-strong/70 text-body",
+};
+
+/* Three-role segmented pill — click a segment to switch the user's role. */
+function RolePillToggle({
+  value,
+  busy,
+  onChange,
+}: {
+  value: TenantRole;
+  busy?: boolean;
+  onChange: (role: TenantRole) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+      {WORKSPACE_ROLES.map((r) => (
+        <button
+          key={r}
+          type="button"
+          disabled={busy || r === value}
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(r);
+          }}
+          className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize transition-colors disabled:cursor-default ${
+            r === value
+              ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+              : "text-muted hover:text-ink"
+          }`}
+        >
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function SystemUsers() {
   const { t } = useT();
+  const auth = useAuth();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [meId, setMeId] = useState("");
   const [users, setUsers] = useState<SystemAdminUser[]>([]);
@@ -36,6 +80,9 @@ export default function SystemUsers() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [detail, setDetail] = useState<SystemAdminUser | null>(null);
+  const [roleBusy, setRoleBusy] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>("create");
@@ -151,17 +198,41 @@ export default function SystemUsers() {
     });
   };
 
-  const WORKSPACE_ROLES: TenantRole[] = ["owner", "admin", "member"];
+  const currentTenantId = String(auth.selectedTenantId ?? auth.tenant?.id ?? "");
+  const currentTenantName = auth.tenant?.name ?? "";
 
-  const ROLE_BADGE_STYLES: Record<TenantRole, string> = {
-    owner: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:border-amber-500/50",
-    admin: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:border-sky-500/50",
-    member: "border-hairline bg-surface-strong/70 text-body hover:border-hairline-strong",
+  const patchMembershipRole = (
+    user: SystemAdminUser,
+    tenantId: number,
+    role: TenantRole,
+  ): SystemAdminUser => ({
+    ...user,
+    memberships: (user.memberships ?? []).map((m) =>
+      m.tenant_id === tenantId ? { ...m, role } : m,
+    ),
+  });
+
+  const changeWorkspaceRole = async (u: SystemAdminUser, tenantId: number, role: TenantRole) => {
+    const key = `${u.id}:${tenantId}`;
+    if (roleBusy === key) return;
+    setRoleBusy(key);
+    setDetailError("");
+    try {
+      await updateSystemUserRole(tenantId, u.id, role);
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? patchMembershipRole(x, tenantId, role) : x)));
+      setDetail((d) => (d && d.id === u.id ? patchMembershipRole(d, tenantId, role) : d));
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "Failed to update role");
+    } finally {
+      setRoleBusy(null);
+    }
   };
 
-  const changeWorkspaceRole = (u: SystemAdminUser, tenantId: number, role: TenantRole) => {
-    void run(() => updateSystemUserRole(tenantId, u.id, role));
-  };
+  const membershipFor = (u: SystemAdminUser) =>
+    (u.memberships ?? []).find((m) => String(m.tenant_id) === currentTenantId);
+
+  const otherCount = (u: SystemAdminUser) =>
+    (u.memberships ?? []).filter((m) => String(m.tenant_id) !== currentTenantId).length;
 
   if (allowed === null) {
     return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">Loading…</div>;
@@ -218,15 +289,28 @@ export default function SystemUsers() {
           <thead>
             <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
               <th className="min-w-[260px] px-5 py-3 font-medium">User</th>
-              <th className="w-[340px] px-5 py-3 font-medium">Workspaces</th>
+              <th className="w-[160px] px-5 py-3 font-medium">
+                Role{currentTenantName ? ` · ${currentTenantName}` : ""}
+              </th>
+              <th className="w-[140px] px-5 py-3 font-medium">Other workspaces</th>
               <th className="w-28 px-5 py-3 font-medium">Status</th>
               <th className="w-32 px-5 py-3 font-medium">Created</th>
               <th className="w-[280px] px-5 py-3 font-medium text-right">{t("users.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
-            {users.map((u) => (
-              <tr key={u.id} className="transition-colors hover:bg-surface-strong/20">
+            {users.map((u) => {
+              const current = membershipFor(u);
+              const others = otherCount(u);
+              return (
+              <tr
+                key={u.id}
+                className="cursor-pointer transition-colors hover:bg-surface-strong/20"
+                onClick={() => {
+                  setDetailError("");
+                  setDetail(u);
+                }}
+              >
                 <td className="px-5 py-3.5 align-middle">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-semibold text-ink border border-hairline">
@@ -253,46 +337,20 @@ export default function SystemUsers() {
                   </div>
                 </td>
                 <td className="px-5 py-3.5 align-middle">
-                  {u.memberships && u.memberships.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      {u.memberships.map((m) => (
-                        <div
-                          key={m.tenant_id}
-                          className="flex items-center justify-between gap-2.5 rounded-lg border border-hairline/80 bg-surface-card/70 px-2.5 py-1.5 transition-colors hover:border-hairline-strong hover:bg-surface-strong/20"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-surface-strong text-[10px] font-semibold text-muted">
-                              {m.tenant_name.charAt(0).toUpperCase()}
-                            </span>
-                            <span
-                              className="caption font-medium text-ink truncate max-w-[170px]"
-                              title={m.tenant_name}
-                            >
-                              {m.tenant_name}
-                            </span>
-                          </div>
-                          <div className="relative shrink-0 inline-flex items-center">
-                            <select
-                              className={`h-6 appearance-none rounded-md border pl-2 pr-5 text-[11px] font-medium capitalize cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-brand/40 ${
-                                ROLE_BADGE_STYLES[m.role] ?? ROLE_BADGE_STYLES.member
-                              }`}
-                              value={m.role}
-                              disabled={busy}
-                              onChange={(e) =>
-                                changeWorkspaceRole(u, m.tenant_id, e.target.value as TenantRole)
-                              }
-                            >
-                              {WORKSPACE_ROLES.map((r) => (
-                                <option key={r} value={r} className="bg-surface text-ink capitalize">
-                                  {r}
-                                </option>
-                              ))}
-                            </select>
-                            <IconChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 opacity-50" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {current ? (
+                    <span
+                      className={`badge-pill inline-block border capitalize ${ROLE_BADGE_STYLES[current.role] ?? ROLE_BADGE_STYLES.member}`}
+                      title={`Role in ${current.tenant_name}`}
+                    >
+                      {current.role}
+                    </span>
+                  ) : (
+                    <span className="caption text-muted-soft">—</span>
+                  )}
+                </td>
+                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                  {others > 0 ? (
+                    <span className="caption text-muted">+{others} workspace{others === 1 ? "" : "s"}</span>
                   ) : (
                     <span className="caption text-muted-soft">—</span>
                   )}
@@ -316,7 +374,10 @@ export default function SystemUsers() {
                     {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                   </span>
                 </td>
-                <td className="px-5 py-3.5 align-middle text-right whitespace-nowrap">
+                <td
+                  className="px-5 py-3.5 align-middle text-right whitespace-nowrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <div className="flex items-center justify-end gap-2">
                     {!(u.is_system_admin && u.id === meId) && (
                       <button
@@ -352,10 +413,11 @@ export default function SystemUsers() {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
+                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
                   No users match this filter.
                 </td>
               </tr>
@@ -363,6 +425,76 @@ export default function SystemUsers() {
           </tbody>
         </table>
       </div>
+
+      {/* user detail — per-workspace role pills */}
+      <Modal
+        open={detail !== null}
+        title="Workspaces & roles"
+        onClose={() => setDetail(null)}
+        width="w-[520px]"
+      >
+        {detail && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[13px] font-semibold text-ink border border-hairline">
+                {initials(detail.username)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+                  <span className="truncate">{detail.username}</span>
+                  {detail.is_system_admin && (
+                    <span className="badge-pill shrink-0 bg-surface-dark text-on-dark text-[10px] py-0.5 px-2">
+                      {t("users.superadmin")}
+                    </span>
+                  )}
+                </div>
+                <div className="caption truncate text-muted">{detail.email}</div>
+              </div>
+            </div>
+
+            {detailError && <p className="caption text-error">{detailError}</p>}
+
+            <div className="flex flex-col gap-2">
+              {(detail.memberships ?? []).length === 0 && (
+                <p className="caption py-4 text-center text-muted-soft">
+                  Not a member of any workspace.
+                </p>
+              )}
+              {[...(detail.memberships ?? [])]
+                .sort((a, b) =>
+                  String(a.tenant_id) === currentTenantId
+                    ? -1
+                    : String(b.tenant_id) === currentTenantId
+                      ? 1
+                      : a.tenant_name.localeCompare(b.tenant_name),
+                )
+                .map((m) => (
+                  <div
+                    key={m.tenant_id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-hairline/80 bg-surface-card/70 px-3 py-2.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-surface-strong text-[11px] font-semibold text-muted">
+                        {m.tenant_name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="truncate text-[13px] font-medium text-ink" title={m.tenant_name}>
+                        {m.tenant_name}
+                      </span>
+                      {String(m.tenant_id) === currentTenantId && (
+                        <span className="caption shrink-0 text-muted-soft">· current</span>
+                      )}
+                    </div>
+                    <RolePillToggle
+                      value={m.role}
+                      busy={roleBusy === `${detail.id}:${m.tenant_id}`}
+                      onChange={(role) => void changeWorkspaceRole(detail, m.tenant_id, role)}
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* add admin / create user */}
       <Modal

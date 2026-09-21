@@ -14,7 +14,7 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/artifacts/, "nav.artifacts"],
   [/^\/platform\/agents/, "nav.agents"],
   [/^\/platform\/organizations/, "nav.organizations"],
-  [/^\/platform\/system/, "nav.system"],
+  [/^\/platform\/system/, "nav.settings"],
   [/^\/platform\/settings/, "nav.settings"],
 ];
 
