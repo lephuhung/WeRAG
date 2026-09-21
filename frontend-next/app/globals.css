@@ -495,3 +495,33 @@ html.dark {
   }
 }
 
+
+/* Upload tasks panel: the "active" bar segment is a moving sheen meaning
+ * "uploaded or uploading but not yet searchable". Ported from the Vue panel's
+ * .bar-segment.is-active. */
+.upload-bar-active {
+  background-color: color-mix(in srgb, var(--color-ink) 32%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-ink) 38%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: upload-bar-sheen 1.6s linear infinite;
+}
+
+@keyframes upload-bar-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-bar-active {
+    animation: none;
+  }
+}

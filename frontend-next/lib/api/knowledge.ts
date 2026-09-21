@@ -131,6 +131,30 @@ export type KnowledgeBaseRow = {
   creator_name?: string;
   type?: string;
   visibility?: string;
+  /* Process-config defaults echoed back on the detail response
+   * (GET /knowledge-bases/:id); they seed the upload/reparse parse-settings
+   * dialog. Loosely typed because the KB detail payload is a superset of
+   * the list row. */
+  chunking_config?: unknown;
+  vlm_config?: {
+    enabled: boolean;
+    model_id?: string;
+    description_language?: string;
+    custom_instructions?: string;
+  };
+  asr_config?: { enabled: boolean; model_id?: string; language?: string };
+  question_generation_config?: {
+    enabled?: boolean;
+    question_count?: number;
+    custom_instructions?: string;
+  };
+  extract_config?: unknown;
+  indexing_strategy?: {
+    vector_enabled: boolean;
+    keyword_enabled: boolean;
+    wiki_enabled: boolean;
+    graph_enabled: boolean;
+  };
 };
 
 type ListResponse = {
@@ -525,7 +549,9 @@ export interface KnowledgeFolderTree {
 }
 
 export function listKnowledgeFolders(kbId: string) {
-  return apiGet(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`);
+  return apiGet<{ success: boolean; data?: KnowledgeFolderTree }>(
+    `/api/v1/knowledge-bases/${kbId}/knowledge/folders`,
+  );
 }
 
 /* Re-file documents under `folderPath` ('' = KB top level). Folders are
@@ -643,7 +669,7 @@ export function batchQueryKnowledge(
   if (kbId) qs += `&kb_id=${encodeURIComponent(kbId)}`;
   if (agentId) qs += `&agent_id=${encodeURIComponent(agentId)}`;
   if (agentSourceTenantId) qs += `&agent_source_tenant_id=${encodeURIComponent(agentSourceTenantId)}`;
-  return apiGet(`/api/v1/knowledge/batch?${qs}`);
+  return apiGet<{ success: boolean; data?: KnowledgeDoc[] }>(`/api/v1/knowledge/batch?${qs}`);
 }
 
 // ---- chunks -------------------------------------------------------------------

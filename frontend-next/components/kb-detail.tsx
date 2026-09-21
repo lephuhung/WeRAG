@@ -3,16 +3,24 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  batchQueryKnowledge,
   getKnowledgeBase,
+  getKnowledgeDetails,
   listKnowledgeFiles,
+  reparseKnowledge,
   type KnowledgeBaseRow,
   type KnowledgeDoc,
+  type KnowledgeProcessOverrides,
 } from "@/lib/api/knowledge";
 import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { UploadModal } from "@/components/knowledge/upload-modal";
+import { DocActionsMenu } from "@/components/knowledge/doc-actions-menu";
+import { ParseSettingsDialog } from "@/components/knowledge/parse-settings-dialog";
+import { useUploadTasks } from "@/lib/upload-tasks";
+import { buildUploadFileName } from "@/lib/upload-queue";
 import {
   IconChat,
   IconDoc,
@@ -45,6 +53,20 @@ function statusStyle(status?: string) {
   return STATUS_STYLE[status ?? ""] ?? STATUS_STYLE.pending;
 }
 
+/* Ported from the Vue knowledgeNeedsStatusPolling (views/knowledge/
+ * wikiStatusRefresh.ts): a row is still "in flight" while parsing runs
+ * (pending/processing/finalizing) or when parsing finished but the async
+ * summary generation is still running — keep polling so the description
+ * fills in without a manual refresh. */
+function needsStatusPolling(d: KnowledgeDoc): boolean {
+  const ps = d.parse_status ?? d.status;
+  if (ps === "pending" || ps === "processing" || ps === "finalizing") return true;
+  return (
+    ps === "completed" &&
+    (d.summary_status === "pending" || d.summary_status === "processing")
+  );
+}
+
 function docName(d: KnowledgeDoc) {
   return d.title || d.file_name || d.id;
 }
@@ -59,7 +81,7 @@ type MainTab = "docs-wiki" | "graph";
 
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
-  const { isOwner } = useTenantRole();
+  const { isOwner, isAdminOrOwner } = useTenantRole();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
@@ -69,7 +91,17 @@ export function KbDetail({ kbId }: { kbId: string }) {
   const [wikiQ, setWikiQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  /* Files handed off from the picker, awaiting parse-settings confirmation
+   * (non-null = the dialog is open in "file" mode). */
+  const [confirmFiles, setConfirmFiles] = useState<File[] | null>(null);
+  /* Rebuild flow: the doc plus the overrides it was last parsed with. */
+  const [reparseTarget, setReparseTarget] = useState<{
+    doc: KnowledgeDoc;
+    overrides: KnowledgeProcessOverrides | null;
+  } | null>(null);
   const [error, setError] = useState("");
+  const { enqueue } = useUploadTasks();
 
   const reloadDocs = () => {
     listKnowledgeFiles(kbId, { page: 1, page_size: 100 })
@@ -96,6 +128,119 @@ export function KbDetail({ kbId }: { kbId: string }) {
       alive = false;
     };
   }, [kbId]);
+
+  /* Open a document card by knowledge id — from the upload panel's "Open"
+   * action (weknora:open-knowledge / ?knowledge_id=) or the references
+   * drawer. Falls back to the detail endpoint when the row isn't in the
+   * currently loaded page. */
+  const openDocById = (knowledgeId: string) => {
+    const cached = docs?.find((d) => d.id === knowledgeId);
+    if (cached) {
+      setOpenDoc(cached);
+      return;
+    }
+    getKnowledgeDetails(knowledgeId)
+      .then((res) => {
+        const detail = (res as { data?: KnowledgeDoc })?.data;
+        if (detail && typeof detail === "object") setOpenDoc(detail);
+      })
+      .catch(() => {});
+  };
+
+  /* Rebuild a document through the parse-settings dialog, seeded with the
+   * overrides stored at its last parse (Vue KnowledgeBase.vue
+   * confirmRebuildKnowledge → uploadConfirm mode 'reparse'). */
+  const openReparse = async (doc: KnowledgeDoc) => {
+    let overrides: KnowledgeProcessOverrides | null = null;
+    try {
+      const res = (await getKnowledgeDetails(doc.id)) as {
+        data?: KnowledgeDoc & { metadata?: { process_overrides?: KnowledgeProcessOverrides } };
+      };
+      overrides = res?.data?.metadata?.process_overrides ?? null;
+    } catch {
+      /* fall back to the KB defaults when the detail call fails */
+    }
+    setReparseTarget({ doc, overrides });
+  };
+
+  /* The upload queue announces each landed file and the settled batch via
+   * `knowledgeFileUploaded`; reload so new rows appear mid-batch, not only
+   * at the end (matches Vue KnowledgeBase.vue's handleFileUploaded). */
+  useEffect(() => {
+    const onUploaded = (e: Event) => {
+      const detail = (e as CustomEvent<{ kbId?: string }>).detail;
+      if (detail?.kbId && detail.kbId !== kbId) return;
+      reloadDocs();
+      getKnowledgeBase(kbId)
+        .then((row) => setKb(row ?? null))
+        .catch(() => {});
+    };
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ kbId?: string; knowledgeId?: string }>).detail;
+      if (!detail?.knowledgeId || (detail.kbId && detail.kbId !== kbId)) return;
+      openDocById(detail.knowledgeId);
+    };
+    /* Files dropped anywhere on this page (GlobalFileDrop) open the upload
+     * dialog prefilled, matching the Vue confirmation flow. */
+    const onDrop = (e: Event) => {
+      const detail = (e as CustomEvent<{ kbId?: string; files?: File[] }>).detail;
+      if (detail?.kbId !== kbId || !detail.files?.length) return;
+      setDroppedFiles(detail.files);
+      setUploadOpen(true);
+    };
+    window.addEventListener("knowledgeFileUploaded", onUploaded);
+    window.addEventListener("weknora:open-knowledge", onOpen);
+    window.addEventListener("weknora:knowledge-file-drop", onDrop);
+    return () => {
+      window.removeEventListener("knowledgeFileUploaded", onUploaded);
+      window.removeEventListener("weknora:open-knowledge", onOpen);
+      window.removeEventListener("weknora:knowledge-file-drop", onDrop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kbId, docs]);
+
+  /* Deep link: /platform/knowledge-bases/<id>?knowledge_id=<docId> opens the
+   * document panel once the list has loaded. */
+  useEffect(() => {
+    if (docs === null) return;
+    const id = new URLSearchParams(window.location.search).get("knowledge_id");
+    if (id) openDocById(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs === null]);
+
+  /* Ported from KnowledgeBase.vue's updateStatus loop: while any row is
+   * still in flight, re-query just those ids every 1.5s so cards move
+   * Pending → Processing → Indexed live after an upload. Each poll writes
+   * a fresh docs array so the effect re-schedules itself until every row
+   * settles (or the component unmounts / kbId changes). */
+  useEffect(() => {
+    const inflight = (docs ?? []).filter(needsStatusPolling);
+    if (inflight.length === 0) return;
+    const timer = setTimeout(() => {
+      const qs = inflight.map((d) => `ids=${encodeURIComponent(d.id)}`).join("&");
+      batchQueryKnowledge(qs, kbId)
+        .then((res) => {
+          const rows = res?.data;
+          if (Array.isArray(rows) && rows.length > 0) {
+            const byId = new Map(rows.map((r) => [r.id, r]));
+            setDocs((prev) =>
+              prev?.map((d) => {
+                const r = byId.get(d.id);
+                return r ? { ...d, ...r } : d;
+              }) ?? prev,
+            );
+          } else {
+            setDocs((prev) => (prev ? [...prev] : prev));
+          }
+        })
+        .catch(() => {
+          /* Transient poll errors shouldn't stop the loop — force the
+           * effect to re-run and try again next tick. */
+          setDocs((prev) => (prev ? [...prev] : prev));
+        });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [docs, kbId]);
 
   const filtered = (docs ?? []).filter(
     (d) => !q || docName(d).toLowerCase().includes(q.toLowerCase()),
@@ -237,11 +382,28 @@ export function KbDetail({ kbId }: { kbId: string }) {
                 {filtered.map((d) => {
                   const st = statusStyle(d.parse_status ?? d.status);
                   return (
-                    <button
+                    <div
                       key={d.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setOpenDoc(d)}
-                      className="card card-hover flex flex-col justify-between p-3 text-left transition-all hover:border-ink/20"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setOpenDoc(d);
+                        }
+                      }}
+                      className="card card-hover group relative flex flex-col justify-between p-3 text-left transition-all hover:border-ink/20"
                     >
+                      <div className="absolute right-2 top-2">
+                        <DocActionsMenu
+                          doc={d}
+                          kbId={kbId}
+                          canMutate={isAdminOrOwner}
+                          onChanged={reloadDocs}
+                          onReparse={openReparse}
+                        />
+                      </div>
                       <div>
                         <div className="flex items-start gap-2">
                           <span
@@ -314,7 +476,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
                           {fmtShortDate(d.updated_at)}
                         </span>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -375,9 +537,68 @@ export function KbDetail({ kbId }: { kbId: string }) {
       />
       <UploadModal
         kbId={kbId}
+        kbName={kb?.name ?? ""}
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onUploaded={() => reloadDocs()}
+        onClose={() => {
+          setUploadOpen(false);
+          setDroppedFiles([]);
+        }}
+        initialFiles={droppedFiles}
+        onProceed={(files) => {
+          setConfirmFiles(files);
+          setUploadOpen(false);
+        }}
+      />
+
+      {/* Parse-settings confirmation — Vue UploadConfirmDialog equivalent.
+       * file mode: picked files; reparse mode: one document's rebuild. */}
+      <ParseSettingsDialog
+        open={confirmFiles !== null}
+        mode="file"
+        kb={kb}
+        files={confirmFiles ?? []}
+        onCancel={() => {
+          /* Back to the picker with the batch restored. */
+          setDroppedFiles(confirmFiles ?? []);
+          setConfirmFiles(null);
+          setUploadOpen(true);
+        }}
+        onConfirm={(result) => {
+          enqueue({
+            kbId,
+            kbName: kb?.name ?? "",
+            tagIds: result.tagIds.length ? result.tagIds : undefined,
+            processConfig: result.processConfig,
+            uploads: result.files.map((f) => ({
+              file: f,
+              fileName: buildUploadFileName(f, ""),
+            })),
+          });
+          setConfirmFiles(null);
+        }}
+      />
+      <ParseSettingsDialog
+        open={reparseTarget !== null}
+        mode="reparse"
+        kb={kb}
+        reparse={
+          reparseTarget
+            ? {
+                fileName: docName(reparseTarget.doc),
+                fileType: reparseTarget.doc.file_type,
+                overrides: reparseTarget.overrides,
+              }
+            : null
+        }
+        onCancel={() => setReparseTarget(null)}
+        onConfirm={(result) => {
+          const doc = reparseTarget?.doc;
+          setReparseTarget(null);
+          if (!doc) return;
+          reparseKnowledge(doc.id, { process_config: result.processConfig })
+            .then(reloadDocs)
+            .catch(() => setError(t("doc.actionFailed")));
+        }}
       />
     </div>
   );

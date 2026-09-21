@@ -221,6 +221,88 @@ export const IconBookmark = ({ className }: P) => (
   </svg>
 );
 
+export const IconChevronUp = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="m18 15-6-6-6 6" />
+  </svg>
+);
+
+export const IconChevronRight = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
+
+export const IconArrowUp = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M12 19V5m-7 7 7-7 7 7" />
+  </svg>
+);
+
+export const IconFileSearch = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+    <circle cx="11.5" cy="14.5" r="2.5" />
+    <path d="m13.3 16.3 2 2" />
+  </svg>
+);
+
+export const IconClock = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </svg>
+);
+
+export const IconMinusCircle = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 12h8" />
+  </svg>
+);
+
+const fill = { fill: "currentColor", stroke: "none" };
+
+export const IconCheckCircleFilled = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...fill}>
+    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.2 14.4-4-4 1.4-1.4 2.6 2.6 5.6-5.6 1.4 1.4z" />
+  </svg>
+);
+
+export const IconErrorCircleFilled = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...fill}>
+    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1 5h2v7h-2zm0 9h2v2h-2z" />
+  </svg>
+);
+
+export const IconInfoCircleFilled = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...fill}>
+    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1 6h2v2h-2zm0 3h2v7h-2z" />
+  </svg>
+);
+
+export const IconInfoCircle = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 8h.01M12 11v5" />
+  </svg>
+);
+
+export const IconMoreHorizontal = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...fill}>
+    <circle cx="5" cy="12" r="1.8" />
+    <circle cx="12" cy="12" r="1.8" />
+    <circle cx="19" cy="12" r="1.8" />
+  </svg>
+);
+
+export const IconFolder = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+);
+
 
 
 

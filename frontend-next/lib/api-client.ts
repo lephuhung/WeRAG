@@ -323,6 +323,14 @@ export function apiUpload<T>(
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(Math.round((e.loaded * 100) / e.total));
     };
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        reject(new ApiError(0, "Upload aborted"));
+        return;
+      }
+      opts.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.onabort = () => reject(new ApiError(0, "Upload aborted"));
     xhr.onload = () => {
       try {
         const payload = JSON.parse(xhr.responseText) as T;

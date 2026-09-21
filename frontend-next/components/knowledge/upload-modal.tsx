@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconDoc } from "@/components/icons";
-import { uploadKnowledgeFile } from "@/lib/api/knowledge";
+import { useUploadTasks } from "@/lib/upload-tasks";
+import { buildUploadFileName } from "@/lib/upload-queue";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -16,39 +17,56 @@ function fmtBytes(bytes: number): string {
 type FileItem = {
   id: string;
   file: File;
-  progress: number;
-  status: "ready" | "uploading" | "done" | "error";
-  error?: string;
 };
 
+/* File picker feeding the global upload queue — transfers, parse status and
+ * retries are reported by the floating UploadTasksPanel, which survives
+ * navigation, instead of inside this modal. Ported to match the Vue flow
+ * (confirm → uploadTasksStore.enqueue → panel). */
 export function UploadModal({
   kbId,
+  kbName,
   open,
   onClose,
-  onUploaded,
+  initialFiles,
+  onProceed,
 }: {
   kbId: string;
+  kbName: string;
   open: boolean;
   onClose: () => void;
-  onUploaded: () => void;
+  /** Files arriving from the global drop zone, merged in when the modal opens. */
+  initialFiles?: File[];
+  /* When set, the Upload button hands the picked files to the caller (which
+   * opens the parse-settings dialog) instead of enqueueing directly —
+   * matching the Vue confirm-dialog flow. */
+  onProceed?: (files: File[]) => void;
 }) {
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { enqueue } = useUploadTasks();
+
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) addFiles(initialFiles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFiles]);
+
+  /* Closed programmatically (e.g. handing off to the parse-settings dialog)
+   * still resets the picker; reopening re-seeds via initialFiles. */
+  useEffect(() => {
+    if (!open) setFiles([]);
+  }, [open]);
 
   const addFiles = (selected: File[]) => {
     const newItems: FileItem[] = selected.map((f) => ({
       id: `${f.name}-${Date.now()}-${Math.random()}`,
       file: f,
-      progress: 0,
-      status: "ready",
     }));
     setFiles((prev) => [...prev, ...newItems]);
   };
 
   const removeFile = (id: string) => {
-    if (busy) return;
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
@@ -60,55 +78,28 @@ export function UploadModal({
     }
   };
 
-  const startUpload = async () => {
-    if (files.length === 0 || busy) return;
-    setBusy(true);
-
-    let anySuccess = false;
-
-    for (let i = 0; i < files.length; i++) {
-      const item = files[i];
-      if (item.status === "done") continue;
-
-      setFiles((prev) =>
-        prev.map((f, idx) => (idx === i ? { ...f, status: "uploading", progress: 0 } : f)),
-      );
-
-      try {
-        await uploadKnowledgeFile(
-          kbId,
-          { file: item.file, fileName: item.file.name },
-          (percent) => {
-            setFiles((prev) =>
-              prev.map((f, idx) => (idx === i ? { ...f, progress: percent } : f)),
-            );
-          },
-        );
-        anySuccess = true;
-        setFiles((prev) =>
-          prev.map((f, idx) => (idx === i ? { ...f, status: "done", progress: 100 } : f)),
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed";
-        setFiles((prev) =>
-          prev.map((f, idx) => (idx === i ? { ...f, status: "error", error: msg } : f)),
-        );
-      }
+  const startUpload = () => {
+    if (files.length === 0) return;
+    if (onProceed) {
+      onProceed(files.map((item) => item.file));
+      return;
     }
-
-    setBusy(false);
-    if (anySuccess) {
-      onUploaded();
-    }
-  };
-
-  const handleClose = () => {
-    if (busy) return;
+    enqueue({
+      kbId,
+      kbName,
+      uploads: files.map((item) => ({
+        file: item.file,
+        fileName: buildUploadFileName(item.file, ""),
+      })),
+    });
     setFiles([]);
     onClose();
   };
 
-  const allDone = files.length > 0 && files.every((f) => f.status === "done");
+  const handleClose = () => {
+    setFiles([]);
+    onClose();
+  };
 
   return (
     <Modal open={open} title="Upload documents" onClose={handleClose} width="w-[560px]">
@@ -121,7 +112,7 @@ export function UploadModal({
           }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
-          onClick={() => !busy && inputRef.current?.click()}
+          onClick={() => inputRef.current?.click()}
           className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-[16px] border-2 border-dashed p-6 text-center transition-colors ${
             dragOver
               ? "border-primary bg-primary/5"
@@ -161,32 +152,16 @@ export function UploadModal({
                     <span className="truncate font-medium text-ink">{item.file.name}</span>
                     <span className="shrink-0 text-muted-soft">{fmtBytes(item.file.size)}</span>
                   </div>
-                  {item.status === "uploading" && (
-                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-strong">
-                      <div
-                        className="h-full bg-primary transition-all duration-200"
-                        style={{ width: `${item.progress}%` }}
-                      />
-                    </div>
-                  )}
-                  {item.status === "error" && (
-                    <p className="caption mt-0.5 text-error truncate">{item.error}</p>
-                  )}
-                  {item.status === "done" && (
-                    <p className="caption mt-0.5 text-success">Uploaded successfully</p>
-                  )}
                 </div>
-                {!busy && item.status !== "done" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(item.id);
-                    }}
-                    className="text-muted hover:text-ink shrink-0 p-1"
-                  >
-                    ✕
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeFile(item.id);
+                  }}
+                  className="text-muted hover:text-ink shrink-0 p-1"
+                >
+                  ✕
+                </button>
               </div>
             ))}
           </div>
@@ -194,24 +169,17 @@ export function UploadModal({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">
+          <button type="button" className="btn btn-outline" onClick={handleClose}>
+            Cancel
+          </button>
           <button
             type="button"
-            className="btn btn-outline"
-            onClick={handleClose}
-            disabled={busy}
+            className="btn btn-primary"
+            disabled={files.length === 0}
+            onClick={startUpload}
           >
-            {allDone ? "Done" : "Cancel"}
+            {`Upload${files.length > 0 ? ` (${files.length})` : ""}`}
           </button>
-          {!allDone && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={files.length === 0 || busy}
-              onClick={() => void startUpload()}
-            >
-              {busy ? "Uploading…" : `Upload ${files.length > 0 ? `(${files.length})` : ""}`}
-            </button>
-          )}
         </div>
       </div>
     </Modal>
