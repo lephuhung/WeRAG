@@ -1,0 +1,52 @@
+# Dev backend with hot reload — `air` rebuilds + restarts on .go changes.
+#
+# Usage:
+#   docker compose -f docker-compose.yml stop app
+#   docker compose -f docker-compose.hotreload.yml up -d app-dev
+#   docker compose -f docker-compose.hotreload.yml logs -f app-dev
+#
+# Shares the prod compose project name, so WeKnora-network / data-files /
+# docreader-tmp resolve to the same resources the prod app used — the dev
+# backend sees the same DB, Redis, docreader and uploaded files.
+services:
+  app-dev:
+    image: golang:1.26-bookworm
+    container_name: WeKnora-app-dev
+    working_dir: /src
+    ports:
+      - "${APP_PORT:-18080}:8080"
+    env_file:
+      - .env
+    volumes:
+      - .:/src
+      - data-files:/data/files
+      - docreader-tmp:/tmp/docreader:ro
+      # Persist Go module + build caches across container restarts.
+      - gomod-cache:/go/pkg/mod
+      - gobuild-cache:/root/.cache/go-build
+    networks:
+      - WeKnora-network
+    # .air.toml builds without the `anydoc` tag (no Rust toolchain in this
+    # image) — parsing falls back to the docreader gRPC service, which the
+    # compose stack already runs.
+    # libsqlite3-dev: sqlite-vec cgo build needs sqlite3.h (prod builder
+    # stage installs it; the golang base image does not).
+    command: >
+      sh -c "apt-get update -qq && apt-get install -y -qq libsqlite3-dev &&
+             go install github.com/air-verse/air@latest && exec air"
+    restart: unless-stopped
+
+networks:
+  WeKnora-network:
+    name: spec-airag-refactor_WeKnora-network
+    external: true
+
+volumes:
+  data-files:
+    name: spec-airag-refactor_data-files
+    external: true
+  docreader-tmp:
+    name: spec-airag-refactor_docreader-tmp
+    external: true
+  gomod-cache:
+  gobuild-cache:

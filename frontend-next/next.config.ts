@@ -4,7 +4,7 @@ const backend = process.env.WERAG_BACKEND_URL ?? "http://10.10.0.241:18080";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  allowedDevOrigins: ["127.0.0.1"],
+  allowedDevOrigins: ["127.0.0.1", "10.10.0.241"],
   async rewrites() {
     // Dev + single-origin deploy parity with Vue (vite proxy + nginx):
     // /api/* and /files/* go to the Go backend.

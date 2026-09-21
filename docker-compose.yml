@@ -378,7 +378,6 @@ services:
         condition: service_healthy
     networks:
       - WeKnora-network
-      - airag_hrag_network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -510,7 +509,6 @@ services:
       start_period: 60s
     networks:
       - WeKnora-network
-      - airag_hrag_network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -529,6 +527,56 @@ services:
       - "5002"
     environment:
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+
+  # vLLM server hosting the SenOCR-Vi PaddleOCR-VL model used by the
+  # paddleocr_vl parser engine (tenants point paddleocr_vl_endpoint at
+  # http://hrag-vllm-ocr:8001/v1). GPU-only — kept behind the `ocr` profile
+  # so CPU-only deployments don't try to start it. Requires the NVIDIA
+  # container toolkit; model weights come from the host HF cache
+  # (HF_HUB_OFFLINE=1) — run `huggingface-cli download VietAlphaLabs/SenOCR-Vi`
+  # into HF_CACHE_DIR once, or unset HF_HUB_OFFLINE to download at start.
+  vllm-ocr:
+    image: ${VLLM_OCR_IMAGE:-vllm/vllm-openai:unlimited-ocr}
+    container_name: hrag-vllm-ocr
+    profiles:
+      - ocr
+      - full
+    ports:
+      - "${VLLM_OCR_PORT:-8001}:8001"
+    environment:
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
+      - FLASHINFER_DISABLE_VERSION_CHECK=1
+      - NVIDIA_VISIBLE_DEVICES=${VLLM_OCR_GPU:-0}
+    volumes:
+      - ${HF_CACHE_DIR:-/root/.cache/huggingface}:/root/.cache/huggingface
+    command:
+      - ${VLLM_OCR_MODEL:-VietAlphaLabs/SenOCR-Vi}
+      - --port
+      - "8001"
+      - --max-model-len
+      - "12288"
+      - --gpu-memory-utilization
+      - "0.24"
+      - --max-num-seqs
+      - "8"
+      - --trust-remote-code
+      - --no-enable-prefix-caching
+      - --mm-processor-cache-gb
+      - "0"
+      - --served-model-name
+      - ${VLLM_OCR_SERVED_NAME:-senocr-vi}
+      - --host
+      - 0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VLLM_OCR_GPU:-0}"]
+              capabilities: [gpu]
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -1037,9 +1085,45 @@ services:
     profiles:
       - full
 
-  # OpenAI-compatible adapter for AIRAG's embed-rerank service (custom
-  # /embed + /rerank API). Enable with `--profile airag-models`; requires the
-  # external airag_hrag_network with hrag-embed-rerank running.
+  # Embedding + rerank service (BGE/vietlegal-harrier) moved in from the
+  # retired AIRAG repo. The image ships the code at /app/backend, so only
+  # the HF model cache needs mounting. GPU-only — profile `airag-models`.
+  # Not port-published: only the OpenAI adapter below calls it, via
+  # docker DNS on WeKnora-network.
+  embed-rerank:
+    image: ${AIRAG_BACKEND_IMAGE:-airag-backend:v2phase2}
+    container_name: hrag-embed-rerank
+    command: ["uvicorn", "embed_rerank_service.main:app", "--host", "0.0.0.0", "--port", "8090"]
+    expose:
+      - "8090"
+    environment:
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
+      - HRAG_EMBEDDING_MODEL=${EMBEDDING_MODEL:-mainguyen9/vietlegal-harrier-0.6b}
+      - HRAG_RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      - HRAG_EMBEDDING_DEVICE=cuda
+      - HRAG_RERANKER_DEVICE=cuda
+      - EMBED_RERANK_CONCURRENCY=${EMBED_RERANK_CONCURRENCY:-1}
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - NVIDIA_VISIBLE_DEVICES=${EMBED_RERANK_GPU:-0}
+    volumes:
+      - ${HF_CACHE_DIR:-/root/.cache/huggingface}:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${EMBED_RERANK_GPU:-0}"]
+              capabilities: [gpu]
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+    profiles:
+      - airag-models
+
+  # OpenAI-compatible adapter for the embed-rerank service above (custom
+  # /embed + /rerank upstream → /v1/embeddings + /v1/rerank). Enable with
+  # `--profile airag-models`; tenant model configs point base_url at
+  # http://hrag-openai-adapter:8090[/v1].
   airag-model-adapter:
     image: ${AIRAG_BACKEND_IMAGE:-airag-backend:v2phase2}
     container_name: hrag-openai-adapter
@@ -1052,7 +1136,9 @@ services:
     ports:
       - "${AIRAG_ADAPTER_PORT:-8090}:8090"
     networks:
-      - airag_hrag_network
+      - WeKnora-network
+    depends_on:
+      - embed-rerank
     restart: unless-stopped
     profiles:
       - airag-models
@@ -1060,10 +1146,6 @@ services:
 networks:
   WeKnora-network:
     driver: bridge
-  # External: AIRAG model services (vllm-ocr :8001, embed-rerank :8090,
-  # vllm-memory :8001) that this stack reuses for OCR/embed/rerank.
-  airag_hrag_network:
-    external: true
 
 volumes:
   postgres-data:
