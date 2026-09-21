@@ -284,6 +284,7 @@ func RegisterSystemRoutes(
 func RegisterSystemAdminRoutes(
 	r *gin.RouterGroup,
 	handler *handler.SystemHandler,
+	statsHandler *handler.StatsHandler,
 	auditLogHandler *handler.AuditLogHandler,
 	g *rbacGuards,
 ) {
@@ -299,6 +300,10 @@ func RegisterSystemAdminRoutes(
 		// user-management UI; /list above is the admins-only subset kept
 		// for the compact admin-picker views.
 		adminRoutes.GET("/users", handler.ListSystemUsers)
+		// Platform-wide usage stats (accounts, documents by status, message
+		// activity heatmap) for the SystemAdmin overview dashboard.
+		// Human-admin only — deliberately not declared as an API-key route.
+		adminRoutes.GET("/stats", statsHandler.GetSystemStats)
 		adminRoutes.POST("/users/reset-password", handler.ResetUserPassword)
 		adminRoutes.POST("/users/create", handler.CreateSystemUser)
 		// Workspace-role management for any tenant — the SystemAdmin

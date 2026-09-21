@@ -95,6 +95,10 @@ DROP TABLE IF EXISTS agent_shares;
 DROP TABLE IF EXISTS kb_shares;
 DROP TABLE IF EXISTS organization_join_requests;
 DROP TABLE IF EXISTS organization_tenant_members;
+-- organization_members_pre_plan3 is the parked pre-000045 backup of
+-- organization_members (kept for that migration's rollback); it still
+-- holds an FK on organizations and must go before the parent table.
+DROP TABLE IF EXISTS organization_members_pre_plan3;
 DROP TABLE IF EXISTS organizations;
 DROP TABLE IF EXISTS tenant_org_members;
 DROP TABLE IF EXISTS tenant_orgs;

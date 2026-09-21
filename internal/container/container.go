@@ -225,6 +225,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Global Vietnamese abbreviation dictionary (AIRAG port) — feeds both the
 	// /abbreviations API and the resolve_abbreviation agent tool.
 	must(container.Provide(service.NewAbbreviationService))
+	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
+	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
 	// the service reports Enabled()=false and the agent tool is never
 	// registered when the people_search config section is absent/disabled.
@@ -555,6 +557,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
+	must(container.Provide(handler.NewStatsHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))

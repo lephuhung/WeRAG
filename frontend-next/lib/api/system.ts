@@ -654,6 +654,57 @@ export function purgeArchivedRuntimeTasks(
   return apiDel(`/api/v1/system/admin/runtime/queues/${encodeURIComponent(queue)}/archived`);
 }
 
+// ---- platform usage statistics (system-scope) -------------------------------------------
+
+/* Mirrors types.SystemStats — GET /api/v1/system/admin/stats (SystemAdmin
+ * only). All counters are platform-wide across every tenant. */
+export interface AccountStats {
+  total_users: number;
+  active_users: number;
+  inactive_users: number;
+  system_admins: number;
+  total_tenants: number;
+  new_users_last_30d: number;
+}
+
+export interface DocumentStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface DocumentStats {
+  total: number;
+  by_status: DocumentStatusCount[];
+}
+
+export interface MessageDayActivity {
+  /** YYYY-MM-DD (server-side calendar day). */
+  date: string;
+  count: number;
+  user: number;
+  assistant: number;
+}
+
+export interface MessageStats {
+  total: number;
+  total_sessions: number;
+  /** Trailing window covered by by_day. */
+  days: number;
+  /** Only days with at least one message — gaps render as zero. */
+  by_day: MessageDayActivity[];
+}
+
+export interface SystemStats {
+  accounts: AccountStats;
+  documents: DocumentStats;
+  messages: MessageStats;
+}
+
+/** GET /api/v1/system/admin/stats?days=N (SystemAdmin only, 1-365). */
+export function getSystemStats(days = 90): Promise<{ data: SystemStats }> {
+  return apiGet(`/api/v1/system/admin/stats?days=${days}`);
+}
+
 // ---- sandbox backend configuration (per workspace) -------------------------------------
 
 export interface SandboxVolumeMountConfig {
