@@ -25,18 +25,17 @@ export interface SettingsNavGroup {
   items: SettingsNavItem[];
 }
 
-/* Sections rendered inside /platform/system/workspace — personal and
- * tenant-level settings. Platform-level configuration lives on the sibling
- * admin tabs (overview, engines, models, extensions, agents, users, logs). */
+/* Sections under /platform/system/workspace — personal and tenant-level
+ * settings. Tooling configs (env vars, browser connection, abbreviations)
+ * live under /platform/system/extensions; platform-level configuration on
+ * the engines/admin tabs. */
 export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
   {
     key: "account",
     labelKey: "settingsNav.groups.account",
     items: [
       { key: "general", labelKey: "settingsNav.general", fallbackLabel: "General", minRole: "member" },
-      { key: "envvars", labelKey: "settingsNav.envvars", fallbackLabel: "Environment variables", minRole: "member" },
       { key: "mymemory", labelKey: "settingsNav.mymemory", fallbackLabel: "My memory", minRole: "member" },
-      { key: "browserconnection", fallbackLabel: "Browser connection", minRole: "member" },
     ],
   },
   {
@@ -47,7 +46,7 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "owner" },
       { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "admin" },
-      { key: "chathistory", fallbackLabel: "Chat history", minRole: "owner" },
+      { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "owner" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "owner" },
     ],
   },
@@ -67,34 +66,35 @@ export function canSeeSection(
 }
 
 /* Legacy /platform/settings?section=<key> URLs → canonical routes under
- * /platform/system. Workspace sections keep their key via ?section=. */
+ * /platform/system. Every section is a real route now. */
 export const LEGACY_SECTION_ROUTES: Record<string, string> = {
-  general: "/platform/system/workspace?section=general",
-  envvars: "/platform/system/workspace?section=envvars",
-  mymemory: "/platform/system/workspace?section=mymemory",
-  browserconnection: "/platform/system/workspace?section=browserconnection",
-  tenant: "/platform/system/workspace?section=tenant",
-  members: "/platform/system/workspace?section=members",
-  "api-keys": "/platform/system/workspace?section=api-keys",
-  orgs: "/platform/system/workspace?section=orgs",
-  chathistory: "/platform/system/workspace?section=chathistory",
-  memory: "/platform/system/workspace?section=memory",
+  general: "/platform/system/workspace",
+  envvars: "/platform/system/extensions/envvars",
+  mymemory: "/platform/system/workspace/mymemory",
+  browserconnection: "/platform/system/extensions/browserconnection",
+  tenant: "/platform/system/workspace/tenant",
+  members: "/platform/system/workspace/members",
+  "api-keys": "/platform/system/workspace/api-keys",
+  orgs: "/platform/system/workspace/orgs",
+  abbreviations: "/platform/system/extensions/abbreviations",
+  chathistory: "/platform/system/workspace/chathistory",
+  memory: "/platform/system/workspace/memory",
   models: "/platform/system/models",
-  "system-overview": "/platform/system/overview",
-  "system-users": "/platform/system/users",
-  "system-services": "/platform/system/services",
-  "system-logs": "/platform/system/logs",
+  "system-overview": "/platform/system/admin",
+  "system-users": "/platform/system/admin/users",
+  "system-services": "/platform/system/engines",
+  "system-logs": "/platform/system/admin/logs",
   "system-models": "/platform/system/models",
-  "system-extensions": "/platform/system/extensions",
-  ollama: "/platform/system/models?tab=ollama",
-  weknoracloud: "/platform/system/models?tab=weknoracloud",
-  parser: "/platform/system/services?category=parsers",
-  vectorstore: "/platform/system/services?category=vector",
-  storage: "/platform/system/services?category=storage",
-  websearch: "/platform/system/services?category=search",
-  sandbox: "/platform/system/services?category=sandbox",
-  skills: "/platform/system/extensions?tab=skills",
-  mcp: "/platform/system/extensions?tab=mcp",
+  "system-extensions": "/platform/system/extensions/mcp",
+  ollama: "/platform/system/models/ollama",
+  weknoracloud: "/platform/system/models/weknoracloud",
+  parser: "/platform/system/engines",
+  vectorstore: "/platform/system/engines/vector",
+  storage: "/platform/system/engines/storage",
+  websearch: "/platform/system/engines/search",
+  sandbox: "/platform/system/engines/sandbox",
+  skills: "/platform/system/extensions/skills",
+  mcp: "/platform/system/extensions/mcp",
 };
 
 /* Legacy ?section= values from the Vue app → nav keys. */

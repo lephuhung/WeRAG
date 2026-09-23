@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconSearch } from "@/components/icons";
+import { Select } from "@/components/select";
 import {
   listWebSearchProviders,
   createWebSearchProvider,
@@ -206,19 +207,14 @@ export function WebSearchSettings() {
 
             <div>
               <label className="block text-muted font-medium mb-1">Provider Engine</label>
-              <select
-                className="input w-full"
+              <Select
+                className="w-full"
                 value={form.provider}
-                onChange={(e) =>
-                  setForm({ ...form, provider: e.target.value as WebSearchProviderEntity["provider"] })
+                onChange={(v) =>
+                  setForm({ ...form, provider: v as WebSearchProviderEntity["provider"] })
                 }
-              >
-                {SUPPORTED_PROVIDERS.map((sp) => (
-                  <option key={sp.id} value={sp.id}>
-                    {sp.name}
-                  </option>
-                ))}
-              </select>
+                options={SUPPORTED_PROVIDERS.map((sp) => ({ value: sp.id, label: sp.name }))}
+              />
             </div>
 
             <div>

@@ -165,7 +165,7 @@ func (s *Server) runSearchKnowledgeWithFilter(
 ) (*mcp.CallToolResult, error) {
 	tool := tools.NewSearchKnowledgeTool(
 		s.kbService, s.knowledgeService, s.chunkService, searchTargetsFor(kbs), nil, s.cfg,
-	)
+	).WithAbbreviationService(s.abbreviationService)
 	if pattern != nil {
 		tool.WithPatternFilter(pattern)
 	}

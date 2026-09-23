@@ -109,3 +109,70 @@ func TestQuickAnswerReasoningAndTimelineShareOneStep(t *testing.T) {
 	assert.Equal(t, "思考中继续", msg.AgentSteps[0].ReasoningContent)
 	require.Len(t, msg.AgentSteps[0].ToolCalls, 1)
 }
+
+func TestQuickAnswerTimelineRecorderPersistsAbbreviationResolution(t *testing.T) {
+	bus := event.NewEventBus()
+	msg := &types.Message{}
+	registerQuickAnswerTimelineRecorder(bus, msg)
+
+	emitTimelineStage(t, bus, "call-1", "resolve_abbreviation",
+		map[string]any{"action": "expand", "text": "XYZABC tỉnh họp"},
+		event.AgentToolResultData{
+			Output:  "unknown_candidate: XYZABC",
+			Success: true,
+			Data: map[string]interface{}{
+				"result": map[string]interface{}{"potential_abbreviations": []string{"XYZABC"}},
+			},
+		})
+	emitTimelineStage(t, bus, "call-2", "resolve_abbreviation",
+		map[string]any{"action": "suggest", "short_form": "XYZABC", "full_form": "X Y Z"},
+		event.AgentToolResultData{
+			Output:  "recorded",
+			Success: true,
+			Data:    map[string]interface{}{"status": "pending_review"},
+		})
+
+	require.Len(t, msg.AgentSteps, 1)
+	require.Len(t, msg.AgentSteps[0].ToolCalls, 2)
+	resolve := msg.AgentSteps[0].ToolCalls[0]
+	assert.Equal(t, "resolve_abbreviation", resolve.Name)
+	assert.Equal(t, "expand", resolve.Args["action"])
+	require.NotNil(t, resolve.Result)
+	assert.Equal(t, []string{"XYZABC"},
+		resolve.Result.Data["result"].(map[string]interface{})["potential_abbreviations"])
+	suggest := msg.AgentSteps[0].ToolCalls[1]
+	assert.Equal(t, "suggest", suggest.Args["action"])
+	assert.Equal(t, "pending_review", suggest.Result.Data["status"])
+}
+
+func TestQuickAnswerTimelineRecorderPersistsPeopleLookup(t *testing.T) {
+	bus := event.NewEventBus()
+	msg := &types.Message{}
+	registerQuickAnswerTimelineRecorder(bus, msg)
+
+	emitTimelineStage(t, bus, "call-1", "people_lookup",
+		map[string]any{"lookup_type": "phone", "query": "0989755968"},
+		event.AgentToolResultData{
+			Output:   "PERSON DISPLAY",
+			Success:  true,
+			Duration: 7,
+			Data: map[string]interface{}{
+				"found":       true,
+				"lookup_type": "phone",
+				"unavailable": false,
+			},
+		})
+
+	require.Len(t, msg.AgentSteps, 1)
+	require.Len(t, msg.AgentSteps[0].ToolCalls, 1)
+	call := msg.AgentSteps[0].ToolCalls[0]
+	assert.Equal(t, "people_lookup", call.Name)
+	assert.Equal(t, types.PipelineToolCallIDPrefix+"call-1", call.ID)
+	assert.Equal(t, "phone", call.Args["lookup_type"])
+	assert.Equal(t, "0989755968", call.Args["query"])
+	require.NotNil(t, call.Result)
+	assert.True(t, call.Result.Success)
+	assert.Equal(t, "PERSON DISPLAY", call.Result.Output)
+	assert.Equal(t, true, call.Result.Data["found"])
+	assert.Equal(t, "phone", call.Result.Data["lookup_type"])
+}

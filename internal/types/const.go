@@ -54,7 +54,8 @@ const (
 	// session/message repository lookups. See SandboxTenantIDFromContext.
 	SandboxTenantIDContextKey ContextKey = "SandboxTenantID"
 	// EmbedQueryContextKey is the context key for embedding query text
-	EmbedQueryContextKey ContextKey = "EmbedQuery"
+	EmbedQueryContextKey             ContextKey = "EmbedQuery"
+	AbbreviationCandidatesContextKey ContextKey = "AbbreviationCandidates"
 	// WikiEditSourceContextKey carries who is authoring the current wiki
 	// page write (user / agent / revert). Absent means the wiki ingest
 	// pipeline. See types.WithWikiEditSource.

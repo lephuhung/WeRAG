@@ -21,27 +21,25 @@ export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors ${
+      className={`flex h-9 max-w-[120px] items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors sm:max-w-[240px] ${
         isAgentStreamMode
           ? "border-ink bg-ink text-white"
           : "border-hairline-strong text-body hover:border-ink hover:text-ink"
       }`}
       title={selectedAgent?.description ?? label}
     >
-      {label}
-      <IconChevronDown className="h-3.5 w-3.5" />
+      <span className="min-w-0 truncate">{label}</span>
+      <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
     </button>
   );
 }
 
 export function AgentSelector({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { agents, sharedAgents, settings, selectAgent } = useChatContext();
-  const [filter, setFilter] = useState("");
   const [sharedFull, setSharedFull] = useState<typeof sharedAgents>([]);
 
   useEffect(() => {
     if (!open) return;
-    setFilter("");
     // Shared list from context may be stale; refresh names for the dropdown.
     apiGet<{ success: boolean; data?: typeof sharedAgents }>(`/api/v1/shared-agents`)
       .then((r) => {
@@ -53,8 +51,6 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
   if (!open) return null;
   const builtins = agents.filter((a) => a.is_builtin);
   const customs = agents.filter((a) => !a.is_builtin);
-  const q = filter.trim().toLowerCase();
-  const match = (name: string) => !q || name.toLowerCase().includes(q);
   const quick = builtins.find((a) => a.id === BUILTIN_QUICK_ANSWER_ID);
   const smart = builtins.find((a) => a.id === BUILTIN_SMART_REASONING_ID);
   const otherBuiltins = builtins.filter(
@@ -71,37 +67,27 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div className="shrink-0 border-b border-hairline p-2">
-          <input
-            className="input h-9 text-[14px]"
-            placeholder="Search agents…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            autoFocus
-          />
-        </div>
+      <div className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {quick && match(quick.name) && (
+          {quick && (
             <AgentRow name="Normal mode" desc={quick.description ?? "Fast RAG answers"} active={current(quick.id)} onClick={() => pick(quick.id)} />
           )}
-          {smart && match(smart.name) && (
+          {smart && (
             <AgentRow name="Agent mode" desc={smart.description ?? "Reasoning with tools"} active={current(smart.id)} onClick={() => pick(smart.id)} />
           )}
-          {otherBuiltins.filter((a) => match(a.name)).map((a) => (
+          {otherBuiltins.map((a) => (
             <AgentRow key={a.id} name={a.name} desc={a.description} active={current(a.id)} onClick={() => pick(a.id)} />
           ))}
-          {customs.filter((a) => match(a.name)).length > 0 && (
+          {customs.length > 0 && (
             <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">My agents</div>
           )}
-          {customs.filter((a) => match(a.name)).map((a) => (
+          {customs.map((a) => (
             <AgentRow key={a.id} name={a.name} desc={a.description} active={current(a.id)} onClick={() => pick(a.id)} />
           ))}
           {(sharedFull.length > 0 || sharedAgents.length > 0) && (
             <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">Shared with me</div>
           )}
           {(sharedFull.length > 0 ? sharedFull : sharedAgents)
-            .filter((s) => match(s.agent.name))
             .map((s) => (
               <AgentRow
                 key={`${s.agent.id}-${s.source_tenant_id}`}

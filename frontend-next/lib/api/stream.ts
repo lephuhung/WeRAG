@@ -79,6 +79,7 @@ export type StreamParams = {
   images?: Array<{ data: string }>;
   suggestionAttribution?: { suggestion_set_id: string; question_id: string };
   questionOrigin?: { knowledge_base_id: string; knowledge_id?: string };
+  abbreviationCandidates?: string[];
   signal?: AbortSignal;
   onChunk: (c: StreamChunk) => void;
 };
@@ -167,6 +168,9 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
       ? { suggestion_attribution: params.suggestionAttribution }
       : {}),
     ...(params.questionOrigin ? { question_origin: params.questionOrigin } : {}),
+    ...(params.abbreviationCandidates?.length
+      ? { abbreviation_candidates: params.abbreviationCandidates }
+      : {}),
     channel: isEmbed ? "embed" : "web",
   };
 }

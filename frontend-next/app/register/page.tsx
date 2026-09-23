@@ -75,7 +75,7 @@ function RegisterForm() {
           {token ? "You were invited — pick a username to join." : "Self-serve registration."}
           {inviteOnly && !token ? " This deployment is invite-only." : ""}
         </p>
-        <form className="card p-8" onSubmit={submit}>
+        <form className="card p-6 sm:p-8" onSubmit={submit}>
           <label className="mb-4 block">
             <span className="caption mb-1.5 block text-muted">Username</span>
             <input className="input" required value={username} onChange={(e) => setUsername(e.target.value)} />

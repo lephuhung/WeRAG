@@ -263,6 +263,7 @@ html.dark {
     line-height: 1.4;
     letter-spacing: 0.96px;
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .input {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Toggle } from "@/components/settings/toggle";
 import { IconClose, IconDoc } from "@/components/icons";
 import { ParserRulesEditor } from "@/components/knowledge/parser-rules-editor";
+import { Select } from "@/components/select";
 import {
   listKnowledgeTags,
   type KnowledgeBaseRow,
@@ -210,22 +211,38 @@ export function ParseSettingsDialog({
     value: string,
     error: boolean,
     onSel: (v: string) => void,
-  ) => (
-    <select
-      className={`input w-[280px] ${error ? "border-error" : ""}`}
-      value={value}
-      onChange={(e) => onSel(e.target.value)}
-    >
-      <option value="">{t("ps.modelPlaceholder")}</option>
-      {models
-        .filter((m) => m.type === type)
-        .map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-    </select>
-  );
+  ) => {
+    const available = models.filter((m) => {
+      if (type === "VLLM") {
+        return (
+          m.type === "VLLM" ||
+          (m.type === "KnowledgeQA" && m.parameters?.supports_vision === true)
+        );
+      }
+      return m.type === type;
+    });
+
+    return (
+      <Select
+        className={`w-full sm:w-[280px] ${error ? "border-error" : ""}`}
+        value={value}
+        onChange={onSel}
+        placeholder={t("ps.modelPlaceholder")}
+        options={[
+          { value: "", label: t("ps.modelPlaceholder") },
+          ...available
+            .filter((m): m is ModelConfig & { id: string } => Boolean(m.id))
+            .map((m) => ({
+              value: m.id,
+              label: `${m.display_name?.trim() || m.name}${m.is_builtin ? " (built-in)" : ""}`,
+            })),
+          ...(value && !available.some((m) => m.id === value)
+            ? [{ value, label: `${value} (Current)` }]
+            : []),
+        ]}
+      />
+    );
+  };
 
   const row = (label: string, desc: string | undefined, control: React.ReactNode) => (
     <div className="flex items-center justify-between gap-6 py-3">
@@ -249,12 +266,12 @@ export function ParseSettingsDialog({
   const title = mode === "reparse" ? t("ps.titleReparse") : t("ps.title");
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-ink/20" onClick={onCancel} />
       <div
         role="dialog"
         aria-label={title}
-        className="card relative flex h-[600px] w-[920px] max-w-full flex-col overflow-hidden p-0"
+        className="card relative flex h-[600px] max-h-[calc(100dvh-1.5rem)] w-[920px] max-w-full flex-col overflow-hidden p-0"
       >
         <button
           onClick={onCancel}
@@ -264,9 +281,9 @@ export function ParseSettingsDialog({
           <IconClose className="h-4 w-4" />
         </button>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* left: files / source */}
-          <aside className="flex w-[260px] shrink-0 flex-col border-r border-hairline bg-surface">
+          <aside className="flex w-full shrink-0 flex-col border-b border-hairline bg-surface md:w-[260px] md:border-b-0 md:border-r">
             <div className="border-b border-hairline px-4 py-3">
               <h2 className="title-sm text-ink">{title}</h2>
               {mode === "file" && (
@@ -275,7 +292,7 @@ export function ParseSettingsDialog({
                 </p>
               )}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="max-h-[140px] min-h-0 flex-1 overflow-y-auto p-2 md:max-h-none">
               {mode === "reparse" && reparse && (
                 <div className="rounded-[10px] bg-surface-card p-3">
                   <p className="truncate text-[13px] font-medium text-ink" title={reparse.fileName}>
@@ -310,8 +327,8 @@ export function ParseSettingsDialog({
           </aside>
 
           {/* middle: section nav */}
-          <nav className="w-[200px] shrink-0 overflow-y-auto border-r border-hairline p-2">
-            <p className="px-2 pb-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-soft">
+          <nav className="flex w-full shrink-0 gap-1 overflow-x-auto border-b border-hairline p-2 md:w-[200px] md:flex-col md:gap-0 md:overflow-y-auto md:overflow-x-hidden md:border-b-0 md:border-r">
+            <p className="hidden px-2 pb-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-soft md:block">
               {t("ps.parseConfig")}
             </p>
             {navItems.map((item) => (
@@ -319,7 +336,7 @@ export function ParseSettingsDialog({
                 key={item.key}
                 type="button"
                 onClick={() => setSection(item.key)}
-                className={`flex w-full flex-col rounded-[8px] px-3 py-2 text-left transition-colors ${
+                className={`flex shrink-0 flex-col rounded-[8px] px-3 py-2 text-left transition-colors md:w-full ${
                   section === item.key ? "bg-surface-strong" : "hover:bg-surface-strong/60"
                 }`}
               >
@@ -414,28 +431,26 @@ export function ParseSettingsDialog({
                     {row(
                       t("ps.chunkStrategy"),
                       undefined,
-                      <select
-                        className="input w-[280px]"
+                      <Select
+                        className="w-full sm:w-[280px]"
                         value={state.chunking.strategy}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           patch((s) => ({
                             ...s,
-                            chunking: { ...s.chunking, strategy: e.target.value },
+                            chunking: { ...s.chunking, strategy: v },
                           }))
                         }
-                      >
-                        {["auto", "heading", "heuristic", "legacy"].map((v) => (
-                          <option key={v} value={v}>
-                            {t(`ps.strategy.${v}` as LocaleKey)}
-                          </option>
-                        ))}
-                      </select>,
+                        options={["auto", "heading", "heuristic", "legacy"].map((v) => ({
+                          value: v,
+                          label: t(`ps.strategy.${v}` as LocaleKey),
+                        }))}
+                      />,
                     )}
                     {row(
                       t("ps.chunkSize"),
                       undefined,
                       <input
-                        className="input w-[160px]"
+                        className="input w-full sm:w-[160px]"
                         type="number"
                         min={100}
                         max={4000}
@@ -453,7 +468,7 @@ export function ParseSettingsDialog({
                       t("ps.chunkOverlap"),
                       undefined,
                       <input
-                        className="input w-[160px]"
+                        className="input w-full sm:w-[160px]"
                         type="number"
                         min={0}
                         max={500}
@@ -503,7 +518,7 @@ export function ParseSettingsDialog({
                               </span>
                             ))}
                             <input
-                              className="input h-7 w-[140px] text-[12px]"
+                              className="input h-7 w-full sm:w-[140px] py-1 text-[12px]"
                               placeholder={t("ps.separatorAdd")}
                               value={sepDraft}
                               onChange={(e) => setSepDraft(e.target.value)}
@@ -526,7 +541,7 @@ export function ParseSettingsDialog({
                           t("ps.tokenLimit"),
                           undefined,
                           <input
-                            className="input w-[160px]"
+                            className="input w-full sm:w-[160px]"
                             type="number"
                             min={0}
                             max={8192}
@@ -584,7 +599,7 @@ export function ParseSettingsDialog({
                               t("ps.parentChunkSize"),
                               undefined,
                               <input
-                                className="input w-[160px]"
+                                className="input w-full sm:w-[160px]"
                                 type="number"
                                 min={512}
                                 max={8192}
@@ -602,7 +617,7 @@ export function ParseSettingsDialog({
                               t("ps.childChunkSize"),
                               undefined,
                               <input
-                                className="input w-[160px]"
+                                className="input w-full sm:w-[160px]"
                                 type="number"
                                 min={64}
                                 max={2048}
@@ -654,22 +669,23 @@ export function ParseSettingsDialog({
                         {row(
                           t("ps.descLangLabel"),
                           t("ps.descLangDesc"),
-                          <select
-                            className="input w-[280px]"
+                          <Select
+                            className="w-full sm:w-[280px]"
                             value={state.multimodal.descriptionLanguage}
-                            onChange={(e) =>
+                            onChange={(v) =>
                               patch((s) => ({
                                 ...s,
-                                multimodal: { ...s.multimodal, descriptionLanguage: e.target.value },
+                                multimodal: { ...s.multimodal, descriptionLanguage: v },
                               }))
                             }
-                          >
-                            <option value="">{t("ps.descLangAuto")}</option>
-                            <option value="Chinese">中文</option>
-                            <option value="English">English</option>
-                            <option value="Korean">한국어</option>
-                            <option value="Russian">Русский</option>
-                          </select>,
+                            options={[
+                              { value: "", label: t("ps.descLangAuto") },
+                              { value: "Chinese", label: "中文" },
+                              { value: "English", label: "English" },
+                              { value: "Korean", label: "한국어" },
+                              { value: "Russian", label: "Русский" },
+                            ]}
+                          />,
                         )}
                         <div className="py-3">
                           <div className="text-[13px] font-medium text-ink">
@@ -722,7 +738,7 @@ export function ParseSettingsDialog({
                           t("ps.asrLangLabel"),
                           t("ps.asrLangDesc"),
                           <input
-                            className="input w-[280px]"
+                            className="input w-full sm:w-[280px]"
                             value={state.asr.language}
                             placeholder={t("ps.asrLangPlaceholder")}
                             onChange={(e) =>

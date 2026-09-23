@@ -108,11 +108,11 @@ export function FollowUpSuggestions({ sessionId, messageId, enabled, onAsk }: {
             if (!setId) return;
             onAsk(q.text, { setId, questionId: q.id }, q.knowledge_base_ids ?? []);
           }}
-          className="flex items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3.5 py-1.5 text-[13px] text-body transition-colors hover:border-ink hover:text-ink"
+          className="flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3.5 py-1.5 text-[13px] text-body transition-colors hover:border-ink hover:text-ink"
           title={q.category}
         >
           <span className="text-muted-soft">›</span>
-          <span className="max-w-[420px] truncate">{q.text}</span>
+          <span className="min-w-0 max-w-[420px] truncate">{q.text}</span>
         </button>
       ))}
       <button

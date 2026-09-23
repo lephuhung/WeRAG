@@ -31,3 +31,36 @@ func TestValidateWorkerConcurrencyMinimums(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateParseDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		wantErr bool
+	}{
+		{name: "enabled with overrides", value: map[string]any{
+			"enabled":         true,
+			"summary_enabled": true,
+			"chunking_config": map[string]any{"chunk_size": 1024},
+			"vlm_config":      map[string]any{"enabled": true, "model_id": "vlm-1"},
+		}},
+		{name: "disabled empty", value: map[string]any{"enabled": false}},
+		{name: "unknown field rejected", value: map[string]any{
+			"enabled":      true,
+			"chunking_siz": 512, // typo must surface, not be silently dropped
+		}, wantErr: true},
+		{name: "enabled wrong type", value: map[string]any{"enabled": "yes"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRegistryEntry(SystemParseDefaultsKey, tt.value)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}

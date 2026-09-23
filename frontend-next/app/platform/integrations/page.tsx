@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { copyToClipboard } from "@/lib/clipboard";
 
 /** Port of cliIntegration.ts buildCLIConnectCommand. */
 function buildCliConnectCommand(apiBase: string): string {
@@ -55,10 +56,12 @@ function ConnectionBanner() {
         <pre className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] text-ink">{cmd}</pre>
         <button
           className="btn btn-outline btn-sm shrink-0"
-          onClick={() => {
-            void navigator.clipboard.writeText(cmd);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+          onClick={async () => {
+            const ok = await copyToClipboard(cmd);
+            if (ok) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }
           }}
         >
           {copied ? t("integrations.copied") : t("integrations.copy")}
@@ -79,7 +82,7 @@ export default function Integrations() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[900px] px-12 py-12">
+      <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
         <div className="caption-uppercase mb-3 text-muted">Workspace</div>
         <h1 className="display-xl mb-10">{t("integrations.title")}</h1>
 

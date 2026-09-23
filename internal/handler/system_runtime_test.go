@@ -38,6 +38,9 @@ func (runtimeTestSettings) GetBool(_ context.Context, _, _ string, def bool) boo
 func (runtimeTestSettings) GetStringList(_ context.Context, _, _ string, def []string) []string {
 	return def
 }
+func (runtimeTestSettings) GetJSON(context.Context, string) (types.JSON, bool) {
+	return nil, false
+}
 func (runtimeTestSettings) List(context.Context) ([]*types.SystemSetting, error) { return nil, nil }
 func (runtimeTestSettings) Get(context.Context, string) (*types.SystemSetting, error) {
 	return nil, nil

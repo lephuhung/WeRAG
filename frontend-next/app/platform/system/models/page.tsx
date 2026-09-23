@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   createModel,
   debugModel,
@@ -12,8 +12,16 @@ import {
   type ModelConfig,
 } from "@/lib/api/models";
 import { Modal } from "@/components/modal";
-import { RequireSystemAccess } from "@/components/require-system-access";
-import { IconEdit, IconPlus, IconPower, IconTrash } from "@/components/icons";
+import {
+  IconEdit,
+  IconPlus,
+  IconPower,
+  IconPulse,
+  IconStorageEngine,
+  IconTrash,
+} from "@/components/icons";
+import { Select } from "@/components/select";
+import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
 import { OllamaSettings } from "@/components/settings/ollama-settings";
 import { WeKnoraCloudSettings } from "@/components/settings/weknora-cloud-settings";
 
@@ -210,17 +218,44 @@ function toUi(m: ModelConfig, i: number): UiModel {
 
 export default function SystemModelsPage() {
   return (
-    <RequireSystemAccess minRole="owner">
-      <Suspense fallback={null}>
-        <SystemModels />
-      </Suspense>
-    </RequireSystemAccess>
+    <Suspense fallback={null}>
+      <SystemModels />
+    </Suspense>
   );
 }
 
+/* ?tab=ollama / ?tab=weknoracloud were fake type filters in the old layout —
+ * they are real sub-routes now. Other ?tab= values still select a type filter. */
+const PROVIDER_ROUTES: Record<string, string> = {
+  ollama: "/platform/system/models/ollama",
+  weknoracloud: "/platform/system/models/weknoracloud",
+};
+
+/* Provider backends — compact cards opening their config in a modal. The
+ * same panels are reachable at /platform/system/models/{ollama,
+ * weknoracloud} for deep-linking and palette search. */
+const providerCards: SectionCard[] = [
+  {
+    key: "ollama",
+    title: "Ollama (local)",
+    desc: "Run and manage local models via an Ollama server.",
+    icon: <IconStorageEngine className="h-5 w-5" />,
+    content: <OllamaSettings />,
+  },
+  {
+    key: "weknoracloud",
+    title: "WeRAG Cloud",
+    desc: "Hosted model provider — credentials and quotas.",
+    icon: <IconPulse className="h-5 w-5" />,
+    content: <WeKnoraCloudSettings />,
+  },
+];
+
 function SystemModels() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") ?? "all";
+  const router = useRouter();
+  const tabParam = searchParams.get("tab");
+  const initialTab = tabParam && !PROVIDER_ROUTES[tabParam] ? tabParam : "all";
 
   const [models, setModels] = useState<UiModel[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -236,11 +271,14 @@ function SystemModels() {
   const [filterType, setFilterType] = useState<string>(initialTab);
 
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab) {
-      setFilterType(tab);
+    if (!tabParam) return;
+    const target = PROVIDER_ROUTES[tabParam];
+    if (target) {
+      router.replace(target);
+    } else {
+      setFilterType(tabParam);
     }
-  }, [searchParams]);
+  }, [tabParam, router]);
 
   const load = async () => {
     try {
@@ -380,14 +418,18 @@ function SystemModels() {
     { id: "Rerank", label: "Rerank" },
     { id: "VLLM", label: "VLM" },
     { id: "ASR", label: "ASR" },
-    { id: "ollama", label: "Ollama Local" },
-    { id: "weknoracloud", label: "WeRAG Cloud" },
   ];
 
   return (
     <div className="mx-auto w-full max-w-[1200px]">
       {loadError && <p className="caption mb-4 text-error">{loadError}</p>}
       {actionError && <p className="caption mb-4 text-error">{actionError}</p>}
+
+      {/* Provider backends */}
+      <div className="caption-uppercase mb-3 text-muted-soft">Providers</div>
+      <div className="mb-8">
+        <SectionCardGrid cards={providerCards} />
+      </div>
 
       {/* Header bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -398,11 +440,9 @@ function SystemModels() {
           </p>
         </div>
 
-        {filterType !== "ollama" && filterType !== "weknoracloud" && (
-          <button className="btn btn-primary btn-sm" onClick={openAdd}>
-            <IconPlus className="h-3.5 w-3.5" /> Add model
-          </button>
-        )}
+        <button className="btn btn-primary btn-sm" onClick={openAdd}>
+          <IconPlus className="h-3.5 w-3.5" /> Add model
+        </button>
       </div>
 
       {/* Type filter tabs */}
@@ -437,19 +477,8 @@ function SystemModels() {
         })}
       </div>
 
-      {/* Subviews: Ollama or WeRAG Cloud */}
-      {filterType === "ollama" ? (
-        <div className="card p-6">
-          <OllamaSettings />
-        </div>
-      ) : filterType === "weknoracloud" ? (
-        <div className="card p-6">
-          <WeKnoraCloudSettings />
-        </div>
-      ) : (
-        <>
-        {/* Card Grid */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* Card Grid */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredModels.map((m) => {
             const config = TYPE_CONFIG[m.type] ?? DEFAULT_TYPE_CONFIG;
             const Icon = config.icon;
@@ -580,8 +609,6 @@ function SystemModels() {
           No models found matching the selected filter.
         </div>
       )}
-      </>
-      )}
 
       {/* Add / Edit Modal */}
       <Modal
@@ -600,18 +627,18 @@ function SystemModels() {
         </label>
         <label className="mb-4 block">
           <span className="caption mb-1.5 block text-muted">Model Type</span>
-          <select
-            className="input"
+          <Select
             value={form.type}
             disabled={!!editing}
-            onChange={(e) => setForm({ ...form, type: e.target.value })}
-          >
-            <option value="KnowledgeQA">Chat / LLM (KnowledgeQA)</option>
-            <option value="Embedding">Embedding (Vector search)</option>
-            <option value="Rerank">Rerank (Score reordering)</option>
-            <option value="VLLM">VLM (Vision-Language Model)</option>
-            <option value="ASR">ASR (Speech recognition)</option>
-          </select>
+            onChange={(v) => setForm({ ...form, type: v })}
+            options={[
+              { value: "KnowledgeQA", label: "Chat / LLM (KnowledgeQA)" },
+              { value: "Embedding", label: "Embedding (Vector search)" },
+              { value: "Rerank", label: "Rerank (Score reordering)" },
+              { value: "VLLM", label: "VLM (Vision-Language Model)" },
+              { value: "ASR", label: "ASR (Speech recognition)" },
+            ]}
+          />
         </label>
         <label className="mb-4 block">
           <span className="caption mb-1.5 block text-muted">Provider</span>

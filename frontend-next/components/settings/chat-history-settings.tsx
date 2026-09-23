@@ -5,6 +5,7 @@ import { Toggle } from "@/components/settings/toggle";
 import { IconRefresh } from "@/components/icons";
 import { apiGet, apiPut } from "@/lib/api-client";
 import { listModels, type ModelConfig } from "@/lib/api/models";
+import { Select } from "@/components/select";
 import { useAuth } from "@/lib/auth";
 
 export interface ChatHistoryConfig {
@@ -147,23 +148,20 @@ export function ChatHistorySettings() {
               Model used to generate vector embeddings for chat messages.
               {modelLocked && " (Locked because indexed messages already exist)"}
             </span>
-            <select
+            <Select
               disabled={!canEdit || modelLocked}
-              className="input text-sm"
+              className="text-sm"
               value={config.embedding_model_id || ""}
-              onChange={(e) => {
-                const next = e.target.value;
-                setConfig({ ...config, embedding_model_id: next });
-                void handleSave({ embedding_model_id: next });
+              placeholder="Select embedding model…"
+              onChange={(v) => {
+                setConfig({ ...config, embedding_model_id: v });
+                void handleSave({ embedding_model_id: v });
               }}
-            >
-              <option value="">Select embedding model…</option>
-              {embeddingModels.map((m) => (
-                <option key={m.id} value={m.name}>
-                  {m.display_name || m.name}
-                </option>
-              ))}
-            </select>
+              options={embeddingModels.map((m) => ({
+                value: m.name,
+                label: m.display_name || m.name,
+              }))}
+            />
           </label>
         </div>
       )}

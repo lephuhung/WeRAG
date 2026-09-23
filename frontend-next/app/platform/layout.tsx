@@ -16,7 +16,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         <RequireAuth>
           <CommandPaletteProvider>
             <UploadTasksProvider>
-              <div className="flex h-screen min-h-0 w-full bg-canvas">
+              <div className="flex h-dvh min-h-0 w-full bg-canvas">
                 <Sidebar />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <Header />

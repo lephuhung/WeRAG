@@ -1079,7 +1079,7 @@ func (s *agentService) registerTools(
 				config.SearchTargets,
 				rerankModel,
 				s.cfg,
-			)
+			).WithAbbreviationService(s.abbreviationService)
 		case tools.ToolReadDocument:
 			toolToRegister = tools.NewReadDocumentTool(s.knowledgeService, s.chunkService, config.SearchTargets)
 		case tools.ToolListDocuments:
@@ -1176,15 +1176,13 @@ func (s *agentService) registerTools(
 		registry.RegisterTool(tools.NewResolveAbbreviationTool(s.abbreviationService))
 	}
 	// people_lookup is PII. It is registered only when the deployment
-	// enabled PEOPLE_SEARCH_* AND the caller is a tenant admin or system
-	// admin — mirroring AIRAG's superadmin gate. There is no human-approval
-	// channel for native tools (the approval gate is MCP-only), so the role
-	// check is the gate; do not weaken it.
-	if s.peopleService != nil && s.peopleService.Enabled() &&
-		(types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin) ||
-			types.IsSystemAdminFromContext(ctx)) {
+	// enabled PEOPLE_SEARCH_* AND the caller is a system admin — mirroring
+	// AIRAG's superadmin gate. There is no human-approval channel for
+	// native tools (the approval gate is MCP-only), so the role check is
+	// the gate; do not weaken it.
+	if s.peopleService != nil && s.peopleService.Enabled() && canUsePeopleLookup(ctx) {
 		registry.RegisterTool(tools.NewPeopleLookupTool(s.peopleService))
-		logger.Infof(ctx, "Registered people_lookup tool (admin caller)")
+		logger.Infof(ctx, "Registered people_lookup tool (system-admin caller)")
 	}
 
 	logger.Infof(ctx, "Registered %d tools", len(registry.ListTools()))

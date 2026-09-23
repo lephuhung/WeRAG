@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconEdit, IconPlus, IconRefresh, IconTrash } from "@/components/icons";
 import { Toggle } from "@/components/settings/toggle";
+import { Select } from "@/components/select";
 import {
   listSandboxConfigs,
   setSandboxWorkspacePolicy,
@@ -402,16 +403,16 @@ export function SandboxSettings() {
 
           <label className="block">
             <span className="caption mb-1.5 block text-muted">Backend Provider</span>
-            <select
+            <Select
               disabled={!!editingConfig}
-              className="input"
               value={sandboxType}
-              onChange={(e) => setSandboxType(e.target.value as "docker" | "cube" | "e2b")}
-            >
-              <option value="docker">Docker (Local or remote daemon)</option>
-              <option value="cube">Cube (Managed Kubernetes)</option>
-              <option value="e2b">E2B (Cloud microVMs)</option>
-            </select>
+              onChange={(v) => setSandboxType(v as "docker" | "cube" | "e2b")}
+              options={[
+                { value: "docker", label: "Docker (Local or remote daemon)" },
+                { value: "cube", label: "Cube (Managed Kubernetes)" },
+                { value: "e2b", label: "E2B (Cloud microVMs)" },
+              ]}
+            />
           </label>
 
           {sandboxType === "docker" && (

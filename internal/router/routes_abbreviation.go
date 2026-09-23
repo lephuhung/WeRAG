@@ -17,12 +17,12 @@ func RegisterAbbreviationRoutes(r *gin.RouterGroup, h *handler.AbbreviationHandl
 	}
 	abbr := g.apiKeyGroup(r.Group("/abbreviations"), apiKeyFullAccess())
 	{
-		abbr.GET("", g.Member(), h.ListAbbreviations)
-		abbr.GET("/:id", g.Member(), h.GetAbbreviation)
+		abbr.GET("", g.MemberOrSystemAdmin(), h.ListAbbreviations)
+		abbr.GET("/:id", g.MemberOrSystemAdmin(), h.GetAbbreviation)
 		// POST creates an inactive suggestion — safe for any signed-in user.
-		abbr.POST("", g.Member(), h.CreateAbbreviation)
+		abbr.POST("", g.MemberOrSystemAdmin(), h.CreateAbbreviation)
 		// PATCH flips is_active (approval) or edits content — admin only.
-		abbr.PATCH("/:id", g.Owner(), h.UpdateAbbreviation)
-		abbr.DELETE("/:id", g.Owner(), h.DeleteAbbreviation)
+		abbr.PATCH("/:id", g.OwnerOrSystemAdmin(), h.UpdateAbbreviation)
+		abbr.DELETE("/:id", g.OwnerOrSystemAdmin(), h.DeleteAbbreviation)
 	}
 }

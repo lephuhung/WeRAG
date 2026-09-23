@@ -61,8 +61,19 @@ export function Header() {
   };
 
   return (
-    <header className="relative flex h-14 shrink-0 items-center justify-between border-b border-hairline bg-canvas px-8">
-      <span className="caption text-muted">{t(sectionLabel)}</span>
+    <header className="relative flex h-14 shrink-0 items-center justify-between gap-3 border-b border-hairline bg-canvas px-4 sm:px-8">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          onClick={() => window.dispatchEvent(new Event("weknora:toggle-sidebar"))}
+          aria-label="Toggle navigation menu"
+          className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink lg:hidden"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+        <span className="caption truncate text-muted">{t(sectionLabel)}</span>
+      </div>
 
       <button
         onClick={() => setOpen((v) => !v)}
@@ -80,7 +91,7 @@ export function Header() {
             ref={menuRef}
             role="dialog"
             aria-label="Account"
-            className="card absolute right-6 top-[50px] z-50 w-[280px] p-2 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
+            className="card absolute right-0 top-[50px] z-50 w-[280px] max-w-[calc(100vw-2rem)] p-2 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
           >
             <button
               className="flex w-full items-center gap-3 rounded-[8px] px-3 py-3 text-left transition-colors hover:bg-surface-strong"

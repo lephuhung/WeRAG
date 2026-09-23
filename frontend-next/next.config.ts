@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     // Go app serves on APP_PORT (default 8080, this env uses 18080);
     // port 8080 here is nginx forcing https redirects.
     return [
+      { source: "/api/:path*", destination: `${backend}/api/:path*` },
       { source: "/files/:path*", destination: `${backend}/files/:path*` },
     ];
   },

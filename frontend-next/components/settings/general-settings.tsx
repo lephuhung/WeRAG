@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { Select } from "@/components/select";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type FontSizeKey = "small" | "normal" | "large";
@@ -73,17 +74,17 @@ export function GeneralSettings() {
           <label className="title-sm block">{t("settings.langTitle")}</label>
           <p className="caption mt-1 text-muted">{t("settings.langDesc")}</p>
         </div>
-        <select
-          className="input w-[280px] shrink-0"
+        <Select
+          className="w-[280px] shrink-0"
           value={locale}
-          onChange={(e) => {
-            const next = e.target.value as "en" | "vi";
-            if (next === "en" || next === "vi") setLocale(next);
+          onChange={(v) => {
+            if (v === "en" || v === "vi") setLocale(v);
           }}
-        >
-          <option value="en">{t("settings.langEn")}</option>
-          <option value="vi">{t("settings.langVi")}</option>
-        </select>
+          options={[
+            { value: "en", label: t("settings.langEn") },
+            { value: "vi", label: t("settings.langVi") },
+          ]}
+        />
       </div>
 
       {/* theme */}
@@ -92,15 +93,16 @@ export function GeneralSettings() {
           <label className="title-sm block">{t("settings.themeTitle")}</label>
           <p className="caption mt-1 text-muted">{t("settings.themeDesc")}</p>
         </div>
-        <select
-          className="input w-[280px] shrink-0"
+        <Select
+          className="w-[280px] shrink-0"
           value={theme}
-          onChange={(e) => setTheme(e.target.value as ThemeMode)}
-        >
-          <option value="light">{t("settings.themeLight")}</option>
-          <option value="dark">{t("settings.themeDark")}</option>
-          <option value="system">{t("settings.themeSystem")}</option>
-        </select>
+          onChange={(v) => setTheme(v as ThemeMode)}
+          options={[
+            { value: "light", label: t("settings.themeLight") },
+            { value: "dark", label: t("settings.themeDark") },
+            { value: "system", label: t("settings.themeSystem") },
+          ]}
+        />
       </div>
 
       {/* font size */}

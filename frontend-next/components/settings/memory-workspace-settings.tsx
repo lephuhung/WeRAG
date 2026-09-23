@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Toggle } from "@/components/settings/toggle";
 import { IconRefresh } from "@/components/icons";
+import { Select } from "@/components/select";
 import {
   getTenantMemoryConfig,
   updateTenantMemoryConfig,
@@ -196,19 +197,19 @@ export function MemoryWorkspaceSettings() {
                 <span className="caption text-muted block mt-0.5 mb-2">
                   LLM used to summarize and extract facts from conversation turns.
                 </span>
-                <select
+                <Select
                   disabled={!canEdit}
-                  className="input text-sm"
+                  className="text-sm"
                   value={config.extract_model_id}
-                  onChange={(e) => setConfig({ ...config, extract_model_id: e.target.value })}
-                >
-                  <option value="">Default system model</option>
-                  {chatModels.map((m) => (
-                    <option key={m.id} value={m.name}>
-                      {m.display_name || m.name} ({m.parameters?.provider || "remote"})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setConfig({ ...config, extract_model_id: v })}
+                  options={[
+                    { value: "", label: "Default system model" },
+                    ...chatModels.map((m) => ({
+                      value: m.name,
+                      label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
+                    })),
+                  ]}
+                />
               </label>
             </div>
 
@@ -218,19 +219,19 @@ export function MemoryWorkspaceSettings() {
                 <span className="caption text-muted block mt-0.5 mb-2">
                   Used when semantic vector matching is enabled for recall.
                 </span>
-                <select
+                <Select
                   disabled={!canEdit || !config.vector_recall}
-                  className="input text-sm"
+                  className="text-sm"
                   value={config.embedding_model_id}
-                  onChange={(e) => setConfig({ ...config, embedding_model_id: e.target.value })}
-                >
-                  <option value="">None (lexical keyword match only)</option>
-                  {embeddingModels.map((m) => (
-                    <option key={m.id} value={m.name}>
-                      {m.display_name || m.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setConfig({ ...config, embedding_model_id: v })}
+                  options={[
+                    { value: "", label: "None (lexical keyword match only)" },
+                    ...embeddingModels.map((m) => ({
+                      value: m.name,
+                      label: m.display_name || m.name,
+                    })),
+                  ]}
+                />
               </label>
             </div>
           </div>

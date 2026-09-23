@@ -11,6 +11,7 @@ import {
   type VectorStoreTypeInfo,
 } from "@/lib/api/vector-stores";
 import { IconBook, IconPlus, IconPulse, IconTrash } from "@/components/icons";
+import { Select } from "@/components/select";
 
 export function VectorStoreSettings() {
   const [stores, setStores] = useState<VectorStoreEntity[]>([]);
@@ -228,27 +229,29 @@ export function VectorStoreSettings() {
 
               <div>
                 <label className="caption mb-1 block font-medium text-ink">Engine Type</label>
-                <select
-                  className="input h-9 w-full text-[13px]"
+                <Select
+                  className="h-9 w-full text-[13px]"
                   value={formData.engine_type}
-                  onChange={(e) => setFormData({ ...formData, engine_type: e.target.value })}
-                >
-                  <option value="pgvector">PGVector (PostgreSQL)</option>
-                  <option value="milvus">Milvus</option>
-                  <option value="qdrant">Qdrant</option>
-                  <option value="chroma">Chroma</option>
-                  <option value="elasticsearch">Elasticsearch</option>
-                  <option value="opensearch">OpenSearch</option>
-                  {types.map((t) => (
-                    <option key={t.type} value={t.type}>
-                      {t.display_name || t.type}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setFormData({ ...formData, engine_type: v })}
+                  options={[
+                    { value: "pgvector", label: "PGVector (PostgreSQL)" },
+                    { value: "milvus", label: "Milvus" },
+                    { value: "qdrant", label: "Qdrant" },
+                    { value: "chroma", label: "Chroma" },
+                    { value: "elasticsearch", label: "Elasticsearch" },
+                    { value: "opensearch", label: "OpenSearch" },
+                    ...types
+                      .filter(
+                        (t) =>
+                          !["pgvector", "milvus", "qdrant", "chroma", "elasticsearch", "opensearch"].includes(t.type),
+                      )
+                      .map((t) => ({ value: t.type, label: t.display_name || t.type })),
+                  ]}
+                />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
                   <label className="caption mb-1 block font-medium text-ink">Host</label>
                   <input
                     className="input h-9 w-full text-[13px]"
@@ -278,7 +281,7 @@ export function VectorStoreSettings() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="caption mb-1 block font-medium text-ink">User</label>
                   <input

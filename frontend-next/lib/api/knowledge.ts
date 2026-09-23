@@ -676,8 +676,18 @@ export function batchQueryKnowledge(
 
 export const KNOWLEDGE_CHUNK_PAGE_SIZE = 25;
 
-export function listKnowledgeChunks(id: string, page: number) {
-  return apiGet(`/api/v1/chunks/${id}?page=${page}&page_size=${KNOWLEDGE_CHUNK_PAGE_SIZE}`);
+/* `includeImageText` asks the backend to splice each chunk's image-derived
+ * text (OCR, falling back to caption) into `content` at the image
+ * placeholder. Scanned / image-only documents keep their real text on
+ * image_ocr children — the default text-only response carries nothing but
+ * the page-image link, which renders blank in the extracted-text view. */
+export function listKnowledgeChunks(
+  id: string,
+  page: number,
+  opts?: { includeImageText?: boolean },
+) {
+  const extra = opts?.includeImageText ? "&include_image_text=true" : "";
+  return apiGet(`/api/v1/chunks/${id}?page=${page}&page_size=${KNOWLEDGE_CHUNK_PAGE_SIZE}${extra}`);
 }
 
 export interface ChunkEditPayload {
@@ -718,8 +728,9 @@ export function regenerateKnowledgeSummary(knowledgeId: string) {
   return apiPost(`/api/v1/knowledge/${knowledgeId}/regenerate-summary`, {});
 }
 
-export function getChunkByIdOnly(chunkId: string) {
-  return apiGet(`/api/v1/chunks/by-id/${chunkId}`);
+export function getChunkByIdOnly(chunkId: string, opts?: { includeImageText?: boolean }) {
+  const extra = opts?.includeImageText ? "?include_image_text=true" : "";
+  return apiGet(`/api/v1/chunks/by-id/${chunkId}${extra}`);
 }
 
 export function deleteGeneratedQuestion(chunkId: string, questionId: string) {

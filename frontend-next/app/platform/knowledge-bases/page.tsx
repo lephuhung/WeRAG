@@ -3,15 +3,28 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
-import { useTenantRole } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { Orb } from "@/components/orb";
-import { IconBook, IconDoc, IconPlus, IconSearch } from "@/components/icons";
+import { Modal } from "@/components/modal";
+import { ParseDefaultsEditor } from "@/components/knowledge/parse-defaults-editor";
+import {
+  IconBook,
+  IconDoc,
+  IconParserEngine,
+  IconPlus,
+  IconSearch,
+} from "@/components/icons";
 
 export default function KnowledgeBaseList() {
   const { isOwner } = useTenantRole();
+  const { user } = useAuth();
+  const { t } = useT();
   const [kbs, setKbs] = useState<KnowledgeBaseRow[] | null>(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [pdOpen, setPdOpen] = useState(false);
+  const isSystemAdmin = user?.is_system_admin === true;
 
   useEffect(() => {
     let alive = true;
@@ -44,11 +57,15 @@ export default function KnowledgeBaseList() {
 
   return (
     <div className="relative flex-1 overflow-y-auto">
-      <Orb color="mint" size={520} className="-top-40 right-[-120px]" />
-      <Orb color="lavender" size={420} className="bottom-[-160px] left-[-100px]" />
+      {/* Orbs live in a clipped overlay so their negative offsets can't
+       * expand the scroll area (a horizontal scrollbar + dead space). */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <Orb color="mint" size={520} className="-top-40 right-[-120px]" />
+        <Orb color="lavender" size={420} className="bottom-[-160px] left-[-100px]" />
+      </div>
 
-      <div className="relative mx-auto w-full max-w-[1200px] px-12 py-12">
-        <div className="mb-10 flex items-end justify-between gap-6">
+      <div className="relative mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-10 sm:gap-6">
           <div>
             <div className="caption-uppercase mb-3 text-muted">Workspace</div>
             <h1 className="display-xl">Knowledge bases</h1>
@@ -56,12 +73,25 @@ export default function KnowledgeBaseList() {
               Collections of documents indexed for retrieval-augmented chat.
             </p>
           </div>
-          {isOwner && (
-            <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
-              <IconPlus className="h-4 w-4" />
-              New knowledge base
-            </Link>
-          )}
+          <div className="flex items-center gap-2.5">
+            {/* Platform-wide ingestion defaults — superadmin only. */}
+            {isSystemAdmin && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setPdOpen(true)}
+              >
+                <IconParserEngine className="h-4 w-4" />
+                {t("pd.title")}
+              </button>
+            )}
+            {isOwner && (
+              <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
+                <IconPlus className="h-4 w-4" />
+                New knowledge base
+              </Link>
+            )}
+          </div>
         </div>
 
         <div className="relative mb-8 max-w-[420px]">
@@ -118,6 +148,15 @@ export default function KnowledgeBaseList() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={pdOpen}
+        title={t("pd.title")}
+        onClose={() => setPdOpen(false)}
+        width="w-[960px]"
+      >
+        <ParseDefaultsEditor />
+      </Modal>
     </div>
   );
 }

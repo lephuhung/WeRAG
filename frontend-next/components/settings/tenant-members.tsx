@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconRefresh, IconSearch, IconTrash } from "@/components/icons";
+import { Select } from "@/components/select";
 import {
   fetchAllTenantMembers,
   addMember,
@@ -19,6 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const ROLES: { id: TenantRole; label: string; desc: string }[] = [
   { id: "owner", label: "Owner", desc: "Full administrative control, workspace deletion & billing" },
@@ -346,10 +348,12 @@ export function TenantMembers() {
                   {inv.invite_url && (
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         const full = new URL(inv.invite_url!, window.location.origin).toString();
-                        void navigator.clipboard.writeText(full);
-                        setSuccess("Invitation link copied to clipboard");
+                        const ok = await copyToClipboard(full);
+                        if (ok) {
+                          setSuccess("Invitation link copied to clipboard");
+                        }
                       }}
                       className="btn btn-outline btn-sm text-xs py-1"
                     >
@@ -460,16 +464,15 @@ export function TenantMembers() {
                     {/* Role */}
                     <td className="py-3.5 px-4">
                       {canEditThisMember && m.role !== "owner" ? (
-                        <select
-                          className="input py-1 px-2.5 text-xs w-32 cursor-pointer font-medium"
+                        <Select
+                          className="h-8 w-32 py-1 px-2.5 text-xs font-medium"
                           value={m.role}
-                          onChange={(e) =>
-                            void handleRoleChange(m, e.target.value as TenantRole)
-                          }
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="member">Member</option>
-                        </select>
+                          onChange={(v) => void handleRoleChange(m, v as TenantRole)}
+                          options={[
+                            { value: "admin", label: "Admin" },
+                            { value: "member", label: "Member" },
+                          ]}
+                        />
                       ) : (
                         <span
                           className={`badge-pill uppercase text-[11px] font-semibold ${
@@ -568,17 +571,11 @@ export function TenantMembers() {
 
               <label className="block">
                 <span className="caption mb-1.5 block text-muted">Initial role</span>
-                <select
-                  className="input"
+                <Select
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as TenantRole)}
-                >
-                  {ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label} — {r.desc}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setInviteRole(v as TenantRole)}
+                  options={ROLES.map((r) => ({ value: r.id, label: `${r.label} — ${r.desc}` }))}
+                />
               </label>
 
               <div className="flex justify-end gap-3 pt-3">
@@ -602,17 +599,11 @@ export function TenantMembers() {
             <div className="space-y-4">
               <label className="block">
                 <span className="caption mb-1.5 block text-muted">Assign role for joiners</span>
-                <select
-                  className="input"
+                <Select
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as TenantRole)}
-                >
-                  {ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label} — {r.desc}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setInviteRole(v as TenantRole)}
+                  options={ROLES.map((r) => ({ value: r.id, label: `${r.label} — ${r.desc}` }))}
+                />
               </label>
 
               <label className="block">
@@ -638,10 +629,12 @@ export function TenantMembers() {
                     />
                     <button
                       type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(generatedLink);
-                        setLinkCopied(true);
-                        setTimeout(() => setLinkCopied(false), 2000);
+                      onClick={async () => {
+                        const ok = await copyToClipboard(generatedLink);
+                        if (ok) {
+                          setLinkCopied(true);
+                          setTimeout(() => setLinkCopied(false), 2000);
+                        }
                       }}
                       className="btn btn-primary shrink-0 text-xs"
                     >

@@ -30,6 +30,20 @@ func TestToolGuidanceUsesActualCapabilities(t *testing.T) {
 	require.Contains(t, formatToolGuidance([]string{"local_browser"}), "requires no shell command")
 }
 
+func TestToolGuidanceAbbreviationSequence(t *testing.T) {
+	guidance := formatToolGuidance([]string{"search_knowledge", "resolve_abbreviation"})
+	require.Contains(t, guidance, "resolve_abbreviation before search_knowledge")
+	require.Contains(t, guidance, "continue with search_knowledge using expanded_text")
+	require.NotContains(t, formatToolGuidance([]string{"search_knowledge"}), "resolve_abbreviation")
+	resolverOnly := formatToolGuidance([]string{"resolve_abbreviation"})
+	require.NotContains(t, resolverOnly, "search_knowledge")
+	require.Contains(t, resolverOnly, "action=suggest")
+	require.Contains(t, resolverOnly, "call resolve_abbreviation")
+	require.Contains(t, guidance, "immediately call resolve_abbreviation with action=suggest")
+	require.Contains(t, guidance, "without another confirmation")
+	require.Contains(t, guidance, "Owner or SuperAdmin activates it")
+}
+
 func TestArtifactGuidanceUsesConfiguredOutputDirectory(t *testing.T) {
 	t.Setenv("WEKNORA_SKILL_OUTPUT_DIR", "/workspace/deliverables")
 	guidance := formatToolGuidance([]string{"shell_exec", "read_file"})

@@ -6,6 +6,7 @@ package container
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -456,6 +457,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		// worker pool against one provider, so install an in-process governor.
 		must(container.Invoke(registerLiteModelConcurrencyLimiter))
 	}
+	// Publish the SystemAdmin-owned parse defaults (system_settings key
+	// knowledge.parse_defaults) to the parse pipeline so every ingestion
+	// path can resolve them at parse time.
+	must(container.Invoke(registerParseDefaultsProvider))
 	must(container.Provide(service.NewTemporaryDocumentService))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 
@@ -485,6 +490,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(chatpipeline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipeline.NewPluginFilterTopK))
 	must(container.Invoke(chatpipeline.NewPluginQueryUnderstand))
+	must(container.Invoke(chatpipeline.NewPluginAbbreviationResolve))
 	must(container.Invoke(chatpipeline.NewPluginLoadHistory))
 	must(container.Invoke(chatpipeline.NewPluginMemoryRecall))
 	must(container.Invoke(chatpipeline.NewPluginExtractEntity))
@@ -721,6 +727,28 @@ func registerLiteModelConcurrencyLimiter(ss interfaces.SystemSettingService) {
 	}
 	logger.Infof(context.Background(),
 		"[ModelLimiter] background model concurrency governed per-model, limit=%d (in-process, lite mode)", limit)
+}
+
+// registerParseDefaultsProvider installs the resolver the parse pipeline
+// consults for the SystemAdmin-published default parse settings
+// (system_settings key knowledge.parse_defaults). Reads go through the
+// settings service's cached resolver, so a hot parse path never hits the DB.
+// A missing or malformed row yields nil — the feature stays off and uploads
+// fall back to per-KB / per-upload configuration.
+func registerParseDefaultsProvider(ss interfaces.SystemSettingService) {
+	service.SetParseDefaultsProvider(func() *types.SystemParseDefaults {
+		raw, ok := ss.GetJSON(context.Background(), service.SystemParseDefaultsKey)
+		if !ok || len(raw) == 0 {
+			return nil
+		}
+		var def types.SystemParseDefaults
+		if err := json.Unmarshal(raw, &def); err != nil {
+			logger.Warnf(context.Background(),
+				"[parse-defaults] cannot decode %q: %v", service.SystemParseDefaultsKey, err)
+			return nil
+		}
+		return &def
+	})
 }
 
 func initRedisClient() (*redis.Client, error) {

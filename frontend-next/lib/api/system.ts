@@ -17,8 +17,28 @@ import {
   type ListAuditLogParams,
   type ListAuditLogResponse,
 } from "./audit";
+import type { KnowledgeProcessOverrides } from "./knowledge";
 
 export type { AuditLog, AuditAction, AuditOutcome, ListAuditLogParams, ListAuditLogResponse };
+
+// ---- system-wide parse defaults ---------------------------------------------------
+
+/* system_settings key holding the platform-wide default parse configuration.
+ * Read/write for SystemAdmins goes through the generic settings endpoints;
+ * members read the resolved value via GET /system/parse-defaults. */
+export const PARSE_DEFAULTS_SETTING_KEY = "knowledge.parse_defaults";
+
+/* Platform-wide default parse settings published by a SystemAdmin. When
+ * `enabled` is true the backend ignores per-upload process_config and resolves
+ * every parse against these overrides merged over the KB config — uploads and
+ * reparses run immediately without the parse-settings dialog. */
+export type SystemParseDefaults = KnowledgeProcessOverrides & { enabled: boolean };
+
+export function getSystemParseDefaults(): Promise<SystemParseDefaults> {
+  return apiGet<{ success: boolean; data?: SystemParseDefaults }>(
+    "/api/v1/system/parse-defaults",
+  ).then((r) => r.data ?? { enabled: false });
+}
 
 // ---- platform API keys ---------------------------------------------------------
 
@@ -454,7 +474,7 @@ export interface SystemSettingItem {
   key: string;
   /** Raw JSON value — narrow via value_type before rendering. */
   value: unknown;
-  value_type: "int" | "string" | "bool" | "string_list";
+  value_type: "int" | "string" | "bool" | "string_list" | "json";
   category: string;
   description: string;
   /** P3+ — currently always false. May surface a "redacted" state when true. */

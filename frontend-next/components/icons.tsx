@@ -303,6 +303,41 @@ export const IconFolder = ({ className }: P) => (
   </svg>
 );
 
+export const IconUser = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M5 20a7 7 0 0 1 14 0" />
+  </svg>
+);
+
+export const IconIdCard = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <circle cx="8.5" cy="11" r="1.8" />
+    <path d="M5.8 16.2a2.9 2.9 0 0 1 5.4 0M13.5 9.5H18M13.5 13H18M13.5 16.5h3" />
+  </svg>
+);
+
+export const IconPhone = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M5 4h3.5l1.5 4-2 1.5a11 11 0 0 0 5.5 5.5L15 13.5l4 1.5V18a2 2 0 0 1-2 2A15 15 0 0 1 4 7a3 3 0 0 1 1-3Z" />
+  </svg>
+);
+
+export const IconMapPin = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M12 21s-6.5-5.6-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21Z" />
+    <circle cx="12" cy="10.5" r="2" />
+  </svg>
+);
+
+export const IconCalendar = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+  </svg>
+);
+
 
 
 

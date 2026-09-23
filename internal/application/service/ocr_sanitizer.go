@@ -6,6 +6,7 @@ import (
 
 	htmltomd "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 )
 
 var (
@@ -60,6 +61,8 @@ func sanitizeOCRText(raw string) string {
 	if isKnownEmptyReply(text) {
 		return ""
 	}
+
+	text = searchutil.CollapseDegenerateTail(text)
 
 	text = multipleNewlines.ReplaceAllString(text, "\n\n")
 	return strings.TrimSpace(text)

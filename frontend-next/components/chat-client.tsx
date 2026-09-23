@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
@@ -13,9 +13,11 @@ import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
 import { IconDoc, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
+import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
 import { type ToolEventItem } from "@/components/chat/tool-result-card";
-import { RagPipelineProgress } from "@/components/chat/rag-pipeline-progress";
+import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+import { copyToClipboard } from "@/lib/clipboard";
 
 type UiMessage = {
   id: string;
@@ -27,7 +29,105 @@ type UiMessage = {
   isError?: boolean;
   assistantMessageId?: string;
   references?: KnowledgeReferenceItem[];
+  abbreviationCandidates?: string[];
+  peopleData?: PeopleRecord[];
 };
+
+function extractPeopleRecords(data: unknown): PeopleRecord[] {
+  if (!data || typeof data !== "object") return [];
+  const persons = (data as Record<string, unknown>).persons;
+  if (!Array.isArray(persons)) return [];
+  return persons.filter(
+    (p): p is PeopleRecord => p !== null && typeof p === "object" && !Array.isArray(p),
+  );
+}
+
+// continue-stream replays the event log — dedupe so replayed tool results
+// don't stack duplicate person cards.
+function mergePeopleRecords(
+  existing: PeopleRecord[] | undefined,
+  incoming: PeopleRecord[],
+): PeopleRecord[] {
+  const seen = new Set((existing ?? []).map((p) => JSON.stringify(p)));
+  const out = [...(existing ?? [])];
+  for (const p of incoming) {
+    const k = JSON.stringify(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
+
+// When a people card renders, the raw profile dump must not also print as
+// answer text: strip <people_lookup> blocks, and cut the old-style persisted
+// dump ("👤 HỒ SƠ #n" blocks with ═ separators). The "Tìm thấy N người"
+// headline stays — it's a useful one-line summary above the cards.
+function stripPeopleDump(content: string, hasCard: boolean): string {
+  if (!hasCard) return content;
+  let text = content.replace(/<people_lookup>[\s\S]*?<\/people_lookup>/g, "");
+  const dumpStart = text.search(/👤|HỒ SƠ #|═{5,}/);
+  if (dumpStart >= 0) text = text.slice(0, dumpStart);
+  return text.trim();
+}
+
+function peopleDataFromHistory(m: ChatMessage): PeopleRecord[] {
+  const out: PeopleRecord[] = [];
+  for (const step of m.agent_steps ?? []) {
+    for (const call of step.tool_calls ?? []) {
+      if (call.name !== "people_lookup") continue;
+      out.push(...extractPeopleRecords(call.result?.data));
+    }
+  }
+  return out;
+}
+
+function extractAbbreviationCandidates(data: unknown): string[] {
+  if (!data || typeof data !== "object") return [];
+  const obj = data as Record<string, unknown>;
+  const sources: unknown[] = [
+    (obj.result as Record<string, unknown> | undefined)?.potential_abbreviations,
+    (obj.abbreviation_resolution as Record<string, unknown> | undefined)
+      ?.potential_abbreviations,
+    obj.potential_abbreviations,
+  ];
+  for (const src of sources) {
+    if (Array.isArray(src)) {
+      const out = src.filter((x): x is string => typeof x === "string");
+      if (out.length > 0) return out;
+    }
+  }
+  return [];
+}
+
+function mergeAbbreviationCandidates(
+  existing: string[] | undefined,
+  incoming: string[],
+): string[] {
+  if (incoming.length === 0) return existing ?? [];
+  const seen = new Set((existing ?? []).map((c) => c.toLowerCase()));
+  const out = [...(existing ?? [])];
+  for (const c of incoming) {
+    if (out.length >= 10) break;
+    const key = c.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(c.trim());
+  }
+  return out.slice(0, 10);
+}
+
+function abbreviationCandidatesFromHistory(m: ChatMessage): string[] {
+  const out: string[] = [];
+  for (const step of m.agent_steps ?? []) {
+    for (const call of step.tool_calls ?? []) {
+      out.push(
+        ...extractAbbreviationCandidates(call.result?.data),
+      );
+    }
+  }
+  return mergeAbbreviationCandidates(undefined, out);
+}
 
 function parseThinkAndContent(
   accText: string,
@@ -58,36 +158,35 @@ function fileToDataUri(file: File): Promise<string> {
   });
 }
 
-function UserMessageBubble({
-  content,
-  onCopy,
+const UserMessageBubble = memo(function UserMessageBubble({
+  message,
   onFork,
   onEdit,
 }: {
-  content: string;
-  onCopy?: () => void;
-  onFork?: () => void;
-  onEdit?: () => void;
+  message: UiMessage;
+  onFork?: (m: UiMessage) => void;
+  onEdit?: (content: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    onCopy?.();
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(message.content);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
     <div className="group mb-6 flex flex-col items-end">
       <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-relaxed text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
-        {content}
+        {message.content}
       </div>
       <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
         {onEdit && (
           <button
             type="button"
-            onClick={onEdit}
+            onClick={() => onEdit(message.content)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
             title="Chỉnh sửa câu hỏi"
             aria-label="Chỉnh sửa câu hỏi"
@@ -111,7 +210,7 @@ function UserMessageBubble({
         {onFork && (
           <button
             type="button"
-            onClick={onFork}
+            onClick={() => onFork(message)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
             title="Tạo nhánh từ câu hỏi này"
             aria-label="Tạo nhánh từ câu hỏi này"
@@ -122,7 +221,7 @@ function UserMessageBubble({
       </div>
     </div>
   );
-}
+});
 
 function BotMessageActions({
   content,
@@ -137,10 +236,12 @@ function BotMessageActions({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(content);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -231,6 +332,92 @@ function CompactReferencesList({
   );
 }
 
+// One assistant turn. memo() keeps history rows from reconciling on every
+// streamed chunk — only the row whose message object actually changed renders.
+const AssistantMessage = memo(function AssistantMessage({
+  m,
+  index,
+  sessionId,
+  busy,
+  abbreviationRefreshKey,
+  onOpenDrawer,
+  onFork,
+  onRegenerate,
+  onAsk,
+}: {
+  m: UiMessage;
+  index: number;
+  sessionId: string;
+  busy: boolean;
+  abbreviationRefreshKey: number;
+  onOpenDrawer: (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index?: number) => void;
+  onFork: (m: UiMessage) => void;
+  onRegenerate: (index: number) => void;
+  onAsk: (text: string, attribution: { setId: string; questionId: string }, kbIds: string[]) => void;
+}) {
+  const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
+  const shownContent = stripPeopleDump(m.content, hasPeopleCard);
+  return (
+    <div className="mb-6 flex gap-3 sm:gap-4">
+      <div className="display-sm mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px]">
+        W
+      </div>
+      <div className="w-full min-w-0 flex-1 pt-1.5">
+        {(m.thinking ||
+          (m.toolEvents?.length ?? 0) > 0 ||
+          (m.references?.length ?? 0) > 0 ||
+          (m.streaming && !m.content)) && (
+          <ThinkingDisplay
+            content={m.thinking ?? ""}
+            streaming={m.streaming && !m.content}
+            events={m.toolEvents}
+            references={m.references}
+            onViewReferences={() => onOpenDrawer(m.references || [])}
+          />
+        )}
+        {shownContent ? (
+          <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
+            <Markdown text={shownContent} streaming={m.streaming} />
+          </div>
+        ) : (
+          <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.toolEvents || m.toolEvents.length === 0) ? "…" : ""}</p>
+        )}
+        {hasPeopleCard && (
+          <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
+        )}
+        {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
+          <AbbreviationSuggestionCard
+            candidates={m.abbreviationCandidates!}
+            refreshKey={abbreviationRefreshKey}
+          />
+        )}
+        {m.references && m.references.length > 0 && (
+          <CompactReferencesList
+            references={m.references}
+            onSelectRef={(r, i) => onOpenDrawer(m.references || [], r, i)}
+          />
+        )}
+        {!m.streaming && (m.assistantMessageId || m.content) && (
+          <BotMessageActions
+            content={m.content}
+            canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
+            onFork={m.assistantMessageId ? () => onFork(m) : undefined}
+            onRegenerate={!busy ? () => onRegenerate(index) : undefined}
+          />
+        )}
+        {sessionId !== "new" && (
+          <FollowUpSuggestions
+            sessionId={sessionId}
+            messageId={m.assistantMessageId ?? null}
+            enabled={!m.streaming}
+            onAsk={onAsk}
+          />
+        )}
+      </div>
+    </div>
+  );
+});
+
 function ChatBody({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q");
@@ -243,13 +430,15 @@ function ChatBody({ id }: { id: string }) {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [abbreviationRefreshKey, setAbbreviationRefreshKey] = useState(0);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [assistantMessageId, setAssistantMessageId] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickBottomRef = useRef(true);
   const sentInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   // Pending follow-up attribution: set when a suggestion chip is clicked,
@@ -268,7 +457,7 @@ function ChatBody({ id }: { id: string }) {
   const [drawerRefs, setDrawerRefs] = useState<KnowledgeReferenceItem[]>([]);
   const [activeRefKey, setActiveRefKey] = useState<string | null>(null);
 
-  const handleOpenDrawer = (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index = 0) => {
+  const handleOpenDrawer = useCallback((refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index = 0) => {
     setDrawerRefs(refs);
     if (activeItem) {
       setActiveRefKey(activeItem.chunk_id || activeItem.id || `${activeItem.knowledge_id || "ref"}-${index}`);
@@ -276,7 +465,7 @@ function ChatBody({ id }: { id: string }) {
       setActiveRefKey(null);
     }
     setDrawerOpen(true);
-  };
+  }, []);
 
   // History and session details:
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
@@ -336,6 +525,12 @@ function ChatBody({ id }: { id: string }) {
               thinking: parsed.thinking,
               references: refs?.length ? refs : undefined,
               assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
+              abbreviationCandidates:
+                m.role === "assistant"
+                  ? abbreviationCandidatesFromHistory(m)
+                  : undefined,
+              peopleData:
+                m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
             };
           });
           if (streamingMsgs.length > 0) {
@@ -373,6 +568,24 @@ function ChatBody({ id }: { id: string }) {
               return;
             }
             if (kind === "agent_query") return;
+            if (kind === "tool_result") {
+              const candidates = extractAbbreviationCandidates(c.data);
+              if (candidates.length > 0) {
+                setMessages((m) =>
+                  m.map((msg) =>
+                    msg.assistantMessageId === inflightId
+                      ? {
+                          ...msg,
+                          abbreviationCandidates: mergeAbbreviationCandidates(
+                            msg.abbreviationCandidates,
+                            candidates,
+                          ),
+                        }
+                      : msg,
+                  ),
+                );
+              }
+            }
             if (kind === "references" && c.knowledge_references?.length) {
               const refs = c.knowledge_references;
               srcSetRef.current = refs;
@@ -401,6 +614,7 @@ function ChatBody({ id }: { id: string }) {
             })
             .finally(() => {
               if (!alive) return;
+              setAbbreviationRefreshKey((v) => v + 1);
               setBusy(false);
               setMessages((m) =>
                 m.map((msg) =>
@@ -503,6 +717,7 @@ function ChatBody({ id }: { id: string }) {
       }
     }
 
+    stickBottomRef.current = true;
     setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
@@ -662,6 +877,33 @@ function ChatBody({ id }: { id: string }) {
         );
         const success = c.success !== false && c.data?.success !== false;
         const output = c.tool_output ?? c.content ?? c.data;
+        const abbrCandidates = extractAbbreviationCandidates(c.data);
+        const peopleRecs =
+          toolName === "people_lookup" ? extractPeopleRecords(c.data) : [];
+        if (peopleRecs.length > 0) {
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg)
+                ? { ...msg, peopleData: mergePeopleRecords(msg.peopleData, peopleRecs) }
+                : msg,
+            ),
+          );
+        }
+        if (abbrCandidates.length > 0) {
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg)
+                ? {
+                    ...msg,
+                    abbreviationCandidates: mergeAbbreviationCandidates(
+                      msg.abbreviationCandidates,
+                      abbrCandidates,
+                    ),
+                  }
+                : msg,
+            ),
+          );
+        }
         if (existingIdx >= 0) {
           toolEventsList[existingIdx] = {
             ...toolEventsList[existingIdx],
@@ -771,6 +1013,11 @@ function ChatBody({ id }: { id: string }) {
     pendingAttribution.current = null;
     const kbIdsOverride = pendingKbIds.current;
     pendingKbIds.current = [];
+    const previousMessage = messages[messages.length - 1];
+    const priorCandidates =
+      previousMessage?.role === "assistant"
+        ? previousMessage.abbreviationCandidates
+        : undefined;
     streamChat({
       sessionId: activeSessionId,
       query: t,
@@ -791,6 +1038,7 @@ function ChatBody({ id }: { id: string }) {
         : undefined,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       images: inlineImages,
+      abbreviationCandidates: priorCandidates?.slice(0, 10),
       signal: ctrl.signal,
       onChunk: applyChunk,
     })
@@ -813,6 +1061,7 @@ function ChatBody({ id }: { id: string }) {
         );
       })
       .finally(() => {
+        setAbbreviationRefreshKey((v) => v + 1);
         setBusy(false);
         setAssistantMessageId(null);
         setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, streaming: false } : msg)));
@@ -821,6 +1070,65 @@ function ChatBody({ id }: { id: string }) {
         }
       });
   };
+
+  // Latest-value refs + stable callbacks: every streamed chunk re-renders
+  // ChatBody, so row components only stay memoized if their props keep
+  // referential identity across renders.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const handleEditQuestion = useCallback((content: string) => setInput(content), []);
+
+  const handleFork = useCallback(
+    (m: UiMessage) => {
+      // User bubbles fork by row id; assistant turns fork by assistant_message_id.
+      void forkSession(id, { message_id: m.assistantMessageId ?? m.id })
+        .then((res) => {
+          const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
+          const sessionId =
+            newId && typeof newId === "object" && "session" in newId
+              ? newId.session?.id
+              : (newId as { id?: string } | undefined)?.id;
+          if (sessionId) void router.push(`/platform/chat/${sessionId}`);
+        })
+        .catch(() => undefined);
+    },
+    [id, router],
+  );
+
+  const handleRegenerate = useCallback((index: number) => {
+    const prevUser = messagesRef.current
+      .slice(0, index)
+      .reverse()
+      .find((msg) => msg.role === "user");
+    if (prevUser) {
+      void sendRef.current({
+        query: prevUser.content,
+        attachments: [],
+        imageFiles: [],
+        mentionedItems: [],
+        modelId: "",
+      });
+    }
+  }, []);
+
+  const handleAskFollowUp = useCallback(
+    (text: string, attribution: { setId: string; questionId: string }, kbIds: string[]) => {
+      pendingAttribution.current = attribution;
+      pendingKbIds.current = kbIds;
+      setInput(text);
+      void sendRef.current({
+        query: text,
+        attachments: [],
+        imageFiles: [],
+        mentionedItems: [],
+        modelId: "",
+      });
+    },
+    [],
+  );
 
   // create-chat ?q=… auto-send, like creatChat.vue navigateToSession(firstQuery).
   useEffect(() => {
@@ -834,9 +1142,19 @@ function ChatBody({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQ, id]);
 
+  // Follow the stream only while the user is parked near the bottom — scrolling
+  // up releases the lock. Setting scrollTop directly (not smooth scrollIntoView):
+  // restarting a smooth animation per streamed token is what made this stutter.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (el && stickBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  const handleMessagesScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  };
 
   const stop = async () => {
     abortRef.current?.abort();
@@ -857,132 +1175,40 @@ function ChatBody({ id }: { id: string }) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="hairline-b flex h-14 shrink-0 items-center px-8">
+      <div className="hairline-b flex h-14 shrink-0 items-center px-4 sm:px-8">
         <h1 className="truncate text-[15px] font-medium text-ink">{title}</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1040px] px-6 py-8">
+      <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[1040px] px-4 py-5 sm:px-6 sm:py-8">
           {messages.map((m, index) =>
             m.role === "user" ? (
               <UserMessageBubble
                 key={m.id}
-                content={m.content}
-                onEdit={() => setInput(m.content)}
-                onFork={
-                  id !== "new"
-                    ? () => {
-                        void forkSession(id, { message_id: m.id })
-                          .then((res) => {
-                            const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
-                            const sessionId =
-                              newId && typeof newId === "object" && "session" in newId
-                                ? newId.session?.id
-                                : (newId as { id?: string } | undefined)?.id;
-                            if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
-                          })
-                          .catch(() => undefined);
-                      }
-                    : undefined
-                }
+                message={m}
+                onEdit={handleEditQuestion}
+                onFork={id !== "new" ? handleFork : undefined}
               />
             ) : (
-              <div key={m.id} className="mb-6 flex gap-4">
-                <div className="display-sm mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px]">
-                  W
-                </div>
-                <div className="w-full min-w-0 flex-1 pt-1.5">
-                  <RagPipelineProgress
-                    events={m.toolEvents}
-                    references={m.references}
-                    isStreaming={m.streaming}
-                    hasAnswer={Boolean(m.content)}
-                    isCompleted={!m.streaming}
-                    onViewReferences={() => handleOpenDrawer(m.references || [])}
-                  />
-                  {m.thinking && (
-                    <ThinkingDisplay content={m.thinking} streaming={m.streaming && !m.content} />
-                  )}
-                  {m.content ? (
-                    <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : ""}>
-                      <Markdown text={m.content} streaming={m.streaming} />
-                    </div>
-                  ) : (
-                    <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.toolEvents || m.toolEvents.length === 0) ? "…" : ""}</p>
-                  )}
-                  {m.references && m.references.length > 0 && (
-                    <CompactReferencesList
-                      references={m.references}
-                      onSelectRef={(r, i) => handleOpenDrawer(m.references || [], r, i)}
-                    />
-                  )}
-                  {!m.streaming && (m.assistantMessageId || m.content) && (
-                    <BotMessageActions
-                      content={m.content}
-                      canFork={id !== "new" && Boolean(m.assistantMessageId)}
-                      onFork={() => {
-                        if (!m.assistantMessageId) return;
-                        void forkSession(id, { message_id: m.assistantMessageId })
-                          .then((res) => {
-                            const newId = (res as { data?: { session?: { id?: string }; id?: string } }).data;
-                            const sessionId =
-                              newId && typeof newId === "object" && "session" in newId
-                                ? newId.session?.id
-                                : (newId as { id?: string } | undefined)?.id;
-                            if (sessionId && router) void router.push(`/platform/chat/${sessionId}`);
-                          })
-                          .catch(() => undefined);
-                      }}
-                      onRegenerate={
-                        !busy
-                          ? () => {
-                              const prevUser = messages
-                                .slice(0, index)
-                                .reverse()
-                                .find((msg) => msg.role === "user");
-                              if (prevUser) {
-                                void send({
-                                  query: prevUser.content,
-                                  attachments: [],
-                                  imageFiles: [],
-                                  mentionedItems: [],
-                                  modelId: "",
-                                });
-                              }
-                            }
-                          : undefined
-                      }
-                    />
-                  )}
-                  {id !== "new" && (
-                    <FollowUpSuggestions
-                      sessionId={id}
-                      messageId={m.assistantMessageId ?? null}
-                      enabled={!m.streaming}
-                      onAsk={(text, attribution, kbIds) => {
-                        pendingAttribution.current = attribution;
-                        pendingKbIds.current = kbIds;
-                        setInput(text);
-                        void send({
-                          query: text,
-                          attachments: [],
-                          imageFiles: [],
-                          mentionedItems: [],
-                          modelId: "",
-                        });
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
+              <AssistantMessage
+                key={m.id}
+                m={m}
+                index={index}
+                sessionId={id}
+                busy={busy}
+                abbreviationRefreshKey={abbreviationRefreshKey}
+                onOpenDrawer={handleOpenDrawer}
+                onFork={handleFork}
+                onRegenerate={handleRegenerate}
+                onAsk={handleAskFollowUp}
+              />
             ),
           )}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
-          <div ref={bottomRef} />
         </div>
       </div>
 
-      <div className="shrink-0 px-6 pb-6 pt-2">
+      <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-6">
         <div className="mx-auto max-w-[760px]">
           <input
             ref={attachments.inputRef}

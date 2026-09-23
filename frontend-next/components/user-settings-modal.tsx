@@ -70,14 +70,14 @@ export function UserSettingsModal({
 
   return (
     <Modal open={open} title={t("userSettings.title")} onClose={onClose} width="w-[720px]">
-      <div className="flex min-h-[420px] gap-6">
+      <div className="flex min-h-0 flex-col gap-4 sm:min-h-[420px] sm:flex-row sm:gap-6">
         {/* section nav */}
-        <div className="w-[160px] shrink-0 border-r border-hairline pr-4">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline pb-3 sm:w-[160px] sm:flex-col sm:gap-0 sm:border-b-0 sm:border-r sm:pb-0 sm:pr-4">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               onClick={() => setSection(s.id)}
-              className={`nav-item mb-0.5 ${section === s.id ? "active" : ""}`}
+              className={`nav-item mb-0.5 shrink-0 whitespace-nowrap ${section === s.id ? "active" : ""}`}
             >
               {s.label}
             </button>

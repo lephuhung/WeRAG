@@ -46,7 +46,7 @@ export function DocPanel({
     setChunks(null);
     if (!doc) return;
     let alive = true;
-    listKnowledgeChunks(doc.id, 1)
+    listKnowledgeChunks(doc.id, 1, { includeImageText: true })
       .then((res) => alive && setChunks(chunkText(res)))
       .catch(() => alive && setChunks([]));
     return () => {

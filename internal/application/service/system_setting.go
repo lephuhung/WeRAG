@@ -32,6 +32,12 @@ import (
 // instance don't cross-talk.
 const pubsubChannelBase = "weknora:system_settings:changed"
 
+// SystemParseDefaultsKey is the system_settings key holding the platform-wide
+// default parse configuration (types.SystemParseDefaults JSON document).
+// Shared by the registry entry, the member-facing read endpoint, and the
+// parse-config resolver hook.
+const SystemParseDefaultsKey = "knowledge.parse_defaults"
+
 // pubsubChannel resolves the effective channel name (with optional
 // namespace suffix). Called both at publish time and inside the
 // subscriber loop — keep it pure.
@@ -298,6 +304,21 @@ var registry = map[string]settingSpec{
 			"每次调用实时读取，修改后立即生效、无需重启。0 或负数表示关闭默认限制" +
 			"（各模型仍会尊重自身在模型管理里配置的上限）。仅影响后台任务，不影响交互式对话。",
 	},
+	// knowledge.parse_defaults is the platform-wide default parse
+	// configuration published by a SystemAdmin. While enabled it replaces
+	// per-upload/per-document process overrides — ResolveProcessConfig merges
+	// it over the KB-level config, so uploads parse with the admin-approved
+	// models/settings without anyone touching the parse dialog. The value is
+	// a JSON document: {"enabled": bool, ...KnowledgeProcessOverrides}.
+	SystemParseDefaultsKey: {
+		Type:     "json",
+		EnvName:  "",
+		Default:  map[string]any{"enabled": false},
+		Category: "knowledge",
+		Description: "全系统默认解析配置。enabled=true 后，所有上传/重解析/数据源导入都按此配置执行，" +
+			"忽略每次上传携带的 process_config（锁定模式）。用于管理员不需要了解解析参数即可直接解析的场景；" +
+			"字段与上传接口的 process_config 相同（vlm_config、asr_config、chunking_config、parser_engine_rules 等）。",
+	},
 }
 
 // systemSettingService wires the repository, audit log, and (P2)
@@ -457,6 +478,12 @@ func encodeDefault(spec settingSpec) (types.JSON, error) {
 		default:
 			return nil, fmt.Errorf("registry spec for string_list has wrong default type %T", spec.Default)
 		}
+	case "json":
+		b, err := json.Marshal(spec.Default)
+		if err != nil {
+			return nil, fmt.Errorf("registry spec for json has unencodable default: %w", err)
+		}
+		return types.JSON(b), nil
 	default:
 		return nil, errors.New("unknown declared type: " + spec.Type)
 	}
@@ -731,6 +758,14 @@ func (s *systemSettingService) GetStringList(ctx context.Context, key string, en
 		return []string{}
 	}
 	return def
+}
+
+// GetJSON resolves a structured ("json" value_type) setting and returns the
+// raw stored document. found=false means no DB row exists — callers then fall
+// back to their own default (JSON settings have no ENV mapping). Same
+// cache-first + DB-degradation policy as the other Get* resolvers.
+func (s *systemSettingService) GetJSON(ctx context.Context, key string) (raw types.JSON, found bool) {
+	return s.resolveRaw(ctx, key)
 }
 
 // List returns all known settings for the management UI. Persisted rows
@@ -1293,6 +1328,21 @@ func encodeForType(declared string, rawValue any) (types.JSON, error) {
 		}
 		b, _ := json.Marshal(entries)
 		return types.JSON(b), nil
+	case "json":
+		// Structured-document settings (e.g. knowledge.parse_defaults).
+		// Only objects/arrays are accepted — a "json" setting is always a
+		// document, never a bare scalar; per-key shape enforcement lives in
+		// validateRegistryEntry.
+		switch rawValue.(type) {
+		case map[string]any, []any, []string:
+		default:
+			return nil, fmt.Errorf("expected JSON object or array, got %T", rawValue)
+		}
+		b, err := json.Marshal(rawValue)
+		if err != nil {
+			return nil, fmt.Errorf("cannot encode JSON value: %w", err)
+		}
+		return types.JSON(b), nil
 	default:
 		return nil, errors.New("unknown declared type: " + declared)
 	}
@@ -1330,6 +1380,21 @@ func validateRegistryEntry(key string, rawValue any) error {
 			return err
 		}
 		return utils.ValidateSSRFWhitelistEntries(entries)
+	case SystemParseDefaultsKey:
+		// Strict-decode into SystemParseDefaults: unknown keys would be
+		// silently dropped at read time, which in a locked config means the
+		// admin believes a setting applies while it never does. Reject so
+		// the UI surfaces the typo.
+		raw, err := json.Marshal(rawValue)
+		if err != nil {
+			return fmt.Errorf("cannot encode value: %w", err)
+		}
+		var def types.SystemParseDefaults
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&def); err != nil {
+			return fmt.Errorf("invalid parse defaults payload: %w", err)
+		}
 	}
 	return nil
 }

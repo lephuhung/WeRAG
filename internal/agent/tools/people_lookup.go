@@ -139,6 +139,11 @@ func (t *PeopleLookupTool) Execute(
 	b.WriteString("<people_lookup>\n")
 	b.WriteString(res.Display)
 	b.WriteString("\n</people_lookup>")
+	if res.Found {
+		b.WriteString("\nThese person records are rendered as profile cards in the UI — " +
+			"do NOT restate the field values in your reply. Give only a short " +
+			"confirmation, or answer just the specific question the user asked.")
+	}
 	if res.Unavailable {
 		b.WriteString("\nThe lookup system reported it is unavailable. Relay that " +
 			"to the user — do NOT report that the person was not found.")

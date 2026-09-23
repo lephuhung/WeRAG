@@ -87,6 +87,16 @@ func isAllUpperLetters(word string) bool {
 	return word != ""
 }
 
+func FindCandidates(text string) []string {
+	var candidates []string
+	for _, token := range extractWordTokens(text) {
+		if IsLikelyAbbreviation(token) {
+			candidates = append(candidates, token)
+		}
+	}
+	return candidates
+}
+
 // IsLikelyAbbreviation ports AIRAG _is_likely_abbreviation:
 //  1. all-uppercase letters (BMNN, TTGT) → definitely an abbreviation
 //  2. Vietnamese stop words → never

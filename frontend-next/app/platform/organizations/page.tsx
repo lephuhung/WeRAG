@@ -241,8 +241,8 @@ export default function Organizations() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[1200px] px-10 py-10">
-        <div className="mb-10 flex items-end justify-between gap-6">
+      <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-10 sm:gap-6">
           <div>
             <div className="caption-uppercase mb-2.5 text-muted font-medium tracking-wider">
               Workspace

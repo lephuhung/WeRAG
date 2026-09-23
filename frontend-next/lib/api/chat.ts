@@ -94,6 +94,15 @@ import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer
 
 // ---- messages ---------------------------------------------------------------
 
+export type ChatMessageToolCall = {
+  name?: string;
+  result?: { data?: unknown };
+};
+
+export type ChatMessageAgentStep = {
+  tool_calls?: ChatMessageToolCall[];
+};
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "assistant" | string;
@@ -101,6 +110,7 @@ export type ChatMessage = {
   created_at?: string;
   is_completed?: boolean;
   knowledge_references?: KnowledgeReferenceItem[];
+  agent_steps?: ChatMessageAgentStep[];
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {

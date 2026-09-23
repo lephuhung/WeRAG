@@ -35,8 +35,12 @@ expanding it first makes downstream knowledge search noticeably better.
 - action="lookup": pass one short form in "short_form" to list its known
   meanings (active and pending).
 - action="suggest": propose a new abbreviation with "short_form",
-  "full_form" and optional "description". Suggestions are inactive until an
-  admin approves them — say so when reporting back to the user.`,
+  "full_form" and optional "description". When the user has explicitly
+  supplied the meaning ("ABC = Full Meaning", or a full-form-only reply to
+  your question about a single unknown candidate), submit it right away
+  without asking again. Never infer or invent a full form. Suggestions stay
+  inactive until a workspace Owner or SuperAdmin activates them — say so
+  when reporting back to the user.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -207,11 +211,24 @@ func (t *ResolveAbbreviationTool) suggest(
 	if err != nil {
 		return t.fail(fmt.Sprintf("suggest failed: %v", err))
 	}
+	status := "pending_review"
+	output := fmt.Sprintf(
+		"Recorded suggestion %q → %q (or it was already pending). It stays inactive until "+
+			"a workspace Owner or SuperAdmin approves it — tell the user it will not expand yet.",
+		row.ShortForm, row.FullForm)
+	if row.IsActive {
+		status = "active"
+		output = fmt.Sprintf("%q → %q is already an active dictionary entry.", row.ShortForm, row.FullForm)
+	}
 	return &types.ToolResult{
 		Success: true,
-		Output: fmt.Sprintf(
-			"Recorded suggestion %q → %q. It is inactive until an administrator approves it — "+
-				"tell the user it will not expand yet.", row.ShortForm, row.FullForm),
-		Data: map[string]interface{}{"id": row.ID, "is_active": row.IsActive},
+		Output:  output,
+		Data: map[string]interface{}{
+			"id":         row.ID,
+			"short_form": row.ShortForm,
+			"full_form":  row.FullForm,
+			"is_active":  row.IsActive,
+			"status":     status,
+		},
 	}, nil
 }

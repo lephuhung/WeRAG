@@ -12,6 +12,7 @@ import {
   type KnowledgeDoc,
   type KnowledgeProcessOverrides,
 } from "@/lib/api/knowledge";
+import { getSystemParseDefaults, type SystemParseDefaults } from "@/lib/api/system";
 import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
 import { DocPanel } from "@/components/doc-panel";
@@ -101,7 +102,22 @@ export function KbDetail({ kbId }: { kbId: string }) {
     overrides: KnowledgeProcessOverrides | null;
   } | null>(null);
   const [error, setError] = useState("");
+  /* Platform-wide parse defaults. When enabled, uploads and rebuilds skip
+   * the parse-settings dialog and run with these overrides — the backend
+   * ignores any per-upload process_config anyway. */
+  const [parseDefaults, setParseDefaults] = useState<SystemParseDefaults | null>(null);
   const { enqueue } = useUploadTasks();
+
+  const defaultsLocked = parseDefaults?.enabled === true;
+  /* Strip the `enabled` flag — the stored shape is
+   * {enabled, ...KnowledgeProcessOverrides} so the rest can be sent as
+   * process_config verbatim. */
+  const lockedProcessConfig: KnowledgeProcessOverrides | undefined = parseDefaults
+    ? (() => {
+        const { enabled: _enabled, ...overrides } = parseDefaults;
+        return overrides;
+      })()
+    : undefined;
 
   const reloadDocs = () => {
     listKnowledgeFiles(kbId, { page: 1, page_size: 100 })
@@ -124,6 +140,9 @@ export function KbDetail({ kbId }: { kbId: string }) {
         setDocs(Array.isArray(data) ? data : (data?.items ?? []));
       })
       .catch(() => alive && setDocs([]));
+    getSystemParseDefaults()
+      .then((def) => alive && setParseDefaults(def))
+      .catch(() => alive && setParseDefaults(null));
     return () => {
       alive = false;
     };
@@ -151,6 +170,14 @@ export function KbDetail({ kbId }: { kbId: string }) {
    * overrides stored at its last parse (Vue KnowledgeBase.vue
    * confirmRebuildKnowledge → uploadConfirm mode 'reparse'). */
   const openReparse = async (doc: KnowledgeDoc) => {
+    /* Locked mode: rebuild immediately with the system defaults — no dialog,
+     * no per-document overrides to seed. */
+    if (defaultsLocked) {
+      reparseKnowledge(doc.id, { process_config: lockedProcessConfig })
+        .then(reloadDocs)
+        .catch(() => setError(t("doc.actionFailed")));
+      return;
+    }
     let overrides: KnowledgeProcessOverrides | null = null;
     try {
       const res = (await getKnowledgeDetails(doc.id)) as {
@@ -249,7 +276,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-10 pt-7 pb-4">
+      <div className="shrink-0 px-4 pt-5 pb-4 sm:px-6 lg:px-10 lg:pt-7">
         <div className="caption mb-4 flex items-center gap-2 text-muted">
           <Link href="/platform/knowledge-bases" className="hover:text-ink">
             Knowledge bases
@@ -322,7 +349,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex min-h-0 flex-1 px-10 pb-6">
+      <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6">
         {activeTab === "docs-wiki" ? (
           /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
           <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
@@ -364,7 +391,15 @@ export function KbDetail({ kbId }: { kbId: string }) {
                     onChange={(e) => setQ(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {defaultsLocked && (
+                    <span
+                      className="caption hidden min-w-0 truncate text-muted md:inline"
+                      title={t("pd.lockedBanner")}
+                    >
+                      {t("pd.lockedBanner")}
+                    </span>
+                  )}
                   <span className="caption text-muted">{filtered.length} files</span>
                   {isOwner && (
                     <button
@@ -422,7 +457,12 @@ export function KbDetail({ kbId }: { kbId: string }) {
                             </div>
                             <div className="caption mt-0.5 flex flex-wrap items-center gap-1 text-muted">
                               {d.profile?.doc_type && (
-                                <span className="badge-pill text-[10px] py-0 px-1">{d.profile.doc_type}</span>
+                                <span
+                                  className="badge-pill min-w-0 max-w-full text-[10px] py-0 px-1"
+                                  title={d.profile.doc_type}
+                                >
+                                  <span className="truncate">{d.profile.doc_type}</span>
+                                </span>
                               )}
                               <span className="text-[11px]">{docExt(d)}</span>
                               {d.file_size ? (
@@ -545,8 +585,22 @@ export function KbDetail({ kbId }: { kbId: string }) {
         }}
         initialFiles={droppedFiles}
         onProceed={(files) => {
-          setConfirmFiles(files);
           setUploadOpen(false);
+          /* Locked mode: enqueue immediately with the system defaults —
+           * the parse-settings dialog is bypassed entirely. */
+          if (defaultsLocked) {
+            enqueue({
+              kbId,
+              kbName: kb?.name ?? "",
+              processConfig: lockedProcessConfig,
+              uploads: files.map((f) => ({
+                file: f,
+                fileName: buildUploadFileName(f, ""),
+              })),
+            });
+            return;
+          }
+          setConfirmFiles(files);
         }}
       />
 

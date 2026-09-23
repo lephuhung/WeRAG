@@ -1,6 +1,7 @@
 package abbreviation
 
 import (
+	"context"
 	"regexp"
 	"sort"
 	"strings"
@@ -30,6 +31,44 @@ type ExpandResult struct {
 	// Potential lists tokens that look like abbreviations but have no DB row —
 	// callers may surface them to the user for a future suggestion.
 	Potential []string `json:"potential_abbreviations"`
+}
+
+type ActiveLister interface {
+	ListActive(context.Context) ([]*types.Abbreviation, error)
+}
+
+func ResolveSearchQuery(
+	ctx context.Context,
+	text string,
+	lister ActiveLister,
+) (string, *ExpandResult, error) {
+	if lister == nil || len(FindCandidates(text)) == 0 {
+		return text, nil, nil
+	}
+	actives, err := lister.ListActive(ctx)
+	if err != nil {
+		return text, nil, err
+	}
+	result := Expand(text, actives)
+	return EnrichSearchQuery(result), result, nil
+}
+
+func EnrichSearchQuery(result *ExpandResult) string {
+	if result == nil {
+		return ""
+	}
+	query := result.Original
+	seen := make(map[string]struct{}, len(result.Applied))
+	for _, applied := range result.Applied {
+		key := strings.ToLower(applied.ShortForm)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		query = replaceAbbreviation(query, applied.ShortForm,
+			applied.FullForm+" ("+applied.ShortForm+")")
+	}
+	return query
 }
 
 // Expand rewrites single-meaning abbreviations in text using the active

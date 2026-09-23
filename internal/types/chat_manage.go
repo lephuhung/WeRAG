@@ -271,6 +271,7 @@ const (
 	LOAD_HISTORY           EventType = "load_history"
 	MEMORY_RECALL          EventType = "memory_recall"
 	QUERY_UNDERSTAND       EventType = "query_understand"
+	ABBREVIATION_RESOLVE   EventType = "abbreviation_resolve"
 	CHUNK_SEARCH           EventType = "chunk_search"
 	CHUNK_SEARCH_PARALLEL  EventType = "chunk_search_parallel"
 	ENTITY_SEARCH          EventType = "entity_search"

@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
+import { Toggle } from "@/components/settings/toggle";
+import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
 import {
   listEmbedChannels,
@@ -306,12 +308,12 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
     >
       <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
         {error && <p className="caption text-error">{error}</p>}
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.nameLabel")}</span>
             <input className="input" value={draft.name} onChange={(e) => patch("name", e.target.value)} />
           </label>
-          <label className="block w-[180px]">
+          <label className="block w-full sm:w-[180px]">
             <span className="caption mb-1.5 block text-muted">Rate / minute</span>
             <input
               className="input"
@@ -322,7 +324,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
               onChange={(e) => patch("rate_limit_per_minute", Number(e.target.value))}
             />
           </label>
-          <label className="block w-[180px]">
+          <label className="block w-full sm:w-[180px]">
             <span className="caption mb-1.5 block text-muted">Rate / day</span>
             <input
               className="input"
@@ -361,51 +363,39 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
           <ToggleRow label={t("embedPublish.allowFileUpload")} checked={draft.allow_file_upload} onChange={(v) => patch("allow_file_upload", v)} />
         </div>
 
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.pageTitle")}</span>
             <input className="input" value={draft.page_title} onChange={(e) => patch("page_title", e.target.value)} />
           </label>
-          <label className="block w-[200px]">
+          <label className="block w-full sm:w-[200px]">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.headerTitleMode")}</span>
-            <select
-              className="input"
+            <Select
               value={draft.header_title_mode}
-              onChange={(e) => patch("header_title_mode", e.target.value as HeaderTitleMode)}
-            >
-              {TITLE_MODES.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+              onChange={(v) => patch("header_title_mode", v as HeaderTitleMode)}
+              options={TITLE_MODES.map((m) => ({ value: m, label: m }))}
+            />
           </label>
-          <label className="block w-[220px]">
+          <label className="block w-full sm:w-[220px]">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.widgetPosition")}</span>
-            <select
-              className="input"
+            <Select
               value={draft.widget_position}
-              onChange={(e) => patch("widget_position", e.target.value as WidgetPosition)}
-            >
-              {POSITIONS.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+              onChange={(v) => patch("widget_position", v as WidgetPosition)}
+              options={POSITIONS.map((p) => ({ value: p, label: p }))}
+            />
           </label>
         </div>
 
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.defaultLocale")}</span>
-            <select
-              className="input"
+            <Select
               value={draft.default_locale}
-              onChange={(e) => patch("default_locale", e.target.value)}
-            >
-              {LOCALES.map((l) => (
-                <option key={l.value} value={l.value}>{l.labelEn}</option>
-              ))}
-            </select>
+              onChange={(v) => patch("default_locale", v)}
+              options={LOCALES.map((l) => ({ value: l.value, label: l.labelEn }))}
+            />
           </label>
-          <label className="block w-[160px]">
+          <label className="block w-full sm:w-[160px]">
             <span className="caption mb-1.5 block text-muted">{t("embedPublish.primaryColor")}</span>
             <input
               className="input"
@@ -463,16 +453,7 @@ function ToggleRow({ label, checked, onChange }: {
 }) {
   return (
     <div className="flex items-center gap-3">
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 rounded-full transition-colors ${checked ? "bg-primary" : "bg-hairline-strong"}`}
-      >
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface-card transition-transform ${
-          checked ? "translate-x-[22px]" : "translate-x-0.5"
-        }`} />
-      </button>
+      <Toggle checked={checked} onChange={onChange} label={label} />
       <span className="title-sm">{label}</span>
     </div>
   );

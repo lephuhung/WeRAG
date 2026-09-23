@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getParserEngines, type ParserEngineInfo } from "@/lib/api/system";
 import type { ParserEngineRule } from "@/lib/api/knowledge";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { Select } from "@/components/select";
 
 /* Embedded port of frontend/src/views/knowledge/settings/KBParserSettings.vue:
  * one engine <select> per file-type family present in the upload batch
@@ -152,42 +153,33 @@ export function ParserRulesEditor({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
       {groups.map((g) => {
         const { available, defaultName } = engineOptions(g.extensions);
         const selected = engineFor(g.extensions);
         return (
-          <div key={g.key} className="flex items-center justify-between gap-4 py-1">
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-ink">{g.label}</div>
-              <div className="mt-0.5 flex flex-wrap gap-1">
-                {g.extensions.map((ext) => (
-                  <span
-                    key={ext}
-                    className="rounded-full bg-surface-strong px-1.5 py-0.5 text-[10px] text-muted"
-                  >
-                    .{ext}
-                  </span>
-                ))}
-              </div>
+          <div key={g.key} className="flex items-center justify-between gap-3 py-1.5">
+            <div className="min-w-0 text-[12.5px] font-medium text-ink">
+              <span className="truncate">{g.label}</span>
+              <span className="ml-1.5 whitespace-nowrap text-[10.5px] font-normal text-muted-soft">
+                {g.extensions.map((x) => `.${x}`).join(" ")}
+              </span>
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <select
-                className="input h-8 w-[220px] text-[12.5px]"
+            <div className="flex shrink-0 flex-col items-end gap-0.5">
+              <Select
+                className="h-7 w-[150px] py-0.5 px-2.5 text-[12px]"
                 value={selected}
-                onChange={(e) => setEngine(g.extensions, e.target.value)}
+                onChange={(v) => setEngine(g.extensions, v)}
                 disabled={available.length === 0}
-              >
-                {available.length === 0 && <option value="">{t("ps.parserNoEngine")}</option>}
-                {available.map((e) => (
-                  <option key={e.Name} value={e.Name}>
-                    {e.Name}
-                    {e.Name === defaultName ? ` (${t("ps.parserDefault")})` : ""}
-                  </option>
-                ))}
-              </select>
+                placeholder={t("ps.parserNoEngine")}
+                options={available.map((e) => ({
+                  value: e.Name,
+                  label:
+                    e.Name === defaultName ? `${e.Name} (${t("ps.parserDefault")})` : e.Name,
+                }))}
+              />
               {g.extensions.includes("xlsx") && selected === "builtin" && (
-                <label className="flex items-center gap-1.5 text-[11.5px] text-muted">
+                <label className="flex items-center gap-1.5 text-[11px] text-muted">
                   <input
                     type="checkbox"
                     checked={ruleFor(g.extensions)?.xlsx_first_row_as_header === true}

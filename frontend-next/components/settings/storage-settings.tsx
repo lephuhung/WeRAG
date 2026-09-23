@@ -10,6 +10,7 @@ import {
   type StorageBackend,
 } from "@/lib/api/storage-backends";
 import { IconDoc, IconPlus, IconTrash } from "@/components/icons";
+import { Select } from "@/components/select";
 
 export function StorageSettings() {
   const [backends, setBackends] = useState<StorageBackend[]>([]);
@@ -209,22 +210,21 @@ export function StorageSettings() {
 
               <div>
                 <label className="caption mb-1 block font-medium text-ink">Provider Type</label>
-                <select
-                  className="input h-9 w-full text-[13px]"
+                <Select
+                  className="h-9 w-full text-[13px]"
                   value={formData.provider}
-                  onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-                >
-                  <option value="local">Local Filesystem</option>
-                  <option value="s3">AWS S3 / S3 Compatible</option>
-                  <option value="minio">MinIO</option>
-                  <option value="oss">Aliyun OSS</option>
-                  <option value="cos">Tencent COS</option>
-                  {types.map((t) => (
-                    <option key={t} value={t}>
-                      {t.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setFormData({ ...formData, provider: v })}
+                  options={[
+                    { value: "local", label: "Local Filesystem" },
+                    { value: "s3", label: "AWS S3 / S3 Compatible" },
+                    { value: "minio", label: "MinIO" },
+                    { value: "oss", label: "Aliyun OSS" },
+                    { value: "cos", label: "Tencent COS" },
+                    ...types
+                      .filter((t) => !["local", "s3", "minio", "oss", "cos"].includes(t))
+                      .map((t) => ({ value: t, label: t.toUpperCase() })),
+                  ]}
+                />
               </div>
 
               {formData.provider !== "local" && (
@@ -238,7 +238,7 @@ export function StorageSettings() {
                       onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="caption mb-1 block font-medium text-ink">Bucket Name</label>
                       <input
@@ -258,7 +258,7 @@ export function StorageSettings() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="caption mb-1 block font-medium text-ink">Access Key ID</label>
                       <input

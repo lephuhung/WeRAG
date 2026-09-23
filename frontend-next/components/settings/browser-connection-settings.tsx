@@ -9,6 +9,7 @@ import {
   downloadBrowserExtension,
   type BrowserAccountStatus,
 } from "@/lib/api/browser";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export function BrowserConnectionSettings() {
   const [status, setStatus] = useState<BrowserAccountStatus | null>(null);
@@ -171,10 +172,12 @@ export function BrowserConnectionSettings() {
               />
               <button
                 type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(pairingLink);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
+                onClick={async () => {
+                  const ok = await copyToClipboard(pairingLink);
+                  if (ok) {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }
                 }}
                 className="btn btn-primary btn-sm shrink-0 text-xs"
               >

@@ -71,6 +71,8 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	LanguageContextKey:      true,
 	LangfuseTraceContextKey: true,
 
+	AbbreviationCandidatesContextKey: true,
+
 	// The agent-level opt-out from long-term memory. Recall is gated inside
 	// the QA services, but extraction, the explicit "remember this" route and
 	// document affinity all run from a context descended from a CloneContext.

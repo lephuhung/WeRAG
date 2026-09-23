@@ -61,7 +61,8 @@ type CreateKnowledgeQARequest struct {
 	Channel               string                       `json:"channel"`                               // Source channel: "web", "api", "im", etc.
 	SuggestionAttribution *types.SuggestionAttribution `json:"suggestion_attribution,omitempty"`
 	// QuestionOrigin is the knowledge source of a picked suggested question.
-	QuestionOrigin *types.QuestionOrigin `json:"question_origin,omitempty"`
+	QuestionOrigin         *types.QuestionOrigin `json:"question_origin,omitempty"`
+	AbbreviationCandidates []string              `json:"abbreviation_candidates,omitempty"`
 }
 
 // AttachmentUpload represents a file attachment upload from the client

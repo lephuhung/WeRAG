@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconRefresh, IconTrash } from "@/components/icons";
+import { Select } from "@/components/select";
 import {
   getMemorySettings,
   updateMemoryEnabled,
@@ -605,17 +606,11 @@ export function MemoryPersonalSettings() {
         <form onSubmit={handleCreate} className="space-y-4">
           <label className="block">
             <span className="caption mb-1.5 block text-muted">Category</span>
-            <select
-              className="input"
+            <Select
               value={draftKind}
-              onChange={(e) => setDraftKind(e.target.value as MemoryKind)}
-            >
-              {KINDS.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.label} — {k.desc}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setDraftKind(v as MemoryKind)}
+              options={KINDS.map((k) => ({ value: k.id, label: `${k.label} — ${k.desc}` }))}
+            />
           </label>
 
           <label className="block">

@@ -1,123 +1,141 @@
-/* Personal and tenant-level settings — the workspace half of the old
- * /platform/settings page, now a tab under /platform/system. Left nav groups
- * come from nav-config.ts (role-gated); the URL contract is `?section=<key>`.
- */
+/* Workspace tab — card hub for personal and tenant settings. Small config
+ * panels open in a modal; table-style managers keep their own routes.
+ * ?section=<key> URLs from the pre-routes layout redirect to the matching
+ * route (including keys that moved to /platform/system/extensions). */
 "use client";
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
-import { useAuth } from "@/lib/auth";
+import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
 import {
-  WORKSPACE_NAV_GROUPS,
-  canSeeSection,
-} from "@/components/settings/nav-config";
+  IconBookmark,
+  IconClock,
+  IconCode,
+  IconInfoCircle,
+  IconOrg,
+  IconSettings,
+} from "@/components/icons";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import { TenantInfo } from "@/components/settings/tenant-info";
-import { ApiKeysSection } from "@/components/settings/api-keys";
-import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
-import { TenantMembers } from "@/components/settings/tenant-members";
-import { TenantOrgs } from "@/components/settings/tenant-orgs";
-import { MemoryPersonalSettings } from "@/components/settings/memory-personal-settings";
-import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
-import { BrowserConnectionSettings } from "@/components/settings/browser-connection-settings";
 import { ChatHistorySettings } from "@/components/settings/chat-history-settings";
+import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
 
-export default function WorkspaceSettingsPage() {
+const W = "/platform/system/workspace";
+const E = "/platform/system/extensions";
+
+const SECTION_ROUTES: Record<string, string> = {
+  general: W,
+  mymemory: `${W}/mymemory`,
+  tenant: `${W}/tenant`,
+  members: `${W}/members`,
+  "api-keys": `${W}/api-keys`,
+  orgs: `${W}/orgs`,
+  chathistory: `${W}/chathistory`,
+  memory: `${W}/memory`,
+  envvars: `${E}/envvars`,
+  browserconnection: `${E}/browserconnection`,
+  abbreviations: `${E}/abbreviations`,
+};
+
+export default function WorkspacePage() {
   return (
     <Suspense fallback={null}>
-      <WorkspaceSettingsBody />
+      <WorkspaceHub />
     </Suspense>
   );
 }
 
-function WorkspaceSettingsBody() {
-  const { t } = useT();
+function WorkspaceHub() {
   const router = useRouter();
   const params = useSearchParams();
-  const auth = useAuth();
-
-  const active = params.get("section") ?? "general";
-
-  const currentRole =
-    auth.memberships.find(
-      (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
-    )?.role ?? "";
-  const isSystemAdmin = auth.user?.is_system_admin === true;
-
-  const visibleItems = WORKSPACE_NAV_GROUPS.flatMap((g) => g.items).filter((it) =>
-    canSeeSection(it, currentRole, isSystemAdmin),
-  );
-  const activeItem = visibleItems.find((it) => it.key === active);
+  const section = params.get("section");
+  const { t } = useT();
 
   useEffect(() => {
-    // Hand-crafted ?section= values must not bypass the role gate — fall back
-    // to the first visible section instead of rendering the panel anyway.
-    if (!activeItem && visibleItems.length > 0) {
-      router.replace(`/platform/system/workspace?section=${visibleItems[0].key}`);
-    }
-  }, [active, activeItem, visibleItems.length, router]);
+    if (!section) return;
+    router.replace(SECTION_ROUTES[section] ?? W);
+  }, [section, router]);
+
+  if (section) return null;
+
+  const accountCards: SectionCard[] = [
+    {
+      key: "general",
+      title: t("settingsNav.general"),
+      desc: "Language, theme and display preferences.",
+      icon: <IconSettings className="h-5 w-5" />,
+      content: <GeneralSettings />,
+    },
+    {
+      key: "mymemory",
+      title: t("settingsNav.mymemory"),
+      desc: "Review and manage what the agent remembers about you.",
+      icon: <IconBookmark className="h-5 w-5" />,
+      href: `${W}/mymemory`,
+    },
+  ];
+
+  const workspaceCards: SectionCard[] = [
+    {
+      key: "tenant",
+      title: t("settingsNav.tenant"),
+      desc: "Workspace profile, storage usage and danger zone.",
+      icon: <IconInfoCircle className="h-5 w-5" />,
+      content: <TenantInfo />,
+    },
+    {
+      key: "members",
+      title: t("settingsNav.members"),
+      desc: "Invite people and manage workspace roles.",
+      icon: <IconOrg className="h-5 w-5" />,
+      href: `${W}/members`,
+      minRole: "admin",
+    },
+    {
+      key: "api-keys",
+      title: t("settingsNav.apiKeys"),
+      desc: "Programmatic access tokens for this workspace.",
+      icon: <IconCode className="h-5 w-5" />,
+      href: `${W}/api-keys`,
+      minRole: "owner",
+    },
+    {
+      key: "orgs",
+      title: t("settingsNav.orgs"),
+      desc: "Shared teams grouping members and knowledge bases.",
+      icon: <IconOrg className="h-5 w-5" />,
+      href: `${W}/orgs`,
+      minRole: "admin",
+    },
+    {
+      key: "chathistory",
+      title: t("systemNav.chathistory"),
+      desc: "Index chat history into a knowledge base for retrieval.",
+      icon: <IconClock className="h-5 w-5" />,
+      content: <ChatHistorySettings />,
+      minRole: "owner",
+    },
+    {
+      key: "memory",
+      title: t("settingsNav.memory"),
+      desc: "Workspace-level memory extraction and retention.",
+      icon: <IconBookmark className="h-5 w-5" />,
+      content: <MemoryWorkspaceSettings />,
+      minRole: "owner",
+    },
+  ];
 
   return (
-    <div className="mx-auto w-full max-w-[1200px]">
-      <div className="flex gap-10">
-        {/* section nav */}
-        <div className="w-[240px] shrink-0">
-          {WORKSPACE_NAV_GROUPS.map((group) => {
-            const items = group.items.filter((it) =>
-              canSeeSection(it, currentRole, isSystemAdmin),
-            );
-            if (items.length === 0) return null;
-            return (
-              <div key={group.key} className="mb-6">
-                <div className="caption-uppercase mb-2 px-3 text-muted-soft">
-                  {t(group.labelKey as never)}
-                </div>
-                {items.map((it) => (
-                  <button
-                    key={it.key}
-                    onClick={() =>
-                      router.replace(`/platform/system/workspace?section=${it.key}`)
-                    }
-                    className={`nav-item mb-0.5 ${active === it.key ? "active" : ""}`}
-                  >
-                    <span className="truncate">
-                      {it.labelKey ? t(it.labelKey as never) : it.fallbackLabel}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* panel */}
-        <div className="min-w-0 flex-1">
-          <div className="card p-8">
-            {active === "general" ? (
-              <GeneralSettings />
-            ) : active === "envvars" ? (
-              <EnvVarsSettings />
-            ) : active === "mymemory" ? (
-              <MemoryPersonalSettings />
-            ) : active === "browserconnection" ? (
-              <BrowserConnectionSettings />
-            ) : active === "tenant" ? (
-              <TenantInfo />
-            ) : active === "members" ? (
-              <TenantMembers />
-            ) : active === "api-keys" ? (
-              <ApiKeysSection />
-            ) : active === "orgs" ? (
-              <TenantOrgs />
-            ) : active === "chathistory" ? (
-              <ChatHistorySettings />
-            ) : active === "memory" ? (
-              <MemoryWorkspaceSettings />
-            ) : null}
-          </div>
-        </div>
+    <div>
+      <div className="caption-uppercase mb-3 text-muted-soft">
+        {t("settingsNav.groups.account")}
       </div>
+      <SectionCardGrid cards={accountCards} />
+      <div className="caption-uppercase mb-3 mt-8 text-muted-soft">
+        {t("settingsNav.groups.workspace")}
+      </div>
+      <SectionCardGrid cards={workspaceCards} />
     </div>
   );
 }

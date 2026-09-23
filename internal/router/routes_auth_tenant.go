@@ -260,6 +260,9 @@ func RegisterSystemRoutes(
 		systemRoutes.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)).POST(
 			"/docreader/reconnect", g.SystemAdmin(), handler.ReconnectDocReader)
 		systemRoutes.GET("/storage-engine-status", g.Member(), handler.GetStorageEngineStatus)
+		// Member-readable: upload UIs poll this to decide whether the
+		// parse-settings dialog can be skipped (SystemAdmin-locked defaults).
+		systemRoutes.GET("/parse-defaults", g.Member(), handler.GetSystemParseDefaults)
 		systemRoutes.POST("/storage-engine-check", g.Owner(), handler.CheckStorageEngine)
 		systemRoutes.POST("/sandbox-check", g.Owner(), handler.CheckSandboxConfig)
 	}

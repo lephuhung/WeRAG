@@ -318,6 +318,22 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"observation, pause/resume and human help. Do not bypass a pause or browser challenge " +
 			"through another tool.\n")
 	}
+	if has("resolve_abbreviation") {
+		if has("search_knowledge") {
+			b.WriteString("When the user's message contains Vietnamese abbreviations or acronyms " +
+				"(UBND, TTHT, BMNN…), call resolve_abbreviation before search_knowledge. " +
+				"For one active meaning, continue with search_knowledge using expanded_text. ")
+		} else {
+			b.WriteString("When the user's message contains Vietnamese abbreviations or acronyms " +
+				"(UBND, TTHT, BMNN…), call resolve_abbreviation. ")
+		}
+		b.WriteString("If a short form is ambiguous, ask which meaning was intended instead of guessing. " +
+			"For an unknown candidate, ask the user for its full form. When the user explicitly " +
+			"supplies that meaning—either as 'ABC = Full Meaning' or as a full-form-only reply " +
+			"when exactly one unknown candidate is pending—immediately call resolve_abbreviation " +
+			"with action=suggest without another confirmation. Never invent a full form. Tell the " +
+			"user the suggestion remains pending until a workspace Owner or SuperAdmin activates it.\n")
+	}
 
 	return b.String()
 }

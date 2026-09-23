@@ -25,6 +25,7 @@ type PluginSearch struct {
 	sessionService        interfaces.SessionService
 	webSearchStateService interfaces.WebSearchStateService
 	webSearchProviderRepo interfaces.WebSearchProviderRepository
+	abbreviationService   interfaces.AbbreviationService
 }
 
 func NewPluginSearch(eventManager *EventManager,
@@ -37,6 +38,7 @@ func NewPluginSearch(eventManager *EventManager,
 	sessionService interfaces.SessionService,
 	webSearchStateService interfaces.WebSearchStateService,
 	webSearchProviderRepo interfaces.WebSearchProviderRepository,
+	abbreviationService interfaces.AbbreviationService,
 ) *PluginSearch {
 	res := &PluginSearch{
 		knowledgeBaseService:  knowledgeBaseService,
@@ -48,6 +50,7 @@ func NewPluginSearch(eventManager *EventManager,
 		sessionService:        sessionService,
 		webSearchStateService: webSearchStateService,
 		webSearchProviderRepo: webSearchProviderRepo,
+		abbreviationService:   abbreviationService,
 	}
 	eventManager.Register(res)
 	return res
@@ -74,6 +77,8 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		})
 		return nil
 	}
+
+	p.resolveAbbreviationQuery(ctx, chatManage)
 
 	pipelineInfo(ctx, "Search", "input", map[string]interface{}{
 		"session_id":     chatManage.SessionID,
@@ -160,6 +165,28 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		"result_count": 0,
 	})
 	return ErrSearchNothing
+}
+
+func (p *PluginSearch) resolveAbbreviationQuery(ctx context.Context, chatManage *types.ChatManage) {
+	resolved, result, err := resolveAbbreviationForTurn(
+		ctx, p.abbreviationService, chatManage.RewriteQuery, chatManage.Query,
+	)
+	if err != nil {
+		pipelineWarn(ctx, "Search", "abbreviation_resolution_error", map[string]interface{}{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		return
+	}
+	input := strings.TrimSpace(chatManage.Query)
+	if input == "" {
+		input = strings.TrimSpace(chatManage.RewriteQuery)
+	}
+	emitAbbreviationResolution(ctx, chatManage, input, result)
+	pipelineInfo(ctx, "Search", "abbreviation_resolution", map[string]interface{}{
+		"applied": len(result.Applied), "ambiguous": len(result.Ambiguous), "potential": len(result.Potential),
+	})
+	chatManage.RewriteQuery = resolved
 }
 
 // getSearchResultFromHistory retrieves relevant knowledge references from chat history

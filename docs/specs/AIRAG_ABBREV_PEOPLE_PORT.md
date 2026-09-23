@@ -189,7 +189,7 @@ go.mod                                                     EDIT (mongo-driver/v2
 ## 4. Caveats
 
 1. **PII**: `persons[]` chứa CCCD/BHXH/SĐT thật. Role-gate Admin + cân nhắc log tool args ở mức hash/redact (kiểm `common.PipelineInfo` hiện log full args — có thể cần tool-side redact).
-2. **Abbreviation expansion chỉ chạy khi agent gọi** — không deterministic như AIRAG (expand trước routing). Phase 2: hook expand vào QA/session path trước khi agent chạy (xem `session_agent_qa_scope`, quick-answer path) — spec riêng.
+2. **Abbreviation expansion giờ chạy deterministic** — active single-meaning abbreviations được enrich (`Full form (SHORT)`) trước agent retrieval, QA/direct pipeline (`PluginSearch.resolveAbbreviationQuery`) và MCP chunk retrieval (`search_knowledge`/`grep_chunks`), không còn phụ thuộc agent gọi tool. Unknown candidates được surface thành CTA trong chat (Quick Answer lẫn Smart Reasoning); suggestions từ CTA hoặc user định nghĩa trực tiếp đều inactive cho tới khi workspace Owner/SuperAdmin duyệt. Tool `resolve_abbreviation` vẫn dùng cho lookup/suggest và xử lý ambiguity (nhiều nghĩa → hỏi lại user).
 3. **Multi-schema regex trên collection lớn** (`lg` ~13M docs): giữ `maxTimeMS` 5s + skip-on-timeout như AIRAG; cân nhắc `PEOPLE_MONGO_PER_SCHEMA_LIMIT` (default 10).
 4. **`suggest_abbreviation` tạo rác**: chỉ review bằng tay; nếu spam trở thành vấn đề → thêm gate Admin cho action suggest.
 5. **MongoDB là single external dep**: sidecar không còn, nên khi mongo chết → tool trả `unavailable`, agent phải fallback sang `search_knowledge` thay vì khẳng định không có dữ liệu.

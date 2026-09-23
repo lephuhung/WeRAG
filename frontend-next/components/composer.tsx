@@ -166,7 +166,7 @@ export function Composer({
   const showStop = isReplying && canStop !== false && !value.trim();
 
   return (
-    <div className="card relative flex flex-col gap-2 p-4" onClick={() => closePopups()}>
+    <div className="card relative flex flex-col gap-2 p-3 sm:p-4" onClick={() => closePopups()}>
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {images.map((img, i) => (
@@ -244,54 +244,58 @@ export function Composer({
       </div>
 
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-        <div className="relative">
-          <AgentModeButton onOpen={() => { closePopups(); setAgentOpen(true); }} />
-          <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
-        </div>
+        {/* Left group wraps internally on narrow screens; send stays pinned
+            right on the first row instead of dropping to a line of its own. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2">
+          <div className="relative">
+            <AgentModeButton onOpen={() => { closePopups(); setAgentOpen(true); }} />
+            <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
+          </div>
 
-        <button
-          onClick={() => toggleWebSearch(!websearchOn)}
-          title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
-          className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors ${
-            websearchOn ? "border-ink bg-ink text-white" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
-          } ${webSearchReady ? "" : "opacity-50"}`}
-        >
-          <span aria-hidden>🌐</span> {websearchOn ? "Web on" : "Web"}
-        </button>
-
-        {imageCapable && (
           <button
-            onClick={onPickImages}
-            title="Attach images (multimodal)"
-            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
-              images.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+            onClick={() => toggleWebSearch(!websearchOn)}
+            title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
+            className={`flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-[13px] font-medium transition-colors sm:px-3 ${
+              websearchOn ? "border-ink bg-ink text-white" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+            } ${webSearchReady ? "" : "opacity-50"}`}
+          >
+            <span aria-hidden>🌐</span> {websearchOn ? "Web on" : "Web"}
+          </button>
+
+          {imageCapable && (
+            <button
+              onClick={onPickImages}
+              title="Attach images (multimodal)"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                images.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <IconPlus className="h-4 w-4" />
+              {images.length > 0 && <span className="caption ml-0.5">{images.length}</span>}
+            </button>
+          )}
+
+          <button
+            onClick={onPickFiles}
+            title={sessionId ? "Attach files" : "Attach files (upload after session is created)"}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              attachments.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
             }`}
           >
-            <IconPlus className="h-4 w-4" />
-            {images.length > 0 && <span className="caption ml-0.5">{images.length}</span>}
+            📎{attachments.length > 0 && <span className="caption ml-0.5">{attachments.length}</span>}
           </button>
-        )}
+        </div>
 
-        <button
-          onClick={onPickFiles}
-          title={sessionId ? "Attach files" : "Attach files (upload after session is created)"}
-          className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
-            attachments.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
-          }`}
-        >
-          📎{attachments.length > 0 && <span className="caption ml-0.5">{attachments.length}</span>}
-        </button>
-
-        <div className="relative ml-auto flex items-center gap-2">
+        <div className="relative ml-auto flex shrink-0 items-center gap-2">
           {showStop ? (
-            <button onClick={onStop} className="btn btn-outline mb-0.5 h-9 shrink-0" title="Stop generation">
+            <button onClick={onStop} className="btn btn-outline h-9 shrink-0" title="Stop generation">
               ■ Stop
             </button>
           ) : (
             <button
               onClick={submit}
               disabled={!value.trim() || isReplying}
-              className="btn btn-primary mb-0.5 h-9 w-9 shrink-0 p-0! disabled:opacity-40"
+              className="btn btn-primary h-9 w-9 shrink-0 p-0! disabled:opacity-40"
               title="Send (Enter)"
             >
               <IconSend className="h-4 w-4" />

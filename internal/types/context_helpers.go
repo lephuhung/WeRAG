@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 // EnvLanguage returns the WEKNORA_LANGUAGE environment variable value, or empty string if unset.
@@ -347,6 +348,53 @@ func LLMCallMetadataFromContext(ctx context.Context) (purpose, prefixFingerprint
 	purpose, _ = ctx.Value(LLMCallPurposeContextKey).(string)
 	prefixFingerprint, _ = ctx.Value(LLMPromptPrefixFingerprintContextKey).(string)
 	return purpose, prefixFingerprint
+}
+
+const (
+	maxAbbreviationCandidates   = 10
+	maxAbbreviationCandidateLen = 50
+)
+
+func WithAbbreviationCandidates(ctx context.Context, candidates []string) context.Context {
+	normalized := normalizeAbbreviationCandidates(candidates)
+	if len(normalized) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, AbbreviationCandidatesContextKey, normalized)
+}
+
+func AbbreviationCandidatesFromContext(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	v, ok := ctx.Value(AbbreviationCandidatesContextKey).([]string)
+	if !ok || len(v) == 0 {
+		return nil
+	}
+	out := make([]string, len(v))
+	copy(out, v)
+	return out
+}
+
+func normalizeAbbreviationCandidates(candidates []string) []string {
+	seen := make(map[string]struct{}, len(candidates))
+	out := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		c = strings.TrimSpace(c)
+		if c == "" || utf8.RuneCountInString(c) > maxAbbreviationCandidateLen {
+			continue
+		}
+		key := strings.ToLower(c)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, c)
+		if len(out) >= maxAbbreviationCandidates {
+			break
+		}
+	}
+	return out
 }
 
 // LanguageFromContext extracts the language locale string from ctx (e.g. "zh-CN", "en-US").

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSession, listSessions, type SessionRow } from "@/lib/api/chat";
+import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import { BrandLogo } from "@/components/brand-logo";
@@ -49,11 +50,13 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useT();
+  const auth = useAuth();
   const palette = useCommandPalette();
   const [live, setLive] = useState<SessionRow[] | null>(null);
   const [removing, setRemoving] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const confirmDelete = async () => {
     if (!removing || deleting) return;
@@ -73,6 +76,16 @@ export function Sidebar() {
     }
   };
 
+  // Below lg the sidebar is an off-canvas drawer: the header's menu button
+  // dispatches this event; navigation and the backdrop close it.
+  useEffect(() => {
+    const toggle = () => setMobileOpen((v) => !v);
+    window.addEventListener("weknora:toggle-sidebar", toggle);
+    return () => window.removeEventListener("weknora:toggle-sidebar", toggle);
+  }, []);
+
+  useEffect(() => setMobileOpen(false), [pathname]);
+
   useEffect(() => {
     let alive = true;
     listSessions(1, 30)
@@ -85,7 +98,7 @@ export function Sidebar() {
     return () => {
       alive = false;
     };
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     const handleTitleUpdated = (e: Event) => {
@@ -156,7 +169,19 @@ export function Sidebar() {
     })();
 
   return (
-    <aside className="flex h-screen w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas">
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-ink/20 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:static lg:z-auto lg:translate-x-0 lg:transition-none ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
       <div className="flex h-16 items-center px-5">
         <Link
           href="/platform/knowledge-bases"
@@ -229,7 +254,13 @@ export function Sidebar() {
 
       <div className="border-t border-hairline px-3 py-3">
         <Link
-          href="/platform/system"
+          href={
+            auth.ready
+              ? auth.user?.is_system_admin
+                ? "/platform/system/admin"
+                : "/platform/system/workspace"
+              : "/platform/system"
+          }
           className={`nav-item ${pathname?.startsWith("/platform/system") || pathname?.startsWith("/platform/settings") ? "active" : ""}`}
         >
           <IconSettings className="h-[18px] w-[18px]" />
@@ -237,6 +268,10 @@ export function Sidebar() {
         </Link>
       </div>
 
+      </aside>
+
+      {/* Rendered outside <aside>: the drawer's transform would make the modal's
+          fixed positioning resolve against the sidebar instead of the viewport. */}
       <Modal
         open={removing !== null}
         title="Delete chat"
@@ -260,6 +295,6 @@ export function Sidebar() {
           </button>
         </div>
       </Modal>
-    </aside>
+    </>
   );
 }

@@ -80,8 +80,8 @@ export default function Artifacts() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[1200px] px-12 py-12">
-        <div className="mb-10 flex items-end justify-between gap-6">
+      <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-10 sm:gap-6">
           <div>
             <div className="caption-uppercase mb-3 text-muted">Workspace</div>
             <h1 className="display-xl">{t("nav.artifacts")}</h1>
@@ -108,7 +108,7 @@ export default function Artifacts() {
         {items === null ? (
           <p className="caption text-muted">Loading…</p>
         ) : items.length === 0 ? (
-          <div className="card flex flex-col items-center justify-center px-8 py-20 text-center">
+          <div className="card flex flex-col items-center justify-center px-4 py-16 text-center sm:px-8 sm:py-20">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-strong text-ink">
               <IconArtifact className="h-6 w-6" />
             </div>

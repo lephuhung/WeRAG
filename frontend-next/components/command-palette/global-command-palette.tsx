@@ -24,10 +24,12 @@ import {
 import { searchMessages, type MessageSearchGroupItem } from "@/lib/api/chat";
 import { listAgents, type AgentRow } from "@/lib/api/agents";
 import { useAuth } from "@/lib/auth";
+import { canSeeSection } from "@/components/settings/nav-config";
+import { SYSTEM_TABS } from "@/components/system/system-nav";
 
 interface CommandItem {
   id: string;
-  category: "quick" | "kbs" | "agents" | "chunks" | "messages" | "ask";
+  category: "quick" | "kbs" | "agents" | "chunks" | "messages" | "ask" | "settings";
   title: string;
   subtitle?: string;
   badge?: string;
@@ -38,8 +40,12 @@ interface CommandItem {
 export function GlobalCommandPalette() {
   const { isOpen, close } = useCommandPalette();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, memberships, selectedTenantId, tenant } = useAuth();
   const isSystemAdmin = user?.is_system_admin === true;
+  const currentRole =
+    memberships.find(
+      (m) => String(m.tenant_id) === String(selectedTenantId ?? tenant?.id ?? ""),
+    )?.role ?? "";
 
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -150,7 +156,7 @@ export function GlobalCommandPalette() {
             icon: <IconAgent className="h-4 w-4" />,
             onSelect: () => {
               close();
-              router.push("/platform/system/agents");
+              router.push("/platform/system/extensions/agents");
             },
           },
         ]
@@ -196,7 +202,7 @@ export function GlobalCommandPalette() {
       icon: <IconPulse className="h-4 w-4" />,
       onSelect: () => {
         close();
-        router.push("/platform/system/logs");
+        router.push("/platform/system/admin/logs");
       },
     },
   ];
@@ -236,7 +242,7 @@ export function GlobalCommandPalette() {
           icon: <IconAgent className="h-4 w-4" />,
           onSelect: () => {
             close();
-            router.push(`/platform/system/agents`);
+            router.push(`/platform/system/extensions/agents`);
           },
         }))
     : [];
@@ -269,6 +275,38 @@ export function GlobalCommandPalette() {
     },
   }));
 
+  /* Every /platform/system sub-page is a real route — index them all so any
+   * settings surface is one ⌘K search away, gated by the same role rules as
+   * the nav. */
+  const settingItems: CommandItem[] = q
+    ? SYSTEM_TABS.flatMap((tab) =>
+        tab.groups.flatMap((g) =>
+          g.items
+            .filter(
+              (it) =>
+                canSeeSection(
+                  { key: it.key, fallbackLabel: it.label, minRole: it.minRole ?? "member" },
+                  currentRole,
+                  isSystemAdmin,
+                ) &&
+                (it.label.toLowerCase().includes(q) ||
+                  tab.label.toLowerCase().includes(q)),
+            )
+            .map((it) => ({
+              id: `setting-${tab.key}-${it.key}`,
+              category: "settings" as const,
+              title: it.label,
+              subtitle: `Settings · ${tab.label}`,
+              icon: <IconSettings className="h-4 w-4" />,
+              onSelect: () => {
+                close();
+                router.push(it.href);
+              },
+            })),
+        ),
+      ).slice(0, 6)
+    : [];
+
   const askAiItem: CommandItem[] = q
     ? [
         {
@@ -293,6 +331,7 @@ export function GlobalCommandPalette() {
     ...matchedAgents,
     ...chunkItems,
     ...messageItems,
+    ...settingItems,
     ...filteredQuick,
   ];
 

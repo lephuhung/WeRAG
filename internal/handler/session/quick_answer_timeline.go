@@ -14,10 +14,12 @@ import (
 // the set is what decides whether the step survives a reload — not whether it
 // produced citations. Keep in sync with RAG_TIMELINE_TOOL_NAMES on the frontend.
 var quickAnswerTimelineTools = map[string]struct{}{
-	"query_understand":   {},
-	"knowledge_search":   {},
-	"attachment_parsing": {},
-	"image_analysis":     {},
+	"query_understand":     {},
+	"knowledge_search":     {},
+	"attachment_parsing":   {},
+	"image_analysis":       {},
+	"resolve_abbreviation": {},
+	"people_lookup":        {},
 }
 
 // quickAnswerTimelineRecorder persists the fast-answer pipeline's timeline into

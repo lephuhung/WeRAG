@@ -72,7 +72,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   const suggestions = suggested?.length ? suggested.map((s) => s.question) : FALLBACK_SUGGESTIONS;
 
   return (
-    <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-8">
+    <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-4 sm:px-8">
       <Orb color="sky" size={560} className="-top-48 left-1/2 -translate-x-1/2" />
       <Orb color="rose" size={380} className="bottom-[-140px] right-[8%]" />
       <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />

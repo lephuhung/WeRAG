@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -11,6 +12,38 @@ import (
 )
 
 const xlsxFirstRowAsHeaderOverride = "xlsx_first_row_as_header"
+
+// parseDefaultsProvider resolves the platform-wide parse defaults a
+// SystemAdmin published under system_settings key "knowledge.parse_defaults"
+// (types.SystemParseDefaults). Wired once at container build via
+// SetParseDefaultsProvider — a nil provider means the feature is off and
+// every caller keeps per-KB / per-upload behaviour. Mirrors the
+// types.SetPreferParserEngine convention: a package-level hook keeps the
+// ResolveProcessConfig signature stable for its ~15 call sites.
+var parseDefaultsProvider atomic.Value // stores func() *types.SystemParseDefaults
+
+// SetParseDefaultsProvider installs the resolver used by
+// lockedParseOverrides. Called once from container wiring; pass nil to clear
+// (tests).
+func SetParseDefaultsProvider(fn func() *types.SystemParseDefaults) {
+	parseDefaultsProvider.Store(fn)
+}
+
+// lockedParseOverrides returns the system-wide parse overrides when the
+// SystemAdmin defaults are enabled, else nil. Non-nil means "locked": the
+// supplied per-upload/per-document overrides are ignored and the admin's
+// config is authoritative for every ingestion path.
+func lockedParseOverrides() *types.KnowledgeProcessOverrides {
+	fn, _ := parseDefaultsProvider.Load().(func() *types.SystemParseDefaults)
+	if fn == nil {
+		return nil
+	}
+	def := fn()
+	if def == nil || !def.Enabled {
+		return nil
+	}
+	return &def.KnowledgeProcessOverrides
+}
 
 func applyParserRuleOverrides(
 	overrides map[string]string,
@@ -37,7 +70,13 @@ func normalizeParserFileType(fileType string) string {
 }
 
 // ResolveProcessConfig merges KB defaults with per-upload overrides for the parse pipeline.
+// When SystemAdmin parse defaults are enabled (knowledge.parse_defaults),
+// they replace `overrides` entirely — the deployment runs in "locked" mode
+// where the published config is authoritative for every parse.
 func ResolveProcessConfig(kb *types.KnowledgeBase, overrides *types.KnowledgeProcessOverrides) types.EffectiveProcessConfig {
+	if locked := lockedParseOverrides(); locked != nil {
+		overrides = locked
+	}
 	eff := types.EffectiveProcessConfig{
 		SummaryEnabled:           true,
 		ChunkingConfig:           kb.ChunkingConfig,
@@ -111,7 +150,7 @@ func validateDefaultFileImportRequirements(
 		logger.Error(ctx, "VLM model is not configured")
 		return werrors.NewBadRequestError("上传图片文件需要设置VLM模型")
 	}
-	if IsAudioType(fileType) && !kb.ASRConfig.IsASREnabled() {
+	if IsAudioType(fileType) && !eff.ASRConfig.IsASREnabled() {
 		logger.Error(ctx, "ASR model is not configured")
 		return werrors.NewBadRequestError("上传音频文件需要设置ASR语音识别模型")
 	}
@@ -135,7 +174,11 @@ func resolveFileImportProcessConfig(
 	}
 
 	eff := ResolveProcessConfig(kb, processOverrides)
-	if enableMultimodel != nil && (processOverrides == nil || processOverrides.EnableMultimodel == nil) {
+	// The legacy enable_multimodel form flag only fills a gap in the
+	// caller's overrides; under locked defaults it must not override the
+	// SystemAdmin-published config.
+	if lockedParseOverrides() == nil && enableMultimodel != nil &&
+		(processOverrides == nil || processOverrides.EnableMultimodel == nil) {
 		eff.EnableMultimodel = *enableMultimodel
 	}
 
@@ -202,7 +245,8 @@ func ApplyKnowledgeProcessOverrides(
 	enableMultimodel *bool,
 ) (types.EffectiveProcessConfig, error) {
 	eff := ResolveProcessConfig(kb, processOverrides)
-	if enableMultimodel != nil && (processOverrides == nil || processOverrides.EnableMultimodel == nil) {
+	locked := lockedParseOverrides() != nil
+	if !locked && enableMultimodel != nil && (processOverrides == nil || processOverrides.EnableMultimodel == nil) {
 		eff.EnableMultimodel = *enableMultimodel
 	}
 	if processOverrides == nil {
@@ -211,8 +255,13 @@ func ApplyKnowledgeProcessOverrides(
 	if err := ValidateProcessOverrides(ctx, kb, processOverrides, fileTypes); err != nil {
 		return eff, err
 	}
-	if err := knowledge.SetProcessOverrides(processOverrides); err != nil {
-		return eff, err
+	// Under locked defaults the caller's overrides never took effect, so
+	// persisting them on the record would mislead the reparse dialog —
+	// keep the record clean instead.
+	if !locked {
+		if err := knowledge.SetProcessOverrides(processOverrides); err != nil {
+			return eff, err
+		}
 	}
 	return eff, nil
 }

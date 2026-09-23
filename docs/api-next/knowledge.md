@@ -617,6 +617,8 @@ handler: `ListKnowledgeChunks` · `chunk.go`
 |---|---|---|---|
 | `page` | integer |  | page number |
 | `page_size` | integer |  | page size |
+| `chunk_type` | string (repeatable) |  | chunk types to return; defaults to `text` only (e.g. `?chunk_type=text&chunk_type=image_ocr`) |
+| `include_image_text` | boolean |  | when `true`, each returned chunk's image-derived text (OCR, falling back to caption) is spliced into `content` at the image placeholder — needed for scanned / image-only documents whose real text lives on `image_ocr` children |
 
 **Response**:
 ```json
@@ -806,6 +808,11 @@ handler: `RegenerateKnowledgeSummary` · `knowledge.go`
 ### `getChunkByIdOnly` — `GET /chunks/by-id/:id`
 
 handler: `GetChunkByIDOnly` · `chunk.go`
+
+**Query**:
+| name | type | req | notes |
+|---|---|---|---|
+| `include_image_text` | boolean |  | when `true`, the chunk's image-derived text (OCR, falling back to caption) is spliced into `content` at the image placeholder — needed for scanned / image-only documents whose real text lives on `image_ocr` children |
 
 **Response**:
 ```json

@@ -59,6 +59,10 @@ type SystemSettingService interface {
 	// the legacy SSRF_WHITELIST format). The slice returned is always
 	// non-nil so callers can iterate without a nil check.
 	GetStringList(ctx context.Context, key string, envName string, def []string) []string
+	// GetJSON resolves a structured ("json" value_type) setting. Returns the
+	// raw stored document and whether a DB row exists; ENV/default fallback
+	// is the caller's concern (JSON settings carry no env mapping).
+	GetJSON(ctx context.Context, key string) (raw types.JSON, found bool)
 
 	// List, Get, Update are the management-CRUD surface called by the
 	// SystemAdmin handlers (gated to user.is_system_admin = true at the

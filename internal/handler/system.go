@@ -2441,6 +2441,33 @@ func (h *SystemHandler) UpdateSystemSetting(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
+// GetSystemParseDefaults godoc
+// @Summary      Get the platform-wide default parse settings
+// @Description  Returns the knowledge.parse_defaults document
+// @Description  ({"enabled": bool, ...process_config fields}). Member-readable
+// @Description  so upload UIs can skip the parse-settings dialog when the
+// @Description  SystemAdmin has locked a default configuration; absent rows
+// @Description  resolve to enabled=false.
+// @Tags         System
+// @Produce      json
+// @Success      200 {object} map[string]interface{} "{ success, data: SystemParseDefaults }"
+// @Router       /system/parse-defaults [get]
+func (h *SystemHandler) GetSystemParseDefaults(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+	raw, found := h.systemSettingSvc.GetJSON(ctx, service.SystemParseDefaultsKey)
+	def := types.SystemParseDefaults{}
+	if found && len(raw) > 0 {
+		if err := json.Unmarshal(raw, &def); err != nil {
+			// A malformed row must not 500 the upload flow — treat as
+			// "no defaults" and let admins fix it via the settings API.
+			logger.Warnf(ctx, "[system] cannot decode %s: %v", service.SystemParseDefaultsKey, err)
+			c.JSON(http.StatusOK, gin.H{"success": true, "data": def})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": def})
+}
+
 // ApplyDefaultStorageQuotaToAllTenants godoc
 // @Summary      Apply the default storage quota to every existing workspace
 // @Description  Reads the current value of `tenant.default_storage_quota_gb`
@@ -2531,4 +2558,3 @@ func (h *SystemHandler) ResetSystemSetting(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-

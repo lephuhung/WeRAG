@@ -3,6 +3,7 @@ package searchutil
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -148,6 +149,79 @@ func ContentOverlapRatio(a, b string) float64 {
 		}
 	}
 	return float64(inter) / float64(len(small))
+}
+
+// degenerateItemBoundary splits OCR output into candidate repeat items:
+// a numbered-list marker ("12. " / "12) ") attached to preceding whitespace
+// (or at the very start), or a run of newlines. Degenerate VLM loops usually
+// take the numbered-list form ("1. X. 2. X."), while bare newlines cover
+// plain repeated lines. The numbered alternative is tried first so a marker
+// following a newline is consumed together with that newline.
+var degenerateItemBoundary = regexp.MustCompile(`(?:^|\s)\d{1,4}[.)]\s+|\n+`)
+
+// degenerateLeadRe strips a leading bullet or residual enumeration from a
+// segment so "12. X" and "13. X" normalize to the same key — a marker can
+// survive inside a segment when it follows a blank line ("\n\n12. X").
+var degenerateLeadRe = regexp.MustCompile(`^\s*(?:[-*•·‣◦]+\s*|\d{1,4}[.)]\s*)`)
+
+const (
+	// degenerateMinRun is the consecutive identical-item count that marks a
+	// tail as degenerate. Real documents almost never end with five truly
+	// identical list items back-to-back.
+	degenerateMinRun = 5
+	// degenerateMinSegmentLen guards against truncating legitimate short
+	// repeats (signature marks, "N/A" rows): only longer sentences count.
+	degenerateMinSegmentLen = 10 // runes
+)
+
+func degenerateNorm(seg string) string {
+	seg = degenerateLeadRe.ReplaceAllString(seg, "")
+	seg = strings.ToLower(strings.Join(strings.Fields(seg), " "))
+	return strings.TrimRight(seg, " .,;:!?…")
+}
+
+// CollapseDegenerateTail truncates a degenerate LLM output tail — a run of
+// identical items (numbered-list entries or whole lines) repeated at the
+// end of the text. VLM OCR occasionally loops a single sentence until the
+// token limit; cutting at the first repeated item keeps whatever real
+// content preceded it. Returns "" when the entire output is one repeated
+// item.
+func CollapseDegenerateTail(text string) string {
+	bounds := degenerateItemBoundary.FindAllStringIndex(text, -1)
+
+	// Segments are the spans between boundaries; each remembers the start
+	// offset of the boundary in front of it so a cut removes the dangling
+	// delimiter ("... 15. ") as well.
+	type segment struct {
+		norm       string
+		boundStart int
+	}
+	segs := make([]segment, 0, len(bounds)+1)
+	prevEnd, prevBound := 0, 0
+	for _, b := range bounds {
+		segs = append(segs, segment{degenerateNorm(text[prevEnd:b[0]]), prevBound})
+		prevEnd, prevBound = b[1], b[0]
+	}
+	segs = append(segs, segment{degenerateNorm(text[prevEnd:]), prevBound})
+
+	// Trailing blank segments carry no text and must not mask the real tail.
+	for len(segs) > 0 && segs[len(segs)-1].norm == "" {
+		segs = segs[:len(segs)-1]
+	}
+	if len(segs) == 0 {
+		return text
+	}
+
+	last := segs[len(segs)-1].norm
+	i := len(segs) - 1
+	for i-1 >= 0 && last != "" && segs[i-1].norm == last {
+		i--
+	}
+	run := len(segs) - i
+	if run >= degenerateMinRun && len([]rune(last)) >= degenerateMinSegmentLen {
+		return strings.TrimRight(text[:segs[i].boundStart], " \t\n")
+	}
+	return text
 }
 
 // ClampFloat clamps a float value to the specified range [minV, maxV].

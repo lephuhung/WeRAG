@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
 	"github.com/google/uuid"
 )
 
@@ -138,6 +139,7 @@ type sessionService struct {
 	// before its sandbox is provisioned. Nil uses NewResolverForkSnapshotDeleter
 	// from sandboxResolver/sandboxMgr.
 	forkSnapshots ForkSnapshotDeleter
+	peopleService quickPeopleLookupService
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -162,6 +164,7 @@ func NewSessionService(cfg *config.Config,
 	memoryService interfaces.MemoryService,
 	sandboxConfigRepo repository.TenantSandboxConfigRepository,
 	tenantSkillRepo repository.TenantSkillRepository,
+	peopleService *people.Service,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                   cfg,
@@ -185,6 +188,7 @@ func NewSessionService(cfg *config.Config,
 		memoryService:         memoryService,
 		sandboxConfigRepo:     sandboxConfigRepo,
 		tenantSkillRepo:       tenantSkillRepo,
+		peopleService:         peopleService,
 	}
 }
 

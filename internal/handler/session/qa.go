@@ -142,6 +142,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Error(ctx, "Failed to parse request data", err)
 		return nil, nil, errors.NewBadRequestError(err.Error())
 	}
+	ctx = types.WithAbbreviationCandidates(ctx, request.AbbreviationCandidates)
 
 	// Validate query content
 	if request.Query == "" {

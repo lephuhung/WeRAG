@@ -41,6 +41,7 @@ func NewPluginSearchParallel(
 	sessionService interfaces.SessionService,
 	webSearchStateService interfaces.WebSearchStateService,
 	webSearchProviderRepo interfaces.WebSearchProviderRepository,
+	abbreviationService interfaces.AbbreviationService,
 	graphRepository interfaces.RetrieveGraphRepository,
 	chunkRepository interfaces.ChunkRepository,
 	knowledgeRepository interfaces.KnowledgeRepository,
@@ -56,6 +57,7 @@ func NewPluginSearchParallel(
 		sessionService:        sessionService,
 		webSearchStateService: webSearchStateService,
 		webSearchProviderRepo: webSearchProviderRepo,
+		abbreviationService:   abbreviationService,
 	}
 
 	searchEntityPlugin := &PluginSearchEntity{

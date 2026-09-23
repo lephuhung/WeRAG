@@ -18,6 +18,19 @@ type KnowledgeProcessOverrides struct {
 	ParserEngineOverrides map[string]string `json:"parser_engine_overrides,omitempty"`
 }
 
+// SystemParseDefaults is the platform-wide parse configuration a SystemAdmin
+// publishes via the system_settings key "knowledge.parse_defaults". When
+// Enabled is true the embedded overrides replace whatever per-upload or
+// per-document overrides were supplied — every ingestion path resolves
+// against these values merged over the KB-level defaults, so workspace
+// admins can upload without configuring parse settings themselves.
+// The JSON shape is {"enabled": bool, ...KnowledgeProcessOverrides} so the
+// exact payload the upload dialog emits is reusable verbatim.
+type SystemParseDefaults struct {
+	Enabled bool `json:"enabled"`
+	KnowledgeProcessOverrides
+}
+
 // EffectiveProcessConfig is the merged view used by the parse pipeline.
 type EffectiveProcessConfig struct {
 	SummaryEnabled           bool

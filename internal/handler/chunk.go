@@ -3,10 +3,12 @@ package handler
 import (
 	stderrors "errors"
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -76,6 +78,18 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		return
 	}
 
+	// Same opt-in as ListKnowledgeChunks: scanned-page text chunks only hold
+	// the image link; ?include_image_text=true inlines the child OCR text.
+	if includeImageText, _ := strconv.ParseBool(c.Query("include_image_text")); includeImageText {
+		if tenantID, ok := types.TenantIDFromContext(ctx); ok {
+			infoMap := searchutil.CollectImageInfoByChunkIDs(
+				ctx, h.service.GetRepository(), tenantID, []string{chunk.ID})
+			if info, ok := infoMap[chunk.ID]; ok && info != "" {
+				chunk.Content = searchutil.InlineImageText(chunk.Content, info)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    chunk,
@@ -88,9 +102,11 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 // @Tags         分块管理
 // @Accept       json
 // @Produce      json
-// @Param        knowledge_id  path      string  true   "知识ID"
-// @Param        page          query     int     false  "页码"  default(1)
-// @Param        page_size     query     int     false  "每页数量"  default(10)
+// @Param        knowledge_id       path      string  true   "知识ID"
+// @Param        page               query     int     false  "页码"  default(1)
+// @Param        page_size          query     int     false  "每页数量"  default(10)
+// @Param        chunk_type         query     []string false "分块类型（默认 text，可重复）"
+// @Param        include_image_text query     bool    false  "将 image_ocr/image_caption 子分块的文本内联到 content 的图片占位处（扫描件需要）"
 // @Success      200           {object}  map[string]interface{}  "分块List "
 // @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
 // @Security     Bearer
@@ -140,6 +156,28 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
+	}
+
+	// ?include_image_text=true splices each chunk's image-derived text (OCR,
+	// falling back to caption) into content at the image placeholder.
+	// Scanned / image-only documents keep their real text on image_ocr /
+	// image_caption children — without this the text chunks carry only the
+	// page-image link and the extracted-text view renders blank.
+	if includeImageText, _ := strconv.ParseBool(c.Query("include_image_text")); includeImageText {
+		if chunks, ok := result.Data.([]*types.Chunk); ok && len(chunks) > 0 {
+			tenantID := types.MustTenantIDFromContext(ctx)
+			chunkIDs := make([]string, 0, len(chunks))
+			for _, ch := range chunks {
+				chunkIDs = append(chunkIDs, ch.ID)
+			}
+			infoMap := searchutil.CollectImageInfoByChunkIDs(
+				ctx, h.service.GetRepository(), tenantID, chunkIDs)
+			for _, ch := range chunks {
+				if info, ok := infoMap[ch.ID]; ok && info != "" {
+					ch.Content = searchutil.InlineImageText(ch.Content, info)
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -32,10 +32,10 @@ export default function NewKnowledgeBase() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[640px] px-12 py-12">
+      <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
         <div className="caption-uppercase mb-3 text-muted">Workspace</div>
         <h1 className="display-xl mb-10">New knowledge base</h1>
-        <form className="card p-8" onSubmit={submit}>
+        <form className="card p-4 sm:p-8" onSubmit={submit}>
           <label className="mb-5 block">
             <span className="caption mb-1.5 block text-muted">Name</span>
             <input

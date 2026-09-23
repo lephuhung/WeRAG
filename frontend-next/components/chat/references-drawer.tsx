@@ -5,6 +5,7 @@ import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { IconDoc } from "@/components/icons";
 import { Markdown } from "@/components/markdown";
 import { getChunkByIdOnly } from "@/lib/api/knowledge";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export type KnowledgeReferenceItem = {
   id?: string;
@@ -71,7 +72,7 @@ export function ReferencesDrawer({
     setLoadingChunkId(currentChunkId);
     let alive = true;
 
-    getChunkByIdOnly(currentChunkId)
+    getChunkByIdOnly(currentChunkId, { includeImageText: true })
       .then((res) => {
         if (!alive) return;
         const raw = res as {
@@ -104,11 +105,13 @@ export function ReferencesDrawer({
     };
   }, [open, currentChunkId, hasEmbeddedContent, chunkContentMap]);
 
-  const handleCopy = (text: string) => {
+  const handleCopy = async (text: string) => {
     if (!text) return;
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const title =

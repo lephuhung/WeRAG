@@ -11,6 +11,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
+import { Toggle } from "@/components/settings/toggle";
+import { Select } from "@/components/select";
+import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/lib/i18n";
 import {
   listIMChannels,
@@ -106,21 +109,11 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
                     {c.session_mode ? ` · ${c.session_mode}` : ""}
                   </div>
                 </div>
-                <button
-                  role="switch"
-                  aria-checked={c.enabled}
-                  onClick={() => void toggle(c)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                    c.enabled ? "bg-primary" : "bg-hairline-strong"
-                  }`}
-                  aria-label={t("agentEditor.im.toggle")}
-                >
-                  <span
-                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface-card transition-transform ${
-                      c.enabled ? "translate-x-[22px]" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
+                <Toggle
+                  checked={c.enabled}
+                  onChange={() => void toggle(c)}
+                  label={t("agentEditor.im.toggle")}
+                />
                 <button className="btn btn-tertiary btn-sm text-[13px]" onClick={() => setEditing(c)}>
                   {t("common.edit")}
                 </button>
@@ -134,12 +127,12 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
               {c.mode === "webhook" && (
                 <div className="mt-1 flex items-center gap-2">
                   <span className="caption text-muted">{t("agentEditor.im.callbackUrl")}:</span>
-                  <code className="caption overflow-x-auto text-ink">
+                  <code className="caption min-w-0 flex-1 overflow-x-auto text-ink">
                     {`${window.location.origin}/api/v1/im/callback/${c.id}`}
                   </code>
                   <button
                     className="btn btn-tertiary btn-sm"
-                    onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/api/v1/im/callback/${c.id}`)}
+                    onClick={() => void copyToClipboard(`${window.location.origin}/api/v1/im/callback/${c.id}`)}
                   >
                     {t("integrations.copy")}
                   </button>
@@ -274,20 +267,16 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
         <div className="flex gap-4">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("agentEditor.im.platform")}</span>
-            <select
-              className="input"
+            <Select
               value={platform}
               disabled={Boolean(channel)}
-              onChange={(e) => {
-                const p = e.target.value as Platform;
+              onChange={(v) => {
+                const p = v as Platform;
                 setPlatform(p);
                 if (p === "dingtalk") setMode("websocket");
               }}
-            >
-              {PLATFORMS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+              options={PLATFORMS.map((p) => ({ value: p.value, label: p.label }))}
+            />
           </label>
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("agentEditor.im.channelName")}</span>
@@ -420,12 +409,15 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
           <div className="caption-uppercase mb-2 text-muted">{t("agentEditor.im.sectionKnowledge")}</div>
           <label className="block">
             <span className="caption mb-1.5 block text-muted">{t("agentEditor.im.fileKnowledgeBase")}</span>
-            <select className="input" value={kbId} onChange={(e) => setKbId(e.target.value)}>
-              <option value="">{t("agentEditor.im.useOwnKB")}</option>
-              {kbs.map((kb) => (
-                <option key={kb.id} value={kb.id}>{kb.name}</option>
-              ))}
-            </select>
+            <Select
+              value={kbId}
+              onChange={setKbId}
+              placeholder={t("agentEditor.im.useOwnKB")}
+              options={[
+                { value: "", label: t("agentEditor.im.useOwnKB") },
+                ...kbs.map((kb) => ({ value: kb.id, label: kb.name })),
+              ]}
+            />
           </label>
         </div>
       </div>

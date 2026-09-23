@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/tenants";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: string }[] = [
   { id: "retrieve", labelEn: "Retrieve", labelVi: "Truy xuất" },
@@ -145,7 +146,7 @@ export function ApiKeysSection() {
           <div className="mt-3 flex justify-end">
             <button
               className="btn btn-outline btn-sm"
-              onClick={() => void navigator.clipboard.writeText(created.token ?? created.api_key)}
+              onClick={() => void copyToClipboard(created.token ?? created.api_key)}
             >
               {t("integrations.copy")}
             </button>
@@ -212,7 +213,7 @@ function CreateKeyModal({ onClose, onCreated }: {
         {!fullAccess && (
           <div className="border-t border-hairline pt-4">
             <div className="caption-uppercase mb-3 text-muted">{t("apiKeys.capabilities")}</div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               {CAPABILITIES.map((c) => (
                 <label key={c.id} className="flex items-center gap-2.5 py-1">
                   <input

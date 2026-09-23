@@ -12,7 +12,7 @@ export default function System() {
     if (!auth.ready) return;
     router.replace(
       auth.user?.is_system_admin
-        ? "/platform/system/overview"
+        ? "/platform/system/admin"
         : "/platform/system/workspace",
     );
   }, [auth.ready, auth.user, router]);

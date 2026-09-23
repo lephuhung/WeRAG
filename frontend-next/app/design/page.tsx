@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { Orb } from "@/components/orb";
+import { Toggle } from "@/components/settings/toggle";
 
 const SWATCHES = [
   { name: "canvas", hex: "#f5f5f5", cls: "bg-canvas" },
@@ -33,9 +37,11 @@ const TYPE_SCALE = [
 ];
 
 export default function DesignPage() {
+  const [demoToggle, setDemoToggle] = useState(true);
+
   return (
     <div className="min-h-screen bg-canvas">
-      <div className="mx-auto max-w-[1200px] px-12 py-16">
+      <div className="mx-auto max-w-[1200px] px-4 py-8 sm:px-8 sm:py-12 lg:px-12 lg:py-16">
         <div className="caption-uppercase mb-3 text-muted">Design system</div>
         <h1 className="display-mega mb-4">ElevenLabs editorial</h1>
         <p className="mb-16 max-w-[560px] text-body">
@@ -106,6 +112,16 @@ export default function DesignPage() {
             <span className="badge-pill">Badge</span>
             <span className="badge-pill">gpt-4o</span>
             <input className="input max-w-[280px]" placeholder="Text input…" />
+            <div className="flex items-center gap-2">
+              <Toggle checked={demoToggle} onChange={setDemoToggle} label="Interactive toggle" />
+              <span className="caption text-muted">
+                {demoToggle ? "Active (On)" : "Inactive (Off)"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Toggle checked={false} disabled label="Disabled toggle" />
+              <span className="caption text-muted">Disabled</span>
+            </div>
           </div>
         </section>
 

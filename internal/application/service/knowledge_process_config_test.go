@@ -549,3 +549,118 @@ func TestResolveProcessConfig_SummaryEnabled(t *testing.T) {
 		})
 	}
 }
+
+// withParseDefaults installs a provider for the duration of the test. NOT
+// parallel-safe — the provider is package-global, so these tests must not
+// run t.Parallel().
+func withParseDefaults(t *testing.T, def *types.SystemParseDefaults) {
+	t.Helper()
+	SetParseDefaultsProvider(func() *types.SystemParseDefaults { return def })
+	t.Cleanup(func() { SetParseDefaultsProvider(nil) })
+}
+
+func enabledParseDefaults() *types.SystemParseDefaults {
+	return &types.SystemParseDefaults{
+		Enabled: true,
+		KnowledgeProcessOverrides: types.KnowledgeProcessOverrides{
+			ChunkingConfig: &types.ChunkingConfig{ChunkSize: 1024, ChunkOverlap: 120},
+			VLMConfig:      &types.VLMConfig{Enabled: true, ModelID: "sys-vlm"},
+			ASRConfig:      &types.ASRConfig{Enabled: true, ModelID: "sys-asr"},
+		},
+	}
+}
+
+func TestResolveProcessConfig_LockedDefaultsReplaceOverrides(t *testing.T) {
+	withParseDefaults(t, enabledParseDefaults())
+
+	kb := &types.KnowledgeBase{
+		ChunkingConfig: types.ChunkingConfig{ChunkSize: 512, ChunkOverlap: 50},
+	}
+	// The caller's overrides are ignored entirely while defaults are locked.
+	eff := ResolveProcessConfig(kb, &types.KnowledgeProcessOverrides{
+		ChunkingConfig: &types.ChunkingConfig{ChunkSize: 2048},
+	})
+	require.Equal(t, 1024, eff.ChunkingConfig.ChunkSize)
+	require.Equal(t, 120, eff.ChunkingConfig.ChunkOverlap)
+	require.Equal(t, "sys-vlm", eff.VLMConfig.ModelID)
+	require.True(t, eff.VLMConfig.Enabled)
+	require.Equal(t, "sys-asr", eff.ASRConfig.ModelID)
+}
+
+func TestResolveProcessConfig_DisabledDefaultsKeepOverrides(t *testing.T) {
+	withParseDefaults(t, &types.SystemParseDefaults{
+		Enabled: false,
+		KnowledgeProcessOverrides: types.KnowledgeProcessOverrides{
+			ChunkingConfig: &types.ChunkingConfig{ChunkSize: 1024},
+		},
+	})
+
+	kb := &types.KnowledgeBase{
+		ChunkingConfig: types.ChunkingConfig{ChunkSize: 512},
+	}
+	eff := ResolveProcessConfig(kb, &types.KnowledgeProcessOverrides{
+		ChunkingConfig: &types.ChunkingConfig{ChunkSize: 2048},
+	})
+	require.Equal(t, 2048, eff.ChunkingConfig.ChunkSize)
+}
+
+func TestResolveProcessConfig_NilProviderKeepsOverrides(t *testing.T) {
+	SetParseDefaultsProvider(nil)
+	kb := &types.KnowledgeBase{
+		ChunkingConfig: types.ChunkingConfig{ChunkSize: 512},
+	}
+	eff := ResolveProcessConfig(kb, &types.KnowledgeProcessOverrides{
+		ChunkingConfig: &types.ChunkingConfig{ChunkSize: 2048},
+	})
+	require.Equal(t, 2048, eff.ChunkingConfig.ChunkSize)
+}
+
+// Locked defaults must satisfy the media prerequisites the KB itself lacks —
+// this is the core "admin didn't configure anything" scenario.
+func TestResolveFileImportProcessConfig_LockedDefaultsProvideVLM(t *testing.T) {
+	withParseDefaults(t, enabledParseDefaults())
+
+	kb := &types.KnowledgeBase{} // no VLM configured on the KB
+	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "png", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "sys-vlm", eff.VLMConfig.ModelID)
+}
+
+// Audio gets the same treatment: the locked ASR default must satisfy the
+// prerequisite even when the KB has no ASR config.
+func TestResolveFileImportProcessConfig_LockedDefaultsProvideASR(t *testing.T) {
+	withParseDefaults(t, enabledParseDefaults())
+
+	kb := &types.KnowledgeBase{} // no ASR configured on the KB
+	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "mp3", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "sys-asr", eff.ASRConfig.ModelID)
+}
+
+// Without locked defaults an audio import on an unconfigured KB must still
+// be rejected — regression guard for the eff-vs-kb ASR check.
+func TestResolveFileImportProcessConfig_AudioStillRequiresASR(t *testing.T) {
+	SetParseDefaultsProvider(nil)
+	kb := &types.KnowledgeBase{}
+	_, err := resolveFileImportProcessConfig(context.Background(), kb, "mp3", nil, nil)
+	require.Error(t, err)
+}
+
+// Under locked defaults the caller-supplied overrides are ignored AND not
+// persisted on the record (the reparse dialog would otherwise seed from
+// values that never took effect).
+func TestApplyKnowledgeProcessOverrides_LockedSkipsPersist(t *testing.T) {
+	withParseDefaults(t, enabledParseDefaults())
+
+	kb := &types.KnowledgeBase{}
+	knowledge := &types.Knowledge{}
+	eff, err := ApplyKnowledgeProcessOverrides(context.Background(), kb, knowledge,
+		&types.KnowledgeProcessOverrides{
+			ChunkingConfig: &types.ChunkingConfig{ChunkSize: 2048},
+		}, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1024, eff.ChunkingConfig.ChunkSize)
+	overrides, err := knowledge.ProcessOverrides()
+	require.NoError(t, err)
+	require.Nil(t, overrides)
+}

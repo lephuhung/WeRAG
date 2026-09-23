@@ -614,3 +614,82 @@ func buildCaptionOCRBlock(img *types.ImageInfo) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+// imageTextForDisplay returns the human-readable text an image carries: the
+// OCR body (the document's real text) when present, otherwise the caption.
+func imageTextForDisplay(img *types.ImageInfo) string {
+	if img == nil {
+		return ""
+	}
+	if ocr := CollapseDegenerateTail(strings.TrimSpace(img.OCRText)); ocr != "" {
+		return ocr
+	}
+	return strings.TrimSpace(img.Caption)
+}
+
+// InlineImageText replaces Markdown image links in content with the image's
+// extracted text (OCR, falling back to caption) so the chunk reads as plain
+// text. It backs the extracted-text view for image-dominated documents —
+// scanned PDFs in particular store every page as a bare `![](url)` text chunk
+// while the recognized text lives on image_ocr / image_caption children, so
+// without this substitution the view renders nothing but broken image links.
+//
+// Images with no extracted text keep their original markup; image_info
+// entries not referenced in content are appended at the end.
+func InlineImageText(content string, imageInfoJSON string) string {
+	var imageInfos []types.ImageInfo
+	if err := json.Unmarshal([]byte(imageInfoJSON), &imageInfos); err != nil {
+		return content
+	}
+	if len(imageInfos) == 0 {
+		return content
+	}
+
+	imageInfoMap := make(map[string]*types.ImageInfo)
+	for i := range imageInfos {
+		if imageInfos[i].URL != "" {
+			imageInfoMap[imageInfos[i].URL] = &imageInfos[i]
+		}
+		if imageInfos[i].OriginalURL != "" {
+			imageInfoMap[imageInfos[i].OriginalURL] = &imageInfos[i]
+		}
+	}
+
+	matches := MarkdownImageRegex.FindAllStringSubmatch(content, -1)
+	processedURLs := make(map[string]bool)
+
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		imgURL := match[2]
+		processedURLs[imgURL] = true
+
+		imgInfo, found := imageInfoMap[imgURL]
+		if !found || imgInfo == nil {
+			continue
+		}
+		text := imageTextForDisplay(imgInfo)
+		if text == "" {
+			continue
+		}
+		content = strings.Replace(content, match[0], text, 1)
+	}
+
+	var extras []string
+	for _, imgInfo := range imageInfos {
+		if processedURLs[imgInfo.URL] || processedURLs[imgInfo.OriginalURL] {
+			continue
+		}
+		if text := imageTextForDisplay(&imgInfo); text != "" {
+			extras = append(extras, text)
+		}
+	}
+	if len(extras) > 0 {
+		if content != "" {
+			content += "\n\n"
+		}
+		content += strings.Join(extras, "\n\n")
+	}
+	return content
+}

@@ -139,7 +139,7 @@ export function MentionPicker({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="card absolute bottom-full left-0 z-50 mb-2 max-h-[320px] w-[360px] overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <div className="card absolute bottom-full left-0 z-50 mb-2 max-h-[320px] w-[360px] max-w-[calc(100vw-2.5rem)] overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div ref={listRef} className="max-h-[320px] overflow-y-auto p-1.5">
           {loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">Loading…</div>}
           {!loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">No matches — sign in to load KBs</div>}

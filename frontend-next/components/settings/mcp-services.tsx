@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
 import { useT } from "@/lib/i18n";
+import { Select } from "@/components/select";
 import {
   createMCPService,
   updateMCPService,
@@ -24,6 +25,7 @@ import {
   type MCPTestResult,
 } from "@/lib/api/mcp";
 import { Chip } from "@/components/settings/chips";
+import { Toggle } from "@/components/settings/toggle";
 
 export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;
@@ -177,13 +179,17 @@ export function McpServiceForm({ service, onClose, onSaved }: {
             </div>
           </>
         ) : (
-          <div className="flex gap-4">
-            <label className="block w-[140px]">
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <label className="block w-full sm:w-[140px]">
               <span className="caption mb-1.5 block text-muted">Command</span>
-              <select className="input" value={cmd} onChange={(e) => setCmd(e.target.value as "uvx" | "npx")}>
-                <option value="npx">npx</option>
-                <option value="uvx">uvx</option>
-              </select>
+              <Select
+                value={cmd}
+                onChange={(v) => setCmd(v as "uvx" | "npx")}
+                options={[
+                  { value: "npx", label: "npx" },
+                  { value: "uvx", label: "uvx" },
+                ]}
+              />
             </label>
             <label className="block flex-1">
               <span className="caption mb-1.5 block text-muted">{t("mcp.args")}</span>
@@ -268,24 +274,17 @@ export function McpToolsPanel({ service, onClose }: { service: MCPService; onClo
             >
               {tool.require_approval ? t("mcp.approvalRequired") : t("mcp.noApproval")}
             </button>
-            <button role="switch"
-              aria-checked={tool.enabled !== false}
-              onClick={() => {
+            <Toggle
+              checked={tool.enabled !== false}
+              onChange={() => {
                 void setMCPToolEnabled(service.id, tool.name, tool.enabled === false).then(() => {
                   setTools((prev) =>
                     prev.map((x) => (x.name === tool.name ? { ...x, enabled: tool.enabled === false } : x)),
                   );
                 });
               }}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                tool.enabled !== false ? "bg-primary" : "bg-hairline-strong"
-              }`}
-              aria-label={t("mcp.tools")}
-            >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface-card transition-transform ${
-                tool.enabled !== false ? "translate-x-[22px]" : "translate-x-0.5"
-              }`} />
-            </button>
+              label={t("mcp.tools")}
+            />
           </div>
         ))}
         {tools !== null && tools.length === 0 && !loading && !error && (

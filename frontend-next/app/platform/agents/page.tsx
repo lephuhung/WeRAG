@@ -11,7 +11,7 @@ export default function AgentsRedirect() {
   useEffect(() => {
     if (!ready) return;
     if (user?.is_system_admin) {
-      router.replace("/platform/system/agents");
+      router.replace("/platform/system/extensions/agents");
     } else {
       router.replace("/platform/knowledge-bases");
     }

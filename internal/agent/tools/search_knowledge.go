@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // Retrieval modes accepted by search_knowledge.
@@ -107,7 +108,15 @@ type SearchKnowledgeTool struct {
 	// patternFilter, when set, keeps only results whose text matches it.
 	// It is not exposed to the model; the MCP grep_chunks endpoint uses it
 	// to keep grep semantics on top of index-backed retrieval.
-	patternFilter *regexp.Regexp
+	patternFilter       *regexp.Regexp
+	abbreviationService interfaces.AbbreviationService
+}
+
+func (t *SearchKnowledgeTool) WithAbbreviationService(
+	svc interfaces.AbbreviationService,
+) *SearchKnowledgeTool {
+	t.abbreviationService = svc
+	return t
 }
 
 // WithPatternFilter restricts results to chunks whose text matches re. The
@@ -177,6 +186,16 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		return &types.ToolResult{Success: false, Error: err.Error()}, err
 	}
 	limit := clampSearchLimit(input.Limit)
+
+	originalQuery := query
+	effectiveQuery, abbreviationResult, resolveErr := abbreviation.ResolveSearchQuery(
+		ctx, query, t.abbreviationService)
+	if resolveErr != nil {
+		logger.Warnf(ctx, "[Tool][SearchKnowledge] Abbreviation resolution failed, using original query: %v",
+			resolveErr)
+	} else {
+		query = effectiveQuery
+	}
 
 	// Optional KB filter: reject hallucinated or out-of-scope handles.
 	searchTargets := t.searchTargets
@@ -300,7 +319,44 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	if len(final) == 0 {
 		result.Output = emptySearchStatement(query, result.Data, len(kbIDs))
 	}
+	annotateAbbreviationResolution(result, originalQuery, abbreviationResult)
 	return result, nil
+}
+
+func annotateAbbreviationResolution(
+	result *types.ToolResult, originalQuery string, res *abbreviation.ExpandResult,
+) {
+	if result == nil || res == nil {
+		return
+	}
+	if result.Data == nil {
+		result.Data = map[string]interface{}{}
+	}
+	result.Data["original_query"] = originalQuery
+	result.Data["abbreviation_resolution"] = res
+	if len(res.Applied) == 0 && len(res.Ambiguous) == 0 {
+		return
+	}
+	var b strings.Builder
+	b.WriteString("<abbreviation_resolution>\n")
+	for _, applied := range res.Applied {
+		fmt.Fprintf(&b, "<applied short_form=\"%s\">%s</applied>\n",
+			xmlEscape(applied.ShortForm), xmlEscape(applied.FullForm))
+	}
+	ambiguousKeys := make([]string, 0, len(res.Ambiguous))
+	for shortForm := range res.Ambiguous {
+		ambiguousKeys = append(ambiguousKeys, shortForm)
+	}
+	sort.Strings(ambiguousKeys)
+	for _, shortForm := range ambiguousKeys {
+		fmt.Fprintf(&b, "<ambiguous short_form=\"%s\">\n", xmlEscape(shortForm))
+		for _, meaning := range res.Ambiguous[shortForm] {
+			fmt.Fprintf(&b, "<meaning>%s</meaning>\n", xmlEscape(meaning.FullForm))
+		}
+		b.WriteString("</ambiguous>\n")
+	}
+	b.WriteString("</abbreviation_resolution>\n")
+	result.Output = b.String() + result.Output
 }
 
 // emptySearchStatement describes an empty result, including any mode

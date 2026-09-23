@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconEdit, IconPlus, IconRefresh, IconTrash } from "@/components/icons";
+import { Select } from "@/components/select";
 import {
   listOrgs,
   createOrg,
@@ -21,6 +22,7 @@ import {
   type TenantRole,
 } from "@/lib/api/tenants";
 import { useAuth } from "@/lib/auth";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export function TenantOrgs() {
   const auth = useAuth();
@@ -504,26 +506,25 @@ export function TenantOrgs() {
             <div className="rounded-xl border border-hairline bg-surface-strong/30 p-4 space-y-3">
               <span className="caption font-medium text-ink">Add Member from Workspace</span>
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="input flex-1 min-w-[180px] text-sm"
+                <Select
+                  className="h-9 flex-1 min-w-[180px] text-sm"
                   value={newMemberUserId}
-                  onChange={(e) => setNewMemberUserId(e.target.value)}
-                >
-                  <option value="">Select workspace member…</option>
-                  {memberCandidates.map((tm) => (
-                    <option key={tm.user_id} value={tm.user_id}>
-                      {tm.username || tm.email} ({tm.role})
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="input w-32 text-sm"
+                  onChange={setNewMemberUserId}
+                  placeholder="Select workspace member…"
+                  options={memberCandidates.map((tm) => ({
+                    value: tm.user_id,
+                    label: `${tm.username || tm.email} (${tm.role})`,
+                  }))}
+                />
+                <Select
+                  className="h-9 w-32 text-sm"
                   value={newMemberRole}
-                  onChange={(e) => setNewMemberRole(e.target.value as TenantOrgRole)}
-                >
-                  <option value="member">Member</option>
-                  <option value="manager">Manager</option>
-                </select>
+                  onChange={(v) => setNewMemberRole(v as TenantOrgRole)}
+                  options={[
+                    { value: "member", label: "Member" },
+                    { value: "manager", label: "Manager" },
+                  ]}
+                />
                 <button
                   type="button"
                   disabled={addingMember || !newMemberUserId}
@@ -618,14 +619,14 @@ export function TenantOrgs() {
 
           <label className="block">
             <span className="caption mb-1.5 block text-muted">Workspace Role</span>
-            <select
-              className="input"
+            <Select
               value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as TenantRole)}
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
+              onChange={(v) => setInviteRole(v as TenantRole)}
+              options={[
+                { value: "member", label: "Member" },
+                { value: "admin", label: "Admin" },
+              ]}
+            />
           </label>
 
           <label className="block">
@@ -651,10 +652,12 @@ export function TenantOrgs() {
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(inviteUrl);
-                    setLinkCopied(true);
-                    setTimeout(() => setLinkCopied(false), 2000);
+                  onClick={async () => {
+                    const ok = await copyToClipboard(inviteUrl);
+                    if (ok) {
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    }
                   }}
                   className="btn btn-primary shrink-0 text-xs"
                 >

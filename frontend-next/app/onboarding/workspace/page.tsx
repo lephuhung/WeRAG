@@ -48,7 +48,7 @@ export default function WorkspaceOnboarding() {
         <p className="body-sm mb-10 text-center text-muted">
           Workspaces isolate knowledge bases, agents and members.
         </p>
-        <form className="card p-8" onSubmit={submit}>
+        <form className="card p-6 sm:p-8" onSubmit={submit}>
           <label className="mb-5 block">
             <span className="caption mb-1.5 block text-muted">Workspace name</span>
             <input

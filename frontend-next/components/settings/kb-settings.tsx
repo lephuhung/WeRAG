@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
+import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
 import {
   getKnowledgeBase,
@@ -257,19 +258,17 @@ export function KbSettingsModal({
               <div className="flex flex-col gap-4">
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.wikiGranularity")}</span>
-                  <select
-                    className="input w-[280px]"
+                  <Select
+                    className="w-[280px]"
                     value={draft.wiki_config.extraction_granularity}
-                    onChange={(e) =>
-                      patch("wiki_config", { ...draft.wiki_config, extraction_granularity: e.target.value as "focused" | "standard" | "exhaustive" })
+                    onChange={(v) =>
+                      patch("wiki_config", { ...draft.wiki_config, extraction_granularity: v as "focused" | "standard" | "exhaustive" })
                     }
-                  >
-                    {(["focused", "standard", "exhaustive"] as const).map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                    options={(["focused", "standard", "exhaustive"] as const).map((g) => ({
+                      value: g,
+                      label: g,
+                    }))}
+                  />
                 </label>
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.wikiMaxPages")}</span>
@@ -354,17 +353,15 @@ export function KbSettingsModal({
                 </div>
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.chunkStrategy")}</span>
-                  <select
-                    className="input w-[280px]"
+                  <Select
+                    className="w-[280px]"
                     value={draft.chunking_config.strategy}
-                    onChange={(e) => patch("chunking_config", { ...draft.chunking_config, strategy: e.target.value })}
-                  >
-                    {STRATEGY_TIERS.map((s) => (
-                      <option key={s} value={s}>
-                        {s || t("kbSettings.chunkStrategyLegacy")}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => patch("chunking_config", { ...draft.chunking_config, strategy: v })}
+                    options={STRATEGY_TIERS.map((s) => ({
+                      value: s,
+                      label: s || t("kbSettings.chunkStrategyLegacy"),
+                    }))}
+                  />
                   <p className="caption mt-1 text-muted-soft">{t("kbSettings.chunkStrategyDesc")}</p>
                 </label>
               </div>

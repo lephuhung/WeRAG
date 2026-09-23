@@ -25,6 +25,9 @@ func (s *sessionService) KnowledgeQA(
 	req *types.QARequest,
 	eventBus *event.EventBus,
 ) error {
+	if handled, err := s.tryQuickAnswerPeopleLookup(ctx, req, eventBus); handled || err != nil {
+		return err
+	}
 	webSearchEnabled := resolveWebSearchEnabled(req)
 	logger.Infof(
 		ctx,
@@ -168,6 +171,7 @@ func (s *sessionService) KnowledgeQA(
 	hasKB := types.HasKnowledgeRetrievalScope(searchTargets, knowledgeBaseIDs, knowledgeIDs)
 	needsRAG := hasKB || webSearchEnabled
 	hasHistory := chatManage.MaxRounds > 0
+	hasAbbreviationCandidates := len(types.AbbreviationCandidatesFromContext(ctx)) > 0
 
 	var pipeline []types.EventType
 	if !needsRAG {
@@ -188,6 +192,8 @@ func (s *sessionService) KnowledgeQA(
 		pipeline = types.NewPipelineBuilder().
 			AddIf(hasHistory, types.LOAD_HISTORY).
 			Add(types.MEMORY_RECALL).
+			AddIf(hasAbbreviationCandidates, types.QUERY_UNDERSTAND).
+			Add(types.ABBREVIATION_RESOLVE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
 	} else {
@@ -207,8 +213,8 @@ func (s *sessionService) KnowledgeQA(
 			Build()
 	}
 
-	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v",
-		len(pipeline), hasKB, webSearchEnabled, hasHistory)
+	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v, abbreviationCandidates=%v",
+		len(pipeline), hasKB, webSearchEnabled, hasHistory, hasAbbreviationCandidates)
 
 	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
 	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)

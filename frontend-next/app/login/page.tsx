@@ -77,7 +77,7 @@ function LoginForm() {
         </div>
         <p className="body-sm mb-8 text-center text-muted">Sign in to your knowledge workspace</p>
 
-        <form className="card p-8" onSubmit={submit}>
+        <form className="card p-6 sm:p-8" onSubmit={submit}>
           <label className="mb-4 block">
             <span className="caption mb-1.5 block text-muted">Email</span>
             <input

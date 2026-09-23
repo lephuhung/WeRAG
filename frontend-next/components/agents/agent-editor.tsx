@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
+import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
 import {
   createAgent,
@@ -23,13 +24,22 @@ type Draft = {
   description: string;
   agent_mode: "quick-answer" | "smart-reasoning";
   model_id: string;
+  rerank_model_id: string;
   system_prompt: string;
   temperature: number;
   max_iterations: number;
+  max_completion_tokens: number;
+  thinking: boolean;
   citation_enabled: boolean;
-  // KB binding
+  // KB binding & retrieval
   kb_selection_mode: "all" | "selected" | "none";
   knowledge_bases: string[];
+  retrieve_kb_only_when_mentioned: boolean;
+  embedding_top_k: number;
+  vector_threshold: number;
+  keyword_threshold: number;
+  rerank_top_k: number;
+  rerank_threshold: number;
   // Tools & MCP
   web_search_enabled: boolean;
   mcp_selection_mode: "all" | "selected" | "none";
@@ -42,12 +52,21 @@ function draftFrom(a: CustomAgent | null): Draft {
     description: a?.description ?? "",
     agent_mode: a?.config?.agent_mode ?? "quick-answer",
     model_id: a?.config?.model_id ?? "",
+    rerank_model_id: a?.config?.rerank_model_id ?? "",
     system_prompt: a?.config?.system_prompt ?? "",
     temperature: a?.config?.temperature ?? 0.7,
     max_iterations: a?.config?.max_iterations ?? 10,
+    max_completion_tokens: a?.config?.max_completion_tokens ?? 0,
+    thinking: a?.config?.thinking ?? false,
     citation_enabled: a?.config?.citation_enabled ?? true,
     kb_selection_mode: a?.config?.kb_selection_mode ?? "all",
     knowledge_bases: a?.config?.knowledge_bases ?? [],
+    retrieve_kb_only_when_mentioned: a?.config?.retrieve_kb_only_when_mentioned ?? false,
+    embedding_top_k: a?.config?.embedding_top_k ?? 10,
+    vector_threshold: a?.config?.vector_threshold ?? 0.5,
+    keyword_threshold: a?.config?.keyword_threshold ?? 0.3,
+    rerank_top_k: a?.config?.rerank_top_k ?? 5,
+    rerank_threshold: a?.config?.rerank_threshold ?? 0.2,
     web_search_enabled: a?.config?.web_search_enabled ?? true,
     mcp_selection_mode: a?.config?.mcp_selection_mode ?? "all",
     mcp_services: a?.config?.mcp_services ?? [],
@@ -101,6 +120,41 @@ export function AgentEditorModal({
     return qaModels.length > 0 ? qaModels : modelList;
   }, [modelList]);
 
+  const rerankModels = useMemo(() => {
+    return modelList.filter((m) => m.type === "Rerank");
+  }, [modelList]);
+
+  // Auto-select default models when creating a new agent
+  useEffect(() => {
+    if (!agent && open) {
+      setDraft((prev) => {
+        let updated = false;
+        let newModelId = prev.model_id;
+        let newRerankModelId = prev.rerank_model_id;
+
+        if (!newModelId && chatModels.length > 0) {
+          const defaultChat = chatModels.find((m) => m.is_default) ?? chatModels[0];
+          if (defaultChat?.id) {
+            newModelId = defaultChat.id;
+            updated = true;
+          }
+        }
+
+        if (!newRerankModelId && rerankModels.length > 0) {
+          const defaultRerank = rerankModels.find((m) => m.is_default) ?? rerankModels[0];
+          if (defaultRerank?.id) {
+            newRerankModelId = defaultRerank.id;
+            updated = true;
+          }
+        }
+
+        return updated
+          ? { ...prev, model_id: newModelId, rerank_model_id: newRerankModelId }
+          : prev;
+      });
+    }
+  }, [agent, open, chatModels, rerankModels]);
+
   useEffect(() => {
     if (!open) return;
     listKnowledgeBases()
@@ -142,18 +196,38 @@ export function AgentEditorModal({
     if (readOnly) return;
     const trimmedName = draft.name.trim() || agent?.name || "";
     if (!trimmedName) return;
+
+    // Validate rerank model requirement when KB is active
+    if (
+      draft.agent_mode === "smart-reasoning" &&
+      draft.kb_selection_mode !== "none" &&
+      !draft.rerank_model_id
+    ) {
+      setError(t("agent.rerankRequired"));
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
       const configPayload = {
         agent_mode: draft.agent_mode,
         model_id: draft.model_id || undefined,
+        rerank_model_id: draft.rerank_model_id || undefined,
         system_prompt: draft.system_prompt || undefined,
         temperature: draft.temperature,
         max_iterations: draft.max_iterations,
+        max_completion_tokens: draft.max_completion_tokens > 0 ? draft.max_completion_tokens : undefined,
+        thinking: draft.thinking,
         citation_enabled: draft.citation_enabled,
         kb_selection_mode: draft.kb_selection_mode,
         knowledge_bases: draft.kb_selection_mode === "selected" ? draft.knowledge_bases : undefined,
+        retrieve_kb_only_when_mentioned: draft.retrieve_kb_only_when_mentioned,
+        embedding_top_k: draft.embedding_top_k,
+        vector_threshold: draft.vector_threshold,
+        keyword_threshold: draft.keyword_threshold,
+        rerank_top_k: draft.rerank_top_k,
+        rerank_threshold: draft.rerank_threshold,
         web_search_enabled: draft.web_search_enabled,
         mcp_selection_mode: draft.mcp_selection_mode,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
@@ -257,53 +331,101 @@ export function AgentEditorModal({
                 onChange={(e) => patch("description", e.target.value)}
               />
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block">
                 <span className="caption mb-1.5 block text-muted">{t("agent.mode")}</span>
-                <select
-                  className="input w-full"
+                <Select
+                  className="w-full"
                   value={draft.agent_mode}
                   disabled={readOnly || isBuiltin}
-                  onChange={(e) =>
-                    patch("agent_mode", e.target.value as "quick-answer" | "smart-reasoning")
+                  onChange={(v) =>
+                    patch("agent_mode", v as "quick-answer" | "smart-reasoning")
                   }
-                >
-                  <option value="quick-answer">{t("agent.modeQuick")}</option>
-                  <option value="smart-reasoning">{t("agent.modeSmart")}</option>
-                </select>
+                  options={[
+                    { value: "quick-answer", label: t("agent.modeQuick") },
+                    { value: "smart-reasoning", label: t("agent.modeSmart") },
+                  ]}
+                />
               </label>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="caption mb-1.5 block text-muted">{t("agent.modelId")}</span>
-                <select
-                  className="input w-full"
+                <span className="caption mb-1.5 block text-muted">{t("agent.modelId")} *</span>
+                <Select
+                  className="w-full"
                   value={draft.model_id}
                   disabled={readOnly}
-                  onChange={(e) => patch("model_id", e.target.value)}
-                >
-                  <option value="">{t("model.selectPlaceholder")}</option>
-                  {chatModels.map((m) => {
-                    const label = m.display_name?.trim() || m.name;
-                    const meta = [
-                      m.parameters?.parameter_size,
-                      m.parameters?.provider || (m.source === "local" ? "local" : ""),
-                      m.is_default ? "default" : "",
-                      m.is_builtin ? "built-in" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(", ");
-                    return (
-                      <option key={m.id} value={m.id}>
-                        {label} {meta ? `(${meta})` : ""}
-                      </option>
-                    );
-                  })}
-                  {draft.model_id && !chatModels.some((m) => m.id === draft.model_id) && (
-                    <option value={draft.model_id}>
-                      {draft.model_id} (Current)
-                    </option>
-                  )}
-                </select>
+                  onChange={(v) => patch("model_id", v)}
+                  placeholder={t("model.selectPlaceholder")}
+                  options={[
+                    { value: "", label: t("model.selectPlaceholder") },
+                    ...chatModels
+                      .filter((m) => m.id)
+                      .map((m) => {
+                        const label = m.display_name?.trim() || m.name;
+                        const meta = [
+                          m.parameters?.parameter_size,
+                          m.parameters?.provider || (m.source === "local" ? "local" : ""),
+                          m.is_default ? "default" : "",
+                          m.is_builtin ? "built-in" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(", ");
+                        return { value: m.id!, label: meta ? `${label} (${meta})` : label };
+                      }),
+                    ...(draft.model_id && !chatModels.some((m) => m.id === draft.model_id)
+                      ? [{ value: draft.model_id, label: `${draft.model_id} (Current)` }]
+                      : []),
+                  ]}
+                />
               </label>
+
+              <label className="block">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="caption text-muted">
+                    {t("agent.rerankModel")}{" "}
+                    <span className={draft.kb_selection_mode !== "none" ? "text-error" : ""}>
+                      {draft.kb_selection_mode !== "none" ? "*" : ""}
+                    </span>
+                  </span>
+                  {rerankModels.length === 0 && (
+                    <span className="caption text-amber-600 text-[10px]">No rerank models</span>
+                  )}
+                </div>
+                <Select
+                  className="w-full"
+                  value={draft.rerank_model_id}
+                  disabled={readOnly}
+                  onChange={(v) => patch("rerank_model_id", v)}
+                  placeholder={t("agent.rerankPlaceholder")}
+                  options={[
+                    { value: "", label: t("agent.rerankPlaceholder") },
+                    ...rerankModels
+                      .filter((m) => m.id)
+                      .map((m) => {
+                        const label = m.display_name?.trim() || m.name;
+                        const meta = [
+                          m.parameters?.provider || (m.source === "local" ? "local" : ""),
+                          m.is_default ? "default" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(", ");
+                        return { value: m.id!, label: meta ? `${label} (${meta})` : label };
+                      }),
+                    ...(draft.rerank_model_id && !rerankModels.some((m) => m.id === draft.rerank_model_id)
+                      ? [{ value: draft.rerank_model_id, label: `${draft.rerank_model_id} (Current)` }]
+                      : []),
+                  ]}
+                />
+              </label>
+            </div>
+
+            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-center gap-2">
+              <span className="text-primary font-bold">ℹ</span>
+              <span>
+                <strong>Embedding &amp; ReRank:</strong> Model Embedding được gắn cố định theo từng Cơ sở tri thức (KB). Model ReRank được cấu hình tại đây để xếp hạng lại tài liệu tìm kiếm.
+              </span>
             </div>
 
             {draft.agent_mode === "smart-reasoning" && (
@@ -318,8 +440,8 @@ export function AgentEditorModal({
                     onChange={(e) => patch("system_prompt", e.target.value)}
                   />
                 </label>
-                <div className="flex gap-4">
-                  <label className="block flex-1">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="block">
                     <span className="caption mb-1.5 block text-muted">{t("agent.temperature")}</span>
                     <input
                       className="input w-full"
@@ -332,7 +454,7 @@ export function AgentEditorModal({
                       onChange={(e) => patch("temperature", Number(e.target.value))}
                     />
                   </label>
-                  <label className="block flex-1">
+                  <label className="block">
                     <span className="caption mb-1.5 block text-muted">{t("agent.maxIterations")}</span>
                     <input
                       className="input w-full"
@@ -343,20 +465,43 @@ export function AgentEditorModal({
                       onChange={(e) => patch("max_iterations", Number(e.target.value))}
                     />
                   </label>
+                  <label className="block">
+                    <span className="caption mb-1.5 block text-muted">{t("agent.maxTokens")}</span>
+                    <input
+                      className="input w-full"
+                      type="number"
+                      min={0}
+                      step={256}
+                      value={draft.max_completion_tokens}
+                      disabled={readOnly}
+                      onChange={(e) => patch("max_completion_tokens", Number(e.target.value))}
+                    />
+                  </label>
                 </div>
               </>
             )}
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="citation_en"
-                checked={draft.citation_enabled}
-                disabled={readOnly}
-                onChange={(e) => patch("citation_enabled", e.target.checked)}
-              />
-              <label htmlFor="citation_en" className="text-ink cursor-pointer select-none">
-                Enable citations and source references in answers
+            <div className="flex flex-col gap-2 pt-1">
+              <label className="flex items-center gap-2 text-ink cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="citation_en"
+                  checked={draft.citation_enabled}
+                  disabled={readOnly}
+                  onChange={(e) => patch("citation_enabled", e.target.checked)}
+                />
+                <span>Enable citations and source references in answers</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-ink cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="thinking_en"
+                  checked={draft.thinking}
+                  disabled={readOnly}
+                  onChange={(e) => patch("thinking", e.target.checked)}
+                />
+                <span>{t("agent.thinking")}</span>
               </label>
             </div>
           </div>
@@ -417,6 +562,83 @@ export function AgentEditorModal({
                   )}
                 </div>
               </div>
+            )}
+
+            {draft.kb_selection_mode !== "none" && (
+              <>
+                <div className="rounded-[10px] border border-hairline p-3">
+                  <label className={`flex items-center gap-2.5 text-ink select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={draft.retrieve_kb_only_when_mentioned}
+                      disabled={readOnly}
+                      onChange={(e) => patch("retrieve_kb_only_when_mentioned", e.target.checked)}
+                    />
+                    <div>
+                      <div className="font-medium text-ink">{t("agent.retrieveOnlyWhenMentioned")}</div>
+                      <div className="caption text-muted">
+                        Khi bật, agent chỉ tìm trong tri thức nếu người dùng có gõ @tên_tri_thức hoặc @tên_tệp.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="rounded-[12px] border border-hairline bg-surface-strong/30 p-4 space-y-3">
+                  <span className="font-medium text-ink block text-[13px]">{t("agent.retrievalStrategy")}</span>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="caption mb-1 block text-muted">{t("agent.embeddingTopK")} (1-50)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        className="input w-full"
+                        value={draft.embedding_top_k}
+                        disabled={readOnly}
+                        onChange={(e) => patch("embedding_top_k", Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="caption mb-1 block text-muted">{t("agent.rerankTopK")} (1-20)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        className="input w-full"
+                        value={draft.rerank_top_k}
+                        disabled={readOnly}
+                        onChange={(e) => patch("rerank_top_k", Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="caption mb-1 block text-muted">{t("agent.rerankThreshold")} (-10..10)</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min={-10}
+                        max={10}
+                        className="input w-full"
+                        value={draft.rerank_threshold}
+                        disabled={readOnly}
+                        onChange={(e) => patch("rerank_threshold", Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="caption mb-1 block text-muted">{t("agent.vectorThreshold")} (0..1)</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min={0}
+                        max={1}
+                        className="input w-full"
+                        value={draft.vector_threshold}
+                        disabled={readOnly}
+                        onChange={(e) => patch("vector_threshold", Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
