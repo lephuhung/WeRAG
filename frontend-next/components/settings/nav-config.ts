@@ -44,6 +44,7 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
+      { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "owner" },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "owner" },
       { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "admin" },
       { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "owner" },
@@ -74,6 +75,7 @@ export const LEGACY_SECTION_ROUTES: Record<string, string> = {
   browserconnection: "/platform/system/extensions/browserconnection",
   tenant: "/platform/system/workspace/tenant",
   members: "/platform/system/workspace/members",
+  sharing: "/platform/system/workspace/sharing",
   "api-keys": "/platform/system/workspace/api-keys",
   orgs: "/platform/system/workspace/orgs",
   abbreviations: "/platform/system/extensions/abbreviations",

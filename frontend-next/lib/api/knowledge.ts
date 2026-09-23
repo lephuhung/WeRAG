@@ -113,6 +113,13 @@ export function listKnowledgeBaseActivity(
 
 // ---- knowledge bases ----------------------------------------------------------
 
+/* Mirrors types.KBVisibility (internal/types/knowledgebase.go): 'tenant'
+ * scopes read/search to the owning workspace's members; 'public' makes the
+ * KB readable by every authenticated user of every tenant. Writes always
+ * stay with the owning tenant. Cross-tenant read access beyond 'public'
+ * goes through kb_access_grants (share_count), not a third scope value. */
+export type KBVisibility = "tenant" | "public";
+
 export type KnowledgeBaseRow = {
   id: string;
   name: string;
@@ -130,7 +137,12 @@ export type KnowledgeBaseRow = {
   creator_id?: string;
   creator_name?: string;
   type?: string;
-  visibility?: string;
+  visibility?: KBVisibility;
+  /* Owning workspace id — differs from the caller's tenant on public or
+   * grant-shared KBs that leak into the list from other tenants. */
+  tenant_id?: number;
+  /* Live cross-tenant access grants on this KB (kb_access_grants). */
+  share_count?: number;
   /* Process-config defaults echoed back on the detail response
    * (GET /knowledge-bases/:id); they seed the upload/reparse parse-settings
    * dialog. Loosely typed because the KB detail payload is a superset of
@@ -217,12 +229,10 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: "document" | "faq";
-  /* Three-scope model: 'tenant' (default) readable by every member of the
-   * owning workspace; 'org' requires org_id, restricted to org members +
-   * tenant Admin/Owner; 'public' readable by every tenant (create/manage
-   * restricted server-side to Owner/SystemAdmin). */
-  visibility?: "tenant" | "org" | "public";
-  org_id?: number;
+  /* Read scope: 'tenant' (default) readable by every member of the owning
+   * workspace; 'public' readable by every tenant — creating it is restricted
+   * server-side to the workspace Owner or a system admin. */
+  visibility?: KBVisibility;
   chunking_config?: unknown;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -315,14 +325,93 @@ export function updateKnowledgeBase(
   return apiPut(`/api/v1/knowledge-bases/${id}`, data);
 }
 
-/* Changes the KB scope. Route is tenant Admin+; the service additionally
- * requires Owner/SystemAdmin for 'public' and validates org_id belongs to
- * the same tenant for 'org'. */
+/* Changes the KB scope (PUT /knowledge-bases/:id/visibility). The route is
+ * workspace Owner only; the service additionally requires Owner/SystemAdmin
+ * for 'public' and rejects callers outside the owning tenant. */
 export function updateKnowledgeBaseVisibility(
   id: string,
-  data: { visibility: "tenant" | "org" | "public"; org_id?: number },
+  data: { visibility: KBVisibility },
 ) {
   return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, data);
+}
+
+// ---- cross-tenant access grants -------------------------------------------
+
+/* Tenant-to-tenant read grants (kb_access_grants — see internal/types/
+ * kb_access_grant.go). The grantee tenant's owner files a request on a
+ * foreign KB; the owning tenant's owner approves, rejects or revokes.
+ * Every grant endpoint is workspace-Owner gated server-side. */
+export type KBGrantStatus = "pending" | "approved" | "rejected" | "revoked" | "expired";
+
+export interface KBAccessGrant {
+  id: string;
+  kb_id: string;
+  kb_name?: string;
+  owner_tenant_id: number;
+  owner_tenant_name?: string;
+  grantee_tenant_id: number;
+  grantee_tenant_name?: string;
+  permission: "viewer" | "editor" | "admin" | string;
+  status: KBGrantStatus;
+  requested_by?: string;
+  approved_by?: string | null;
+  message?: string;
+  expires_at?: string | null;
+  responded_at?: string | null;
+  created_at?: string;
+}
+
+type KBGrantListResponse = { success: boolean; data?: KBAccessGrant[]; message?: string };
+type KBGrantResponse = { success: boolean; data?: KBAccessGrant; message?: string };
+
+function grantStatusQuery(statuses?: KBGrantStatus[]): string {
+  return statuses?.length ? `?status=${statuses.join(",")}` : "";
+}
+
+/* Grantee side: ask the owning tenant for read access to kbId. 400 when the
+ * KB is already ours, 404 when it doesn't exist, 409 when a live grant or
+ * pending request already covers the pair. */
+export function requestKBAccess(
+  kbId: string,
+  data: { message?: string; expires_at?: string } = {},
+): Promise<KBGrantResponse> {
+  return apiPost(`/api/v1/knowledge-bases/${kbId}/access-requests`, data);
+}
+
+/* Owner side: every grant touching KBs this tenant owns, optionally
+ * filtered by ?status=pending,approved,… */
+export function listIncomingKBGrants(
+  tenantId: number | string,
+  statuses?: KBGrantStatus[],
+): Promise<KBAccessGrant[]> {
+  return apiGet<KBGrantListResponse>(
+    `/api/v1/tenants/${tenantId}/access-grants${grantStatusQuery(statuses)}`,
+  ).then((r) => r.data ?? []);
+}
+
+/* Grantee side: requests this tenant has filed on foreign KBs. */
+export function listOutgoingKBGrants(statuses?: KBGrantStatus[]): Promise<KBAccessGrant[]> {
+  return apiGet<KBGrantListResponse>(
+    `/api/v1/access-grants${grantStatusQuery(statuses)}`,
+  ).then((r) => r.data ?? []);
+}
+
+/* Owner side: approve or reject a pending request. 409 when the row was
+ * already finalised. */
+export function reviewKBGrant(
+  tenantId: number | string,
+  grantId: string,
+  data: { approved: boolean; message?: string },
+): Promise<KBGrantResponse> {
+  return apiPut(`/api/v1/tenants/${tenantId}/access-grants/${grantId}`, data);
+}
+
+/* Owner side: withdraw an approved grant. */
+export function revokeKBGrant(
+  tenantId: number | string,
+  grantId: string,
+): Promise<KBGrantResponse> {
+  return apiDel(`/api/v1/tenants/${tenantId}/access-grants/${grantId}`);
 }
 
 /** Opt-in automatic generation of the knowledge-base description. */

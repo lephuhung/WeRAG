@@ -2,8 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api-client";
+import { apiGet, apiPost, getTokens } from "@/lib/api-client";
 import { getAuthConfig, getInvitationByToken } from "@/lib/api/auth";
+import { acceptInvitationByToken } from "@/lib/api/tenants";
 import { Orb } from "@/components/orb";
 
 function RegisterForm() {
@@ -17,6 +18,12 @@ function RegisterForm() {
   const [inviteOnly, setInviteOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /* Signed-in visitors landing on an invite link can join with their
+   * current account (auth/me/invitations/accept-by-token) instead of
+   * registering a second one — they can still opt into the form below. */
+  const [hasSession] = useState(() => !!getTokens().token);
+  const [useNewAccount, setUseNewAccount] = useState(false);
+  const showJoinCard = !!token && hasSession && !useNewAccount;
 
   useEffect(() => {
     let alive = true;
@@ -64,6 +71,20 @@ function RegisterForm() {
     }
   };
 
+  const joinWithSession = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await acceptInvitationByToken(token);
+      if (!res.success) throw new Error(res.message ?? "Join failed");
+      router.push("/platform/knowledge-bases");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Join failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-6">
       <Orb color="peach" size={520} className="-top-40 right-[-100px]" />
@@ -72,9 +93,33 @@ function RegisterForm() {
           {token ? `Join ${tenantName ?? "workspace"}` : "Create account"}
         </div>
         <p className="body-sm mb-10 text-center text-muted">
-          {token ? "You were invited — pick a username to join." : "Self-serve registration."}
+          {token
+            ? showJoinCard
+              ? "You were invited — join with your current account or create a new one."
+              : "You were invited — pick a username to join."
+            : "Self-serve registration."}
           {inviteOnly && !token ? " This deployment is invite-only." : ""}
         </p>
+        {showJoinCard ? (
+          <div className="card p-6 sm:p-8">
+            {error && <p className="body-sm mb-4 text-error">{error}</p>}
+            <button
+              type="button"
+              className="btn btn-primary w-full"
+              disabled={busy}
+              onClick={() => void joinWithSession()}
+            >
+              {busy ? "Joining…" : "Join workspace"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline mt-3 w-full"
+              onClick={() => setUseNewAccount(true)}
+            >
+              Create a new account instead
+            </button>
+          </div>
+        ) : (
         <form className="card p-6 sm:p-8" onSubmit={submit}>
           <label className="mb-4 block">
             <span className="caption mb-1.5 block text-muted">Username</span>
@@ -105,6 +150,7 @@ function RegisterForm() {
             {busy ? "Creating…" : token ? "Join workspace" : "Register"}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

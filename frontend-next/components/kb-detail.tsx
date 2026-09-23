@@ -7,11 +7,15 @@ import {
   getKnowledgeBase,
   getKnowledgeDetails,
   listKnowledgeFiles,
+  listOutgoingKBGrants,
   reparseKnowledge,
+  requestKBAccess,
+  type KBAccessGrant,
   type KnowledgeBaseRow,
   type KnowledgeDoc,
   type KnowledgeProcessOverrides,
 } from "@/lib/api/knowledge";
+import { ApiError } from "@/lib/api-client";
 import { getSystemParseDefaults, type SystemParseDefaults } from "@/lib/api/system";
 import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
@@ -32,7 +36,7 @@ import {
 } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { useT, type LocaleKey } from "@/lib/i18n";
-import { useTenantRole } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
@@ -84,6 +88,7 @@ type MainTab = "docs-wiki" | "graph";
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
   const { isOwner, isAdminOrOwner } = useTenantRole();
+  const { selectedTenantId, tenant } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
@@ -103,6 +108,14 @@ export function KbDetail({ kbId }: { kbId: string }) {
     overrides: KnowledgeProcessOverrides | null;
   } | null>(null);
   const [error, setError] = useState("");
+  /* 403/404 on the KB fetch usually means a foreign tenant-scoped KB: the
+   * owner can file a cross-tenant access request straight from here. */
+  const [denied, setDenied] = useState(false);
+  const [grantForKb, setGrantForKb] = useState<KBAccessGrant | null>(null);
+  const [grantChecked, setGrantChecked] = useState(false);
+  const [reqSent, setReqSent] = useState(false);
+  const [reqMessage, setReqMessage] = useState("");
+  const [reqBusy, setReqBusy] = useState(false);
   /* Platform-wide parse defaults. When enabled, uploads and rebuilds skip
    * the parse-settings dialog and run with these overrides — the backend
    * ignores any per-upload process_config anyway. */
@@ -152,7 +165,16 @@ export function KbDetail({ kbId }: { kbId: string }) {
     let alive = true;
     getKnowledgeBase(kbId)
       .then((row) => alive && setKb(row ?? null))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : "Failed to load"));
+      .catch((e) => {
+        if (!alive) return;
+        /* KBAccessRead returns 403/404 for foreign tenant-scoped KBs —
+         * swap the content area for the request-access panel. */
+        if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+          setDenied(true);
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Failed to load");
+      });
     listKnowledgeFiles(kbId, { page: 1, page_size: 100 })
       .then((res) => {
         if (!alive) return;
@@ -167,6 +189,45 @@ export function KbDetail({ kbId }: { kbId: string }) {
       alive = false;
     };
   }, [kbId]);
+
+  /* Denied page: check whether this workspace already filed a request for
+   * this KB so the panel can show its status instead of a fresh form.
+   * The outgoing-grants list is Owner-gated, so skip it for members. */
+  useEffect(() => {
+    if (!denied || !isOwner) return;
+    let alive = true;
+    listOutgoingKBGrants(["pending", "approved"])
+      .then((rows) => {
+        if (!alive) return;
+        setGrantForKb(rows.find((g) => g.kb_id === kbId) ?? null);
+        setGrantChecked(true);
+      })
+      .catch(() => alive && setGrantChecked(true));
+    return () => {
+      alive = false;
+    };
+  }, [denied, isOwner, kbId]);
+
+  const submitAccessRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReqBusy(true);
+    setError("");
+    try {
+      const res = await requestKBAccess(kbId, {
+        message: reqMessage.trim() || undefined,
+      });
+      if (res.success) {
+        setReqSent(true);
+        if (res.data) setGrantForKb(res.data);
+      } else {
+        setError(res.message || "Request failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setReqBusy(false);
+    }
+  };
 
   /* Open a document card by knowledge id — from the upload panel's "Open"
    * action (weknora:open-knowledge / ?knowledge_id=) or the references
@@ -300,6 +361,12 @@ export function KbDetail({ kbId }: { kbId: string }) {
     (d) => !q || docName(d).toLowerCase().includes(q.toLowerCase()),
   );
 
+  /* A KB owned by another tenant reaches this view via 'public' visibility
+   * or an approved access grant — mark it so the header shows Shared. */
+  const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
+  const isForeignKb =
+    kb?.tenant_id !== undefined && String(kb.tenant_id) !== activeTenantId;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
@@ -319,11 +386,15 @@ export function KbDetail({ kbId }: { kbId: string }) {
             {error && <p className="caption mt-2 text-error">{error}</p>}
             <div className="caption mt-2.5 flex items-center gap-4 text-muted">
               <span>{kb?.knowledge_count ?? kb?.document_count ?? docs?.length ?? "—"} documents</span>
+              {kb?.visibility === "public" && (
+                <span className="badge-pill">{t("kbList.publicBadge")}</span>
+              )}
+              {isForeignKb && <span className="badge-pill">{t("kbList.sharedBadge")}</span>}
               {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
             </div>
           </div>
           <div className="flex gap-3">
-            {isOwner && (
+            {isOwner && !denied && (
               <>
                 <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
                   <IconSettings className="h-4 w-4" /> Settings
@@ -333,12 +404,14 @@ export function KbDetail({ kbId }: { kbId: string }) {
                 </button>
               </>
             )}
-            <Link
-              href={`/platform/knowledge-bases/${kbId}/creatChat`}
-              className="btn btn-primary"
-            >
-              <IconChat className="h-4 w-4" /> Chat
-            </Link>
+            {!denied && (
+              <Link
+                href={`/platform/knowledge-bases/${kbId}/creatChat`}
+                className="btn btn-primary"
+              >
+                <IconChat className="h-4 w-4" /> Chat
+              </Link>
+            )}
           </div>
         </div>
 
@@ -376,6 +449,53 @@ export function KbDetail({ kbId }: { kbId: string }) {
       </div>
 
       {/* Main Content Area */}
+      {denied ? (
+        /* Foreign tenant-scoped KB (or a deleted one): the owner can file a
+         * cross-tenant access request; other roles only get the notice. */
+        <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6">
+          <div className="card mx-auto mt-10 h-fit w-full max-w-[480px] p-6">
+            <h2 className="title-sm font-semibold text-ink">{t("kbGrants.deniedTitle")}</h2>
+            <p className="body-sm mt-2 text-muted">{t("kbGrants.deniedDesc")}</p>
+            {error && <p className="caption mt-3 text-error">{error}</p>}
+            {isOwner ? (
+              reqSent || grantForKb?.status === "pending" ? (
+                <p className="body-sm mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                  {t("kbGrants.requestSent")}
+                </p>
+              ) : grantForKb?.status === "approved" ? (
+                /* Grant exists but the fetch still failed — likely a stale
+                 * cache or expiry; offer a reload. */
+                <button
+                  className="btn btn-outline btn-sm mt-4"
+                  onClick={() => window.location.reload()}
+                >
+                  {t("common.refresh")}
+                </button>
+              ) : (
+                grantChecked && (
+                  <form onSubmit={submitAccessRequest} className="mt-4 space-y-3">
+                    <input
+                      className="input w-full text-[13px]"
+                      placeholder={t("kbGrants.requestMessage")}
+                      value={reqMessage}
+                      onChange={(e) => setReqMessage(e.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      disabled={reqBusy}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {reqBusy ? "…" : t("kbGrants.requestSubmit")}
+                    </button>
+                  </form>
+                )
+              )
+            ) : (
+              <p className="caption mt-4 text-muted-soft">{t("kbGrants.deniedMember")}</p>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6">
         {activeTab === "docs-wiki" ? (
           /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
@@ -581,6 +701,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
           </section>
         )}
       </div>
+      )}
 
       {/* Slide-in Panels & Modals */}
       <DocPanel doc={openDoc} onClose={() => setOpenDoc(null)} />

@@ -2,12 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createKnowledgeBase } from "@/lib/api/knowledge";
+import { createKnowledgeBase, type KBVisibility } from "@/lib/api/knowledge";
+import { Select } from "@/components/select";
+import { useTenantRole } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export default function NewKnowledgeBase() {
   const router = useRouter();
+  const { t } = useT();
+  /* Backend only lets the workspace Owner or a system admin create public
+   * KBs (validateKBVisibility); everyone else keeps the tenant default. */
+  const { isOwner } = useTenantRole();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState<KBVisibility>("tenant");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -17,7 +25,11 @@ export default function NewKnowledgeBase() {
     setBusy(true);
     setError(null);
     try {
-      const res = await createKnowledgeBase({ name: name.trim(), description: description.trim() || undefined });
+      const res = await createKnowledgeBase({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        visibility,
+      });
       const id =
         res.data && typeof res.data === "object" && "id" in res.data
           ? String((res.data as { id: unknown }).id)
@@ -55,6 +67,23 @@ export default function NewKnowledgeBase() {
               placeholder="What does this collection cover?"
             />
           </label>
+          {isOwner && (
+            <div className="mb-6 block">
+              <span className="caption mb-1.5 block text-muted">{t("kbSettings.visibilityNote")}</span>
+              <Select
+                className="w-[280px]"
+                value={visibility}
+                onChange={(v) => setVisibility(v as KBVisibility)}
+                options={[
+                  { value: "tenant", label: t("kbSettings.visTenant") },
+                  { value: "public", label: t("kbSettings.visPublic") },
+                ]}
+              />
+              <p className="caption mt-1 text-muted-soft">
+                {t(visibility === "public" ? "kbSettings.visPublicTip" : "kbSettings.visTenantTip")}
+              </p>
+            </div>
+          )}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <div className="flex gap-3">
             <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>

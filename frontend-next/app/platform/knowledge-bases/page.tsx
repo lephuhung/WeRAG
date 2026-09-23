@@ -18,7 +18,7 @@ import {
 
 export default function KnowledgeBaseList() {
   const { isOwner } = useTenantRole();
-  const { user } = useAuth();
+  const { user, selectedTenantId, tenant } = useAuth();
   const { t } = useT();
   const [kbs, setKbs] = useState<KnowledgeBaseRow[] | null>(null);
   const [error, setError] = useState("");
@@ -44,6 +44,7 @@ export default function KnowledgeBaseList() {
   }, []);
 
   const ORBS = ["mint", "lavender", "peach", "sky", "rose"] as const;
+  const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
   const rows = (kbs ?? [])
     .filter((k) => !q || k.name.toLowerCase().includes(q.toLowerCase()))
     .map((k, i) => ({
@@ -53,6 +54,10 @@ export default function KnowledgeBaseList() {
       docs: k.knowledge_count ?? k.document_count ?? 0,
       updatedAt: k.updated_at ?? "",
       orb: ORBS[i % ORBS.length],
+      visibility: k.visibility,
+      /* The list also returns other tenants' public KBs and KBs granted to
+       * this workspace — flag them so the card can show where it lives. */
+      foreign: k.tenant_id !== undefined && String(k.tenant_id) !== activeTenantId,
     }));
 
   return (
@@ -123,7 +128,15 @@ export default function KnowledgeBaseList() {
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-strong text-ink">
                   <IconBook className="h-5 w-5" />
                 </div>
-                <h2 className="title-md truncate">{kb.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="title-md truncate">{kb.name}</h2>
+                  {kb.visibility === "public" && (
+                    <span className="badge-pill shrink-0">{t("kbList.publicBadge")}</span>
+                  )}
+                  {kb.foreign && (
+                    <span className="badge-pill shrink-0">{t("kbList.sharedBadge")}</span>
+                  )}
+                </div>
                 <p className="body-sm mt-1.5 line-clamp-2 text-body">{kb.description}</p>
                 <div className="caption mt-5 flex items-center gap-4 text-muted">
                   <span className="flex items-center gap-1.5">
