@@ -80,7 +80,7 @@ export function useAttachments(sessionId?: string) {
         file,
         settings.selectedAgentId || undefined,
         settings.selectedAgentSourceTenantId ?? undefined,
-        undefined,
+        "auto",
         (progress) => patch(localId, { progress }),
       );
       const data: TemporaryAttachment = res.data;

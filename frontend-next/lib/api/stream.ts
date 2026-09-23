@@ -114,6 +114,18 @@ function readTokens(): { token: string | null; refreshToken: string | null; tena
   }
 }
 
+// Same contract as api-client's Accept-Language: backend Language() reads the
+// first tag (streame.ts sent the i18n locale); "zh-CN" fallback preserved.
+function acceptLanguage(): string {
+  try {
+    const raw = localStorage.getItem("werag_locale")?.trim() || localStorage.getItem("locale")?.trim() || "";
+    const base = raw.split(/[-_]/)[0]?.toLowerCase() || "";
+    return base === "en" ? "en-US" : base === "vi" ? "vi-VN" : base === "zh" ? "zh-CN" : "zh-CN";
+  } catch {
+    return "zh-CN";
+  }
+}
+
 async function refreshTokenNow(refreshToken: string): Promise<string> {
   const res = await fetch("/api/v1/auth/refresh", {
     method: "POST",
@@ -249,6 +261,7 @@ async function openChatStream(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      "Accept-Language": acceptLanguage(),
       Authorization: embed ? `Embed ${embed.embedToken}` : `Bearer ${token}`,
       "X-Request-ID": Math.random().toString(36).slice(2, 14),
       // Embed visitors have no tenant context — never send X-Tenant-ID.
@@ -309,6 +322,7 @@ export async function continueStream(params: {
     fetch(url, {
       headers: {
         Accept: "text/event-stream",
+        "Accept-Language": acceptLanguage(),
         Authorization: `Bearer ${authToken}`,
         "X-Request-ID": Math.random().toString(36).slice(2, 14),
         ...(tenantId ? { "X-Tenant-ID": tenantId } : {}),

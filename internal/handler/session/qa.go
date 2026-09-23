@@ -1286,6 +1286,18 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 						SessionID: sessionID,
 					},
 				})
+				// The SSE loop only exits on a `complete` (or stop) event, so a
+				// turn that fails before producing one must emit it explicitly —
+				// otherwise the client connection stays open forever.
+				if streamCtx.assistantMessage != nil {
+					streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
+						Type:      event.EventAgentComplete,
+						SessionID: sessionID,
+						Data: event.AgentCompleteData{
+							MessageID: streamCtx.assistantMessage.ID,
+						},
+					})
+				}
 			}
 		}
 	}()

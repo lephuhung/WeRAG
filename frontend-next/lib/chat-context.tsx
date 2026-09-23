@@ -140,6 +140,11 @@ function persist(s: ChatSettings) {
 
 type Ctx = {
   settings: ChatSettings;
+  // True once settings have been hydrated from localStorage. Anything that
+  // fires on mount (the ?q= auto-send) must wait for it — child effects run
+  // before this provider's hydration effect, so they otherwise send the
+  // DEFAULTS (webSearchEnabled=false, no KB scope) on the first request.
+  hydrated: boolean;
   update: (patch: Partial<ChatSettings>) => void;
   addKnowledgeBase: (id: string) => void;
   removeKnowledgeBase: (id: string) => void;
@@ -184,10 +189,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [skills, setSkills] = useState<Ctx["skills"]>([]);
   const [webSearchReady, setWebSearchReady] = useState(false);
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
+  const [hydrated, setHydrated] = useState(false);
   const loaded = useRef(false);
 
   useEffect(() => {
     setSettings(loadSettings());
+    setHydrated(true);
   }, []);
 
   const update = useCallback((patch: Partial<ChatSettings>) => {
@@ -470,6 +477,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       settings,
+      hydrated,
       update,
       addKnowledgeBase,
       removeKnowledgeBase,
@@ -502,6 +510,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       settings,
+      hydrated,
       update,
       addKnowledgeBase,
       removeKnowledgeBase,

@@ -103,6 +103,12 @@ export type ChatMessageAgentStep = {
   tool_calls?: ChatMessageToolCall[];
 };
 
+export type ChatMessageAttachment = {
+  file_name?: string;
+  file_type?: string;
+  file_size?: number;
+};
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "assistant" | string;
@@ -111,6 +117,8 @@ export type ChatMessage = {
   is_completed?: boolean;
   knowledge_references?: KnowledgeReferenceItem[];
   agent_steps?: ChatMessageAgentStep[];
+  attachments?: ChatMessageAttachment[];
+  images?: { url?: string; caption?: string }[];
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {

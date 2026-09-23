@@ -137,10 +137,12 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	// Set headers for SSE
 	setSSEHeaders(c)
 
-	// Check if stream is already completed
+	// Check if stream is already completed. A terminal error event also ends
+	// the run: turns that failed before a `complete` event existed leave a
+	// stream whose only close marker is the error itself.
 	streamCompleted := false
 	for _, evt := range events {
-		if evt.Type == "complete" {
+		if evt.Type == "complete" || (evt.Type == types.ResponseTypeError && evt.Done) {
 			streamCompleted = true
 			break
 		}
@@ -182,8 +184,8 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 			// Send new events
 			streamCompletedNow := false
 			for _, evt := range newEvents {
-				// Check for completion event
-				if evt.Type == "complete" {
+				// Check for completion event; a terminal error ends the run too.
+				if evt.Type == "complete" || (evt.Type == types.ResponseTypeError && evt.Done) {
 					streamCompletedNow = true
 				}
 

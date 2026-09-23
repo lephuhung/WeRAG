@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconPlus, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
+import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
 import { AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
@@ -19,6 +20,9 @@ export type ComposerSend = {
   mentionedItems: MentionRequestItem[];
   imageFiles: File[];
   attachments: PendingAttachment[];
+  // Retrieval hint from a picked suggested question (creatChat.vue
+  // questionOriginFromSuggestion); plain typed text leaves it undefined.
+  questionOrigin?: QuestionOrigin;
 };
 
 export function Composer({
@@ -149,11 +153,21 @@ export function Composer({
           ? "Ask anything — web search on…"
           : "Ask anything… (@ to quote KB, files, tags)";
 
+  const [sendBlockMsg, setSendBlockMsg] = useState("");
+  useEffect(() => setSendBlockMsg(""), [attachments, value]);
+
   const submit = () => {
     if (!value.trim() || isReplying) return;
-    if (attachments.some((a) => a.status === "uploading")) return;
+    if (attachments.some((a) => a.status === "uploading")) {
+      setSendBlockMsg("An attachment is still uploading — wait for it to finish or remove it.");
+      return;
+    }
     const failed = attachments.find((a) => a.status === "failed");
-    if (failed) return;
+    if (failed) {
+      setSendBlockMsg(`“${failed.name}” failed to process (${failed.error ?? "unknown error"}) — remove it or re-upload before sending.`);
+      return;
+    }
+    setSendBlockMsg("");
     onSend({
       query: value.trim(),
       modelId: settings.selectedChatModelId || "",
@@ -217,6 +231,8 @@ export function Composer({
           ))}
         </div>
       )}
+
+      {sendBlockMsg && <p className="caption text-error">{sendBlockMsg}</p>}
 
       <MentionChips />
 

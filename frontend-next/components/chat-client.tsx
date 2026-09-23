@@ -8,16 +8,20 @@ import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
-import { useAttachments } from "@/components/use-attachments";
+import { useAttachments, formatFileSize } from "@/components/use-attachments";
+import { useBrowserKnownOffline } from "@/components/use-browser-status";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
 import { IconDoc, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
+import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
 import { type ToolEventItem } from "@/components/chat/tool-result-card";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import { copyToClipboard } from "@/lib/clipboard";
+
+type UiAttachment = { name: string; size?: number; title?: string; isImage?: boolean };
 
 type UiMessage = {
   id: string;
@@ -31,6 +35,7 @@ type UiMessage = {
   references?: KnowledgeReferenceItem[];
   abbreviationCandidates?: string[];
   peopleData?: PeopleRecord[];
+  attachments?: UiAttachment[];
 };
 
 function extractPeopleRecords(data: unknown): PeopleRecord[] {
@@ -149,6 +154,21 @@ function parseThinkAndContent(
   return { thinking: explicitThinking || undefined, content: accText };
 }
 
+// User messages carry attachment metadata so the bubble can show which files
+// were sent — both the optimistic row and history rows from `m.attachments`.
+function attachmentsFromHistory(m: ChatMessage): UiAttachment[] | undefined {
+  const files = (m.attachments ?? [])
+    .filter((a) => a.file_name)
+    .map((a) => ({ name: a.file_name!, size: a.file_size }));
+  const images = (m.images ?? []).map((img, i) => ({
+    name: `Ảnh ${i + 1}`,
+    title: img.caption?.trim(),
+    isImage: true,
+  }));
+  const all = [...files, ...images];
+  return all.length > 0 ? all : undefined;
+}
+
 function fileToDataUri(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -179,6 +199,25 @@ const UserMessageBubble = memo(function UserMessageBubble({
 
   return (
     <div className="group mb-6 flex flex-col items-end">
+      {(message.attachments?.length ?? 0) > 0 && (
+        <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
+          {message.attachments!.map((a, i) => (
+            <span
+              key={`${a.name}-${i}`}
+              title={a.title ?? (a.size ? `${a.name} · ${formatFileSize(a.size)}` : a.name)}
+              className="flex items-center gap-2 rounded-lg border border-[#cfe1fd] bg-[#edf5ff] px-2.5 py-1.5 text-[12px] font-medium text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]"
+            >
+              <span
+                className="w-[22px] shrink-0"
+                dangerouslySetInnerHTML={{
+                  __html: renderFileIconSvg(a.isImage && !a.name.includes(".") ? "image.png" : a.name),
+                }}
+              />
+              <span className="max-w-[180px] truncate">{a.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-relaxed text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
         {message.content}
       </div>
@@ -421,6 +460,15 @@ const AssistantMessage = memo(function AssistantMessage({
 function ChatBody({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q");
+  // Retrieval hint from a picked suggested question on the create-chat page
+  // (creatChat.vue firstQuestionOrigin → question_origin on the first turn).
+  const initialOrigin =
+    searchParams.get("qokb")?.trim()
+      ? {
+          knowledge_base_id: searchParams.get("qokb")!.trim(),
+          ...(searchParams.get("qok")?.trim() ? { knowledge_id: searchParams.get("qok")!.trim() } : {}),
+        }
+      : undefined;
   const ctx = useChatContext();
   const { user } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
@@ -446,8 +494,15 @@ function ChatBody({ id }: { id: string }) {
   // pendingSuggestionAttribution / pendingSuggestionKnowledgeBaseIds pair.
   const pendingAttribution = useRef<{ setId: string; questionId: string } | null>(null);
   const pendingKbIds = useRef<string[]>([]);
+  // One-shot: the ?qokb/?qok hint belongs to the first turn only. A second
+  // manual send must not re-attach it (creatChat.vue clears firstQuestionOrigin
+  // by consuming it in the first sendMsg).
+  const originConsumed = useRef(false);
   const router = useRouter();
   const attachments = useAttachments(id === "new" ? undefined : id);
+  // index.vue:1395 gates local_browser_enabled on !knownOffline so an offline
+  // extension never claims browser sources.
+  const browserKnownOffline = useBrowserKnownOffline();
   // Continue-stream scratch refs (reset per attach attempt).
   const accRef = useRef("");
   const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
@@ -531,6 +586,8 @@ function ChatBody({ id }: { id: string }) {
                   : undefined,
               peopleData:
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
+              attachments:
+                m.role === "user" ? attachmentsFromHistory(m) : undefined,
             };
           });
           if (streamingMsgs.length > 0) {
@@ -591,6 +648,26 @@ function ChatBody({ id }: { id: string }) {
               srcSetRef.current = refs;
               return;
             }
+            if (kind === "error") {
+              const errorText = c.content || (c.data?.error as string) || "Stream failed";
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.assistantMessageId === inflightId
+                    ? {
+                        ...msg,
+                        content: msg.content || `⚠️ ${errorText}`,
+                        isError: true,
+                        streaming: false,
+                      }
+                    : msg,
+                ),
+              );
+              // Replays of turns that died before the backend emitted a
+              // `complete` event never end server-side — abort so the
+              // .finally below clears `busy` instead of locking the chat.
+              ctrl.abort();
+              return;
+            }
             accRef.current += c.content ?? "";
             const parsed = parseThinkAndContent(accRef.current);
             setMessages((m) =>
@@ -607,7 +684,9 @@ function ChatBody({ id }: { id: string }) {
             );
           };
           accRef.current = last.content ?? "";
-          continueStream({ sessionId: id, messageId: inflightId, onChunk: applyChunk })
+          const ctrl = new AbortController();
+          abortRef.current = ctrl;
+          continueStream({ sessionId: id, messageId: inflightId, signal: ctrl.signal, onChunk: applyChunk })
             .catch(() => {
               /* the turn may simply be finished server-side — history next
                * open re-reads it complete */
@@ -688,6 +767,7 @@ function ChatBody({ id }: { id: string }) {
           file,
           ctx.settings.selectedAgentId || undefined,
           ctx.settings.selectedAgentSourceTenantId ?? undefined,
+          "auto",
         );
         imageAttachmentIds.push(up.data.id);
       } catch {
@@ -706,6 +786,7 @@ function ChatBody({ id }: { id: string }) {
               a.file,
               ctx.settings.selectedAgentId || undefined,
               ctx.settings.selectedAgentSourceTenantId ?? undefined,
+              "auto",
             );
             attachments.setItems((prev) => prev.map((x) => (x.localId === a.localId ? { ...x, documentId: up.data.id, status: up.data.status } : x)));
           }),
@@ -717,8 +798,14 @@ function ChatBody({ id }: { id: string }) {
       }
     }
 
+    // Echo which files were sent on the user bubble — the question alone is
+    // meaningless when the content lives in an attached document.
+    const sentAttachments: UiAttachment[] = [
+      ...s.attachments.map((a) => ({ name: a.name, size: a.size })),
+      ...s.imageFiles.map((f) => ({ name: f.name, size: f.size, isImage: true })),
+    ];
     stickBottomRef.current = true;
-    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t }, { id: asstId, role: "assistant", content: "", streaming: true }]);
+    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
 
@@ -803,6 +890,11 @@ function ChatBody({ id }: { id: string }) {
               : msg,
           ),
         );
+        // A backend error event is terminal for the turn, but older backends
+        // keep the SSE socket open after it — without aborting, streamChat
+        // never settles and `busy` stays locked, silently swallowing every
+        // subsequent send.
+        ctrl.abort();
         return;
       }
 
@@ -1013,6 +1105,12 @@ function ChatBody({ id }: { id: string }) {
     pendingAttribution.current = null;
     const kbIdsOverride = pendingKbIds.current;
     pendingKbIds.current = [];
+    // First-turn hint from create-chat (?qokb/?qok) or an explicit send
+    // option; consumed once so later sends never re-attach a stale hint
+    // (creatChat.vue clears firstQuestionOrigin in the first sendMsg).
+    const firstSend = !originConsumed.current;
+    originConsumed.current = true;
+    const questionOrigin = s.questionOrigin ?? (firstSend ? initialOrigin : undefined);
     const previousMessage = messages[messages.length - 1];
     const priorCandidates =
       previousMessage?.role === "assistant"
@@ -1031,11 +1129,17 @@ function ChatBody({ id }: { id: string }) {
       skillNames: [...skillSet],
       mentionedItems: s.mentionedItems,
       webSearchEnabled: ctx.settings.webSearchEnabled,
-      localBrowserEnabled: ctx.settings.localBrowserEnabled,
+      // Same gate as the Vue sender: knowledge-chat rejects
+      // local_browser_enabled outright, so it only rides agent turns.
+      // Plus the knownOffline gate (index.vue:1395): never claim browser
+      // sources when the extension is offline.
+      localBrowserEnabled: isAgentMode && ctx.settings.localBrowserEnabled && !browserKnownOffline,
       summaryModelId: s.modelId || ctx.settings.selectedChatModelId || undefined,
       suggestionAttribution: attribution
         ? { suggestion_set_id: attribution.setId, question_id: attribution.questionId }
         : undefined,
+      // index.vue sends options?.questionOrigin the same way.
+      questionOrigin,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       images: inlineImages,
       abbreviationCandidates: priorCandidates?.slice(0, 10),
@@ -1131,16 +1235,19 @@ function ChatBody({ id }: { id: string }) {
   );
 
   // create-chat ?q=… auto-send, like creatChat.vue navigateToSession(firstQuery).
+  // Waits for ctx.hydrated: this effect runs before ChatProvider's settings
+  // hydration, and firing early would send DEFAULTS — web_search_enabled=false,
+  // no KB scope — for the user's very first question.
   useEffect(() => {
-    if (initialQ && !sentInitial.current) {
+    if (initialQ && !sentInitial.current && ctx.hydrated) {
       sentInitial.current = true;
       if (typeof window !== "undefined") {
         window.history.replaceState(null, "", `/platform/chat/${id}`);
       }
-      void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [] });
+      void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [], questionOrigin: initialOrigin });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQ, id]);
+  }, [initialQ, id, ctx.hydrated]);
 
   // Follow the stream only while the user is parked near the bottom — scrolling
   // up releases the lock. Setting scrollTop directly (not smooth scrollIntoView):
