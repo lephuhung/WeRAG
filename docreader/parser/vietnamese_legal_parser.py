@@ -34,6 +34,10 @@ Environment (docreader service, ``DOCREADER_*`` convention):
 * ``DOCREADER_VN_OCR_DETECT_BROKEN_VN``   — default true
 * ``DOCREADER_VN_OCR_VN_TONE_MIN_RATIO``  — default 0.02 (AIRAG
   HRAG_OCR_VN_TONE_MIN_RATIO)
+* ``DOCREADER_VN_OCR_REPETITION_PENALTY`` — default 1.05; SenOCR-Vi can
+  otherwise loop a fragment (e.g. its instruction template) until
+  max_tokens. Set to 1.0 to disable; only for endpoints accepting the
+  OpenAI ``repetition_penalty`` extension (vLLM).
 """
 
 import base64
@@ -65,6 +69,7 @@ VN_OCR_MAX_TOKENS = _env_int("DOCREADER_VN_OCR_MAX_TOKENS", 4096)
 VN_OCR_CONCURRENCY = _env_int("DOCREADER_VN_OCR_CONCURRENCY", 4)
 VN_OCR_TIMEOUT = _env_float("DOCREADER_VN_OCR_TIMEOUT", 180.0)
 VN_OCR_VLLM_XARGS = _env_bool("DOCREADER_VN_OCR_VLLM_XARGS", False)
+VN_OCR_REPETITION_PENALTY = _env_float("DOCREADER_VN_OCR_REPETITION_PENALTY", 1.05)
 VN_DETECT_BROKEN = _env_bool("DOCREADER_VN_OCR_DETECT_BROKEN_VN", True)
 VN_TONE_MIN_RATIO = _env_float("DOCREADER_VN_OCR_VN_TONE_MIN_RATIO", 0.02)
 
@@ -116,6 +121,64 @@ def _strip_ocr_markup(text: str) -> str:
     return _MULTI_BLANK_RE.sub("\n\n", text).strip()
 
 
+# --- Degenerate-output collapse (port of Go searchutil.CollapseDegenerateTail)
+#
+# SenOCR-Vi occasionally loops one sentence (e.g. its instruction template
+# "N. Use LaTeX to output the output content.") until max_tokens. A run of
+# identical items at the END of the page is not real content — cut at the
+# first repeated item so whatever preceded it survives. Mirrors the Go
+# implementation, including the truncated-final-item variant.
+
+_DEGEN_BOUNDARY_RE = re.compile(r"(?:^|\s)\d{1,4}[.)]\s+|\n+")
+_DEGEN_LEAD_RE = re.compile(r"^\s*(?:[-*•·‣◦]+\s*|\d{1,4}[.)]\s*)")
+_DEGEN_MIN_RUN = 5
+_DEGEN_MIN_SEGMENT_LEN = 10  # chars
+
+
+def _degen_norm(seg: str) -> str:
+    seg = _DEGEN_LEAD_RE.sub("", seg)
+    seg = " ".join(seg.split()).lower()
+    return seg.rstrip(" .,;:!?…")
+
+
+def _collapse_degenerate_tail(text: str) -> str:
+    bounds = list(_DEGEN_BOUNDARY_RE.finditer(text))
+    segs = []  # (norm, bound_start)
+    prev_end, prev_bound = 0, 0
+    for b in bounds:
+        segs.append((_degen_norm(text[prev_end : b.start()]), prev_bound))
+        prev_end, prev_bound = b.end(), b.start()
+    segs.append((_degen_norm(text[prev_end:]), prev_bound))
+
+    while segs and segs[-1][0] == "":
+        segs.pop()
+    if not segs:
+        return text
+
+    last = segs[-1][0]
+    cut_start = -1
+    if last:
+        i = len(segs) - 1
+        while i - 1 >= 0 and segs[i - 1][0] == last:
+            i -= 1
+        if len(segs) - i >= _DEGEN_MIN_RUN and len(last) >= _DEGEN_MIN_SEGMENT_LEN:
+            cut_start = segs[i][1]
+        elif len(segs) >= 2:
+            canon = segs[-2][0]
+            if canon and canon.startswith(last):
+                j = len(segs) - 2
+                while j - 1 >= 0 and segs[j - 1][0] == canon:
+                    j -= 1
+                if (
+                    len(segs) - j >= _DEGEN_MIN_RUN
+                    and len(canon) >= _DEGEN_MIN_SEGMENT_LEN
+                ):
+                    cut_start = segs[j][1]
+    if cut_start >= 0:
+        return text[:cut_start].rstrip(" \t\n")
+    return text
+
+
 # Scanned-page image references emitted by PDFParser._assemble_blocks.
 _PAGE_IMG_BLOCK_RE = re.compile(
     r"!\[[^\]\n]*_page_(\d+)\.jpg\]\((images/[^\)\n]*_page_\d+\.jpg)\)"
@@ -142,6 +205,7 @@ def _ocr_page_image(
     api_key: str = "",
     prompt: str = "",
     vllm_xargs: bool = False,
+    repetition_penalty: float = 0.0,
 ) -> str:
     """One page image → OCR text via an OpenAI-compatible chat endpoint."""
     data_uri = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
@@ -159,6 +223,9 @@ def _ocr_page_image(
         "temperature": 0.0,
         "max_tokens": VN_OCR_MAX_TOKENS,
     }
+    rp = repetition_penalty if repetition_penalty > 0 else VN_OCR_REPETITION_PENALTY
+    if rp and rp != 1.0:
+        payload["repetition_penalty"] = rp
     if vllm_xargs:
         # Only for engines still running Unlimited-OCR's NGram processor:
         # structural special tokens must NOT be stripped, and the processor
@@ -179,7 +246,7 @@ def _ocr_page_image(
         )
         resp.raise_for_status()
         text = resp.json()["choices"][0]["message"]["content"]
-        return _strip_ocr_markup(text or "")
+        return _collapse_degenerate_tail(_strip_ocr_markup(text or ""))
     except Exception as e:
         logger.error("[VN-OCR] page %d failed: %s", page_no, e)
         return ""
@@ -220,6 +287,13 @@ class VietnameseLegalPDFParser(PDFParser):
             if not xargs
             else xargs.lower() not in ("0", "false", "no", "off")
         )
+        rp_raw = str(
+            kwargs.pop("openai_ocr_repetition_penalty", "") or ""
+        ).strip()
+        try:
+            self._ocr_repetition_penalty = float(rp_raw) if rp_raw else 0.0
+        except ValueError:
+            self._ocr_repetition_penalty = 0.0
         super().__init__(*args, **kwargs)
         # Env fallbacks when the request did not pin an endpoint.
         self._ocr_url = self._ocr_url or VN_OCR_URL
@@ -279,6 +353,7 @@ class VietnameseLegalPDFParser(PDFParser):
                     api_key=self._ocr_api_key,
                     prompt=self._ocr_prompt,
                     vllm_xargs=self._ocr_vllm_xargs,
+                    repetition_penalty=self._ocr_repetition_penalty,
                 ): i
                 for i, (page_no, ref) in jobs.items()
             }

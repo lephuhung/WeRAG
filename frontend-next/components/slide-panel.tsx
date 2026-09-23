@@ -51,11 +51,14 @@ export function SlidePanelHeader({
   title,
   subtitle,
   onClose,
+  actions,
   children,
 }: {
   title: string;
   subtitle?: string;
   onClose: () => void;
+  /** Extra controls rendered between the title and the close button. */
+  actions?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
@@ -65,6 +68,7 @@ export function SlidePanelHeader({
         <div className="truncate text-[15px] font-medium text-ink">{title}</div>
         {subtitle && <div className="caption truncate text-muted">{subtitle}</div>}
       </div>
+      {actions}
       <button
         onClick={onClose}
         aria-label="Close"

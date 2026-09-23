@@ -144,6 +144,11 @@ type MessageAttachment struct {
 	TokenCount     int    `json:"token_count,omitempty"`     // Approximate tokens in the parsed document
 	SelectedChunks int    `json:"selected_chunks,omitempty"` // Chunks included in this message prompt
 	TotalChunks    int    `json:"total_chunks,omitempty"`    // Total parsed chunks
+	// ParseError is set when the attachment's content could not be made
+	// available to the model (parse failure, timeout, missing/expired
+	// document, or content with no readable text). BuildPrompt renders it as
+	// an explicit failure block so the LLM knows not to fabricate an answer.
+	ParseError string `json:"parse_error,omitempty"`
 }
 
 // MessageAttachments is a slice of MessageAttachment for database storage
@@ -173,7 +178,11 @@ func (attachments MessageAttachments) BuildPrompt() string {
 		}
 		sb.WriteString("</metadata>\n")
 
-		if att.Content != "" {
+		if att.ParseError != "" {
+			sb.WriteString("<status>unavailable</status>\n")
+			sb.WriteString(fmt.Sprintf("<error>%s</error>\n", html.EscapeString(att.ParseError)))
+			sb.WriteString("<instruction>This attachment could not be read. Do not guess, infer, or fabricate its contents. Tell the user the file could not be processed, briefly explain why if a reason is given above, and ask them to re-upload the file, provide a different file, or paste the relevant text directly.</instruction>\n")
+		} else if att.Content != "" {
 			sb.WriteString("<content>\n")
 			content := strings.ReplaceAll(att.Content, "</content>", "&lt;/content&gt;")
 			content = strings.ReplaceAll(content, "</attachment>", "&lt;/attachment&gt;")
@@ -186,7 +195,7 @@ func (attachments MessageAttachments) BuildPrompt() string {
 					att.LineCount))
 			}
 		} else {
-			sb.WriteString("<note>File content extraction failed or is unsupported.</note>\n")
+			sb.WriteString("<note>File content extraction failed or is unsupported. Do not fabricate this attachment's contents; tell the user it could not be read.</note>\n")
 		}
 		sb.WriteString("</attachment>\n")
 	}

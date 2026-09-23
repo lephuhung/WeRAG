@@ -16,8 +16,9 @@ import {
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { listMCPServices, type MCPService } from "@/lib/api/mcp";
 import { listModels, type ModelConfig } from "@/lib/api/models";
+import { getStorageEngineStatus } from "@/lib/api/system";
 
-type TabKey = "basic" | "knowledge" | "tools";
+type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
 
 type Draft = {
   name: string;
@@ -44,6 +45,15 @@ type Draft = {
   web_search_enabled: boolean;
   mcp_selection_mode: "all" | "selected" | "none";
   mcp_services: string[];
+  // Multimodal / attachments
+  image_upload_enabled: boolean;
+  vlm_model_id: string;
+  attachment_image_understanding: boolean;
+  attachment_ocr_max_pages: number;
+  attachment_parse_wait_timeout_sec: number;
+  image_storage_provider: string;
+  audio_upload_enabled: boolean;
+  asr_model_id: string;
 };
 
 function draftFrom(a: CustomAgent | null): Draft {
@@ -70,6 +80,14 @@ function draftFrom(a: CustomAgent | null): Draft {
     web_search_enabled: a?.config?.web_search_enabled ?? true,
     mcp_selection_mode: a?.config?.mcp_selection_mode ?? "all",
     mcp_services: a?.config?.mcp_services ?? [],
+    image_upload_enabled: a?.config?.image_upload_enabled ?? false,
+    vlm_model_id: a?.config?.vlm_model_id ?? "",
+    attachment_image_understanding: a?.config?.attachment_image_understanding ?? false,
+    attachment_ocr_max_pages: a?.config?.attachment_ocr_max_pages ?? 0,
+    attachment_parse_wait_timeout_sec: a?.config?.attachment_parse_wait_timeout_sec ?? 0,
+    image_storage_provider: a?.config?.image_storage_provider ?? "",
+    audio_upload_enabled: a?.config?.audio_upload_enabled ?? false,
+    asr_model_id: a?.config?.asr_model_id ?? "",
   };
 }
 
@@ -124,6 +142,16 @@ export function AgentEditorModal({
     return modelList.filter((m) => m.type === "Rerank");
   }, [modelList]);
 
+  const vlmModels = useMemo(() => {
+    return modelList.filter((m) => m.type === "VLLM");
+  }, [modelList]);
+
+  const asrModels = useMemo(() => {
+    return modelList.filter((m) => m.type === "ASR");
+  }, [modelList]);
+
+  const [storageStatus, setStorageStatus] = useState<Record<string, boolean>>({});
+
   // Auto-select default models when creating a new agent
   useEffect(() => {
     if (!agent && open) {
@@ -163,6 +191,13 @@ export function AgentEditorModal({
     listMCPServices()
       .then((res: MCPService[]) => setMcpList(res ?? []))
       .catch(() => setMcpList([]));
+    getStorageEngineStatus()
+      .then((res) => {
+        const map: Record<string, boolean> = {};
+        for (const e of res.data?.engines ?? []) map[e.name] = e.available;
+        setStorageStatus(map);
+      })
+      .catch(() => setStorageStatus({}));
   }, [open]);
 
   const patch = <K extends keyof Draft>(k: K, v: Draft[K]) =>
@@ -207,6 +242,11 @@ export function AgentEditorModal({
       return;
     }
 
+    if (draft.image_upload_enabled && !draft.vlm_model_id) {
+      setError(t("agent.vlmRequired"));
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -231,6 +271,14 @@ export function AgentEditorModal({
         web_search_enabled: draft.web_search_enabled,
         mcp_selection_mode: draft.mcp_selection_mode,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
+        image_upload_enabled: draft.image_upload_enabled,
+        vlm_model_id: draft.vlm_model_id || undefined,
+        attachment_image_understanding: draft.attachment_image_understanding,
+        attachment_ocr_max_pages: draft.attachment_ocr_max_pages > 0 ? draft.attachment_ocr_max_pages : undefined,
+        attachment_parse_wait_timeout_sec: draft.attachment_parse_wait_timeout_sec > 0 ? draft.attachment_parse_wait_timeout_sec : undefined,
+        image_storage_provider: draft.image_storage_provider || undefined,
+        audio_upload_enabled: draft.audio_upload_enabled,
+        asr_model_id: draft.asr_model_id || undefined,
       };
 
       const res = agent
@@ -306,6 +354,15 @@ export function AgentEditorModal({
             }`}
           >
             Tools & MCP
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("multimodal")}
+            className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
+              tab === "multimodal" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
+            }`}
+          >
+            {t("agent.tabMultimodal")}
           </button>
         </div>
 
@@ -640,6 +697,182 @@ export function AgentEditorModal({
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Tab: Multimodal */}
+        {tab === "multimodal" && (
+          <div className="space-y-3.5">
+            <div className="rounded-[12px] border border-hairline p-3">
+              <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                <input
+                  type="checkbox"
+                  checked={draft.image_upload_enabled}
+                  disabled={readOnly}
+                  onChange={(e) => patch("image_upload_enabled", e.target.checked)}
+                />
+                <div>
+                  <div className="font-medium text-ink">{t("agent.imageUpload")}</div>
+                  <div className="caption text-muted">{t("agent.imageUploadDesc")}</div>
+                </div>
+              </label>
+            </div>
+
+            {draft.image_upload_enabled && (
+              <>
+                <label className="block">
+                  <span className="caption mb-1.5 block text-muted">
+                    {t("agent.vlmModel")} <span className="text-error">*</span>
+                  </span>
+                  <Select
+                    className="w-full"
+                    value={draft.vlm_model_id}
+                    disabled={readOnly}
+                    onChange={(v) => patch("vlm_model_id", v)}
+                    placeholder={t("model.selectPlaceholder")}
+                    options={[
+                      { value: "", label: t("model.selectPlaceholder") },
+                      ...vlmModels
+                        .filter((m) => m.id)
+                        .map((m) => {
+                          const label = m.display_name?.trim() || m.name;
+                          const meta = [
+                            m.parameters?.parameter_size,
+                            m.parameters?.provider || (m.source === "local" ? "local" : ""),
+                            m.is_default ? "default" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(", ");
+                          return { value: m.id!, label: meta ? `${label} (${meta})` : label };
+                        }),
+                      ...(draft.vlm_model_id && !vlmModels.some((m) => m.id === draft.vlm_model_id)
+                        ? [{ value: draft.vlm_model_id, label: `${draft.vlm_model_id} (Current)` }]
+                        : []),
+                    ]}
+                  />
+                  <p className="caption text-muted mt-1">{t("agent.vlmModelDesc")}</p>
+                </label>
+
+                <div className="rounded-[12px] border border-hairline p-3">
+                  <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={draft.attachment_image_understanding}
+                      disabled={readOnly}
+                      onChange={(e) => patch("attachment_image_understanding", e.target.checked)}
+                    />
+                    <div>
+                      <div className="font-medium text-ink">{t("agent.imageUnderstanding")}</div>
+                      <div className="caption text-muted">{t("agent.imageUnderstandingDesc")}</div>
+                    </div>
+                  </label>
+                </div>
+
+                {draft.attachment_image_understanding && (
+                  <label className="block w-40">
+                    <span className="caption mb-1.5 block text-muted">{t("agent.ocrMaxPages")}</span>
+                    <input
+                      className="input w-full"
+                      type="number"
+                      min={0}
+                      max={64}
+                      step={1}
+                      value={draft.attachment_ocr_max_pages}
+                      disabled={readOnly}
+                      onChange={(e) => patch("attachment_ocr_max_pages", Number(e.target.value))}
+                    />
+                    <p className="caption text-muted mt-1">{t("agent.ocrMaxPagesDesc")}</p>
+                  </label>
+                )}
+
+                <label className="block">
+                  <span className="caption mb-1.5 block text-muted">{t("agent.storageProvider")}</span>
+                  <Select
+                    className="w-full"
+                    value={draft.image_storage_provider}
+                    disabled={readOnly}
+                    onChange={(v) => patch("image_storage_provider", v)}
+                    placeholder={t("agent.storageDefault")}
+                    options={[
+                      { value: "", label: t("agent.storageDefault") },
+                      { value: "local", label: "Local" },
+                      { value: "minio", label: `MinIO${storageStatus.minio === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
+                      { value: "cos", label: `Tencent COS${storageStatus.cos === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
+                      { value: "tos", label: `Volcengine TOS${storageStatus.tos === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
+                      { value: "s3", label: `Amazon S3${storageStatus.s3 === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
+                      { value: "oss", label: `Aliyun OSS${storageStatus.oss === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
+                    ]}
+                  />
+                  <p className="caption text-muted mt-1">{t("agent.storageProviderDesc")}</p>
+                </label>
+              </>
+            )}
+
+            <div className="rounded-[12px] border border-hairline p-3">
+              <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                <input
+                  type="checkbox"
+                  checked={draft.audio_upload_enabled}
+                  disabled={readOnly}
+                  onChange={(e) => patch("audio_upload_enabled", e.target.checked)}
+                />
+                <div>
+                  <div className="font-medium text-ink">{t("agent.audioUpload")}</div>
+                  <div className="caption text-muted">{t("agent.audioUploadDesc")}</div>
+                </div>
+              </label>
+            </div>
+
+            {draft.audio_upload_enabled && (
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("agent.asrModel")}</span>
+                <Select
+                  className="w-full"
+                  value={draft.asr_model_id}
+                  disabled={readOnly}
+                  onChange={(v) => patch("asr_model_id", v)}
+                  placeholder={t("model.selectPlaceholder")}
+                  options={[
+                    { value: "", label: t("model.selectPlaceholder") },
+                    ...asrModels
+                      .filter((m) => m.id)
+                      .map((m) => {
+                        const label = m.display_name?.trim() || m.name;
+                        const meta = [
+                          m.parameters?.provider || (m.source === "local" ? "local" : ""),
+                        ]
+                          .filter(Boolean)
+                          .join(", ");
+                        return { value: m.id!, label: meta ? `${label} (${meta})` : label };
+                      }),
+                    ...(draft.asr_model_id && !asrModels.some((m) => m.id === draft.asr_model_id)
+                      ? [{ value: draft.asr_model_id, label: `${draft.asr_model_id} (Current)` }]
+                      : []),
+                  ]}
+                />
+                <p className="caption text-muted mt-1">{t("agent.asrModelDesc")}</p>
+              </label>
+            )}
+
+            <label className="block w-40">
+              <span className="caption mb-1.5 block text-muted">{t("agent.parseWaitTimeout")}</span>
+              <input
+                className="input w-full"
+                type="number"
+                min={0}
+                max={600}
+                step={10}
+                value={draft.attachment_parse_wait_timeout_sec}
+                disabled={readOnly}
+                onChange={(e) => patch("attachment_parse_wait_timeout_sec", Number(e.target.value))}
+              />
+              <p className="caption text-muted mt-1">{t("agent.parseWaitTimeoutDesc")}</p>
+            </label>
+
+            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-center gap-2">
+              <span className="text-primary font-bold">ℹ</span>
+              <span>{t("agent.multimodalReuploadHint")}</span>
+            </div>
           </div>
         )}
 

@@ -6,6 +6,7 @@ from docreader.models.document import Document
 from docreader.parser.vietnamese_legal_parser import (
     VietnameseLegalPDFParser,
     _PAGE_IMG_BLOCK_RE,
+    _collapse_degenerate_tail,
     _has_broken_vn_text_layer,
     _strip_ocr_markup,
 )
@@ -52,6 +53,44 @@ class TestStripOcrMarkup(unittest.TestCase):
 
     def test_collapses_blank_runs(self):
         self.assertEqual(_strip_ocr_markup("a\n\n\n\nb"), "a\n\nb")
+
+
+class TestCollapseDegenerateTail(unittest.TestCase):
+    def test_collapses_numbered_repeat_tail(self):
+        junk = "".join(
+            f"{i}. Use LaTeX to output the output content. " for i in range(1, 16)
+        )
+        text = "Điều 1. Nội dung thật của trang scan.\n" + junk
+        self.assertEqual(
+            _collapse_degenerate_tail(text),
+            "Điều 1. Nội dung thật của trang scan.",
+        )
+
+    def test_collapses_truncated_final_item(self):
+        # Model hit max_tokens mid-repeat: the last item is a truncation of
+        # the repeated one and would slip past a strict equality check.
+        junk = "".join(
+            f"{i}. Use LaTeX to output the output content. " for i in range(1, 15)
+        ) + "15. Use LaTeX to,"
+        text = "Điều 1. Nội dung thật.\n" + junk
+        self.assertEqual(_collapse_degenerate_tail(text), "Điều 1. Nội dung thật.")
+
+    def test_entire_output_degenerate_returns_empty(self):
+        junk = "".join(
+            f"{i}. Use LaTeX to output the output content. " for i in range(1, 21)
+        )
+        self.assertEqual(_collapse_degenerate_tail(junk), "")
+
+    def test_legit_numbered_list_kept(self):
+        text = (
+            "Steps:\n1. Open the file.\n2. Read the contents.\n"
+            "3. Close the file.\n4. Save the draft.\n5. Submit it."
+        )
+        self.assertEqual(_collapse_degenerate_tail(text), text)
+
+    def test_shared_prefix_different_items_kept(self):
+        text = "Steps:\n1. go to market\n2. go to school\n3. go to work\n4. go to bed\n5. go"
+        self.assertEqual(_collapse_degenerate_tail(text), text)
 
 
 class TestPageMarkers(unittest.TestCase):

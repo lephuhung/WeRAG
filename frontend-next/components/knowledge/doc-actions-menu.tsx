@@ -12,6 +12,7 @@ import {
   IconTrash,
 } from "@/components/icons";
 import {
+  batchQueryKnowledge,
   cancelKnowledgeParse,
   deleteKnowledge,
   downloadKnowledge,
@@ -20,6 +21,7 @@ import {
   type KnowledgeDoc,
   type KnowledgeFolderNode,
 } from "@/lib/api/knowledge";
+import { waitForKnowledgeDeletion } from "@/lib/knowledge-deletion";
 import { useT } from "@/lib/i18n";
 
 /* Ported from frontend/src/views/knowledge/components/DocumentActionMenu.vue,
@@ -48,6 +50,7 @@ export function DocActionsMenu({
   kbId,
   canMutate,
   onChanged,
+  onDeleted,
   onReparse,
 }: {
   doc: KnowledgeDoc;
@@ -55,6 +58,9 @@ export function DocActionsMenu({
   canMutate: boolean;
   /** Called after an action that changed the document (delete/move/cancel…). */
   onChanged: () => void;
+  /** Called once a delete is submitted so the parent can flag the row as
+   * 'deleting' while the async backend task runs. */
+  onDeleted?: (doc: KnowledgeDoc) => void;
   /** Rebuild opens the parse-settings dialog (Vue UploadConfirmDialog
    * reparse mode); the owner submits reparseKnowledge from there. */
   onReparse?: (doc: KnowledgeDoc) => void;
@@ -159,11 +165,43 @@ export function DocActionsMenu({
   const moveTo = (path: string) =>
     run(() => moveKnowledgeToFolder(kbId, [doc.id], path));
 
+  /* Backend deletion is asynchronous (parse_status → 'deleting' → row
+   * removed), so reloading the list as soon as DELETE returns can still
+   * contain the document — that forced a manual refresh. Submit, flag the
+   * row via onDeleted, then poll the batch endpoint until the id stops
+   * coming back; only then refresh (mirrors Vue deleteKnowledgeDocuments +
+   * waitForKnowledgeDeletion). */
+  const submitDelete = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deleteKnowledge(doc.id);
+    } catch {
+      setError(t("doc.actionFailed"));
+      setBusy(false);
+      return;
+    }
+    close();
+    setBusy(false);
+    onDeleted?.(doc);
+    void waitForKnowledgeDeletion(
+      [doc.id],
+      (ids) =>
+        batchQueryKnowledge(
+          ids.map((i) => `ids=${encodeURIComponent(i)}`).join("&"),
+          kbId,
+        ),
+    )
+      .catch(() => {})
+      .finally(() => onChanged());
+  };
+
   const itemCls =
     "flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] leading-5 text-ink transition-colors hover:bg-surface-strong";
   const dangerCls = `${itemCls} text-error hover:bg-surface-strong`;
 
-  const confirmView = (message: string, okLabel: string, action: () => Promise<unknown>) => (
+  const confirmView = (message: string, okLabel: string, onOk: () => void) => (
     <div className="p-3">
       <p className="text-[12.5px] leading-[18px] text-body">{message}</p>
       {error && <p className="caption mt-1.5 text-error">{error}</p>}
@@ -175,7 +213,7 @@ export function DocActionsMenu({
           type="button"
           className="btn btn-primary btn-sm h-7"
           disabled={busy}
-          onClick={() => void run(action)}
+          onClick={onOk}
         >
           {okLabel}
         </button>
@@ -192,9 +230,11 @@ export function DocActionsMenu({
       onClick={(e) => e.stopPropagation()}
     >
       {mode === "confirm-cancel" &&
-        confirmView(t("doc.cancelParseConfirm", { fileName }), t("doc.cancelParse"), () => cancelKnowledgeParse(doc.id))}
+        confirmView(t("doc.cancelParseConfirm", { fileName }), t("doc.cancelParse"), () =>
+          void run(() => cancelKnowledgeParse(doc.id)),
+        )}
       {mode === "confirm-delete" &&
-        confirmView(t("doc.deleteConfirm", { fileName }), t("doc.delete"), () => deleteKnowledge(doc.id))}
+        confirmView(t("doc.deleteConfirm", { fileName }), t("doc.delete"), () => void submitDelete())}
 
       {mode === "folder" && (
         <div>

@@ -30,6 +30,7 @@ type TenantHandler struct {
 	userService   interfaces.UserService
 	memberService interfaces.TenantMemberService
 	kbService     interfaces.KnowledgeBaseService
+	modelService  interfaces.ModelService
 	config        *config.Config
 	// systemSettingSvc resolves runtime tenant policies and limits.
 	// Reading goes DB > ENV >
@@ -61,6 +62,7 @@ func NewTenantHandler(
 	userService interfaces.UserService,
 	memberService interfaces.TenantMemberService,
 	kbService interfaces.KnowledgeBaseService,
+	modelService interfaces.ModelService,
 	config *config.Config,
 	systemSettingSvc interfaces.SystemSettingService,
 ) *TenantHandler {
@@ -70,6 +72,7 @@ func NewTenantHandler(
 		userService:      userService,
 		memberService:    memberService,
 		kbService:        kbService,
+		modelService:     modelService,
 		config:           config,
 		systemSettingSvc: systemSettingSvc,
 	}
@@ -1699,6 +1702,13 @@ func (h *TenantHandler) updateTenantChatHistoryConfigInternal(c *gin.Context) {
 		return
 	}
 
+	// Reject non-UUID refs (e.g. a model name) — the indexing job resolves
+	// this id via GetModelByID and would fail silently for every message.
+	if err := h.validateConfigModelID(ctx, "embedding_model_id", req.EmbeddingModelID, types.ModelTypeEmbedding); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
 	existing := tenant.ChatHistoryConfig
 
 	// Build the new config, preserving the internally-managed knowledge_base_id
@@ -1911,6 +1921,17 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 		return
 	}
 
+	// Same guard as chat history config: names/stale ids would fail silently
+	// in the background extraction and vector-recall jobs.
+	if err := h.validateConfigModelID(ctx, "extract_model_id", cfg.ExtractModelID, ""); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	if err := h.validateConfigModelID(ctx, "embedding_model_id", cfg.EmbeddingModelID, types.ModelTypeEmbedding); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
 	tenant.MemoryConfig = &cfg
 	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
 	if err != nil {
@@ -1927,6 +1948,25 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 		"data":    updatedTenant.MemoryConfig,
 		"message": "Memory configuration updated successfully",
 	})
+}
+
+// validateConfigModelID resolves a *_model_id config field against the models
+// table so a UI or API caller cannot persist a model name or stale id that the
+// background jobs would then fail to resolve. Empty ids are allowed (field
+// unset); wantType empty skips the type check. GetModelByID also enforces
+// tenant scope and rejects non-active models.
+func (h *TenantHandler) validateConfigModelID(ctx context.Context, field, id string, wantType types.ModelType) error {
+	if id == "" {
+		return nil
+	}
+	m, err := h.modelService.GetModelByID(ctx, id)
+	if err != nil || m == nil {
+		return fmt.Errorf("%s: model %q not found", field, id)
+	}
+	if wantType != "" && m.Type != wantType {
+		return fmt.Errorf("%s: model %q has type %q, expected %q", field, id, m.Type, wantType)
+	}
+	return nil
 }
 
 func validateParserEngineOutboundURLs(cfg *types.ParserEngineConfig) error {

@@ -49,7 +49,7 @@ export function Header() {
       if (token) {
         await fetch("/api/v1/auth/logout", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Accept-Language": "zh-CN" },
           body: "{}",
         });
       }

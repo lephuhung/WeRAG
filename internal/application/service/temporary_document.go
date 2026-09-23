@@ -112,6 +112,7 @@ type temporaryDocumentService struct {
 	tenantService      interfaces.TenantService
 	taskEnqueuer       interfaces.TaskEnqueuer
 	sessionAttachments sessionAttachmentLookup
+	auditLog           interfaces.AuditLogService
 }
 
 func NewTemporaryDocumentService(
@@ -124,12 +125,13 @@ func NewTemporaryDocumentService(
 	tenantService interfaces.TenantService,
 	taskEnqueuer interfaces.TaskEnqueuer,
 	messages interfaces.MessageRepository,
+	auditLog interfaces.AuditLogService,
 ) interfaces.TemporaryDocumentService {
 	return &temporaryDocumentService{
 		repo: repo, fileService: fileService, resourceCatalog: resourceCatalog,
 		documentReader: documentReader, imageResolver: imageResolver,
 		modelService: modelService, tenantService: tenantService, taskEnqueuer: taskEnqueuer,
-		sessionAttachments: messages,
+		sessionAttachments: messages, auditLog: auditLog,
 	}
 }
 
@@ -214,6 +216,7 @@ func (s *temporaryDocumentService) Create(
 		asynq.Queue(queue), asynq.MaxRetry(2), asynq.Timeout(10*time.Minute),
 	); err != nil {
 		_ = s.repo.MarkFailed(ctx, tenantID, document.ID, "failed to schedule document parsing")
+		s.auditParseFailure(ctx, document, "enqueue", "failed to schedule document parsing")
 		document.Status = types.TemporaryDocumentStatusFailed
 		document.ErrorMessage = "failed to schedule document parsing"
 		return document, fmt.Errorf("schedule attachment parsing: %w", err)
@@ -375,6 +378,7 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 			message = message[:2000]
 		}
 		_ = s.repo.MarkFailed(ctx, payload.TenantID, payload.DocumentID, message)
+		s.auditParseFailure(ctx, document, "parse", message)
 		logger.Errorf(ctx, "temporary document parse failed: document_id=%s err=%v", payload.DocumentID, parseErr)
 		if hasRetryCount && hasMaxRetry {
 			return parseErr
@@ -409,6 +413,33 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	return s.repo.MarkReady(ctx, payload.TenantID, payload.DocumentID, content,
 		types.JSON(chunksJSON), types.JSON(imagesJSON), types.JSON(metadataJSON),
 		chunker.ApproxTokenCount(content, lang), len(chunks), time.Now())
+}
+
+// auditParseFailure records a terminal attachment parsing failure in the audit
+// log so the event is traceable outside the chat timeline. Audit writes are
+// best-effort: a logging failure must never break the upload or worker path.
+func (s *temporaryDocumentService) auditParseFailure(ctx context.Context, document *types.TemporaryDocument, stage, errMsg string) {
+	if s.auditLog == nil || document == nil {
+		return
+	}
+	details, _ := json.Marshal(map[string]string{
+		"file_name": document.FileName,
+		"file_type": document.FileType,
+		"stage":     stage,
+		"error":     errMsg,
+	})
+	if err := s.auditLog.Log(ctx, &types.AuditLog{
+		TenantID:   document.TenantID,
+		Action:     types.AuditActionAttachmentParseFailed,
+		ScopeType:  "session",
+		ScopeID:    document.SessionID,
+		TargetType: "temporary_document",
+		TargetID:   document.ID,
+		Outcome:    types.AuditOutcomeFailed,
+		Details:    types.JSON(details),
+	}); err != nil {
+		logger.Warnf(ctx, "audit log for failed attachment %s failed: %v", document.ID, err)
+	}
 }
 
 func (s *temporaryDocumentService) parse(ctx context.Context, document *types.TemporaryDocument) (string, []types.TemporaryDocumentImage, map[string]string, error) {
@@ -470,7 +501,13 @@ func (s *temporaryDocumentService) parse(ctx context.Context, document *types.Te
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("parse document: %w", err)
 	}
-	if result != nil && result.MarkdownContent != "" {
+	if result == nil {
+		return "", nil, nil, fmt.Errorf("parse document: empty result")
+	}
+	if result.Error != "" {
+		return "", nil, nil, fmt.Errorf("parse document: %s", result.Error)
+	}
+	if result.MarkdownContent != "" {
 		result.MarkdownContent = chunker.NormalizeLineEndings(result.MarkdownContent)
 		result.MarkdownContent = docparser.NormalizeHTMLTables(result.MarkdownContent)
 	}

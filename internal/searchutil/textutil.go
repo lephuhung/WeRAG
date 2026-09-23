@@ -213,13 +213,33 @@ func CollapseDegenerateTail(text string) string {
 	}
 
 	last := segs[len(segs)-1].norm
-	i := len(segs) - 1
-	for i-1 >= 0 && last != "" && segs[i-1].norm == last {
-		i--
+	cutStart := -1
+	if last != "" {
+		// Identical-item run ending at (and including) the last segment.
+		i := len(segs) - 1
+		for i-1 >= 0 && segs[i-1].norm == last {
+			i--
+		}
+		if len(segs)-i >= degenerateMinRun && len([]rune(last)) >= degenerateMinSegmentLen {
+			cutStart = segs[i].boundStart
+		} else if len(segs) >= 2 {
+			// The final item may be a truncation of the repeated one (the
+			// model ran out of max_tokens mid-sentence): it still counts
+			// when it is a prefix of the identical items in front of it.
+			canon := segs[len(segs)-2].norm
+			if canon != "" && strings.HasPrefix(canon, last) {
+				j := len(segs) - 2
+				for j-1 >= 0 && segs[j-1].norm == canon {
+					j--
+				}
+				if len(segs)-j >= degenerateMinRun && len([]rune(canon)) >= degenerateMinSegmentLen {
+					cutStart = segs[j].boundStart
+				}
+			}
+		}
 	}
-	run := len(segs) - i
-	if run >= degenerateMinRun && len([]rune(last)) >= degenerateMinSegmentLen {
-		return strings.TrimRight(text[:segs[i].boundStart], " \t\n")
+	if cutStart >= 0 {
+		return strings.TrimRight(text[:cutStart], " \t\n")
 	}
 	return text
 }

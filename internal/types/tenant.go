@@ -345,7 +345,10 @@ type ParserEngineConfig struct {
 	PaddleOCRVLPrompt   string `json:"paddleocr_vl_prompt,omitempty"`   // openai mode: optional OCR prompt
 	// openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs +
 	// skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.
-	PaddleOCRVLVllmXargs           string `json:"paddleocr_vl_vllm_xargs,omitempty"`
+	PaddleOCRVLVllmXargs string `json:"paddleocr_vl_vllm_xargs,omitempty"`
+	// openai mode: repetition_penalty for /chat/completions (vLLM extension);
+	// default 1.05 breaks degenerate loops, "1"/"0" disables.
+	PaddleOCRVLRepetitionPenalty   string `json:"paddleocr_vl_repetition_penalty,omitempty"`
 	PaddleOCRVLUseSealRecognition  *bool  `json:"paddleocr_vl_use_seal_recognition,omitempty"`
 	PaddleOCRVLUseChartRecognition *bool  `json:"paddleocr_vl_use_chart_recognition,omitempty"`
 
@@ -477,6 +480,9 @@ func (c *ParserEngineConfig) ToOverridesMap() map[string]string {
 	}
 	if c.PaddleOCRVLVllmXargs != "" {
 		m["paddleocr_vl_vllm_xargs"] = c.PaddleOCRVLVllmXargs
+	}
+	if c.PaddleOCRVLRepetitionPenalty != "" {
+		m["paddleocr_vl_repetition_penalty"] = c.PaddleOCRVLRepetitionPenalty
 	}
 	if c.PaddleOCRVLUseSealRecognition != nil {
 		m["paddleocr_vl_use_seal_recognition"] = fmt.Sprintf("%v", *c.PaddleOCRVLUseSealRecognition)

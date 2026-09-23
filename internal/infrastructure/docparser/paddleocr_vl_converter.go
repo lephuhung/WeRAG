@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
@@ -37,30 +39,47 @@ const paddleOCRVLTimeout = 1000 * time.Second // large scanned PDFs can take a w
 // Mode is auto-detected: an endpoint whose path ends in "/v1" selects
 // "openai"; anything else selects "layout". paddleocr_vl_api overrides it.
 type PaddleOCRVLReader struct {
-	endpoint     string
-	apiMode      string
-	ocrModel     string
-	ocrAPIKey    string
-	ocrPrompt    string
-	ocrVllmXargs string
-	useSeal      bool
-	useChart     bool
-	remote       interfaces.DocReader
+	endpoint      string
+	apiMode       string
+	ocrModel      string
+	ocrAPIKey     string
+	ocrPrompt     string
+	ocrVllmXargs  string
+	ocrRepPenalty float64
+	// ocrRepPenaltySet reports whether the tenant explicitly configured
+	// paddleocr_vl_repetition_penalty; only then is it forwarded to the
+	// docreader (which otherwise falls back to its own env default).
+	ocrRepPenaltySet bool
+	useSeal          bool
+	useChart         bool
+	remote           interfaces.DocReader
 }
 
 // NewPaddleOCRVLReader creates a reader from ParserEngineOverrides.
 // remote is the docreader client used for OpenAI-mode PDF rendering (may be nil).
 func NewPaddleOCRVLReader(overrides map[string]string, remote interfaces.DocReader) *PaddleOCRVLReader {
+	// Default 1.05 breaks SenOCR-Vi's degenerate loops (instruction-template
+	// echoes run to max_tokens otherwise); set the override to "1" or "0"
+	// for endpoints that reject the repetition_penalty extension.
+	rp, rpSet := 1.05, false
+	if raw := strings.TrimSpace(overrides["paddleocr_vl_repetition_penalty"]); raw != "" {
+		rpSet = true
+		if v, err := strconv.ParseFloat(raw, 64); err == nil {
+			rp = v
+		}
+	}
 	return &PaddleOCRVLReader{
-		endpoint:     strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"),
-		apiMode:      resolvePaddleOCRVLAPIMode(overrides),
-		ocrModel:     strings.TrimSpace(overrides["paddleocr_vl_model"]),
-		ocrAPIKey:    overrides["paddleocr_vl_api_key"],
-		ocrPrompt:    overrides["paddleocr_vl_prompt"],
-		ocrVllmXargs: strings.TrimSpace(overrides["paddleocr_vl_vllm_xargs"]),
-		useSeal:      parseBoolOr(overrides["paddleocr_vl_use_seal_recognition"], true),
-		useChart:     parseBoolOr(overrides["paddleocr_vl_use_chart_recognition"], false),
-		remote:       remote,
+		endpoint:         strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"),
+		apiMode:          resolvePaddleOCRVLAPIMode(overrides),
+		ocrModel:         strings.TrimSpace(overrides["paddleocr_vl_model"]),
+		ocrAPIKey:        overrides["paddleocr_vl_api_key"],
+		ocrPrompt:        overrides["paddleocr_vl_prompt"],
+		ocrVllmXargs:     strings.TrimSpace(overrides["paddleocr_vl_vllm_xargs"]),
+		ocrRepPenalty:    rp,
+		ocrRepPenaltySet: rpSet,
+		useSeal:          parseBoolOr(overrides["paddleocr_vl_use_seal_recognition"], true),
+		useChart:         parseBoolOr(overrides["paddleocr_vl_use_chart_recognition"], false),
+		remote:           remote,
 	}
 }
 
@@ -356,6 +375,9 @@ func (c *PaddleOCRVLReader) readOpenAI(ctx context.Context, req *types.ReadReque
 		"openai_ocr_prompt":     c.ocrPrompt,
 		"openai_ocr_vllm_xargs": xargs,
 	}
+	if c.ocrRepPenaltySet {
+		overrides["openai_ocr_repetition_penalty"] = strconv.FormatFloat(c.ocrRepPenalty, 'f', -1, 64)
+	}
 	res, err := c.remote.Read(ctx, &types.ReadRequest{
 		FileContent:           req.FileContent,
 		FileName:              req.FileName,
@@ -392,7 +414,7 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 	if len(image) > 2 && image[0] == 0xFF && image[1] == 0xD8 {
 		mime = "image/jpeg"
 	}
-	payload, _ := json.Marshal(map[string]any{
+	reqBody := map[string]any{
 		"model": c.ocrModel,
 		"messages": []any{
 			map[string]any{
@@ -406,7 +428,11 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 			},
 		},
 		"temperature": 0.0,
-	})
+	}
+	if c.ocrRepPenalty > 0 && c.ocrRepPenalty != 1.0 {
+		reqBody["repetition_penalty"] = c.ocrRepPenalty
+	}
+	payload, _ := json.Marshal(reqBody)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return "", err
@@ -466,11 +492,14 @@ var (
 )
 
 func stripOCRMarkup(text string) string {
-	if !strings.Contains(text, "<|") {
-		return text
+	if strings.Contains(text, "<|") {
+		text = ocrDetBlockPattern.ReplaceAllString(text, "")
+		text = ocrSpecialTokenPattern.ReplaceAllString(text, "")
 	}
-	text = ocrDetBlockPattern.ReplaceAllString(text, "")
-	text = ocrSpecialTokenPattern.ReplaceAllString(text, "")
+	// Degenerate repeats (e.g. SenOCR-Vi echoing its instruction template in a
+	// numbered loop until max_tokens) carry no detector markup, so this runs
+	// unconditionally — it is a no-op on clean output.
+	text = searchutil.CollapseDegenerateTail(text)
 	return strings.TrimSpace(ocrMultiBlankPattern.ReplaceAllString(text, "\n\n"))
 }
 

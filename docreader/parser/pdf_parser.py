@@ -224,6 +224,22 @@ def _page_image_area_ratio(page, raw) -> float:
     return _page_object_stats(page, raw)[0]
 
 
+_REF_UNSAFE_CHARS_RE = re.compile(r"[^\w.\-]+", re.UNICODE)
+
+
+def _ref_base_name(file_name: str) -> str:
+    """Filesystem/markdown-safe base for generated image ref filenames.
+
+    Parens, brackets and spaces from the original file name would end up
+    inside generated refs like ``images/<base>_page_1.jpg`` — the markdown
+    image syntax ``](...)`` then contains unescaped parens and downstream
+    consumers matching refs with a strict pattern (e.g. VN-OCR page routing)
+    silently fail, disabling OCR for files named e.g. ``doc (1).pdf``.
+    """
+    base = os.path.splitext(file_name or "document")[0]
+    return _REF_UNSAFE_CHARS_RE.sub("_", base).strip("_") or "document"
+
+
 def _extract_page_text(page) -> str:
     """Plain top-to-bottom text extraction (fallback path)."""
     textpage = None
@@ -1401,7 +1417,7 @@ class PDFScannedParser(BaseParser):
 
         images = {}
         markdown_lines = []
-        base_name = os.path.splitext(self.file_name or "document")[0]
+        base_name = _ref_base_name(self.file_name)
 
         logger.info(
             "PDFScannedParser: Rendering PDF pages to JPEG images for %s",
@@ -1582,7 +1598,7 @@ class PDFParser(BaseParser):
         import pypdfium2 as pdfium
         import pypdfium2.raw as pdfium_r
 
-        base_name = os.path.splitext(self.file_name or "document")[0]
+        base_name = _ref_base_name(self.file_name)
         scale = max(1, CONFIG.pdf_render_dpi) / 72
         quality = _normalize_image_quality(CONFIG.pdf_jpeg_quality)
 

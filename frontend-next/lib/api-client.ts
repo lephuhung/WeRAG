@@ -60,6 +60,26 @@ function isValidTenantId(id: string | null | undefined): boolean {
   return !Number.isNaN(n) && n > 0;
 }
 
+// Backend Language() middleware reads the first Accept-Language tag
+// (frontend/src/utils/request.ts sent the UI locale the same way; "zh-CN"
+// default). Locales here are short ("en"|"vi"|"zh") — expand to the BCP-47
+// tags the backend localizes (en-US, vi-VN, zh-CN).
+const LOCALE_TO_BCP47: Record<string, string> = {
+  en: "en-US",
+  vi: "vi-VN",
+  zh: "zh-CN",
+};
+
+function acceptLanguageHeader(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem("werag_locale")?.trim() || localStorage.getItem("locale")?.trim() || "";
+    const base = raw.split(/[-_]/)[0]?.toLowerCase() || "";
+    return { "Accept-Language": LOCALE_TO_BCP47[base] ?? "zh-CN" };
+  } catch {
+    return { "Accept-Language": "zh-CN" };
+  }
+}
+
 function selectedTenantHeader(skip: boolean): Record<string, string> {
   if (skip) return {};
   try {
@@ -200,6 +220,7 @@ async function request<T>(path: string, init: RequestInit, opts?: ApiRequestOpti
     headers: {
       "Content-Type": "application/json",
       "X-Request-ID": `${Math.random().toString(36).slice(2, 14)}`,
+      ...acceptLanguageHeader(),
       ...(!isEmbed && token ? { Authorization: `Bearer ${token}` } : {}),
       ...selectedTenantHeader(isEmbed),
       ...(init.headers ?? {}),
@@ -249,7 +270,7 @@ export function apiDel<T>(path: string, body?: unknown, opts?: ApiRequestOptions
   );
 }
 
-async function downloadRequest(path: string, init: RequestInit, opts?: ApiRequestOptions): Promise<Blob> {
+async function downloadRequest(path: string, init: RequestInit, opts?: ApiRequestOptions, retry = true): Promise<Blob> {
   const { token } = getTokens();
   const isEmbed = path.includes("/api/v1/embed/");
   const controller = new AbortController();
@@ -258,11 +279,35 @@ async function downloadRequest(path: string, init: RequestInit, opts?: ApiReques
     signal: wireSignal(controller, opts),
     headers: {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...acceptLanguageHeader(),
       ...(!isEmbed && token ? { Authorization: `Bearer ${token}` } : {}),
       ...selectedTenantHeader(isEmbed),
       ...(opts?.headers ?? {}),
     },
   });
+  if (
+    res.status === 401 &&
+    retry &&
+    !isEmbed &&
+    !isPublicAuthPath(path)
+  ) {
+    /* Same refresh-then-replay contract as request(): Vue's axios
+     * interceptor covers downloads too — without this an expired access
+     * token fails downloads/uploads while every JSON call self-heals. */
+    const next = await refreshAccessToken();
+    return downloadRequest(
+      path,
+      {
+        ...init,
+        headers: {
+          ...(init.headers ?? {}),
+          Authorization: `Bearer ${next}`,
+        },
+      },
+      opts,
+      false,
+    );
+  }
   if (!res.ok) {
     // A failed download still returns a JSON error body — unwrap it.
     const text = await res.text().catch(() => "");
@@ -296,6 +341,7 @@ export function apiUpload<T>(
   form: FormData,
   onProgress?: (percent: number) => void,
   opts?: ApiRequestOptions,
+  retry = true,
 ): Promise<T> {
   const token = (() => {
     try {
@@ -319,7 +365,11 @@ export function apiUpload<T>(
     if (!isEmbed && token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     if (!isEmbed && tenantId) xhr.setRequestHeader("X-Tenant-ID", tenantId);
     xhr.setRequestHeader("X-Request-ID", Math.random().toString(36).slice(2, 14));
-    for (const [k, v] of Object.entries(opts?.headers ?? {})) xhr.setRequestHeader(k, v);
+    try {
+      xhr.setRequestHeader("Accept-Language", acceptLanguageHeader()["Accept-Language"]);
+    } catch {
+      /* locale is best-effort */
+    }
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(Math.round((e.loaded * 100) / e.total));
     };
@@ -332,12 +382,39 @@ export function apiUpload<T>(
     }
     xhr.onabort = () => reject(new ApiError(0, "Upload aborted"));
     xhr.onload = () => {
+      if (
+        xhr.status === 401 &&
+        retry &&
+        !isEmbed &&
+        !isPublicAuthPath(path)
+      ) {
+        /* The upload ran with a stale access token: refresh once and
+         * resend the same FormData, like request()'s replay. */
+        refreshAccessToken()
+          .then(() => resolve(apiUpload(path, form, onProgress, opts, false)))
+          .catch(reject);
+        return;
+      }
+      /* Error bodies are not always the JSON envelope (nginx 413/504
+       * pages, proxies). Don't leak the JSON.parse SyntaxError as the
+       * user-facing message. */
+      let payload: T | null = null;
       try {
-        const payload = JSON.parse(xhr.responseText) as T;
-        if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
-        else reject(new ApiError(xhr.status, envelopeMessage(payload), payload));
-      } catch (err) {
-        reject(err instanceof Error ? err : new ApiError(xhr.status, "Upload failed"));
+        payload = xhr.responseText ? (JSON.parse(xhr.responseText) as T) : null;
+      } catch {
+        payload = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (payload !== null) resolve(payload);
+        else reject(new ApiError(xhr.status, "Upload failed: empty response"));
+      } else {
+        reject(
+          new ApiError(
+            xhr.status,
+            payload ? envelopeMessage(payload) : `Upload failed: HTTP ${xhr.status}`,
+            payload ?? undefined,
+          ),
+        );
       }
     };
     xhr.onerror = () => reject(new ApiError(0, "Network error during upload"));

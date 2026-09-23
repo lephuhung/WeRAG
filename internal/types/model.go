@@ -22,6 +22,15 @@ const (
 	ModelTypeASR         ModelType = "ASR"         // ASR (Automatic Speech Recognition) model
 )
 
+// Valid reports whether t is one of the supported model types.
+func (t ModelType) Valid() bool {
+	switch t {
+	case ModelTypeEmbedding, ModelTypeRerank, ModelTypeKnowledgeQA, ModelTypeVLLM, ModelTypeASR:
+		return true
+	}
+	return false
+}
+
 // ModelStatus represents the status of the model
 type ModelStatus string
 

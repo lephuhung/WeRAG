@@ -21,6 +21,9 @@ import (
 const (
 	// maxTextFileLines is the line limit for inline text content; excess lines are truncated.
 	maxTextFileLines = 500
+	// maxParseErrorLen caps the failure reason carried in MessageAttachment so a
+	// pathological parser error cannot bloat the prompt or the stored message.
+	maxParseErrorLen = 1000
 	// textFileExtensions lists plain-text extensions handled by the line-based reader.
 	textFileExtensions = ".txt,.md,.markdown,.json,.xml,.yaml,.yml,.csv,.log"
 )
@@ -95,30 +98,36 @@ func (p *AttachmentProcessor) ProcessAttachment(
 		FileSize: fileSize,
 	}
 
-	// Extract text content based on file type; errors are non-fatal.
+	// Extract text content based on file type; errors are non-fatal. They are
+	// recorded in ParseError so BuildPrompt can instruct the model not to
+	// fabricate the attachment's contents.
 	if p.isTextFile(ext) {
 		if err := p.processTextFile(ctx, data, attachment); err != nil {
 			logger.Warnf(ctx, "text file processing failed: %v", err)
-			attachment.Content = fmt.Sprintf("<error><message>Failed to process text file</message><details>%v</details></error>", err)
+			attachment.ParseError = fmt.Sprintf("failed to process text file: %v", err)
 		}
 	} else if docparser.IsAudioFormat(ext) {
 		if err := p.processAudioFile(ctx, data, baseName, attachment, asrModelID); err != nil {
 			logger.Warnf(ctx, "audio transcription failed: %v, keeping placeholder", err)
-			attachment.Content = fmt.Sprintf("<error><message>Failed to transcribe audio file</message><details>%v</details></error>", err)
+			attachment.ParseError = fmt.Sprintf("failed to transcribe audio file: %v", err)
 		}
 	} else if docparser.IsSimpleFormat(ext) {
 		if err := p.processWithDocParser(ctx, data, baseName, ext, attachment, tenantID); err != nil {
 			logger.Warnf(ctx, "SimpleFormatReader failed: %v", err)
-			attachment.Content = fmt.Sprintf("<error><message>Failed to parse document</message><details>%v</details></error>", err)
+			attachment.ParseError = fmt.Sprintf("failed to parse document: %v", err)
 		}
 	} else {
 		if err := p.processWithDocumentReader(ctx, data, baseName, ext, attachment, tenantID); err != nil {
 			logger.Warnf(ctx, "DocumentReader failed: %v, keeping metadata only", err)
-			attachment.Content = fmt.Sprintf("<error><message>Failed to read document</message><details>%v</details></error>", err)
+			attachment.ParseError = fmt.Sprintf("failed to read document: %v", err)
 		}
 	}
 
 	attachment.Content = common.CleanInvalidUTF8(attachment.Content)
+	attachment.ParseError = common.CleanInvalidUTF8(attachment.ParseError)
+	if len(attachment.ParseError) > maxParseErrorLen {
+		attachment.ParseError = attachment.ParseError[:maxParseErrorLen]
+	}
 
 	logger.Infof(ctx, "attachment processed: fileName=%s, truncated=%v, contentLen=%d",
 		secutils.SanitizeForLog(baseName), attachment.IsTruncated, len(attachment.Content))

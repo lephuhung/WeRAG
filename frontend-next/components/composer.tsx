@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconPlus, IconSend } from "@/components/icons";
+import { IconGlobe, IconPlus, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
@@ -272,10 +272,10 @@ export function Composer({
             onClick={() => toggleWebSearch(!websearchOn)}
             title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
             className={`flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-[13px] font-medium transition-colors sm:px-3 ${
-              websearchOn ? "border-ink bg-ink text-white" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+              websearchOn ? "border-[#cfe1fd] bg-[#edf5ff] text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
             } ${webSearchReady ? "" : "opacity-50"}`}
           >
-            <span aria-hidden>🌐</span> {websearchOn ? "Web on" : "Web"}
+            <IconGlobe className="h-3.5 w-3.5" /> {websearchOn ? "Web on" : "Web"}
           </button>
 
           {imageCapable && (

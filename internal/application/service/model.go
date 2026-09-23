@@ -180,6 +180,12 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 		return err
 	}
 
+	// An unknown/empty type would land in the table and then fail every
+	// type-gated lookup (agent resolution, selector filters) downstream.
+	if !model.Type.Valid() {
+		return fmt.Errorf("invalid model type %q", model.Type)
+	}
+
 	// Handle remote models (e.g., OpenAI, Azure)
 	if model.Source == types.ModelSourceRemote {
 		logger.Info(ctx, "Remote model detected, setting status to active")

@@ -1,6 +1,7 @@
 import { apiGet } from "@/lib/api-client";
+import type { SuggestedQuestion } from "@/lib/api/agents";
 
-export type SuggestedQuestion = { question: string };
+export type { SuggestedQuestion };
 
 /* Ported from frontend/src/api/agent/index.ts getSuggestedQuestions.
  * Vue resolves agentId from settingsStore.selectedAgentId; the Next shell has

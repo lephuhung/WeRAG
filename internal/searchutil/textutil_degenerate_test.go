@@ -91,6 +91,26 @@ func TestCollapseDegenerateTail_BlankLineSeparatedItems(t *testing.T) {
 	}
 }
 
+func TestCollapseDegenerateTail_TruncatedLastItem(t *testing.T) {
+	// The model hits max_tokens mid-repeat: the final item is a truncation
+	// of the repeated one, which a strict equality run would miss.
+	junk := repeat(14, "%d. Use LaTeX to output the output content. ") + "15. Use LaTeX to,"
+	input := "Điều 1. Nội dung thật của trang scan.\n" + junk
+	got := CollapseDegenerateTail(input)
+	if got != "Điều 1. Nội dung thật của trang scan." {
+		t.Fatalf("expected degenerate tail with truncated last item removed, got:\n%s", got)
+	}
+}
+
+func TestCollapseDegenerateTail_SharedPrefixDifferentItemsKept(t *testing.T) {
+	// Items that merely share a prefix with the last one but differ among
+	// themselves are a legitimate list, not a degeneration.
+	input := "Steps:\n1. go to market\n2. go to school\n3. go to work\n4. go to bed\n5. go"
+	if got := CollapseDegenerateTail(input); got != input {
+		t.Fatalf("distinct items sharing a prefix must be kept, got:\n%s", got)
+	}
+}
+
 func TestInlineImageText_CollapsesDegenerateOCR(t *testing.T) {
 	content := "![page1](resource://page1)"
 	raw := `[{"url":"resource://page1","ocr_text":"Điều 1. Thật ` +

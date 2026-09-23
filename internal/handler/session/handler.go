@@ -64,6 +64,9 @@ type Handler struct {
 	// forkService branches a session at a chosen user message. May be nil in
 	// deployments where fork is not wired; ForkSession checks.
 	forkService sessionForker
+	// auditLog records attachment-processing failures. Best-effort only: nil in
+	// deployments without audit wiring and never allowed to fail a chat turn.
+	auditLog interfaces.AuditLogService
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -97,6 +100,7 @@ func NewHandler(
 	desktopLast service.SandboxDesktopLastStore,
 	rdb *redis.Client,
 	forkService *service.SessionForkService,
+	auditLog interfaces.AuditLogService,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -125,6 +129,7 @@ func NewHandler(
 		desktopTickets:        desktopTickets,
 		desktopLast:           desktopLast,
 		redis:                 rdb,
+		auditLog:              auditLog,
 		attachmentProcessor: NewAttachmentProcessor(
 			fileService,
 			documentReader,

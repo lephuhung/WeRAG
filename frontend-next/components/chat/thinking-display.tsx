@@ -2,7 +2,18 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "@/components/markdown";
-import type { ToolEventItem } from "./tool-result-card";
+import { useT } from "@/lib/i18n";
+import { IconBulb, IconCheckCircleFilled, IconMinusCircle } from "@/components/icons";
+import {
+  stepsSummaryNodes,
+  thinkingSummaryText,
+  toolStepIcon,
+  toolStepSummary,
+  toolStepTitle,
+  type AgentStepItem,
+  type ThinkingStep,
+  type ToolStep,
+} from "./agent-steps";
 import type { KnowledgeReferenceItem } from "./references-drawer";
 
 // Only the tail of the reasoning stream is rendered: bounds the DOM size and
@@ -25,23 +36,43 @@ function fmtDuration(seconds: number): string {
   return s ? `${m} phút ${s} giây` : `${m} phút`;
 }
 
+const isThinkingStep = (
+  s: AgentStepItem,
+): s is ThinkingStep | (ToolStep & { tool_name: "thinking" }) =>
+  s.type === "thinking" || (s.type === "tool" && s.tool_name === "thinking");
+
+const thinkingBody = (s: ThinkingStep | ToolStep): string =>
+  s.type === "thinking"
+    ? s.content
+    : String(s.tool_data?.thought || (typeof s.output === "string" ? s.output : "") || "");
+
+const thinkingTitle = (s: ThinkingStep | ToolStep, t: (k: "step.think") => string): string =>
+  s.type === "thinking" ? (s.title ?? "") : t("step.think");
+
+const stepPending = (s: AgentStepItem): boolean =>
+  s.type === "tool" ? s.status === "pending" : s.type === "thinking" ? !s.done : false;
+
 /* Unified reasoning block: the RAG/tool pipeline and the thought process are
  * ONE collapsible section — the header carries the live status + duration +
- * document count, the expanded body shows the thinking stream (and a compact
- * tool-status line). Replaces the old separate RagPipelineProgress bar. */
+ * document count, the expanded body shows the agent step timeline (thinking
+ * rounds, tool calls, compaction markers — ported from the Vue smart-agent
+ * tree) or, when no structured steps exist, the raw thinking stream. */
 export const ThinkingDisplay = memo(function ThinkingDisplay({
   content,
   streaming,
-  events = [],
+  steps = [],
+  durationMs,
   references = [],
   onViewReferences,
 }: {
   content: string;
   streaming?: boolean;
-  events?: ToolEventItem[];
+  steps?: AgentStepItem[];
+  durationMs?: number;
   references?: KnowledgeReferenceItem[];
   onViewReferences?: () => void;
 }) {
+  const { t } = useT();
   // Open while streaming; finished thinking (history or completed turns)
   // mounts collapsed — mirrors "khi think xong tự động đóng".
   const [expanded, setExpanded] = useState(() => Boolean(streaming));
@@ -51,18 +82,24 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
   const wasStreaming = useRef(false);
   const startedAt = useRef<number | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set());
+  const activeThinking = useRef<Set<string>>(new Set());
 
-  const toolCount = events.length;
+  const hasSteps = steps.length > 0;
+  const toolSteps = useMemo(
+    () => steps.filter((s): s is ToolStep => s.type === "tool" && s.tool_name !== "thinking"),
+    [steps],
+  );
+  const toolCount = toolSteps.length;
   const hasTools = toolCount > 0;
-  const toolsPending = hasTools && events.some((e) => e.status === "pending");
+  const toolsPending = hasTools && toolSteps.some((e) => e.status === "pending");
 
   // Total found documents count (references list wins; otherwise peek at tool
   // outputs for a count only — never a tool name or payload).
   const docCount = useMemo(() => {
     if (references && references.length > 0) return references.length;
-    for (const event of events) {
-      if (!event.output) continue;
-      let data = event.output;
+    for (const step of toolSteps) {
+      let data: unknown = step.tool_data ?? step.output;
       if (typeof data === "string") {
         try {
           data = JSON.parse(data.trim());
@@ -80,7 +117,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
       }
     }
     return 0;
-  }, [references, events]);
+  }, [references, toolSteps]);
 
   // Auto-collapse once the stream finishes; the header still lets the user
   // re-open it manually afterwards. A thinking phase that (re)starts mid-turn —
@@ -99,6 +136,27 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
     }
   }, [streaming]);
 
+  // Vue auto-expands the trailing run of thinking cards while the agent works
+  // and folds them back once a tool call follows — the live "reading its mind"
+  // view without leaving every round open afterwards.
+  useEffect(() => {
+    const trailing = new Set<string>();
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const s = steps[i];
+      if (!isThinkingStep(s)) break;
+      trailing.add(s.id);
+    }
+    const prev = activeThinking.current;
+    if (prev.size === trailing.size && [...trailing].every((id) => prev.has(id))) return;
+    activeThinking.current = trailing;
+    setExpandedSteps((old) => {
+      const next = new Set(old);
+      for (const id of prev) if (!trailing.has(id)) next.delete(id);
+      for (const id of trailing) next.add(id);
+      return next;
+    });
+  }, [steps]);
+
   const { visible, truncated } = tailSlice(content, MAX_VISIBLE_CHARS);
 
   // The top fade only makes sense once text is actually clipped above the
@@ -115,15 +173,32 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
     return () => ro.disconnect();
   }, [expanded]);
 
-  if (!content && !streaming && !hasTools) return null;
+  if (!content && !streaming && !hasTools && !hasSteps) return null;
+
+  const toggleStep = (id: string) =>
+    setExpandedSteps((old) => {
+      const next = new Set(old);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const label = streaming
     ? content || !hasTools
-      ? "Đang suy nghĩ…"
-      : "Đang tra cứu & suy nghĩ…"
+      ? t("think.thinking")
+      : t("think.thinkingTools")
     : content
-      ? "Đã suy nghĩ"
-      : "Đã xử lý";
+      ? t("think.done")
+      : t("think.processed");
+
+  const summaryMs = durationMs && durationMs > 0 ? durationMs : (elapsed ?? 0) * 1000;
+  // While streaming, a settled tail means the agent is between steps — show
+  // the "thinking" placeholder row (Vue's trailing activity node).
+  const showPendingTail =
+    Boolean(streaming) &&
+    hasSteps &&
+    !stepPending(steps[steps.length - 1]) &&
+    steps[steps.length - 1].type !== "compacted";
 
   return (
     <div className="mb-4 text-left">
@@ -143,24 +218,33 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
             <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-muted-soft" />
           )}
           <span className={`truncate ${streaming ? "animate-shimmer-text" : ""}`}>
-            {label}
-            {!streaming && elapsed != null && (
-              <span className="font-normal text-muted-soft"> · {fmtDuration(elapsed)}</span>
-            )}
-            {hasTools && (
-              <span className="font-normal text-muted-soft"> · {toolCount} công cụ</span>
+            {!streaming && hasSteps ? (
+              stepsSummaryNodes(t, steps, summaryMs)
+            ) : (
+              <>
+                {label}
+                {!streaming && elapsed != null && (
+                  <span className="font-normal text-muted-soft"> · {fmtDuration(elapsed)}</span>
+                )}
+                {hasTools && (
+                  <span className="font-normal text-muted-soft">
+                    {" "}
+                    · {t("think.toolCalls", { tools: toolCount })}
+                  </span>
+                )}
+              </>
             )}
           </span>
           <svg
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`h-3.5 w-3.5 shrink-0 text-muted-soft transition-transform duration-200 ${
+            className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-soft transition-transform duration-200 ${
               expanded ? "rotate-180" : ""
             }`}
           >
             <path
               fillRule="evenodd"
-              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25-4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
               clipRule="evenodd"
             />
           </svg>
@@ -170,57 +254,174 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
             type="button"
             onClick={onViewReferences}
             className="shrink-0 cursor-pointer rounded-full bg-surface-strong/70 px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-strong hover:text-ink"
-            title="Bấm để mở danh sách tài liệu tham khảo"
+            title={t("think.openDocs")}
           >
-            {docCount} tài liệu
+            {t("think.docs", { count: docCount })}
           </button>
         )}
       </div>
 
-      {expanded && (
-        <div className="ml-1 border-l-2 border-hairline pl-3.5 pb-1 pt-0.5 text-[13px] leading-relaxed text-muted [&_.chat-markdown]:text-muted">
-          {hasTools && (
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-muted-soft">
-              {toolsPending ? (
-                <span className="animate-shimmer-text">Đang sử dụng công cụ…</span>
-              ) : (
-                <span>
-                  Đã sử dụng {toolCount} công cụ
-                  {docCount > 0 ? ` · ${docCount} tài liệu` : ""}
+      {expanded &&
+        (hasSteps ? (
+          /* Step timeline: thinking rounds, tool calls and compaction markers
+             on a single rail, like the Vue smart-agent tree. */
+          <ol className="relative ml-1 flex flex-col gap-0.5 border-l-0 pb-1 pt-0.5 text-[13px] leading-relaxed text-muted">
+            <span aria-hidden className="absolute bottom-2 left-[8px] top-2 w-px bg-hairline" />
+            {steps.map((step) => {
+              if (isThinkingStep(step)) {
+                const body = thinkingBody(step);
+                const title = thinkingTitle(step, t);
+                const open = expandedSteps.has(step.id);
+                const pending = stepPending(step) && streaming;
+                const line = title || thinkingSummaryText(body) || t("step.think");
+                const badge =
+                  step.type === "tool" && step.tool_data?.thought_number
+                    ? `${step.tool_data.thought_number}/${step.tool_data.total_thoughts ?? "?"}`
+                    : null;
+                return (
+                  <li key={step.id} className="relative flex items-start gap-2.5 py-0.5">
+                    <span className="relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas text-muted-soft">
+                      <IconBulb className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => body && toggleStep(step.id)}
+                        className={`block max-w-full truncate text-left ${pending ? "animate-shimmer-text" : ""}`}
+                      >
+                        {line}
+                        {badge && <span className="ml-1.5 text-[11px] text-muted-soft">{badge}</span>}
+                      </button>
+                      {open && body && (
+                        <div className="mt-0.5 max-h-[240px] overflow-y-auto pr-1 text-[12.5px] [&_.chat-markdown]:text-muted">
+                          {/* While the turn is still streaming, render the body
+                              as cheap plain text — a Markdown re-parse of every
+                              expanded card per delta starves useDeferredValue
+                              and the answer stops streaming. */}
+                          {streaming ? (
+                            <div className="whitespace-pre-wrap">
+                              {tailSlice(body, MAX_VISIBLE_CHARS).visible}
+                            </div>
+                          ) : (
+                            <Markdown text={body} />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              }
+              if (step.type === "compacted") {
+                const detail = [
+                  step.tokens_before && step.tokens_after
+                    ? t("think.compactedSummary", {
+                        before: step.tokens_before.toLocaleString(),
+                        after: step.tokens_after.toLocaleString(),
+                      })
+                    : "",
+                  step.degraded ? t("think.compactedDegraded") : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <li key={step.id} className="relative flex items-start gap-2.5 py-0.5">
+                    <span className="relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas text-muted-soft">
+                      <IconMinusCircle className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span>{t("think.compacted")}</span>
+                      {detail && <div className="text-[12px] text-muted-soft">{detail}</div>}
+                    </div>
+                  </li>
+                );
+              }
+              const pending = step.status === "pending";
+              const failed = step.status === "error";
+              const summary = toolStepSummary(t, step);
+              return (
+                <li key={step.id} className="relative flex items-start gap-2.5 py-0.5">
+                  <span
+                    className={`relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas ${
+                      failed ? "text-error" : "text-muted-soft"
+                    }`}
+                  >
+                    {toolStepIcon(step)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`truncate ${pending ? "animate-shimmer-text" : ""} ${failed ? "text-error" : ""}`}
+                    >
+                      {toolStepTitle(t, step)}
+                    </div>
+                    {summary && <div className="text-[12px] text-muted-soft">{summary}</div>}
+                    {failed && step.error && (
+                      <div className="truncate text-[12px] text-error/80">{step.error}</div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+            {showPendingTail && (
+              <li className="relative flex items-start gap-2.5 py-0.5">
+                <span className="relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas text-muted-soft">
+                  <IconBulb className="h-3.5 w-3.5" />
                 </span>
-              )}
-            </div>
-          )}
-          {truncated && (
-            <div className="mb-1.5 text-[10px] italic text-muted-soft">
-              … showing last {MAX_VISIBLE_CHARS.toLocaleString()} characters
-            </div>
-          )}
-          {/* Rolling window: overflow-hidden (no scrollbar) + justify-end pins the
-              newest text to the bottom so older lines drift up and clip away —
-              the "cuộn xuống" effect. The mask fades both edges: clipped lines
-              dissolve at the top, and fresh text pours in faded at the bottom
-              like a waterfall. */}
-          <div
-            ref={rollRef}
-            className={`flex max-h-[240px] flex-col justify-end overflow-hidden${
-              overflowing
-                ? " [-webkit-mask-image:linear-gradient(to_bottom,transparent,black_2.25rem,black_calc(100%_-_1.1rem),transparent)] [mask-image:linear-gradient(to_bottom,transparent,black_2.25rem,black_calc(100%_-_1.1rem),transparent)]"
-                : ""
-            }`}
-          >
-            <div ref={feedRef}>
-              {content ? (
-                <Markdown text={visible} streaming={streaming} />
-              ) : (
-                <span className="animate-shimmer-text italic">
-                  {hasTools ? "Đang tra cứu dữ liệu…" : "Contemplating…"}
+                <span className="animate-shimmer-text">{t("think.thinking")}</span>
+              </li>
+            )}
+            {!streaming && (
+              <li className="relative flex items-start gap-2.5 py-0.5">
+                <span className="relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas text-muted-soft">
+                  <IconCheckCircleFilled className="h-3.5 w-3.5" />
                 </span>
-              )}
+                <span>{t("think.finish")}</span>
+              </li>
+            )}
+          </ol>
+        ) : (
+          <div className="ml-1 border-l-2 border-hairline pl-3.5 pb-1 pt-0.5 text-[13px] leading-relaxed text-muted [&_.chat-markdown]:text-muted">
+            {hasTools && (
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-muted-soft">
+                {toolsPending ? (
+                  <span className="animate-shimmer-text">{t("think.usingTools")}</span>
+                ) : (
+                  <span>
+                    {t("think.toolsUsed", { count: toolCount })}
+                    {docCount > 0 ? ` · ${t("think.docs", { count: docCount })}` : ""}
+                  </span>
+                )}
+              </div>
+            )}
+            {truncated && (
+              <div className="mb-1.5 text-[10px] italic text-muted-soft">
+                {t("think.tailOnly", { chars: MAX_VISIBLE_CHARS.toLocaleString() })}
+              </div>
+            )}
+            {/* Rolling window: overflow-hidden (no scrollbar) + justify-end pins the
+                newest text to the bottom so older lines drift up and clip away —
+                the "cuộn xuống" effect. The mask fades both edges: clipped lines
+                dissolve at the top, and fresh text pours in faded at the bottom
+                like a waterfall. */}
+            <div
+              ref={rollRef}
+              className={`flex max-h-[240px] flex-col justify-end overflow-hidden${
+                overflowing
+                  ? " [-webkit-mask-image:linear-gradient(to_bottom,transparent,black_2.25rem,black_calc(100%_-_1.1rem),transparent)] [mask-image:linear-gradient(to_bottom,transparent,black_2.25rem,black_calc(100%_-_1.1rem),transparent)]"
+                  : ""
+              }`}
+            >
+              <div ref={feedRef}>
+                {content ? (
+                  <Markdown text={visible} streaming={streaming} />
+                ) : (
+                  <span className="animate-shimmer-text italic">
+                    {hasTools ? t("think.lookup") : t("think.contemplating")}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        ))}
     </div>
   );
 });

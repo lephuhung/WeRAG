@@ -205,7 +205,7 @@ export function MemoryWorkspaceSettings() {
                   options={[
                     { value: "", label: "Default system model" },
                     ...chatModels.map((m) => ({
-                      value: m.name,
+                      value: m.id ?? "",
                       label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
                     })),
                   ]}
@@ -227,7 +227,7 @@ export function MemoryWorkspaceSettings() {
                   options={[
                     { value: "", label: "None (lexical keyword match only)" },
                     ...embeddingModels.map((m) => ({
-                      value: m.name,
+                      value: m.id ?? "",
                       label: m.display_name || m.name,
                     })),
                   ]}

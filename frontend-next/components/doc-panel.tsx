@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   downloadKnowledge,
   listKnowledgeChunks,
@@ -10,8 +10,14 @@ import {
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Markdown } from "@/components/markdown";
 import { renderFileIconSvg } from "@/components/files/file-icon";
-import { IconDoc, IconExternal } from "@/components/icons";
+import { IconDoc, IconExternal, IconPulse } from "@/components/icons";
 import { DocPreviewModal, type DocPreviewSource } from "@/components/doc-preview-modal";
+import {
+  ProcessingTimeline,
+  ProcessingTimelineDrawer,
+  type TimelineSummary,
+} from "@/components/knowledge/processing-timeline";
+import { useT } from "@/lib/i18n";
 
 const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
   completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
@@ -41,9 +47,22 @@ export function DocPanel({
   const [chunks, setChunks] = useState<string[] | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [previewSource, setPreviewSource] = useState<DocPreviewSource | null>(null);
+  /* Processing pipeline trace (port of the Vue doc-content.vue mounts):
+   * a hidden compact timeline keeps /spans polling while parsing is in
+   * flight and reports hasSpans + a one-line summary; the trace button
+   * in the header opens the full waterfall in a secondary drawer. */
+  const [hasTrace, setHasTrace] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceSummary, setTraceSummary] = useState<TimelineSummary | null>(null);
+  const traceOpenRef = useRef(false);
+  traceOpenRef.current = traceOpen;
+  const { t } = useT();
 
   useEffect(() => {
     setChunks(null);
+    setHasTrace(false);
+    setTraceOpen(false);
+    setTraceSummary(null);
     if (!doc) return;
     let alive = true;
     listKnowledgeChunks(doc.id, 1, { includeImageText: true })
@@ -85,10 +104,54 @@ export function DocPanel({
     });
   };
 
+  const traceIconColor =
+    traceSummary && ["done", "completed"].includes(traceSummary.status)
+      ? "text-success"
+      : traceSummary && ["failed"].includes(traceSummary.status)
+        ? "text-error"
+        : traceSummary && ["running", "processing", "pending"].includes(traceSummary.status)
+          ? "text-amber-500"
+          : "text-muted";
+
+  const traceTitle = (() => {
+    let tip = t("ks.viewTrace");
+    if (traceSummary && traceSummary.totalMs > 0) {
+      tip += ` · ${formatDurationText(traceSummary.totalMs)}`;
+    } else if (traceSummary && traceSummary.stageTotal > 0) {
+      tip += ` · ${traceSummary.stageIndex}/${traceSummary.stageTotal}`;
+    }
+    return tip;
+  })();
+
+  /* Escape/backdrop must not close the doc panel while the trace drawer
+   * is open above it — SlidePanel's window keydown would otherwise
+   * close both at once. */
+  const closePanel = () => {
+    if (traceOpenRef.current) return;
+    onClose();
+  };
+
   return (
     <>
-      <SlidePanel open={doc !== null} onClose={onClose} label="Document" width="w-[560px]">
-        <SlidePanelHeader title={name} subtitle="Extracted chunks" onClose={onClose}>
+      <SlidePanel open={doc !== null} onClose={closePanel} label="Document" width="w-[560px]">
+        <SlidePanelHeader
+          title={name}
+          subtitle="Extracted chunks"
+          onClose={closePanel}
+          actions={
+            doc && hasTrace ? (
+              <button
+                type="button"
+                title={traceTitle}
+                aria-label={traceTitle}
+                onClick={() => setTraceOpen(true)}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-strong ${traceIconColor}`}
+              >
+                <IconPulse className="h-4 w-4" />
+              </button>
+            ) : undefined
+          }
+        >
           {doc && (
             <span
               className="w-[30px] shrink-0"
@@ -98,6 +161,23 @@ export function DocPanel({
             />
           )}
         </SlidePanelHeader>
+
+        {/* Hidden compact mount: keeps the timeline fetching so the
+         * header button's status stays live even before the user opens
+         * the trace drawer. gracePoll=false → stops polling once the
+         * parse pipeline itself reaches a terminal status. */}
+        {doc && (
+          <div className="hidden" aria-hidden="true">
+            <ProcessingTimeline
+              knowledgeId={doc.id}
+              parseStatus={doc.parse_status ?? doc.status}
+              compact
+              gracePoll={false}
+              onHasSpans={setHasTrace}
+              onSummary={setTraceSummary}
+            />
+          </div>
+        )}
         {doc && st && (
           <>
             {/* meta */}
@@ -161,8 +241,25 @@ export function DocPanel({
         source={previewSource}
         onClose={() => setPreviewSource(null)}
       />
+      {doc && (
+        <ProcessingTimelineDrawer
+          open={traceOpen}
+          knowledgeId={doc.id}
+          parseStatus={doc.parse_status ?? doc.status}
+          docTitle={name}
+          onClose={() => setTraceOpen(false)}
+        />
+      )}
     </>
   );
+}
+/* Duration for the trace button tooltip (same shape as the timeline's). */
+function formatDurationText(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+  const mins = Math.floor(ms / 60000);
+  const rem = ((ms % 60000) / 1000).toFixed(1);
+  return `${mins}m${rem}s`;
 }
 /* Compact header timestamp — RFC3339 too long for the meta row. */
 function fmtShortDate(v?: string): string {

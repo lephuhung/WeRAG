@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 
 	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	"github.com/Tencent/WeKnora/internal/logger"
+	chatmodel "github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -61,25 +63,40 @@ func (h *Handler) saveImageAttachments(ctx context.Context, images []ImageAttach
 // analyzeImageAttachments runs VLM analysis on saved images and populates Caption.
 // Used as a fallback for pure chat paths where the pipeline rewrite step won't run.
 // For RAG paths, image analysis is handled in the pipeline rewrite step instead.
-func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAttachment, vlmModelID string, userQuery string) {
+// Returns the number of images that actually received a caption so callers can
+// report honest success instead of pretending every image was analyzed.
+func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAttachment, vlmModelID string, userQuery string) int {
 	if len(images) == 0 || vlmModelID == "" {
-		return
+		return 0
 	}
 
 	vlmModel, err := h.modelService.GetVLMModel(ctx, vlmModelID)
 	if err != nil {
 		logger.Warnf(ctx, "No VLM model available for image analysis, skipping: %v", err)
-		return
+		return 0
 	}
 
+	analyzed := 0
 	for i := range images {
 		img := &images[i]
-		if img.Data == "" {
-			continue
-		}
-		imgBytes, _, decErr := decodeDataURI(img.Data)
-		if decErr != nil {
-			logger.Warnf(ctx, "Failed to decode image %d for VLM analysis: %v", i, decErr)
+		var imgBytes []byte
+		switch {
+		case img.Data != "":
+			var decErr error
+			imgBytes, _, decErr = decodeDataURI(img.Data)
+			if decErr != nil {
+				logger.Warnf(ctx, "Failed to decode image %d for VLM analysis: %v", i, decErr)
+				continue
+			}
+		case img.URL != "":
+			// Pre-uploaded (temporary document) images arrive URL-only; resolve
+			// the stored bytes so they are not silently skipped.
+			imgBytes = h.resolveStoredImageBytes(ctx, img.URL)
+			if len(imgBytes) == 0 {
+				logger.Warnf(ctx, "Failed to resolve image %d bytes for VLM analysis: %s", i, img.URL)
+				continue
+			}
+		default:
 			continue
 		}
 		prompt := buildImageAnalysisPrompt(userQuery)
@@ -88,8 +105,32 @@ func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAtt
 			logger.Warnf(ctx, "VLM analysis failed for image %d: %v", i, analysisErr)
 		} else {
 			img.Caption = analysis
+			analyzed++
 		}
 	}
+	return analyzed
+}
+
+// resolveStoredImageBytes reads image bytes for a stored serving URL
+// (resource://, local://, or a provider path). It first tries the chat
+// package's tenant-aware resolver, then falls back to the default file
+// service. Returns nil when the URL cannot be resolved.
+func (h *Handler) resolveStoredImageBytes(ctx context.Context, url string) []byte {
+	if chatmodel.LocalImageResolver != nil {
+		if data, ok := chatmodel.LocalImageResolver(url); ok {
+			return data
+		}
+	}
+	rc, err := h.fileService.GetFile(ctx, url)
+	if err != nil {
+		return nil
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxImageSize+1))
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // buildImageAnalysisPrompt generates a context-aware VLM prompt based on the

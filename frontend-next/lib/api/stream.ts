@@ -203,11 +203,19 @@ async function readSSE(res: Response, onChunk: (c: StreamChunk) => void) {
       }
     }
     if (!data || data === "[DONE]") return;
+    let parsed: StreamChunk;
     try {
-      const parsed = JSON.parse(data) as StreamChunk;
-      onChunk(parsed);
+      parsed = JSON.parse(data) as StreamChunk;
     } catch (err) {
       console.warn("[readSSE] Failed to parse JSON frame:", err, "raw data:", data);
+      return;
+    }
+    try {
+      onChunk(parsed);
+    } catch (err) {
+      // A throwing chunk handler must not kill the stream — but it MUST be
+      // visible, otherwise every update silently vanishes until the end.
+      console.error("[readSSE] onChunk handler threw:", err, "chunk:", parsed);
     }
   };
 

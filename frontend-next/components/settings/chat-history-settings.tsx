@@ -158,7 +158,7 @@ export function ChatHistorySettings() {
                 void handleSave({ embedding_model_id: v });
               }}
               options={embeddingModels.map((m) => ({
-                value: m.name,
+                value: m.id ?? "",
                 label: m.display_name || m.name,
               }))}
             />

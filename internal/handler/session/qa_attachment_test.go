@@ -60,3 +60,11 @@ func TestDecodeAndValidateAttachmentUploadsReturnsDecodedBytes(t *testing.T) {
 	require.Len(t, decoded, 1)
 	assert.Equal(t, []byte("hello"), decoded[0])
 }
+
+func TestAttachmentHasUsableText(t *testing.T) {
+	assert.False(t, attachmentHasUsableText(""))
+	assert.False(t, attachmentHasUsableText("  \n  "))
+	assert.False(t, attachmentHasUsableText("![scan.png](images/scan.png)\n"))
+	assert.True(t, attachmentHasUsableText("![img](x)\nSome real text"))
+	assert.True(t, attachmentHasUsableText("plain text content"))
+}

@@ -48,6 +48,7 @@ const STATUS_STYLE: Record<
   pending: { labelKey: "status.pending", fallback: "Pending", cls: "text-muted", dot: "#a8a29e" },
   failed: { labelKey: "status.failed", fallback: "Failed", cls: "text-error", dot: "#dc2626" },
   cancelled: { labelKey: "status.cancelled", fallback: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
+  deleting: { labelKey: "status.deleting", fallback: "Deleting", cls: "text-muted", dot: "#a8a29e" },
 };
 
 function statusStyle(status?: string) {
@@ -61,7 +62,7 @@ function statusStyle(status?: string) {
  * fills in without a manual refresh. */
 function needsStatusPolling(d: KnowledgeDoc): boolean {
   const ps = d.parse_status ?? d.status;
-  if (ps === "pending" || ps === "processing" || ps === "finalizing") return true;
+  if (ps === "pending" || ps === "processing" || ps === "finalizing" || ps === "deleting") return true;
   return (
     ps === "completed" &&
     (d.summary_status === "pending" || d.summary_status === "processing")
@@ -126,6 +127,25 @@ export function KbDetail({ kbId }: { kbId: string }) {
         setDocs(Array.isArray(data) ? data : (data?.items ?? []));
       })
       .catch(() => setDocs([]));
+  };
+
+  /* Document actions that change the row set (delete/move/cancel) also
+   * affect the header's document counter. */
+  const refreshAfterDocChange = () => {
+    reloadDocs();
+    getKnowledgeBase(kbId)
+      .then((row) => setKb(row ?? null))
+      .catch(() => {});
+  };
+
+  /* Deletion is asynchronous server-side: flag the row so the status poll
+   * keeps tracking it and drops it once the batch endpoint stops
+   * returning the id. */
+  const markDocDeleting = (doc: KnowledgeDoc) => {
+    setOpenDoc((prev) => (prev?.id === doc.id ? null : prev));
+    setDocs((prev) =>
+      prev?.map((d) => (d.id === doc.id ? { ...d, parse_status: "deleting" } : d)) ?? prev,
+    );
   };
 
   useEffect(() => {
@@ -245,16 +265,23 @@ export function KbDetail({ kbId }: { kbId: string }) {
     if (inflight.length === 0) return;
     const timer = setTimeout(() => {
       const qs = inflight.map((d) => `ids=${encodeURIComponent(d.id)}`).join("&");
+      const requested = new Set(inflight.map((d) => d.id));
       batchQueryKnowledge(qs, kbId)
         .then((res) => {
           const rows = res?.data;
-          if (Array.isArray(rows) && rows.length > 0) {
+          /* A valid array is authoritative for the queried ids: a doc the
+           * response no longer contains was deleted (async delete finishes
+           * between polls), so drop it instead of leaving a stale card. */
+          if (Array.isArray(rows)) {
             const byId = new Map(rows.map((r) => [r.id, r]));
-            setDocs((prev) =>
-              prev?.map((d) => {
-                const r = byId.get(d.id);
-                return r ? { ...d, ...r } : d;
-              }) ?? prev,
+            setDocs(
+              (prev) =>
+                prev
+                  ?.filter((d) => !requested.has(d.id) || byId.has(d.id))
+                  .map((d) => {
+                    const r = byId.get(d.id);
+                    return r ? { ...d, ...r } : d;
+                  }) ?? prev,
             );
           } else {
             setDocs((prev) => (prev ? [...prev] : prev));
@@ -435,7 +462,8 @@ export function KbDetail({ kbId }: { kbId: string }) {
                           doc={d}
                           kbId={kbId}
                           canMutate={isAdminOrOwner}
-                          onChanged={reloadDocs}
+                          onChanged={refreshAfterDocChange}
+                          onDeleted={markDocDeleting}
                           onReparse={openReparse}
                         />
                       </div>

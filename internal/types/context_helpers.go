@@ -469,6 +469,8 @@ func LanguageLocaleName(locale string) string {
 		return "Spanish"
 	case "pt-BR", "pt":
 		return "Portuguese"
+	case "vi-VN", "vi":
+		return "Vietnamese"
 	default:
 		// For unknown locales, return the locale itself
 		return locale

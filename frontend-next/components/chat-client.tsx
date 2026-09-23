@@ -16,7 +16,12 @@ import { IconDoc, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
-import { type ToolEventItem } from "@/components/chat/tool-result-card";
+import {
+  applyChunkToSteps,
+  finalizeSteps,
+  stepsFromHistory,
+  type AgentStepItem,
+} from "@/components/chat/agent-steps";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -28,7 +33,10 @@ type UiMessage = {
   role: "user" | "assistant";
   content: string;
   thinking?: string;
-  toolEvents?: ToolEventItem[];
+  /** Ordered agent timeline (thinking rounds + tool calls), rendered by
+   * ThinkingDisplay — mirrors the Vue smart-agent event stream. */
+  steps?: AgentStepItem[];
+  agentDurationMs?: number;
   streaming?: boolean;
   isError?: boolean;
   assistantMessageId?: string;
@@ -177,6 +185,11 @@ function fileToDataUri(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+/* Answer text streamed between tool rounds is a preamble that the next
+ * tool_call retracts (folded into the thinking card title). Longer output is
+ * the real final answer — that is what collapses the thinking panel. */
+const PREAMBLE_MAX_CHARS = 240;
 
 const UserMessageBubble = memo(function UserMessageBubble({
   message,
@@ -403,13 +416,22 @@ const AssistantMessage = memo(function AssistantMessage({
       </div>
       <div className="w-full min-w-0 flex-1 pt-1.5">
         {(m.thinking ||
-          (m.toolEvents?.length ?? 0) > 0 ||
+          (m.steps?.length ?? 0) > 0 ||
           (m.references?.length ?? 0) > 0 ||
           (m.streaming && !m.content)) && (
           <ThinkingDisplay
             content={m.thinking ?? ""}
-            streaming={m.streaming && !m.content}
-            events={m.toolEvents}
+            /* Open while the agent reasons/calls tools; fold once the final
+               answer streams. Answer text between rounds is a preamble that
+               the next tool call retracts into a thinking title — only a
+               sustained answer past this threshold counts as "the answer",
+               otherwise the panel would flicker once per agent round. */
+            streaming={
+              m.streaming &&
+              !(m.content.length > ((m.steps?.length ?? 0) > 0 ? PREAMBLE_MAX_CHARS : 0))
+            }
+            steps={m.steps}
+            durationMs={m.agentDurationMs}
             references={m.references}
             onViewReferences={() => onOpenDrawer(m.references || [])}
           />
@@ -419,7 +441,7 @@ const AssistantMessage = memo(function AssistantMessage({
             <Markdown text={shownContent} streaming={m.streaming} />
           </div>
         ) : (
-          <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.toolEvents || m.toolEvents.length === 0) ? "…" : ""}</p>
+          <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
         )}
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
@@ -505,6 +527,7 @@ function ChatBody({ id }: { id: string }) {
   const browserKnownOffline = useBrowserKnownOffline();
   // Continue-stream scratch refs (reset per attach attempt).
   const accRef = useRef("");
+  const stepsRef = useRef<AgentStepItem[]>([]);
   const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
 
   // References slide-out panel (drawer)
@@ -578,6 +601,14 @@ function ChatBody({ id }: { id: string }) {
               role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
               content: parsed.content,
               thinking: parsed.thinking,
+              steps:
+                m.role === "assistant"
+                  ? (() => {
+                      const s = stepsFromHistory(m);
+                      return s.length ? s : undefined;
+                    })()
+                  : undefined,
+              agentDurationMs: m.agent_duration_ms || undefined,
               references: refs?.length ? refs : undefined,
               assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
               abbreviationCandidates:
@@ -648,6 +679,41 @@ function ChatBody({ id }: { id: string }) {
               srcSetRef.current = refs;
               return;
             }
+            const toolScopedError =
+              kind === "error" &&
+              Boolean(
+                c.tool_call_id || c.tool_name || c.data?.tool_call_id || c.data?.tool_name,
+              );
+            if (
+              kind === "thinking" ||
+              kind === "tool_call" ||
+              kind === "tool_result" ||
+              kind === "context_compacted" ||
+              kind === "command_output" ||
+              toolScopedError
+            ) {
+              applyChunkToSteps(stepsRef.current, c);
+              const snap = [...stepsRef.current];
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.assistantMessageId === inflightId ? { ...msg, steps: snap } : msg,
+                ),
+              );
+              return;
+            }
+            if (kind === "complete" || kind === "stop" || kind === "agent_complete") {
+              finalizeSteps(stepsRef.current);
+              const snap = [...stepsRef.current];
+              const dur = Number(c.data?.total_duration_ms) || 0;
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.assistantMessageId === inflightId
+                    ? { ...msg, steps: snap, agentDurationMs: dur || msg.agentDurationMs }
+                    : msg,
+                ),
+              );
+              return;
+            }
             if (kind === "error") {
               const errorText = c.content || (c.data?.error as string) || "Stream failed";
               setMessages((m) =>
@@ -668,6 +734,9 @@ function ChatBody({ id }: { id: string }) {
               ctrl.abort();
               return;
             }
+            // Same gate as the send path: only answer events carry
+            // user-facing text — everything else has its own channel.
+            if (kind && kind !== "answer") return;
             accRef.current += c.content ?? "";
             const parsed = parseThinkAndContent(accRef.current);
             setMessages((m) =>
@@ -684,6 +753,12 @@ function ChatBody({ id }: { id: string }) {
             );
           };
           accRef.current = last.content ?? "";
+          stepsRef.current = stepsFromHistory(last);
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.assistantMessageId === inflightId ? { ...msg, streaming: true } : msg,
+            ),
+          );
           const ctrl = new AbortController();
           abortRef.current = ctrl;
           continueStream({ sessionId: id, messageId: inflightId, signal: ctrl.signal, onChunk: applyChunk })
@@ -813,7 +888,11 @@ function ChatBody({ id }: { id: string }) {
     abortRef.current = ctrl;
     let acc = "";
     let thinkingAcc = "";
-    let toolEventsList: ToolEventItem[] = [];
+    let stepsList: AgentStepItem[] = [];
+    // Length of `acc` at the last tool_call boundary. Text appended after that
+    // point is the round preamble — Vue retracts it from the answer area and
+    // folds it into the thinking card as its title once the tool call lands.
+    let answerCursor = 0;
 
     // Mirror useChatStreamHandler.processStreamChunk:
     // handle thinking, tool execution, answer content and references.
@@ -873,7 +952,13 @@ function ChatBody({ id }: { id: string }) {
         );
         if (kind === "references") return;
       }
-      if (kind === "error") {
+      // A tool-scoped error belongs to a single step — the turn continues;
+      // only an unattributed error is fatal (handled further down).
+      const toolScopedError =
+        kind === "error" &&
+        Boolean(c.tool_call_id || c.tool_name || c.data?.tool_call_id || c.data?.tool_name);
+
+      if (kind === "error" && !toolScopedError) {
         const errorText = c.content || (c.data?.error as string) || "Stream failed";
         console.error("[applyChunk] Error event received:", errorText, c);
         setError(errorText);
@@ -898,7 +983,8 @@ function ChatBody({ id }: { id: string }) {
         return;
       }
 
-      // 1. Thinking / Reasoning chunks
+      // 1. Thinking / Reasoning chunks — feed both the rolling text stream
+      // (thinkingAcc) and the structured step timeline (stepsList).
       const thoughtText =
         c.reasoning_content ??
         c.thought ??
@@ -906,13 +992,16 @@ function ChatBody({ id }: { id: string }) {
         (kind === "thinking" ? c.content : undefined);
       if (kind === "thinking") {
         thinkingAcc += thoughtText ?? c.content ?? "";
+        applyChunkToSteps(stepsList, c);
         const snapThinking = thinkingAcc;
+        const snapSteps = [...stepsList];
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
               ? {
                   ...msg,
                   thinking: snapThinking,
+                  steps: snapSteps,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
                 }
               : msg,
@@ -924,34 +1013,48 @@ function ChatBody({ id }: { id: string }) {
         thinkingAcc += thoughtText;
       }
 
-      // 2. Tool call events
+      // 2. Tool call events — fold the retracted preamble into the round's
+      // thinking card (Vue superseded-answer behavior), then record the call.
       if (kind === "tool_call") {
-        const toolName = c.tool_name || (c.data?.tool_name as string) || "";
-        const callId =
-          c.tool_call_id ||
-          (c.data?.tool_call_id as string) ||
-          (c.data?.event_id as string) ||
-          `tool-${toolName}-${Date.now()}`;
-        const existingIdx = toolEventsList.findIndex((t) => t.id === callId);
-        const item: ToolEventItem = {
-          id: callId,
-          tool_name: toolName,
-          title: (c.data?.title as string) || toolName,
-          input: c.tool_data ?? c.tool_input ?? c.data?.arguments ?? c.data,
-          status: "pending",
-        };
-        if (existingIdx >= 0) {
-          toolEventsList[existingIdx] = { ...toolEventsList[existingIdx], ...item };
-        } else {
-          toolEventsList.push(item);
+        if (acc.length > answerCursor) {
+          const preamble = acc.slice(answerCursor).trim();
+          acc = acc.slice(0, answerCursor);
+          if (preamble) {
+            const lastThink = [...stepsList]
+              .reverse()
+              .find(
+                (s): s is Extract<AgentStepItem, { type: "thinking" }> =>
+                  s.type === "thinking",
+              );
+            if (lastThink && !lastThink.title) {
+              lastThink.title = preamble;
+            } else {
+              stepsList.push({
+                type: "thinking",
+                id: `preamble-${stepsList.length}`,
+                title: preamble,
+                content: "",
+                done: true,
+              });
+            }
+          }
+          const parsed = parseThinkAndContent(acc, thinkingAcc);
+          const content = parsed.content;
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg) ? { ...msg, content } : msg,
+            ),
+          );
         }
-        const snapTools = [...toolEventsList];
+        answerCursor = acc.length;
+        applyChunkToSteps(stepsList, c);
+        const snapSteps = [...stepsList];
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
               ? {
                   ...msg,
-                  toolEvents: snapTools,
+                  steps: snapSteps,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
                 }
               : msg,
@@ -960,15 +1063,16 @@ function ChatBody({ id }: { id: string }) {
         return;
       }
 
-      // 3. Tool result events
-      if (kind === "tool_result") {
+      // 3. Tool result events (and tool-scoped errors / live command output /
+      // compaction markers) — update the matching step; abbreviation/people
+      // extraction stays as before.
+      if (
+        kind === "tool_result" ||
+        toolScopedError ||
+        kind === "context_compacted" ||
+        kind === "command_output"
+      ) {
         const toolName = c.tool_name || (c.data?.tool_name as string) || "";
-        const callId = c.tool_call_id || (c.data?.tool_call_id as string) || (c.data?.event_id as string);
-        const existingIdx = toolEventsList.findIndex((t) =>
-          callId ? t.id === callId : t.tool_name === toolName,
-        );
-        const success = c.success !== false && c.data?.success !== false;
-        const output = c.tool_output ?? c.content ?? c.data;
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
           toolName === "people_lookup" ? extractPeopleRecords(c.data) : [];
@@ -996,29 +1100,14 @@ function ChatBody({ id }: { id: string }) {
             ),
           );
         }
-        if (existingIdx >= 0) {
-          toolEventsList[existingIdx] = {
-            ...toolEventsList[existingIdx],
-            status: success ? "success" : "error",
-            output,
-            error: !success ? (c.content || (c.data?.error as string) || "Tool error") : undefined,
-          };
-        } else {
-          toolEventsList.push({
-            id: callId || `tool-${toolName}-${Date.now()}`,
-            tool_name: toolName,
-            status: success ? "success" : "error",
-            output,
-            error: !success ? (c.content || (c.data?.error as string) || "Tool error") : undefined,
-          });
-        }
-        const snapTools = [...toolEventsList];
+        applyChunkToSteps(stepsList, c);
+        const snapSteps = [...stepsList];
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
               ? {
                   ...msg,
-                  toolEvents: snapTools,
+                  steps: snapSteps,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
                 }
               : msg,
@@ -1027,14 +1116,19 @@ function ChatBody({ id }: { id: string }) {
         return;
       }
 
-      // 4. Complete event
-      if (kind === "complete" || kind === "stop") {
+      // 4. Complete event — settle pending steps and record the turn duration.
+      if (kind === "complete" || kind === "stop" || kind === "agent_complete") {
+        finalizeSteps(stepsList);
+        const snapSteps = [...stepsList];
+        const durationMs = Number(c.data?.total_duration_ms) || 0;
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
               ? {
                   ...msg,
                   streaming: false,
+                  steps: snapSteps,
+                  agentDurationMs: durationMs || msg.agentDurationMs,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
                 }
               : msg,
@@ -1043,7 +1137,11 @@ function ChatBody({ id }: { id: string }) {
         return;
       }
 
-      // 5. Regular answer content
+      // 5. Regular answer content — only `answer` events carry user-facing
+      // text. Other kinds (reflection, command_output, memory_recalled,
+      // approval/oauth markers…) have their own channels; letting them fall
+      // through would leak their payloads into the message (Vue ignores them).
+      if (kind && kind !== "answer") return;
       acc += c.content ?? "";
       const parsed = parseThinkAndContent(acc, thinkingAcc);
       setMessages((m) =>
@@ -1168,7 +1266,17 @@ function ChatBody({ id }: { id: string }) {
         setAbbreviationRefreshKey((v) => v + 1);
         setBusy(false);
         setAssistantMessageId(null);
-        setMessages((m) => m.map((msg) => (msg.id === asstId ? { ...msg, streaming: false } : msg)));
+        // Streams that end without a `complete` event (abort, socket drop)
+        // would leave tool rows shimmering forever — settle them.
+        finalizeSteps(stepsList);
+        const snapSteps = [...stepsList];
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === asstId
+              ? { ...msg, streaming: false, steps: snapSteps.length ? snapSteps : msg.steps }
+              : msg,
+          ),
+        );
         if (id === "new" && activeSessionId !== "new") {
           router.replace(`/platform/chat/${activeSessionId}`);
         }

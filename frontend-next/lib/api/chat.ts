@@ -95,11 +95,30 @@ import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer
 // ---- messages ---------------------------------------------------------------
 
 export type ChatMessageToolCall = {
+  id?: string;
   name?: string;
-  result?: { data?: unknown };
+  args?: Record<string, unknown>;
+  /** Resolved proxy target; name/args stay the model's call for replay. */
+  target?: { name?: string; args?: Record<string, unknown>; service_name?: string; tool_name?: string };
+  result?: {
+    success?: boolean;
+    output?: string;
+    data?: Record<string, unknown>;
+    error?: string;
+  };
+  duration?: number;
 };
 
 export type ChatMessageAgentStep = {
+  iteration?: number;
+  /** LLM reasoning/think-phase text — the round preamble. */
+  thought?: string;
+  /** reasoning_content emitted by thinking-mode models. */
+  reasoning_content?: string;
+  /** Thought was a standalone intermediate answer, not a tool-round preamble. */
+  intermediate_answer?: boolean;
+  timestamp?: string;
+  duration?: number;
   tool_calls?: ChatMessageToolCall[];
 };
 
@@ -117,6 +136,8 @@ export type ChatMessage = {
   is_completed?: boolean;
   knowledge_references?: KnowledgeReferenceItem[];
   agent_steps?: ChatMessageAgentStep[];
+  /** Total wall-clock time of the agent turn — shown in the steps header. */
+  agent_duration_ms?: number;
   attachments?: ChatMessageAttachment[];
   images?: { url?: string; caption?: string }[];
 };

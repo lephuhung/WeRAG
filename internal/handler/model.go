@@ -637,8 +637,19 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	}
 	model.Parameters = newParams
 
-	model.Source = req.Source
-	model.Type = req.Type
+	// Source/Type are presence-gated like the other preserved fields: an
+	// update that omits them must not wipe the stored values (empty type
+	// breaks agent resolution and model selectors downstream).
+	if req.Source != "" {
+		model.Source = req.Source
+	}
+	if req.Type != "" {
+		if !req.Type.Valid() {
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("invalid model type %q", req.Type)))
+			return
+		}
+		model.Type = req.Type
+	}
 
 	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
 	if err := h.service.UpdateModel(ctx, model); err != nil {

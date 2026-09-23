@@ -202,6 +202,15 @@ const (
 	AuditActionFAQImportStarted   AuditAction = "faq.import_started"
 	AuditActionFAQImportCompleted AuditAction = "faq.import_completed"
 	AuditActionFAQImportFailed    AuditAction = "faq.import_failed"
+
+	// Attachment actions. attachment.parse_failed is emitted by the
+	// temporary-document worker when parsing reaches a terminal failure;
+	// chat.attachment_unavailable is emitted when a QA turn proceeds while
+	// one or more referenced attachments could not provide usable content
+	// to the model. Both exist so an unreadable attachment leaves a durable
+	// trail instead of only appearing in the chat timeline.
+	AuditActionAttachmentParseFailed     AuditAction = "attachment.parse_failed"
+	AuditActionChatAttachmentUnavailable AuditAction = "chat.attachment_unavailable"
 )
 
 // AuditOutcome separates asynchronous acceptance from terminal business

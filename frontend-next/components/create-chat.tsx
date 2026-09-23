@@ -8,6 +8,7 @@ import { ChatProvider } from "@/lib/chat-context";
 import { Orb } from "@/components/orb";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments } from "@/components/use-attachments";
+import { questionOriginFromSuggestion } from "@/lib/question-origin";
 
 const FALLBACK_SUGGESTIONS = [
   "Summarize the latest release notes",
@@ -27,6 +28,8 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
 
   // Session create takes title/description only (CreateSessionRequest); the
   // KB scope + first question travel via ?q=… + chat context, like the Vue flow.
+  // A picked suggestion's retrieval hint rides as qokb/qok (creatChat.vue
+  // firstQuestionOrigin) so the first stream keeps question_origin.
   const send = async (s: ComposerSend) => {
     const q = s.query.trim();
     if (!q || busy) return;
@@ -51,7 +54,10 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
           /* ignore */
         }
       }
-      router.push(`/platform/chat/${sessionId}?q=${encodeURIComponent(q)}`);
+      const qp = new URLSearchParams({ q });
+      if (s.questionOrigin?.knowledge_base_id) qp.set("qokb", s.questionOrigin.knowledge_base_id);
+      if (s.questionOrigin?.knowledge_id) qp.set("qok", s.questionOrigin.knowledge_id);
+      router.push(`/platform/chat/${sessionId}?${qp.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {
@@ -113,16 +119,36 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
         {error && <p className="body-sm mt-4 text-center text-error">{error}</p>}
 
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => void send({ query: s, modelId: "", mentionedItems: [], imageFiles: [], attachments: [] })}
-              disabled={busy}
-              className="rounded-full border border-hairline-strong bg-surface-card px-4 py-2 text-[14px] text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-            >
-              {s}
-            </button>
-          ))}
+          {suggested?.length
+            ? suggested.map((item) => (
+                <button
+                  key={item.question}
+                  onClick={() =>
+                    void send({
+                      query: item.question,
+                      modelId: "",
+                      mentionedItems: [],
+                      imageFiles: [],
+                      attachments: [],
+                      questionOrigin: questionOriginFromSuggestion(item),
+                    })
+                  }
+                  disabled={busy}
+                  className="rounded-full border border-hairline-strong bg-surface-card px-4 py-2 text-[14px] text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                >
+                  {item.question}
+                </button>
+              ))
+            : FALLBACK_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => void send({ query: s, modelId: "", mentionedItems: [], imageFiles: [], attachments: [] })}
+                  disabled={busy}
+                  className="rounded-full border border-hairline-strong bg-surface-card px-4 py-2 text-[14px] text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
         </div>
       </div>
     </div>

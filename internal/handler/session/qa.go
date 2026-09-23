@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -329,6 +330,17 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 			err := <-errChan
 			logger.Errorf(ctx, "[%s] attachment processing failed: %v", logPrefix, err)
 			return nil, nil, errors.NewBadRequestError(fmt.Sprintf("attachment processing failed: %v", err))
+		}
+
+		// Extraction failures are non-fatal by design (the attachment carries
+		// ParseError so the model is told the file is unreadable) — but they
+		// must still leave an audit trail.
+		for i := range processedAttachments {
+			att := &processedAttachments[i]
+			if att.ParseError == "" {
+				continue
+			}
+			h.auditAttachmentFailure(ctx, tenantID, sessionID, requestID, att, "processed", att.ParseError)
 		}
 
 		logger.Infof(ctx, "[%s] all attachments processed", logPrefix)
@@ -1361,12 +1373,20 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 	})
 
 	vlmStart := time.Now()
-	h.analyzeImageAttachments(streamCtx.asyncCtx, reqCtx.images,
+	analyzed := h.analyzeImageAttachments(streamCtx.asyncCtx, reqCtx.images,
 		reqCtx.customAgent.Config.VLMModelID, reqCtx.query)
 
-	outputMsg := "已分析图片内容"
-	if mode == qaModeAgent {
-		outputMsg = "已查看图片内容"
+	// Report what the VLM actually produced: an image the model cannot see and
+	// that never got a caption must not be reported as analyzed.
+	var outputMsg string
+	success := analyzed > 0
+	switch {
+	case analyzed == 0:
+		outputMsg = "图片内容分析不可用"
+	case mode == qaModeAgent:
+		outputMsg = fmt.Sprintf("已查看 %d/%d 张图片内容", analyzed, len(reqCtx.images))
+	default:
+		outputMsg = fmt.Sprintf("已分析 %d/%d 张图片内容", analyzed, len(reqCtx.images))
 	}
 	streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 		Type:      event.EventAgentToolResult,
@@ -1375,7 +1395,7 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 			ToolCallID: toolCallID,
 			ToolName:   "image_analysis",
 			Output:     outputMsg,
-			Success:    true,
+			Success:    success,
 			Duration:   time.Since(vlmStart).Milliseconds(),
 			Iteration:  iteration,
 		},
@@ -1403,7 +1423,9 @@ func attachmentParseWaitTimeout() time.Duration {
 // resolveTemporaryAttachments selects prompt content for pre-uploaded documents
 // after the SSE stream is live. When any attachment is still parsing it emits a
 // "attachment_parsing" timeline step and waits (bounded); unfinished attachments
-// are skipped rather than blocking or failing the whole turn.
+// are skipped rather than blocking or failing the whole turn. Skipped or
+// unreadable attachments are kept as explicit failure entries so the model knows
+// a file was provided but could not be read, and each one is audit-logged.
 func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCtx *qaRequestContext) {
 	if len(reqCtx.attachmentIDs) == 0 {
 		return
@@ -1416,7 +1438,10 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 
 	start := time.Now()
 	var toolCallID string
-	if h.hasPendingAttachments(ctx, tenantID, sessionID, reqCtx.attachmentIDs) {
+	emitToolCall := func() {
+		if toolCallID != "" {
+			return
+		}
 		toolCallID = uuid.New().String()
 		streamCtx.eventBus.Emit(ctx, event.Event{
 			Type:      event.EventAgentToolCall,
@@ -1427,6 +1452,9 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 				Iteration:  0,
 			},
 		})
+	}
+	if h.hasPendingAttachments(ctx, tenantID, sessionID, reqCtx.attachmentIDs) {
+		emitToolCall()
 		waitTimeout := attachmentParseWaitTimeout()
 		if reqCtx.customAgent != nil && reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec > 0 {
 			waitTimeout = time.Duration(reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec) * time.Second
@@ -1435,19 +1463,54 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 	}
 
 	readyIDs, skipped := h.partitionReadyAttachments(ctx, tenantID, sessionID, reqCtx.attachmentIDs)
+	// Surface the parsing step even when every referenced document was already
+	// failed before the request — otherwise a dead attachment stays invisible.
+	if len(skipped) > 0 {
+		emitToolCall()
+	}
 
 	var temporaryResult *types.TemporaryDocumentPromptResult
 	var resolveErr error
 	if len(readyIDs) > 0 {
 		temporaryResult, resolveErr = h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, readyIDs, reqCtx.query)
+		if resolveErr != nil {
+			logger.Warnf(ctx, "temporary attachment resolution failed for session %s: %v", sessionID, resolveErr)
+			// A raced delete/status change can fail the whole batch on one bad
+			// document; retry per-document so healthy attachments still resolve
+			// and only the broken ones are marked unavailable.
+			temporaryResult = &types.TemporaryDocumentPromptResult{}
+			salvageFailed := 0
+			for _, id := range readyIDs {
+				res, err := h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, []string{id}, reqCtx.query)
+				if err != nil || res == nil {
+					reason := "attachment content could not be resolved"
+					if err != nil {
+						reason = fmt.Sprintf("attachment content could not be resolved: %v", err)
+					}
+					skipped = append(skipped, skippedAttachment{id: id, status: "resolve_error", reason: reason})
+					salvageFailed++
+					continue
+				}
+				temporaryResult.Attachments = append(temporaryResult.Attachments, res.Attachments...)
+				temporaryResult.ImageURLs = append(temporaryResult.ImageURLs, res.ImageURLs...)
+			}
+			if salvageFailed == 0 {
+				resolveErr = nil
+			}
+		}
 	}
 
+	// Emit the timeline result whenever the step was shown (pending wait or
+	// unavailable attachments), so the UI never silently skips a failure.
+	parsedCount := 0
+	if temporaryResult != nil {
+		parsedCount = len(temporaryResult.Attachments)
+	}
 	if toolCallID != "" {
-		output := fmt.Sprintf("已解析 %d 个附件", len(readyIDs))
-		if skipped > 0 {
-			output += fmt.Sprintf("，%d 个未完成已跳过", skipped)
+		output := fmt.Sprintf("已解析 %d 个附件", parsedCount)
+		if len(skipped) > 0 {
+			output += fmt.Sprintf("，%d 个不可用已跳过", len(skipped))
 		}
-		success := resolveErr == nil
 		if resolveErr != nil {
 			output = fmt.Sprintf("附件解析失败: %v", resolveErr)
 		}
@@ -1458,25 +1521,24 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 				ToolCallID: toolCallID,
 				ToolName:   "attachment_parsing",
 				Output:     output,
-				Success:    success,
+				Success:    len(skipped) == 0,
 				Duration:   time.Since(start).Milliseconds(),
 				Iteration:  0,
 				Data: map[string]interface{}{
 					"display_type":  "attachment_parsing",
-					"parsed_count":  len(readyIDs),
-					"skipped_count": skipped,
+					"parsed_count":  parsedCount,
+					"skipped_count": len(skipped),
 				},
 			},
 		})
 	}
-	if resolveErr != nil || temporaryResult == nil {
-		if resolveErr != nil {
-			logger.Warnf(ctx, "temporary attachment resolution failed for session %s: %v", sessionID, resolveErr)
-		}
-		return
-	}
 
-	attachments := temporaryResult.Attachments
+	var attachments types.MessageAttachments
+	var imageURLs []string
+	if temporaryResult != nil {
+		attachments = temporaryResult.Attachments
+		imageURLs = temporaryResult.ImageURLs
+	}
 	if reqCtx.customAgent != nil && len(reqCtx.customAgent.Config.SupportedFileTypes) > 0 {
 		filtered := attachments[:0]
 		for _, att := range attachments {
@@ -1487,6 +1549,45 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 		}
 		attachments = filtered
 	}
+
+	// Extracted page/file images only reach the model when the agent opted into
+	// image upload and the parse produced stored image refs. A ready document
+	// whose content carries no readable text and whose images are not forwarded
+	// is unusable — flag it instead of letting the model guess.
+	visionForwarded := reqCtx.customAgent != nil &&
+		reqCtx.customAgent.Config.ImageUploadEnabled && len(imageURLs) > 0
+	for i := range attachments {
+		if attachments[i].ParseError == "" && !visionForwarded && !attachmentHasUsableText(attachments[i].Content) {
+			attachments[i].ParseError = "no readable text could be extracted from this file; it may be a scanned document or an image and no vision/OCR model is configured to read it"
+			h.auditAttachmentFailure(ctx, tenantID, sessionID, reqCtx.requestID, &attachments[i], "ready", "no_readable_content")
+		}
+	}
+
+	// Turn skipped documents into explicit failure attachments so the model
+	// sees that a file was provided but could not be read.
+	metaByID := make(map[string]types.MessageAttachment, len(reqCtx.attachmentMetas))
+	for _, meta := range reqCtx.attachmentMetas {
+		metaByID[meta.ID] = meta
+	}
+	for _, skip := range skipped {
+		att := types.MessageAttachment{ID: skip.id, ParseError: skip.reason}
+		if skip.doc != nil {
+			att.URL = skip.doc.ResourceRef
+			att.FileName = skip.doc.FileName
+			att.FileType = skip.doc.FileType
+			att.FileSize = skip.doc.FileSize
+		} else if meta, ok := metaByID[skip.id]; ok {
+			att.FileName = meta.FileName
+			att.FileType = meta.FileType
+			att.FileSize = meta.FileSize
+		}
+		attachments = append(attachments, att)
+		h.auditAttachmentFailure(ctx, tenantID, sessionID, reqCtx.requestID, &att, skip.status, skip.reason)
+	}
+	if len(attachments) == 0 {
+		return
+	}
+
 	reqCtx.attachments = append(reqCtx.attachments, attachments...)
 	// Persist the freshly selected content back onto the stored user message.
 	// The message was created with metadata-only attachment entries (content is
@@ -1494,11 +1595,63 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 	// later Agent-mode turn rebuilds history from the Attachments column and
 	// sees empty attachments (see buildUserHistoryMessage in agent_history.go).
 	h.persistResolvedAttachmentContent(ctx, reqCtx, attachments)
-	if reqCtx.customAgent != nil && reqCtx.customAgent.Config.ImageUploadEnabled {
-		for _, imageURL := range temporaryResult.ImageURLs {
+	if visionForwarded {
+		for _, imageURL := range imageURLs {
 			reqCtx.images = append(reqCtx.images, ImageAttachment{URL: imageURL})
 		}
 	}
+}
+
+// auditAttachmentFailure records that a QA turn proceeded while an attachment's
+// content was unavailable to the model. Best-effort: the audit service logs its
+// own failures, and a missing service (lite mode) degrades silently.
+func (h *Handler) auditAttachmentFailure(
+	ctx context.Context, tenantID uint64, sessionID, requestID string,
+	att *types.MessageAttachment, status, reason string,
+) {
+	if h.auditLog == nil {
+		return
+	}
+	details, _ := json.Marshal(map[string]string{
+		"file_name":  att.FileName,
+		"file_type":  att.FileType,
+		"status":     status,
+		"reason":     reason,
+		"request_id": requestID,
+	})
+	actor, _ := types.UserIDFromContext(ctx)
+	targetType, targetID := "attachment_upload", ""
+	if att.ID != "" {
+		targetType, targetID = "temporary_document", att.ID
+	}
+	// Detach from the stream lifetime so a user-triggered stop cannot drop the
+	// audit write; pin the session tenant for the same reason.
+	auditCtx := context.WithValue(
+		context.WithoutCancel(ctx), types.TenantIDContextKey, tenantID,
+	)
+	_ = h.auditLog.Log(auditCtx, &types.AuditLog{
+		TenantID:    tenantID,
+		ActorUserID: actor,
+		Action:      types.AuditActionChatAttachmentUnavailable,
+		ScopeType:   "session",
+		ScopeID:     sessionID,
+		TargetType:  targetType,
+		TargetID:    targetID,
+		Outcome:     types.AuditOutcomeFailed,
+		Details:     types.JSON(details),
+	})
+}
+
+// attachmentContentImagePattern matches markdown image references so the
+// usable-text check ignores image-only content (mirrors the service-side
+// markdownImagePattern used to detect scanned/image-only documents).
+var attachmentContentImagePattern = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+
+// attachmentHasUsableText reports whether extracted attachment content carries
+// real text. Content made only of image markdown (e.g. an uploaded image or a
+// scanned PDF page) is unusable to a model that never receives the image.
+func attachmentHasUsableText(content string) bool {
+	return strings.TrimSpace(attachmentContentImagePattern.ReplaceAllString(content, "")) != ""
 }
 
 // persistResolvedAttachmentContent writes the parsed content of pre-uploaded
@@ -1604,16 +1757,41 @@ func (h *Handler) waitForAttachments(ctx context.Context, tenantID uint64, sessi
 	}
 }
 
-// partitionReadyAttachments splits the ids into ready ones and a count of those
-// skipped (missing, failed, or still parsing after the wait).
-func (h *Handler) partitionReadyAttachments(ctx context.Context, tenantID uint64, sessionID string, ids []string) (ready []string, skipped int) {
+// skippedAttachment records a referenced document that could not provide
+// prompt content, with enough context to render an LLM-visible failure entry
+// and an audit row.
+type skippedAttachment struct {
+	id     string
+	doc    *types.TemporaryDocument // nil when the row is gone or unreadable
+	status string                   // document status at skip time (or "missing"/"resolve_error")
+	reason string                   // human/LLM-readable explanation
+}
+
+// partitionReadyAttachments splits the ids into ready ones and the details of
+// those skipped (missing, failed, or still parsing after the wait).
+func (h *Handler) partitionReadyAttachments(ctx context.Context, tenantID uint64, sessionID string, ids []string) (ready []string, skipped []skippedAttachment) {
 	for _, id := range ids {
 		doc, err := h.temporaryDocuments.Get(ctx, tenantID, sessionID, id)
-		if err != nil || doc == nil || doc.Status != types.TemporaryDocumentStatusReady {
-			skipped++
-			continue
+		switch {
+		case err != nil || doc == nil:
+			skipped = append(skipped, skippedAttachment{
+				id: id, status: "missing",
+				reason: "the attachment could not be found or has expired",
+			})
+		case doc.Status == types.TemporaryDocumentStatusReady:
+			ready = append(ready, id)
+		case doc.Status == types.TemporaryDocumentStatusFailed:
+			reason := "parsing failed"
+			if msg := strings.TrimSpace(doc.ErrorMessage); msg != "" {
+				reason = "parsing failed: " + msg
+			}
+			skipped = append(skipped, skippedAttachment{id: id, doc: doc, status: string(doc.Status), reason: reason})
+		default:
+			skipped = append(skipped, skippedAttachment{
+				id: id, doc: doc, status: string(doc.Status),
+				reason: "parsing did not finish within the wait timeout",
+			})
 		}
-		ready = append(ready, id)
 	}
 	return ready, skipped
 }
