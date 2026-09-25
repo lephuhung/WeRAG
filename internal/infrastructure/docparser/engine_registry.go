@@ -92,9 +92,10 @@ func remoteReader(deps ReaderDeps) (interfaces.DocReader, error) {
 //
 // Merge rules:
 //   - Local engines are always included, with Go-side availability checks.
-//   - For a remote engine whose name matches a local one, the remote's
-//     file_types and description take precedence (the remote service is
-//     authoritative for its own capabilities).
+//   - The local description is authoritative for display (a stale remote
+//     docreader must not override UI strings with another language).
+//     Only the remote's file_types are adopted, since the remote service
+//     knows its own capabilities.
 //   - Remote engines not present locally are appended as-is, enabling
 //     auto-discovery of newly added docreader engines without Go changes.
 func ListAllEngines(
@@ -118,9 +119,6 @@ func ListAllEngines(
 		if re, ok := remoteMap[name]; ok {
 			if len(re.FileTypes) > 0 {
 				fileTypes = re.FileTypes
-			}
-			if re.Description != "" {
-				description = re.Description
 			}
 		}
 

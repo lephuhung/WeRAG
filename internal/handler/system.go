@@ -440,19 +440,19 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 		Addr string `json:"addr" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请提供 addr 参数"})
+		c.JSON(400, gin.H{"code": 1, "msg": "please provide the addr parameter"})
 		return
 	}
 	addr := strings.TrimSpace(req.Addr)
 	if addr == "" {
-		c.JSON(400, gin.H{"code": 1, "msg": "addr 不能为空"})
+		c.JSON(400, gin.H{"code": 1, "msg": "addr must not be empty"})
 		return
 	}
 
 	// SSRF validation for docreader address
 	if err := secutils.ValidateURLForSSRF(addr); err != nil {
 		logger.Warnf(c.Request.Context(), "SSRF validation failed for docreader addr: %v", err)
-		c.JSON(400, gin.H{"code": 1, "msg": secutils.FormatSSRFError("DocReader 地址", addr, err)})
+		c.JSON(400, gin.H{"code": 1, "msg": secutils.FormatSSRFError("DocReader address", addr, err)})
 		return
 	}
 
@@ -463,7 +463,7 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 
 	if err := h.documentReader.Reconnect(addr); err != nil {
 		logger.Errorf(c.Request.Context(), "Failed to reconnect docreader to %s: %v", addr, err)
-		c.JSON(200, gin.H{"code": 1, "msg": fmt.Sprintf("连接失败: %v", err)})
+		c.JSON(200, gin.H{"code": 1, "msg": fmt.Sprintf("connection failed: %v", err)})
 		return
 	}
 
@@ -485,7 +485,7 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 	engines := docparser.ListAllEngines(true, overrides, remoteEngines)
 
 	_, docreaderTransport := h.getDocReaderConnInfo()
-	c.JSON(200, gin.H{"code": 0, "msg": "连接成功", "data": engines, "docreader_addr": addr, "docreader_transport": docreaderTransport, "connected": true})
+	c.JSON(200, gin.H{"code": 0, "msg": "connected", "data": engines, "docreader_addr": addr, "docreader_transport": docreaderTransport, "connected": true})
 }
 
 // CheckParserEngines runs availability check with the given config overrides (e.g. current form values).
@@ -500,7 +500,7 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 func (h *SystemHandler) CheckParserEngines(c *gin.Context) {
 	var body types.ParserEngineConfig
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请求体格式错误"})
+		c.JSON(400, gin.H{"code": 1, "msg": "invalid request body"})
 		return
 	}
 	var existing *types.ParserEngineConfig
@@ -566,7 +566,7 @@ func (h *SystemHandler) fetchRemoteEngines(ctx context.Context, reader interface
 func (h *SystemHandler) getKeywordIndexEngine() string {
 	retrieveDriver := os.Getenv("RETRIEVE_DRIVER")
 	if retrieveDriver == "" {
-		return "未配置"
+		return "not configured"
 	}
 
 	drivers := strings.Split(retrieveDriver, ",")
@@ -580,7 +580,7 @@ func (h *SystemHandler) getKeywordIndexEngine() string {
 	}
 
 	if len(keywordEngines) == 0 {
-		return "未配置"
+		return "not configured"
 	}
 	return strings.Join(keywordEngines, ", ")
 }
@@ -595,7 +595,7 @@ func (h *SystemHandler) getVectorStoreEngine() string {
 	// Fallback to RETRIEVE_DRIVER for vector support
 	retrieveDriver := os.Getenv("RETRIEVE_DRIVER")
 	if retrieveDriver == "" {
-		return "未配置"
+		return "not configured"
 	}
 
 	drivers := strings.Split(retrieveDriver, ",")
@@ -609,7 +609,7 @@ func (h *SystemHandler) getVectorStoreEngine() string {
 	}
 
 	if len(vectorEngines) == 0 {
-		return "未配置"
+		return "not configured"
 	}
 	return strings.Join(vectorEngines, ", ")
 }
@@ -880,10 +880,10 @@ func storageEndpointHost(endpoint string) string {
 func isBlockedStorageEndpoint(endpoint string) (bool, string) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
-		return true, "无效的地址"
+		return true, "invalid address"
 	}
 	if err := secutils.ValidateURLForSSRF(endpoint); err != nil {
-		return true, secutils.FormatSSRFError("存储 Endpoint", endpoint, err)
+		return true, secutils.FormatSSRFError("storage endpoint", endpoint, err)
 	}
 	return false, ""
 }
@@ -923,11 +923,11 @@ func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
 
 	var req StorageCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请求体格式错误"})
+		c.JSON(400, gin.H{"code": 1, "msg": "invalid request body"})
 		return
 	}
 	if !isStorageProviderAllowed(req.Provider) {
-		c.JSON(403, gin.H{"code": 1, "msg": "该存储引擎已被禁用"})
+		c.JSON(403, gin.H{"code": 1, "msg": "this storage engine is disabled"})
 		return
 	}
 
@@ -947,7 +947,7 @@ func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
 	case "obs":
 		h.checkOBS(c, ctx, req.OBS)
 	default:
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: "本地存储无需检测"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: "local storage needs no check"}})
 	}
 }
 
@@ -963,12 +963,12 @@ func (h *SystemHandler) isS3Configured(c *gin.Context) bool {
 
 func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *types.MinIOEngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 MinIO 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "MinIO config not provided"}})
 		return
 	}
 
 	if cfg.BucketName != "" && !cosFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Bucket 名称格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 
@@ -979,7 +979,7 @@ func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *typ
 		secretAccessKey = os.Getenv("MINIO_SECRET_ACCESS_KEY")
 	}
 	if endpoint == "" || accessKeyID == "" || secretAccessKey == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint、Access Key、Secret Key 不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Access Key and Secret Key must not be empty"}})
 		return
 	}
 
@@ -1011,28 +1011,28 @@ func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *typ
 		return
 	}
 
-	msg := "连接成功"
+	msg := "connected"
 	if cfg.BucketName != "" {
-		msg = fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)
+		msg = fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)
 	}
 	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: msg}})
 }
 
 func (h *SystemHandler) checkCOS(c *gin.Context, ctx context.Context, cfg *types.COSEngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 COS 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "COS config not provided"}})
 		return
 	}
 	if cfg.SecretID == "" || cfg.SecretKey == "" || cfg.Region == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Secret ID、Secret Key、Region、Bucket 名称不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Secret ID, Secret Key, Region and Bucket name must not be empty"}})
 		return
 	}
 	if !cosFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region 格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 	if !cosFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Bucket 名称格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 
@@ -1041,26 +1041,26 @@ func (h *SystemHandler) checkCOS(c *gin.Context, ctx context.Context, cfg *types
 		logger.Errorf(ctx, "Storage check: COS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查 Secret ID / Secret Key 是否正确"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Secret ID / Secret Key"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在，请检查名称和 Region", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
 			return
 		}
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
 		return
 	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) checkTOS(c *gin.Context, ctx context.Context, cfg *types.TOSEngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 TOS 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "TOS config not provided"}})
 		return
 	}
 	if cfg.Endpoint == "" || cfg.Region == "" || cfg.AccessKey == "" || cfg.SecretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint、Region、Access Key、Secret Key、Bucket 名称不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
 		return
 	}
 
@@ -1075,30 +1075,30 @@ func (h *SystemHandler) checkTOS(c *gin.Context, ctx context.Context, cfg *types
 		logger.Errorf(ctx, "Storage check: TOS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查 Access Key / Secret Key 是否正确"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在，请检查名称和 Region", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
 			return
 		}
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
 		return
 	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) checkS3(c *gin.Context, ctx context.Context, cfg *types.S3EngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 S3 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "S3 config not provided"}})
 		return
 	}
 	if cfg.Region == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region、Bucket 名称不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region and Bucket name must not be empty"}})
 		return
 	}
 	if (cfg.AccessKey == "") != (cfg.SecretKey == "") {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Access Key 与 Secret Key 必须同时填写或同时留空（使用 AWS 默认凭证链）"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Access Key and Secret Key must both be set or both be empty (uses the AWS default credential chain)"}})
 		return
 	}
 
@@ -1115,28 +1115,28 @@ func (h *SystemHandler) checkS3(c *gin.Context, ctx context.Context, cfg *types.
 		logger.Errorf(ctx, "Storage check: S3 connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查静态密钥或 AWS IAM Role / 默认凭证链权限"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check static keys or AWS IAM Role / default credential chain permissions"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NotFound") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在，请检查名称和 Region", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
 			return
 		}
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
 		return
 	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) checkOSS(c *gin.Context, ctx context.Context, cfg *types.OSSEngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 OSS 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "OSS config not provided"}})
 		return
 	}
 
 	endpoint, accessKey, secretKey := cfg.Endpoint, cfg.AccessKey, cfg.SecretKey
 	if endpoint == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint、Access Key、Secret Key、Bucket Name 不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Access Key, Secret Key and Bucket Name must not be empty"}})
 		return
 	}
 
@@ -1148,11 +1148,11 @@ func (h *SystemHandler) checkOSS(c *gin.Context, ctx context.Context, cfg *types
 		return
 	}
 	if !ossFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region 格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 	if !ossFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Bucket 名称格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 
@@ -1161,31 +1161,31 @@ func (h *SystemHandler) checkOSS(c *gin.Context, ctx context.Context, cfg *types
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
 			logger.Errorf(ctx, "Storage check: OSS auth failed, endpoint: %s, bucket: %s", endpoint, cfg.BucketName)
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查 Access Key / Secret Key 是否正确"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
 			logger.Errorf(ctx, "Storage check: OSS bucket not found, bucket: %s", cfg.BucketName)
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist", cfg.BucketName)}})
 			return
 		}
 		logger.Errorf(ctx, "Storage check: OSS connectivity failed, endpoint: %s, bucket: %s, error: %v", endpoint, cfg.BucketName, err)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("OSS 连通性检测失败: %s", sanitizeStorageCheckError(err))}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("OSS connectivity check failed: %s", sanitizeStorageCheckError(err))}})
 		return
 	}
 
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) checkKS3(c *gin.Context, ctx context.Context, cfg *types.KS3EngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 KS3 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "KS3 config not provided"}})
 		return
 	}
 
 	endpoint, region, accessKey, secretKey := cfg.Endpoint, cfg.Region, cfg.AccessKey, cfg.SecretKey
 	if endpoint == "" || region == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint、Region、Access Key、Secret Key、Bucket 名称不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
 		return
 	}
 
@@ -1200,28 +1200,28 @@ func (h *SystemHandler) checkKS3(c *gin.Context, ctx context.Context, cfg *types
 		logger.Errorf(ctx, "Storage check: KS3 connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查 Access Key / Secret Key 是否正确"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在，请检查名称和 Region", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
 			return
 		}
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
 		return
 	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) checkOBS(c *gin.Context, ctx context.Context, cfg *types.OBSEngineConfig) {
 	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "未提供 OBS 配置"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "OBS config not provided"}})
 		return
 	}
 
 	endpoint, region, accessKey, secretKey := cfg.Endpoint, cfg.Region, cfg.AccessKey, cfg.SecretKey
 	if endpoint == "" || region == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint、Region、Access Key、Secret Key、Bucket 名称不能为空"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
 		return
 	}
 
@@ -1233,11 +1233,11 @@ func (h *SystemHandler) checkOBS(c *gin.Context, ctx context.Context, cfg *types
 	}
 
 	if !ossFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region 格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 	if !ossFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Bucket 名称格式不正确，仅允许字母、数字、点、连字符"}})
+		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
 		return
 	}
 
@@ -1246,17 +1246,17 @@ func (h *SystemHandler) checkOBS(c *gin.Context, ctx context.Context, cfg *types
 		logger.Errorf(ctx, "Storage check: OBS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "认证失败，请检查 Access Key / Secret Key 是否正确"}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
 			return
 		}
 		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("Bucket「%s」不存在，请检查名称和 Region", cfg.BucketName)}})
+			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
 			return
 		}
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
 		return
 	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("连接成功，Bucket「%s」已确认存在", cfg.BucketName)}})
+	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 func (h *SystemHandler) ResolveDocumentReader(ctx context.Context, addr string) interfaces.DocumentReader {

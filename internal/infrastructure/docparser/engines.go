@@ -27,6 +27,10 @@ const (
 	PaddleOCRVLEngineName = "paddleocr_vl"
 	// PaddleOCRVLCloudEngineName is the PaddleOCR-VL AI Studio cloud API.
 	PaddleOCRVLCloudEngineName = "paddleocr_vl_cloud"
+	// MarkitdownEngineName is the Microsoft MarkItDown converter in docreader.
+	MarkitdownEngineName = "markitdown"
+	// OpenDataLoaderEngineName is the OpenDataLoader PDF parser in docreader.
+	OpenDataLoaderEngineName = "opendataloader"
 )
 
 func init() {
@@ -37,8 +41,9 @@ func init() {
 	RegisterEngine(&weKnoraCloudEngine{})
 	RegisterEngine(&mineruEngine{})
 	RegisterEngine(&mineruCloudEngine{})
-	RegisterEngine(&paddleOCRVLEngine{})
 	RegisterEngine(&paddleOCRVLCloudEngine{})
+	RegisterEngine(&markitdownEngine{})
+	RegisterEngine(&opendataloaderEngine{})
 }
 
 // preferAnydocWhenAvailable is the type-level default override: when the
@@ -281,9 +286,59 @@ func (e *paddleOCRVLCloudEngine) CheckAvailable(_ bool, overrides map[string]str
 	}
 	return PingPaddleOCRVLCloud(token)
 }
-
 func (e *paddleOCRVLCloudEngine) NewReader(
 	_ context.Context, deps ReaderDeps,
 ) (interfaces.DocReader, error) {
 	return NewPaddleOCRVLCloudReader(deps.Overrides), nil
+}
+
+// ---------------------------------------------------------------------------
+// markitdown / opendataloader — docreader-only engines reached via the
+// remote ListEngines RPC. Local entries exist so the UI shows the
+// authoritative English description even when the remote docreader is stale
+// or unreachable; parsing itself still routes to the docreader client.
+// ---------------------------------------------------------------------------
+
+type markitdownEngine struct{}
+
+func (e *markitdownEngine) Name() string { return MarkitdownEngineName }
+
+func (e *markitdownEngine) Description() string {
+	return "MarkItDown converter (Microsoft MarkItDown library)"
+}
+
+func (e *markitdownEngine) FileTypes(_ bool) []string {
+	return []string{"md", "markdown", "pdf", "docx", "doc", "pptx", "ppt", "xlsx", "xls", "csv"}
+}
+
+func (e *markitdownEngine) CheckAvailable(docreaderConnected bool, _ map[string]string) (bool, string) {
+	if docreaderConnected {
+		return true, ""
+	}
+	return false, "DocReader service not connected"
+}
+
+func (e *markitdownEngine) NewReader(_ context.Context, deps ReaderDeps) (interfaces.DocReader, error) {
+	return remoteReader(deps)
+}
+
+type opendataloaderEngine struct{}
+
+func (e *opendataloaderEngine) Name() string { return OpenDataLoaderEngineName }
+
+func (e *opendataloaderEngine) Description() string {
+	return "OpenDataLoader PDF (layout analysis, requires Java 11+)"
+}
+
+func (e *opendataloaderEngine) FileTypes(_ bool) []string { return []string{"pdf"} }
+
+func (e *opendataloaderEngine) CheckAvailable(docreaderConnected bool, _ map[string]string) (bool, string) {
+	if docreaderConnected {
+		return true, ""
+	}
+	return false, "DocReader service not connected"
+}
+
+func (e *opendataloaderEngine) NewReader(_ context.Context, deps ReaderDeps) (interfaces.DocReader, error) {
+	return remoteReader(deps)
 }
