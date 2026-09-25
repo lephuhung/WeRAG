@@ -823,14 +823,14 @@ func (h *SystemHandler) GetStorageEngineStatus(c *gin.Context) {
 		}
 	}
 	engines := []StorageEngineStatusItem{
-		{Name: "local", Allowed: allowed["local"], Available: true, Description: "本地文件系统存储，仅适合单机部署"},
-		{Name: "minio", Allowed: allowed["minio"], Available: minioConfigured || minioEnvAvailable, Description: "S3 兼容的自托管对象存储，适合内网和私有云部署"},
-		{Name: "cos", Allowed: allowed["cos"], Available: cosConfigured, Description: "腾讯云对象存储服务，适合公有云部署，支持 CDN 加速"},
-		{Name: "tos", Allowed: allowed["tos"], Available: tosConfigured, Description: "火山引擎对象存储服务，适合公有云部署"},
-		{Name: "s3", Allowed: allowed["s3"], Available: s3Configured, Description: "AWS S3 与兼容对象存储服务，适合公有云与混合云部署"},
-		{Name: "oss", Allowed: allowed["oss"], Available: ossConfigured, Description: "阿里云对象存储服务，适合公有云部署，支持 S3 兼容协议"},
-		{Name: "ks3", Allowed: allowed["ks3"], Available: ks3Configured, Description: "金山云对象存储服务，适合公有云部署"},
-		{Name: "obs", Allowed: allowed["obs"], Available: obsConfigured, Description: "华为云对象存储服务，适合公有云部署"},
+		{Name: "local", Allowed: allowed["local"], Available: true, Description: "Local filesystem storage, best for single-node deployments"},
+		{Name: "minio", Allowed: allowed["minio"], Available: minioConfigured || minioEnvAvailable, Description: "S3-compatible self-hosted object storage, for intranet and private cloud"},
+		{Name: "cos", Allowed: allowed["cos"], Available: cosConfigured, Description: "Tencent Cloud object storage, for public cloud with CDN acceleration"},
+		{Name: "tos", Allowed: allowed["tos"], Available: tosConfigured, Description: "Volcengine object storage service, for public cloud"},
+		{Name: "s3", Allowed: allowed["s3"], Available: s3Configured, Description: "AWS S3 and compatible object storage, for public and hybrid cloud"},
+		{Name: "oss", Allowed: allowed["oss"], Available: ossConfigured, Description: "Alibaba Cloud object storage, for public cloud with S3-compatible API"},
+		{Name: "ks3", Allowed: allowed["ks3"], Available: ks3Configured, Description: "Kingsoft Cloud object storage, for public cloud"},
+		{Name: "obs", Allowed: allowed["obs"], Available: obsConfigured, Description: "Huawei Cloud object storage, for public cloud"},
 	}
 	c.JSON(200, gin.H{
 		"code": 0,

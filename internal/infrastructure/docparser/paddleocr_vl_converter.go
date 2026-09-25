@@ -524,10 +524,10 @@ func stripOCRMarkup(text string) string {
 func PingPaddleOCRVL(endpoint string) (bool, string) {
 	endpoint = strings.TrimRight(endpoint, "/")
 	if endpoint == "" {
-		return false, "未配置 PaddleOCR-VL 端点"
+		return false, "PaddleOCR-VL endpoint not configured"
 	}
 	if err := utils.ValidateURLForSSRF(endpoint); err != nil {
-		return false, fmt.Sprintf("PaddleOCR-VL 端点未通过 SSRF 校验: %v", err)
+		return false, fmt.Sprintf("PaddleOCR-VL endpoint failed SSRF validation: %v", err)
 	}
 	client := utils.NewSSRFSafeHTTPClient(utils.SSRFSafeHTTPClientConfig{
 		Timeout:      5 * time.Second,
@@ -540,11 +540,11 @@ func PingPaddleOCRVL(endpoint string) (bool, string) {
 	}
 	resp, err := client.Get(endpoint + path)
 	if err != nil {
-		return false, fmt.Sprintf("PaddleOCR-VL 服务不可达: %v", err)
+		return false, fmt.Sprintf("PaddleOCR-VL service unreachable: %v", err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 500 {
-		return false, fmt.Sprintf("PaddleOCR-VL 服务返回状态 %d", resp.StatusCode)
+		return false, fmt.Sprintf("PaddleOCR-VL service returned status %d", resp.StatusCode)
 	}
 	return true, ""
 }

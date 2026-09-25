@@ -136,7 +136,7 @@ class ParserEngineRegistry:
                     available = False
                     unavailable_reason = str(e) or self._unavailable_hint.get(name, "")
             if not available and not unavailable_reason:
-                unavailable_reason = self._unavailable_hint.get(name, "不可用")
+                unavailable_reason = self._unavailable_hint.get(name, "Unavailable")
             result.append(
                 {
                     "name": name,
@@ -179,7 +179,7 @@ def _build_default_registry() -> ParserEngineRegistry:
             "xmind": XMindParser,
             **_image_types,
         },
-        description="内置解析引擎",
+        description="Built-in parser engine",
     )
 
     reg.register(
@@ -196,17 +196,17 @@ def _build_default_registry() -> ParserEngineRegistry:
             "xls": MarkitdownParser,
             "csv": MarkitdownParser,
         },
-        description="MarkItDown 解析引擎（微软 MarkItDown 库）",
+        description="MarkItDown parser engine (Microsoft MarkItDown library)",
     )
 
     reg.register(
         "opendataloader",
         {"pdf": OpenDataLoaderParser},
-        description="OpenDataLoader PDF（版面分析，需 Java 11+）",
+        description="OpenDataLoader PDF (layout analysis, requires Java 11+)",
         check_available=lambda overrides: opendataloader_available(
             overrides, quick=True
         ),
-        unavailable_hint="请安装 opendataloader-pdf 与 Java 11+",
+        unavailable_hint="Please install opendataloader-pdf and Java 11+",
     )
 
     reg.register(

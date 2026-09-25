@@ -488,14 +488,14 @@ func readZipEntryBytes(f *zip.File) ([]byte, error) {
 func PingMinerUCloud(apiKey string) (bool, string) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return false, "未配置 MinerU Cloud API Key"
+		return false, "MinerU Cloud API Key not configured"
 	}
 
 	targetURL := defaultBaseURL + "/file-urls/batch"
 	payload := []byte(`{"files":[],"model_version":"pipeline"}`)
 	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(payload))
 	if err != nil {
-		return false, fmt.Sprintf("构建请求失败: %v", err)
+		return false, fmt.Sprintf("failed to build request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -506,12 +506,12 @@ func PingMinerUCloud(apiKey string) (bool, string) {
 	})
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Sprintf("MinerU Cloud 不可达: %v", err)
+		return false, fmt.Sprintf("MinerU Cloud unreachable: %v", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return false, "MinerU Cloud API Key 无效"
+		return false, "MinerU Cloud API Key invalid"
 	}
 	return true, ""
 }

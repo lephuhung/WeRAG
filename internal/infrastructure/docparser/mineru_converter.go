@@ -362,7 +362,7 @@ func validateMinerUOutboundURL(rawURL string) error {
 func PingMinerU(endpoint string) (bool, string) {
 	endpoint = strings.TrimRight(endpoint, "/")
 	if endpoint == "" {
-		return false, "未配置 MinerU 端点"
+		return false, "MinerU endpoint not configured"
 	}
 	if err := validateMinerUOutboundURL(endpoint); err != nil {
 		return false, err.Error()
@@ -373,11 +373,11 @@ func PingMinerU(endpoint string) (bool, string) {
 	})
 	resp, err := client.Get(endpoint + "/docs")
 	if err != nil {
-		return false, fmt.Sprintf("MinerU 服务不可达: %v", err)
+		return false, fmt.Sprintf("MinerU service unreachable: %v", err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return false, fmt.Sprintf("MinerU 服务返回状态 %d", resp.StatusCode)
+		return false, fmt.Sprintf("MinerU service returned status %d", resp.StatusCode)
 	}
 	return true, ""
 }
