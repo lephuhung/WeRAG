@@ -1157,7 +1157,7 @@ func ResetSSRFWhitelistForTest() {
 
 // FormatSSRFError takes the error returned by ValidateURLForSSRF and wraps
 // it with operator guidance — specifically how to add a host to the SSRF
-// allow-list. Without this hint, users hit "Base URL 未通过安全校验" with
+// allow-list. Without this hint, users hit a bare validation failure with
 // no idea how to recover (the allowlist is configured server-side, not
 // in the UI). The hint references SSRF_WHITELIST_EXTRA rather than
 // SSRF_WHITELIST because the latter is the project's baseline list and
@@ -1175,9 +1175,9 @@ func FormatSSRFError(label, rawURL string, err error) string {
 		host = parsed
 	}
 	return fmt.Sprintf(
-		"%s 未通过安全校验：%v。如该地址确实可信，请联系运维在服务端环境变量 "+
-			"SSRF_WHITELIST_EXTRA 中加入该主机（支持精确域名 / *.example.com 通配 / IP / CIDR），"+
-			"示例：SSRF_WHITELIST_EXTRA=%s,*.example.com,10.0.0.0/8",
+		"%s failed security validation: %v. If this address is trusted, ask your operator to add the host to the server-side "+
+			"SSRF_WHITELIST_EXTRA env var (supports exact domain / *.example.com wildcard / IP / CIDR), "+
+			"e.g.: SSRF_WHITELIST_EXTRA=%s,*.example.com,10.0.0.0/8",
 		label, err, host,
 	)
 }
