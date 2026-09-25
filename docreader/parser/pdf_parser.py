@@ -1400,8 +1400,17 @@ def _strip_repeating_lines(texts: list, classes: list) -> list:
         if classes[i] != "text":
             cleaned.append(text)
             continue
-        kept = [ln for ln in text.splitlines() if ln.strip() not in repeating]
-        cleaned.append("\n".join(kept))
+        lines = text.splitlines()
+        # Strip only verified repeated boundary lines: leading/trailing
+        # runs. Interior paragraphs that happen to equal a header/footer
+        # string (quotes, repeated slogans) must be preserved.
+        start = 0
+        while start < len(lines) and lines[start].strip() in repeating:
+            start += 1
+        end = len(lines)
+        while end > start and lines[end - 1].strip() in repeating:
+            end -= 1
+        cleaned.append("\n".join(lines[start:end]))
     return cleaned
 
 

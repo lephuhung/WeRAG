@@ -39,6 +39,21 @@ class TestBrokenVNTextLayer(unittest.TestCase):
         text = "Article 1. This law provides for independence. " * 20
         self.assertFalse(_has_broken_vn_text_layer(text))
 
+    def test_valid_nfd_vietnamese_is_not_broken(self):
+        import unicodedata
+
+        # Valid Vietnamese in NFD (base + combining tones) must NFC-compose
+        # back to tone characters instead of flagging as a broken layer.
+        healthy = "Điều 1. Bộ luật dân sự quy định độc lập tự do hạnh phúc. " * 20
+        nfd = unicodedata.normalize("NFD", healthy)
+        # Sanity: NFD really decomposes (no pre-composed tones left).
+        self.assertNotIn("\u1ec1", nfd)
+        self.assertFalse(_has_broken_vn_text_layer(nfd))
+
+    def test_broken_layer_still_detected_after_nfc(self):
+        text = "B lut dân s quy đnh đc lâp t do hnh phúc. " * 20
+        self.assertTrue(_has_broken_vn_text_layer(text))
+
 
 class TestStripOcrMarkup(unittest.TestCase):
     def test_strips_detection_blocks_and_special_tokens(self):
@@ -178,6 +193,28 @@ class TestOcrScannedPages(unittest.TestCase):
         self.assertEqual(out.metadata["vn_ocr_pages"], 0)
         self.assertNotEqual(out.metadata.get("image_source_type"), "vn_ocr")
 
+    def test_mixed_success_keeps_scanned_pdf_for_residual(self):
+        # One page OCR'd, one failed: the residual image must stay for Go
+        # OCR, so image_source_type stays scanned_pdf (vn_ocr only when
+        # every scanned image was replaced).
+        doc = _make_doc()
+        with mock.patch(
+            "docreader.parser.vietnamese_legal_parser._ocr_page_image",
+            side_effect=["OCR trang 2", ""],
+        ):
+            out = _parser()._ocr_scanned_pages(doc)
+
+        self.assertIn("OCR trang 2", out.content)
+        self.assertIn("images/nd_page_3.jpg", out.content)
+        self.assertNotIn("nd_page_2.jpg](images", out.content)
+        self.assertEqual(out.metadata["vn_ocr_pages"], 1)
+        self.assertEqual(out.metadata["image_source_type"], "scanned_pdf")
+        self.assertEqual(len(out.images), 1)
+        # Page markers for all pages survive the partial replacement.
+        self.assertIn("<!-- page 1 -->", out.content)
+        self.assertIn("<!-- page 2 -->", out.content)
+        self.assertIn("<!-- page 3 -->", out.content)
+
     def test_no_scanned_refs_is_noop(self):
         doc = Document(content="plain text", images={}, metadata={})
         with mock.patch(
@@ -219,6 +256,137 @@ class TestRequestOverrides(unittest.TestCase):
         VietnameseLegalPDFParser(
             file_name="nd.pdf", file_type="pdf", mineru_backend="pipeline"
         )
+
+
+def _capture_ocr_payload(**ocr_kwargs):
+    """Run _ocr_page_image with a mocked Session and return the payload."""
+    from docreader.parser import vietnamese_legal_parser as m
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class _Session:
+        def post(self, url, json=None, headers=None, timeout=None):
+            captured["payload"] = json
+            return _Resp()
+
+    with mock.patch.object(m, "_get_ocr_session", return_value=_Session()):
+        m._ocr_page_image(
+            b"jpeg", 1, url="http://ocr/v1", model="mdl", **ocr_kwargs
+        )
+    return captured["payload"]
+
+
+class TestRepetitionPenalty(unittest.TestCase):
+    def test_default_sends_no_repetition_penalty(self):
+        with mock.patch.dict("os.environ", {}, clear=False):
+            import os
+
+            os.environ.pop("DOCREADER_VN_OCR_REPETITION_PENALTY", None)
+            payload = _capture_ocr_payload()
+        self.assertNotIn("repetition_penalty", payload)
+
+    def test_explicit_env_is_sent(self):
+        with mock.patch.dict(
+            "os.environ", {"DOCREADER_VN_OCR_REPETITION_PENALTY": "1.2"}
+        ):
+            payload = _capture_ocr_payload()
+        self.assertEqual(payload.get("repetition_penalty"), 1.2)
+
+    def test_explicit_env_one_disables(self):
+        with mock.patch.dict(
+            "os.environ", {"DOCREADER_VN_OCR_REPETITION_PENALTY": "1"}
+        ):
+            payload = _capture_ocr_payload()
+        self.assertNotIn("repetition_penalty", payload)
+
+    def test_per_upload_override_wins_over_env(self):
+        with mock.patch.dict(
+            "os.environ", {"DOCREADER_VN_OCR_REPETITION_PENALTY": "1.2"}
+        ):
+            payload = _capture_ocr_payload(repetition_penalty=1.4)
+        self.assertEqual(payload.get("repetition_penalty"), 1.4)
+
+    def test_per_upload_one_disables_despite_env(self):
+        with mock.patch.dict(
+            "os.environ", {"DOCREADER_VN_OCR_REPETITION_PENALTY": "1.2"}
+        ):
+            payload = _capture_ocr_payload(repetition_penalty=1.0)
+        self.assertNotIn("repetition_penalty", payload)
+
+    def test_per_upload_zero_disables_despite_env(self):
+        with mock.patch.dict(
+            "os.environ", {"DOCREADER_VN_OCR_REPETITION_PENALTY": "1.2"}
+        ):
+            payload = _capture_ocr_payload(repetition_penalty=0.0)
+        self.assertNotIn("repetition_penalty", payload)
+
+
+class TestForceScannedMarkers(unittest.TestCase):
+    def _image_pdf(self, num_pages=2):
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        pages = [Image.new("RGB", (64, 64), c) for c in ("white", "black")]
+        pages = (pages * ((num_pages // 2) + 1))[:num_pages]
+        pages[0].save(buf, format="PDF", save_all=True, append_images=pages[1:])
+        return buf.getvalue()
+
+    def test_force_scanned_has_marker_per_image_page(self):
+        pdf_bytes = self._image_pdf(2)
+        p = VietnameseLegalPDFParser(
+            file_name="forced.pdf", file_type="pdf", pdf_force_scanned="true"
+        )
+        with mock.patch.object(
+            VietnameseLegalPDFParser, "_ocr_enabled", return_value=False
+        ):
+            doc = p.parse_into_text(pdf_bytes)
+        self.assertEqual(doc.metadata.get("page_count"), 2)
+        self.assertEqual(doc.metadata.get("scanned_page_count"), 2)
+        self.assertEqual(doc.content.count("<!-- page "), 2)
+        self.assertIn("<!-- page 1 -->", doc.content)
+        self.assertIn("<!-- page 2 -->", doc.content)
+        self.assertIn("images/forced_page_1.jpg", doc.content)
+        self.assertIn("images/forced_page_2.jpg", doc.content)
+        self.assertEqual(len(doc.images), 2)
+
+    def test_fallback_render_gets_markers_without_duplicates(self):
+        # Simulate the routing-fallback path: _route fails, super falls back
+        # to full image rendering. Markers must be added exactly once.
+        from docreader.parser import vietnamese_legal_parser as m
+
+        pdf_bytes = self._image_pdf(2)
+        p = VietnameseLegalPDFParser(file_name="fb.pdf", file_type="pdf")
+        real_route = p._route
+        with mock.patch.object(
+            m.PDFParser, "_route", side_effect=RuntimeError("boom")
+        ), mock.patch.object(
+            VietnameseLegalPDFParser, "_ocr_enabled", return_value=False
+        ):
+            doc = p.parse_into_text(pdf_bytes)
+        self.assertEqual(doc.content.count("<!-- page "), 2)
+        self.assertIn("images/fb_page_1.jpg", doc.content)
+        # Sanity: the normal route is unchanged (no duplication there either).
+        with mock.patch.object(
+            VietnameseLegalPDFParser, "_ocr_enabled", return_value=False
+        ):
+            doc2 = p.parse_into_text(pdf_bytes)
+        _ = real_route  # keep linters quiet about unused capture
+        self.assertEqual(doc2.content.count("<!-- page "), 2)
+
+    def test_mixed_route_does_not_duplicate_markers(self):
+        doc = _make_doc()
+        out = _parser()._ensure_image_page_markers(doc)
+        self.assertEqual(out.content, doc.content)
+        self.assertEqual(out.content.count("<!-- page "), 3)
 
 
 if __name__ == "__main__":

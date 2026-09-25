@@ -45,6 +45,7 @@ import logging
 import os
 import re
 import threading
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -89,7 +90,12 @@ def _has_broken_vn_text_layer(text: str) -> bool:
 
     Vietnamese base letters present + tone-char ratio below threshold → the
     embedded layer is corrupt; the page should be rendered and OCR'd.
+
+    The input is NFC-normalized first so valid NFD text (base letter +
+    combining tone marks) composes back to pre-composed tone characters
+    instead of misclassifying as a broken layer.
     """
+    text = unicodedata.normalize("NFC", text or "")
     letters = tone = base = 0
     for ch in text:
         if ch.isalpha():
@@ -196,6 +202,34 @@ def _get_ocr_session() -> requests.Session:
     return _ocr_session
 
 
+def _resolve_repetition_penalty(explicit) -> float | None:
+    """Decide which repetition_penalty (if any) to send.
+
+    Only an explicit per-upload override or an explicitly configured
+    ``DOCREADER_VN_OCR_REPETITION_PENALTY`` env value is sent. Explicit
+    ``1``/``0`` (and any unset state) disables the parameter so the
+    endpoint default applies. Reads the env live so tests can patch it.
+    """
+    if explicit is not None:
+        try:
+            v = float(explicit)
+        except (TypeError, ValueError):
+            return None
+        if v and v != 1.0 and v > 0:
+            return v
+        return None
+    raw = os.environ.get("DOCREADER_VN_OCR_REPETITION_PENALTY", "").strip()
+    if not raw:
+        return None
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    if v and v != 1.0 and v > 0:
+        return v
+    return None
+
+
 def _ocr_page_image(
     jpeg_bytes: bytes,
     page_no: int,
@@ -205,7 +239,7 @@ def _ocr_page_image(
     api_key: str = "",
     prompt: str = "",
     vllm_xargs: bool = False,
-    repetition_penalty: float = 0.0,
+    repetition_penalty=None,
 ) -> str:
     """One page image → OCR text via an OpenAI-compatible chat endpoint."""
     data_uri = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
@@ -223,8 +257,8 @@ def _ocr_page_image(
         "temperature": 0.0,
         "max_tokens": VN_OCR_MAX_TOKENS,
     }
-    rp = repetition_penalty if repetition_penalty > 0 else VN_OCR_REPETITION_PENALTY
-    if rp and rp != 1.0:
+    rp = _resolve_repetition_penalty(repetition_penalty)
+    if rp is not None:
         payload["repetition_penalty"] = rp
     if vllm_xargs:
         # Only for engines still running Unlimited-OCR's NGram processor:
@@ -290,10 +324,16 @@ class VietnameseLegalPDFParser(PDFParser):
         rp_raw = str(
             kwargs.pop("openai_ocr_repetition_penalty", "") or ""
         ).strip()
-        try:
-            self._ocr_repetition_penalty = float(rp_raw) if rp_raw else 0.0
-        except ValueError:
-            self._ocr_repetition_penalty = 0.0
+        if not rp_raw:
+            # Unset per-upload override: fall back to an explicitly
+            # configured env value inside _ocr_page_image (None sentinel
+            # preserves the unset-vs-explicit-0 distinction).
+            self._ocr_repetition_penalty = None
+        else:
+            try:
+                self._ocr_repetition_penalty = float(rp_raw)
+            except ValueError:
+                self._ocr_repetition_penalty = None
         super().__init__(*args, **kwargs)
         # Env fallbacks when the request did not pin an endpoint.
         self._ocr_url = self._ocr_url or VN_OCR_URL
@@ -319,8 +359,39 @@ class VietnameseLegalPDFParser(PDFParser):
     def parse_into_text(self, content: bytes) -> Document:
         doc = super().parse_into_text(content)
         doc.metadata["vn_legal_parser"] = "1"
+        doc = self._ensure_image_page_markers(doc)
         if self._ocr_enabled() and doc.images:
             doc = self._ocr_scanned_pages(doc)
+        return doc
+
+    def _ensure_image_page_markers(self, doc: Document) -> Document:
+        """Prefix page markers for image-only docs (force/fallback path).
+
+        ``PDFScannedParser`` (used by force-scanned mode and the routing
+        fallback) emits bare image refs with no ``<!-- page N -->``
+        markers. The mixed/native route already carries markers via
+        ``_assemble_blocks`` + ``_page_marker``, so when any marker is
+        present this is a no-op — never duplicate markers.
+        """
+        if not doc.content or "<!-- page " in doc.content:
+            return doc
+        blocks = doc.content.split("\n\n")
+        new_blocks: list = []
+        for blk in blocks:
+            m = _PAGE_IMG_BLOCK_RE.search(blk)
+            if m:
+                try:
+                    page_no = int(m.group(1))
+                except ValueError:
+                    page_no = len(new_blocks) + 1
+                new_blocks.append(self._page_marker(page_no - 1) + blk)
+            elif blk.strip().startswith("!["):
+                new_blocks.append(
+                    self._page_marker(len(new_blocks)) + blk
+                )
+            else:
+                new_blocks.append(blk)
+        doc.content = "\n\n".join(new_blocks).strip()
         return doc
 
     def _ocr_scanned_pages(self, doc: Document) -> Document:
@@ -386,7 +457,14 @@ class VietnameseLegalPDFParser(PDFParser):
         doc.metadata["vn_ocr_pages"] = ocr_pages
         doc.metadata["vn_ocr_model"] = self._ocr_model
         if ocr_pages:
-            doc.metadata["image_source_type"] = "vn_ocr"
+            # Only claim vn_ocr when every scanned-page image was
+            # replaced. With any residual scanned image left for the
+            # Go-side OCR fallback, stay on scanned_pdf so downstream
+            # still routes the page to OCR/VLM.
+            remaining = any(ref in doc.images for _, ref in jobs.values())
+            doc.metadata["image_source_type"] = (
+                "scanned_pdf" if remaining else "vn_ocr"
+            )
         return doc
 
 

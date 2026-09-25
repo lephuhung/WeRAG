@@ -143,6 +143,32 @@ class StripRepeatingLinesTest(unittest.TestCase):
         classes = ["text"] * 2
         self.assertEqual(_strip_repeating_lines(texts, classes), texts)
 
+    def test_preserves_interior_paragraph_matching_header(self):
+        # A repeated boundary string quoted inside body text must survive;
+        # only the leading/trailing boundary occurrences are stripped.
+        header = "ACME CONFIDENTIAL"
+        texts = [
+            f"{header}\nbody page {i} cites {header} in text\nshared footer"
+            for i in range(6)
+        ]
+        classes = ["text"] * 6
+        cleaned = _strip_repeating_lines(texts, classes)
+        for i, page in enumerate(cleaned):
+            lines = page.splitlines()
+            # Boundary header/footer removed.
+            self.assertFalse(lines and lines[0] == header)
+            self.assertFalse(lines and lines[-1] == "shared footer")
+            # Interior paragraph mentioning the header string preserved.
+            self.assertIn(f"body page {i} cites {header} in text", page)
+
+    def test_preserves_substantive_singleton_interior(self):
+        header = "ACME CONFIDENTIAL"
+        texts = [f"{header}\nunique body {i}\nshared footer" for i in range(6)]
+        classes = ["text"] * 6
+        cleaned = _strip_repeating_lines(texts, classes)
+        for i, page in enumerate(cleaned):
+            self.assertIn(f"unique body {i}", page)
+
 
 class SelectEmbeddedImagesTest(unittest.TestCase):
     def _fig(self, page, h="fig", w=200, ht=200, area=0.2):
