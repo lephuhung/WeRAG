@@ -269,7 +269,7 @@ func TestDownloadMessageArtifact_SessionNotOwnedReturns404(t *testing.T) {
 	}
 }
 
-func TestDownloadMessageArtifact_SourceStorageAndGrantRevocation(t *testing.T) {
+func TestDownloadMessageArtifact_LegacyTenantGrantCannotAuthorizeSourceStorage(t *testing.T) {
 	const ref = "resource://AbCdEfGhIjKlMnOpQrStUv"
 	const physical = "local://7/exports/report.pdf"
 	grants := &artifactGrantStub{granted: map[string]bool{"kb-shared": true}}
@@ -318,13 +318,12 @@ func TestDownloadMessageArtifact_SourceStorageAndGrantRevocation(t *testing.T) {
 		return w
 	}
 	w := request()
-	if w.Code != http.StatusOK || w.Body.String() != "PDF-BYTES" ||
-		w.Header().Get("Cache-Control") != "private, no-store" {
-		t.Fatalf("status=%d body=%q cache=%q", w.Code, w.Body.String(), w.Header().Get("Cache-Control"))
+	if w.Code != http.StatusNotFound || ownerFiles.calls != 0 || globalFiles.calls != 0 {
+		t.Fatalf("legacy grant must not access artifact: status=%d owner reads=%d global reads=%d", w.Code, ownerFiles.calls, globalFiles.calls)
 	}
 	delete(grants.granted, "kb-shared")
 	w = request()
-	if w.Code != http.StatusNotFound || ownerFiles.calls != 1 || globalFiles.calls != 0 {
+	if w.Code != http.StatusNotFound || ownerFiles.calls != 0 || globalFiles.calls != 0 {
 		t.Fatalf(
 			"revoked artifact: status=%d owner reads=%d global reads=%d",
 			w.Code,

@@ -1492,7 +1492,31 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 					continue
 				}
 				temporaryResult.Attachments = append(temporaryResult.Attachments, res.Attachments...)
-				temporaryResult.ImageURLs = append(temporaryResult.ImageURLs, res.ImageURLs...)
+				// Keep the per-document image ownership aligned with the
+				// salvaged attachments; pad when a result predates it. Each
+				// per-document result enforced the aggregate cap against its
+				// own slice, so the salvaged merge must re-apply the TOTAL
+				// cap of 4 here — and ownership records only the URLs that
+				// were actually forwarded.
+				for i := range res.Attachments {
+					var owned []string
+					if i < len(res.AttachmentImageURLs) {
+						owned = res.AttachmentImageURLs[i]
+					} else if res.AttachmentImageURLs == nil && len(res.Attachments) == 1 {
+						// Legacy single-document result without ownership
+						// info: its aggregate URLs belong to that document.
+						owned = res.ImageURLs
+					}
+					var forwarded []string
+					for _, url := range owned {
+						if len(temporaryResult.ImageURLs) >= 4 {
+							break
+						}
+						temporaryResult.ImageURLs = append(temporaryResult.ImageURLs, url)
+						forwarded = append(forwarded, url)
+					}
+					temporaryResult.AttachmentImageURLs = append(temporaryResult.AttachmentImageURLs, forwarded)
+				}
 			}
 			if salvageFailed == 0 {
 				resolveErr = nil
@@ -1535,29 +1559,58 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 
 	var attachments types.MessageAttachments
 	var imageURLs []string
+	var attachmentImageURLs [][]string
 	if temporaryResult != nil {
 		attachments = temporaryResult.Attachments
 		imageURLs = temporaryResult.ImageURLs
+		attachmentImageURLs = temporaryResult.AttachmentImageURLs
 	}
 	if reqCtx.customAgent != nil && len(reqCtx.customAgent.Config.SupportedFileTypes) > 0 {
-		filtered := attachments[:0]
-		for _, att := range attachments {
-			ext := strings.TrimPrefix(strings.ToLower(att.FileType), ".")
-			if containsFileType(reqCtx.customAgent.Config.SupportedFileTypes, ext) {
-				filtered = append(filtered, att)
+		var filtered types.MessageAttachments
+		var filteredOwned [][]string
+		for i := range attachments {
+			ext := strings.TrimPrefix(strings.ToLower(attachments[i].FileType), ".")
+			if !containsFileType(reqCtx.customAgent.Config.SupportedFileTypes, ext) {
+				continue
+			}
+			filtered = append(filtered, attachments[i])
+			if attachmentImageURLs != nil {
+				var owned []string
+				if i < len(attachmentImageURLs) {
+					owned = attachmentImageURLs[i]
+				}
+				filteredOwned = append(filteredOwned, owned)
 			}
 		}
 		attachments = filtered
+		if attachmentImageURLs != nil {
+			attachmentImageURLs = filteredOwned
+			// A filtered-out document's images must not reach the model:
+			// rebuild the aggregate from the surviving documents' owned
+			// URLs instead of forwarding the pre-filter list.
+			var rebuilt []string
+			for _, owned := range filteredOwned {
+				rebuilt = append(rebuilt, owned...)
+			}
+			imageURLs = rebuilt
+		}
 	}
 
 	// Extracted page/file images only reach the model when the agent opted into
 	// image upload and the parse produced stored image refs. A ready document
-	// whose content carries no readable text and whose images are not forwarded
-	// is unusable — flag it instead of letting the model guess.
-	visionForwarded := reqCtx.customAgent != nil &&
-		reqCtx.customAgent.Config.ImageUploadEnabled && len(imageURLs) > 0
+	// whose content carries no readable text and whose own images are not
+	// forwarded is unusable — flag it instead of letting the model guess. The
+	// check is per document: a sibling document's images must not suppress
+	// this document's unreadable-content failure.
+	imageUploadEnabled := reqCtx.customAgent != nil &&
+		reqCtx.customAgent.Config.ImageUploadEnabled
+	visionForwarded := imageUploadEnabled && len(imageURLs) > 0
 	for i := range attachments {
-		if attachments[i].ParseError == "" && !visionForwarded && !attachmentHasUsableText(attachments[i].Content) {
+		forwarded := false
+		if imageUploadEnabled && i < len(attachmentImageURLs) {
+			forwarded = len(attachmentImageURLs[i]) > 0
+		}
+		if attachments[i].ParseError == "" && !forwarded && !attachmentHasUsableText(attachments[i].Content) {
 			attachments[i].ParseError = "no readable text could be extracted from this file; it may be a scanned document or an image and no vision/OCR model is configured to read it"
 			h.auditAttachmentFailure(ctx, tenantID, sessionID, reqCtx.requestID, &attachments[i], "ready", "no_readable_content")
 		}

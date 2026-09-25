@@ -44,8 +44,8 @@ type SystemHandler struct {
 	tenantSvc      interfaces.TenantService
 	userSvc        interfaces.UserService
 	// memberSvc lets system admins adjust a user's per-workspace role
-	// (owner/admin/contributor/viewer) without holding Owner inside that
-	// tenant — the route group already enforces SystemAdmin.
+	// (admin/member) without holding a role inside that tenant — the
+	// route group already enforces SystemAdmin.
 	memberSvc        interfaces.TenantMemberService
 	systemSettingSvc interfaces.SystemSettingService
 	apiKeySvc        interfaces.TenantAPIKeyService
@@ -1602,8 +1602,8 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 // @Summary      Update a user's workspace role
 // @Description  Change a user's role inside any tenant (SystemAdmin only).
 // @Description  Unlike PUT /tenants/:id/members/:user_id this does not require
-// @Description  the caller to be Owner of the target tenant — the route group
-// @Description  already gates on SystemAdmin. The "last owner" invariant is
+// @Description  the caller to be Admin of the target tenant — the route group
+// @Description  already gates on SystemAdmin. The "last admin" invariant is
 // @Description  still enforced by the service layer.
 // @Tags         System Admin
 // @Accept       json
@@ -1615,7 +1615,7 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 // @Failure      400  {object}  map[string]interface{}  "Invalid tenant_id or role"
 // @Failure      403  {object}  map[string]interface{}  "Forbidden: not a system admin"
 // @Failure      404  {object}  map[string]interface{}  "Membership not found"
-// @Failure      409  {object}  map[string]interface{}  "Would demote the last owner"
+// @Failure      409  {object}  map[string]interface{}  "Would demote the last admin"
 // @Router       /system/admin/tenants/{tenant_id}/members/{user_id} [put]
 func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
 	ctx := logger.CloneContext(c.Request.Context())
@@ -1636,8 +1636,12 @@ func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
 		return
 	}
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("the owner role is retired; assign admin instead"))
+		return
+	}
 	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
+		c.Error(apperrors.NewValidationError("role must be one of admin/member"))
 		return
 	}
 
@@ -1645,8 +1649,10 @@ func (h *SystemHandler) UpdateSystemUserRole(c *gin.Context) {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
 			c.Error(apperrors.NewNotFoundError("membership not found"))
-		case errors.Is(err, service.ErrLastOwner):
+		case errors.Is(err, service.ErrLastAdmin):
 			c.Error(apperrors.NewConflictError(err.Error()))
+		case errors.Is(err, service.ErrOwnerRoleRetired):
+			c.Error(apperrors.NewValidationError(err.Error()))
 		case errors.Is(err, service.ErrInvalidTenantRole):
 			c.Error(apperrors.NewValidationError(err.Error()))
 		default:
@@ -2474,7 +2480,7 @@ func (h *SystemHandler) GetSystemParseDefaults(c *gin.Context) {
 // @Description  (3-tier resolver: DB > ENV > default) and writes that many
 // @Description  GiB into storage_quota for every row in tenants. Bypasses
 // @Description  the per-workspace PUT whitelist, which forbids storage_quota
-// @Description  edits by Owners. SystemAdmin only.
+// @Description  edits by workspace Admins. SystemAdmin only.
 // @Description  Idempotent — running twice with the same setting is a no-op.
 // @Tags         System Admin
 // @Produce      json

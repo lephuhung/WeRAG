@@ -1078,12 +1078,16 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, keyword string, 
 
 	scopes := make([]types.KnowledgeSearchScope, 0)
 
-	// Own tenant: document-type knowledge bases
+	// Own tenant: document-type knowledge bases. Each scope carries the
+	// KB's own stored data scope (not the caller's tenant) so converted
+	// rows (stable foreign/zero data scope) and invited rows query the
+	// partition their chunks actually live in. For ordinary own-tenant KBs
+	// kb.TenantID == tenantID, so tenant-scoped behavior is unchanged.
 	ownKBs, err := s.kbService.ListKnowledgeBases(ctx)
 	if err == nil {
 		for _, kb := range ownKBs {
 			if kb != nil && kb.Type == types.KnowledgeBaseTypeDocument {
-				scopes = append(scopes, types.KnowledgeSearchScope{TenantID: tenantID, KBID: kb.ID})
+				scopes = append(scopes, types.KnowledgeSearchScope{TenantID: kb.TenantID, KBID: kb.ID})
 			}
 		}
 	}

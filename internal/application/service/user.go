@@ -207,17 +207,17 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to create user")
 	}
 
-	// Bootstrap an Owner membership so the registrant has full control over
+	// Bootstrap an Admin membership so the registrant can administer
 	// the tenant their account just created. Failure here only logs — the
 	// user record exists and the auth middleware's orphan-tenant recovery
 	// path will recreate the membership on next login.
 	if createdTenant != nil && s.memberService != nil {
-		if _, err := s.memberService.EnsureOwner(ctx, user.ID, createdTenant.ID); err != nil {
-			logger.Errorf(ctx, "Failed to create owner membership for user %s tenant %d: %v",
+		if _, err := s.memberService.EnsureAdmin(ctx, user.ID, createdTenant.ID); err != nil {
+			logger.Errorf(ctx, "Failed to create admin membership for user %s tenant %d: %v",
 				user.ID, createdTenant.ID, err)
 			_ = s.userRepo.DeleteUser(ctx, user.ID)
 			_ = s.tenantService.DeleteTenant(ctx, createdTenant.ID)
-			return nil, errors.New("failed to finalise workspace ownership")
+			return nil, errors.New("failed to finalise workspace administration")
 		}
 	}
 

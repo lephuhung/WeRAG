@@ -111,6 +111,48 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// RequireTenantAdmin is the plan-mandated guard for tenant-sensitive
+// operations (KB create/delete/configuration, membership/invitation
+// management). It requires Tenant Admin authority (Admin level or above;
+// legacy Owner satisfies via the role ladder) or platform SuperAdmin.
+//
+// Unlike RequireRole, denial is UNCONDITIONAL: the RBAC rollout flag
+// (cfg.Tenant.EnableRBAC) must not bypass KB lifecycle or membership
+// authorization. A Member is denied even when enforcement is disabled.
+// API-key principals still short-circuit to the APIKeyGate (machine
+// authorization is a distinct mechanism).
+func RequireTenantAdmin(cfg *config.Config) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		if _, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
+			c.Next()
+			return
+		}
+		if types.IsSystemAdminFromContext(ctx) {
+			c.Next()
+			return
+		}
+		role := types.CallerFromContext(ctx).Role
+		if role.IsTenantAdmin() {
+			c.Next()
+			return
+		}
+		uid, _ := types.UserIDFromContext(ctx)
+		logger.Warnf(ctx,
+			"[rbac] tenant-admin required (strict, enforced regardless of rollout flag): user=%s have=%s path=%s",
+			uid, role, c.Request.URL.Path)
+		if svc := AuditServiceFromContext(c); svc != nil {
+			tenantID := types.CallerFromContext(ctx).TenantID
+			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), types.TenantRoleAdmin)
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Forbidden: tenant admin required",
+		})
+		c.Abort()
+	}
+}
+
 // RequireRoleOrSystemAdmin applies the tenant role floor while also allowing
 // platform system administrators. Use it for routes that normally mutate
 // tenant infrastructure but have a narrowly-scoped platform-owned resource
@@ -128,6 +170,46 @@ func RequireRoleOrSystemAdmin(min types.TenantRole, cfg *config.Config) gin.Hand
 			return
 		}
 		requireRole(c)
+	}
+}
+
+// RequireExplicitHumanSuperAdmin allows only an explicit human platform
+// administrator: the system-admin flag plus a real non-synthetic user ID.
+// CanAccessAllTenants alone never qualifies, and machine principals
+// (API-key scopes — the gate short-circuits them elsewhere — and synthetic
+// users) never qualify. No tenant context is required: a tenantless
+// explicit human SuperAdmin passes so platform-owned flows (public KB
+// create/scope/content management) stay reachable without an active
+// workspace, while tenantless non-admins get 401 and tenant-scoped
+// non-admins get 403. Unlike RequireSystemAdmin this never honours the raw
+// flag for synthetic identities or API keys.
+func RequireExplicitHumanSuperAdmin(cfg *config.Config) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		caller := types.CallerFromContext(ctx)
+		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+			c.Next()
+			return
+		}
+		uid, _ := types.UserIDFromContext(ctx)
+		if caller.TenantID == 0 {
+			logger.Warnf(ctx,
+				"[rbac] explicit human system admin required (no tenant context): user=%s path=%s",
+				uid, c.Request.URL.Path)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Unauthorized",
+			})
+			c.Abort()
+			return
+		}
+		logger.Warnf(ctx,
+			"[rbac] explicit human system admin required: user=%s path=%s",
+			uid, c.Request.URL.Path)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Forbidden: system administrator required",
+		})
+		c.Abort()
 	}
 }
 

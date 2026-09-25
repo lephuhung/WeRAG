@@ -188,6 +188,69 @@ func RequireKBAccess(
 	kbGrantService interfaces.KBAccessGrantService,
 	cfg *config.Config,
 ) gin.HandlerFunc {
+	return RequireKBAccessWithInvite(resolveKBID, requiredPermission, kbService, kbGrantService, nil, cfg)
+}
+
+// RequireKBAccessWithInvite extends RequireKBAccess with recipient-bound
+// invitation access: when the caller's tenant has no grant, a live invite
+// accepted by THIS user confers read-only access (Viewer only). A nil
+// invites lookup disables the fallback (fail-closed); write guards pass
+// nil because invites never satisfy Editor/Admin.
+func RequireKBAccessWithInvite(
+	resolveKBID KBIDResolver,
+	requiredPermission types.KBPermission,
+	kbService KBLookup,
+	kbGrantService interfaces.KBAccessGrantService,
+	invites access.KBInviteLookup,
+	cfg *config.Config,
+) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return runKBAccessGuard(resolveKBID, cfg, func(ctx context.Context, c *gin.Context, kbID string) (*KBAccess, error) {
+		return resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbGrantService, invites)
+	})
+}
+
+// RequireKBDownload gates original-file download routes (single-file
+// download and batch ZIP). It is the only guard that lets a
+// platform-public Viewer fetch original bytes: same-owner-tenant callers
+// keep the tenant download policy, invitation viewers stay denied, and
+// preview/read routes stay behind Viewer access.
+func RequireKBDownload(
+	resolveKBID KBIDResolver,
+	kbService KBLookup,
+	_ interfaces.KBAccessGrantService,
+	cfg *config.Config,
+) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return runKBAccessGuard(resolveKBID, cfg, func(ctx context.Context, c *gin.Context, kbID string) (*KBAccess, error) {
+		return resolveKBDownloadAccess(ctx, c, kbID, kbService)
+	})
+}
+
+// RequireKBManage gates content-mutation routes by KB owner: the owning
+// tenant keeps its existing role policy (floors stay on the route), while
+// platform-owned rows admit only an explicit human SuperAdmin. It never
+// treats a public Viewer as an editor.
+func RequireKBManage(
+	resolveKBID KBIDResolver,
+	kbService KBLookup,
+	_ interfaces.KBAccessGrantService,
+	cfg *config.Config,
+) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return runKBAccessGuard(resolveKBID, cfg, func(ctx context.Context, c *gin.Context, kbID string) (*KBAccess, error) {
+		return resolveKBManageAccess(ctx, c, kbID, kbService)
+	})
+}
+
+// runKBAccessGuard resolves one KB, maps resolution errors to HTTP status,
+// and on success stashes the grant plus rewrites the request to carry the
+// effective (data-scope) tenant ID.
+func runKBAccessGuard(
+	resolveKBID KBIDResolver,
+	cfg *config.Config,
+	resolve func(ctx context.Context, c *gin.Context, kbID string) (*KBAccess, error),
+) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
 	return func(c *gin.Context) {
 		kbID, err := resolveKBID(c)
@@ -204,7 +267,7 @@ func RequireKBAccess(
 			return
 		}
 
-		grant, err := resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbGrantService)
+		grant, err := resolve(ctx, c, kbID)
 		switch {
 		case stderrors.Is(err, access.ErrUnauthorized):
 			_ = c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
@@ -264,11 +327,73 @@ func resolveKBAccess(
 	requiredPermission types.KBPermission,
 	kbService KBLookup,
 	kbGrantService interfaces.KBAccessGrantService,
+	invites access.KBInviteLookup,
 ) (*KBAccess, error) {
 	request := KBAccessRequest(c)
-	if request.Caller.TenantID == 0 {
+	request.Caller = request.Caller.Normalize()
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		!access.IsAuthenticatedHuman(ctx, request.Caller) {
 		return nil, access.ErrUnauthorized
 	}
+	kb, err := loadKBForGuard(ctx, kbID, kbService)
+	if err != nil {
+		return nil, err
+	}
+	if invites == nil {
+		return access.ResolveKB(ctx, request, kb, requiredPermission, kbGrantService)
+	}
+	return access.ResolveKBWithInvite(ctx, request, kb, requiredPermission, kbGrantService, invites)
+}
+
+// resolveKBDownloadAccess resolves the dedicated original-download grant.
+// Invitation lookups are never consulted: invite readers keep read-only
+// access and stay denied here.
+func resolveKBDownloadAccess(
+	ctx context.Context,
+	c *gin.Context,
+	kbID string,
+	kbService KBLookup,
+) (*KBAccess, error) {
+	request := KBAccessRequest(c)
+	request.Caller = request.Caller.Normalize()
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		!access.IsAuthenticatedHuman(ctx, request.Caller) {
+		return nil, access.ErrUnauthorized
+	}
+	kb, err := loadKBForGuard(ctx, kbID, kbService)
+	if err != nil {
+		return nil, err
+	}
+	return access.ResolveKBForDownload(ctx, request, kb)
+}
+
+// resolveKBManageAccess resolves the owner-aware mutation grant: owning
+// tenant via the existing policy, platform-owned rows via explicit human
+// SuperAdmin only.
+func resolveKBManageAccess(
+	ctx context.Context,
+	c *gin.Context,
+	kbID string,
+	kbService KBLookup,
+) (*KBAccess, error) {
+	request := KBAccessRequest(c)
+	request.Caller = request.Caller.Normalize()
+	// Unlike public reads, tenantless mutations are reserved for an
+	// explicit human SuperAdmin. Reject before lookup to avoid a KB
+	// existence oracle for ordinary tenantless users.
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+		return nil, access.ErrUnauthorized
+	}
+	kb, err := loadKBForGuard(ctx, kbID, kbService)
+	if err != nil {
+		return nil, err
+	}
+	return access.ResolveKBForManage(ctx, request, kb)
+}
+
+// loadKBForGuard loads one KB for guard resolution. A genuine "not found"
+// maps to the access sentinel; transient errors propagate for a 503.
+func loadKBForGuard(ctx context.Context, kbID string, kbService KBLookup) (*types.KnowledgeBase, error) {
 	kb, err := kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
 		if stderrors.Is(err, apprepo.ErrKnowledgeBaseNotFound) {
@@ -276,5 +401,5 @@ func resolveKBAccess(
 		}
 		return nil, err
 	}
-	return access.ResolveKB(ctx, request, kb, requiredPermission, kbGrantService)
+	return kb, nil
 }

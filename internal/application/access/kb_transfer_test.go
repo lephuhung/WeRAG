@@ -11,7 +11,7 @@ import (
 )
 
 func TestTransferAdmissionRequiresIndependentGrants(t *testing.T) {
-	source, target := &types.KnowledgeBase{ID: "source", TenantID: 1}, &types.KnowledgeBase{ID: "target", TenantID: 1}
+	source, target := &types.KnowledgeBase{ID: "source", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}, &types.KnowledgeBase{ID: "target", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}
 	ctx := types.WithCaller(
 		context.Background(),
 		types.Caller{TenantID: 1, UserID: "user", Role: types.TenantRoleAdmin},
@@ -37,7 +37,7 @@ func TestTransferAdmissionRequiresIndependentGrants(t *testing.T) {
 }
 
 func TestTransferTaskScopeIsExactAndDoesNotCreateCaller(t *testing.T) {
-	source, target := &types.KnowledgeBase{ID: "source", TenantID: 7}, &types.KnowledgeBase{ID: "target", TenantID: 7}
+	source, target := &types.KnowledgeBase{ID: "source", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, &types.KnowledgeBase{ID: "target", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}
 	ctx, err := WithKBTransferTask(context.Background(), source, target, 7, KBTransferMove, "task", false)
 	require.NoError(t, err)
 	ctx = logger.CloneContext(ctx)
@@ -65,7 +65,7 @@ func TestTransferTaskScopeIsExactAndDoesNotCreateCaller(t *testing.T) {
 }
 
 func TestTransferAPICapabilitiesRemainSeparate(t *testing.T) {
-	source, target := &types.KnowledgeBase{ID: "source", TenantID: 1}, &types.KnowledgeBase{ID: "target", TenantID: 1}
+	source, target := &types.KnowledgeBase{ID: "source", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}, &types.KnowledgeBase{ID: "target", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}
 	for _, tc := range []struct {
 		operation  KBTransferOperation
 		capability string

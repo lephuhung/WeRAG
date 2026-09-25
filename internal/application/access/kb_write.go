@@ -10,7 +10,7 @@ import (
 // role checks belong to the entry point that resolved the grant; an execution
 // tenant alone, or a shared-agent/read grant, never authorizes a mutation.
 func RequireKBWrite(ctx context.Context, kb *types.KnowledgeBase) error {
-	if kb == nil || kb.ID == "" || kb.TenantID == 0 {
+	if kb == nil || kb.ID == "" {
 		return ErrNotFound
 	}
 	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok && !scope.FullAccess &&
@@ -28,8 +28,10 @@ func RequireKBWrite(ctx context.Context, kb *types.KnowledgeBase) error {
 // bindings before any side effects. It grants only this KB, preserves the
 // original caller (including an absent caller), and never creates an Admin.
 // This is a task execution grant, not a way to authorize an incoming request.
+// A platform data scope (tenant 0) is a legitimate worker scope for
+// platform-owned KBs; any mismatch still fails closed.
 func WithKBTaskWrite(ctx context.Context, kb *types.KnowledgeBase, expectedTenant uint64) (context.Context, error) {
-	if kb == nil || kb.ID == "" || expectedTenant == 0 || kb.TenantID != expectedTenant {
+	if kb == nil || kb.ID == "" || kb.TenantID != expectedTenant {
 		return ctx, ErrForbidden
 	}
 	ctx = types.WithExecutionTenant(ctx, expectedTenant)

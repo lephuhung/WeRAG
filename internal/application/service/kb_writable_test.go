@@ -26,6 +26,16 @@ func (l writableGrantLookup) ApprovedKBPermission(
 	return permission, ok, nil
 }
 
+type publicWritableLookup struct{}
+
+func (publicWritableLookup) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+	return &types.KBScope{TenantID: 42, Visibility: types.KBVisibilityPublic}, nil
+}
+
+func (publicWritableLookup) ApprovedKBPermission(context.Context, string, uint64) (types.KBPermission, bool, error) {
+	return "", false, nil
+}
+
 func TestKBWritableIDs(t *testing.T) {
 	targets := types.SearchTargets{
 		{KnowledgeBaseID: "own", TenantID: 42},
@@ -50,6 +60,10 @@ func TestKBWritableIDs(t *testing.T) {
 
 	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, true))
 	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, false))
+	// A stale public marker does not reduce the owning tenant Member's
+	// ability to upload into their own KB.
+	require.Equal(t, []string{"own"}, kbWritableIDs(
+		caller(types.TenantRoleMember, "u"), publicWritableLookup{}, targets[:1], true))
 
 	// Scoped API keys write only with the ingest capability.
 	chatOnly := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityChat)}}

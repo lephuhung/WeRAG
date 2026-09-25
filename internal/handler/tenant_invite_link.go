@@ -77,12 +77,12 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
 		return
 	}
-	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("the owner role is retired; assign admin instead"))
 		return
 	}
-	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
-		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of admin/member"))
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *TenantInvitationHandler) CreateInviteLink(c *gin.Context) {
 
 	inv, _, err := h.invitationService.CreateShareLink(ctx, tenantID, req.Role, invitedBy, req.Message)
 	if err != nil {
-		if errors.Is(err, service.ErrAPIKeyCannotAssignOwner) {
+		if errors.Is(err, service.ErrAPIKeyCannotAssignAdmin) {
 			c.Error(apperrors.NewForbiddenError(err.Error()))
 			return
 		}

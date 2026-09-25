@@ -83,7 +83,7 @@ func admissionKnowledge(moving bool) *types.Knowledge {
 
 func admissionKB(creator string) *stubKBService {
 	return &stubKBService{get: func(context.Context, string) (*types.KnowledgeBase, error) {
-		return &types.KnowledgeBase{ID: "kb", TenantID: 7, CreatorID: creator}, nil
+		return &types.KnowledgeBase{ID: "kb", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant, CreatorID: creator}, nil
 	}}
 }
 
@@ -199,7 +199,7 @@ func TestMutationHandlersPreserveApplicationStatus(t *testing.T) {
 				}
 				failure := fmt.Errorf("operation: %w", app)
 				kg := &mutationAdmissionKnowledge{rows: []*types.Knowledge{admissionKnowledge(false)}, err: failure}
-				h := &KnowledgeHandler{kgService: kg}
+				h := &KnowledgeHandler{kgService: kg, kbService: admissionKB("user")}
 				chunks := &ChunkHandler{service: &mutationChunkService{err: failure}}
 				r := documentHandlerRouter()
 				method, path, body := http.MethodPut, "/doc", `{"title":"new"}`

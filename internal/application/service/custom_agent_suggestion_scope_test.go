@@ -80,7 +80,7 @@ func (s *suggestionKBGrantService) GetKBScope(_ context.Context, _ string) (*typ
 	return nil, nil
 }
 
-func TestResolveSuggestionTagScopes_UsesSourceTenantForSharedKB(t *testing.T) {
+func TestResolveSuggestionTagScopesDoesNotExpandLegacyTenantGrant(t *testing.T) {
 	const (
 		callerTenant = uint64(1)
 		sourceTenant = uint64(2)
@@ -105,9 +105,9 @@ func TestResolveSuggestionTagScopes_UsesSourceTenantForSharedKB(t *testing.T) {
 		[]types.TagScope{{KnowledgeBaseID: kbID, TagIDs: []string{tagID}}},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, []string{kbID}, resolved.KnowledgeBaseIDs)
-	assert.Equal(t, []string{"doc-in-tag"}, resolved.KnowledgeIDs)
-	assert.Equal(t, []string{tagID}, resolved.TagIDsByTenant[sourceTenant])
+	assert.Empty(t, resolved.KnowledgeBaseIDs, "legacy tenant grant must not add a foreign KB")
+	assert.Empty(t, resolved.KnowledgeIDs)
+	assert.Empty(t, resolved.TagIDsByTenant[sourceTenant])
 	assert.Empty(t, resolved.TagIDsByTenant[callerTenant])
 }
 

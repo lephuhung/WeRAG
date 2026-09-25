@@ -40,6 +40,7 @@ type RouterParams struct {
 	ModelService            interfaces.ModelService
 	EvaluationService       interfaces.EvaluationService
 	KBAccessGrantService    interfaces.KBAccessGrantService
+	KBInvitationService     interfaces.KBInvitationService
 	KBHandler               *handler.KnowledgeBaseHandler
 	KnowledgeHandler        *handler.KnowledgeHandler
 	TenantHandler           *handler.TenantHandler
@@ -81,6 +82,7 @@ type RouterParams struct {
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
 	KBAccessGrantHandler         *handler.KBAccessGrantHandler
+	KBInvitationHandler          *handler.KBInvitationHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -244,6 +246,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.KnowledgeService,
 			params.ChunkService,
 			params.KBAccessGrantService,
+			params.KBInvitationService,
 		)
 
 		// API-key gate: single authority for X-API-Key principals. Runs
@@ -312,6 +315,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, rbacGuards)
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
 		RegisterKBAccessGrantRoutes(v1, params.KBAccessGrantHandler, rbacGuards)
+		RegisterKBInvitationRoutes(v1, params.KBInvitationHandler, rbacGuards)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)

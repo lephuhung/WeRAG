@@ -19,11 +19,9 @@ import (
 )
 
 // TenantMemberHandler exposes /tenants/:id/members CRUD. The route layer
-// enforces RBAC (Member for list, Admin for mutations) — see
-// router.RegisterTenantRoutes. On top of that, only Owner (or a system
-// admin) may assign the owner role or mutate an existing owner's
-// membership: admins manage members but cannot transfer or seize
-// ownership.
+// enforces RBAC (Member for list, strict TenantAdmin for mutations) —
+// see router.RegisterTenantRoutes. The owner role is retired: only
+// admin/member may be assigned.
 //
 // Tenant scoping: the auth middleware resolves the caller's role against
 // the *active* tenant (JWT / X-Tenant-ID switch / API-key). The URL :id
@@ -53,15 +51,6 @@ func NewTenantMemberHandler(
 		memberService: memberService,
 		userService:   userService,
 	}
-}
-
-// callerCanManageOwners reports whether the authenticated caller may assign
-// the owner role or mutate an existing owner's membership. Admins pass the
-// route-level member-management gate but must not escalate to or tamper
-// with ownership; system admins bypass tenant roles entirely.
-func callerCanManageOwners(ctx context.Context) bool {
-	return types.IsSystemAdminFromContext(ctx) ||
-		types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
 }
 
 // addMemberRequest is the JSON body for POST /tenants/:id/members.
@@ -214,12 +203,12 @@ func (h *TenantMemberHandler) AddMember(c *gin.Context) {
 	// Defence in depth — service also re-validates, but rejecting early
 	// gives the client a better error message than the generic service
 	// sentinel-mapped 400.
-	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("the owner role is retired; assign admin instead"))
 		return
 	}
-	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
-		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of admin/member"))
 		return
 	}
 
@@ -266,7 +255,7 @@ func writeAddMemberError(
 	switch {
 	case errors.Is(err, service.ErrInvalidTenantRole):
 		c.Error(apperrors.NewValidationError(err.Error()))
-	case errors.Is(err, service.ErrAPIKeyCannotAssignOwner):
+	case errors.Is(err, service.ErrAPIKeyCannotAssignAdmin):
 		c.Error(apperrors.NewForbiddenError(err.Error()))
 	case errors.Is(err, service.ErrMembershipAlreadyExists):
 		// 409 reads better than 400 here: the request was syntactically
@@ -350,37 +339,26 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
 		return
 	}
-	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("the owner role is retired; assign admin instead"))
 		return
 	}
-
-	if !callerCanManageOwners(ctx) {
-		if req.Role == types.TenantRoleOwner {
-			c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
-			return
-		}
-		current, err := h.memberService.GetMembership(ctx, userID, tenantID)
-		if err != nil {
-			logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
-			c.Error(apperrors.NewInternalServerError("failed to load membership").WithDetails(err.Error()))
-			return
-		}
-		if current != nil && current.Role == types.TenantRoleOwner {
-			c.Error(apperrors.NewForbiddenError("only workspace owners can change an owner's role"))
-			return
-		}
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of admin/member"))
+		return
 	}
 
 	if err := h.memberService.UpdateRole(ctx, userID, tenantID, req.Role); err != nil {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
 			c.Error(apperrors.NewNotFoundError("membership not found"))
-		case errors.Is(err, service.ErrLastOwner):
+		case errors.Is(err, service.ErrLastAdmin):
 			c.Error(apperrors.NewConflictError(err.Error()))
+		case errors.Is(err, service.ErrOwnerRoleRetired):
+			c.Error(apperrors.NewValidationError(err.Error()))
 		case errors.Is(err, service.ErrInvalidTenantRole):
 			c.Error(apperrors.NewValidationError(err.Error()))
-		case errors.Is(err, service.ErrAPIKeyCannotAssignOwner):
+		case errors.Is(err, service.ErrAPIKeyCannotAssignAdmin):
 			c.Error(apperrors.NewForbiddenError(err.Error()))
 		default:
 			logger.Errorf(ctx, "UpdateRole failed: user=%s tenant=%d err=%v",
@@ -415,24 +393,11 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 		return
 	}
 
-	if !callerCanManageOwners(ctx) {
-		current, err := h.memberService.GetMembership(ctx, userID, tenantID)
-		if err != nil {
-			logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
-			c.Error(apperrors.NewInternalServerError("failed to load membership").WithDetails(err.Error()))
-			return
-		}
-		if current != nil && current.Role == types.TenantRoleOwner {
-			c.Error(apperrors.NewForbiddenError("only workspace owners can remove an owner"))
-			return
-		}
-	}
-
 	if err := h.memberService.RemoveMember(ctx, userID, tenantID); err != nil {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
 			c.Error(apperrors.NewNotFoundError("membership not found"))
-		case errors.Is(err, service.ErrLastOwner):
+		case errors.Is(err, service.ErrLastAdmin):
 			c.Error(apperrors.NewConflictError(err.Error()))
 		default:
 			logger.Errorf(ctx, "RemoveMember failed: user=%s tenant=%d err=%v",
@@ -449,8 +414,8 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 // @Summary      退出当前Tenant workspace
 // @Description  调用方主动退出当前Tenant workspace。等价于以自己的 user_id 调 RemoveMember，
 //
-//	但不需要 Owner 权限——非 Owner 也可以自助离开。最后一位 Owner 仍然不能离开
-//	（需先把其他成员提升为 Owner），由服务层 ErrLastOwner 拦截。
+//	但不需要 Admin 权限——非 Admin 也可以自助离开。最后一位 Admin 仍然不能离开
+//	（需先把其他成员提升为 Admin），由服务层 ErrLastAdmin 拦截。
 //
 // @Tags         Tenant workspace成员
 // @Produce      json
@@ -474,7 +439,7 @@ func (h *TenantMemberHandler) LeaveTenant(c *gin.Context) {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
 			c.Error(apperrors.NewNotFoundError("you are not a member of this workspace"))
-		case errors.Is(err, service.ErrLastOwner):
+		case errors.Is(err, service.ErrLastAdmin):
 			c.Error(apperrors.NewConflictError(err.Error()))
 		default:
 			logger.Errorf(ctx, "LeaveTenant failed: user=%s tenant=%d err=%v",

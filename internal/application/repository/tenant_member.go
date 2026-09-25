@@ -16,7 +16,15 @@ import (
 // when the operation would leave the tenant without an active Owner.
 // The service layer maps this to its own ErrLastOwner sentinel (same
 // semantic; just kept separate so the repo doesn't import service).
+//
+// Deprecated: the owner role is retired (migration 000112). New code
+// must use ErrLastAdmin and the DemoteAdminAtomically /
+// RemoveAdminAtomically helpers below.
 var ErrLastOwner = errors.New("repository: last active owner")
+
+// ErrLastAdmin is returned by the atomic demote / remove repo helpers
+// when the operation would leave the tenant without an active Admin.
+var ErrLastAdmin = errors.New("repository: last active admin")
 
 // forUpdateClause returns the gorm SELECT ... FOR UPDATE clause. Kept
 // in one place so we can swap it out for `clause.Locking{Strength: "UPDATE"}`
@@ -170,6 +178,9 @@ func (r *tenantMemberRepository) SoftDelete(ctx context.Context, userID string, 
 }
 
 // CountActiveOwners reports the number of active owner rows in the tenant.
+//
+// Deprecated: the owner role is retired (migration 000112); always 0 on
+// migrated data.
 func (r *tenantMemberRepository) CountActiveOwners(ctx context.Context, tenantID uint64) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
@@ -181,6 +192,8 @@ func (r *tenantMemberRepository) CountActiveOwners(ctx context.Context, tenantID
 }
 
 // DemoteOwnerAtomically transitions an Owner row to a non-Owner role
+//
+// Deprecated: the owner role is retired; use DemoteAdminAtomically.
 // while holding an UPDATE lock on the tenant's other Owner rows. This
 // closes the TOCTOU window in the old "Get → CountActiveOwners → Update"
 // sequence where two concurrent demotions of two different Owners could
@@ -237,6 +250,8 @@ func (r *tenantMemberRepository) DemoteOwnerAtomically(
 
 // RemoveOwnerAtomically soft-deletes an Owner row under the same lock
 // as DemoteOwnerAtomically. Same return semantics.
+//
+// Deprecated: the owner role is retired; use RemoveAdminAtomically.
 func (r *tenantMemberRepository) RemoveOwnerAtomically(
 	ctx context.Context,
 	userID string,
@@ -254,6 +269,80 @@ func (r *tenantMemberRepository) RemoveOwnerAtomically(
 		}
 		if len(locked) == 0 {
 			return ErrLastOwner
+		}
+		res := tx.
+			Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+			Delete(&types.TenantMember{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+}
+
+// DemoteAdminAtomically transitions an Admin row to Member while holding
+// an UPDATE lock on the tenant's other Admin rows — the same TOCTOU
+// closure as DemoteOwnerAtomically, applied to the surviving top role.
+//
+// Returns ErrLastAdmin when there is no other active Admin.
+func (r *tenantMemberRepository) DemoteAdminAtomically(
+	ctx context.Context,
+	userID string,
+	tenantID uint64,
+	newRole types.TenantRole,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked []types.TenantMember
+		err := tx.
+			Clauses(forUpdateClause()).
+			Where("tenant_id = ? AND user_id <> ? AND role = ? AND status = ?",
+				tenantID, userID, types.TenantRoleAdmin, types.TenantMemberStatusActive).
+			Find(&locked).Error
+		if err != nil {
+			return err
+		}
+		if len(locked) == 0 {
+			return ErrLastAdmin
+		}
+		res := tx.
+			Model(&types.TenantMember{}).
+			Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+			Updates(map[string]any{
+				"role":       newRole,
+				"updated_at": time.Now(),
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+}
+
+// RemoveAdminAtomically soft-deletes an Admin row under the same lock
+// as DemoteAdminAtomically. Same return semantics.
+func (r *tenantMemberRepository) RemoveAdminAtomically(
+	ctx context.Context,
+	userID string,
+	tenantID uint64,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked []types.TenantMember
+		err := tx.
+			Clauses(forUpdateClause()).
+			Where("tenant_id = ? AND user_id <> ? AND role = ? AND status = ?",
+				tenantID, userID, types.TenantRoleAdmin, types.TenantMemberStatusActive).
+			Find(&locked).Error
+		if err != nil {
+			return err
+		}
+		if len(locked) == 0 {
+			return ErrLastAdmin
 		}
 		res := tx.
 			Where("user_id = ? AND tenant_id = ?", userID, tenantID).

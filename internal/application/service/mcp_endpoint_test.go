@@ -232,8 +232,8 @@ func TestMCPEndpointKnowledgeBaseScopeIsTenantIsolated(t *testing.T) {
 	svc := &mcpEndpointService{
 		repo: newStubMCPEndpointRepo(),
 		kbService: &stubKBForMCPEndpoint{kbs: map[string]*types.KnowledgeBase{
-			"kb-own":     {ID: "kb-own", TenantID: 1, Name: "Own"},
-			"kb-foreign": {ID: "kb-foreign", TenantID: 2, Name: "Foreign"},
+			"kb-own":     {ID: "kb-own", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "Own"},
+			"kb-foreign": {ID: "kb-foreign", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant, Name: "Foreign"},
 		}},
 	}
 	ctx := types.WithCaller(context.Background(), types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleAdmin})

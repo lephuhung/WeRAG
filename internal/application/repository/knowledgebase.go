@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -22,9 +23,27 @@ func NewKnowledgeBaseRepository(db *gorm.DB) interfaces.KnowledgeBaseRepository 
 	return &knowledgeBaseRepository{db: db}
 }
 
-// CreateKnowledgeBase creates a new knowledge base
+// CreateKnowledgeBase creates a new knowledge base.
+//
+// Tenant-scoped rows (tenant_id != 0) serialize against tenant deletion on
+// the live tenant row: the insert runs inside a transaction that locks and
+// verifies the tenant first, so a KB can never be orphaned under a tenant
+// that a concurrent delete just removed (creation fails with
+// ErrTenantNotFound instead). Platform-owned rows (tenant_id == 0) have no
+// tenant owner and stay independent of any tenant row.
 func (r *knowledgeBaseRepository) CreateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) error {
-	return r.db.WithContext(ctx).Create(kb).Error
+	if kb == nil {
+		return errors.New("knowledge base cannot be empty")
+	}
+	if kb.TenantID == 0 {
+		return r.db.WithContext(ctx).Create(kb).Error
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockLiveTenantRow(tx, ctx, kb.TenantID); err != nil {
+			return err
+		}
+		return tx.Create(kb).Error
+	})
 }
 
 // GetKnowledgeBaseByID gets a knowledge base by id (no tenant scope; caller must enforce isolation where needed)
@@ -92,11 +111,12 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 }
 
 // GetKBScopeByID returns the access-scope projection of one KB without
-// loading the full row.
+// loading the full row: the data-scope tenant, the authorization owner
+// (0 = platform-owned), and the visibility.
 func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
 	var scope types.KBScope
 	err := r.db.WithContext(ctx).Model(&types.KnowledgeBase{}).
-		Select("tenant_id", "visibility", "org_id").
+		Select("tenant_id", "owner_tenant_id", "visibility").
 		Where("id = ?", id).
 		Take(&scope).Error
 	if err != nil {
@@ -155,6 +175,68 @@ func (r *knowledgeBaseRepository) ListForeignKnowledgeBasesByTenantID(
 		return nil, err
 	}
 	return kbs, nil
+}
+
+// catalogOrder keeps every catalog query on one stable ordering so paged
+// reads never skip or duplicate rows: newest first, id ASC as tiebreak
+// (created_at has second precision on SQLite and ties are common).
+func catalogOrder(q *gorm.DB) *gorm.DB {
+	return q.Order("created_at DESC").Order("id ASC")
+}
+
+// ListOwnedKnowledgeBases lists the non-temporary KBs authorized under
+// ownerTenantID: owner-owned rows plus legacy pre-backfill rows (owner 0
+// with tenant visibility inside the same data scope). Platform-owned
+// public rows never match; foreign tenant-owned rows never match.
+func (r *knowledgeBaseRepository) ListOwnedKnowledgeBases(
+	ctx context.Context, ownerTenantID uint64,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	q := r.db.WithContext(ctx).
+		Where("is_temporary = ?", false).
+		Where(
+			"owner_tenant_id = ? OR (owner_tenant_id = 0 AND visibility = ? AND tenant_id = ?)",
+			ownerTenantID, string(types.KBVisibilityTenant), ownerTenantID,
+		)
+	if err := catalogOrder(q).Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
+// ListPlatformPublicCatalog lists one page of the platform-owned public
+// catalog: owner_tenant_id = 0 AND visibility = public. The data-scope
+// tenant_id is never consulted, so converted rows that retained a tenant
+// data scope are included. Temporary and soft-deleted rows (via GORM's
+// auto-scope) are excluded. total counts the filtered catalog ignoring
+// limit/offset.
+func (r *knowledgeBaseRepository) ListPlatformPublicCatalog(
+	ctx context.Context, keyword string, limit, offset int,
+) ([]*types.KnowledgeBase, int64, error) {
+	if limit <= 0 {
+		limit = types.PublicCatalogDefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	base := r.db.WithContext(ctx).Model(&types.KnowledgeBase{}).
+		Where("is_temporary = ?", false).
+		Where("owner_tenant_id = 0 AND visibility = ?", string(types.KBVisibilityPublic))
+	if q := strings.TrimSpace(keyword); q != "" {
+		// Same LIKE convention as SearchTenants: backslash-escaped
+		// wildcards with the default LIKE escape.
+		like := "%" + escapeLikeKeyword(q) + "%"
+		base = base.Where("name LIKE ? OR description LIKE ?", like, like)
+	}
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var kbs []*types.KnowledgeBase
+	if err := catalogOrder(base).Limit(limit).Offset(offset).Find(&kbs).Error; err != nil {
+		return nil, 0, err
+	}
+	return kbs, total, nil
 }
 
 // userKBPinRow mirrors the user_kb_pins table. Kept local to the

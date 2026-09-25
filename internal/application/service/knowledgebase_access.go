@@ -9,10 +9,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// Service reads accept exact upstream grants. Otherwise cross-tenant reads
-// require a user and a tenant access grant resolved for the original caller.
-// Scope lookups stay enabled for userless principals so 'public' visibility
-// still applies to API-key and integration callers.
+// Service reads accept exact upstream grants (including recipient-bound KB
+// invitations). Otherwise they remain within the caller's own tenant; public
+// visibility and tenant-wide grants do not expand this scope.
 func kbReadPermissions(ctx context.Context, lookup access.KBGrantLookup) *access.KBPermissions {
 	p := access.NewKBPermissions(ctx, lookup)
 	if types.CallerFromContext(ctx).UserID == "" {
@@ -40,25 +39,6 @@ func kbWritableIDs(
 	} else if roleEnforced && !caller.Role.HasPermission(types.TenantRoleMember) {
 		return nil
 	}
-	var scopes map[string]*types.KBScope
-	scopeOf := func(kbID string) *types.KBScope {
-		if lookup == nil {
-			return nil
-		}
-		if scopes == nil {
-			scopes = make(map[string]*types.KBScope)
-		}
-		if s, ok := scopes[kbID]; ok {
-			return s
-		}
-		s, err := lookup.GetKBScope(ctx, kbID)
-		if err != nil {
-			scopes[kbID] = nil
-			return nil
-		}
-		scopes[kbID] = s
-		return s
-	}
 	seen := make(map[string]bool, len(targets))
 	var ids []string
 	for _, target := range targets {
@@ -67,15 +47,6 @@ func kbWritableIDs(
 		}
 		seen[target.KnowledgeBaseID] = true
 		writable := caller.TenantID != 0 && target.TenantID == caller.TenantID
-		if writable {
-			if scope := scopeOf(target.KnowledgeBaseID); scope != nil && scope.Visibility == types.KBVisibilityPublic {
-				// Public corpus writes stay with the owning tenant's
-				// Owner, system admins and tenant-level API keys.
-				_, isKey := types.TenantAPIKeyScopeFromContext(ctx)
-				writable = isKey || types.IsSystemAdminFromContext(ctx) ||
-					caller.Role.HasPermission(types.TenantRoleOwner)
-			}
-		}
 		if writable {
 			ids = append(ids, target.KnowledgeBaseID)
 		}

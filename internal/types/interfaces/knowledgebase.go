@@ -25,6 +25,12 @@ type KnowledgeBaseService interface {
 	//   - Possible errors such as insufficient permissions, duplicate names, etc.
 	CreateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) (*types.KnowledgeBase, error)
 
+	// CreatePublicKnowledgeBase creates a platform-owned public knowledge
+	// base (owner and data scope 0, platform defaults). Only an explicit
+	// human SuperAdmin may invoke it; tenant admins, cross-tenant operators
+	// without the explicit flag, and API-key principals are rejected.
+	CreatePublicKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) (*types.KnowledgeBase, error)
+
 	// GetKnowledgeBaseByID retrieves knowledge base information by ID
 	// Parameters:
 	//   - ctx: Context information
@@ -60,6 +66,18 @@ type KnowledgeBaseService interface {
 	// ListKnowledgeBasesByTenantID lists all knowledge bases for a specific tenant (e.g. for shared agent context).
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
+	// ListPublicCatalog returns one bounded page of the platform-owned
+	// public catalog (owner 0 + public visibility) with the catalog total.
+	// Human callers only: anonymous contexts are unauthorized and API-key
+	// principals are forbidden — visibility never becomes an implicit key
+	// grant. Tenantless explicit human SuperAdmins are admitted (no tenant
+	// context required). page starts at 1; pageSize is clamped to
+	// PublicCatalogMaxPageSize. Items carry per-row counts enriched under
+	// each KB's own data scope.
+	ListPublicCatalog(
+		ctx context.Context, page, pageSize int, keyword string,
+	) (items []*types.KnowledgeBase, total int64, err error)
+
 	// UpdateKnowledgeBase updates knowledge base information
 	// Parameters:
 	//   - ctx: Context information
@@ -75,12 +93,16 @@ type KnowledgeBaseService interface {
 	) (*types.KnowledgeBase, error)
 
 	// SetKnowledgeBaseVisibility changes the KB scope (tenant/public).
-	// Only callers of the owning tenant may invoke it; the service
-	// re-checks the caller's role against the target visibility
-	// (public requires the tenant Owner or a system admin; narrowing
-	// to tenant requires tenant Admin+).
+	// Only an explicit human SuperAdmin may invoke it — for promotion
+	// (tenant→public) and for scope transfer (public→tenant) alike.
+	// A public→tenant transition requires the nonzero destination tenant
+	// in targetTenantID (0 means omitted); the destination must exist.
+	// A tenant→tenant call with a different target is rejected; with an
+	// omitted or same-owner target it is a no-op. Transitions modify
+	// owner/visibility metadata only: KB ID and data-scope tenant_id are
+	// preserved and no child rows, indexes, or background jobs are touched.
 	SetKnowledgeBaseVisibility(ctx context.Context,
-		id string, visibility types.KBVisibility,
+		id string, visibility types.KBVisibility, targetTenantID uint64,
 	) (*types.KnowledgeBase, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base
@@ -206,14 +228,34 @@ type KnowledgeBaseRepository interface {
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// GetKBScopeByID returns the lightweight access-scope projection
-	// (tenant, visibility) of one knowledge base. Returns nil without
-	// error when the KB does not exist.
+	// (authorization owner, data-scope tenant, visibility) of one knowledge
+	// base. Returns nil without error when the KB does not exist.
 	GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error)
 
 	// ListVisibleKnowledgeBases lists the non-temporary KBs of tenantID:
 	// 'tenant'- and 'public'-visibility rows. Cross-tenant visibility
 	// comes from kb_access_grants, resolved by the service layer.
 	ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// ListOwnedKnowledgeBases lists the non-temporary KBs authorized under
+	// ownerTenantID: rows with owner_tenant_id = ownerTenantID plus legacy
+	// pre-backfill rows (owner 0, tenant visibility, data scope
+	// ownerTenantID). Platform-owned public rows never match; they belong
+	// to ListPlatformPublicCatalog. Ordered created_at DESC, id ASC.
+	ListOwnedKnowledgeBases(ctx context.Context, ownerTenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// ListPlatformPublicCatalog lists the platform-owned public catalog:
+	// rows with owner_tenant_id = 0 AND visibility = public, excluding
+	// temporary and soft-deleted rows. Never consults the data-scope
+	// tenant_id, so converted rows that kept a foreign data scope are
+	// included and nonzero-owner rows are excluded. Stable order
+	// (created_at DESC, id ASC); paged in the database via limit/offset so
+	// large catalogs are never fully materialized. total counts the whole
+	// filtered catalog regardless of paging. keyword optionally filters
+	// name/description (LIKE, empty = no filter).
+	ListPlatformPublicCatalog(
+		ctx context.Context, keyword string, limit, offset int,
+	) (items []*types.KnowledgeBase, total int64, err error)
 
 	// ListPublicKnowledgeBasesExcept lists non-temporary public KBs not
 	// owned by tenantID — the cross-tenant catalog every authenticated

@@ -99,6 +99,213 @@ func isTenantOptionalAPI(path, method string) bool {
 		return true
 	case strings.HasPrefix(path, "/api/v1/me/invitations"):
 		return true
+	case path == "/api/v1/knowledge-bases/public" && method == http.MethodPost:
+		// Platform public-KB creation: an explicit human SuperAdmin with
+		// no active workspace must reach the route; its dedicated guard
+		// denies everyone else.
+		return true
+	case path == "/api/v1/knowledge-bases/public" && method == http.MethodGet:
+		// Human-only public catalog discovery (Task 4): tenantless
+		// callers reach the route, but the handler still denies
+		// anonymous (401) and API-key (403) principals, and the service
+		// admits only authenticated humans.
+		return true
+	case strings.HasPrefix(path, "/api/v1/knowledge-bases/"):
+		// KB lifecycle mutations stay reachable for a tenantless
+		// explicit human SuperAdmin managing platform-owned KBs. The
+		// route guards (TenantAdmin + owner-aware manage) still deny
+		// every other tenantless caller, and sub-resource content routes
+		// (knowledge/faq/tags/wiki/…) are deliberately excluded.
+		//
+		// Per-KB-guarded public reads/downloads (Task 6 integration
+		// finding) stay reachable for any tenantless authenticated
+		// human: auth only admits, while KBAccessRead/Download decide on
+		// the loaded owner+visibility (public Viewer only; tenant-owned,
+		// invited, and malformed rows stay denied downstream).
+		return isTenantlessKBLifecyclePath(path, method) || isTenantlessPublicReadPath(path, method)
+	case strings.HasPrefix(path, "/api/v1/knowledge/"):
+		// Document-scoped reads/original-downloads/previews resolve
+		// their parent KB through the knowledge id; the per-KB
+		// read/download guard decides downstream.
+		return isTenantlessPublicReadPath(path, method)
+	case strings.HasPrefix(path, "/api/v1/chunks/"):
+		// Chunk-scoped reads resolve through chunk -> knowledge -> KB.
+		return isTenantlessPublicReadPath(path, method)
+	case strings.HasPrefix(path, "/api/v1/knowledgebase/"):
+		// Wiki reads resolve through :kb_id; mutations stay excluded
+		// by method below.
+		return isTenantlessPublicReadPath(path, method)
+	default:
+		return false
+	}
+}
+
+// isTenantlessPublicReadPath matches only read-only, per-KB-guarded
+// public consumption shapes for tenantless authenticated humans. Every
+// admitted shape carries a KBAccessRead/Download guard downstream that
+// loads the KB and grants Viewer only on owner=0 + visibility=public rows
+// (tenant-owned, invited, and malformed rows stay denied there).
+//
+// Deliberately excluded even under a matching prefix: the mixed tenant
+// list, cross-KB /knowledge/search + /knowledge/batch, move/batch/delete
+// bodies, activity, pin, move-targets, files serve, duplicate/copy,
+// progress, invites, and every write method. Trailing-slash variants fail
+// closed (gin redirects those before auth sees a routable path).
+func isTenantlessPublicReadPath(path, method string) bool {
+	isGet := method == http.MethodGet
+	isPost := method == http.MethodPost
+	if !isGet && !isPost {
+		return false
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/v1/knowledge-bases/"); ok {
+		return matchTenantlessKBReadShape(rest, isGet, isPost)
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/v1/knowledge/"); ok {
+		if !isGet {
+			return false
+		}
+		switch rest {
+		case "search", "batch", "move", "batch-delete", "batch-reparse", "folder", "tags":
+			return false
+		}
+		segs := strings.Split(rest, "/")
+		switch len(segs) {
+		case 1:
+			// GET /knowledge/:id (document detail). "move" has no :id
+			// collision: move is POST-only and rejected above by method.
+			return segs[0] != "" && segs[0] != "search" && segs[0] != "batch"
+		case 2:
+			// GET /knowledge/:id/{stages,spans,download,preview}.
+			if segs[0] == "" {
+				return false
+			}
+			switch segs[1] {
+			case "stages", "spans", "download", "preview":
+				return true
+			}
+			return false
+		case 4:
+			// GET /knowledge/move/progress/:task_id is progress, not
+			// per-KB content: excluded (no per-KB guard).
+			return false
+		default:
+			return false
+		}
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/v1/chunks/"); ok {
+		if !isGet {
+			return false
+		}
+		segs := strings.Split(rest, "/")
+		switch len(segs) {
+		case 1:
+			// GET /chunks/:knowledge_id (chunk list).
+			return segs[0] != ""
+		case 2:
+			// GET /chunks/by-id/:id (single chunk).
+			return segs[0] == "by-id" && segs[1] != ""
+		case 3:
+			// GET /chunks/:knowledge_id/:id/revisions.
+			return segs[0] != "" && segs[0] != "by-id" && segs[1] != "" && segs[2] == "revisions"
+		default:
+			return false
+		}
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/v1/knowledgebase/"); ok {
+		// Wiki reads are GET-only under /knowledgebase/:kb_id/wiki/…;
+		// every mutation is POST/PUT/DELETE and already excluded.
+		if !isGet {
+			return false
+		}
+		segs := strings.Split(rest, "/")
+		return len(segs) >= 3 && segs[0] != "" && segs[1] == "wiki"
+	}
+	return false
+}
+
+// matchTenantlessKBReadShape matches read-only per-KB shapes under
+// /api/v1/knowledge-bases/:id/… (detail, content/folder listing, tags,
+// FAQ reads + per-KB search, hybrid search, original downloads). Pin,
+// visibility, profile, duplicate, move-targets, activity, and files serve
+// shapes are absent here and stay tenant-scoped.
+func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
+	segs := strings.Split(rest, "/")
+	if len(segs) == 0 || segs[0] == "" || segs[0] == "public" || segs[0] == "copy" {
+		return false
+	}
+	switch len(segs) {
+	case 1:
+		// GET /knowledge-bases/:id (detail). Mutations share this
+		// shape but are PUT/DELETE (lifecycle matcher owns them).
+		return isGet
+	case 2:
+		// GET detail-adjacent reads; POST is admitted only on the
+		// hybrid-search shape (per-KB search, read-only guard).
+		if segs[1] == "hybrid-search" {
+			return isGet || isPost
+		}
+		if !isGet {
+			return false
+		}
+		switch segs[1] {
+		case "knowledge", "tags":
+			return true
+		default:
+			// pin (PUT-only), visibility, activity, files,
+			// move-targets: excluded.
+			return false
+		}
+	case 3:
+		switch segs[1] {
+		case "knowledge":
+			// GET folders; POST batch-download (originals).
+			if segs[2] == "folders" {
+				return isGet
+			}
+			return segs[2] == "batch-download" && isPost
+		case "faq":
+			switch segs[2] {
+			case "entries":
+				return isGet
+			case "search":
+				return isPost
+			default:
+				return false
+			}
+		case "hybrid-search":
+			return false
+		default:
+			return false
+		}
+	case 4:
+		// GET /knowledge-bases/:id/faq/entries/:entry_id and
+		// GET /knowledge-bases/:id/faq/entries/export.
+		return isGet && segs[1] == "faq" && segs[2] == "entries" && segs[3] != ""
+	default:
+		return false
+	}
+}
+
+// under /api/v1/knowledge-bases/: single-segment update/delete, the
+// two-segment visibility switch, and the three-segment profile regeneration.
+// Reads (GET detail/list/search) and every nested content route keep
+// requiring a workspace.
+func isTenantlessKBLifecyclePath(path, method string) bool {
+	rest := strings.TrimPrefix(path, "/api/v1/knowledge-bases/")
+	if rest == "" || strings.HasSuffix(rest, "/") {
+		return false
+	}
+	segs := strings.Split(rest, "/")
+	switch len(segs) {
+	case 1:
+		if segs[0] == "public" {
+			return false
+		}
+		return method == http.MethodPut || method == http.MethodDelete
+	case 2:
+		return segs[1] == "visibility" && method == http.MethodPut
+	case 3:
+		return segs[1] == "profile" && segs[2] == "generate" && method == http.MethodPost
 	default:
 		return false
 	}
@@ -538,7 +745,7 @@ func attachAPIKeyAuthContext(
 	apiKeyTenantRoleContext := types.TenantRoleMember
 	fullAccess := key != nil && key.FullAccess && !key.IsPlatform()
 	if fullAccess {
-		apiKeyTenantRoleContext = types.TenantRoleOwner
+		apiKeyTenantRoleContext = types.TenantRoleAdmin
 	}
 	session := authSession{
 		User:      user,
@@ -728,15 +935,15 @@ func principalTenantIDFromClaims(claims jwt.MapClaims) uint64 {
 //  1. Active TenantMember row → return that role.
 //  2. Cross-tenant superuser switch (X-Tenant-ID with CanAccessAllTenants=true)
 //     → grant Admin in the target tenant. Org admins are intentionally not
-//     promoted to Owner; tenant deletion / API-key rotation should always
-//     stay with a real Owner inside the target tenant. Cross-tenant access
+//     promoted beyond Admin; tenant deletion / API-key rotation should always
+//     stay with a real Admin inside the target tenant. Cross-tenant access
 //     is also never allowed to trigger the orphan-tenant auto-promotion
 //     below — a superuser only visits, never claims ownership.
 //  3. No membership but the tenant currently has zero active members AND
 //     the caller is authenticating into their own home tenant (i.e.
 //     targetTenantID == user.TenantID and this is not a cross-tenant
 //     switch). This is the API-key-only orphan-tenant self-heal path:
-//     the registrant becomes Owner of the tenant their own user record
+//     the registrant becomes Admin of the tenant their own user record
 //     points to. Any other path (cross-tenant switch, JWT minted for a
 //     foreign tenant, etc.) is intentionally excluded to avoid silent
 //     ownership grabs.
@@ -793,20 +1000,20 @@ func resolveTenantRole(
 	}
 
 	// 3. 孤儿Tenant workspace自愈：仅当用户登录的是自己的 home tenant、且该Tenant workspace尚无任何活跃成员时
-	//    允许自动晋升为 Owner。跨Tenant workspace switch / JWT 指向他人Tenant workspace的场景一律不进入此分支，
-	//    防止越权获得他人Tenant workspace的 Owner 权限。
+	//    允许自动晋升为 Admin。跨Tenant workspace switch / JWT 指向他人Tenant workspace的场景一律不进入此分支，
+	//    防止越权获得他人Tenant workspace的 Admin 权限。
 	isHomeTenant := !crossTenantSwitch && targetTenantID == user.TenantID
 	if isHomeTenant {
 		hasAny, anyErr := memberService.HasAnyMembers(ctx, targetTenantID)
 		if anyErr == nil && !hasAny {
 			if _, e := memberService.AddMember(
-				ctx, user.ID, targetTenantID, types.TenantRoleOwner, nil,
+				ctx, user.ID, targetTenantID, types.TenantRoleAdmin, nil,
 			); e == nil {
 				logger.Infof(ctx,
-					"[audit] Auto-promoted user %s to Owner of orphan tenant %d (home_tenant=true)",
+					"[audit] Auto-promoted user %s to Admin of orphan tenant %d (home_tenant=true)",
 					user.ID, targetTenantID,
 				)
-				return types.TenantRoleOwner, true
+				return types.TenantRoleAdmin, true
 			} else {
 				logger.Warnf(ctx, "Failed to auto-promote user %s in tenant %d: %v",
 					user.ID, targetTenantID, e)

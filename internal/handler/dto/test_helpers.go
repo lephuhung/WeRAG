@@ -18,5 +18,5 @@ func viewerContext() context.Context {
 
 func ownerContext() context.Context {
 	ctx := context.Background()
-	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleOwner)
+	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
 }

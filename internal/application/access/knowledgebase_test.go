@@ -60,16 +60,16 @@ func TestResolveKBPermissionMatrix(t *testing.T) {
 	}{
 		{name: "own KB", own: true, required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
 		{
-			name:       "granted viewer reads",
+			name:       "legacy tenant grant cannot read",
 			permission: types.KBPermissionViewer,
 			required:   types.KBPermissionViewer,
-			want:       types.KBPermissionViewer,
+			wantErr:    ErrForbidden,
 		},
 		{
-			name:       "granted editor writes",
+			name:       "legacy tenant grant cannot write",
 			permission: types.KBPermissionEditor,
 			required:   types.KBPermissionEditor,
-			want:       types.KBPermissionEditor,
+			wantErr:    ErrForbidden,
 		},
 		{
 			name:       "viewer grant cannot write",
@@ -91,9 +91,13 @@ func TestResolveKBPermissionMatrix(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			kb := &types.KnowledgeBase{ID: "kb", TenantID: 2}
+			kb := &types.KnowledgeBase{
+				ID: "kb", TenantID: 2,
+				OwnerTenantID: 2, Visibility: types.KBVisibilityTenant,
+			}
 			if tt.own {
 				kb.TenantID = 1
+				kb.OwnerTenantID = 1
 			}
 			grants := &grantLookup{grants: map[string]types.KBPermission{}}
 			if tt.permission != "" {
@@ -118,7 +122,10 @@ func TestResolveKBPermissionMatrix(t *testing.T) {
 }
 
 func TestResolveKBMissingIdentityResourceAndAPIKeyScope(t *testing.T) {
-	kb := &types.KnowledgeBase{ID: "kb", TenantID: 1}
+	kb := &types.KnowledgeBase{
+		ID: "kb", TenantID: 1,
+		OwnerTenantID: 1, Visibility: types.KBVisibilityTenant,
+	}
 	_, err := ResolveKB(context.Background(), KBRequest{}, kb, types.KBPermissionViewer, nil)
 	require.ErrorIs(t, err, ErrUnauthorized)
 	_, err = ResolveKB(
@@ -142,6 +149,7 @@ func TestResolveKBVisibilityMatrix(t *testing.T) {
 		name       string
 		visibility types.KBVisibility
 		kbTenant   uint64
+		kbOwner    uint64
 		caller     types.Caller
 		sysAdmin   bool
 		granted    types.KBPermission
@@ -149,49 +157,53 @@ func TestResolveKBVisibilityMatrix(t *testing.T) {
 		want       types.KBPermission
 		wantErr    error
 	}{
-		// --- public, same tenant ---
-		{name: "public KB member reads",
-			visibility: types.KBVisibilityPublic, kbTenant: 1,
+		// --- tenant-owned rows: owning-tenant members keep normal access ---
+		{name: "tenant KB member reads in owning tenant",
+			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
-			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
-		{name: "public KB member cannot write",
-			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			required: types.KBPermissionViewer, want: types.KBPermissionAdmin},
+		{name: "tenant KB member writes in owning tenant",
+			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
-			required: types.KBPermissionEditor, wantErr: ErrForbidden},
-		{name: "public KB owner writes",
-			visibility: types.KBVisibilityPublic, kbTenant: 1,
+			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
+		{name: "tenant KB admin writes in owning tenant",
+			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
 			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
-		{name: "public KB system admin writes",
-			visibility: types.KBVisibilityPublic, kbTenant: 1,
+		// --- platform-owned public rows: every authenticated human reads ---
+		{name: "platform public KB foreign member reads",
+			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
+			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
+		{name: "platform public KB data scope is the execution tenant",
+			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
+			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
+		{name: "platform public KB tenant admin cannot write",
+			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
+			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
+			required: types.KBPermissionEditor, wantErr: ErrForbidden},
+		{name: "platform public KB system admin read resolves viewer, write stays closed",
+			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			sysAdmin: true,
-			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
-		// --- public, cross tenant ---
-		{name: "public KB foreign tenant reads",
-			visibility: types.KBVisibilityPublic, kbTenant: 2,
-			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
-		{name: "public KB foreign tenant cannot write",
-			visibility: types.KBVisibilityPublic, kbTenant: 2,
-			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
-			required: types.KBPermissionEditor, wantErr: ErrForbidden},
 		// --- tenant-scoped ---
 		{name: "tenant KB member gets admin in own tenant",
-			visibility: types.KBVisibilityTenant, kbTenant: 1,
+			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
 		{name: "tenant KB foreign denied without grant",
-			visibility: types.KBVisibilityTenant, kbTenant: 2,
+			visibility: types.KBVisibilityTenant, kbTenant: 2, kbOwner: 2,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			required: types.KBPermissionViewer, wantErr: ErrForbidden},
-		{name: "tenant KB foreign reads with approved grant",
-			visibility: types.KBVisibilityTenant, kbTenant: 2,
+		{name: "legacy approved tenant grant does not authorize foreign read",
+			visibility: types.KBVisibilityTenant, kbTenant: 2, kbOwner: 2,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			granted:  types.KBPermissionViewer,
-			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
+			required: types.KBPermissionViewer, wantErr: ErrForbidden},
 		{name: "tenant KB foreign viewer grant cannot write",
-			visibility: types.KBVisibilityTenant, kbTenant: 2,
+			visibility: types.KBVisibilityTenant, kbTenant: 2, kbOwner: 2,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			granted:  types.KBPermissionViewer,
 			required: types.KBPermissionEditor, wantErr: ErrForbidden},
@@ -199,7 +211,7 @@ func TestResolveKBVisibilityMatrix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			kb := &types.KnowledgeBase{
 				ID: "kb", TenantID: tt.kbTenant,
-				Visibility: tt.visibility,
+				OwnerTenantID: tt.kbOwner, Visibility: tt.visibility,
 			}
 			grants := &grantLookup{grants: map[string]types.KBPermission{}}
 			if tt.granted != "" {

@@ -12,11 +12,15 @@ import (
 )
 
 // setupTestDB creates an in-memory SQLite database with tenant table.
+// It also creates the knowledge_bases table: tenant deletion checks the
+// KB data-scope dependency inside its own transaction, so the table must
+// exist wherever DeleteTenant is exercised.
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.TenantMember{}))
+	require.NoError(t, db.Exec(knowledgeBasesTestDDL).Error)
 	return db
 }
 

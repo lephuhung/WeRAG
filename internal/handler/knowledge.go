@@ -61,7 +61,7 @@ func (h *KnowledgeHandler) requireKBOwnershipOrAdmin(c *gin.Context, kbID string
 	evalErr := middleware.EvaluateOwnershipOrRole(
 		c.Request.Context(),
 		h.cfg,
-		types.TenantRoleOwner,
+		types.TenantRoleAdmin,
 		func() (string, error) { return resolveKBCreatorByKBID(c, h.kbService, kbID) },
 	)
 	if evalErr == nil {
@@ -105,17 +105,16 @@ func (h *KnowledgeHandler) validateKnowledgeBaseWriteAccessWithKBID(
 	c *gin.Context,
 	kbID string,
 ) (*types.KnowledgeBase, string, uint64, types.KBPermission, error) {
-	grant, err := resolveHandlerKBAccessFor(
+	grant, err := resolveHandlerKBManageAccessFor(
 		c,
 		kbID,
 		h.kbService,
 		h.kbAccessGrantService,
-		types.KBPermissionEditor,
 	)
 	if err != nil {
 		return nil, kbID, 0, "", err
 	}
-	if err := access.RequireKBWrite(grant.Context(c.Request.Context()), grant.KnowledgeBase); err != nil {
+	if err := access.RequireKBManage(grant.Context(c.Request.Context()), grant.KnowledgeBase); err != nil {
 		return nil, kbID, 0, "", kbAccessHTTPError(err)
 	}
 	return grant.KnowledgeBase, kbID, grant.EffectiveTenantID, grant.Permission, nil
@@ -123,7 +122,10 @@ func (h *KnowledgeHandler) validateKnowledgeBaseWriteAccessWithKBID(
 
 // resolveKnowledgeAndValidateKBAccess resolves a document and checks its parent
 // KB using the same policy as KB routes. The persisted document supplies the KB
-// and owner reference, so unguarded callers do not need an additional KB lookup.
+// id and data-scope reference; the KB row itself is loaded for owner-aware
+// resolution so platform-public rows keep their recorded data scope.
+// Reads use ResolveKB; mutations use the owner-aware manage decision so
+// platform-owned rows admit only an explicit human SuperAdmin.
 func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 	c *gin.Context,
 	knowledgeID string,
@@ -131,7 +133,8 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 ) (*types.Knowledge, context.Context, error) {
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
-	if request.Caller.TenantID == 0 {
+	request.Caller = request.Caller.Normalize()
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
 		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
 	}
 	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
@@ -148,12 +151,70 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 		return knowledge, grant.Context(ctx), nil
 	}
 	kb := &types.KnowledgeBase{ID: knowledge.KnowledgeBaseID, TenantID: knowledge.TenantID}
-	grant, err := access.ResolveKB(ctx, request, kb, requiredPermission, h.kbAccessGrantService)
+	if h.kbService != nil {
+		if loaded, lerr := h.kbService.GetKnowledgeBaseByID(ctx, knowledge.KnowledgeBaseID); lerr == nil && loaded != nil {
+			kb = loaded
+		}
+	}
+	var grant *access.KBAccess
+	if requiredPermission == types.KBPermissionViewer {
+		grant, err = access.ResolveKB(ctx, request, kb, requiredPermission, h.kbAccessGrantService)
+	} else {
+		grant, err = access.ResolveKBForManage(ctx, request, kb)
+	}
 	if goerrors.Is(err, access.ErrForbidden) {
 		return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
 	}
 	if err != nil {
 		return nil, ctx, kbAccessHTTPError(err)
+	}
+	if grant.EffectiveTenantID != knowledge.TenantID {
+		return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
+	}
+	return knowledge, grant.Context(ctx), nil
+}
+
+// resolveKnowledgeAndValidateKBDownload resolves a document for original-file
+// download through the dedicated download decision. Invitation reads are
+// never consulted, so invite Viewers keep their no-download behavior while
+// platform-public Viewers may fetch originals through the recorded data scope.
+func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBDownload(
+	c *gin.Context,
+	knowledgeID string,
+) (*types.Knowledge, context.Context, error) {
+	ctx := c.Request.Context()
+	request := middleware.KBAccessRequest(c)
+	request.Caller = request.Caller.Normalize()
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
+	}
+	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
+	if err != nil || knowledge == nil {
+		return nil, ctx, errors.NewNotFoundError("Knowledge not found")
+	}
+	if err := requireTenantAPIKeyKnowledgeBase(ctx, knowledge.KnowledgeBaseID); err != nil {
+		return nil, ctx, err
+	}
+	// Never reuse a stashed read grant here: a Viewer stash may come from a
+	// recipient-bound invitation, which must not confer original download.
+	// The download decision is always re-resolved against the KB row (one
+	// extra lookup per download); the route guard already enforced the same
+	// policy, so this is a consistent second check, not a wider one.
+	kb := &types.KnowledgeBase{ID: knowledge.KnowledgeBaseID, TenantID: knowledge.TenantID}
+	if h.kbService != nil {
+		if loaded, lerr := h.kbService.GetKnowledgeBaseByID(ctx, knowledge.KnowledgeBaseID); lerr == nil && loaded != nil {
+			kb = loaded
+		}
+	}
+	grant, err := access.ResolveKBForDownload(ctx, request, kb)
+	if goerrors.Is(err, access.ErrForbidden) {
+		return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
+	}
+	if err != nil {
+		return nil, ctx, kbAccessHTTPError(err)
+	}
+	if grant.EffectiveTenantID != knowledge.TenantID {
+		return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
 	}
 	return knowledge, grant.Context(ctx), nil
 }
@@ -251,8 +312,10 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating knowledge from file")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate management access to the knowledge base (owning tenant or an
+	// explicit human SuperAdmin on platform-owned rows); public Viewers stay
+	// denied by the permission check below.
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseWriteAccessWithKBID(c, c.Param("id"))
 	if err != nil {
 		c.Error(err)
 		return
@@ -400,8 +463,10 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating knowledge from URL")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate management access to the knowledge base (owning tenant or an
+	// explicit human SuperAdmin on platform-owned rows); public Viewers stay
+	// denied by the permission check below.
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseWriteAccessWithKBID(c, c.Param("id"))
 	if err != nil {
 		c.Error(err)
 		return
@@ -497,8 +562,10 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating manual knowledge")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate management access to the knowledge base (owning tenant or an
+	// explicit human SuperAdmin on platform-owned rows); public Viewers stay
+	// denied by the permission check below.
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseWriteAccessWithKBID(c, c.Param("id"))
 	if err != nil {
 		c.Error(err)
 		return
@@ -1482,10 +1549,10 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 		return
 	}
 
-	// Keep a handler-level Editor check in addition to the route guard. The
-	// original file is more sensitive than parsed-content reads and must not
-	// be downloadable through a read-only organization share.
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.KBPermissionEditor)
+	// Original bytes leave through the dedicated download decision: public
+	// Viewers may fetch them, invitation Viewers stay denied, and preview
+	// keeps its Viewer boundary in PreviewKnowledgeFile below.
+	_, effCtx, err := h.resolveKnowledgeAndValidateKBDownload(c, id)
 	if err != nil {
 		c.Error(err)
 		return
@@ -2270,12 +2337,14 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		return
 	}
 
-	// Resolve explicit write grants independently for both body IDs.
-	if _, err := resolveHandlerKBAccessFor(c, req.SourceKBID, h.kbService, h.kbAccessGrantService, types.KBPermissionEditor); err != nil {
+	// Resolve explicit management grants independently for both body IDs:
+	// owning tenant via the existing policy, platform-owned rows via
+	// explicit human SuperAdmin only.
+	if _, err := resolveHandlerKBManageAccessFor(c, req.SourceKBID, h.kbService, h.kbAccessGrantService); err != nil {
 		_ = c.Error(err)
 		return
 	}
-	if _, err := resolveHandlerKBAccessFor(c, req.TargetKBID, h.kbService, h.kbAccessGrantService, types.KBPermissionEditor); err != nil {
+	if _, err := resolveHandlerKBManageAccessFor(c, req.TargetKBID, h.kbService, h.kbAccessGrantService); err != nil {
 		_ = c.Error(err)
 		return
 	}

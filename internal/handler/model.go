@@ -544,6 +544,214 @@ type UpdateModelRequest struct {
 	Type        types.ModelType       `json:"type"`
 }
 
+// cloneModelStringMap copies a string map, preserving nil, so merging into
+// the copy never mutates the stored parameters on validation errors.
+func cloneModelStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// mergeModelParameters overlays only the keys present in paramsRaw onto stored,
+// so a partial PUT preserves unspecified fields — including nested maps and
+// structs — while still honouring explicit false/0/empty values. Credentials
+// (api_key, app_secret) are always preserved from stored; a differing
+// non-empty credential in the body is reported via the returned attempt flag
+// (the caller logs the deprecation warning) and never applied. Nested maps
+// (extra_config, custom_headers) merge key-wise: supplied keys overlay the
+// stored entries while unspecified stored keys are preserved. An explicit {}
+// clears the whole map, an explicit null resets it to nil, and a per-key
+// null (e.g. {"extra_config":{"stale":null}}) deletes that single entry —
+// needed because map values are strings and there is otherwise no way to
+// express "remove this key" without wiping the map. The stored maps are
+// never mutated: the merge works on copies, so a validation error leaves the
+// caller's value untouched. Unknown keys are ignored. A JSON type mismatch
+// returns an error for a 400 response.
+func mergeModelParameters(
+	stored types.ModelParameters,
+	paramsRaw json.RawMessage,
+) (types.ModelParameters, bool, error) {
+	merged := stored
+	// Deep-copy the nested maps so overlaying below never mutates the
+	// caller's stored value — especially when a later key fails validation
+	// and we return stored as-is.
+	merged.ExtraConfig = cloneModelStringMap(stored.ExtraConfig)
+	merged.CustomHeaders = cloneModelStringMap(stored.CustomHeaders)
+	if len(paramsRaw) == 0 || strings.TrimSpace(string(paramsRaw)) == "null" {
+		return merged, false, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(paramsRaw, &fields); err != nil {
+		return stored, false, fmt.Errorf("invalid parameters: %w", err)
+	}
+	isNull := func(raw json.RawMessage) bool {
+		return strings.TrimSpace(string(raw)) == "null"
+	}
+	applyString := func(key string, dst *string) error {
+		raw, ok := fields[key]
+		if !ok {
+			return nil
+		}
+		if isNull(raw) {
+			*dst = ""
+			return nil
+		}
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+		*dst = s
+		return nil
+	}
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{
+		{"base_url", &merged.BaseURL},
+		{"provider", &merged.Provider},
+		{"interface_type", &merged.InterfaceType},
+		{"parameter_size", &merged.ParameterSize},
+		{"app_id", &merged.AppID},
+	} {
+		if err := applyString(f.key, f.dst); err != nil {
+			return stored, false, err
+		}
+	}
+	if raw, ok := fields["supports_vision"]; ok {
+		if isNull(raw) {
+			merged.SupportsVision = false
+		} else {
+			var b bool
+			if err := json.Unmarshal(raw, &b); err != nil {
+				return stored, false, fmt.Errorf("invalid supports_vision: %w", err)
+			}
+			merged.SupportsVision = b
+		}
+	}
+	for _, f := range []struct {
+		key string
+		dst *int
+	}{
+		{"context_window", &merged.ContextWindow},
+		{"max_output_tokens", &merged.MaxOutputTokens},
+		{"max_concurrency", &merged.MaxConcurrency},
+	} {
+		raw, ok := fields[f.key]
+		if !ok {
+			continue
+		}
+		if isNull(raw) {
+			*f.dst = 0
+			continue
+		}
+		var n int
+		if err := json.Unmarshal(raw, &n); err != nil {
+			return stored, false, fmt.Errorf("invalid %s: %w", f.key, err)
+		}
+		*f.dst = n
+	}
+	for _, f := range []struct {
+		key string
+		dst *map[string]string
+	}{
+		{"extra_config", &merged.ExtraConfig},
+		{"custom_headers", &merged.CustomHeaders},
+	} {
+		raw, ok := fields[f.key]
+		if !ok {
+			continue
+		}
+		if isNull(raw) {
+			*f.dst = nil
+			continue
+		}
+		var entries map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return stored, false, fmt.Errorf("invalid %s: %w", f.key, err)
+		}
+		if len(entries) == 0 {
+			*f.dst = map[string]string{}
+			continue
+		}
+		overlay := *f.dst
+		if overlay == nil {
+			overlay = make(map[string]string, len(entries))
+		}
+		for k, v := range entries {
+			if isNull(v) {
+				delete(overlay, k)
+				continue
+			}
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				return stored, false, fmt.Errorf("invalid %s.%s: %w", f.key, k, err)
+			}
+			overlay[k] = s
+		}
+		*f.dst = overlay
+	}
+	if raw, ok := fields["embedding_parameters"]; ok {
+		if isNull(raw) {
+			merged.EmbeddingParameters = types.EmbeddingParameters{}
+		} else {
+			var sub map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &sub); err != nil {
+				return stored, false, fmt.Errorf("invalid embedding_parameters: %w", err)
+			}
+			if v, ok := sub["dimension"]; ok {
+				if isNull(v) {
+					merged.EmbeddingParameters.Dimension = 0
+				} else if err := json.Unmarshal(v, &merged.EmbeddingParameters.Dimension); err != nil {
+					return stored, false, fmt.Errorf("invalid embedding_parameters.dimension: %w", err)
+				}
+			}
+			if v, ok := sub["truncate_prompt_tokens"]; ok {
+				if isNull(v) {
+					merged.EmbeddingParameters.TruncatePromptTokens = 0
+				} else if err := json.Unmarshal(v, &merged.EmbeddingParameters.TruncatePromptTokens); err != nil {
+					return stored, false, fmt.Errorf("invalid embedding_parameters.truncate_prompt_tokens: %w", err)
+				}
+			}
+			if v, ok := sub["supports_dimension_override"]; ok {
+				if isNull(v) {
+					merged.EmbeddingParameters.SupportsDimensionOverride = false
+				} else if err := json.Unmarshal(v, &merged.EmbeddingParameters.SupportsDimensionOverride); err != nil {
+					return stored, false, fmt.Errorf("invalid embedding_parameters.supports_dimension_override: %w", err)
+				}
+			}
+		}
+	}
+	credentialAttempt := false
+	for _, f := range []struct {
+		key    string
+		stored string
+	}{
+		{"api_key", stored.APIKey},
+		{"app_secret", stored.AppSecret},
+	} {
+		raw, ok := fields[f.key]
+		if !ok || isNull(raw) {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return stored, false, fmt.Errorf("invalid %s: %w", f.key, err)
+		}
+		if s != "" && s != f.stored {
+			credentialAttempt = true
+		}
+	}
+	// Credentials always stay at their stored values.
+	merged.APIKey = stored.APIKey
+	merged.AppSecret = stored.AppSecret
+	return merged, credentialAttempt, nil
+}
+
 // UpdateModel godoc
 // @Summary      Update 模型
 // @Description  Update 模型Configuration 信息
@@ -569,8 +777,23 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 		return
 	}
 
+	// Read the raw body so field presence can be distinguished from zero
+	// values: an omitted "parameters"/"description" key must preserve the
+	// stored value, while an explicit false/0/""/{} applies.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		logger.Error(ctx, "Failed to read request body", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
 	var req UpdateModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	var rawBody map[string]json.RawMessage
+	if err := json.Unmarshal(body, &rawBody); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
@@ -596,46 +819,39 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	if req.DisplayName != nil {
 		model.DisplayName = secutils.SanitizeForLog(*req.DisplayName)
 	}
-	model.Description = req.Description
+	if _, ok := rawBody["description"]; ok {
+		model.Description = req.Description
+	}
 
-	// SSRF validation for updated model BaseURL
-	if req.Parameters.BaseURL != "" {
-		if err := secutils.ValidateURLForSSRF(req.Parameters.BaseURL); err != nil {
-			logger.Warnf(ctx, "SSRF validation failed for model BaseURL: %v", err)
-			c.Error(errors.NewBadRequestError(secutils.FormatSSRFError("Base URL", req.Parameters.BaseURL, err)))
+	// Presence-aware parameter merge: only keys present in the body overlay
+	// the stored parameters. Credentials (api_key, app_secret) NEVER flow
+	// through this endpoint — they live behind the /credentials subresource
+	// and mergeModelParameters always preserves the stored values, so even
+	// a misbehaving caller cannot clobber them. Log a warning to spot
+	// stale callers.
+	storedParams := model.Parameters
+	if paramsRaw, hasParams := rawBody["parameters"]; hasParams {
+		merged, credentialAttempt, err := mergeModelParameters(storedParams, paramsRaw)
+		if err != nil {
+			logger.Error(ctx, "Failed to parse model parameters", err)
+			c.Error(errors.NewBadRequestError(err.Error()))
 			return
 		}
+		if credentialAttempt {
+			logger.Warnf(ctx,
+				"deprecated: api_key/app_secret in PUT /models/%s body is ignored; use PUT /credentials instead", id)
+		}
+		// SSRF validation runs against the effective BaseURL, and only
+		// when it actually changed.
+		if merged.BaseURL != storedParams.BaseURL && merged.BaseURL != "" {
+			if err := secutils.ValidateURLForSSRF(merged.BaseURL); err != nil {
+				logger.Warnf(ctx, "SSRF validation failed for model BaseURL: %v", err)
+				c.Error(errors.NewBadRequestError(secutils.FormatSSRFError("Base URL", merged.BaseURL, err)))
+				return
+			}
+		}
+		model.Parameters = merged
 	}
-	// Credentials (api_key, app_secret) NEVER flow through this endpoint —
-	// they live behind the /credentials subresource. Force-preserve them by
-	// snapshotting the stored values before copying request fields in, so
-	// that even a misbehaving caller that puts api_key in the body cannot
-	// clobber a stored credential. Log a warning to spot stale callers.
-	storedAPIKey := model.Parameters.APIKey
-	storedAppSecret := model.Parameters.AppSecret
-	if req.Parameters.APIKey != "" && req.Parameters.APIKey != storedAPIKey {
-		logger.Warnf(ctx,
-			"deprecated: api_key in PUT /models/%s body is ignored; use PUT /credentials instead", id)
-	}
-	if req.Parameters.AppSecret != "" && req.Parameters.AppSecret != storedAppSecret {
-		logger.Warnf(ctx,
-			"deprecated: app_secret in PUT /models/%s body is ignored; use PUT /credentials instead", id)
-	}
-	newParams := req.Parameters
-	newParams.APIKey = storedAPIKey
-	newParams.AppSecret = storedAppSecret
-	// Preserve backend-managed fields not sent by the frontend either.
-	newParams.ParameterSize = model.Parameters.ParameterSize
-	if newParams.InterfaceType == "" {
-		newParams.InterfaceType = model.Parameters.InterfaceType
-	}
-	if newParams.AppID == "" {
-		newParams.AppID = model.Parameters.AppID
-	}
-	if newParams.ExtraConfig == nil {
-		newParams.ExtraConfig = model.Parameters.ExtraConfig
-	}
-	model.Parameters = newParams
 
 	// Source/Type are presence-gated like the other preserved fields: an
 	// update that omits them must not wipe the stored values (empty type

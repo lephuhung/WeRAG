@@ -72,7 +72,7 @@ func TestKBFilesRequireExactGrantAndBinding(t *testing.T) {
 	require.ErrorIs(t, err, bindings.err)
 }
 
-func TestMessageFilesRequireReferenceAndRecheckRevocation(t *testing.T) {
+func TestMessageFilesDoNotAuthorizeFromLegacyTenantGrant(t *testing.T) {
 	const ref = "resource://AbCdEfGhIjKlMnOpQrStUv"
 	messages := &fileMessages{
 		// The caller's own agent produced the reply; the referenced resource
@@ -98,22 +98,14 @@ func TestMessageFilesRequireReferenceAndRecheckRevocation(t *testing.T) {
 	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
 	require.ErrorIs(t, err, ErrForbidden, "a longer handle is not the requested handle")
 	messages.message.Content = "![image](" + ref + ")"
-	// Referenced content alone is not enough for a foreign-tenant resource —
-	// the retrieval evidence must also name a granted KB.
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden)
+	// The referenced content and retrieval evidence do not authorize a
+	// cross-tenant resource through a retired tenant-wide grant.
 	messages.message.KnowledgeReferences = types.References{
 		{KnowledgeBaseID: "shared", Content: ref},
 	}
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden, "evidence without a live grant stays denied")
 	grants.grants["shared/1"] = types.KBPermissionViewer
 	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), messages.tenant, "session lookup must use the caller")
-	delete(grants.grants, "shared/1")
-	_, err = ResolveMessageFile(ctx, "session", "message", ref, messages, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden, "historical references cannot bypass grant revocation")
+	require.ErrorIs(t, err, ErrForbidden, "legacy tenant grant must not authorize a message file")
 }
 
 func TestMessageArtifactsKeepSessionOwnershipSeparateFromAgentOutput(t *testing.T) {
@@ -139,7 +131,7 @@ func (k messageFileKBs) GetKnowledgeBasesByIDsOnly(context.Context, []string) ([
 	return []*types.KnowledgeBase{k.kb}, nil
 }
 
-func TestMessageSharedKBFilesRequireLiveBinding(t *testing.T) {
+func TestMessageSharedKBFilesRejectLegacyTenantGrant(t *testing.T) {
 	const ref = "resource://AbCdEfGhIjKlMnOpQrStUv"
 	message := &types.Message{
 		AgentTenantID: 1, Role: "assistant",
@@ -154,20 +146,7 @@ func TestMessageSharedKBFilesRequireLiveBinding(t *testing.T) {
 		GrantGuard: grants, KBs: messageFileKBs{kb: &types.KnowledgeBase{ID: "shared", TenantID: 2}}, Bindings: binding,
 	}
 	_, err := AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
-	require.NoError(t, err)
-	require.Equal(t, "shared", binding.kb)
-	require.Equal(t, uint64(2), binding.tenant)
-	binding.allowed = false
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden, "retrieval text alone must not authorize an unrelated same-tenant resource")
-	binding.allowed = true
-	binding.err = errors.New("binding lookup unavailable")
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden)
-	binding.err = nil
-	authorizer.Bindings = nil
-	_, err = AuthorizeMessageFile(callerContext(), message, ref, catalog, authorizer)
-	require.ErrorIs(t, err, ErrForbidden, "missing live lookup must fail closed")
+	require.ErrorIs(t, err, ErrForbidden, "legacy tenant-wide grant must not authorize a foreign KB file")
 }
 
 // This fixture represents a catalog claim made by the artifact collector.

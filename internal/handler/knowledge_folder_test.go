@@ -23,7 +23,7 @@ func (s *stubFolderKBService) GetKnowledgeBaseByID(_ context.Context, id string)
 	if id != "kb-1" {
 		return nil, errors.New("kb not found")
 	}
-	return &types.KnowledgeBase{ID: "kb-1", TenantID: 1, Type: types.KnowledgeBaseTypeDocument}, nil
+	return &types.KnowledgeBase{ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Type: types.KnowledgeBaseTypeDocument}, nil
 }
 
 type stubFolderKGService struct {

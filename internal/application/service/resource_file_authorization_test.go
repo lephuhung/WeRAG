@@ -30,7 +30,7 @@ func (catalogFileGrants) GetKnowledgeBasesByIDsOnly(context.Context, []string) (
 	return []*types.KnowledgeBase{{ID: "shared", TenantID: 7}}, nil
 }
 
-func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T) {
+func TestCatalogFileAuthorizationRejectsLegacyTenantGrant(t *testing.T) {
 	catalog, db := newResourceCatalogForTest(t)
 	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{}, &types.Chunk{}, &types.WikiPage{}))
 	ctx := newSharedAccessContext()
@@ -90,12 +90,5 @@ func TestCatalogFileAuthorizationRejectsPrivateHandlesInSharedText(t *testing.T)
 			}
 		}
 	}
-	check(false)
-	require.NoError(
-		t,
-		catalog.Bind(ctx, ref, types.ResourceOwnerKnowledge, "shared-doc", types.ResourceRelationSourceFile),
-	)
-	check(true)
-	require.NoError(t, db.Where("id = ?", "shared").Delete(&types.KnowledgeBase{}).Error)
 	check(false)
 }

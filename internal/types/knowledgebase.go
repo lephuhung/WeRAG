@@ -3,6 +3,7 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -79,12 +80,26 @@ func (v KBVisibility) IsValid() bool {
 	}
 }
 
+// Public catalog pagination bounds (Task 4). The main KB list embeds the
+// first default-sized public page so its array response shape is preserved;
+// the dedicated catalog endpoint accepts page/page_size (clamped to the max)
+// and reports total/page metadata for Task 5 pagination.
+const (
+	PublicCatalogDefaultPageSize = 50
+	PublicCatalogMaxPageSize     = 200
+)
+
 // KBScope is the lightweight access-scope projection of a knowledge
 // base — just the columns the permission layer needs, without loading
 // the full row (configs, strategies, generated profile).
+//
+// OwnerTenantID is the authorization owner (0 = platform-owned);
+// TenantID remains the data-scope/execution partition used for content
+// retrieval after authorization succeeds.
 type KBScope struct {
-	TenantID   uint64
-	Visibility KBVisibility
+	TenantID      uint64
+	OwnerTenantID uint64
+	Visibility    KBVisibility
 }
 
 // KnowledgeBase represents a knowledge base entity
@@ -101,6 +116,16 @@ type KnowledgeBase struct {
 	Description string `yaml:"description"             json:"description"`
 	// Workspace ID
 	TenantID uint64 `yaml:"tenant_id"               json:"tenant_id"`
+	// OwnerTenantID is the authorization owner of this knowledge base:
+	// a nonzero tenant ID means tenant-owned, 0 means platform-owned
+	// (no tenant owner). TenantID above stays the immutable
+	// data-scope/execution partition for documents and indexes and is
+	// never rewritten by a public/tenant scope transition. Rows
+	// predating migration 000113 backfill this column from tenant_id.
+	// The owner/visibility invariant (public <=> owner 0, tenant <=>
+	// owner > 0) is enforced by migration 000113's CHECK constraint on
+	// PostgreSQL and by ValidateOwnership in Go (SQLite/test path).
+	OwnerTenantID uint64 `yaml:"owner_tenant_id"         json:"owner_tenant_id"         gorm:"not null;default:0"`
 	// CreatorID records the user ID of whoever originally created the KB.
 	// Used by the workspace-level RBAC middleware to let Contributors edit
 	// their own KBs without granting them access to everyone else's.
@@ -767,6 +792,35 @@ func (f *FAQConfig) Scan(value interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(b, f)
+}
+
+// ValidateOwnership checks the platform owner/visibility invariant:
+// visibility 'public' requires platform ownership (OwnerTenantID == 0)
+// and visibility 'tenant' requires a nonzero owning tenant. The
+// data-scope TenantID is deliberately not consulted: a public KB may
+// retain a tenant data scope and a tenant KB may keep a stable scope
+// across transitions. Safe to call on a nil receiver (returns an error
+// so fail-closed callers reject ownerless rows).
+func (kb *KnowledgeBase) ValidateOwnership() error {
+	if kb == nil {
+		return fmt.Errorf("knowledge base ownership: nil knowledge base")
+	}
+	switch kb.Visibility {
+	case KBVisibilityPublic:
+		if kb.OwnerTenantID != 0 {
+			return fmt.Errorf(
+				"knowledge base ownership: public visibility requires platform owner (owner_tenant_id = 0), got %d",
+				kb.OwnerTenantID)
+		}
+	case KBVisibilityTenant:
+		if kb.OwnerTenantID == 0 {
+			return fmt.Errorf(
+				"knowledge base ownership: tenant visibility requires a nonzero owner_tenant_id")
+		}
+	default:
+		return fmt.Errorf("knowledge base ownership: unknown visibility %q", kb.Visibility)
+	}
+	return nil
 }
 
 // EnsureDefaults 确保类型与Configuration 具备默认值

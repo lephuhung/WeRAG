@@ -34,6 +34,12 @@ func (s *handlerKBGrantStub) GetKBScope(_ context.Context, _ string) (*types.KBS
 	return nil, nil
 }
 
+type handlerInviteLookupStub struct{}
+
+func (handlerInviteLookupStub) HasAcceptedInvite(_ context.Context, kbID, userID string) (bool, error) {
+	return kbID == "kb" && userID == "recipient", nil
+}
+
 type handlerKnowledgeAccessStub struct {
 	interfaces.KnowledgeService
 	knowledge *types.Knowledge
@@ -67,6 +73,7 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 			r.Use(middleware.ErrorHandler(), func(c *gin.Context) {
 				ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
 				ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
+				ctx = types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "recipient", Role: types.TenantRoleMember})
 				c.Request = c.Request.WithContext(ctx)
 				if ginCallerKey {
 					c.Set(types.TenantIDContextKey.String(), uint64(1))
@@ -74,11 +81,12 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 				c.Next()
 			})
 			enabled := true
-			r.GET("/:id", middleware.RequireKBAccess(
+			r.GET("/:id", middleware.RequireKBAccessWithInvite(
 				middleware.KBIDFromParam("id"),
 				types.KBPermissionViewer,
 				svc,
 				grants,
+				handlerInviteLookupStub{},
 				&config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}},
 			), func(c *gin.Context) {
 				_, _, effective, permission, err := kbHandler.validateAndGetKnowledgeBase(c)
@@ -93,12 +101,12 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 				require.Equal(t, uint64(2), types.MustTenantIDFromContext(ctx))
 				require.Equal(t, uint64(1), types.CallerFromContext(ctx).TenantID)
 				require.Equal(t, 1, lookups, "handlers must reuse the guarded KB")
-				require.Equal(t, 1, grants.calls, "handlers must reuse the permission decision")
+				require.Zero(t, grants.calls, "legacy tenant grant lookup must not authorize access")
 				// The effective tenant is 2, but the write must still be checked
 				// as caller 1 and rejected, not upgraded to resource ownership.
 				_, _, err = h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.KBPermissionEditor)
 				require.Error(t, err)
-				require.Equal(t, uint64(1), grants.caller)
+				require.Zero(t, grants.calls, "write attempt must not consult retired grants")
 				c.Status(http.StatusNoContent)
 			})
 			w := httptest.NewRecorder()

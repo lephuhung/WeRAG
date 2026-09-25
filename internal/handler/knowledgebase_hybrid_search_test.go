@@ -22,7 +22,7 @@ type hybridSearchTestService struct {
 }
 
 func (s *hybridSearchTestService) GetKnowledgeBaseByID(_ context.Context, id string) (*types.KnowledgeBase, error) {
-	return &types.KnowledgeBase{ID: id, TenantID: 1}, nil
+	return &types.KnowledgeBase{ID: id, TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}, nil
 }
 
 func (s *hybridSearchTestService) HybridSearch(

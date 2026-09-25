@@ -749,6 +749,20 @@ func TestIngestItem_URLCreationMetadataAttachFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "attach datasource metadata")
 }
 
-func (s *processSyncKBService) SetKnowledgeBaseVisibility(ctx context.Context, id string, visibility types.KBVisibility) (*types.KnowledgeBase, error) {
+func (s *processSyncKBService) CreatePublicKnowledgeBase(
+	_ context.Context, _ *types.KnowledgeBase,
+) (*types.KnowledgeBase, error) {
 	return nil, nil
+}
+
+func (s *processSyncKBService) SetKnowledgeBaseVisibility(
+	ctx context.Context, id string, visibility types.KBVisibility, targetTenantID uint64,
+) (*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (s *processSyncKBService) ListPublicCatalog(
+	context.Context, int, int, string,
+) ([]*types.KnowledgeBase, int64, error) {
+	return nil, 0, nil
 }

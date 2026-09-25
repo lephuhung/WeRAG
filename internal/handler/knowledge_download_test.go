@@ -126,7 +126,7 @@ func TestBatchDownloadKnowledgeProducesCompleteZIP(t *testing.T) {
 		names: map[string]string{"a": "设计说明.md", "b": "设计说明.md", "c": `..\设计说明 (2).md`},
 	}
 	w := runBatchDownload(t, svc, []string{"a", "b", "a", "c"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 7}, nil, nil)
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, "application/zip", w.Header().Get("Content-Type"))
 	require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
@@ -162,43 +162,43 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 	}{
 		{
 			name: "空列表", status: 400,
-			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "空白ID", ids: []string{" "}, status: 400,
-			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "超出数量", ids: make([]string, maxBatchDownloadFiles+1), status: 400,
-			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "文档缺失", ids: []string{"missing"}, status: 404,
-			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "跨知识库", ids: []string{"a"}, status: 404,
 			item: &types.Knowledge{ID: "a", TenantID: 7, KnowledgeBaseID: "other", FilePath: "secret"},
-			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "跨租户", ids: []string{"a"}, status: 404,
 			item: &types.Knowledge{ID: "a", TenantID: 8, KnowledgeBaseID: "kb-1", FilePath: "secret"},
-			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "仅无原文件", ids: []string{"a"}, status: 400,
 			item: &types.Knowledge{ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", Type: "url"},
-			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
 			name: "共享只读", ids: []string{"a"}, status: 403,
-			kb:     &types.KnowledgeBase{ID: "kb-1", TenantID: 8},
+			kb:     &types.KnowledgeBase{ID: "kb-1", TenantID: 8, OwnerTenantID: 8, Visibility: types.KBVisibilityTenant},
 			grants: &downloadGrantStub{permission: types.KBPermissionViewer},
 		},
 		{
 			name: "密钥无此库权限", ids: []string{"a"}, status: 403,
-			kb:    &types.KnowledgeBase{ID: "kb-1", TenantID: 7},
+			kb:    &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 			scope: &types.TenantAPIKeyScope{KnowledgeBaseIDs: types.StringArray{"other"}},
 		},
 	}
@@ -226,7 +226,7 @@ func TestBatchDownloadKnowledgeFailureDoesNotReturnPartialZIP(t *testing.T) {
 		names: map[string]string{"a": "first.txt"}, failID: "b",
 	}
 	w := runBatchDownload(t, svc, []string{"a", "b"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 7}, nil, nil)
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	require.Contains(t, w.Header().Get("Content-Type"), "json")
 	require.Empty(t, w.Header().Get("Content-Disposition"))
@@ -255,7 +255,7 @@ func TestBatchDownloadKnowledgeSkipsEntriesWithoutOriginalFiles(t *testing.T) {
 		names: map[string]string{"a": "keep.txt"},
 	}
 	w := runBatchDownload(t, svc, []string{"a", "url"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 7}, nil, nil)
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	reader, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
 	require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestBatchDownloadKnowledgeSkipsEntriesWithoutOriginalFiles(t *testing.T) {
 	require.Equal(t, []string{"a"}, svc.opened)
 }
 
-func TestBatchDownloadKnowledgeAllowsSharedEditor(t *testing.T) {
+func TestBatchDownloadKnowledgeRejectsLegacyTenantGrant(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	svc := &downloadKnowledgeStub{
 		items:          []*types.Knowledge{{ID: "a", TenantID: 8, KnowledgeBaseID: "kb-1", FilePath: "stored-a"}},
@@ -272,10 +272,10 @@ func TestBatchDownloadKnowledgeAllowsSharedEditor(t *testing.T) {
 		expectedTenant: 8,
 	}
 	w := runBatchDownload(t, svc, []string{"a"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 8},
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 8, OwnerTenantID: 8, Visibility: types.KBVisibilityTenant},
 		&downloadGrantStub{permission: types.KBPermissionEditor}, nil)
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.Equal(t, []string{"a"}, svc.opened)
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	require.Empty(t, svc.opened, "retired tenant-wide grants cannot authorize source-file access")
 }
 
 func TestBatchDownloadKnowledgeRejectsWhenBusy(t *testing.T) {
@@ -292,7 +292,7 @@ func TestBatchDownloadKnowledgeRejectsWhenBusy(t *testing.T) {
 		names: map[string]string{"a": "a.txt"},
 	}
 	w := runBatchDownload(t, svc, []string{"a"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 7}, nil, nil)
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
 	require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
 	require.Empty(t, svc.opened)
 }
@@ -388,7 +388,7 @@ func TestBatchDownloadKnowledgePreservesFolderPaths(t *testing.T) {
 		names: map[string]string{"a": "design.md"},
 	}
 	w := runBatchDownload(t, svc, []string{"a"},
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 7}, nil, nil)
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	reader, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
 	require.NoError(t, err)

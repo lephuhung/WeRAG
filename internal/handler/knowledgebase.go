@@ -410,6 +410,64 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	})
 }
 
+// CreatePublicKnowledgeBase godoc
+// @Summary      Create platform public Knowledge Base
+// @Description  Create a platform-owned public knowledge base (owner and data scope 0). Explicit human SuperAdmin only; never reachable with an API key.
+// @Tags         Knowledge Base
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.KnowledgeBase  true  "Knowledge Base信息"
+// @Success      201      {object}  map[string]interface{}  "Create 的Knowledge Base"
+// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Security     Bearer
+// @Router       /knowledge-bases/public [post]
+func (h *KnowledgeBaseHandler) CreatePublicKnowledgeBase(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	logger.Info(ctx, "Start creating public knowledge base")
+
+	var req types.KnowledgeBase
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if err := validateExtractConfig(req.ExtractConfig); err != nil {
+		logger.Error(ctx, "Invalid extract configuration", err)
+		c.Error(err)
+		return
+	}
+	types.NormalizeKnowledgeBasePromptInstructions(&req)
+	if err := validateKnowledgeBasePromptInstructions(&req); err != nil {
+		c.Error(err)
+		return
+	}
+	provider := strings.ToLower(strings.TrimSpace(req.GetStorageProvider()))
+	if provider != "" && !isStorageProviderAllowed(provider) {
+		c.Error(apperrors.NewBadRequestError("Storage provider is not allowed by STORAGE_ALLOW_LIST"))
+		return
+	}
+
+	logger.Infof(ctx, "Creating public knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
+	kb, err := h.service.CreatePublicKnowledgeBase(ctx, &req)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(apperrors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Public knowledge base created successfully, ID: %s, name: %s",
+		secutils.SanitizeForLog(kb.ID), secutils.SanitizeForLog(kb.Name))
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, 0), nil),
+	})
+}
+
 // validateAndGetKnowledgeBase validates request parameters and retrieves the knowledge base.
 // Enforces per-API-key KB scope before tenant/share/agent resolution.
 // Returns the knowledge base, knowledge base ID, effective tenant ID for embedding, permission level, and any errors encountered
@@ -542,6 +600,84 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	})
 }
 
+// ListPublicCatalog godoc
+// @Summary      平台公开 Knowledge Base目录
+// @Description  返回平台公开 KB 的一页（owner_tenant_id=0 且 visibility=public），附带 total/page/page_size 元数据。仅限已认证人类调用；匿名 401，API key 403。无租户上下文的显式人类 SuperAdmin 可调用。
+// @Tags         Knowledge Base
+// @Produce      json
+// @Param        page       query     int     false  "页码（从 1 开始，默认 1）"
+// @Param        page_size  query     int     false  "每页条数（默认 50，上限 200）"
+// @Param        q          query     string  false  "名称/描述关键字过滤"
+// @Success      200        {object}  map[string]interface{}  "公开目录分页"
+// @Security     Bearer
+// @Router       /knowledge-bases/public [get]
+func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Human-only: anonymous contexts lack an identity and API-key
+	// principals never receive implicit public rows (the route also
+	// declares no API-key policy, so keys are default-denied upstream).
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		c.Error(apperrors.NewForbiddenError("API keys cannot access the public catalog"))
+		return
+	}
+	if !access.IsAuthenticatedHuman(ctx, types.CallerFromContext(ctx)) {
+		c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
+		return
+	}
+
+	page, pageSize := parseCatalogPagination(c)
+	items, total, err := h.service.ListPublicCatalog(ctx, page, pageSize, strings.TrimSpace(c.Query("q")))
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(apperrors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	// Creator display names, batched (one query) so the page stays
+	// bounded. Share counts are intentionally omitted here: grants do not
+	// expand public visibility and Task 5 renders no share affordance on
+	// public rows.
+	enrichKBCreatorNames(ctx, h.userService, items)
+
+	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"items":     h.buildKBListResponse(ctx, items, callerTenantID),
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
+	})
+}
+
+// parseCatalogPagination normalizes page/page_size query parameters for
+// the public catalog: page starts at 1, page_size defaults and clamps to
+// the platform catalog bounds. Malformed values fall back to defaults
+// rather than failing the request.
+func parseCatalogPagination(c *gin.Context) (page, pageSize int) {
+	page, pageSize = 1, types.PublicCatalogDefaultPageSize
+	if raw := strings.TrimSpace(c.Query("page")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			pageSize = v
+		}
+	}
+	if pageSize > types.PublicCatalogMaxPageSize {
+		pageSize = types.PublicCatalogMaxPageSize
+	}
+	return page, pageSize
+}
+
 func filterKnowledgeBasesForAPIKeyScope(ctx context.Context, kbs []*types.KnowledgeBase) []*types.KnowledgeBase {
 	scope, ok := types.TenantAPIKeyScopeFromContext(ctx)
 	if !ok || len(scope.KnowledgeBaseIDs) == 0 {
@@ -669,14 +805,21 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start updating knowledge base")
 
 	// Validate and get the knowledge base
-	_, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	kb, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Only admin/editor can update knowledge base
-	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
+	// Only admin/editor can update knowledge base. Platform-owned public
+	// rows admit only an explicit human SuperAdmin (a public Viewer — even
+	// a SuperAdmin-backed Viewer grant — is never an editor).
+	if kb != nil && access.IsPlatformPublicKB(kb) {
+		if !access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
+			c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
+			return
+		}
+	} else if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
 		c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
 		return
 	}
@@ -705,8 +848,15 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	updatedKB, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
 	if err != nil {
+		// Owner-aware service denials (tenant-ownership, public-only
+		// SuperAdmin) are typed AppErrors and must keep their status;
+		// only raw infra errors become 500.
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
@@ -717,14 +867,16 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, callerTenantID), nil),
+		"data":    buildKBResponse(updatedKB, h.resolveKBStoreView(ctx, updatedKB, callerTenantID), nil),
 	})
 }
 
 // UpdateKnowledgeBaseVisibilityRequest changes the KB scope.
-// visibility = tenant | public.
+// visibility = tenant | public. target_tenant_id carries the destination
+// tenant for public→tenant transfers and must be omitted otherwise.
 type UpdateKnowledgeBaseVisibilityRequest struct {
-	Visibility types.KBVisibility `json:"visibility" binding:"required"`
+	Visibility     types.KBVisibility `json:"visibility" binding:"required"`
+	TargetTenantID uint64             `json:"target_tenant_id"`
 }
 
 // UpdateKnowledgeBaseVisibility godoc
@@ -753,7 +905,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-	kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility)
+	kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.TargetTenantID)
 	if err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.Error(appErr)
@@ -788,8 +940,14 @@ func (h *KnowledgeBaseHandler) GenerateKnowledgeBaseProfile(c *gin.Context) {
 		return
 	}
 	if permission != types.KBPermissionAdmin && permission != types.KBPermissionEditor {
-		_ = c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
-		return
+		// Platform-owned public rows admit only an explicit human
+		// SuperAdmin for profile regeneration; cross-tenant Viewers stay
+		// denied.
+		if !access.IsPlatformPublicKB(kb) ||
+			!access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
+			_ = c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
+			return
+		}
 	}
 	if h.profileService == nil {
 		_ = c.Error(apperrors.NewInternalServerError("knowledge base profile service unavailable"))
@@ -840,11 +998,26 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	// Only owner (admin with matching tenant) can delete knowledge base
-	tenantID, _ := c.Get(types.TenantIDContextKey.String())
-	if kb.TenantID != tenantID.(uint64) || permission != types.KBPermissionAdmin {
-		c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
-		return
+	// Only owner (admin with matching tenant) can delete knowledge base.
+	// Platform-owned public rows admit only an explicit human SuperAdmin.
+	// Tenant-owned rows compare against the authorization owner (not the
+	// data scope) so converted rows stay manageable by their owning tenant.
+	if access.IsPlatformPublicKB(kb) {
+		if !access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
+			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+			return
+		}
+	} else {
+		ownerTenantID := kb.OwnerTenantID
+		if ownerTenantID == 0 {
+			ownerTenantID = kb.TenantID
+		}
+		tenantID, _ := c.Get(types.TenantIDContextKey.String())
+		callerTenantID, _ := tenantID.(uint64)
+		if ownerTenantID != callerTenantID || permission != types.KBPermissionAdmin {
+			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",
@@ -852,6 +1025,10 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 
 	// Delete the knowledge base
 	if err := h.service.DeleteKnowledgeBase(ctx, id); err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
@@ -949,7 +1126,7 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		}
 		if err := middleware.EvaluateOwnershipOrRole(c.Request.Context(),
 			h.cfg,
-			types.TenantRoleOwner,
+			types.TenantRoleAdmin,
 			func() (string,
 				error,
 			) {
@@ -1268,10 +1445,17 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		return
 	}
 
-	// Filter eligible targets
+	// Filter eligible targets. Platform-owned public rows are excluded:
+	// moving tenant content is a tenant-scoped operation and the
+	// tenant-scoped contract of this endpoint predates the public catalog
+	// (Task 4 preserves it). Content moves into public KBs stay governed
+	// by the owner-aware manage guard on the move path itself.
 	targets := make([]*types.KnowledgeBase, 0)
 	for _, kb := range allKBs {
 		if kb.ID == sourceKBID {
+			continue
+		}
+		if access.IsPlatformPublicKB(kb) {
 			continue
 		}
 		if kb.IsTemporary {

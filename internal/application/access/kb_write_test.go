@@ -11,7 +11,10 @@ import (
 
 func TestKBWriteConsumesOperationGrant(t *testing.T) {
 	ctx := callerContext()
-	kb := &types.KnowledgeBase{ID: "kb", TenantID: types.CallerFromContext(ctx).TenantID}
+	kb := &types.KnowledgeBase{
+		ID: "kb", TenantID: types.CallerFromContext(ctx).TenantID,
+		OwnerTenantID: types.CallerFromContext(ctx).TenantID, Visibility: types.KBVisibilityTenant,
+	}
 	read, err := ResolveKB(ctx, KBRequest{Caller: types.CallerFromContext(ctx)}, kb, types.KBPermissionViewer, nil)
 	require.NoError(t, err)
 	require.Equal(t, types.KBPermissionAdmin, read.Permission, "owner permission projection remains unchanged")

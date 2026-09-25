@@ -279,6 +279,12 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 	if err != nil {
 		return fmt.Errorf("document parsing failed: %w", err)
 	}
+	if result == nil {
+		return fmt.Errorf("document parsing failed: empty result")
+	}
+	if result.Error != "" {
+		return fmt.Errorf("document parsing failed: %s", result.Error)
+	}
 
 	// Resolve embedded image refs to storage URLs.
 	if len(result.ImageRefs) > 0 && p.imageResolver != nil {

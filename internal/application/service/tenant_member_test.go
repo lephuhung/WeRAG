@@ -248,6 +248,63 @@ func (r *fakeTenantMemberRepo) RemoveOwnerAtomically(
 	return nil
 }
 
+// DemoteAdminAtomically and RemoveAdminAtomically mirror the owner
+// variants above for the surviving top role (admin). Count other active
+// Admins, fail closed when there are none.
+func (r *fakeTenantMemberRepo) DemoteAdminAtomically(
+	ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole,
+) error {
+	others := int64(0)
+	var target *types.TenantMember
+	for _, e := range r.rows {
+		if e.TenantID != tenantID || e.DeletedAt.Valid || e.Status != types.TenantMemberStatusActive {
+			continue
+		}
+		if e.Role.IsTenantAdmin() && e.UserID != userID {
+			others++
+		}
+		if e.UserID == userID {
+			target = e
+		}
+	}
+	if others == 0 {
+		return apprepo.ErrLastAdmin
+	}
+	if target == nil {
+		return gormErrRecordNotFound
+	}
+	target.Role = newRole
+	target.UpdatedAt = time.Now()
+	return nil
+}
+
+func (r *fakeTenantMemberRepo) RemoveAdminAtomically(
+	ctx context.Context, userID string, tenantID uint64,
+) error {
+	others := int64(0)
+	var target *types.TenantMember
+	for _, e := range r.rows {
+		if e.TenantID != tenantID || e.DeletedAt.Valid || e.Status != types.TenantMemberStatusActive {
+			continue
+		}
+		if e.Role.IsTenantAdmin() && e.UserID != userID {
+			others++
+		}
+		if e.UserID == userID {
+			target = e
+		}
+	}
+	if others == 0 {
+		return apprepo.ErrLastAdmin
+	}
+	if target == nil {
+		return gormErrRecordNotFound
+	}
+	target.DeletedAt.Time = time.Now()
+	target.DeletedAt.Valid = true
+	return nil
+}
+
 // Compile-time guard so the test stays in sync with the interface.
 var _ interfaces.TenantMemberRepository = (*fakeTenantMemberRepo)(nil)
 
@@ -344,7 +401,7 @@ func TestTenantMemberService_RemoveMember_ClearsStaleHomeAndRevokesTokens(t *tes
 	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo)
 	ctx := context.Background()
 
-	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 7); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
 	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleMember, nil); err != nil {
@@ -381,7 +438,7 @@ func TestTenantMemberService_RemoveMember_RevokesTokensEvenWhenHomeUnchanged(t *
 	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo)
 	ctx := context.Background()
 
-	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 7); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
 	if _, err := svc.AddMember(ctx, "contrib", 7, types.TenantRoleMember, nil); err != nil {
@@ -400,27 +457,45 @@ func TestTenantMemberService_RemoveMember_RevokesTokensEvenWhenHomeUnchanged(t *
 	}
 }
 
-func TestTenantMemberService_AddMember_RejectsInvalidRole(t *testing.T) {
+func TestTenantMemberService_AddMember_RejectsOwnerRole(t *testing.T) {
 	svc, _ := newServiceWithRepo()
-	_, err := svc.AddMember(context.Background(), "u1", 1, types.TenantRole("nonsense"), nil)
-	if !errors.Is(err, ErrInvalidTenantRole) {
-		t.Fatalf("want ErrInvalidTenantRole, got %v", err)
+	_, err := svc.AddMember(context.Background(), "u1", 1, types.TenantRoleOwner, nil)
+	if !errors.Is(err, ErrOwnerRoleRetired) {
+		t.Fatalf("want ErrOwnerRoleRetired, got %v", err)
 	}
 }
 
-func TestTenantMemberService_AddMember_APIKeyCannotAssignOwner(t *testing.T) {
+func TestTenantMemberService_AddMember_NormalizesLegacyRoles(t *testing.T) {
+	svc, _ := newServiceWithRepo()
+	ctx := context.Background()
+	for _, legacy := range []types.TenantRole{"nonsense", "contributor", "viewer", ""} {
+		m, err := svc.AddMember(ctx, "u-"+string(legacy), 1, legacy, nil)
+		if err != nil {
+			t.Fatalf("AddMember(%q): %v", legacy, err)
+		}
+		if m.Role != types.TenantRoleMember {
+			t.Fatalf("AddMember(%q) role = %q, want member", legacy, m.Role)
+		}
+	}
+}
+
+func TestTenantMemberService_AddMember_APIKeyCannotAssignAdmin(t *testing.T) {
 	svc, repo := newServiceWithRepo()
 	ctx := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{
 		KeyID:        1,
 		Capabilities: types.StringArray{string(types.APIKeyCapabilityManageMembers)},
 	})
 
-	_, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleOwner, nil)
-	if !errors.Is(err, ErrAPIKeyCannotAssignOwner) {
-		t.Fatalf("want ErrAPIKeyCannotAssignOwner, got %v", err)
+	_, err := svc.AddMember(ctx, "u1", 1, types.TenantRoleAdmin, nil)
+	if !errors.Is(err, ErrAPIKeyCannotAssignAdmin) {
+		t.Fatalf("want ErrAPIKeyCannotAssignAdmin, got %v", err)
 	}
 	if len(repo.rows) != 0 {
-		t.Fatalf("API key owner assignment must not create a membership, got %d rows", len(repo.rows))
+		t.Fatalf("API key admin assignment must not create a membership, got %d rows", len(repo.rows))
+	}
+	// The retired owner role is rejected before the API-key check.
+	if _, err := svc.AddMember(ctx, "u2", 1, types.TenantRoleOwner, nil); !errors.Is(err, ErrOwnerRoleRetired) {
+		t.Fatalf("want ErrOwnerRoleRetired, got %v", err)
 	}
 }
 
@@ -451,71 +526,82 @@ func TestTenantMemberService_AddMember_MapsDuplicateKeyRace(t *testing.T) {
 	}
 }
 
-func TestTenantMemberService_EnsureOwner_Idempotent(t *testing.T) {
+func TestTenantMemberService_EnsureAdmin_Idempotent(t *testing.T) {
 	svc, repo := newServiceWithRepo()
 	ctx := context.Background()
-	first, err := svc.EnsureOwner(ctx, "u1", 1)
+	first, err := svc.EnsureAdmin(ctx, "u1", 1)
 	if err != nil {
-		t.Fatalf("first EnsureOwner: %v", err)
+		t.Fatalf("first EnsureAdmin: %v", err)
 	}
-	second, err := svc.EnsureOwner(ctx, "u1", 1)
+	second, err := svc.EnsureAdmin(ctx, "u1", 1)
 	if err != nil {
-		t.Fatalf("second EnsureOwner: %v", err)
+		t.Fatalf("second EnsureAdmin: %v", err)
 	}
 	if first.ID != second.ID {
-		t.Fatalf("EnsureOwner not idempotent: %d vs %d", first.ID, second.ID)
+		t.Fatalf("EnsureAdmin not idempotent: %d vs %d", first.ID, second.ID)
 	}
 	if len(repo.rows) != 1 {
-		t.Fatalf("want exactly 1 row after idempotent EnsureOwner, got %d", len(repo.rows))
+		t.Fatalf("want exactly 1 row after idempotent EnsureAdmin, got %d", len(repo.rows))
 	}
 }
 
-func TestTenantMemberService_UpdateRole_BlocksDemotingLastOwner(t *testing.T) {
+func TestTenantMemberService_UpdateRole_BlocksDemotingLastAdmin(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "admin", 1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	err := svc.UpdateRole(ctx, "owner", 1, types.TenantRoleAdmin)
-	if !errors.Is(err, ErrLastOwner) {
-		t.Fatalf("want ErrLastOwner when demoting last owner, got %v", err)
+	err := svc.UpdateRole(ctx, "admin", 1, types.TenantRoleMember)
+	if !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("want ErrLastAdmin when demoting last admin, got %v", err)
 	}
 }
 
-func TestTenantMemberService_UpdateRole_APIKeyCannotPromoteOwner(t *testing.T) {
+func TestTenantMemberService_UpdateRole_APIKeyCannotGrantAdmin(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	humanCtx := context.Background()
 	if _, err := svc.AddMember(humanCtx, "u1", 1, types.TenantRoleAdmin, nil); err != nil {
-		t.Fatalf("seed: %v", err)
+		t.Fatalf("seed u1: %v", err)
+	}
+	if _, err := svc.AddMember(humanCtx, "u2", 1, types.TenantRoleAdmin, nil); err != nil {
+		t.Fatalf("seed u2: %v", err)
+	}
+	if _, err := svc.AddMember(humanCtx, "u3", 1, types.TenantRoleMember, nil); err != nil {
+		t.Fatalf("seed u3: %v", err)
 	}
 	apiKeyCtx := types.WithTenantAPIKeyScope(humanCtx, types.TenantAPIKeyScope{
 		KeyID:        1,
 		Capabilities: types.StringArray{string(types.APIKeyCapabilityManageMembers)},
 	})
 
-	err := svc.UpdateRole(apiKeyCtx, "u1", 1, types.TenantRoleOwner)
-	if !errors.Is(err, ErrAPIKeyCannotAssignOwner) {
-		t.Fatalf("want ErrAPIKeyCannotAssignOwner, got %v", err)
+	// Granting admin through an API key is denied and side-effect free.
+	err := svc.UpdateRole(apiKeyCtx, "u3", 1, types.TenantRoleAdmin)
+	if !errors.Is(err, ErrAPIKeyCannotAssignAdmin) {
+		t.Fatalf("want ErrAPIKeyCannotAssignAdmin, got %v", err)
 	}
-	member, getErr := svc.GetMembership(humanCtx, "u1", 1)
+	member, getErr := svc.GetMembership(humanCtx, "u3", 1)
 	if getErr != nil {
 		t.Fatalf("get membership: %v", getErr)
 	}
-	if member == nil || member.Role != types.TenantRoleAdmin {
-		t.Fatalf("API key promotion must leave role unchanged, got %+v", member)
+	if member == nil || member.Role != types.TenantRoleMember {
+		t.Fatalf("API key grant must leave role unchanged, got %+v", member)
+	}
+	// Lowering an admin to member through an API key is allowed.
+	if err := svc.UpdateRole(apiKeyCtx, "u1", 1, types.TenantRoleMember); err != nil {
+		t.Fatalf("API key demotion to member should succeed, got %v", err)
 	}
 }
 
-func TestTenantMemberService_UpdateRole_AllowsDemotionWhenOtherOwnerExists(t *testing.T) {
+func TestTenantMemberService_UpdateRole_AllowsDemotionWhenOtherAdminExists(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner1", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "admin1", 1); err != nil {
 		t.Fatalf("seed1: %v", err)
 	}
-	if _, err := svc.AddMember(ctx, "owner2", 1, types.TenantRoleOwner, nil); err != nil {
+	if _, err := svc.AddMember(ctx, "admin2", 1, types.TenantRoleAdmin, nil); err != nil {
 		t.Fatalf("seed2: %v", err)
 	}
-	if err := svc.UpdateRole(ctx, "owner1", 1, types.TenantRoleAdmin); err != nil {
+	if err := svc.UpdateRole(ctx, "admin1", 1, types.TenantRoleMember); err != nil {
 		t.Fatalf("UpdateRole: %v", err)
 	}
 }
@@ -523,11 +609,11 @@ func TestTenantMemberService_UpdateRole_AllowsDemotionWhenOtherOwnerExists(t *te
 func TestTenantMemberService_UpdateRole_NoopOnSameRole(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	// 把"还是 Owner"作为 no-op 处理，必须不触发 ErrLastOwner（同一角色不算降级）。
-	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRoleOwner); err != nil {
+	// 把"还是 Admin"作为 no-op 处理，必须不触发 ErrLastAdmin（同一角色不算降级）。
+	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRoleAdmin); err != nil {
 		t.Fatalf("UpdateRole same role should be a no-op, got %v", err)
 	}
 }
@@ -535,11 +621,18 @@ func TestTenantMemberService_UpdateRole_NoopOnSameRole(t *testing.T) {
 func TestTenantMemberService_UpdateRole_RejectsInvalidRole(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRole("nope")); !errors.Is(err, ErrInvalidTenantRole) {
-		t.Fatalf("want ErrInvalidTenantRole, got %v", err)
+	if _, err := svc.AddMember(ctx, "second", 1, types.TenantRoleAdmin, nil); err != nil {
+		t.Fatalf("seed second admin: %v", err)
+	}
+	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRoleOwner); !errors.Is(err, ErrOwnerRoleRetired) {
+		t.Fatalf("want ErrOwnerRoleRetired, got %v", err)
+	}
+	// Legacy/unknown values normalize to member instead of failing.
+	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRole("nope")); err != nil {
+		t.Fatalf("legacy role value should normalize to member, got %v", err)
 	}
 }
 
@@ -553,18 +646,18 @@ func TestTenantMemberService_UpdateRole_ReturnsNotFound(t *testing.T) {
 func TestTenantMemberService_RemoveMember_BlocksLastOwner(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := svc.RemoveMember(ctx, "owner", 1); !errors.Is(err, ErrLastOwner) {
-		t.Fatalf("want ErrLastOwner, got %v", err)
+	if err := svc.RemoveMember(ctx, "owner", 1); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("want ErrLastAdmin, got %v", err)
 	}
 }
 
 func TestTenantMemberService_RemoveMember_AllowsContributorRemoval(t *testing.T) {
 	svc, _ := newServiceWithRepo()
 	ctx := context.Background()
-	if _, err := svc.EnsureOwner(ctx, "owner", 1); err != nil {
+	if _, err := svc.EnsureAdmin(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
 	if _, err := svc.AddMember(ctx, "contrib", 1, types.TenantRoleMember, nil); err != nil {
@@ -586,7 +679,7 @@ func TestTenantMemberService_RemoveMember_ReturnsNotFound(t *testing.T) {
 	}
 }
 
-// The TOCTOU race the atomic helpers were introduced for: two Owner
+// The TOCTOU race the atomic helpers were introduced for: two Admin
 // rows, demoting both must keep at least one. Sequentially via the
 // service the second call must observe the post-first-demote state
 // and refuse with ErrLastOwner. (True concurrent demotes are
@@ -599,14 +692,14 @@ func TestTenantMemberService_UpdateRole_AtomicDemoteRejectsSecondLastOwner(t *te
 	for _, uid := range []string{"a", "b"} {
 		repo.rows = append(repo.rows, &types.TenantMember{
 			ID: uint64(len(repo.rows) + 1), UserID: uid, TenantID: tenantID,
-			Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive,
+			Role: types.TenantRoleAdmin, Status: types.TenantMemberStatusActive,
 		})
 	}
 	if err := svc.UpdateRole(ctx, "a", tenantID, types.TenantRoleMember); err != nil {
 		t.Fatalf("first demote should succeed, got %v", err)
 	}
-	if err := svc.UpdateRole(ctx, "b", tenantID, types.TenantRoleMember); !errors.Is(err, ErrLastOwner) {
-		t.Fatalf("second demote must hit ErrLastOwner, got %v", err)
+	if err := svc.UpdateRole(ctx, "b", tenantID, types.TenantRoleMember); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("second demote must hit ErrLastAdmin, got %v", err)
 	}
 }
 
@@ -617,14 +710,14 @@ func TestTenantMemberService_RemoveMember_AtomicRemoveRejectsSecondLastOwner(t *
 	for _, uid := range []string{"a", "b"} {
 		repo.rows = append(repo.rows, &types.TenantMember{
 			ID: uint64(len(repo.rows) + 1), UserID: uid, TenantID: tenantID,
-			Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive,
+			Role: types.TenantRoleAdmin, Status: types.TenantMemberStatusActive,
 		})
 	}
 	if err := svc.RemoveMember(ctx, "a", tenantID); err != nil {
 		t.Fatalf("first remove should succeed, got %v", err)
 	}
-	if err := svc.RemoveMember(ctx, "b", tenantID); !errors.Is(err, ErrLastOwner) {
-		t.Fatalf("second remove must hit ErrLastOwner, got %v", err)
+	if err := svc.RemoveMember(ctx, "b", tenantID); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("second remove must hit ErrLastAdmin, got %v", err)
 	}
 }
 

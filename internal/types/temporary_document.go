@@ -116,4 +116,10 @@ type TemporaryDocumentCreateOptions struct {
 type TemporaryDocumentPromptResult struct {
 	Attachments MessageAttachments
 	ImageURLs   []string
+	// AttachmentImageURLs parallels Attachments: AttachmentImageURLs[i] holds
+	// the image URLs owned by Attachments[i] that were actually forwarded
+	// (i.e. after the visual-query filter and the aggregate cap), so callers
+	// can tell per document whether vision content reaches the model instead
+	// of relying on a request-wide image check.
+	AttachmentImageURLs [][]string
 }

@@ -25,9 +25,9 @@ func TestTenantResponse_ViewerOmitsSecrets(t *testing.T) {
 	assert.NotContains(t, s, "credentials")
 }
 
-func TestTenantResponse_OwnerOmitsLegacyTenantAPIKey(t *testing.T) {
+func TestTenantResponse_AdminOmitsLegacyTenantAPIKey(t *testing.T) {
 	tenant := sampleSecretTenant()
-	body, err := json.Marshal(NewTenantResponse(ownerContext(), tenant))
+	body, err := json.Marshal(NewTenantResponse(adminContext(), tenant))
 	require.NoError(t, err)
 	s := string(body)
 	assert.NotContains(t, s, `"api_key"`)
@@ -36,9 +36,9 @@ func TestTenantResponse_OwnerOmitsLegacyTenantAPIKey(t *testing.T) {
 	assert.Contains(t, s, "web_search_config")
 }
 
-func TestTenantResponse_OwnerGetsRedactedIntegrationConfigs(t *testing.T) {
+func TestTenantResponse_AdminGetsRedactedIntegrationConfigs(t *testing.T) {
 	tenant := sampleSecretTenant()
-	resp := NewTenantResponse(ownerContext(), tenant)
+	resp := NewTenantResponse(adminContext(), tenant)
 	require.NotNil(t, resp.WebSearchConfig)
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.WebSearchConfig.ProxyURL)
 	assert.Empty(t, resp.WebSearchConfig.APIKey)
@@ -48,9 +48,9 @@ func TestTenantResponse_OwnerGetsRedactedIntegrationConfigs(t *testing.T) {
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.StorageEngineConfig.MinIO.SecretAccessKey)
 }
 
-func TestTenantResponse_AdminOmitsIntegrationConfigs(t *testing.T) {
+func TestTenantResponse_MemberOmitsIntegrationConfigs(t *testing.T) {
 	tenant := sampleSecretTenant()
-	resp := NewTenantResponse(adminContext(), tenant)
+	resp := NewTenantResponse(viewerContext(), tenant)
 	assert.Nil(t, resp.WebSearchConfig)
 	assert.Nil(t, resp.ParserEngineConfig)
 	assert.Nil(t, resp.StorageEngineConfig)

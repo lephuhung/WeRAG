@@ -87,43 +87,73 @@ func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler,
 	// Catalog writes bake into sandbox images; scoped API keys cannot hold them.
 	catalogWrite := g.apiKeyGroup(r.Group("/skills/catalog"), apiKeyFullAccess())
 	{
-		catalogWrite.POST("", g.Owner(), skillHandler.RegisterCatalog)
-		catalogWrite.POST("/:id/install", g.Owner(), skillHandler.InstallCatalog)
-		catalogWrite.GET("/:id/files", g.Owner(), skillHandler.ListCatalogFiles)
-		catalogWrite.GET("/:id/files/content", g.Owner(), skillHandler.GetCatalogFile)
-		catalogWrite.DELETE("/:id", g.Owner(), skillHandler.DeleteCatalog)
+		catalogWrite.POST("", g.Admin(), skillHandler.RegisterCatalog)
+		catalogWrite.POST("/:id/install", g.Admin(), skillHandler.InstallCatalog)
+		catalogWrite.GET("/:id/files", g.Admin(), skillHandler.ListCatalogFiles)
+		catalogWrite.GET("/:id/files/content", g.Admin(), skillHandler.GetCatalogFile)
+		catalogWrite.DELETE("/:id", g.Admin(), skillHandler.DeleteCatalog)
 	}
 }
 
-// RegisterKBAccessGrantRoutes registers the direct tenant-to-tenant KB
-// access grant lifecycle. The grantee tenant's admin files a request on a
-// foreign KB; the owning tenant's admin/owner approves, rejects or revokes.
-// Grant management is not exposed to scoped API keys — only full-access
-// keys (and JWT sessions) may change who can read a KB.
+// RegisterKBAccessGrantRoutes registers the retired tenant-wide KB
+// grant endpoints. Mutations (request/review/revoke) are disabled: they
+// return 410 Gone, and the service layer rejects them with
+// ErrGrantDisabled as a second line of defence (migration 000111 revoked
+// every live row, so the remaining read paths can never authorize
+// access). The GET listings stay as read-only audit visibility into the
+// revoked rows.
 func RegisterKBAccessGrantRoutes(r *gin.RouterGroup, grantHandler *handler.KBAccessGrantHandler, g *rbacGuards) {
 	if grantHandler == nil {
 		return
 	}
-	// Grantee side: request read access to a knowledge base owned by
-	// another tenant. Requires Admin in the caller's own tenant.
+	// Grantee side: tenant-wide access requests are retired.
 	grants := g.apiKeyGroup(r.Group("/knowledge-bases/:id/access-requests"), apiKeyFullAccess())
 	{
-		grants.POST("", g.Owner(), grantHandler.RequestAccess)
+		grants.POST("", g.TenantAdmin(), grantHandler.RequestAccessDisabled)
 	}
 
-	// Owner side: review incoming requests and manage live grants.
-	// :id is the owning tenant id; RequirePathTenantMatch pins it to the
-	// active tenant (system/cross-tenant admins excepted).
+	// Owner side: review/revoke are retired; incoming listing stays.
 	tenantGrants := g.apiKeyGroup(r.Group("/tenants/:id/access-grants"), apiKeyFullAccess())
 	{
-		tenantGrants.GET("", g.Owner(), grantHandler.ListIncoming)
-		tenantGrants.PUT("/:grant_id", g.Owner(), grantHandler.Review)
-		tenantGrants.DELETE("/:grant_id", g.Owner(), grantHandler.Revoke)
+		tenantGrants.GET("", g.TenantAdmin(), grantHandler.ListIncoming)
+		tenantGrants.PUT("/:grant_id", g.TenantAdmin(), grantHandler.ReviewDisabled)
+		tenantGrants.DELETE("/:grant_id", g.TenantAdmin(), grantHandler.RevokeDisabled)
 	}
 
-	// Grantee side listing: grants the caller's tenant has requested.
+	// Grantee side listing stays (read-only audit visibility).
 	g.apiKeyRoute(r, http.MethodGet, "/access-grants",
-		apiKeyFullAccess(), g.Owner(), grantHandler.ListOutgoing)
+		apiKeyFullAccess(), g.TenantAdmin(), grantHandler.ListOutgoing)
+}
+
+// RegisterKBInvitationRoutes registers the recipient-bound, read-only KB
+// invitation lifecycle (tenant/KB permission plan). This flow is DISTINCT
+// from tenant join invitations (RegisterMyInvitationRoutes) and from the
+// legacy tenant-wide grant requests above:
+//
+//   - POST/GET /knowledge-bases/:id/invites: owning-tenant Tenant Admin
+//     issues/lists invites for a specific user in another tenant.
+//   - DELETE .../:invite_id: owning-tenant Tenant Admin revokes (immediate).
+//   - POST /kb-invites/accept + GET /kb-invites: the authenticated named
+//     recipient redeems/lists their own invites.
+//
+// Invite management is not exposed to scoped API keys — only full-access
+// keys (and JWT sessions) may change who can read a KB.
+func RegisterKBInvitationRoutes(r *gin.RouterGroup, inviteHandler *handler.KBInvitationHandler, g *rbacGuards) {
+	if inviteHandler == nil {
+		return
+	}
+	invites := g.apiKeyGroup(r.Group("/knowledge-bases/:id/invites"), apiKeyFullAccess())
+	{
+		invites.POST("", g.TenantAdmin(), inviteHandler.Issue)
+		invites.GET("", g.TenantAdmin(), inviteHandler.ListByKB)
+		invites.DELETE("/:invite_id", g.TenantAdmin(), inviteHandler.Revoke)
+	}
+	g.apiKeyRoute(r, http.MethodPost, "/kb-invites/accept",
+		apiKeyFullAccess(), g.Member(), inviteHandler.Accept)
+	g.apiKeyRoute(r, http.MethodPost, "/kb-invites/:id/accept",
+		apiKeyFullAccess(), g.Member(), inviteHandler.AcceptByID)
+	g.apiKeyRoute(r, http.MethodGet, "/kb-invites",
+		apiKeyFullAccess(), g.Member(), inviteHandler.ListMine)
 }
 
 // RegisterEmbedPublicRoutes registers anonymous embed endpoints secured by publish tokens.
@@ -177,18 +207,18 @@ func RegisterEmbedChannelRoutes(r *gin.RouterGroup, embedHandler *handler.EmbedC
 	}
 	agentEmbed := g.apiKeyGroup(r.Group("/agents/:id/embed-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		agentEmbed.POST("", g.Owner(), embedHandler.CreateEmbedChannel)
-		agentEmbed.GET("", g.Owner(), embedHandler.ListEmbedChannels)
+		agentEmbed.POST("", g.Admin(), embedHandler.CreateEmbedChannel)
+		agentEmbed.GET("", g.Admin(), embedHandler.ListEmbedChannels)
 	}
 	channels := g.apiKeyGroup(r.Group("/embed-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		channels.GET("", g.Owner(), embedHandler.ListAllEmbedChannels)
-		channels.GET("/:channel_id", g.Owner(), embedHandler.GetEmbedChannel)
-		channels.PUT("/:channel_id", g.Owner(), embedHandler.UpdateEmbedChannel)
-		channels.DELETE("/:channel_id", g.Owner(), embedHandler.DeleteEmbedChannel)
-		channels.POST("/:channel_id/rotate-token", g.Owner(), embedHandler.RotateEmbedToken)
-		channels.POST("/:channel_id/preview-session", g.Owner(), embedHandler.IssuePreviewSession)
-		channels.GET("/:channel_id/stats", g.Owner(), embedHandler.GetEmbedChannelStats)
+		channels.GET("", g.Admin(), embedHandler.ListAllEmbedChannels)
+		channels.GET("/:channel_id", g.Admin(), embedHandler.GetEmbedChannel)
+		channels.PUT("/:channel_id", g.Admin(), embedHandler.UpdateEmbedChannel)
+		channels.DELETE("/:channel_id", g.Admin(), embedHandler.DeleteEmbedChannel)
+		channels.POST("/:channel_id/rotate-token", g.Admin(), embedHandler.RotateEmbedToken)
+		channels.POST("/:channel_id/preview-session", g.Admin(), embedHandler.IssuePreviewSession)
+		channels.GET("/:channel_id/stats", g.Admin(), embedHandler.GetEmbedChannelStats)
 	}
 }
 
@@ -211,25 +241,25 @@ func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g
 	// Channel CRUD under agents
 	agentChannels := g.apiKeyGroup(r.Group("/agents/:id/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		agentChannels.POST("", g.Owner(), imHandler.CreateIMChannel)
-		agentChannels.GET("", g.Owner(), imHandler.ListIMChannels)
+		agentChannels.POST("", g.Admin(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.Admin(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := g.apiKeyGroup(r.Group("/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		channels.GET("", g.Owner(), imHandler.ListAllIMChannels)
-		channels.PUT("/:id", g.Owner(), imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", g.Owner(), imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", g.Owner(), imHandler.ToggleIMChannel)
+		channels.GET("", g.Admin(), imHandler.ListAllIMChannels)
+		channels.PUT("/:id", g.Admin(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.Admin(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.Admin(), imHandler.ToggleIMChannel)
 	}
 
 	// WeChat QR code login (requires authentication) — Admin+: a successful
 	// scan binds a personal WeChat account to the tenant.
 	wechatGroup := g.apiKeyGroup(r.Group("/wechat"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		wechatGroup.POST("/qrcode", g.Owner(), imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", g.Owner(), imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
 	}
 }
 

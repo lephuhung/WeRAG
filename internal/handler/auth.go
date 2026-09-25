@@ -974,7 +974,7 @@ func (h *AuthHandler) AutoSetup(c *gin.Context) {
 		Memberships: []types.Membership{{
 			TenantID:   user.TenantID,
 			TenantName: tenantNameOrEmpty(tenant),
-			Role:       types.TenantRoleOwner,
+			Role:       types.TenantRoleAdmin,
 		}},
 		Token:        accessToken,
 		RefreshToken: refreshToken,

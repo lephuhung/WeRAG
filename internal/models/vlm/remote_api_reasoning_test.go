@@ -251,6 +251,98 @@ func TestRemoteAPIVLMReportsTruncatedCompletion(t *testing.T) {
 	}
 }
 
+// TestPredictRawShapesReasoningModelLikeSDK covers the repetition_penalty
+// path: when repPenalty is set Predict falls back to predictRaw, whose
+// hand-marshalled wire must shape reasoning-model requests exactly like the
+// SDK path (max_completion_tokens, no temperature) instead of sending the
+// ordinary max_tokens/temperature pair these models reject.
+func TestPredictRawShapesReasoningModelLikeSDK(t *testing.T) {
+	withVLMSSRFWhitelist(t, "127.0.0.1")
+
+	var lastRequest map[string]interface{}
+	server := newVLMChatTestServer(t, &lastRequest)
+	defer server.Close()
+
+	v, err := NewRemoteAPIVLM(&Config{
+		BaseURL:   server.URL,
+		ModelName: "gpt-5-nano",
+		APIKey:    "sk-test",
+		Extra:     map[string]any{"repetition_penalty": "1.05"},
+	})
+	if err != nil {
+		t.Fatalf("NewRemoteAPIVLM: %v", err)
+	}
+
+	content, err := v.Predict(t.Context(), [][]byte{testPNG}, "extract the text")
+	if err != nil {
+		t.Fatalf("Predict: %v", err)
+	}
+	if content != "extracted text" {
+		t.Errorf("content = %q, want %q", content, "extracted text")
+	}
+
+	if _, ok := lastRequest["max_tokens"]; ok {
+		t.Errorf("raw wire carries max_tokens, which reasoning models reject: %v", lastRequest["max_tokens"])
+	}
+	if got, ok := lastRequest["max_completion_tokens"]; !ok {
+		t.Error("raw wire is missing max_completion_tokens")
+	} else if got != float64(defaultMaxToks) {
+		t.Errorf("max_completion_tokens = %v, want %d", got, defaultMaxToks)
+	}
+	if _, ok := lastRequest["temperature"]; ok {
+		t.Errorf("raw wire carries temperature, which reasoning models reject: %v", lastRequest["temperature"])
+	}
+	if got, ok := lastRequest["repetition_penalty"]; !ok {
+		t.Error("raw wire is missing repetition_penalty")
+	} else if f, isFloat := got.(float64); !isFloat || math.Abs(f-1.05) > 1e-6 {
+		t.Errorf("repetition_penalty = %v, want 1.05", got)
+	}
+}
+
+// TestPredictRawKeepsSamplingParamsForOrdinaryModel guards the other side of
+// the repetition_penalty path: ordinary vision models still expect max_tokens
+// and temperature on the raw wire.
+func TestPredictRawKeepsSamplingParamsForOrdinaryModel(t *testing.T) {
+	withVLMSSRFWhitelist(t, "127.0.0.1")
+
+	var lastRequest map[string]interface{}
+	server := newVLMChatTestServer(t, &lastRequest)
+	defer server.Close()
+
+	v, err := NewRemoteAPIVLM(&Config{
+		BaseURL:   server.URL,
+		ModelName: "gpt-4o",
+		APIKey:    "sk-test",
+		Extra:     map[string]any{"repetition_penalty": "1.05"},
+	})
+	if err != nil {
+		t.Fatalf("NewRemoteAPIVLM: %v", err)
+	}
+
+	if _, err := v.Predict(t.Context(), [][]byte{testPNG}, "extract the text"); err != nil {
+		t.Fatalf("Predict: %v", err)
+	}
+
+	if got, ok := lastRequest["max_tokens"]; !ok {
+		t.Error("raw wire is missing max_tokens")
+	} else if got != float64(defaultMaxToks) {
+		t.Errorf("max_tokens = %v, want %d", got, defaultMaxToks)
+	}
+	if got, ok := lastRequest["temperature"]; !ok {
+		t.Error("raw wire is missing temperature")
+	} else if f, isFloat := got.(float64); !isFloat || math.Abs(f-float64(defaultTemp)) > 1e-6 {
+		t.Errorf("temperature = %v, want %v", got, defaultTemp)
+	}
+	if _, ok := lastRequest["max_completion_tokens"]; ok {
+		t.Error("raw wire carries max_completion_tokens for a non-reasoning model")
+	}
+	if got, ok := lastRequest["repetition_penalty"]; !ok {
+		t.Error("raw wire is missing repetition_penalty")
+	} else if f, isFloat := got.(float64); !isFloat || math.Abs(f-1.05) > 1e-6 {
+		t.Errorf("repetition_penalty = %v, want 1.05", got)
+	}
+}
+
 // TestRemoteAPIVLMUnshapedReasoningRequestIsRejected pins the upstream
 // behavior this fix works around: without the shaping, go-openai rejects the
 // request before it leaves the process. It fails identically for max_tokens

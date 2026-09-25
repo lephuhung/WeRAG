@@ -102,7 +102,10 @@ func runGuard(
 func TestRequireKBAccess_OwnKB(t *testing.T) {
 	rec, c := runGuard(t, 100, "kb-1",
 		types.KBPermissionViewer,
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 100},
+		&types.KnowledgeBase{
+			ID: "kb-1", TenantID: 100,
+			OwnerTenantID: 100, Visibility: types.KBVisibilityTenant,
+		},
 		nil,
 	)
 	require.False(t, c.IsAborted(), "should pass through")
@@ -144,7 +147,7 @@ func TestRequireKBAccess_NotFound_Aborts(t *testing.T) {
 	require.False(t, ok, "no access should be stashed on failure")
 }
 
-func TestRequireKBAccess_GrantedKB_RewritesTenantContext(t *testing.T) {
+func TestRequireKBAccess_LegacyTenantGrantDenied(t *testing.T) {
 	grants := &stubKBGrantForGuard{
 		permission: map[string]types.KBPermission{"kb-granted": types.KBPermissionViewer},
 		granted:    map[string]bool{"kb-granted": true},
@@ -154,13 +157,9 @@ func TestRequireKBAccess_GrantedKB_RewritesTenantContext(t *testing.T) {
 		&types.KnowledgeBase{ID: "kb-granted", TenantID: 200},
 		grants,
 	)
-	require.False(t, c.IsAborted())
-	access, ok := KBAccessFromContext(c)
-	require.True(t, ok)
-	require.Equal(t, uint64(200), access.EffectiveTenantID)
-	require.Equal(t, types.KBPermissionViewer, access.Permission)
-	got, _ := types.TenantIDFromContext(c.Request.Context())
-	require.Equal(t, uint64(200), got, "guard must rewrite context to source tenant")
+	require.True(t, c.IsAborted(), "legacy tenant-wide grants must not authorize access")
+	_, ok := KBAccessFromContext(c)
+	require.False(t, ok)
 }
 
 func TestRequireKBAccess_GrantedKB_PermissionBelowMin_Aborts(t *testing.T) {
@@ -176,25 +175,12 @@ func TestRequireKBAccess_GrantedKB_PermissionBelowMin_Aborts(t *testing.T) {
 	require.True(t, c.IsAborted(), "Viewer grant must reject when Editor required")
 }
 
-func TestRequireKBAccess_PublicKB_ForeignTenantReadOnly(t *testing.T) {
-	// A public KB is readable by any tenant without a grant — but a write
-	// requirement still denies, since public stays owner-writable only.
-	_, c := runGuard(t, 100, "kb-pub",
-		types.KBPermissionViewer,
-		&types.KnowledgeBase{ID: "kb-pub", TenantID: 200, Visibility: types.KBVisibilityPublic},
-		nil,
-	)
-	require.False(t, c.IsAborted())
-	access, ok := KBAccessFromContext(c)
-	require.True(t, ok)
-	require.Equal(t, types.KBPermissionViewer, access.Permission)
-
-	_, c = runGuard(t, 100, "kb-pub",
-		types.KBPermissionEditor,
-		&types.KnowledgeBase{ID: "kb-pub", TenantID: 200, Visibility: types.KBVisibilityPublic},
-		nil,
-	)
-	require.True(t, c.IsAborted(), "foreign tenant must not write a public KB")
+func TestRequireKBAccess_LegacyPublicKBForeignTenantDenied(t *testing.T) {
+	for _, required := range []types.KBPermission{types.KBPermissionViewer, types.KBPermissionEditor} {
+		_, c := runGuard(t, 100, "kb-pub", required,
+			&types.KnowledgeBase{ID: "kb-pub", TenantID: 200, Visibility: types.KBVisibilityPublic}, nil)
+		require.True(t, c.IsAborted(), "legacy public visibility must never grant cross-tenant access")
+	}
 }
 
 func TestRequireKBAccess_NoGrant_ForeignTenant_Aborts(t *testing.T) {

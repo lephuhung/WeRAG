@@ -43,7 +43,7 @@ func NewTenantResponseWithRole(tenant *types.Tenant, role types.TenantRole) *Ten
 	if tenant == nil {
 		return nil
 	}
-	includeSecrets := role.HasPermission(types.TenantRoleOwner)
+	includeSecrets := role.IsTenantAdmin()
 	resp := &TenantResponse{
 		ID:                tenant.ID,
 		Name:              tenant.Name,

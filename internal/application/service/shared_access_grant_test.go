@@ -79,7 +79,7 @@ func seedKnowledge(t *testing.T, db *gorm.DB, knowledge *types.Knowledge) {
 	require.NoError(t, db.Create(knowledge).Error)
 }
 
-func TestGetKnowledgeBatchWithSharedAccess_IncludesGrantedKnowledgeWithPermission(t *testing.T) {
+func TestGetKnowledgeBatchWithSharedAccessRejectsLegacyTenantGrant(t *testing.T) {
 	service, db := newKnowledgeSharedAccessService(t, &fakeKBGrantService{
 		allowedKBs: map[string]types.KBPermission{"kb-shared": types.KBPermissionViewer},
 	})
@@ -89,8 +89,7 @@ func TestGetKnowledgeBatchWithSharedAccess_IncludesGrantedKnowledgeWithPermissio
 	ctx := newSharedAccessContext()
 	rows, err := service.GetKnowledgeBatchWithSharedAccess(ctx, 2, []string{"k1", "k2"})
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "k1", rows[0].ID)
+	require.Empty(t, rows, "legacy tenant-wide grant must not reveal foreign knowledge")
 }
 
 // emptyWebSearchProviderRepo is a no-op WebSearchProviderRepository for

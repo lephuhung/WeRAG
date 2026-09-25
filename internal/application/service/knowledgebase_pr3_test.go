@@ -78,6 +78,17 @@ func (f *fakeRegistry) GetOrLoadByStoreID(
 type fakeKBRepo struct {
 	rows      map[string]*types.KnowledgeBase
 	createErr error
+	updateErr error
+	// Task 4 catalog fixtures.
+	owned          []*types.KnowledgeBase
+	catalogItems   []*types.KnowledgeBase
+	catalogTotal   int64
+	catalogErr     error
+	catalogLimit   int
+	catalogOffset  int
+	catalogKeyword string
+	catalogPage    int
+	byIDs          map[string]*types.KnowledgeBase
 }
 
 func (r *fakeKBRepo) UpdateKnowledgeBaseGeneratedProfile(
@@ -111,8 +122,17 @@ func (r *fakeKBRepo) GetKnowledgeBaseByIDAndTenant(_ context.Context, id string,
 	return kb, nil
 }
 
-func (r *fakeKBRepo) GetKnowledgeBaseByIDs(_ context.Context, _ []string) ([]*types.KnowledgeBase, error) {
-	return nil, nil
+func (r *fakeKBRepo) GetKnowledgeBaseByIDs(_ context.Context, ids []string) ([]*types.KnowledgeBase, error) {
+	if r.byIDs == nil {
+		return nil, nil
+	}
+	out := make([]*types.KnowledgeBase, 0, len(ids))
+	for _, id := range ids {
+		if kb, ok := r.byIDs[id]; ok {
+			out = append(out, kb)
+		}
+	}
+	return out, nil
 }
 
 func (r *fakeKBRepo) ListKnowledgeBases(_ context.Context) ([]*types.KnowledgeBase, error) {
@@ -130,7 +150,7 @@ func (r *fakeKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, tenantID ui
 }
 
 func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
-	return nil
+	return r.updateErr
 }
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }
 func (r *fakeKBRepo) TogglePinKnowledgeBase(_ context.Context, _ string, _ uint64) (*types.KnowledgeBase, error) {
@@ -611,6 +631,18 @@ func (r *fakeKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 
 func (r *fakeKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
+}
+
+func (r *fakeKBRepo) ListOwnedKnowledgeBases(_ context.Context, _ uint64) ([]*types.KnowledgeBase, error) {
+	return r.owned, nil
+}
+
+func (r *fakeKBRepo) ListPlatformPublicCatalog(
+	_ context.Context, keyword string, limit, offset int,
+) ([]*types.KnowledgeBase, int64, error) {
+	r.catalogKeyword, r.catalogLimit, r.catalogOffset = keyword, limit, offset
+	r.catalogPage = offset/limit + 1
+	return r.catalogItems, r.catalogTotal, r.catalogErr
 }
 
 func (r *fakeKBRepo) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {

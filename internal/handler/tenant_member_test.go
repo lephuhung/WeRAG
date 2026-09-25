@@ -422,13 +422,13 @@ func TestTenantMember_UpdateRole_HappyPath(t *testing.T) {
 	}
 }
 
-func TestTenantMember_UpdateRole_LastOwnerMaps409(t *testing.T) {
-	// Service-layer invariant: the last Owner cannot be demoted. Mapping
-	// ErrLastOwner to 409 lets the UI render the message inline rather
+func TestTenantMember_UpdateRole_LastAdminMaps409(t *testing.T) {
+	// Service-layer invariant: the last Admin cannot be demoted. Mapping
+	// ErrLastAdmin to 409 lets the UI render the message inline rather
 	// than as a generic failure.
 	ms := &stubMemberService{
 		updateRole: func(_ context.Context, _ string, _ uint64, _ types.TenantRole) error {
-			return service.ErrLastOwner
+			return service.ErrLastAdmin
 		},
 	}
 	h := newTestMemberHandler(ms, &stubMemberUserService{})
@@ -474,10 +474,10 @@ func TestTenantMember_RemoveMember_HappyPath(t *testing.T) {
 	}
 }
 
-func TestTenantMember_RemoveMember_LastOwnerMaps409(t *testing.T) {
+func TestTenantMember_RemoveMember_LastAdminMaps409(t *testing.T) {
 	ms := &stubMemberService{
 		remove: func(_ context.Context, _ string, _ uint64) error {
-			return service.ErrLastOwner
+			return service.ErrLastAdmin
 		},
 	}
 	h := newTestMemberHandler(ms, &stubMemberUserService{})
@@ -510,14 +510,14 @@ func TestTenantMember_LeaveTenant_HappyPath(t *testing.T) {
 	}
 }
 
-func TestTenantMember_LeaveTenant_LastOwnerMaps409(t *testing.T) {
+func TestTenantMember_LeaveTenant_LastAdminMaps409(t *testing.T) {
 	// The whole point of having a separate leave endpoint is that
-	// non-Owners can quit, but the same last-Owner invariant still
-	// applies — an Owner that's the only one left must transfer
-	// ownership before they can leave.
+	// non-Admins can quit, but the same last-Admin invariant still
+	// applies — an Admin that's the only one left must promote
+	// another member before they can leave.
 	ms := &stubMemberService{
 		remove: func(_ context.Context, _ string, _ uint64) error {
-			return service.ErrLastOwner
+			return service.ErrLastAdmin
 		},
 	}
 	h := newTestMemberHandler(ms, &stubMemberUserService{})
@@ -788,20 +788,13 @@ func TestTenantMember_AddMember_SyntheticCallerLeavesInvitedByNull(t *testing.T)
 
 // ---------- Owner-role escalation guards ----------
 
-func TestTenantMember_AddMember_AdminCannotAssignOwner(t *testing.T) {
-	h := newTestMemberHandler(&stubMemberService{}, &stubMemberUserService{})
-	body := map[string]any{"email": "bob@x.com", "role": "owner"}
-	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPost, "/tenants/1/members", body,
-		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("admin assigning owner must 403, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestTenantMember_AddMember_OwnerCanAssignOwner(t *testing.T) {
+func TestTenantMember_AddMember_OwnerRoleRetired(t *testing.T) {
+	// The owner role is retired: assignment is rejected with 400 even
+	// for a Tenant Admin caller (service returns ErrOwnerRoleRetired).
 	ms := &stubMemberService{
-		add: func(_ context.Context, userID string, tenantID uint64, role types.TenantRole, _ *string) (*types.TenantMember, error) {
-			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: role, Status: types.TenantMemberStatusActive, JoinedAt: time.Now()}, nil
+		add: func(_ context.Context, _ string, _ uint64, _ types.TenantRole, _ *string) (*types.TenantMember, error) {
+			t.Fatal("AddMember service must not run for a retired role")
+			return nil, nil
 		},
 	}
 	us := &stubMemberUserService{
@@ -812,46 +805,46 @@ func TestTenantMember_AddMember_OwnerCanAssignOwner(t *testing.T) {
 	h := newTestMemberHandler(ms, us)
 	body := map[string]any{"email": "bob@x.com", "role": "owner"}
 	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPost, "/tenants/1/members", body,
-		memberCtxOpts{callerID: "u-owner", role: types.TenantRoleOwner})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("owner assigning owner must 201, got %d body=%s", w.Code, w.Body.String())
+		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("assigning retired owner must 400, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
-func TestTenantMember_UpdateRole_AdminCannotTouchOwner(t *testing.T) {
+func TestTenantMember_UpdateRole_OwnerRoleRetired(t *testing.T) {
+	// Assigning the retired owner role via update is rejected with 400
+	// before the service runs.
 	ms := &stubMemberService{
-		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
-			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner}, nil
-		},
 		updateRole: func(_ context.Context, _ string, _ uint64, _ types.TenantRole) error {
-			t.Fatal("UpdateRole must not run when an admin demotes an owner")
+			t.Fatal("UpdateRole must not run for a retired role")
 			return nil
 		},
 	}
 	h := newTestMemberHandler(ms, &stubMemberUserService{})
-	body := map[string]any{"role": "member"}
-	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-owner", body,
+	body := map[string]any{"role": "owner"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-bob", body,
 		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("admin demoting owner must 403, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("assigning retired owner must 400, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
-func TestTenantMember_RemoveMember_AdminCannotRemoveOwner(t *testing.T) {
+func TestTenantMember_RemoveMember_AdminRemovesMember(t *testing.T) {
+	// Owner-specific pre-blocks are gone: an Admin removal flows
+	// straight to the service, which enforces the last-Admin invariant.
 	ms := &stubMemberService{
-		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
-			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner}, nil
-		},
-		remove: func(_ context.Context, _ string, _ uint64) error {
-			t.Fatal("RemoveMember must not run when an admin removes an owner")
+		remove: func(_ context.Context, userID string, tenantID uint64) error {
+			if userID != "u-bob" || tenantID != 1 {
+				t.Fatalf("unexpected args: user=%s tenant=%d", userID, tenantID)
+			}
 			return nil
 		},
 	}
 	h := newTestMemberHandler(ms, &stubMemberUserService{})
-	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-owner", nil,
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-bob", nil,
 		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("admin removing owner must 403, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin removing member must 200, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 

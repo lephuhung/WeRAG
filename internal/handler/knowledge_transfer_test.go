@@ -60,7 +60,7 @@ func transferHandlerConfig() *config.Config {
 
 func transferHandlerKB() *stubKBService {
 	return &stubKBService{get: func(_ context.Context, id string) (*types.KnowledgeBase, error) {
-		return &types.KnowledgeBase{ID: id, TenantID: 7, CreatorID: "user"}, nil
+		return &types.KnowledgeBase{ID: id, TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant, CreatorID: "user"}, nil
 	}}
 }
 
@@ -98,7 +98,7 @@ func TestCopyAdmissionReservesDestinationAndPreservesCreator(t *testing.T) {
 func TestCopyAdmissionRequiresExistingDestinationOwnership(t *testing.T) {
 	q := &documentDeleteEnqueuer{}
 	kb := &stubKBService{get: func(_ context.Context, id string) (*types.KnowledgeBase, error) {
-		return &types.KnowledgeBase{ID: id, TenantID: 7, CreatorID: "someone-else"}, nil
+		return &types.KnowledgeBase{ID: id, TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant, CreatorID: "someone-else"}, nil
 	}}
 	h := &KnowledgeBaseHandler{
 		cfg:              transferHandlerConfig(),

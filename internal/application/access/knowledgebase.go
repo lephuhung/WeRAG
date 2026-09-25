@@ -17,6 +17,71 @@ var (
 	ErrForbidden    = errors.New("kb_access: forbidden")
 )
 
+// IsPlatformPublicKB reports whether kb carries platform ownership:
+// visibility public with no owning tenant. Authorization uses this
+// owner + visibility pair; the data-scope TenantID is never consulted here
+// so a converted KB keeps working after its scope transition.
+func IsPlatformPublicKB(kb *types.KnowledgeBase) bool {
+	return kb != nil && kb.Visibility == types.KBVisibilityPublic && kb.OwnerTenantID == 0
+}
+
+// IsHumanCaller reports whether caller is a real human identity as opposed
+// to an anonymous context or the synthetic system-<tenant> user the API-key
+// auth path attaches to machine principals.
+func IsHumanCaller(caller types.Caller) bool {
+	return caller.UserID != "" && !types.IsSyntheticUserID(caller.UserID)
+}
+
+// IsAuthenticatedHuman reports whether ctx and caller identify a genuine
+// human UI principal. Beyond IsHumanCaller it rejects every machine
+// identity that carries a user-ID-shaped value: any TenantAPIKeyScope
+// (tenant keys use synthetic users, but platform keys use
+// Principal.StorageID() == "api_platform:<id>" as their user ID), and any
+// non-web principal type (api_tenant, api_platform, api_external_user,
+// embed sessions). Public-visibility admission must consult this — never
+// bare IsHumanCaller — so API-key identity can never widen into a human
+// grant. Unit contexts without a principal fall back to the user-ID check.
+func IsAuthenticatedHuman(ctx context.Context, caller types.Caller) bool {
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		return false
+	}
+	if principal, ok := types.PrincipalFromContext(ctx); ok {
+		switch principal.Type {
+		case "", types.PrincipalWebUser:
+			// Human session (or unset principal in unit contexts).
+		default:
+			return false
+		}
+	}
+	return IsHumanCaller(caller)
+}
+
+// IsExplicitHumanSuperAdmin reports whether ctx carries an explicit human
+// platform administrator: the system-admin flag plus a real non-synthetic
+// user ID. CanAccessAllTenants alone never qualifies, and machine
+// principals (API-key scopes, synthetic users) never qualify.
+func IsExplicitHumanSuperAdmin(ctx context.Context, caller types.Caller) bool {
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		return false
+	}
+	return types.IsSystemAdminFromContext(ctx) && IsHumanCaller(caller)
+}
+
+// checkAPIKeyScope rejects KB-restricted API-key callers outside their
+// allow-list. Public visibility never expands this boundary.
+func checkAPIKeyScope(ctx context.Context, kbID string) error {
+	return types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, kbID)
+}
+
+// callerMismatch rejects a request whose ambient context caller differs from
+// the explicitly captured request caller: a grant cannot replace identity.
+func callerMismatch(ctx context.Context, caller types.Caller) bool {
+	if ambient, ok := ctx.Value(types.CallerContextKey).(types.Caller); ok && ambient != caller {
+		return true
+	}
+	return false
+}
+
 // KBRequest keeps the authenticated caller separate from the resource tenant.
 type KBRequest struct {
 	Caller types.Caller
@@ -65,25 +130,28 @@ func (a *KBAccess) WithGrant(ctx context.Context) context.Context {
 	return context.WithValue(types.WithCaller(ctx, caller), types.KBGrantsContextKey, grants)
 }
 
-// ResolveKB authorizes a server-loaded KB (or a document's persisted KB/tenant
-// reference). Its tenant is authoritative. It never treats an effective
-// resource tenant as the caller. Cross-tenant reads require either a public
-// KB or a live kb_access_grants row approved for the caller's tenant.
-// Grant lookup errors do not grant access (fail closed).
+// ResolveKB authorizes a server-loaded KB by owner + visibility. The
+// owner (OwnerTenantID; 0 = platform-owned) decides who may act, while the
+// data-scope TenantID becomes the grant's effective execution tenant for
+// content retrieval after authorization succeeds. ResolveKB never treats an
+// effective resource tenant as the caller, and never lets public visibility
+// or legacy tenant-wide grants authorize cross-tenant access beyond the
+// platform-public read below: recipient-bound invites stay on the separate
+// ResolveKBWithInvite path. The grants argument remains for source
+// compatibility but is intentionally ignored: legacy approved rows cannot
+// confer access. ResolveKB never grants content writes on platform-owned
+// rows — not even to explicit SuperAdmins; management uses ResolveKBForManage.
 func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, required types.KBPermission,
-	grants KBGrantLookup,
+	_ KBGrantLookup,
 ) (*KBAccess, error) {
-	if request.Caller.TenantID == 0 {
-		return nil, ErrUnauthorized
-	}
 	if kb == nil || kb.ID == "" {
 		return nil, ErrNotFound
 	}
-	if err := types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, kb.ID); err != nil {
+	if err := checkAPIKeyScope(ctx, kb.ID); err != nil {
 		return nil, err
 	}
 	request.Caller = request.Caller.Normalize()
-	if caller, ok := ctx.Value(types.CallerContextKey).(types.Caller); ok && caller != request.Caller {
+	if callerMismatch(ctx, request.Caller) {
 		return nil, ErrForbidden
 	}
 	grant := func(permission types.KBPermission) (*KBAccess, error) {
@@ -92,40 +160,153 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 			EffectiveTenantID: kb.TenantID, Permission: permission, operationPermission: required,
 		}, nil
 	}
-	if kb.TenantID == request.Caller.TenantID {
-		if kb.Visibility == types.KBVisibilityPublic {
-			// Public corpus content is platform-sensitive: only the owning
-			// tenant's Owner, system admins and tenant-level API keys may
-			// write; every other tenant member reads.
-			role := types.KBPermissionViewer
-			if request.Caller.Role.HasPermission(types.TenantRoleOwner) ||
-				types.IsSystemAdminFromContext(ctx) {
-				role = types.KBPermissionAdmin
-			} else if request.Caller.UserID == "" {
-				if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
-					role = types.KBPermissionAdmin
-				}
-			}
-			if !role.HasPermission(required) {
-				return nil, ErrForbidden
-			}
-			return grant(role)
-		}
+	// Owning-tenant members keep their normal access on tenant-owned rows.
+	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == request.Caller.TenantID {
 		return grant(types.KBPermissionAdmin)
 	}
-	if kb.Visibility == types.KBVisibilityPublic {
-		// Public KBs are readable by every tenant's callers; writes
-		// stay with the owning tenant.
+	if IsPlatformPublicKB(kb) {
+		// Platform-public rows are readable by every authenticated human
+		// (Viewer only) — including tenantless humans with no active
+		// workspace. Writes stay closed here; the manage path below is
+		// the only writer.
 		if required == types.KBPermissionViewer {
-			return grant(types.KBPermissionViewer)
+			if IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+				return grant(types.KBPermissionViewer)
+			}
+			// API-key principals (any scope, any principal type) never
+			// count as human here, even with an allowlisted public row.
+			if IsAuthenticatedHuman(ctx, request.Caller) {
+				return grant(types.KBPermissionViewer)
+			}
+			if request.Caller.TenantID == 0 {
+				return nil, ErrUnauthorized
+			}
+		}
+		// Anonymous callers without any tenant context stay unauthorized;
+		// authenticated non-humans and human writers stay forbidden.
+		if request.Caller.TenantID == 0 && !IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+			return nil, ErrUnauthorized
 		}
 		return nil, ErrForbidden
 	}
-	if grants != nil {
-		permission, ok, err := grants.ApprovedKBPermission(ctx, kb.ID, request.Caller.TenantID)
-		if err == nil && ok && permission.HasPermission(required) {
-			return grant(permission)
-		}
+	// Tenant-owned foreign rows, legacy public rows with a nonzero owner,
+	// and malformed owner/visibility pairs fail closed. Ordinary access
+	// without an authenticated tenant stays unauthorized.
+	if request.Caller.TenantID == 0 {
+		return nil, ErrUnauthorized
 	}
 	return nil, ErrForbidden
+}
+
+// ResolveKBForDownload is the dedicated original-download decision,
+// distinct from write permission: platform-public viewers may fetch original
+// bytes, same-owner-tenant callers keep the tenant download policy, and an
+// explicit human SuperAdmin may download from platform-owned rows.
+// Invitation viewers are never consulted here, so their existing
+// no-download behavior is unchanged; uninvited private cross-tenant callers
+// stay denied. The grant carries at most Viewer for public rows and never
+// satisfies a later write check.
+func ResolveKBForDownload(ctx context.Context, request KBRequest, kb *types.KnowledgeBase) (*KBAccess, error) {
+	if kb == nil || kb.ID == "" {
+		return nil, ErrNotFound
+	}
+	if err := checkAPIKeyScope(ctx, kb.ID); err != nil {
+		return nil, err
+	}
+	request.Caller = request.Caller.Normalize()
+	if callerMismatch(ctx, request.Caller) {
+		return nil, ErrForbidden
+	}
+	grant := func(permission types.KBPermission) (*KBAccess, error) {
+		return &KBAccess{
+			KnowledgeBase: kb, Caller: request.Caller,
+			EffectiveTenantID: kb.TenantID, Permission: permission,
+			operationPermission: types.KBPermissionViewer,
+		}, nil
+	}
+	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == request.Caller.TenantID {
+		return grant(types.KBPermissionAdmin)
+	}
+	if IsPlatformPublicKB(kb) {
+		if IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+			return grant(types.KBPermissionViewer)
+		}
+		// Tenantless real humans download platform-public originals;
+		// API-key principals and anonymous/synthetic callers without a
+		// tenant stay unauthorized.
+		if IsAuthenticatedHuman(ctx, request.Caller) {
+			return grant(types.KBPermissionViewer)
+		}
+		if request.Caller.TenantID == 0 {
+			return nil, ErrUnauthorized
+		}
+		return nil, ErrForbidden
+	}
+	if request.Caller.TenantID == 0 {
+		return nil, ErrUnauthorized
+	}
+	return nil, ErrForbidden
+}
+
+// ResolveKBForManage authorizes content mutations by owner: the owning
+// tenant keeps its existing access (role floors stay at the route layer),
+// while platform-owned rows admit only an explicit human SuperAdmin.
+// CanAccessAllTenants alone and every machine principal stay denied on
+// platform-owned rows. KB creation and owner/scope transitions are out of
+// scope here; Task 3 owns those privileged flows.
+func ResolveKBForManage(ctx context.Context, request KBRequest, kb *types.KnowledgeBase) (*KBAccess, error) {
+	if kb == nil || kb.ID == "" {
+		return nil, ErrNotFound
+	}
+	if err := checkAPIKeyScope(ctx, kb.ID); err != nil {
+		return nil, err
+	}
+	request.Caller = request.Caller.Normalize()
+	if callerMismatch(ctx, request.Caller) {
+		return nil, ErrForbidden
+	}
+	grant := func(permission types.KBPermission) (*KBAccess, error) {
+		return &KBAccess{
+			KnowledgeBase: kb, Caller: request.Caller,
+			EffectiveTenantID: kb.TenantID, Permission: permission,
+			operationPermission: types.KBPermissionEditor,
+		}, nil
+	}
+	if IsPlatformPublicKB(kb) {
+		if IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+			return grant(types.KBPermissionAdmin)
+		}
+		if request.Caller.TenantID == 0 {
+			return nil, ErrUnauthorized
+		}
+		return nil, ErrForbidden
+	}
+	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == request.Caller.TenantID {
+		return grant(types.KBPermissionAdmin)
+	}
+	if request.Caller.TenantID == 0 {
+		return nil, ErrUnauthorized
+	}
+	return nil, ErrForbidden
+}
+
+// RequireKBManage consumes an explicit operation grant for content
+// mutations. Platform-owned rows admit only an explicit human SuperAdmin
+// (machine principals stay denied even with a grant); tenant-owned rows
+// keep the existing editor-grant plus ingest-capability policy. An execution
+// tenant alone never authorizes a mutation.
+func RequireKBManage(ctx context.Context, kb *types.KnowledgeBase) error {
+	if kb == nil || kb.ID == "" {
+		return ErrNotFound
+	}
+	if IsPlatformPublicKB(kb) {
+		if IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
+			return nil
+		}
+		if types.CallerFromContext(ctx).TenantID == 0 {
+			return ErrUnauthorized
+		}
+		return ErrForbidden
+	}
+	return RequireKBWrite(ctx, kb)
 }

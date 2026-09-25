@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     tenant_id INTEGER NOT NULL,
+    owner_tenant_id INTEGER NOT NULL DEFAULT 0,
     type VARCHAR(32) NOT NULL DEFAULT 'document',
     visibility VARCHAR(16) NOT NULL DEFAULT 'tenant',
     org_id INTEGER NULL,

@@ -198,7 +198,8 @@ func newDocumentWriteFixture(t *testing.T) *documentWriteFixture {
 	repo := &documentKnowledgeSpy{KnowledgeRepository: repository.NewKnowledgeRepository(db)}
 	chunkRepo := &documentChunkSpy{ChunkRepository: repository.NewChunkRepository(db)}
 	kbs := &documentKBLookup{values: map[string]*types.KnowledgeBase{
-		"kb": {ID: "kb", TenantID: 7}, "other": {ID: "other", TenantID: 7},
+		"kb":    {ID: "kb", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
+		"other": {ID: "other", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 	}}
 	for _, row := range []*types.Knowledge{
 		{

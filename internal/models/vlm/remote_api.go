@@ -204,7 +204,9 @@ func (v *RemoteAPIVLM) Predict(ctx context.Context, imgBytesList [][]byte, promp
 
 // predictRaw mirrors Predict but marshals the request body by hand so
 // OpenAI-extension fields go-openai does not model (repetition_penalty) can
-// be sent to compatible endpoints (vLLM).
+// be sent to compatible endpoints (vLLM). Reasoning (o-series) and GPT-5
+// models get the same shaping as the SDK path: max_completion_tokens instead
+// of max_tokens, and no sampling parameters.
 func (v *RemoteAPIVLM) predictRaw(ctx context.Context, parts []openai.ChatMessagePart) (string, error) {
 	content := make([]any, 0, len(parts))
 	for _, p := range parts {
@@ -220,15 +222,20 @@ func (v *RemoteAPIVLM) predictRaw(ctx context.Context, parts []openai.ChatMessag
 			}
 		}
 	}
-	payload, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"model": v.modelName,
 		"messages": []any{
 			map[string]any{"role": "user", "content": content},
 		},
-		"max_tokens":         defaultMaxToks,
-		"temperature":        v.temperature,
 		"repetition_penalty": v.repPenalty,
-	})
+	}
+	if provider.IsOpenAIReasoningOrGPT5Model(v.modelName) {
+		fields["max_completion_tokens"] = defaultMaxToks
+	} else {
+		fields["max_tokens"] = defaultMaxToks
+		fields["temperature"] = v.temperature
+	}
+	payload, err := json.Marshal(fields)
 	if err != nil {
 		return "", fmt.Errorf("marshal VLM request: %w", err)
 	}

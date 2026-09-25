@@ -102,7 +102,7 @@ func mayWriteSharedMCPMetadata(ctx context.Context) bool {
 	if types.IsSystemAdminFromContext(ctx) {
 		return true
 	}
-	return types.CallerFromContext(ctx).Role.HasPermission(types.TenantRoleOwner)
+	return types.CallerFromContext(ctx).Role.IsTenantAdmin()
 }
 
 func mcpMetadataAppError(err error, refresh bool) *errors.AppError {

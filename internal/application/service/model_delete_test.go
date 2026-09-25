@@ -465,6 +465,16 @@ func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context
 	return nil, nil
 }
 
+func (r *stubKBRepoForModelDelete) ListOwnedKnowledgeBases(context.Context, uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *stubKBRepoForModelDelete) ListPlatformPublicCatalog(
+	context.Context, string, int, int,
+) ([]*types.KnowledgeBase, int64, error) {
+	return nil, 0, nil
+}
+
 func (r *stubKBRepoForModelDelete) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }

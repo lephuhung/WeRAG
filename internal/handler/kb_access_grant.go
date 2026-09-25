@@ -98,22 +98,34 @@ func (h *KBAccessGrantHandler) Review(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": grant})
 }
 
-// Revoke handles DELETE /tenants/:id/access-grants/:grant_id — withdraw an
-// approved grant on a KB the caller's tenant owns.
-func (h *KBAccessGrantHandler) Revoke(c *gin.Context) {
-	ctx := c.Request.Context()
-	grantID := c.Param("grant_id")
-	if grantID == "" {
-		c.Error(apperrors.NewBadRequestError("grant id is required"))
-		return
-	}
-	caller := middleware.KBAccessRequest(c).Caller
-	grant, err := h.grantService.Revoke(ctx, caller, grantID)
-	if err != nil {
-		c.Error(grantHTTPError(err))
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": grant})
+// Retired tenant-wide grant mutations. Each returns 410 Gone so clients
+// learn the flow is replaced by recipient-bound KB invitations
+// (POST /knowledge-bases/:id/invites). The service layer independently
+// rejects these operations with ErrGrantDisabled.
+func (h *KBAccessGrantHandler) RequestAccessDisabled(c *gin.Context) {
+	c.Error(&apperrors.AppError{
+		Code:     apperrors.ErrNotFound,
+		Message:  "tenant-wide kb access requests are retired; ask the owning workspace admin for a recipient-bound invitation",
+		HTTPCode: http.StatusGone,
+	})
+}
+
+// ReviewDisabled handles PUT /tenants/:id/access-grants/:grant_id.
+func (h *KBAccessGrantHandler) ReviewDisabled(c *gin.Context) {
+	c.Error(&apperrors.AppError{
+		Code:     apperrors.ErrNotFound,
+		Message:  "tenant-wide kb grant review is retired; use recipient-bound kb invitations",
+		HTTPCode: http.StatusGone,
+	})
+}
+
+// RevokeDisabled handles DELETE /tenants/:id/access-grants/:grant_id.
+func (h *KBAccessGrantHandler) RevokeDisabled(c *gin.Context) {
+	c.Error(&apperrors.AppError{
+		Code:     apperrors.ErrNotFound,
+		Message:  "tenant-wide kb grants are retired; all live grants were revoked",
+		HTTPCode: http.StatusGone,
+	})
 }
 
 // parseGrantStatuses parses a comma-separated ?status= query value into
@@ -150,6 +162,12 @@ func splitComma(raw string) []string {
 
 func grantHTTPError(err error) error {
 	switch {
+	case stderrors.Is(err, service.ErrGrantDisabled):
+		return &apperrors.AppError{
+			Code:     apperrors.ErrNotFound,
+			Message:  "tenant-wide kb grants are retired; ask the owning workspace admin for a recipient-bound invitation",
+			HTTPCode: http.StatusGone,
+		}
 	case stderrors.Is(err, service.ErrGrantNotFound):
 		return apperrors.NewNotFoundError("kb access grant not found")
 	case stderrors.Is(err, service.ErrGrantExists):

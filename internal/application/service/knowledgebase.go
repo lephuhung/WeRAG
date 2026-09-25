@@ -35,6 +35,7 @@ type knowledgeBaseService struct {
 	kgRepo               interfaces.KnowledgeRepository
 	chunkRepo            interfaces.ChunkRepository
 	kbAccessGrantService interfaces.KBAccessGrantService
+	kbInviteService      interfaces.KBInvitationService
 	modelService         interfaces.ModelService
 	retrieveEngine       interfaces.RetrieveEngineRegistry
 	ownership            retriever.TenantStoreOwnership
@@ -58,6 +59,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
 	kbAccessGrantService interfaces.KBAccessGrantService,
+	kbInviteService interfaces.KBInvitationService,
 	modelService interfaces.ModelService,
 	retrieveEngine interfaces.RetrieveEngineRegistry,
 	ownership retriever.TenantStoreOwnership,
@@ -80,6 +82,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		kgRepo:               kgRepo,
 		chunkRepo:            chunkRepo,
 		kbAccessGrantService: kbAccessGrantService,
+		kbInviteService:      kbInviteService,
 		modelService:         modelService,
 		retrieveEngine:       retrieveEngine,
 		ownership:            ownership,
@@ -124,6 +127,11 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	}
 	kb.CreatedAt = time.Now()
 	kb.TenantID = types.MustTenantIDFromContext(ctx)
+	// OwnerTenantID is the authorization owner: tenant-created KBs are
+	// owned by the active tenant. TenantID above stays the immutable
+	// data-scope/execution partition and is never rewritten by a later
+	// public/tenant scope transition (Task 3).
+	kb.OwnerTenantID = kb.TenantID
 	kb.UpdatedAt = time.Now()
 	// Record the creator so RBAC's RequireOwnershipOrRole can let
 	// Contributors edit their own KBs without granting them tenant-wide
@@ -139,6 +147,11 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	kb.EnsureDefaults()
 	if err := s.validateKBVisibility(ctx, kb); err != nil {
 		return nil, err
+	}
+	// Validate owner/visibility before persistence so no write path can
+	// mint a privileged-scope row (e.g. owner 0 + tenant visibility).
+	if err := kb.ValidateOwnership(); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
 	}
 	applyTenantDefaultStorageProvider(ctx, kb)
 	if err := s.applyAndValidateStorageBackend(ctx, kb); err != nil {
@@ -168,6 +181,12 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 			"knowledge_base_id": kb.ID,
 			"tenant_id":         kb.TenantID,
 		})
+		// The repository serialization protocol rejects inserts under a
+		// deleted/missing tenant instead of orphaning the row; surface
+		// that as 404 so callers don't read it as an infra failure.
+		if errors.Is(err, repository.ErrTenantNotFound) {
+			return nil, apperrors.NewNotFoundError("workspace not found")
+		}
 		return nil, err
 	}
 	recordKBActivity(ctx, s.audit, kb.TenantID, kb.ID, types.AuditActionKBCreated,
@@ -293,40 +312,263 @@ func (s *knowledgeBaseService) validateVectorStoreBinding(
 	}
 }
 
-// validateKBVisibility enforces the scope model at creation time:
-//   - public KBs may only be created by the owning tenant's Owner or a
-//     system admin / platform API key (public corpus is platform-facing);
-//   - tenant KBs (the default) keep the existing RBAC — no extra check.
+// validateKBVisibility enforces the scope model on the tenant create
+// path. Tenant Admins create tenant KBs only: a public visibility payload
+// is rejected for every caller on this flow, including system admins —
+// platform-owned public KBs are minted exclusively through
+// CreatePublicKnowledgeBase. Tenant is the only accepted scope here.
 func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *types.KnowledgeBase) error {
+	_ = ctx
 	switch kb.Visibility {
 	case types.KBVisibilityPublic:
-		if !canManagePublicKB(ctx) {
-			return apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được tạo knowledge base công khai")
-		}
+		return apperrors.NewForbiddenError("public knowledge bases can only be created by a platform SuperAdmin through the public flow")
+	case "", types.KBVisibilityTenant:
+		kb.Visibility = types.KBVisibilityTenant
 	default:
 		kb.Visibility = types.KBVisibilityTenant
 	}
 	return nil
 }
 
-// canManagePublicKB reports whether the caller may create or manage a
-// public-visibility KB: the owning tenant's Owner, a system admin, or a
-// platform API key. Tenant members below Owner stay read-only on the
-// public corpus.
-func canManagePublicKB(ctx context.Context) bool {
-	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
-		return scope.IsPlatform()
+// CreatePublicKnowledgeBase creates a platform-owned public knowledge base.
+// Only an explicit human SuperAdmin (is_system_admin plus a real
+// non-synthetic user, never an API-key principal) may invoke it —
+// CanAccessAllTenants alone never qualifies. The row is stamped with
+// owner and data scope 0 and resolved from platform/global defaults: the
+// selected tenant's storage/model configuration is never inherited and no
+// tenant-scoped StorageBackendID binding is accepted.
+func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
+	kb *types.KnowledgeBase,
+) (*types.KnowledgeBase, error) {
+	if kb == nil {
+		return nil, apperrors.NewBadRequestError("knowledge base cannot be empty")
 	}
-	return types.IsSystemAdminFromContext(ctx) ||
-		types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
+	caller := types.CallerFromContext(ctx)
+	if !access.IsExplicitHumanSuperAdmin(ctx, caller) {
+		if caller.TenantID == 0 {
+			return nil, apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return nil, apperrors.NewForbiddenError("only an explicit platform SuperAdmin may create public knowledge bases")
+	}
+	if kb.ID == "" {
+		kb.ID = uuid.New().String()
+	}
+	now := time.Now()
+	kb.CreatedAt = now
+	kb.UpdatedAt = now
+	// Platform scope: no owning tenant and the reserved platform data
+	// scope. TenantID stays the immutable execution partition for the KB's
+	// documents and indexes.
+	kb.OwnerTenantID = 0
+	kb.TenantID = 0
+	kb.Visibility = types.KBVisibilityPublic
+	if uid, ok := types.UserIDFromContext(ctx); ok && !types.IsSyntheticUserID(uid) {
+		kb.CreatorID = uid
+	}
+	kb.EnsureDefaults()
+	kb.Visibility = types.KBVisibilityPublic
+	// Platform storage defaults: an explicit provider must clear the
+	// global allowlist; otherwise the first globally-allowed provider is
+	// used. Tenant-scoped backend bindings and the active tenant's
+	// defaults are never consulted here.
+	if kb.StorageBackendID != nil && strings.TrimSpace(*kb.StorageBackendID) != "" {
+		return nil, apperrors.NewBadRequestError("public knowledge bases cannot bind a tenant storage backend")
+	}
+	kb.StorageBackendID = nil
+	provider := strings.ToLower(strings.TrimSpace(kb.GetStorageProvider()))
+	if provider == "" {
+		provider = storageallowlist.FirstAllowed()
+		if provider == "" {
+			return nil, apperrors.NewInternalServerError("no supported storage provider is configured")
+		}
+		kb.SetStorageProvider(provider)
+	} else if !storageallowlist.IsAllowed(provider) {
+		return nil, apperrors.NewBadRequestError("Storage provider is not allowed by STORAGE_ALLOW_LIST")
+	}
+	kb.Normalize()
+	if kb.HasVectorStore() {
+		// Bound against the platform scope so only a platform-owned
+		// store could satisfy it; tenant stores fail closed here.
+		if err := s.validateVectorStoreBinding(ctx, 0, *kb.VectorStoreID); err != nil {
+			return nil, err
+		}
+	}
+	if err := kb.ValidateOwnership(); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
+	}
+	logger.Infof(ctx, "Creating public knowledge base, ID: %s, name: %s", kb.ID, kb.Name)
+	if err := s.repo.CreateKnowledgeBase(ctx, kb); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": kb.ID,
+		})
+		s.recordKBScopeChange(ctx, kb.ID, oldKBScope{}, newKBScopeOf(kb), 0, types.AuditOutcomeFailed)
+		return nil, err
+	}
+	s.recordKBScopeChange(ctx, kb.ID, oldKBScope{}, newKBScopeOf(kb), 0, types.AuditOutcomeSuccess)
+	logger.Infof(ctx, "Public knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
+	return kb, nil
 }
 
-// SetKnowledgeBaseVisibility changes a KB's scope. Only principals of the
-// owning tenant reach this — visibility is scope-defining, so shared-KB
-// editors of foreign tenants must not widen or narrow another tenant's KB.
+// oldKBScope snapshots the pre-transition owner/visibility of a KB for
+// auditing. The zero value denotes "no previous scope" (creation).
+type oldKBScope struct {
+	OwnerTenantID uint64
+	Visibility    types.KBVisibility
+	Known         bool
+}
+
+// newKBScopeOf projects the post-transition owner/visibility of a KB.
+func newKBScopeOf(kb *types.KnowledgeBase) oldKBScope {
+	if kb == nil {
+		return oldKBScope{}
+	}
+	return oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
+}
+
+// recordKBScopeChange writes one kb.scope_changed audit event carrying the
+// actor, old/new owner+visibility, target tenant when present, KB ID, and
+// outcome. Unlike recordKBActivity it permits the platform scope
+// (tenant_id 0): public rows have no owning tenant to attribute to, and
+// dropping their trail would leave privileged transitions unaudited.
+// Best-effort like recordKBActivity: audit outages never roll back the
+// business mutation.
+func (s *knowledgeBaseService) recordKBScopeChange(
+	ctx context.Context,
+	kbID string,
+	oldScope, newScope oldKBScope,
+	targetTenantID uint64,
+	outcome types.AuditOutcome,
+) {
+	if s.audit == nil || kbID == "" {
+		return
+	}
+	if outcome == "" {
+		outcome = types.AuditOutcomeSuccess
+	}
+	tenantID := newScope.OwnerTenantID
+	if tenantID == 0 {
+		tenantID = oldScope.OwnerTenantID
+	}
+	actor := types.CallerFromContext(ctx).UserID
+	details := map[string]any{
+		"kb_id":            kbID,
+		"actor_user_id":    actor,
+		"new_owner_tenant": newScope.OwnerTenantID,
+		"new_visibility":   string(newScope.Visibility),
+		"outcome":          string(outcome),
+	}
+	if oldScope.Known {
+		details["old_owner_tenant"] = oldScope.OwnerTenantID
+		details["old_visibility"] = string(oldScope.Visibility)
+	}
+	if targetTenantID != 0 {
+		details["target_tenant_id"] = targetTenantID
+	}
+	var detailJSON types.JSON
+	if b, merr := json.Marshal(details); merr == nil {
+		detailJSON = types.JSON(b)
+	}
+	_ = s.audit.Log(ctx, &types.AuditLog{
+		TenantID:    tenantID,
+		ActorUserID: actor,
+		Action:      types.AuditActionKBScopeChanged,
+		ScopeType:   auditScopeKnowledgeBase,
+		ScopeID:     kbID,
+		TargetType:  "knowledge_base",
+		TargetID:    kbID,
+		Outcome:     outcome,
+		Details:     detailJSON,
+	})
+}
+
+// logKBAuditAllowZero writes a minimal KB audit event that survives the
+// platform scope (tenant_id 0). Used for platform-owned lifecycle events
+// that recordKBActivity would silently drop.
+func (s *knowledgeBaseService) logKBAuditAllowZero(
+	ctx context.Context, tenantID uint64, kbID string,
+	action types.AuditAction, outcome types.AuditOutcome,
+) {
+	if s.audit == nil || kbID == "" {
+		return
+	}
+	_ = s.audit.Log(ctx, &types.AuditLog{
+		TenantID:    tenantID,
+		ActorUserID: types.CallerFromContext(ctx).UserID,
+		Action:      action,
+		ScopeType:   auditScopeKnowledgeBase,
+		ScopeID:     kbID,
+		TargetType:  "knowledge_base",
+		TargetID:    kbID,
+		Outcome:     outcome,
+	})
+}
+
+// requireKBLifecycleAccess enforces the owner-aware mutation policy for KB
+// lifecycle operations (update/delete). Platform-owned public rows admit
+// only an explicit human SuperAdmin. Tenant-owned rows require the caller
+// to act inside the owning tenant under its existing role policy: platform
+// SuperAdmin authority alone never overrides tenant ownership, so a
+// SuperAdmin without (or outside) the owning tenant is denied. API-key
+// principals never qualify on public rows and stay bounded by the
+// allowlist checks elsewhere on tenant rows.
+func requireKBLifecycleAccess(ctx context.Context, kb *types.KnowledgeBase) error {
+	if kb == nil || kb.ID == "" {
+		return apperrors.NewNotFoundError("knowledge base not found")
+	}
+	caller := types.CallerFromContext(ctx)
+	if access.IsPlatformPublicKB(kb) {
+		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+			return nil
+		}
+		if caller.TenantID == 0 {
+			return apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return apperrors.NewForbiddenError("only an explicit platform SuperAdmin may manage this public knowledge base")
+	}
+	owner := kb.OwnerTenantID
+	if owner == 0 {
+		// Legacy rows predating the owner backfill: the data scope is
+		// the only ownership signal available.
+		owner = kb.TenantID
+	}
+	if owner == 0 {
+		// Platform data-scope row that is not public: fail closed to
+		// explicit human SuperAdmins only.
+		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+			return nil
+		}
+		if caller.TenantID == 0 {
+			return apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return apperrors.NewForbiddenError("only an explicit platform SuperAdmin may manage this knowledge base")
+	}
+	if caller.TenantID == 0 || caller.TenantID != owner {
+		if caller.TenantID == 0 {
+			return apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return apperrors.NewForbiddenError("không thể sửa knowledge base thuộc workspace khác")
+	}
+	return nil
+}
+
+// SetKnowledgeBaseVisibility changes a KB's owner/scope. Promotion
+// (tenant→public) and scope transfer (public→tenant) alike require an
+// explicit human SuperAdmin — tenant Admins, CanAccessAllTenants-only
+// operators, and API-key principals are all denied. A public→tenant
+// transition requires the nonzero destination tenant and verifies it
+// exists before touching the row; rejected transitions leave the stored
+// owner/visibility intact. Only owner/visibility metadata changes: the KB
+// ID and data-scope tenant_id are preserved and no child rows, vector
+// indexes, or background jobs are touched.
 func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
-	ctx context.Context, id string, visibility types.KBVisibility,
+	ctx context.Context, id string, visibility types.KBVisibility, targetTenantID uint64,
 ) (*types.KnowledgeBase, error) {
+	if id == "" {
+		return nil, apperrors.NewBadRequestError("knowledge base ID cannot be empty")
+	}
+	if !visibility.IsValid() {
+		return nil, apperrors.NewBadRequestError("invalid visibility")
+	}
 	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -335,35 +577,69 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		return nil, apperrors.NewNotFoundError("knowledge base not found")
 	}
 	caller := types.CallerFromContext(ctx)
-	if caller.TenantID == 0 || caller.TenantID != kb.TenantID {
-		return nil, apperrors.NewForbiddenError("không thể đổi phạm vi của knowledge base thuộc workspace khác")
+	if !access.IsExplicitHumanSuperAdmin(ctx, caller) {
+		if caller.TenantID == 0 {
+			return nil, apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return nil, apperrors.NewForbiddenError("only an explicit platform SuperAdmin may change knowledge base scope")
 	}
-	if !visibility.IsValid() {
+	oldScope := oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
+	switch {
+	case kb.Visibility == types.KBVisibilityPublic && visibility == types.KBVisibilityPublic:
+		if targetTenantID != 0 {
+			return nil, apperrors.NewBadRequestError("target tenant must be omitted when keeping public scope")
+		}
+		return kb, nil
+	case kb.Visibility == types.KBVisibilityTenant && visibility == types.KBVisibilityTenant:
+		owner := kb.OwnerTenantID
+		if owner == 0 {
+			owner = kb.TenantID
+		}
+		if targetTenantID == 0 || targetTenantID == owner {
+			return kb, nil
+		}
+		return nil, apperrors.NewBadRequestError("tenant-to-tenant scope transfer is not supported")
+	case kb.Visibility == types.KBVisibilityTenant && visibility == types.KBVisibilityPublic:
+		if targetTenantID != 0 {
+			return nil, apperrors.NewBadRequestError("target tenant must be omitted when publishing to public scope")
+		}
+		kb.OwnerTenantID = 0
+		kb.Visibility = types.KBVisibilityPublic
+	case kb.Visibility == types.KBVisibilityPublic && visibility == types.KBVisibilityTenant:
+		if targetTenantID == 0 {
+			return nil, apperrors.NewBadRequestError("target tenant is required when moving a public knowledge base to tenant scope")
+		}
+		// The destination must exist before the row is touched so a
+		// typo leaves the previous owner/visibility intact.
+		if s.tenantRepo == nil {
+			return nil, apperrors.NewInternalServerError("tenant service unavailable")
+		}
+		target, terr := s.tenantRepo.GetTenantByID(ctx, targetTenantID)
+		if terr != nil {
+			if errors.Is(terr, repository.ErrTenantNotFound) {
+				return nil, apperrors.NewNotFoundError("target tenant not found")
+			}
+			return nil, terr
+		}
+		if target == nil {
+			return nil, apperrors.NewNotFoundError("target tenant not found")
+		}
+		kb.OwnerTenantID = targetTenantID
+		kb.Visibility = types.KBVisibilityTenant
+	default:
 		return nil, apperrors.NewBadRequestError("invalid visibility")
 	}
-	switch visibility {
-	case types.KBVisibilityPublic:
-		if !canManagePublicKB(ctx) {
-			return nil, apperrors.NewForbiddenError("chỉ Owner của workspace hoặc quản trị hệ thống mới được công khai knowledge base")
-		}
-	default:
-		// Narrowing to tenant scope is an Admin+ decision.
-		if !caller.Role.HasPermission(types.TenantRoleOwner) && !types.IsSystemAdminFromContext(ctx) {
-			if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); !isKey || caller.UserID != "" {
-				return nil, apperrors.NewForbiddenError("chỉ Admin của workspace mới được đổi phạm vi knowledge base")
-			}
-		}
-	}
-	kb.Visibility = visibility
 	kb.EnsureDefaults()
+	// Validate owner/visibility before persistence.
+	if err := kb.ValidateOwnership(); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
+	}
 	kb.UpdatedAt = time.Now()
 	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
+		s.recordKBScopeChange(ctx, kb.ID, oldScope, newKBScopeOf(kb), targetTenantID, types.AuditOutcomeFailed)
 		return nil, err
 	}
-	recordKBActivity(ctx, s.audit, kb.TenantID, kb.ID, types.AuditActionKBUpdated,
-		"knowledge_base", kb.ID, types.AuditOutcomeSuccess, map[string]any{
-			"visibility": string(visibility),
-		})
+	s.recordKBScopeChange(ctx, kb.ID, oldScope, newKBScopeOf(kb), targetTenantID, types.AuditOutcomeSuccess)
 	return kb, nil
 }
 
@@ -423,22 +699,82 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 	return kbs, nil
 }
 
-// ListKnowledgeBases returns all knowledge bases for a tenant
+// ListKnowledgeBases returns the user-facing catalog for the caller's
+// active tenant: owner-tenant KBs, a bounded first page of the platform
+// public catalog (authenticated human callers only — never API-key or
+// machine principals), and accepted recipient-bound invites. Rows are
+// deduplicated by KB ID; temporary/deleted rows are excluded at the
+// repository layer. Foreign tenant-owned rows never enter through public
+// visibility or cross-tenant access.
+//
+// Count/status enrichment runs under each KB's stored data-scope
+// tenant_id (never the requesting tenant), so converted and invited rows
+// report their own partition's numbers.
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
 	tenantID := types.MustTenantIDFromContext(ctx)
+	caller := types.CallerFromContext(ctx)
+	// Human-only public leg: the helper rejects every machine identity
+	// (any API-key scope, API principal types), so public rows stay
+	// human-only even for allowlisted platform keys.
+	human := access.IsAuthenticatedHuman(ctx, caller)
 
-	// The caller sees tenant+public KBs of their own workspace, plus
-	// public KBs of every other tenant and KBs granted to this tenant
-	// via approved kb_access_grants.
-	kbs, err := s.repo.ListVisibleKnowledgeBases(ctx, tenantID)
-	if err == nil {
-		if pubs, perr := s.repo.ListPublicKnowledgeBasesExcept(ctx, tenantID); perr == nil {
-			kbs = append(kbs, pubs...)
+	// Owner-tenant rows (plus legacy pre-backfill rows in the same data
+	// scope). Data-scope/agent listings keep their own repository
+	// methods and are untouched by this composition.
+	kbs, err := s.repo.ListOwnedKnowledgeBases(ctx, tenantID)
+	if err == nil && human {
+		// Bounded public page for human discovery. A catalog failure
+		// degrades to owned+invites (warned) rather than hiding the
+		// caller's own KBs — same best-effort convention as invites
+		// and processing counts below.
+		if pub, _, perr := s.repo.ListPlatformPublicCatalog(
+			ctx, "", types.PublicCatalogDefaultPageSize, 0,
+		); perr == nil {
+			seen := make(map[string]struct{}, len(kbs)+len(pub))
+			for _, kb := range kbs {
+				if kb != nil {
+					seen[kb.ID] = struct{}{}
+				}
+			}
+			for _, kb := range pub {
+				if kb == nil || kb.ID == "" {
+					continue
+				}
+				if _, dup := seen[kb.ID]; dup {
+					continue
+				}
+				seen[kb.ID] = struct{}{}
+				kbs = append(kbs, kb)
+			}
+		} else {
+			logger.Warnf(ctx, "Failed to list public catalog for tenant=%d: %v", tenantID, perr)
 		}
-		if s.kbAccessGrantService != nil {
-			if granted, gerr := s.kbAccessGrantService.GrantedKBIDs(ctx, tenantID); gerr == nil && len(granted) > 0 {
-				if grantedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, granted); kerr == nil {
-					kbs = append(kbs, grantedKBs...)
+	}
+	if err == nil {
+		// Recipient-bound invites: KBs this user was individually
+		// invited to read (accepted, unexpired). Lookup errors fail
+		// closed (no invites); appendInvitedKBs dedupes against rows
+		// already listed.
+		if s.kbInviteService != nil {
+			if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
+				if invited, ierr := s.kbInviteService.InvitedKBIDs(ctx, userID); ierr == nil && len(invited) > 0 {
+					seen := make(map[string]struct{}, len(kbs))
+					for _, kb := range kbs {
+						if kb != nil {
+							seen[kb.ID] = struct{}{}
+						}
+					}
+					var fresh []string
+					for _, id := range invited {
+						if _, dup := seen[id]; !dup {
+							fresh = append(fresh, id)
+						}
+					}
+					if len(fresh) > 0 {
+						if invitedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, fresh); kerr == nil {
+							kbs = appendInvitedKBs(kbs, invitedKBs)
+						}
+					}
 				}
 			}
 		}
@@ -454,14 +790,17 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		return nil, err
 	}
 
-	// Query knowledge count and chunk count for each knowledge base
+	// Query knowledge count and chunk count for each knowledge base,
+	// always under the KB's own stored data scope — never the requesting
+	// tenant — so converted and invited rows report their own partition.
 	for _, kb := range kbs {
 		kb.EnsureDefaults()
+		dataTenant := kb.TenantID
 
 		// Get knowledge count
 		switch kb.Type {
 		case types.KnowledgeBaseTypeDocument:
-			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, dataTenant, kb.ID)
 			if err != nil {
 				logger.Warnf(ctx, "Failed to get knowledge count for knowledge base %s: %v", kb.ID, err)
 			} else {
@@ -469,7 +808,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 			}
 		case types.KnowledgeBaseTypeFAQ:
 			// Get chunk count
-			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, dataTenant, kb.ID)
 			if err != nil {
 				logger.Warnf(ctx, "Failed to get chunk count for knowledge base %s: %v", kb.ID, err)
 			} else {
@@ -480,7 +819,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		// Check if there is a processing import task
 		processingCount, err := s.kgRepo.CountKnowledgeByStatus(
 			ctx,
-			tenantID,
+			dataTenant,
 			kb.ID,
 			[]string{"pending", "processing"},
 		)
@@ -500,6 +839,88 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		s.applyUserKBPins(ctx, tenantID, userID, kbs)
 	}
 	return kbs, nil
+}
+
+// ListPublicCatalog returns one bounded page of the platform-owned public
+// catalog with the catalog total. Human callers only: anonymous contexts
+// are unauthorized and API-key principals are forbidden, so public
+// visibility never becomes an implicit key grant. No tenant context is
+// required, so tenantless explicit human SuperAdmins can discover the
+// catalog. Counts are enriched under each KB's own data scope.
+func (s *knowledgeBaseService) ListPublicCatalog(
+	ctx context.Context, page, pageSize int, keyword string,
+) ([]*types.KnowledgeBase, int64, error) {
+	caller := types.CallerFromContext(ctx)
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		return nil, 0, apperrors.NewForbiddenError("API keys cannot access the public catalog")
+	}
+	if !access.IsAuthenticatedHuman(ctx, caller) {
+		return nil, 0, apperrors.NewUnauthorizedError("Unauthorized")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = types.PublicCatalogDefaultPageSize
+	}
+	if pageSize > types.PublicCatalogMaxPageSize {
+		pageSize = types.PublicCatalogMaxPageSize
+	}
+	items, total, err := s.repo.ListPlatformPublicCatalog(ctx, keyword, pageSize, saturateCatalogOffset(page, pageSize))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"page": page, "page_size": pageSize,
+		})
+		return nil, 0, err
+	}
+	for _, kb := range items {
+		if kb == nil {
+			continue
+		}
+		kb.EnsureDefaults()
+		if cerr := s.FillKnowledgeBaseCounts(ctx, kb); cerr != nil {
+			logger.Warnf(ctx, "Failed to fill KB counts for %s: %v", kb.ID, cerr)
+		}
+	}
+	return items, total, nil
+}
+
+// saturateCatalogOffset computes (page-1)*pageSize without wrapping: on
+// extreme pages the offset saturates at maxInt (a valid empty page) instead
+// of overflowing into a negative offset that the repository would clamp
+// back to the first page. Callers normalize page >= 1 and pageSize >= 1
+// before reaching here.
+func saturateCatalogOffset(page, pageSize int) int {
+	maxOffset := int64(int(^uint(0) >> 1))
+	if p := int64(page - 1); p > maxOffset/int64(pageSize) {
+		return int(maxOffset)
+	}
+	return (page - 1) * pageSize
+}
+
+// appendInvitedKBs merges recipient-invited KB rows into a listing,
+// skipping nil rows and IDs already present so an invite overlapping
+// own-tenant access never duplicates a row. Temporary KBs are skipped:
+// the owned and public legs exclude them at SQL, and an accepted invite
+// to an ephemeral row must not resurface it in the catalog.
+func appendInvitedKBs(existing, invited []*types.KnowledgeBase) []*types.KnowledgeBase {
+	seen := make(map[string]struct{}, len(existing))
+	for _, kb := range existing {
+		if kb != nil {
+			seen[kb.ID] = struct{}{}
+		}
+	}
+	for _, kb := range invited {
+		if kb == nil || kb.ID == "" || kb.IsTemporary {
+			continue
+		}
+		if _, dup := seen[kb.ID]; dup {
+			continue
+		}
+		seen[kb.ID] = struct{}{}
+		existing = append(existing, kb)
+	}
+	return existing
 }
 
 // ListKnowledgeBasesByTenantID returns all knowledge bases for the given tenant (e.g. for shared agent context).
@@ -609,6 +1030,14 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"knowledge_base_id": id,
 		})
+		return nil, err
+	}
+	// Owner-aware lifecycle guard: platform-owned rows admit only an
+	// explicit human SuperAdmin; tenant-owned rows require the caller to
+	// act inside the owning tenant. Route role floors stay authoritative
+	// for the owning tenant's own policy; this check keeps platform
+	// authority from overriding tenant ownership for direct callers.
+	if err := requireKBLifecycleAccess(ctx, kb); err != nil {
 		return nil, err
 	}
 
@@ -819,8 +1248,11 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s", id)
 
-	// Get tenant ID from context
-	tenantID := types.MustTenantIDFromContext(ctx)
+	// Execution scope only: tenant 0 is legitimate for platform-owned
+	// rows (explicit human SuperAdmin without an active tenant). The
+	// owner-aware check below decides authority; never assume the
+	// caller's tenant owns the row.
+	tenantID, _ := types.TenantIDFromContext(ctx)
 	tenantInfo, _ := types.TenantInfoFromContext(ctx)
 
 	// Load the KB before soft-delete so we can snapshot its VectorStoreID
@@ -837,6 +1269,12 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	if kb != nil {
 		vectorStoreIDSnapshot = kb.VectorStoreID
 	}
+	// Owner-aware lifecycle guard (see UpdateKnowledgeBase): a
+	// tenantless/out-of-tenant SuperAdmin must not delete tenant-owned
+	// KBs; platform-owned rows require explicit human SuperAdmin.
+	if err := requireKBLifecycleAccess(ctx, kb); err != nil {
+		return err
+	}
 
 	// Step 1: Delete the knowledge base record first (mark as deleted)
 	logger.Infof(ctx, "Deleting knowledge base from database")
@@ -851,8 +1289,15 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	if kb != nil {
 		deletedName = kb.Name
 	}
-	recordKBActivity(ctx, s.audit, tenantID, id, types.AuditActionKBDeleted,
-		"knowledge_base", id, types.AuditOutcomeSuccess, map[string]any{"name": deletedName})
+	// Platform-owned rows have no owning tenant, and recordKBActivity
+	// drops tenant-0 events: log those deletes directly so the trail
+	// survives. Tenant-owned rows keep the existing activity path.
+	if kb != nil && kb.OwnerTenantID == 0 && kb.TenantID == 0 {
+		s.logKBAuditAllowZero(ctx, 0, id, types.AuditActionKBDeleted, types.AuditOutcomeSuccess)
+	} else {
+		recordKBActivity(ctx, s.audit, tenantID, id, types.AuditActionKBDeleted,
+			"knowledge_base", id, types.AuditOutcomeSuccess, map[string]any{"name": deletedName})
+	}
 
 	// Stop both ephemeral queue work and durable wiki operations that target
 	// the now-deleted KB. ProcessKBDelete repeats this with document IDs and
@@ -886,12 +1331,20 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 		cancelDSCancel()
 	}
 
-	// Step 2: Enqueue async task for heavy cleanup operations
+	// Step 2: Enqueue async task for heavy cleanup operations.
+	// tenantInfo is absent for tenantless platform deletes; fall back to
+	// the system-default engines so the payload stays well-formed.
+	var effectiveEngines []types.RetrieverEngineParams
+	if tenantInfo != nil {
+		effectiveEngines = tenantInfo.GetEffectiveEngines()
+	} else {
+		effectiveEngines = types.GetDefaultRetrieverEngines()
+	}
 	payload := types.KBDeletePayload{
 		TenantID:         tenantID,
 		KnowledgeBaseID:  id,
 		DataSourceIDs:    dataSourceIDs,
-		EffectiveEngines: tenantInfo.GetEffectiveEngines(),
+		EffectiveEngines: effectiveEngines,
 		VectorStoreID:    vectorStoreIDSnapshot, // snapshot taken before soft-delete
 	}
 	langfuse.InjectTracing(ctx, &payload)
@@ -1328,12 +1781,17 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		// Preserve VectorStoreID so the cloned KB lands on the same
 		// physical index. GORM `<-:create` permits the value at INSERT.
 		targetKB = &types.KnowledgeBase{
-			ID:                    destinationID,
-			CreatorID:             creatorID,
-			Name:                  sourceKB.Name,
-			Type:                  sourceKB.Type,
-			Description:           sourceKB.Description,
-			TenantID:              tenantID,
+			ID:          destinationID,
+			CreatorID:   creatorID,
+			Name:        sourceKB.Name,
+			Type:        sourceKB.Type,
+			Description: sourceKB.Description,
+			TenantID:    tenantID,
+			// The clone is a fresh tenant-owned row: ownership is
+			// stamped from the execution scope, never inherited from
+			// the source's owner/visibility.
+			OwnerTenantID:         tenantID,
+			Visibility:            types.KBVisibilityTenant,
 			ChunkingConfig:        sourceKB.ChunkingConfig,
 			ImageProcessingConfig: sourceKB.ImageProcessingConfig,
 			EmbeddingModelID:      sourceKB.EmbeddingModelID,
@@ -1354,6 +1812,10 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 			targetKB.CreatorID = uid
 		}
 		targetKB.EnsureDefaults()
+		// Validate owner/visibility before persistence.
+		if err := targetKB.ValidateOwnership(); err != nil {
+			return nil, nil, apperrors.NewBadRequestError(err.Error())
+		}
 		if err := s.repo.CreateKnowledgeBase(ctx, targetKB); err != nil {
 			return nil, nil, err
 		}
@@ -1392,6 +1854,11 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 	targetKB.GeneratedProfile = nil
 	targetKB.ID = uuid.New().String()
 	targetKB.TenantID = tenantID
+	// Scope is never inherited: the copy is a plain tenant-owned KB even
+	// when the source carried platform ownership. Owner and visibility are
+	// stamped together so the row always satisfies the owner/visibility
+	// invariant before persistence.
+	targetKB.OwnerTenantID = tenantID
 	targetKB.Name = s.buildDuplicateKnowledgeBaseName(ctx, tenantID, sourceKB.Name)
 	targetKB.CreatorID = ""
 	if uid, ok := types.UserIDFromContext(ctx); ok && !types.IsSyntheticUserID(uid) {
@@ -1405,8 +1872,9 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 	targetKB.IsTemporary = false
 	// Scope is never inherited: duplicating a public KB must not
 	// mint a new privileged-scope KB for the caller. The copy is a plain
-	// tenant KB; a privileged caller can re-scope it afterwards through
-	// SetKnowledgeBaseVisibility.
+	// tenant KB (owner and visibility stamped together, above and below,
+	// so the row satisfies the owner/visibility invariant); a privileged
+	// caller can re-scope it afterwards through SetKnowledgeBaseVisibility.
 	targetKB.Visibility = types.KBVisibilityTenant
 	targetKB.IsPinned = false
 	targetKB.PinnedAt = nil
@@ -1418,6 +1886,10 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 	targetKB.CreatorName = ""
 	targetKB.EnsureDefaults()
 	targetKB.Normalize()
+	// Validate owner/visibility before persistence.
+	if err := targetKB.ValidateOwnership(); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
+	}
 
 	if targetKB.HasVectorStore() {
 		if err := s.validateVectorStoreBinding(ctx, tenantID, *targetKB.VectorStoreID); err != nil {

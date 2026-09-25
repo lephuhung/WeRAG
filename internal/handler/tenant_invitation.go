@@ -227,13 +227,15 @@ func (h *TenantInvitationHandler) ListTenantInvitations(c *gin.Context) {
 	}
 
 	usersByID := h.hydrateUsers(c, rows)
-	showShareLinks := types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
+	showShareLinks := types.CallerFromContext(ctx).Role.IsTenantAdmin() ||
+		types.IsSystemAdminFromContext(ctx)
 	resp := make([]types.TenantInvitationResponse, 0, len(rows))
 	for _, inv := range rows {
 		// Within the tenant view we don't bother hydrating tenant name
 		// (the caller already knows the tenant). Pass an empty map.
-		// Share-link URLs embed the registration token — only Owners may
-		// re-copy them; other roles see metadata without invite_url.
+		// Share-link URLs embed the registration token — only Tenant
+		// Admins may re-copy them; other roles see metadata without
+		// invite_url.
 		if showShareLinks {
 			resp = append(resp, h.projectInvitationWithLink(inv, usersByID, nil))
 		} else {
@@ -274,12 +276,12 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
 		return
 	}
-	if !req.Role.IsValid() {
-		c.Error(apperrors.NewValidationError("role must be one of owner/admin/member"))
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("the owner role is retired; assign admin instead"))
 		return
 	}
-	if req.Role == types.TenantRoleOwner && !callerCanManageOwners(ctx) {
-		c.Error(apperrors.NewForbiddenError("only workspace owners can assign the owner role"))
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of admin/member"))
 		return
 	}
 
@@ -320,7 +322,7 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 		switch {
 		case errors.Is(err, service.ErrInvalidTenantRole):
 			c.Error(apperrors.NewValidationError(err.Error()))
-		case errors.Is(err, service.ErrAPIKeyCannotAssignOwner):
+		case errors.Is(err, service.ErrAPIKeyCannotAssignAdmin):
 			c.Error(apperrors.NewForbiddenError(err.Error()))
 		case errors.Is(err, service.ErrPendingInvitationExists):
 			c.Error(apperrors.NewConflictError(err.Error()))

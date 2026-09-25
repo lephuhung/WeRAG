@@ -85,7 +85,8 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 			status: http.StatusForbidden,
 		},
 		{
-			// Admins no longer mutate knowledge bases — same as members.
+			// Admins bypass the creator check (creator OR Admin+);
+			// members cannot touch another member's KB.
 			name: "admin noncreator",
 			role: types.TenantRoleAdmin,
 			kb: &types.KnowledgeBase{
@@ -93,7 +94,7 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 				TenantID:  1,
 				CreatorID: "other",
 			},
-			status: http.StatusForbidden,
+			status: http.StatusNoContent,
 		},
 
 		{name: "tenant owned", kb: &types.KnowledgeBase{ID: "kb", TenantID: 1}, status: http.StatusForbidden},
@@ -152,8 +153,14 @@ func TestBodyKBOwnershipPreservesStatusAndTenantBoundary(t *testing.T) {
 			})
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/write", nil))
+			// Admin role bypasses the creator lookup entirely (lazy
+			// ownership resolution); everything else looks up once.
+			wantCalls := 1
+			if tt.name == "admin noncreator" {
+				wantCalls = 0
+			}
 			require.Equal(t, tt.status, w.Code, w.Body.String())
-			require.Equal(t, 1, calls)
+			require.Equal(t, wantCalls, calls)
 		})
 	}
 }

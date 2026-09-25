@@ -155,6 +155,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTenantMemberRepository))
 	must(container.Provide(repository.NewTenantInvitationRepository))
 	must(container.Provide(repository.NewKBAccessGrantRepository))
+	must(container.Provide(repository.NewKBInvitationRepository))
 	must(container.Provide(repository.NewAuditLogRepository))
 	must(container.Provide(repository.NewKnowledgeBaseRepository))
 	must(container.Provide(repository.NewKnowledgeRepository))
@@ -219,6 +220,19 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAuditLogRetentionRunner))
 	must(container.Provide(service.NewKnowledgeBaseService))
 	must(container.Provide(service.NewKBAccessGrantService)) // KBAccessGrantService must be registered before KnowledgeService and KnowledgeTagService
+	must(container.Provide(func(repo interfaces.KnowledgeBaseRepository) interfaces.KBInviteKBReader {
+		return repo
+	}))
+	must(container.Provide(func(repo interfaces.UserRepository) interfaces.KBInviteUserReader {
+		return repo
+	}))
+	must(container.Provide(func(svc interfaces.TenantMemberService) interfaces.KBInviteMemberReader {
+		return svc
+	}))
+	must(container.Provide(func(audit interfaces.AuditLogService) interfaces.KBInviteAuditWriter {
+		return audit
+	}))
+	must(container.Provide(service.NewKBInvitationService))
 	must(container.Provide(service.NewKnowledgeService))
 	must(container.Provide(service.NewSpanTracker))
 	must(container.Provide(service.NewChunkService))
@@ -524,6 +538,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTenantMemberHandler))
 	must(container.Provide(handler.NewTenantInvitationHandler))
 	must(container.Provide(handler.NewKBAccessGrantHandler))
+	must(container.Provide(handler.NewKBInvitationHandler))
 	must(container.Provide(handler.NewAuditLogHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))

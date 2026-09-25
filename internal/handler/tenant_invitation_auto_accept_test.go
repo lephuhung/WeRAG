@@ -233,9 +233,9 @@ func TestCreateInvitation_AutoAccept_UnknownEmailReturns404(t *testing.T) {
 	}
 }
 
-func TestCreateInvitation_AutoAccept_APICannotAssignOwnerReturns403(t *testing.T) {
+func TestCreateInvitation_AutoAccept_APICannotAssignAdminReturns403(t *testing.T) {
 	users := &autoAcceptUserSvc{user: &types.User{ID: "u-bob", Email: "bob@x.com"}}
-	members := &autoAcceptMemberSvc{addErr: service.ErrAPIKeyCannotAssignOwner}
+	members := &autoAcceptMemberSvc{addErr: service.ErrAPIKeyCannotAssignAdmin}
 	invites := &autoAcceptInvitationSvc{}
 	h := &TenantInvitationHandler{
 		invitationService: invites,
@@ -245,9 +245,14 @@ func TestCreateInvitation_AutoAccept_APICannotAssignOwnerReturns403(t *testing.T
 	}
 	r := newAutoAcceptTestRouter(h)
 
-	w := postAutoAcceptInvitation(t, r, `{"email":"bob@x.com","role":"owner"}`)
+	w := postAutoAcceptInvitation(t, r, `{"email":"bob@x.com","role":"admin"}`)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s, want 403", w.Code, w.Body.String())
+	}
+	// The retired owner role is rejected with 400 before the service runs.
+	w = postAutoAcceptInvitation(t, r, `{"email":"bob@x.com","role":"owner"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", w.Code, w.Body.String())
 	}
 }
 

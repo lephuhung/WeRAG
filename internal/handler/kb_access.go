@@ -36,7 +36,14 @@ func resolveHandlerKBAccessFor(c *gin.Context, kbID string, kbService middleware
 ) (*access.KBAccess, error) {
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
-	if request.Caller.TenantID == 0 {
+	request.Caller = request.Caller.Normalize()
+	// Tenantless callers proceed only as explicit human SuperAdmins or
+	// real human users; per-KB guards then admit them solely on
+	// platform-public rows (tenant-owned, invited, and malformed rows
+	// stay denied downstream). Anonymous and machine principals stay
+	// unauthorized here.
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		!access.IsAuthenticatedHuman(ctx, request.Caller) {
 		return nil, apperrors.NewUnauthorizedError("Unauthorized")
 	}
 	if kbID == "" {
@@ -60,6 +67,79 @@ func resolveHandlerKBAccessFor(c *gin.Context, kbID string, kbService middleware
 	if err == nil {
 		// Preserve authorization for body-based routes without changing the
 		// execution tenant until the handler performs its resource operation.
+		c.Request = c.Request.WithContext(grant.WithGrant(ctx))
+	}
+	return grant, kbAccessHTTPError(err)
+}
+
+// resolveHandlerKBDownloadAccessFor resolves the dedicated original-download
+// grant for body/query-based endpoints. Invitation reads are never consulted:
+// invite Viewers stay denied here by construction.
+func resolveHandlerKBDownloadAccessFor(c *gin.Context, kbID string, kbService middleware.KBLookup) (*access.KBAccess, error) {
+	ctx := c.Request.Context()
+	request := middleware.KBAccessRequest(c)
+	request.Caller = request.Caller.Normalize()
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		!access.IsAuthenticatedHuman(ctx, request.Caller) {
+		return nil, apperrors.NewUnauthorizedError("Unauthorized")
+	}
+	if kbID == "" {
+		return nil, apperrors.NewBadRequestError("Knowledge base ID cannot be empty")
+	}
+	if err := requireTenantAPIKeyKnowledgeBase(ctx, kbID); err != nil {
+		return nil, err
+	}
+	// No stashed-grant shortcut: a Viewer stash may come from a read-only
+	// invitation, which must never confer original download. The guard on the
+	// download routes already applied this same decision.
+	kb, err := kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		if stderrors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			return nil, apperrors.NewNotFoundError("knowledge base not found")
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		return nil, apperrors.NewInternalServerError(err.Error())
+	}
+	grant, err := access.ResolveKBForDownload(ctx, request, kb)
+	if err == nil {
+		c.Request = c.Request.WithContext(grant.WithGrant(ctx))
+	}
+	return grant, kbAccessHTTPError(err)
+}
+
+// resolveHandlerKBManageAccessFor resolves the owner-aware mutation grant
+// for body/query-based endpoints: owning tenant via the existing policy,
+// platform-owned rows via explicit human SuperAdmin only.
+func resolveHandlerKBManageAccessFor(c *gin.Context, kbID string, kbService middleware.KBLookup,
+	_ interfaces.KBAccessGrantService,
+) (*access.KBAccess, error) {
+	ctx := c.Request.Context()
+	request := middleware.KBAccessRequest(c)
+	request.Caller = request.Caller.Normalize()
+	// Tenantless mutation is reserved for explicit human SuperAdmins;
+	// deny before lookup to avoid exposing KB existence to other callers.
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+		return nil, apperrors.NewUnauthorizedError("Unauthorized")
+	}
+	if kbID == "" {
+		return nil, apperrors.NewBadRequestError("Knowledge base ID cannot be empty")
+	}
+	if err := requireTenantAPIKeyKnowledgeBase(ctx, kbID); err != nil {
+		return nil, err
+	}
+	if grant, ok := resolvedKBAccess(c, kbID, types.KBPermissionEditor); ok {
+		return grant, nil
+	}
+	kb, err := kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		if stderrors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			return nil, apperrors.NewNotFoundError("knowledge base not found")
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		return nil, apperrors.NewInternalServerError(err.Error())
+	}
+	grant, err := access.ResolveKBForManage(ctx, request, kb)
+	if err == nil {
 		c.Request = c.Request.WithContext(grant.WithGrant(ctx))
 	}
 	return grant, kbAccessHTTPError(err)

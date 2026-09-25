@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/handler/dto"
@@ -299,7 +301,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 			}
 			ownedCount := 0
 			for _, m := range memberships {
-				if m != nil && m.Role == types.TenantRoleOwner {
+				if m != nil && m.Role.IsTenantAdmin() {
 					ownedCount++
 				}
 			}
@@ -366,12 +368,12 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	// unreachable (middleware/auth.go's orphan-recovery only fires for a
 	// user's home tenant, never for a freshly-created side workspace),
 	// yet still occupies storage_bucket / name uniqueness slots.
-	// Idempotent: EnsureOwner is a no-op when the row already exists,
-	// so cross-tenant superusers create-and-own through the same path.
+	// Idempotent: EnsureAdmin is a no-op when the row already exists,
+	// so cross-tenant superusers create-and-administer through the same path.
 	if h.memberService != nil && !platformCaller {
-		if _, err := h.memberService.EnsureOwner(ctx, caller.ID, createdTenant.ID); err != nil {
+		if _, err := h.memberService.EnsureAdmin(ctx, caller.ID, createdTenant.ID); err != nil {
 			logger.Errorf(ctx,
-				"Failed to bootstrap owner membership for user %s tenant %d: %v — rolling back tenant",
+				"Failed to bootstrap admin membership for user %s tenant %d: %v — rolling back tenant",
 				caller.ID, createdTenant.ID, err)
 			if delErr := h.service.DeleteTenant(ctx, createdTenant.ID); delErr != nil {
 				logger.Errorf(ctx,
@@ -379,13 +381,13 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 					createdTenant.ID, delErr,
 				)
 			}
-			c.Error(errors.NewInternalServerError("Failed to finalise workspace ownership").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to finalise workspace administration").WithDetails(err.Error()))
 			return
 		}
 
 		// Quota TOCTOU guard. The earlier ownedCount check is racy:
 		// N concurrent CreateTenant calls all read ownedCount < cap,
-		// all proceed, all insert. Re-count AFTER the Owner membership
+		// all proceed, all insert. Re-count AFTER the Admin membership
 		// is committed; if we landed over the cap, roll back this
 		// tenant + its membership so the bound holds in steady state.
 		// We only do this for non-superusers (the only path that has
@@ -398,7 +400,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 			} else {
 				ownedNow := 0
 				for _, m := range memberships {
-					if m != nil && m.Role == types.TenantRoleOwner {
+					if m != nil && m.Role.IsTenantAdmin() {
 						ownedNow++
 					}
 				}
@@ -1145,6 +1147,18 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 	logger.Infof(ctx, "Deleting tenant, ID: %d", id)
 
 	if err := h.service.DeleteTenant(ctx, id); err != nil {
+		// A data-scope dependency blocks the delete transactionally:
+		// surface the blocking KB ID so operators know what to move
+		// or delete first.
+		var depErr *repository.TenantKBDependencyError
+		if stderrors.As(err, &depErr) {
+			logger.Warnf(ctx, "Workspace deletion blocked by knowledge base %s, ID: %d",
+				secutils.SanitizeForLog(depErr.KnowledgeBaseID), id)
+			c.Error(errors.NewConflictError(
+				fmt.Sprintf("Workspace cannot be deleted while knowledge base %q still uses it", depErr.KnowledgeBaseID),
+			).WithDetails(fmt.Sprintf("knowledge_base_id=%s", depErr.KnowledgeBaseID)))
+			return
+		}
 		if appErr, ok := errors.IsAppError(err); ok {
 			logger.Error(ctx, "Failed to delete workspace: application error", appErr)
 			c.Error(appErr)
@@ -1415,7 +1429,7 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 // parser/provider engine configuration (endpoints, credentials, model
 // parameters). It mirrors the model-catalog authority axis: system
 // admins on JWT, or platform API keys carrying system_models_manage.
-// Tenant roles — including Owner — never qualify.
+// Tenant roles — including Admin — never qualify.
 func canManageParserEngineConfig(ctx context.Context) bool {
 	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
 		return scope.IsPlatform() && scope.HasCapability(types.APIKeyCapabilitySystemModelsManage)

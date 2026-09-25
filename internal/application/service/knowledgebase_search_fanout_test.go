@@ -819,20 +819,20 @@ func TestAuthorizeKBAccess_SameTenantAllPass(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAuthorizeKBAccess_ForeignTenantWithShare_OK(t *testing.T) {
+func TestAuthorizeKBAccess_ForeignTenantLegacyGrantDenied(t *testing.T) {
 	t.Parallel()
-	share := &fakeKBGrantForAuth{
+	legacyGrant := &fakeKBGrantForAuth{
 		allowed: map[string]map[uint64]bool{
 			"kb-foreign": {7: true},
 		},
 	}
-	s := &knowledgeBaseService{kbAccessGrantService: share}
+	s := &knowledgeBaseService{kbAccessGrantService: legacyGrant}
 	kbs := []*types.KnowledgeBase{
 		{ID: "kb-own", TenantID: 7},
 		{ID: "kb-foreign", TenantID: 99},
 	}
 	err := s.authorizeKBAccess(ctxWithTenantForAuth(7), kbs)
-	require.NoError(t, err)
+	require.Error(t, err, "legacy tenant-wide grants must not authorize search fan-out")
 }
 
 func TestAuthorizeKBAccess_ForeignTenantNoShare_NotFound(t *testing.T) {
@@ -854,16 +854,16 @@ func TestAuthorizeKBAccess_ForeignTenantNoShare_NotFound(t *testing.T) {
 		"reject must surface as NotFound to avoid leaking foreign KB existence")
 }
 
-func TestAuthorizeKBAccess_PermissionLookupError_500(t *testing.T) {
+func TestAuthorizeKBAccess_LegacyGrantLookupErrorDoesNotAuthorize(t *testing.T) {
 	t.Parallel()
-	share := &fakeKBGrantForAuth{err: stderrors.New("share infra down")}
+	share := &fakeKBGrantForAuth{err: stderrors.New("legacy grant lookup unavailable")}
 	s := &knowledgeBaseService{kbAccessGrantService: share}
 	kbs := []*types.KnowledgeBase{{ID: "kb-foreign", TenantID: 99}}
 	err := s.authorizeKBAccess(ctxWithTenantForAuth(7), kbs)
-	require.Error(t, err)
+	require.Error(t, err, "retired grant lookup errors cannot turn into access")
 	app, ok := apperrors.IsAppError(err)
 	require.True(t, ok)
-	assert.Equal(t, apperrors.ErrInternalServer, app.Code)
+	assert.Equal(t, apperrors.ErrNotFound, app.Code)
 }
 
 func TestAuthorizeKBAccess_EmptyKBs_OK(t *testing.T) {

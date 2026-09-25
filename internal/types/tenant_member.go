@@ -15,8 +15,15 @@ import (
 type TenantRole string
 
 const (
-	// TenantRoleOwner has full control over the tenant, including tenant
-	// deletion, ownership transfer, and managing tenant API keys.
+	// TenantRoleOwner is a legacy compatibility alias for full tenant
+	// control. New code must use TenantRoleAdmin: the human role model
+	// is exactly SuperAdmin (platform, see User.IsSystemAdmin), Tenant
+	// Admin and Member. Owner is retained only so existing rows and
+	// callers keep working until an explicitly reviewed owner->admin
+	// migration is approved; Owner always satisfies Admin-level checks
+	// via HasPermission. Do not assign Owner to new memberships.
+	//
+	// Deprecated: use TenantRoleAdmin for new grants.
 	TenantRoleOwner TenantRole = "owner"
 	// TenantRoleAdmin manages users, integrations, knowledge bases, access
 	// grants and tenant-scoped configuration such as model providers,
@@ -43,9 +50,45 @@ var tenantRoleLevel = map[TenantRole]int{
 }
 
 // IsValid reports whether r is one of the defined tenant roles.
+// Owner is still accepted for backward compatibility; see the
+// deprecation note on TenantRoleOwner.
 func (r TenantRole) IsValid() bool {
 	_, ok := tenantRoleLevel[r]
 	return ok
+}
+
+// IsHumanTenantRole reports whether r is one of the exactly two
+// tenant-scoped human roles approved by the tenant/KB permission plan:
+// admin (Tenant Admin) or member (Member). SuperAdmin is platform-wide
+// (User.IsSystemAdmin) and never a tenant membership role; owner is a
+// legacy alias that must not be assigned to new memberships.
+func (r TenantRole) IsHumanTenantRole() bool {
+	return r == TenantRoleAdmin || r == TenantRoleMember
+}
+
+// IsTenantAdmin reports whether r carries Tenant Admin authority.
+// Legacy Owner rows satisfy this (Owner level 40 >= Admin level 30)
+// so existing owners keep working until the reviewed owner->admin
+// migration; new grants must use TenantRoleAdmin directly.
+func (r TenantRole) IsTenantAdmin() bool {
+	return r.HasPermission(TenantRoleAdmin)
+}
+
+// NormalizeTenantRole maps legacy membership values to the approved
+// three-role model: contributor/viewer -> member; owner/admin -> admin
+// for display/assignment purposes (owner rows themselves are preserved
+// until the migration decision). Unknown/empty values default to member
+// (fail-closed least privilege).
+func NormalizeTenantRole(r TenantRole) TenantRole {
+	switch r {
+	case TenantRoleAdmin, TenantRoleOwner:
+		return TenantRoleAdmin
+	case TenantRoleMember:
+		return TenantRoleMember
+	default:
+		// Legacy contributor/viewer and any unknown value collapse to member.
+		return TenantRoleMember
+	}
 }
 
 // Level returns the numeric privilege level of the role. Unknown roles

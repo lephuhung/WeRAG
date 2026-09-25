@@ -736,14 +736,20 @@ func (s *temporaryDocumentService) ResolveForPrompt(ctx context.Context, tenantI
 		})
 		// Image-type attachments always expose their image so vision models can
 		// see it directly; text documents only attach extracted images when the
-		// question is visual, to avoid gratuitous multimodal latency.
+		// question is visual, to avoid gratuitous multimodal latency. The
+		// per-document ownership is recorded alongside the aggregate list so
+		// callers can tell which documents are actually vision-served (the
+		// aggregate cap may cut off later documents).
+		var owned []string
 		if docparser.IsImageFormat(document.FileType) || isVisualDocumentQuery(query) {
 			for _, image := range temporaryDocumentImageRefs(document.ImageRefs) {
 				if image.URL != "" && len(result.ImageURLs) < 4 {
 					result.ImageURLs = append(result.ImageURLs, image.URL)
+					owned = append(owned, image.URL)
 				}
 			}
 		}
+		result.AttachmentImageURLs = append(result.AttachmentImageURLs, owned)
 	}
 	return result, nil
 }

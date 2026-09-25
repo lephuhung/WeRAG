@@ -51,6 +51,10 @@ type TenantMemberRepository interface {
 	// CountActiveOwners reports how many active rows in the tenant carry
 	// the owner role. Used by service-layer invariant checks ("cannot
 	// remove the last owner").
+	//
+	// Deprecated: the owner role is retired (migration 000112). Kept so
+	// existing implementations keep compiling; always returns 0 on
+	// migrated data. New code uses the last-Admin invariant instead.
 	CountActiveOwners(ctx context.Context, tenantID uint64) (int64, error)
 
 	// HasAnyMembers reports whether the tenant has at least one active
@@ -63,9 +67,23 @@ type TenantMemberRepository interface {
 	// active Owners, fixing the TOCTOU race where two concurrent
 	// demotions could leave the tenant ownerless. Returns the
 	// repo-level ErrLastOwner sentinel when no other Owner exists.
+	//
+	// Deprecated: the owner role is retired (migration 000112). Use
+	// DemoteAdminAtomically for the surviving last-Admin invariant.
 	DemoteOwnerAtomically(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
 
 	// RemoveOwnerAtomically soft-deletes an Owner row under the same
 	// lock as DemoteOwnerAtomically.
+	//
+	// Deprecated: see DemoteOwnerAtomically. Use RemoveAdminAtomically.
 	RemoveOwnerAtomically(ctx context.Context, userID string, tenantID uint64) error
+
+	// DemoteAdminAtomically demotes an Admin to Member inside a
+	// transaction holding an UPDATE lock on the tenant's other active
+	// Admins. Returns ErrLastAdmin when no other Admin exists.
+	DemoteAdminAtomically(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
+
+	// RemoveAdminAtomically soft-deletes an Admin row under the same
+	// lock as DemoteAdminAtomically.
+	RemoveAdminAtomically(ctx context.Context, userID string, tenantID uint64) error
 }

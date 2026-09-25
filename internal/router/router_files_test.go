@@ -876,7 +876,7 @@ func grantedKBFileRequest() *http.Request {
 			url.QueryEscape("resource://ShArEdKbHaNdLe00000000"), nil)
 }
 
-func TestMessageScopedFilesServesGrantedKBResource(t *testing.T) {
+func TestMessageScopedFilesRejectsLegacyTenantGrant(t *testing.T) {
 	engine, requestedPath := newGrantedKBTestEngine(t, true,
 		types.References{{
 			KnowledgeID:     "knowledge-1",
@@ -890,11 +890,11 @@ func TestMessageScopedFilesServesGrantedKBResource(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "shared-kb-image" {
-		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("legacy tenant-wide grant must be denied: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
-	if *requestedPath != "local://10005/images/quadrant.jpg" {
-		t.Fatalf("requested path = %q", *requestedPath)
+	if *requestedPath != "" {
+		t.Fatalf("denied request reached storage path %q", *requestedPath)
 	}
 }
 
@@ -960,7 +960,7 @@ func TestMessageScopedFilesGrantedKBRequiresResourceTenantMatch(t *testing.T) {
 	}
 }
 
-func TestMessageScopedFilesServesLegacyMessageViaGrantedKB(t *testing.T) {
+func TestMessageScopedFilesRejectsLegacyMessageTenantGrant(t *testing.T) {
 	// Messages written before agent_tenant_id was populated record no source
 	// tenant; the granted KB evidence still authorizes the resource.
 	gin.SetMode(gin.TestMode)
@@ -1010,12 +1010,12 @@ func TestMessageScopedFilesServesLegacyMessageViaGrantedKB(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "legacy-shared-kb-image" {
-		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("legacy tenant-wide grant must be denied: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestMessageScopedFilesGrantedKBResolvesKnowledgeOwner(t *testing.T) {
+func TestMessageScopedFilesRejectsLegacyKnowledgeOwnerGrant(t *testing.T) {
 	// Older references predate the denormalized knowledge_base_id field; the
 	// fallback still resolves their KB through the knowledge entry.
 	gin.SetMode(gin.TestMode)
@@ -1066,12 +1066,12 @@ func TestMessageScopedFilesGrantedKBResolvesKnowledgeOwner(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "resolved-kb-image" {
-		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("legacy tenant-wide grant must be denied: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestMessageScopedFilesGrantedKBAcceptsImageInfoEvidence(t *testing.T) {
+func TestMessageScopedFilesRejectsImageInfoWithLegacyTenantGrant(t *testing.T) {
 	engine, requestedPath := newGrantedKBTestEngine(t, true,
 		types.References{{
 			KnowledgeID:     "knowledge-1",
@@ -1086,11 +1086,11 @@ func TestMessageScopedFilesGrantedKBAcceptsImageInfoEvidence(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "shared-kb-image" {
-		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("legacy tenant-wide grant must be denied: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
-	if *requestedPath != "local://10005/images/quadrant.jpg" {
-		t.Fatalf("requested path = %q", *requestedPath)
+	if *requestedPath != "" {
+		t.Fatalf("denied request reached storage path %q", *requestedPath)
 	}
 }
 
@@ -1113,7 +1113,7 @@ func TestMessageScopedFilesGrantedKBRejectsHandlePrefix(t *testing.T) {
 	}
 }
 
-func TestMessageScopedFilesServesGrantedKBResourceFromAgentSteps(t *testing.T) {
+func TestMessageScopedFilesRejectsAgentStepLegacyTenantGrant(t *testing.T) {
 	engine, requestedPath := newGrantedKBTestEngineFromMessage(t, true,
 		&types.Message{
 			AgentID:       "own-agent-1",
@@ -1144,11 +1144,11 @@ func TestMessageScopedFilesServesGrantedKBResourceFromAgentSteps(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "shared-kb-image" {
-		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("legacy tenant-wide grant must be denied: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
-	if *requestedPath != "local://10005/images/quadrant.jpg" {
-		t.Fatalf("requested path = %q", *requestedPath)
+	if *requestedPath != "" {
+		t.Fatalf("denied request reached storage path %q", *requestedPath)
 	}
 }
 

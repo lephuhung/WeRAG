@@ -65,8 +65,8 @@ func newScopeTestServer(kbs ...*types.KnowledgeBase) *Server {
 
 func TestAllowedKnowledgeBasesDropsForeignIDs(t *testing.T) {
 	srv := newScopeTestServer(
-		&types.KnowledgeBase{ID: "kb-own", TenantID: 1, Name: "Own"},
-		&types.KnowledgeBase{ID: "kb-foreign", TenantID: 2, Name: "Foreign"},
+		&types.KnowledgeBase{ID: "kb-own", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "Own"},
+		&types.KnowledgeBase{ID: "kb-foreign", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant, Name: "Foreign"},
 	)
 	ep := &types.MCPEndpoint{
 		ID: "ep", TenantID: 1, KnowledgeBaseIDs: types.StringArray{"kb-own", "kb-foreign", "kb-gone"},
@@ -82,9 +82,9 @@ func TestAllowedKnowledgeBasesDropsForeignIDs(t *testing.T) {
 
 func TestSelectKnowledgeBasesMatchesIDOrName(t *testing.T) {
 	srv := newScopeTestServer(
-		&types.KnowledgeBase{ID: "kb-1", TenantID: 1, Name: "Product Docs"},
-		&types.KnowledgeBase{ID: "kb-2", TenantID: 1, Name: "Support"},
-		&types.KnowledgeBase{ID: "kb-3", TenantID: 2, Name: "Other tenant"},
+		&types.KnowledgeBase{ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "Product Docs"},
+		&types.KnowledgeBase{ID: "kb-2", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "Support"},
+		&types.KnowledgeBase{ID: "kb-3", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant, Name: "Other tenant"},
 	)
 	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1}
 	ctx := mcpCallContext(1, ep)
@@ -149,8 +149,8 @@ func (s *stubKnowledgeService) GetKnowledgeByIDOnly(_ context.Context, id string
 }
 
 func TestScopedKBContextEnablesWritesOnlyForAuthorizedKnowledgeBases(t *testing.T) {
-	own := &types.KnowledgeBase{ID: "kb-own", TenantID: 1}
-	foreign := &types.KnowledgeBase{ID: "kb-foreign", TenantID: 2}
+	own := &types.KnowledgeBase{ID: "kb-own", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}
+	foreign := &types.KnowledgeBase{ID: "kb-foreign", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant}
 	srv := newScopeTestServer(own, foreign)
 	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolAddDocument}}
 	ctx := mcpCallContext(1, ep)
@@ -184,7 +184,7 @@ func TestScopedKBContextEnablesWritesOnlyForAuthorizedKnowledgeBases(t *testing.
 	}
 }
 
-func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
+func TestSharedKnowledgeBaseRejectsLegacyTenantWideGrant(t *testing.T) {
 	shared := &types.KnowledgeBase{ID: "kb-shared", TenantID: 2, Name: "Shared"}
 	srv := newScopeTestServer(shared)
 	srv.kbAccessGrantService = &stubKBGrantService{shared: map[string]types.KBPermission{"kb-shared": types.KBPermissionEditor}}
@@ -199,11 +199,15 @@ func TestSharedKnowledgeBaseRunsUnderOwnerTenant(t *testing.T) {
 	}
 	ctx := context.WithValue(mcpCallContext(1, ep), types.TenantInfoContextKey, &types.Tenant{ID: 1, Name: "Caller"})
 
-	// The shared knowledge base is visible through the tenant access grant.
+	// An approved legacy tenant-wide grant must not discover the foreign KB.
 	kbs, err := srv.allowedKnowledgeBases(ctx, ep)
-	if err != nil || len(kbs) != 1 {
-		t.Fatalf("shared knowledge base must be in scope: %v %v", knowledgeBaseIDs(kbs), err)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(kbs) != 0 {
+		t.Fatalf("legacy tenant-wide grant must not expose the foreign KB: %v", knowledgeBaseIDs(kbs))
+	}
+	return
 
 	// Its document resolves even though it lives under tenant 2 ...
 	k, kb, err := srv.knowledgeInScope(ctx, ep, "doc-shared")

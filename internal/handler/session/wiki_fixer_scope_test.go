@@ -45,7 +45,7 @@ func (s *wikiFixerKBGrantStub) GetKBScope(_ context.Context, _ string) (*types.K
 	return nil, nil
 }
 
-func TestResolveBuiltinWikiFixerTenantScope_SharedEditorUsesSourceTenant(t *testing.T) {
+func TestResolveBuiltinWikiFixerTenantScopeRejectsLegacyEditorGrant(t *testing.T) {
 	agent := &types.CustomAgent{ID: types.BuiltinWikiFixerID, TenantID: 10, Name: "Wiki Fixer"}
 	kbLookup := &wikiFixerKBLookupStub{
 		kb: &types.KnowledgeBase{ID: "kb-shared", TenantID: 20, Name: "Shared KB"},
@@ -65,19 +65,17 @@ func TestResolveBuiltinWikiFixerTenantScope_SharedEditorUsesSourceTenant(t *test
 		kbGrants,
 	)
 
-	require.NotSame(t, agent, gotAgent)
-	require.Equal(t, uint64(20), gotAgent.TenantID)
-	require.Equal(t, uint64(20), effectiveTenantID)
+	require.Same(t, agent, gotAgent, "legacy tenant-wide grant must not switch execution scope")
+	require.Zero(t, effectiveTenantID)
 	require.Equal(t, uint64(10), agent.TenantID, "must not mutate the cached built-in agent")
 	require.Equal(t, "kb-shared", kbLookup.calledWith)
-	require.Equal(t, "kb-shared", kbGrants.checkedKBID)
-	require.Equal(t, uint64(10), kbGrants.checkedTenantID)
+	require.Empty(t, kbGrants.checkedKBID, "retired grant lookup must not be consulted")
 }
 
 // The scoped run executes in the owner's workspace, so the caller's own fixer
 // customizations must not select the owner's other KBs, MCP services, skills
 // or models there.
-func TestResolveBuiltinWikiFixerTenantScope_PinsConfigToTheSharedKB(t *testing.T) {
+func TestResolveBuiltinWikiFixerTenantScopeDoesNotPinToLegacySharedKB(t *testing.T) {
 	agent := &types.CustomAgent{ID: types.BuiltinWikiFixerID, TenantID: 10, Config: types.CustomAgentConfig{
 		KBSelectionMode:     "all",
 		MCPSelectionMode:    "",
@@ -93,14 +91,9 @@ func TestResolveBuiltinWikiFixerTenantScope_PinsConfigToTheSharedKB(t *testing.T
 		context.Background(), agent, 10, types.TenantRoleMember, []string{"kb-shared"}, kbLookup, kbGrants,
 	)
 
-	cfg := gotAgent.Config
-	require.Equal(t, "selected", cfg.KBSelectionMode)
-	require.Equal(t, []string{"kb-shared"}, cfg.KnowledgeBases)
-	require.Equal(t, "none", cfg.MCPSelectionMode)
-	require.Equal(t, "none", cfg.SkillsSelectionMode)
-	require.Empty(t, cfg.SandboxConfigID)
-	require.False(t, cfg.WebSearchEnabled)
-	require.Empty(t, cfg.ModelID)
+	require.Same(t, agent, gotAgent, "retired tenant-wide grant must not reconfigure the agent")
+	require.Equal(t, "all", gotAgent.Config.KBSelectionMode)
+	require.Empty(t, gotAgent.Config.KnowledgeBases)
 	require.Equal(t, "all", agent.Config.KBSelectionMode, "must not mutate the caller's agent")
 }
 

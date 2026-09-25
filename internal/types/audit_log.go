@@ -169,10 +169,18 @@ const (
 	AuditActionKBAccessApproved  AuditAction = "kb.access_approved"
 	AuditActionKBAccessRejected  AuditAction = "kb.access_rejected"
 	AuditActionKBAccessRevoked   AuditAction = "kb.access_revoked"
-	AuditActionKBDuplicated      AuditAction = "kb.duplicated"
-	AuditActionKBCloneStarted    AuditAction = "kb.clone_started"
-	AuditActionKBCloneCompleted  AuditAction = "kb.clone_completed"
-	AuditActionKBCloneFailed     AuditAction = "kb.clone_failed"
+	// KB invitation lifecycle actions (recipient-bound read invitations).
+	AuditActionKBInviteIssued   AuditAction = "kb.invite_issued"
+	AuditActionKBInviteAccepted AuditAction = "kb.invite_accepted"
+	AuditActionKBInviteRevoked  AuditAction = "kb.invite_revoked"
+	AuditActionKBDuplicated     AuditAction = "kb.duplicated"
+	// AuditActionKBScopeChanged records a platform owner/scope transition
+	// (tenant↔public): details carry actor, old/new owner_tenant_id and
+	// visibility, the target tenant when present, the KB ID, and outcome.
+	AuditActionKBScopeChanged   AuditAction = "kb.scope_changed"
+	AuditActionKBCloneStarted   AuditAction = "kb.clone_started"
+	AuditActionKBCloneCompleted AuditAction = "kb.clone_completed"
+	AuditActionKBCloneFailed    AuditAction = "kb.clone_failed"
 
 	AuditActionKnowledgeCreated        AuditAction = "knowledge.created"
 	AuditActionKnowledgeUpdated        AuditAction = "knowledge.updated"

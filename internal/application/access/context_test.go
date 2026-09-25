@@ -15,16 +15,18 @@ func callerContext() context.Context {
 	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 }
 
-func TestKBGrantSurvivesExecutionSwitchAndDetachWithoutWidening(t *testing.T) {
+func TestKBInviteSurvivesExecutionSwitchAndDetachWithoutWidening(t *testing.T) {
 	ctx := callerContext()
 	kb := &types.KnowledgeBase{ID: "shared", TenantID: 2}
 	grants := &grantLookup{grants: map[string]types.KBPermission{"shared/1": types.KBPermissionViewer}}
-	grant, err := ResolveKB(
+	invites := &stubInvites{accepted: map[string]bool{"shared\x00user": true}}
+	grant, err := ResolveKBWithInvite(
 		ctx,
 		KBRequest{Caller: types.CallerFromContext(ctx)},
 		kb,
 		types.KBPermissionViewer,
 		grants,
+		invites,
 	)
 	require.NoError(t, err)
 	ctx = grant.Context(ctx)
@@ -74,8 +76,8 @@ func TestExecutionTenantDoesNotGrantOwnershipOrChangeGrantIdentity(t *testing.T)
 	allowed, err := NewKBPermissions(ctx, grants).Check("private", 2, types.KBPermissionViewer)
 	require.NoError(t, err)
 	require.False(t, allowed)
-	require.Equal(t, "private", grants.queriedKB)
-	require.Equal(t, uint64(1), grants.queriedT, "grant lookup must use the caller tenant, not the execution tenant")
+	require.Empty(t, grants.queriedKB, "legacy tenant grants are not consulted")
+	require.Zero(t, grants.queriedT, "legacy tenant grants are not consulted")
 	ctx = types.WithExecutionTenant(context.Background(), 2)
 	allowed, err = NewKBPermissions(ctx, nil).Check("private", 2, types.KBPermissionViewer)
 	require.NoError(t, err)
@@ -93,6 +95,46 @@ func TestKBGrantBranchesRemainIndependent(t *testing.T) {
 	require.False(t, HasKBGrant(first, "second", 2, types.KBPermissionViewer))
 	require.True(t, HasKBGrant(second, "second", 2, types.KBPermissionViewer))
 	require.False(t, HasKBGrant(second, "first", 2, types.KBPermissionViewer))
+}
+
+func TestKBPermissionsPublicOwnerSemantics(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		scope      *types.KBScope
+		required   types.KBPermission
+		want       bool
+		wantLegacy bool
+	}{
+		{
+			name:     "platform public row grants cross-tenant human read",
+			scope:    &types.KBScope{TenantID: 2, OwnerTenantID: 0, Visibility: types.KBVisibilityPublic},
+			required: types.KBPermissionViewer, want: true,
+		},
+		{
+			name:     "platform public row never grants writes",
+			scope:    &types.KBScope{TenantID: 2, OwnerTenantID: 0, Visibility: types.KBVisibilityPublic},
+			required: types.KBPermissionEditor, want: false,
+		},
+		{
+			name:     "tenant row with legacy grant map stays denied cross-tenant",
+			scope:    &types.KBScope{TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant},
+			required: types.KBPermissionViewer, want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := types.WithCaller(callerContext(), types.Caller{TenantID: 1, UserID: "user", Role: types.TenantRoleMember})
+			lookup := &grantLookup{
+				scope:  tt.scope,
+				grants: map[string]types.KBPermission{"kb/1": types.KBPermissionViewer},
+			}
+			allowed, err := NewKBPermissions(ctx, lookup).Check("kb", 2, tt.required)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, allowed)
+			legacyAllowed, err := NewKBGrantPermissions(ctx, lookup, 1).Check("kb", types.KBPermissionViewer)
+			require.NoError(t, err)
+			require.False(t, legacyAllowed, "tenant-wide grant helper must fail closed")
+		})
+	}
 }
 
 func TestKBPermissionsOwnerShortcutOnlyGrantsRead(t *testing.T) {

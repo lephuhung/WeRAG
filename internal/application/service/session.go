@@ -66,7 +66,7 @@ func loadSessionForRead(
 	tenantID uint64,
 	ownerID, sessionID string,
 ) (*types.Session, error) {
-	isAdmin := types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner)
+	isAdmin := types.TenantRoleFromContext(ctx).IsTenantAdmin()
 
 	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
 	if err == nil {
@@ -347,12 +347,12 @@ func (s *sessionService) ListSessions(
 	query.TenantID = types.MustTenantIDFromContext(ctx)
 	// API / IM / embed source filters are tenant-wide admin views over channel
 	// traffic. Gate them behind Admin+ and drop the per-user owner scope so an
-	// Owner/admin can observe sessions that are otherwise isolated per key,
+	// Admin can observe sessions that are otherwise isolated per key,
 	// visitor, or IM identity; everyone else stays scoped to their own principal.
 	if types.SessionListSourceRequiresAdmin(query.Source) {
-		if !types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner) {
+		if !types.TenantRoleFromContext(ctx).IsTenantAdmin() {
 			return nil, apperrors.NewForbiddenError(
-				"listing channel sessions requires tenant owner role",
+				"listing channel sessions requires tenant admin role",
 			)
 		}
 		query.UserID = ""

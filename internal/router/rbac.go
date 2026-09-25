@@ -138,6 +138,7 @@ type rbacGuards struct {
 	knowledgeService middleware.KnowledgeLookup
 	chunkService     middleware.ChunkLookup
 	kbGrantService   interfaces.KBAccessGrantService
+	kbInviteService  interfaces.KBInvitationService
 
 	// apiKeyAuthorizer is the single source of truth for which routes an
 	// X-API-Key principal may call. Routes opt in via the apiKeyGroup
@@ -159,6 +160,7 @@ func newRBACGuards(
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 	kbGrantService interfaces.KBAccessGrantService,
+	kbInviteService interfaces.KBInvitationService,
 ) *rbacGuards {
 	g := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	if kbHandler != nil {
@@ -182,6 +184,7 @@ func newRBACGuards(
 	g.knowledgeService = knowledgeService
 	g.chunkService = chunkService
 	g.kbGrantService = kbGrantService
+	g.kbInviteService = kbInviteService
 	return g
 }
 
@@ -196,6 +199,16 @@ func (g *rbacGuards) Admin() gin.HandlerFunc {
 	return middleware.RequireRole(types.TenantRoleAdmin, g.cfg)
 }
 
+// TenantAdmin enforces Tenant Admin authority unconditionally: unlike
+// Admin() (which logs-and-passes when the RBAC rollout flag is off),
+// this guard denies Members even in rollout-off mode. Use it for the
+// plan-sensitive operations only: KB create/delete/configuration and
+// membership/invitation management. Legacy Owner passes (Owner >= Admin).
+// SuperAdmin passes. API-key principals defer to the APIKeyGate.
+func (g *rbacGuards) TenantAdmin() gin.HandlerFunc {
+	return middleware.RequireTenantAdmin(g.cfg)
+}
+
 func (g *rbacGuards) AdminOrSystemAdmin() gin.HandlerFunc {
 	return middleware.RequireRoleOrSystemAdmin(types.TenantRoleAdmin, g.cfg)
 }
@@ -205,11 +218,17 @@ func (g *rbacGuards) MemberOrSystemAdmin() gin.HandlerFunc {
 }
 
 func (g *rbacGuards) OwnerOrSystemAdmin() gin.HandlerFunc {
-	return middleware.RequireRoleOrSystemAdmin(types.TenantRoleOwner, g.cfg)
+	// Deprecated: the owner role is retired (migration 000112).
+	// Retained as an Admin-level alias so older route registrations keep
+	// working; new routes must use AdminOrSystemAdmin or TenantAdmin.
+	return middleware.RequireRoleOrSystemAdmin(types.TenantRoleAdmin, g.cfg)
 }
 
 func (g *rbacGuards) Owner() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleOwner, g.cfg)
+	// Deprecated: the owner role is retired (migration 000112).
+	// Retained as an Admin-level alias; new routes must use Admin or
+	// TenantAdmin (strict, enforced even when the rollout flag is off).
+	return middleware.RequireRole(types.TenantRoleAdmin, g.cfg)
 }
 
 // API-key authorization — a SEPARATE authority from the JWT role/ownership
@@ -434,6 +453,16 @@ func (g *rbacGuards) SystemAdmin() gin.HandlerFunc {
 	return middleware.RequireSystemAdmin(g.cfg)
 }
 
+// PlatformSuperAdmin gates platform-owned flows (public KB creation and
+// other explicit-SuperAdmin-only routes) on explicit human SuperAdmin
+// authority: the system-admin flag plus a real non-synthetic user, never
+// an API-key principal and never CanAccessAllTenants alone. Tenant context
+// is not required. Service layers re-verify the same authority so the
+// check holds for direct callers too.
+func (g *rbacGuards) PlatformSuperAdmin() gin.HandlerFunc {
+	return middleware.RequireExplicitHumanSuperAdmin(g.cfg)
+}
+
 // Ownership-or-role guards. Required role here is the privilege level
 // that bypasses the ownership check; Contributors ALWAYS pass when they
 // own the resource.
@@ -550,11 +579,12 @@ func (g *rbacGuards) PathTenantMatch() gin.HandlerFunc {
 // because someone shared an agent". The kbID is read from the gin
 // param named in `param` (typically "id" for /knowledge-bases/:id/...).
 func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
-	return middleware.RequireKBAccess(
+	return middleware.RequireKBAccessWithInvite(
 		middleware.KBIDFromParam(param),
 		types.KBPermissionViewer,
 		g.kbService,
 		g.kbGrantService,
+		g.kbInviteService,
 		g.cfg,
 	)
 }
@@ -572,16 +602,76 @@ func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 	)
 }
 
+// KBAccessDownload gates original-file download routes (single-file
+// download, batch ZIP). It admits platform-public Viewers while invitation
+// viewers stay denied; preview/read routes stay behind KBAccessRead.
+func (g *rbacGuards) KBAccessDownload(param string) gin.HandlerFunc {
+	return middleware.RequireKBDownload(
+		middleware.KBIDFromParam(param),
+		g.kbService,
+		g.kbGrantService,
+		g.cfg,
+	)
+}
+
+// KBAccessDownloadFromKnowledgeIDParam resolves the KB through a knowledge
+// document (URL `:knowledge_id`/`:id`) for the single-file download route.
+func (g *rbacGuards) KBAccessDownloadFromKnowledgeIDParam(param string) gin.HandlerFunc {
+	return middleware.RequireKBDownload(
+		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
+		g.kbService,
+		g.kbGrantService,
+		g.cfg,
+	)
+}
+
+// KBAccessManage gates content-mutation routes by KB owner: the owning
+// tenant keeps its existing role policy while platform-owned rows admit
+// only an explicit human SuperAdmin. It never treats public Viewer as
+// editor. KB lifecycle creation and owner/scope transitions stay on their
+// dedicated guards (Task 3).
+func (g *rbacGuards) KBAccessManage(param string) gin.HandlerFunc {
+	return middleware.RequireKBManage(
+		middleware.KBIDFromParam(param),
+		g.kbService,
+		g.kbGrantService,
+		g.cfg,
+	)
+}
+
+// KBAccessManageFromKnowledgeIDParam mirrors KBAccessManage for routes that
+// address content through a knowledge document id.
+func (g *rbacGuards) KBAccessManageFromKnowledgeIDParam(param string) gin.HandlerFunc {
+	return middleware.RequireKBManage(
+		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
+		g.kbService,
+		g.kbGrantService,
+		g.cfg,
+	)
+}
+
+// KBAccessManageFromChunkIDParam mirrors KBAccessManage for routes that
+// address chunks directly by chunk id.
+func (g *rbacGuards) KBAccessManageFromChunkIDParam(param string) gin.HandlerFunc {
+	return middleware.RequireKBManage(
+		middleware.KBIDFromChunkIDParam(param, g.chunkService),
+		g.kbService,
+		g.kbGrantService,
+		g.cfg,
+	)
+}
+
 // KBAccessReadFromKnowledgeIDParam is like KBAccessRead but resolves
 // the kb_id by walking a knowledge document (URL `:knowledge_id`)
 // back to its parent KB. Used by the chunk routes whose URL addresses
 // the chunk via /chunks/:knowledge_id rather than /knowledge-bases/:id.
 func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerFunc {
-	return middleware.RequireKBAccess(
+	return middleware.RequireKBAccessWithInvite(
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
 		types.KBPermissionViewer,
 		g.kbService,
 		g.kbGrantService,
+		g.kbInviteService,
 		g.cfg,
 	)
 }
@@ -602,11 +692,12 @@ func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.Handler
 // chunk's denormalised KnowledgeBaseID column). Used by
 // /chunks/by-id/:id read routes.
 func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc {
-	return middleware.RequireKBAccess(
+	return middleware.RequireKBAccessWithInvite(
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
 		types.KBPermissionViewer,
 		g.kbService,
 		g.kbGrantService,
+		g.kbInviteService,
 		g.cfg,
 	)
 }

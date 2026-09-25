@@ -828,6 +828,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     tenant_id INTEGER NOT NULL,
+    owner_tenant_id INTEGER NOT NULL DEFAULT 0,
     creator_id VARCHAR(36),
     type VARCHAR(32) NOT NULL DEFAULT 'document',
     visibility VARCHAR(16) NOT NULL DEFAULT 'tenant',
@@ -1206,6 +1207,16 @@ func (r *realKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 
 func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
+}
+
+func (r *realKBRepo) ListOwnedKnowledgeBases(context.Context, uint64) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (r *realKBRepo) ListPlatformPublicCatalog(
+	context.Context, string, int, int,
+) ([]*types.KnowledgeBase, int64, error) {
+	return nil, 0, nil
 }
 
 func (r *realKBRepo) ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {

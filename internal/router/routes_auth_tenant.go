@@ -62,7 +62,7 @@ func RegisterTenantRoutes(
 	tenantRoutes := r.Group("/tenants")
 	{
 		// Create Tenant workspace对所有已登录用户开放：用户可以为自己再开一个工作区，
-		// handler 内部会调 EnsureOwner 把调用者写成新Tenant workspace的 Owner。
+		// handler 内部会调 EnsureAdmin 把调用者写成新Tenant workspace的 Admin。
 		// 跨Tenant workspace超管走同一个端点，但能携带 storage_quota / status 等
 		// 全字段（见 handler.CreateTenant 内部分支）。
 		// 安全说明：这里不挂 g.CrossTenant()，因为 self-service Create
@@ -79,7 +79,7 @@ func RegisterTenantRoutes(
 		// PathTenantMatch group. Tenant-level surface: full-access keys may
 		// call it, and scoped keys need manage_tenant_settings.
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Member(), handler.GetTenantKV)
-		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Owner(), handler.UpdateTenantKV)
+		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UpdateTenantKV)
 
 		// Per-tenant endpoints share PathTenantMatch at the group level.
 		// Most /tenants/:id/* endpoints stay undeclared for API keys by
@@ -92,30 +92,31 @@ func RegisterTenantRoutes(
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
 				g.Member(), handler.GetTenant)
 			g.apiKeyRoute(tenantByID, http.MethodPut, "",
-				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Owner(), handler.UpdateTenant)
+				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Admin(), handler.UpdateTenant)
 			g.apiKeyRoute(tenantByID, http.MethodDelete, "",
-				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Owner(), handler.DeleteTenant)
-			tenantByID.GET("/api-keys", g.Owner(), handler.ListAPIKeys)
-			tenantByID.POST("/api-keys", g.Owner(), handler.CreateAPIKey)
-			tenantByID.PUT("/api-keys/:key_id", g.Owner(), handler.UpdateAPIKey)
-			tenantByID.DELETE("/api-keys/:key_id", g.Owner(), handler.DeleteAPIKey)
-			tenantByID.GET("/api-principal-config", g.Owner(), handler.GetAPIPrincipalConfig)
-			tenantByID.PUT("/api-principal-config", g.Owner(), handler.UpdateAPIPrincipalConfig)
-			tenantByID.POST("/api-principal-test-token", g.Owner(), handler.CreateAPIPrincipalTestToken)
+				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Admin(), handler.DeleteTenant)
+			tenantByID.GET("/api-keys", g.Admin(), handler.ListAPIKeys)
+			tenantByID.POST("/api-keys", g.Admin(), handler.CreateAPIKey)
+			tenantByID.PUT("/api-keys/:key_id", g.Admin(), handler.UpdateAPIKey)
+			tenantByID.DELETE("/api-keys/:key_id", g.Admin(), handler.DeleteAPIKey)
+			tenantByID.GET("/api-principal-config", g.Admin(), handler.GetAPIPrincipalConfig)
+			tenantByID.PUT("/api-principal-config", g.Admin(), handler.UpdateAPIPrincipalConfig)
+			tenantByID.POST("/api-principal-test-token", g.Admin(), handler.CreateAPIPrincipalTestToken)
 
 			// Tenant member management (PR 3 of #1303). Listing is
 			// Viewer+ so any active member can see the roster; mutation
 			// is Admin+ — managing membership is the admin's core duty.
 			// The owner role itself stays protected in the handlers:
-			// only Owner+ (or a system admin) may assign owner or mutate
-			// an existing owner's membership. /:id/leave is Viewer+ —
-			// any member can quit on their own; the service still
-			// rejects when it would leave the tenant without an Owner.
+			// Membership mutations are strict TenantAdmin (enforced even
+			// when the RBAC rollout flag is off): members must not
+			// manage memberships. /:id/leave is Member+ — any member
+			// can quit on their own; the service still rejects when
+			// it would leave the tenant without an Admin.
 			if memberHandler != nil {
 				g.apiKeyRoute(tenantByID, http.MethodGet, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.Member(), memberHandler.ListMembers)
-				g.apiKeyRoute(tenantByID, http.MethodPost, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), memberHandler.AddMember)
-				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), memberHandler.UpdateMemberRole)
-				g.apiKeyRoute(tenantByID, http.MethodDelete, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), memberHandler.RemoveMember)
+				g.apiKeyRoute(tenantByID, http.MethodPost, "/members", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), memberHandler.AddMember)
+				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), memberHandler.UpdateMemberRole)
+				g.apiKeyRoute(tenantByID, http.MethodDelete, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), memberHandler.RemoveMember)
 				tenantByID.POST("/leave", g.Member(), memberHandler.LeaveTenant)
 			}
 
@@ -124,19 +125,19 @@ func RegisterTenantRoutes(
 			// so the invitee gets to confirm via /me/invitations
 			// before any tenant_members row is written. List is
 			// Viewer+ so any member can see pending invites in the
-			// management view; create/revoke are Owner+ to match the
-			// existing /members mutation gates. nil-skip pattern
+			// management view; create/revoke are strict TenantAdmin to
+			// match the /members mutation gates. nil-skip pattern
 			// mirrors memberHandler above for environments built
 			// without the invitation dependency wired.
 			if invitationHandler != nil {
 				g.apiKeyRoute(tenantByID, http.MethodGet, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.Member(), invitationHandler.ListTenantInvitations)
-				g.apiKeyRoute(tenantByID, http.MethodPost, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), invitationHandler.CreateInvitation)
-				g.apiKeyRoute(tenantByID, http.MethodDelete, "/invitations/:inv_id", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), invitationHandler.RevokeInvitation)
+				g.apiKeyRoute(tenantByID, http.MethodPost, "/invitations", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), invitationHandler.CreateInvitation)
+				g.apiKeyRoute(tenantByID, http.MethodDelete, "/invitations/:inv_id", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), invitationHandler.RevokeInvitation)
 				// Share-link create lives under /invite-links so the URL
 				// reads as "create a link" rather than another flavour
 				// of /invitations; the underlying row still lives in the
 				// tenant_invitations table and shows up in the GET above.
-				g.apiKeyRoute(tenantByID, http.MethodPost, "/invite-links", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), invitationHandler.CreateInviteLink)
+				g.apiKeyRoute(tenantByID, http.MethodPost, "/invite-links", apiKeyManageMembers(apiKeyFullAccess()), g.TenantAdmin(), invitationHandler.CreateInviteLink)
 			}
 
 			// Audit log feed (PR 6 of #1303). Admin+ so denied-action
@@ -145,7 +146,7 @@ func RegisterTenantRoutes(
 			// reads. nil-skip mirrors the memberHandler pattern above
 			// for environments wired without the audit dependency.
 			if auditLogHandler != nil {
-				tenantByID.GET("/audit-log", g.Owner(), auditLogHandler.ListTenantAuditLog)
+				tenantByID.GET("/audit-log", g.Admin(), auditLogHandler.ListTenantAuditLog)
 			}
 		}
 	}
@@ -263,8 +264,8 @@ func RegisterSystemRoutes(
 		// Member-readable: upload UIs poll this to decide whether the
 		// parse-settings dialog can be skipped (SystemAdmin-locked defaults).
 		systemRoutes.GET("/parse-defaults", g.Member(), handler.GetSystemParseDefaults)
-		systemRoutes.POST("/storage-engine-check", g.Owner(), handler.CheckStorageEngine)
-		systemRoutes.POST("/sandbox-check", g.Owner(), handler.CheckSandboxConfig)
+		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
+		systemRoutes.POST("/sandbox-check", g.Admin(), handler.CheckSandboxConfig)
 	}
 }
 

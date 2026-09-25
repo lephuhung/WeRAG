@@ -139,7 +139,7 @@ func (h *AuditLogHandler) ListKnowledgeBaseActivity(c *gin.Context) {
 	}
 	actorID, _ := types.UserIDFromContext(ctx)
 	role := types.TenantRoleFromContext(ctx)
-	if access.KnowledgeBase.CreatorID != actorID && !role.HasPermission(types.TenantRoleOwner) {
+	if access.KnowledgeBase.CreatorID != actorID && !role.IsTenantAdmin() {
 		c.Error(errors.NewForbiddenError("knowledge base activity requires creator or admin access"))
 		return
 	}

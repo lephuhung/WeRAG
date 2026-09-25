@@ -244,8 +244,8 @@ type TenantConfig struct {
 	// Read through IsRBACEnforced so callers stay nil-safe.
 	EnableRBAC *bool `yaml:"enable_rbac" json:"enable_rbac"`
 	// MaxOwnedPerUser caps how many tenants a single non-superuser can
-	// create (and Own) via self-service POST /tenants. Counts only Owner
-	// memberships so being invited as Admin/Editor/Viewer in another
+	// create (and administer) via self-service POST /tenants. Counts
+	// only Admin memberships so being invited as Member in another
 	// tenant doesn't burn quota. Cross-tenant superusers
 	// (CanAccessAllTenants) are exempt.
 	//   > 0 — enforce the cap (handler returns 429 when reached).
@@ -301,7 +301,7 @@ type AuthConfig struct {
 	// RegistrationMode controls who may call POST /auth/register.
 	//   "self_serve" (default) — anyone may register; a new tenant is
 	//                            auto-created and the registrant becomes
-	//                            its Owner. Preserves existing behaviour.
+	//                            its Admin. Preserves existing behaviour.
 	//   "invite_only"          — public registration is rejected; new
 	//                            users only enter through the invitation
 	//                            flow added in PR 3.

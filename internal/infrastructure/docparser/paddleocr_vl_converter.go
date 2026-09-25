@@ -391,6 +391,9 @@ func (c *PaddleOCRVLReader) readOpenAI(ctx context.Context, req *types.ReadReque
 	if err != nil {
 		return &types.ReadResult{Error: fmt.Sprintf("docreader openai_ocr failed: %v", err)}, nil
 	}
+	if res == nil {
+		return &types.ReadResult{Error: "docreader openai_ocr returned empty result"}, nil
+	}
 	if res.Metadata == nil {
 		res.Metadata = map[string]string{}
 	}
@@ -429,7 +432,12 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 		},
 		"temperature": 0.0,
 	}
-	if c.ocrRepPenalty > 0 && c.ocrRepPenalty != 1.0 {
+	// repetition_penalty is a nonstandard extension: only forward it when the
+	// tenant explicitly configured paddleocr_vl_repetition_penalty to a
+	// meaningful non-default value, mirroring the readOpenAI docreader
+	// pass-through (which gates on ocrRepPenaltySet). The 1.05 default stays
+	// local so generic OpenAI-compatible endpoints never see the key.
+	if c.ocrRepPenaltySet && c.ocrRepPenalty > 0 && c.ocrRepPenalty != 1.0 {
 		reqBody["repetition_penalty"] = c.ocrRepPenalty
 	}
 	payload, _ := json.Marshal(reqBody)
@@ -441,7 +449,16 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 	if c.ocrAPIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.ocrAPIKey)
 	}
-	resp, err := (&http.Client{Timeout: 300 * time.Second}).Do(httpReq)
+	// The endpoint passed SSRF validation at Read time, but a raw client
+	// would still follow a redirect to loopback/metadata targets and forward
+	// the Authorization header cross-origin. Use the SSRF-safe client (same
+	// as callLayoutParsing/Ping) so redirect targets are re-validated and
+	// credentials are stripped on cross-origin hops.
+	client := utils.NewSSRFSafeHTTPClient(utils.SSRFSafeHTTPClientConfig{
+		Timeout:      300 * time.Second,
+		MaxRedirects: 5,
+	})
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", err
 	}
