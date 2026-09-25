@@ -32,7 +32,9 @@ export function MemoryWorkspaceSettings() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canEdit = currentRole === "owner" || isSystemAdmin;
+  /* Tenant KV config (PUT /tenants/kv/:key) is Admin+ on the backend,
+   * so all Tenant Admins may edit — not just legacy owners. */
+  const canEdit = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
 
   const [config, setConfig] = useState<MemoryConfig>(DEFAULT_CONFIG);
   const [models, setModels] = useState<ModelConfig[]>([]);

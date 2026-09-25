@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "@/lib/api-client";
+import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { SessionLastRequestState } from "@/lib/api/chat";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
@@ -207,14 +208,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [agentsRes, sharedRes, kbRes, sharedKbRes, modelsRes, mcpRes, skillsRes, providersRes] =
+      /* Chat KB selection uses the same invitation-aware source as the KB
+       * list and agent selectors: listKnowledgeBases() already includes
+       * accepted-invitee KBs, so the legacy shared-KB endpoint merge
+       * is retired here. Stale persisted IDs stay subject to server
+       * authorization at retrieval time. */
+      const [agentsRes, sharedRes, kbRows, modelsRes, mcpRes, skillsRes, providersRes] =
         await Promise.all([
           apiGet<{ success: boolean; data?: AgentSummary[] }>(`/api/v1/agents`).catch(() => null),
           apiGet<{ success: boolean; data?: SharedAgentSummary[] }>(`/api/v1/shared-agents`).catch(() => null),
-          apiGet<{ success: boolean; data?: KbSummary[] }>(`/api/v1/knowledge-bases`).catch(() => null),
-          apiGet<{ success: boolean; data?: Array<{ knowledge_base?: KbSummary; org_name?: string }> }>(
-            `/api/v1/shared-knowledge-bases`,
-          ).catch(() => null),
+          listKnowledgeBases().catch(() => null),
           apiGet<{ success: boolean; data?: ModelSummary[] }>(`/api/v1/models`).catch(() => null),
           apiGet<{ success: boolean; data?: Ctx["mcpServices"] }>(`/api/v1/mcp-services`).catch(() => null),
           apiGet<{ success: boolean; data?: Ctx["skills"] }>(`/api/v1/skills`).catch(() => null),
@@ -222,17 +225,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             `/api/v1/web-search-providers`,
           ).catch(() => null),
         ]);
-      const list = (r: { data?: KbSummary[] } | null): KbSummary[] =>
-        Array.isArray(r?.data) ? (r?.data as KbSummary[]) : [];
-      const own = list(kbRes);
-      const ownIds = new Set(own.map((k) => k.id));
-      const shared =
-        sharedKbRes?.data
-          ?.filter((s) => s.knowledge_base && !ownIds.has(s.knowledge_base.id))
-          .map((s) => ({ ...(s.knowledge_base as KbSummary), org_name: s.org_name })) ?? [];
       if (agentsRes?.data) setAgents(agentsRes.data);
       if (sharedRes?.data) setSharedAgents(sharedRes.data.filter((s) => s.agent && !s.disabled_by_me));
-      setKnowledgeBases([...own, ...shared]);
+      setKnowledgeBases(
+        (kbRows ?? []).map((k) => ({
+          id: k.id,
+          name: k.name,
+          type: k.type,
+          knowledge_count: k.knowledge_count ?? k.document_count ?? k.doc_count,
+          chunk_count: k.chunk_count,
+        })),
+      );
       if (modelsRes?.data) {
         setModels(modelsRes.data);
         const mList = modelsRes.data;

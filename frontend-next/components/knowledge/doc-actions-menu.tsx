@@ -49,6 +49,7 @@ export function DocActionsMenu({
   doc,
   kbId,
   canMutate,
+  canDownloadOriginal = true,
   onChanged,
   onDeleted,
   onReparse,
@@ -56,6 +57,11 @@ export function DocActionsMenu({
   doc: KnowledgeDoc;
   kbId: string;
   canMutate: boolean;
+  /* Resource capability gate (UI affordance only — the backend still
+   * authorizes /download). Foreign (invited, read-only) KBs pass false
+   * so the original-download action is hidden. Defaults true so existing
+   * own-tenant callers keep download without code changes. */
+  canDownloadOriginal?: boolean;
   /** Called after an action that changed the document (delete/move/cancel…). */
   onChanged: () => void;
   /** Called once a delete is submitted so the parent can flag the row as
@@ -79,7 +85,9 @@ export function DocActionsMenu({
   const parseStatus = doc.parse_status ?? doc.status ?? "";
   const inFlight = IN_FLIGHT.has(parseStatus);
   const fileName = doc.title || doc.file_name || doc.id;
-  const canDownload = doc.type === "file" || doc.type === "manual" || !doc.type;
+  const canDownload =
+    (doc.type === "file" || doc.type === "manual" || !doc.type) &&
+    canDownloadOriginal;
 
   const close = () => {
     setOpen(false);

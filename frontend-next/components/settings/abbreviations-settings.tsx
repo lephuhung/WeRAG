@@ -1,7 +1,8 @@
 /* Global Vietnamese abbreviation dictionary (AIRAG port): the agent expands
  * these short forms via the resolve_abbreviation tool before searching. Any
- * member can suggest entries; a workspace owner (or system admin) edits,
- * activates and deletes — the server enforces the same split. */
+ * member can suggest entries; a Tenant Admin (or system admin) edits,
+ * activates and deletes — the server enforces the same split (PATCH/DELETE
+ * are Admin+ via OwnerOrSystemAdmin, an Admin-level alias). */
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -38,7 +39,7 @@ export function AbbreviationsSettings() {
       (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
     )?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || isSystemAdmin;
+  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
 
   const [rows, setRows] = useState<Abbreviation[]>([]);
   const [total, setTotal] = useState(0);

@@ -20,6 +20,7 @@ import {
 } from "@/lib/parse-settings";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { Select } from "@/components/select";
+import { SegmentedPills } from "@/components/knowledge/segmented-pills";
 
 /* SystemAdmin editor for the platform-wide parse defaults stored under the
  * system_settings key "knowledge.parse_defaults". While `enabled` is on,
@@ -142,7 +143,7 @@ export function ParseDefaultsEditor() {
   };
 
   const row = (label: string, desc: string | undefined, control: React.ReactNode) => (
-    <div className="flex items-center justify-between gap-6 py-3">
+    <div className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink">{label}</div>
         {desc && <div className="caption mt-0.5 text-muted">{desc}</div>}
@@ -195,7 +196,7 @@ export function ParseDefaultsEditor() {
 
   return (
     <div>
-      <section className="card mb-4 p-5">
+      <section className="card mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="title-sm text-ink">{t("pd.title")}</h2>
@@ -233,14 +234,15 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section className="card p-5 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <section className="card p-4 xl:col-span-3">
         <h3 className="title-sm text-ink">{t("ps.tabParser")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.parserDesc")}</p>
-        <div className="mt-3">
+        <div className="mt-2">
           <ParserRulesEditor
             rules={state.chunking.parserEngineRules}
             relevantExtensions={[]}
+            columns={3}
             onChange={(rules) =>
               patch((s) => ({
                 ...s,
@@ -252,8 +254,7 @@ export function ParseDefaultsEditor() {
         {row(
           t("ps.pdfScanLabel"),
           t("ps.pdfScanDesc"),
-          <Select
-            className="w-full sm:w-[280px]"
+          <SegmentedPills
             value={state.pdfForceScanned ? "force" : "auto"}
             onChange={(v) => patch((s) => ({ ...s, pdfForceScanned: v === "force" }))}
             options={[
@@ -264,7 +265,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-5">
+      <section className="card p-4">
         <h3 className="title-sm text-ink">{t("ps.tabChunking")}</h3>
         <div className="divide-y divide-hairline">
           {row(
@@ -392,7 +393,7 @@ export function ParseDefaultsEditor() {
         </div>
       </section>
 
-      <section className="card p-5">
+      <section className="card p-4">
         <h3 className="title-sm text-ink">{t("ps.tabMultimodal")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.multimodalDesc")}</p>
         <div className="divide-y divide-hairline">
@@ -440,7 +441,7 @@ export function ParseDefaultsEditor() {
               <div className="py-3">
                 <div className="text-[13px] font-medium text-ink">{t("ps.customInstrLabel")}</div>
                 <textarea
-                  className="input mt-2 h-auto min-h-[72px] w-full resize-y"
+                  className="input mt-2 h-auto min-h-[56px] w-full resize-y"
                   placeholder={t("ps.customInstrPlaceholder")}
                   value={state.multimodal.customInstructions}
                   onChange={(e) =>
@@ -461,7 +462,10 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-5">
+      {/* Column 3: ASR + summary + question stack — keeps the three narrow
+       * sections in one column so the grid stays three cells wide. */}
+      <div className="flex flex-col gap-4">
+      <section className="card p-4">
         <h3 className="title-sm text-ink">{t("ps.tabAsr")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.asrDesc")}</p>
         <div className="divide-y divide-hairline">
@@ -504,8 +508,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <div className="flex flex-col gap-4">
-      <section className="card p-5">
+      <section className="card p-4">
         <h3 className="title-sm text-ink">{t("ps.tabSummary")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.summaryDesc")}</p>
         {row(
@@ -518,7 +521,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-5">
+      <section className="card p-4">
         <h3 className="title-sm text-ink">{t("ps.tabQuestion")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.questionDesc")}</p>
         {row(
@@ -550,7 +553,7 @@ export function ParseDefaultsEditor() {
           <div className="py-3">
             <div className="text-[13px] font-medium text-ink">{t("ps.questionInstrLabel")}</div>
             <textarea
-              className="input mt-2 h-auto min-h-[72px] w-full resize-y"
+              className="input mt-2 h-auto min-h-[56px] w-full resize-y"
               value={state.question.customInstructions}
               onChange={(e) =>
                 patch((s) => ({

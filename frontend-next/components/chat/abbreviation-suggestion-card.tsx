@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { IconBulb } from "@/components/icons";
 import {
   createAbbreviation,
   listAbbreviations,
@@ -120,7 +121,7 @@ export function AbbreviationSuggestionCard({
         return (
           <div
             key={short}
-            className="rounded-lg border border-hairline bg-surface-card p-4"
+            className="rounded-lg border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/70 p-4 dark:border-amber-500/30 dark:border-l-amber-500/60 dark:bg-amber-500/10"
           >
             {done ? (
               <div className="text-[13px] text-body">
@@ -141,6 +142,10 @@ export function AbbreviationSuggestionCard({
               <>
                 {rows.length > 0 ? (
                   <div className="space-y-1 text-[13px] text-body">
+                    <div className="mb-1.5 flex items-center gap-1.5 font-medium text-ink">
+                      <IconBulb className="h-4 w-4 shrink-0 text-amber-500" />
+                      Có nghĩa đang chờ duyệt cho “{short}”
+                    </div>
                     {rows.map((r) => (
                       <div key={r.id} className="flex items-center gap-2">
                         <span className="text-ink">
@@ -153,8 +158,12 @@ export function AbbreviationSuggestionCard({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-[13px] text-body">
-                    Hệ thống chưa có nghĩa được duyệt cho “{short}”.
+                  <p className="flex items-center gap-1.5 text-[13px] text-body">
+                    <IconBulb className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span>
+                      Hệ thống chưa có nghĩa được duyệt cho{" "}
+                      <strong className="font-semibold text-ink">“{short}”</strong>.
+                    </span>
                   </p>
                 )}
                 {openForm !== short ? (
@@ -166,7 +175,7 @@ export function AbbreviationSuggestionCard({
                       setFullForm("");
                       setDescription("");
                     }}
-                    className="mt-2 rounded-full border border-hairline bg-surface px-3.5 py-1.5 text-[13px] text-body transition-colors hover:border-ink hover:text-ink"
+                    className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3.5 py-1.5 text-[13px] font-medium text-white shadow-sm transition-colors hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500"
                   >
                     {rows.length > 0 ? "Đề xuất nghĩa khác" : "Bổ sung nghĩa"}
                   </button>

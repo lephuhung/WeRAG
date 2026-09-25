@@ -37,10 +37,16 @@ export function WikiBrowser({
   kbId,
   changed,
   q = "",
+  /* Resource-aware mutation authority threaded from KbDetail: own-tenant
+   * manage (Tenant Admin of the owning workspace). Never derive this from
+   * the viewer's active-tenant role alone — an invitee may be an admin of
+   * their own workspace yet hold only read access here. */
+  canMutate = false,
 }: {
   kbId: string;
   changed?: number;
   q?: string;
+  canMutate?: boolean;
 }) {
   const { t } = useT();
   const [index, setIndex] = useState<{
@@ -190,6 +196,7 @@ export function WikiBrowser({
           kbId={kbId}
           slug={openSlug}
           title={item?.title ?? openSlug}
+          canMutate={canMutate}
           onClose={() => setOpenSlug(null)}
           onNavigate={(nextSlug) => setOpenSlug(nextSlug)}
         />
@@ -204,15 +211,27 @@ export function WikiPageView({
   title,
   onClose,
   onNavigate,
+  /* Same resource gate as WikiBrowser: own-tenant manage authority.
+   * Combined with the owner's role check below so neither a foreign
+   * invitee's active-tenant role nor the KB context alone grants edits. */
+  canMutate = false,
 }: {
   kbId: string;
   slug: string;
   title: string;
   onClose: () => void;
   onNavigate?: (slug: string) => void;
+  canMutate?: boolean;
 }) {
   const { t } = useT();
-  const { isOwner } = useTenantRole();
+  const { isTenantAdmin } = useTenantRole();
+  /* Wiki edits require BOTH the resource capability (own-tenant manage,
+   * threaded from KbDetail) AND Tenant Admin authority in the active
+   * workspace — a foreign invitee who admins their own workspace must
+   * never see mutation controls here. Backend mutation routes use
+   * TenantAdmin + KBAccessWrite, so all Tenant Admins (not just legacy
+   * owners) qualify. */
+  const canEditWiki = canMutate && isTenantAdmin;
   const [page, setPage] = useState<WikiPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -323,7 +342,7 @@ export function WikiPageView({
                   <button className="btn btn-outline btn-sm" onClick={showRevList}>
                     {t("wiki.history")}
                   </button>
-                  {isOwner && (
+                  {canEditWiki && (
                     <button className="btn btn-primary btn-sm" onClick={startEdit}>
                       {t("wiki.edit")}
                     </button>
@@ -406,7 +425,7 @@ export function WikiPageView({
                       {r.created_at ? new Date(r.created_at).toLocaleString() : ""}
                     </div>
                   </div>
-                  {isOwner && (
+                  {canEditWiki && (
                     <button className="btn btn-outline btn-sm" onClick={() => void revertTo(r.version)}>
                       {t("wiki.revertTo")}
                     </button>

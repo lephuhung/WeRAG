@@ -1,7 +1,8 @@
 /* Ported from frontend/src/views/settings/TenantInfo.vue.
  * Info rows (id/name/description/status/created/storage) + leave/delete
- * danger zones with the same gating: name/description editing is owner-only;
- * leave hidden for the last owner; delete owner-only with name-typed
+ * danger zones with the same gating: name/description editing is
+ * Tenant Admin+ (backend PUT/DELETE /tenants/:id use g.Admin());
+ * leave hidden for the last owner; delete Tenant Admin+ with name-typed
  * confirmation.
  */
 "use client";
@@ -82,7 +83,7 @@ export function TenantInfo() {
 
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const effectiveRole = isSystemAdmin ? "owner" : (currentRole ?? "");
-  const canEditTenant = ({ member: 10, admin: 30, owner: 40 }[effectiveRole] ?? 0) >= 40;
+  const canEditTenant = ({ member: 10, admin: 30, owner: 40 }[effectiveRole] ?? 0) >= 30;
   const activeTenantMatch = info && Number(info.id) === Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const canLeave = activeTenantMatch && effectiveRole && effectiveRole !== "owner" ? true
     : ownerSnapshot.ready && ownerSnapshot.count > 1;

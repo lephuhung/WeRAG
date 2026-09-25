@@ -113,12 +113,16 @@ export function listKnowledgeBaseActivity(
 
 // ---- knowledge bases ----------------------------------------------------------
 
-/* Mirrors types.KBVisibility (internal/types/knowledgebase.go): 'tenant'
- * scopes read/search to the owning workspace's members; 'public' makes the
- * KB readable by every authenticated user of every tenant. Writes always
- * stay with the owning tenant. Cross-tenant read access beyond 'public'
- * goes through kb_access_grants (share_count), not a third scope value. */
+/* Mirrors types.KBVisibility (internal/types/knowledgebase.go) for READS.
+ * 'tenant' is the only writable scope: it limits read/search to the
+ * owning workspace's members (plus recipient-bound kb_invitations).
+ * 'public' is a legacy response value only — old rows may still decode
+ * to it, but no create/update payload below accepts it. Writes always
+ * stay with the owning tenant. */
 export type KBVisibility = "tenant" | "public";
+
+/* The only scope the UI may write when creating a KB. */
+export type KBVisibilityWrite = "tenant";
 
 export type KnowledgeBaseRow = {
   id: string;
@@ -138,10 +142,16 @@ export type KnowledgeBaseRow = {
   creator_name?: string;
   type?: string;
   visibility?: KBVisibility;
-  /* Owning workspace id — differs from the caller's tenant on public or
-   * grant-shared KBs that leak into the list from other tenants. */
+  /* Owning workspace id — differs from the caller's tenant on KBs
+   * shared from other tenants (legacy public rows or invite-shared KBs
+   * that leak into the list). */
   tenant_id?: number;
-  /* Live cross-tenant access grants on this KB (kb_access_grants). */
+  /* Authorization owner: nonzero tenant id means tenant-owned, 0 means
+   * platform-owned (no tenant owner). UI ownership is derived from
+   * owner_tenant_id + visibility, never from data-scope tenant_id alone. */
+  owner_tenant_id?: number;
+  /* Legacy cross-tenant grant count echoed by the backend
+   * (kb_access_grants, retired). Kept for response decoding only. */
   share_count?: number;
   /* Process-config defaults echoed back on the detail response
    * (GET /knowledge-bases/:id); they seed the upload/reparse parse-settings
@@ -229,10 +239,10 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: "document" | "faq";
-  /* Read scope: 'tenant' (default) readable by every member of the owning
-   * workspace; 'public' readable by every tenant — creating it is restricted
-   * server-side to the workspace Owner or a system admin. */
-  visibility?: KBVisibility;
+  /* Read scope: 'tenant' (default, and the only writable value on this
+   * tenant route). Platform-public KBs are created exclusively through
+   * createPublicKnowledgeBase (POST /knowledge-bases/public). */
+  visibility?: KBVisibilityWrite;
   chunking_config?: unknown;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -325,93 +335,138 @@ export function updateKnowledgeBase(
   return apiPut(`/api/v1/knowledge-bases/${id}`, data);
 }
 
-/* Changes the KB scope (PUT /knowledge-bases/:id/visibility). The route is
- * workspace Owner only; the service additionally requires Owner/SystemAdmin
- * for 'public' and rejects callers outside the owning tenant. */
-export function updateKnowledgeBaseVisibility(
+// ---- platform-public catalog (Task 5) ------------------------------------
+
+export interface PublicCatalogResult {
+  items: KnowledgeBaseRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/* Dedicated public-catalog page: owner_tenant_id=0 + visibility=public with
+ * server-side paging (page>=1, page_size default 50/max 200) and keyword
+ * search over name/description. Authenticated human JWT only; the backend
+ * denies anonymous (401) and API keys (403), and tenantless human sessions
+ * may call it. Never assume the main mixed list holds the whole catalog. */
+export function listPublicCatalog(params?: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+}): Promise<PublicCatalogResult> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.pageSize) query.set("page_size", String(params.pageSize));
+  if (params?.q) query.set("q", params.q);
+  const qs = query.toString();
+  return apiGet<{ success: boolean; data?: { items?: KnowledgeBaseRow[]; total?: number; page?: number; page_size?: number } }>(
+    `/api/v1/knowledge-bases/public${qs ? `?${qs}` : ""}`,
+  ).then((res) => {
+    const d = res.data;
+    return {
+      items: Array.isArray(d?.items) ? (d?.items as KnowledgeBaseRow[]) : [],
+      total: typeof d?.total === "number" ? d.total : 0,
+      page: typeof d?.page === "number" && d.page > 0 ? d.page : 1,
+      pageSize: typeof d?.page_size === "number" && d.page_size > 0 ? d.page_size : 50,
+    };
+  });
+}
+
+/* Platform-owned public KB creation. Only name/description/type cross the
+ * wire: tenant storage backends, vector-store bindings, and selected-
+ * tenant defaults must never leak into a platform create (the service
+ * resolves platform defaults and rejects tenant-bound bindings). Explicit
+ * human SuperAdmin only — the backend enforces it. */
+export function createPublicKnowledgeBase(data: { name: string; description?: string; type?: "document" | "faq" }) {
+  return apiPost<{ success: boolean; data?: KnowledgeBaseRow }>(`/api/v1/knowledge-bases/public`, data);
+}
+
+/* Owner/scope transition. tenant→public publishes (no target); public→
+ * tenant requires the existing nonzero destination tenant id selected by
+ * the SuperAdmin. Explicit human SuperAdmin only — the backend enforces
+ * it for both directions. */
+export function changeKnowledgeBaseVisibility(
   id: string,
-  data: { visibility: KBVisibility },
+  data: { visibility: "public" } | { visibility: "tenant"; target_tenant_id: number },
 ) {
   return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, data);
 }
 
-// ---- cross-tenant access grants -------------------------------------------
+// ---- recipient-bound KB read invitations ----------------------------------
 
-/* Tenant-to-tenant read grants (kb_access_grants — see internal/types/
- * kb_access_grant.go). The grantee tenant's owner files a request on a
- * foreign KB; the owning tenant's owner approves, rejects or revokes.
- * Every grant endpoint is workspace-Owner gated server-side. */
-export type KBGrantStatus = "pending" | "approved" | "rejected" | "revoked" | "expired";
+/* Tenant-wide access grants (kb_access_grants) and the KB visibility
+ * endpoint are retired: the request/review/revoke/list clients and the
+ * visibility writer were removed here after confirming no UI callers
+ * remained. Cross-workspace reads now use recipient-bound kb_invitations
+ * below; tenant joins use the tenant invitation APIs in ./tenants. */
 
-export interface KBAccessGrant {
+/* Individual read invitations (kb_invitations — see internal/types/
+ * kb_invitation.go). DISTINCT from tenant join invitations (see
+ * ./tenants) and from the retired tenant-wide grants noted above: an
+ * owning-tenant Admin invites ONE
+ * specific user in another tenant; only that authenticated recipient can
+ * accept, and the grant is read-only, single-user, non-re-shareable.
+ * The plaintext token is returned once at creation and never stored. */
+export type KBInviteStatus = "pending" | "accepted" | "revoked" | "expired";
+
+export interface KBInvite {
   id: string;
   kb_id: string;
   kb_name?: string;
   owner_tenant_id: number;
-  owner_tenant_name?: string;
-  grantee_tenant_id: number;
-  grantee_tenant_name?: string;
-  permission: "viewer" | "editor" | "admin" | string;
-  status: KBGrantStatus;
-  requested_by?: string;
-  approved_by?: string | null;
+  recipient_user_id: string;
+  recipient_tenant_id: number;
+  status: KBInviteStatus;
   message?: string;
   expires_at?: string | null;
-  responded_at?: string | null;
+  accepted_at?: string | null;
   created_at?: string;
+  /** Plaintext token — present only on the creation response. */
+  token?: string;
 }
 
-type KBGrantListResponse = { success: boolean; data?: KBAccessGrant[]; message?: string };
-type KBGrantResponse = { success: boolean; data?: KBAccessGrant; message?: string };
+type KBInviteListResponse = { success: boolean; data?: KBInvite[]; message?: string };
+type KBInviteResponse = { success: boolean; data?: KBInvite; message?: string };
 
-function grantStatusQuery(statuses?: KBGrantStatus[]): string {
-  return statuses?.length ? `?status=${statuses.join(",")}` : "";
-}
-
-/* Grantee side: ask the owning tenant for read access to kbId. 400 when the
- * KB is already ours, 404 when it doesn't exist, 409 when a live grant or
- * pending request already covers the pair. */
-export function requestKBAccess(
+/* Owning-tenant Admin: invite a specific user in another tenant to read kbId.
+ * The recipient is identified by user ID or email (resolved server-side);
+ * they must hold an active membership in recipient_tenant_id. */
+export function issueKBInvite(
   kbId: string,
-  data: { message?: string; expires_at?: string } = {},
-): Promise<KBGrantResponse> {
-  return apiPost(`/api/v1/knowledge-bases/${kbId}/access-requests`, data);
+  data: { recipient_user_id?: string; recipient_email?: string; recipient_tenant_id: number; message?: string; expires_at?: string },
+): Promise<KBInviteResponse> {
+  return apiPost(`/api/v1/knowledge-bases/${kbId}/invites`, data);
 }
 
-/* Owner side: every grant touching KBs this tenant owns, optionally
- * filtered by ?status=pending,approved,… */
-export function listIncomingKBGrants(
-  tenantId: number | string,
-  statuses?: KBGrantStatus[],
-): Promise<KBAccessGrant[]> {
-  return apiGet<KBGrantListResponse>(
-    `/api/v1/tenants/${tenantId}/access-grants${grantStatusQuery(statuses)}`,
-  ).then((r) => r.data ?? []);
+/* Owning-tenant Admin: list invites on kbId. */
+export function listKBInvites(kbId: string): Promise<KBInvite[]> {
+  return apiGet<KBInviteListResponse>(`/api/v1/knowledge-bases/${kbId}/invites`).then(
+    (r) => r.data ?? [],
+  );
 }
 
-/* Grantee side: requests this tenant has filed on foreign KBs. */
-export function listOutgoingKBGrants(statuses?: KBGrantStatus[]): Promise<KBAccessGrant[]> {
-  return apiGet<KBGrantListResponse>(
-    `/api/v1/access-grants${grantStatusQuery(statuses)}`,
-  ).then((r) => r.data ?? []);
+/* Owning-tenant Admin: revoke a pending invite (immediate effect). */
+export function revokeKBInvite(
+  kbId: string,
+  inviteId: string,
+): Promise<{ success: boolean; message?: string }> {
+  return apiDel(`/api/v1/knowledge-bases/${kbId}/invites/${inviteId}`);
 }
 
-/* Owner side: approve or reject a pending request. 409 when the row was
- * already finalised. */
-export function reviewKBGrant(
-  tenantId: number | string,
-  grantId: string,
-  data: { approved: boolean; message?: string },
-): Promise<KBGrantResponse> {
-  return apiPut(`/api/v1/tenants/${tenantId}/access-grants/${grantId}`, data);
+/* Authenticated recipient: redeem their own invite (single-use token). */
+export function acceptKBInvite(token: string): Promise<KBInviteResponse> {
+  return apiPost(`/api/v1/kb-invites/accept`, { token });
 }
 
-/* Owner side: withdraw an approved grant. */
-export function revokeKBGrant(
-  tenantId: number | string,
-  grantId: string,
-): Promise<KBGrantResponse> {
-  return apiDel(`/api/v1/tenants/${tenantId}/access-grants/${grantId}`);
+/* Authenticated recipient: accept their own invite in-app by invite ID.
+ * The server verifies recipient binding and membership. */
+export function acceptKBInviteByID(inviteId: string): Promise<KBInviteResponse> {
+  return apiPost(`/api/v1/kb-invites/${inviteId}/accept`, {});
+}
+
+/* Authenticated user: invites addressed to them. */
+export function listMyKBInvites(): Promise<KBInvite[]> {
+  return apiGet<KBInviteListResponse>(`/api/v1/kb-invites`).then((r) => r.data ?? []);
 }
 
 /** Opt-in automatic generation of the knowledge-base description. */
@@ -773,10 +828,11 @@ export const KNOWLEDGE_CHUNK_PAGE_SIZE = 25;
 export function listKnowledgeChunks(
   id: string,
   page: number,
-  opts?: { includeImageText?: boolean },
+  opts?: { includeImageText?: boolean; pageSize?: number },
 ) {
   const extra = opts?.includeImageText ? "&include_image_text=true" : "";
-  return apiGet(`/api/v1/chunks/${id}?page=${page}&page_size=${KNOWLEDGE_CHUNK_PAGE_SIZE}${extra}`);
+  const pageSize = opts?.pageSize ?? KNOWLEDGE_CHUNK_PAGE_SIZE;
+  return apiGet(`/api/v1/chunks/${id}?page=${page}&page_size=${pageSize}${extra}`);
 }
 
 export interface ChunkEditPayload {

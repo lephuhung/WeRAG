@@ -22,7 +22,10 @@ export function SkillsSettings() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || isSystemAdmin;
+  /* Skill catalog writes (POST /skills/catalog, install, DELETE) are
+   * Admin+ on the backend, so all Tenant Admins may manage — not just
+   * legacy owners. Catalog reads stay Admin+ server-side as well. */
+  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
 
   const [catalog, setCatalog] = useState<SkillCatalogItem[]>([]);
   const [sandboxes, setSandboxes] = useState<SandboxConfigRecord[]>([]);

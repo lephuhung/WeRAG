@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconOrg, IconPlus, IconSearch } from "@/components/icons";
 import { Modal } from "@/components/modal";
+import { InviteMemberModal } from "@/components/invite-member-modal";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
@@ -38,6 +39,10 @@ function WorkspaceMembersPanel({
   const [members, setMembers] = useState<TenantMember[] | null>(null);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  /* my_role comes from the caller's own membership in this workspace —
+   * invite management needs admin+ (same gate as the members settings). */
+  const canInvite = workspace?.my_role === "owner" || workspace?.my_role === "admin";
 
   useEffect(() => {
     if (!open || !workspace) return;
@@ -81,6 +86,17 @@ function WorkspaceMembersPanel({
       />
 
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-2">
+        {canInvite && (
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className="btn btn-primary btn-sm mb-4 flex w-fit items-center gap-1.5"
+          >
+            <IconPlus className="h-3.5 w-3.5" />
+            <span>Invite member</span>
+          </button>
+        )}
+
         {/* Search bar */}
         {members && members.length > 3 && (
           <div className="relative mb-4">
@@ -164,6 +180,20 @@ function WorkspaceMembersPanel({
           </div>
         )}
       </div>
+
+      <InviteMemberModal
+        tenantId={workspace?.tenant_id ?? 0}
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onInvited={() => {
+          /* Refresh the member list so email-accepted/new members and the
+           * pending-invite count stay accurate. */
+          if (!workspace) return;
+          fetchAllTenantMembers(workspace.tenant_id)
+            .then(setMembers)
+            .catch(() => {});
+        }}
+      />
     </SlidePanel>
   );
 }
@@ -226,7 +256,7 @@ export default function Organizations() {
       if (res.success && res.data) {
         setWorkspaces((prev) => [
           ...(prev ?? []),
-          { tenant_id: Number(res.data!.id), name: res.data!.name, description: res.data!.description, my_role: "owner" },
+          { tenant_id: Number(res.data!.id), name: res.data!.name, description: res.data!.description, my_role: "admin" },
         ]);
       } else {
         setError(res.message || "Create failed");

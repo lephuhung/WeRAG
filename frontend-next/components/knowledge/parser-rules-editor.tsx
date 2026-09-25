@@ -37,11 +37,15 @@ export function ParserRulesEditor({
   rules,
   relevantExtensions,
   onChange,
+  columns = 2,
 }: {
   rules: ParserEngineRule[] | undefined;
   /** Only show groups overlapping these extensions (empty = show all). */
   relevantExtensions: string[];
   onChange: (rules: ParserEngineRule[]) => void;
+  /* Grid columns ≥lg: 2 keeps the upload dialog readable, 3 densifies the
+   * full-width parse-defaults editor so it fits without scrolling. */
+  columns?: 2 | 3;
 }) {
   const { t } = useT();
   const [engines, setEngines] = useState<ParserEngineInfo[] | null>(null);
@@ -153,12 +157,16 @@ export function ParserRulesEditor({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+    <div
+      className={`grid grid-cols-1 gap-x-6 sm:grid-cols-2 ${
+        columns === 3 ? "lg:grid-cols-3" : ""
+      }`}
+    >
       {groups.map((g) => {
         const { available, defaultName } = engineOptions(g.extensions);
         const selected = engineFor(g.extensions);
         return (
-          <div key={g.key} className="flex items-center justify-between gap-3 py-1.5">
+          <div key={g.key} className="flex items-center justify-between gap-3 py-1">
             <div className="min-w-0 text-[12.5px] font-medium text-ink">
               <span className="truncate">{g.label}</span>
               <span className="ml-1.5 whitespace-nowrap text-[10.5px] font-normal text-muted-soft">
@@ -179,14 +187,25 @@ export function ParserRulesEditor({
                 }))}
               />
               {g.extensions.includes("xlsx") && selected === "builtin" && (
-                <label className="flex items-center gap-1.5 text-[11px] text-muted">
-                  <input
-                    type="checkbox"
-                    checked={ruleFor(g.extensions)?.xlsx_first_row_as_header === true}
-                    onChange={(e) => setXlsxHeader(g.extensions, e.target.checked)}
-                  />
+                /* Pill toggle for the two-state header flag. */
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={ruleFor(g.extensions)?.xlsx_first_row_as_header === true}
+                  onClick={() =>
+                    setXlsxHeader(
+                      g.extensions,
+                      !(ruleFor(g.extensions)?.xlsx_first_row_as_header === true),
+                    )
+                  }
+                  className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+                    ruleFor(g.extensions)?.xlsx_first_row_as_header === true
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                      : "border-hairline text-muted hover:text-ink"
+                  }`}
+                >
                   {t("ps.parserXlsxHeader")}
-                </label>
+                </button>
               )}
             </div>
           </div>

@@ -100,7 +100,7 @@ function WorkspaceHub() {
       desc: "Cross-workspace knowledge-base access requests.",
       icon: <IconGlobe className="h-5 w-5" />,
       href: `${W}/sharing`,
-      minRole: "owner",
+      minRole: "admin",
     },
     {
       key: "api-keys",
@@ -108,7 +108,7 @@ function WorkspaceHub() {
       desc: "Programmatic access tokens for this workspace.",
       icon: <IconCode className="h-5 w-5" />,
       href: `${W}/api-keys`,
-      minRole: "owner",
+      minRole: "admin",
     },
     {
       key: "orgs",
@@ -124,7 +124,7 @@ function WorkspaceHub() {
       desc: "Index chat history into a knowledge base for retrieval.",
       icon: <IconClock className="h-5 w-5" />,
       content: <ChatHistorySettings />,
-      minRole: "owner",
+      minRole: "admin",
     },
     {
       key: "memory",
@@ -132,7 +132,7 @@ function WorkspaceHub() {
       desc: "Workspace-level memory extraction and retention.",
       icon: <IconBookmark className="h-5 w-5" />,
       content: <MemoryWorkspaceSettings />,
-      minRole: "owner",
+      minRole: "admin",
     },
   ];
 

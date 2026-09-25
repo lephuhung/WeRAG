@@ -207,7 +207,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-xs font-medium text-muted transition-colors select-none hover:text-ink"
+          className="flex min-w-0 items-center gap-2 py-1.5 text-xs font-medium text-muted transition-colors select-none hover:text-ink"
         >
           {streaming ? (
             <span className="relative flex h-2 w-2 shrink-0">
@@ -238,7 +238,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
           <svg
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-soft transition-transform duration-200 ${
+            className={`h-3.5 w-3.5 shrink-0 text-muted-soft transition-transform duration-200 ${
               expanded ? "rotate-180" : ""
             }`}
           >
@@ -253,7 +253,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
           <button
             type="button"
             onClick={onViewReferences}
-            className="shrink-0 cursor-pointer rounded-full bg-surface-strong/70 px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-strong hover:text-ink"
+            className="shrink-0 cursor-pointer rounded-full border border-emerald-200 bg-emerald-50/80 px-2 py-0.5 text-[11px] font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20"
             title={t("think.openDocs")}
           >
             {t("think.docs", { count: docCount })}

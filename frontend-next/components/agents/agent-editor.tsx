@@ -16,6 +16,7 @@ import {
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { listMCPServices, type MCPService } from "@/lib/api/mcp";
 import { listModels, type ModelConfig } from "@/lib/api/models";
+import { buildAgentConfigForSave } from "@/lib/api/agent-config";
 import { getStorageEngineStatus } from "@/lib/api/system";
 
 type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
@@ -281,16 +282,24 @@ export function AgentEditorModal({
         asr_model_id: draft.asr_model_id || undefined,
       };
 
+      // The backend PUT replaces the whole config: on EDIT merge the edited
+      // fields over the stored config so fields this editor has no UI for
+      // (allowed_tools, selected_skills, sandbox_config_id,
+      // chat_parser_engine_rules, …) survive, while an explicitly cleared
+      // edited value (undefined) still clears the stored key. On CREATE the
+      // current defaults go out untouched.
+      const config = buildAgentConfigForSave(agent?.config, configPayload, agent ? "edit" : "create");
+
       const res = agent
         ? await updateAgent(agent.id, {
             name: trimmedName,
             description: draft.description,
-            config: configPayload,
+            config,
           })
         : await createAgent({
             name: trimmedName,
             description: draft.description,
-            config: configPayload,
+            config,
           });
       onSaved(res.data);
       onClose();

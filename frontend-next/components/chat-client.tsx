@@ -10,9 +10,22 @@ import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments, formatFileSize } from "@/components/use-attachments";
 import { useBrowserKnownOffline } from "@/components/use-browser-status";
+import {
+  combinedCapError,
+  consumeFirstTurnHandoff,
+  mergeAttachmentIds,
+  resolveFirstTurnHandoff,
+  rotateHandoffSessionState,
+  takeHandoffTurn,
+  type HandoffSessionState,
+  type ResolvedFirstTurn,
+} from "@/lib/first-turn-handoff";
+import { createStreamGeneration, type StreamGeneration } from "@/lib/stream-generation";
+import { shouldCommitDeferredSendTurn } from "@/lib/deferred-send-guard";
+import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconDoc, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
+import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
@@ -354,27 +367,41 @@ function CompactReferencesList({
 
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-      {displayed.map((r, i) => (
-        <button
-          key={r.chunk_id ?? r.id ?? `${r.knowledge_id || "ref"}-${i}`}
-          type="button"
-          onClick={() => onSelectRef?.(r, i)}
-          title={r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Tài liệu"}
-          className="group flex max-w-[220px] items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-body transition-all hover:border-primary/40 hover:bg-surface-strong/60 hover:text-ink cursor-pointer select-none text-left"
-        >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-strong group-hover:bg-primary/15 group-hover:text-primary text-[10px] font-semibold text-ink transition-colors">
-            {i + 1}
-          </span>
-          <IconDoc className="h-3 w-3 shrink-0 text-muted group-hover:text-primary transition-colors" />
-          <span className="truncate">{r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Nguồn"}</span>
-        </button>
-      ))}
+      {displayed.map((r, i) => {
+        const name = r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Nguồn";
+        const isWeb =
+          r.chunk_type === "web_search" || Boolean(r.metadata?.url) || r.id?.startsWith("http");
+        return (
+          <button
+            key={r.chunk_id ?? r.id ?? `${r.knowledge_id || "ref"}-${i}`}
+            type="button"
+            onClick={() => onSelectRef?.(r, i)}
+            title={name}
+            className="group flex max-w-[220px] items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[12.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 cursor-pointer select-none text-left"
+          >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-semibold text-white transition-colors group-hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:group-hover:bg-emerald-400">
+              {i + 1}
+            </span>
+            {isWeb ? (
+              <IconGlobe className="h-3 w-3 shrink-0 text-emerald-600 transition-colors dark:text-emerald-400" />
+            ) : (
+              <span
+                className="w-[12px] shrink-0 self-center"
+                dangerouslySetInnerHTML={{
+                  __html: renderFileIconSvg(r.knowledge_filename ?? r.knowledge_title ?? name),
+                }}
+              />
+            )}
+            <span className="truncate">{name}</span>
+          </button>
+        );
+      })}
 
       {hasMore && (
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="flex items-center gap-1 rounded-full border border-hairline bg-surface-strong/70 px-2.5 py-1 text-[12px] font-medium text-body hover:bg-surface-strong hover:text-ink transition-colors select-none cursor-pointer"
+          className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[12.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 select-none cursor-pointer"
           title={showAll ? "Thu gọn bớt nguồn" : `Xem thêm ${remaining} nguồn khác`}
         >
           <span>{showAll ? "Thu gọn" : `+${remaining}`}</span>
@@ -482,15 +509,41 @@ const AssistantMessage = memo(function AssistantMessage({
 function ChatBody({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q");
-  // Retrieval hint from a picked suggested question on the create-chat page
-  // (creatChat.vue firstQuestionOrigin → question_origin on the first turn).
-  const initialOrigin =
-    searchParams.get("qokb")?.trim()
-      ? {
-          knowledge_base_id: searchParams.get("qokb")!.trim(),
-          ...(searchParams.get("qok")?.trim() ? { knowledge_id: searchParams.get("qok")!.trim() } : {}),
-        }
-      : undefined;
+  // Session-keyed one-shot first-turn handoff from create-chat (?q / ?qokb /
+  // ?qok plus the fh flag): the attachment IDs pre-uploaded against the fresh
+  // session ride a one-shot same-tab sessionStorage record keyed by session
+  // id — the URL never carries IDs or names. Consumed once per session id
+  // during render (before the auto-send effect strips the query string) and
+  // cached on a ref so StrictMode double-renders cannot consume it twice.
+  // Keyed by session ID because this component may be reused for a new `id`
+  // while old flags linger — a new session resolves its own handoff and
+  // nothing leaks into later turns. When the flag is set but the record is
+  // gone (reload / other tab), resolved.handoffError is set and the
+  // auto-send effect keeps the draft instead of sending a file-less turn.
+  const handoffRef = useRef<HandoffSessionState>({
+    sessionId: "",
+    attachmentIds: [],
+    attachmentNames: [],
+    consumed: false,
+  });
+  const handoffCacheRef = useRef<{ sessionId: string; resolved: ResolvedFirstTurn } | null>(null);
+  if (handoffCacheRef.current?.sessionId !== id) {
+    let stored: { attachmentIds: string[]; attachmentNames: string[] } | null = null;
+    try {
+      stored =
+        typeof window !== "undefined" && window.sessionStorage
+          ? consumeFirstTurnHandoff(window.sessionStorage, id)
+          : null;
+    } catch {
+      stored = null;
+    }
+    handoffCacheRef.current = { sessionId: id, resolved: resolveFirstTurnHandoff(searchParams, stored) };
+  }
+  handoffRef.current = rotateHandoffSessionState(
+    handoffRef.current,
+    id,
+    handoffCacheRef.current.resolved,
+  );
   const ctx = useChatContext();
   const { user } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
@@ -511,15 +564,23 @@ function ChatBody({ id }: { id: string }) {
   const stickBottomRef = useRef(true);
   const sentInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Generation guard for the streaming race: when the route id changes while
+  // session A still streams, the session-change effect below bumps the
+  // counter (and aborts A's controller) so A's late onChunk / then / catch /
+  // finally callbacks — which may already be queued — skip every state write
+  // instead of mutating new session B state (e.g. clearing B's busy flag).
+  // Each send() also bumps on start, so a resend after stop() invalidates
+  // the stopped stream's pending finalizer. idRef tracks the live route id
+  // for the originating-id half of the guard.
+  const generationsRef = useRef<StreamGeneration | null>(null);
+  if (!generationsRef.current) generationsRef.current = createStreamGeneration();
+  const idRef = useRef(id);
+  idRef.current = id;
   // Pending follow-up attribution: set when a suggestion chip is clicked,
   // consumed (and cleared) by the very next send — mirrors the Vue
   // pendingSuggestionAttribution / pendingSuggestionKnowledgeBaseIds pair.
   const pendingAttribution = useRef<{ setId: string; questionId: string } | null>(null);
   const pendingKbIds = useRef<string[]>([]);
-  // One-shot: the ?qokb/?qok hint belongs to the first turn only. A second
-  // manual send must not re-attach it (creatChat.vue clears firstQuestionOrigin
-  // by consuming it in the first sendMsg).
-  const originConsumed = useRef(false);
   const router = useRouter();
   const attachments = useAttachments(id === "new" ? undefined : id);
   // index.vue:1395 gates local_browser_enabled on !knownOffline so an offline
@@ -549,6 +610,16 @@ function ChatBody({ id }: { id: string }) {
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
   // and hydrate input state (agent, model, KBs) from last_request_state.
   useEffect(() => {
+    // A new route id invalidates every in-flight callback from the previous
+    // session: abort its controller AND bump the generation, so already-
+    // queued late chunks/finalizers from A skip their writes instead of
+    // mutating B state. The reset below then starts B from a clean slate.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    const generations = generationsRef.current!;
+    const gen = generations.next();
+    const originId = id;
+    const isLive = () => generations.isCurrent(gen) && idRef.current === originId;
     sentInitial.current = false;
     setMessages([]);
     setError(null);
@@ -636,10 +707,15 @@ function ChatBody({ id }: { id: string }) {
           return mapped;
         });
         const last = rows[rows.length - 1];
-        if (alive && last && last.role !== "user" && last.is_completed === false && last.id) {
+        // Resume-branch only: history merging above stays under `alive` (as
+        // before) so a send issued while history loads never drops rows —
+        // but attaching a continue-stream to a stale session must not run.
+        if (alive && isLive() && last && last.role !== "user" && last.is_completed === false && last.id) {
           setBusy(true);
           const inflightId = last.id;
           const applyChunk = (c: StreamChunk) => {
+            // Stale session/generation: A's late chunks must not touch B.
+            if (!alive || !isLive()) return;
             const kind = c.response_type ?? c.type;
             if (kind === "session_title") {
               const newTitle = c.content || c.data?.title;
@@ -767,7 +843,9 @@ function ChatBody({ id }: { id: string }) {
                * open re-reads it complete */
             })
             .finally(() => {
-              if (!alive) return;
+              // A stale finalizer must not clear the new session's busy
+              // flag or settle its rows.
+              if (!alive || !isLive()) return;
               setAbbreviationRefreshKey((v) => v + 1);
               setBusy(false);
               setMessages((m) =>
@@ -806,12 +884,43 @@ function ChatBody({ id }: { id: string }) {
     const t = s.query.trim();
     if (!t || busy) return;
     setError(null);
+    // A new send invalidates any previous stream's pending callbacks (e.g.
+    // a resend right after stop()): they capture `gen` and skip their late
+    // writes once stale, so only the live turn touches state.
+    const gen = generationsRef.current!.next();
+    const originId = idRef.current;
+    // Deferred-send liveness gate (same pure helper as
+    // lib/deferred-send-guard.ts): every await below re-checks it before
+    // any state write, so a turn whose upload is still pending when the
+    // route moves A→B (or a resend bumps the generation) drops its commit
+    // phase instead of appending A's bubble / overriding B's controller.
+    const isLive = () =>
+      shouldCommitDeferredSendTurn(generationsRef.current!, gen, idRef.current, originId);
     setBusy(true);
+
+    // Combined file+image cap BEFORE creating a session or uploading, so an
+    // over-cap send never leaves an orphan session/uploads or a server-
+    // rejected stream. Input and selection stay intact for retry.
+    const handoffPendingCount = !handoffRef.current.consumed
+      ? handoffRef.current.attachmentIds.length
+      : 0;
+    const capErr = combinedCapError(
+      s.attachments.length + s.imageFiles.length + handoffPendingCount,
+    );
+    if (capErr) {
+      setError(capErr);
+      setBusy(false);
+      return;
+    }
 
     let activeSessionId = id;
     if (activeSessionId === "new") {
       try {
         const res = await createSession({});
+        // Route may have moved while createSession was pending: a stale A
+        // turn must not reroute B's URL, dispatch session-created for B,
+        // or continue into the upload/stream path — drop out silently.
+        if (!isLive()) return;
         const sid = res.data?.id;
         if (!sid) throw new Error("Failed to create session");
         activeSessionId = sid;
@@ -824,6 +933,8 @@ function ChatBody({ id }: { id: string }) {
           );
         }
       } catch (e) {
+        // Stale upload/session errors never surface into the new session.
+        if (!isLive()) return;
         setError(e instanceof Error ? e.message : "Failed to create session");
         setBusy(false);
         return;
@@ -833,28 +944,36 @@ function ChatBody({ id }: { id: string }) {
     const asstId = `a${Date.now()}`;
 
     // Web images upload as temporary documents (VLM reads them in background);
-    // inline base64 is the per-image fallback when the upload fails.
-    const imageAttachmentIds: string[] = [];
-    for (const file of s.imageFiles) {
-      try {
-        const up = await uploadTemporaryAttachment(
-          activeSessionId,
-          file,
-          ctx.settings.selectedAgentId || undefined,
-          ctx.settings.selectedAgentSourceTenantId ?? undefined,
-          "auto",
-        );
-        imageAttachmentIds.push(up.data.id);
-      } catch {
-        /* base64 fallback below */
-      }
-    }
+    // inline base64 is the per-image fallback for the files whose upload
+    // actually failed — tracked by identity, never by success count.
+    const { attachmentIds: imageAttachmentIds, inlineImages: fallbackInlineImages } =
+      await uploadImagesWithFallback(
+        s.imageFiles,
+        async (file) => {
+          const up = await uploadTemporaryAttachment(
+            activeSessionId,
+            file,
+            ctx.settings.selectedAgentId || undefined,
+            ctx.settings.selectedAgentSourceTenantId ?? undefined,
+            "auto",
+          );
+          return up.data.id;
+        },
+        (file) => fileToDataUri(file),
+      );
+    // Navigating A→B while the image upload was pending leaves this turn
+    // stale: never append A's bubble or start A's stream on B.
+    if (!isLive()) return;
 
     // Local files picked before the session existed (create-chat page) upload now.
+    // Their IDs are collected synchronously for THIS request: patching React
+    // state is async, so reading them back from s.attachments (which lacks
+    // documentId) would silently drop them from the turn.
     const localOnes = s.attachments.filter((a) => !a.documentId);
+    let localUploadedIds: string[] = [];
     if (localOnes.length > 0) {
       try {
-        await Promise.all(
+        localUploadedIds = await Promise.all(
           localOnes.map(async (a) => {
             const up = await uploadTemporaryAttachment(
               activeSessionId,
@@ -863,27 +982,57 @@ function ChatBody({ id }: { id: string }) {
               ctx.settings.selectedAgentSourceTenantId ?? undefined,
               "auto",
             );
+            // The per-file callback runs after its own await: a stale A
+            // turn must not patch attachment state now owned by B.
+            if (!isLive()) return up.data.id;
             attachments.setItems((prev) => prev.map((x) => (x.localId === a.localId ? { ...x, documentId: up.data.id, status: up.data.status } : x)));
+            return up.data.id;
           }),
         );
+        // Route may have moved while the local uploads were pending.
+        if (!isLive()) return;
       } catch (e) {
+        // Stale upload errors never surface into the new session.
+        if (!isLive()) return;
         setError(e instanceof Error ? e.message : "Attachment upload failed");
         setBusy(false);
         return;
       }
     }
 
+    // Final commit gate: every await above has resolved. If the route moved
+    // A→B (or a resend bumped the generation) while uploads were pending,
+    // drop the stale A turn here — before consuming the one-shot handoff,
+    // before appending the optimistic bubble, and before installing the
+    // abort controller / launching the stream — so B is never touched.
+    if (!isLive()) return;
+    // One-shot first-turn handoff: the first send of this session rides the
+    // pre-uploaded IDs (+ display names) and the retrieval hint; later sends
+    // get empties so stale hints/IDs never re-attach (creatChat.vue clears
+    // firstQuestionOrigin in the first sendMsg).
+    const firstSend = !handoffRef.current.consumed;
+    const handoffTake = takeHandoffTurn(handoffRef.current);
+    handoffRef.current = handoffTake.next;
+    const handoffIds = firstSend ? handoffTake.attachmentIds : [];
+    const handoffNames = firstSend ? handoffTake.attachmentNames : [];
+
     // Echo which files were sent on the user bubble — the question alone is
-    // meaningless when the content lives in an attached document.
+    // meaningless when the content lives in an attached document. First-turn
+    // handoff files arrive as IDs only, so their one-shot display names fill
+    // the bubble instead of rendering it empty.
     const sentAttachments: UiAttachment[] = [
       ...s.attachments.map((a) => ({ name: a.name, size: a.size })),
       ...s.imageFiles.map((f) => ({ name: f.name, size: f.size, isImage: true })),
+      ...handoffNames.map((name) => ({ name })),
     ];
     stickBottomRef.current = true;
     setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
 
+    // Covered by the commit gate above (no await intervenes, so liveness
+    // cannot change here): reaching this point means the turn is live, and
+    // installing the abort controller / launching the stream is safe.
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let acc = "";
@@ -896,7 +1045,11 @@ function ChatBody({ id }: { id: string }) {
 
     // Mirror useChatStreamHandler.processStreamChunk:
     // handle thinking, tool execution, answer content and references.
+    // Every branch below writes state for THIS turn only — when the route
+    // changed (or a newer send started) the generation is stale and the
+    // chunk is dropped so session A's tail never mutates session B.
     const applyChunk = (c: StreamChunk) => {
+      if (!isLive()) return;
       const kind = c.response_type ?? c.type;
       const incomingAsstId = c.assistant_message_id;
       if (incomingAsstId) {
@@ -1159,18 +1312,7 @@ function ChatBody({ id }: { id: string }) {
     };
 
     // Inline image payload is the embedded/base64-fallback path only.
-    let inlineImages: Array<{ data: string }> | undefined;
-    if (s.imageFiles.length > imageAttachmentIds.length) {
-      inlineImages = [];
-      for (const file of s.imageFiles.slice(imageAttachmentIds.length)) {
-        try {
-          inlineImages.push({ data: await fileToDataUri(file) });
-        } catch {
-          /* skip unreadable */
-        }
-      }
-      if (inlineImages.length === 0) inlineImages = undefined;
-    }
+    const inlineImages = fallbackInlineImages;
 
     // Mirror index.vue sendMsg: sidebar KB/file ids ∪ @mentioned ids; MCP/skills
     // only on the agent pipeline; summary_model_id only from the admin picker.
@@ -1190,10 +1332,12 @@ function ChatBody({ id }: { id: string }) {
     const isAgentMode =
       selectedAgentId === "builtin-smart-reasoning" ||
       (selectedAgentId !== "builtin-quick-answer" && ctx.settings.isAgentEnabled);
-    const attachmentIds = [
-      ...s.attachments.map((a) => a.documentId).filter((x): x is string => Boolean(x)),
-      ...imageAttachmentIds,
-    ];
+    const attachmentIds = mergeAttachmentIds(
+      s.attachments.map((a) => a.documentId).filter((x): x is string => Boolean(x)),
+      localUploadedIds,
+      imageAttachmentIds,
+      handoffIds,
+    );
 
     attachments.clear();
     // Follow-up attribution anchors this single turn to the clicked
@@ -1203,12 +1347,10 @@ function ChatBody({ id }: { id: string }) {
     pendingAttribution.current = null;
     const kbIdsOverride = pendingKbIds.current;
     pendingKbIds.current = [];
-    // First-turn hint from create-chat (?qokb/?qok) or an explicit send
-    // option; consumed once so later sends never re-attach a stale hint
-    // (creatChat.vue clears firstQuestionOrigin in the first sendMsg).
-    const firstSend = !originConsumed.current;
-    originConsumed.current = true;
-    const questionOrigin = s.questionOrigin ?? (firstSend ? initialOrigin : undefined);
+    // Explicit per-send hint wins; otherwise the one-shot first-turn hint
+    // from the handoff state (already consumed above — later sends resolve
+    // to undefined so a stale hint never re-attaches).
+    const questionOrigin = s.questionOrigin ?? (firstSend ? handoffTake.questionOrigin : undefined);
     const previousMessage = messages[messages.length - 1];
     const priorCandidates =
       previousMessage?.role === "assistant"
@@ -1245,6 +1387,8 @@ function ChatBody({ id }: { id: string }) {
       onChunk: applyChunk,
     })
       .catch((e: unknown) => {
+        // Stale turns never surface errors into the new session.
+        if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorText = e instanceof Error ? e.message : "Stream failed";
         console.error("[streamChat] Error:", e);
@@ -1263,6 +1407,10 @@ function ChatBody({ id }: { id: string }) {
         );
       })
       .finally(() => {
+        // The core of the A→B race fix: a stale finalizer (old session A
+        // completing while B streams) must NOT clear B's busy flag, settle
+        // B's rows, or reroute — it simply drops out.
+        if (!isLive()) return;
         setAbbreviationRefreshKey((v) => v + 1);
         setBusy(false);
         setAssistantMessageId(null);
@@ -1349,10 +1497,20 @@ function ChatBody({ id }: { id: string }) {
   useEffect(() => {
     if (initialQ && !sentInitial.current && ctx.hydrated) {
       sentInitial.current = true;
+      // Flagged file handoff but the one-shot record is gone (reload, other
+      // tab, expired storage): DO NOT auto-send the bare question without
+      // its files — surface an actionable error and keep the question as a
+      // draft for the user to re-attach and resend.
+      const resolved = handoffCacheRef.current?.sessionId === id ? handoffCacheRef.current.resolved : null;
       if (typeof window !== "undefined") {
         window.history.replaceState(null, "", `/platform/chat/${id}`);
       }
-      void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [], questionOrigin: initialOrigin });
+      if (resolved?.handoffError) {
+        setInput(initialQ);
+        setError(resolved.handoffError);
+        return;
+      }
+      void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQ, id, ctx.hydrated]);

@@ -80,19 +80,33 @@ function acceptLanguageHeader(): Record<string, string> {
   }
 }
 
-function selectedTenantHeader(skip: boolean): Record<string, string> {
-  if (skip) return {};
+/* Case-insensitive lookup for an explicit custom header value. Upload and
+ * download wrappers accept shorthand header bags, so `authorization` must
+ * match `Authorization`. */
+function lookupCustomHeader(
+  headers: Record<string, string> | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) return undefined;
+  const want = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === want) return value;
+  }
+  return undefined;
+}
+
+function storedTenantId(): string | null {
   try {
     const id = localStorage.getItem(TENANT_KEY);
     if (!isValidTenantId(id)) {
       if (id === "undefined" || id === "null") {
         localStorage.removeItem(TENANT_KEY);
       }
-      return {};
+      return null;
     }
-    return { "X-Tenant-ID": id!.trim() };
+    return id!.trim();
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -131,9 +145,43 @@ function withHttpStatus<T>(data: T, status: number): T {
 export type ApiRequestOptions = {
   /** Extra headers; an explicit Authorization (e.g. `Embed <token>`) wins over JWT. */
   headers?: Record<string, string>;
+  /** Omit X-Tenant-ID even when one is stored (stale-tenant recovery retry). */
+  skipTenant?: boolean;
   /** Abort the request after N ms (fetch has no built-in timeout). */
   timeoutMs?: number;
   signal?: AbortSignal;
+};
+
+/* Extra opts.headers that are not managed above ride the request verbatim
+ * (X-WeKnora-Desktop-Token, X-Embed-Session, ...). Managed names are
+ * skipped so computed values are not concatenated into duplicates. */
+function passthroughHeaders(headers: Record<string, string>): Record<string, string> {
+  const extra: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    switch (name.toLowerCase()) {
+      case "authorization":
+      case "x-tenant-id":
+      case "x-request-id":
+      case "accept-language":
+        continue;
+    }
+    extra[name] = value;
+  }
+  return extra;
+}
+
+/* Strip a stale caller-copy Bearer so a refresh replay picks up the freshly
+ * stored token instead of re-sending the expired one (same rule as
+ * apiUpload's replay). */
+function withoutCustomAuth(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return headers;
+  const replay: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== "authorization") replay[name] = value;
+  }
+  return replay;
 };
 
 /* Share-link / embed endpoints are reachable anonymously — a 401 there must
@@ -153,31 +201,99 @@ function isPublicAuthPath(path: string): boolean {
 
 let refreshPromise: Promise<string> | null = null;
 
-async function refreshAccessToken(): Promise<string> {
+/* Only a confirmed-invalid refresh credential wipes the session: an
+ * explicit 401/403 from /auth/refresh, or an equivalent explicit
+ * invalid-auth verdict in the body (e.g. success:false carrying an
+ * invalid/expired/revoked refresh-token message). Anything else — 5xx,
+ * network failure, unparseable body — is transient: tokens are preserved
+ * and no navigation happens, so the next request retries with the same
+ * credentials instead of signing the user out for a blip. */
+function isInvalidRefreshCredential(status: number, payload: unknown): boolean {
+  // 5xx / network (status 0): always transient, even when a proxy error
+  // page carries invalid-looking text such as "session expired".
+  if (status === 0 || status >= 500) return false;
+  if (status === 401 || status === 403) return true;
+  if (payload && typeof payload === "object") {
+    const record = payload as { error?: unknown; message?: unknown };
+    const texts: unknown[] = [record.message];
+    if (typeof record.error === "string") texts.push(record.error);
+    else if (record.error && typeof record.error === "object") {
+      texts.push((record.error as { message?: unknown }).message);
+    }
+    if (
+      texts.some(
+        (text) =>
+          typeof text === "string" &&
+          /invalid[^a-z0-9]*refresh|refresh[^a-z0-9]*(invalid|expired|revoked)|unauthori|session expired|please sign in|sign.?in again/i.test(
+            text,
+          ),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Shared refresh single-flight: JSON (request/downloadRequest/apiUpload) and
+ * the SSE stream (lib/api/stream.ts) import this same function, so
+ * concurrent 401s reuse one promise and one token rotation. The backend
+ * rotates BOTH tokens on every call — both are persisted. */
+export async function refreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
-    const { refreshToken } = getTokens();
-    if (!refreshToken) throw new ApiError(401, "Please sign in again");
-    const res = await fetch("/api/v1/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
+    /* Snapshot the credentials this refresh runs for. The response is
+     * async: a login, logout, or account switch may land mid-flight, and
+     * blindly persisting afterwards would overwrite the newer session
+     * (or resurrect a logged-out one). Every store/clear below first
+     * re-checks that these are still the current credentials. */
+    const { token: requestAccess, refreshToken: requestRefresh } = getTokens();
+    if (!requestRefresh) throw new ApiError(401, "Please sign in again");
+    const superseded = () => {
+      const current = getTokens();
+      return (
+        current.refreshToken !== requestRefresh || current.token !== requestAccess
+      );
+    };
+    const staleFlight = () =>
+      new ApiError(409, "Session changed during refresh");
+    let res: Response;
+    try {
+      res = await fetch("/api/v1/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: requestRefresh }),
+      });
+    } catch (err) {
+      // Network/abort before any verdict: transient, keep the session.
+      throw new ApiError(
+        0,
+        err instanceof Error ? err.message : "Network error during refresh",
+      );
+    }
     const data = (await res.json().catch(() => null)) as {
       success?: boolean;
       access_token?: string;
       refresh_token?: string;
       data?: { token?: string; refreshToken?: string };
       message?: string;
+      error?: string | { code?: string; message?: string };
     } | null;
     const token = data?.access_token ?? data?.data?.token;
     const nextRefresh = data?.refresh_token ?? data?.data?.refreshToken;
     if (!res.ok || !data?.success || !token) {
+      // A verdict for the OLD session must never touch the NEW one: no
+      // clearing, no redirect, no replay under the wrong account.
+      if (superseded()) throw staleFlight();
+      if (!isInvalidRefreshCredential(res.status, data)) {
+        throw new ApiError(res.status || 0, envelopeMessage(data), data ?? undefined);
+      }
       clearTokens();
       window.location.href = "/login";
       throw new ApiError(res.status || 401, data?.message ?? "Session expired");
     }
-    setTokens(token, nextRefresh ?? refreshToken);
+    if (superseded()) throw staleFlight();
+    setTokens(token, nextRefresh ?? requestRefresh);
     return token;
   })();
   try {
@@ -209,21 +325,40 @@ function wireSignal(controller: AbortController, opts?: ApiRequestOptions): Abor
 
 async function request<T>(path: string, init: RequestInit, opts?: ApiRequestOptions, retry = true): Promise<T> {
   const { token } = getTokens();
-  const isEmbed =
-    path.includes("/api/v1/embed/") ||
-    (typeof (init.headers as Record<string, string> | undefined)?.Authorization === "string" &&
-      (init.headers as Record<string, string>).Authorization.startsWith("Embed "));
+  /* opts.headers carry caller credentials (Embed tokens, desktop token,
+   * tenant/session overrides) — an explicit Authorization wins over the
+   * stored JWT, case-insensitively, with the same override rule as
+   * apiUpload(): an explicit `Bearer` is a stale-capable caller copy and
+   * stays refresh-eligible; any other scheme is caller-managed. */
+  const customHeaders = opts?.headers ?? {};
+  const customAuth = lookupCustomHeader(customHeaders, "Authorization");
+  const initAuth = (init.headers as Record<string, string> | undefined)?.Authorization;
+  const isEmbedAuth =
+    (typeof customAuth === "string" && customAuth.startsWith("Embed ")) ||
+    (typeof initAuth === "string" && initAuth.startsWith("Embed "));
+  const isBearerCustomAuth =
+    typeof customAuth === "string" && customAuth.startsWith("Bearer ");
+  const isEmbed = path.includes("/api/v1/embed/") || isEmbedAuth;
+  const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
+  const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
+  const tenantHeader =
+    customTenant ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
   const controller = new AbortController();
   const res = await fetch(path, {
     ...init,
     signal: wireSignal(controller, opts),
     headers: {
       "Content-Type": "application/json",
-      "X-Request-ID": `${Math.random().toString(36).slice(2, 14)}`,
-      ...acceptLanguageHeader(),
-      ...(!isEmbed && token ? { Authorization: `Bearer ${token}` } : {}),
-      ...selectedTenantHeader(isEmbed),
+      "X-Request-ID":
+        lookupCustomHeader(customHeaders, "X-Request-ID") ??
+        `${Math.random().toString(36).slice(2, 14)}`,
+      "Accept-Language":
+        lookupCustomHeader(customHeaders, "Accept-Language") ??
+        acceptLanguageHeader()["Accept-Language"],
+      ...(authHeader ? { Authorization: authHeader } : {}),
+      ...(tenantHeader ? { "X-Tenant-ID": tenantHeader } : {}),
       ...(init.headers ?? {}),
+      ...passthroughHeaders(customHeaders),
     },
   });
   if (
@@ -231,13 +366,14 @@ async function request<T>(path: string, init: RequestInit, opts?: ApiRequestOpti
     retry &&
     !isEmbed &&
     !isPublicAuthPath(path) &&
-    !path.includes("/auth/refresh")
+    !path.includes("/auth/refresh") &&
+    (customAuth === undefined || isBearerCustomAuth)
   ) {
     const next = await refreshAccessToken();
     return request<T>(
       path,
       { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${next}` } },
-      opts,
+      isBearerCustomAuth ? { ...opts, headers: withoutCustomAuth(opts?.headers) } : opts,
       false,
     );
   }
@@ -272,24 +408,40 @@ export function apiDel<T>(path: string, body?: unknown, opts?: ApiRequestOptions
 
 async function downloadRequest(path: string, init: RequestInit, opts?: ApiRequestOptions, retry = true): Promise<Blob> {
   const { token } = getTokens();
-  const isEmbed = path.includes("/api/v1/embed/");
+  /* Same opts.headers override rule as request(): explicit Authorization
+   * wins (case-insensitive); Embed or other caller-managed schemes never
+   * refresh; a stale caller-copy Bearer replays with the fresh token. */
+  const customHeaders = opts?.headers ?? {};
+  const customAuth = lookupCustomHeader(customHeaders, "Authorization");
+  const isEmbedAuth = typeof customAuth === "string" && customAuth.startsWith("Embed ");
+  const isBearerCustomAuth =
+    typeof customAuth === "string" && customAuth.startsWith("Bearer ");
+  const isEmbed = path.includes("/api/v1/embed/") || isEmbedAuth;
+  const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
+  const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
+  const tenantHeader =
+    customTenant ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
   const controller = new AbortController();
   const res = await fetch(path, {
     ...init,
     signal: wireSignal(controller, opts),
     headers: {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...acceptLanguageHeader(),
-      ...(!isEmbed && token ? { Authorization: `Bearer ${token}` } : {}),
-      ...selectedTenantHeader(isEmbed),
-      ...(opts?.headers ?? {}),
+      "Accept-Language":
+        lookupCustomHeader(customHeaders, "Accept-Language") ??
+        acceptLanguageHeader()["Accept-Language"],
+      ...(authHeader ? { Authorization: authHeader } : {}),
+      ...(tenantHeader ? { "X-Tenant-ID": tenantHeader } : {}),
+      ...(init.headers ?? {}),
+      ...passthroughHeaders(customHeaders),
     },
   });
   if (
     res.status === 401 &&
     retry &&
     !isEmbed &&
-    !isPublicAuthPath(path)
+    !isPublicAuthPath(path) &&
+    (customAuth === undefined || isBearerCustomAuth)
   ) {
     /* Same refresh-then-replay contract as request(): Vue's axios
      * interceptor covers downloads too — without this an expired access
@@ -304,7 +456,7 @@ async function downloadRequest(path: string, init: RequestInit, opts?: ApiReques
           Authorization: `Bearer ${next}`,
         },
       },
-      opts,
+      isBearerCustomAuth ? { ...opts, headers: withoutCustomAuth(opts?.headers) } : opts,
       false,
     );
   }
@@ -357,18 +509,64 @@ export function apiUpload<T>(
       return null;
     }
   })();
-  const isEmbed = path.includes("/api/v1/embed/");
+  /* Custom upload headers (opts.headers) win over the stored defaults, with
+   * the same override semantics as request(): an explicit `Embed <token>`
+   * Authorization marks the call as embed and suppresses the stored JWT and
+   * tenant, matching the axios postUpload interceptor this was ported from.
+   * Content-Type is never applied: XHR must derive the multipart boundary
+   * from the FormData, and a manual value would corrupt the upload. */
+  const customHeaders = opts?.headers ?? {};
+  const customAuth = lookupCustomHeader(customHeaders, "Authorization");
+  const isEmbedAuth =
+    typeof customAuth === "string" && customAuth.startsWith("Embed ");
+  /* An explicit `Bearer <token>` in opts.headers is a stale-capable caller
+   * copy of the JWT (not caller-managed auth): it stays refresh-eligible so
+   * a 401 still self-heals. Any other explicit Authorization scheme (Embed
+   * above, or e.g. `Token ...`) is caller-managed and must never trigger a
+   * refresh — replaying with the stored JWT would send the wrong identity. */
+  const isBearerCustomAuth =
+    typeof customAuth === "string" && customAuth.startsWith("Bearer ");
+  const isEmbed = path.includes("/api/v1/embed/") || isEmbedAuth;
+  const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
+  const storedTenant = tenantId !== null && isValidTenantId(tenantId) ? tenantId.trim() : null;
+  const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
+  const tenantHeader = customTenant ?? (!isEmbed ? storedTenant : null);
+  const requestId =
+    lookupCustomHeader(customHeaders, "X-Request-ID") ??
+    Math.random().toString(36).slice(2, 14);
+  let acceptLanguage: string | null = null;
+  try {
+    acceptLanguage =
+      lookupCustomHeader(customHeaders, "Accept-Language") ??
+      acceptLanguageHeader()["Accept-Language"];
+  } catch {
+    /* locale is best-effort */
+  }
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", path);
     if (opts?.timeoutMs) xhr.timeout = opts.timeoutMs;
-    if (!isEmbed && token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    if (!isEmbed && tenantId) xhr.setRequestHeader("X-Tenant-ID", tenantId);
-    xhr.setRequestHeader("X-Request-ID", Math.random().toString(36).slice(2, 14));
-    try {
-      xhr.setRequestHeader("Accept-Language", acceptLanguageHeader()["Accept-Language"]);
-    } catch {
-      /* locale is best-effort */
+    if (authHeader) xhr.setRequestHeader("Authorization", authHeader);
+    if (tenantHeader) xhr.setRequestHeader("X-Tenant-ID", tenantHeader);
+    xhr.setRequestHeader("X-Request-ID", requestId);
+    if (acceptLanguage) xhr.setRequestHeader("Accept-Language", acceptLanguage);
+    for (const [name, value] of Object.entries(customHeaders)) {
+      /* Managed above (or forbidden for multipart): skip so XHR does not
+       * concatenate duplicate values onto the same header. Everything else
+       * — e.g. X-WeKnora-Desktop-Token — passes through verbatim. */
+      switch (name.toLowerCase()) {
+        case "authorization":
+        case "x-tenant-id":
+        case "x-request-id":
+        case "accept-language":
+        case "content-type":
+          continue;
+      }
+      try {
+        xhr.setRequestHeader(name, value);
+      } catch {
+        /* invalid header name/value */
+      }
     }
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(Math.round((e.loaded * 100) / e.total));
@@ -386,12 +584,36 @@ export function apiUpload<T>(
         xhr.status === 401 &&
         retry &&
         !isEmbed &&
-        !isPublicAuthPath(path)
+        !isPublicAuthPath(path) &&
+        (customAuth === undefined || isBearerCustomAuth)
       ) {
         /* The upload ran with a stale access token: refresh once and
-         * resend the same FormData, like request()'s replay. */
+         * resend the same FormData, like request()'s replay. A stale
+         * custom `Bearer` in opts.headers must not survive into the replay
+         * — strip it so the recursive call picks up the freshly stored
+         * token instead of re-sending the expired one. */
         refreshAccessToken()
-          .then(() => resolve(apiUpload(path, form, onProgress, opts, false)))
+          .then(() => {
+            if (!isBearerCustomAuth) {
+              resolve(apiUpload(path, form, onProgress, opts, false));
+              return;
+            }
+            const replayHeaders: Record<string, string> = {};
+            for (const [name, value] of Object.entries(customHeaders)) {
+              if (name.toLowerCase() !== "authorization") {
+                replayHeaders[name] = value;
+              }
+            }
+            resolve(
+              apiUpload(
+                path,
+                form,
+                onProgress,
+                { ...opts, headers: replayHeaders },
+                false,
+              ),
+            );
+          })
           .catch(reject);
         return;
       }

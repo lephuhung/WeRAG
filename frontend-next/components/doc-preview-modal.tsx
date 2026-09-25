@@ -15,9 +15,18 @@ export interface DocPreviewSource {
 export function DocPreviewModal({
   source,
   onClose,
+  canDownloadOriginal = true,
 }: {
   source: DocPreviewSource | null;
   onClose: () => void;
+  /* Resource capability gate (UI affordance only — the backend still
+   * authorizes /preview and /download, and nothing here can stop
+   * browser-level saving of content already delivered for preview).
+   * The /preview endpoint serves the original file, so the modal's
+   * explicit Download controls are original-source download affordances
+   * and are hidden when false. Defaults true so unrelated callers
+   * (e.g. the artifacts page) keep download without code changes. */
+  canDownloadOriginal?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -145,13 +154,15 @@ export function DocPreviewModal({
                 >
                   <IconExternal className="h-3.5 w-3.5" /> Open
                 </button>
-                <button
-                  onClick={handleDownload}
-                  className="btn btn-primary btn-sm"
-                  title="Download file"
-                >
-                  <IconDownload className="h-3.5 w-3.5" /> Download
-                </button>
+                {canDownloadOriginal && (
+                  <button
+                    onClick={handleDownload}
+                    className="btn btn-primary btn-sm"
+                    title="Download file"
+                  >
+                    <IconDownload className="h-3.5 w-3.5" /> Download
+                  </button>
+                )}
               </>
             )}
             <button
@@ -212,16 +223,20 @@ export function DocPreviewModal({
               <div>
                 <p className="text-[15px] font-medium text-ink">Preview not available</p>
                 <p className="caption mt-1 text-muted">
-                  Direct in-browser preview is not supported for this file format. You can download the file to inspect it.
+                  {canDownloadOriginal
+                    ? "Direct in-browser preview is not supported for this file format. You can download the file to inspect it."
+                    : "Direct in-browser preview is not supported for this file format."}
                 </p>
               </div>
-              <button
-                onClick={handleDownload}
-                disabled={!blobUrl}
-                className="btn btn-primary btn-sm"
-              >
-                <IconDownload className="h-4 w-4" /> Download original file
-              </button>
+              {canDownloadOriginal && (
+                <button
+                  onClick={handleDownload}
+                  disabled={!blobUrl}
+                  className="btn btn-primary btn-sm"
+                >
+                  <IconDownload className="h-4 w-4" /> Download original file
+                </button>
+              )}
             </div>
           )}
         </div>

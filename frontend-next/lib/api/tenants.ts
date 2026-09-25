@@ -302,8 +302,18 @@ export async function searchTenants(params: SearchTenantsParams = {}): Promise<S
 
 // ---- members --------------------------------------------------------------------
 
-/* TenantRole mirrors internal/types/tenant_member.go's three-role enum. */
-export type TenantRole = "owner" | "admin" | "member";
+/* TenantRole mirrors the backend human role model (tenant/KB permission
+ * plan): exactly Admin and Member at tenant scope, with SuperAdmin as the
+ * platform flag (user.is_system_admin) rather than a membership role.
+ * "owner" is a legacy alias the backend still serializes for pre-migration
+ * rows — normalize it to "admin" for display/assignment via
+ * normalizeTenantRole (see ./tenant-roles). Never assign "owner" to new
+ * memberships. */
+import type { AssignableTenantRole, TenantRole } from "../tenant-roles";
+import { isTenantAdminRole, normalizeTenantRole } from "../tenant-roles";
+
+export type { AssignableTenantRole, TenantRole };
+export { isTenantAdminRole, normalizeTenantRole };
 
 export type TenantMemberStatus = "active" | "invited" | "suspended";
 

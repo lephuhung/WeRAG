@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconGlobe, IconPlus, IconSend } from "@/components/icons";
+import { IconDoc, IconGlobe, IconImage, IconPaperclip, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
@@ -67,6 +67,7 @@ export function Composer({
   const [mentionAnchor, setMentionAnchor] = useState(0);
   const [mentionItemsCount, setMentionItemsCount] = useState(0);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export function Composer({
   const closePopups = () => {
     setMentionOpen(false);
     setAgentOpen(false);
+    setAttachOpen(false);
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -271,35 +273,68 @@ export function Composer({
           <button
             onClick={() => toggleWebSearch(!websearchOn)}
             title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
-            className={`flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-[13px] font-medium transition-colors sm:px-3 ${
+            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[12.5px] font-medium transition-colors sm:px-2.5 ${
               websearchOn ? "border-[#cfe1fd] bg-[#edf5ff] text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
             } ${webSearchReady ? "" : "opacity-50"}`}
           >
             <IconGlobe className="h-3.5 w-3.5" /> {websearchOn ? "Web on" : "Web"}
           </button>
 
-          {imageCapable && (
+          <div className="relative">
             <button
-              onClick={onPickImages}
-              title="Attach images (multimodal)"
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                images.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+              onClick={() => {
+                const next = !attachOpen;
+                closePopups();
+                setAttachOpen(next);
+              }}
+              title={sessionId ? "Attach files or images" : "Attach (upload after session is created)"}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                images.length + attachments.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
               }`}
             >
-              <IconPlus className="h-4 w-4" />
-              {images.length > 0 && <span className="caption ml-0.5">{images.length}</span>}
+              <IconPaperclip className="h-3.5 w-3.5" />
+              {images.length + attachments.length > 0 && (
+                <span className="caption ml-0.5">{images.length + attachments.length}</span>
+              )}
             </button>
-          )}
-
-          <button
-            onClick={onPickFiles}
-            title={sessionId ? "Attach files" : "Attach files (upload after session is created)"}
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
-              attachments.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
-            }`}
-          >
-            📎{attachments.length > 0 && <span className="caption ml-0.5">{attachments.length}</span>}
-          </button>
+            {attachOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setAttachOpen(false)} />
+                <div className="card absolute bottom-full left-0 z-50 mb-2 w-[200px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+                  <button
+                    onClick={() => {
+                      setAttachOpen(false);
+                      onPickFiles();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink"
+                  >
+                    <IconDoc className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block">Upload file</span>
+                      <span className="caption block text-muted">PDF, DOCX, XLSX…</span>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAttachOpen(false);
+                      onPickImages();
+                    }}
+                    disabled={!imageCapable}
+                    title={imageCapable ? undefined : "Current agent doesn't support images"}
+                    className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-body"
+                  >
+                    <IconImage className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block">Upload image</span>
+                      <span className="caption block text-muted">
+                        {imageCapable ? "JPEG, PNG, GIF, WebP" : "Not supported by this agent"}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="relative ml-auto flex shrink-0 items-center gap-2">

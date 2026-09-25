@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function Modal({
   open,
@@ -15,6 +16,14 @@ export function Modal({
   children: React.ReactNode;
   width?: string;
 }) {
+  /* Portal to <body>: modals nested inside SlidePanel (or any other
+   * transformed/animated container) would otherwise be trapped by the
+   * ancestor's transform — `position: fixed` resolves against that box,
+   * squashing the dialog into the panel and breaking the Select menu's
+   * viewport coordinates inside it. */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -22,9 +31,9 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-ink/20" onClick={onClose} />
       <div
@@ -46,6 +55,7 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

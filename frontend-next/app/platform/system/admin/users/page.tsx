@@ -28,7 +28,8 @@ const initials = (name: string) =>
 
 type AddMode = "create" | "promote";
 
-const WORKSPACE_ROLES: TenantRole[] = ["member", "admin", "owner"];
+/* Assignable workspace roles: admin/member (owner is retired). */
+const WORKSPACE_ROLES: TenantRole[] = ["member", "admin"];
 
 const ROLE_BADGE_STYLES: Record<TenantRole, string> = {
   owner: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",

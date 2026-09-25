@@ -6,12 +6,10 @@ import { IconPlus, IconRefresh, IconSearch, IconTrash } from "@/components/icons
 import { Select } from "@/components/select";
 import {
   fetchAllTenantMembers,
-  addMember,
   updateMemberRole,
   removeMember,
   leaveTenant,
   listTenantInvitations,
-  createInviteLink,
   revokeInvitation,
   type TenantMember,
   type TenantRole,
@@ -21,11 +19,13 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
+import { InviteMemberModal } from "@/components/invite-member-modal";
 
+/* Workspace roles: Tenant Admin and Member (plus platform SuperAdmin, which is
+ * not a membership). The legacy owner role is retired and not assignable. */
 const ROLES: { id: TenantRole; label: string; desc: string }[] = [
-  { id: "owner", label: "Owner", desc: "Full administrative control, workspace deletion & billing" },
-  { id: "admin", label: "Admin", desc: "Manage members, models, integrations, skills, and storage" },
-  { id: "member", label: "Member", desc: "Read knowledge bases, documents, and chat with agents" },
+  { id: "admin", label: "Admin", desc: "Manage members, knowledge bases, models, integrations, skills, and storage" },
+  { id: "member", label: "Member", desc: "Read knowledge bases, upload documents, and chat with agents" },
 ];
 
 export function TenantMembers() {
@@ -37,8 +37,8 @@ export function TenantMembers() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
-  const isOwner = currentRole === "owner" || isSystemAdmin;
+  const isTenantAdmin = currentRole === "admin" || currentRole === "owner" || isSystemAdmin;
+  const canManage = isTenantAdmin;
 
   const [members, setMembers] = useState<TenantMember[]>([]);
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
@@ -49,15 +49,9 @@ export function TenantMembers() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  // Invite Modal
+  // Invite Modal — the email/link form lives in InviteMemberModal so the
+  // organizations page can reuse it.
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  const [inviteTab, setInviteTab] = useState<"email" | "link">("email");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<TenantRole>("member");
-  const [inviteMsg, setInviteMsg] = useState("");
-  const [generatedLink, setGeneratedLink] = useState("");
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [inviting, setInviting] = useState(false);
 
   // Remove / Leave confirmation
   const [removingMember, setRemovingMember] = useState<TenantMember | null>(null);
@@ -67,8 +61,11 @@ export function TenantMembers() {
   // RBAC info modal
   const [rbacModalOpen, setRbacModalOpen] = useState(false);
 
-  const ownerCount = useMemo(() => {
-    return members.filter((m) => m.role === "owner" && m.status === "active").length;
+  // Active Tenant Admins (legacy owner rows count as admin until migrated).
+  const adminCount = useMemo(() => {
+    return members.filter(
+      (m) => (m.role === "admin" || m.role === "owner") && m.status === "active",
+    ).length;
   }, [members]);
 
   const loadData = useCallback(async () => {
@@ -100,8 +97,8 @@ export function TenantMembers() {
   // Member role change
   const handleRoleChange = async (member: TenantMember, newRole: TenantRole) => {
     if (!activeTenantId || !canManage) return;
-    if (member.role === "owner" && newRole !== "owner" && ownerCount <= 1) {
-      setError("Cannot demote the last remaining workspace owner");
+    if ((member.role === "admin" || member.role === "owner") && newRole !== "admin" && adminCount <= 1) {
+      setError("Cannot demote the last remaining workspace admin");
       return;
     }
     setError("");
@@ -122,8 +119,8 @@ export function TenantMembers() {
   // Remove member
   const handleRemoveMember = async () => {
     if (!activeTenantId || !removingMember) return;
-    if (removingMember.role === "owner" && ownerCount <= 1) {
-      setError("Cannot remove the last remaining workspace owner");
+    if ((removingMember.role === "admin" || removingMember.role === "owner") && adminCount <= 1) {
+      setError("Cannot remove the last remaining workspace admin");
       setRemovingMember(null);
       return;
     }
@@ -148,8 +145,8 @@ export function TenantMembers() {
   // Leave workspace
   const handleLeave = async () => {
     if (!activeTenantId) return;
-    if (currentRole === "owner" && ownerCount <= 1) {
-      setError("You are the last owner. Transfer ownership before leaving.");
+    if ((currentRole === "admin" || currentRole === "owner") && adminCount <= 1) {
+      setError("You are the last admin. Promote another member before leaving.");
       setConfirmLeave(false);
       return;
     }
@@ -167,58 +164,6 @@ export function TenantMembers() {
     } finally {
       setActionBusy(false);
       setConfirmLeave(false);
-    }
-  };
-
-  // Send email invite
-  const handleInviteEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeTenantId || !inviteEmail.trim()) return;
-    setInviting(true);
-    setError("");
-    try {
-      const res = await addMember(activeTenantId, {
-        email: inviteEmail.trim(),
-        role: inviteRole,
-      });
-      if (res.success) {
-        setSuccess(`Invitation sent to ${inviteEmail.trim()}`);
-        setInviteModalOpen(false);
-        setInviteEmail("");
-        await loadData();
-      } else {
-        setError(res.message || "Failed to send invitation");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to send invitation");
-    } finally {
-      setInviting(false);
-    }
-  };
-
-  // Generate share link
-  const handleCreateShareLink = async () => {
-    if (!activeTenantId) return;
-    setInviting(true);
-    setError("");
-    try {
-      const res = await createInviteLink(activeTenantId, {
-        role: inviteRole,
-        message: inviteMsg.trim() || undefined,
-      });
-      if (res.success && res.data) {
-        const fullUrl = res.data.invite_url
-          ? new URL(res.data.invite_url, window.location.origin).toString()
-          : `${window.location.origin}/invite/${res.data.id}`;
-        setGeneratedLink(fullUrl);
-        await loadData();
-      } else {
-        setError(res.message || "Failed to generate invite link");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate invite link");
-    } finally {
-      setInviting(false);
     }
   };
 
@@ -277,11 +222,7 @@ export function TenantMembers() {
           {canManage && (
             <button
               type="button"
-              onClick={() => {
-                setInviteModalOpen(true);
-                setGeneratedLink("");
-                setLinkCopied(false);
-              }}
+              onClick={() => setInviteModalOpen(true)}
               className="btn btn-primary btn-sm flex items-center gap-1.5"
             >
               <IconPlus className="h-3.5 w-3.5" />
@@ -388,7 +329,7 @@ export function TenantMembers() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {["all", "owner", "admin", "member"].map((r) => (
+          {["all", "admin", "member"].map((r) => (
             <button
               key={r}
               type="button"
@@ -432,8 +373,7 @@ export function TenantMembers() {
             ) : (
               filteredMembers.map((m) => {
                 const isMe = m.user_id === auth.user?.id;
-                const canEditThisMember =
-                  canManage && (!isMe || isOwner) && !(m.role === "owner" && !isOwner);
+                const canEditThisMember = canManage && (!isMe || isTenantAdmin);
 
                 return (
                   <tr key={m.user_id} className="hover:bg-surface-strong/30 transition-colors">
@@ -463,7 +403,7 @@ export function TenantMembers() {
 
                     {/* Role */}
                     <td className="py-3.5 px-4">
-                      {canEditThisMember && m.role !== "owner" ? (
+                      {canEditThisMember ? (
                         <Select
                           className="h-8 w-32 py-1 px-2.5 text-xs font-medium"
                           value={m.role}
@@ -476,9 +416,7 @@ export function TenantMembers() {
                       ) : (
                         <span
                           className={`badge-pill uppercase text-[11px] font-semibold ${
-                            m.role === "owner"
-                              ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                              : m.role === "admin"
+                            m.role === "admin" || m.role === "owner"
                               ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
                               : ""
                           }`}
@@ -523,152 +461,15 @@ export function TenantMembers() {
       </div>
 
       {/* Invite Member Modal */}
-      <Modal
+      <InviteMemberModal
+        tenantId={activeTenantId}
         open={inviteModalOpen}
-        title="Invite to Workspace"
         onClose={() => setInviteModalOpen(false)}
-      >
-        <div className="space-y-5">
-          {/* Tabs */}
-          <div className="flex border-b border-hairline pb-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setInviteTab("email")}
-              className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
-                inviteTab === "email"
-                  ? "border-brand text-brand font-semibold"
-                  : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              Invite by Email
-            </button>
-            <button
-              type="button"
-              onClick={() => setInviteTab("link")}
-              className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
-                inviteTab === "link"
-                  ? "border-brand text-brand font-semibold"
-                  : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              Shareable Link
-            </button>
-          </div>
-
-          {inviteTab === "email" ? (
-            <form onSubmit={handleInviteEmail} className="space-y-4">
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">Email address</span>
-                <input
-                  type="email"
-                  required
-                  placeholder="member@company.com"
-                  className="input"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-              </label>
-
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">Initial role</span>
-                <Select
-                  value={inviteRole}
-                  onChange={(v) => setInviteRole(v as TenantRole)}
-                  options={ROLES.map((r) => ({ value: r.id, label: `${r.label} — ${r.desc}` }))}
-                />
-              </label>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setInviteModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={inviting || !inviteEmail.trim()}
-                  className="btn btn-primary"
-                >
-                  {inviting ? "Sending…" : "Send Invitation"}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="space-y-4">
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">Assign role for joiners</span>
-                <Select
-                  value={inviteRole}
-                  onChange={(v) => setInviteRole(v as TenantRole)}
-                  options={ROLES.map((r) => ({ value: r.id, label: `${r.label} — ${r.desc}` }))}
-                />
-              </label>
-
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">Note / Message (optional)</span>
-                <input
-                  type="text"
-                  placeholder="e.g. Engineering team onboarding"
-                  className="input"
-                  value={inviteMsg}
-                  onChange={(e) => setInviteMsg(e.target.value)}
-                />
-              </label>
-
-              {generatedLink ? (
-                <div className="rounded-xl border border-hairline bg-surface-strong/50 p-4 space-y-2">
-                  <span className="caption font-medium text-ink">Active invite link</span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={generatedLink}
-                      className="input text-xs font-mono select-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await copyToClipboard(generatedLink);
-                        if (ok) {
-                          setLinkCopied(true);
-                          setTimeout(() => setLinkCopied(false), 2000);
-                        }
-                      }}
-                      className="btn btn-primary shrink-0 text-xs"
-                    >
-                      {linkCopied ? "Copied!" : "Copy link"}
-                    </button>
-                  </div>
-                  <p className="caption text-muted text-[11px]">
-                    Anyone with this link can join this workspace as {inviteRole}.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleCreateShareLink()}
-                  disabled={inviting}
-                  className="btn btn-primary w-full"
-                >
-                  {inviting ? "Generating…" : "Generate Invite Link"}
-                </button>
-              )}
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setInviteModalOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
+        onInvited={() => {
+          setSuccess("Invitation sent");
+          void loadData();
+        }}
+      />
 
       {/* Remove Confirmation Modal */}
       <Modal
@@ -711,7 +512,7 @@ export function TenantMembers() {
         <div className="space-y-4">
           <p className="body-sm text-body">
             Are you sure you want to leave this workspace? You will need an invitation from an
-            owner or administrator to rejoin.
+            administrator to rejoin.
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button

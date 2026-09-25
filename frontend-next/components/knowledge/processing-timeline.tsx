@@ -26,6 +26,8 @@ import {
   type KnowledgeTraceNode,
 } from "@/lib/knowledge-trace";
 import { copyToClipboard } from "@/lib/clipboard";
+import { shouldApplyResponse } from "@/lib/request-identity";
+import { TimelineRequestCoordinator } from "@/lib/timeline-request-coordinator";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import {
   IconCheck,
@@ -432,9 +434,22 @@ export function ProcessingTimeline({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  /* One permanent interval drives polling; the tick reads the freshest
-   * "should I fetch?" decision via this ref — no re-arming, no chains. */
-  const fetchInFlightRef = useRef(false);
+  /* Generation guard for side-channel fetches that bypass the spans
+   * coordinator (fetchProcessOverrides, per-attempt ensureAttemptStatuses
+   * sub-fetches): incremented on every knowledgeId switch and captured at
+   * request time, so a late doc-A callback can never write doc-B
+   * header/tab state — on success or on failure. */
+  const timelineGenRef = useRef(0);
+  /* Request coordination: exactly one spans fetch is ever in flight. A
+   * fetch requested while another runs (attempt switch, knowledge-ID
+   * switch, manual refresh) is remembered as pending and fires the moment
+   * the old ticket settles; a late old payload that is no longer the
+   * newest request for the current selection is discarded without touching
+   * data/summary/status/loading. */
+  const coordRef = useRef<TimelineRequestCoordinator | null>(null);
+  if (!coordRef.current) {
+    coordRef.current = new TimelineRequestCoordinator({ knowledgeId, attempt: undefined });
+  }
   const shouldPollRef = useRef(false);
   const fetchRef = useRef<() => void>(() => {});
   const attemptRef = useRef<number | undefined>(undefined);
@@ -518,25 +533,69 @@ export function ProcessingTimeline({
 
   const fetchSpans = useCallback(
     async (opts: { manual?: boolean } = {}) => {
+      const coord = coordRef.current;
+      if (!coord) return;
       const { knowledgeId: id, onHasSpans: emitHas } = propsRef.current;
       if (!id) return;
-      if (fetchInFlightRef.current) return;
-      fetchInFlightRef.current = true;
-      if (opts.manual) setRefreshing(true);
-      if (!dataRef.current) setLoading(true);
+      /* Sync the newest selection, then issue the fetch: when a request
+       * is already in flight this queues the selection as pending and
+       * returns — the settle path below fires it immediately instead of
+       * waiting for the next poll tick. */
+      coord.updateSelection({ knowledgeId: id, attempt: attemptRef.current });
+      const ticket = coord.requestFetch();
+      if (!ticket) return;
+      /* Flags this ticket raised itself, so a stale settle can undo them
+       * without ever clearing state owned by a newer selection. */
+      let raisedLoading = false;
+      let raisedRefreshing = false;
+      if (opts.manual) {
+        setRefreshing(true);
+        raisedRefreshing = true;
+      }
+      if (!dataRef.current) {
+        setLoading(true);
+        raisedLoading = true;
+      }
       let attemptOk = false;
+      let settledAccept = false;
+      /* Settle exactly once per ticket: releases the in-flight slot (no
+       * deadlock on late resolutions) and reports the pending newest
+       * selection, if any, for an immediate retry. */
+      const settleTicket = (): boolean => {
+        const { accept, retry } = coord.settle(ticket);
+        settledAccept = accept;
+        if (retry) void fetchSpans();
+        return accept;
+      };
       try {
-        const res = (await getKnowledgeSpans(id, attemptRef.current)) as {
+        const res = (await getKnowledgeSpans(
+          ticket.selection.knowledgeId,
+          ticket.selection.attempt,
+        )) as {
           success?: boolean;
           data?: SpansResponse;
         };
+        /* Stale ticket (a newer selection was requested while this ran):
+         * never let the old payload touch data/summary/status/loading —
+         * and a stale terminal payload must not freeze polling for the
+         * selection that is actually live. */
+        if (!settleTicket()) {
+          return;
+        }
         if (res?.success && res.data) {
           const payload = res.data;
           dataRef.current = payload;
           setData(payload);
           attemptOk = true;
-          if (attemptRef.current === undefined) {
+          /* Adopt the payload attempt only for a fetch that targeted no
+           * attempt while the user has still chosen none — a newer user
+           * choice always wins over auto-selection. */
+          if (coord.shouldAutoSelectAttempt(ticket.selection.attempt)) {
             setSelectedAttempt(payload.attempt);
+            coord.updateSelection({
+              knowledgeId: ticket.selection.knowledgeId,
+              attempt: payload.attempt,
+            });
           }
           /* Auto-expand, on EVERY fetch and at EVERY depth: rows with
            * children expand unless the user has toggled them. Deep
@@ -562,21 +621,40 @@ export function ProcessingTimeline({
               isLatestAttempt: payload.attempt === latestAttempt,
             }) || "running";
           setAttemptStatuses((prev) => new Map(prev).set(payload.attempt, tabStatus));
-          ensureAttemptStatuses(payload.latest_attempt || 0);
+          /* Owner-pinned so these sub-fetches die with this selection. */
+          ensureAttemptStatuses(
+            payload.latest_attempt || 0,
+            ticket.selection.knowledgeId,
+            timelineGenRef.current,
+          );
           emitHas?.(knowledgeSpansPayloadHasTrace(payload));
         } else {
           emitHas?.(false);
         }
       } catch (e) {
         console.warn("[ProcessingTimeline] fetchSpans failed", e);
+        /* A failed stale ticket still releases the slot and triggers the
+         * pending retry; only the newest ticket may report the failure. */
+        if (!settleTicket()) {
+          return;
+        }
         emitHas?.(false);
       } finally {
+        if (!settledAccept) {
+          /* Stale ticket without a pending retry: undo only the flags it
+           * raised itself. (With a retry, the fresh fetch owns them.) */
+          const retrying = coord.hasPending() || coord.isInFlight();
+          if (!retrying) {
+            if (raisedLoading) setLoading(false);
+            if (raisedRefreshing) setRefreshing(false);
+          }
+          return;
+        }
         setLastFetchedAt(Date.now());
         setLastFetchOk(attemptOk);
         setFailedAttempts((n) => (attemptOk ? 0 : n + 1));
         setLoading(false);
         setRefreshing(false);
-        fetchInFlightRef.current = false;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -585,16 +663,27 @@ export function ProcessingTimeline({
 
   /* Per-attempt header statuses for the attempt tabs — the main fetch
    * only describes the selected attempt, so the other attempts are
-   * queried once each. */
+   * queried once each. Each sub-fetch captures its owner (knowledgeId +
+   * generation): a late doc-A response after a knowledgeId switch is
+   * discarded instead of writing doc-B header/tab state. */
   const ensureAttemptStatuses = useCallback(
-    (latest: number) => {
-      const id = propsRef.current.knowledgeId;
+    (latest: number, ownerId?: string, ownerGen?: number) => {
+      const id = ownerId ?? propsRef.current.knowledgeId;
+      const gen = ownerGen ?? timelineGenRef.current;
       if (!id || latest <= 1) return;
       for (let n = 1; n <= latest; n++) {
         if (attemptStatusRef.current.has(n)) continue;
         attemptStatusRef.current.add(n);
         getKnowledgeSpans(id, n)
           .then((res) => {
+            if (
+              !shouldApplyResponse(
+                { id, gen },
+                { id: propsRef.current.knowledgeId, gen: timelineGenRef.current },
+              )
+            ) {
+              return;
+            }
             const r = res as { success?: boolean; data?: SpansResponse };
             if (r?.success && r.data?.trace) {
               const status =
@@ -616,9 +705,19 @@ export function ProcessingTimeline({
     fetchRef.current = () => void fetchSpans();
   }, [fetchSpans]);
 
-  const fetchProcessOverrides = useCallback(async () => {
-    const { knowledgeId: id, compact: isCompact } = propsRef.current;
+  /* Owner-guarded like ensureAttemptStatuses above: captures the
+   * knowledgeId + generation at request time and applies nothing — on
+   * success or on failure — once a newer document owns this timeline. */
+  const fetchProcessOverrides = useCallback(async (ownerId?: string, ownerGen?: number) => {
+    const { compact: isCompact } = propsRef.current;
+    const id = ownerId ?? propsRef.current.knowledgeId;
+    const gen = ownerGen ?? timelineGenRef.current;
     if (isCompact || !id) return;
+    const isCurrent = () =>
+      shouldApplyResponse(
+        { id, gen },
+        { id: propsRef.current.knowledgeId, gen: timelineGenRef.current },
+      );
     try {
       const res = (await getKnowledgeDetails(id)) as {
         success?: boolean;
@@ -629,6 +728,7 @@ export function ProcessingTimeline({
           title?: string;
         };
       };
+      if (!isCurrent()) return;
       if (res?.success && res.data) {
         setProcessOverrides(res.data.metadata?.process_overrides ?? null);
         setCurrentFileType(
@@ -636,6 +736,7 @@ export function ProcessingTimeline({
         );
       }
     } catch {
+      if (!isCurrent()) return;
       setProcessOverrides(null);
       setCurrentFileType("");
     }
@@ -644,6 +745,13 @@ export function ProcessingTimeline({
   /* Reset + initial fetch whenever the document changes; mount the
    * permanent poll/now intervals once. */
   useEffect(() => {
+    /* Drop any in-flight/pending work for the previous document so its
+     * late response can never touch the new document's state, and bump
+     * the generation so the coordinator-bypassing side fetches
+     * (fetchProcessOverrides, per-attempt statuses) discard theirs too. */
+    timelineGenRef.current += 1;
+    const gen = timelineGenRef.current;
+    coordRef.current?.reset({ knowledgeId, attempt: undefined });
     setSelectedAttempt(undefined);
     dataRef.current = null;
     setData(null);
@@ -657,7 +765,7 @@ export function ProcessingTimeline({
     setNotice(null);
     setConfirmCancel(false);
     void fetchSpans();
-    void fetchProcessOverrides();
+    void fetchProcessOverrides(knowledgeId, gen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [knowledgeId]);
 
@@ -665,7 +773,10 @@ export function ProcessingTimeline({
     let poll: ReturnType<typeof setInterval> | null = null;
     if (autoPoll) {
       poll = setInterval(() => {
-        if (fetchInFlightRef.current) return;
+        /* While a fetch is in flight the coordinator queues the newest
+         * selection as pending; the settle path fires it immediately, so
+         * the tick only needs to start work when the slot is free. */
+        if (coordRef.current?.isInFlight()) return;
         if (!shouldPollRef.current) return;
         fetchRef.current();
       }, POLL_INTERVAL_MS);

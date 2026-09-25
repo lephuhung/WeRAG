@@ -1,6 +1,6 @@
-/* Ported from frontend/src/config/settingsAccess.ts + Settings.vue navGroups.
- * Role model matches internal/types/tenant_member.go: member < admin < owner,
- * and "system" gates on the platform-wide system-admin flag.
+/* Role model matches the backend human model: member < admin, with the
+ * legacy "owner" alias normalized to admin (see normalizeNavRole), and
+ * "system" gating on the platform-wide system-admin flag.
  * Server-side guards stay authoritative; this only hides UI entries.
  */
 
@@ -9,8 +9,13 @@ export type SettingsRoleKey = "member" | "admin" | "owner" | "system";
 const ROLE_LEVEL: Record<string, number> = {
   member: 10,
   admin: 30,
-  owner: 40,
 };
+
+/* The backend owner role is retired: treat a legacy "owner" string as
+ * admin on both sides of the comparison. */
+function normalizeNavRole(role: string): string {
+  return role === "owner" ? "admin" : role;
+}
 
 export interface SettingsNavItem {
   key: string;
@@ -44,17 +49,19 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
-      { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "owner" },
-      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "owner" },
+      /* Retained for compatibility: the route now renders a retired-notice
+       * pointing at per-KB recipient-bound invites. */
+      { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "admin" },
+      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "admin" },
       { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "admin" },
-      { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "owner" },
-      { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "owner" },
+      { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "admin" },
+      { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "admin" },
     ],
   },
 ];
 
 export function roleAtLeast(role: string, min: Exclude<SettingsRoleKey, "system">): boolean {
-  return (ROLE_LEVEL[role] ?? 0) >= ROLE_LEVEL[min];
+  return (ROLE_LEVEL[normalizeNavRole(role)] ?? 0) >= (ROLE_LEVEL[normalizeNavRole(min)] ?? 0);
 }
 
 export function canSeeSection(

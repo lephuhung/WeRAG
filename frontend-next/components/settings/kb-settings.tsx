@@ -17,11 +17,8 @@ import { useT } from "@/lib/i18n";
 import {
   getKnowledgeBase,
   updateKnowledgeBase,
-  updateKnowledgeBaseVisibility,
-  type KBVisibility,
   type KnowledgeBaseRow,
 } from "@/lib/api/knowledge";
-import { useAuth, useTenantRole } from "@/lib/auth";
 
 type IndexingStrategy = {
   vector_enabled: boolean;
@@ -79,16 +76,12 @@ export function KbSettingsModal({
   onSaved?: (row: KnowledgeBaseRow) => void;
 }) {
   const { t } = useT();
-  const { isOwner } = useTenantRole();
-  const { selectedTenantId, tenant } = useAuth();
 
   const [section, setSection] = useState<Section>("basic");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [draft, setDraft] = useState<KBConfigDraft | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<KBVisibility>("tenant");
-  const [initialVisibility, setInitialVisibility] = useState<KBVisibility>("tenant");
   const [loading, setLoading] = useState(open);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -111,9 +104,6 @@ export function KbSettingsModal({
           setKb(row);
           setName(row.name);
           setDescription(row.description ?? "");
-          const vis: KBVisibility = row.visibility === "public" ? "public" : "tenant";
-          setVisibility(vis);
-          setInitialVisibility(vis);
           /* Backend GET returns every config block; mirror the defaults
            * used by the Vue editor's loadKBData. */
           const chunking = (row as { chunking_config?: Record<string, unknown> }).chunking_config ?? {};
@@ -171,13 +161,6 @@ export function KbSettingsModal({
     setDirty(true);
   };
 
-  /* The visibility route is Owner-only and the service rejects callers
-   * outside the owning tenant — so the control stays read-only for members
-   * and for foreign (public/grant-shared) KBs leaking into this workspace. */
-  const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
-  const canEditVisibility =
-    isOwner && (!kb?.tenant_id || String(kb.tenant_id) === activeTenantId);
-
   const save = async () => {
     if (!draft) return;
     setSaving(true);
@@ -194,12 +177,6 @@ export function KbSettingsModal({
           chunking_config: draft.chunking_config,
         },
       });
-      /* Visibility rides a dedicated endpoint — UpdateKnowledgeBase has no
-       * field for it. Skip the call when the scope didn't change. */
-      if (canEditVisibility && visibility !== initialVisibility) {
-        await updateKnowledgeBaseVisibility(kbId, { visibility });
-        setInitialVisibility(visibility);
-      }
       const fresh = await getKnowledgeBase(kbId);
       if (fresh) {
         setKb(fresh);
@@ -251,30 +228,10 @@ export function KbSettingsModal({
                     onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
                   />
                 </label>
-                {canEditVisibility ? (
-                  <label className="block">
-                    <span className="caption mb-1.5 block text-muted">{t("kbSettings.visibilityNote")}</span>
-                    <Select
-                      className="w-[280px]"
-                      value={visibility}
-                      onChange={(v) => { setVisibility(v as KBVisibility); setDirty(true); }}
-                      options={[
-                        { value: "tenant", label: t("kbSettings.visTenant") },
-                        { value: "public", label: t("kbSettings.visPublic") },
-                      ]}
-                    />
-                    <p className="caption mt-1 text-muted-soft">
-                      {t(visibility === "public" ? "kbSettings.visPublicTip" : "kbSettings.visTenantTip")}
-                    </p>
-                  </label>
-                ) : (
-                  <div className="caption text-muted">
-                    {t("kbSettings.visibilityNote")}:{" "}
-                    <span className="text-ink">
-                      {t(kb?.visibility === "public" ? "kbSettings.visPublic" : "kbSettings.visTenant")}
-                    </span>
-                  </div>
-                )}
+                <div className="caption text-muted">
+                  {t("kbSettings.visibilityNote")}:{" "}
+                  <span className="text-ink">{t("kbSettings.visTenant")}</span>
+                </div>
               </div>
             )}
 

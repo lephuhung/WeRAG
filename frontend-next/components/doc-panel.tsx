@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   downloadKnowledge,
+  KNOWLEDGE_CHUNK_PAGE_SIZE,
   listKnowledgeChunks,
   previewKnowledgeFile,
   type KnowledgeDoc,
 } from "@/lib/api/knowledge";
+import { fetchAllPages } from "@/lib/knowledge-pagination";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Markdown } from "@/components/markdown";
 import { renderFileIconSvg } from "@/components/files/file-icon";
@@ -30,9 +32,7 @@ const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> 
 
 type ChunkRow = { id?: string; content?: string };
 
-function chunkText(res: unknown): string[] {
-  const r = res as { data?: { items?: ChunkRow[] } | ChunkRow[] };
-  const items = Array.isArray(r?.data) ? r.data : (r?.data?.items ?? []);
+function chunkText(items: ChunkRow[]): string[] {
   return items.map((c) => c.content ?? "").filter(Boolean);
 }
 
@@ -40,11 +40,20 @@ function chunkText(res: unknown): string[] {
 export function DocPanel({
   doc,
   onClose,
+  canDownloadOriginal = true,
 }: {
   doc: KnowledgeDoc | null;
   onClose: () => void;
+  /* Resource capability gate (UI affordance only — the backend still
+   * authorizes /download and /preview). Foreign (invited, read-only) KBs
+   * pass false: the standalone original-download button is hidden and a
+   * failed preview surfaces its error instead of falling back to the
+   * original download. The Preview action itself stays available. */
+  canDownloadOriginal?: boolean;
 }) {
   const [chunks, setChunks] = useState<string[] | null>(null);
+  const [chunksError, setChunksError] = useState<string | null>(null);
+  const [chunksTotal, setChunksTotal] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [previewSource, setPreviewSource] = useState<DocPreviewSource | null>(null);
   /* Processing pipeline trace (port of the Vue doc-content.vue mounts):
@@ -58,26 +67,41 @@ export function DocPanel({
   traceOpenRef.current = traceOpen;
   const { t } = useT();
 
+  /* Keyed on the document ID (not the row object, which the KB status
+   * poll replaces every tick): walk every chunk page so long documents
+   * render in full. A mid-walk failure keeps the pages that did load and
+   * surfaces the error instead of pretending the document is empty. */
+  const docId = doc?.id ?? null;
   useEffect(() => {
     setChunks(null);
+    setChunksError(null);
+    setChunksTotal(null);
     setHasTrace(false);
     setTraceOpen(false);
     setTraceSummary(null);
-    if (!doc) return;
+    if (!docId) return;
     let alive = true;
-    listKnowledgeChunks(doc.id, 1, { includeImageText: true })
-      .then((res) => alive && setChunks(chunkText(res)))
-      .catch(() => alive && setChunks([]));
+    fetchAllPages<ChunkRow>(
+      (page, pageSize) =>
+        listKnowledgeChunks(docId, page, { includeImageText: true, pageSize }),
+      { pageSize: KNOWLEDGE_CHUNK_PAGE_SIZE, isCurrent: () => alive },
+    ).then(({ items, total, error, aborted, incomplete, incompleteReason }) => {
+      if (!alive || aborted) return;
+      setChunks(chunkText(items));
+      setChunksTotal(total);
+      /* Cap/shift integrity: never render a partial list as complete. */
+      setChunksError(error ?? (incomplete ? incompleteReason : null));
+    });
     return () => {
       alive = false;
     };
-  }, [doc]);
+  }, [docId]);
 
   const st = doc ? (STATUS_STYLE[doc.parse_status ?? doc.status ?? ""] ?? STATUS_STYLE.pending) : null;
   const name = doc ? (doc.title || doc.file_name || doc.id) : "";
 
   const download = async () => {
-    if (!doc || downloading) return;
+    if (!doc || downloading || !canDownloadOriginal) return;
     setDownloading(true);
     try {
       const blob = await downloadKnowledge(doc.id);
@@ -100,7 +124,13 @@ export function DocPanel({
       fileType: doc.file_type,
       sizeBytes: doc.file_size,
       fetchBlob: () =>
-        previewKnowledgeFile(doc.id).catch(() => downloadKnowledge(doc.id)),
+        previewKnowledgeFile(doc.id).catch((previewErr) => {
+          /* Read-only foreign preview must never silently fall back to
+           * the original download — surface the preview error instead.
+           * Own-tenant callers keep the legacy download fallback. */
+          if (!canDownloadOriginal) throw previewErr;
+          return downloadKnowledge(doc.id);
+        }),
     });
   };
 
@@ -205,9 +235,16 @@ export function DocPanel({
             {/* extracted text */}
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
               <div className="caption-uppercase mb-3 text-muted-soft">Extracted text</div>
-              {chunks === null && <p className="caption text-muted">Loading…</p>}
-              {chunks !== null && chunks.length === 0 && (
+              {chunks === null && !chunksError && <p className="caption text-muted">Loading…</p>}
+              {chunks !== null && chunks.length === 0 && !chunksError && (
                 <p className="caption text-muted">No extracted text available.</p>
+              )}
+              {chunksError && (
+                <p className="caption text-error">
+                  {chunks !== null && chunks.length > 0
+                    ? `Only showing ${chunks.length}${chunksTotal !== null ? ` of ${chunksTotal}` : ""} chunks — failed to load the rest: ${chunksError}`
+                    : `Failed to load extracted text: ${chunksError}`}
+                </p>
               )}
               <div className="flex flex-col gap-4">
                 {(chunks ?? []).map((p, i) => (
@@ -224,14 +261,16 @@ export function DocPanel({
                 >
                   <IconExternal className="h-3.5 w-3.5" /> Preview file
                 </button>
-                <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() => void download()}
-                  disabled={downloading}
-                >
-                  <IconDoc className="h-3.5 w-3.5" />{" "}
-                  {downloading ? "Downloading…" : "Download original"}
-                </button>
+                {canDownloadOriginal && (
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() => void download()}
+                    disabled={downloading}
+                  >
+                    <IconDoc className="h-3.5 w-3.5" />{" "}
+                    {downloading ? "Downloading…" : "Download original"}
+                  </button>
+                )}
               </div>
             </div>
           </>
@@ -240,6 +279,7 @@ export function DocPanel({
       <DocPreviewModal
         source={previewSource}
         onClose={() => setPreviewSource(null)}
+        canDownloadOriginal={canDownloadOriginal}
       />
       {doc && (
         <ProcessingTimelineDrawer

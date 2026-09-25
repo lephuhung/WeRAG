@@ -23,7 +23,10 @@ export function SandboxSettings() {
   const currentRole =
     auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || isSystemAdmin;
+  /* Sandbox configs (all /sandbox-configs routes incl. workspace-policy
+   * and per-config skills) are Admin+ on the backend, so all Tenant
+   * Admins may manage — not just legacy owners. */
+  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
 
   const [configs, setConfigs] = useState<SandboxConfigRecord[]>([]);
   const [scriptsDisabled, setScriptsDisabled] = useState(false);

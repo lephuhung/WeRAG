@@ -16,6 +16,11 @@
  */
 
 import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+/* Shares api-client's refresh single-flight: a concurrent JSON 401 reuses
+ * the same promise, and BOTH rotated tokens are persisted (the backend
+ * rotates the refresh token on every call — storing only the access token
+ * silently desyncs the next rotation). Embed streams never refresh. */
+import { refreshAccessToken } from "../api-client.ts";
 
 export type StreamChunk = {
   id?: string;
@@ -124,26 +129,6 @@ function acceptLanguage(): string {
   } catch {
     return "zh-CN";
   }
-}
-
-async function refreshTokenNow(refreshToken: string): Promise<string> {
-  const res = await fetch("/api/v1/auth/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-  });
-  const data = await res.json().catch(() => null);
-  const token =
-    data && typeof data === "object" && "access_token" in data
-      ? (data as { access_token?: string }).access_token
-      : undefined;
-  if (!res.ok || !token) throw new Error("Session expired");
-  try {
-    localStorage.setItem("weknora_token", token);
-  } catch {
-    /* private mode */
-  }
-  return token;
 }
 
 function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: boolean) {
@@ -294,7 +279,7 @@ export async function streamChat(params: StreamParams): Promise<void> {
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? err.status : undefined;
     if (status === 401 && refreshToken) {
-      const next = await refreshTokenNow(refreshToken);
+      const next = await refreshAccessToken();
       await openChatStream(params, next, null);
       return;
     }
@@ -339,7 +324,7 @@ export async function continueStream(params: {
     });
   let res = await open(token);
   if (res.status === 401 && refreshToken) {
-    res = await open(await refreshTokenNow(refreshToken));
+    res = await open(await refreshAccessToken());
   }
   if (res.status === 401) throw streamError(res);
   if (!res.ok) throw streamError(res, await res.text().catch(() => ""));

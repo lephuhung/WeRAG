@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Orb } from "@/components/orb";
 import { BrandLogo } from "@/components/brand-logo";
+import { resolveSafeNextPath } from "@/lib/safe-next";
 
 function LoginForm() {
   const router = useRouter();
@@ -57,7 +58,7 @@ function LoginForm() {
       } else {
         localStorage.removeItem("weknora_selected_tenant_id");
       }
-      router.push(searchParams.get("next") ?? "/platform/knowledge-bases");
+      router.push(resolveSafeNextPath(searchParams.get("next")));
     } catch {
       setError("Network error — is the backend reachable?");
     } finally {

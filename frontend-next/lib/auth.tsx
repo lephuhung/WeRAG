@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet, clearTokens, getTokens, setTokens } from "@/lib/api-client";
+import { loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
 import { useT } from "@/lib/i18n";
 
 /* Mirrors frontend/src/api/auth/index.ts LoginResponse + UserInfo shapes (subset). */
@@ -77,15 +78,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
       return false;
     }
+    /* A stored tenant id can go stale while the session is still valid —
+     * the loader below retries once without X-Tenant-ID, so a stale
+     * selection (or a transient blip) no longer signs the user out. */
+    let tenantStored = false;
     try {
-      const res = await apiGet<{
-        success: boolean;
-        data?: {
-          user: UserInfo;
-          tenant?: TenantInfo | null;
-          memberships?: AuthState["memberships"];
-        };
-      }>("/api/v1/auth/me");
+      tenantStored = localStorage.getItem(TENANT_KEY) != null;
+    } catch {
+      /* private mode */
+    }
+    const outcome = await loadWithStaleTenantRecovery(
+      (skipTenant) =>
+        apiGet<{
+          success: boolean;
+          data?: {
+            user: UserInfo;
+            tenant?: TenantInfo | null;
+            memberships?: AuthState["memberships"];
+          };
+        }>("/api/v1/auth/me", skipTenant ? { skipTenant: true } : undefined),
+      tenantStored,
+    );
+    if (outcome.kind === "transient") {
+      /* Network blip / 5xx: retain tokens and session state — the next
+       * refreshMe retries with the same credentials. */
+      setReady(true);
+      return false;
+    }
+    if (outcome.kind === "ok") {
+      const res = outcome.value;
       if (res.success && res.data?.user) {
         setUser(res.data.user);
         setTenant(res.data.tenant ?? null);
@@ -94,7 +115,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
          * is stored. Without this, weknora_selected_tenant_id stays empty
          * after login and the header is never sent — every request silently
          * scopes to the JWT tenant even after the user "switches". Matches
-         * Vue's effective-tenant fallback (selectedTenantId || tenant.id). */
+         * Vue's effective-tenant fallback (selectedTenantId || tenant.id).
+         * After a stale-tenant recovery the stored id is known-bad: drop it
+         * first so the session tenant below replaces it instead of the
+         * stale value surviving. */
+        if (outcome.recoveredFromStaleTenant) {
+          try {
+            localStorage.removeItem(TENANT_KEY);
+          } catch {
+            /* private mode */
+          }
+          setSelectedTenantId(null);
+        }
         const sessionTenantId = res.data.tenant?.id ?? res.data.user?.tenant_id;
         if (sessionTenantId != null && Number(sessionTenantId) > 0) {
           try {
@@ -116,9 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setReady(true);
         return true;
       }
-    } catch {
-      /* fall through */
     }
+    /* Confirmed invalid authentication (401/403 even without the tenant
+     * header) or a success envelope with no user: the session is unusable. */
     clearTokens();
     setUser(null);
     setReady(true);
@@ -220,8 +252,10 @@ export function useAuth() {
 }
 
 /* Role of the current user inside the active workspace, plus the common
- * permission booleans. Roles are the backend's `owner | admin | member`;
- * a missing/unknown role means member-level (fail closed). */
+ * permission booleans. The human role model is Admin | Member at tenant
+ * scope plus platform SuperAdmin (user.is_system_admin); "owner" is a
+ * legacy backend alias treated as admin until the reviewed migration.
+ * A missing/unknown role means member-level (fail closed). */
 export function useTenantRole() {
   const auth = useAuth();
   const role =
@@ -230,5 +264,6 @@ export function useTenantRole() {
     )?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const isOwner = isSystemAdmin || role === "owner";
-  return { role, isSystemAdmin, isOwner, isAdminOrOwner: isOwner || role === "admin" };
+  const isTenantAdmin = isSystemAdmin || role === "admin" || role === "owner";
+  return { role, isSystemAdmin, isOwner, isAdminOrOwner: isOwner || role === "admin", isTenantAdmin };
 }
