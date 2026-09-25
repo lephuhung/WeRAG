@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
@@ -57,6 +57,8 @@ type UiMessage = {
   abbreviationCandidates?: string[];
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
+  /** Tool/skill-generated files of this turn — images render inline. */
+  artifacts?: ArtifactMeta[];
 };
 
 function extractPeopleRecords(data: unknown): PeopleRecord[] {
@@ -417,6 +419,7 @@ const AssistantMessage = memo(function AssistantMessage({
   m,
   index,
   sessionId,
+  chatId,
   busy,
   abbreviationRefreshKey,
   onOpenDrawer,
@@ -427,6 +430,8 @@ const AssistantMessage = memo(function AssistantMessage({
   m: UiMessage;
   index: number;
   sessionId: string;
+  /** Chat route id — artifact downloads are scoped to the session. */
+  chatId: string;
   busy: boolean;
   abbreviationRefreshKey: number;
   onOpenDrawer: (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index?: number) => void;
@@ -465,7 +470,7 @@ const AssistantMessage = memo(function AssistantMessage({
         )}
         {shownContent ? (
           <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
-            <Markdown text={shownContent} streaming={m.streaming} />
+            <Markdown text={shownContent} streaming={m.streaming} artifacts={m.artifacts} imageContext={m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null} />
           </div>
         ) : (
           <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
@@ -690,6 +695,8 @@ function ChatBody({ id }: { id: string }) {
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
               attachments:
                 m.role === "user" ? attachmentsFromHistory(m) : undefined,
+              artifacts:
+                m.role === "assistant" ? (m.artifacts?.length ? m.artifacts : undefined) : undefined,
             };
           });
           if (streamingMsgs.length > 0) {
@@ -781,10 +788,17 @@ function ChatBody({ id }: { id: string }) {
               finalizeSteps(stepsRef.current);
               const snap = [...stepsRef.current];
               const dur = Number(c.data?.total_duration_ms) || 0;
+              const streamed = c.data?.artifacts;
+              const resumeArtifacts = Array.isArray(streamed) ? (streamed as ArtifactMeta[]) : undefined;
               setMessages((m) =>
                 m.map((msg) =>
                   msg.assistantMessageId === inflightId
-                    ? { ...msg, steps: snap, agentDurationMs: dur || msg.agentDurationMs }
+                    ? {
+                        ...msg,
+                        steps: snap,
+                        agentDurationMs: dur || msg.agentDurationMs,
+                        ...(resumeArtifacts?.length ? { artifacts: resumeArtifacts } : {}),
+                      }
                     : msg,
                 ),
               );
@@ -1274,6 +1288,14 @@ function ChatBody({ id }: { id: string }) {
         finalizeSteps(stepsList);
         const snapSteps = [...stepsList];
         const durationMs = Number(c.data?.total_duration_ms) || 0;
+        // The backend attaches freshly-persisted artifacts (tool-generated
+        // images, skill files) on the complete event so the panel can render
+        // them without a page refresh — mirrors the Vue stream handler.
+        const streamedArtifacts = c.data?.artifacts;
+        const artifacts = Array.isArray(streamedArtifacts) ? (streamedArtifacts as ArtifactMeta[]) : undefined;
+        // final_content carries the rewritten answer body (artifact handles);
+        // prefer it when the streamed accumulation missed the rewrite.
+        const finalContent = typeof c.data?.final_content === "string" ? c.data.final_content : undefined;
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
@@ -1283,6 +1305,8 @@ function ChatBody({ id }: { id: string }) {
                   steps: snapSteps,
                   agentDurationMs: durationMs || msg.agentDurationMs,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
+                  ...(artifacts?.length ? { artifacts } : {}),
+                  ...(finalContent ? { content: parseThinkAndContent(finalContent, thinkingAcc).content } : {}),
                 }
               : msg,
           ),
@@ -1568,6 +1592,7 @@ function ChatBody({ id }: { id: string }) {
                 m={m}
                 index={index}
                 sessionId={id}
+                chatId={id}
                 busy={busy}
                 abbreviationRefreshKey={abbreviationRefreshKey}
                 onOpenDrawer={handleOpenDrawer}

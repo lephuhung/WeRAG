@@ -457,6 +457,16 @@ html.dark {
     border: none;
     border-top: 1px solid var(--color-hairline);
   }
+  .chat-markdown img.markdown-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md2);
+    margin: 8px 0;
+  }
+  .chat-markdown img.artifact-ref-image[data-img-loading="1"] {
+    min-height: 160px;
+    background: var(--color-surface-strong);
+  }
 }
 
 @keyframes shimmerSweep {

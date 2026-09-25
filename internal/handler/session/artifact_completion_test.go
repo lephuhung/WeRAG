@@ -33,6 +33,67 @@ func (s completionHistory) RecordRestoredMtime(context.Context, string, string, 
 	return nil
 }
 
+type recordingToolImageFileService struct {
+	interfaces.FileService
+	saved [][]byte
+	names []string
+}
+
+func (f *recordingToolImageFileService) SaveBytes(_ context.Context, data []byte, _ uint64, name string, _ bool) (string, error) {
+	f.saved = append(f.saved, data)
+	f.names = append(f.names, name)
+	return "local://7/tool-images/" + name, nil
+}
+
+// A tool-produced image (e.g. MCP text-to-image) must be persisted as a
+// message artifact and cited in the answer body — otherwise the chat panel
+// has no bytes to render and the model reports it cannot see the image.
+func TestCompletionPersistsToolGeneratedImages(t *testing.T) {
+	stream := &completionEventRecorder{}
+	message := &types.Message{ID: "m", Content: "Đây là ảnh của bạn:"}
+	message.AgentSteps = types.AgentSteps{{
+		ToolCalls: []types.ToolCall{{
+			ID:   "call-1",
+			Name: "call_mcp_tool",
+			Result: &types.ToolResult{
+				Success:           true,
+				Output:            "[Image: image/png]",
+				GeneratedImages:   [][]byte{[]byte("PNG-BYTES")},
+			},
+		}},
+	}}
+	files := &recordingToolImageFileService{}
+	handler := NewAgentStreamHandler(context.Background(), "s", "m", "req", 7, time.Now(),
+		message, stream, nil, nil, nil, nil,
+		NewToolImagePersister(files, nil))
+
+	err := handler.handleComplete(context.Background(), event.Event{Data: event.AgentCompleteData{MessageID: "m"}})
+	require.NoError(t, err)
+
+	require.Len(t, files.saved, 1, "image bytes must reach storage")
+	require.Equal(t, []byte("PNG-BYTES"), files.saved[0])
+	require.Len(t, message.Artifacts, 1)
+	require.Equal(t, "local://7/tool-images/"+files.names[0], message.Artifacts[0].URL)
+	require.Contains(t, message.Content, "![generated image]("+message.Artifacts[0].FileName+")")
+	last := stream.events[len(stream.events)-1]
+	require.Equal(t, types.ResponseTypeComplete, last.Type)
+	require.Equal(t, message.Content, last.Data["final_content"])
+	require.Len(t, last.Data["artifacts"], 1)
+}
+
+// No generated images, no storage, no persister: the turn completes exactly
+// as before — image persistence is purely additive.
+func TestCompletionWithoutToolImagesUnchanged(t *testing.T) {
+	stream := &completionEventRecorder{}
+	message := &types.Message{ID: "m", Content: "Chào bạn"}
+	handler := NewAgentStreamHandler(context.Background(), "s", "m", "req", 1, time.Time{},
+		message, stream, nil, nil, nil, nil)
+
+	err := handler.handleComplete(context.Background(), event.Event{Data: event.AgentCompleteData{MessageID: "m"}})
+	require.NoError(t, err)
+	require.Empty(t, message.Artifacts)
+	require.Equal(t, "Chào bạn", message.Content)
+}
 func TestCompletionPublishesReconciledArtifactContent(t *testing.T) {
 	old := types.MessageArtifact{URL: "resource://dHZ_fFslfs0GgJGaJZGjGA", FileName: "deck.pptx", SourcePath: "/workspace/output/deck.pptx"}
 	next := old

@@ -37,6 +37,25 @@ func TestBrowserScreenshotStorageKeepsOneImageWithoutMutatingLiveResult(t *testi
 	}
 }
 
+func TestSanitizeAgentStepsForStorage_KeepsGeneratedImages(t *testing.T) {
+	// Tool-produced images (e.g. MCP text-to-image) must survive storage
+	// sanitization: handleComplete persists them as message artifacts.
+	// Only screenshots are dropped (already in Data for the result card).
+	result := &types.ToolResult{
+		Success:         true,
+		Output:          "[Image: image/png]",
+		GeneratedImages: [][]byte{[]byte("PNG-BYTES")},
+	}
+	steps := []types.AgentStep{{ToolCalls: []types.ToolCall{{ID: "call-1", Name: "call_mcp_tool", Result: result}}}}
+	stored := SanitizeAgentStepsForStorage(steps)[0].ToolCalls[0].Result
+	if len(stored.GeneratedImages) != 1 || string(stored.GeneratedImages[0]) != "PNG-BYTES" {
+		t.Fatalf("generated images must survive storage sanitize, got %#v", stored.GeneratedImages)
+	}
+	if len(result.GeneratedImages) != 1 {
+		t.Fatal("sanitize must not mutate the live result")
+	}
+}
+
 func TestSanitizeToolDataForPersist_knowledgeChunksList(t *testing.T) {
 	data := map[string]interface{}{
 		"display_type":    "knowledge_chunks_list",

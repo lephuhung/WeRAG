@@ -122,6 +122,19 @@ export type ChatMessageAgentStep = {
   tool_calls?: ChatMessageToolCall[];
 };
 
+export interface ArtifactMeta {
+  index: number;
+  /** `resource://<handle>` — stable identity the answer body references.
+   * Empty when the deployment runs without a resource catalog. */
+  handle?: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  source_path: string;
+  mod_time: string;
+  created_at: string;
+}
+
 export type ChatMessageAttachment = {
   file_name?: string;
   file_type?: string;
@@ -140,6 +153,8 @@ export type ChatMessage = {
   agent_duration_ms?: number;
   attachments?: ChatMessageAttachment[];
   images?: { url?: string; caption?: string }[];
+  /** Skill/tool-generated files of this turn — images render inline. */
+  artifacts?: ArtifactMeta[];
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {
@@ -213,19 +228,6 @@ export function removeSteerSession(sessionId: string, steerId: string) {
 // its position (:index) in the owning assistant message. List endpoints return
 // metadata only — clients must go through downloadArtifact to fetch bytes so
 // ownership checks always run server-side.
-
-export interface ArtifactMeta {
-  index: number;
-  /** `resource://<handle>` — stable identity the answer body references.
-   * Empty when the deployment runs without a resource catalog. */
-  handle?: string;
-  file_name: string;
-  file_type: string;
-  file_size: number;
-  source_path: string;
-  mod_time: string;
-  created_at: string;
-}
 
 export function listMessageArtifacts(sessionId: string, messageId: string) {
   return apiGet(`/api/v1/sessions/${sessionId}/messages/${messageId}/artifacts`);

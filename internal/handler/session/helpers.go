@@ -310,6 +310,7 @@ func (h *Handler) setupStreamHandler(
 		ctx, sessionID, assistantMessageID, requestID, tenantID, receivedAt,
 		assistantMessage, h.streamManager, eventBus, h.artifactCollector,
 		h.workspaceCheckpointer, h.sandboxIDLookup,
+		NewToolImagePersister(h.fileService, h.resourceCatalog),
 	)
 	streamHandler.Subscribe()
 	return streamHandler

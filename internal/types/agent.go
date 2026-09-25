@@ -369,6 +369,12 @@ type ToolResult struct {
 	Data        map[string]interface{} `json:"data,omitempty"`   // Structured data for programmatic use
 	Error       string                 `json:"error,omitempty"`  // Error message if execution failed
 	Images      []string               `json:"images,omitempty"` // Base64 data URIs from tool (e.g. MCP image content)
+	// GeneratedImages carries tool-produced binary images that must survive
+	// as user-visible files (e.g. text-to-image results). Unlike Images —
+	// which are ephemeral model inputs dropped before persistence — these
+	// are promoted to message artifacts at turn completion so the chat panel
+	// can render and download them. Entries are raw bytes, never data URIs.
+	GeneratedImages [][]byte `json:"-"`
 }
 
 // ToolCall represents a single tool invocation within an agent step

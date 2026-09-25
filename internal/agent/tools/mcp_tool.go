@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -332,10 +333,11 @@ func (t *MCPTool) Execute(ctx context.Context, args json.RawMessage) (*types.Too
 	logger.GetLogger(ctx).Infof("MCP tool executed successfully: %s (images: %d)", t.mcpTool.Name, len(images))
 
 	return &types.ToolResult{
-		Success: true,
-		Output:  output,
-		Data:    data,
-		Images:  images,
+		Success:         true,
+		Output:          output,
+		Data:            data,
+		Images:          images,
+		GeneratedImages: decodeGeneratedImages(result.Content),
 	}, nil
 }
 
@@ -404,6 +406,33 @@ func extractContentAndImages(content []mcp.ContentItem) (text string, images []s
 		text = strings.Join(textParts, "\n")
 	}
 	return text, images, skippedImages
+}
+
+// decodeGeneratedImages extracts raw image bytes from MCP image content for
+// user-visible persistence (message artifacts). It mirrors the validation in
+// extractContentAndImages (MIME whitelist, size, count) so the persisted set
+// is exactly what the model saw — no silent extra or missing images. Invalid
+// base64 degrades to "not persisted" rather than failing the turn.
+func decodeGeneratedImages(content []mcp.ContentItem) [][]byte {
+	var out [][]byte
+	for _, item := range content {
+		if item.Type != "image" || item.Data == "" {
+			continue
+		}
+		mimeType := item.MimeType
+		if mimeType == "" {
+			mimeType = "image/png"
+		}
+		if !allowedImageMIMEs[mimeType] || len(item.Data)*3/4 > maxMCPImageSize || len(out) >= maxMCPImages {
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(item.Data)
+		if err != nil {
+			continue
+		}
+		out = append(out, raw)
+	}
+	return out
 }
 
 // redactImageData returns a copy of content items with image Data fields replaced

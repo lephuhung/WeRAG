@@ -50,6 +50,11 @@ type AgentStreamHandler struct {
 	// doesn't support artifact collection or WeKnora was built without it.
 	artifactCollector *service.ArtifactCollector
 
+	// toolImagePersister persists tool-produced binary images (e.g. MCP
+	// text-to-image results) as message artifacts. Nil when file storage is
+	// unavailable; handleComplete then skips image persistence gracefully.
+	toolImagePersister ToolImagePersister
+
 	// checkpointer commits the sandbox's /workspace at the end of the turn so
 	// session fork can roll a forked sandbox back to this exact message. Nil
 	// when the deployment has no sandbox backend; handleComplete checks.
@@ -114,7 +119,12 @@ func NewAgentStreamHandler(
 	artifactCollector *service.ArtifactCollector,
 	checkpointer *service.WorkspaceCheckpointer,
 	sandboxIDLookup SandboxIDLookup,
+	toolImagePersister ...ToolImagePersister,
 ) *AgentStreamHandler {
+	var persister ToolImagePersister
+	if len(toolImagePersister) > 0 {
+		persister = toolImagePersister[0]
+	}
 	return &AgentStreamHandler{
 		ctx:                ctx,
 		sessionID:          sessionID,
@@ -126,6 +136,7 @@ func NewAgentStreamHandler(
 		streamManager:      streamManager,
 		eventBus:           eventBus,
 		artifactCollector:  artifactCollector,
+		toolImagePersister: persister,
 		checkpointer:       checkpointer,
 		sandboxIDLookup:    sandboxIDLookup,
 		knowledgeRefs:      make([]*types.SearchResult, 0),
@@ -824,6 +835,25 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			// A reused reference is owned by this message too, so deleting the
 			// message that first produced the file cannot invalidate it.
 			h.artifactCollector.BindArtifactsToMessage(collectCtx, h.assistantMessageID, previous)
+		}
+		// Persist tool-produced binary images (e.g. MCP text-to-image) as
+		// message artifacts and cite them in the answer body. This is the
+		// user-visible half of ToolResult.GeneratedImages: the model saw the
+		// pixels during the turn, but without persistence the chat panel has
+		// no bytes to render — the symptom "MCP thành công mà LLM báo không
+		// thấy ảnh". Best-effort like the sandbox collect above: nil
+		// persister, no generated images, or per-image failures all degrade
+		// to "no image artifacts" without disturbing the turn.
+		if imageArtifacts := h.persistToolGeneratedImages(h.assistantMessage.AgentSteps); len(imageArtifacts) > 0 {
+			h.assistantMessage.Artifacts = mergeArtifactLists(h.assistantMessage.Artifacts, imageArtifacts)
+			imageRefs := "\n\n" + toolGeneratedImageMarkdown(imageArtifacts)
+			if !strings.Contains(h.assistantMessage.Content, imageRefs) {
+				h.assistantMessage.Content += imageRefs
+			}
+			logger.GetLogger(h.ctx).Infof(
+				"tool images attached %d file(s) to message=%s session=%s",
+				len(imageArtifacts), h.assistantMessageID, h.sessionID,
+			)
 		}
 		h.assistantMessage.Content = types.ClarifyArtifactVersions(h.assistantMessage.Content,
 			h.assistantMessage.Artifacts, previous, types.LanguageFromContextOrDefault(h.ctx))
