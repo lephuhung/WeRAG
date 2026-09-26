@@ -21,7 +21,7 @@ export const ARTIFACT_TRANSPARENT_PIXEL =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 function artifactHandle(a: ArtifactMeta): string {
-  return (a.handle || "").trim().match(RESOURCE_HANDLE_RE)?.[1] || "";
+  return (a.handle || a.url || "").trim().match(RESOURCE_HANDLE_RE)?.[1] || "";
 }
 
 function fileExtension(fileName: string): string {

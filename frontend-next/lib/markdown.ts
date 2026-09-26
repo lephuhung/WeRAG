@@ -73,8 +73,11 @@ const IMAGE_EXTENSIONS: Record<string, true> = {
 function artifactImageIndex(src: string): number | null {
   if (!src || !activeArtifacts?.length) return null;
   const handleMatch = src.match(RESOURCE_HANDLE_RE);
+  // History payloads carry the reference as `url`, live complete events as
+  // `handle` — same identity (mirrors Vue artifactHandle: handle || url).
+  const refOf = (a: ArtifactMeta) => (a.handle || a.url || "").trim();
   const found = handleMatch
-    ? activeArtifacts.find((a) => (a.handle || "").trim() === handleMatch[0])
+    ? activeArtifacts.find((a) => refOf(a) === handleMatch[0])
     : activeArtifacts.find((a) => (a.file_name || "").trim() === src.split("/").pop()?.trim());
   if (!found) return null;
   const ext = (found.file_name || "").trim().toLowerCase().split(".").pop() ?? "";

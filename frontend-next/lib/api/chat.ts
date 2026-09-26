@@ -127,6 +127,9 @@ export interface ArtifactMeta {
   /** `resource://<handle>` — stable identity the answer body references.
    * Empty when the deployment runs without a resource catalog. */
   handle?: string;
+  /** History payloads (`LoadMessages`) serialize `Message.Artifacts` whose
+   * storage reference is named `url` — same identity as `handle`. */
+  url?: string;
   file_name: string;
   file_type: string;
   file_size: number;
