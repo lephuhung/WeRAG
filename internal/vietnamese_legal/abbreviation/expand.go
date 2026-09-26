@@ -89,6 +89,11 @@ func Expand(text string, actives []*types.Abbreviation) *ExpandResult {
 
 	byShort := map[string][]*types.Abbreviation{}
 	for _, a := range actives {
+		// A nil row carries no short form; skip it instead of panicking.
+		// Inactive-row handling is unchanged.
+		if a == nil {
+			continue
+		}
 		key := strings.ToLower(a.ShortForm)
 		byShort[key] = append(byShort[key], a)
 	}

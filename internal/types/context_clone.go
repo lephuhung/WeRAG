@@ -72,6 +72,11 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	LangfuseTraceContextKey: true,
 
 	AbbreviationCandidatesContextKey: true,
+	// The sealed abbreviation turn binding. It describes one user turn
+	// (restriction-style payload: principal, session, message IDs, raw
+	// query), so dropping it across a detach would let background work run
+	// unbound. No existing key decision is altered by this entry.
+	AbbreviationResolutionContextKey: true,
 
 	// The agent-level opt-out from long-term memory. Recall is gated inside
 	// the QA services, but extraction, the explicit "remember this" route and

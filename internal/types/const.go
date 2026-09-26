@@ -56,6 +56,12 @@ const (
 	// EmbedQueryContextKey is the context key for embedding query text
 	EmbedQueryContextKey             ContextKey = "EmbedQuery"
 	AbbreviationCandidatesContextKey ContextKey = "AbbreviationCandidates"
+	// AbbreviationResolutionContextKey carries the sealed per-turn
+	// abbreviation binding. Only the private sealedAbbreviationTurn payload
+	// (package abbreviation) is ever stored under it; generic maps or DTOs
+	// under this key are rejected. Declared here so the clone table in
+	// context_clone.go can name it.
+	AbbreviationResolutionContextKey ContextKey = "AbbreviationResolution"
 	// WikiEditSourceContextKey carries who is authoring the current wiki
 	// page write (user / agent / revert). Absent means the wiki ingest
 	// pipeline. See types.WithWikiEditSource.

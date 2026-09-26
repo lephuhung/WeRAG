@@ -87,6 +87,45 @@ func isAllUpperLetters(word string) bool {
 	return word != ""
 }
 
+// wordTokenSpan is a word token with its UTF-8 byte offsets into the source
+// text. Unlike extractWordTokens it keeps every occurrence (no dedupe) so
+// callers can record per-occurrence spans.
+type wordTokenSpan struct {
+	token      string
+	start, end int
+}
+
+// extractWordTokenSpans returns word tokens (same word definition as
+// extractWordTokens: letter/digit/underscore runs of length >= 2) with byte
+// offsets, in order of appearance.
+func extractWordTokenSpans(text string) []wordTokenSpan {
+	var spans []wordTokenSpan
+	start := -1
+	flush := func(end int) {
+		if start < 0 {
+			return
+		}
+		tok := text[start:end]
+		s := start
+		start = -1
+		if utf8.RuneCountInString(tok) < 2 {
+			return
+		}
+		spans = append(spans, wordTokenSpan{token: tok, start: s, end: end})
+	}
+	for i, r := range text {
+		if isWordRune(r) {
+			if start < 0 {
+				start = i
+			}
+		} else {
+			flush(i)
+		}
+	}
+	flush(len(text))
+	return spans
+}
+
 func FindCandidates(text string) []string {
 	var candidates []string
 	for _, token := range extractWordTokens(text) {
