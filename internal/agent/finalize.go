@@ -20,6 +20,13 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	sessionID string,
 	conversation []chat.Message,
 ) error {
+	// Final-answer synthesis is a model call and an answer-emission point;
+	// it must not run for a turn whose sealed abbreviation state is absent
+	// or invalid. The natural-stop path and the max-iteration fallback both
+	// funnel through here.
+	if err := e.checkAbbreviationTurn(ctx); err != nil {
+		return err
+	}
 	totalToolCalls := countTotalToolCalls(state.RoundSteps)
 	logger.Infof(ctx, "[Agent][FinalAnswer] Synthesizing from %d steps, %d tool calls",
 		len(state.RoundSteps), totalToolCalls)

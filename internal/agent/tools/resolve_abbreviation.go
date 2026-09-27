@@ -21,25 +21,28 @@ var resolveAbbreviationTool = BaseTool{
 
 ## When to Use
 
-Call this when the user's message contains a likely abbreviation or acronym
-(UBND, BMNN, TTHT, BCĐ, ...) and you need its expansion before reasoning or
-searching. Vietnamese legal/administrative text is dense with shorthand, and
-expanding it first makes downstream knowledge search noticeably better.
+In a Q&A turn, abbreviations in the user's message were already resolved and
+validated by the runtime before you were invoked — use the resolved mapping
+shown in the request or in this tool's output, and never re-expand or guess a
+short form. This tool's remaining jobs are narrower:
 
 ## Actions
 
-- action="expand" (default): pass the full user text in "text". Returns the
-  rewritten text plus which abbreviations were applied, which matched
-  several meanings (ambiguous — ask the user which they meant), and which
-  look like abbreviations but are unknown to the dictionary.
+- action="expand" (default): pass text in "text". Inside a resolved Q&A turn
+  the runtime's validated mapping is applied; outside one, the active
+  dictionary is consulted. Returns the rewritten text plus which
+  abbreviations were applied, which matched several meanings (ambiguous —
+  ask the user which they meant), and which look like abbreviations but are
+  unknown to the dictionary.
 - action="lookup": pass one short form in "short_form" to list its known
-  meanings (active and pending).
+  meanings (active and pending — pending entries are diagnostic only and are
+  never used for expansion).
 - action="suggest": propose a new abbreviation with "short_form",
-  "full_form" and optional "description". When the user has explicitly
-  supplied the meaning ("ABC = Full Meaning", or a full-form-only reply to
-  your question about a single unknown candidate), submit it right away
-  without asking again. Never infer or invent a full form. Suggestions stay
-  inactive until a workspace Owner or SuperAdmin activates them — say so
+  "full_form" and optional "description". Inside a resolved Q&A turn it is
+  accepted only when it reproduces the exact definition the user supplied
+  for this request. Never infer or invent a full form. An accepted
+  suggestion applies to the current request and stays pending for the shared
+  dictionary until a workspace Owner or SuperAdmin activates it — say so
   when reporting back to the user.`,
 	schema: json.RawMessage(`{
   "type": "object",
@@ -122,11 +125,18 @@ func (t *ResolveAbbreviationTool) expand(
 	if strings.TrimSpace(input.Text) == "" {
 		return t.fail("text is required for action=expand")
 	}
-	actives, err := t.svc.ListActive(ctx)
-	if err != nil {
-		return t.fail(fmt.Sprintf("failed to load abbreviation dictionary: %v", err))
+	var res *abbreviation.ExpandResult
+	if sealed, ok := abbreviation.ResolutionFromContext(ctx); ok {
+		// Bound QA turn: reuse the validated mapping — the dictionary is not
+		// consulted again and model arguments cannot widen it.
+		res = abbreviation.Expand(input.Text, sealedAbbreviationActives(&sealed))
+	} else {
+		actives, err := t.svc.ListActive(ctx)
+		if err != nil {
+			return t.fail(fmt.Sprintf("failed to load abbreviation dictionary: %v", err))
+		}
+		res = abbreviation.Expand(input.Text, actives)
 	}
-	res := abbreviation.Expand(input.Text, actives)
 
 	var b strings.Builder
 	b.WriteString("<abbreviation_expand>\n")
@@ -203,6 +213,18 @@ func (t *ResolveAbbreviationTool) suggest(
 	if short == "" || full == "" {
 		return t.fail("short_form and full_form are required for action=suggest")
 	}
+	if sealed, ok := abbreviation.ResolutionFromContext(ctx); ok {
+		// Inside a bound QA turn a suggestion is accepted only when it
+		// reproduces a definition the user supplied for this request (the
+		// sealed user_current_request term, normalized short and full form
+		// with its source message). Model tool arguments alone are never
+		// authoritative user intent.
+		if !sealedUserDefinitionMatches(&sealed, short, full) {
+			return t.fail("action=suggest requires the exact definition the user supplied " +
+				"for this turn (matching short and full form); the model cannot propose " +
+				"abbreviation meanings on its own")
+		}
+	}
 	row, err := t.svc.Suggest(ctx, &types.AbbreviationCreateRequest{
 		ShortForm:   short,
 		FullForm:    full,
@@ -213,8 +235,9 @@ func (t *ResolveAbbreviationTool) suggest(
 	}
 	status := "pending_review"
 	output := fmt.Sprintf(
-		"Recorded suggestion %q → %q (or it was already pending). It stays inactive until "+
-			"a workspace Owner or SuperAdmin approves it — tell the user it will not expand yet.",
+		"Recorded suggestion %q → %q (or it was already pending). The meaning applies to the "+
+			"current request; for the shared dictionary it stays pending until a workspace "+
+			"Owner or SuperAdmin approves it — tell the user so.",
 		row.ShortForm, row.FullForm)
 	if row.IsActive {
 		status = "active"

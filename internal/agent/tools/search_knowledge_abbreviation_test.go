@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -54,7 +55,7 @@ func newAbbreviationSearchTool(
 func TestSearchKnowledgeAppliesAbbreviationResolution(t *testing.T) {
 	kb := &fakeKBServiceForAbbreviation{}
 	svc := &searchStubAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
+		{ID: "m-1", ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
 	}}
 	tool := newAbbreviationSearchTool(kb, svc)
 
@@ -88,23 +89,77 @@ func TestSearchKnowledgeAppliesAbbreviationResolution(t *testing.T) {
 func TestSearchKnowledgeAmbiguousAbbreviationStaysUntouched(t *testing.T) {
 	kb := &fakeKBServiceForAbbreviation{}
 	svc := &searchStubAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "BCH", FullForm: "Ban chấp hành", IsActive: true},
-		{ShortForm: "BCH", FullForm: "Bệnh viện C Hòa", IsActive: true},
+		{ID: "m-a", ShortForm: "BCH", FullForm: "Ban chấp hành", IsActive: true},
+		{ID: "m-b", ShortForm: "BCH", FullForm: "Bệnh viện C Hòa", IsActive: true},
 	}}
 	tool := newAbbreviationSearchTool(kb, svc)
 
+	// Without selection or literal mode, retrieval must not run at all.
 	res, err := tool.Execute(context.Background(), json.RawMessage(`{"query":"BCH đã họp"}`))
-	if err != nil || !res.Success {
-		t.Fatalf("execute: res=%+v err=%v", res, err)
+	if err == nil || res == nil || res.Success {
+		t.Fatalf("ambiguous query without selection must be blocked: res=%+v err=%v", res, err)
 	}
-	for _, p := range kb.searchParams {
+	if !strings.Contains(res.Error, "abbreviation_selection_required") {
+		t.Fatalf("error=%q", res.Error)
+	}
+	if len(kb.searchParams) != 0 {
+		t.Fatalf("HybridSearch ran %d times on a blocked query", len(kb.searchParams))
+	}
+
+	// Explicit literal mode keeps the multi-meaning term unexpanded.
+	kb2 := &fakeKBServiceForAbbreviation{}
+	tool2 := newAbbreviationSearchTool(kb2, svc)
+	res2, err := tool2.Execute(context.Background(),
+		json.RawMessage(`{"query":"BCH đã họp","literal_abbreviations":true}`))
+	if err != nil || !res2.Success {
+		t.Fatalf("literal execute: res=%+v err=%v", res2, err)
+	}
+	for _, p := range kb2.searchParams {
 		if p.QueryText != "BCH đã họp" {
-			t.Fatalf("ambiguous query must stay unchanged, got %q", p.QueryText)
+			t.Fatalf("literal query must stay unchanged, got %q", p.QueryText)
 		}
 	}
-	if !strings.Contains(res.Output, `<ambiguous short_form="BCH">`) ||
-		!strings.Contains(res.Output, "<meaning>Ban chấp hành</meaning>") ||
-		!strings.Contains(res.Output, "<meaning>Bệnh viện C Hòa</meaning>") {
-		t.Fatalf("output=%q", res.Output)
+}
+
+// An unknown abbreviation blocks retrieval entirely — no HybridSearch call.
+func TestSearchKnowledgeUnknownAbbreviationBlocks(t *testing.T) {
+	kb := &fakeKBServiceForAbbreviation{}
+	tool := newAbbreviationSearchTool(kb, &searchStubAbbreviationService{})
+
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"query":"ATTT là gì"}`))
+	if err == nil || res == nil || res.Success {
+		t.Fatalf("unknown abbreviation must be blocked: res=%+v err=%v", res, err)
+	}
+	if !strings.Contains(res.Error, "abbreviation_definition_required") {
+		t.Fatalf("error=%q", res.Error)
+	}
+	if res.Data["abbreviation_resolution"] == nil {
+		t.Fatal("blocked result must carry resolution data")
+	}
+	if len(kb.searchParams) != 0 {
+		t.Fatalf("HybridSearch ran %d times on a blocked query", len(kb.searchParams))
+	}
+}
+
+// Inside a sealed QA turn the validated mapping is used and the dictionary
+// is never re-read — client-supplied selection flags cannot override it.
+func TestSearchKnowledgeBoundTurnUsesSealedMapping(t *testing.T) {
+	kb := &fakeKBServiceForAbbreviation{}
+	svc := &countingAbbrevSvc{err: errors.New("dictionary must not be read")}
+	tool := newAbbreviationSearchTool(kb, svc)
+
+	ctx := sealedToolCtx(t, map[string]string{"ATTT": "An toàn thông tin"})
+	res, err := tool.Execute(ctx, json.RawMessage(
+		`{"query":"quy định ATTT","abbreviation_meaning_ids":{"attt":"forged"},"literal_abbreviations":true}`))
+	if err != nil || !res.Success {
+		t.Fatalf("bound execute: res=%+v err=%v", res, err)
+	}
+	if svc.calls != 0 {
+		t.Fatalf("dictionary re-read %d times inside a sealed turn", svc.calls)
+	}
+	for _, p := range kb.searchParams {
+		if p.QueryText != "quy định An toàn thông tin (ATTT)" {
+			t.Fatalf("QueryText=%q", p.QueryText)
+		}
 	}
 }

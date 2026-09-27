@@ -36,6 +36,11 @@ func (e *AgentEngine) streamLLMToEventBus(
 	opts *chat.ChatOptions,
 	emitFunc func(chunk *types.StreamResponse, fullContent string),
 ) (*streamLLMResult, error) {
+	// Every ChatStream call in this engine funnels here — thinking rounds,
+	// retries and the final-answer synthesis — so one check gates them all.
+	if err := e.checkAbbreviationTurn(ctx); err != nil {
+		return nil, err
+	}
 	logger.Debugf(ctx, "[Agent][Stream] Starting LLM stream with %d messages", len(messages))
 
 	// No wall-clock deadline here: a round that streams a large tool-call

@@ -32,16 +32,15 @@ func TestToolGuidanceUsesActualCapabilities(t *testing.T) {
 
 func TestToolGuidanceAbbreviationSequence(t *testing.T) {
 	guidance := formatToolGuidance([]string{"search_knowledge", "resolve_abbreviation"})
-	require.Contains(t, guidance, "resolve_abbreviation before search_knowledge")
-	require.Contains(t, guidance, "continue with search_knowledge using expanded_text")
+	require.Contains(t, guidance, "already resolved and validated by the runtime")
+	require.Contains(t, guidance, "abbreviation_meaning_ids")
 	require.NotContains(t, formatToolGuidance([]string{"search_knowledge"}), "resolve_abbreviation")
 	resolverOnly := formatToolGuidance([]string{"resolve_abbreviation"})
 	require.NotContains(t, resolverOnly, "search_knowledge")
 	require.Contains(t, resolverOnly, "action=suggest")
-	require.Contains(t, resolverOnly, "call resolve_abbreviation")
-	require.Contains(t, guidance, "immediately call resolve_abbreviation with action=suggest")
-	require.Contains(t, guidance, "without another confirmation")
-	require.Contains(t, guidance, "Owner or SuperAdmin activates it")
+	require.Contains(t, resolverOnly, "exact meaning the user supplied")
+	require.Contains(t, guidance, "pending")
+	require.Contains(t, guidance, "Owner or SuperAdmin")
 }
 
 func TestArtifactGuidanceUsesConfiguredOutputDirectory(t *testing.T) {

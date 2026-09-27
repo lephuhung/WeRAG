@@ -319,20 +319,19 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"through another tool.\n")
 	}
 	if has("resolve_abbreviation") {
+		b.WriteString("Abbreviations in the user's message were already resolved and validated by " +
+			"the runtime before this turn; use the resolved mapping shown in the request or tool " +
+			"results and never re-expand or guess a short form's meaning. ")
 		if has("search_knowledge") {
-			b.WriteString("When the user's message contains Vietnamese abbreviations or acronyms " +
-				"(UBND, TTHT, BMNN…), call resolve_abbreviation before search_knowledge. " +
-				"For one active meaning, continue with search_knowledge using expanded_text. ")
-		} else {
-			b.WriteString("When the user's message contains Vietnamese abbreviations or acronyms " +
-				"(UBND, TTHT, BMNN…), call resolve_abbreviation. ")
+			b.WriteString("When a standalone term has several active meanings, search_knowledge " +
+				"reports them; pick one of the reported meaning IDs via abbreviation_meaning_ids " +
+				"or pass literal_abbreviations to keep the term unexpanded — never invent an ID. ")
 		}
-		b.WriteString("If a short form is ambiguous, ask which meaning was intended instead of guessing. " +
-			"For an unknown candidate, ask the user for its full form. When the user explicitly " +
-			"supplies that meaning—either as 'ABC = Full Meaning' or as a full-form-only reply " +
-			"when exactly one unknown candidate is pending—immediately call resolve_abbreviation " +
-			"with action=suggest without another confirmation. Never invent a full form. Tell the " +
-			"user the suggestion remains pending until a workspace Owner or SuperAdmin activates it.\n")
+		b.WriteString("An abbreviation the runtime still cannot resolve needs the user's " +
+			"definition; resolve_abbreviation action=suggest is accepted only when it reproduces " +
+			"the exact meaning the user supplied for this request. That meaning then applies to " +
+			"this request locally, while the shared dictionary keeps it pending until a " +
+			"workspace Owner or SuperAdmin approves it. Never invent a full form.\n")
 	}
 
 	return b.String()

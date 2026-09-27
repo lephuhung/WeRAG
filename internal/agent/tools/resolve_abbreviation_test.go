@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,9 +88,64 @@ func TestResolveAbbreviation_SuggestStaysInactive(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.Success)
 	require.Equal(t, "BCĐ", stub.suggested.ShortForm)
-	require.Contains(t, res.Output, "inactive")
+	require.Contains(t, res.Output, "pending")
 	// suggestion must not pretend it already expands
 	require.Equal(t, false, res.Data["is_active"])
+}
+
+// sealedUserDefCtx returns a context bound to a turn whose ATTT meaning came
+// from the user's own current-request definition — the only provenance a
+// suggest action may reproduce.
+func sealedUserDefCtx(t *testing.T) context.Context {
+	t.Helper()
+	full := "An toàn thông tin"
+	res := abbreviation.Inspect("ATTT là gì", nil)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, res.Status)
+	res, err := abbreviation.ApplyDefinitions(res, []types.AbbreviationDefinition{{
+		ShortForm: "ATTT", FullForm: full,
+		SourceMessageID: "user-1", Start: 0, End: len(full),
+	}})
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, res.Status)
+	ctx, err := abbreviation.BindTurn(context.Background(), types.AbbreviationBinding{
+		Owner: types.AbbreviationOwner{
+			TenantID: 1, SessionID: "sess-1", OwnerID: "u1", PrincipalID: "user:u1",
+		},
+		UserMessageID: "user-1", AssistantMessageID: "assist-1", RawQuery: "ATTT là gì",
+	}, res)
+	require.NoError(t, err)
+	return ctx
+}
+
+// Inside a bound turn, expand uses the sealed mapping — never the dictionary.
+func TestResolveAbbreviation_ExpandBoundTurnUsesSeal(t *testing.T) {
+	stub := &stubAbbreviationService{} // no actives: a dictionary read would prove nothing expanded
+	res, err := NewResolveAbbreviationTool(stub).Execute(sealedUserDefCtx(t),
+		json.RawMessage(`{"action":"expand","text":"ATTT đã họp"}`))
+	require.NoError(t, err)
+	require.True(t, res.Success)
+	require.Contains(t, res.Output, "An toàn thông tin")
+}
+
+// A suggest that mirrors the user-supplied definition is accepted; anything
+// the model invents is refused.
+func TestResolveAbbreviation_SuggestBoundTurnRequiresUserDefinition(t *testing.T) {
+	ctx := sealedUserDefCtx(t)
+	stub := &stubAbbreviationService{}
+	tool := NewResolveAbbreviationTool(stub)
+
+	res, err := tool.Execute(ctx, json.RawMessage(
+		`{"action":"suggest","short_form":"attt","full_form":"An toàn thông tin"}`))
+	require.NoError(t, err)
+	require.True(t, res.Success)
+	require.NotNil(t, stub.suggested, "matching user definition must reach Suggest")
+
+	stub2 := &stubAbbreviationService{}
+	res2, err := NewResolveAbbreviationTool(stub2).Execute(ctx, json.RawMessage(
+		`{"action":"suggest","short_form":"ATTT","full_form":"An thần tinh tế"}`))
+	require.Error(t, err)
+	require.False(t, res2.Success)
+	require.Nil(t, stub2.suggested, "invented meaning must be refused before Suggest")
 }
 
 func TestResolveAbbreviation_BadAction(t *testing.T) {

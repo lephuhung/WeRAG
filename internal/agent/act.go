@@ -233,6 +233,17 @@ func (e *AgentEngine) executeToolCalls(
 	round := iteration + 1
 	n := len(response.ToolCalls)
 
+	// The abbreviation gate covers tools the same way it covers the model:
+	// a turn whose sealed state is missing or invalid cannot run search, MCP
+	// or sandbox side effects. Calls are recorded as refused, like truncated
+	// arguments, so the transcript still shows what was declined.
+	if err := e.checkAbbreviationTurn(ctx); err != nil {
+		logger.Warnf(ctx, "[Agent][Round-%d] Refusing %d tool call(s): abbreviation turn invalid: %v",
+			round, n, err)
+		e.refuseToolCalls(ctx, response, step, iteration, sessionID, err.Error())
+		return
+	}
+
 	// A completion-token cap cuts the response mid-serialization, so every call
 	// in it may carry incomplete arguments. Running them is worse than failing
 	// them: a truncated write_sandbox_file lands a half-written file and still
@@ -274,13 +285,23 @@ func (e *AgentEngine) failTruncatedToolCalls(
 	ctx context.Context, response *types.ChatResponse,
 	step *types.AgentStep, iteration int, sessionID string,
 ) {
+	e.refuseToolCalls(ctx, response, step, iteration, sessionID, truncatedArgumentsError)
+}
+
+// refuseToolCalls records every call in the response as failed with the
+// given reason without executing any of them, emitting the same events a
+// real execution would so the UI and the transcript stay consistent.
+func (e *AgentEngine) refuseToolCalls(
+	ctx context.Context, response *types.ChatResponse,
+	step *types.AgentStep, iteration int, sessionID, reason string,
+) {
 	for i, tc := range response.ToolCalls {
 		toolCall := types.ToolCall{
 			ID:               agenttools.NormalizeToolCallID(tc.ID, tc.Function.Name, i),
 			Name:             tc.Function.Name,
 			Args:             map[string]any{"_raw": tc.Function.Arguments},
 			ProviderMetadata: tc.ProviderMetadata,
-			Result:           &types.ToolResult{Success: false, Error: truncatedArgumentsError},
+			Result:           &types.ToolResult{Success: false, Error: reason},
 		}
 		step.ToolCalls = append(step.ToolCalls, toolCall)
 		e.emitToolOutcome(ctx, toolCall, iteration, sessionID)

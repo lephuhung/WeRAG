@@ -102,7 +102,7 @@ func TestKnowledgeBase_OwnerBackfill_KeepsTenantID(t *testing.T) {
 	for tenant, id := range ids {
 		kb := &types.KnowledgeBase{
 			ID: id, Name: "legacy-kb",
-			TenantID: tenant,
+			TenantID:         tenant,
 			EmbeddingModelID: "e", SummaryModelID: "s",
 		}
 		require.NoError(t, db.Create(kb).Error)

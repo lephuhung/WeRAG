@@ -40,7 +40,8 @@ func (r *sourceRegistry) ModelOutput(result *types.ToolResult) string {
 	}
 	switch displayType {
 	case "grep_results":
-		return r.modelKnowledgeOutput("keyword", mapsValue(result.Data["chunk_results"]), result.Output)
+		return abbreviationResolutionPrefix(result.Output) +
+			r.modelKnowledgeOutput("keyword", mapsValue(result.Data["chunk_results"]), result.Output)
 	case "search_results":
 		// search_knowledge reports the mode it actually used; legacy
 		// knowledge_search payloads carry none and were always semantic.
@@ -48,7 +49,8 @@ func (r *sourceRegistry) ModelOutput(result *types.ToolResult) string {
 		if mode == "" {
 			mode = "semantic"
 		}
-		output := r.modelKnowledgeOutput(mode, mapsValue(result.Data["results"]), result.Output)
+		output := abbreviationResolutionPrefix(result.Output) +
+			r.modelKnowledgeOutput(mode, mapsValue(result.Data["results"]), result.Output)
 		return r.annotateModeFallbacks(output, result.Data)
 	case "knowledge_chunks_list":
 		return r.modelKnowledgeChunksOutput(result.Data, result.Output)
@@ -721,6 +723,23 @@ func failedToolModelText(output, errMsg string) string {
 	default:
 		return output + "\n\nError: " + errMsg
 	}
+}
+
+// abbreviationResolutionPrefix keeps the abbreviation-resolution annotation
+// a tool put at the head of its output visible when the row renderer replaces
+// the rest of the text. The block is descriptive only: it reports what the
+// backend gate already validated, and model text can never use it to mark a
+// turn ready.
+func abbreviationResolutionPrefix(output string) string {
+	const open, close = "<abbreviation_resolution>", "</abbreviation_resolution>"
+	if !strings.HasPrefix(output, open) {
+		return ""
+	}
+	end := strings.Index(output, close)
+	if end < 0 {
+		return ""
+	}
+	return output[:end+len(close)] + "\n"
 }
 
 func mapsValue(value interface{}) []map[string]interface{} {

@@ -76,6 +76,13 @@ func (e *AgentEngine) runCompaction(
 	if e.compactor == nil {
 		return messages, false
 	}
+	// Compaction is a model call: a bound engine whose sealed turn state is
+	// invalid compacts nothing and lets the guarded LLM call abort the round.
+	if err := e.checkAbbreviationTurn(ctx); err != nil {
+		logger.Warnf(ctx, "[Agent][Round-%d] compaction skipped: abbreviation turn invalid: %v",
+			round, err)
+		return messages, false
+	}
 	// The exhausted mark is tied to a message count rather than a bare flag:
 	// once the loop appends new rounds there is new history to summarize, and
 	// the earlier "nothing to compact" no longer describes the context.

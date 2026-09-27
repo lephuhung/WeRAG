@@ -43,6 +43,13 @@ type AgentEngine interface {
 	// end on a stored turn, so later turns start from them. Nil (default)
 	// keeps compaction local to the turn. Must be called before Execute.
 	SetContextCheckpointSink(sink types.ContextCheckpointSink)
+
+	// RequireAbbreviationTurn pins the engine to the sealed abbreviation
+	// turn that authorized it. QA entry points must call it before Execute
+	// with the binding sealed into ctx; once set, every model call, tool
+	// execution and answer emission verifies the sealed context still
+	// matches. Engines that never call it keep their existing lifecycle.
+	RequireAbbreviationTurn(b types.AbbreviationBinding)
 }
 
 // AgentService defines the interface for agent-related operations

@@ -114,6 +114,7 @@ func (r *Registry) DecodeToolCalls(toolCalls []types.LLMToolCall) {
 	}
 	normalizeWebFetchItems(toolCalls)
 	normalizeMCPCallArguments(toolCalls)
+	stripAbbreviationAuthorityClaims(toolCalls)
 	r.resources.DecodeToolCalls(toolCalls)
 	r.sources.DecodeToolCallsWithPolicy(toolCalls, sourceArgumentAllowed)
 	for i := range toolCalls {
@@ -140,6 +141,46 @@ func (r *Registry) DecodeToolCalls(toolCalls []types.LLMToolCall) {
 			toolCalls[i].ArgumentResolution = ArgumentResolutionResolved
 		default:
 			toolCalls[i].ArgumentResolution = ArgumentResolutionUnchanged
+		}
+	}
+}
+
+// abbreviationAuthorityClaimKeys are argument keys a model could write to
+// impersonate abbreviation-resolution state. Resolution is owned by the
+// backend gate: no tool schema accepts these keys, so they are stripped from
+// decoded arguments before dispatch. The legitimate search_knowledge fields
+// (abbreviation_meaning_ids, literal_abbreviations) are request hints, not
+// authority claims, and stay.
+var abbreviationAuthorityClaimKeys = map[string]struct{}{
+	"abbreviation_ready":       {},
+	"abbreviation_resolution":  {},
+	"abbreviation_candidates":  {},
+	"abbreviation_suggestions": {},
+	"abbreviation_status":      {},
+	"abbreviation_terms":       {},
+}
+
+// stripAbbreviationAuthorityClaims removes fabricated abbreviation state
+// keys from tool-call arguments. A model cannot mark a turn ready or hand a
+// resolver result to itself through any tool.
+func stripAbbreviationAuthorityClaims(calls []types.LLMToolCall) {
+	for i := range calls {
+		var args map[string]json.RawMessage
+		if json.Unmarshal([]byte(calls[i].Function.Arguments), &args) != nil {
+			continue
+		}
+		dirty := false
+		for key := range args {
+			if _, bad := abbreviationAuthorityClaimKeys[key]; bad {
+				delete(args, key)
+				dirty = true
+			}
+		}
+		if !dirty {
+			continue
+		}
+		if encoded, err := json.Marshal(args); err == nil {
+			calls[i].Function.Arguments = string(encoded)
 		}
 	}
 }

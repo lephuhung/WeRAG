@@ -78,6 +78,10 @@ type AgentEngine struct {
 	steerSink         types.SteerSink
 	allowSteerOverrun bool // one extra ReAct round after a loop-end inject past MaxIterations
 	steerOverruns     int  // how many times this turn has already used the extra round
+	// abbreviationBinding, when set, pins this engine to the sealed QA turn
+	// that authorized it (see abbreviation_guard.go). QA entry points always
+	// set it; autonomous engines leave it nil and skip every check.
+	abbreviationBinding *types.AbbreviationBinding
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -299,6 +303,20 @@ func (e *AgentEngine) Execute(
 ) (*types.AgentState, error) {
 	logger.Infof(ctx, "[Agent] Starting execution: session=%s, message=%s, query_len=%d, context_msgs=%d",
 		sessionID, messageID, len(query), len(llmContext))
+
+	// A bound engine refuses to run anything — model calls, tools,
+	// compaction, answer synthesis — outside its sealed abbreviation turn.
+	// Both checks run before any side effect, including tool cleanup and
+	// tracing, so a forged or missing turn state cannot leak work.
+	if err := e.checkAbbreviationBindingArgs(sessionID, messageID); err != nil {
+		logger.Warnf(ctx, "[Agent] Rejected: %v", err)
+		return nil, err
+	}
+	if err := e.checkAbbreviationTurn(ctx); err != nil {
+		logger.Warnf(ctx, "[Agent] Rejected: abbreviation turn check failed: %v", err)
+		return nil, err
+	}
+
 	// Ensure tools are cleaned up after execution
 	defer e.toolRegistry.Cleanup(ctx)
 
@@ -367,7 +385,8 @@ func (e *AgentEngine) Execute(
 	if len(imageURLs) > 0 {
 		imgs = imageURLs[0]
 	}
-	messages := e.buildMessagesWithLLMContext(systemPrompt, query, sessionID, llmContext, imgs)
+	messages := e.buildMessagesWithLLMContext(systemPrompt,
+		e.abbreviationModelQuery(ctx, query), sessionID, llmContext, imgs)
 	if e.toolRegistry != nil {
 		e.toolRegistry.RememberMCPHistory(messages)
 		e.toolRegistry.RefreshMCPTools(ctx)

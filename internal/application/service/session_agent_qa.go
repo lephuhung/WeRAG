@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/types"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // AgentQA performs agent-based question answering with conversation history and streaming support
@@ -225,6 +226,16 @@ func (s *sessionService) AgentQA(
 		logger.Errorf(ctx, "Failed to create agent engine: %v", err)
 		return err
 	}
+
+	// Pin the engine to the sealed abbreviation turn before it can touch the
+	// model, tools or the answer stream. PrepareAbbreviationTurn always binds
+	// a ready resolution, so a missing seal is a hard failure, not a skip.
+	abbreviationBinding, bound := abbreviation.BindingFromContext(ctx)
+	if !bound {
+		logger.Errorf(ctx, "Agent QA missing sealed abbreviation turn for session: %s", sessionID)
+		return types.ErrAbbreviationNotReady
+	}
+	engine.RequireAbbreviationTurn(abbreviationBinding)
 
 	// Recall long-term memory for this turn. Like the RAG path this is a
 	// no-model read, and an agent may opt out of it entirely.

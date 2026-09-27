@@ -16,7 +16,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // Retrieval modes accepted by search_knowledge.
@@ -72,6 +71,15 @@ var searchKnowledgeTool = BaseTool{
       "description": "Maximum chunks to return (default 10, max 30)",
       "minimum": 1,
       "maximum": 30
+    },
+    "abbreviation_meaning_ids": {
+      "type": "object",
+      "description": "Optional map of abbreviation short form to one of the active meaning IDs the resolver reported. Only valid outside a resolved QA turn; a bound turn's validated mapping always wins.",
+      "additionalProperties": { "type": "string" }
+    },
+    "literal_abbreviations": {
+      "type": "boolean",
+      "description": "Leave known multi-meaning abbreviations unexpanded instead of selecting a meaning. Never bypasses unknown abbreviations, which always block the search."
     }
   },
   "required": ["query"]
@@ -84,6 +92,11 @@ type SearchKnowledgeInput struct {
 	Mode             string   `json:"mode,omitempty"`
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
 	Limit            int      `json:"limit,omitempty"`
+	// AbbreviationMeaningIDs and LiteralAbbreviations steer standalone
+	// resolution only; inside a sealed QA turn the validated mapping always
+	// wins and these fields are ignored.
+	AbbreviationMeaningIDs map[string]string `json:"abbreviation_meaning_ids,omitempty"`
+	LiteralAbbreviations   bool              `json:"literal_abbreviations,omitempty"`
 }
 
 // searchResultWithMeta wraps search result with metadata about which query matched it
@@ -188,14 +201,13 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	limit := clampSearchLimit(input.Limit)
 
 	originalQuery := query
-	effectiveQuery, abbreviationResult, resolveErr := abbreviation.ResolveSearchQuery(
-		ctx, query, t.abbreviationService)
-	if resolveErr != nil {
-		logger.Warnf(ctx, "[Tool][SearchKnowledge] Abbreviation resolution failed, using original query: %v",
-			resolveErr)
-	} else {
-		query = effectiveQuery
+	resolved, blocked, resolveErr := ResolveToolQuery(ctx, query, t.abbreviationService,
+		input.AbbreviationMeaningIDs, input.LiteralAbbreviations)
+	if blocked != nil {
+		logger.Warnf(ctx, "[Tool][SearchKnowledge] Abbreviation gate blocked retrieval: %v", resolveErr)
+		return blocked, resolveErr
 	}
+	query = resolved
 
 	// Optional KB filter: reject hallucinated or out-of-scope handles.
 	searchTargets := t.searchTargets
@@ -319,44 +331,32 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	if len(final) == 0 {
 		result.Output = emptySearchStatement(query, result.Data, len(kbIDs))
 	}
-	annotateAbbreviationResolution(result, originalQuery, abbreviationResult)
+	annotateAbbreviationResolution(result, originalQuery, query)
 	return result, nil
 }
 
+// annotateAbbreviationResolution records the raw query the model supplied
+// and, when the gate rewrote it, the validated effective query. The block is
+// descriptive only — nothing in it grants resolution authority to model
+// output.
 func annotateAbbreviationResolution(
-	result *types.ToolResult, originalQuery string, res *abbreviation.ExpandResult,
+	result *types.ToolResult, originalQuery, effectiveQuery string,
 ) {
-	if result == nil || res == nil {
+	if result == nil {
 		return
 	}
 	if result.Data == nil {
 		result.Data = map[string]interface{}{}
 	}
 	result.Data["original_query"] = originalQuery
-	result.Data["abbreviation_resolution"] = res
-	if len(res.Applied) == 0 && len(res.Ambiguous) == 0 {
+	if effectiveQuery == originalQuery {
 		return
 	}
-	var b strings.Builder
-	b.WriteString("<abbreviation_resolution>\n")
-	for _, applied := range res.Applied {
-		fmt.Fprintf(&b, "<applied short_form=\"%s\">%s</applied>\n",
-			xmlEscape(applied.ShortForm), xmlEscape(applied.FullForm))
+	result.Data["abbreviation_resolution"] = map[string]interface{}{
+		"effective_query": effectiveQuery,
 	}
-	ambiguousKeys := make([]string, 0, len(res.Ambiguous))
-	for shortForm := range res.Ambiguous {
-		ambiguousKeys = append(ambiguousKeys, shortForm)
-	}
-	sort.Strings(ambiguousKeys)
-	for _, shortForm := range ambiguousKeys {
-		fmt.Fprintf(&b, "<ambiguous short_form=\"%s\">\n", xmlEscape(shortForm))
-		for _, meaning := range res.Ambiguous[shortForm] {
-			fmt.Fprintf(&b, "<meaning>%s</meaning>\n", xmlEscape(meaning.FullForm))
-		}
-		b.WriteString("</ambiguous>\n")
-	}
-	b.WriteString("</abbreviation_resolution>\n")
-	result.Output = b.String() + result.Output
+	result.Output = "<abbreviation_resolution>\n<effective_query>" +
+		xmlEscape(effectiveQuery) + "</effective_query>\n</abbreviation_resolution>\n" + result.Output
 }
 
 // emptySearchStatement describes an empty result, including any mode

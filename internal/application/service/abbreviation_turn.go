@@ -16,7 +16,7 @@ type AbbreviationPrepareInput struct {
 	ExpectedVersion          *uint64
 	Snapshot                 types.AbbreviationRequestSnapshot
 	ModelID, RelevantHistory string
-	ResolveModelID func(context.Context) (string, error)
+	ResolveModelID           func(context.Context) (string, error)
 }
 
 type AbbreviationPreparer interface {

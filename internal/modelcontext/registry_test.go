@@ -679,3 +679,50 @@ func TestModelOutputReportsSearchModeAndFallbacks(t *testing.T) {
 	}})
 	require.Contains(t, legacy, `mode="semantic"`, "legacy knowledge_search payloads were semantic")
 }
+
+// The resolution annotation a tool prefixes to its output must survive source
+// rendering — otherwise the model loses the validated mapping while seeing
+// the chunks that mapping produced.
+func TestAbbreviationResolutionPrefixSurvivesSearchRendering(t *testing.T) {
+	registry := NewRegistry(true)
+	row := map[string]interface{}{
+		"chunk_id": "chunk-1", "knowledge_id": "doc-1", "knowledge_base_id": "kb-1",
+		"knowledge_title": "Doc", "content": "an toàn thông tin content",
+	}
+	result := registry.ModelToolResultForTool("search_knowledge", &types.ToolResult{
+		Success: true,
+		Output:  "<abbreviation_resolution>\n<effective_query>An toàn thông tin (ATTT) là gì</effective_query>\n</abbreviation_resolution>\n<chunks>fallback</chunks>",
+		Data: map[string]any{
+			"display_type": "search_results", "mode": "hybrid",
+			"results": []map[string]interface{}{row},
+		},
+	})
+	require.Contains(t, result, "<abbreviation_resolution>")
+	require.Contains(t, result, "An toàn thông tin (ATTT)")
+	require.Contains(t, result, `mode="hybrid"`)
+}
+
+// Model-written abbreviation authority keys never survive argument decode:
+// the backend gate alone owns resolution state.
+func TestDecodeToolCallsStripsAbbreviationAuthorityClaims(t *testing.T) {
+	registry := NewRegistry(true)
+	calls := []types.LLMToolCall{{
+		Type: "function",
+		Function: types.FunctionCall{
+			Name: "search_knowledge",
+			Arguments: `{"query":"ATTT là gì","abbreviation_ready":true,` +
+				`"abbreviation_resolution":{"status":"ready"},` +
+				`"abbreviation_meaning_ids":{"attt":"m-1"}}`,
+		},
+	}}
+	registry.DecodeToolCalls(calls)
+
+	var args map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(calls[0].Function.Arguments), &args))
+	require.NotContains(t, args, "abbreviation_ready")
+	require.NotContains(t, args, "abbreviation_resolution")
+	// Legitimate hint fields stay — the tool's own policy decides whether
+	// they apply (a bound turn ignores them entirely).
+	require.Contains(t, args, "abbreviation_meaning_ids")
+	require.Equal(t, "ATTT là gì", args["query"])
+}
