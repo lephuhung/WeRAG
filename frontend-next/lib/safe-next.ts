@@ -11,7 +11,7 @@
  * is unit-testable.
  */
 
-export const DEFAULT_POST_LOGIN_ROUTE = "/platform/knowledge-bases";
+export const DEFAULT_POST_LOGIN_ROUTE = "/platform/creatChat";
 
 const MAX_NEXT_LENGTH = 2048;
 

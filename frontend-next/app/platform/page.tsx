@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Platform() {
-  redirect("/platform/knowledge-bases");
+  redirect("/platform/creatChat");
 }
