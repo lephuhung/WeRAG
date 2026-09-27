@@ -32,7 +32,7 @@ func (s *sessionService) tryQuickAnswerPeopleLookup(
 	if eventBus == nil || s.peopleService == nil || !s.peopleService.Enabled() || !canUsePeopleLookup(ctx) {
 		return false, nil
 	}
-	request, ok := people.DetectLookupRequest(req.Query)
+	request, ok := people.DetectLookupRequest(abbreviationEffectiveQuery(ctx, req.Query))
 	if !ok {
 		return false, nil
 	}

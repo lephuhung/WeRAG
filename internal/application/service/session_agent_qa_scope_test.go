@@ -114,6 +114,36 @@ func TestApplyPerRequestSkillScope_NoneIgnores(t *testing.T) {
 	assert.Empty(t, cfg.PinnedSkillNames)
 }
 
+func TestAbbreviationOwnerScopeUsesSessionTenantForSharedAgent(t *testing.T) {
+	svc := &sessionService{sessionRepo: &abbreviationSessionRepo{}, messageRepo: newAbbreviationMessageRepo()}
+	// Shared-agent execution: the request tenant is the agent's workspace,
+	// but the session owner tenant stays the caller's own.
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(99))
+	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, uint64(7))
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "alice")
+	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: "alice"})
+	req := &types.QARequest{
+		Session:     &types.Session{ID: "s", TenantID: 7, UserID: "alice"},
+		CustomAgent: &types.CustomAgent{ID: "ag", TenantID: 99},
+		Query:       "ATTT có yêu cầu gì", UserMessageID: "u1", AssistantMessageID: "a1",
+	}
+	owner, err := svc.abbreviationOwner(ctx, req)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(7), owner.TenantID, "turn state must be scoped by the session-owner tenant")
+
+	snap := abbreviationSnapshot(req)
+	assert.Equal(t, "agent", snap.Mode)
+	assert.Equal(t, "ag", snap.AgentID)
+	assert.Equal(t, uint64(99), snap.AgentTenantID)
+
+	// Resuming under a different agent tenant than the frozen snapshot is a
+	// scope change and must be rejected rather than silently widened.
+	other := *req
+	other.CustomAgent = &types.CustomAgent{ID: "ag", TenantID: 98}
+	assert.ErrorIs(t, svc.authorizeAbbreviationResume(ctx, &other, snap), types.ErrAbbreviationConflict)
+	assert.NoError(t, svc.authorizeAbbreviationResume(ctx, req, snap))
+}
+
 func TestConfigureSkillsFromAgentDoesNotLoadHostPreloadedDir(t *testing.T) {
 	svc := &sessionService{}
 	cfg := &types.AgentConfig{}

@@ -79,15 +79,27 @@ func TestKnowledgeQAPeopleLookupSystemAdminShortCircuits(t *testing.T) {
 			LookupType: "phone",
 		},
 	}
-	svc := &sessionService{peopleService: fake}
+	_, store, dict, _ := newTurnCoordinatorFixture(t)
+	messages := newAbbreviationMessageRepo()
+	messages.messages["u1"].Content = "Tra cứu số điện thoại 0989755968"
+	svc := &sessionService{
+		peopleService:        fake,
+		sessionRepo:          &abbreviationSessionRepo{},
+		messageRepo:          messages,
+		abbreviationPreparer: NewAbbreviationTurnCoordinator(store, dict, nil),
+		abbreviationStore:    store,
+	}
 	bus := event.NewEventBus()
 	events := captureEvents(bus)
 
 	req := &types.QARequest{
-		Session: &types.Session{ID: "sess-1"},
-		Query:   "Tra cứu số điện thoại 0989755968",
+		Session:            &types.Session{ID: "s", TenantID: 7, UserID: "alice"},
+		Query:              "Tra cứu số điện thoại 0989755968",
+		UserMessageID:      "u1",
+		AssistantMessageID: "a1",
 	}
-	err := svc.KnowledgeQA(systemAdminCtx(), req, bus)
+	ctx := context.WithValue(abbreviationTestContext(), types.SystemAdminContextKey, true)
+	err := svc.KnowledgeQA(ctx, req, bus)
 	require.NoError(t, err)
 
 	require.Len(t, fake.calls, 1)

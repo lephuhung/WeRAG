@@ -25,6 +25,15 @@ func (s *sessionService) KnowledgeQA(
 	req *types.QARequest,
 	eventBus *event.EventBus,
 ) error {
+	ctx, handled, err := s.PrepareAbbreviationTurn(ctx, req, eventBus)
+	if handled || err != nil {
+		return err
+	}
+	if err := s.claimAbbreviationExecution(ctx, req); err != nil {
+		return err
+	}
+	s.watchAbbreviationCompletion(ctx, req, eventBus)
+	effectiveQuery := abbreviationEffectiveQuery(ctx, req.Query)
 	if handled, err := s.tryQuickAnswerPeopleLookup(ctx, req, eventBus); handled || err != nil {
 		return err
 	}
@@ -33,7 +42,7 @@ func (s *sessionService) KnowledgeQA(
 		ctx,
 		"Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v",
 		req.Session.ID,
-		req.Query,
+		effectiveQuery,
 		webSearchEnabled,
 	)
 
@@ -108,7 +117,7 @@ func (s *sessionService) KnowledgeQA(
 
 	chatManage := &types.ChatManage{
 		PipelineRequest: types.PipelineRequest{
-			Query:                   req.Query,
+			Query:                   effectiveQuery,
 			SessionID:               req.Session.ID,
 			UserID:                  types.SessionOwnerIDFromContext(ctx),
 			MaxRounds:               s.cfg.Conversation.MaxRounds,
@@ -142,7 +151,7 @@ func (s *sessionService) KnowledgeQA(
 			Language:                types.LanguageNameFromContext(ctx),
 		},
 		PipelineState: types.PipelineState{
-			RewriteQuery:     req.Query,
+			RewriteQuery:     effectiveQuery,
 			ImageDescription: req.ImageDescription,
 			QuotedContext:    req.QuotedContext,
 		},
@@ -176,7 +185,7 @@ func (s *sessionService) KnowledgeQA(
 	var pipeline []types.EventType
 	if !needsRAG {
 		// Pure chat — no retrieval needed.
-		userContent := req.Query
+		userContent := effectiveQuery
 		if req.ImageDescription != "" && !chatModelSupportsVision {
 			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
 		}

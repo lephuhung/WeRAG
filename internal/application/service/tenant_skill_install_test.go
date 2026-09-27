@@ -3316,6 +3316,14 @@ func (s *installSessionService) AgentQA(context.Context, *types.QARequest, *even
 	return nil
 }
 
+func (s *installSessionService) PrepareAbbreviationTurn(ctx context.Context, _ *types.QARequest, _ *event.EventBus) (context.Context, bool, error) {
+	return ctx, false, types.ErrAbbreviationNotReady
+}
+
+func (s *installSessionService) RetryAbbreviationSuggestions(context.Context, string, string) error {
+	return types.ErrAbbreviationNotReady
+}
+
 type installModelService struct {
 	// missing names models the workspace can no longer resolve, e.g. one the
 	// installer agent still points at after it was deleted.

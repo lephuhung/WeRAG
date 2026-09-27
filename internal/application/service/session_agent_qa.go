@@ -26,6 +26,15 @@ func (s *sessionService) AgentQA(
 	req *types.QARequest,
 	eventBus *event.EventBus,
 ) error {
+	ctx, handled, err := s.PrepareAbbreviationTurn(ctx, req, eventBus)
+	if handled || err != nil {
+		return err
+	}
+	if err := s.claimAbbreviationExecution(ctx, req); err != nil {
+		return err
+	}
+	s.watchAbbreviationCompletion(ctx, req, eventBus)
+	effectiveQuery := abbreviationEffectiveQuery(ctx, req.Query)
 	sessionID := req.Session.ID
 	// Propagate the session ID so stateful sandbox backends (CubeSandbox) can
 	// bind script execution to a per-session MicroVM instance.
@@ -45,7 +54,7 @@ func (s *sessionService) AgentQA(
 	// Resolve retrieval tenant using shared helper
 	agentTenantID := s.resolveRetrievalTenantID(ctx, req)
 	logger.Infof(ctx, "Start agent-based question answering, session ID: %s, agent tenant ID: %d, query: %s, session: %s",
-		sessionID, agentTenantID, req.Query, string(sessionJSON))
+		sessionID, agentTenantID, effectiveQuery, string(sessionJSON))
 
 	var tenantInfo *types.Tenant
 	if v := ctx.Value(types.TenantInfoContextKey); v != nil {
@@ -221,7 +230,7 @@ func (s *sessionService) AgentQA(
 	// no-model read, and an agent may opt out of it entirely.
 	memoryCtx := types.ApplyAgentMemoryPreference(ctx, agentConfig.MemoryEnabled)
 	if s.memoryService != nil {
-		recall := s.memoryService.Recall(memoryCtx, req.Query)
+		recall := s.memoryService.Recall(memoryCtx, effectiveQuery)
 		if recall.Prompt != "" {
 			engine.SetMemoryPrompt(recall.Prompt)
 			used := types.UsedMemoriesFromItems(recall.Items)
@@ -250,13 +259,13 @@ func (s *sessionService) AgentQA(
 		engine.SetContextCheckpointSink(messageCheckpointSink{repo: s.messageRepo, sessionID: sessionID})
 	}
 
-	agentQuery := req.Query
+	agentQuery := effectiveQuery
 	var agentImageURLs []string
 	if agentModelSupportsVision && len(req.ImageURLs) > 0 {
 		agentImageURLs = req.ImageURLs
 		logger.Infof(ctx, "Agent model supports vision, passing %d image(s) directly", len(agentImageURLs))
 	} else if req.ImageDescription != "" {
-		agentQuery = req.Query + "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		agentQuery = effectiveQuery + "\n\n[用户上传图片内容]\n" + req.ImageDescription
 		logger.Infof(ctx, "Agent model does not support vision, appending image description (%d chars)", len(req.ImageDescription))
 	}
 	if req.QuotedContext != "" {

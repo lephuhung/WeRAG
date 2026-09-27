@@ -138,8 +138,11 @@ type sessionService struct {
 	// forkSnapshots retires provider snapshots when a forked session is deleted
 	// before its sandbox is provisioned. Nil uses NewResolverForkSnapshotDeleter
 	// from sandboxResolver/sandboxMgr.
-	forkSnapshots ForkSnapshotDeleter
-	peopleService quickPeopleLookupService
+	forkSnapshots           ForkSnapshotDeleter
+	peopleService           quickPeopleLookupService
+	abbreviationPreparer    AbbreviationPreparer
+	abbreviationCoordinator *AbbreviationTurnCoordinator
+	abbreviationStore       interfaces.AbbreviationTurnRepository
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -165,30 +168,35 @@ func NewSessionService(cfg *config.Config,
 	sandboxConfigRepo repository.TenantSandboxConfigRepository,
 	tenantSkillRepo repository.TenantSkillRepository,
 	peopleService *people.Service,
+	abbreviationCoordinator *AbbreviationTurnCoordinator,
+	abbreviationStore interfaces.AbbreviationTurnRepository,
 ) interfaces.SessionService {
 	return &sessionService{
-		cfg:                   cfg,
-		sessionRepo:           sessionRepo,
-		messageRepo:           messageRepo,
-		knowledgeBaseService:  knowledgeBaseService,
-		knowledgeService:      knowledgeService,
-		chunkService:          chunkService,
-		modelService:          modelService,
-		tenantService:         tenantService,
-		eventManager:          eventManager,
-		agentService:          agentService,
-		webSearchStateRepo:    webSearchStateRepo,
-		webSearchProviderRepo: webSearchProviderRepo,
-		kbAccessGrantService:  kbAccessGrantService,
-		suggestionRepo:        suggestionRepo,
-		sandboxMgr:            sandboxMgr,
-		sandboxResolver:       sandboxResolver,
-		sandboxPinner:         sandboxPinner,
-		sandboxPolicy:         sandboxPolicy,
-		memoryService:         memoryService,
-		sandboxConfigRepo:     sandboxConfigRepo,
-		tenantSkillRepo:       tenantSkillRepo,
-		peopleService:         peopleService,
+		cfg:                     cfg,
+		sessionRepo:             sessionRepo,
+		messageRepo:             messageRepo,
+		knowledgeBaseService:    knowledgeBaseService,
+		knowledgeService:        knowledgeService,
+		chunkService:            chunkService,
+		modelService:            modelService,
+		tenantService:           tenantService,
+		eventManager:            eventManager,
+		agentService:            agentService,
+		webSearchStateRepo:      webSearchStateRepo,
+		webSearchProviderRepo:   webSearchProviderRepo,
+		kbAccessGrantService:    kbAccessGrantService,
+		suggestionRepo:          suggestionRepo,
+		sandboxMgr:              sandboxMgr,
+		sandboxResolver:         sandboxResolver,
+		sandboxPinner:           sandboxPinner,
+		sandboxPolicy:           sandboxPolicy,
+		memoryService:           memoryService,
+		sandboxConfigRepo:       sandboxConfigRepo,
+		tenantSkillRepo:         tenantSkillRepo,
+		peopleService:           peopleService,
+		abbreviationPreparer:    abbreviationCoordinator,
+		abbreviationCoordinator: abbreviationCoordinator,
+		abbreviationStore:       abbreviationStore,
 	}
 }
 

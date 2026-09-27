@@ -35,18 +35,25 @@ func TestAbbreviationTurnWaitsForUnknownBeforeSelector(t *testing.T) {
 	}
 	selector := &turnSelector{ids: map[string]string{"attt": "b"}}
 	c := NewAbbreviationTurnCoordinator(store, dict, selector)
-	first, err := c.Prepare(context.Background(), turnInput(owner, "u1", "a1", "ATTT và XYZ cần gì"))
+	modelCalls := 0
+	resolveModel := func(context.Context) (string, error) { modelCalls++; return "query-model", nil }
+	firstInput := turnInput(owner, "u1", "a1", "ATTT và XYZ cần gì")
+	firstInput.ResolveModelID = resolveModel
+	first, err := c.Prepare(context.Background(), firstInput)
 	require.NoError(t, err)
 	require.Equal(t, []string{"XYZ"}, first.UnknownTerms)
 	require.Zero(t, selector.calls)
+	require.Zero(t, modelCalls)
 	v := first.Version
 	input := turnInput(owner, "u2", "a2", "XYZ = Xây dựng y tế")
 	input.ContinuationID, input.ExpectedVersion = first.RequestID, &v
+	input.ResolveModelID = resolveModel
 	ready, err := c.Prepare(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, types.AbbreviationStatusReady, ready.Status)
 	require.Equal(t, "An toàn thực phẩm (ATTT) và Xây dựng y tế (XYZ) cần gì", ready.EffectiveQuery)
 	require.Equal(t, 1, selector.calls)
+	require.Equal(t, 1, modelCalls)
 }
 
 func TestAbbreviationTurnSelectorFailureBlocks(t *testing.T) {

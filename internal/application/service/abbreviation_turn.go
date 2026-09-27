@@ -16,6 +16,7 @@ type AbbreviationPrepareInput struct {
 	ExpectedVersion          *uint64
 	Snapshot                 types.AbbreviationRequestSnapshot
 	ModelID, RelevantHistory string
+	ResolveModelID func(context.Context) (string, error)
 }
 
 type AbbreviationPreparer interface {
@@ -206,7 +207,15 @@ func (c *AbbreviationTurnCoordinator) finishReady(ctx context.Context, in Abbrev
 		if c.selector == nil {
 			return c.blockSelector(ctx, in.Binding, row, "selector_unavailable")
 		}
-		ids, err := c.selector.Select(ctx, in.ModelID, in.RelevantHistory, r)
+		modelID := in.ModelID
+		if modelID == "" && in.ResolveModelID != nil {
+			var err error
+			modelID, err = in.ResolveModelID(ctx)
+			if err != nil {
+				return c.blockSelector(ctx, in.Binding, row, "selector_unavailable")
+			}
+		}
+		ids, err := c.selector.Select(ctx, modelID, in.RelevantHistory, r)
 		if err != nil {
 			return c.blockSelector(ctx, in.Binding, row, "selector_unavailable")
 		}
