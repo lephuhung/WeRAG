@@ -22,6 +22,7 @@ import {
 } from "@/lib/first-turn-handoff";
 import { createStreamGeneration, type StreamGeneration } from "@/lib/stream-generation";
 import { shouldCommitDeferredSendTurn } from "@/lib/deferred-send-guard";
+import { detachSessionActivity, updateSessionActivity } from "@/lib/session-activity";
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
@@ -563,8 +564,24 @@ function ChatBody({ id }: { id: string }) {
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  // Sync mirror of `busy`: async closures (history load, stream finalizers)
+  // check the live flag without depending on stale renders.
+  const busyRef = useRef(false);
+  const setBusy = (v: boolean) => {
+    busyRef.current = v;
+    setBusyState(v);
+  };
   const [assistantMessageId, setAssistantMessageId] = useState<string | null>(null);
+  // Session whose turn activity we report to the sidebar. Tracks `id` except
+  // on the "new" route, where send() points it at the freshly-created session
+  // (mirrors Vue's activitySessionId, set in sendMsg/onAfterMsgList).
+  const [activitySessionId, setActivitySessionId] = useState("");
+  const activitySessionIdRef = useRef("");
+  const markActivitySession = (sid: string) => {
+    activitySessionIdRef.current = sid;
+    setActivitySessionId(sid);
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottomRef = useRef(true);
   const sentInitial = useRef(false);
@@ -626,13 +643,18 @@ function ChatBody({ id }: { id: string }) {
     const originId = id;
     const isLive = () => generations.isCurrent(gen) && idRef.current === originId;
     sentInitial.current = false;
+    markActivitySession(id === "new" ? "" : id);
     setMessages([]);
     setError(null);
     setBusy(false);
+    // Leaving (or unmounting) a session whose turn is still generating: flag
+    // its activity marker detached so the sidebar keeps reporting/polling it —
+    // mirrors Vue clearData → sessionActivity.detach.
+    const detachOnLeave = () => detachSessionActivity(activitySessionIdRef.current);
     if (id === "new") {
       setSession(null);
       setSessionTitle(null);
-      return;
+      return detachOnLeave;
     }
     let alive = true;
 
@@ -656,6 +678,7 @@ function ChatBody({ id }: { id: string }) {
     if (initialQ && !sentInitial.current) {
       return () => {
         alive = false;
+        detachOnLeave();
       };
     }
 
@@ -713,13 +736,23 @@ function ChatBody({ id }: { id: string }) {
           }
           return mapped;
         });
-        const last = rows[rows.length - 1];
+        // Resume the trailing *assistant* turn, not simply the last row: a
+        // turn that absorbed a mid-run message ends with the injected user
+        // bubble in some orderings, so keying off the tail row would skip the
+        // resume entirely and leave a running agent with no visible output
+        // (Vue getmsgList uses findLastMessage for the same reason).
         // Resume-branch only: history merging above stays under `alive` (as
         // before) so a send issued while history loads never drops rows —
         // but attaching a continue-stream to a stale session must not run.
-        if (alive && isLive() && last && last.role !== "user" && last.is_completed === false && last.id) {
+        const resumeTarget = [...rows].reverse().find(
+          (m) => m.role === "assistant" && m.is_completed === false && m.id,
+        );
+        if (alive && isLive() && resumeTarget?.id) {
           setBusy(true);
-          const inflightId = last.id;
+          const inflightId = resumeTarget.id;
+          // Mirrors currentAssistantMessageId on resume: lets stop() reach the
+          // server and feeds the activity marker with the real turn id.
+          setAssistantMessageId(inflightId);
           const applyChunk = (c: StreamChunk) => {
             // Stale session/generation: A's late chunks must not touch B.
             if (!alive || !isLive()) return;
@@ -842,8 +875,8 @@ function ChatBody({ id }: { id: string }) {
               ),
             );
           };
-          accRef.current = last.content ?? "";
-          stepsRef.current = stepsFromHistory(last);
+          accRef.current = resumeTarget.content ?? "";
+          stepsRef.current = stepsFromHistory(resumeTarget);
           setMessages((m) =>
             m.map((msg) =>
               msg.assistantMessageId === inflightId ? { ...msg, streaming: true } : msg,
@@ -868,6 +901,11 @@ function ChatBody({ id }: { id: string }) {
                 ),
               );
             });
+        } else if (alive && isLive() && !busyRef.current) {
+          // History settled with no in-flight turn and no local send in
+          // progress — clear a stale activity marker left for this session
+          // (Vue: sessionActivity.update(id, false) after getmsgList).
+          updateSessionActivity(id, false);
         }
       })
       .catch(() => {
@@ -875,8 +913,25 @@ function ChatBody({ id }: { id: string }) {
       });
     return () => {
       alive = false;
+      detachOnLeave();
     };
   }, [id]);
+
+  // Mirrors the Vue session-activity watcher (index.vue activitySessionId
+  // watch): the sidebar marks a session "reply in progress" while its turn
+  // streams. Only a same-session busy→idle transition clears the marker here —
+  // on a session switch the [id] cleanup already detached the old entry, so
+  // this must not wipe the detached marker the sidebar poller still owns.
+  const prevActivityRef = useRef({ sid: "", busy: false });
+  useEffect(() => {
+    const prev = prevActivityRef.current;
+    if (busy) {
+      updateSessionActivity(activitySessionId, true, assistantMessageId ?? "");
+    } else if (prev.busy && prev.sid === activitySessionId) {
+      updateSessionActivity(activitySessionId, false);
+    }
+    prevActivityRef.current = { sid: activitySessionId, busy };
+  }, [activitySessionId, busy, assistantMessageId]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
   useEffect(() => () => images.forEach((i) => URL.revokeObjectURL(i.preview)), [images]);
@@ -955,6 +1010,9 @@ function ChatBody({ id }: { id: string }) {
       }
     }
 
+    // Report turn activity on the resolved session id — on the "new" route
+    // this is the session just created (Vue sets activitySessionId in sendMsg).
+    markActivitySession(activeSessionId);
     const asstId = `a${Date.now()}`;
 
     // Web images upload as temporary documents (VLM reads them in background);

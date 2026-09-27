@@ -4,6 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSession, listSessions, type SessionRow } from "@/lib/api/chat";
+import {
+  clearSessionActivity,
+  refreshSessionActivity,
+  updateSessionActivity,
+  useSessionActivityEntries,
+} from "@/lib/session-activity";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
@@ -53,6 +59,10 @@ export function Sidebar() {
   const auth = useAuth();
   const palette = useCommandPalette();
   const [live, setLive] = useState<SessionRow[] | null>(null);
+  // Sessions with an in-flight assistant turn (this tab marked them, or they
+  // were left mid-generation). Rows show a spinner; detached entries are
+  // polled below until the backend finishes the turn.
+  const activity = useSessionActivityEntries();
   const [removing, setRemoving] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -64,6 +74,7 @@ export function Sidebar() {
     setDeleteError("");
     try {
       await deleteSession(removing.id);
+      updateSessionActivity(removing.id, false);
       setLive((prev) => prev?.filter((s) => s.id !== removing.id) ?? prev);
       if (pathname === `/platform/chat/${removing.id}`) {
         router.push("/platform/creatChat");
@@ -85,6 +96,19 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => setMobileOpen(false), [pathname]);
+
+  // Poll sessions left mid-generation (detached markers) so the sidebar's
+  // "reply in progress" indicator clears once the backend finishes the turn —
+  // mirrors menu.vue's 5s sessionActivity.refresh() interval.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refreshSessionActivity();
+    }, 5000);
+    return () => {
+      window.clearInterval(timer);
+      clearSessionActivity();
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -232,11 +256,19 @@ export function Sidebar() {
                 }`}
               >
                 <span className="truncate">{s.title}</span>
+                {activity.has(s.id) && (
+                  <span
+                    role="status"
+                    aria-label={t("nav.sessionInProgress")}
+                    title={t("nav.sessionInProgress")}
+                    className="ml-auto h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-muted-soft border-t-ink motion-reduce:animate-none"
+                  />
+                )}
                 <button
                   type="button"
                   title="Delete chat"
                   aria-label="Delete chat"
-                  className="ml-auto hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex"
+                  className={`${activity.has(s.id) ? "" : "ml-auto "}hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
