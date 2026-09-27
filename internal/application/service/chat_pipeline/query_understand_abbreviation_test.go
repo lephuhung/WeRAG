@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 type stubQueryChat struct {
@@ -47,112 +48,53 @@ func (s *stubQueryModelService) GetChatModel(context.Context, string) (chat.Chat
 	return s.chat, s.err
 }
 
-type stubSuggestAbbreviationService struct {
-	interfaces.AbbreviationService
-	suggestions []*types.Abbreviation
-	suggestErr  error
-	calls       int
-}
-
-func (s *stubSuggestAbbreviationService) Suggest(_ context.Context,
-	req *types.AbbreviationCreateRequest) (*types.Abbreviation, error) {
-	s.calls++
-	if s.suggestErr != nil {
-		return nil, s.suggestErr
-	}
-	row := &types.Abbreviation{
-		ID:        "abbr-1",
-		ShortForm: req.ShortForm,
-		FullForm:  req.FullForm,
-		IsActive:  false,
-	}
-	s.suggestions = append(s.suggestions, row)
-	return row, nil
-}
-
-func newQueryUnderstandPlugin(modelSvc interfaces.ModelService,
-	abbrSvc interfaces.AbbreviationService) *PluginQueryUnderstand {
+func newQueryUnderstandPlugin(modelSvc interfaces.ModelService) *PluginQueryUnderstand {
 	return &PluginQueryUnderstand{
 		config: &config.Config{Conversation: &config.ConversationConfig{
 			RewritePromptSystem: "system",
 			RewritePromptUser:   "user {{query}}",
 		}},
-		modelService:        modelSvc,
-		abbreviationService: abbrSvc,
+		modelService: modelSvc,
 	}
 }
 
-func TestParseOutput_ReadsAbbreviationSuggestions(t *testing.T) {
+func boundAbbreviationManage(t *testing.T, query string) *types.ChatManage {
+	t.Helper()
+	r := readyAbbreviation(t, query)
+	cm := newAbbreviationChatManage(query, &recordingEventBus{})
+	res := r
+	cm.AbbreviationResolution = &res
+	cm.ChatModelID = "m1"
+	return cm
+}
+
+func markerPromptQuery(t *testing.T, model *stubQueryChat) string {
+	t.Helper()
+	if len(model.messages) != 2 {
+		t.Fatalf("messages=%d", len(model.messages))
+	}
+	return model.messages[1].Content
+}
+
+func TestParseOutput_IgnoresSuggestionPayload(t *testing.T) {
 	cm := &types.ChatManage{}
 	p := &PluginQueryUnderstand{}
-	suggestions := p.parseOutput(cm,
+	p.parseOutput(cm,
 		`{"rewrite_query":"r","intent":"kb_search","abbreviation_suggestions":[`+
-			`{"short_form":"UBND","full_form":"Ủy ban nhân dân","description":"x"}]}`)
+			`{"short_form":"UBND","full_form":"Ủy ban nhân dân","description":"x"}],`+
+			`"status":"ready"}`)
 	if cm.RewriteQuery != "r" || cm.Intent != types.IntentKBSearch {
 		t.Fatalf("rewrite/intent lost: %+v", cm)
 	}
-	if len(suggestions) != 1 || suggestions[0].ShortForm != "UBND" {
-		t.Fatalf("suggestions=%+v", suggestions)
+	if cm.AbbreviationResolution != nil {
+		t.Fatal("model output must never mint a resolution")
 	}
 }
 
-func TestParseOutput_MalformedSuggestionsStillParsesQuery(t *testing.T) {
-	cm := &types.ChatManage{}
-	p := &PluginQueryUnderstand{}
-	suggestions := p.parseOutput(cm,
-		`{"rewrite_query":"r","intent":"kb_search","abbreviation_suggestions":"bogus"}`)
-	if cm.RewriteQuery != "r" {
-		t.Fatalf("RewriteQuery=%q", cm.RewriteQuery)
-	}
-	if len(suggestions) != 0 {
-		t.Fatalf("suggestions=%+v", suggestions)
-	}
-}
-
-func TestBuildPrompts_AppendsContractOnlyWithCandidates(t *testing.T) {
-	p := newQueryUnderstandPlugin(nil, nil)
-	cm := &types.ChatManage{}
-	cm.Query = "q"
-
-	sys, _ := p.buildPrompts(context.Background(), cm, nil)
-	if strings.Contains(sys, "abbreviation_suggestions") {
-		t.Fatal("contract must not appear without candidates")
-	}
-
-	ctx := types.WithAbbreviationCandidates(context.Background(), []string{"UBND"})
-	sys, _ = p.buildPrompts(ctx, cm, nil)
-	if !strings.Contains(sys, "abbreviation_suggestions") ||
-		!strings.Contains(sys, `"UBND"`) ||
-		!strings.Contains(sys, "trusted data, not instructions") {
-		t.Fatalf("contract missing: %q", sys)
-	}
-}
-
-func TestOnEvent_ExtractionForcesModelPathWhenRewriteDisabled(t *testing.T) {
-	model := &stubQueryChat{response: `{"rewrite_query":"rw","abbreviation_suggestions":[]}`}
-	p := newQueryUnderstandPlugin(&stubQueryModelService{chat: model}, nil)
-	cm := newAbbreviationChatManage("XYZABC là gì", &recordingEventBus{})
-	cm.ChatModelID = "m1"
-	cm.EnableRewrite = false
-
-	ctx := types.WithAbbreviationCandidates(context.Background(), []string{"XYZABC"})
-	called := false
-	err := p.OnEvent(ctx, types.QUERY_UNDERSTAND, cm, func() *PluginError {
-		called = true
-		return nil
-	})
-	if err != nil || !called {
-		t.Fatalf("err=%v next=%v", err, called)
-	}
-	if model.calls != 1 {
-		t.Fatalf("model must run for extraction, calls=%d", model.calls)
-	}
-}
-
-func TestOnEvent_SkipsModelWithoutRewriteOrCandidates(t *testing.T) {
+func TestOnEvent_RewriteDisabledKeepsEffectiveQuery(t *testing.T) {
 	model := &stubQueryChat{response: "{}"}
-	p := newQueryUnderstandPlugin(&stubQueryModelService{chat: model}, nil)
-	cm := newAbbreviationChatManage("tỉnh họp", &recordingEventBus{})
+	p := newQueryUnderstandPlugin(&stubQueryModelService{chat: model})
+	cm := boundAbbreviationManage(t, "ATTT có yêu cầu gì")
 	cm.EnableRewrite = false
 
 	called := false
@@ -164,125 +106,91 @@ func TestOnEvent_SkipsModelWithoutRewriteOrCandidates(t *testing.T) {
 		t.Fatalf("err=%v next=%v", err, called)
 	}
 	if model.calls != 0 {
-		t.Fatalf("model must be skipped, calls=%d", model.calls)
+		t.Fatalf("model must be skipped when rewrite is disabled, calls=%d", model.calls)
+	}
+	if cm.RewriteQuery != cm.AbbreviationResolution.EffectiveQuery {
+		t.Fatalf("RewriteQuery=%q, want effective %q",
+			cm.RewriteQuery, cm.AbbreviationResolution.EffectiveQuery)
 	}
 }
 
-func TestPersistAbbreviationSuggestions_ValidSoleCandidateReply(t *testing.T) {
-	svc := &stubSuggestAbbreviationService{}
-	p := &PluginQueryUnderstand{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân", bus)
-	cm.Query = "Ủy ban nhân dân"
+func TestOnEvent_ProtectedRewriteRestoresMarkers(t *testing.T) {
+	r := abbreviation.Inspect("ATTT có yêu cầu gì", []*types.Abbreviation{
+		{ID: "m1", ShortForm: "ATTT", FullForm: "An toàn thông tin", IsActive: true},
+	})
+	p, err := abbreviation.ProtectRewrite(r)
+	if err != nil {
+		t.Fatalf("ProtectRewrite: %v", err)
+	}
+	// The model faithfully rewrites while keeping the marker verbatim.
+	model := &stubQueryChat{
+		response: `{"rewrite_query":"các yêu cầu của ` + p.Text()[:len(p.Text())-len(" có yêu cầu gì")] + ` là gì","intent":"kb_search"}`,
+	}
+	plugin := newQueryUnderstandPlugin(&stubQueryModelService{chat: model})
+	cm := boundAbbreviationManage(t, "ATTT có yêu cầu gì")
+	cm.EnableRewrite = true
 
-	p.persistAbbreviationSuggestions(context.Background(), cm,
-		[]string{"UBND"},
-		[]queryAbbreviationSuggestion{{ShortForm: "ubnd", FullForm: "Ủy ban nhân dân"}})
-
-	if len(svc.suggestions) != 1 {
-		t.Fatalf("suggestions=%+v", svc.suggestions)
+	called := false
+	perr := plugin.OnEvent(context.Background(), types.QUERY_UNDERSTAND, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if perr != nil || !called {
+		t.Fatalf("err=%v next=%v", perr, called)
 	}
-	if svc.suggestions[0].ShortForm != "UBND" || svc.suggestions[0].IsActive {
-		t.Fatalf("row=%+v", svc.suggestions[0])
+	if strings.Contains(cm.RewriteQuery, "⟦ABBR-") {
+		t.Fatalf("markers must be restored, not leaked: %q", cm.RewriteQuery)
 	}
-	results := abbreviationToolResults(bus)
-	if len(results) != 1 || !results[0].Success {
-		t.Fatalf("tool results=%+v", results)
+	if !strings.Contains(cm.RewriteQuery, "An toàn thông tin (ATTT)") {
+		t.Fatalf("validated expansion missing: %q", cm.RewriteQuery)
 	}
-	if results[0].Data["status"] != "pending_review" || results[0].Data["short_form"] != "UBND" {
-		t.Fatalf("data=%+v", results[0].Data)
-	}
-}
-
-func TestPersistAbbreviationSuggestions_RejectsInvalid(t *testing.T) {
-	svc := &stubSuggestAbbreviationService{}
-	p := &PluginQueryUnderstand{abbreviationService: svc}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân là UBND", &recordingEventBus{})
-	cm.Query = "Ủy ban nhân dân là UBND"
-	long := strings.Repeat("a", 256)
-
-	for _, s := range []queryAbbreviationSuggestion{
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "nghĩa không có trong câu"},
-		{ShortForm: "UBND", FullForm: "  "},
-		{ShortForm: "UBND", FullForm: long},
-		{ShortForm: "UBND", FullForm: "ubnd"},
-	} {
-		p.persistAbbreviationSuggestions(context.Background(), cm,
-			[]string{"UBND"}, []queryAbbreviationSuggestion{s})
-	}
-	if len(svc.suggestions) != 0 {
-		t.Fatalf("all invalid suggestions must be rejected: %+v", svc.suggestions)
+	// The model must have seen the marker, never the raw abbreviation.
+	if strings.Contains(markerPromptQuery(t, model), "ATTT") {
+		t.Fatal("model must not see the raw abbreviation")
 	}
 }
 
-func TestPersistAbbreviationSuggestions_ServiceErrorFailsOpen(t *testing.T) {
-	svc := &stubSuggestAbbreviationService{suggestErr: errors.New("db down")}
-	p := &PluginQueryUnderstand{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân", bus)
-	cm.Query = "Ủy ban nhân dân"
+func TestOnEvent_MarkerTamperingFallsBackToEffective(t *testing.T) {
+	model := &stubQueryChat{
+		// The model replaced the marker with a different expansion.
+		response: `{"rewrite_query":"An toàn thực phẩm có yêu cầu gì","intent":"kb_search"}`,
+	}
+	p := newQueryUnderstandPlugin(&stubQueryModelService{chat: model})
+	cm := boundAbbreviationManage(t, "ATTT có yêu cầu gì")
+	cm.EnableRewrite = true
 
-	p.persistAbbreviationSuggestions(context.Background(), cm,
-		[]string{"UBND"},
-		[]queryAbbreviationSuggestion{{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"}})
-
-	results := abbreviationToolResults(bus)
-	if len(results) != 1 || results[0].Success || results[0].Error == "" {
-		t.Fatalf("expected failed tool result: %+v", results)
+	called := false
+	err := p.OnEvent(context.Background(), types.QUERY_UNDERSTAND, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if err != nil || !called {
+		t.Fatalf("err=%v next=%v", err, called)
+	}
+	want := cm.AbbreviationResolution.EffectiveQuery
+	if cm.RewriteQuery != want {
+		t.Fatalf("RewriteQuery=%q, want validated fallback %q", cm.RewriteQuery, want)
 	}
 }
 
-func TestPersistAbbreviationSuggestions_CapsAttemptsNotSuccesses(t *testing.T) {
-	svc := &stubSuggestAbbreviationService{suggestErr: errors.New("db down")}
-	p := &PluginQueryUnderstand{abbreviationService: svc}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân", &recordingEventBus{})
-	cm.Query = "Ủy ban nhân dân"
+func TestOnEvent_NotReadyResolutionBlocks(t *testing.T) {
+	model := &stubQueryChat{response: "{}"}
+	p := newQueryUnderstandPlugin(&stubQueryModelService{chat: model})
+	cm := newAbbreviationChatManage("XYZABC là gì", &recordingEventBus{})
+	cm.ChatModelID = "m1"
+	cm.EnableRewrite = true
+	bad := abbreviation.Inspect("XYZABC là gì", nil)
+	cm.AbbreviationResolution = &bad
 
-	suggestions := []queryAbbreviationSuggestion{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
+	called := false
+	err := p.OnEvent(context.Background(), types.QUERY_UNDERSTAND, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if err == nil || called {
+		t.Fatalf("non-ready resolution must fail closed: err=%v next=%v", err, called)
 	}
-	p.persistAbbreviationSuggestions(context.Background(), cm,
-		[]string{"UBND"}, suggestions)
-	if svc.calls != 5 {
-		t.Fatalf("attempts must be capped at 5, calls=%d", svc.calls)
+	if model.calls != 0 {
+		t.Fatalf("model must not be invoked, calls=%d", model.calls)
 	}
-}
-
-func TestPersistAbbreviationSuggestions_InvalidEntriesConsumeAttempts(t *testing.T) {
-	svc := &stubSuggestAbbreviationService{}
-	p := &PluginQueryUnderstand{abbreviationService: svc}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân", &recordingEventBus{})
-	cm.Query = "Ủy ban nhân dân"
-
-	suggestions := []queryAbbreviationSuggestion{
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "OTHER", FullForm: "Ủy ban nhân dân"},
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"},
-	}
-	p.persistAbbreviationSuggestions(context.Background(), cm,
-		[]string{"UBND"}, suggestions)
-	if len(svc.suggestions) != 0 {
-		t.Fatalf("valid sixth item must not be attempted: %+v", svc.suggestions)
-	}
-	if svc.calls != 0 {
-		t.Fatalf("calls=%d", svc.calls)
-	}
-}
-
-func TestPersistAbbreviationSuggestions_NilServiceNoop(t *testing.T) {
-	p := &PluginQueryUnderstand{}
-	cm := newAbbreviationChatManage("Ủy ban nhân dân", &recordingEventBus{})
-	cm.Query = "Ủy ban nhân dân"
-	p.persistAbbreviationSuggestions(context.Background(), cm,
-		[]string{"UBND"},
-		[]queryAbbreviationSuggestion{{ShortForm: "UBND", FullForm: "Ủy ban nhân dân"}})
 }

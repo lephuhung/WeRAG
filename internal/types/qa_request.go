@@ -52,9 +52,9 @@ type QuestionOrigin struct {
 // replacing the previous 14-parameter method signatures.
 // EventBus is passed separately to avoid circular dependency with the event package.
 type QARequest struct {
-	Session                *Session // The conversation session
-	Query                  string   // User query text
-	AssistantMessageID     string   // Pre-created assistant message ID
+	Session            *Session // The conversation session
+	Query              string   // User query text
+	AssistantMessageID string   // Pre-created assistant message ID
 	// ClarificationRequestID and ClarificationVersion resume a waiting
 	// abbreviation turn; both must be set together and are reauthorized
 	// against the frozen request snapshot server-side.

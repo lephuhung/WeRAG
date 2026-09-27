@@ -164,9 +164,24 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 
 	chatManage.RenderedContexts = contextsBuilder.String()
 
+	// When an abbreviation resolution is bound, the model-facing question is
+	// the gate-validated rewritten/effective query, not the raw text.
+	answerQuery := safeQuery
+	if chatManage.AbbreviationResolution != nil {
+		if rewrite := strings.TrimSpace(chatManage.RewriteQuery); rewrite != "" {
+			if safeRewrite, ok := utils.ValidateInput(rewrite); ok {
+				answerQuery = safeRewrite
+			} else {
+				pipelineWarn(ctx, "IntoChatMessage", "invalid_rewrite_query_fallback", map[string]interface{}{
+					"session_id": chatManage.SessionID,
+				})
+			}
+		}
+	}
+
 	// Replace placeholders in context template
 	userContent := types.RenderPromptPlaceholders(chatManage.SummaryConfig.ContextTemplate, types.PlaceholderValues{
-		"query":    safeQuery,
+		"query":    answerQuery,
 		"contexts": chatManage.RenderedContexts,
 		"language": chatManage.Language,
 	})

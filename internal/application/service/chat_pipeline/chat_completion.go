@@ -5,6 +5,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // PluginChatCompletion implements chat completion functionality
@@ -54,6 +55,18 @@ func (p *PluginChatCompletion) OnEvent(
 	chatMessages = modelContext.EncodeMessages(chatMessages)
 	reportModelContextLeaks(ctx, "Completion", modelContext, chatMessages)
 	ctx = withPromptCacheMetadata(ctx, chatModel, chatMessages, opt, "knowledge_qa")
+
+	// Defensive gate check: a request carrying an abbreviation binding must
+	// still match the sealed turn before the answer model is invoked.
+	if b := chatManage.AbbreviationBinding; b.UserMessageID != "" {
+		if err := abbreviation.RequireTurn(ctx, b); err != nil {
+			pipelineError(ctx, "Completion", "abbreviation_turn_invalid", map[string]interface{}{
+				"session_id": chatManage.SessionID,
+				"error":      err.Error(),
+			})
+			return ErrAbbreviationGate.WithError(err)
+		}
+	}
 
 	// Call the chat model to generate response
 	pipelineInfo(ctx, "Completion", "model_call", map[string]interface{}{

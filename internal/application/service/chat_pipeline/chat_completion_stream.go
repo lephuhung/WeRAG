@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 	"github.com/google/uuid"
 )
 
@@ -77,6 +78,18 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	pipelineInfo(ctx, "Stream", "eventbus_ready", map[string]interface{}{
 		"session_id": chatManage.SessionID,
 	})
+
+	// Defensive gate check: a request carrying an abbreviation binding must
+	// still match the sealed turn before the answer model is invoked.
+	if b := chatManage.AbbreviationBinding; b.UserMessageID != "" {
+		if err := abbreviation.RequireTurn(ctx, b); err != nil {
+			pipelineError(ctx, "Stream", "abbreviation_turn_invalid", map[string]interface{}{
+				"session_id": chatManage.SessionID,
+				"error":      err.Error(),
+			})
+			return ErrAbbreviationGate.WithError(err)
+		}
+	}
 
 	// Initiate streaming chat model call with independent context
 	pipelineInfo(ctx, "Stream", "model_call", map[string]interface{}{

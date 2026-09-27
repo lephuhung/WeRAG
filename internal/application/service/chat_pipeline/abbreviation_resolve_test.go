@@ -2,157 +2,143 @@ package chatpipeline
 
 import (
 	"context"
-	"errors"
 	"testing"
 
-	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
-func TestPluginAbbreviationResolve_UnknownCandidateEmits(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
-	}}
-	p := &PluginAbbreviationResolve{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("XYZABC tỉnh họp", bus)
+func readyAbbreviation(t *testing.T, query string) types.AbbreviationResolution {
+	t.Helper()
+	r := abbreviation.Inspect(query, []*types.Abbreviation{
+		{ID: "m1", ShortForm: "ATTT", FullForm: "An toàn thông tin", IsActive: true},
+		{ID: "m2", ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
+	})
+	if r.Status != types.AbbreviationStatusReady {
+		t.Fatalf("resolution not ready: %+v", r)
+	}
+	return r
+}
 
+func testBinding() types.AbbreviationBinding {
+	return types.AbbreviationBinding{
+		Owner: types.AbbreviationOwner{
+			TenantID: 7, SessionID: "sess-1", OwnerID: "u1", PrincipalID: "user:u1",
+		},
+		UserMessageID:      "um-1",
+		AssistantMessageID: "am-1",
+		RawQuery:           "ATTT có yêu cầu gì",
+	}
+}
+
+func sealedCtx(t *testing.T, r types.AbbreviationResolution, b types.AbbreviationBinding) context.Context {
+	t.Helper()
+	ctx, err := abbreviation.BindTurn(context.Background(), b, r)
+	if err != nil {
+		t.Fatalf("BindTurn: %v", err)
+	}
+	return ctx
+}
+
+func TestPluginAbbreviationResolve_ReadyTurnPasses(t *testing.T) {
+	b := testBinding()
+	r := readyAbbreviation(t, b.RawQuery)
+	ctx := sealedCtx(t, r, b)
+
+	cm := newAbbreviationChatManage(b.RawQuery, &recordingEventBus{})
+	res := r
+	cm.AbbreviationResolution = &res
+	cm.AbbreviationBinding = b
+	cm.RewriteQuery = r.EffectiveQuery
+
+	p := &PluginAbbreviationResolve{}
 	called := false
-	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
+	err := p.OnEvent(ctx, types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
 		called = true
 		return nil
 	})
 	if err != nil || !called {
-		t.Fatalf("OnEvent err=%v next=%v", err, called)
+		t.Fatalf("err=%v next=%v", err, called)
 	}
-	results := abbreviationToolResults(bus)
-	if len(results) != 1 {
-		t.Fatalf("expected one resolve_abbreviation result, got %d", len(results))
-	}
-	res, ok := results[0].Data["result"].(*abbreviation.ExpandResult)
-	if !ok || len(res.Potential) != 1 || res.Potential[0] != "XYZABC" {
-		t.Fatalf("result = %#v", results[0].Data["result"])
-	}
-	var callSeen bool
-	for _, evt := range bus.events {
-		if data, ok := evt.Data.(event.AgentToolCallData); ok && data.ToolName == "resolve_abbreviation" {
-			callSeen = true
-		}
-	}
-	if !callSeen {
-		t.Fatal("expected a resolve_abbreviation tool_call event")
-	}
-}
-
-func TestPluginAbbreviationResolve_KnownMeaningRewritesSilently(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
-	}}
-	p := &PluginAbbreviationResolve{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("UBND tỉnh họp", bus)
-
-	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError { return nil })
-	if err != nil {
-		t.Fatalf("err=%v", err)
-	}
-	if cm.RewriteQuery != "Ủy ban nhân dân (UBND) tỉnh họp" {
+	if cm.RewriteQuery != r.EffectiveQuery {
 		t.Fatalf("RewriteQuery=%q", cm.RewriteQuery)
 	}
-	if got := abbreviationToolResults(bus); len(got) != 0 {
-		t.Fatalf("applied-only resolution must not emit events: %+v", got)
+	if len(cm.EventBus.(*recordingEventBus).events) != 0 {
+		t.Fatal("resolve stage must not emit abbreviation events")
 	}
 }
 
-func TestPluginAbbreviationResolve_FailsOpen(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{err: errors.New("dictionary unavailable")}
-	p := &PluginAbbreviationResolve{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("UBND tỉnh họp", bus)
+func TestPluginAbbreviationResolve_BindingMismatchBlocks(t *testing.T) {
+	b := testBinding()
+	r := readyAbbreviation(t, b.RawQuery)
+	ctx := sealedCtx(t, r, b)
 
+	cm := newAbbreviationChatManage(b.RawQuery, &recordingEventBus{})
+	res := r
+	cm.AbbreviationResolution = &res
+	forged := b
+	forged.UserMessageID = "um-other"
+	cm.AbbreviationBinding = forged
+
+	p := &PluginAbbreviationResolve{}
 	called := false
-	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
+	err := p.OnEvent(ctx, types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
 		called = true
 		return nil
 	})
-	if err != nil || !called {
-		t.Fatalf("err=%v next=%v", err, called)
+	if err == nil || called {
+		t.Fatalf("forged binding must block: err=%v next=%v", err, called)
 	}
-	if cm.RewriteQuery != "UBND tỉnh họp" {
-		t.Fatalf("error must keep the original query: %q", cm.RewriteQuery)
-	}
-	if len(bus.events) != 0 {
-		t.Fatalf("no events expected on failure: %+v", bus.events)
-	}
-}
-
-func TestPluginAbbreviationResolve_RawQueryUnknownStillEmitted(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
-	}}
-	p := &PluginAbbreviationResolve{abbreviationService: svc}
-	bus := &recordingEventBus{}
-	cm := newAbbreviationChatManage("đơn vị này họp về gì", bus)
-	cm.Query = "XYZABC tỉnh họp"
-
-	called := false
-	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
-		called = true
-		return nil
-	})
-	if err != nil || !called {
-		t.Fatalf("err=%v next=%v", err, called)
-	}
-	if cm.RewriteQuery != "đơn vị này họp về gì" {
-		t.Fatalf("effective rewrite must stay: %q", cm.RewriteQuery)
-	}
-	results := abbreviationToolResults(bus)
-	if len(results) != 1 {
-		t.Fatalf("expected one resolve_abbreviation result, got %d", len(results))
-	}
-	res, ok := results[0].Data["result"].(*abbreviation.ExpandResult)
-	if !ok || len(res.Potential) != 1 || res.Potential[0] != "XYZABC" {
-		t.Fatalf("result = %#v", results[0].Data["result"])
-	}
-	var callSeen bool
-	for _, evt := range bus.events {
-		if data, ok := evt.Data.(event.AgentToolCallData); ok && data.ToolName == "resolve_abbreviation" {
-			callSeen = true
-			if data.Arguments["text"] != "XYZABC tỉnh họp" {
-				t.Fatalf("event provenance must be the raw query, got %v", data.Arguments["text"])
-			}
-		}
-	}
-	if !callSeen {
-		t.Fatal("expected a resolve_abbreviation tool_call event")
-	}
-}
-
-func TestResolveAbbreviationForTurn_OriginalErrorFailsOpen(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{err: errors.New("dictionary unavailable")}
-	resolved, result, err := resolveAbbreviationForTurn(
-		context.Background(), svc, "đơn vị này họp", "XYZABC tỉnh họp",
-	)
-	if err == nil {
-		t.Fatal("original-query dictionary error must be returned")
-	}
-	if resolved != "đơn vị này họp" || result != nil {
-		t.Fatalf("resolved=%q result=%+v", resolved, result)
-	}
-}
-
-func TestPluginAbbreviationResolve_NoCandidateNoDictionary(t *testing.T) {
-	svc := &stubPipelineAbbreviationService{actives: []*types.Abbreviation{
-		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
-	}}
-	p := &PluginAbbreviationResolve{abbreviationService: svc}
-	cm := newAbbreviationChatManage("tỉnh họp sáng nay", &recordingEventBus{})
-	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError { return nil })
-	if err != nil {
+	if err.ErrorType != ErrAbbreviationGate.ErrorType {
 		t.Fatalf("err=%v", err)
 	}
-	if svc.calls != 0 {
-		t.Fatalf("ListActive must not run without candidates, calls=%d", svc.calls)
+}
+
+func TestPluginAbbreviationResolve_UnsealedContextBlocks(t *testing.T) {
+	b := testBinding()
+	r := readyAbbreviation(t, b.RawQuery)
+	cm := newAbbreviationChatManage(b.RawQuery, &recordingEventBus{})
+	res := r
+	cm.AbbreviationResolution = &res
+	cm.AbbreviationBinding = b
+
+	p := &PluginAbbreviationResolve{}
+	called := false
+	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if err == nil || called {
+		t.Fatalf("unsealed binding must block: err=%v next=%v", err, called)
+	}
+}
+
+func TestPluginAbbreviationResolve_NotReadyBlocks(t *testing.T) {
+	r := abbreviation.Inspect("XYZABC là gì", nil)
+	cm := newAbbreviationChatManage("XYZABC là gì", &recordingEventBus{})
+	res := r
+	cm.AbbreviationResolution = &res
+
+	p := &PluginAbbreviationResolve{}
+	called := false
+	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if err == nil || called {
+		t.Fatalf("non-ready resolution must block: err=%v next=%v", err, called)
+	}
+}
+
+func TestPluginAbbreviationResolve_NoResolutionPasses(t *testing.T) {
+	p := &PluginAbbreviationResolve{}
+	cm := newAbbreviationChatManage("tỉnh họp sáng nay", &recordingEventBus{})
+	called := false
+	err := p.OnEvent(context.Background(), types.ABBREVIATION_RESOLVE, cm, func() *PluginError {
+		called = true
+		return nil
+	})
+	if err != nil || !called {
+		t.Fatalf("err=%v next=%v", err, called)
 	}
 }

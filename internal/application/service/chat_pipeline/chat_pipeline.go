@@ -122,6 +122,10 @@ var (
 		Description: "Failed to get conversation history",
 		ErrorType:   "get_history_failed",
 	}
+	ErrAbbreviationGate = &PluginError{
+		Description: "Abbreviation resolution gate rejected the turn",
+		ErrorType:   "abbreviation_gate",
+	}
 )
 
 // clone creates a copy of the PluginError

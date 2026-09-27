@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // KnowledgeQA performs knowledge base question answering with LLM summarization
@@ -115,9 +116,19 @@ func (s *sessionService) KnowledgeQA(
 		len(searchTargets),
 	)
 
+	// The sealed turn carries the authoritative query split: Query keeps the
+	// root original text (for storage/history display), while downstream
+	// semantic stages read the validated effective query.
+	abbreviationResolution, hasAbbreviationTurn := abbreviation.ResolutionFromContext(ctx)
+	abbreviationBinding, hasAbbreviationBinding := abbreviation.BindingFromContext(ctx)
+	pipelineQuery := req.Query
+	if hasAbbreviationTurn && abbreviationResolution.OriginalQuery != "" {
+		pipelineQuery = abbreviationResolution.OriginalQuery
+	}
+
 	chatManage := &types.ChatManage{
 		PipelineRequest: types.PipelineRequest{
-			Query:                   effectiveQuery,
+			Query:                   pipelineQuery,
 			SessionID:               req.Session.ID,
 			UserID:                  types.SessionOwnerIDFromContext(ctx),
 			MaxRounds:               s.cfg.Conversation.MaxRounds,
@@ -149,6 +160,7 @@ func (s *sessionService) KnowledgeQA(
 			ChatModelSupportsVision: chatModelSupportsVision,
 			Attachments:             req.Attachments,
 			Language:                types.LanguageNameFromContext(ctx),
+			AbbreviationBinding:     abbreviationBinding,
 		},
 		PipelineState: types.PipelineState{
 			RewriteQuery:     effectiveQuery,
@@ -160,6 +172,13 @@ func (s *sessionService) KnowledgeQA(
 			MessageID:     req.AssistantMessageID,
 			UserMessageID: req.UserMessageID,
 		},
+	}
+	if hasAbbreviationTurn {
+		resCopy := abbreviationResolution.Clone()
+		chatManage.AbbreviationResolution = &resCopy
+	}
+	if !hasAbbreviationBinding {
+		chatManage.AbbreviationBinding = types.AbbreviationBinding{}
 	}
 
 	// Apply custom agent overrides (system prompt, temperature, retrieval params,
@@ -180,7 +199,7 @@ func (s *sessionService) KnowledgeQA(
 	hasKB := types.HasKnowledgeRetrievalScope(searchTargets, knowledgeBaseIDs, knowledgeIDs)
 	needsRAG := hasKB || webSearchEnabled
 	hasHistory := chatManage.MaxRounds > 0
-	hasAbbreviationCandidates := len(types.AbbreviationCandidatesFromContext(ctx)) > 0
+	hasAbbreviationTerms := hasAbbreviationTurn && len(abbreviationResolution.Terms) > 0
 
 	var pipeline []types.EventType
 	if !needsRAG {
@@ -201,7 +220,7 @@ func (s *sessionService) KnowledgeQA(
 		pipeline = types.NewPipelineBuilder().
 			AddIf(hasHistory, types.LOAD_HISTORY).
 			Add(types.MEMORY_RECALL).
-			AddIf(hasAbbreviationCandidates, types.QUERY_UNDERSTAND).
+			AddIf(hasAbbreviationTerms, types.QUERY_UNDERSTAND).
 			Add(types.ABBREVIATION_RESOLVE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
@@ -222,8 +241,8 @@ func (s *sessionService) KnowledgeQA(
 			Build()
 	}
 
-	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v, abbreviationCandidates=%v",
-		len(pipeline), hasKB, webSearchEnabled, hasHistory, hasAbbreviationCandidates)
+	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v, abbreviationTerms=%v",
+		len(pipeline), hasKB, webSearchEnabled, hasHistory, hasAbbreviationTerms)
 
 	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
 	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)

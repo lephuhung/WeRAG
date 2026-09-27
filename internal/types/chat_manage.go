@@ -65,6 +65,13 @@ type PipelineRequest struct {
 	// query-understanding stage. Empty values fall back to tenant/global defaults.
 	IntentPromptOverrides map[string]string `json:"-"`
 
+	// Abbreviation gate state for this turn, set once by the QA entry point
+	// from the sealed context. Both fields are request-scoped and immutable:
+	// the resolution is a deep copy; it is never transported over EventBus
+	// and never re-derived from model or frontend output.
+	AbbreviationBinding    AbbreviationBinding     `json:"-"`
+	AbbreviationResolution *AbbreviationResolution `json:"-"`
+
 	// Misc request-scoped config
 	TenantID            uint64 `json:"-"`
 	WebSearchEnabled    bool   `json:"-"`
@@ -204,6 +211,12 @@ func (c *ChatManage) Clone() *ChatManage {
 	entityKnowledge := make(map[string]string)
 	maps.Copy(entityKnowledge, c.EntityKnowledge)
 
+	var abbreviationResolution *AbbreviationResolution
+	if c.AbbreviationResolution != nil {
+		r := c.AbbreviationResolution.Clone()
+		abbreviationResolution = &r
+	}
+
 	return &ChatManage{
 		PipelineRequest: PipelineRequest{
 			Query:                    c.Query,
@@ -247,6 +260,8 @@ func (c *ChatManage) Clone() *ChatManage {
 			WebFetchTopN:             c.WebFetchTopN,
 			Language:                 c.Language,
 			IntentPromptOverrides:    maps.Clone(c.IntentPromptOverrides),
+			AbbreviationBinding:      c.AbbreviationBinding,
+			AbbreviationResolution:   abbreviationResolution,
 		},
 		PipelineState: PipelineState{
 			RewriteQuery:         c.RewriteQuery,

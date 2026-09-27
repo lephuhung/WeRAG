@@ -70,6 +70,20 @@ func ResolutionFromContext(ctx context.Context) (types.AbbreviationResolution, b
 	return cloneResolution(sealed.resolution), true
 }
 
+// BindingFromContext returns the sealed turn binding so downstream stages can
+// re-verify the turn with RequireTurn without re-deriving owner scope. The
+// returned value is a copy; mutating it cannot corrupt the sealed payload.
+func BindingFromContext(ctx context.Context) (types.AbbreviationBinding, bool) {
+	if ctx == nil {
+		return types.AbbreviationBinding{}, false
+	}
+	sealed, ok := ctx.Value(types.AbbreviationResolutionContextKey).(sealedAbbreviationTurn)
+	if !ok {
+		return types.AbbreviationBinding{}, false
+	}
+	return sealed.binding, true
+}
+
 // RequireTurn verifies that the presented binding equals the sealed binding
 // in full — tenant, principal, session, owner scope, message IDs and raw
 // query, not just status — and that the sealed resolution is still

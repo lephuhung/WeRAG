@@ -159,6 +159,24 @@ type AbbreviationPublicState struct {
 	ExpiresAt         time.Time                `json:"expires_at"`
 }
 
+// Clone returns a deep copy of the resolution: every nested slice and pointer
+// is isolated so caller mutation cannot affect the source.
+func (r AbbreviationResolution) Clone() AbbreviationResolution {
+	out := r
+	out.Terms = make([]AbbreviationTerm, len(r.Terms))
+	for i, t := range r.Terms {
+		out.Terms[i] = t
+		out.Terms[i].Occurrences = append([]AbbreviationOccurrence(nil), t.Occurrences...)
+		out.Terms[i].Meanings = append([]AbbreviationMeaning(nil), t.Meanings...)
+		if t.Definition != nil {
+			def := *t.Definition
+			out.Terms[i].Definition = &def
+		}
+	}
+	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
+	return out
+}
+
 // PublicState projects the shareable subset of the resolution. Slices are
 // deep-copied so callers cannot mutate internal state through the projection.
 func (r AbbreviationResolution) PublicState() AbbreviationPublicState {
