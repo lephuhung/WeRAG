@@ -6,6 +6,8 @@ import {
   getPromptTemplates,
   getParserEngines,
   getSystemInfo,
+  mergeParserEngineAvailability,
+  STATIC_PARSER_ENGINES,
   type PromptTemplatesConfig,
   type StorageEngineStatusItem,
   type ParserEngineInfo,
@@ -186,11 +188,16 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
       loadedAt.value.tenantRetrievalConfig = Date.now()
     })
   }
-
   async function ensureParserEngines(force = false): Promise<void> {
+    // Layout renders instantly from the static catalog; the backend call only
+    // refreshes Available/UnavailableReason flags afterwards.
+    if (!parserEngines.value.length) parserEngines.value = [...STATIC_PARSER_ENGINES]
     return runOnce('parserEngines', force, async () => {
       const resp = await getParserEngines()
-      parserEngines.value = resp?.data && Array.isArray(resp.data) ? resp.data : []
+      const remote = resp?.data && Array.isArray(resp.data) ? resp.data : []
+      parserEngines.value = remote.length
+        ? mergeParserEngineAvailability(STATIC_PARSER_ENGINES, remote)
+        : [...STATIC_PARSER_ENGINES]
       loadedAt.value.parserEngines = Date.now()
     })
   }

@@ -1,3 +1,4 @@
+import type { ParserEngineInfo } from './parserEngineCatalog'
 import { get, post, put, del, patch, postUpload } from '@/utils/request'
 import type { CreatedTenantAPIKey, TenantAPIKey, TenantAPIKeyCapability } from '@/api/tenant'
 
@@ -101,13 +102,8 @@ export function getPromptTemplates(): Promise<{ data: PromptTemplatesConfig }> {
   return get('/api/v1/tenants/kv/prompt-templates')
 }
 
-export interface ParserEngineInfo {
-  Name: string
-  Description: string
-  FileTypes: string[]
-  Available?: boolean
-  UnavailableReason?: string
-}
+export type { ParserEngineInfo } from './parserEngineCatalog'
+export { STATIC_PARSER_ENGINES, mergeParserEngineAvailability } from './parserEngineCatalog'
 
 /** 解析引擎配置（引擎连接参数存空间；聊天附件解析策略在智能体中配置） */
 export type MinerUParseMethod = 'auto' | 'ocr' | 'txt'

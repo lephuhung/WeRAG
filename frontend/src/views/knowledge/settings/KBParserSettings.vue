@@ -5,12 +5,7 @@
       <p class="section-description">{{ $t('kbSettings.parser.description') }}</p>
     </div>
 
-    <div v-if="loading" class="loading-inline">
-      <t-loading size="small" />
-      <span>{{ $t('kbSettings.parser.loading') }}</span>
-    </div>
-
-    <div v-else-if="fileTypeGroups.length === 0" class="empty-hint">
+    <div v-if="fileTypeGroups.length === 0" class="empty-hint">
       <p>{{ $t('kbSettings.parser.noEngineAvailable') }}</p>
     </div>
 
@@ -66,9 +61,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { type ParserEngineInfo } from '@/api/system'
+import { STATIC_PARSER_ENGINES, mergeParserEngineAvailability, type ParserEngineInfo } from '@/api/system'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useUIStore } from '@/stores/ui'
 import { storeToRefs } from 'pinia'
@@ -119,8 +114,8 @@ const emit = defineEmits<{
 
 const uiStore = useUIStore()
 const localEngineRules = ref<ParserEngineRule[]>([...props.parserEngineRules])
-const parserEngines = ref<ParserEngineInfo[]>([])
-const loading = ref(true)
+// Fixed layout seeds instantly; the backend only refreshes availability flags.
+const parserEngines = ref<ParserEngineInfo[]>([...STATIC_PARSER_ENGINES])
 
 const allFileTypes = computed(() => {
   const s = new Set<string>()
@@ -302,14 +297,17 @@ function goToParserSettings() {
 }
 
 async function loadEngines(force = false) {
-  loading.value = true
+  // Paint the fixed layout from cache/static immediately; backend only
+  // refreshes availability flags. Rule defaults are emitted after flags
+  // resolve so a static-seeded guess never persists a wrong engine.
+  const cached = editorResources.parserEngines
+  parserEngines.value = cached.length ? [...cached] : [...STATIC_PARSER_ENGINES]
   try {
     await editorResources.ensureParserEngines(force)
-    parserEngines.value = editorResources.parserEngines as ParserEngineInfo[]
+    parserEngines.value = [...editorResources.parserEngines]
   } catch {
-    parserEngines.value = []
+    parserEngines.value = mergeParserEngineAvailability(STATIC_PARSER_ENGINES, cached)
   } finally {
-    loading.value = false
     ensureCompleteRules()
   }
 }
@@ -358,13 +356,6 @@ watch(() => props.parserEngineRules, (v) => {
     margin: 0;
     line-height: 1.5;
   }
-}
-
-.loading-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
 }
 
 .empty-hint {
