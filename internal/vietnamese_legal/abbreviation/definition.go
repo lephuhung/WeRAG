@@ -103,6 +103,9 @@ func validDefinitionPhrase(phrase string) bool {
 		return false
 	}
 	lower := strings.ToLower(phrase)
+	if lower == "gì" || lower == "nào" || lower == "ai" || lower == "ở đâu" || strings.HasSuffix(lower, " là gì") {
+		return false
+	}
 	return !strings.HasPrefix(lower, "không phải") && !strings.HasPrefix(lower, "chưa phải") &&
 		!strings.HasPrefix(lower, "chẳng phải") && !strings.HasPrefix(lower, "assistant nói") &&
 		!strings.HasSuffix(lower, " đúng không") && !strings.HasSuffix(lower, " phải không") &&

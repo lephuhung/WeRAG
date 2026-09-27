@@ -28,16 +28,10 @@ func (s *abbreviationService) Suggest(
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.repo.ListByShortForm(ctx, short)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range existing {
-		if row != nil && strings.EqualFold(strings.TrimSpace(row.FullForm), full) {
-			return row, nil
-		}
-	}
-	return s.create(ctx, short, full, req.Description, false)
+	userID, _ := types.UserIDFromContext(ctx)
+	return s.repo.SuggestUnique(ctx, &types.Abbreviation{
+		ShortForm: short, FullForm: full, Description: req.Description, SuggestedBy: userID,
+	})
 }
 
 // Create inserts a row with an explicit active flag.

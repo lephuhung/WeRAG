@@ -11,6 +11,7 @@ import (
 type AbbreviationRepository interface {
 	// Create inserts a new abbreviation row.
 	Create(ctx context.Context, abbr *types.Abbreviation) error
+	SuggestUnique(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, error)
 
 	// GetByID retrieves one row. Returns nil, nil when absent.
 	GetByID(ctx context.Context, id string) (*types.Abbreviation, error)

@@ -27,6 +27,22 @@ func (r *fakeAbbreviationRepo) Create(_ context.Context, abbr *types.Abbreviatio
 	return nil
 }
 
+func (r *fakeAbbreviationRepo) SuggestUnique(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, error) {
+	rows, err := r.ListByShortForm(ctx, abbr.ShortForm)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.FullForm), abbr.FullForm) {
+			return row, nil
+		}
+	}
+	if err := r.Create(ctx, abbr); err != nil {
+		return nil, err
+	}
+	return abbr, nil
+}
+
 func (r *fakeAbbreviationRepo) ListByShortForm(_ context.Context, short string) ([]*types.Abbreviation, error) {
 	r.listCalls++
 	if r.listErr != nil {

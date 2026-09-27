@@ -50,6 +50,7 @@ var abbreviationTurnTransitions = map[string]map[string]bool{
 	types.AbbreviationTurnAwaitingDefinition: {
 		types.AbbreviationTurnAwaitingDefinition: true,
 		types.AbbreviationTurnReady:              true,
+		types.AbbreviationTurnBlockedError:       true,
 		types.AbbreviationTurnCancelled:          true,
 		types.AbbreviationTurnExpired:            true,
 	},

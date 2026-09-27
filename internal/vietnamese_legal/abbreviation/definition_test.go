@@ -30,6 +30,8 @@ func TestParseUserDefinitionEvidence(t *testing.T) {
 		{"ATTT = An toàn thông tin?", false, false},
 		{"ATTT là An toàn thông tin đúng không", false, false},
 		{"ATTT là An toàn thông tin phải không", false, false},
+		{"ATTT là gì", false, false},
+		{"ATTT = gì", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.text, func(t *testing.T) {
