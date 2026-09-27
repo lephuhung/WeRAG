@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -48,9 +50,9 @@ func TestAbbreviationTurnPostgresLockSQL(t *testing.T) {
 // reads .env or production credentials and never touches shared schemas:
 // only the new migration runs, over a truthful minimal sessions/messages
 // baseline (owner and role columns included), and the schema is dropped at
-// the end. One pooled connection keeps SET search_path valid on every
-// statement; the concurrent block therefore proves the version predicate
-// elects one winner under serialization, not a multi-connection race.
+// the end. The base pool pins SET search_path for migration and fixtures;
+// the concurrent block pins the schema in each separate connection pool
+// to verify the version predicate across independent connections.
 func TestAbbreviationTurnPostgres(t *testing.T) {
 	dsn := os.Getenv("WEKNORA_MIGRATION_TEST_POSTGRES_DSN")
 	if dsn == "" {
@@ -162,21 +164,35 @@ func TestAbbreviationTurnPostgres(t *testing.T) {
 	require.True(t, ok)
 
 	// Concurrent swaps elect exactly one winner through the version predicate.
+	raceRepos := make([]*abbreviationTurnRepository, 2)
+	for i := range raceRepos {
+		config, err := pgx.ParseConfig(dsn)
+		require.NoError(t, err)
+		config.RuntimeParams["search_path"] = schema
+		conn := stdlib.OpenDB(*config)
+		t.Cleanup(func() { _ = conn.Close() })
+		raceDB, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{})
+		require.NoError(t, err)
+		raceRepos[i] = &abbreviationTurnRepository{db: raceDB}
+	}
 	var wg sync.WaitGroup
 	wins := make([]bool, 2)
+	errs := make([]error, 2)
+	start := make(chan struct{})
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
+			<-start
 			attempt := *row
 			attempt.State = "ready"
-			ok, err := repo.CompareAndSwap(ctx, owner, 3, &attempt)
-			if err == nil {
-				wins[n] = ok
-			}
+			wins[n], errs[n] = raceRepos[n].CompareAndSwap(ctx, owner, 3, &attempt)
 		}(i)
 	}
+	close(start)
 	wg.Wait()
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
 	require.True(t, wins[0] != wins[1], "exactly one concurrent CAS must win")
 
 	// A live awaiting turn justifies the one-waiting violation below.

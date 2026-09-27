@@ -32,24 +32,24 @@ func abbreviationTurnRepoRoot(t *testing.T) string {
 
 // splitMigrationStatements splits a migration file into executable
 // statements. The abbreviation migration files contain no triggers or
-// embedded semicolons, so a semicolon split with comment/empty filtering
-// is exact.
+// embedded SQL semicolons, so filtering comments before splitting on
+// semicolons is exact.
 func splitMigrationStatements(t *testing.T, path string) []string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	var out []string
-	for _, part := range strings.Split(string(raw), ";") {
-		var kept []string
-		for _, line := range strings.Split(part, "\n") {
-			if idx := strings.Index(line, "--"); idx >= 0 {
-				line = line[:idx]
-			}
-			if strings.TrimSpace(line) != "" {
-				kept = append(kept, line)
-			}
+	var lines []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if idx := strings.Index(line, "--"); idx >= 0 {
+			line = line[:idx]
 		}
-		if stmt := strings.TrimSpace(strings.Join(kept, "\n")); stmt != "" {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	var out []string
+	for _, part := range strings.Split(strings.Join(lines, "\n"), ";") {
+		if stmt := strings.TrimSpace(part); stmt != "" {
 			out = append(out, stmt)
 		}
 	}
