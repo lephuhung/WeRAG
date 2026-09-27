@@ -90,6 +90,12 @@ type qaRequestContext struct {
 	// previous run are visible to this engine from round 1 and to any client
 	// that reloads the queue.
 	steerCarryOver []interfaces.StreamEvent
+
+	// clarificationRequestID / clarificationVersion resume a waiting
+	// abbreviation clarification turn. They are pointers only — the backend
+	// gate re-validates the stored turn, owner scope and frozen snapshot.
+	clarificationRequestID string
+	clarificationVersion   *uint64
 }
 
 // buildQARequest converts the qaRequestContext into a types.QARequest for service invocation.
@@ -98,23 +104,25 @@ type qaRequestContext struct {
 func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 	imageURLs, imageDescription := extractImageURLsAndOCRText(rc.images)
 	req := &types.QARequest{
-		Session:             rc.session,
-		Query:               rc.query,
-		AssistantMessageID:  rc.assistantMessage.ID,
-		SummaryModelID:      rc.summaryModelID,
-		CustomAgent:         rc.customAgent,
-		KnowledgeBaseIDs:    rc.knowledgeBaseIDs,
-		KnowledgeIDs:        rc.knowledgeIDs,
-		TagScopes:           rc.tagScopes,
-		MCPServiceIDs:       rc.mcpServiceIDs,
-		SkillNames:          rc.skillNames,
-		ImageURLs:           imageURLs,
-		ImageDescription:    imageDescription,
-		UserMessageID:       rc.userMessageID,
-		WebSearchEnabled:    rc.webSearchEnabled,
-		LocalBrowserEnabled: rc.localBrowserEnabled,
-		Attachments:         rc.attachments,
-		QuestionOrigin:      rc.questionOrigin,
+		Session:                rc.session,
+		Query:                  rc.query,
+		AssistantMessageID:     rc.assistantMessage.ID,
+		SummaryModelID:         rc.summaryModelID,
+		CustomAgent:            rc.customAgent,
+		KnowledgeBaseIDs:       rc.knowledgeBaseIDs,
+		KnowledgeIDs:           rc.knowledgeIDs,
+		TagScopes:              rc.tagScopes,
+		MCPServiceIDs:          rc.mcpServiceIDs,
+		SkillNames:             rc.skillNames,
+		ImageURLs:              imageURLs,
+		ImageDescription:       imageDescription,
+		UserMessageID:          rc.userMessageID,
+		WebSearchEnabled:       rc.webSearchEnabled,
+		LocalBrowserEnabled:    rc.localBrowserEnabled,
+		Attachments:            rc.attachments,
+		QuestionOrigin:         rc.questionOrigin,
+		ClarificationRequestID: rc.clarificationRequestID,
+		ClarificationVersion:   rc.clarificationVersion,
 	}
 	if rc.steerSink != nil {
 		req.SteerSink = rc.steerSink
@@ -426,27 +434,29 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 			ModelID:          modelID,
 			ExecutionContext: executionContext,
 		},
-		knowledgeBaseIDs:      secutils.SanitizeForLogArray(kbIDs),
-		knowledgeIDs:          secutils.SanitizeForLogArray(knowledgeIDs),
-		tagScopes:             tagScopes,
-		tagIDs:                secutils.SanitizeForLogArray(tagIDs),
-		mcpServiceIDs:         secutils.SanitizeForLogArray(mcpServiceIDs),
-		skillNames:            secutils.SanitizeForLogArray(skillNames),
-		summaryModelID:        secutils.SanitizeForLog(request.SummaryModelID),
-		webSearchEnabled:      request.WebSearchEnabled,
-		localBrowserEnabled:   request.LocalBrowserEnabled,
-		mentionedItems:        convertMentionedItems(request.MentionedItems),
-		effectiveTenantID:     effectiveTenantID,
-		images:                request.Images,
-		channel:               request.Channel,
-		attachments:           processedAttachments,
-		attachmentIDs:         attachmentIDs,
-		attachmentMetas:       attachmentMetas,
-		suggestionAttribution: request.SuggestionAttribution,
-		questionOrigin:        request.QuestionOrigin,
-		reqAgentEnabled:       request.AgentEnabled,
-		reqAgentID:            request.AgentID,
-		resourceRewriter:      resourceRewriter,
+		knowledgeBaseIDs:       secutils.SanitizeForLogArray(kbIDs),
+		knowledgeIDs:           secutils.SanitizeForLogArray(knowledgeIDs),
+		tagScopes:              tagScopes,
+		tagIDs:                 secutils.SanitizeForLogArray(tagIDs),
+		mcpServiceIDs:          secutils.SanitizeForLogArray(mcpServiceIDs),
+		skillNames:             secutils.SanitizeForLogArray(skillNames),
+		summaryModelID:         secutils.SanitizeForLog(request.SummaryModelID),
+		webSearchEnabled:       request.WebSearchEnabled,
+		localBrowserEnabled:    request.LocalBrowserEnabled,
+		mentionedItems:         convertMentionedItems(request.MentionedItems),
+		effectiveTenantID:      effectiveTenantID,
+		images:                 request.Images,
+		channel:                request.Channel,
+		attachments:            processedAttachments,
+		attachmentIDs:          attachmentIDs,
+		attachmentMetas:        attachmentMetas,
+		suggestionAttribution:  request.SuggestionAttribution,
+		questionOrigin:         request.QuestionOrigin,
+		reqAgentEnabled:        request.AgentEnabled,
+		reqAgentID:             request.AgentID,
+		resourceRewriter:       resourceRewriter,
+		clarificationRequestID: secutils.SanitizeForLog(request.ClarificationRequestID),
+		clarificationVersion:   request.ClarificationVersion,
 	}
 
 	return reqCtx, &request, nil
@@ -753,17 +763,6 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext, generateTitle bool, m
 	// Setup stream handler
 	h.setupStreamHandler(asyncCtx, reqCtx.sessionID, reqCtx.assistantMessage.ID,
 		reqCtx.requestID, reqCtx.session.TenantID, reqCtx.receivedAt, reqCtx.assistantMessage, eventBus)
-
-	// Generate title if needed
-	if generateTitle && reqCtx.session.Title == "" {
-		// Use the same model as the conversation for title generation
-		modelID := ""
-		if reqCtx.customAgent != nil && reqCtx.customAgent.Config.ModelID != "" {
-			modelID = reqCtx.customAgent.Config.ModelID
-		}
-		logger.Infof(reqCtx.ctx, "Session has no title, starting async title generation, session ID: %s, model: %s", reqCtx.sessionID, modelID)
-		h.sessionService.GenerateTitleAsync(asyncCtx, reqCtx.session, reqCtx.query, modelID, eventBus)
-	}
 
 	return streamCtx
 }
@@ -1259,15 +1258,45 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			}
 		}()
 
+		// Build the QA request before any semantic work: the abbreviation gate
+		// binds to the persisted user message and must see the same query the
+		// service call will use.
+		qaReq := reqCtx.buildQARequest()
+
+		// Mandatory abbreviation-resolution gate: it runs after messages and
+		// SSE are ready but before attachment hydration, VLM, retrieval and any
+		// model call. A handled turn already emitted its terminal events; a
+		// preparation error completes the turn with a controlled error. Only a
+		// ready, sealed turn reaches downstream, and the service entry reuses
+		// the exact binding instead of preparing again.
+		preparedCtx, handled, prepErr := h.sessionService.PrepareAbbreviationTurn(
+			streamCtx.asyncCtx, qaReq, streamCtx.eventBus)
+		if handled {
+			if generateTitle {
+				h.writeProvisionalSessionTitle(streamCtx.asyncCtx, streamCtx.eventBus, reqCtx)
+			}
+			return
+		}
+		if prepErr != nil {
+			h.emitAbbreviationPreparationError(streamCtx.asyncCtx, streamCtx.eventBus,
+				reqCtx.sessionID, reqCtx.assistantMessage.ID, prepErr)
+			return
+		}
+		streamCtx.asyncCtx = preparedCtx
+
+		// Session title generation is itself a model call on the raw query, so
+		// it runs only after the gate sealed a ready turn. A provisional raw
+		// title written while the turn waited for clarification is replaced.
+		if generateTitle {
+			h.generateSessionTitle(streamCtx, reqCtx)
+		}
+
 		// Resolve pre-uploaded attachments (may still be parsing): waits with a
 		// timeline step so the send is not blocked, then injects content/images.
 		h.resolveTemporaryAttachments(streamCtx, reqCtx)
 
 		// Run VLM image analysis if applicable
 		h.runVLMAnalysisIfNeeded(streamCtx, reqCtx, mode)
-
-		// Build QA request and invoke the appropriate service
-		qaReq := reqCtx.buildQARequest()
 
 		var serviceErr error
 		var stageName string

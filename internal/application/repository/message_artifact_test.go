@@ -18,6 +18,7 @@ func newArtifactTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}, &testIMChannelSession{},
 	))
+	migrateAbbreviationTables(t, db)
 	return db
 }
 

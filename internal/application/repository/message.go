@@ -53,6 +53,9 @@ func (r *messageRepository) GetMessage(
 	if err := attachArtifacts(ctx, r.db, &message); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, []*types.Message{&message}); err != nil {
+		return nil, err
+	}
 	return &message, nil
 }
 
@@ -72,6 +75,9 @@ func (r *messageRepository) GetMessagesBySession(
 		return nil, err
 	}
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
 		return nil, err
 	}
 	return messages, nil
@@ -103,6 +109,9 @@ func (r *messageRepository) GetRecentMessagesBySession(
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
@@ -129,6 +138,9 @@ func (r *messageRepository) GetMessagesBySessionBeforeTime(
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
@@ -149,6 +161,9 @@ func (r *messageRepository) ListMessagesBySessionAfterTime(
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
@@ -163,6 +178,9 @@ func (r *messageRepository) ListMessagesBySessionAfterCursor(ctx context.Context
 		return nil, err
 	}
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
 		return nil, err
 	}
 	return messages, nil
@@ -184,6 +202,9 @@ func (r *messageRepository) ListMessagesBySessionBeforeCursor(
 		return nil, err
 	}
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
 		return nil, err
 	}
 	return messages, nil
@@ -208,6 +229,9 @@ func (r *messageRepository) ListMessagesBySessionUpTo(
 		return nil, err
 	}
 	if err := attachArtifacts(ctx, r.db, messages...); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messages); err != nil {
 		return nil, err
 	}
 	return messages, nil
@@ -244,6 +268,9 @@ func (r *messageRepository) GetFirstMessageOfUser(ctx context.Context, sessionID
 	if err := attachArtifacts(ctx, r.db, &message); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, []*types.Message{&message}); err != nil {
+		return nil, err
+	}
 	return &message, nil
 }
 
@@ -264,6 +291,9 @@ func (r *messageRepository) GetMessageByRequestID(
 		return nil, result.Error
 	}
 	if err := attachArtifacts(ctx, r.db, &message); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, []*types.Message{&message}); err != nil {
 		return nil, err
 	}
 
@@ -311,6 +341,9 @@ func (r *messageRepository) SearchMessagesByKeyword(
 		return nil, err
 	}
 	if err := attachArtifactsWithSession(ctx, r.db, results); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messageWithSessionMessages(results)); err != nil {
 		return nil, err
 	}
 
@@ -368,6 +401,9 @@ func (r *messageRepository) GetMessagesByKnowledgeIDs(
 	if err := attachArtifactsWithSession(ctx, r.db, results); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateAbbreviationState(ctx, messageWithSessionMessages(results)); err != nil {
+		return nil, err
+	}
 	return results, nil
 }
 
@@ -391,6 +427,9 @@ func (r *messageRepository) GetMessagesByRequestIDs(
 		return nil, err
 	}
 	if err := attachArtifactsWithSession(ctx, r.db, results); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateAbbreviationState(ctx, messageWithSessionMessages(results)); err != nil {
 		return nil, err
 	}
 	return results, nil

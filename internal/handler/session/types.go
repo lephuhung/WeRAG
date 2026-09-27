@@ -61,8 +61,14 @@ type CreateKnowledgeQARequest struct {
 	Channel               string                       `json:"channel"`                               // Source channel: "web", "api", "im", etc.
 	SuggestionAttribution *types.SuggestionAttribution `json:"suggestion_attribution,omitempty"`
 	// QuestionOrigin is the knowledge source of a picked suggested question.
-	QuestionOrigin         *types.QuestionOrigin `json:"question_origin,omitempty"`
-	AbbreviationCandidates []string              `json:"abbreviation_candidates,omitempty"`
+	QuestionOrigin *types.QuestionOrigin `json:"question_origin,omitempty"`
+	// ClarificationRequestID resumes a waiting abbreviation clarification
+	// turn. It is only a pointer: the backend re-validates the stored turn,
+	// its owner scope and the frozen request snapshot before resuming.
+	ClarificationRequestID string `json:"clarification_request_id,omitempty"`
+	// ClarificationVersion is the turn version the client saw; a stale value
+	// fails closed so two replies can never both resume the same turn.
+	ClarificationVersion *uint64 `json:"clarification_version,omitempty"`
 }
 
 // AttachmentUpload represents a file attachment upload from the client

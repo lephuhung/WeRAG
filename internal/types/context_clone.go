@@ -71,7 +71,6 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	LanguageContextKey:      true,
 	LangfuseTraceContextKey: true,
 
-	AbbreviationCandidatesContextKey: true,
 	// The sealed abbreviation turn binding. It describes one user turn
 	// (restriction-style payload: principal, session, message IDs, raw
 	// query), so dropping it across a detach would let background work run

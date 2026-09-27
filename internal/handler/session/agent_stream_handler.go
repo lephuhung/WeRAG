@@ -70,6 +70,12 @@ type AgentStreamHandler struct {
 	finalAnswer     string
 	answerSegments  []*answerSegment     // Per-answer-event-ID accumulation, so superseded preambles can be dropped
 	eventStartTimes map[string]time.Time // Track start time for duration calculation
+	// completeEmitted marks that the terminal stream event already went out.
+	// More than one EventAgentComplete can legitimately arrive — e.g. the
+	// abbreviation gate completes a paused turn with its own event while the
+	// final-answer completion path synthesises another — and a second append
+	// would duplicate the client-visible completion.
+	completeEmitted bool
 	mu              sync.Mutex
 }
 
@@ -165,6 +171,7 @@ func (h *AgentStreamHandler) Subscribe() {
 	h.eventBus.On(event.EventToolApprovalResolved, h.handleToolApprovalResolved)
 	h.eventBus.On(event.EventMCPOAuthRequired, h.handleMCPOAuthRequired)
 	h.eventBus.On(event.EventMCPOAuthResolved, h.handleMCPOAuthResolved)
+	h.eventBus.On(event.EventAbbreviationResolution, h.handleAbbreviationResolution)
 }
 
 // handleThought handles agent thought events
@@ -499,6 +506,27 @@ func (h *AgentStreamHandler) handleMemoryRecalled(ctx context.Context, evt event
 	return nil
 }
 
+// handleAbbreviationResolution forwards the backend-owned clarification gate
+// state. The payload is already the public projection — the service never
+// emits owner, principal, request snapshot, or definition spans, so the stream
+// relays the event verbatim.
+func (h *AgentStreamHandler) handleAbbreviationResolution(_ context.Context, evt event.Event) error {
+	data, ok := evt.Data.(event.AbbreviationResolutionData)
+	if !ok {
+		return nil
+	}
+	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
+		ID:        evt.ID,
+		Type:      types.ResponseTypeAbbreviationResolution,
+		Done:      false,
+		Timestamp: time.Now(),
+		Data:      map[string]interface{}{"abbreviation": data},
+	}); err != nil {
+		logger.GetLogger(h.ctx).Error("Append abbreviation resolution event to stream failed", "error", err)
+	}
+	return nil
+}
+
 // handleContextCompacted forwards a compaction to the UI.
 //
 // The summary itself is carried so the user can expand it and see exactly what
@@ -722,6 +750,13 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// A second completion for the same turn is a duplicate: the terminal
+	// stream event already went out and the message bookkeeping (content,
+	// artifacts, checkpoint) is final.
+	if h.completeEmitted {
+		return nil
+	}
+
 	// Update assistant message with final data
 	if data.MessageID == h.assistantMessageID {
 		// h.assistantMessage.Content = data.FinalAnswer
@@ -920,6 +955,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	if turnUsage != nil {
 		completeData["usage"] = turnUsage
 	}
+	h.completeEmitted = true
 	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
 		ID:        evt.ID,
 		Type:      types.ResponseTypeComplete,

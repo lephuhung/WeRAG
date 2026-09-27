@@ -424,6 +424,13 @@ type Message struct {
 	// only; nil unless a later turn's compaction ended exactly here. Internal
 	// to history loading, so it stays out of API responses.
 	ContextCheckpoint *ContextCheckpoint `json:"-" gorm:"type:jsonb;column:context_checkpoint"`
+	// Abbreviation carries the public clarification state linked to this
+	// message by the abbreviation-resolution gate (root question, definition
+	// reply, clarification or answer). Hydrated by the message repository at
+	// read time from live turn rows — never persisted on the message itself —
+	// and projects only AbbreviationPublicState fields: no owner, principal,
+	// snapshot or definition spans.
+	Abbreviation *AbbreviationPublicState `json:"abbreviation,omitempty" gorm:"-"`
 	// Message creation timestamp
 	CreatedAt time.Time `json:"created_at"`
 	// Last update timestamp

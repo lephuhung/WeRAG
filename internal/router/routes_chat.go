@@ -74,6 +74,10 @@ func RegisterSessionRoutes(
 		// currently generating. Accepts even when no run is live (the client
 		// then falls back to a normal send), mirroring StopSession's ownership
 		// rules.
+		// Retry persisting abbreviation dictionary suggestions for a
+		// clarification turn. No QA/model side effects — same session
+		// authentication and chat capability as the QA routes.
+		sessions.POST("/:session_id/abbreviation-clarifications/:request_id/retry-suggestions", handler.RetryAbbreviationSuggestions)
 		sessions.POST("/:session_id/steer", handler.SteerMessage)
 		sessions.GET("/:id/steer", handler.ListSteerMessages)
 		sessions.DELETE("/:id/steer/:steer_id", handler.DeleteSteerMessage)

@@ -19,6 +19,7 @@ func newMessageSearchDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}))
+	migrateAbbreviationTables(t, db)
 	return db
 }
 

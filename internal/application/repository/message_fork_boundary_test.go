@@ -17,6 +17,7 @@ func newMessageRepositoryForForkTest(t *testing.T) (*messageRepository, *gorm.DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Message{}, &types.MessageArtifactRecord{}))
+	migrateAbbreviationTables(t, db)
 
 	return &messageRepository{db: db}, db
 }

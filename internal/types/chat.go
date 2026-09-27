@@ -289,6 +289,12 @@ const (
 	// — the console does not have to read the durable prompt row to caption
 	// the run.
 	ResponseTypeInstallPrompt ResponseType = "install_prompt"
+	// ResponseTypeAbbreviationResolution carries the backend-owned
+	// abbreviation gate verdict for the current turn. It is informational:
+	// the public state describes whether clarification is required, which
+	// terms are still unknown and which validated meanings were applied —
+	// it never grants the stream any authority to mark a turn ready itself.
+	ResponseTypeAbbreviationResolution ResponseType = "abbreviation_resolution"
 )
 
 // StreamResponse stream response

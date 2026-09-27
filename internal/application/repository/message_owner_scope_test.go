@@ -25,6 +25,7 @@ func newOwnerScopeDB(t *testing.T, name string) (*gorm.DB, map[string]string) {
 	if err := db.AutoMigrate(&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	migrateAbbreviationTables(t, db)
 	sessions := map[string]*types.Session{
 		"alice":  {TenantID: 7, UserID: "web_user:alice", Title: "Alice 的会话"},
 		"bob":    {TenantID: 7, UserID: "web_user:bob", Title: "Bob 的会话"},

@@ -54,8 +54,7 @@ const (
 	// session/message repository lookups. See SandboxTenantIDFromContext.
 	SandboxTenantIDContextKey ContextKey = "SandboxTenantID"
 	// EmbedQueryContextKey is the context key for embedding query text
-	EmbedQueryContextKey             ContextKey = "EmbedQuery"
-	AbbreviationCandidatesContextKey ContextKey = "AbbreviationCandidates"
+	EmbedQueryContextKey ContextKey = "EmbedQuery"
 	// AbbreviationResolutionContextKey carries the sealed per-turn
 	// abbreviation binding. Only the private sealedAbbreviationTurn payload
 	// (package abbreviation) is ever stored under it; generic maps or DTOs
