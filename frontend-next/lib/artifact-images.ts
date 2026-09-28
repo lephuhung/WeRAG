@@ -104,29 +104,105 @@ async function loadArtifactBlobURL(
   return task;
 }
 
-/** Swap placeholder <img> nodes carrying data-artifact-index for blob URLs. */
-export async function hydrateArtifactImages(
+async function hydrateImage(
+  img: HTMLImageElement,
+  ctx: ArtifactImageContext,
+  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>,
+): Promise<void> {
+  const index = Number(img.getAttribute("data-artifact-index"));
+  if (!Number.isInteger(index) || index < 0) return;
+  img.dataset.authHydrated = "1";
+  const blobURL = await loadArtifactBlobURL(ctx, index, download);
+  if (!blobURL) {
+    img.dataset.authHydrated = "0";
+    return;
+  }
+  img.src = blobURL;
+  img.removeAttribute("data-img-loading");
+}
+
+/* Artifact downloads run through the authenticated download endpoint at full
+ * size — firing one per image across the whole history window saturates the
+ * connection on load. Cap parallel downloads; offscreen images queue behind
+ * the visible ones instead of all racing at once. */
+const MAX_CONCURRENT_DOWNLOADS = 3;
+let runningDownloads = 0;
+const downloadQueue: Array<() => Promise<void>> = [];
+
+function pumpDownloadQueue() {
+  while (runningDownloads < MAX_CONCURRENT_DOWNLOADS && downloadQueue.length > 0) {
+    const task = downloadQueue.shift()!;
+    runningDownloads++;
+    void task().finally(() => {
+      runningDownloads--;
+      pumpDownloadQueue();
+    });
+  }
+}
+
+function enqueueDownload(task: () => Promise<void>): void {
+  downloadQueue.push(task);
+  pumpDownloadQueue();
+}
+
+type PendingHydration = {
+  ctx: ArtifactImageContext;
+  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>;
+};
+
+const pendingJobs = new Map<HTMLImageElement, PendingHydration>();
+let observer: IntersectionObserver | null = null;
+
+/* One shared observer for every chat-markdown root: an image only starts its
+ * authenticated blob download once it nears the viewport, so history images
+ * above the fold never hit the network. */
+function sharedObserver(): IntersectionObserver | null {
+  if (typeof IntersectionObserver === "undefined") return null;
+  if (observer) return observer;
+  observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const img = entry.target as HTMLImageElement;
+        const job = pendingJobs.get(img);
+        pendingJobs.delete(img);
+        observer?.unobserve(img);
+        if (job) enqueueDownload(() => hydrateImage(img, job.ctx, job.download));
+      }
+    },
+    { rootMargin: "300px 0px" },
+  );
+  return observer;
+}
+
+/** Swap placeholder <img> nodes carrying data-artifact-index for blob URLs.
+ * Downloads start lazily when an image nears the viewport (eager fallback
+ * where IntersectionObserver is unavailable). Returns a cleanup that drops
+ * still-pending observations so a re-render doesn't double-queue them. */
+export function hydrateArtifactImages(
   root: ParentNode | null | undefined,
   ctx: ArtifactImageContext | null | undefined,
   download: (sessionId: string, messageId: string, index: number) => Promise<Blob>,
-): Promise<void> {
-  if (!root || !ctx?.sessionId || !ctx?.messageId) return;
+): () => void {
+  if (!root || !ctx?.sessionId || !ctx?.messageId) return () => {};
   const images = Array.from(
     root.querySelectorAll<HTMLImageElement>("img.artifact-ref-image[data-artifact-index]"),
-  ).filter((img) => img.dataset.authHydrated !== "1");
-  if (!images.length) return;
-  await Promise.all(
-    images.map(async (img) => {
-      const index = Number(img.getAttribute("data-artifact-index"));
-      if (!Number.isInteger(index) || index < 0) return;
-      img.dataset.authHydrated = "1";
-      const blobURL = await loadArtifactBlobURL(ctx, index, download);
-      if (!blobURL) {
-        img.dataset.authHydrated = "0";
-        return;
-      }
-      img.src = blobURL;
-      img.removeAttribute("data-img-loading");
-    }),
-  );
+  ).filter((img) => img.dataset.authHydrated !== "1" && !pendingJobs.has(img));
+  if (!images.length) return () => {};
+
+  const io = sharedObserver();
+  if (!io) {
+    for (const img of images) enqueueDownload(() => hydrateImage(img, ctx, download));
+    return () => {};
+  }
+  for (const img of images) {
+    pendingJobs.set(img, { ctx, download });
+    io.observe(img);
+  }
+  return () => {
+    for (const img of images) {
+      pendingJobs.delete(img);
+      io.unobserve(img);
+    }
+  };
 }

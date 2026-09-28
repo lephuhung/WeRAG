@@ -36,9 +36,9 @@ renderer.image = ({ href, title, text }: { href?: string; title?: string | null;
   // pixel keeps layout stable until hydration swaps the real bytes in.
   const idx = artifactImageIndex(src);
   if (idx !== null) {
-    return `<img src="${ARTIFACT_TRANSPARENT_PIXEL}" alt="${alt}"${titleAttr} class="markdown-image artifact-ref-image" data-artifact-index="${idx}" data-img-loading="1">`;
+    return `<img src="${ARTIFACT_TRANSPARENT_PIXEL}" alt="${alt}"${titleAttr} class="markdown-image artifact-ref-image" data-artifact-index="${idx}" data-img-loading="1" loading="lazy" decoding="async">`;
   }
-  return `<img src="${escapeHtml(src)}" alt="${alt}"${titleAttr} class="markdown-image" loading="lazy">`;
+  return `<img src="${escapeHtml(src)}" alt="${alt}"${titleAttr} class="markdown-image" loading="lazy" decoding="async">`;
 };
 
 function escapeHtml(s: string): string {
@@ -110,6 +110,6 @@ export function renderChatMarkdown(raw: string): string {
   const html = marked.parse(withWikiLinks, { renderer, breaks: true, async: false }) as string;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["pre", "code", "span", "table", "thead", "tbody", "tr", "th", "td", "img"],
-    ADD_ATTR: ["class", "colspan", "rowspan", "data-slug", "src", "alt", "title", "loading", "data-artifact-index", "data-img-loading"],
+    ADD_ATTR: ["class", "colspan", "rowspan", "data-slug", "src", "alt", "title", "loading", "decoding", "data-artifact-index", "data-img-loading"],
   });
 }

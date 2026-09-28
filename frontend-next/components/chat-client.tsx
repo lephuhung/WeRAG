@@ -61,6 +61,12 @@ type UiMessage = {
   attachments?: UiAttachment[];
   /** Tool/skill-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];
+  /** History `is_completed`, or set when a live turn ends via a complete
+   * event — gates the suggestions fetch (Vue: message.is_completed). */
+  isCompleted?: boolean;
+  /** The turn finished streaming in this client → suggestions POST ensure
+   * instead of read-only GET (Vue: onTurnComplete → ensure=true). */
+  suggestionEnsure?: boolean;
 };
 
 function extractPeopleRecords(data: unknown): PeopleRecord[] {
@@ -508,7 +514,8 @@ const AssistantMessage = memo(function AssistantMessage({
           <FollowUpSuggestions
             sessionId={sessionId}
             messageId={m.assistantMessageId ?? null}
-            enabled={!m.streaming}
+            enabled={!m.streaming && m.isCompleted === true}
+            ensure={m.suggestionEnsure === true}
             onAsk={onAsk}
           />
         )}
@@ -719,6 +726,7 @@ function ChatBody({ id }: { id: string }) {
                 m.role === "assistant"
                   ? abbreviationCandidatesFromHistory(m)
                   : undefined,
+              isCompleted: m.is_completed === true,
               peopleData:
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
               attachments:
@@ -839,6 +847,8 @@ function ChatBody({ id }: { id: string }) {
                         ...msg,
                         steps: snap,
                         agentDurationMs: dur || msg.agentDurationMs,
+                        isCompleted: true,
+                        suggestionEnsure: true,
                         ...(resumeArtifacts?.length ? { artifacts: resumeArtifacts } : {}),
                       }
                     : msg,
@@ -1367,6 +1377,8 @@ function ChatBody({ id }: { id: string }) {
               ? {
                   ...msg,
                   streaming: false,
+                  isCompleted: true,
+                  suggestionEnsure: true,
                   steps: snapSteps,
                   agentDurationMs: durationMs || msg.agentDurationMs,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,

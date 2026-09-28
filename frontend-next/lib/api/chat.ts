@@ -2,7 +2,7 @@
  * chat-history.ts + message-suggestion.ts + artifacts.ts.
  * SSE streaming itself lives in ./stream.ts (postChat equivalent).
  */
-import { apiDel, apiDownload, apiGet, apiPost, apiPut } from "@/lib/api-client";
+import { apiDel, apiDownload, apiGet, apiPost, apiPut, type ApiRequestOptions } from "@/lib/api-client";
 
 // ---- sessions ---------------------------------------------------------------
 
@@ -322,16 +322,27 @@ export interface MessageSuggestionSet {
   generated_at?: string;
 }
 
-export function ensureMessageSuggestions(sessionId: string, messageId: string, regenerate = false) {
+export function ensureMessageSuggestions(
+  sessionId: string,
+  messageId: string,
+  regenerate = false,
+  opts?: ApiRequestOptions,
+) {
   return apiPost<{ data: MessageSuggestionSet }>(
     `/api/v1/sessions/${sessionId}/messages/${messageId}/suggestions`,
     { regenerate },
+    opts,
   );
 }
 
-export function getMessageSuggestions(sessionId: string, messageId: string) {
+export function getMessageSuggestions(
+  sessionId: string,
+  messageId: string,
+  opts?: ApiRequestOptions,
+) {
   return apiGet<{ data: MessageSuggestionSet }>(
     `/api/v1/sessions/${sessionId}/messages/${messageId}/suggestions`,
+    opts,
   );
 }
 

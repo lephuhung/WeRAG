@@ -37,7 +37,7 @@ export const Markdown = memo(function Markdown({
   // render — same hydrate-after-paint contract as the Vue panel.
   useEffect(() => {
     if (!imageContext) return;
-    void hydrateArtifactImages(rootRef.current, imageContext, downloadArtifact);
+    return hydrateArtifactImages(rootRef.current, imageContext, downloadArtifact);
   }, [html, imageContext]);
   return <div ref={rootRef} className="chat-markdown" dangerouslySetInnerHTML={{ __html: html }} data-streaming={streaming ? "1" : undefined} />;
 });
