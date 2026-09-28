@@ -69,7 +69,6 @@ export type StreamParams = {
   query: string;
   agentEnabled?: boolean;
   agentId?: string;
-  agentSourceTenantId?: string | number;
   knowledgeBaseIds?: string[];
   knowledgeIds?: string[];
   tagIds?: string[];
@@ -137,9 +136,6 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
     query: params.query,
     agent_enabled: agentEnabled,
     ...(params.agentId ? { agent_id: params.agentId } : {}),
-    ...(params.agentSourceTenantId
-      ? { agent_source_tenant_id: Number(params.agentSourceTenantId) || params.agentSourceTenantId }
-      : {}),
     ...(params.knowledgeBaseIds?.length ? { knowledge_base_ids: params.knowledgeBaseIds } : {}),
     ...(params.knowledgeIds?.length ? { knowledge_ids: params.knowledgeIds } : {}),
     ...(params.tagIds?.length ? { tag_ids: params.tagIds } : {}),

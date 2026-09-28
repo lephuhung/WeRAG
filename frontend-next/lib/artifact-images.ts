@@ -30,6 +30,13 @@ function fileExtension(fileName: string): string {
   return dot > 0 ? base.slice(dot + 1) : "";
 }
 
+/** `LoadMessages` artifact rows carry no `index` — the download endpoint
+ * addresses files by array position, so normalize history payloads before
+ * they reach the renderer (Vue does the same `map` in botmsg.vue). */
+export function withArtifactIndexes(list: ArtifactMeta[]): ArtifactMeta[] {
+  return list.map((a, i) => ({ index: i, ...a }));
+}
+
 /** Images render inline; every other artifact kind is out of scope here. */
 export function artifactRendersAsImage(a: ArtifactMeta): boolean {
   const ext = fileExtension(a.file_name);

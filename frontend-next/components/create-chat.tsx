@@ -97,7 +97,6 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                   sid,
                   file,
                   ctx.settings.selectedAgentId || undefined,
-                  ctx.settings.selectedAgentSourceTenantId ?? undefined,
                   "auto",
                 );
                 return { id: up.data.id };
@@ -174,7 +173,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       <Orb color="rose" size={380} className="bottom-[-140px] right-[8%]" />
       <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />
 
-      <div className="relative w-full max-w-[720px]">
+      <div className="relative w-full max-w-[768px]">
         <h1 className="display-xl mb-3 text-center">What would you like to know?</h1>
         <p className="mb-10 text-center text-muted">
           Ask across your knowledge bases — answers cite their sources.

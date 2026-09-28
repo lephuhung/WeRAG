@@ -27,14 +27,12 @@ export function uploadTemporaryAttachment(
   sessionId: string,
   file: File,
   agentId?: string,
-  agentSourceTenantId?: string,
   parserEngine?: string,
   onProgress?: (percent: number) => void,
 ): Promise<AttachmentResponse> {
   const form = new FormData();
   form.append("file", file);
   if (agentId) form.append("agent_id", agentId);
-  if (agentSourceTenantId) form.append("agent_source_tenant_id", agentSourceTenantId);
   if (parserEngine) form.append("parser_engine", parserEngine);
   return apiUpload<AttachmentResponse>(
     `/api/v1/sessions/${sessionId}/attachments`,

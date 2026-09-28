@@ -285,26 +285,6 @@ export interface AgentShareResponse {
   agent_avatar?: string;
 }
 
-export interface SharedAgentInfo {
-  agent: { id: string; name: string; description?: string; [key: string]: unknown };
-  share_id: string;
-  organization_id: string;
-  org_name: string;
-  permission: string;
-  source_tenant_id: number;
-  shared_at: string;
-  shared_by_user_id?: string;
-  shared_by_username?: string;
-  /** Resolved in the source tenant by the backend — do NOT compare against
-   * the current space's search-engine list. */
-  web_search_ready: boolean;
-  /** Whether the current user disabled this shared agent (their own
-   * chat-dropdown visibility only). */
-  disabled_by_me?: boolean;
-}
-
-export type OrganizationSharedAgentItem = SharedAgentInfo & { is_mine: boolean };
-
 export interface ListAgentSharesResponse {
   shares: AgentShareResponse[];
   total: number;
@@ -622,36 +602,8 @@ export async function removeAgentShare(
   }
 }
 
-export async function listSharedAgents(): Promise<ApiResponse<SharedAgentInfo[]>> {
-  try {
-    return await apiGet("/api/v1/shared-agents");
-  } catch (error) {
-    return fail(error, "Failed to list shared agents");
-  }
-}
-
-/** All agents in an organization including those shared by the current tenant. */
-export async function listOrganizationSharedAgents(
-  orgId: string,
-): Promise<ApiResponse<OrganizationSharedAgentItem[]>> {
-  try {
-    return await apiGet(`/api/v1/organizations/${orgId}/shared-agents`);
-  } catch (error) {
-    return fail(error, "Failed to list organization shared agents");
-  }
-}
-
-/** Toggle whether a shared agent shows in MY chat dropdown. */
-export async function setSharedAgentDisabledByMe(
-  agentId: string,
-  disabled: boolean,
-): Promise<ApiResponse<void>> {
-  try {
-    return await apiPost("/api/v1/shared-agents/disabled", { agent_id: agentId, disabled });
-  } catch (error) {
-    return fail(error, "Failed to update preference");
-  }
-}
+/* The shared-agent endpoints were removed with the organization refactor —
+ * sessions resolve only the caller's own agents now. */
 
 export async function listOrgAgentShares(
   orgId: string,

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
+import { withArtifactIndexes } from "@/lib/artifact-images";
 import { ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
@@ -227,7 +228,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
   };
 
   return (
-    <div className="group mb-6 flex flex-col items-end">
+    <div className="group mb-4 flex flex-col items-end">
       {(message.attachments?.length ?? 0) > 0 && (
         <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {message.attachments!.map((a, i) => (
@@ -247,7 +248,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
           ))}
         </div>
       )}
-      <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-relaxed text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
+      <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
         {message.content}
       </div>
       <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
@@ -443,7 +444,7 @@ const AssistantMessage = memo(function AssistantMessage({
   const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
   const shownContent = stripPeopleDump(m.content, hasPeopleCard);
   return (
-    <div className="mb-6 flex gap-3 sm:gap-4">
+    <div className="mb-4 flex gap-3 sm:gap-4">
       <div className="display-sm mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px]">
         W
       </div>
@@ -719,7 +720,11 @@ function ChatBody({ id }: { id: string }) {
               attachments:
                 m.role === "user" ? attachmentsFromHistory(m) : undefined,
               artifacts:
-                m.role === "assistant" ? (m.artifacts?.length ? m.artifacts : undefined) : undefined,
+                /* History rows omit `index` — assign array position so the
+                 * download endpoint and image hydration can address them. */
+                m.role === "assistant" && m.artifacts?.length
+                  ? withArtifactIndexes(m.artifacts)
+                  : undefined,
             };
           });
           if (streamingMsgs.length > 0) {
@@ -1026,7 +1031,6 @@ function ChatBody({ id }: { id: string }) {
             activeSessionId,
             file,
             ctx.settings.selectedAgentId || undefined,
-            ctx.settings.selectedAgentSourceTenantId ?? undefined,
             "auto",
           );
           return up.data.id;
@@ -1051,7 +1055,6 @@ function ChatBody({ id }: { id: string }) {
               activeSessionId,
               a.file,
               ctx.settings.selectedAgentId || undefined,
-              ctx.settings.selectedAgentSourceTenantId ?? undefined,
               "auto",
             );
             // The per-file callback runs after its own await: a stale A
@@ -1443,7 +1446,6 @@ function ChatBody({ id }: { id: string }) {
       query: t,
       agentEnabled: isAgentMode,
       agentId: selectedAgentId,
-      agentSourceTenantId: ctx.settings.selectedAgentSourceTenantId ?? undefined,
       knowledgeBaseIds: kbIdsOverride.length > 0 ? kbIdsOverride : [...kbIdSet],
       knowledgeIds: [...fileIdSet],
       tagIds: [...tagIds],
@@ -1635,7 +1637,7 @@ function ChatBody({ id }: { id: string }) {
       </div>
 
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1040px] px-4 py-5 sm:px-6 sm:py-8">
+        <div className="mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8">
           {messages.map((m, index) =>
             m.role === "user" ? (
               <UserMessageBubble
@@ -1664,8 +1666,8 @@ function ChatBody({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-6">
-        <div className="mx-auto max-w-[760px]">
+      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6">
+        <div className="mx-auto w-full max-w-[768px]">
           <input
             ref={attachments.inputRef}
             type="file"

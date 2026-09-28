@@ -83,7 +83,9 @@ function artifactImageIndex(src: string): number | null {
   const ext = (found.file_name || "").trim().toLowerCase().split(".").pop() ?? "";
   const isImage = ext ? IMAGE_EXTENSIONS[ext] === true : (found.file_type || "").toLowerCase().startsWith("image/");
   if (!isImage) return null;
-  return found.index;
+  // The download endpoint addresses artifacts by array position; history
+  // payloads omit `index`, so fall back to the position when unset.
+  return found.index ?? activeArtifacts.indexOf(found);
 }
 
 export function renderChatMarkdown(raw: string): string {

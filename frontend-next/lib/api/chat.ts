@@ -123,7 +123,11 @@ export type ChatMessageAgentStep = {
 };
 
 export interface ArtifactMeta {
-  index: number;
+  /* Position in the owning message's artifact list — the download endpoint
+   * addresses files by it. Live `complete` events carry it; `LoadMessages`
+   * history omits it, so callers normalize by array position
+   * (withArtifactIndexes, mirroring the Vue `map((a,i)=>({index:i,...a}))`). */
+  index?: number;
   /** `resource://<handle>` — stable identity the answer body references.
    * Empty when the deployment runs without a resource catalog. */
   handle?: string;

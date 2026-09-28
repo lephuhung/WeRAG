@@ -79,7 +79,6 @@ export function useAttachments(sessionId?: string) {
         sessionId,
         file,
         settings.selectedAgentId || undefined,
-        settings.selectedAgentSourceTenantId ?? undefined,
         "auto",
         (progress) => patch(localId, { progress }),
       );

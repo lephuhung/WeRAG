@@ -344,7 +344,7 @@ html.dark {
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
     font-size: 14px;
-    line-height: 1.7;
+    line-height: 1.55;
     color: var(--color-body);
     overflow-wrap: break-word;
   }
@@ -355,7 +355,7 @@ html.dark {
     margin-bottom: 0;
   }
   .chat-markdown p {
-    margin: 0 0 12px;
+    margin: 0 0 8px;
   }
   .chat-markdown h1,
   .chat-markdown h2,
@@ -363,8 +363,8 @@ html.dark {
   .chat-markdown h4 {
     color: var(--color-ink);
     font-weight: 600;
-    line-height: 1.4;
-    margin: 20px 0 10px;
+    line-height: 1.35;
+    margin: 14px 0 6px;
   }
   .chat-markdown h1 {
     font-size: 22px;
@@ -377,11 +377,11 @@ html.dark {
   }
   .chat-markdown ul,
   .chat-markdown ol {
-    margin: 0 0 12px;
+    margin: 0 0 8px;
     padding-left: 24px;
   }
   .chat-markdown li {
-    margin: 4px 0;
+    margin: 2px 0;
   }
   .chat-markdown ul {
     list-style: disc;
@@ -390,19 +390,19 @@ html.dark {
     list-style: decimal;
   }
   .chat-markdown blockquote {
-    margin: 0 0 12px;
-    padding: 8px 16px;
+    margin: 0 0 8px;
+    padding: 6px 14px;
     border-left: 3px solid var(--color-hairline-strong);
     color: var(--color-muted);
   }
   .chat-markdown pre {
-    margin: 0 0 12px;
-    padding: 14px 16px;
+    margin: 0 0 8px;
+    padding: 12px 14px;
     background: var(--color-surface-strong);
     border-radius: var(--radius-md2);
     overflow-x: auto;
     font-size: 13.5px;
-    line-height: 1.6;
+    line-height: 1.5;
   }
   .chat-markdown code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -417,14 +417,14 @@ html.dark {
   }
   .chat-markdown table {
     width: 100%;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
     border-collapse: collapse;
     font-size: 14px;
   }
   .chat-markdown th,
   .chat-markdown td {
     border: 1px solid var(--color-hairline);
-    padding: 8px 12px;
+    padding: 6px 10px;
     text-align: left;
   }
   .chat-markdown th {
@@ -453,7 +453,7 @@ html.dark {
     text-decoration: none;
   }
   .chat-markdown hr {
-    margin: 16px 0;
+    margin: 12px 0;
     border: none;
     border-top: 1px solid var(--color-hairline);
   }
@@ -461,7 +461,7 @@ html.dark {
     max-width: 100%;
     height: auto;
     border-radius: var(--radius-md2);
-    margin: 8px 0;
+    margin: 6px 0;
   }
   .chat-markdown img.artifact-ref-image[data-img-loading="1"] {
     min-height: 160px;

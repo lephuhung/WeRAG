@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { apiGet } from "@/lib/api-client";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import {
   BUILTIN_QUICK_ANSWER_ID,
@@ -11,8 +10,9 @@ import {
 import { IconChevronDown } from "@/components/icons";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
- * agents + shared-with-me agents. Selecting writes selectedAgentId (+ source
- * tenant for shared) into the chat context, mirroring settings.selectAgent.
+ * agents. Selecting writes selectedAgentId into the chat context, mirroring
+ * settings.selectAgent. (Shared agents were dropped with the organization
+ * refactor — the backend no longer exposes them.)
  */
 
 export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
@@ -35,18 +35,7 @@ export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
 }
 
 export function AgentSelector({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { agents, sharedAgents, settings, selectAgent } = useChatContext();
-  const [sharedFull, setSharedFull] = useState<typeof sharedAgents>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    // Shared list from context may be stale; refresh names for the dropdown.
-    apiGet<{ success: boolean; data?: typeof sharedAgents }>(`/api/v1/shared-agents`)
-      .then((r) => {
-        if (r.data) setSharedFull(r.data.filter((s) => s.agent && !s.disabled_by_me));
-      })
-      .catch(() => setSharedFull([]));
-  }, [open]);
+  const { agents, settings, selectAgent } = useChatContext();
 
   if (!open) return null;
   const builtins = agents.filter((a) => a.is_builtin);
@@ -57,12 +46,11 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
     (a) => a.id !== BUILTIN_QUICK_ANSWER_ID && a.id !== BUILTIN_SMART_REASONING_ID,
   );
 
-  const pick = (id: string, sourceTenantId?: string | null) => {
-    selectAgent(id, sourceTenantId ?? null);
+  const pick = (id: string) => {
+    selectAgent(id);
     onClose();
   };
-  const current = (id: string, source?: string | null) =>
-    settings.selectedAgentId === id && (settings.selectedAgentSourceTenantId ?? null) === (source ?? null);
+  const current = (id: string) => settings.selectedAgentId === id;
 
   return (
     <>
@@ -84,20 +72,6 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
           {customs.map((a) => (
             <AgentRow key={a.id} name={a.name} desc={a.description} active={current(a.id)} onClick={() => pick(a.id)} />
           ))}
-          {(sharedFull.length > 0 || sharedAgents.length > 0) && (
-            <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">Shared with me</div>
-          )}
-          {(sharedFull.length > 0 ? sharedFull : sharedAgents)
-            .map((s) => (
-              <AgentRow
-                key={`${s.agent.id}-${s.source_tenant_id}`}
-                name={s.agent.name}
-                desc={s.org_name}
-                badge="shared"
-                active={current(s.agent.id, String(s.source_tenant_id))}
-                onClick={() => pick(s.agent.id, String(s.source_tenant_id))}
-              />
-            ))}
         </div>
       </div>
     </>
@@ -134,13 +108,11 @@ export function useAgentModelSync() {
 function AgentRow({
   name,
   desc,
-  badge,
   active,
   onClick,
 }: {
   name: string;
   desc?: string;
-  badge?: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -154,7 +126,6 @@ function AgentRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-[14px] font-medium text-ink">
           <span className="truncate">{name}</span>
-          {badge && <span className="badge-pill shrink-0">{badge}</span>}
           {active && <span className="caption shrink-0 text-muted">current</span>}
         </span>
         {desc && <span className="caption block truncate text-muted">{desc}</span>}

@@ -52,14 +52,6 @@ export type AgentSummary = {
   };
 };
 
-export type SharedAgentSummary = {
-  agent: { id: string; name: string; description?: string };
-  source_tenant_id: number;
-  org_name: string;
-  web_search_ready?: boolean;
-  disabled_by_me?: boolean;
-};
-
 export type KbSummary = {
   id: string;
   name: string;
@@ -86,7 +78,6 @@ export type ChatSettings = {
   selectedSkills: string[];
   isAgentEnabled: boolean;
   selectedAgentId: string;
-  selectedAgentSourceTenantId: string | null;
   webSearchEnabled: boolean;
   localBrowserEnabled: boolean;
   selectedChatModelId: string;
@@ -104,7 +95,6 @@ const DEFAULTS: ChatSettings = {
   selectedSkills: [],
   isAgentEnabled: false,
   selectedAgentId: BUILTIN_QUICK_ANSWER_ID,
-  selectedAgentSourceTenantId: null,
   webSearchEnabled: false,
   localBrowserEnabled: false,
   selectedChatModelId: "",
@@ -115,7 +105,7 @@ function loadSettings(): ChatSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<ChatSettings>;
-    return {
+    const merged = {
       ...DEFAULTS,
       ...parsed,
       selectedKnowledgeBases: parsed.selectedKnowledgeBases ?? [],
@@ -126,6 +116,9 @@ function loadSettings(): ChatSettings {
       selectedSkills: parsed.selectedSkills ?? [],
       selectedAgentId: parsed.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
     };
+    // Field removed with the shared-agent feature; scrub stale persisted copies.
+    delete (merged as Record<string, unknown>).selectedAgentSourceTenantId;
+    return merged;
   } catch {
     return { ...DEFAULTS };
   }
@@ -157,7 +150,7 @@ type Ctx = {
   removeMCPService: (id: string) => void;
   addSkill: (name: string) => void;
   removeSkill: (name: string) => void;
-  selectAgent: (id: string, sourceTenantId?: string | null) => void;
+  selectAgent: (id: string) => void;
   toggleWebSearch: (on: boolean) => void;
   toggleLocalBrowser: (on: boolean) => void;
   setModel: (id: string) => void;
@@ -166,7 +159,6 @@ type Ctx = {
   fileNames: Record<string, string>;
   // space resources
   agents: AgentSummary[];
-  sharedAgents: SharedAgentSummary[];
   knowledgeBases: KbSummary[];
   models: ModelSummary[];
   mcpServices: Array<{ id: string; name: string; description?: string; usage_instructions?: string }>;
@@ -183,7 +175,6 @@ const ChatContext = createContext<Ctx | null>(null);
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<ChatSettings>(DEFAULTS);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [sharedAgents, setSharedAgents] = useState<SharedAgentSummary[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KbSummary[]>([]);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [mcpServices, setMcpServices] = useState<Ctx["mcpServices"]>([]);
@@ -213,10 +204,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
        * accepted-invitee KBs, so the legacy shared-KB endpoint merge
        * is retired here. Stale persisted IDs stay subject to server
        * authorization at retrieval time. */
-      const [agentsRes, sharedRes, kbRows, modelsRes, mcpRes, skillsRes, providersRes] =
+      const [agentsRes, kbRows, modelsRes, mcpRes, skillsRes, providersRes] =
         await Promise.all([
           apiGet<{ success: boolean; data?: AgentSummary[] }>(`/api/v1/agents`).catch(() => null),
-          apiGet<{ success: boolean; data?: SharedAgentSummary[] }>(`/api/v1/shared-agents`).catch(() => null),
           listKnowledgeBases().catch(() => null),
           apiGet<{ success: boolean; data?: ModelSummary[] }>(`/api/v1/models`).catch(() => null),
           apiGet<{ success: boolean; data?: Ctx["mcpServices"] }>(`/api/v1/mcp-services`).catch(() => null),
@@ -226,7 +216,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ).catch(() => null),
         ]);
       if (agentsRes?.data) setAgents(agentsRes.data);
-      if (sharedRes?.data) setSharedAgents(sharedRes.data.filter((s) => s.agent && !s.disabled_by_me));
       setKnowledgeBases(
         (kbRows ?? []).map((k) => ({
           id: k.id,
@@ -361,14 +350,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [settings.selectedSkills, update],
   );
   const selectAgent = useCallback(
-    (id: string, sourceTenantId?: string | null) => {
+    (id: string) => {
       // Mirrors settings.selectAgent: switching agent resets the per-turn websearch flag.
       const isQuickAnswer = id === BUILTIN_QUICK_ANSWER_ID;
       const targetAgent = agents.find((a) => a.id === id);
       const agentModelId = targetAgent?.config?.model_id;
       update({
         selectedAgentId: id,
-        selectedAgentSourceTenantId: sourceTenantId ? String(sourceTenantId) : null,
         webSearchEnabled: false,
         isAgentEnabled: !isQuickAnswer,
         ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
@@ -409,16 +397,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
-  const selectedAgent = useMemo<AgentSummary | null>(() => {
-    // Shared agents win on id collision (builtin ids exist in every tenant).
-    if (settings.selectedAgentSourceTenantId) {
-      const shared = sharedAgents.find(
-        (s) => s.agent.id === settings.selectedAgentId && String(s.source_tenant_id) === settings.selectedAgentSourceTenantId,
-      );
-      if (shared) return { id: shared.agent.id, name: shared.agent.name, description: shared.agent.description, is_builtin: false };
-    }
-    return agents.find((a) => a.id === settings.selectedAgentId) ?? null;
-  }, [agents, sharedAgents, settings.selectedAgentId, settings.selectedAgentSourceTenantId]);
+  const selectedAgent = useMemo<AgentSummary | null>(
+    () => agents.find((a) => a.id === settings.selectedAgentId) ?? null,
+    [agents, settings.selectedAgentId],
+  );
 
   const isAgentStreamMode = useMemo(() => {
     // Mirrors isAgentStreamAgentId: quick-answer → RAG pipeline, everything else → agent pipeline.
@@ -500,7 +482,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       removeMention,
       fileNames,
       agents,
-      sharedAgents,
       knowledgeBases,
       models,
       mcpServices,
@@ -534,7 +515,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       removeMention,
       fileNames,
       agents,
-      sharedAgents,
       knowledgeBases,
       models,
       mcpServices,
