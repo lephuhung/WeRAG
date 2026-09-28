@@ -134,11 +134,11 @@ export function AccountMenu() {
         <div
           role="dialog"
           aria-label={name || t("user.settings")}
-          className="card absolute bottom-full left-0 z-50 mb-2 w-[272px] max-w-[calc(100vw-1.5rem)] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
+          className="acct-menu card absolute bottom-full left-0 z-50 mb-2 w-[272px] max-w-[calc(100vw-1.5rem)] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
         >
           {/* account card */}
           <div className="flex items-center gap-3 px-2.5 py-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-strong text-[13px] font-medium text-ink">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-[13px] font-semibold text-white">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset
                 <img src={avatarUrl} alt="" className="h-9 w-9 object-cover" />

@@ -69,13 +69,13 @@ export function GeneralSettings() {
   return (
     <div className="flex flex-col divide-y divide-hairline">
       {/* language */}
-      <div className="flex items-center justify-between gap-8 py-4">
+      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
         <div className="min-w-0">
           <label className="title-sm block">{t("settings.langTitle")}</label>
           <p className="caption mt-1 text-muted">{t("settings.langDesc")}</p>
         </div>
         <Select
-          className="w-[280px] shrink-0"
+          className="w-full sm:w-[280px] sm:shrink-0"
           value={locale}
           onChange={(v) => {
             if (v === "en" || v === "vi") setLocale(v);
@@ -88,13 +88,13 @@ export function GeneralSettings() {
       </div>
 
       {/* theme */}
-      <div className="flex items-center justify-between gap-8 py-4">
+      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
         <div className="min-w-0">
           <label className="title-sm block">{t("settings.themeTitle")}</label>
           <p className="caption mt-1 text-muted">{t("settings.themeDesc")}</p>
         </div>
         <Select
-          className="w-[280px] shrink-0"
+          className="w-full sm:w-[280px] sm:shrink-0"
           value={theme}
           onChange={(v) => setTheme(v as ThemeMode)}
           options={[
@@ -106,12 +106,12 @@ export function GeneralSettings() {
       </div>
 
       {/* font size */}
-      <div className="flex items-center justify-between gap-8 py-4">
+      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
         <div className="min-w-0">
           <label className="title-sm block">{t("settings.fontSizeTitle")}</label>
           <p className="caption mt-1 text-muted">{t("settings.fontSizeDesc")}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex items-center gap-1">
           {fontSizeOptions.map((opt) => (
             <button
               key={opt.value}

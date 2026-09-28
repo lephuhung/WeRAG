@@ -293,7 +293,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
                         {badge && <span className="ml-1.5 text-[11px] text-muted-soft">{badge}</span>}
                       </button>
                       {open && body && (
-                        <div className="mt-0.5 max-h-[240px] overflow-y-auto pr-1 text-[12.5px] [&_.chat-markdown]:text-muted">
+                        <div className="mt-0.5 max-h-[240px] overflow-y-auto pr-1 text-[12.5px] [&_.chat-markdown]:!text-[12.5px] [&_.chat-markdown]:text-muted">
                           {/* While the turn is still streaming, render the body
                               as cheap plain text — a Markdown re-parse of every
                               expanded card per delta starves useDeferredValue
@@ -379,7 +379,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
             )}
           </ol>
         ) : (
-          <div className="ml-1 border-l-2 border-hairline pl-3.5 pb-1 pt-0.5 text-[13px] leading-relaxed text-muted [&_.chat-markdown]:text-muted">
+          <div className="ml-1 border-l-2 border-hairline pl-3.5 pb-1 pt-0.5 text-[13px] leading-relaxed text-muted [&_.chat-markdown]:!text-[13px] [&_.chat-markdown]:text-muted">
             {hasTools && (
               <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-muted-soft">
                 {toolsPending ? (

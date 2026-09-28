@@ -24,6 +24,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { canSeeSection, type SettingsRoleKey } from "@/components/settings/nav-config";
+import { Select } from "@/components/select";
 import { InModalNavContext } from "@/components/system/in-modal-nav";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import { ProfileSettings } from "@/components/settings/profile-settings";
@@ -303,12 +304,12 @@ export function SettingsModal({
               />
             </div>
           </div>
-          <nav className="flex min-h-0 flex-1 gap-0.5 overflow-x-auto px-3 py-3 max-sm:flex-row sm:flex-col sm:overflow-y-auto sm:overflow-x-hidden">
+          <nav className="hidden min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3 sm:flex sm:overflow-x-hidden">
             {visibleGroups.length === 0 && (
               <p className="caption px-3 py-2 text-muted">{t("settingsModal.noResults")}</p>
             )}
             {visibleGroups.map((g) => (
-              <div key={g.key} className="max-sm:flex max-sm:gap-0.5 sm:mb-1">
+              <div key={g.key} className="sm:mb-1">
                 <div className="caption-uppercase px-3 pb-1.5 pt-2.5 text-muted-soft max-sm:hidden">
                   {t(g.labelKey)}
                 </div>
@@ -333,6 +334,19 @@ export function SettingsModal({
               </div>
             ))}
           </nav>
+          {/* Mobile: the whole nav collapses into one dropdown. */}
+          <div className="px-3 py-3 sm:hidden">
+            <Select
+              value={activeKey}
+              onChange={(key) => {
+                const it = visibleGroups.flatMap((grp) => grp.items).find((x) => x.key === key);
+                if (it) openSection(it);
+              }}
+              options={visibleGroups.flatMap((grp) =>
+                grp.items.map((it) => ({ value: it.key, label: label(it) })),
+              )}
+            />
+          </div>
         </div>
 
         {/* content pane */}

@@ -340,6 +340,15 @@ html.dark {
     background: var(--color-surface-strong);
     color: var(--color-ink);
   }
+  /* Compact scope for the account dropdown — smaller than the settings rail. */
+  .acct-menu .nav-item {
+    font-size: 12.5px;
+    padding: 6px 10px;
+  }
+  .acct-menu .nav-item svg {
+    width: 16px;
+    height: 16px;
+  }
 
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
@@ -360,6 +369,9 @@ html.dark {
   }
   .chat-markdown p:last-child {
     margin-bottom: 0;
+  }
+  .chat-markdown li {
+    text-align: justify;
   }
   .chat-markdown h1,
   .chat-markdown h2,

@@ -260,7 +260,7 @@ export function KbSettingsModal({
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.wikiGranularity")}</span>
                   <Select
-                    className="w-[280px]"
+                    className="w-full max-w-[280px] sm:w-[280px]"
                     value={draft.wiki_config.extraction_granularity}
                     onChange={(v) =>
                       patch("wiki_config", { ...draft.wiki_config, extraction_granularity: v as "focused" | "standard" | "exhaustive" })
@@ -355,7 +355,7 @@ export function KbSettingsModal({
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.chunkStrategy")}</span>
                   <Select
-                    className="w-[280px]"
+                    className="w-full max-w-[280px] sm:w-[280px]"
                     value={draft.chunking_config.strategy}
                     onChange={(v) => patch("chunking_config", { ...draft.chunking_config, strategy: v })}
                     options={STRATEGY_TIERS.map((s) => ({

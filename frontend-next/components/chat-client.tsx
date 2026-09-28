@@ -387,9 +387,9 @@ function CompactReferencesList({
             type="button"
             onClick={() => onSelectRef?.(r, i)}
             title={name}
-            className="group flex max-w-[220px] items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[12.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 cursor-pointer select-none text-left"
+            className="group flex max-w-[180px] items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/80 px-2 py-0.5 text-[11.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 cursor-pointer select-none text-left"
           >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-semibold text-white transition-colors group-hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:group-hover:bg-emerald-400">
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-semibold text-white transition-colors group-hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:group-hover:bg-emerald-400">
               {i + 1}
             </span>
             {isWeb ? (
@@ -451,7 +451,8 @@ const AssistantMessage = memo(function AssistantMessage({
   const shownContent = stripPeopleDump(m.content, hasPeopleCard);
   return (
     <div className="mb-4 flex gap-3 sm:gap-4">
-      <div className="display-sm mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px]">
+      {/* Avatar hidden on phones — every pixel of width goes to the text. */}
+      <div className="display-sm mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px] sm:flex">
         W
       </div>
       <div className="w-full min-w-0 flex-1 pt-1.5">
