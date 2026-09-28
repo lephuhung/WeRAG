@@ -59,7 +59,6 @@ import {
   IconKey,
   IconLock,
   IconOrg,
-  IconParserEngine,
   IconPower,
   IconPulse,
   IconSearch,
@@ -74,8 +73,8 @@ const SharingPage = lazy(() => import("@/app/platform/system/workspace/sharing/p
 const McpServersPage = lazy(() => import("@/app/platform/system/extensions/mcp/page"));
 const AgentsPage = lazy(() => import("@/app/platform/system/extensions/agents/page"));
 const ModelCatalogPage = lazy(() => import("@/app/platform/system/models/page"));
-const EnginesPage = lazy(() => import("@/app/platform/system/engines/page"));
 const RuntimeQueuesPage = lazy(() => import("@/app/platform/system/engines/queues/page"));
+
 const AdminOverviewPage = lazy(() => import("@/app/platform/system/admin/page"));
 const AdminUsersPage = lazy(() => import("@/app/platform/system/admin/users/page"));
 const AdminLogsPage = lazy(() => import("@/app/platform/system/admin/logs/page"));
@@ -145,23 +144,16 @@ const GROUPS: SettingsGroup[] = [
     ],
   },
   {
-    key: "models",
-    labelKey: "systemNav.models",
+    key: "engines",
+    labelKey: "settingsNav.config",
     items: [
       { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "owner", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
-    ],
-  },
-  {
-    key: "engines",
-    labelKey: "systemNav.engines",
-    items: [
-      { key: "engines", labelKey: "systemNav.engines", fallback: "Engines", icon: IconParserEngine, minRole: "system", render: () => <EnginesPage />, route: `${SYS}/engines` },
-      { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector`, subOnly: true, parent: "engines" },
-      { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage`, subOnly: true, parent: "engines" },
-      { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search`, subOnly: true, parent: "engines" },
-      { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox`, subOnly: true, parent: "engines" },
+      { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector` },
+      { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage` },
+      { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
+      { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
 
-      { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, minRole: "system", render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues`, subOnly: true, parent: "engines" },
+      { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, minRole: "system", render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
     ],
   },
   {
@@ -169,8 +161,8 @@ const GROUPS: SettingsGroup[] = [
     labelKey: "systemNav.admin",
     items: [
       { key: "overview", labelKey: "systemNav.overview", fallback: "Overview", icon: IconPulse, minRole: "system", render: () => <AdminOverviewPage />, route: `${SYS}/admin` },
-      { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, minRole: "system", render: () => <AdminUsersPage />, route: `${SYS}/admin/users`, subOnly: true, parent: "overview" },
-      { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, minRole: "system", render: () => <AdminLogsPage />, route: `${SYS}/admin/logs`, subOnly: true, parent: "overview" },
+      { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, minRole: "system", render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
+      { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, minRole: "system", render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
     ],
   },
 ];

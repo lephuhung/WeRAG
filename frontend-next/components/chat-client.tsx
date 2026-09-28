@@ -470,6 +470,10 @@ const AssistantMessage = memo(function AssistantMessage({
             onViewReferences={() => onOpenDrawer(m.references || [])}
           />
         )}
+        {/* Faint rule separating the reasoning timeline from the answer. */}
+        {(m.thinking || (m.steps?.length ?? 0) > 0) && shownContent && (
+          <div className="my-3 h-px w-full bg-hairline" aria-hidden="true" />
+        )}
         {shownContent ? (
           <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
             <Markdown text={shownContent} streaming={m.streaming} artifacts={m.artifacts} imageContext={m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null} />

@@ -343,8 +343,8 @@ html.dark {
 
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
-    font-size: 14px;
-    line-height: 1.55;
+    font-size: 15px;
+    line-height: 1.75;
     color: var(--color-body);
     overflow-wrap: break-word;
   }
@@ -355,7 +355,11 @@ html.dark {
     margin-bottom: 0;
   }
   .chat-markdown p {
-    margin: 0 0 8px;
+    margin: 0 0 16px;
+    text-align: justify;
+  }
+  .chat-markdown p:last-child {
+    margin-bottom: 0;
   }
   .chat-markdown h1,
   .chat-markdown h2,

@@ -273,11 +273,11 @@ export function Composer({
           <button
             onClick={() => toggleWebSearch(!websearchOn)}
             title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
-            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[12.5px] font-medium transition-colors sm:px-2.5 ${
-              websearchOn ? "border-[#cfe1fd] bg-[#edf5ff] text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[12.5px] font-medium transition-colors sm:px-2.5 ${
+              websearchOn ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]" : "text-muted hover:bg-surface-strong hover:text-ink"
             } ${webSearchReady ? "" : "opacity-50"}`}
           >
-            <IconGlobe className="h-3.5 w-3.5" /> {websearchOn ? "Web on" : "Web"}
+            <IconGlobe className="h-3.5 w-3.5" /> Web
           </button>
 
           <div className="relative">
@@ -288,8 +288,8 @@ export function Composer({
                 setAttachOpen(next);
               }}
               title={sessionId ? "Attach files or images" : "Attach (upload after session is created)"}
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                images.length + attachments.length > 0 ? "border-ink text-ink" : "border-hairline-strong text-muted hover:border-ink hover:text-ink"
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                images.length + attachments.length > 0 ? "bg-surface-strong text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
               <IconPaperclip className="h-3.5 w-3.5" />
@@ -300,7 +300,7 @@ export function Composer({
             {attachOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setAttachOpen(false)} />
-                <div className="card absolute bottom-full left-0 z-50 mb-2 w-[200px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+                <div className="card absolute bottom-full left-0 z-50 mb-2 w-[230px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
                   <button
                     onClick={() => {
                       setAttachOpen(false);
@@ -309,9 +309,9 @@ export function Composer({
                     className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink"
                   >
                     <IconDoc className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block">Upload file</span>
-                      <span className="caption block text-muted">PDF, DOCX, XLSX…</span>
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="block whitespace-nowrap">Upload file</span>
+                      <span className="caption block whitespace-nowrap text-muted">PDF, DOCX, XLSX…</span>
                     </span>
                   </button>
                   <button
@@ -324,9 +324,9 @@ export function Composer({
                     className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-body"
                   >
                     <IconImage className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block">Upload image</span>
-                      <span className="caption block text-muted">
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="block whitespace-nowrap">Upload image</span>
+                      <span className="caption block whitespace-nowrap text-muted">
                         {imageCapable ? "JPEG, PNG, GIF, WebP" : "Not supported by this agent"}
                       </span>
                     </span>

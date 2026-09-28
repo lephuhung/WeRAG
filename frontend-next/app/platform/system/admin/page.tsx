@@ -13,9 +13,7 @@ import {
   type SystemStats,
 } from "@/lib/api/system";
 import { MessageHeatmap } from "@/components/system/message-heatmap";
-import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
-import { IconClock, IconOrg } from "@/components/icons";
 
 function formatUptime(seconds?: number): string {
   if (seconds === undefined) return "—";
@@ -87,23 +85,6 @@ function SystemOverviewBody() {
 
   const maxDocCount = Math.max(1, ...(stats?.documents.by_status ?? []).map((s) => s.count));
 
-  const adminCards: SectionCard[] = [
-    {
-      key: "users",
-      title: t("adm.cardUsers"),
-      desc: t("adm.cardUsersDesc"),
-      icon: <IconOrg className="h-5 w-5" />,
-      href: "/platform/system/admin/users",
-    },
-    {
-      key: "logs",
-      title: t("adm.cardLogs"),
-      desc: t("adm.cardLogsDesc"),
-      icon: <IconClock className="h-5 w-5" />,
-      href: "/platform/system/admin/logs",
-    },
-  ];
-
   const infoRows: { label: string; value: string }[] = info
     ? [
         { label: t("adm.infoVersion"), value: info.version },
@@ -128,10 +109,6 @@ function SystemOverviewBody() {
           {t("adm.migrationError", { err: info.db_migration_error })}
         </p>
       )}
-
-      <div className="mb-8">
-        <SectionCardGrid cards={adminCards} />
-      </div>
 
       {stats && (
         <>

@@ -17,6 +17,7 @@ import {
   IconChevronUp,
   IconLogout,
   IconSettings,
+  IconUser,
 } from "@/components/icons";
 
 const LOCALES: { id: Locale; label: string }[] = [
@@ -107,16 +108,13 @@ export function AccountMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-2 text-left transition-colors hover:bg-surface-strong"
+        className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-strong"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-medium text-ink">
-          {initials}
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-muted">
+          <IconUser className="h-4 w-4" />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13.5px] font-medium text-ink">
-            {name || "—"}
-          </span>
-          <span className="caption block truncate text-muted">{roleLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
+          {name || "—"}
         </span>
         {isTenantAdmin && pending > 0 && (
           <span className="badge-pill shrink-0 border border-amber-500/20 bg-amber-500/10 text-amber-600">

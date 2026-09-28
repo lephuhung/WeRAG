@@ -21,10 +21,10 @@ export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
-      className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
+      className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
         isAgentStreamMode
-          ? "border-[#cfe1fd] bg-[#edf5ff] text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]"
-          : "border-hairline-strong text-body hover:border-ink hover:text-ink"
+          ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]"
+          : "text-body hover:bg-surface-strong hover:text-ink"
       }`}
       title={selectedAgent?.description ?? label}
     >
