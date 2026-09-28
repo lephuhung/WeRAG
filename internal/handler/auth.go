@@ -47,6 +47,10 @@ type AuthHandler struct {
 	// fixtures — the share-link endpoints respond 503 rather than
 	// blocking the rest of the auth surface.
 	invitationSvc interfaces.TenantInvitationService
+	// fileService persists avatar uploads (POST /auth/me/avatar) and is
+	// required for that endpoint; when nil the endpoint responds 503 so
+	// legacy test fixtures keep constructing the handler without it.
+	fileService interfaces.FileService
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -65,6 +69,7 @@ func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService, tenantService interfaces.TenantService,
 	systemSettingSvc interfaces.SystemSettingService,
 	invitationSvc interfaces.TenantInvitationService,
+	fileServices ...interfaces.FileService,
 ) *AuthHandler {
 	// Boot-time guard: a nil-or-empty Auth section silently disables the
 	// invite_only gate (see Register below). Emit a loud one-shot log
@@ -76,13 +81,17 @@ func NewAuthHandler(configInfo *config.Config,
 				"registration_mode enforcement is disabled. This is almost certainly a wiring bug.",
 			configInfo)
 	}
-	return &AuthHandler{
+	h := &AuthHandler{
 		configInfo:       configInfo,
 		userService:      userService,
 		tenantService:    tenantService,
 		systemSettingSvc: systemSettingSvc,
 		invitationSvc:    invitationSvc,
 	}
+	if len(fileServices) > 0 {
+		h.fileService = fileServices[0]
+	}
+	return h
 }
 
 // resolveRegistrationMode returns the currently active registration mode.
@@ -743,6 +752,68 @@ func (h *AuthHandler) UpdateMyPreferences(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    prefs,
+	})
+}
+
+// updateMyProfileRequest is the body for PUT /auth/me. Username is the
+// display name shown across the UI; it must stay unique.
+type updateMyProfileRequest struct {
+	Username string `json:"username" binding:"required,min=2,max=50"`
+}
+
+// UpdateMyProfile godoc
+// @Summary      Update 当前用户的显示名称
+// @Description  修改当前登录用户的 username（全站展示名）。名称全局唯一，2–50 个字符。
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request  body      updateMyProfileRequest  true  "Profile update"
+// @Success      200      {object}  map[string]interface{}  "Update 后的用户信息"
+// @Failure      400      {object}  errors.AppError         "请求参数错误或名称已被占用"
+// @Failure      401      {object}  errors.AppError         "未授权"
+// @Security     Bearer
+// @Router       /auth/me [put]
+func (h *AuthHandler) UpdateMyProfile(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	user, err := h.userService.GetCurrentUser(ctx)
+	if err != nil {
+		c.Error(errors.NewUnauthorizedError("Failed to get user information").WithDetails(err.Error()))
+		return
+	}
+
+	var req updateMyProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("Invalid profile request").WithDetails(err.Error()))
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		c.Error(errors.NewValidationError("Username cannot be empty"))
+		return
+	}
+	if username != user.Username {
+		if existing, lookupErr := h.userService.GetUserByUsername(ctx, username); lookupErr == nil && existing != nil && existing.ID != user.ID {
+			c.Error(errors.NewConflictError("This display name is already taken"))
+			return
+		}
+	}
+
+	user.Username = username
+	if err := h.userService.UpdateUser(ctx, user); err != nil {
+		logger.Errorf(ctx, "Failed to update profile for user %s: %v", user.Email, err)
+		c.Error(errors.NewBadRequestError("Failed to update profile").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+		},
 	})
 }
 

@@ -2,7 +2,7 @@
  * i18n `t()` fallbacks are replaced with plain strings — callers should map
  * ApiError.message through useT() where a localized string is wanted.
  */
-import { apiGet, apiPost, apiPut } from "@/lib/api-client";
+import { apiGet, apiPost, apiPut, apiUpload } from "@/lib/api-client";
 
 // ---- request/response types ----------------------------------------------
 
@@ -360,6 +360,39 @@ export async function updateMyPreferences(
     return {
       success: false,
       message: error instanceof Error ? error.message : "Failed to update preferences",
+    };
+  }
+}
+
+/* Update the caller's display name (username). Backend: PUT /auth/me. */
+export async function updateMyProfile(
+  username: string,
+): Promise<{ success: boolean; data?: { id: string; username: string; email: string }; message?: string }> {
+  try {
+    return await apiPut("/api/v1/auth/me", { username });
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to update profile",
+    };
+  }
+}
+
+/* Upload the signed-in user's avatar. The backend stores the image and
+ * returns its provider:// path, which then shows up on /auth/me as
+ * user.avatar; render it back through the authenticated /files proxy
+ * (see lib/avatar.ts). */
+export async function uploadMyAvatar(
+  file: File,
+): Promise<{ success: boolean; data?: { avatar: string }; message?: string }> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    return await apiUpload("/api/v1/auth/me/avatar", form);
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to upload avatar",
     };
   }
 }

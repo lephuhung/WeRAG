@@ -233,6 +233,11 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	// for any valid API key. Chat clients / MCP call it to discover "who am I";
 	// leaving it default-deny was why scoped keys got a 403 here.
 	g.apiKeyRoute(r, http.MethodGet, "/auth/me", apiKeyAny(), handler.GetCurrentUser)
+	r.PUT("/auth/me", handler.UpdateMyProfile)
+	// Avatar upload is the caller's own profile asset: any authenticated
+	// user may replace their own avatar; the handler derives identity from
+	// the token, never from the request.
+	r.POST("/auth/me/avatar", handler.UploadMyAvatar)
 	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
 	r.POST("/auth/change-password", handler.ChangePassword)
 }

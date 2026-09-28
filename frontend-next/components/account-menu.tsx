@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listAbbreviations } from "@/lib/api/abbreviations";
 import { useAuth, useTenantRole } from "@/lib/auth";
+import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
 import { SettingsModal } from "@/components/settings-modal";
 import {
@@ -17,7 +18,6 @@ import {
   IconChevronUp,
   IconLogout,
   IconSettings,
-  IconUser,
 } from "@/components/icons";
 
 const LOCALES: { id: Locale; label: string }[] = [
@@ -95,6 +95,7 @@ export function AccountMenu() {
 
   const name = auth.user?.username ?? "";
   const initials = (name || "?").slice(0, 2).toUpperCase();
+  const avatarUrl = useAvatarUrl(auth.user?.avatar);
   const roleLabel = isSystemAdmin
     ? t("acct.roleSystem")
     : role === "admin" || role === "owner"
@@ -110,8 +111,13 @@ export function AccountMenu() {
         aria-expanded={open}
         className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-strong"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-muted">
-          <IconUser className="h-4 w-4" />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-[11px] font-semibold text-white">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset
+            <img src={avatarUrl} alt="" className="h-7 w-7 object-cover" />
+          ) : (
+            initials
+          )}
         </span>
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
           {name || "—"}
@@ -132,8 +138,13 @@ export function AccountMenu() {
         >
           {/* account card */}
           <div className="flex items-center gap-3 px-2.5 py-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[13px] font-medium text-ink">
-              {initials}
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-strong text-[13px] font-medium text-ink">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset
+                <img src={avatarUrl} alt="" className="h-9 w-9 object-cover" />
+              ) : (
+                initials
+              )}
             </span>
             <div className="min-w-0">
               <div className="truncate text-[14px] font-medium text-ink">{name}</div>
