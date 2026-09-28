@@ -257,7 +257,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
       <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
         {message.content}
       </div>
-      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
+      {/* Touch has no hover — actions stay visible on phones, fade-in on desktop. */}
+      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
         {onEdit && (
           <button
             type="button"
