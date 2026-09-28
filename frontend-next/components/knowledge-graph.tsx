@@ -31,8 +31,8 @@ interface PosEdge {
 
 const WIDTH = 1000;
 const HEIGHT = 650;
-const COLLISION_DISTANCE = 85; // Minimum distance between node centers to avoid overlap
-const SPRING_LENGTH = 140; // Rest length of link springs
+const COLLISION_DISTANCE = 92; // Minimum distance between node centers to avoid overlap
+const SPRING_LENGTH = 175; // Rest length of link springs
 
 export function KnowledgeGraph({
   kbId,
@@ -175,8 +175,9 @@ export function KnowledgeGraph({
             dist = Math.sqrt(dx * dx + dy * dy);
           }
 
-          // Coulomb repulsion
-          const repForce = (7000 / (dist * dist + 400)) * alpha;
+          // Coulomb repulsion — softer falloff so far pairs still drift apart
+          // instead of forming a tight lattice under the collision constraint.
+          const repForce = (12000 / (dist * dist + 2500)) * alpha;
           const fx = (dx / dist) * repForce;
           const fy = (dy / dist) * repForce;
 
@@ -185,8 +186,10 @@ export function KnowledgeGraph({
           b.vx += fx;
           b.vy += fy;
 
-          // Hard collision constraint
-          const minAllowedDist = a.radius + b.radius + COLLISION_DISTANCE;
+          // Hard collision constraint. The jitter breaks the square lattice
+          // that uniform min-distance packing otherwise produces.
+          const minAllowedDist =
+            (a.radius + b.radius + COLLISION_DISTANCE) * (0.85 + Math.random() * 0.3);
           if (dist < minAllowedDist) {
             const overlap = (minAllowedDist - dist) * 0.5 * alpha;
             const pushX = (dx / dist) * overlap;
@@ -219,25 +222,20 @@ export function KnowledgeGraph({
         b.vy -= fy;
       }
 
-      // 3. Centering force to prevent drift
+      // 3. Centering force — kept weak: peripheral nodes settle at radii that
+      // vary with connectivity instead of a uniform ring/rectangle. The view
+      // auto-fits anyway, so the layout may exceed the nominal canvas.
       for (const n of initialNodes) {
         const cdx = WIDTH / 2 - n.x;
         const cdy = HEIGHT / 2 - n.y;
-        n.vx += cdx * 0.012 * alpha;
-        n.vy += cdy * 0.012 * alpha;
+        n.vx += cdx * 0.004 * alpha;
+        n.vy += cdy * 0.004 * alpha;
 
         // Apply velocity with damping
         n.x += n.vx * dt;
         n.y += n.vy * dt;
         n.vx *= 0.6;
         n.vy *= 0.6;
-
-        // Soft canvas boundary constraints
-        const pad = 60;
-        if (n.x < pad) n.x = pad;
-        if (n.x > WIDTH - pad) n.x = WIDTH - pad;
-        if (n.y < pad) n.y = pad;
-        if (n.y > HEIGHT - pad) n.y = HEIGHT - pad;
       }
     }
 
