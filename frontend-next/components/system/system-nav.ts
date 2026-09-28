@@ -140,13 +140,6 @@ export const SYSTEM_TABS: SystemTab[] = [
         labelKey: "systemNav.pipeline",
         items: [
           {
-            key: "parse-defaults",
-            label: "Parse defaults",
-            labelKey: "pd.title",
-            href: "/platform/system/engines/parse-defaults",
-            minRole: "system",
-          },
-          {
             key: "queues",
             label: "Runtime queues",
             labelKey: "systemNav.queues",

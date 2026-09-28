@@ -16,14 +16,11 @@ import {
   IconEdit,
   IconPlus,
   IconPower,
-  IconPulse,
-  IconStorageEngine,
   IconTrash,
 } from "@/components/icons";
 import { Select } from "@/components/select";
-import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
-import { OllamaSettings } from "@/components/settings/ollama-settings";
-import { WeKnoraCloudSettings } from "@/components/settings/weknora-cloud-settings";
+import { useInSettingsModal } from "@/components/system/in-modal-nav";
+import { useT } from "@/lib/i18n";
 
 const EMPTY_FORM = { name: "", provider: "", type: "KnowledgeQA", baseUrl: "", apiKey: "" };
 
@@ -137,8 +134,6 @@ const IconModelDefault = ({ className }: { className?: string }) => (
 );
 
 type TypeConfig = {
-  name: string;
-  sub: string;
   icon: (props: { className?: string }) => React.ReactNode;
   color: string;
   bg: string;
@@ -148,8 +143,6 @@ type TypeConfig = {
 
 const TYPE_CONFIG: Record<string, TypeConfig> = {
   KnowledgeQA: {
-    name: "Chat / LLM",
-    sub: "Text generation & QA",
     icon: IconModelChat,
     color: "text-blue-600 dark:text-blue-400",
     bg: "bg-blue-50 dark:bg-blue-950/40",
@@ -157,8 +150,6 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
     badge: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20",
   },
   Embedding: {
-    name: "Embedding",
-    sub: "Vector semantic search",
     icon: IconModelEmbedding,
     color: "text-purple-600 dark:text-purple-400",
     bg: "bg-purple-50 dark:bg-purple-950/40",
@@ -166,8 +157,6 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
     badge: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20",
   },
   Rerank: {
-    name: "Rerank",
-    sub: "Score & order reranking",
     icon: IconModelRerank,
     color: "text-amber-600 dark:text-amber-400",
     bg: "bg-amber-50 dark:bg-amber-950/40",
@@ -175,8 +164,6 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
     badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
   },
   VLLM: {
-    name: "VLM",
-    sub: "Vision & OCR multimodal",
     icon: IconModelVLM,
     color: "text-emerald-600 dark:text-emerald-400",
     bg: "bg-emerald-50 dark:bg-emerald-950/40",
@@ -184,8 +171,6 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
     badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
   },
   ASR: {
-    name: "ASR",
-    sub: "Speech recognition",
     icon: IconModelASR,
     color: "text-rose-600 dark:text-rose-400",
     bg: "bg-rose-50 dark:bg-rose-950/40",
@@ -195,8 +180,6 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
 };
 
 const DEFAULT_TYPE_CONFIG: TypeConfig = {
-  name: "Model",
-  sub: "General AI model",
   icon: IconModelDefault,
   color: "text-stone-600 dark:text-stone-400",
   bg: "bg-surface-strong",
@@ -231,27 +214,9 @@ const PROVIDER_ROUTES: Record<string, string> = {
   weknoracloud: "/platform/system/models/weknoracloud",
 };
 
-/* Provider backends — compact cards opening their config in a modal. The
- * same panels are reachable at /platform/system/models/{ollama,
- * weknoracloud} for deep-linking and palette search. */
-const providerCards: SectionCard[] = [
-  {
-    key: "ollama",
-    title: "Ollama (local)",
-    desc: "Run and manage local models via an Ollama server.",
-    icon: <IconStorageEngine className="h-5 w-5" />,
-    content: <OllamaSettings />,
-  },
-  {
-    key: "weknoracloud",
-    title: "WeRAG Cloud",
-    desc: "Hosted model provider — credentials and quotas.",
-    icon: <IconPulse className="h-5 w-5" />,
-    content: <WeKnoraCloudSettings />,
-  },
-];
-
 function SystemModels() {
+  const inModal = useInSettingsModal();
+  const { t } = useT();
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get("tab");
@@ -286,7 +251,7 @@ function SystemModels() {
       setModels(rows.map(toUi));
       setLoadError("");
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load models");
+      setLoadError(e instanceof Error ? e.message : t("mdl.loadFailed"));
     } finally {
       setLoaded(true);
     }
@@ -348,7 +313,7 @@ function SystemModels() {
       setModalOpen(false);
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Save failed");
+      setActionError(e instanceof Error ? e.message : t("mdl.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -360,9 +325,9 @@ function SystemModels() {
     setTestMsg(null);
     try {
       const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
-      setTestMsg(res.ok ? "Connection successful — model responded." : res.error || "Test failed");
+      setTestMsg(res.ok ? t("mdl.testOk") : res.error || t("mdl.testFail"));
     } catch (e) {
-      setTestMsg(e instanceof Error ? e.message : "Test failed");
+      setTestMsg(e instanceof Error ? e.message : t("mdl.testFail"));
     } finally {
       setTesting(false);
     }
@@ -374,7 +339,7 @@ function SystemModels() {
       await updateModel(m.id, { status: next });
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Update failed");
+      setActionError(e instanceof Error ? e.message : t("mdl.updateFailed"));
     }
   };
 
@@ -388,10 +353,10 @@ function SystemModels() {
     } catch (e) {
       setActionError(
         e instanceof ModelInUseError
-          ? "Model is still in use — remove its bindings first."
+          ? t("mdl.inUse")
           : e instanceof Error
             ? e.message
-            : "Delete failed",
+            : t("mdl.deleteFailed"),
       );
       setDeleting(null);
     }
@@ -412,36 +377,39 @@ function SystemModels() {
   }, [models, filterType]);
 
   const filterOptions = [
-    { id: "all", label: "All" },
-    { id: "KnowledgeQA", label: "Chat" },
-    { id: "Embedding", label: "Embedding" },
-    { id: "Rerank", label: "Rerank" },
-    { id: "VLLM", label: "VLM" },
-    { id: "ASR", label: "ASR" },
+    { id: "all", label: t("mdl.filterAll") },
+    { id: "KnowledgeQA", label: t("mdl.typeChatShort") },
+    { id: "Embedding", label: t("mdl.typeEmbedding") },
+    { id: "Rerank", label: t("mdl.typeRerank") },
+    { id: "VLLM", label: t("mdl.typeVlm") },
+    { id: "ASR", label: t("mdl.typeAsr") },
   ];
+
+  const typeMeta: Record<string, { name: string; sub: string }> = {
+    KnowledgeQA: { name: t("mdl.typeChat"), sub: t("mdl.typeChatSub") },
+    Embedding: { name: t("mdl.typeEmbedding"), sub: t("mdl.typeEmbeddingSub") },
+    Rerank: { name: t("mdl.typeRerank"), sub: t("mdl.typeRerankSub") },
+    VLLM: { name: t("mdl.typeVlm"), sub: t("mdl.typeVlmSub") },
+    ASR: { name: t("mdl.typeAsr"), sub: t("mdl.typeAsrSub") },
+  };
+  const defaultTypeMeta = { name: t("mdl.typeDefault"), sub: t("mdl.typeDefaultSub") };
 
   return (
     <div className="mx-auto w-full max-w-[1200px]">
       {loadError && <p className="caption mb-4 text-error">{loadError}</p>}
       {actionError && <p className="caption mb-4 text-error">{actionError}</p>}
 
-      {/* Provider backends */}
-      <div className="caption-uppercase mb-3 text-muted-soft">Providers</div>
-      <div className="mb-8">
-        <SectionCardGrid cards={providerCards} />
-      </div>
-
       {/* Header bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="title-md font-semibold text-ink">Models & Providers</h2>
+          <h2 className="title-md font-semibold text-ink">{t("mdl.title")}</h2>
           <p className="caption text-muted">
-            {loaded ? `${models.length} models configured` : "Loading models…"}
+            {loaded ? t("mdl.count", { n: models.length }) : t("mdl.loading")}
           </p>
         </div>
 
         <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <IconPlus className="h-3.5 w-3.5" /> Add model
+          <IconPlus className="h-3.5 w-3.5" /> {t("mdl.add")}
         </button>
       </div>
 
@@ -478,9 +446,12 @@ function SystemModels() {
       </div>
 
       {/* Card Grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "xl:grid-cols-3"}`}
+      >
           {filteredModels.map((m) => {
             const config = TYPE_CONFIG[m.type] ?? DEFAULT_TYPE_CONFIG;
+            const meta = typeMeta[m.type] ?? defaultTypeMeta;
             const Icon = config.icon;
             const isActive = m.status === "active";
 
@@ -497,7 +468,7 @@ function SystemModels() {
                   {/* Type Logo */}
                   <div
                     className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${config.bg} ${config.border} ${config.color}`}
-                    title={`${config.name} (${config.sub})`}
+                    title={`${meta.name} (${meta.sub})`}
                   >
                     <Icon className="h-5 w-5" />
                   </div>
@@ -507,16 +478,16 @@ function SystemModels() {
                       <span
                         className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${config.badge}`}
                       >
-                        {config.name}
+                        {meta.name}
                       </span>
                       {m.isDefault && (
                         <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white dark:bg-white dark:text-ink">
-                          DEFAULT
+                          {t("mdl.defaultBadge")}
                         </span>
                       )}
                     </div>
                     <div className="text-[11.5px] text-muted-soft truncate mt-0.5">
-                      {config.sub}
+                      {meta.sub}
                     </div>
                   </div>
                 </div>
@@ -526,8 +497,8 @@ function SystemModels() {
                   <button
                     type="button"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-strong hover:text-ink"
-                    title="Edit model"
-                    aria-label="Edit model"
+                    title={t("mdl.edit")}
+                    aria-label={t("mdl.edit")}
                     onClick={() => openEdit(m)}
                   >
                     <IconEdit className="h-3.5 w-3.5" />
@@ -539,8 +510,8 @@ function SystemModels() {
                         ? "text-emerald-600 hover:text-amber-600"
                         : "text-muted hover:text-emerald-600"
                     }`}
-                    title={isActive ? "Disable model" : "Enable model"}
-                    aria-label={isActive ? "Disable model" : "Enable model"}
+                    title={isActive ? t("mdl.disable") : t("mdl.enable")}
+                    aria-label={isActive ? t("mdl.disable") : t("mdl.enable")}
                     onClick={() => void toggle(m)}
                   >
                     <IconPower className="h-3.5 w-3.5" />
@@ -548,8 +519,8 @@ function SystemModels() {
                   <button
                     type="button"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-strong hover:text-error"
-                    title="Delete model"
-                    aria-label="Delete model"
+                    title={t("mdl.delete")}
+                    aria-label={t("mdl.delete")}
                     onClick={() => setDeleting(m)}
                   >
                     <IconTrash className="h-3.5 w-3.5" />
@@ -574,7 +545,7 @@ function SystemModels() {
                   </p>
                 ) : (
                   <p className="caption text-muted-soft truncate mt-1 text-[11.5px]">
-                    Remote API endpoint
+                    {t("mdl.remoteApi")}
                   </p>
                 )}
               </div>
@@ -582,7 +553,7 @@ function SystemModels() {
               {/* Footer: Provider and Status */}
               <div className="mt-4 flex items-center justify-between gap-2 border-t border-hairline pt-3 text-xs">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-muted text-[11.5px]">Provider:</span>
+                  <span className="text-muted text-[11.5px]">{t("mdl.provider")}</span>
                   <span className="badge-pill truncate max-w-[130px] font-medium">
                     {m.provider || "generic"}
                   </span>
@@ -595,7 +566,7 @@ function SystemModels() {
                     }`}
                   />
                   <span className="text-[11.5px] font-medium text-muted">
-                    {isActive ? "Active" : "Disabled"}
+                    {isActive ? t("mdl.active") : t("mdl.disabled")}
                   </span>
                 </div>
               </div>
@@ -606,18 +577,18 @@ function SystemModels() {
 
       {loaded && filteredModels.length === 0 && !loadError && (
         <div className="card py-16 text-center text-[14px] text-muted">
-          No models found matching the selected filter.
+          {t("mdl.empty")}
         </div>
       )}
 
       {/* Add / Edit Modal */}
       <Modal
         open={modalOpen}
-        title={editing ? "Edit model" : "Add model"}
+        title={editing ? t("mdl.edit") : t("mdl.add")}
         onClose={() => setModalOpen(false)}
       >
         <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">Name</span>
+          <span className="caption mb-1.5 block text-muted">{t("mdl.name")}</span>
           <input
             className="input"
             placeholder="e.g. Qwen/Qwen3.6-35B-A3B-FP8"
@@ -626,31 +597,31 @@ function SystemModels() {
           />
         </label>
         <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">Model Type</span>
+          <span className="caption mb-1.5 block text-muted">{t("mdl.type")}</span>
           <Select
             value={form.type}
             disabled={!!editing}
             onChange={(v) => setForm({ ...form, type: v })}
             options={[
-              { value: "KnowledgeQA", label: "Chat / LLM (KnowledgeQA)" },
-              { value: "Embedding", label: "Embedding (Vector search)" },
-              { value: "Rerank", label: "Rerank (Score reordering)" },
-              { value: "VLLM", label: "VLM (Vision-Language Model)" },
-              { value: "ASR", label: "ASR (Speech recognition)" },
+              { value: "KnowledgeQA", label: t("mdl.optKnowledgeQA") },
+              { value: "Embedding", label: t("mdl.optEmbedding") },
+              { value: "Rerank", label: t("mdl.optRerank") },
+              { value: "VLLM", label: t("mdl.optVlm") },
+              { value: "ASR", label: t("mdl.optAsr") },
             ]}
           />
         </label>
         <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">Provider</span>
+          <span className="caption mb-1.5 block text-muted">{t("mdl.providerField")}</span>
           <input
             className="input"
-            placeholder="e.g. openai, generic, ollama"
+            placeholder={t("mdl.providerPh")}
             value={form.provider}
             onChange={(e) => setForm({ ...form, provider: e.target.value })}
           />
         </label>
         <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">Base URL</span>
+          <span className="caption mb-1.5 block text-muted">{t("mdl.baseUrl")}</span>
           <input
             className="input"
             placeholder="https://api.openai.com/v1"
@@ -660,7 +631,7 @@ function SystemModels() {
         </label>
         <label className="mb-4 block">
           <span className="caption mb-1.5 block text-muted">
-            API key{editing ? " (leave empty to keep current)" : ""}
+            {t("mdl.apiKey")}{editing ? t("mdl.apiKeyKeep") : ""}
           </span>
           <input
             className="input"
@@ -671,29 +642,29 @@ function SystemModels() {
         </label>
         <div className="flex gap-3">
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("memp.saving") : t("common.save")}
           </button>
           {editing && (
             <button className="btn btn-outline" onClick={() => void test()} disabled={testing}>
-              {testing ? "Testing…" : "Test connection"}
+              {testing ? t("vstore.testing") : t("mdl.testConn")}
             </button>
           )}
           <button className="btn btn-outline" onClick={() => setModalOpen(false)}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
         {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
       </Modal>
 
       {/* Delete Confirmation Modal */}
-      <Modal open={deleting !== null} title="Delete model" onClose={() => setDeleting(null)}>
-        <p className="body-sm mb-6 text-body">Delete {deleting?.name}?</p>
+      <Modal open={deleting !== null} title={t("mdl.deleteTitle")} onClose={() => setDeleting(null)}>
+        <p className="body-sm mb-6 text-body">{t("mdl.deleteBody", { name: deleting?.name ?? "" })}</p>
         <div className="flex gap-3">
           <button className="btn btn-primary" onClick={() => void remove()}>
-            Delete
+            {t("common.delete")}
           </button>
           <button className="btn btn-outline" onClick={() => setDeleting(null)}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       </Modal>

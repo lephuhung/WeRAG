@@ -21,15 +21,15 @@ import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
 import { InviteMemberModal } from "@/components/invite-member-modal";
 
-/* Workspace roles: Tenant Admin and Member (plus platform SuperAdmin, which is
- * not a membership). The legacy owner role is retired and not assignable. */
-const ROLES: { id: TenantRole; label: string; desc: string }[] = [
-  { id: "admin", label: "Admin", desc: "Manage members, knowledge bases, models, integrations, skills, and storage" },
-  { id: "member", label: "Member", desc: "Read knowledge bases, upload documents, and chat with agents" },
-];
-
 export function TenantMembers() {
   const { t } = useT();
+
+  /* Workspace roles: Tenant Admin and Member (plus platform SuperAdmin, which is
+   * not a membership). The legacy owner role is retired and not assignable. */
+  const ROLES: { id: TenantRole; label: string; desc: string }[] = [
+    { id: "admin", label: t("acct.roleAdmin"), desc: t("mem.roleAdminDesc") },
+    { id: "member", label: t("acct.roleMember"), desc: t("mem.roleMemberDesc") },
+  ];
   const auth = useAuth();
   const router = useRouter();
 
@@ -84,7 +84,7 @@ export function TenantMembers() {
         setInvitations(invRes.data.invitations ?? []);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error");
+      setError(e instanceof Error ? e.message : t("mem.networkError"));
     } finally {
       setLoading(false);
     }
@@ -98,7 +98,7 @@ export function TenantMembers() {
   const handleRoleChange = async (member: TenantMember, newRole: TenantRole) => {
     if (!activeTenantId || !canManage) return;
     if ((member.role === "admin" || member.role === "owner") && newRole !== "admin" && adminCount <= 1) {
-      setError("Cannot demote the last remaining workspace admin");
+      setError(t("mem.errLastAdminDemote"));
       return;
     }
     setError("");
@@ -106,13 +106,17 @@ export function TenantMembers() {
     try {
       const res = await updateMemberRole(activeTenantId, member.user_id, newRole);
       if (res.success) {
-        setSuccess(`Updated ${member.username || member.email}'s role to ${newRole}`);
+        setSuccess(
+          t("mem.roleUpdated")
+            .replace("{name}", member.username || member.email)
+            .replace("{role}", newRole),
+        );
         await loadData();
       } else {
-        setError(res.message || "Failed to update role");
+        setError(res.message || t("mem.updateRoleFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update role");
+      setError(e instanceof Error ? e.message : t("mem.updateRoleFailed"));
     }
   };
 
@@ -120,7 +124,7 @@ export function TenantMembers() {
   const handleRemoveMember = async () => {
     if (!activeTenantId || !removingMember) return;
     if ((removingMember.role === "admin" || removingMember.role === "owner") && adminCount <= 1) {
-      setError("Cannot remove the last remaining workspace admin");
+      setError(t("mem.errLastAdminRemove"));
       setRemovingMember(null);
       return;
     }
@@ -129,14 +133,16 @@ export function TenantMembers() {
     try {
       const res = await removeMember(activeTenantId, removingMember.user_id);
       if (res.success) {
-        setSuccess(`Removed ${removingMember.username || removingMember.email}`);
+        setSuccess(
+          t("mem.removed").replace("{name}", removingMember.username || removingMember.email),
+        );
         setRemovingMember(null);
         await loadData();
       } else {
-        setError(res.message || "Failed to remove member");
+        setError(res.message || t("mem.removeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove member");
+      setError(e instanceof Error ? e.message : t("mem.removeFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -146,7 +152,7 @@ export function TenantMembers() {
   const handleLeave = async () => {
     if (!activeTenantId) return;
     if ((currentRole === "admin" || currentRole === "owner") && adminCount <= 1) {
-      setError("You are the last admin. Promote another member before leaving.");
+      setError(t("mem.errLastAdminLeave"));
       setConfirmLeave(false);
       return;
     }
@@ -157,10 +163,10 @@ export function TenantMembers() {
       if (res.success) {
         router.push("/platform/knowledge-bases");
       } else {
-        setError(res.message || "Failed to leave workspace");
+        setError(res.message || t("mem.leaveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to leave workspace");
+      setError(e instanceof Error ? e.message : t("mem.leaveFailed"));
     } finally {
       setActionBusy(false);
       setConfirmLeave(false);
@@ -175,10 +181,10 @@ export function TenantMembers() {
       if (res.success) {
         await loadData();
       } else {
-        setError(res.message || "Failed to revoke invitation");
+        setError(res.message || t("mem.revokeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to revoke invitation");
+      setError(e instanceof Error ? e.message : t("mem.revokeFailed"));
     }
   };
 
@@ -200,12 +206,12 @@ export function TenantMembers() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <h2 className="title-md font-semibold text-ink">Workspace Members</h2>
+            <h2 className="title-md font-semibold text-ink">{t("mem.title")}</h2>
             <button
               type="button"
               onClick={() => setRbacModalOpen(true)}
               className="text-muted hover:text-ink transition-colors"
-              title="View permissions breakdown"
+              title={t("mem.rbacTooltip")}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8}>
                 <circle cx="12" cy="12" r="10" />
@@ -214,7 +220,7 @@ export function TenantMembers() {
             </button>
           </div>
           <p className="caption text-muted mt-1">
-            Manage who has access to this workspace and control member roles.
+            {t("mem.subtitle")}
           </p>
         </div>
 
@@ -226,14 +232,14 @@ export function TenantMembers() {
               className="btn btn-primary btn-sm flex items-center gap-1.5"
             >
               <IconPlus className="h-3.5 w-3.5" />
-              <span>Invite member</span>
+              <span>{t("mem.invite")}</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => void loadData()}
             className="btn btn-outline btn-sm flex items-center gap-1.5"
-            title="Refresh list"
+            title={t("common.refresh")}
           >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
@@ -256,12 +262,12 @@ export function TenantMembers() {
         <div className="rounded-xl border border-hairline bg-surface-card p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-ink">Pending Invitations</span>
+              <span className="text-sm font-semibold text-ink">{t("mem.pendingInv")}</span>
               <span className="rounded-full bg-surface-strong px-2 py-0.5 text-xs font-medium text-muted">
                 {invitations.length}
               </span>
             </div>
-            <span className="caption text-muted">Valid for 7 days</span>
+            <span className="caption text-muted">{t("mem.valid7d")}</span>
           </div>
 
           <div className="divide-y divide-hairline">
@@ -271,17 +277,17 @@ export function TenantMembers() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-ink truncate">
                       {inv.is_share_link
-                        ? "Public share link"
-                        : inv.invitee_email || inv.invitee_name || "Unknown user"}
+                        ? t("mem.shareLink")
+                        : inv.invitee_email || inv.invitee_name || t("mem.unknownUser")}
                     </span>
                     <span className="badge-pill uppercase text-[10.5px]">
-                      {inv.role}
+                      {inv.role === "admin" || inv.role === "owner" ? t("acct.roleAdmin") : t("acct.roleMember")}
                     </span>
                   </div>
                   <p className="caption text-muted truncate mt-0.5">
                     {inv.is_share_link
-                      ? `${inv.accepted_count || 0} accepted`
-                      : `Invited by ${inv.inviter_name || inv.inviter_email || "admin"}`}
+                      ? t("mem.acceptedCount").replace("{n}", String(inv.accepted_count || 0))
+                      : t("mem.invitedBy").replace("{name}", inv.inviter_name || inv.inviter_email || "admin")}
                   </p>
                 </div>
 
@@ -293,12 +299,12 @@ export function TenantMembers() {
                         const full = new URL(inv.invite_url!, window.location.origin).toString();
                         const ok = await copyToClipboard(full);
                         if (ok) {
-                          setSuccess("Invitation link copied to clipboard");
+                          setSuccess(t("mem.linkCopied"));
                         }
                       }}
                       className="btn btn-outline btn-sm text-xs py-1"
                     >
-                      Copy link
+                      {t("mem.copyLink")}
                     </button>
                   )}
                   <button
@@ -306,7 +312,7 @@ export function TenantMembers() {
                     onClick={() => void handleRevokeInvite(inv.id)}
                     className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 py-1"
                   >
-                    Revoke
+                    {t("mem.revoke")}
                   </button>
                 </div>
               </div>
@@ -322,25 +328,29 @@ export function TenantMembers() {
           <input
             type="text"
             className="input pl-9 text-sm"
-            placeholder="Search by name or email…"
+            placeholder={t("mem.searchPh")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
         <div className="flex items-center gap-1.5">
-          {["all", "admin", "member"].map((r) => (
+          {[
+            { id: "all", label: t("common.all") },
+            { id: "admin", label: t("acct.roleAdmin") },
+            { id: "member", label: t("acct.roleMember") },
+          ].map((r) => (
             <button
-              key={r}
+              key={r.id}
               type="button"
-              onClick={() => setRoleFilter(r)}
-              className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                roleFilter === r
+              onClick={() => setRoleFilter(r.id)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                roleFilter === r.id
                   ? "bg-ink text-white dark:bg-white dark:text-ink"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
-              {r}
+              {r.label}
             </button>
           ))}
         </div>
@@ -351,23 +361,23 @@ export function TenantMembers() {
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-              <th className="py-3 px-4">Member</th>
-              <th className="py-3 px-4">Role</th>
-              <th className="py-3 px-4">Joined</th>
-              <th className="py-3 px-4 text-right">Actions</th>
+              <th className="py-3 px-4">{t("mem.colMember")}</th>
+              <th className="py-3 px-4">{t("mem.colRole")}</th>
+              <th className="py-3 px-4">{t("mem.colJoined")}</th>
+              <th className="py-3 px-4 text-right">{t("mem.colActions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
             {loading ? (
               <tr>
                 <td colSpan={4} className="py-12 text-center text-muted">
-                  Loading members…
+                  {t("common.loading")}
                 </td>
               </tr>
             ) : filteredMembers.length === 0 ? (
               <tr>
                 <td colSpan={4} className="py-12 text-center text-muted">
-                  No members found matching your search.
+                  {t("mem.empty")}
                 </td>
               </tr>
             ) : (
@@ -390,7 +400,7 @@ export function TenantMembers() {
                             </span>
                             {isMe && (
                               <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand uppercase">
-                                You
+                                {t("mem.you")}
                               </span>
                             )}
                           </div>
@@ -409,8 +419,8 @@ export function TenantMembers() {
                           value={m.role}
                           onChange={(v) => void handleRoleChange(m, v as TenantRole)}
                           options={[
-                            { value: "admin", label: "Admin" },
-                            { value: "member", label: "Member" },
+                            { value: "admin", label: t("acct.roleAdmin") },
+                            { value: "member", label: t("acct.roleMember") },
                           ]}
                         />
                       ) : (
@@ -421,7 +431,7 @@ export function TenantMembers() {
                               : ""
                           }`}
                         >
-                          {m.role}
+                          {m.role === "admin" || m.role === "owner" ? t("acct.roleAdmin") : t("acct.roleMember")}
                         </span>
                       )}
                     </td>
@@ -439,14 +449,14 @@ export function TenantMembers() {
                           onClick={() => setConfirmLeave(true)}
                           className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                         >
-                          Leave workspace
+                          {t("mem.leaveWs")}
                         </button>
                       ) : canEditThisMember ? (
                         <button
                           type="button"
                           onClick={() => setRemovingMember(m)}
                           className="btn btn-ghost btn-sm text-muted hover:text-rose-600 p-1.5"
-                          title="Remove member"
+                          title={t("common.remove")}
                         >
                           <IconTrash className="h-4 w-4" />
                         </button>
@@ -466,7 +476,7 @@ export function TenantMembers() {
         open={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
         onInvited={() => {
-          setSuccess("Invitation sent");
+          setSuccess(t("mem.inviteSent"));
           void loadData();
         }}
       />
@@ -474,14 +484,12 @@ export function TenantMembers() {
       {/* Remove Confirmation Modal */}
       <Modal
         open={removingMember !== null}
-        title="Remove Member"
+        title={t("mem.removeTitle")}
         onClose={() => setRemovingMember(null)}
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            Are you sure you want to remove{" "}
-            <strong>{removingMember?.username || removingMember?.email}</strong> from this
-            workspace? They will immediately lose access to all resources and knowledge bases.
+            {t("mem.removeBody").replace("{name}", removingMember?.username || removingMember?.email || "")}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -489,7 +497,7 @@ export function TenantMembers() {
               className="btn btn-outline"
               onClick={() => setRemovingMember(null)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -497,7 +505,7 @@ export function TenantMembers() {
               onClick={() => void handleRemoveMember()}
               className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {actionBusy ? "Removing…" : "Remove member"}
+              {actionBusy ? `${t("common.remove")}…` : t("mem.removeCta")}
             </button>
           </div>
         </div>
@@ -506,13 +514,12 @@ export function TenantMembers() {
       {/* Leave Workspace Confirmation Modal */}
       <Modal
         open={confirmLeave}
-        title="Leave Workspace"
+        title={t("mem.leaveTitle")}
         onClose={() => setConfirmLeave(false)}
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            Are you sure you want to leave this workspace? You will need an invitation from an
-            administrator to rejoin.
+            {t("mem.leaveBody")}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -520,7 +527,7 @@ export function TenantMembers() {
               className="btn btn-outline"
               onClick={() => setConfirmLeave(false)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -528,7 +535,7 @@ export function TenantMembers() {
               onClick={() => void handleLeave()}
               className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {actionBusy ? "Leaving…" : "Confirm Leave"}
+              {actionBusy ? `${t("mem.leaveCta")}…` : t("mem.leaveCta")}
             </button>
           </div>
         </div>
@@ -537,17 +544,17 @@ export function TenantMembers() {
       {/* RBAC Breakdown Modal */}
       <Modal
         open={rbacModalOpen}
-        title="Workspace Role & Permissions Guide"
+        title={t("mem.rbacTitle")}
         onClose={() => setRbacModalOpen(false)}
       >
         <div className="space-y-4 text-sm max-h-[60vh] overflow-y-auto pr-1">
           {ROLES.map((r) => (
             <div key={r.id} className="rounded-xl border border-hairline p-4 space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-ink capitalize">{r.label}</span>
+                <span className="font-semibold text-ink">{r.label}</span>
                 {currentRole === r.id && (
                   <span className="badge-pill bg-brand/10 text-brand text-[10px] font-bold">
-                    Current Role
+                    {t("mem.currentRole")}
                   </span>
                 )}
               </div>

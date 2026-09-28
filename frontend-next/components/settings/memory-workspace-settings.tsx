@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/memory";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 const DEFAULT_CONFIG: MemoryConfig = {
   enabled: false,
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: MemoryConfig = {
 };
 
 export function MemoryWorkspaceSettings() {
+  const { t } = useT();
   const auth = useAuth();
   const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const currentRole =
@@ -56,7 +58,7 @@ export function MemoryWorkspaceSettings() {
       }
       setModels(mdlRes);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load workspace memory configuration");
+      setError(e instanceof Error ? e.message : t("memw.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -75,12 +77,12 @@ export function MemoryWorkspaceSettings() {
       const res = await updateTenantMemoryConfig(payload);
       if (res.success && res.data) {
         setConfig(res.data);
-        setSuccess("Workspace memory settings saved");
+        setSuccess(t("memw.saved"));
       } else {
-        setError("Failed to save workspace memory settings");
+        setError(t("memw.saveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save configuration");
+      setError(e instanceof Error ? e.message : t("memw.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -94,9 +96,9 @@ export function MemoryWorkspaceSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">Workspace Memory</h2>
+          <h2 className="title-md font-semibold text-ink">{t("memw.title")}</h2>
           <p className="caption text-muted mt-1">
-            Configure how long-term memory is captured, extracted, and injected for members of this workspace.
+            {t("memw.subtitle")}
           </p>
         </div>
 
@@ -108,14 +110,14 @@ export function MemoryWorkspaceSettings() {
               disabled={saving}
               className="btn btn-primary btn-sm"
             >
-              {saving ? "Saving…" : "Save changes"}
+              {saving ? t("memp.saving") : t("memp.saveChanges")}
             </button>
           )}
           <button
             type="button"
             onClick={() => void loadData()}
             className="btn btn-outline btn-sm p-1.5"
-            title="Refresh"
+            title={t("common.refresh")}
           >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
@@ -136,9 +138,9 @@ export function MemoryWorkspaceSettings() {
       {/* Main Switch */}
       <div className="flex items-center justify-between rounded-xl border border-hairline bg-surface-card p-5">
         <div>
-          <span className="text-sm font-semibold text-ink block">Enable Workspace Memory</span>
+          <span className="text-sm font-semibold text-ink block">{t("memw.enable")}</span>
           <span className="caption text-muted block mt-0.5">
-            When enabled, conversations can extract and retain facts to personalize future interactions.
+            {t("memw.enableDesc")}
           </span>
         </div>
         <Toggle
@@ -157,9 +159,9 @@ export function MemoryWorkspaceSettings() {
           <div className="rounded-xl border border-hairline p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm font-medium text-ink block">Extraction Mode</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.mode")}</span>
                 <span className="caption text-muted block mt-0.5">
-                  Choose whether memories are inferred automatically or only when users explicitly state them.
+                  {t("memw.modeDesc")}
                 </span>
               </div>
               <div className="flex items-center gap-1 rounded-lg border border-hairline p-1 bg-surface-strong/40">
@@ -173,7 +175,7 @@ export function MemoryWorkspaceSettings() {
                       : "text-muted hover:text-ink"
                   }`}
                 >
-                  Automatic
+                  {t("memw.modeAuto")}
                 </button>
                 <button
                   type="button"
@@ -185,7 +187,7 @@ export function MemoryWorkspaceSettings() {
                       : "text-muted hover:text-ink"
                   }`}
                 >
-                  Explicit only
+                  {t("memw.modeExplicit")}
                 </button>
               </div>
             </div>
@@ -195,9 +197,9 @@ export function MemoryWorkspaceSettings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-xl border border-hairline p-5 space-y-2">
               <label className="block">
-                <span className="text-sm font-medium text-ink block">Extraction Model</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.extractModel")}</span>
                 <span className="caption text-muted block mt-0.5 mb-2">
-                  LLM used to summarize and extract facts from conversation turns.
+                  {t("memw.extractModelDesc")}
                 </span>
                 <Select
                   disabled={!canEdit}
@@ -205,7 +207,7 @@ export function MemoryWorkspaceSettings() {
                   value={config.extract_model_id}
                   onChange={(v) => setConfig({ ...config, extract_model_id: v })}
                   options={[
-                    { value: "", label: "Default system model" },
+                    { value: "", label: t("memw.defaultModel") },
                     ...chatModels.map((m) => ({
                       value: m.id ?? "",
                       label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
@@ -217,9 +219,9 @@ export function MemoryWorkspaceSettings() {
 
             <div className="rounded-xl border border-hairline p-5 space-y-2">
               <label className="block">
-                <span className="text-sm font-medium text-ink block">Embedding Model (Vector Recall)</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.embeddingModel")}</span>
                 <span className="caption text-muted block mt-0.5 mb-2">
-                  Used when semantic vector matching is enabled for recall.
+                  {t("memw.embeddingModelDesc")}
                 </span>
                 <Select
                   disabled={!canEdit || !config.vector_recall}
@@ -227,7 +229,7 @@ export function MemoryWorkspaceSettings() {
                   value={config.embedding_model_id}
                   onChange={(v) => setConfig({ ...config, embedding_model_id: v })}
                   options={[
-                    { value: "", label: "None (lexical keyword match only)" },
+                    { value: "", label: t("memw.embeddingNone") },
                     ...embeddingModels.map((m) => ({
                       value: m.id ?? "",
                       label: m.display_name || m.name,
@@ -242,9 +244,9 @@ export function MemoryWorkspaceSettings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex items-center justify-between rounded-xl border border-hairline p-5">
               <div>
-                <span className="text-sm font-medium text-ink block">Vector Recall</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.vectorRecall")}</span>
                 <span className="caption text-muted block mt-0.5">
-                  Match memories by semantic meaning, not just exact keywords.
+                  {t("memw.vectorRecallDesc")}
                 </span>
               </div>
               <Toggle
@@ -256,9 +258,9 @@ export function MemoryWorkspaceSettings() {
 
             <div className="flex items-center justify-between rounded-xl border border-hairline p-5">
               <div>
-                <span className="text-sm font-medium text-ink block">Retrieval Conditioning</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.retrieval")}</span>
                 <span className="caption text-muted block mt-0.5">
-                  Allow recalled memory to reshape KB search queries.
+                  {t("memw.retrievalDesc")}
                 </span>
               </div>
               <Toggle
@@ -273,9 +275,9 @@ export function MemoryWorkspaceSettings() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
               <label className="block">
-                <span className="text-sm font-medium text-ink block">Extraction Delay</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.delay")}</span>
                 <span className="caption text-muted block text-xs">
-                  Seconds to wait after a message before extracting facts.
+                  {t("memw.delayDesc")}
                 </span>
                 <input
                   type="number"
@@ -293,9 +295,9 @@ export function MemoryWorkspaceSettings() {
 
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
               <label className="block">
-                <span className="text-sm font-medium text-ink block">Min Run Interval</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.minInterval")}</span>
                 <span className="caption text-muted block text-xs">
-                  Floor between two distillation passes for a user (seconds).
+                  {t("memw.minIntervalDesc")}
                 </span>
                 <input
                   type="number"
@@ -313,9 +315,9 @@ export function MemoryWorkspaceSettings() {
 
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
               <label className="block">
-                <span className="text-sm font-medium text-ink block">Max Items Cap</span>
+                <span className="text-sm font-medium text-ink block">{t("memw.maxItems")}</span>
                 <span className="caption text-muted block text-xs">
-                  Maximum retained memory items per user.
+                  {t("memw.maxItemsDesc")}
                 </span>
                 <input
                   type="number"
@@ -333,14 +335,14 @@ export function MemoryWorkspaceSettings() {
           {/* Custom instructions */}
           <div className="rounded-xl border border-hairline p-5 space-y-2">
             <label className="block">
-              <span className="text-sm font-medium text-ink block">Workspace Extraction Guidelines</span>
+              <span className="text-sm font-medium text-ink block">{t("memw.guidelines")}</span>
               <span className="caption text-muted block text-xs mb-2">
-                Custom prompt rules injected into memory distillation (e.g. ignore greeting patterns, focus on tech stacks).
+                {t("memw.guidelinesDesc")}
               </span>
               <textarea
                 rows={3}
                 disabled={!canEdit}
-                placeholder="e.g. Always record project identifiers, API version preferences, and tech stacks mentioned."
+                placeholder={t("memw.guidelinesPh")}
                 className="input resize-none text-sm font-mono"
                 value={config.extract_instructions}
                 onChange={(e) => setConfig({ ...config, extract_instructions: e.target.value })}

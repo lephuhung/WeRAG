@@ -97,7 +97,7 @@ export function KbSettingsModal({
         .then((row) => {
           if (!alive) return;
           if (!row) {
-            setError("Knowledge base not found");
+            setError(t("kbSettings.notFound"));
             setLoading(false);
             return;
           }
@@ -144,7 +144,7 @@ export function KbSettingsModal({
         })
         .catch((e: unknown) => {
           if (alive) {
-            setError(e instanceof Error ? e.message : "Failed to load settings");
+            setError(e instanceof Error ? e.message : t("kbSettings.loadFailed"));
             setLoading(false);
           }
         });
@@ -185,7 +185,7 @@ export function KbSettingsModal({
       setDirty(false);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("kbSettings.saveFailed"));
     } finally {
       setSaving(false);
     }

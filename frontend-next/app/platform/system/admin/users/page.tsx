@@ -47,6 +47,7 @@ function RolePillToggle({
   busy?: boolean;
   onChange: (role: TenantRole) => void;
 }) {
+  const { t } = useT();
   return (
     <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
       {WORKSPACE_ROLES.map((r) => (
@@ -64,7 +65,7 @@ function RolePillToggle({
               : "text-muted hover:text-ink"
           }`}
         >
-          {r}
+          {r === "admin" ? t("usrp.roleAdmin") : r === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember")}
         </button>
       ))}
     </div>
@@ -102,7 +103,7 @@ export default function SystemUsers() {
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : "Failed to load users");
+      else setError(e instanceof Error ? e.message : t("usrp.loadFailed"));
     }
   }, []);
 
@@ -145,7 +146,7 @@ export default function SystemUsers() {
       await load(q.trim());
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Operation failed");
+      setError(e instanceof Error ? e.message : t("usrp.opFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -223,7 +224,7 @@ export default function SystemUsers() {
       setUsers((prev) => prev.map((x) => (x.id === u.id ? patchMembershipRole(x, tenantId, role) : x)));
       setDetail((d) => (d && d.id === u.id ? patchMembershipRole(d, tenantId, role) : d));
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : "Failed to update role");
+      setDetailError(e instanceof Error ? e.message : t("usrp.roleFailed"));
     } finally {
       setRoleBusy(null);
     }
@@ -236,15 +237,15 @@ export default function SystemUsers() {
     (u.memberships ?? []).filter((m) => String(m.tenant_id) !== currentTenantId).length;
 
   if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">Loading…</div>;
+    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">{t("usrp.loading")}</div>;
   }
 
   if (!allowed) {
     return (
       <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">User management</h2>
+        <h2 className="title-md mb-2">{t("usrp.title")}</h2>
         <p className="body-sm text-muted">
-          This page is only available to system administrators.
+          {t("usrp.denied")}
         </p>
       </div>
     );
@@ -256,8 +257,11 @@ export default function SystemUsers() {
     <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">
-          <span className="font-medium text-ink">{total}</span> users ·{" "}
-          {adminCount} system {adminCount === 1 ? "administrator" : "administrators"}
+          {t("usrp.summary", {
+            total,
+            admins: adminCount,
+            adminWord: adminCount === 1 ? t("usrp.adminOne") : t("usrp.adminMany"),
+          })}
         </span>
         <button
           className="btn btn-primary btn-sm ml-auto"
@@ -278,7 +282,7 @@ export default function SystemUsers() {
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
           <input
             className="input h-10 pl-10 text-[14px]"
-            placeholder="Search name or email…"
+            placeholder={t("usrp.searchPh")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -289,13 +293,13 @@ export default function SystemUsers() {
         <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
             <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[260px] px-5 py-3 font-medium">User</th>
+              <th className="min-w-[260px] px-5 py-3 font-medium">{t("usrp.colUser")}</th>
               <th className="w-[160px] px-5 py-3 font-medium">
-                Role{currentTenantName ? ` · ${currentTenantName}` : ""}
+                {t("usrp.colRole")}{currentTenantName ? ` · ${currentTenantName}` : ""}
               </th>
-              <th className="w-[140px] px-5 py-3 font-medium">Other workspaces</th>
-              <th className="w-28 px-5 py-3 font-medium">Status</th>
-              <th className="w-32 px-5 py-3 font-medium">Created</th>
+              <th className="w-[140px] px-5 py-3 font-medium">{t("usrp.colOtherWs")}</th>
+              <th className="w-28 px-5 py-3 font-medium">{t("usrp.colStatus")}</th>
+              <th className="w-32 px-5 py-3 font-medium">{t("usrp.colCreated")}</th>
               <th className="w-[280px] px-5 py-3 font-medium text-right">{t("users.actions")}</th>
             </tr>
           </thead>
@@ -326,11 +330,11 @@ export default function SystemUsers() {
                           </span>
                         ) : (
                           <span className="badge-pill shrink-0 bg-surface-strong text-muted-soft text-[10px] py-0.5 px-2">
-                            User
+                            {t("usrp.roleUser")}
                           </span>
                         )}
                         {u.id === meId && (
-                          <span className="caption shrink-0 text-muted-soft font-normal">(you)</span>
+                          <span className="caption shrink-0 text-muted-soft font-normal">{t("usrp.you")}</span>
                         )}
                       </div>
                       <div className="caption truncate text-muted">{u.email}</div>
@@ -341,9 +345,9 @@ export default function SystemUsers() {
                   {current ? (
                     <span
                       className={`badge-pill inline-block border capitalize ${ROLE_BADGE_STYLES[current.role] ?? ROLE_BADGE_STYLES.member}`}
-                      title={`Role in ${current.tenant_name}`}
+                      title={t("usrp.roleIn", { name: current.tenant_name })}
                     >
-                      {current.role}
+                      {current.role === "admin" ? t("usrp.roleAdmin") : current.role === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember")}
                     </span>
                   ) : (
                     <span className="caption text-muted-soft">—</span>
@@ -351,7 +355,7 @@ export default function SystemUsers() {
                 </td>
                 <td className="px-5 py-3.5 align-middle whitespace-nowrap">
                   {others > 0 ? (
-                    <span className="caption text-muted">+{others} workspace{others === 1 ? "" : "s"}</span>
+                    <span className="caption text-muted">{t("usrp.otherWs", { n: others })}</span>
                   ) : (
                     <span className="caption text-muted-soft">—</span>
                   )}
@@ -367,7 +371,7 @@ export default function SystemUsers() {
                         u.is_active ? "bg-emerald-500" : "bg-muted-soft"
                       }`}
                     />
-                    {u.is_active ? "Active" : "Disabled"}
+                    {u.is_active ? t("mdl.active") : t("mdl.disabled")}
                   </span>
                 </td>
                 <td className="px-5 py-3.5 align-middle whitespace-nowrap">
@@ -391,11 +395,11 @@ export default function SystemUsers() {
                         disabled={busy}
                         title={
                           u.is_system_admin
-                            ? "Revoke global system-admin rights"
-                            : "Grant global system-admin rights"
+                            ? t("usrp.revokeTip")
+                            : t("usrp.promoteTip")
                         }
                       >
-                        {u.is_system_admin ? "Revoke superadmin" : "Make superadmin"}
+                        {u.is_system_admin ? t("usrp.revokeCta") : t("usrp.promoteCta")}
                       </button>
                     )}
                     {!u.is_system_admin && (
@@ -406,9 +410,9 @@ export default function SystemUsers() {
                           setResetting(u);
                         }}
                         disabled={u.id === meId}
-                        title={u.id === meId ? "Use Settings → Security for your own password" : ""}
+                        title={u.id === meId ? t("usrp.resetSelfTip") : ""}
                       >
-                        Reset password
+                        {t("usrp.resetCta")}
                       </button>
                     )}
                   </div>
@@ -419,7 +423,7 @@ export default function SystemUsers() {
             {users.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
-                  No users match this filter.
+                  {t("usrp.empty")}
                 </td>
               </tr>
             )}
@@ -430,7 +434,7 @@ export default function SystemUsers() {
       {/* user detail — per-workspace role pills */}
       <Modal
         open={detail !== null}
-        title="Workspaces & roles"
+        title={t("usrp.wsRolesTitle")}
         onClose={() => setDetail(null)}
         width="w-[520px]"
       >
@@ -458,7 +462,7 @@ export default function SystemUsers() {
             <div className="flex flex-col gap-2">
               {(detail.memberships ?? []).length === 0 && (
                 <p className="caption py-4 text-center text-muted-soft">
-                  Not a member of any workspace.
+                  {t("usrp.noMembership")}
                 </p>
               )}
               {[...(detail.memberships ?? [])]
@@ -482,7 +486,7 @@ export default function SystemUsers() {
                         {m.tenant_name}
                       </span>
                       {String(m.tenant_id) === currentTenantId && (
-                        <span className="caption shrink-0 text-muted-soft">· current</span>
+                        <span className="caption shrink-0 text-muted-soft">{t("usrp.currentWs")}</span>
                       )}
                     </div>
                     <RolePillToggle
@@ -508,8 +512,8 @@ export default function SystemUsers() {
           <div className="flex items-center gap-1 rounded-full bg-surface-strong p-1">
             {(
               [
-                { id: "create", label: "Create account" },
-                { id: "promote", label: "Promote existing" },
+                { id: "create", label: t("usrp.modeCreate") },
+                { id: "promote", label: t("usrp.modePromote") },
               ] as const
             ).map((m) => (
               <button
@@ -533,7 +537,7 @@ export default function SystemUsers() {
                 className="input"
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
-                placeholder="2–50 characters"
+                placeholder={t("usrp.namePh")}
               />
             </label>
           )}
@@ -548,13 +552,13 @@ export default function SystemUsers() {
           </label>
           {addMode === "create" && (
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Password (optional)</span>
+              <span className="caption mb-1.5 block text-muted">{t("usrp.pwOptional")}</span>
               <input
                 className="input"
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="Leave empty to generate"
+                placeholder={t("usrp.pwPh")}
               />
             </label>
           )}
@@ -562,7 +566,7 @@ export default function SystemUsers() {
           {generatedPassword && (
             <div className="rounded-[12px] border border-hairline bg-canvas-soft p-4">
               <div className="caption-uppercase mb-1.5 text-muted">
-                Generated password — shown once
+                {t("usrp.generatedPw")}
               </div>
               <code className="text-[14px] font-medium text-ink">{generatedPassword}</code>
             </div>
@@ -570,7 +574,7 @@ export default function SystemUsers() {
 
           <div className="mt-1 flex justify-end gap-3">
             <button className="btn btn-outline" onClick={() => setModalOpen(false)}>
-              {generatedPassword ? "Done" : t("common.cancel")}
+              {generatedPassword ? t("usrp.done") : t("common.cancel")}
             </button>
             {!generatedPassword && (
               <button className="btn btn-primary" onClick={submitAdd} disabled={busy}>
@@ -584,19 +588,20 @@ export default function SystemUsers() {
       {/* reset password */}
       <Modal
         open={resetting !== null}
-        title={`Reset password — ${resetting?.username ?? ""}`}
+        title={t("usrp.resetTitle", { name: resetting?.username ?? "" })}
         onClose={() => setResetting(null)}
         width="w-[420px]"
       >
         <div className="flex flex-col gap-4">
           <p className="body-sm text-body">
-            Set a new password for <span className="font-medium text-ink">{resetting?.email}</span>.
-            All active sessions for this account will be revoked.
+            {t("usrp.resetBody1")}{" "}
+            <span className="font-medium text-ink">{resetting?.email}</span>.{" "}
+            {t("usrp.resetBody2")}
           </p>
           <input
             className="input"
             type="password"
-            placeholder="New password"
+            placeholder={t("usrp.newPwPh")}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
@@ -605,7 +610,7 @@ export default function SystemUsers() {
               {t("common.cancel")}
             </button>
             <button className="btn btn-primary" onClick={submitReset} disabled={busy || !newPassword}>
-              Reset
+              {t("usrp.resetBtn")}
             </button>
           </div>
         </div>
@@ -614,21 +619,21 @@ export default function SystemUsers() {
       {/* revoke confirm */}
       <Modal
         open={revoking !== null}
-        title="Revoke system administrator"
+        title={t("usrp.revokeTitle")}
         onClose={() => setRevoking(null)}
         width="w-[420px]"
       >
         <p className="body-sm mb-6 text-body">
-          Remove system-admin rights from{" "}
-          <span className="font-medium text-ink">{revoking?.username}</span> ({revoking?.email})?
-          The account itself is kept.
+          {t("usrp.revokeBody1")}{" "}
+          <span className="font-medium text-ink">{revoking?.username}</span> ({revoking?.email})?{" "}
+          {t("usrp.revokeBody2")}
         </p>
         <div className="flex justify-end gap-3">
           <button className="btn btn-outline" onClick={() => setRevoking(null)}>
             {t("common.cancel")}
           </button>
           <button className="btn btn-primary" onClick={submitRevoke} disabled={busy}>
-            Revoke
+            {t("usrp.revokeBtn")}
           </button>
         </div>
       </Modal>
@@ -636,21 +641,21 @@ export default function SystemUsers() {
       {/* promote confirm */}
       <Modal
         open={promoting !== null}
-        title="Promote to system administrator"
+        title={t("usrp.promoteTitle")}
         onClose={() => setPromoting(null)}
         width="w-[420px]"
       >
         <p className="body-sm mb-6 text-body">
-          Grant system-admin rights to{" "}
-          <span className="font-medium text-ink">{promoting?.username}</span> ({promoting?.email})?
-          They will be able to manage all tenants and platform settings.
+          {t("usrp.promoteBody1")}{" "}
+          <span className="font-medium text-ink">{promoting?.username}</span> ({promoting?.email})?{" "}
+          {t("usrp.promoteBody2")}
         </p>
         <div className="flex justify-end gap-3">
           <button className="btn btn-outline" onClick={() => setPromoting(null)}>
             {t("common.cancel")}
           </button>
           <button className="btn btn-primary" onClick={submitPromote} disabled={busy}>
-            Promote
+            {t("usrp.promoteBtn")}
           </button>
         </div>
       </Modal>

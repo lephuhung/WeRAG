@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Modal } from "@/components/modal";
 import { IconChevronRight } from "@/components/icons";
+import { useInModalNav, useInSettingsModal } from "@/components/system/in-modal-nav";
 import { canSeeSection, type SettingsRoleKey } from "@/components/settings/nav-config";
 
 /* Card hub for a /platform/system tab. Compact cards replace the old left
@@ -26,6 +27,8 @@ export interface SectionCard {
 export function SectionCardGrid({ cards }: { cards: SectionCard[] }) {
   const router = useRouter();
   const auth = useAuth();
+  const inModalNav = useInModalNav();
+  const inModal = useInSettingsModal();
   const [open, setOpen] = useState<string | null>(null);
 
   const isSystemAdmin = auth.user?.is_system_admin === true;
@@ -46,13 +49,19 @@ export function SectionCardGrid({ cards }: { cards: SectionCard[] }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-2 ${inModal ? "gap-3" : "gap-4 xl:grid-cols-3"}`}
+      >
         {visible.map((c) => (
           <button
             key={c.key}
             type="button"
-            onClick={() => (c.href ? router.push(c.href) : setOpen(c.key))}
-            className="card card-hover group flex items-start gap-3.5 p-5 text-left transition-all duration-150 hover:border-hairline-strong"
+            onClick={() => {
+              if (inModalNav?.(c.href ?? c.key)) return;
+              if (c.href) router.push(c.href);
+              else setOpen(c.key);
+            }}
+            className={`card card-hover group flex items-start gap-3.5 text-left transition-all duration-150 hover:border-hairline-strong ${inModal ? "p-4" : "p-5"}`}
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-hairline bg-surface-strong text-muted transition-colors group-hover:text-ink">
               {c.icon}

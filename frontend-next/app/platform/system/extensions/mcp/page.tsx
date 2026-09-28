@@ -19,6 +19,8 @@ import {
 import { McpServiceForm, McpToolsPanel } from "@/components/settings/mcp-services";
 import { Toggle } from "@/components/settings/toggle";
 import { RequireSystemAccess } from "@/components/require-system-access";
+import { useInSettingsModal } from "@/components/system/in-modal-nav";
+import { useT } from "@/lib/i18n";
 
 export default function McpServersPage() {
   return (
@@ -29,6 +31,8 @@ export default function McpServersPage() {
 }
 
 function McpServersPanel() {
+  const inModal = useInSettingsModal();
+  const { t } = useT();
   const [mcpServices, setMcpServices] = useState<MCPService[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
   const [mcpError, setMcpError] = useState("");
@@ -44,7 +48,7 @@ function McpServersPanel() {
     setMcpError("");
     listMCPServices()
       .then((data) => setMcpServices(data ?? []))
-      .catch((e) => setMcpError(e instanceof Error ? e.message : "Failed to load MCP services"))
+      .catch((e) => setMcpError(e instanceof Error ? e.message : t("mcpp.loadFailed")))
       .finally(() => setMcpLoading(false));
   }, []);
 
@@ -57,7 +61,7 @@ function McpServersPanel() {
       const next = await updateMCPService(s.id, { enabled: !s.enabled });
       setMcpServices((prev) => prev.map((x) => (x.id === next.id ? next : x)));
     } catch (e) {
-      setMcpError(e instanceof Error ? e.message : "Failed to toggle service");
+      setMcpError(e instanceof Error ? e.message : t("mcpp.toggleFailed"));
     }
   };
 
@@ -71,7 +75,7 @@ function McpServersPanel() {
         ...prev,
         [s.id]: {
           success: false,
-          message: e instanceof Error ? e.message : "Test failed",
+          message: e instanceof Error ? e.message : t("mcpp.testFailed"),
           tools: [],
         },
       }));
@@ -85,9 +89,9 @@ function McpServersPanel() {
       {/* Header bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="title-md font-semibold text-ink">MCP Servers</h2>
+          <h2 className="title-md font-semibold text-ink">{t("mcpp.title")}</h2>
           <p className="caption text-muted">
-            External tools and service endpoints available for dynamic tool calls in agents.
+            {t("mcpp.subtitle")}
           </p>
         </div>
 
@@ -96,20 +100,22 @@ function McpServersPanel() {
             className="btn btn-outline btn-sm"
             onClick={loadMcp}
             disabled={mcpLoading}
-            title="Refresh MCP servers"
+            title={t("mcpp.refreshTip")}
           >
             <IconRefresh className={`h-3.5 w-3.5 ${mcpLoading ? "animate-spin" : ""}`} />
-            Refresh
+            {t("common.refresh")}
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => setCreatingMcp(true)}>
-            <IconPlus className="h-3.5 w-3.5" /> Add MCP Server
+            <IconPlus className="h-3.5 w-3.5" /> {t("mcpp.add")}
           </button>
         </div>
       </div>
 
       {mcpError && <p className="caption mb-4 text-error">{mcpError}</p>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div
+        className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "lg:grid-cols-3"}`}
+      >
         {mcpServices.map((s) => {
           const testResult = testResults[s.id];
           return (
@@ -131,7 +137,7 @@ function McpServersPanel() {
                       </span>
                       {s.is_builtin && (
                         <span className="rounded bg-surface-strong px-1.5 py-0.5 text-[10px] font-medium text-muted">
-                          builtin
+                          {t("mcpp.builtin")}
                         </span>
                       )}
                     </div>
@@ -141,12 +147,12 @@ function McpServersPanel() {
                       </span>
                       {s.catalog && (
                         <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
-                          {s.catalog.tool_count} tools
+                          {t("mcpp.toolCount", { n: s.catalog.tool_count })}
                         </span>
                       )}
                       {s.catalog?.stale && (
                         <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-                          stale
+                          {t("mcp.stale")}
                         </span>
                       )}
                     </div>
@@ -155,14 +161,14 @@ function McpServersPanel() {
                   <Toggle
                     checked={s.enabled}
                     onChange={() => void toggleMcp(s)}
-                    title={s.enabled ? "Enabled" : "Disabled"}
-                    label={s.enabled ? "Enabled" : "Disabled"}
+                    title={s.enabled ? t("common.on") : t("common.off")}
+                    label={s.enabled ? t("common.on") : t("common.off")}
                   />
                 </div>
 
                 {/* Description */}
                 <p className="caption line-clamp-2 text-muted mb-3">
-                  {s.description || "No description provided."}
+                  {s.description || t("mcpp.noDesc")}
                 </p>
 
                 {/* Endpoint / Stdio Details */}
@@ -187,8 +193,8 @@ function McpServersPanel() {
                     }`}
                   >
                     {testResult.success
-                      ? `Connected · ${(testResult.tools ?? []).length} tools verified`
-                      : testResult.message || "Connection failed"}
+                      ? t("mcpp.testOk", { n: (testResult.tools ?? []).length })
+                      : testResult.message || t("mcp.testFail")}
                   </div>
                 )}
               </div>
@@ -201,19 +207,19 @@ function McpServersPanel() {
                     onClick={() => void handleTestMcp(s)}
                     disabled={testingId === s.id}
                   >
-                    {testingId === s.id ? "Testing…" : "Test"}
+                    {testingId === s.id ? t("vstore.testing") : t("vstore.test")}
                   </button>
                   <button
                     className="btn btn-tertiary btn-sm text-[12px]"
                     onClick={() => setToolsForMcp(s)}
                   >
-                    Tools
+                    {t("mcp.tools")}
                   </button>
                   <button
                     className="btn btn-tertiary btn-sm text-[12px]"
                     onClick={() => setEditingMcp(s)}
                   >
-                    Edit
+                    {t("common.edit")}
                   </button>
                 </div>
 
@@ -221,7 +227,7 @@ function McpServersPanel() {
                   <button
                     className="btn btn-tertiary btn-sm text-[12px] text-error hover:bg-rose-500/10"
                     onClick={() => setRemovingMcp(s)}
-                    title="Delete service"
+                    title={t("mcp.deleteTitle")}
                   >
                     <IconTrash className="h-3.5 w-3.5" />
                   </button>
@@ -239,8 +245,8 @@ function McpServersPanel() {
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-surface-strong text-muted group-hover:text-primary">
             <IconPlus className="h-5 w-5" />
           </div>
-          <span className="text-[14px] font-medium text-ink">Register MCP Server</span>
-          <span className="caption mt-1 text-muted">HTTP Streamable, SSE or Stdio</span>
+          <span className="text-[14px] font-medium text-ink">{t("mcpp.register")}</span>
+          <span className="caption mt-1 text-muted">{t("mcpp.registerDesc")}</span>
         </div>
       </div>
 
@@ -269,16 +275,16 @@ function McpServersPanel() {
 
       <Modal
         open={removingMcp !== null}
-        title="Delete MCP Service"
+        title={t("mcp.deleteTitle")}
         onClose={() => setRemovingMcp(null)}
         width="w-[420px]"
       >
         <p className="body-sm text-body">
-          Are you sure you want to delete MCP service &quot;{removingMcp?.name}&quot;? Agents using its tools will lose access.
+          {t("mcp.deleteBody", { name: removingMcp?.name ?? "" })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn btn-outline btn-sm" onClick={() => setRemovingMcp(null)}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="btn btn-sm bg-[var(--color-error)] text-white"
@@ -291,7 +297,7 @@ function McpServersPanel() {
               }
             }}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       </Modal>

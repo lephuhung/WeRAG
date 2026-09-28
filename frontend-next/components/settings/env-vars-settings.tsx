@@ -11,8 +11,10 @@ import {
   type EnvVarView,
 } from "@/lib/api/env-vars";
 import { IconSettings, IconTrash } from "@/components/icons";
+import { useT } from "@/lib/i18n";
 
 export function EnvVarsSettings() {
+  const { t } = useT();
   const [groups, setGroups] = useState<ConfigEnvGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -31,7 +33,7 @@ export function EnvVarsSettings() {
       const res = await listMyEnvVars();
       setGroups(res.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load environment variables");
+      setError(e instanceof Error ? e.message : t("envv.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -54,14 +56,14 @@ export function EnvVarsSettings() {
       setEditingVar(null);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update variable");
+      setError(err instanceof Error ? err.message : t("envv.updateFailed"));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (type: "sandbox" | "skill", targetId: string, name: string) => {
-    if (!confirm(`Clear your custom value for ${name}?`)) return;
+    if (!confirm(t("envv.confirmClear", { name }))) return;
     try {
       if (type === "sandbox") {
         await deleteMySandboxEnv(targetId, name);
@@ -70,16 +72,16 @@ export function EnvVarsSettings() {
       }
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to clear variable");
+      setError(err instanceof Error ? err.message : t("envv.clearFailed"));
     }
   };
 
   return (
     <div>
       <div className="border-b border-hairline pb-4">
-        <h2 className="title-md">Environment Variables</h2>
+        <h2 className="title-md">{t("envv.title")}</h2>
         <p className="caption mt-1 text-muted">
-          Manage your personal credentials and execution variables for sandboxes and skills. User values override workspace defaults.
+          {t("envv.subtitle")}
         </p>
       </div>
 
@@ -90,11 +92,11 @@ export function EnvVarsSettings() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-muted">Loading environment variables…</div>
+        <div className="py-12 text-center text-muted">{t("envv.loading")}</div>
       ) : groups.length === 0 ? (
         <div className="py-12 text-center text-muted">
           <IconSettings className="mx-auto mb-2 h-8 w-8 text-muted-soft" />
-          <p className="text-[14px]">No environment variables required or configured.</p>
+          <p className="text-[14px]">{t("envv.empty")}</p>
         </div>
       ) : (
         <div className="mt-6 space-y-8">
@@ -111,7 +113,7 @@ export function EnvVarsSettings() {
 
               {group.vars.length > 0 && (
                 <div className="rounded-xl border border-hairline bg-surface p-4 space-y-3">
-                  <div className="caption-uppercase text-muted-soft">Sandbox Variables</div>
+                  <div className="caption-uppercase text-muted-soft">{t("envv.sandboxVars")}</div>
                   <div className="divide-y divide-hairline">
                     {group.vars.map((v) => (
                       <VarRow
@@ -173,18 +175,18 @@ export function EnvVarsSettings() {
       {editingVar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-[440px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-2">Configure {editingVar.name}</h3>
+            <h3 className="title-sm mb-2">{t("envv.configureTitle", { name: editingVar.name })}</h3>
             <p className="caption mb-4 text-muted">
-              Enter your personal value. It will be stored securely and only used during your own executions.
+              {t("envv.configureDesc")}
             </p>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Value</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("envv.value")}</label>
                 <input
                   required
                   type="password"
                   className="input h-9 w-full text-[13px]"
-                  placeholder="Enter secret or credential"
+                  placeholder={t("envv.valuePh")}
                   value={editingVar.value}
                   onChange={(e) =>
                     setEditingVar({ ...editingVar, value: e.target.value })
@@ -198,14 +200,14 @@ export function EnvVarsSettings() {
                   onClick={() => setEditingVar(null)}
                   className="btn btn-outline btn-sm"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
                   className="btn btn-primary btn-sm"
                 >
-                  {saving ? "Saving…" : "Save Value"}
+                  {saving ? t("memp.saving") : t("envv.save")}
                 </button>
               </div>
             </form>
@@ -225,6 +227,9 @@ function VarRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useT();
+  const srcKey =
+    item.source === "user" ? "envv.srcUser" : item.source === "workspace" ? "envv.srcWorkspace" : "envv.srcMissing";
   return (
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1">
@@ -239,9 +244,9 @@ function VarRow({
                 : "bg-error/15 text-error"
             }`}
           >
-            {item.source}
+            {t(srcKey)}
           </span>
-          {item.required && <span className="caption text-error">*required</span>}
+          {item.required && <span className="caption text-error">*{t("envv.required")}</span>}
         </div>
         {item.description && (
           <p className="caption mt-0.5 text-muted">{item.description}</p>
@@ -250,13 +255,13 @@ function VarRow({
 
       <div className="flex items-center gap-2">
         <button onClick={onEdit} className="btn btn-outline btn-sm">
-          {item.source === "user" ? "Update" : "Set"}
+          {item.source === "user" ? t("envv.update") : t("envv.set")}
         </button>
         {item.source === "user" && (
           <button
             onClick={onDelete}
             className="rounded-lg p-1.5 text-muted hover:bg-surface-strong hover:text-error"
-            title="Clear my custom value"
+            title={t("envv.clearTip")}
           >
             <IconTrash className="h-4 w-4" />
           </button>

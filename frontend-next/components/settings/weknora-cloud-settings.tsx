@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export function WeKnoraCloudSettings() {
+  const { t } = useT();
   const auth = useAuth();
   const isSystemAdmin = auth.user?.is_system_admin === true;
 
@@ -29,13 +31,13 @@ export function WeKnoraCloudSettings() {
         },
       );
       if (res.success) {
-        setSuccess("WeRAG Cloud credentials configured successfully");
+        setSuccess(t("wkn.saved"));
         setAppSecret("");
       } else {
-        setError(res.message || "Failed to save credentials");
+        setError(res.message || t("wkn.saveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save credentials");
+      setError(e instanceof Error ? e.message : t("wkn.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -45,9 +47,9 @@ export function WeKnoraCloudSettings() {
     <div className="space-y-8">
       {/* Header */}
       <div className="border-b border-hairline pb-5">
-        <h2 className="title-md font-semibold text-ink">WeRAG Cloud Platform</h2>
+        <h2 className="title-md font-semibold text-ink">{t("wkn.title")}</h2>
         <p className="caption text-muted mt-1">
-          Configure cloud model services, atomic knowledge interfaces, and speech recognition credentials.
+          {t("wkn.subtitle")}
         </p>
       </div>
 
@@ -65,12 +67,12 @@ export function WeKnoraCloudSettings() {
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
         <label className="block">
-          <span className="text-sm font-medium text-ink block mb-1">App ID</span>
+          <span className="text-sm font-medium text-ink block mb-1">{t("wkn.appId")}</span>
           <input
             type="text"
             required
             disabled={!isSystemAdmin || saving}
-            placeholder="e.g. wx_aispeech_app_id"
+            placeholder={t("wkn.appIdPh")}
             className="input font-mono text-sm"
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
@@ -78,7 +80,7 @@ export function WeKnoraCloudSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-ink block mb-1">App Secret</span>
+          <span className="text-sm font-medium text-ink block mb-1">{t("wkn.appSecret")}</span>
           <input
             type="password"
             required
@@ -96,7 +98,7 @@ export function WeKnoraCloudSettings() {
             disabled={saving || !appId.trim() || !appSecret.trim()}
             className="btn btn-primary"
           >
-            {saving ? "Saving credentials…" : "Save Credentials"}
+            {saving ? t("wkn.saving") : t("wkn.saveCta")}
           </button>
         )}
       </form>

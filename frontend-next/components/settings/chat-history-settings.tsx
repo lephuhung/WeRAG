@@ -7,6 +7,7 @@ import { apiGet, apiPut } from "@/lib/api-client";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { Select } from "@/components/select";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export interface ChatHistoryConfig {
   enabled: boolean;
@@ -22,6 +23,7 @@ export interface ChatHistoryKBStats {
 }
 
 export function ChatHistorySettings() {
+  const { t } = useT();
   const auth = useAuth();
   const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const currentRole =
@@ -57,7 +59,7 @@ export function ChatHistorySettings() {
       if (statsRes?.data) setStats(statsRes.data);
       setModels(mdlRes);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load chat history configuration");
+      setError(e instanceof Error ? e.message : t("chath.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -79,10 +81,10 @@ export function ChatHistorySettings() {
       );
       if (res?.data) {
         setConfig(res.data);
-        setSuccess("Chat history settings saved");
+        setSuccess(t("chath.saved"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save configuration");
+      setError(e instanceof Error ? e.message : t("chath.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -96,9 +98,9 @@ export function ChatHistorySettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">Chat History Indexing</h2>
+          <h2 className="title-md font-semibold text-ink">{t("chath.title")}</h2>
           <p className="caption text-muted mt-1">
-            Automatically index past chat messages into a dedicated knowledge base for recall and semantic search.
+            {t("chath.subtitle")}
           </p>
         </div>
 
@@ -106,7 +108,7 @@ export function ChatHistorySettings() {
           type="button"
           onClick={() => void loadData()}
           className="btn btn-outline btn-sm p-1.5"
-          title="Refresh"
+          title={t("common.refresh")}
         >
           <IconRefresh className="h-3.5 w-3.5" />
         </button>
@@ -126,9 +128,9 @@ export function ChatHistorySettings() {
       {/* Switch */}
       <div className="flex items-center justify-between rounded-xl border border-hairline bg-surface-card p-5">
         <div>
-          <span className="text-sm font-semibold text-ink block">Enable Message Indexing</span>
+          <span className="text-sm font-semibold text-ink block">{t("chath.enable")}</span>
           <span className="caption text-muted block mt-0.5">
-            Store conversations in vector storage to let agents cite previous chats.
+            {t("chath.enableDesc")}
           </span>
         </div>
         <Toggle
@@ -145,16 +147,16 @@ export function ChatHistorySettings() {
       {config.enabled && (
         <div className="rounded-xl border border-hairline p-5 space-y-3">
           <label className="block">
-            <span className="text-sm font-medium text-ink block">Embedding Model</span>
+            <span className="text-sm font-medium text-ink block">{t("chath.embeddingModel")}</span>
             <span className="caption text-muted block text-xs mt-0.5 mb-2">
-              Model used to generate vector embeddings for chat messages.
-              {modelLocked && " (Locked because indexed messages already exist)"}
+              {t("chath.embeddingModelDesc")}
+              {modelLocked && ` ${t("chath.lockedNote")}`}
             </span>
             <Select
               disabled={!canEdit || modelLocked}
               className="text-sm"
               value={config.embedding_model_id || ""}
-              placeholder="Select embedding model…"
+              placeholder={t("chath.selectModel")}
               onChange={(v) => {
                 setConfig({ ...config, embedding_model_id: v });
                 void handleSave({ embedding_model_id: v });
@@ -170,18 +172,18 @@ export function ChatHistorySettings() {
 
       {/* Stats Card */}
       <div className="rounded-xl border border-hairline bg-surface-strong/30 p-5 space-y-2">
-        <span className="caption font-medium text-ink block">Indexing Statistics</span>
+        <span className="caption font-medium text-ink block">{t("chath.stats")}</span>
         <div className="grid grid-cols-2 gap-4 pt-1">
           <div>
-            <span className="caption text-muted block text-xs">Indexed Messages</span>
+            <span className="caption text-muted block text-xs">{t("chath.indexedMessages")}</span>
             <span className="font-semibold text-ink text-xl">
               {stats?.indexed_message_count ?? 0}
             </span>
           </div>
           <div>
-            <span className="caption text-muted block text-xs">Target Knowledge Base</span>
+            <span className="caption text-muted block text-xs">{t("chath.targetKb")}</span>
             <span className="caption font-mono text-muted text-xs truncate block mt-1">
-              {stats?.knowledge_base_id || "Auto-managed"}
+              {stats?.knowledge_base_id || t("chath.autoManaged")}
             </span>
           </div>
         </div>

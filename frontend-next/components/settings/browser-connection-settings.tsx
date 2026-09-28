@@ -10,8 +10,10 @@ import {
   type BrowserAccountStatus,
 } from "@/lib/api/browser";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useT } from "@/lib/i18n";
 
 export function BrowserConnectionSettings() {
+  const { t } = useT();
   const [status, setStatus] = useState<BrowserAccountStatus | null>(null);
   const [pairingLink, setPairingLink] = useState("");
   const [loading, setLoading] = useState(true);
@@ -26,7 +28,7 @@ export function BrowserConnectionSettings() {
       const res = await getBrowserConnection();
       setStatus(res.data ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load browser connection status");
+      setError(e instanceof Error ? e.message : t("browser.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -45,7 +47,7 @@ export function BrowserConnectionSettings() {
         setPairingLink(res.data.pairing_link);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate pairing link");
+      setError(e instanceof Error ? e.message : t("browser.pairFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -59,7 +61,7 @@ export function BrowserConnectionSettings() {
       setStatus(res.data ?? null);
       setPairingLink("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to disconnect browser");
+      setError(e instanceof Error ? e.message : t("browser.disconnectFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -75,7 +77,7 @@ export function BrowserConnectionSettings() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to download browser extension bundle");
+      setError(e instanceof Error ? e.message : t("browser.downloadFailed"));
     }
   };
 
@@ -84,9 +86,9 @@ export function BrowserConnectionSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">Browser Extension Connection</h2>
+          <h2 className="title-md font-semibold text-ink">{t("browser.title")}</h2>
           <p className="caption text-muted mt-1">
-            Pair your local browser extension to allow agents to interact with web pages directly.
+            {t("browser.subtitle")}
           </p>
         </div>
 
@@ -94,7 +96,7 @@ export function BrowserConnectionSettings() {
           type="button"
           onClick={() => void loadStatus()}
           className="btn btn-outline btn-sm p-1.5"
-          title="Refresh status"
+          title={t("browser.refreshTip")}
         >
           <IconRefresh className="h-3.5 w-3.5" />
         </button>
@@ -118,17 +120,17 @@ export function BrowserConnectionSettings() {
             <div>
               <span className="font-semibold text-ink block text-base">
                 {loading
-                  ? "Checking connection…"
+                  ? t("browser.checking")
                   : status?.connected
-                  ? "Browser Connected"
-                  : "Not Connected"}
+                  ? t("browser.connected")
+                  : t("browser.notConnected")}
               </span>
               {status?.device && (
                 <span className="caption text-muted block text-xs mt-0.5">
-                  Device: {status.device.label || status.device.id} • Last seen:{" "}
+                  {t("browser.device")}: {status.device.label || status.device.id} • {t("browser.lastSeen")}:{" "}
                   {status.device.last_seen_at
                     ? new Date(status.device.last_seen_at).toLocaleTimeString()
-                    : "now"}
+                    : t("browser.now")}
                 </span>
               )}
             </div>
@@ -142,7 +144,7 @@ export function BrowserConnectionSettings() {
                 onClick={() => void handleRevoke()}
                 className="btn btn-outline btn-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs"
               >
-                Disconnect
+                {t("browser.disconnect")}
               </button>
             ) : (
               <button
@@ -151,7 +153,7 @@ export function BrowserConnectionSettings() {
                 onClick={() => void handlePair()}
                 className="btn btn-primary btn-sm text-xs"
               >
-                {actionBusy ? "Generating…" : "Pair New Browser"}
+                {actionBusy ? t("browser.generating") : t("browser.pair")}
               </button>
             )}
           </div>
@@ -161,7 +163,7 @@ export function BrowserConnectionSettings() {
         {pairingLink && !status?.connected && (
           <div className="rounded-xl border border-brand/30 bg-brand/5 p-4 space-y-2 mt-4">
             <span className="caption font-semibold text-brand block">
-              Single-use Pairing Link (Expires in 5 minutes):
+              {t("browser.pairingLink")}
             </span>
             <div className="flex items-center gap-2">
               <input
@@ -181,11 +183,11 @@ export function BrowserConnectionSettings() {
                 }}
                 className="btn btn-primary btn-sm shrink-0 text-xs"
               >
-                {copied ? "Copied!" : "Copy"}
+                {copied ? t("browser.copied") : t("common.copy")}
               </button>
             </div>
             <p className="caption text-muted text-[11px]">
-              Open this link in the browser containing your WeRAG extension to complete pairing.
+              {t("browser.pairingHint")}
             </p>
           </div>
         )}
@@ -194,9 +196,9 @@ export function BrowserConnectionSettings() {
       {/* Extension package download card */}
       <div className="rounded-xl border border-hairline p-6 flex items-center justify-between gap-4">
         <div>
-          <span className="font-semibold text-ink block text-sm">Download Chrome / Edge Extension</span>
+          <span className="font-semibold text-ink block text-sm">{t("browser.download")}</span>
           <span className="caption text-muted block text-xs mt-0.5">
-            Install the extension bundle unpacked in Developer Mode to enable local browsing capabilities.
+            {t("browser.downloadDesc")}
           </span>
         </div>
         <button
@@ -204,7 +206,7 @@ export function BrowserConnectionSettings() {
           onClick={() => void handleDownload()}
           className="btn btn-outline btn-sm text-xs shrink-0"
         >
-          Download .zip
+          {t("browser.downloadZip")}
         </button>
       </div>
     </div>

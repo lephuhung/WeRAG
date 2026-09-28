@@ -94,6 +94,7 @@ export function AbbreviationSuggestionCard({
         return;
       }
       const row = res.data;
+      window.dispatchEvent(new Event("weknora:abbreviations-changed"));
       if (row.is_active) {
         setActive((prev) => ({ ...prev, [short]: true }));
       } else {

@@ -14,25 +14,8 @@ import {
 } from "@/lib/api/system";
 import { MessageHeatmap } from "@/components/system/message-heatmap";
 import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
+import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { IconClock, IconOrg } from "@/components/icons";
-
-/* Management surfaces — full pages with tables/audit UI. */
-const adminCards: SectionCard[] = [
-  {
-    key: "users",
-    title: "Users",
-    desc: "Platform accounts, roles and system admins.",
-    icon: <IconOrg className="h-5 w-5" />,
-    href: "/platform/system/admin/users",
-  },
-  {
-    key: "logs",
-    title: "Audit logs",
-    desc: "Search the platform audit trail.",
-    icon: <IconClock className="h-5 w-5" />,
-    href: "/platform/system/admin/logs",
-  },
-];
 
 function formatUptime(seconds?: number): string {
   if (seconds === undefined) return "—";
@@ -63,6 +46,7 @@ export default function SystemOverview() {
 }
 
 function SystemOverviewBody() {
+  const inModal = useInSettingsModal();
   const { t } = useT();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [queues, setQueues] = useState<RuntimeQueuesResponse | null>(null);
@@ -75,7 +59,7 @@ function SystemOverviewBody() {
     let alive = true;
     getSystemInfo()
       .then((res) => alive && setInfo(res.data ?? null))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : "Failed to load system info"));
+      .catch((e) => alive && setError(e instanceof Error ? e.message : t("adm.loadFailed")));
     getRuntimeQueues()
       .then((res) => alive && setQueues(res))
       .catch((e) => {
@@ -103,19 +87,36 @@ function SystemOverviewBody() {
 
   const maxDocCount = Math.max(1, ...(stats?.documents.by_status ?? []).map((s) => s.count));
 
+  const adminCards: SectionCard[] = [
+    {
+      key: "users",
+      title: t("adm.cardUsers"),
+      desc: t("adm.cardUsersDesc"),
+      icon: <IconOrg className="h-5 w-5" />,
+      href: "/platform/system/admin/users",
+    },
+    {
+      key: "logs",
+      title: t("adm.cardLogs"),
+      desc: t("adm.cardLogsDesc"),
+      icon: <IconClock className="h-5 w-5" />,
+      href: "/platform/system/admin/logs",
+    },
+  ];
+
   const infoRows: { label: string; value: string }[] = info
     ? [
-        { label: "Version", value: info.version },
-        { label: "Edition", value: info.edition ?? "—" },
-        { label: "Commit", value: info.commit_id ?? "—" },
-        { label: "Build time", value: info.build_time ?? "—" },
-        { label: "Go version", value: info.go_version ?? "—" },
-        { label: "Started at", value: info.started_at ?? "—" },
-        { label: "Uptime", value: formatUptime(info.uptime_seconds) },
-        { label: "Database", value: info.db_version ?? "—" },
-        { label: "Keyword engine", value: info.keyword_index_engine ?? "—" },
-        { label: "Vector store", value: info.vector_store_engine ?? "—" },
-        { label: "Graph engine", value: info.graph_database_engine ?? "—" },
+        { label: t("adm.infoVersion"), value: info.version },
+        { label: t("adm.infoEdition"), value: info.edition ?? "—" },
+        { label: t("adm.infoCommit"), value: info.commit_id ?? "—" },
+        { label: t("adm.infoBuildTime"), value: info.build_time ?? "—" },
+        { label: t("adm.infoGoVersion"), value: info.go_version ?? "—" },
+        { label: t("adm.infoStartedAt"), value: info.started_at ?? "—" },
+        { label: t("adm.infoUptime"), value: formatUptime(info.uptime_seconds) },
+        { label: t("adm.infoDatabase"), value: info.db_version ?? "—" },
+        { label: t("adm.infoKeywordEngine"), value: info.keyword_index_engine ?? "—" },
+        { label: t("adm.infoVectorStore"), value: info.vector_store_engine ?? "—" },
+        { label: t("adm.infoGraphEngine"), value: info.graph_database_engine ?? "—" },
       ]
     : [];
 
@@ -124,7 +125,7 @@ function SystemOverviewBody() {
       {error && <p className="caption mb-4 text-error">{error}</p>}
       {info?.db_migration_error && (
         <p className="caption mb-4 text-error">
-          Database migration error: {info.db_migration_error}
+          {t("adm.migrationError", { err: info.db_migration_error })}
         </p>
       )}
 
@@ -136,7 +137,9 @@ function SystemOverviewBody() {
         <>
           <div className="mb-6">
             <h2 className="title-md mb-3">{t("stats.accounts")}</h2>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <div
+              className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${inModal ? "" : "lg:grid-cols-5"}`}
+            >
               {[
                 { label: t("stats.totalUsers"), value: stats.accounts.total_users },
                 { label: t("stats.activeUsers"), value: stats.accounts.active_users },
@@ -152,7 +155,7 @@ function SystemOverviewBody() {
             </div>
           </div>
 
-          <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={`mb-6 grid grid-cols-1 gap-4 ${inModal ? "" : "lg:grid-cols-2"}`}>
             <div className="card p-6">
               <div className="mb-4 flex items-baseline justify-between">
                 <h2 className="title-md">{t("stats.documentsByStatus")}</h2>
@@ -207,12 +210,12 @@ function SystemOverviewBody() {
       )}
 
       {queues && (
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className={`mb-6 grid grid-cols-2 gap-4 ${inModal ? "" : "lg:grid-cols-4"}`}>
           {[
-            { label: "Active tasks", value: totals.active },
-            { label: "Pending", value: totals.pending },
-            { label: "Retrying", value: totals.retry },
-            { label: "Failed (archived)", value: totals.archived },
+            { label: t("adm.qActive"), value: totals.active },
+            { label: t("adm.qPending"), value: totals.pending },
+            { label: t("adm.qRetry"), value: totals.retry },
+            { label: t("adm.qFailed"), value: totals.archived },
           ].map((s) => (
             <div key={s.label} className="card p-5">
               <div className="caption-uppercase text-muted-soft">{s.label}</div>
@@ -223,18 +226,18 @@ function SystemOverviewBody() {
       )}
       {queuesDenied && (
         <p className="caption mb-4 text-muted-soft">
-          Runtime queue metrics are only available to system administrators.
+          {t("q.denied")}
         </p>
       )}
       {queues && !queues.available && (
         <p className="caption mb-4 text-muted-soft">
-          Queue metrics are unavailable in this deployment.
+          {t("q.unavailable")}
         </p>
       )}
 
       <div className="card p-6">
-        <h2 className="title-md mb-5">System info</h2>
-        {info === null && !error && <p className="caption text-muted">Loading…</p>}
+        <h2 className="title-md mb-5">{t("adm.sysInfo")}</h2>
+        {info === null && !error && <p className="caption text-muted">{t("adm.loading")}</p>}
         <dl className="grid grid-cols-1 gap-x-10 gap-y-4 sm:grid-cols-2">
           {infoRows.map((r) => (
             <div

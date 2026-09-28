@@ -12,8 +12,10 @@ import {
 } from "@/lib/api/vector-stores";
 import { IconBook, IconPlus, IconPulse, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
+import { useT } from "@/lib/i18n";
 
 export function VectorStoreSettings() {
+  const { t } = useT();
   const [stores, setStores] = useState<VectorStoreEntity[]>([]);
   const [types, setTypes] = useState<VectorStoreTypeInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +51,7 @@ export function VectorStoreSettings() {
         setTypes(tRes.value);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load vector stores");
+      setError(e instanceof Error ? e.message : t("vstore.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -63,11 +65,11 @@ export function VectorStoreSettings() {
     setTestingId(id);
     try {
       await testVectorStoreById(id);
-      setTestResults((prev) => ({ ...prev, [id]: { ok: true, msg: "Connection successful" } }));
+      setTestResults((prev) => ({ ...prev, [id]: { ok: true, msg: t("vstore.testOk") } }));
     } catch (err) {
       setTestResults((prev) => ({
         ...prev,
-        [id]: { ok: false, msg: err instanceof Error ? err.message : "Connection failed" },
+        [id]: { ok: false, msg: err instanceof Error ? err.message : t("vstore.testFail") },
       }));
     } finally {
       setTestingId(null);
@@ -75,12 +77,12 @@ export function VectorStoreSettings() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this vector store?")) return;
+    if (!confirm(t("vstore.confirmDelete"))) return;
     try {
       await deleteVectorStore(id);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete vector store");
+      setError(e instanceof Error ? e.message : t("vstore.deleteFailed"));
     }
   };
 
@@ -113,7 +115,7 @@ export function VectorStoreSettings() {
       });
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create vector store");
+      setError(err instanceof Error ? err.message : t("vstore.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -123,16 +125,16 @@ export function VectorStoreSettings() {
     <div>
       <div className="flex items-center justify-between border-b border-hairline pb-4">
         <div>
-          <h2 className="title-md">Vector Store Engines</h2>
+          <h2 className="title-md">{t("vstore.title")}</h2>
           <p className="caption mt-1 text-muted">
-            Configure vector databases used for dense retrieval, embedding indexes, and semantic search.
+            {t("vstore.subtitle")}
           </p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
           className="btn btn-primary btn-sm flex items-center gap-1.5"
         >
-          <IconPlus className="h-4 w-4" /> Add Vector Store
+          <IconPlus className="h-4 w-4" /> {t("vstore.add")}
         </button>
       </div>
 
@@ -143,11 +145,11 @@ export function VectorStoreSettings() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-muted">Loading vector stores…</div>
+        <div className="py-12 text-center text-muted">{t("vstore.loading")}</div>
       ) : stores.length === 0 ? (
         <div className="py-12 text-center text-muted">
           <IconBook className="mx-auto mb-2 h-8 w-8 text-muted-soft" />
-          <p className="text-[14px]">No vector stores configured.</p>
+          <p className="text-[14px]">{t("vstore.empty")}</p>
         </div>
       ) : (
         <div className="mt-6 space-y-3">
@@ -180,14 +182,14 @@ export function VectorStoreSettings() {
                         className="btn btn-outline btn-sm flex items-center gap-1"
                       >
                         <IconPulse className={`h-3.5 w-3.5 ${testingId === s.id ? "animate-spin" : ""}`} />
-                        {testingId === s.id ? "Testing…" : "Test"}
+                        {testingId === s.id ? t("vstore.testing") : t("vstore.test")}
                       </button>
                     )}
                     {!s.readonly && s.id && (
                       <button
                         onClick={() => handleDelete(s.id!)}
                         className="rounded-lg p-1.5 text-muted hover:bg-surface-strong hover:text-error"
-                        title="Delete"
+                        title={t("common.delete")}
                       >
                         <IconTrash className="h-4 w-4" />
                       </button>
@@ -214,21 +216,21 @@ export function VectorStoreSettings() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-[500px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-4">Add Vector Store Engine</h3>
+            <h3 className="title-sm mb-4">{t("vstore.addTitle")}</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Name</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("vstore.name")}</label>
                 <input
                   required
                   className="input h-9 w-full text-[13px]"
-                  placeholder="e.g. Production pgvector"
+                  placeholder={t("vstore.namePh")}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
 
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Engine Type</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("vstore.engineType")}</label>
                 <Select
                   className="h-9 w-full text-[13px]"
                   value={formData.engine_type}
@@ -252,7 +254,7 @@ export function VectorStoreSettings() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-2">
-                  <label className="caption mb-1 block font-medium text-ink">Host</label>
+                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.host")}</label>
                   <input
                     className="input h-9 w-full text-[13px]"
                     placeholder="localhost or 127.0.0.1"
@@ -261,7 +263,7 @@ export function VectorStoreSettings() {
                   />
                 </div>
                 <div>
-                  <label className="caption mb-1 block font-medium text-ink">Port</label>
+                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.port")}</label>
                   <input
                     className="input h-9 w-full text-[13px]"
                     placeholder="5432"
@@ -272,7 +274,7 @@ export function VectorStoreSettings() {
               </div>
 
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Database Name</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("vstore.dbName")}</label>
                 <input
                   className="input h-9 w-full text-[13px]"
                   placeholder="werag_vectors"
@@ -283,7 +285,7 @@ export function VectorStoreSettings() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="caption mb-1 block font-medium text-ink">User</label>
+                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.user")}</label>
                   <input
                     className="input h-9 w-full text-[13px]"
                     placeholder="postgres"
@@ -292,7 +294,7 @@ export function VectorStoreSettings() {
                   />
                 </div>
                 <div>
-                  <label className="caption mb-1 block font-medium text-ink">Password</label>
+                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.password")}</label>
                   <input
                     className="input h-9 w-full text-[13px]"
                     type="password"
@@ -308,14 +310,14 @@ export function VectorStoreSettings() {
                   onClick={() => setModalOpen(false)}
                   className="btn btn-outline btn-sm"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="btn btn-primary btn-sm"
                 >
-                  {submitting ? "Saving…" : "Save"}
+                  {submitting ? t("memp.saving") : t("common.save")}
                 </button>
               </div>
             </form>

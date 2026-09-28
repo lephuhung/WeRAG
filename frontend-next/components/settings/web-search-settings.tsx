@@ -11,6 +11,7 @@ import {
   testWebSearchProvider,
   type WebSearchProviderEntity,
 } from "@/lib/api/web-search";
+import { useT } from "@/lib/i18n";
 
 const SUPPORTED_PROVIDERS = [
   { id: "brave", name: "Brave Search" },
@@ -22,6 +23,7 @@ const SUPPORTED_PROVIDERS = [
 ] as const;
 
 export function WebSearchSettings() {
+  const { t } = useT();
   const [providers, setProviders] = useState<WebSearchProviderEntity[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +51,7 @@ export function WebSearchSettings() {
       const res = await listWebSearchProviders();
       setProviders(res.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load search providers");
+      setError(e instanceof Error ? e.message : t("ws.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -83,19 +85,19 @@ export function WebSearchSettings() {
       });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add search provider");
+      setError(e instanceof Error ? e.message : t("ws.addFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Remove this search provider?")) return;
+    if (!confirm(t("ws.confirmRemove"))) return;
     try {
       await deleteWebSearchProvider(id);
       setProviders((prev) => prev.filter((p) => p.id !== id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove provider");
+      setError(e instanceof Error ? e.message : t("ws.removeFailed"));
     }
   };
 
@@ -103,9 +105,9 @@ export function WebSearchSettings() {
     setTestResult(null);
     try {
       await testWebSearchProvider(id);
-      setTestResult("Provider connected and responded successfully!");
+      setTestResult(t("ws.testOk"));
     } catch (e) {
-      setTestResult(e instanceof Error ? e.message : "Search test failed");
+      setTestResult(e instanceof Error ? e.message : t("ws.testFailed"));
     }
   };
 
@@ -113,9 +115,9 @@ export function WebSearchSettings() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="title-md text-ink">Web Search Providers</h3>
+          <h3 className="title-md text-ink">{t("ws.title")}</h3>
           <p className="body-sm mt-1 text-muted">
-            Configure external search engines for real-time web retrieval during chats and agent execution.
+            {t("ws.subtitle")}
           </p>
         </div>
         <button
@@ -123,14 +125,14 @@ export function WebSearchSettings() {
           className="btn btn-primary btn-sm"
           onClick={() => setModalOpen(true)}
         >
-          <IconPlus className="h-4 w-4" /> Add provider
+          <IconPlus className="h-4 w-4" /> {t("ws.add")}
         </button>
       </div>
 
       {error && <div className="card mb-4 p-4 text-error text-xs">{error}</div>}
       {testResult && (
         <div className="card mb-4 p-4 text-xs font-mono bg-surface-strong">
-          <div className="font-semibold text-ink mb-1">Test Status:</div>
+          <div className="font-semibold text-ink mb-1">{t("ws.testStatus")}:</div>
           <div className="text-muted">{testResult}</div>
         </div>
       )}
@@ -138,7 +140,7 @@ export function WebSearchSettings() {
       {/* List */}
       {providers.length === 0 && !busy ? (
         <div className="card p-8 text-center text-muted text-xs">
-          No web search providers configured yet. Click &quot;Add provider&quot; to configure Tavily, Brave, Google, etc.
+          {t("ws.empty")}
         </div>
       ) : (
         <div className="space-y-3">
@@ -153,7 +155,7 @@ export function WebSearchSettings() {
                   </span>
                   {p.is_default && (
                     <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                      Default
+                      {t("ws.default")}
                     </span>
                   )}
                 </div>
@@ -168,7 +170,7 @@ export function WebSearchSettings() {
                     className="btn btn-outline btn-sm"
                     onClick={() => handleTest(p.id!)}
                   >
-                    Test
+                    {t("ws.test")}
                   </button>
                 )}
                 {p.id && (
@@ -190,23 +192,23 @@ export function WebSearchSettings() {
       {modalOpen && (
         <Modal
           open={modalOpen}
-          title="Add Search Provider"
+          title={t("ws.addTitle")}
           onClose={() => setModalOpen(false)}
           width="w-[480px]"
         >
           <div className="space-y-4 text-xs">
             <div>
-              <label className="block text-muted font-medium mb-1">Display Name *</label>
+              <label className="block text-muted font-medium mb-1">{t("ws.displayName")} *</label>
               <input
                 className="input w-full"
-                placeholder="e.g. My Tavily Search"
+                placeholder={t("ws.displayNamePh")}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
 
             <div>
-              <label className="block text-muted font-medium mb-1">Provider Engine</label>
+              <label className="block text-muted font-medium mb-1">{t("ws.providerEngine")}</label>
               <Select
                 className="w-full"
                 value={form.provider}
@@ -218,7 +220,7 @@ export function WebSearchSettings() {
             </div>
 
             <div>
-              <label className="block text-muted font-medium mb-1">API Key / Token</label>
+              <label className="block text-muted font-medium mb-1">{t("ws.apiKey")}</label>
               <input
                 type="password"
                 className="input w-full font-mono text-[11px]"
@@ -230,7 +232,7 @@ export function WebSearchSettings() {
 
             {form.provider === "searxng" && (
               <div>
-                <label className="block text-muted font-medium mb-1">Base URL (SearXNG)</label>
+                <label className="block text-muted font-medium mb-1">{t("ws.baseUrl")}</label>
                 <input
                   className="input w-full font-mono text-[11px]"
                   placeholder="http://localhost:8080"
@@ -248,7 +250,7 @@ export function WebSearchSettings() {
                 onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
               />
               <label htmlFor="default_search" className="text-ink cursor-pointer select-none">
-                Set as default search provider for workspace
+                {t("ws.setDefault")}
               </label>
             </div>
 
@@ -258,7 +260,7 @@ export function WebSearchSettings() {
                 className="btn btn-outline"
                 onClick={() => setModalOpen(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -266,7 +268,7 @@ export function WebSearchSettings() {
                 disabled={!form.name.trim() || busy}
                 onClick={() => void handleCreate()}
               >
-                {busy ? "Saving…" : "Add Provider"}
+                {busy ? t("memp.saving") : t("ws.addCta")}
               </button>
             </div>
           </div>

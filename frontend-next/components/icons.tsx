@@ -239,6 +239,12 @@ export const IconChevronRight = ({ className }: P) => (
   </svg>
 );
 
+export const IconChevronLeft = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="m15 18-6-6 6-6" />
+  </svg>
+);
+
 export const IconArrowUp = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <path d="M12 19V5m-7 7 7-7 7 7" />
@@ -363,6 +369,20 @@ export const IconGlobe = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <circle cx="12" cy="12" r="9" />
     <path d="M3 12h18M12 3c2.5 2.6 4 5.6 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.6-4-9s1.5-6.4 4-9Z" />
+  </svg>
+);
+
+export const IconLock = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+export const IconKey = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <circle cx="8.5" cy="8.5" r="4.5" />
+    <path d="m11.7 11.7 8.3 8.3M17 17l2.5-2.5M14 14l2-2" />
   </svg>
 );
 

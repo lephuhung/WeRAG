@@ -28,6 +28,7 @@ import { AgentEditorModal } from "@/components/agents/agent-editor";
 import { Modal } from "@/components/modal";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { RequireSystemAccess } from "@/components/require-system-access";
+import { useInSettingsModal } from "@/components/system/in-modal-nav";
 
 export default function AgentsPage() {
   return (
@@ -38,6 +39,7 @@ export default function AgentsPage() {
 }
 
 function AgentsPanel() {
+  const inModal = useInSettingsModal();
   const auth = useAuth();
   const user = auth.user;
   const router = useRouter();
@@ -68,7 +70,7 @@ function AgentsPanel() {
       .catch((e) => {
         if (alive) {
           setAgents([]);
-          setError(e instanceof Error ? e.message : "Failed to load agents");
+          setError(e instanceof Error ? e.message : t("agentp.loadFailed"));
         }
       });
     listModels()
@@ -100,7 +102,7 @@ function AgentsPanel() {
       await deleteAgent(removing.id);
       setAgents((prev) => prev?.filter((a) => a.id !== removing.id) ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      setError(e instanceof Error ? e.message : t("agentp.deleteFailed"));
     } finally {
       setRemoving(null);
     }
@@ -111,7 +113,7 @@ function AgentsPanel() {
       const res = await copyAgent(a.id);
       setAgents((prev) => [...(prev ?? []), res.data]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Copy failed");
+      setError(e instanceof Error ? e.message : t("agentp.copyFailed"));
     }
   };
 
@@ -123,7 +125,7 @@ function AgentsPanel() {
     <>
       <div className="mb-6 flex items-center justify-between gap-4">
         <p className="text-[14px] text-muted">
-          Purpose-built assistants bound to knowledge bases and tools.
+          {t("agentp.subtitle")}
         </p>
         <button
           className="btn btn-primary"
@@ -138,10 +140,12 @@ function AgentsPanel() {
 
       {error && <p className="caption mb-6 text-error">{error}</p>}
       {agents !== null && agents.length === 0 && !error && (
-        <p className="caption mb-6 text-muted-soft">No agents in this workspace yet.</p>
+        <p className="caption mb-6 text-muted-soft">{t("agentp.empty")}</p>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "xl:grid-cols-3"}`}
+      >
         {(agents ?? []).map((a) => {
           const isBuiltin = isBuiltinAgent(a.id);
           const modelName = getModelDisplayName(a.config?.model_id);
@@ -163,7 +167,7 @@ function AgentsPanel() {
                   </div>
                   {isBuiltin && (
                     <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted shrink-0">
-                      built-in
+                      {t("agentp.builtin")}
                     </span>
                   )}
                 </div>
@@ -254,17 +258,17 @@ function AgentsPanel() {
                   {modelName ? (
                     <span
                       className="badge-pill truncate max-w-[150px]"
-                      title={`Chat Model: ${modelName} (ID: ${a.config?.model_id})`}
+                      title={t("agentp.chatModel", { name: modelName, id: a.config?.model_id ?? "" })}
                     >
                       {modelName}
                     </span>
                   ) : (
-                    <span className="text-[11.5px] text-muted-soft">Default</span>
+                    <span className="text-[11.5px] text-muted-soft">{t("agentp.defaultModel")}</span>
                   )}
                   {a.config?.rerank_model_id && (
                     <span
                       className="badge-pill truncate max-w-[140px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                      title={`ReRank: ${getModelDisplayName(a.config?.rerank_model_id)}`}
+                      title={t("agentp.rerank", { name: getModelDisplayName(a.config?.rerank_model_id) })}
                     >
                       RR: {getModelDisplayName(a.config?.rerank_model_id)}
                     </span>
@@ -296,7 +300,7 @@ function AgentsPanel() {
         width="w-[420px]"
       >
         <p className="body-sm text-body">
-          {t("agent.deleteConfirmBody").replace("{name}", removing?.name ?? "")}
+          {t("agent.deleteConfirmBody", { name: removing?.name ?? "" })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn btn-outline btn-sm" onClick={() => setRemoving(null)}>

@@ -30,6 +30,8 @@ import {
 import { Modal } from "@/components/modal";
 import { Select } from "@/components/select";
 import { SectionCardGrid, type SectionCard } from "@/components/system/section-cards";
+import { useInSettingsModal } from "@/components/system/in-modal-nav";
+import { useT } from "@/lib/i18n";
 import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
 import { StorageSettings } from "@/components/settings/storage-settings";
 import { WebSearchSettings } from "@/components/settings/web-search-settings";
@@ -37,57 +39,16 @@ import { SandboxSettings } from "@/components/settings/sandbox-settings";
 
 const E = "/platform/system/engines";
 
-const backendCards: SectionCard[] = [
-  {
-    key: "vector",
-    title: "Vector store",
-    desc: "Embedding index backend and connection settings.",
-    icon: <IconStorageEngine className="h-5 w-5" />,
-    content: <VectorStoreSettings />,
-  },
-  {
-    key: "storage",
-    title: "Storage",
-    desc: "Object storage backend for uploads and artifacts.",
-    icon: <IconStorageEngine className="h-5 w-5" />,
-    content: <StorageSettings />,
-  },
-  {
-    key: "search",
-    title: "Web search",
-    desc: "External search provider used by retrieval tools.",
-    icon: <IconSearch className="h-5 w-5" />,
-    content: <WebSearchSettings />,
-  },
-  {
-    key: "sandbox",
-    title: "Sandbox",
-    desc: "Isolated code execution environment for agents.",
-    icon: <IconCode className="h-5 w-5" />,
-    content: <SandboxSettings />,
-  },
-  {
-    key: "queues",
-    title: "Runtime queues",
-    desc: "Live asynq queue depth, workers and task history.",
-    icon: <IconPulse className="h-5 w-5" />,
-    href: `${E}/queues`,
-  },
-];
-
 const STATUS = {
   healthy: {
-    label: "Healthy",
     dot: "bg-emerald-500",
     badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
   },
   degraded: {
-    label: "Degraded",
     dot: "bg-amber-500",
     badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
   },
   down: {
-    label: "Down",
     dot: "bg-rose-500",
     badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
   },
@@ -152,6 +113,8 @@ const DEFAULT_PARSER_CONFIG: ParserEngineConfig = {
 };
 
 export default function SystemEnginesPage() {
+  const inModal = useInSettingsModal();
+  const { t } = useT();
   const [services, setServices] = useState<ServiceRow[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -188,7 +151,7 @@ export default function SystemEnginesPage() {
         engineKey: "docreader",
         name: "DocReader",
         category: "core",
-        description: `Document parsing service (${parsers.docreader_transport ?? "grpc"})`,
+        description: t("eng.docreaderDesc", { transport: parsers.docreader_transport ?? "grpc" }),
         status: parsers.connected === false ? "down" : "healthy",
         detail: parsers.docreader_addr,
         configurable: true,
@@ -200,7 +163,7 @@ export default function SystemEnginesPage() {
         rows.push({
           id: `parser-${p.Name}`,
           engineKey,
-          name: `Parser: ${p.Name}`,
+          name: t("eng.parserName", { name: p.Name }),
           category: "parser",
           description: p.Description,
           status: p.Available === false ? "degraded" : "healthy",
@@ -216,18 +179,18 @@ export default function SystemEnginesPage() {
         rows.push({
           id: `storage-${e.name}`,
           engineKey: e.name,
-          name: `Storage: ${e.name}`,
+          name: t("eng.storageName", { name: e.name }),
           category: "storage",
           description: e.description,
           status: !e.available ? "down" : e.allowed === false ? "degraded" : "healthy",
-          detail: e.allowed === false ? "Not allowed in this deployment" : undefined,
+          detail: e.allowed === false ? t("eng.notAllowed") : undefined,
           configurable: false,
         });
       }
 
       setServices(rows);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load services");
+      setError(e instanceof Error ? e.message : t("eng.loadFailed"));
       setServices([]);
     } finally {
       setLoading(false);
@@ -253,7 +216,7 @@ export default function SystemEnginesPage() {
       await load();
       setModalOpen(false);
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save configuration");
+      setSaveError(e instanceof Error ? e.message : t("eng.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -268,34 +231,77 @@ export default function SystemEnginesPage() {
         const addr = config.docreader_addr || "";
         const res = await reconnectDocReader(addr);
         if (res.connected) {
-          setCheckResult({ ok: true, message: "DocReader connected successfully!" });
+          setCheckResult({ ok: true, message: t("eng.docreaderOk") });
         } else {
           setCheckResult({
             ok: false,
-            message: res.msg || "Could not connect to DocReader service.",
+            message: res.msg || t("eng.docreaderFail"),
           });
         }
       } else {
         const res = await checkParserEngines(config);
         const engine = res.data?.find((p: ParserEngineInfo) => p.Name === selectedService.engineKey);
         if (engine?.Available) {
-          setCheckResult({ ok: true, message: "Engine probe successful! Service is available." });
+          setCheckResult({ ok: true, message: t("eng.probeOk") });
         } else {
           setCheckResult({
             ok: false,
-            message: engine?.UnavailableReason || "Engine responded as unavailable.",
+            message: engine?.UnavailableReason || t("eng.probeFail"),
           });
         }
       }
     } catch (e) {
       setCheckResult({
         ok: false,
-        message: e instanceof Error ? e.message : "Connection test failed",
+        message: e instanceof Error ? e.message : t("eng.testFail"),
       });
     } finally {
       setChecking(false);
     }
   };
+
+  const backendCards: SectionCard[] = [
+    {
+      key: "vector",
+      title: t("eng.cardVector"),
+      desc: t("eng.cardVectorDesc"),
+      icon: <IconStorageEngine className="h-5 w-5" />,
+      content: <VectorStoreSettings />,
+    },
+    {
+      key: "storage",
+      title: t("eng.cardStorage"),
+      desc: t("eng.cardStorageDesc"),
+      icon: <IconStorageEngine className="h-5 w-5" />,
+      content: <StorageSettings />,
+    },
+    {
+      key: "search",
+      title: t("eng.cardSearch"),
+      desc: t("eng.cardSearchDesc"),
+      icon: <IconSearch className="h-5 w-5" />,
+      content: <WebSearchSettings />,
+    },
+    {
+      key: "sandbox",
+      title: t("eng.cardSandbox"),
+      desc: t("eng.cardSandboxDesc"),
+      icon: <IconCode className="h-5 w-5" />,
+      content: <SandboxSettings />,
+    },
+    {
+      key: "queues",
+      title: t("eng.cardQueues"),
+      desc: t("eng.cardQueuesDesc"),
+      icon: <IconPulse className="h-5 w-5" />,
+      href: `${E}/queues`,
+    },
+  ];
+
+  const statusLabel = (s: keyof typeof STATUS) =>
+    s === "healthy" ? t("eng.stHealthy") : s === "degraded" ? t("eng.stDegraded") : t("eng.stDown");
+  const categoryLabel = (c: ServiceCategory) =>
+    c === "core" ? t("eng.catCore") : c === "parser" ? t("eng.catParser") : t("eng.catStorage");
 
   const rows = services ?? [];
   const healthyCount = rows.filter((s) => s.status === "healthy").length;
@@ -309,17 +315,17 @@ export default function SystemEnginesPage() {
       {/* Header bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="title-md font-semibold text-ink">Engines</h2>
+          <h2 className="title-md font-semibold text-ink">{t("eng.title")}</h2>
           <p className="caption text-muted">
             <span className="font-medium text-ink">
               {healthyCount}/{rows.length}
             </span>{" "}
-            engines healthy · {loading ? "checking…" : "checked just now"}
+            {t("eng.healthySuffix")} · {loading ? t("eng.checking") : t("eng.checked")}
           </p>
         </div>
 
         <button className="btn btn-outline btn-sm" onClick={() => void load()}>
-          <IconRefresh className="h-3.5 w-3.5" /> Refresh
+          <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
         </button>
       </div>
 
@@ -328,8 +334,8 @@ export default function SystemEnginesPage() {
       {/* Status Filter */}
       {rows.length > 0 && (
         <div className="mb-6 flex items-center gap-1 border-b border-hairline pb-3 text-xs text-muted">
-          <span className="mr-1">Status:</span>
-          {["all", "healthy", "degraded", "down"].map((st) => (
+          <span className="mr-1">{t("eng.statusFilter")}</span>
+          {(["all", "healthy", "degraded", "down"] as const).map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -339,14 +345,16 @@ export default function SystemEnginesPage() {
                   : "text-muted hover:text-ink"
               }`}
             >
-              {st}
+              {st === "all" ? t("eng.stAll") : statusLabel(st)}
             </button>
           ))}
         </div>
       )}
 
       {/* Engine card grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "xl:grid-cols-3"}`}
+      >
         {filteredServices.map((s) => {
           const st = STATUS[s.status];
           const isCore = s.category === "core";
@@ -382,18 +390,18 @@ export default function SystemEnginesPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="rounded bg-surface-strong px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
-                        {s.category}
+                        {categoryLabel(s.category)}
                       </span>
                       {s.configurable && (
                         <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                          CONFIG
+                          {t("eng.configBadge")}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className={`h-2 w-2 rounded-full shrink-0 ${st.dot}`} />
                       <span className="caption text-[11.5px] font-medium text-muted">
-                        {st.label}
+                        {statusLabel(s.status)}
                       </span>
                     </div>
                   </div>
@@ -403,8 +411,8 @@ export default function SystemEnginesPage() {
                   <button
                     type="button"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-strong hover:text-ink shrink-0"
-                    title="Configure service"
-                    aria-label="Configure service"
+                    title={t("eng.configure")}
+                    aria-label={t("eng.configure")}
                     onClick={(e) => {
                       e.stopPropagation();
                       openConfig(s);
@@ -453,12 +461,12 @@ export default function SystemEnginesPage() {
                     {s.detail}
                   </span>
                 ) : (
-                  <span className="text-[11.5px] text-muted-soft">Integrated</span>
+                  <span className="text-[11.5px] text-muted-soft">{t("eng.integrated")}</span>
                 )}
 
                 {s.configurable ? (
                   <span className="caption text-[11.5px] font-medium text-muted group-hover:text-ink transition-colors shrink-0">
-                    Configure →
+                    {t("eng.configureLink")}
                   </span>
                 ) : s.docLink ? (
                   <a
@@ -468,7 +476,7 @@ export default function SystemEnginesPage() {
                     className="caption flex items-center gap-1 text-[11.5px] text-muted hover:text-ink transition-colors shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    Docs <IconExternal className="h-3 w-3" />
+                    {t("eng.docs")} <IconExternal className="h-3 w-3" />
                   </a>
                 ) : null}
               </div>
@@ -479,14 +487,14 @@ export default function SystemEnginesPage() {
 
       {/* Backend & pipeline configuration */}
       <div className="caption-uppercase mb-3 mt-10 text-muted-soft">
-        Backends &amp; pipeline
+        {t("eng.sectionBackends")}
       </div>
       <SectionCardGrid cards={backendCards} />
 
       {/* Service Configuration & Details Modal */}
       <Modal
         open={modalOpen}
-        title={selectedService?.name ?? "Service Details"}
+        title={selectedService?.name ?? t("eng.detailsTitle")}
         onClose={() => setModalOpen(false)}
         width="w-[560px]"
       >
@@ -496,14 +504,14 @@ export default function SystemEnginesPage() {
             <div className="rounded-xl border border-hairline bg-surface-strong/50 p-4">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted">
-                  {selectedService.category} engine
+                  {t("eng.engineSuffix", { category: categoryLabel(selectedService.category) })}
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                     STATUS[selectedService.status].badge
                   }`}
                 >
-                  {STATUS[selectedService.status].label}
+                  {statusLabel(selectedService.status)}
                 </span>
               </div>
               <p className="body-sm text-body">{selectedService.description}</p>
@@ -518,7 +526,7 @@ export default function SystemEnginesPage() {
             {selectedService.fileTypes && selectedService.fileTypes.length > 0 && (
               <div>
                 <span className="caption mb-1.5 block font-medium text-muted">
-                  Supported file types
+                  {t("eng.fileTypes")}
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedService.fileTypes.map((ft) => (
@@ -540,7 +548,7 @@ export default function SystemEnginesPage() {
               <div className="space-y-4 border-t border-hairline pt-4">
                 <label className="block">
                   <span className="caption mb-1.5 block font-medium text-muted">
-                    DocReader Address
+                    {t("eng.docreaderAddr")}
                   </span>
                   <input
                     className="input font-mono text-sm"
@@ -551,19 +559,19 @@ export default function SystemEnginesPage() {
                     }
                   />
                   <p className="caption text-muted-soft mt-1">
-                    DocReader service host & port for parsing documents.
+                    {t("eng.docreaderAddrHint")}
                   </p>
                 </label>
 
                 <label className="block">
-                  <span className="caption mb-1.5 block font-medium text-muted">Transport</span>
+                  <span className="caption mb-1.5 block font-medium text-muted">{t("eng.transport")}</span>
                   <Select
                     value={config.docreader_transport ?? "grpc"}
                     onChange={(v) =>
                       setConfig({ ...config, docreader_transport: v })
                     }
                     options={[
-                      { value: "grpc", label: "gRPC (recommended)" },
+                      { value: "grpc", label: t("eng.grpcRec") },
                       { value: "http", label: "HTTP" },
                     ]}
                   />
@@ -576,7 +584,7 @@ export default function SystemEnginesPage() {
               <div className="space-y-4 border-t border-hairline pt-4">
                 <label className="block">
                   <span className="caption mb-1.5 block font-medium text-muted">
-                    Self-Hosted Endpoint
+                    {t("eng.selfHosted")}
                   </span>
                   <input
                     className="input font-mono text-sm"
@@ -588,7 +596,7 @@ export default function SystemEnginesPage() {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block">
-                    <span className="caption mb-1.5 block font-medium text-muted">Backend</span>
+                    <span className="caption mb-1.5 block font-medium text-muted">{t("eng.backend")}</span>
                     <Select
                       value={config.mineru_model ?? "pipeline"}
                       onChange={(v) => setConfig({ ...config, mineru_model: v })}
@@ -604,7 +612,7 @@ export default function SystemEnginesPage() {
 
                   <label className="block">
                     <span className="caption mb-1.5 block font-medium text-muted">
-                      Parse Method
+                      {t("eng.parseMethod")}
                     </span>
                     <Select
                       value={config.mineru_parse_method ?? "auto"}
@@ -615,9 +623,9 @@ export default function SystemEnginesPage() {
                         })
                       }
                       options={[
-                        { value: "auto", label: "Auto" },
+                        { value: "auto", label: t("eng.parseAuto") },
                         { value: "ocr", label: "OCR" },
-                        { value: "txt", label: "Text only" },
+                        { value: "txt", label: t("eng.parseTxt") },
                       ]}
                     />
                   </label>
@@ -625,7 +633,7 @@ export default function SystemEnginesPage() {
 
                 <label className="block">
                   <span className="caption mb-1.5 block font-medium text-muted">
-                    vLLM Server URL
+                    {t("eng.vllmUrl")}
                   </span>
                   <input
                     className="input font-mono text-sm"
@@ -636,7 +644,7 @@ export default function SystemEnginesPage() {
                 </label>
 
                 <label className="block">
-                  <span className="caption mb-1.5 block font-medium text-muted">Language</span>
+                  <span className="caption mb-1.5 block font-medium text-muted">{t("eng.language")}</span>
                   <input
                     className="input"
                     placeholder="ch, en, vi"
@@ -655,7 +663,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Formula recognition
+                    {t("eng.formula")}
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-sm text-ink">
@@ -667,7 +675,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Table recognition
+                    {t("eng.table")}
                   </label>
                 </div>
               </div>
@@ -677,11 +685,11 @@ export default function SystemEnginesPage() {
             {selectedService.engineKey === "mineru_cloud" && (
               <div className="space-y-4 border-t border-hairline pt-4">
                 <label className="block">
-                  <span className="caption mb-1.5 block font-medium text-muted">API Key</span>
+                  <span className="caption mb-1.5 block font-medium text-muted">{t("eng.apiKey")}</span>
                   <input
                     className="input font-mono text-sm"
                     type="password"
-                    placeholder="Enter MinerU Cloud API Key"
+                    placeholder={t("eng.apiKeyPh")}
                     value={config.mineru_api_key ?? ""}
                     onChange={(e) => setConfig({ ...config, mineru_api_key: e.target.value })}
                   />
@@ -690,7 +698,7 @@ export default function SystemEnginesPage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="caption mb-1.5 block font-medium text-muted">
-                      Model Version
+                      {t("eng.modelVersion")}
                     </span>
                     <Select
                       value={config.mineru_cloud_model ?? "pipeline"}
@@ -706,7 +714,7 @@ export default function SystemEnginesPage() {
                   </label>
 
                   <label className="block">
-                    <span className="caption mb-1.5 block font-medium text-muted">Language</span>
+                    <span className="caption mb-1.5 block font-medium text-muted">{t("eng.language")}</span>
                     <input
                       className="input"
                       placeholder="ch, en"
@@ -729,7 +737,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Formula recognition
+                    {t("eng.formula")}
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-sm text-ink">
@@ -741,7 +749,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Table recognition
+                    {t("eng.table")}
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-sm text-ink">
@@ -764,7 +772,7 @@ export default function SystemEnginesPage() {
               <div className="space-y-4 border-t border-hairline pt-4">
                 <label className="block">
                   <span className="caption mb-1.5 block font-medium text-muted">
-                    Self-Hosted Endpoint
+                    {t("eng.selfHosted")}
                   </span>
                   <input
                     className="input font-mono text-sm"
@@ -787,7 +795,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Seal recognition
+                    {t("eng.seal")}
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-sm text-ink">
@@ -802,7 +810,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Chart recognition
+                    {t("eng.chart")}
                   </label>
                 </div>
               </div>
@@ -812,18 +820,18 @@ export default function SystemEnginesPage() {
             {selectedService.engineKey === "paddleocr_vl_cloud" && (
               <div className="space-y-4 border-t border-hairline pt-4">
                 <label className="block">
-                  <span className="caption mb-1.5 block font-medium text-muted">Cloud Token</span>
+                  <span className="caption mb-1.5 block font-medium text-muted">{t("eng.cloudToken")}</span>
                   <input
                     className="input font-mono text-sm"
                     type="password"
-                    placeholder="Enter PaddleOCR-VL Cloud Token"
+                    placeholder={t("eng.cloudTokenPh")}
                     value={config.paddleocr_vl_cloud_token ?? ""}
                     onChange={(e) => setConfig({ ...config, paddleocr_vl_cloud_token: e.target.value })}
                   />
                 </label>
 
                 <label className="block">
-                  <span className="caption mb-1.5 block font-medium text-muted">Model</span>
+                  <span className="caption mb-1.5 block font-medium text-muted">{t("eng.model")}</span>
                   <input
                     className="input font-mono text-sm"
                     placeholder="PaddleOCR-VL-1.6"
@@ -847,7 +855,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Seal recognition
+                    {t("eng.seal")}
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-sm text-ink">
@@ -862,7 +870,7 @@ export default function SystemEnginesPage() {
                       }
                       className="h-4 w-4 rounded"
                     />
-                    Chart recognition
+                    {t("eng.chart")}
                   </label>
                 </div>
               </div>
@@ -897,7 +905,7 @@ export default function SystemEnginesPage() {
                     onClick={() => void handleTestConnection()}
                     disabled={checking || saving}
                   >
-                    {checking ? "Testing…" : "Test Connection"}
+                    {checking ? t("vstore.testing") : t("eng.testConn")}
                   </button>
                 )}
               </div>
@@ -908,7 +916,7 @@ export default function SystemEnginesPage() {
                   className="btn btn-outline btn-sm"
                   onClick={() => setModalOpen(false)}
                 >
-                  {selectedService.configurable ? "Cancel" : "Close"}
+                  {selectedService.configurable ? t("common.cancel") : t("eng.close")}
                 </button>
                 {selectedService.configurable && (
                   <button
@@ -917,7 +925,7 @@ export default function SystemEnginesPage() {
                     onClick={() => void handleSaveConfig()}
                     disabled={saving}
                   >
-                    {saving ? "Saving…" : "Save Configuration"}
+                    {saving ? t("memp.saving") : t("eng.saveConfig")}
                   </button>
                 )}
               </div>

@@ -71,7 +71,7 @@ export default function KnowledgeBaseList() {
       })
       .catch((e) => {
         setKbs([]);
-        setError(e instanceof Error ? e.message : "Failed to load knowledge bases");
+        setError(e instanceof Error ? e.message : t("kbList.loadFailed"));
       });
   };
 
@@ -88,7 +88,7 @@ export default function KnowledgeBaseList() {
       .catch((e) => {
         if (alive) {
           setKbs([]);
-          setError(e instanceof Error ? e.message : "Failed to load knowledge bases");
+          setError(e instanceof Error ? e.message : t("kbList.loadFailed"));
         }
       });
     return () => {
@@ -111,7 +111,7 @@ export default function KnowledgeBaseList() {
           if (!alive) return;
           setPubItems([]);
           setPubTotal(0);
-          setPubError(e instanceof Error ? e.message : "Failed to load public catalog");
+          setPubError(e instanceof Error ? e.message : t("kbList.pubLoadFailed"));
           setPubOk(false);
         });
     }, 250);
@@ -196,7 +196,7 @@ export default function KnowledgeBaseList() {
           {kb.caps.canInvite && (
             <button
               type="button"
-              title="Invite an external member to read"
+              title={t("kbList.inviteTitle")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -204,7 +204,7 @@ export default function KnowledgeBaseList() {
               }}
               className="absolute right-12 top-4 z-10 flex h-7 items-center justify-center rounded-full px-2 text-[11px] font-medium text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
             >
-              Invite
+              {t("kbList.invite")}
             </button>
           )}
           <div className="relative min-w-0">
@@ -227,7 +227,7 @@ export default function KnowledgeBaseList() {
             <div className="caption mt-5 flex items-center gap-4 text-muted">
               <span className="flex items-center gap-1.5">
                 <IconDoc className="h-3.5 w-3.5" />
-                {kb.docs} documents
+                {t("kbList.docs", { n: kb.docs })}
               </span>
               <span className="ml-auto whitespace-nowrap">{fmtShortDate(kb.updatedAt)}</span>
             </div>
@@ -250,13 +250,13 @@ export default function KnowledgeBaseList() {
       <div className="relative mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-10 sm:gap-6">
           <div>
-            <div className="caption-uppercase mb-3 text-muted">Workspace</div>
+            <div className="caption-uppercase mb-3 text-muted">{t("settingsNav.groups.workspace")}</div>
             <h1 className="display-xl">Knowledge bases</h1>
             <p className="mt-3 max-w-[520px] text-body">
-              Collections of documents indexed for retrieval-augmented chat.
+              {t("kbList.subtitle")}
             </p>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Platform-wide ingestion defaults — superadmin only. */}
             {isSystemAdmin && (
               <button
@@ -278,7 +278,7 @@ export default function KnowledgeBaseList() {
             {isTenantAdmin && hasTenant && (
               <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
                 <IconPlus className="h-4 w-4" />
-                New knowledge base
+                {t("kbList.newKb")}
               </Link>
             )}
           </div>
@@ -294,7 +294,7 @@ export default function KnowledgeBaseList() {
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
           <input
             className="input pl-10"
-            placeholder="Search knowledge bases…"
+            placeholder={t("kbList.searchPh")}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -304,14 +304,14 @@ export default function KnowledgeBaseList() {
         </div>
 
         {kbs === null && hasTenant && (
-          <p className="caption mb-6 text-muted-soft">Loading knowledge bases…</p>
+          <p className="caption mb-6 text-muted-soft">{t("kbList.loading")}</p>
         )}
 
         {hasTenant && (
           <>
             <h2 className="title-sm mb-4">{t("kbPublic.workspaceSection")}</h2>
             {workspaceCards.length === 0 && kbs !== null && !error && (
-              <p className="caption mb-6 text-muted-soft">No knowledge bases yet.</p>
+              <p className="caption mb-6 text-muted-soft">{t("kbList.empty")}</p>
             )}
             {renderCards(workspaceCards, {
               append: isTenantAdmin ? (
@@ -320,7 +320,7 @@ export default function KnowledgeBaseList() {
                   className="flex min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
                 >
                   <span className="flex items-center gap-2 text-[15px] font-medium">
-                    <IconPlus className="h-4 w-4" /> Create knowledge base
+                    <IconPlus className="h-4 w-4" /> {t("kbList.newKb")}
                   </span>
                 </Link>
               ) : undefined,
@@ -344,7 +344,7 @@ export default function KnowledgeBaseList() {
           <>
             {renderCards(publicCards, { hideShare: true })}
             {pubTotal === 0 && (
-              <p className="caption mb-6 mt-2 text-muted-soft">No public knowledge bases yet.</p>
+              <p className="caption mb-6 mt-2 text-muted-soft">{t("kbList.publicEmpty")}</p>
             )}
             {pubTotal > PUBLIC_PAGE_SIZE && (
               <div className="caption mt-4 flex items-center gap-3 text-muted">
@@ -378,7 +378,7 @@ export default function KnowledgeBaseList() {
             onClick={() => setInvitesOpen((v) => !v)}
             className="btn btn-outline btn-sm"
           >
-            {invitesOpen ? "Hide shared-with-me invitations" : "Show KBs shared with me"}
+            {invitesOpen ? t("kbList.hideShared") : t("kbList.showShared")}
           </button>
           {invitesOpen && (
             <div className="mt-4 rounded-xl border border-hairline p-5">
@@ -399,7 +399,7 @@ export default function KnowledgeBaseList() {
 
       <Modal
         open={inviteKb !== null}
-        title="Invite to read"
+        title={t("kbList.inviteModalTitle")}
         onClose={() => setInviteKb(null)}
       >
         {inviteKb && <KBInvitePanel kbId={inviteKb.id} kbName={inviteKb.name} />}

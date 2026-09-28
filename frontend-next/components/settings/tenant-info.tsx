@@ -47,10 +47,10 @@ export function TenantInfo() {
       if (res.success && res.data?.tenant) {
         setInfo(res.data.tenant as unknown as TenantRecord);
       } else {
-        setError(res.message || "Failed to load workspace");
+        setError(res.message || t("tenant.loadFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(err instanceof Error ? err.message : t("tenant.networkError"));
     } finally {
       setLoading(false);
     }
@@ -114,7 +114,7 @@ export function TenantInfo() {
       setInfo({ ...info, name });
       setEditingName(false);
     } else {
-      setError(res.message || "Failed to save name");
+      setError(res.message || t("tenant.saveNameFailed"));
     }
   };
 
@@ -132,7 +132,7 @@ export function TenantInfo() {
       setInfo({ ...info, description });
       setEditingDesc(false);
     } else {
-      setError(res.message || "Failed to save description");
+      setError(res.message || t("tenant.saveDescFailed"));
     }
   };
 
@@ -144,7 +144,7 @@ export function TenantInfo() {
       await auth.logout();
       router.push("/login");
     } else {
-      setError(res.message || "Failed to leave workspace");
+      setError(res.message || t("tenant.leaveFailed"));
     }
   };
 
@@ -158,7 +158,7 @@ export function TenantInfo() {
       await auth.refreshMe();
       router.push("/platform");
     } else {
-      setError(res.message || "Failed to delete workspace");
+      setError(res.message || t("tenant.deleteFailed"));
     }
   };
 

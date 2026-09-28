@@ -85,7 +85,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
         : await createMCPService(payload);
       onSaved(saved);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("mcp.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -98,7 +98,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
       const res = await testMCPService(service.id);
       setTestResult(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Test failed");
+      setError(e instanceof Error ? e.message : t("mcp.testFailed"));
     } finally {
       setTesting(false);
     }
@@ -243,7 +243,7 @@ export function McpToolsPanel({ service, onClose }: { service: MCPService; onClo
     let alive = true;
     getMCPServiceTools(service.id)
       .then((list) => alive && setTools(list))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : "Failed to load tools"))
+      .catch((e) => alive && setError(e instanceof Error ? e.message : t("mcp.loadToolsFailed")))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;

@@ -53,7 +53,6 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
        * pointing at per-KB recipient-bound invites. */
       { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "admin" },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "admin" },
-      { key: "orgs", labelKey: "settingsNav.orgs", fallbackLabel: "Organizations", minRole: "admin" },
       { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "admin" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "admin" },
     ],
@@ -84,7 +83,6 @@ export const LEGACY_SECTION_ROUTES: Record<string, string> = {
   members: "/platform/system/workspace/members",
   sharing: "/platform/system/workspace/sharing",
   "api-keys": "/platform/system/workspace/api-keys",
-  orgs: "/platform/system/workspace/orgs",
   abbreviations: "/platform/system/extensions/abbreviations",
   chathistory: "/platform/system/workspace/chathistory",
   memory: "/platform/system/workspace/memory",

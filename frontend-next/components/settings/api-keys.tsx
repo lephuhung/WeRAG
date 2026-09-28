@@ -56,7 +56,7 @@ export function ApiKeysSection() {
     const tenantId = Number(localStorage.getItem("weknora_selected_tenant_id") ?? auth.tenant?.id ?? 0);
     listTenantAPIKeys(tenantId)
       .then((res) => setKeys(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load keys"))
+      .catch((e) => setError(e instanceof Error ? e.message : t("apikey.loadFailed")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -95,7 +95,9 @@ export function ApiKeysSection() {
                 {k.full_access ? (
                   <span className="badge-pill text-error">{t("apiKeys.fullAccess")}</span>
                 ) : (
-                  <span className="badge-pill">{(k.capabilities ?? []).length} caps</span>
+                  <span className="badge-pill">
+                  {t("apiKeys.capsCount").replace("{n}", String((k.capabilities ?? []).length))}
+                </span>
                 )}
               </div>
               <div className="caption mt-0.5 text-muted">
@@ -161,7 +163,7 @@ function CreateKeyModal({ onClose, onCreated }: {
   onClose: () => void;
   onCreated: (k: CreatedTenantAPIKey) => void;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [name, setName] = useState("");
   const [fullAccess, setFullAccess] = useState(false);
   const [caps, setCaps] = useState<Set<TenantAPIKeyCapability>>(new Set(["retrieve"]));
@@ -191,7 +193,7 @@ function CreateKeyModal({ onClose, onCreated }: {
       const createdRes = await createTenantAPIKey(tenantId, payload);
       if (createdRes.data) onCreated(createdRes.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Create failed");
+      setError(e instanceof Error ? e.message : t("apikey.createFailed"));
     } finally {
       setSaving(false);
     }
@@ -222,7 +224,9 @@ function CreateKeyModal({ onClose, onCreated }: {
                     checked={caps.has(c.id)}
                     onChange={() => toggleCap(c.id)}
                   />
-                  <span className="text-[14px] text-body">{c.labelEn}</span>
+                  <span className="text-[14px] text-body">
+                    {locale === "vi" ? c.labelVi : c.labelEn}
+                  </span>
                 </label>
               ))}
             </div>

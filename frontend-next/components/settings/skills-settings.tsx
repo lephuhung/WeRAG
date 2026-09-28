@@ -15,8 +15,10 @@ import {
 } from "@/lib/api/skills";
 import { listSandboxConfigs, type SandboxConfigRecord } from "@/lib/api/sandbox";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export function SkillsSettings() {
+  const { t } = useT();
   const auth = useAuth();
   const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const currentRole =
@@ -68,7 +70,7 @@ export function SkillsSettings() {
       setCatalog(cRes.data ?? []);
       setSandboxes(sRes.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load skills catalog");
+      setError(e instanceof Error ? e.message : t("skillc.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -86,17 +88,17 @@ export function SkillsSettings() {
     try {
       if (regTab === "file" && selectedFile) {
         await registerSkillCatalogFromFile(selectedFile, (p) => setUploadProgress(p));
-        setSuccess(`Registered skill bundle: ${selectedFile.name}`);
+        setSuccess(t("skillc.registeredFile", { name: selectedFile.name }));
       } else if (regTab === "source" && sourceUrl.trim()) {
         await registerSkillCatalogFromSource(sourceUrl.trim());
-        setSuccess(`Registered skill from source`);
+        setSuccess(t("skillc.registeredSrc"));
       }
       setRegisterModalOpen(false);
       setSelectedFile(null);
       setSourceUrl("");
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to register skill");
+      setError(e instanceof Error ? e.message : t("skillc.registerFailed"));
     } finally {
       setRegistering(false);
       setUploadProgress(0);
@@ -110,11 +112,11 @@ export function SkillsSettings() {
     setError("");
     try {
       await installSkillCatalog(installSkill.id, targetSandboxIds);
-      setSuccess(`Installed ${installSkill.name} to selected sandboxes`);
+      setSuccess(t("skillc.installed", { name: installSkill.name }));
       setInstallSkill(null);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to install skill");
+      setError(e instanceof Error ? e.message : t("skillc.installFailed"));
     } finally {
       setInstalling(false);
     }
@@ -136,7 +138,7 @@ export function SkillsSettings() {
         setFileContent(cRes.data?.content ?? "");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to inspect skill bundle files");
+      setError(e instanceof Error ? e.message : t("skillc.inspectFailed"));
     } finally {
       setLoadingFiles(false);
     }
@@ -151,7 +153,7 @@ export function SkillsSettings() {
       const cRes = await getCatalogSkillFile(viewFilesSkill.id, path);
       setFileContent(cRes.data?.content ?? "");
     } catch (e) {
-      setFileContent("Failed to load file contents");
+      setFileContent(t("skillc.loadFileFail"));
     } finally {
       setLoadingFiles(false);
     }
@@ -164,11 +166,11 @@ export function SkillsSettings() {
     setError("");
     try {
       await deleteSkillCatalog(deletingSkill.id);
-      setSuccess(`Deleted skill ${deletingSkill.name}`);
+      setSuccess(t("skillc.deleted", { name: deletingSkill.name }));
       setDeletingSkill(null);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete skill");
+      setError(e instanceof Error ? e.message : t("skillc.deleteFailed"));
     } finally {
       setDeletingBusy(false);
     }
@@ -179,9 +181,9 @@ export function SkillsSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">Skill Catalog</h2>
+          <h2 className="title-md font-semibold text-ink">{t("skillc.title")}</h2>
           <p className="caption text-muted mt-1">
-            Registered tool packages and execution scripts that can be baked into sandbox runtime environments.
+            {t("skillc.subtitle")}
           </p>
         </div>
 
@@ -193,14 +195,14 @@ export function SkillsSettings() {
               className="btn btn-primary btn-sm flex items-center gap-1.5"
             >
               <IconPlus className="h-3.5 w-3.5" />
-              <span>Register skill</span>
+              <span>{t("skillc.register")}</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => void loadData()}
             className="btn btn-outline btn-sm p-1.5"
-            title="Refresh"
+            title={t("common.refresh")}
           >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
@@ -220,11 +222,10 @@ export function SkillsSettings() {
 
       {/* Catalog Grid */}
       {loading ? (
-        <p className="caption text-muted text-center py-12">Loading skill catalog…</p>
+        <p className="caption text-muted text-center py-12">{t("skillc.loading")}</p>
       ) : catalog.length === 0 ? (
         <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-          No skills registered in catalog yet. Register a skill package (.zip or repository) to provide
-          agent execution tools.
+          {t("skillc.empty")}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -253,7 +254,7 @@ export function SkillsSettings() {
                         onClick={() => void handleOpenFiles(sk)}
                         className="btn btn-outline btn-sm text-xs py-1"
                       >
-                        Files
+                        {t("skillc.files")}
                       </button>
                       <button
                         type="button"
@@ -265,13 +266,13 @@ export function SkillsSettings() {
                         }}
                         className="btn btn-outline btn-sm text-xs py-1"
                       >
-                        Install
+                        {t("skillc.install")}
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeletingSkill(sk)}
                         className="btn btn-ghost btn-sm p-1 text-muted hover:text-rose-600"
-                        title="Delete skill"
+                        title={t("skillc.deleteTip")}
                       >
                         <IconTrash className="h-3.5 w-3.5" />
                       </button>
@@ -280,16 +281,16 @@ export function SkillsSettings() {
                 </div>
 
                 <p className="text-sm text-muted mt-2 line-clamp-3 leading-relaxed">
-                  {sk.description || "No description provided for this skill."}
+                  {sk.description || t("skillc.noDesc")}
                 </p>
               </div>
 
               {/* Installations */}
               <div className="border-t border-hairline pt-3 space-y-1.5 text-xs">
-                <span className="caption font-medium text-muted block">Active Installations:</span>
+                <span className="caption font-medium text-muted block">{t("skillc.activeInst")}</span>
                 {!sk.installations || sk.installations.length === 0 ? (
                   <span className="caption text-muted-soft block">
-                    Not installed in any sandbox configs.
+                    {t("skillc.noInst")}
                   </span>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
@@ -318,7 +319,7 @@ export function SkillsSettings() {
       {/* Register Skill Modal */}
       <Modal
         open={registerModalOpen}
-        title="Register Skill Package"
+        title={t("skillc.registerTitle")}
         onClose={() => setRegisterModalOpen(false)}
       >
         <div className="space-y-4">
@@ -332,7 +333,7 @@ export function SkillsSettings() {
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >
-              Upload Archive (.zip)
+              {t("skillc.tabFile")}
             </button>
             <button
               type="button"
@@ -343,14 +344,14 @@ export function SkillsSettings() {
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >
-              Repository URL
+              {t("skillc.tabSource")}
             </button>
           </div>
 
           <form onSubmit={handleRegister} className="space-y-4 pt-2">
             {regTab === "file" ? (
               <label className="block">
-                <span className="caption mb-1.5 block text-muted">Skill Archive</span>
+                <span className="caption mb-1.5 block text-muted">{t("skillc.archive")}</span>
                 <input
                   type="file"
                   accept=".zip"
@@ -359,12 +360,12 @@ export function SkillsSettings() {
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 />
                 <span className="caption text-muted block text-xs mt-1">
-                  Must contain a valid skill descriptor (`SKILL.md` or metadata YAML).
+                  {t("skillc.archiveHint")}
                 </span>
               </label>
             ) : (
               <label className="block">
-                <span className="caption mb-1.5 block text-muted">Git Source Repository</span>
+                <span className="caption mb-1.5 block text-muted">{t("skillc.sourceRepo")}</span>
                 <input
                   type="url"
                   required
@@ -391,14 +392,14 @@ export function SkillsSettings() {
                 className="btn btn-outline"
                 onClick={() => setRegisterModalOpen(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={registering || (regTab === "file" && !selectedFile) || (regTab === "source" && !sourceUrl.trim())}
                 className="btn btn-primary"
               >
-                {registering ? "Registering…" : "Register Skill"}
+                {registering ? t("skillc.registering") : t("skillc.registerCta")}
               </button>
             </div>
           </form>
@@ -408,19 +409,18 @@ export function SkillsSettings() {
       {/* Install Skill Modal */}
       <Modal
         open={installSkill !== null}
-        title={`Install ${installSkill?.name || "Skill"}`}
+        title={t("skillc.installTitle", { name: installSkill?.name || "Skill" })}
         onClose={() => setInstallSkill(null)}
       >
         <div className="space-y-4">
           <p className="caption text-muted">
-            Select the sandbox configurations where this skill will be baked in and made available
-            to agents.
+            {t("skillc.installDesc")}
           </p>
 
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {sandboxes.length === 0 ? (
               <p className="caption text-muted text-center py-4">
-                No sandbox configurations found. Configure a sandbox first.
+                {t("skillc.noSandboxes")}
               </p>
             ) : (
               sandboxes.map((sb) => {
@@ -445,7 +445,7 @@ export function SkillsSettings() {
                     <div>
                       <span className="font-medium text-sm text-ink block">{sb.name}</span>
                       <span className="caption text-muted text-xs block">
-                        Type: {sb.sandbox_type}
+                        {t("skillc.sandboxType")}: {sb.sandbox_type}
                       </span>
                     </div>
                   </label>
@@ -460,7 +460,7 @@ export function SkillsSettings() {
               className="btn btn-outline"
               onClick={() => setInstallSkill(null)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -468,7 +468,7 @@ export function SkillsSettings() {
               onClick={() => void handleInstall()}
               className="btn btn-primary"
             >
-              {installing ? "Installing…" : "Install to Selected"}
+              {installing ? t("skillc.installing") : t("skillc.installCta")}
             </button>
           </div>
         </div>
@@ -477,7 +477,7 @@ export function SkillsSettings() {
       {/* View Bundle Files Modal */}
       <Modal
         open={viewFilesSkill !== null}
-        title={`Files in ${viewFilesSkill?.name || "Skill"}`}
+        title={t("skillc.filesTitle", { name: viewFilesSkill?.name || "Skill" })}
         onClose={() => setViewFilesSkill(null)}
       >
         <div className="flex gap-4 h-96">
@@ -500,9 +500,9 @@ export function SkillsSettings() {
 
           <div className="w-2/3 overflow-auto bg-surface-strong/30 rounded-lg p-3 font-mono text-xs text-ink whitespace-pre-wrap">
             {loadingFiles ? (
-              <span className="text-muted">Loading file content…</span>
+              <span className="text-muted">{t("skillc.loadingFile")}</span>
             ) : (
-              fileContent || "Empty file or binary content"
+              fileContent || t("skillc.emptyFile")
             )}
           </div>
         </div>
@@ -511,13 +511,12 @@ export function SkillsSettings() {
       {/* Delete Skill Modal */}
       <Modal
         open={deletingSkill !== null}
-        title="Delete Skill"
+        title={t("skillc.deleteTitle")}
         onClose={() => setDeletingSkill(null)}
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            Are you sure you want to delete <strong>{deletingSkill?.name}</strong> from the catalog?
-            Active sandboxes will retain their current container image until rebuilt.
+            {t("skillc.deleteBody1")} <strong>{deletingSkill?.name}</strong> {t("skillc.deleteBody2")}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -525,7 +524,7 @@ export function SkillsSettings() {
               className="btn btn-outline"
               onClick={() => setDeletingSkill(null)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -533,7 +532,7 @@ export function SkillsSettings() {
               onClick={() => void handleDelete()}
               className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {deletingBusy ? "Deleting…" : "Delete Skill"}
+              {deletingBusy ? t("skillc.deleting") : t("skillc.deleteTitle")}
             </button>
           </div>
         </div>

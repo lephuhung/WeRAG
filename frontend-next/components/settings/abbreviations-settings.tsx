@@ -21,6 +21,11 @@ import { useT } from "@/lib/i18n";
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
 
+/* Lets the account-menu pending badge refresh after any mutation here. */
+function notifyAbbreviationsChanged() {
+  window.dispatchEvent(new Event("weknora:abbreviations-changed"));
+}
+
 function fmtDate(v?: string): string {
   if (!v) return "-";
   try {
@@ -78,7 +83,7 @@ export function AbbreviationsSettings() {
       setRows(res.data ?? []);
       setTotal(res.total ?? 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load abbreviations");
+      setError(e instanceof Error ? e.message : t("abbrev.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -134,6 +139,7 @@ export function AbbreviationsSettings() {
         if (res.success) {
           setFormOpen(false);
           await load();
+          notifyAbbreviationsChanged();
         } else {
           setError(t("abbrev.saveFailed"));
         }
@@ -149,6 +155,7 @@ export function AbbreviationsSettings() {
           setSuccess(t("abbrev.suggestSaved"));
           setFormOpen(false);
           await load();
+          notifyAbbreviationsChanged();
         } else {
           setError(t("abbrev.saveFailed"));
         }
@@ -168,6 +175,7 @@ export function AbbreviationsSettings() {
       const res = await updateAbbreviation(row.id, { is_active: !row.is_active });
       if (res.success) {
         await load();
+        notifyAbbreviationsChanged();
       } else {
         setError(t("abbrev.saveFailed"));
       }
@@ -185,6 +193,7 @@ export function AbbreviationsSettings() {
       if (res.success) {
         setDeleting(null);
         await load();
+        notifyAbbreviationsChanged();
       } else {
         setError(t("abbrev.deleteFailed"));
       }

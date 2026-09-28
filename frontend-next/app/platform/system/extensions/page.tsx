@@ -51,7 +51,7 @@ function ExtensionsHub() {
     {
       key: "agents",
       title: t("systemNav.agents"),
-      desc: "Custom agents, IM channels and embed widgets.",
+      desc: t("ehub.agents"),
       icon: <IconAgent className="h-5 w-5" />,
       href: `${E}/agents`,
       minRole: "system",
@@ -59,7 +59,7 @@ function ExtensionsHub() {
     {
       key: "mcp",
       title: t("systemNav.mcpServers"),
-      desc: "Connect MCP tool servers available to agents.",
+      desc: t("ehub.mcp"),
       icon: <IconGraph className="h-5 w-5" />,
       href: `${E}/mcp`,
       minRole: "system",
@@ -67,7 +67,7 @@ function ExtensionsHub() {
     {
       key: "skills",
       title: t("settingsNav.skills"),
-      desc: "Installable skill catalog for agents.",
+      desc: t("ehub.skills"),
       icon: <IconArtifact className="h-5 w-5" />,
       href: `${E}/skills`,
       minRole: "system",
@@ -78,7 +78,7 @@ function ExtensionsHub() {
     {
       key: "browserconnection",
       title: t("systemNav.browserconnection"),
-      desc: "Connect a local browser for agent-driven browsing.",
+      desc: t("ehub.browser"),
       icon: <IconExternal className="h-5 w-5" />,
       content: <BrowserConnectionSettings />,
       modalWidth: "w-[560px]",
@@ -86,7 +86,7 @@ function ExtensionsHub() {
     {
       key: "envvars",
       title: t("settingsNav.envvars"),
-      desc: "Environment variables injected into agent runs.",
+      desc: t("ehub.envvars"),
       icon: <IconCode className="h-5 w-5" />,
       content: <EnvVarsSettings />,
       modalWidth: "w-[560px]",
@@ -94,7 +94,7 @@ function ExtensionsHub() {
     {
       key: "abbreviations",
       title: t("settingsNav.abbreviations"),
-      desc: "Terms expanded in chat and knowledge queries.",
+      desc: t("ehub.abbreviations"),
       icon: <IconBook className="h-5 w-5" />,
       href: `${E}/abbreviations`,
     },

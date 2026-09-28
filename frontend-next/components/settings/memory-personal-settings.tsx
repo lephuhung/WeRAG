@@ -29,16 +29,18 @@ import {
   type MemoryDoc,
 } from "@/lib/api/memory";
 import { Toggle } from "@/components/settings/toggle";
-
-const KINDS: { id: MemoryKind; label: string; desc: string }[] = [
-  { id: "profile", label: "Profile", desc: "User background, title, identity traits" },
-  { id: "preference", label: "Preference", desc: "Stylistic, tone, or formatting habits" },
-  { id: "fact", label: "Fact", desc: "Facts explicitly retained about context or projects" },
-  { id: "task", label: "Task", desc: "Ongoing objectives or standing workflows" },
-  { id: "interest", label: "Interest", desc: "Recurring themes and topics of interest" },
-];
+import { useT } from "@/lib/i18n";
 
 export function MemoryPersonalSettings() {
+  const { t } = useT();
+
+  const KINDS: { id: MemoryKind; label: string; desc: string }[] = [
+    { id: "profile", label: t("memp.kProfile"), desc: t("memp.kProfileDesc") },
+    { id: "preference", label: t("memp.kPreference"), desc: t("memp.kPreferenceDesc") },
+    { id: "fact", label: t("memp.kFact"), desc: t("memp.kFactDesc") },
+    { id: "task", label: t("memp.kTask"), desc: t("memp.kTaskDesc") },
+    { id: "interest", label: t("memp.kInterest"), desc: t("memp.kInterestDesc") },
+  ];
   const [settings, setSettings] = useState<MemorySettings | null>(null);
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [topics, setTopics] = useState<MemoryTopic[]>([]);
@@ -78,7 +80,7 @@ export function MemoryPersonalSettings() {
       if (sRes.success && sRes.data) setSettings(sRes.data);
       if (iRes.success && iRes.data) setItems(iRes.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load memory data");
+      setError(e instanceof Error ? e.message : t("memp.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -89,7 +91,7 @@ export function MemoryPersonalSettings() {
       const res = await listMemoryTopics({ limit: 100 });
       if (res.success && res.data) setTopics(res.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load memory topics");
+      setError(e instanceof Error ? e.message : t("memp.loadTopicsFailed"));
     }
   };
 
@@ -98,7 +100,7 @@ export function MemoryPersonalSettings() {
       const res = await listMemoryDocuments({ limit: 100 });
       if (res.success && res.data) setDocs(res.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load memory documents");
+      setError(e instanceof Error ? e.message : t("memp.loadDocsFailed"));
     }
   };
 
@@ -115,10 +117,10 @@ export function MemoryPersonalSettings() {
       const res = await updateMemoryEnabled(checked);
       if (res.success && res.data) {
         setSettings(res.data);
-        setSuccess(`Personal memory ${checked ? "enabled" : "disabled"}`);
+        setSuccess(t(checked ? "memp.enabledMsg" : "memp.disabledMsg"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update memory setting");
+      setError(e instanceof Error ? e.message : t("memp.updateFailed"));
     }
   };
 
@@ -126,10 +128,10 @@ export function MemoryPersonalSettings() {
   const handleConfirm = async (id: string) => {
     try {
       await confirmMemoryItem(id);
-      setSuccess("Memory approved and active");
+      setSuccess(t("memp.approved"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to confirm memory");
+      setError(e instanceof Error ? e.message : t("memp.confirmFailed"));
     }
   };
 
@@ -137,10 +139,10 @@ export function MemoryPersonalSettings() {
   const handleReject = async (id: string) => {
     try {
       await rejectMemoryItem(id);
-      setSuccess("Memory rejected");
+      setSuccess(t("memp.rejected"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reject memory");
+      setError(e instanceof Error ? e.message : t("memp.rejectFailed"));
     }
   };
 
@@ -148,10 +150,10 @@ export function MemoryPersonalSettings() {
   const handleDelete = async (id: string) => {
     try {
       await deleteMemoryItem(id);
-      setSuccess("Memory deleted");
+      setSuccess(t("memp.deleted"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete memory");
+      setError(e instanceof Error ? e.message : t("memp.deleteFailed"));
     }
   };
 
@@ -163,12 +165,16 @@ export function MemoryPersonalSettings() {
       const res = await consolidateMemory();
       if (res.success && res.data) {
         setSuccess(
-          `Consolidation complete: reviewed ${res.data.reviewed}, merged ${res.data.merged}, demoted ${res.data.demoted}.`,
+          t("memp.consolidateDone", {
+            a: res.data.reviewed,
+            b: res.data.merged,
+            c: res.data.demoted,
+          }),
         );
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Consolidation failed");
+      setError(e instanceof Error ? e.message : t("memp.consolidateFailed"));
     } finally {
       setBusyAction(false);
     }
@@ -189,7 +195,7 @@ export function MemoryPersonalSettings() {
         URL.revokeObjectURL(url);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to export memory");
+      setError(e instanceof Error ? e.message : t("memp.exportFailed"));
     }
   };
 
@@ -200,12 +206,12 @@ export function MemoryPersonalSettings() {
     try {
       const res = await clearMemoryItems();
       if (res.success) {
-        setSuccess(`Cleared ${res.removed} memory items`);
+        setSuccess(t("memp.cleared", { n: res.removed }));
         setConfirmClearOpen(false);
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to clear memory");
+      setError(e instanceof Error ? e.message : t("memp.clearFailed"));
     } finally {
       setBusyAction(false);
     }
@@ -224,13 +230,13 @@ export function MemoryPersonalSettings() {
         importance: draftImportance,
       });
       if (res.success) {
-        setSuccess("Created memory item");
+        setSuccess(t("memp.created"));
         setAddModalOpen(false);
         setDraftContent("");
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create memory item");
+      setError(e instanceof Error ? e.message : t("memp.createFailed"));
     } finally {
       setSavingItem(false);
     }
@@ -248,12 +254,12 @@ export function MemoryPersonalSettings() {
         importance: editImportance,
       });
       if (res.success) {
-        setSuccess("Updated memory item");
+        setSuccess(t("memp.updated"));
         setEditingItem(null);
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update memory item");
+      setError(e instanceof Error ? e.message : t("memp.updateItemFailed"));
     } finally {
       setSavingItem(false);
     }
@@ -264,9 +270,9 @@ export function MemoryPersonalSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">My Memory</h2>
+          <h2 className="title-md font-semibold text-ink">{t("memp.title")}</h2>
           <p className="caption text-muted mt-1">
-            Personal facts, traits, and preferences retained to personalize AI responses for you.
+            {t("memp.subtitle")}
           </p>
         </div>
 
@@ -277,30 +283,30 @@ export function MemoryPersonalSettings() {
             className="btn btn-primary btn-sm flex items-center gap-1.5"
           >
             <IconPlus className="h-3.5 w-3.5" />
-            <span>Add memory</span>
+            <span>{t("memp.add")}</span>
           </button>
           <button
             type="button"
             onClick={() => void handleConsolidate()}
             disabled={busyAction}
             className="btn btn-outline btn-sm text-xs"
-            title="Merge and optimize redundant memory entries"
+            title={t("memp.consolidateTip")}
           >
-            {busyAction ? "Consolidating…" : "Consolidate now"}
+            {busyAction ? t("memp.consolidating") : t("memp.consolidate")}
           </button>
           <button
             type="button"
             onClick={() => void handleExport()}
             className="btn btn-outline btn-sm text-xs"
-            title="Export as JSON"
+            title={t("memp.exportTip")}
           >
-            Export
+            {t("memp.export")}
           </button>
           <button
             type="button"
             onClick={() => void loadData()}
             className="btn btn-outline btn-sm p-1.5"
-            title="Refresh"
+            title={t("common.refresh")}
           >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
@@ -310,9 +316,7 @@ export function MemoryPersonalSettings() {
       {/* Workspace disabled banner if applicable */}
       {settings && !settings.workspace_enabled && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-400">
-          <strong>Workspace memory is disabled:</strong> Your workspace administrator has turned off
-          the long-term memory feature. Personal memories will not be applied to agent conversations
-          until re-enabled at the workspace level.
+          <strong>{t("memp.workspaceDisabled")}</strong> {t("memp.workspaceDisabledBody")}
         </div>
       )}
 
@@ -330,9 +334,9 @@ export function MemoryPersonalSettings() {
       {/* Switch Row */}
       <div className="flex items-center justify-between rounded-xl border border-hairline bg-surface-card p-5">
         <div>
-          <span className="text-sm font-semibold text-ink block">Enable Personal Memory</span>
+          <span className="text-sm font-semibold text-ink block">{t("memp.enableTitle")}</span>
           <span className="caption text-muted block mt-0.5">
-            Allow AI agents to learn preferences and past facts during your conversations.
+            {t("memp.enableDesc")}
           </span>
         </div>
         <Toggle
@@ -354,7 +358,7 @@ export function MemoryPersonalSettings() {
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            Memory Items ({items.length})
+            {t("memp.tabItems")} ({items.length})
           </button>
           <button
             type="button"
@@ -365,7 +369,7 @@ export function MemoryPersonalSettings() {
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            Tracked Topics
+            {t("memp.tabTopics")}
           </button>
           <button
             type="button"
@@ -376,7 +380,7 @@ export function MemoryPersonalSettings() {
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            Signal Documents
+            {t("memp.tabDocs")}
           </button>
         </div>
 
@@ -387,13 +391,13 @@ export function MemoryPersonalSettings() {
                 key={st}
                 type="button"
                 onClick={() => setStatusFilter(st)}
-                className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   statusFilter === st
                     ? "bg-ink text-white dark:bg-white dark:text-ink"
                     : "text-muted hover:bg-surface-strong hover:text-ink"
                 }`}
               >
-                {st}
+                {t(`memp.st.${st}`)}
               </button>
             ))}
           </div>
@@ -404,10 +408,10 @@ export function MemoryPersonalSettings() {
       {mainTab === "items" && (
         <div className="space-y-3">
           {loading ? (
-            <p className="caption text-muted text-center py-12">Loading memory items…</p>
+            <p className="caption text-muted text-center py-12">{t("memp.loading")}</p>
           ) : items.length === 0 ? (
             <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-              No memory items in this status category.
+              {t("memp.emptyItems")}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3">
@@ -427,7 +431,7 @@ export function MemoryPersonalSettings() {
                         </span>
                       )}
                       <span className="caption text-muted text-[11px]">
-                        Importance: {it.importance}/5
+                        {t("memp.importance")}: {it.importance}/5
                       </span>
                       {it.origin && (
                         <span className="caption text-muted-soft text-[11px]">
@@ -445,14 +449,14 @@ export function MemoryPersonalSettings() {
                             onClick={() => void handleConfirm(it.id)}
                             className="btn btn-primary btn-sm text-xs py-1"
                           >
-                            Approve
+                            {t("memp.approve")}
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleReject(it.id)}
                             className="btn btn-outline btn-sm text-xs py-1 text-rose-600"
                           >
-                            Reject
+                            {t("memp.reject")}
                           </button>
                         </>
                       )}
@@ -465,13 +469,13 @@ export function MemoryPersonalSettings() {
                         }}
                         className="btn btn-ghost btn-sm text-xs py-1"
                       >
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleDelete(it.id)}
                         className="btn btn-ghost btn-sm p-1 text-muted hover:text-rose-600"
-                        title="Delete"
+                        title={t("common.delete")}
                       >
                         <IconTrash className="h-3.5 w-3.5" />
                       </button>
@@ -484,10 +488,12 @@ export function MemoryPersonalSettings() {
 
                   <div className="flex items-center justify-between text-[11px] text-muted border-t border-hairline pt-2 mt-1">
                     <span>
-                      Created: {it.created_at ? new Date(it.created_at).toLocaleDateString() : "—"}
+                      {t("memp.createdAt")}: {it.created_at ? new Date(it.created_at).toLocaleDateString() : "—"}
                     </span>
                     <span>
-                      {it.use_count > 0 ? `Recalled ${it.use_count} times` : "Not yet recalled"}
+                      {it.use_count > 0
+                        ? t("memp.recalledTimes", { n: it.use_count })
+                        : t("memp.notRecalled")}
                     </span>
                   </div>
                 </div>
@@ -502,7 +508,7 @@ export function MemoryPersonalSettings() {
                 onClick={() => setConfirmClearOpen(true)}
                 className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
               >
-                Clear all memories
+                {t("memp.clearAll")}
               </button>
             </div>
           )}
@@ -514,24 +520,26 @@ export function MemoryPersonalSettings() {
         <div className="space-y-3">
           {topics.length === 0 ? (
             <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-              No tracked topics found yet. As you converse about subjects, recurring topics will appear here.
+              {t("memp.emptyTopics")}
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-hairline">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-                    <th className="py-3 px-4">Topic</th>
-                    <th className="py-3 px-4">Hits</th>
-                    <th className="py-3 px-4">Last seen</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-3 px-4">{t("memp.colTopic")}</th>
+                    <th className="py-3 px-4">{t("memp.colHits")}</th>
+                    <th className="py-3 px-4">{t("memp.colLastSeen")}</th>
+                    <th className="py-3 px-4 text-right">{t("mem.colActions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-hairline">
                   {topics.map((tp) => (
                     <tr key={tp.id} className="hover:bg-surface-strong/30 transition-colors">
                       <td className="py-3 px-4 font-medium text-ink">#{tp.topic}</td>
-                      <td className="py-3 px-4 text-muted text-xs">{tp.hits} mentions</td>
+                      <td className="py-3 px-4 text-muted text-xs">
+                        {t("memp.mentions", { n: tp.hits })}
+                      </td>
                       <td className="py-3 px-4 text-muted text-xs">
                         {tp.last_seen_at ? new Date(tp.last_seen_at).toLocaleDateString() : "—"}
                       </td>
@@ -541,11 +549,11 @@ export function MemoryPersonalSettings() {
                           onClick={async () => {
                             await promoteMemoryTopic(tp.id);
                             await loadTopics();
-                            setSuccess(`Promoted topic #${tp.topic} to interest memory`);
+                            setSuccess(t("memp.promoted", { topic: tp.topic }));
                           }}
                           className="btn btn-outline btn-sm text-xs py-1"
                         >
-                          Promote to memory
+                          {t("memp.promote")}
                         </button>
                         <button
                           type="button"
@@ -572,7 +580,7 @@ export function MemoryPersonalSettings() {
         <div className="space-y-3">
           {docs.length === 0 ? (
             <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-              No personal retrieval documents recorded yet.
+              {t("memp.emptyDocs")}
             </div>
           ) : (
             <div className="divide-y divide-hairline rounded-xl border border-hairline">
@@ -581,7 +589,7 @@ export function MemoryPersonalSettings() {
                   <div>
                     <span className="font-medium text-ink block">{dc.title}</span>
                     <span className="caption text-muted block text-xs">
-                      KB ID: {dc.knowledge_base_id} • Hits: {dc.hits}
+                      KB ID: {dc.knowledge_base_id} • {t("memp.colHits")}: {dc.hits}
                     </span>
                   </div>
                   <button
@@ -602,10 +610,10 @@ export function MemoryPersonalSettings() {
       )}
 
       {/* Add Memory Modal */}
-      <Modal open={addModalOpen} title="Add Personal Memory" onClose={() => setAddModalOpen(false)}>
+      <Modal open={addModalOpen} title={t("memp.addTitle")} onClose={() => setAddModalOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Category</span>
+            <span className="caption mb-1.5 block text-muted">{t("memp.category")}</span>
             <Select
               value={draftKind}
               onChange={(v) => setDraftKind(v as MemoryKind)}
@@ -614,11 +622,11 @@ export function MemoryPersonalSettings() {
           </label>
 
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Memory Content</span>
+            <span className="caption mb-1.5 block text-muted">{t("memp.content")}</span>
             <textarea
               required
               rows={4}
-              placeholder="e.g. Prefers concise Python code examples with typing annotations"
+              placeholder={t("memp.contentPh")}
               className="input resize-none"
               value={draftContent}
               onChange={(e) => setDraftContent(e.target.value)}
@@ -627,7 +635,7 @@ export function MemoryPersonalSettings() {
 
           <label className="block">
             <span className="caption mb-1.5 block text-muted">
-              Importance (1: lowest — 5: highest)
+              {t("memp.importanceRange")}
             </span>
             <div className="flex items-center gap-3">
               <input
@@ -648,14 +656,14 @@ export function MemoryPersonalSettings() {
               className="btn btn-outline"
               onClick={() => setAddModalOpen(false)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={savingItem || !draftContent.trim()}
               className="btn btn-primary"
             >
-              {savingItem ? "Saving…" : "Save memory"}
+              {savingItem ? t("memp.saving") : t("memp.saveMemory")}
             </button>
           </div>
         </form>
@@ -664,12 +672,12 @@ export function MemoryPersonalSettings() {
       {/* Edit Memory Modal */}
       <Modal
         open={editingItem !== null}
-        title="Edit Memory Item"
+        title={t("memp.editTitle")}
         onClose={() => setEditingItem(null)}
       >
         <form onSubmit={handleSaveEdit} className="space-y-4">
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Content</span>
+            <span className="caption mb-1.5 block text-muted">{t("memp.contentLabel")}</span>
             <textarea
               required
               rows={4}
@@ -680,7 +688,7 @@ export function MemoryPersonalSettings() {
           </label>
 
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Importance</span>
+            <span className="caption mb-1.5 block text-muted">{t("memp.importance")}</span>
             <div className="flex items-center gap-3">
               <input
                 type="range"
@@ -700,14 +708,14 @@ export function MemoryPersonalSettings() {
               className="btn btn-outline"
               onClick={() => setEditingItem(null)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={savingItem || !editContent.trim()}
               className="btn btn-primary"
             >
-              {savingItem ? "Saving…" : "Save changes"}
+              {savingItem ? t("memp.saving") : t("memp.saveChanges")}
             </button>
           </div>
         </form>
@@ -716,13 +724,12 @@ export function MemoryPersonalSettings() {
       {/* Clear All Modal */}
       <Modal
         open={confirmClearOpen}
-        title="Clear All Memories"
+        title={t("memp.clearTitle")}
         onClose={() => setConfirmClearOpen(false)}
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            Are you sure you want to delete all personal memory items? This action cannot be
-            undone.
+            {t("memp.clearBody")}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -730,7 +737,7 @@ export function MemoryPersonalSettings() {
               className="btn btn-outline"
               onClick={() => setConfirmClearOpen(false)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -738,7 +745,7 @@ export function MemoryPersonalSettings() {
               onClick={() => void handleClearAll()}
               className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {busyAction ? "Clearing…" : "Delete all memories"}
+              {busyAction ? t("memp.clearing") : t("memp.clearCta")}
             </button>
           </div>
         </div>

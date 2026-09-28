@@ -8,8 +8,10 @@ import {
   downloadOllamaModel,
   type OllamaModelInfo,
 } from "@/lib/api/initialization";
+import { useT } from "@/lib/i18n";
 
 export function OllamaSettings() {
+  const { t } = useT();
   const [running, setRunning] = useState<boolean | null>(null);
   const [url, setUrl] = useState<string>("http://localhost:11434");
   const [version, setVersion] = useState<string>("");
@@ -36,7 +38,7 @@ export function OllamaSettings() {
         setModels([]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect to Ollama");
+      setError(e instanceof Error ? e.message : t("ol.connectFailed"));
       setRunning(false);
     } finally {
       setBusy(false);
@@ -50,14 +52,14 @@ export function OllamaSettings() {
   const handlePull = async () => {
     if (!pullModelName.trim()) return;
     setPulling(true);
-    setPullMsg("Pull request initiated…");
+    setPullMsg(t("ol.pullInitiated"));
     try {
       await downloadOllamaModel(pullModelName.trim());
-      setPullMsg(`Downloading ${pullModelName} in background. Check Ollama terminal for progress.`);
+      setPullMsg(t("ol.pullStarted", { name: pullModelName }));
       setPullModelName("");
       setTimeout(() => void refresh(), 3000);
     } catch (e) {
-      setPullMsg(e instanceof Error ? e.message : "Pull failed");
+      setPullMsg(e instanceof Error ? e.message : t("ol.pullFailed"));
     } finally {
       setPulling(false);
     }
@@ -67,9 +69,9 @@ export function OllamaSettings() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h3 className="title-md text-ink">Ollama Local AI</h3>
+          <h3 className="title-md text-ink">{t("ol.title")}</h3>
           <p className="body-sm mt-1 text-muted">
-            Connect to a local or on-premises Ollama server for private model inference.
+            {t("ol.connectHint")}
           </p>
         </div>
         <button
@@ -78,7 +80,7 @@ export function OllamaSettings() {
           disabled={busy}
           onClick={() => void refresh()}
         >
-          <IconRefresh className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} /> Check Status
+          <IconRefresh className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} /> {t("ol.checkStatus")}
         </button>
       </div>
 
@@ -99,7 +101,7 @@ export function OllamaSettings() {
             />
             <div>
               <div className="text-sm font-medium text-ink">
-                {running === true ? "Ollama Connected" : running === false ? "Ollama Offline" : "Checking…"}
+                {running === true ? t("ol.connected") : running === false ? t("ol.offline") : t("ol.checking")}
               </div>
               <div className="caption text-muted font-mono mt-0.5">{url}</div>
             </div>
@@ -110,11 +112,11 @@ export function OllamaSettings() {
 
       {/* Pull model input */}
       <div className="card p-5 mb-6">
-        <h4 className="text-xs font-semibold uppercase text-muted mb-2">Pull New Model</h4>
+        <h4 className="text-xs font-semibold uppercase text-muted mb-2">{t("ol.pullTitle")}</h4>
         <div className="flex gap-2">
           <input
             className="input flex-1 text-xs"
-            placeholder="e.g. llama3.2:3b, qwen2.5:7b, nomic-embed-text"
+            placeholder={t("ol.pullPh")}
             value={pullModelName}
             onChange={(e) => setPullModelName(e.target.value)}
           />
@@ -124,7 +126,7 @@ export function OllamaSettings() {
             disabled={!pullModelName.trim() || pulling || !running}
             onClick={() => void handlePull()}
           >
-            <IconPlus className="h-4 w-4" /> Pull Model
+            <IconPlus className="h-4 w-4" /> {pulling ? t("ol.pulling") : t("ol.pullCta")}
           </button>
         </div>
         {pullMsg && <p className="caption mt-2 text-muted">{pullMsg}</p>}
@@ -132,10 +134,10 @@ export function OllamaSettings() {
 
       {/* Installed models */}
       <div>
-        <h4 className="text-xs font-semibold uppercase text-muted mb-3">Available Models ({models.length})</h4>
+        <h4 className="text-xs font-semibold uppercase text-muted mb-3">{t("ol.availModels", { n: models.length })}</h4>
         {models.length === 0 ? (
           <div className="card p-6 text-center text-muted text-xs">
-            {running ? "No models found in Ollama repository." : "Start Ollama service to view installed models."}
+            {running ? t("ol.emptyRunning") : t("ol.emptyStopped")}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

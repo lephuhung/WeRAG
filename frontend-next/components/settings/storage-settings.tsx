@@ -11,8 +11,10 @@ import {
 } from "@/lib/api/storage-backends";
 import { IconDoc, IconPlus, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
+import { useT } from "@/lib/i18n";
 
 export function StorageSettings() {
+  const { t } = useT();
   const [backends, setBackends] = useState<StorageBackend[]>([]);
   const [defaultId, setDefaultId] = useState<string | null>(null);
   const [types, setTypes] = useState<string[]>([]);
@@ -48,7 +50,7 @@ export function StorageSettings() {
         setTypes(tRes.value.data);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load storage backends");
+      setError(e instanceof Error ? e.message : t("stor.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -63,17 +65,17 @@ export function StorageSettings() {
       await setDefaultStorageBackend(id);
       setDefaultId(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to set default storage backend");
+      setError(e instanceof Error ? e.message : t("stor.setDefaultFailed"));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this storage backend?")) return;
+    if (!confirm(t("stor.confirmDelete"))) return;
     try {
       await deleteStorageBackend(id);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete storage backend");
+      setError(e instanceof Error ? e.message : t("stor.deleteFailed"));
     }
   };
 
@@ -105,7 +107,7 @@ export function StorageSettings() {
       });
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create storage backend");
+      setError(err instanceof Error ? err.message : t("stor.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -115,16 +117,16 @@ export function StorageSettings() {
     <div>
       <div className="flex items-center justify-between border-b border-hairline pb-4">
         <div>
-          <h2 className="title-md">Storage Engine Settings</h2>
+          <h2 className="title-md">{t("stor.title")}</h2>
           <p className="caption mt-1 text-muted">
-            Configure local or object storage backends for document parsing, artifacts, and knowledge storage.
+            {t("stor.subtitle")}
           </p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
           className="btn btn-primary btn-sm flex items-center gap-1.5"
         >
-          <IconPlus className="h-4 w-4" /> Add Storage Backend
+          <IconPlus className="h-4 w-4" /> {t("stor.add")}
         </button>
       </div>
 
@@ -135,11 +137,11 @@ export function StorageSettings() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-muted">Loading storage backends…</div>
+        <div className="py-12 text-center text-muted">{t("stor.loading")}</div>
       ) : backends.length === 0 ? (
         <div className="py-12 text-center text-muted">
           <IconDoc className="mx-auto mb-2 h-8 w-8 text-muted-soft" />
-          <p className="text-[14px]">No storage backends configured.</p>
+          <p className="text-[14px]">{t("stor.empty")}</p>
         </div>
       ) : (
         <div className="mt-6 space-y-3">
@@ -156,13 +158,13 @@ export function StorageSettings() {
                     <span className="badge-pill uppercase text-[10px]">{b.provider}</span>
                     {isDefault && (
                       <span className="badge-pill bg-success/15 text-success text-[10px]">
-                        Default
+                        {t("stor.default")}
                       </span>
                     )}
                   </div>
                   <p className="caption mt-1 text-muted">
-                    Source: {b.source} · Status: {b.status}
-                    {b.config.bucket_name ? ` · Bucket: ${b.config.bucket_name}` : ""}
+                    {t("stor.source")}: {b.source} · {t("stor.status")}: {b.status}
+                    {b.config.bucket_name ? ` · ${t("stor.bucket")}: ${b.config.bucket_name}` : ""}
                   </p>
                 </div>
 
@@ -172,14 +174,14 @@ export function StorageSettings() {
                       onClick={() => handleSetDefault(b.id)}
                       className="btn btn-outline btn-sm"
                     >
-                      Set Default
+                      {t("stor.setDefault")}
                     </button>
                   )}
                   {b.source !== "env" && (
                     <button
                       onClick={() => handleDelete(b.id)}
                       className="rounded-lg p-1.5 text-muted hover:bg-surface-strong hover:text-error"
-                      title="Delete"
+                      title={t("common.delete")}
                     >
                       <IconTrash className="h-4 w-4" />
                     </button>
@@ -195,27 +197,27 @@ export function StorageSettings() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-[500px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-4">Add Storage Backend</h3>
+            <h3 className="title-sm mb-4">{t("stor.addTitle")}</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Name</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("stor.name")}</label>
                 <input
                   required
                   className="input h-9 w-full text-[13px]"
-                  placeholder="e.g. MinIO S3 Store"
+                  placeholder={t("stor.namePh")}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
 
               <div>
-                <label className="caption mb-1 block font-medium text-ink">Provider Type</label>
+                <label className="caption mb-1 block font-medium text-ink">{t("stor.provider")}</label>
                 <Select
                   className="h-9 w-full text-[13px]"
                   value={formData.provider}
                   onChange={(v) => setFormData({ ...formData, provider: v })}
                   options={[
-                    { value: "local", label: "Local Filesystem" },
+                    { value: "local", label: t("stor.pLocal") },
                     { value: "s3", label: "AWS S3 / S3 Compatible" },
                     { value: "minio", label: "MinIO" },
                     { value: "oss", label: "Aliyun OSS" },
@@ -230,7 +232,7 @@ export function StorageSettings() {
               {formData.provider !== "local" && (
                 <>
                   <div>
-                    <label className="caption mb-1 block font-medium text-ink">Endpoint URL</label>
+                    <label className="caption mb-1 block font-medium text-ink">{t("stor.endpoint")}</label>
                     <input
                       className="input h-9 w-full text-[13px]"
                       placeholder="https://s3.amazonaws.com or http://minio:9000"
@@ -240,7 +242,7 @@ export function StorageSettings() {
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="caption mb-1 block font-medium text-ink">Bucket Name</label>
+                      <label className="caption mb-1 block font-medium text-ink">{t("stor.bucketName")}</label>
                       <input
                         className="input h-9 w-full text-[13px]"
                         placeholder="my-bucket"
@@ -249,7 +251,7 @@ export function StorageSettings() {
                       />
                     </div>
                     <div>
-                      <label className="caption mb-1 block font-medium text-ink">Region</label>
+                      <label className="caption mb-1 block font-medium text-ink">{t("stor.region")}</label>
                       <input
                         className="input h-9 w-full text-[13px]"
                         placeholder="us-east-1"
@@ -260,7 +262,7 @@ export function StorageSettings() {
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="caption mb-1 block font-medium text-ink">Access Key ID</label>
+                      <label className="caption mb-1 block font-medium text-ink">{t("stor.accessKey")}</label>
                       <input
                         className="input h-9 w-full text-[13px]"
                         type="password"
@@ -269,7 +271,7 @@ export function StorageSettings() {
                       />
                     </div>
                     <div>
-                      <label className="caption mb-1 block font-medium text-ink">Secret Access Key</label>
+                      <label className="caption mb-1 block font-medium text-ink">{t("stor.secretKey")}</label>
                       <input
                         className="input h-9 w-full text-[13px]"
                         type="password"
@@ -287,14 +289,14 @@ export function StorageSettings() {
                   onClick={() => setModalOpen(false)}
                   className="btn btn-outline btn-sm"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="btn btn-primary btn-sm"
                 >
-                  {submitting ? "Saving…" : "Save"}
+                  {submitting ? t("memp.saving") : t("common.save")}
                 </button>
               </div>
             </form>

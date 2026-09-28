@@ -10,9 +10,9 @@ import {
   updateSessionActivity,
   useSessionActivityEntries,
 } from "@/lib/session-activity";
-import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
+import { AccountMenu } from "@/components/account-menu";
 import { BrandLogo } from "@/components/brand-logo";
 import { Modal } from "@/components/modal";
 import {
@@ -23,7 +23,6 @@ import {
   IconOrg,
   IconPlus,
   IconSearch,
-  IconSettings,
   IconTrash,
 } from "@/components/icons";
 
@@ -56,7 +55,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useT();
-  const auth = useAuth();
   const palette = useCommandPalette();
   const [live, setLive] = useState<SessionRow[] | null>(null);
   // Sessions with an in-flight assistant turn (this tab marked them, or they
@@ -285,19 +283,7 @@ export function Sidebar() {
       </div>
 
       <div className="border-t border-hairline px-3 py-3">
-        <Link
-          href={
-            auth.ready
-              ? auth.user?.is_system_admin
-                ? "/platform/system/admin"
-                : "/platform/system/workspace"
-              : "/platform/system"
-          }
-          className={`nav-item ${pathname?.startsWith("/platform/system") || pathname?.startsWith("/platform/settings") ? "active" : ""}`}
-        >
-          <IconSettings className="h-[18px] w-[18px]" />
-          {t("nav.settings")}
-        </Link>
+        <AccountMenu />
       </div>
 
       </aside>

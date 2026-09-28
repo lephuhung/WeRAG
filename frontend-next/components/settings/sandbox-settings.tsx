@@ -16,8 +16,10 @@ import {
   type SandboxConfigData,
 } from "@/lib/api/sandbox";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export function SandboxSettings() {
+  const { t } = useT();
   const auth = useAuth();
   const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const currentRole =
@@ -64,7 +66,7 @@ export function SandboxSettings() {
       setConfigs(res.data ?? []);
       setScriptsDisabled(res.workspace_scripts_disabled === true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load sandbox configurations");
+      setError(e instanceof Error ? e.message : t("sbox.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -80,9 +82,9 @@ export function SandboxSettings() {
     try {
       const res = await setSandboxWorkspacePolicy(disabled);
       setScriptsDisabled(res.workspace_scripts_disabled);
-      setSuccess(`Workspace script execution ${disabled ? "disabled" : "enabled"}`);
+      setSuccess(t(disabled ? "sbox.policyDisabled" : "sbox.policyEnabled"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update workspace script policy");
+      setError(e instanceof Error ? e.message : t("sbox.policyFailed"));
     }
   };
 
@@ -144,19 +146,19 @@ export function SandboxSettings() {
           description: desc.trim() || undefined,
           config: configData,
         });
-        setSuccess(`Updated sandbox config ${name}`);
+        setSuccess(t("sbox.updated", { name }));
       } else {
         await createSandboxConfig({
           name: name.trim(),
           description: desc.trim() || undefined,
           config: configData,
         });
-        setSuccess(`Created sandbox config ${name}`);
+        setSuccess(t("sbox.created", { name }));
       }
       setModalOpen(false);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save sandbox configuration");
+      setError(e instanceof Error ? e.message : t("sbox.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -175,7 +177,7 @@ export function SandboxSettings() {
         setInventorySessions(res.data.session_ids ?? []);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load active sandboxes");
+      setError(e instanceof Error ? e.message : t("sbox.loadActiveFailed"));
     } finally {
       setLoadingInventory(false);
     }
@@ -188,11 +190,11 @@ export function SandboxSettings() {
     setError("");
     try {
       await deleteSandboxConfig(deletingConfig.id);
-      setSuccess(`Deleted sandbox configuration ${deletingConfig.name}`);
+      setSuccess(t("sbox.deleted", { name: deletingConfig.name }));
       setDeletingConfig(null);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete sandbox configuration");
+      setError(e instanceof Error ? e.message : t("sbox.deleteFailed"));
     } finally {
       setDeletingBusy(false);
     }
@@ -207,9 +209,9 @@ export function SandboxSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
-          <h2 className="title-md font-semibold text-ink">Sandbox Environments</h2>
+          <h2 className="title-md font-semibold text-ink">{t("sbox.title")}</h2>
           <p className="caption text-muted mt-1">
-            Isolated runtime instances where agents safely execute code, tools, and custom skills.
+            {t("sbox.subtitle")}
           </p>
         </div>
 
@@ -221,14 +223,14 @@ export function SandboxSettings() {
               className="btn btn-primary btn-sm flex items-center gap-1.5"
             >
               <IconPlus className="h-3.5 w-3.5" />
-              <span>Add sandbox</span>
+              <span>{t("sbox.add")}</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => void loadData()}
             className="btn btn-outline btn-sm p-1.5"
-            title="Refresh"
+            title={t("common.refresh")}
           >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
@@ -250,10 +252,10 @@ export function SandboxSettings() {
       <div className="flex items-center justify-between rounded-xl border border-hairline bg-surface-card p-5">
         <div>
           <span className="text-sm font-semibold text-ink block">
-            Workspace Code Execution Policy
+            {t("sbox.policyTitle")}
           </span>
           <span className="caption text-muted block mt-0.5">
-            When disabled, all agent code interpreter and script execution requests will be blocked.
+            {t("sbox.policyDesc")}
           </span>
         </div>
         <Toggle
@@ -266,18 +268,18 @@ export function SandboxSettings() {
       {/* Filters */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          {["all", "docker", "cube", "e2b"].map((t) => (
+          {["all", "docker", "cube", "e2b"].map((ft) => (
             <button
-              key={t}
+              key={ft}
               type="button"
-              onClick={() => setFilterType(t)}
+              onClick={() => setFilterType(ft)}
               className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                filterType === t
+                filterType === ft
                   ? "bg-ink text-white dark:bg-white dark:text-ink"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
-              {t}
+              {ft === "all" ? t("common.all") : ft}
             </button>
           ))}
         </div>
@@ -288,24 +290,24 @@ export function SandboxSettings() {
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-              <th className="py-3 px-4">Name</th>
-              <th className="py-3 px-4">Backend Type</th>
-              <th className="py-3 px-4">Endpoint / Target</th>
-              <th className="py-3 px-4">Created</th>
-              <th className="py-3 px-4 text-right">Actions</th>
+              <th className="py-3 px-4">{t("sbox.colName")}</th>
+              <th className="py-3 px-4">{t("sbox.colType")}</th>
+              <th className="py-3 px-4">{t("sbox.colEndpoint")}</th>
+              <th className="py-3 px-4">{t("sbox.colCreated")}</th>
+              <th className="py-3 px-4 text-right">{t("mem.colActions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
             {loading ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-muted">
-                  Loading sandbox configurations…
+                  {t("sbox.loading")}
                 </td>
               </tr>
             ) : filteredConfigs.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-muted">
-                  No sandbox configurations found. Add one to enable code execution for agents.
+                  {t("sbox.empty")}
                 </td>
               </tr>
             ) : (
@@ -314,7 +316,7 @@ export function SandboxSettings() {
                   cfg.config?.docker?.endpoint ||
                   cfg.config?.cube?.endpoint ||
                   cfg.config?.e2b?.template ||
-                  "Default";
+                  t("stor.default");
 
                 return (
                   <tr key={cfg.id} className="hover:bg-surface-strong/30 transition-colors">
@@ -343,7 +345,7 @@ export function SandboxSettings() {
                         onClick={() => void openInventory(cfg)}
                         className="btn btn-outline btn-sm text-xs py-1"
                       >
-                        Status
+                        {t("sbox.status")}
                       </button>
                       {canManage && (
                         <>
@@ -351,7 +353,7 @@ export function SandboxSettings() {
                             type="button"
                             onClick={() => openEdit(cfg)}
                             className="btn btn-ghost btn-sm p-1.5 text-muted hover:text-ink"
-                            title="Edit"
+                            title={t("common.edit")}
                           >
                             <IconEdit className="h-3.5 w-3.5" />
                           </button>
@@ -359,7 +361,7 @@ export function SandboxSettings() {
                             type="button"
                             onClick={() => setDeletingConfig(cfg)}
                             className="btn btn-ghost btn-sm p-1.5 text-muted hover:text-rose-600"
-                            title="Delete"
+                            title={t("common.delete")}
                           >
                             <IconTrash className="h-3.5 w-3.5" />
                           </button>
@@ -377,16 +379,16 @@ export function SandboxSettings() {
       {/* Create / Edit Modal */}
       <Modal
         open={modalOpen}
-        title={editingConfig ? "Edit Sandbox Environment" : "Add Sandbox Environment"}
+        title={editingConfig ? t("sbox.editTitle") : t("sbox.addTitle")}
         onClose={() => setModalOpen(false)}
       >
         <form onSubmit={handleSave} className="space-y-4">
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Name</span>
+            <span className="caption mb-1.5 block text-muted">{t("sbox.name")}</span>
             <input
               type="text"
               required
-              placeholder="e.g. Local Docker Runner"
+              placeholder={t("sbox.namePh")}
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -394,10 +396,10 @@ export function SandboxSettings() {
           </label>
 
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Description (optional)</span>
+            <span className="caption mb-1.5 block text-muted">{t("sbox.desc")}</span>
             <input
               type="text"
-              placeholder="e.g. General execution environment"
+              placeholder={t("sbox.descPh")}
               className="input"
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
@@ -405,7 +407,7 @@ export function SandboxSettings() {
           </label>
 
           <label className="block">
-            <span className="caption mb-1.5 block text-muted">Backend Provider</span>
+            <span className="caption mb-1.5 block text-muted">{t("sbox.provider")}</span>
             <Select
               disabled={!!editingConfig}
               value={sandboxType}
@@ -420,7 +422,7 @@ export function SandboxSettings() {
 
           {sandboxType === "docker" && (
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Docker Daemon Endpoint</span>
+              <span className="caption mb-1.5 block text-muted">{t("sbox.dockerEndpoint")}</span>
               <input
                 type="text"
                 placeholder="unix:///var/run/docker.sock or tcp://127.0.0.1:2375"
@@ -434,7 +436,7 @@ export function SandboxSettings() {
           {sandboxType === "cube" && (
             <>
               <label className="block">
-                <span className="caption mb-1.5 block text-muted">Cube API Endpoint</span>
+                <span className="caption mb-1.5 block text-muted">{t("sbox.cubeEndpoint")}</span>
                 <input
                   type="text"
                   required
@@ -446,7 +448,7 @@ export function SandboxSettings() {
               </label>
               <label className="block">
                 <span className="caption mb-1.5 block text-muted">
-                  API Key{editingConfig ? " (leave empty to keep current)" : ""}
+                  {t("sbox.apiKey")}{editingConfig ? ` ${t("sbox.keepCurrent")}` : ""}
                 </span>
                 <input
                   type="password"
@@ -461,7 +463,7 @@ export function SandboxSettings() {
           {sandboxType === "e2b" && (
             <label className="block">
               <span className="caption mb-1.5 block text-muted">
-                E2B API Key{editingConfig ? " (leave empty to keep current)" : ""}
+                {t("sbox.e2bKey")}{editingConfig ? ` ${t("sbox.keepCurrent")}` : ""}
               </span>
               <input
                 type="password"
@@ -479,14 +481,14 @@ export function SandboxSettings() {
               className="btn btn-outline"
               onClick={() => setModalOpen(false)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={saving || !name.trim()}
               className="btn btn-primary"
             >
-              {saving ? "Saving…" : editingConfig ? "Save changes" : "Create sandbox"}
+              {saving ? t("memp.saving") : editingConfig ? t("memp.saveChanges") : t("sbox.createCta")}
             </button>
           </div>
         </form>
@@ -495,23 +497,23 @@ export function SandboxSettings() {
       {/* Inventory Status Modal */}
       <Modal
         open={inventoryConfig !== null}
-        title={`Status for ${inventoryConfig?.name || "Sandbox"}`}
+        title={t("sbox.statusTitle", { name: inventoryConfig?.name || "Sandbox" })}
         onClose={() => setInventoryConfig(null)}
       >
         <div className="space-y-4">
           {loadingInventory ? (
-            <p className="caption text-muted text-center py-6">Checking backend status…</p>
+            <p className="caption text-muted text-center py-6">{t("sbox.checking")}</p>
           ) : (
             <>
               <div className="rounded-xl border border-hairline p-4 space-y-2 bg-surface-strong/30">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted">Active Sandbox Containers:</span>
+                  <span className="text-muted">{t("sbox.activeContainers")}:</span>
                   <span className="font-semibold text-ink text-base">
-                    {inventoryCount !== null ? inventoryCount : "Unknown"}
+                    {inventoryCount !== null ? inventoryCount : t("sbox.unknown")}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted">Provider:</span>
+                  <span className="text-muted">{t("sbox.provider")}:</span>
                   <span className="badge-pill uppercase text-xs">
                     {inventoryConfig?.sandbox_type}
                   </span>
@@ -520,7 +522,7 @@ export function SandboxSettings() {
 
               {inventorySessions.length > 0 && (
                 <div className="space-y-1">
-                  <span className="caption text-muted font-medium">Bound Session IDs:</span>
+                  <span className="caption text-muted font-medium">{t("sbox.sessions")}:</span>
                   <div className="max-h-32 overflow-y-auto space-y-1">
                     {inventorySessions.map((sid) => (
                       <div
@@ -542,7 +544,7 @@ export function SandboxSettings() {
               className="btn btn-outline"
               onClick={() => setInventoryConfig(null)}
             >
-              Close
+              {t("common.close")}
             </button>
           </div>
         </div>
@@ -551,13 +553,13 @@ export function SandboxSettings() {
       {/* Delete Modal */}
       <Modal
         open={deletingConfig !== null}
-        title="Delete Sandbox Configuration"
+        title={t("sbox.deleteTitle")}
         onClose={() => setDeletingConfig(null)}
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            Are you sure you want to delete <strong>{deletingConfig?.name}</strong>?
-            Agents configured to run in this sandbox will fail until mapped to another active environment.
+            {t("sbox.deleteBody1")} <strong>{deletingConfig?.name}</strong>?
+            {" "}{t("sbox.deleteBody2")}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -565,7 +567,7 @@ export function SandboxSettings() {
               className="btn btn-outline"
               onClick={() => setDeletingConfig(null)}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
@@ -573,7 +575,7 @@ export function SandboxSettings() {
               onClick={() => void handleDelete()}
               className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {deletingBusy ? "Deleting…" : "Delete Configuration"}
+              {deletingBusy ? t("skillc.deleting") : t("sbox.deleteCta")}
             </button>
           </div>
         </div>

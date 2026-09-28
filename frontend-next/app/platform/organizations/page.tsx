@@ -5,7 +5,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconOrg, IconPlus, IconSearch } from "@/components/icons";
+import { IconEdit, IconOrg, IconPlus, IconSearch } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import { InviteMemberModal } from "@/components/invite-member-modal";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
@@ -14,6 +14,8 @@ import {
   createTenant,
   fetchAllTenantMembers,
   listMembers,
+  searchTenants,
+  updateTenant,
   type TenantMember,
 } from "@/lib/api/tenants";
 import { useT } from "@/lib/i18n";
@@ -207,6 +209,10 @@ export default function Organizations() {
 
   const [membersWorkspace, setMembersWorkspace] = useState<Workspace | null>(null);
 
+  const [editing, setEditing] = useState<Workspace | null>(null);
+  const [editDraft, setEditDraft] = useState({ name: "", description: "" });
+  const [editBusy, setEditBusy] = useState(false);
+
   const load = useCallback(async () => {
     const me = await getCurrentUser();
     const memberships = me.data?.memberships ?? [];
@@ -269,6 +275,56 @@ export default function Organizations() {
     }
   };
 
+  const openEdit = (w: Workspace) => {
+    setEditing(w);
+    setEditDraft({ name: w.name, description: w.description ?? "" });
+    /* Memberships don't carry the description — fetch it best-effort so
+     * the form doesn't silently wipe an existing description on save.
+     * Keep whatever the user typed if the fetch resolves late. */
+    searchTenants({ tenant_id: w.tenant_id, page_size: 1 })
+      .then((res) => {
+        const found = res.data?.items?.find((i) => Number(i.id) === w.tenant_id);
+        if (found?.description) {
+          setEditDraft((d) => (d.description ? d : { ...d, description: found.description! }));
+        }
+      })
+      .catch(() => {});
+  };
+
+  const submitEdit = async () => {
+    if (!editing || !editDraft.name.trim()) return;
+    setEditBusy(true);
+    try {
+      const res = await updateTenant(editing.tenant_id, {
+        name: editDraft.name.trim(),
+        description: editDraft.description,
+      });
+      if (!res.success) {
+        setError(res.message || t("agent.orgsEditFailed"));
+        return;
+      }
+      const nextName = res.data?.name ?? editDraft.name.trim();
+      const nextDesc = res.data?.description ?? editDraft.description;
+      setWorkspaces((prev) =>
+        (prev ?? []).map((w) =>
+          w.tenant_id === editing.tenant_id
+            ? { ...w, name: nextName, description: nextDesc }
+            : w,
+        ),
+      );
+      setMembersWorkspace((prev) =>
+        prev && prev.tenant_id === editing.tenant_id
+          ? { ...prev, name: nextName, description: nextDesc }
+          : prev,
+      );
+      setEditing(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("agent.orgsEditFailed"));
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
@@ -323,11 +379,27 @@ export default function Organizations() {
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white transition-all duration-200 shadow-xs">
                     <IconOrg className="h-5 w-5" />
                   </div>
-                  {w.my_role && (
-                    <span className="badge-pill bg-surface-strong text-muted text-[11px] font-semibold uppercase tracking-wider">
-                      {w.my_role}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(w.my_role === "owner" || w.my_role === "admin") && (
+                      <button
+                        type="button"
+                        title={t("agent.orgsEdit")}
+                        aria-label={t("agent.orgsEdit")}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-muted opacity-0 transition-all hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEdit(w);
+                        }}
+                      >
+                        <IconEdit className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {w.my_role && (
+                      <span className="badge-pill bg-surface-strong text-muted text-[11px] font-semibold uppercase tracking-wider">
+                        {w.my_role}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <h3 className="mt-3.5 text-[15.5px] font-semibold text-ink group-hover:text-primary transition-colors truncate">
@@ -395,6 +467,45 @@ export default function Organizations() {
             </button>
             <button className="btn btn-primary btn-sm" disabled={!draft.name.trim()} onClick={() => void submit()}>
               {t("common.save")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={editing !== null}
+        title={t("agent.orgsEdit")}
+        onClose={() => setEditing(null)}
+        width="w-[480px]"
+      >
+        <div className="flex flex-col gap-4">
+          <label className="block">
+            <span className="caption mb-1.5 block text-muted">{t("agent.orgsName")} *</span>
+            <input
+              className="input w-full"
+              value={editDraft.name}
+              onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="caption mb-1.5 block text-muted">{t("agent.orgsDescription")}</span>
+            <textarea
+              className="input w-full h-auto min-h-[64px] resize-y"
+              value={editDraft.description}
+              onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })}
+            />
+          </label>
+          <div className="mt-2 flex justify-end gap-2">
+            <button className="btn btn-outline btn-sm" onClick={() => setEditing(null)}>
+              {t("common.cancel")}
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={editBusy || !editDraft.name.trim()}
+              onClick={() => void submitEdit()}
+            >
+              {editBusy ? "…" : t("common.save")}
             </button>
           </div>
         </div>
