@@ -35,7 +35,7 @@ export default function NewKnowledgeBase() {
           : null;
       router.push(id ? `/platform/knowledge-bases/${id}` : "/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      setError(err instanceof Error ? err.message : t("kbNew.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -44,31 +44,31 @@ export default function NewKnowledgeBase() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
-        <div className="caption-uppercase mb-3 text-muted">Workspace</div>
-        <h1 className="display-xl mb-10">New knowledge base</h1>
+        <div className="caption-uppercase mb-3 text-muted">{t("kbNew.workspace")}</div>
+        <h1 className="display-xl mb-10">{t("kbNew.title")}</h1>
         {!isTenantAdmin && (
           <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
-            Only workspace admins can create knowledge bases.
+            {t("kbNew.adminOnly")}
           </p>
         )}
         <form className="card p-4 sm:p-8" onSubmit={submit}>
           <label className="mb-5 block">
-            <span className="caption mb-1.5 block text-muted">Name</span>
+            <span className="caption mb-1.5 block text-muted">{t("kbNew.name")}</span>
             <input
               className="input"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Product Documentation"
+              placeholder={t("kbNew.namePh")}
             />
           </label>
           <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Description</span>
+            <span className="caption mb-1.5 block text-muted">{t("kbNew.desc")}</span>
             <textarea
               className="input min-h-[96px] resize-y"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What does this collection cover?"
+              placeholder={t("kbNew.descPh")}
             />
           </label>
           <div className="mb-6 block">
@@ -78,10 +78,10 @@ export default function NewKnowledgeBase() {
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <div className="flex gap-3">
             <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-              {busy ? "Creating…" : "Create knowledge base"}
+              {busy ? t("kbNew.creating") : t("kbNew.create")}
             </button>
             <button type="button" className="btn btn-outline" onClick={() => router.back()}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </form>

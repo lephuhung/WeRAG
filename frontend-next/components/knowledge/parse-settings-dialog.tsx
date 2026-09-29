@@ -224,7 +224,7 @@ export function ParseSettingsDialog({
 
     return (
       <Select
-        className={`w-full sm:w-[280px] ${error ? "border-error" : ""}`}
+        className={`w-full @[420px]:w-[280px] ${error ? "border-error" : ""}`}
         value={value}
         onChange={onSel}
         placeholder={t("ps.modelPlaceholder")}
@@ -244,13 +244,15 @@ export function ParseSettingsDialog({
     );
   };
 
+  // Same container-query rule as ParseDefaultsEditor: stacked rows in narrow
+  // panes, side-by-side once the pane is wide enough for a 280px control.
   const row = (label: string, desc: string | undefined, control: React.ReactNode) => (
-    <div className="flex items-center justify-between gap-6 py-3">
-      <div className="min-w-0">
+    <div className="flex flex-col gap-1.5 py-3 @[420px]:flex-row @[420px]:items-center @[420px]:justify-between @[420px]:gap-6">
+      <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-ink">{label}</div>
         {desc && <p className="caption mt-0.5 text-muted">{desc}</p>}
       </div>
-      <div className="shrink-0">{control}</div>
+      <div className="w-full min-w-0 @[420px]:w-auto @[420px]:shrink-0">{control}</div>
     </div>
   );
 
@@ -353,7 +355,7 @@ export function ParseSettingsDialog({
           </nav>
 
           {/* right: config panel */}
-          <div className="min-w-0 flex-1 overflow-y-auto p-5">
+          <div className="min-w-0 flex-1 overflow-y-auto p-5 @container">
             {!state ? (
               <p className="caption text-muted">{t("common.loading")}</p>
             ) : (
@@ -432,7 +434,7 @@ export function ParseSettingsDialog({
                       t("ps.chunkStrategy"),
                       undefined,
                       <Select
-                        className="w-full sm:w-[280px]"
+                        className="w-full @[420px]:w-[280px]"
                         value={state.chunking.strategy}
                         onChange={(v) =>
                           patch((s) => ({
@@ -450,7 +452,7 @@ export function ParseSettingsDialog({
                       t("ps.chunkSize"),
                       undefined,
                       <input
-                        className="input w-full sm:w-[160px]"
+                        className="input w-full @[420px]:w-[160px]"
                         type="number"
                         min={100}
                         max={4000}
@@ -468,7 +470,7 @@ export function ParseSettingsDialog({
                       t("ps.chunkOverlap"),
                       undefined,
                       <input
-                        className="input w-full sm:w-[160px]"
+                        className="input w-full @[420px]:w-[160px]"
                         type="number"
                         min={0}
                         max={500}
@@ -541,7 +543,7 @@ export function ParseSettingsDialog({
                           t("ps.tokenLimit"),
                           undefined,
                           <input
-                            className="input w-full sm:w-[160px]"
+                            className="input w-full @[420px]:w-[160px]"
                             type="number"
                             min={0}
                             max={8192}
@@ -599,7 +601,7 @@ export function ParseSettingsDialog({
                               t("ps.parentChunkSize"),
                               undefined,
                               <input
-                                className="input w-full sm:w-[160px]"
+                                className="input w-full @[420px]:w-[160px]"
                                 type="number"
                                 min={512}
                                 max={8192}
@@ -617,7 +619,7 @@ export function ParseSettingsDialog({
                               t("ps.childChunkSize"),
                               undefined,
                               <input
-                                className="input w-full sm:w-[160px]"
+                                className="input w-full @[420px]:w-[160px]"
                                 type="number"
                                 min={64}
                                 max={2048}
@@ -670,7 +672,7 @@ export function ParseSettingsDialog({
                           t("ps.descLangLabel"),
                           t("ps.descLangDesc"),
                           <Select
-                            className="w-full sm:w-[280px]"
+                            className="w-full @[420px]:w-[280px]"
                             value={state.multimodal.descriptionLanguage}
                             onChange={(v) =>
                               patch((s) => ({
@@ -738,7 +740,7 @@ export function ParseSettingsDialog({
                           t("ps.asrLangLabel"),
                           t("ps.asrLangDesc"),
                           <input
-                            className="input w-full sm:w-[280px]"
+                            className="input w-full @[420px]:w-[280px]"
                             value={state.asr.language}
                             placeholder={t("ps.asrLangPlaceholder")}
                             onChange={(e) =>

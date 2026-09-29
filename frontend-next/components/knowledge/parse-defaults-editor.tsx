@@ -142,13 +142,16 @@ export function ParseDefaultsEditor() {
     }
   };
 
+  // Rows adapt to the card's width via a container query (the modal splits
+  // into ~380px columns where a fixed 280px control would squeeze the label
+  // down to per-word wrapping): stacked below 420px, side-by-side above.
   const row = (label: string, desc: string | undefined, control: React.ReactNode) => (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0">
+    <div className="flex flex-col gap-1.5 py-2 @[420px]:flex-row @[420px]:items-center @[420px]:justify-between @[420px]:gap-4">
+      <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-ink">{label}</div>
         {desc && <div className="caption mt-0.5 text-muted">{desc}</div>}
       </div>
-      <div className="shrink-0">{control}</div>
+      <div className="w-full min-w-0 @[420px]:w-auto @[420px]:shrink-0">{control}</div>
     </div>
   );
 
@@ -170,7 +173,7 @@ export function ParseDefaultsEditor() {
 
     return (
       <Select
-        className={`w-full sm:w-[280px] ${invalid ? "border-error" : ""}`}
+        className={`w-full @[420px]:w-[280px] ${invalid ? "border-error" : ""}`}
         value={value}
         onChange={onSel}
         placeholder={t("ps.modelPlaceholder")}
@@ -235,7 +238,7 @@ export function ParseDefaultsEditor() {
       </section>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      <section className="card p-4 xl:col-span-3">
+      <section className="card p-4 xl:col-span-3 @container">
         <h3 className="title-sm text-ink">{t("ps.tabParser")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.parserDesc")}</p>
         <div className="mt-2">
@@ -265,14 +268,14 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-4">
+      <section className="card p-4 @container">
         <h3 className="title-sm text-ink">{t("ps.tabChunking")}</h3>
         <div className="divide-y divide-hairline">
           {row(
             t("ps.chunkStrategy"),
             undefined,
             <Select
-              className="w-full sm:w-[280px]"
+              className="w-full @[420px]:w-[280px]"
               value={state.chunking.strategy}
               onChange={(v) =>
                 patch((s) => ({ ...s, chunking: { ...s.chunking, strategy: v } }))
@@ -287,7 +290,7 @@ export function ParseDefaultsEditor() {
             t("ps.chunkSize"),
             undefined,
             <input
-              className="input w-full sm:w-[160px]"
+              className="input w-full @[420px]:w-[160px]"
               type="number"
               min={64}
               max={8192}
@@ -305,7 +308,7 @@ export function ParseDefaultsEditor() {
             t("ps.chunkOverlap"),
             undefined,
             <input
-              className="input w-full sm:w-[160px]"
+              className="input w-full @[420px]:w-[160px]"
               type="number"
               min={0}
               max={1024}
@@ -323,7 +326,7 @@ export function ParseDefaultsEditor() {
             t("ps.tokenLimit"),
             undefined,
             <input
-              className="input w-full sm:w-[160px]"
+              className="input w-full @[420px]:w-[160px]"
               type="number"
               min={0}
               max={8192}
@@ -356,7 +359,7 @@ export function ParseDefaultsEditor() {
                 t("ps.parentChunkSize"),
                 undefined,
                 <input
-                  className="input w-full sm:w-[160px]"
+                  className="input w-full @[420px]:w-[160px]"
                   type="number"
                   min={512}
                   max={8192}
@@ -374,7 +377,7 @@ export function ParseDefaultsEditor() {
                 t("ps.childChunkSize"),
                 undefined,
                 <input
-                  className="input w-full sm:w-[160px]"
+                  className="input w-full @[420px]:w-[160px]"
                   type="number"
                   min={64}
                   max={2048}
@@ -393,7 +396,7 @@ export function ParseDefaultsEditor() {
         </div>
       </section>
 
-      <section className="card p-4">
+      <section className="card p-4 @container">
         <h3 className="title-sm text-ink">{t("ps.tabMultimodal")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.multimodalDesc")}</p>
         <div className="divide-y divide-hairline">
@@ -420,7 +423,7 @@ export function ParseDefaultsEditor() {
                 t("ps.descLangLabel"),
                 t("ps.descLangDesc"),
                 <Select
-                  className="w-full sm:w-[280px]"
+                  className="w-full @[420px]:w-[280px]"
                   value={state.multimodal.descriptionLanguage}
                   onChange={(v) =>
                     patch((s) => ({
@@ -465,7 +468,7 @@ export function ParseDefaultsEditor() {
       {/* Column 3: ASR + summary + question stack — keeps the three narrow
        * sections in one column so the grid stays three cells wide. */}
       <div className="flex flex-col gap-4">
-      <section className="card p-4">
+      <section className="card p-4 @container">
         <h3 className="title-sm text-ink">{t("ps.tabAsr")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.asrDesc")}</p>
         <div className="divide-y divide-hairline">
@@ -490,7 +493,7 @@ export function ParseDefaultsEditor() {
                 t("ps.asrLangLabel"),
                 t("ps.asrLangDesc"),
                 <input
-                  className="input w-full sm:w-[280px]"
+                  className="input w-full @[420px]:w-[280px]"
                   value={state.asr.language}
                   placeholder={t("ps.asrLangPlaceholder")}
                   onChange={(e) =>
@@ -508,7 +511,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-4">
+      <section className="card p-4 @container">
         <h3 className="title-sm text-ink">{t("ps.tabSummary")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.summaryDesc")}</p>
         {row(
@@ -521,7 +524,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-4">
+      <section className="card p-4 @container">
         <h3 className="title-sm text-ink">{t("ps.tabQuestion")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.questionDesc")}</p>
         {row(
