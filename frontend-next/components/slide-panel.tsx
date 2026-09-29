@@ -30,7 +30,7 @@ export function SlidePanel({
     <>
       <div
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-ink/10 transition-opacity duration-200 ${
+        className={`fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px] transition-opacity duration-200 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />

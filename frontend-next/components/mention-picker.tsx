@@ -14,7 +14,44 @@ import { IconDoc } from "@/components/icons";
 
 export type MentionResolved = MentionRequestItem;
 
-type PickerItem = MentionRequestItem & { description?: string; count?: number };
+type PickerItem = MentionRequestItem & { description?: string; count?: number; file_type?: string };
+
+/* Soft-tinted badge per file type; falls back to a doc glyph for unknown types. */
+const FILE_TYPE_STYLES: Record<string, { label: string; cls: string }> = {
+  pdf: { label: "PDF", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
+  doc: { label: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+  docx: { label: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+  xls: { label: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  xlsx: { label: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  csv: { label: "CSV", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  ppt: { label: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
+  pptx: { label: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
+  md: { label: "MD", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+  txt: { label: "TXT", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  html: { label: "HTML", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  png: { label: "PNG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
+  jpg: { label: "JPG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
+  jpeg: { label: "JPG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
+  audio: { label: "AUD", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
+  video: { label: "VID", cls: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
+};
+
+function TypeBadge({ fileType }: { fileType?: string }) {
+  const key = (fileType || "").toLowerCase().replace(/^\./, "");
+  const style = FILE_TYPE_STYLES[key];
+  if (!style) {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
+        <IconDoc className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  return (
+    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[8.5px] font-bold tracking-tight ${style.cls}`}>
+      {style.label}
+    </span>
+  );
+}
 
 function useMentionData(open: boolean, keyword: string) {
   const ctx = useChatContext();
@@ -49,7 +86,7 @@ function useMentionData(open: boolean, keyword: string) {
         });
         const res = await apiGet<{
           success: boolean;
-          data?: Array<{ id: string; title?: string; file_name?: string; knowledge_base_id?: string; knowledge_base_name?: string }>;
+          data?: Array<{ id: string; title?: string; file_name?: string; description?: string; file_type?: string; knowledge_base_id?: string; knowledge_base_name?: string }>;
         }>(`/api/v1/knowledge/search?${params.toString()}`);
         fileItems = (res.data ?? [])
           .filter((f) => match(f.title || f.file_name || ""))
@@ -58,9 +95,10 @@ function useMentionData(open: boolean, keyword: string) {
             id: f.id,
             name: f.title || f.file_name || f.id,
             type: "file",
+            file_type: f.file_type,
             kb_id: f.knowledge_base_id,
             kb_name: f.knowledge_base_name,
-            description: f.knowledge_base_name,
+            description: f.description || f.knowledge_base_name,
           }));
       } catch {
         /* file search offline — KB/tag/MCP/skill still work */
@@ -127,8 +165,17 @@ export function MentionPicker({
   onSelect: (item: MentionResolved) => void;
   onClose: () => void;
 }) {
-  const { items, loading } = useMentionData(open, keyword);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const { items, loading } = useMentionData(open, keyword || search);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      searchRef.current?.focus();
+    }
+  }, [open]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-idx="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
@@ -140,7 +187,26 @@ export function MentionPicker({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className="card absolute bottom-full left-0 z-50 mb-2 max-h-[320px] w-[360px] max-w-[calc(100vw-2.5rem)] overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div ref={listRef} className="max-h-[320px] overflow-y-auto p-1.5">
+        <div className="shrink-0 border-b border-hairline p-1.5">
+          <div className="relative">
+            <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") onClose();
+                e.stopPropagation();
+              }}
+              placeholder="Tìm KB, file, tag…"
+              className="w-full rounded-[8px] bg-surface-strong py-1.5 pl-8 pr-3 text-[13px] text-ink placeholder:text-muted-soft focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+          </div>
+        </div>
+        <div ref={listRef} className="max-h-[280px] overflow-y-auto p-1.5">
           {loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">Loading…</div>}
           {!loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">No matches — sign in to load KBs</div>}
           {groups.map((g) => {
@@ -161,9 +227,21 @@ export function MentionPicker({
                         idx === activeIndex ? "bg-surface-strong" : "hover:bg-surface-strong"
                       }`}
                     >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
-                        <IconDoc className="h-3.5 w-3.5" />
-                      </span>
+                      {item.type === "file" ? (
+                        <TypeBadge fileType={item.file_type} />
+                      ) : item.type === "kb" ? (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                            <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+                            <path d="M4 5.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+                            <path d="M4 11.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+                          </svg>
+                        </span>
+                      ) : (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
+                          <IconDoc className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[14px] font-medium text-ink">{item.name}</span>
                         {(item.description || typeof item.count === "number") && (
