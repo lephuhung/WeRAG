@@ -253,7 +253,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
           <button
             type="button"
             onClick={onViewReferences}
-            className="shrink-0 cursor-pointer rounded-full border border-emerald-200 bg-emerald-50/80 px-2 py-0.5 text-[11px] font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20"
+            className="shrink-0 cursor-pointer rounded-full border border-sky-200 bg-sky-50/80 px-2 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20"
             title={t("think.openDocs")}
           >
             {t("think.docs", { count: docCount })}

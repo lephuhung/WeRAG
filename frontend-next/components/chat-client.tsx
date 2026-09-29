@@ -389,13 +389,13 @@ function CompactReferencesList({
             type="button"
             onClick={() => onSelectRef?.(r, i)}
             title={name}
-            className="group flex max-w-[180px] items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/80 px-2 py-0.5 text-[11.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 cursor-pointer select-none text-left"
+            className="group flex max-w-[180px] items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-2 py-0.5 text-[11.5px] font-medium text-sky-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-sky-300 hover:bg-sky-100 hover:text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20 cursor-pointer select-none text-left"
           >
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-semibold text-white transition-colors group-hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:group-hover:bg-emerald-400">
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[9px] font-semibold text-white transition-colors group-hover:bg-sky-700 dark:bg-sky-500 dark:text-sky-950 dark:group-hover:bg-sky-400">
               {i + 1}
             </span>
             {isWeb ? (
-              <IconGlobe className="h-3 w-3 shrink-0 text-emerald-600 transition-colors dark:text-emerald-400" />
+              <IconGlobe className="h-3 w-3 shrink-0 text-sky-600 transition-colors dark:text-sky-400" />
             ) : (
               <span
                 className="w-[12px] shrink-0 self-center"
@@ -413,7 +413,7 @@ function CompactReferencesList({
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[12.5px] font-medium text-emerald-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/20 select-none cursor-pointer"
+          className="flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-2.5 py-1 text-[12.5px] font-medium text-sky-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-sky-300 hover:bg-sky-100 hover:text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20 select-none cursor-pointer"
           title={showAll ? "Thu gọn bớt nguồn" : `Xem thêm ${remaining} nguồn khác`}
         >
           <span>{showAll ? "Thu gọn" : `+${remaining}`}</span>

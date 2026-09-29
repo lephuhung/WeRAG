@@ -449,7 +449,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
    * chosen by search — never the move-targets list). Hidden from
    * Tenant Admins, members, and invited readers. */
   const scopePanel = !isSystemAdmin || denied || !kb ? null : isPublicKb ? (
-    <div className="caption mt-2 flex flex-wrap items-center gap-2 text-muted">
+    <div className="caption flex flex-wrap items-center gap-2 text-muted">
       <button
         type="button"
         className="btn btn-outline btn-sm"
@@ -503,7 +503,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
       {scopeError && <span className="text-error">{scopeError}</span>}
     </div>
   ) : !isForeignKb ? (
-    <div className="caption mt-2 flex flex-wrap items-center gap-2 text-muted">
+    <div className="caption flex flex-wrap items-center gap-2 text-muted">
       {!confirmPublish ? (
         <button
           type="button"
@@ -563,8 +563,8 @@ export function KbDetail({ kbId }: { kbId: string }) {
               {/* Public identity keys off owner + visibility: a converted
                * row's foreign data scope must never mislabel it "Shared".
                * Invited rows keep the Shared marker. */}
-              {isPublicKb && <span className="badge-pill">{t("kbList.publicBadge")}</span>}
-              {isForeignKb && <span className="badge-pill">{t("kbList.sharedBadge")}</span>}
+              {isPublicKb && <span className="badge-pill bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>}
+              {isForeignKb && <span className="badge-pill bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>}
               {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
             </div>
           </div>
@@ -657,8 +657,10 @@ export function KbDetail({ kbId }: { kbId: string }) {
         {activeTab === "docs-wiki" ? (
           /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
           <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
-            {/* Left: Wiki Section (increased width) */}
-            <section className="card flex min-h-0 flex-col overflow-hidden w-full lg:w-[440px] xl:w-[480px] shrink-0">
+            {/* Left: Wiki Section (increased width). On mobile the stacked
+             * column would otherwise size to the full wiki tree and push the
+             * document list off-screen — cap it to a scrollable 45vh. */}
+            <section className="card flex h-[45vh] min-h-0 flex-col overflow-hidden w-full lg:h-auto lg:w-[440px] xl:w-[480px] shrink-0">
               {/* Wiki Search & Header */}
               <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
                 <div className="flex items-center gap-2 font-medium text-[13.5px] text-ink">
@@ -684,9 +686,10 @@ export function KbDetail({ kbId }: { kbId: string }) {
 
             {/* Right: Document Cards Grid */}
             <section className="flex min-h-0 flex-1 flex-col min-w-0">
-              {/* Document Search and Action Bar */}
-              <div className="mb-3.5 flex shrink-0 items-center justify-between gap-4">
-                <div className="relative w-full max-w-[320px]">
+              {/* Document Search and Action Bar — wraps to two rows when the
+               * column is narrow instead of squeezing the right group. */}
+              <div className="mb-3.5 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
+                <div className="relative w-full max-w-[320px] min-w-[180px]">
                   <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-soft" />
                   <input
                     className="input h-9 pl-9 text-[13px]"
@@ -695,7 +698,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
                     onChange={(e) => setQ(e.target.value)}
                   />
                 </div>
-                <div className="flex min-w-0 items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                   {defaultsLocked && (
                     <span
                       className="caption hidden min-w-0 truncate text-muted md:inline"
@@ -704,7 +707,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
                       {t("pd.lockedBanner")}
                     </span>
                   )}
-                  <span className="caption text-muted">{filtered.length} files</span>
+                  <span className="caption whitespace-nowrap text-muted">{filtered.length} files</span>
                   {!denied && scopePanel}
                   {docsError && (
                     <span className="caption max-w-[320px] truncate text-error" title={docsError}>

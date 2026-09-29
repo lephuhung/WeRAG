@@ -217,10 +217,10 @@ export default function KnowledgeBaseList() {
                * data tenant_id, so a converted row's foreign data scope
                * doesn't mislabel it "Shared". */}
               {kb.caps.kind === "public" && (
-                <span className="badge-pill shrink-0">{t("kbList.publicBadge")}</span>
+                <span className="badge-pill shrink-0 bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>
               )}
               {kb.caps.kind === "invited" && (
-                <span className="badge-pill shrink-0">{t("kbList.sharedBadge")}</span>
+                <span className="badge-pill shrink-0 bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>
               )}
             </div>
             <p className="body-sm mt-1.5 line-clamp-2 text-body">{kb.description}</p>
@@ -313,18 +313,7 @@ export default function KnowledgeBaseList() {
             {workspaceCards.length === 0 && kbs !== null && !error && (
               <p className="caption mb-6 text-muted-soft">{t("kbList.empty")}</p>
             )}
-            {renderCards(workspaceCards, {
-              append: isTenantAdmin ? (
-                <Link
-                  href="/platform/knowledge-bases/new"
-                  className="flex min-h-[190px] items-center justify-center rounded-[16px] border border-dashed border-hairline-strong text-muted transition-colors hover:border-ink hover:text-ink"
-                >
-                  <span className="flex items-center gap-2 text-[15px] font-medium">
-                    <IconPlus className="h-4 w-4" /> {t("kbList.newKb")}
-                  </span>
-                </Link>
-              ) : undefined,
-            })}
+            {renderCards(workspaceCards)}
             {invitedCards.length > 0 && (
               <>
                 <h2 className="title-sm mb-4 mt-10">{t("kbPublic.invitedSection")}</h2>
