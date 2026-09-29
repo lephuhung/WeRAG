@@ -19,6 +19,7 @@ import {
   uploadFirstTurnFiles,
 } from "@/lib/first-turn-handoff";
 import { questionOriginFromSuggestion } from "@/lib/question-origin";
+import { useT } from "@/lib/i18n";
 
 const FALLBACK_SUGGESTIONS = [
   "Summarize the latest release notes",
@@ -37,6 +38,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachments = useAttachments(undefined);
   const ctx = useChatContext();
+  const { t } = useT();
 
   const addImages = (files: File[]) => {
     const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -174,10 +176,8 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />
 
       <div className="relative w-full max-w-[768px]">
-        <h1 className="display-xl mb-3 text-center">What would you like to know?</h1>
-        <p className="mb-10 text-center text-muted">
-          Ask across your knowledge bases — answers cite their sources.
-        </p>
+        <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
+        <p className="mb-10 text-center text-muted">{t("cc.subtitle")}</p>
 
         <input
           ref={attachments.inputRef}
@@ -237,7 +237,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                     )
                   }
                   disabled={busy}
-                  className="rounded-full border border-hairline-strong bg-surface-card px-4 py-2 text-[14px] text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                  className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
                 >
                   {item.question}
                 </button>
@@ -255,7 +255,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                     )
                   }
                   disabled={busy}
-                  className="rounded-full border border-hairline-strong bg-surface-card px-4 py-2 text-[14px] text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                  className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
                 >
                   {s}
                 </button>

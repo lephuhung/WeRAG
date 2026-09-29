@@ -7,6 +7,7 @@ import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
 import { AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
+import { useT } from "@/lib/i18n";
 
 /* Ports Input-field.vue's composer: textarea + @mention picker + image/file
  * attachments + agent-mode switch + websearch toggle + model picker + send/stop.
@@ -58,6 +59,7 @@ export function Composer({
   placeholder?: string;
 }) {
   const ctx = useChatContext();
+  const { t } = useT();
   const { settings, mentionItems, webSearchReady, toggleWebSearch, selectedAgent } = ctx;
   useAgentModelSync();
 
@@ -148,12 +150,12 @@ export function Composer({
   const websearchOn = settings.webSearchEnabled;
   const placeholder =
     selectedAgent && !selectedAgent.is_builtin
-      ? selectedAgent.description || `Ask ${selectedAgent.name}…`
+      ? selectedAgent.description || t("composer.askAgent", { name: selectedAgent.name })
       : mentionItems.length > 0
-        ? "Ask with selected context… (Enter to send, Shift+Enter for newline)"
+        ? t("composer.askContext")
         : websearchOn
-          ? "Ask anything — web search on…"
-          : "Ask anything… (@ to quote KB, files, tags)";
+          ? t("composer.askAnyWeb")
+          : t("composer.askAny");
 
   const [sendBlockMsg, setSendBlockMsg] = useState("");
   useEffect(() => setSendBlockMsg(""), [attachments, value]);
