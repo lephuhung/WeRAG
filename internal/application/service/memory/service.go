@@ -40,12 +40,13 @@ const rejectedMessageWindow = time.Hour
 
 // Service implements interfaces.MemoryService.
 type Service struct {
-	repo         interfaces.MemoryRepository
-	tenantRepo   interfaces.TenantRepository
-	messageRepo  interfaces.MessageRepository
-	modelService interfaces.ModelService
-	enqueuer     interfaces.TaskEnqueuer
-	config       *config.Config
+	repo           interfaces.MemoryRepository
+	tenantRepo     interfaces.TenantRepository
+	messageRepo    interfaces.MessageRepository
+	modelService   interfaces.ModelService
+	enqueuer       interfaces.TaskEnqueuer
+	systemSettings interfaces.SystemSettingService
+	config         *config.Config
 }
 
 // NewMemoryService builds the long-term memory service.
@@ -55,16 +56,33 @@ func NewMemoryService(
 	messageRepo interfaces.MessageRepository,
 	modelService interfaces.ModelService,
 	enqueuer interfaces.TaskEnqueuer,
+	systemSettings interfaces.SystemSettingService,
 	cfg *config.Config,
 ) interfaces.MemoryService {
 	return &Service{
-		repo:         repo,
-		tenantRepo:   tenantRepo,
-		messageRepo:  messageRepo,
-		modelService: modelService,
-		enqueuer:     enqueuer,
-		config:       cfg,
+		repo:           repo,
+		tenantRepo:     tenantRepo,
+		messageRepo:    messageRepo,
+		modelService:   modelService,
+		enqueuer:       enqueuer,
+		systemSettings: systemSettings,
+		config:         cfg,
 	}
+}
+
+// MemoryPlatformEnabledKey is the system_settings key holding the
+// SuperAdmin platform-wide memory kill switch.
+const MemoryPlatformEnabledKey = "memory.platform_enabled"
+
+// platformEnabled reads the platform-wide memory switch. A nil
+// systemSettings (legacy tests) or a broken store stays enabled — the
+// per-tenant and per-user switches remain authoritative in that case,
+// so a settings outage must not silently wipe memory platform-wide.
+func (s *Service) platformEnabled(ctx context.Context) bool {
+	if s.systemSettings == nil {
+		return true
+	}
+	return s.systemSettings.GetBool(ctx, MemoryPlatformEnabledKey, "", true)
 }
 
 // workspaceConfig loads the workspace memory switch. A failed lookup yields
@@ -89,6 +107,9 @@ func (s *Service) workspaceConfig(ctx context.Context, tenantID uint64) *types.M
 func (s *Service) enabledScope(ctx context.Context) (interfaces.MemoryScope, *types.MemoryConfig, bool) {
 	scope, err := ResolveScope(ctx)
 	if err != nil {
+		return scope, nil, false
+	}
+	if !s.platformEnabled(ctx) {
 		return scope, nil, false
 	}
 	cfg := s.workspaceConfig(ctx, scope.TenantID)
@@ -894,7 +915,9 @@ func (s *Service) GetSettings(ctx context.Context) (*types.MemorySettings, error
 		return nil, err
 	}
 	cfg := s.workspaceConfig(ctx, scope.TenantID)
+	platform := s.platformEnabled(ctx)
 	settings := &types.MemorySettings{
+		PlatformEnabled: platform,
 		WorkspaceEnabled: cfg.MemoryEnabled(),
 		UserEnabled:      true,
 		WriteMode:        cfg.WriteMode,
@@ -915,7 +938,7 @@ func (s *Service) GetSettings(ctx context.Context) (*types.MemorySettings, error
 	if err == nil {
 		settings.ItemCount = int(count)
 	}
-	settings.Effective = settings.WorkspaceEnabled && settings.UserEnabled
+	settings.Effective = settings.PlatformEnabled && settings.WorkspaceEnabled && settings.UserEnabled
 	return settings, nil
 }
 

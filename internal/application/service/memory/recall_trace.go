@@ -31,6 +31,9 @@ func (s *Service) scopeDisableReason(ctx context.Context) string {
 	if err != nil {
 		return "no_principal"
 	}
+	if !s.platformEnabled(ctx) {
+		return "platform_disabled"
+	}
 	cfg := s.workspaceConfig(ctx, scope.TenantID)
 	if !cfg.MemoryEnabled() {
 		return "workspace_disabled"

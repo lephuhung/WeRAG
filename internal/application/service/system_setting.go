@@ -304,6 +304,43 @@ var registry = map[string]settingSpec{
 			"每次调用实时读取，修改后立即生效、无需重启。0 或负数表示关闭默认限制" +
 			"（各模型仍会尊重自身在模型管理里配置的上限）。仅影响后台任务，不影响交互式对话。",
 	},
+	// memory.platform_enabled is the platform-wide memory kill switch. When
+	// false, long-term memory is off for every tenant and every user — the
+	// workspace MemoryConfig.Enabled switch and the per-user opt-out stay
+	// stored but have no effect. Read live on every gated call (memory
+	// recall, retrieval conditioning, settings UI), so edits take effect
+	// immediately without a restart.
+	"memory.platform_enabled": {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  true,
+		Category: "memory",
+		Description: "平台级长期记忆总开关。关闭后所有空间和所有用户的长期记忆立即停用，" +
+			"个人与空间的记忆设置保留但不生效。修改后立即生效。",
+	},
+	// chat.web_search_enabled gates web search (network providers and the
+	// local-browser tool) platform-wide. The per-agent / per-request switches
+	// and the tenant provider config stay in place but are neutralised while
+	// this is off. Read live per QA turn.
+	"chat.web_search_enabled": {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  true,
+		Category: "chat",
+		Description: "平台级联网搜索开关。关闭后所有会话（含智能体与本地浏览器工具）不再执行联网搜索，" +
+			"用户侧开关保留但无效。修改后立即生效。",
+	},
+	// chat.mcp_enabled gates MCP tool invocation platform-wide. Agent configs
+	// keep their MCP selection but every run resolves to "none" while this is
+	// off. Read live per QA turn.
+	"chat.mcp_enabled": {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  true,
+		Category: "chat",
+		Description: "平台级 MCP 工具开关。关闭后所有智能体运行不加载任何 MCP 服务，" +
+			"智能体配置中的 MCP 选择保留但无效。修改后立即生效。",
+	},
 	// knowledge.parse_defaults is the platform-wide default parse
 	// configuration published by a SystemAdmin. While enabled it replaces
 	// per-upload/per-document process overrides — ResolveProcessConfig merges

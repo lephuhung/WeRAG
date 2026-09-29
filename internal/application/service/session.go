@@ -130,6 +130,9 @@ type sessionService struct {
 	sandboxPinner         *SessionSandboxPinner
 	sandboxPolicy         WorkspaceSandboxPolicy
 	memoryService         interfaces.MemoryService // Service for cross-session long-term memory
+	// systemSettings answers the platform-wide chat switches
+	// (chat.web_search_enabled, chat.mcp_enabled) owned by SuperAdmin.
+	systemSettings interfaces.SystemSettingService
 	// sandboxConfigRepo and tenantSkillRepo answer "which installed skills can
 	// this turn actually invoke". They are repositories rather than
 	// TenantSkillService because that service depends on this one.
@@ -165,6 +168,7 @@ func NewSessionService(cfg *config.Config,
 	sandboxPinner *SessionSandboxPinner,
 	sandboxPolicy WorkspaceSandboxPolicy,
 	memoryService interfaces.MemoryService,
+	systemSettings interfaces.SystemSettingService,
 	sandboxConfigRepo repository.TenantSandboxConfigRepository,
 	tenantSkillRepo repository.TenantSkillRepository,
 	peopleService *people.Service,
@@ -191,6 +195,7 @@ func NewSessionService(cfg *config.Config,
 		sandboxPinner:           sandboxPinner,
 		sandboxPolicy:           sandboxPolicy,
 		memoryService:           memoryService,
+		systemSettings:          systemSettings,
 		sandboxConfigRepo:       sandboxConfigRepo,
 		tenantSkillRepo:         tenantSkillRepo,
 		peopleService:           peopleService,

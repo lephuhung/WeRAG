@@ -984,6 +984,9 @@ func WrapMemoryForPrompt(block, recall string) string {
 // The UI renders this directly rather than merging a workspace setting with a
 // user setting itself, so "why is my memory off" has exactly one answer.
 type MemorySettings struct {
+	// PlatformEnabled is the SuperAdmin platform-wide kill switch. When
+	// false, memory is off for everyone regardless of the other switches.
+	PlatformEnabled bool `json:"platform_enabled"`
 	// WorkspaceEnabled is the admin switch on the workspace.
 	WorkspaceEnabled bool `json:"workspace_enabled"`
 	// UserEnabled is the caller's own opt out. Meaningless while the

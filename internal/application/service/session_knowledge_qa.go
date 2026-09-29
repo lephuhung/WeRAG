@@ -38,7 +38,10 @@ func (s *sessionService) KnowledgeQA(
 	if handled, err := s.tryQuickAnswerPeopleLookup(ctx, req, eventBus); handled || err != nil {
 		return err
 	}
-	webSearchEnabled := resolveWebSearchEnabled(req)
+	// Platform-wide SuperAdmin switch: while off, no knowledge-QA turn
+	// performs web search regardless of the request or agent switches.
+	webSearchEnabled := resolveWebSearchEnabled(req) &&
+		s.systemSettings.GetBool(ctx, "chat.web_search_enabled", "", true)
 	logger.Infof(
 		ctx,
 		"Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v",

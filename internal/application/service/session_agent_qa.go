@@ -327,11 +327,16 @@ func (s *sessionService) buildAgentConfig(
 	agentTenantID uint64,
 ) (*types.AgentConfig, error) {
 	customAgent := req.CustomAgent
+	// Platform-wide SuperAdmin switches: while a switch is off, the
+	// per-agent and per-request choices stay stored but are neutralised
+	// for every tenant and user.
+	platformWebSearch := s.systemSettings.GetBool(ctx, "chat.web_search_enabled", "", true)
+	platformMCP := s.systemSettings.GetBool(ctx, "chat.mcp_enabled", "", true)
 	agentConfig := &types.AgentConfig{
 		MaxIterations:               customAgent.Config.MaxIterations,
 		Temperature:                 customAgent.Config.Temperature,
-		WebSearchEnabled:            customAgent.Config.WebSearchEnabled && req.WebSearchEnabled,
-		LocalBrowserEnabled:         req.LocalBrowserEnabled,
+		WebSearchEnabled:            customAgent.Config.WebSearchEnabled && req.WebSearchEnabled && platformWebSearch,
+		LocalBrowserEnabled:         req.LocalBrowserEnabled && platformWebSearch,
 		WebSearchMaxResults:         customAgent.Config.WebSearchMaxResults,
 		WebSearchProviderID:         customAgent.Config.WebSearchProviderID,
 		MultiTurnEnabled:            customAgent.Config.MultiTurnEnabled,
@@ -393,6 +398,13 @@ func (s *sessionService) buildAgentConfig(
 	// <must_use> hint, keeping all scope logic in one place per resource type.
 	applyPerRequestSkillScope(ctx, agentConfig, customAgent.Config.SkillsSelectionMode, req.SkillNames)
 	applyPerRequestMCPScope(ctx, agentConfig, customAgent.Config.MCPServices, false, req.MCPServiceIDs)
+	// Platform-wide MCP kill switch (SuperAdmin): force the selection mode
+	// to "none" and clear the service list after per-request scoping, so no
+	// run can load MCP tools while the switch is off.
+	if !platformMCP {
+		agentConfig.MCPSelectionMode = "none"
+		agentConfig.MCPServices = nil
+	}
 
 	// Use custom agent's system prompt if specified
 	if systemPrompt, _ := s.cfg.ResolveCustomAgentPrompts(customAgent); systemPrompt != "" {
