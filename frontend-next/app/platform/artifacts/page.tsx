@@ -33,6 +33,68 @@ function itemKey(a: ArtifactLibraryItem): string {
   return `${a.message_id}:${a.index}`;
 }
 
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i;
+const isImageArtifact = (a: ArtifactLibraryItem) =>
+  IMAGE_EXT_RE.test(a.file_name) || (a.file_type || "").toLowerCase().startsWith("image/");
+
+/* Thumbnail cache shared across re-renders: one low-res blob per artifact. */
+const thumbCache = new Map<string, string>();
+
+function ArtifactThumb({ item }: { item: ArtifactLibraryItem }) {
+  const key = `${item.session_id}\u0000${item.message_id}\u0000${item.index}`;
+  const [src, setSrc] = useState<string | null>(thumbCache.get(key) ?? null);
+  const holderRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (src) return;
+    let cancelled = false;
+    let io: IntersectionObserver | null = null;
+    const load = async () => {
+      try {
+        const blob = await downloadArtifact(item.session_id, item.message_id, item.index, { width: 512 });
+        const url = URL.createObjectURL(blob);
+        thumbCache.set(key, url);
+        if (!cancelled) setSrc(url);
+      } catch {
+        /* keep the icon fallback */
+      }
+    };
+    if (typeof IntersectionObserver !== "undefined" && holderRef.current) {
+      io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            io?.disconnect();
+            void load();
+          }
+        },
+        { rootMargin: "300px 0px" },
+      );
+      io.observe(holderRef.current);
+      return () => {
+        cancelled = true;
+        io?.disconnect();
+      };
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (src) {
+    return <img src={src} alt={item.file_name} className="h-full w-full object-cover" loading="lazy" />;
+  }
+  return (
+    <div ref={holderRef} className="flex h-full w-full items-center justify-center">
+      <span
+        className="h-12 w-11 opacity-70"
+        dangerouslySetInnerHTML={{ __html: renderFileIconSvg(item.file_name) }}
+      />
+    </div>
+  );
+}
+
 function ArtifactsInner() {
   const { t } = useT();
   const router = useRouter();
@@ -252,53 +314,65 @@ function ArtifactsInner() {
             {sections.map((section) => (
               <section key={section.group} className="mb-6">
                 <h3 className="caption-uppercase mb-2 text-muted">{t(`artifactLibrary.group.${section.group}`)}</h3>
-                <div className="card overflow-hidden">
-                  {section.items.map((a, i) => (
-                    <div
-                      key={itemKey(a)}
-                      onClick={() => setPreviewItem(a)}
-                      className={`flex cursor-pointer items-center gap-4 px-5 py-4 hover:bg-surface-strong/50 ${i > 0 ? "border-t border-hairline" : ""}`}
-                    >
-                      <span
-                        className="h-9 w-8 shrink-0"
-                        dangerouslySetInnerHTML={{ __html: renderFileIconSvg(a.file_name) }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[15px] font-medium text-ink" title={a.file_name}>
-                          {a.file_name}
+                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
+                  {section.items.map((a) => {
+                    const image = isImageArtifact(a);
+                    return (
+                      <div key={itemKey(a)} className="card card-hover group relative min-w-0 overflow-hidden">
+                        <div
+                          onClick={() => setPreviewItem(a)}
+                          className="relative cursor-pointer aspect-square"
+                          title={a.file_name}
+                        >
+                          {image ? (
+                            <ArtifactThumb item={a} />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-surface-strong/40">
+                              <span className="h-16 w-14 opacity-80" dangerouslySetInnerHTML={{ __html: renderFileIconSvg(a.file_name) }} />
+                            </div>
+                          )}
+                          {a.version_count > 1 && (
+                            <span className="caption absolute left-3 top-3 rounded-full bg-ink/60 px-2 py-0.5 text-[11px] font-semibold text-white">
+                              ×{a.version_count}
+                            </span>
+                          )}
                         </div>
-                        <div className="caption truncate text-muted">
-                          {formatArtifactSize(a.file_size)} · {formatArtifactDateTime(a.created_at)}
-                          {a.version_count > 1 ? ` · ${t("artifactLibrary.versions", { count: a.version_count })}` : ""}
+                        <div className="p-4">
+                          <div className="truncate text-[14px] font-medium text-ink" title={a.file_name}>
+                            {a.file_name}
+                          </div>
+                          <div className="caption mt-0.5 truncate text-muted">
+                            {formatArtifactSize(a.file_size)} · {formatArtifactDateTime(a.created_at)}
+                          </div>
+                          <Link
+                            href={`/platform/chat/${a.session_id}`}
+                            title={t("artifactLibrary.openSession")}
+                            onClick={(e) => e.stopPropagation()}
+                            className="caption mt-1 block max-w-full truncate text-muted hover:text-ink"
+                          >
+                            {a.session_title || t("artifactLibrary.untitledSession")}
+                          </Link>
+                          <div className="mt-3 flex items-center gap-2 overflow-hidden">
+                            <button
+                              className="btn btn-outline btn-sm min-w-0 flex-1 truncate px-2.5"
+                              title={t("artifactLibrary.preview")}
+                              onClick={(e) => { e.stopPropagation(); setPreviewItem(a); }}
+                            >
+                              <IconExternal className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t("artifactLibrary.preview")}</span>
+                            </button>
+                            <button
+                              className="btn btn-outline btn-sm min-w-0 flex-1 truncate px-2.5"
+                              title={t("artifactLibrary.download")}
+                              disabled={!!downloading[itemKey(a)]}
+                              onClick={(e) => { e.stopPropagation(); void handleDownload(a); }}
+                            >
+                              <IconDownload className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t("artifactLibrary.download")}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <Link
-                        href={`/platform/chat/${a.session_id}`}
-                        title={t("artifactLibrary.openSession")}
-                        onClick={(e) => e.stopPropagation()}
-                        className="caption hidden max-w-[220px] truncate text-muted hover:text-ink sm:block"
-                      >
-                        {a.session_title || t("artifactLibrary.untitledSession")}
-                      </Link>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          className="btn btn-outline btn-sm"
-                          title={t("artifactLibrary.preview")}
-                          onClick={(e) => { e.stopPropagation(); setPreviewItem(a); }}
-                        >
-                          <IconExternal className="h-3.5 w-3.5" /> {t("artifactLibrary.preview")}
-                        </button>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          title={t("artifactLibrary.download")}
-                          disabled={!!downloading[itemKey(a)]}
-                          onClick={(e) => { e.stopPropagation(); void handleDownload(a); }}
-                        >
-                          <IconDownload className="h-3.5 w-3.5" /> {t("artifactLibrary.download")}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             ))}
