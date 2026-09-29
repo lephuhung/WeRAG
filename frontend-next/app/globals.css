@@ -474,10 +474,18 @@ html.dark {
     border-top: 1px solid var(--color-hairline);
   }
   .chat-markdown img.markdown-image {
-    max-width: 100%;
+    display: block;
+    width: auto;
+    max-width: min(240px, 100%);
+    max-height: 240px;
     height: auto;
     border-radius: var(--radius-md2);
     margin: 6px 0;
+    cursor: zoom-in;
+    transition: box-shadow 0.15s;
+  }
+  .chat-markdown img.markdown-image:hover {
+    box-shadow: 0 0 0 2px var(--color-hairline);
   }
   .chat-markdown img.artifact-ref-image[data-img-loading="1"] {
     min-height: 160px;
@@ -491,6 +499,30 @@ html.dark {
   }
   100% {
     background-position: -100% 50%;
+  }
+}
+
+/* Breathing logo for the workspace loading screen — the brand mark is
+ * square, so a spinning ring looks broken around it. */
+@keyframes workspaceLoadingPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+}
+
+.workspace-loading-pulse {
+  animation: workspaceLoadingPulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-loading-pulse {
+    animation: none;
   }
 }
 

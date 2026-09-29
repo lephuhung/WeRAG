@@ -1,7 +1,9 @@
 package session
 
 import (
+	"bytes"
 	stderrors "errors"
+	"io"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -239,6 +241,25 @@ func (h *Handler) DownloadMessageArtifact(c *gin.Context) {
 			sessionID, messageID, index, err)
 		_ = c.Error(errors.NewNotFoundError("artifact blob missing"))
 		return
+	}
+	// Downscaled preview: ?width=<px> serves a re-encoded, smaller variant so
+	// chat history renders inline thumbnails without pulling full-size blobs.
+	// The original bytes flow through the same endpoint without the param.
+	if maxWidth, ok := parseThumbnailWidth(c.Query("width")); ok && thumbnailableExtension(artifact.FileName) {
+		data, readErr := io.ReadAll(io.LimitReader(reader, maxThumbnailSourceBytes))
+		_ = reader.Close()
+		if readErr != nil {
+			logger.Warnf(ctx, "artifact thumbnail read failed: session=%s message=%s idx=%d err=%v",
+				sessionID, messageID, index, readErr)
+			_ = c.Error(errors.NewInternalServerError("artifact blob unreadable"))
+			return
+		}
+		if serveImageThumbnail(c.Writer, c.Request, data, artifact.FileName, maxWidth) {
+			return
+		}
+		// Not thumbnailizable (decode failure, already small) — fall through
+		// and stream the buffered original bytes.
+		reader = io.NopCloser(bytes.NewReader(data))
 	}
 	if err := filetransport.Serve(c.Writer, c.Request, reader, filetransport.Options{
 		Filename: artifact.FileName, Download: true, ContentType: mimeTypeFor(artifact.FileName),

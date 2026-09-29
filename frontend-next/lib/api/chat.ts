@@ -245,14 +245,18 @@ export function listSessionArtifacts(sessionId: string) {
 }
 
 /* Streams a single artifact's bytes as a Blob for a browser download. A plain
- * `<a href>` can't carry the Bearer token; apiDownload keeps auth intact. */
+ * `<a href>` can't carry the Bearer token; apiDownload keeps auth intact.
+ * `width` asks the backend for a downscaled image variant (inline previews);
+ * omit it for the original bytes (lightbox view / file download). */
 export function downloadArtifact(
   sessionId: string,
   messageId: string,
   index: number,
+  opts?: { width?: number },
 ): Promise<Blob> {
+  const width = opts?.width ? `?width=${opts.width}` : "";
   return apiDownload(
-    `/api/v1/sessions/${sessionId}/messages/${messageId}/artifacts/${index}/download`,
+    `/api/v1/sessions/${sessionId}/messages/${messageId}/artifacts/${index}/download${width}`,
   );
 }
 

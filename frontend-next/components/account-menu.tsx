@@ -111,16 +111,21 @@ export function AccountMenu() {
         aria-expanded={open}
         className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-strong"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-[11px] font-semibold text-white">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-[11px] font-semibold text-white">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset
-            <img src={avatarUrl} alt="" className="h-7 w-7 object-cover" />
+            <img src={avatarUrl} alt="" className="h-8 w-8 object-cover" />
           ) : (
             initials
           )}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
-          {name || "—"}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14.5px] font-semibold leading-tight text-ink">
+            {name || "—"}
+          </span>
+          <span className="block truncate text-[12.5px] leading-tight text-muted">
+            {roleLabel}
+          </span>
         </span>
         {isTenantAdmin && pending > 0 && (
           <span className="badge-pill shrink-0 border border-amber-500/20 bg-amber-500/10 text-amber-600">

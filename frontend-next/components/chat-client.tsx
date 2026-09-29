@@ -257,8 +257,9 @@ const UserMessageBubble = memo(function UserMessageBubble({
       <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
         {message.content}
       </div>
-      {/* Touch has no hover — actions stay visible on phones, fade-in on desktop. */}
-      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-80">
+      {/* Touch has no hover — actions stay visible on phones; on desktop they
+          appear only while hovering the user message. */}
+      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
         {onEdit && (
           <button
             type="button"
@@ -451,7 +452,7 @@ const AssistantMessage = memo(function AssistantMessage({
   const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
   const shownContent = stripPeopleDump(m.content, hasPeopleCard);
   return (
-    <div className="mb-4 flex gap-3 sm:gap-4">
+    <div data-message-id={m.id} className="mb-4 flex gap-3 sm:gap-4">
       {/* Avatar hidden on phones — every pixel of width goes to the text. */}
       <div className="display-sm mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px] sm:flex">
         W
@@ -1620,9 +1621,25 @@ function ChatBody({ id }: { id: string }) {
   // Follow the stream only while the user is parked near the bottom — scrolling
   // up releases the lock. Setting scrollTop directly (not smooth scrollIntoView):
   // restarting a smooth animation per streamed token is what made this stutter.
+  // Once the answer's first text arrives, stop chasing the stream's bottom edge:
+  // pin the top of that answer at the top of the viewport so the user reads from
+  // the start while new text flows in below. While only thinking/steps stream,
+  // keep the old follow-the-bottom behavior.
+  const pinnedAnswerRef = useRef<string | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickBottomRef.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const last = messages[messages.length - 1];
+    if (last?.role === "assistant" && last.streaming && last.content && pinnedAnswerRef.current !== last.id) {
+      pinnedAnswerRef.current = last.id;
+      const node = el.querySelector<HTMLElement>(`[data-message-id="${last.id}"]`);
+      if (node) {
+        el.scrollTop = node.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 12;
+        stickBottomRef.current = false;
+        return;
+      }
+    }
+    if (stickBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const handleMessagesScroll = () => {

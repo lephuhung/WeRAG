@@ -14,6 +14,18 @@ export type ArtifactImageContext = {
   messageId: string;
 };
 
+/* Inline previews request a downscaled variant (`?width=`) so chat history
+ * never pulls multi-MB originals just to render a 240px thumbnail; the
+ * lightbox fetches the FULL variant once when opened. */
+const THUMBNAIL_WIDTH = 512;
+
+export type ArtifactDownloadFn = (
+  sessionId: string,
+  messageId: string,
+  index: number,
+  opts?: { width?: number },
+) => Promise<Blob>;
+
 const RESOURCE_HANDLE_RE = /^resource:\/\/([A-Za-z0-9_-]{22})$/;
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"]);
 
@@ -72,24 +84,25 @@ function blobCache(): BlobCache {
   return scope.__weknoraArtifactBlobCacheV1__;
 }
 
-function blobKey(ctx: ArtifactImageContext, index: number): string {
-  return `${ctx.sessionId}\u0000${ctx.messageId}\u0000${index}`;
+function blobKey(ctx: ArtifactImageContext, index: number, variant: "thumb" | "full"): string {
+  return `${ctx.sessionId}\u0000${ctx.messageId}\u0000${index}\u0000${variant}`;
 }
 
 async function loadArtifactBlobURL(
   ctx: ArtifactImageContext,
   index: number,
-  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>,
+  variant: "thumb" | "full",
+  download: ArtifactDownloadFn,
 ): Promise<string | null> {
   const cache = blobCache();
-  const key = blobKey(ctx, index);
+  const key = blobKey(ctx, index, variant);
   const cached = cache.byKey.get(key);
   if (cached) return cached;
   let task = cache.inflight.get(key);
   if (!task) {
     task = (async () => {
       try {
-        const blob = await download(ctx.sessionId, ctx.messageId, index);
+        const blob = await download(ctx.sessionId, ctx.messageId, index, variant === "thumb" ? { width: THUMBNAIL_WIDTH } : undefined);
         const url = URL.createObjectURL(blob);
         cache.byKey.set(key, url);
         return url;
@@ -104,15 +117,27 @@ async function loadArtifactBlobURL(
   return task;
 }
 
+/** Blob URL for the original-size artifact image, cached per (message, index).
+ * The lightbox calls this when it opens; failures resolve to null so the
+ * caller keeps showing the already-hydrated thumbnail. */
+export async function loadArtifactFullURL(
+  ctx: ArtifactImageContext | null | undefined,
+  index: number,
+  download: ArtifactDownloadFn,
+): Promise<string | null> {
+  if (!ctx?.sessionId || !ctx?.messageId) return null;
+  return loadArtifactBlobURL(ctx, index, "full", download);
+}
+
 async function hydrateImage(
   img: HTMLImageElement,
   ctx: ArtifactImageContext,
-  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>,
+  download: ArtifactDownloadFn,
 ): Promise<void> {
   const index = Number(img.getAttribute("data-artifact-index"));
   if (!Number.isInteger(index) || index < 0) return;
   img.dataset.authHydrated = "1";
-  const blobURL = await loadArtifactBlobURL(ctx, index, download);
+  const blobURL = await loadArtifactBlobURL(ctx, index, "thumb", download);
   if (!blobURL) {
     img.dataset.authHydrated = "0";
     return;
@@ -147,7 +172,7 @@ function enqueueDownload(task: () => Promise<void>): void {
 
 type PendingHydration = {
   ctx: ArtifactImageContext;
-  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>;
+  download: ArtifactDownloadFn;
 };
 
 const pendingJobs = new Map<HTMLImageElement, PendingHydration>();
@@ -182,7 +207,7 @@ function sharedObserver(): IntersectionObserver | null {
 export function hydrateArtifactImages(
   root: ParentNode | null | undefined,
   ctx: ArtifactImageContext | null | undefined,
-  download: (sessionId: string, messageId: string, index: number) => Promise<Blob>,
+  download: ArtifactDownloadFn,
 ): () => void {
   if (!root || !ctx?.sessionId || !ctx?.messageId) return () => {};
   const images = Array.from(
