@@ -265,6 +265,20 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	}
 	logger.Info(ctx, "Password verification successful")
 
+	// Two-factor gate. The password is already verified, so a missing or
+	// wrong code must NOT leak which part failed beyond the 2FA signal —
+	// respond with two_factor_required and no tokens.
+	if user.TwoFactorEnabled {
+		if err := s.verifyTwoFactorForLogin(ctx, user, req.TwoFactorCode); err != nil {
+			logger.Warn(ctx, "Two-factor verification failed")
+			return &types.LoginResponse{
+				Success:           false,
+				Message:           "Two-factor code required",
+				TwoFactorRequired: true,
+			}, nil
+		}
+	}
+
 	// Generate tokens. Resolve the target tenant once so the JWT claim
 	// and the tenant we return below agree — otherwise an honoured
 	// "last active tenant" preference would mint a token for tenant N

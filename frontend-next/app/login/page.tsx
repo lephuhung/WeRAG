@@ -12,6 +12,8 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +25,7 @@ function LoginForm() {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept-Language": "zh-CN" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, two_factor_code: totpCode }),
       });
       const data = await res.json().catch(() => null);
       const token =
@@ -34,6 +36,16 @@ function LoginForm() {
         data && typeof data === "object" && "refresh_token" in data
           ? (data as { refresh_token?: string }).refresh_token
           : undefined;
+      if (
+        data &&
+        typeof data === "object" &&
+        (data as { two_factor_required?: boolean }).two_factor_required
+      ) {
+        // Correct password but a 6-digit authenticator code is required.
+        setTotpRequired(true);
+        setError("Enter the 6-digit code from your authenticator app");
+        return;
+      }
       if (!res.ok || !token) {
         const msg =
           data && typeof data === "object" && "message" in data
@@ -101,6 +113,22 @@ function LoginForm() {
               placeholder="••••••••"
             />
           </label>
+          {totpRequired && (
+            <label className="mb-6 block">
+              <span className="caption mb-1.5 block text-muted">Authenticator code</span>
+              <input
+                className="input tracking-[0.5em]"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                autoFocus
+                required
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="••••••"
+              />
+            </label>
+          )}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <button type="submit" className="btn btn-primary w-full" disabled={busy}>
             {busy ? "Signing in…" : "Sign in"}

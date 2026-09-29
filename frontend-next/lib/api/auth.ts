@@ -505,3 +505,75 @@ export async function registerByInvite(data: RegisterByInviteRequest): Promise<L
     };
   }
 }
+
+// ===== Two-factor authentication (TOTP authenticator, 6-digit codes) =====
+// Endpoints are planned — the UI degrades gracefully while the backend is
+// not deployed yet (errors surface as a friendly "unavailable" message).
+
+export interface TwoFactorStatusResponse {
+  success: boolean;
+  enabled?: boolean;
+  message?: string;
+}
+
+export interface TwoFactorSetupResponse {
+  success: boolean;
+  /* Base32 secret to enter manually if scanning the QR fails. */
+  secret?: string;
+  /* otpauth:// URI — the frontend renders it as a QR code. */
+  otpauth_url?: string;
+  message?: string;
+}
+
+export interface TwoFactorEnableResponse {
+  success: boolean;
+  /* One-time codes shown once, to store somewhere safe. */
+  recovery_codes?: string[];
+  message?: string;
+}
+
+export async function getTwoFactorStatus(): Promise<TwoFactorStatusResponse> {
+  try {
+    return await apiGet<TwoFactorStatusResponse>("/api/v1/auth/2fa/status");
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "2FA unavailable",
+    };
+  }
+}
+
+export async function setupTwoFactor(): Promise<TwoFactorSetupResponse> {
+  try {
+    return await apiPost<TwoFactorSetupResponse>("/api/v1/auth/2fa/setup", {});
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "2FA unavailable",
+    };
+  }
+}
+
+export async function enableTwoFactor(code: string): Promise<TwoFactorEnableResponse> {
+  try {
+    return await apiPost<TwoFactorEnableResponse>("/api/v1/auth/2fa/enable", { code });
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Invalid code",
+    };
+  }
+}
+
+export async function disableTwoFactor(code: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    return await apiPost<{ success: boolean; message?: string }>("/api/v1/auth/2fa/disable", {
+      code,
+    });
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Invalid code",
+    };
+  }
+}

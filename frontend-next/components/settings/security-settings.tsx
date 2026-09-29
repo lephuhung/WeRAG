@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { clearTokens } from "@/lib/api-client";
 import { changePassword } from "@/lib/api/auth";
+import { TwoFactorSettings } from "@/components/settings/two-factor-settings";
 import { useT } from "@/lib/i18n";
 
 export function SecuritySettings() {
@@ -80,6 +81,10 @@ export function SecuritySettings() {
           )}
           {pwError && <span className="caption text-error">{pwError}</span>}
         </div>
+      </div>
+
+      <div className="border-t border-hairline pt-7">
+        <TwoFactorSettings />
       </div>
     </div>
   );

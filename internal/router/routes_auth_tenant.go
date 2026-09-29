@@ -240,6 +240,12 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.POST("/auth/me/avatar", handler.UploadMyAvatar)
 	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
 	r.POST("/auth/change-password", handler.ChangePassword)
+	// Two-factor authentication (TOTP). Identity is derived from the token
+	// in every handler, so any authenticated user manages their own enrolment.
+	r.GET("/auth/2fa/status", handler.TwoFactorStatus)
+	r.POST("/auth/2fa/setup", handler.TwoFactorSetup)
+	r.POST("/auth/2fa/enable", handler.TwoFactorEnable)
+	r.POST("/auth/2fa/disable", handler.TwoFactorDisable)
 }
 
 // RegisterSystemRoutes registers system information routes

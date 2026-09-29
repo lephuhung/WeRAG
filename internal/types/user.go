@@ -111,6 +111,15 @@ type User struct {
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.
 	Preferences UserPreferences `json:"preferences" gorm:"type:jsonb;not null;default:'{}'"`
+	// Base32 TOTP secret for two-factor authentication. Written by the
+	// 2FA setup endpoint while enrolment is still pending; only honoured
+	// once TwoFactorEnabled is true. Never serialised.
+	TOTPSecret string `json:"-" gorm:"type:varchar(64);not null;default:''"`
+	// Whether TOTP two-factor authentication is enforced at login.
+	TwoFactorEnabled bool `json:"two_factor_enabled" gorm:"not null;default:false"`
+	// JSON array of bcrypt hashes of the one-time recovery codes minted
+	// when 2FA was enabled. Empty when no codes are minted or all used.
+	TwoFactorRecoveryCodes string `json:"-" gorm:"type:text;not null;default:''"`
 	// Creation time of the user
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the user
@@ -149,6 +158,10 @@ type AuthToken struct {
 type LoginRequest struct {
 	Email    string `json:"email"    binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
+	// TwoFactorCode is the 6-digit TOTP code (or a one-time recovery code)
+	// required when the account has 2FA enabled. Empty for accounts
+	// without 2FA.
+	TwoFactorCode string `json:"two_factor_code"`
 }
 
 type OIDCAuthURLResponse struct {
@@ -236,7 +249,12 @@ func (m TenantProvisioningMode) IsValid() bool {
 type LoginResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
-	User    *User  `json:"user,omitempty"`
+	// TwoFactorRequired is true when the credentials were correct but the
+	// account has 2FA enabled and no/invalid code was supplied. The
+	// frontend must prompt for a 6-digit code and retry with
+	// two_factor_code set. No tokens are issued in that response.
+	TwoFactorRequired bool  `json:"two_factor_required,omitempty"`
+	User              *User `json:"user,omitempty"`
 	// ActiveTenant is the workspace whose ID is encoded in the issued JWT;
 	// future requests are scoped to it until the client calls /auth/switch-tenant.
 	// Defaults to the user's home workspace on a fresh login.

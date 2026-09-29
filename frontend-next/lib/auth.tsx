@@ -158,11 +158,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setLocale]);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, twoFactorCode?: string) => {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept-Language": "zh-CN" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, two_factor_code: twoFactorCode ?? "" }),
       });
       const data = (await res.json()) as {
         success: boolean;

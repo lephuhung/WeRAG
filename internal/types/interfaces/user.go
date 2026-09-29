@@ -37,6 +37,17 @@ type UserService interface {
 	DeleteUser(ctx context.Context, id string) error
 	// ChangePassword changes user password
 	ChangePassword(ctx context.Context, userID string, oldPassword, newPassword string) error
+	// TwoFactorStatus reports whether the account enforces TOTP 2FA.
+	TwoFactorStatus(ctx context.Context, userID string) (bool, error)
+	// BeginTwoFactorSetup mints and stores a pending TOTP secret, returning
+	// it with the otpauth:// provisioning URI for QR rendering.
+	BeginTwoFactorSetup(ctx context.Context, userID string) (secret, otpauthURL string, err error)
+	// EnableTwoFactor verifies a live TOTP code against the pending secret,
+	// enforces 2FA and returns the plaintext one-time recovery codes.
+	EnableTwoFactor(ctx context.Context, userID, code string) ([]string, error)
+	// DisableTwoFactor turns 2FA off after verifying a live TOTP or
+	// recovery code, clearing the enrolment state.
+	DisableTwoFactor(ctx context.Context, userID, code string) error
 	// AdminResetPassword replaces a user's password without requiring the old
 	// password and revokes all of that user's existing sessions. Callers must
 	// enforce the system-admin and cannot-reset-self guards before invoking it.
