@@ -18,6 +18,7 @@ templates:
       - gist: one line (at most 25 words) stating what the document is about.
       - topics: 3-5 short topic keywords (1-4 words each) that a reader would use to find this document. Use the document's own terminology; do not pad with generic words such as "information" or "document".
       - doc_type: a short label for the kind of document, e.g. "user manual", "meeting notes", "contract", "research paper", "FAQ", "policy", "tutorial", "report".
+        For legal, regulatory or administrative documents, identify the SPECIFIC instrument type from its issuing formula or number line (e.g. "Luật số…", "Nghị định số…", "Quyết định số…"), never the generic category. Use exactly one of these labels when applicable: "Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh", "Nghị quyết", "Nghị định", "Quyết định", "Thông tư", "Thông tư liên tịch", "Chỉ thị", "Công văn", "Kế hoạch", "Đề án", "Quy chế", "Quyết định - Hướng dẫn", "Báo cáo", "Hướng dẫn", "Kết luận", "Đề xuất", "Chương trình", "Dự thảo". Match the type word that appears in the document itself (e.g. a document numbered "Nghị quyết số 12/NQ-CP" is "Nghị quyết", one numbered "Công văn số 123/CV-…" is "Công văn", a document titled "Kế hoạch triển khai…" is "Kế hoạch"). Only fall back to a generic label like "report" or "policy" when no specific type appears in the text.
       - typical_question: one self-contained natural-language question that this document answers well. No pronouns such as "it" or "this document".
 
       ## Content Rules
