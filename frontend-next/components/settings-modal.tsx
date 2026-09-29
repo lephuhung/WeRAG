@@ -49,6 +49,7 @@ import {
   IconBookmark,
   IconBulb,
   IconChevronLeft,
+  IconChat,
   IconClock,
   IconClose,
   IconCode,
@@ -73,6 +74,7 @@ import {
 const SharingPage = lazy(() => import("@/app/platform/system/workspace/sharing/page"));
 const McpServersPage = lazy(() => import("@/app/platform/system/extensions/mcp/page"));
 const AgentsPage = lazy(() => import("@/app/platform/system/extensions/agents/page"));
+const IMChannelsPage = lazy(() => import("@/app/platform/system/extensions/im-channels/page"));
 const ModelCatalogPage = lazy(() => import("@/app/platform/system/models/page"));
 const RuntimeQueuesPage = lazy(() => import("@/app/platform/system/engines/queues/page"));
 
@@ -142,6 +144,7 @@ const GROUPS: SettingsGroup[] = [
       { key: "skills", labelKey: "settingsNav.skills", fallback: "Skills", icon: IconBulb, minRole: "system", render: () => <SkillsSettings />, route: `${E}/skills` },
       { key: "mcp", labelKey: "systemNav.mcpServers", fallback: "MCP servers", icon: IconPulse, minRole: "system", render: () => <McpServersPage />, route: `${E}/mcp` },
       { key: "agents", labelKey: "systemNav.agents", fallback: "Agents", icon: IconAgent, minRole: "system", render: () => <AgentsPage />, route: `${E}/agents` },
+      { key: "imchannels", labelKey: "systemNav.imChannels", fallback: "IM channels", icon: IconChat, minRole: "system", render: () => <IMChannelsPage />, route: `${E}/im-channels` },
     ],
   },
   {

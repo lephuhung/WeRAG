@@ -14,6 +14,7 @@ import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { Select } from "@/components/select";
 import { copyToClipboard } from "@/lib/clipboard";
+import { IconClose } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import {
   listIMChannels,
@@ -199,14 +200,18 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
   );
 }
 
-function IMChannelForm({ agentId, channel, onClose, onSaved }: {
-  agentId: string;
+/* Channel form fields — shared shell used by the modal wrapper (per-agent
+ * panel) and the inline card (tenant-wide page). */
+function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
+  agentId?: string;
+  agents?: { id: string; name: string }[];
   channel: IMChannel | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useT();
   const [platform, setPlatform] = useState<Platform>(channel?.platform ?? "telegram");
+  const [agent, setAgent] = useState(agentId ?? channel?.agent_id ?? "");
   const [name, setName] = useState(channel?.name ?? "");
   const [mode, setMode] = useState<IMChannel["mode"]>(channel?.mode ?? "websocket");
   const [outputMode, setOutputMode] = useState<IMChannel["output_mode"]>(channel?.output_mode ?? "stream");
@@ -245,7 +250,7 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
         credentials: creds,
       };
       if (channel) await updateIMChannel(channel.id, payload);
-      else await createIMChannel(agentId, payload);
+      else await createIMChannel(agent, payload);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -255,13 +260,8 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
   };
 
   return (
-    <Modal
-      open
-      title={channel ? t("agentEditor.im.editChannel") : t("agentEditor.im.addChannel")}
-      onClose={onClose}
-      width="w-[560px]"
-    >
-      <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
+    <>
+      <div className="flex flex-col gap-4">
         {error && <p className="caption text-error">{error}</p>}
 
         <div className="flex gap-4">
@@ -283,6 +283,19 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
         </div>
+
+        {/* Agent binding — shown only when the caller didn't pin an agent. */}
+        {!agentId && !channel && agents && (
+          <label className="block">
+            <span className="caption mb-1.5 block text-muted">{t("imp.agent")}</span>
+            <Select
+              value={agent}
+              onChange={setAgent}
+              placeholder={t("imp.pickAgent")}
+              options={agents.map((a) => ({ value: a.id, label: a.name }))}
+            />
+          </label>
+        )}
 
         {/* access */}
         <div className="border-t border-hairline pt-4">
@@ -426,11 +439,55 @@ function IMChannelForm({ agentId, channel, onClose, onSaved }: {
         <button className="btn btn-outline btn-sm" onClick={onClose} disabled={saving}>
           {t("common.cancel")}
         </button>
-        <button className="btn btn-primary btn-sm" disabled={saving || !name.trim()} onClick={() => void submit()}>
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={saving || !name.trim() || (!channel && !agentId && !agent)}
+          onClick={() => void submit()}
+        >
           {saving ? "…" : t("common.save")}
         </button>
       </div>
+    </>
+  );
+}
+
+/* Modal wrapper — used by the per-agent slide panel. */
+export function IMChannelForm(props: Parameters<typeof IMChannelFields>[0]) {
+  const { t } = useT();
+  return (
+    <Modal
+      open
+      title={props.channel ? t("agentEditor.im.editChannel") : t("agentEditor.im.addChannel")}
+      onClose={props.onClose}
+      width="w-[560px]"
+    >
+      <div className="flex max-h-[70vh] flex-col overflow-y-auto pr-1">
+        <IMChannelFields {...props} />
+      </div>
     </Modal>
+  );
+}
+
+/* Inline card — rendered directly in the tenant-wide IM channels page
+ * (inside the settings modal) instead of stacking another modal. */
+export function IMChannelInlineForm(props: Parameters<typeof IMChannelFields>[0]) {
+  const { t } = useT();
+  return (
+    <div className="card mb-6 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="title-md">
+          {props.channel ? t("agentEditor.im.editChannel") : t("agentEditor.im.addChannel")}
+        </h2>
+        <button
+          onClick={props.onClose}
+          aria-label={t("common.cancel")}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink"
+        >
+          <IconClose className="h-4 w-4" />
+        </button>
+      </div>
+      <IMChannelFields {...props} />
+    </div>
   );
 }
 

@@ -171,6 +171,13 @@ export const SYSTEM_TABS: SystemTab[] = [
             minRole: "system",
           },
           {
+            key: "imchannels",
+            label: "IM channels",
+            labelKey: "systemNav.imChannels",
+            href: "/platform/system/extensions/im-channels",
+            minRole: "system",
+          },
+          {
             key: "mcp",
             label: "MCP servers",
             labelKey: "systemNav.mcpServers",
