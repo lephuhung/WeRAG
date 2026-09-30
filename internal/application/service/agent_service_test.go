@@ -204,7 +204,7 @@ func TestCreateAgentEngineOpensSandboxToolsOnlyForInstallMode(t *testing.T) {
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolReadFile))
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolWriteSandboxFile))
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
-		require.Nil(t, engine.(*agent.AgentEngine).GetSkillsManager())
+		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
 	})
 
 	t.Run("skills disabled without skills or install mode gets no shell or skill tools but keeps file tools", func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestCreateAgentEngineOpensSandboxToolsOnlyForInstallMode(t *testing.T) {
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
 		require.False(t, toolOffered(chatModel.lastToolNames, tools.LegacyToolReadSkill))
 		require.False(t, toolOffered(chatModel.lastToolNames, tools.LegacyToolExecuteSkillScript))
-		require.Nil(t, engine.(*agent.AgentEngine).GetSkillsManager())
+		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
 	})
 
 	t.Run("skills enabled with skill dirs keeps existing behavior", func(t *testing.T) {
@@ -306,12 +306,12 @@ func TestCreateAgentEngineOpensSandboxToolsOnlyForInstallMode(t *testing.T) {
 		for _, meta := range mgr.GetAllMetadata() {
 			names = append(names, meta.Name)
 		}
-		require.Equal(t, []string{"pdf-tools"}, names)
+		require.Equal(t, append(append([]string{}, bundledLegalSkillNames...), "pdf-tools"), names)
 	})
 }
 
 func TestSkillToolsFollowSkillsEnabled(t *testing.T) {
-	t.Run("skills disabled: initializeSkillsManager registers no skill tools or shell", func(t *testing.T) {
+	t.Run("tenant skills disabled: initializeSkillsManager registers a built-in reader but no shell", func(t *testing.T) {
 		registry := tools.NewToolRegistry()
 		svc := &agentService{
 			sandboxResolver: stubSandboxResolver{
@@ -327,6 +327,7 @@ func TestSkillToolsFollowSkillsEnabled(t *testing.T) {
 		}, registry)
 
 		require.NoError(t, err)
+		require.True(t, toolRegistered(registry, tools.ToolReadFile))
 		require.False(t, toolRegistered(registry, tools.LegacyToolReadSkill))
 		require.False(t, toolRegistered(registry, tools.LegacyToolExecuteSkillScript))
 		require.False(t, toolRegistered(registry, tools.ToolShellExec),
@@ -394,7 +395,7 @@ func TestCreateAgentEngineShellFollowsSkillsEnabledWithoutInstalledSkills(t *tes
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolReadFile))
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolWriteSandboxFile))
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
-	require.Nil(t, engine.(*agent.AgentEngine).GetSkillsManager())
+	require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
 }
 
 // Whether an installed skill is invocable is decided when the AgentConfig is
@@ -413,7 +414,9 @@ func TestSkillsManagerOffersTheInjectedInstalledSkills(t *testing.T) {
 	skillNamesOf := func(mgr *skills.Manager) []string {
 		var names []string
 		for _, meta := range mgr.GetAllMetadata() {
-			names = append(names, meta.Name)
+			if !skills.IsBuiltinName(meta.Name) {
+				names = append(names, meta.Name)
+			}
 		}
 		return names
 	}
@@ -484,7 +487,7 @@ func TestSkillsManagerOffersTheInjectedInstalledSkills(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, skillNamesOf(mgr),
-			"a skill the model is told about but cannot invoke burns turns for nothing")
+			"an unavailable tenant skill must not be advertised beside the four built-ins")
 	})
 }
 

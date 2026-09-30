@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	legalskillassets "github.com/Tencent/WeKnora/examples/skills"
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
@@ -264,21 +265,15 @@ func (s *agentService) CreateAgentEngine(
 		}
 	}
 
-	// TenantSkills is the sandbox image. SkillDirs is a host skill tree used
-	// by tests (and any caller that still points at a host directory); the
-	// QA path no longer fills it.
-	//
-	// The shell is registered above by registerSandboxShellIfAllowed and
-	// follows SkillsEnabled rather than requiring a ready skill to already
-	// exist. offerSkills only gates the skills manager that feeds the model
-	// the installed-skill list and the read_file / shell_exec environment. A sandbox whose skills are still installing —
-	// or that simply has none yet — therefore gets a shell without an
-	// empty skills manager or skill tools that cannot succeed.
-	offerSkills := config.SkillsEnabled &&
-		(len(config.SkillDirs) > 0 || len(config.TenantSkills) > 0)
-	if offerSkills {
+	// Legal instruction skills are always readable by ordinary Smart Reasoning
+	// agents. Tenant/host skills still follow SkillsEnabled and their sandbox
+	// selection; install mode remains a separate privileged workflow.
+	if !config.SkillInstallMode() {
 		skillsManager, err := s.initializeSkillsManager(ctx, sessionID, config, toolRegistry)
 		if err != nil {
+			if errors.Is(err, skills.ErrInvalidBuiltin) {
+				return nil, fmt.Errorf("failed to load built-in legal skills: %w", err)
+			}
 			logger.Warnf(ctx, "Failed to initialize skills manager: %v", err)
 		} else if skillsManager != nil {
 			engine.SetSkillsManager(skillsManager)
@@ -574,30 +569,36 @@ func (s *agentService) initializeSkillsManager(
 	config *types.AgentConfig,
 	toolRegistry *tools.ToolRegistry,
 ) (*skills.Manager, error) {
+	builtins, err := skills.NewBuiltinSource(legalskillassets.FS)
+	if err != nil {
+		return nil, err
+	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	sandboxMgr, configID, err := resolveSandboxForExecution(
 		ctx, s.sandboxResolver, s.sandboxMgr, s.sandboxPinner,
 		tenantID, sessionID, config.SandboxConfigID, s.sandboxPolicy,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("resolve sandbox config for session %s: %w", sessionID, err)
+	sandboxUnavailable := err != nil
+	if sandboxUnavailable {
+		logger.Warnf(ctx, "Sandbox unavailable for session %s; only built-in skills will be offered: %v", sessionID, err)
 	}
-	if sandboxMgr == nil {
+	if sandboxMgr == nil || sandboxUnavailable {
 		sandboxMgr = sandbox.NewDisabledManager()
 	}
 
 	logger.Infof(ctx, "Workspace sandbox in use: config=%s type=%s", configID, sandboxMgr.GetType())
 
-	// Create skills manager
-	skillsConfig := &skills.ManagerConfig{
-		SkillDirs:     config.SkillDirs,
-		AllowedSkills: config.AllowedSkills,
-		Enabled:       config.SkillsEnabled,
+	// Tenant/host selections do not restrict the application's four legal skills.
+	skillsConfig := &skills.ManagerConfig{Enabled: true}
+	if config.SkillsEnabled && !sandboxUnavailable {
+		skillsConfig.SkillDirs = config.SkillDirs
+		skillsConfig.AllowedSkills = config.AllowedSkills
 	}
-
-	skillsManager := skills.NewManager(skillsConfig, sandboxMgr)
-	if source := s.tenantSkillSource(ctx, config); source != nil {
-		skillsManager.WithTenantSource(source)
+	skillsManager := skills.NewManager(skillsConfig, sandboxMgr).WithBuiltinSource(builtins)
+	if config.SkillsEnabled && !sandboxUnavailable {
+		if source := s.tenantSkillSource(ctx, config); source != nil {
+			skillsManager.WithTenantSource(source)
+		}
 	}
 
 	// Initialize (discover skills)
@@ -616,19 +617,17 @@ func (s *agentService) initializeSkillsManager(
 			shellEnabled = true
 		}
 	}
-	if config.SkillsEnabled {
-		var reader *tools.ReadFileTool
-		if tool, err := toolRegistry.GetTool(tools.ToolReadFile); err == nil {
-			reader, _ = tool.(*tools.ReadFileTool)
-		}
-		if reader == nil {
-			// Instructions remain readable without a session filesystem.
-			reader = tools.NewReadFileTool(nil)
-			toolRegistry.RegisterTool(reader)
-		}
-		reader.WithSkills(skillsManager, shellEnabled)
-		logger.Infof(ctx, "Attached skill resources to read_file")
+	var reader *tools.ReadFileTool
+	if tool, err := toolRegistry.GetTool(tools.ToolReadFile); err == nil {
+		reader, _ = tool.(*tools.ReadFileTool)
 	}
+	if reader == nil {
+		// Instructions remain readable without a session filesystem.
+		reader = tools.NewReadFileTool(nil)
+		toolRegistry.RegisterTool(reader)
+	}
+	reader.WithSkills(skillsManager, shellEnabled)
+	logger.Infof(ctx, "Attached skill resources to read_file")
 
 	return skillsManager, nil
 }
