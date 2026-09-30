@@ -67,6 +67,9 @@ func TestBuiltinSourceRejectsBrokenBundledInstructions(t *testing.T) {
 		{"wrong-name", func(files fstest.MapFS) {
 			files["legal-document-summary/SKILL.md"] = &fstest.MapFile{Data: []byte("---\nname: wrong\ndescription: x\n---\nbody")}
 		}},
+		{"invalid-title-masked-by-matching-slug", func(files fstest.MapFS) {
+			files["legal-document-summary/SKILL.md"] = &fstest.MapFile{Data: []byte("---\nname: Wrong / Title\nslug: legal-document-summary\ndescription: x\n---\nbody")}
+		}},
 		{"empty-body", func(files fstest.MapFS) {
 			files["legal-document-summary/SKILL.md"] = &fstest.MapFile{Data: []byte("---\nname: legal-document-summary\ndescription: x\n---\n   \n")}
 		}},

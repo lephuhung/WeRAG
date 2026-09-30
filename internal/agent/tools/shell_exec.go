@@ -363,6 +363,12 @@ func (t *ShellExecTool) Execute(ctx context.Context, args json.RawMessage) (*typ
 	if input.SkillName != "" && t.skillEnvironment == nil {
 		return &types.ToolResult{Success: false, Error: "no skill environment is available for this call; omit skill_name for system commands"}, nil
 	}
+	// A built-in owns its reserved name even if a tenant installed a duplicate.
+	// Reject before resolving the duplicate's declared secrets or suggesting
+	// the user supply credentials for a skill that cannot execute.
+	if input.SkillName != "" && t.skillEnvironment.IsBuiltinSkill(input.SkillName) {
+		return &types.ToolResult{Success: false, Error: fmt.Sprintf("skill %q is read-only and cannot execute", input.SkillName)}, nil
+	}
 
 	if len(input.Stdin) > 65536 {
 		return &types.ToolResult{Success: false, Error: "stdin exceeds 65536 bytes; write the input to a workspace file and redirect from it"}, nil

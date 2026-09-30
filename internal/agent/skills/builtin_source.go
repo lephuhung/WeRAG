@@ -1,10 +1,13 @@
 package skills
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ErrInvalidBuiltin identifies an invalid application asset. Unlike an
@@ -54,8 +57,9 @@ func NewBuiltinSource(fsys fs.FS) (*BuiltinSource, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %v", ErrInvalidBuiltin, filePath, err)
 		}
-		if skill.Name != name || skill.FrontmatterRepaired || strings.TrimSpace(skill.Instructions) == "" {
-			return nil, fmt.Errorf("%w: %s: expected matching name, unmodified frontmatter and nonempty instructions", ErrInvalidBuiltin, filePath)
+		declaredName, err := declaredBuiltinName(string(data))
+		if err != nil || declaredName != name || skill.Name != name || skill.FrontmatterRepaired || strings.TrimSpace(skill.Instructions) == "" {
+			return nil, fmt.Errorf("%w: %s: expected matching literal name, unmodified frontmatter and nonempty instructions: %v", ErrInvalidBuiltin, filePath, err)
 		}
 		skill.BasePath = "skill://" + name
 		skill.FilePath = skill.BasePath + "/SKILL.md"
@@ -63,6 +67,37 @@ func NewBuiltinSource(fsys fs.FS) (*BuiltinSource, error) {
 		src.files[name] = string(data)
 	}
 	return src, nil
+}
+
+// declaredBuiltinName checks the literal frontmatter identity before the
+// third-party parser can replace an invalid display name with its slug.
+func declaredBuiltinName(content string) (string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(strings.TrimPrefix(content, "\ufeff")))
+	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
+		return "", errors.New("missing frontmatter")
+	}
+	var lines []string
+	closed := false
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) == "---" {
+			closed = true
+			break
+		}
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	if !closed {
+		return "", errors.New("unclosed frontmatter")
+	}
+	var frontmatter struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &frontmatter); err != nil {
+		return "", err
+	}
+	return frontmatter.Name, nil
 }
 
 // Has checks membership in this source, never a tenant-provided name.

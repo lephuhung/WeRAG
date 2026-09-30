@@ -299,7 +299,8 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 		b.WriteString(sandboxArtifactReferenceGuidance())
 	}
 	if !skillInstallMode && has("shell_exec") && has("read_file") {
-		b.WriteString("For listed skills, run bundled scripts and your own scripts with " +
+		b.WriteString("Read-only skills have no executable scripts, even when shell_exec is available. " +
+			"For executable installed or host skills, run bundled scripts and your own scripts with " +
 			"shell_exec(skill_name=..., command=...). This selects an installed skill's runtime " +
 			"or stages host skill resources, and applies scoped credentials; " +
 			"use $WEKNORA_SKILL_DIR for bundled files.\n")
