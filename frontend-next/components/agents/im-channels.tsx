@@ -302,27 +302,25 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
           <div className="caption-uppercase mb-2 text-muted">{t("agentEditor.im.sectionAccess")}</div>
           <div className="mb-3 flex gap-4">
             <span className="title-sm flex items-center">{t("agentEditor.im.mode")}</span>
-            <div className="flex gap-1.5">
-              <Chip active={mode === "websocket"} onClick={() => setMode("websocket")}>
-                {platform === "dingtalk" ? "Stream" : "WebSocket"}
-              </Chip>
-              <Chip
-                active={mode === "webhook"}
-                disabled={platform === "dingtalk" || platform === "qqbot"}
-                onClick={() => setMode("webhook")}
-              >
-                Webhook
-              </Chip>
-            </div>
+            <PillToggle
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "websocket", label: platform === "dingtalk" ? "Stream" : "WebSocket" },
+                { value: "webhook", label: "Webhook", disabled: platform === "dingtalk" || platform === "qqbot" },
+              ]}
+            />
           </div>
           <div className="flex gap-4">
             <span className="title-sm flex items-center">{t("agentEditor.im.outputMode")}</span>
-            <Chip active={outputMode === "stream"} onClick={() => setOutputMode("stream")}>
-              {t("agentEditor.im.outputStream")}
-            </Chip>
-            <Chip active={outputMode === "full"} onClick={() => setOutputMode("full")}>
-              {t("agentEditor.im.outputFull")}
-            </Chip>
+            <PillToggle
+              value={outputMode}
+              onChange={setOutputMode}
+              options={[
+                { value: "stream", label: t("agentEditor.im.outputStream") },
+                { value: "full", label: t("agentEditor.im.outputFull") },
+              ]}
+            />
           </div>
         </div>
 
@@ -331,12 +329,14 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
           <div className="caption-uppercase mb-2 text-muted">{t("agentEditor.im.sectionSession")}</div>
           <div className="flex gap-4">
             <span className="title-sm flex items-center">{t("agentEditor.im.sessionMode")}</span>
-            <Chip active={sessionMode === "user"} onClick={() => setSessionMode("user")}>
-              {t("agentEditor.im.sessionModeUser")}
-            </Chip>
-            <Chip active={sessionMode === "thread"} disabled={!supportsThread(platform)} onClick={() => setSessionMode("thread")}>
-              {t("agentEditor.im.sessionModeThread")}
-            </Chip>
+            <PillToggle
+              value={sessionMode}
+              onChange={setSessionMode}
+              options={[
+                { value: "user", label: t("agentEditor.im.sessionModeUser") },
+                { value: "thread", label: t("agentEditor.im.sessionModeThread"), disabled: !supportsThread(platform) },
+              ]}
+            />
           </div>
         </div>
 
@@ -491,24 +491,29 @@ export function IMChannelInlineForm(props: Parameters<typeof IMChannelFields>[0]
   );
 }
 
-function Chip({ active, disabled, onClick, children }: {
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+/* Segmented pill toggle — one track, sliding accent on the active option. */
+function PillToggle<T extends string>({ value, onChange, options }: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string; disabled?: boolean }[];
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`h-8 rounded-full border px-3.5 text-[13px] font-medium transition-colors ${
-        active
-          ? "border-primary bg-primary text-on-primary"
-          : "border-hairline-strong bg-surface-card text-body hover:border-ink hover:text-ink"
-      } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
-    >
-      {children}
-    </button>
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/50 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          disabled={o.disabled}
+          onClick={() => onChange(o.value)}
+          className={`h-7 rounded-full px-3.5 text-[13px] font-medium transition-all ${
+            value === o.value
+              ? "bg-primary text-on-primary shadow-sm"
+              : "text-muted hover:text-ink"
+          } ${o.disabled ? "cursor-not-allowed opacity-40 hover:text-muted" : ""}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -100,35 +100,37 @@ function IMChannelsPanel() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <p className="caption max-w-[560px] text-muted">{t("imp.subtitle")}</p>
-        <div className="flex items-center gap-2">
-          {/* Hidden while the create form is open — the form carries the
-              (single) agent picker for that moment. */}
-          {agents.length > 1 && !createOpen && (
-            <Select
-              className="w-[200px]"
-              value={agentFilter}
-              onChange={setAgentFilter}
-              options={[
-                { value: "", label: t("imp.allAgents") },
-                ...agents.map((a) => ({ value: a.id, label: a.name })),
-              ]}
-            />
-          )}
-          <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>
-            <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            {t("common.refresh")}
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
-            <IconPlus className="h-3.5 w-3.5" /> {t("agentEditor.im.addChannel")}
-          </button>
+      {/* Header controls — hidden entirely while the create form is open,
+          so there's only one "Thêm kênh" on screen at a time. */}
+      {!createOpen && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <p className="caption max-w-[560px] text-muted">{t("imp.subtitle")}</p>
+          <div className="flex items-center gap-2">
+            {agents.length > 1 && (
+              <Select
+                className="w-[200px]"
+                value={agentFilter}
+                onChange={setAgentFilter}
+                options={[
+                  { value: "", label: t("imp.allAgents") },
+                  ...agents.map((a) => ({ value: a.id, label: a.name })),
+                ]}
+              />
+            )}
+            <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>
+              <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              {t("common.refresh")}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
+              <IconPlus className="h-3.5 w-3.5" /> {t("agentEditor.im.addChannel")}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {error && <p className="caption mb-4 text-error">{error}</p>}
       {loading && <p className="caption text-muted">…</p>}
-      {!loading && filtered.length === 0 && !error && (
+      {!createOpen && !loading && filtered.length === 0 && !error && (
         <p className="caption text-muted-soft">{t("imp.empty")}</p>
       )}
 
