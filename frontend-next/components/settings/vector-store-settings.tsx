@@ -13,9 +13,11 @@ import {
 import { IconBook, IconPlus, IconPulse, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function VectorStoreSettings() {
   const { t } = useT();
+  const confirmAction = useConfirm();
   const [stores, setStores] = useState<VectorStoreEntity[]>([]);
   const [types, setTypes] = useState<VectorStoreTypeInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +79,14 @@ export function VectorStoreSettings() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("vstore.confirmDelete"))) return;
+    if (
+      !(await confirmAction({
+        title: t("common.delete"),
+        message: t("vstore.confirmDelete"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await deleteVectorStore(id);
       await loadData();

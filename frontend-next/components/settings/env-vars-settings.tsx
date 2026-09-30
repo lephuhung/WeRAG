@@ -12,9 +12,11 @@ import {
 } from "@/lib/api/env-vars";
 import { IconSettings, IconTrash } from "@/components/icons";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function EnvVarsSettings() {
   const { t } = useT();
+  const confirmAction = useConfirm();
   const [groups, setGroups] = useState<ConfigEnvGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -63,7 +65,8 @@ export function EnvVarsSettings() {
   };
 
   const handleDelete = async (type: "sandbox" | "skill", targetId: string, name: string) => {
-    if (!confirm(t("envv.confirmClear", { name }))) return;
+    if (!(await confirmAction({ title: t("common.delete"), message: t("envv.confirmClear", { name }), danger: true })))
+      return;
     try {
       if (type === "sandbox") {
         await deleteMySandboxEnv(targetId, name);

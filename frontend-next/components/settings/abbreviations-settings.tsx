@@ -284,7 +284,8 @@ export function AbbreviationsSettings() {
 
       {/* Table */}
       <div className="overflow-hidden rounded-xl border border-hairline">
-        <table className="w-full text-left border-collapse text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
               <th className="py-3 px-4 w-36">{t("abbrev.shortForm")}</th>
@@ -371,7 +372,8 @@ export function AbbreviationsSettings() {
               ))
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}

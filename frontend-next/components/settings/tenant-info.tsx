@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/api/auth";
 import { deleteTenant, fetchAllTenantMembers, leaveTenant, updateTenant, type TenantInfo as TenantRecord } from "@/lib/api/tenants";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 import { useRouter } from "next/navigation";
 
 const ownerCount = (members: { role: string }[]) => members.filter((m) => m.role === "owner").length;
@@ -27,6 +28,7 @@ function formatBytes(bytes: number): string {
 
 export function TenantInfo() {
   const { t, locale } = useT();
+  const confirmAction = useConfirm();
   const router = useRouter();
   const auth = useAuth();
 
@@ -138,7 +140,8 @@ export function TenantInfo() {
 
   const leave = async () => {
     if (!info) return;
-    if (!window.confirm(t("tenant.leaveConfirm"))) return;
+    if (!(await confirmAction({ title: t("common.confirm"), message: t("tenant.leaveConfirm"), danger: true })))
+      return;
     const res = await leaveTenant(Number(info.id));
     if (res.success) {
       await auth.logout();
