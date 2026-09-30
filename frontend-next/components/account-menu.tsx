@@ -11,6 +11,7 @@ import { listAbbreviations } from "@/lib/api/abbreviations";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
+import { useToast } from "@/components/toast";
 import { SettingsModal } from "@/components/settings-modal";
 import {
   IconBook,
@@ -38,11 +39,28 @@ export function AccountMenu() {
   const [settingsSection, setSettingsSection] = useState("general");
   const [pending, setPending] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+  // Last known pending total (null until the first successful poll) so a
+  // rise can be toasted as "new suggestion awaiting approval".
+  const pendingRef = useRef<number | null>(null);
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const tLatest = useRef(t);
+  tLatest.current = t;
 
   const refreshPending = useCallback(async () => {
     try {
       const res = await listAbbreviations({ isActive: false, page: 1, pageSize: 1 });
-      setPending(res.total ?? 0);
+      const total = res.total ?? 0;
+      const prev = pendingRef.current;
+      pendingRef.current = total;
+      setPending(total);
+      if (prev !== null && total > prev) {
+        toastRef.current.info(
+          tLatest.current("acct.abbrevPendingToast", { count: total }),
+          () => window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "abbreviations" })),
+        );
+      }
     } catch {
       /* non-fatal — badge just stays stale */
     }
@@ -63,6 +81,17 @@ export function AccountMenu() {
   }, [isTenantAdmin, refreshPending]);
 
   useEffect(() => setOpen(false), [pathname]);
+
+  /* Toast notifications (e.g. new pending abbreviation) open the settings
+   * modal by dispatching weknora:open-settings with the section as detail. */
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      setSettingsSection((e as CustomEvent<string>).detail || "general");
+      setSettingsOpen(true);
+    };
+    window.addEventListener("weknora:open-settings", onOpen);
+    return () => window.removeEventListener("weknora:open-settings", onOpen);
+  }, []);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);

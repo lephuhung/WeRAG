@@ -29,6 +29,9 @@ export function createSessionActivityState(
   entries: Map<string, SessionActivityRecord>,
   fetchMessages: (sessionId: string) => Promise<ActivityMessage[]>,
   onChange: () => void = () => {},
+  // Fired when a detached turn completes server-side — the UI layer uses this
+  // to notify the user ("chat finished while you were elsewhere").
+  onDetachedComplete: (sessionId: string) => void = () => {},
 ): SessionActivityState {
   const pending = new Set<string>();
 
@@ -73,6 +76,7 @@ export function createSessionActivityState(
           if (message?.is_completed || (!message && entry.messageId)) {
             entries.delete(sessionId);
             onChange();
+            onDetachedComplete(sessionId);
           } else if (message) {
             const messageId = message.id ?? entry.messageId;
             if (messageId !== entry.messageId || entry.failures > 0) {

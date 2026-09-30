@@ -15,6 +15,7 @@ import { useCommandPalette } from "@/components/command-palette/command-palette-
 import { AccountMenu } from "@/components/account-menu";
 import { BrandLogo } from "@/components/brand-logo";
 import { Modal } from "@/components/modal";
+import { SessionCompleteToasts } from "@/components/session-complete-toasts";
 import {
   IconAgent,
   IconArtifact,
@@ -194,7 +195,9 @@ export function Sidebar() {
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-ink/20 lg:hidden"
+          /* Click-to-close layer that also dims + blurs the page behind the
+           * mobile drawer, keeping focus on the sidebar. */
+          className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />
@@ -287,6 +290,10 @@ export function Sidebar() {
       </div>
 
       </aside>
+
+      <SessionCompleteToasts
+        titles={new Map<string, string>((live ?? []).map((s) => [s.id, s.title ?? ""]))}
+      />
 
       {/* Rendered outside <aside>: the drawer's transform would make the modal's
           fixed positioning resolve against the sidebar instead of the viewport. */}
