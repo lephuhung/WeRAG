@@ -5,7 +5,11 @@
 Agent Skills 是一种让 Agent 通过阅读"使用说明书"来学习新能力的扩展机制。与传统的硬编码工具不同，Skills 通过注入到 System Prompt 来扩展 Agent 的能力，遵循 **Progressive Disclosure（渐进式披露）** 的设计理念。
 目前仅支持带**智能推理**能力的智能体使用。前端可在智能体的编辑页面找到相关配置
 
-已安装到沙箱镜像的技能统一通过 `shell_exec(skill_name=..., command=...)` 执行；`read_file(path="skill://<name>/SKILL.md")` 返回具体执行方式。独立的 `execute_skill_script` 已删除；宿主机技能也通过同一 Shell 入口准备资源并执行，无 Shell 时仅可阅读技能。工具设计与沙箱迁移要求见 [Agent Tools 设计评审与重构](agent-tools-design.md)。
+已安装到沙箱镜像的**可执行**技能通过 `shell_exec(skill_name=..., command=...)` 执行；`read_file(path="skill://<name>/SKILL.md")` 返回对应技能的说明。应用内置的四个越南法律技能是**只读说明**，不能执行，也不需要沙箱。独立的 `execute_skill_script` 已删除；宿主机技能也通过同一 Shell 入口准备资源并执行，无 Shell 时仅可阅读技能。工具设计与沙箱迁移要求见 [Agent Tools 设计评审与重构](agent-tools-design.md)。
+
+### 内置越南法律技能（Smart Reasoning）
+
+`examples/skills/` 下的 `legal-document-summary`、`legal-document-comparison`、`legal-latest-guidance`、`legal-question-abbreviations` 四份 `SKILL.md` 在构建时嵌入应用。普通 Smart Reasoning 智能体默认能看到它们的名称和描述，并按需通过 `read_file(path="skill://legal-document-comparison/SKILL.md")` 读取说明；无需沙箱、zip 安装或开启租户技能。`none`/`selected` 仅控制租户技能；与内置技能重名的租户包不覆盖内置内容，`shell_exec(skill_name=...)` 也不能执行此重名包。技能只能引导智能体使用当前 WeKnora 中有权读取的法律资料，不会自行从外部搜索资料或扩大知识库权限。编辑 Markdown 后须重新构建和部署应用。Quick Answer/RAG 暂不使用这些内置技能；租户技能的 catalog/配置界面不一定列出内置技能，仍按下文流程安装其他自定义技能。
 
 ### 核心特性
 
@@ -112,7 +116,7 @@ type AgentConfig struct {
 }
 ```
 
-生产对话只使用当前智能体所选沙箱配置上的已安装技能（`TenantSkills`）。`SkillDirs` 仅用于测试或把宿主技能目录 stage 进会话，不再有部署级 `skills/preloaded`。
+租户技能在生产对话中只使用当前智能体所选沙箱配置上的已安装技能（`TenantSkills`）；上文四个内置只读技能不受该选择限制。`SkillDirs` 仅用于测试或把宿主技能目录 stage 进会话，不再有部署级 `skills/preloaded`。
 
 ### 配置示例
 
@@ -222,7 +226,7 @@ Skills 功能通过两个工具与 Agent 交互：
 {"path": "scripts/analyze.py"}
 ```
 
-两类内容共用分页、输出预算和二进制抑制；内容较长时按返回的 `next_offset` 继续。技能资源经过技能白名单和包内路径校验，即使没有沙箱也能阅读。`skill://` 代表技能包资源，不是可用于 Shell 的路径；运行脚本时使用加载结果给出的执行方式。
+两类内容共用分页、输出预算和二进制抑制；内容较长时按返回的 `next_offset` 继续。租户技能资源经过技能白名单和包内路径校验；内置技能不受租户白名单限制，且即使没有沙箱也能阅读。`skill://` 代表技能包资源，不是可用于 Shell 的路径；只有可执行技能才会返回脚本执行方式。
 
 新会话仅注册 `read_file`，不再同时暴露 `read_skill` 和 `read_sandbox_file`。旧的 Tool 实现已删除；名称只保留用于识别和展示旧记录。
 
