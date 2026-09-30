@@ -90,7 +90,8 @@ func knowledgeBelongsToKB(knowledges []*types.Knowledge, knowledgeID string, kbI
 
 func newTagTargetSessionService() *sessionService {
 	return &sessionService{
-		cfg: &config.Config{},
+		cfg:            &config.Config{},
+		systemSettings: defaultChatSystemSettings{},
 		knowledgeBaseService: &tagTargetKnowledgeBaseService{
 			kbs: map[string]*types.KnowledgeBase{
 				"doc-kb": {ID: "doc-kb", TenantID: 100, Type: types.KnowledgeBaseTypeDocument},

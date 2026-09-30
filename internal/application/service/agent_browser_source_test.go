@@ -10,8 +10,19 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
 )
+
+// These agent-config tests use the default platform switches, without a
+// settings database. Embedding the interface leaves unexpected methods loud.
+type defaultChatSystemSettings struct {
+	interfaces.SystemSettingService
+}
+
+func (defaultChatSystemSettings) GetBool(_ context.Context, _, _ string, fallback bool) bool {
+	return fallback
+}
 
 type browserSourceKBService struct{ fakeAgentKnowledgeBaseService }
 
@@ -80,7 +91,10 @@ func TestBrowserSourceUnavailableDoesNotCreateFallbackEngine(t *testing.T) {
 }
 
 func TestBrowserSourceConfigPreservesOtherSelectionsAndResetsNextTurn(t *testing.T) {
-	svc := &sessionService{cfg: &config.Config{}, webSearchProviderRepo: &emptyWebSearchProviderRepo{}}
+	svc := &sessionService{
+		cfg: &config.Config{}, webSearchProviderRepo: &emptyWebSearchProviderRepo{},
+		systemSettings: defaultChatSystemSettings{},
+	}
 	req := &types.QARequest{
 		LocalBrowserEnabled: true, WebSearchEnabled: true,
 		Session: &types.Session{ID: "session", TenantID: 1},
@@ -113,7 +127,7 @@ func TestAgentPromptReferencesReachBothRuntimePaths(t *testing.T) {
 		AgentSystemPrompt: []config.PromptTemplate{{ID: "agent", Content: "Latest agent template"}},
 		SystemPrompt:      []config.PromptTemplate{{ID: "normal", Content: "Latest normal template"}},
 		ContextTemplate:   []config.PromptTemplate{{ID: "context", Content: "Latest {{contexts}}"}},
-	}}, webSearchProviderRepo: &emptyWebSearchProviderRepo{}}
+	}}, webSearchProviderRepo: &emptyWebSearchProviderRepo{}, systemSettings: defaultChatSystemSettings{}}
 	a := &types.CustomAgent{TenantID: 1, Config: types.CustomAgentConfig{
 		AgentMode: types.AgentModeSmartReasoning, SystemPromptID: "agent", ContextTemplateID: "context",
 	}}

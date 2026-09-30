@@ -26,6 +26,7 @@ func TestAgentConfigCarriesTheMemoryPreference(t *testing.T) {
 			svc := &sessionService{
 				cfg:                   &config.Config{},
 				webSearchProviderRepo: &emptyWebSearchProviderRepo{},
+				systemSettings:        defaultChatSystemSettings{},
 			}
 			req := &types.QARequest{
 				Session: &types.Session{ID: "session-1", TenantID: 1},
@@ -49,6 +50,7 @@ func TestAgentConfigCarriesMaxCompletionTokens(t *testing.T) {
 	svc := &sessionService{
 		cfg:                   &config.Config{},
 		webSearchProviderRepo: &emptyWebSearchProviderRepo{},
+		systemSettings:        defaultChatSystemSettings{},
 	}
 	req := &types.QARequest{
 		Session: &types.Session{ID: "session-1", TenantID: 1},
