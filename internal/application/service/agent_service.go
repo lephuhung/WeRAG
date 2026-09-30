@@ -246,10 +246,6 @@ func (s *agentService) CreateAgentEngine(
 	engine.SetAppConfig(s.cfg)
 	pinnedMCP := s.resolvePinnedMCPServiceInfos(ctx, config)
 	s.attachPinnedMCPToolNames(toolRegistry, pinnedMCP)
-	engine.SetPinnedMentions(
-		pinnedMCP,
-		s.resolvePinnedSkillInfos(config),
-	)
 	engine.SetQuestionOrigin(s.resolveQuestionOriginInfo(ctx, config.QuestionOrigin, config.SearchTargets, kbInfos))
 
 	// Non-vision chat models use the configured VLM to describe tool images.
@@ -281,6 +277,10 @@ func (s *agentService) CreateAgentEngine(
 				len(skillsManager.GetAllMetadata()))
 		}
 	}
+
+	// Validate @Skill priority against the same manager and source precedence
+	// used by the prompt and read_file, after the manager is attached.
+	engine.SetPinnedMentions(pinnedMCP, s.resolvePinnedSkillInfos(config, engine.GetSkillsManager()))
 
 	// Browser operations are native BrowserSkill RPCs, independent of shell and sandbox setup.
 	if config.LocalBrowserEnabled && s.browserSkill.Enabled() && !config.SkillInstallMode() {
@@ -1542,36 +1542,27 @@ func fallbackPinnedMCPInfos(ids []string) []*agent.PinnedMCPServiceInfo {
 	return result
 }
 
-func (s *agentService) resolvePinnedSkillInfos(config *types.AgentConfig) []*agent.PinnedSkillInfo {
-	if len(config.PinnedSkillNames) == 0 {
+func (s *agentService) resolvePinnedSkillInfos(config *types.AgentConfig, manager *skills.Manager) []*agent.PinnedSkillInfo {
+	if len(config.PinnedSkillNames) == 0 || manager == nil {
 		return nil
 	}
 
 	descByName := make(map[string]string)
-	if len(config.SkillDirs) > 0 {
-		loader := skills.NewLoader(config.SkillDirs)
-		if metadata, err := loader.DiscoverSkills(); err == nil {
-			for _, meta := range metadata {
-				if meta != nil {
-					descByName[meta.Name] = meta.Description
-				}
-			}
-		}
-	}
-	for _, row := range config.TenantSkills {
-		if row != nil && row.Name != "" {
-			descByName[row.Name] = row.Description
+	for _, meta := range manager.GetAllMetadata() {
+		if meta != nil {
+			descByName[meta.Name] = meta.Description
 		}
 	}
 
 	result := make([]*agent.PinnedSkillInfo, 0, len(config.PinnedSkillNames))
 	for _, name := range config.PinnedSkillNames {
-		if name == "" {
+		description, available := descByName[name]
+		if !available {
 			continue
 		}
 		result = append(result, &agent.PinnedSkillInfo{
 			Name:        name,
-			Description: descByName[name],
+			Description: description,
 		})
 	}
 	return result

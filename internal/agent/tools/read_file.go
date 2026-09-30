@@ -145,7 +145,9 @@ func (t *ReadFileTool) readSkillResource(ctx context.Context, input ReadFileInpu
 		fmt.Fprintf(&b, "# %s\n\n%s\n\n", skill.Name, skill.Description)
 		// Keep execution guidance before potentially long instructions so the
 		// first page identifies the correct runtime even for large skills.
-		if t.shell {
+		if t.skills.IsBuiltinSkill(name) {
+			b.WriteString("Read-only instructions: this built-in skill has no executable scripts or sandbox directory.\n\n")
+		} else if t.shell {
 			dir, installed := t.skills.SandboxSkillDir(name)
 			if !installed {
 				dir = "a session directory prepared automatically from this skill package"

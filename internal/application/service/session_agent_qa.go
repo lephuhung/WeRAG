@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/agent"
+	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -504,7 +505,7 @@ func mergeResolvedTagKnowledgeIDs(
 // @mention must still be able to read and execute it. Mentioning a skill only
 // prioritizes it, it never revokes access to the agent's configured set.
 //
-// It is a no-op when no skills were mentioned or skills are disabled.
+// Built-in legal skills remain eligible even when tenant skills are disabled.
 func applyPerRequestSkillScope(
 	ctx context.Context,
 	agentConfig *types.AgentConfig,
@@ -514,18 +515,20 @@ func applyPerRequestSkillScope(
 	if len(requested) == 0 {
 		return
 	}
-	if skillsMode == "none" || skillsMode == "" {
-		logger.Warnf(ctx, "Ignoring @skill mention: agent skills selection is disabled (mode=%s)", skillsMode)
-		return
+	var eligibleTenant map[string]bool
+	if agentConfig.SkillsEnabled && skillsMode != "none" && skillsMode != "" {
+		eligibleTenant = make(map[string]bool)
+		for _, name := range pinPreservingRequestOrder(requested, agentConfig.AllowedSkills) {
+			eligibleTenant[name] = true
+		}
 	}
-	if !agentConfig.SkillsEnabled {
-		return
+	var pinned []string
+	for _, name := range dedupPreservingOrder(requested) {
+		if skills.IsBuiltinName(name) || eligibleTenant[name] {
+			pinned = append(pinned, name)
+		}
 	}
-	// PinnedSkillNames carries only mentioned skills that are currently
-	// allowed, so the <must_use> hint never directs the model at a skill it
-	// cannot load. An empty AllowedSkills means all skills are allowed,
-	// matching Manager.isSkillAllowed, so every mention is pinned in that case.
-	agentConfig.PinnedSkillNames = pinPreservingRequestOrder(requested, agentConfig.AllowedSkills)
+	agentConfig.PinnedSkillNames = pinned
 	logger.Infof(ctx, "Applied per-request @skill scope: requested=%v effective=%v pinned=%v",
 		requested, agentConfig.AllowedSkills, agentConfig.PinnedSkillNames)
 }
