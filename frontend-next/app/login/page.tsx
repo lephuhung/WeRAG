@@ -24,7 +24,7 @@ function LoginForm() {
     try {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Accept-Language": "zh-CN" },
+        headers: { "Content-Type": "application/json", "Accept-Language": "vi-VN" },
         body: JSON.stringify({ email, password, two_factor_code: totpCode }),
       });
       const data = await res.json().catch(() => null);

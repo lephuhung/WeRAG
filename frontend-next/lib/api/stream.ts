@@ -119,14 +119,14 @@ function readTokens(): { token: string | null; refreshToken: string | null; tena
 }
 
 // Same contract as api-client's Accept-Language: backend Language() reads the
-// first tag (streame.ts sent the i18n locale); "zh-CN" fallback preserved.
+// first tag (streame.ts sent the i18n locale); Vietnamese is the fallback.
 function acceptLanguage(): string {
   try {
     const raw = localStorage.getItem("werag_locale")?.trim() || localStorage.getItem("locale")?.trim() || "";
     const base = raw.split(/[-_]/)[0]?.toLowerCase() || "";
-    return base === "en" ? "en-US" : base === "vi" ? "vi-VN" : base === "zh" ? "zh-CN" : "zh-CN";
+    return base === "en" ? "en-US" : "vi-VN";
   } catch {
-    return "zh-CN";
+    return "vi-VN";
   }
 }
 
