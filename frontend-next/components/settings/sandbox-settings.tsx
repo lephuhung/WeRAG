@@ -18,6 +18,9 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 
+/* Same default the Vue editor pre-fills (SandboxConfigEditorDrawer.vue). */
+const DEFAULT_DOCKER_IMAGE = "wechatopenai/weknora-sandbox:main";
+
 export function SandboxSettings() {
   const { t } = useT();
   const auth = useAuth();
@@ -46,6 +49,14 @@ export function SandboxSettings() {
   const [sandboxType, setSandboxType] = useState<"docker" | "cube" | "e2b">("docker");
   const [endpoint, setEndpoint] = useState("");
   const [apiKey, setApiKey] = useState("");
+  // Fields the Vue editor (SandboxConfigEditorDrawer) collects per backend.
+  const [dockerImage, setDockerImage] = useState("");
+  const [tlsCertPath, setTlsCertPath] = useState("");
+  const [allowPrivate, setAllowPrivate] = useState(false);
+  const [apiUrl, setApiUrl] = useState("");
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [sandboxDomain, setSandboxDomain] = useState("");
+  const [dnsServers, setDnsServers] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Inventory Modal
@@ -95,6 +106,13 @@ export function SandboxSettings() {
     setDesc("");
     setSandboxType("docker");
     setEndpoint("unix:///var/run/docker.sock");
+    setDockerImage(DEFAULT_DOCKER_IMAGE);
+    setTlsCertPath("");
+    setAllowPrivate(false);
+    setApiUrl("");
+    setProxyUrl("");
+    setSandboxDomain("");
+    setDnsServers("");
     setApiKey("");
     setModalOpen(true);
   };
@@ -105,16 +123,33 @@ export function SandboxSettings() {
     setName(cfg.name);
     setDesc(cfg.description || "");
     const st = (cfg.sandbox_type as "docker" | "cube" | "e2b") || "docker";
+    const c = cfg.config || {};
     setSandboxType(st);
+    setAllowPrivate(c.allow_private_endpoints === true);
+    setApiKey("");
+    setProxyUrl("");
+    setSandboxDomain("");
+    setDnsServers("");
+    setApiUrl("");
     if (st === "docker") {
-      setEndpoint(cfg.config?.docker?.endpoint || "unix:///var/run/docker.sock");
-      setApiKey("");
+      setEndpoint(c.docker?.host || c.docker?.endpoint || "unix:///var/run/docker.sock");
+      setDockerImage(c.docker?.image || DEFAULT_DOCKER_IMAGE);
+      setTlsCertPath(c.docker?.tls_cert_path || "");
     } else if (st === "cube") {
-      setEndpoint(cfg.config?.cube?.endpoint || "");
-      setApiKey("");
-    } else if (st === "e2b") {
       setEndpoint("");
-      setApiKey("");
+      setDockerImage("");
+      setTlsCertPath("");
+      setApiUrl(c.cube?.api_url || c.cube?.endpoint || "");
+      setProxyUrl(c.cube?.proxy_url || "");
+      setSandboxDomain(c.cube?.sandbox_domain || "");
+      setDnsServers((c.cube?.dns_servers ?? []).join(", "));
+    } else {
+      setEndpoint("");
+      setDockerImage("");
+      setTlsCertPath("");
+      setApiUrl(c.e2b?.api_url || "");
+      setSandboxDomain(c.e2b?.sandbox_domain || "");
+      setProxyUrl(c.e2b?.proxy_url || "");
     }
     setModalOpen(true);
   };
@@ -126,17 +161,40 @@ export function SandboxSettings() {
     setSaving(true);
     setError("");
     try {
-      const configData: SandboxConfigData = { type: sandboxType };
+      const configData: SandboxConfigData = {
+        // The backend validates "sandbox_type" (Vue's collectPayload sends it
+        // at the config top level); "type" kept for legacy readers.
+        type: sandboxType,
+        sandbox_type: sandboxType,
+      };
+      if (allowPrivate) configData.allow_private_endpoints = true;
       if (sandboxType === "docker") {
-        configData.docker = { endpoint: endpoint.trim() || undefined };
+        const host = endpoint.trim() || undefined;
+        configData.docker = {
+          // Legacy records read "endpoint"; the Vue editor persists "host".
+          endpoint: host,
+          host,
+          image: dockerImage.trim() || DEFAULT_DOCKER_IMAGE,
+          ...(tlsCertPath.trim() ? { tls_cert_path: tlsCertPath.trim() } : {}),
+        };
       } else if (sandboxType === "cube") {
+        const url = apiUrl.trim() || undefined;
         configData.cube = {
-          endpoint: endpoint.trim() || undefined,
+          endpoint: url,
+          api_url: url,
+          ...(proxyUrl.trim() ? { proxy_url: proxyUrl.trim() } : {}),
+          ...(sandboxDomain.trim() ? { sandbox_domain: sandboxDomain.trim() } : {}),
           ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
+          ...(dnsServers.split(",").map((s) => s.trim()).filter(Boolean).length
+            ? { dns_servers: dnsServers.split(",").map((s) => s.trim()).filter(Boolean) }
+            : {}),
         };
       } else if (sandboxType === "e2b") {
         configData.e2b = {
           ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
+          ...(apiUrl.trim() ? { api_url: apiUrl.trim() } : {}),
+          ...(sandboxDomain.trim() ? { sandbox_domain: sandboxDomain.trim() } : {}),
+          ...(proxyUrl.trim() ? { proxy_url: proxyUrl.trim() } : {}),
         };
       }
 
@@ -423,16 +481,39 @@ export function SandboxSettings() {
           </label>
 
           {sandboxType === "docker" && (
-            <label className="block">
-              <span className="caption mb-1.5 block text-muted">{t("sbox.dockerEndpoint")}</span>
-              <input
-                type="text"
-                placeholder="unix:///var/run/docker.sock or tcp://127.0.0.1:2375"
-                className="input font-mono text-xs"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-              />
-            </label>
+            <>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.dockerImage")}</span>
+                <input
+                  type="text"
+                  required
+                  placeholder={DEFAULT_DOCKER_IMAGE}
+                  className="input font-mono text-xs"
+                  value={dockerImage}
+                  onChange={(e) => setDockerImage(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.dockerEndpoint")}</span>
+                <input
+                  type="text"
+                  placeholder="unix:///var/run/docker.sock or tcp://127.0.0.1:2375"
+                  className="input font-mono text-xs"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.tlsCertPath")}</span>
+                <input
+                  type="text"
+                  placeholder="/etc/weknora/docker-certs"
+                  className="input font-mono text-xs"
+                  value={tlsCertPath}
+                  onChange={(e) => setTlsCertPath(e.target.value)}
+                />
+              </label>
+            </>
           )}
 
           {sandboxType === "cube" && (
@@ -442,10 +523,30 @@ export function SandboxSettings() {
                 <input
                   type="text"
                   required
-                  placeholder="https://cube.internal:8443"
+                  placeholder="http://cube.example.com:33000"
                   className="input font-mono text-xs"
-                  value={endpoint}
-                  onChange={(e) => setEndpoint(e.target.value)}
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.proxyUrl")}</span>
+                <input
+                  type="text"
+                  placeholder="http://cube.example.com:80"
+                  className="input font-mono text-xs"
+                  value={proxyUrl}
+                  onChange={(e) => setProxyUrl(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.sandboxDomain")}</span>
+                <input
+                  type="text"
+                  placeholder="cube.app"
+                  className="input font-mono text-xs"
+                  value={sandboxDomain}
+                  onChange={(e) => setSandboxDomain(e.target.value)}
                 />
               </label>
               <label className="block">
@@ -459,23 +560,73 @@ export function SandboxSettings() {
                   onChange={(e) => setApiKey(e.target.value)}
                 />
               </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.dnsServers")}</span>
+                <input
+                  type="text"
+                  placeholder="8.8.8.8, 1.1.1.1"
+                  className="input font-mono text-xs"
+                  value={dnsServers}
+                  onChange={(e) => setDnsServers(e.target.value)}
+                />
+              </label>
             </>
           )}
 
           {sandboxType === "e2b" && (
-            <label className="block">
-              <span className="caption mb-1.5 block text-muted">
-                {t("sbox.e2bKey")}{editingConfig ? ` ${t("sbox.keepCurrent")}` : ""}
-              </span>
-              <input
-                type="password"
-                required={!editingConfig}
-                className="input font-mono text-xs"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </label>
+            <>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">
+                  {t("sbox.e2bKey")}{editingConfig ? ` ${t("sbox.keepCurrent")}` : ""}
+                </span>
+                <input
+                  type="password"
+                  required={!editingConfig}
+                  className="input font-mono text-xs"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.apiUrl")}</span>
+                <input
+                  type="text"
+                  placeholder="https://api.e2b.app"
+                  className="input font-mono text-xs"
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.sandboxDomain")}</span>
+                <input
+                  type="text"
+                  placeholder="e2b.app"
+                  className="input font-mono text-xs"
+                  value={sandboxDomain}
+                  onChange={(e) => setSandboxDomain(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="caption mb-1.5 block text-muted">{t("sbox.proxyUrl")}</span>
+                <input
+                  type="text"
+                  placeholder="http://sandbox-gateway.example.com"
+                  className="input font-mono text-xs"
+                  value={proxyUrl}
+                  onChange={(e) => setProxyUrl(e.target.value)}
+                />
+              </label>
+            </>
           )}
+
+          <label className="flex items-start justify-between gap-4 rounded-[10px] border border-hairline px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-ink">{t("sbox.allowPrivate")}</span>
+              <span className="caption mt-0.5 block text-muted">{t("sbox.allowPrivateHint")}</span>
+            </span>
+            <Toggle checked={allowPrivate} onChange={setAllowPrivate} label={t("sbox.allowPrivate")} />
+          </label>
 
           <div className="flex justify-end gap-3 pt-3">
             <button
