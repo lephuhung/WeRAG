@@ -26,6 +26,7 @@ import {
 } from "@/lib/api/agents";
 import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { KnowledgeBaseRow } from "@/lib/api/knowledge";
+import { IMPlatformIcon } from "@/components/agents/im-platform-icon";
 
 type Platform = IMChannel["platform"];
 
@@ -34,6 +35,11 @@ const PLATFORMS: { value: Platform; label: string; consoleUrl?: string }[] = [
   { value: "slack", label: "Slack", consoleUrl: "https://api.slack.com/apps" },
   { value: "feishu", label: "Feishu", consoleUrl: "https://open.feishu.cn/" },
   { value: "lark", label: "Lark", consoleUrl: "https://open.larksuite.com/" },
+  { value: "wecom", label: "WeCom" },
+  { value: "wechat", label: "WeChat" },
+  { value: "dingtalk", label: "DingTalk" },
+  { value: "qqbot", label: "QQ Bot" },
+  { value: "mattermost", label: "Mattermost" },
 ];
 
 const THREAD_PLATFORMS: Platform[] = ["slack", "feishu", "lark", "telegram"];
@@ -275,7 +281,15 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
                 setPlatform(p);
                 if (p === "dingtalk") setMode("websocket");
               }}
-              options={PLATFORMS.map((p) => ({ value: p.value, label: p.label }))}
+              options={PLATFORMS.map((p) => ({
+                value: p.value,
+                label: (
+                  <span className="flex items-center gap-2">
+                    <IMPlatformIcon platform={p.value} className="h-4 w-4 shrink-0" />
+                    {p.label}
+                  </span>
+                ),
+              }))}
             />
           </label>
           <label className="block flex-1">
