@@ -101,6 +101,9 @@ type Manager struct {
 	// When set it is the only source the model is told about: a host skill
 	// directory is not what execution would find inside the sandbox.
 	tenantSource SkillSource
+	// builtinSource is immutable and takes precedence over same-named tenant
+	// or host skills. It never supplies an executable sandbox path.
+	builtinSource *BuiltinSource
 
 	// Configuration
 	skillDirs     []string
@@ -152,10 +155,25 @@ func (m *Manager) WithTenantSource(source SkillSource) *Manager {
 	return m
 }
 
+// WithBuiltinSource attaches application-provided, read-only skills during
+// construction, before Initialize can make them visible to an agent.
+func (m *Manager) WithBuiltinSource(source *BuiltinSource) *Manager {
+	m.builtinSource = source
+	return m
+}
+
+// IsBuiltinSkill reports whether the named skill must never be executed.
+func (m *Manager) IsBuiltinSkill(name string) bool {
+	return m != nil && m.builtinSource.Has(name)
+}
+
 // resolveSource decides which source owns one skill name. An installed image
 // is the only copy the sandbox can run: falling back to a host skill directory
 // would advertise files that are not in the image.
 func (m *Manager) resolveSource(skillName string) SkillSource {
+	if m.IsBuiltinSkill(skillName) {
+		return m.builtinSource
+	}
 	if m.tenantSource != nil {
 		return m.tenantSource
 	}
@@ -166,10 +184,31 @@ func (m *Manager) resolveSource(skillName string) SkillSource {
 // installed into the sandbox image, that image is the source of truth; a host
 // skill directory is not what execution would find inside the sandbox.
 func (m *Manager) discoverAllSkills() ([]*SkillMetadata, error) {
-	if m.tenantSource != nil {
-		return m.tenantSource.DiscoverSkills()
+	var all []*SkillMetadata
+	if m.builtinSource != nil {
+		builtins, err := m.builtinSource.DiscoverSkills()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, builtins...)
 	}
-	return m.loader.Reload()
+
+	var other []*SkillMetadata
+	var err error
+	if m.tenantSource != nil {
+		other, err = m.tenantSource.DiscoverSkills()
+	} else {
+		other, err = m.loader.Reload()
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, meta := range m.filterAllowedSkills(other) {
+		if meta != nil && !m.IsBuiltinSkill(meta.Name) {
+			all = append(all, meta)
+		}
+	}
+	return all, nil
 }
 
 // Initialize discovers all skills and caches their metadata
@@ -182,11 +221,6 @@ func (m *Manager) Initialize(ctx context.Context) error {
 	metadata, err := m.discoverAllSkills()
 	if err != nil {
 		return fmt.Errorf("failed to discover skills: %w", err)
-	}
-
-	// Filter by allowed skills if specified
-	if len(m.allowedSkills) > 0 {
-		metadata = m.filterAllowedSkills(metadata)
 	}
 
 	m.mu.Lock()
@@ -248,6 +282,9 @@ func (m *Manager) LoadSkill(ctx context.Context, skillName string) (*Skill, erro
 
 // isSkillAllowed checks if a skill is in the allowed list
 func (m *Manager) isSkillAllowed(skillName string) bool {
+	if m.IsBuiltinSkill(skillName) {
+		return true
+	}
 	if len(m.allowedSkills) == 0 {
 		return true
 	}
@@ -372,10 +409,6 @@ func (m *Manager) Reload(ctx context.Context) error {
 	metadata, err := m.discoverAllSkills()
 	if err != nil {
 		return err
-	}
-
-	if len(m.allowedSkills) > 0 {
-		metadata = m.filterAllowedSkills(metadata)
 	}
 
 	m.mu.Lock()
