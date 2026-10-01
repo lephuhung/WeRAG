@@ -4,9 +4,10 @@ import "github.com/Tencent/WeKnora/internal/types"
 
 // AuthLoginResponse is the HTTP-safe login / switch-tenant response shape.
 type AuthLoginResponse struct {
-	Success      bool               `json:"success"`
-	Message      string             `json:"message,omitempty"`
-	User         *types.User        `json:"user,omitempty"`
+	Success           bool               `json:"success"`
+	Message           string             `json:"message,omitempty"`
+	TwoFactorRequired bool               `json:"two_factor_required,omitempty"`
+	User              *types.User        `json:"user,omitempty"`
 	ActiveTenant *TenantResponse    `json:"active_tenant,omitempty"`
 	Memberships  []types.Membership `json:"memberships"`
 	Token        string             `json:"token,omitempty"`
@@ -35,13 +36,14 @@ func NewAuthLoginResponse(resp *types.LoginResponse) *AuthLoginResponse {
 		role = membershipRoleForTenant(resp.Memberships, resp.ActiveTenant.ID)
 	}
 	return &AuthLoginResponse{
-		Success:      resp.Success,
-		Message:      resp.Message,
-		User:         resp.User,
-		ActiveTenant: NewTenantResponseWithRole(resp.ActiveTenant, role),
-		Memberships:  resp.Memberships,
-		Token:        resp.Token,
-		RefreshToken: resp.RefreshToken,
+		Success:           resp.Success,
+		Message:           resp.Message,
+		TwoFactorRequired: resp.TwoFactorRequired,
+		User:              resp.User,
+		ActiveTenant:      NewTenantResponseWithRole(resp.ActiveTenant, role),
+		Memberships:       resp.Memberships,
+		Token:             resp.Token,
+		RefreshToken:      resp.RefreshToken,
 	}
 }
 
