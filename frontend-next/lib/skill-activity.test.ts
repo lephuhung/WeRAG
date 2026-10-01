@@ -98,3 +98,21 @@ describe("confirmed skill activity", () => {
     }
   });
 });
+
+it("reports the same skill for a confirmed live result and persisted history", () => {
+  const input = { toolName: "read_file", args: { path: "skill://legal-document-summary/SKILL.md" } };
+  const live = confirmedSkillActivity({
+    ...input,
+    confirmedSuccess: confirmedStreamToolResult("tool_result", undefined, true),
+  });
+  const history = confirmedSkillActivity({
+    ...input,
+    confirmedSuccess: confirmedHistoryToolResult({ success: true }),
+  });
+  assert.deepEqual(live, { kind: "read", name: "legal-document-summary" });
+  assert.deepEqual(history, { kind: "read", name: "legal-document-summary" });
+  assert.equal(confirmedSkillActivity({
+    ...input,
+    confirmedSuccess: confirmedHistoryToolResult(undefined),
+  }), null);
+});

@@ -14,6 +14,11 @@ import type { LocaleKey } from "@/lib/i18n";
 import type { StreamChunk } from "@/lib/api/stream";
 import type { ChatMessage } from "@/lib/api/chat";
 import {
+  confirmedHistoryToolResult,
+  confirmedSkillActivity,
+  confirmedStreamToolResult,
+} from "@/lib/skill-activity";
+import {
   IconBulb,
   IconSearch,
   IconGlobe,
@@ -44,6 +49,8 @@ export type ToolStep = {
   /** Call arguments (data.arguments of the tool_call event / step args). */
   args?: unknown;
   status: "pending" | "success" | "error";
+  /** An actual successful result, not an inferred status from finalizeSteps. */
+  confirmedSuccess?: boolean;
   output?: unknown;
   error?: string;
   /** Structured result payload — the `data` object of tool_result events
@@ -174,6 +181,7 @@ export function applyChunkToSteps(steps: AgentStepItem[], c: StreamChunk): void 
       steps.push(step);
     }
     step.status = success ? "success" : "error";
+    step.confirmedSuccess = confirmedStreamToolResult(kind, c.success, d?.success);
     if (toolName) step.tool_name = toolName;
     step.output = d?.output ?? c.tool_output ?? c.content;
     if (d) step.tool_data = d;
@@ -230,6 +238,7 @@ export function stepsFromHistory(m: ChatMessage): AgentStepItem[] {
         tool_name: toolName,
         args: call.target?.args || call.args,
         status: result?.success === false ? "error" : "success",
+        confirmedSuccess: confirmedHistoryToolResult(result),
         output: result?.output,
         error: result?.error,
         tool_data: data,
@@ -455,6 +464,18 @@ export function toolStepTitle(t: TFn, step: ToolStep): string {
     if (name === "execute_skill_script") return `${withDetail(loc(name), skillNameOf(step))}...`;
     if (SANDBOX_FILE_TOOLS.has(name)) return `${withDetail(loc(name), sandboxPathOf(step))}...`;
     return t("step.calling", { name: loc(name) });
+  }
+
+  const activity = !failed ? confirmedSkillActivity({
+    toolName: name,
+    args: step.args,
+    resultData: step.tool_data,
+    confirmedSuccess: step.confirmedSuccess === true,
+  }) : null;
+  if (activity) {
+    return t(activity.kind === "read" ? "step.skillUsed" : "step.skillExecuted", {
+      name: activity.name,
+    });
   }
 
   if (name === "search_knowledge" || name === "knowledge_search") {
