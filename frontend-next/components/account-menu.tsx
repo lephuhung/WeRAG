@@ -56,9 +56,12 @@ export function AccountMenu() {
       pendingRef.current = total;
       setPending(total);
       if (prev !== null && total > prev) {
+        // Longer dwell (20s): admin may be away from the screen when a new
+        // suggestion lands, and 5s was easy to miss.
         toastRef.current.info(
           tLatest.current("acct.abbrevPendingToast", { count: total }),
           () => window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "abbreviations" })),
+          20_000,
         );
       }
     } catch {

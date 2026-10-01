@@ -12,12 +12,18 @@ import {
 import { createPortal } from "react-dom";
 
 type ToastKind = "success" | "error" | "info";
-type ToastItem = { id: number; kind: ToastKind; message: string; onClick?: () => void };
+type ToastItem = {
+  id: number;
+  kind: ToastKind;
+  message: string;
+  onClick?: () => void;
+  durationMs?: number;
+};
 
 type Toast = {
-  success: (message: string, onClick?: () => void) => void;
-  error: (message: string, onClick?: () => void) => void;
-  info: (message: string, onClick?: () => void) => void;
+  success: (message: string, onClick?: () => void, durationMs?: number) => void;
+  error: (message: string, onClick?: () => void, durationMs?: number) => void;
+  info: (message: string, onClick?: () => void, durationMs?: number) => void;
 };
 
 const ToastContext = createContext<Toast>({
@@ -35,10 +41,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => setMounted(true), []);
 
-  const push = useCallback((kind: ToastKind, message: string, onClick?: () => void) => {
+  const push = useCallback((kind: ToastKind, message: string, onClick?: () => void, durationMs?: number) => {
     if (!message) return;
     const id = nextId.current++;
-    setItems((prev) => [...prev.slice(-4), { id, kind, message, onClick }]);
+    setItems((prev) => [...prev.slice(-4), { id, kind, message, onClick, durationMs }]);
   }, []);
 
   const dismiss = useCallback((id: number) => {
@@ -47,9 +53,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const api = useMemo<Toast>(
     () => ({
-      success: (m, onClick) => push("success", m, onClick),
-      error: (m, onClick) => push("error", m, onClick),
-      info: (m, onClick) => push("info", m, onClick),
+      success: (m, onClick, durationMs) => push("success", m, onClick, durationMs),
+      error: (m, onClick, durationMs) => push("error", m, onClick, durationMs),
+      info: (m, onClick, durationMs) => push("info", m, onClick, durationMs),
     }),
     [push],
   );
@@ -68,7 +74,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         createPortal(
           <div
             aria-live="polite"
-            className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2"
+            className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2"
           >
             {items.map((item) => (
               <ToastRow key={item.id} item={item} accent={accent[item.kind]} onDismiss={dismiss} />
@@ -90,22 +96,23 @@ function ToastRow({
   onDismiss: (id: number) => void;
 }) {
   const [leaving, setLeaving] = useState(false);
+  const duration = item.durationMs ?? AUTO_DISMISS_MS;
 
   useEffect(() => {
-    const hide = setTimeout(() => setLeaving(true), AUTO_DISMISS_MS);
-    const remove = setTimeout(() => onDismiss(item.id), AUTO_DISMISS_MS + 200);
+    const hide = setTimeout(() => setLeaving(true), duration);
+    const remove = setTimeout(() => onDismiss(item.id), duration + 200);
     return () => {
       clearTimeout(hide);
       clearTimeout(remove);
     };
-  }, [item.id, onDismiss]);
+  }, [item.id, item.durationMs, onDismiss, duration]);
 
   return (
     <div
       role="status"
       onClick={item.onClick}
       className={`card pointer-events-auto flex items-start gap-2.5 py-2.5 pl-3 pr-1.5 shadow-lg transition-all duration-200 ${
-        leaving ? "translate-y-1 opacity-0" : "opacity-100"
+        leaving ? "-translate-y-1 opacity-0" : "opacity-100"
       } ${item.onClick ? "cursor-pointer" : ""}`}
     >
       <span className={`mt-0.5 h-4 w-1 shrink-0 rounded-full ${accent}`} aria-hidden />

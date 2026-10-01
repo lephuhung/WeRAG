@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Orb } from "@/components/orb";
 import { BrandLogo } from "@/components/brand-logo";
 import { resolveSafeNextPath } from "@/lib/safe-next";
@@ -13,7 +13,50 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
-  const [totpCode, setTotpCode] = useState("");
+  const [totpDigits, setTotpDigits] = useState<string[]>(Array(6).fill(""));
+  const totpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const totpCode = totpDigits.join("");
+
+  const setDigit = useCallback((index: number, value: string) => {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    setTotpDigits((prev) => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+    if (digit && index < 5) totpRefs.current[index + 1]?.focus();
+  }, []);
+
+  const onTotpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !totpDigits[index] && index > 0) {
+      totpRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      totpRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      totpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const onTotpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    e.preventDefault();
+    setTotpDigits((prev) => {
+      const next = [...prev];
+      pasted.split("").forEach((d, i) => (next[i] = d));
+      return next;
+    });
+    totpRefs.current[Math.min(pasted.length, 5)]?.focus();
+  };
+
+  // When the full code is present after the 2FA prompt, submit on its own —
+  // authenticator users expect paste-and-go.
+  useEffect(() => {
+    if (totpRequired && totpCode.length === 6 && !totpDigits.includes("")) {
+      void submit(new Event("submit") as unknown as React.FormEvent);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totpCode, totpRequired]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -114,20 +157,30 @@ function LoginForm() {
             />
           </label>
           {totpRequired && (
-            <label className="mb-6 block">
+            <div className="mb-6">
               <span className="caption mb-1.5 block text-muted">Authenticator code</span>
-              <input
-                className="input tracking-[0.5em]"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                autoFocus
-                required
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="••••••"
-              />
-            </label>
+              <div className="flex justify-between gap-2" onPaste={onTotpPaste}>
+                {totpDigits.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={(el) => {
+                      totpRefs.current[i] = el;
+                    }}
+                    className="h-12 w-full max-w-[48px] rounded-[10px] border border-hairline bg-surface-card text-center text-[20px] font-semibold tracking-normal text-ink outline-none transition-colors focus:border-ink"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete={i === 0 ? "one-time-code" : "off"}
+                    maxLength={1}
+                    autoFocus={i === 0}
+                    required
+                    aria-label={`Digit ${i + 1}`}
+                    value={digit}
+                    onChange={(e) => setDigit(i, e.target.value)}
+                    onKeyDown={(e) => onTotpKeyDown(i, e)}
+                  />
+                ))}
+              </div>
+            </div>
           )}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <button type="submit" className="btn btn-primary w-full" disabled={busy}>
