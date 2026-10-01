@@ -1,6 +1,6 @@
-/* Invite-member modal shared by the workspace members settings page and
- * the organizations workspace panel: invite a specific email, or mint a
- * shareable join link (POST /tenants/:id/invite-links → /register?token=). */
+/* Invite-member modal for the workspace members settings page: invite a
+ * specific email, or mint a shareable join link (POST
+ * /tenants/:id/invite-links → /register?token=). */
 "use client";
 
 import { useState } from "react";

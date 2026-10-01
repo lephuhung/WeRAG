@@ -9,7 +9,6 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/knowledge-bases/, "nav.knowledgeBases"],
   [/^\/platform\/artifacts/, "nav.artifacts"],
   [/^\/platform\/agents/, "nav.agents"],
-  [/^\/platform\/organizations/, "nav.organizations"],
   [/^\/platform\/system/, "nav.settings"],
   [/^\/platform\/settings/, "nav.settings"],
 ];

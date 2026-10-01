@@ -10,7 +10,6 @@ import {
   IconChat,
   IconClose,
   IconDoc,
-  IconOrg,
   IconPulse,
   IconSearch,
   IconSettings,
@@ -170,17 +169,6 @@ export function GlobalCommandPalette() {
       onSelect: () => {
         close();
         router.push("/platform/artifacts");
-      },
-    },
-    {
-      id: "quick-orgs",
-      category: "quick",
-      title: "Organizations",
-      subtitle: "Workspaces and shared teams",
-      icon: <IconOrg className="h-4 w-4" />,
-      onSelect: () => {
-        close();
-        router.push("/platform/organizations");
       },
     },
     {

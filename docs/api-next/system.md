@@ -421,20 +421,6 @@ handler: `UpdateSystemUserRole` · `system.go`
 { success: true }
 ```
 ---
-### `updateSystemOrgTenantRole` — `PUT /system/admin/organizations/:org_id/members/:tenant_id`
-
-handler: `UpdateSystemOrgTenantRole` · `system.go`
-
-**Body** `updateOrgMemberRoleRequest`:
-| field | type | req | notes |
-|---|---|---|---|
-| `role` | OrgMemberRole | yes |  |
-
-**Response**:
-```json
-{ success: true }
-```
----
 ### `resetUserPassword` — `POST /system/admin/users/reset-password`
 
 handler: `ResetUserPassword` · `system.go`

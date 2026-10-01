@@ -49,8 +49,7 @@ export function TenantMembers() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  // Invite Modal — the email/link form lives in InviteMemberModal so the
-  // organizations page can reuse it.
+  // Invite Modal — the email/link form lives in InviteMemberModal.
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   // Remove / Leave confirmation

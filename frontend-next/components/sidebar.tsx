@@ -21,7 +21,6 @@ import {
   IconArtifact,
   IconBook,
   IconChat,
-  IconOrg,
   IconPlus,
   IconSearch,
   IconTrash,
@@ -31,7 +30,6 @@ const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
   { href: "/platform/knowledge-bases", labelKey: "nav.knowledgeBases", icon: IconBook, match: ["/platform/knowledge-bases"] },
   { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"] },
-  { href: "/platform/organizations", labelKey: "nav.organizations", icon: IconOrg, match: ["/platform/organizations"] },
 ] as const;
 
 function isActive(pathname: string | null, match: readonly string[]) {

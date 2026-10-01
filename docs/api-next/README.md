@@ -83,7 +83,6 @@ Notes:
 |---|---|---|
 | [Authentication](auth.md) | `auth.ts` | login, register, OIDC, refresh, preferences |
 | [Tenants & Workspace Config](tenants.md) | `tenants.ts` | tenant CRUD, members, KV config dispatch |
-| [Organizations & Sharing](organizations.md) | `organizations.ts` | orgs, spaces, agent/KB shares |
 | [Initialization](initialization.md) | `initialization.ts` | bootstrap, remote-init, system status |
 | [Knowledge](knowledge.md) | `knowledge.ts` | knowledge bases, documents, chunks, tags, FAQ, search |
 | [Wiki](wiki.md) | `wiki.ts` | wiki pages, folders, links |
