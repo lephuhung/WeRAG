@@ -29,11 +29,19 @@ function emit() {
   for (const l of listeners) l();
 }
 
-const activity = createSessionActivityState(
-  entries,
-  async (sessionId) => (await listMessages(sessionId, 20)).data ?? [],
-  emit,
-);
+const activity = createSessionActivityState(entries, async (sessionId) => (await listMessages(sessionId, 20)).data ?? [], emit, (sessionId) => {
+  for (const l of completedListeners) l(sessionId);
+});
+
+// Turn-finished notifications for sessions the user left mid-generation.
+const completedListeners = new Set<(sessionId: string) => void>();
+
+export function subscribeSessionCompleted(listener: (sessionId: string) => void) {
+  completedListeners.add(listener);
+  return () => {
+    completedListeners.delete(listener);
+  };
+}
 
 export function updateSessionActivity(sessionId: string, running: boolean, messageId = "") {
   activity.update(sessionId, running, messageId);

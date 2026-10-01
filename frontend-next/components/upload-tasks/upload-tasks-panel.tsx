@@ -26,6 +26,7 @@ import {
 } from "@/lib/upload-tasks-state";
 import { useUploadTasks } from "@/lib/upload-tasks";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 
 /* Ported from frontend/src/components/upload-tasks/UploadTasksPanel.vue. */
 
@@ -59,6 +60,7 @@ const LEGEND_DOT: Record<string, string> = {
 
 export function UploadTasksPanel() {
   const { t } = useT();
+  const confirmAction = useConfirm();
   const pathname = usePathname();
   const router = useRouter();
   const store = useUploadTasks();
@@ -252,9 +254,15 @@ export function UploadTasksPanel() {
 
   if (!visible || items.length === 0) return null;
 
-  const handleClose = () => {
-    // Popconfirm port: closing mid-upload asks once, via the native dialog.
-    if (isUploading && !window.confirm(t("uploadTasks.closeConfirm", { count: pendingTransfers })))
+  const handleClose = async () => {
+    // Popconfirm port: closing mid-upload asks once.
+    if (
+      isUploading &&
+      !(await confirmAction({
+        title: t("common.close"),
+        message: t("uploadTasks.closeConfirm", { count: pendingTransfers }),
+      }))
+    )
       return;
     store.dismiss();
   };

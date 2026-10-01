@@ -358,7 +358,8 @@ export function TenantMembers() {
 
       {/* Members Table */}
       <div className="overflow-hidden rounded-xl border border-hairline">
-        <table className="w-full text-left border-collapse text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
               <th className="py-3 px-4">{t("mem.colMember")}</th>
@@ -467,7 +468,8 @@ export function TenantMembers() {
               })
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Invite Member Modal */}

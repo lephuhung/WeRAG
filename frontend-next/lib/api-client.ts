@@ -61,22 +61,21 @@ function isValidTenantId(id: string | null | undefined): boolean {
 }
 
 // Backend Language() middleware reads the first Accept-Language tag
-// (frontend/src/utils/request.ts sent the UI locale the same way; "zh-CN"
-// default). Locales here are short ("en"|"vi"|"zh") — expand to the BCP-47
-// tags the backend localizes (en-US, vi-VN, zh-CN).
+// (frontend/src/utils/request.ts sent the UI locale the same way). Locales
+// here are short ("en"|"vi") — expand to the BCP-47 tags the backend
+// localizes (en-US, vi-VN). Vietnamese is the product default.
 const LOCALE_TO_BCP47: Record<string, string> = {
   en: "en-US",
   vi: "vi-VN",
-  zh: "zh-CN",
 };
 
 function acceptLanguageHeader(): Record<string, string> {
   try {
     const raw = localStorage.getItem("werag_locale")?.trim() || localStorage.getItem("locale")?.trim() || "";
     const base = raw.split(/[-_]/)[0]?.toLowerCase() || "";
-    return { "Accept-Language": LOCALE_TO_BCP47[base] ?? "zh-CN" };
+    return { "Accept-Language": LOCALE_TO_BCP47[base] ?? "vi-VN" };
   } catch {
-    return { "Accept-Language": "zh-CN" };
+    return { "Accept-Language": "vi-VN" };
   }
 }
 

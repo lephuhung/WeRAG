@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconChat, IconPlus, IconRefresh } from "@/components/icons";
+import { IconPlus, IconRefresh } from "@/components/icons";
 import {
   listAllIMChannels,
   listAgents,
@@ -20,6 +20,7 @@ import { RequireSystemAccess } from "@/components/require-system-access";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { useT } from "@/lib/i18n";
 import { AgentIMChannels, IMChannelInlineForm } from "@/components/agents/im-channels";
+import { IMPlatformIcon } from "@/components/agents/im-platform-icon";
 
 export default function IMChannelsPage() {
   return (
@@ -149,7 +150,7 @@ function IMChannelsPanel() {
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-strong text-ink">
-                  <IconChat className="h-5 w-5" />
+                  <IMPlatformIcon platform={c.platform} className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

@@ -8,29 +8,64 @@ import { Select } from "@/components/select";
 
 /* Embedded port of frontend/src/views/knowledge/settings/KBParserSettings.vue:
  * one engine <select> per file-type family present in the upload batch
- * (relevantExtensions), driven by the backend's parser-engine registry. */
+ * (relevantExtensions), driven by the backend's parser-engine registry.
+ * Rows are grouped into Documents / Data & Web / Media sections, each with a
+ * soft-tinted type glyph (same color language as the mention picker). */
 
 const SIMPLE_EXTS = new Set(["md", "markdown", "txt", "csv", "json"]);
 
-const GROUP_DEFS: { key: string; labelKey: string; exts: string[] }[] = [
-  { key: "pdf", labelKey: "ps.fileTypePdf", exts: ["pdf"] },
-  { key: "office", labelKey: "ps.fileTypeWord", exts: ["docx", "doc"] },
-  { key: "ppt", labelKey: "ps.fileTypePpt", exts: ["pptx", "ppt"] },
-  { key: "excel", labelKey: "ps.fileTypeExcel", exts: ["xlsx", "xls"] },
-  { key: "ebook", labelKey: "ps.fileTypeEbook", exts: ["epub"] },
-  { key: "webarchive", labelKey: "ps.fileTypeWebArchive", exts: ["mhtml"] },
-  { key: "csv", labelKey: "ps.fileTypeCsv", exts: ["csv"] },
-  { key: "markdown", labelKey: "Markdown", exts: ["md", "markdown"] },
-  { key: "text", labelKey: "ps.fileTypeText", exts: ["txt"] },
-  { key: "json", labelKey: "ps.fileTypeJson", exts: ["json"] },
-  { key: "image", labelKey: "ps.fileTypeImage", exts: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"] },
-  { key: "audiovisual", labelKey: "ps.fileTypeAudiovisual", exts: ["mp3", "wav", "m4a", "flac", "ogg"] },
+type GroupCategory = "documents" | "data" | "media";
+
+const GROUP_DEFS: {
+  key: string;
+  labelKey: string;
+  exts: string[];
+  category: GroupCategory;
+}[] = [
+  { key: "pdf", labelKey: "ps.fileTypePdf", exts: ["pdf"], category: "documents" },
+  { key: "office", labelKey: "ps.fileTypeWord", exts: ["docx", "doc"], category: "documents" },
+  { key: "ppt", labelKey: "ps.fileTypePpt", exts: ["pptx", "ppt"], category: "documents" },
+  { key: "excel", labelKey: "ps.fileTypeExcel", exts: ["xlsx", "xls"], category: "documents" },
+  { key: "ebook", labelKey: "ps.fileTypeEbook", exts: ["epub"], category: "documents" },
+  { key: "text", labelKey: "ps.fileTypeText", exts: ["txt"], category: "documents" },
+  { key: "markdown", labelKey: "Markdown", exts: ["md", "markdown"], category: "documents" },
+  { key: "csv", labelKey: "ps.fileTypeCsv", exts: ["csv"], category: "data" },
+  { key: "json", labelKey: "ps.fileTypeJson", exts: ["json"], category: "data" },
+  { key: "webarchive", labelKey: "ps.fileTypeWebArchive", exts: ["mhtml"], category: "data" },
+  { key: "image", labelKey: "ps.fileTypeImage", exts: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"], category: "media" },
+  { key: "audiovisual", labelKey: "ps.fileTypeAudiovisual", exts: ["mp3", "wav", "m4a", "flac", "ogg"], category: "media" },
 ];
+
+const CATEGORY_ORDER: GroupCategory[] = ["documents", "data", "media"];
+
+const CATEGORY_LABEL_KEY: Record<GroupCategory, LocaleKey> = {
+  documents: "ps.groupDocuments",
+  data: "ps.groupData",
+  media: "ps.groupMedia",
+};
+
+/* Soft-tinted abbreviation glyph per family — mirrors the mention picker's
+ * file-type badge colors (red/blue/orange/emerald…). */
+const GROUP_GLYPH: Record<string, { glyph: string; cls: string }> = {
+  pdf: { glyph: "PDF", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
+  office: { glyph: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+  ppt: { glyph: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
+  excel: { glyph: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  ebook: { glyph: "EPUB", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  text: { glyph: "TXT", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  markdown: { glyph: "MD", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+  csv: { glyph: "CSV", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  json: { glyph: "JSON", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  webarchive: { glyph: "MHT", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  image: { glyph: "IMG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
+  audiovisual: { glyph: "AUD", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
+};
 
 interface Group {
   key: string;
   label: string;
   extensions: string[];
+  category: GroupCategory;
 }
 
 export function ParserRulesEditor({
@@ -77,13 +112,14 @@ export function ParserRulesEditor({
           key: def.key,
           label: def.labelKey.startsWith("ps.") ? t(def.labelKey as LocaleKey) : def.labelKey,
           extensions: exts,
+          category: def.category,
         });
     }
     /* Extensions the backend registry knows but no family covers get their own
-     * dynamic row, matching the Vue component. */
+     * dynamic row in the data section, matching the Vue component. */
     const grouped = new Set(out.flatMap((g) => g.extensions));
     for (const ext of [...ft].filter((x) => !grouped.has(x) && x !== "url").sort()) {
-      out.push({ key: `dyn-${ext}`, label: ext.toUpperCase(), extensions: [ext] });
+      out.push({ key: `dyn-${ext}`, label: ext.toUpperCase(), extensions: [ext], category: "data" });
     }
 
     if (!relevantExtensions.length) return out;
@@ -149,6 +185,8 @@ export function ParserRulesEditor({
       if (r) r.xlsx_first_row_as_header = checked;
     });
 
+  const rowGrid = `grid grid-cols-1 gap-x-6 sm:grid-cols-2 ${columns === 3 ? "lg:grid-cols-3" : ""}`;
+
   if (engines === null) {
     return <p className="caption text-muted">{t("ps.parserLoading")}</p>;
   }
@@ -157,56 +195,96 @@ export function ParserRulesEditor({
   }
 
   return (
-    <div
-      className={`grid grid-cols-1 gap-x-6 sm:grid-cols-2 ${
-        columns === 3 ? "lg:grid-cols-3" : ""
-      }`}
-    >
-      {groups.map((g) => {
-        const { available, defaultName } = engineOptions(g.extensions);
-        const selected = engineFor(g.extensions);
+    <div className="space-y-4">
+      {CATEGORY_ORDER.map((category) => {
+        const catGroups = groups.filter((g) => g.category === category);
+        if (catGroups.length === 0) return null;
         return (
-          <div key={g.key} className="flex items-center justify-between gap-3 py-1">
-            <div className="min-w-0 text-[12.5px] font-medium text-ink">
-              <span className="truncate">{g.label}</span>
-              <span className="ml-1.5 whitespace-nowrap text-[10.5px] font-normal text-muted-soft">
-                {g.extensions.map((x) => `.${x}`).join(" ")}
-              </span>
+          <div key={category}>
+            <div className="caption-uppercase mb-1 flex items-center gap-2 text-muted-soft">
+              {t(CATEGORY_LABEL_KEY[category])}
+              <span className="h-px flex-1 bg-hairline" aria-hidden />
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-0.5">
-              <Select
-                className="h-7 w-[150px] py-0.5 px-2.5 text-[12px]"
-                value={selected}
-                onChange={(v) => setEngine(g.extensions, v)}
-                disabled={available.length === 0}
-                placeholder={t("ps.parserNoEngine")}
-                options={available.map((e) => ({
-                  value: e.Name,
-                  label:
-                    e.Name === defaultName ? `${e.Name} (${t("ps.parserDefault")})` : e.Name,
-                }))}
-              />
-              {g.extensions.includes("xlsx") && selected === "builtin" && (
-                /* Pill toggle for the two-state header flag. */
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={ruleFor(g.extensions)?.xlsx_first_row_as_header === true}
-                  onClick={() =>
-                    setXlsxHeader(
-                      g.extensions,
-                      !(ruleFor(g.extensions)?.xlsx_first_row_as_header === true),
-                    )
-                  }
-                  className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
-                    ruleFor(g.extensions)?.xlsx_first_row_as_header === true
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                      : "border-hairline text-muted hover:text-ink"
-                  }`}
-                >
-                  {t("ps.parserXlsxHeader")}
-                </button>
-              )}
+            <div className={rowGrid}>
+              {catGroups.map((g) => {
+                const { available, defaultName } = engineOptions(g.extensions);
+                const selected = engineFor(g.extensions);
+                const rule = ruleFor(g.extensions);
+                const isDefault = selected === defaultName;
+                const glyph = GROUP_GLYPH[g.key] ?? {
+                  glyph: g.key.replace(/^dyn-/, "").slice(0, 4).toUpperCase(),
+                  cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+                };
+                const noEngine = available.length === 0;
+                return (
+                  <div
+                    key={g.key}
+                    className={`flex items-center gap-2.5 py-1 ${noEngine ? "opacity-55" : ""}`}
+                  >
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[8px] font-bold tracking-tight ${glyph.cls}`}
+                      aria-hidden
+                    >
+                      {glyph.glyph}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px] font-medium text-ink">{g.label}</div>
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {g.extensions.map((x) => (
+                          <span
+                            key={x}
+                            className="rounded bg-surface-strong px-1 py-px text-[10px] leading-4 text-muted"
+                          >
+                            .{x}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    {noEngine ? (
+                      <span className="shrink-0 text-[11px] text-muted-soft">
+                        — {t("ps.parserNoEngine")}
+                      </span>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {g.extensions.includes("xlsx") && selected === "builtin" && (
+                          /* Pill toggle for the two-state header flag — kept
+                           * inline so rows stay a uniform height. */
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={rule?.xlsx_first_row_as_header === true}
+                            onClick={() => setXlsxHeader(g.extensions, !(rule?.xlsx_first_row_as_header === true))}
+                            className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+                              rule?.xlsx_first_row_as_header === true
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                : "border-hairline text-muted hover:text-ink"
+                            }`}
+                          >
+                            {t("ps.parserXlsxHeader")}
+                          </button>
+                        )}
+                        <Select
+                          className={`h-7 w-[150px] py-0.5 px-2.5 text-[12px] ${
+                            isDefault
+                              ? "text-muted"
+                              : "border-sky-500/40 font-medium text-ink"
+                          }`}
+                          value={selected}
+                          onChange={(v) => setEngine(g.extensions, v)}
+                          placeholder={t("ps.parserNoEngine")}
+                          options={available.map((e) => ({
+                            value: e.Name,
+                            label:
+                              e.Name === defaultName
+                                ? `${e.Name} · ${t("ps.parserDefault")}`
+                                : e.Name,
+                          }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

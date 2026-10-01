@@ -12,9 +12,11 @@ import {
 import { IconDoc, IconPlus, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function StorageSettings() {
   const { t } = useT();
+  const confirmAction = useConfirm();
   const [backends, setBackends] = useState<StorageBackend[]>([]);
   const [defaultId, setDefaultId] = useState<string | null>(null);
   const [types, setTypes] = useState<string[]>([]);
@@ -70,7 +72,14 @@ export function StorageSettings() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("stor.confirmDelete"))) return;
+    if (
+      !(await confirmAction({
+        title: t("common.delete"),
+        message: t("stor.confirmDelete"),
+        danger: true,
+      }))
+ )
+      return;
     try {
       await deleteStorageBackend(id);
       await loadData();

@@ -8,7 +8,9 @@ export interface SandboxConfigData {
   type: string;
   docker?: {
     endpoint?: string;
+    host?: string;
     image?: string;
+    tls_cert_path?: string;
     network?: string;
     auto_remove?: boolean;
     cpu_limit?: number;
@@ -16,13 +18,21 @@ export interface SandboxConfigData {
   };
   cube?: {
     endpoint?: string;
+    api_url?: string;
+    proxy_url?: string;
+    sandbox_domain?: string;
+    dns_servers?: string[];
     api_key?: string;
     cluster_id?: string;
   };
   e2b?: {
     api_key?: string;
+    api_url?: string;
+    sandbox_domain?: string;
+    proxy_url?: string;
     template?: string;
   };
+  allow_private_endpoints?: boolean;
   [key: string]: unknown;
 }
 

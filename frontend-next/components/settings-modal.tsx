@@ -70,17 +70,21 @@ import {
 } from "@/components/icons";
 
 /* Heavy sections are lazy so the sidebar chunk doesn't pull every admin page
- * eagerly — they stream in only when the section is opened. */
-const SharingPage = lazy(() => import("@/app/platform/system/workspace/sharing/page"));
-const McpServersPage = lazy(() => import("@/app/platform/system/extensions/mcp/page"));
-const AgentsPage = lazy(() => import("@/app/platform/system/extensions/agents/page"));
-const IMChannelsPage = lazy(() => import("@/app/platform/system/extensions/im-channels/page"));
-const ModelCatalogPage = lazy(() => import("@/app/platform/system/models/page"));
-const RuntimeQueuesPage = lazy(() => import("@/app/platform/system/engines/queues/page"));
+ * eagerly — they stream in only when the section is opened. The section
+ * modules live in components/settings/pages; the old /platform/system/*
+ * routes redirect here and open the matching section. */
+const SharingPage = lazy(() => import("@/components/settings/pages/sharing"));
+const McpServersPage = lazy(() => import("@/components/settings/pages/mcp-servers"));
+const AgentsPage = lazy(() => import("@/components/settings/pages/system-agents"));
+const IMChannelsPage = lazy(() => import("@/components/settings/pages/im-channels"));
+const ModelCatalogPage = lazy(() => import("@/components/settings/pages/model-catalog"));
+const ModelOllamaPage = lazy(() => import("@/components/settings/pages/model-ollama"));
+const ModelWeknoraCloudPage = lazy(() => import("@/components/settings/pages/model-weknoracloud"));
+const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 
-const AdminOverviewPage = lazy(() => import("@/app/platform/system/admin/page"));
-const AdminUsersPage = lazy(() => import("@/app/platform/system/admin/users/page"));
-const AdminLogsPage = lazy(() => import("@/app/platform/system/admin/logs/page"));
+const AdminOverviewPage = lazy(() => import("@/components/settings/pages/admin-overview"));
+const AdminUsersPage = lazy(() => import("@/components/settings/pages/admin-users"));
+const AdminLogsPage = lazy(() => import("@/components/settings/pages/admin-logs"));
 
 type IconCmp = ComponentType<{ className?: string }>;
 
@@ -152,6 +156,8 @@ const GROUPS: SettingsGroup[] = [
     labelKey: "settingsNav.config",
     items: [
       { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "owner", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
+      { key: "ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "owner", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
+      { key: "weknoracloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "owner", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
       { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector` },
       { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage` },
       { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
@@ -172,8 +178,15 @@ const GROUPS: SettingsGroup[] = [
 ];
 
 /* route → section key, so links inside embedded pages resolve to modal
- * sub-pages instead of navigating away. */
-const ROUTE_TO_KEY = new Map<string, string>();
+ * sub-pages instead of navigating away. Also consumed by the
+ * /platform/system catch-all redirect, which turns an old deep link into
+ * "open the settings modal at this section". */
+export const SECTION_ROUTES: Record<string, string> = Object.fromEntries(
+  GROUPS.flatMap((g) => g.items)
+    .filter((it) => it.route)
+    .map((it) => [it.route as string, it.key]),
+);
+const ROUTE_TO_KEY = new Map<string, string>(Object.entries(SECTION_ROUTES));
 const ITEM_KEYS = new Set<string>();
 for (const g of GROUPS)
   for (const it of g.items) {

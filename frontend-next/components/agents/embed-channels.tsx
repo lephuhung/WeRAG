@@ -26,7 +26,6 @@ const LOCALES: { value: string; labelEn: string }[] = [
   { value: "", labelEn: "Follow browser" },
   { value: "en-US", labelEn: "English" },
   { value: "vi-VN", labelEn: "Tiếng Việt" },
-  { value: "zh-CN", labelEn: "简体中文" },
   { value: "ko-KR", labelEn: "한국어" },
   { value: "ja-JP", labelEn: "日本語" },
   { value: "ru-RU", labelEn: "Русский" },

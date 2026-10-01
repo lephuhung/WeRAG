@@ -12,6 +12,7 @@ import {
   type WebSearchProviderEntity,
 } from "@/lib/api/web-search";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const SUPPORTED_PROVIDERS = [
   { id: "brave", name: "Brave Search" },
@@ -24,6 +25,7 @@ const SUPPORTED_PROVIDERS = [
 
 export function WebSearchSettings() {
   const { t } = useT();
+  const confirmAction = useConfirm();
   const [providers, setProviders] = useState<WebSearchProviderEntity[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -92,7 +94,14 @@ export function WebSearchSettings() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("ws.confirmRemove"))) return;
+    if (
+      !(await confirmAction({
+        title: t("common.delete"),
+        message: t("ws.confirmRemove"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await deleteWebSearchProvider(id);
       setProviders((prev) => prev.filter((p) => p.id !== id));

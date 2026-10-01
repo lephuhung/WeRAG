@@ -8,12 +8,16 @@ import { GlobalCommandPalette } from "@/components/command-palette/global-comman
 import { UploadTasksProvider } from "@/lib/upload-tasks";
 import { UploadTasksPanel } from "@/components/upload-tasks/upload-tasks-panel";
 import { GlobalFileDrop } from "@/components/upload-tasks/global-file-drop";
+import { ToastProvider } from "@/components/toast";
+import { ConfirmProvider } from "@/components/confirm-dialog";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
     <I18nProvider>
       <AuthProvider>
         <RequireAuth>
+          <ToastProvider>
+            <ConfirmProvider>
           <CommandPaletteProvider>
             <UploadTasksProvider>
               <div className="flex h-dvh min-h-0 w-full bg-canvas">
@@ -28,6 +32,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
               <GlobalFileDrop />
             </UploadTasksProvider>
           </CommandPaletteProvider>
+          </ConfirmProvider>
+          </ToastProvider>
         </RequireAuth>
       </AuthProvider>
     </I18nProvider>

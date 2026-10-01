@@ -38,6 +38,7 @@ import {
 } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { useToast } from "@/components/toast";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { getKBViewerCapabilities } from "@/lib/kb-capabilities";
 import { buildScopeChangePayload } from "@/lib/kb-public";
@@ -93,6 +94,7 @@ type MainTab = "docs-wiki" | "graph";
 
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
+const toast = useToast();
   const { isTenantAdmin, isSystemAdmin } = useTenantRole();
   const { selectedTenantId, tenant } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
@@ -186,7 +188,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
         if (!isCurrentKb(ownerKbId)) return;
         setKb(row ?? null);
       })
-      .catch(() => {});
+      .catch(() => toast.error(t("common.error")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kbId, reloadDocs]);
 
@@ -245,7 +247,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
         const detail = (res as { data?: KnowledgeDoc })?.data;
         if (detail && typeof detail === "object") setOpenDoc(detail);
       })
-      .catch(() => {});
+      .catch(() => toast.error(t("common.error")));
   };
 
   /* Rebuild a document through the parse-settings dialog, seeded with the
@@ -286,7 +288,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
           if (!isCurrentKb(ownerKbId)) return;
           setKb(row ?? null);
         })
-        .catch(() => {});
+        .catch(() => toast.error(t("common.error")));
     };
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<{ kbId?: string; knowledgeId?: string }>).detail;
@@ -412,7 +414,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
         if (!isCurrentKb(ownerKbId)) return;
         setKb(row ?? null);
       })
-      .catch(() => {});
+      .catch(() => toast.error(t("common.error")));
   };
 
   const runScopeChange = async (payload: { visibility: "public" } | { visibility: "tenant"; target_tenant_id: number }) => {
@@ -905,7 +907,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
               if (!isCurrentKb(ownerKbId)) return;
               setKb(row ?? null);
             })
-            .catch(() => {});
+            .catch(() => toast.error(t("common.error")));
         }}
       />
       <UploadModal
