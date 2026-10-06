@@ -1,0 +1,33 @@
+{
+  "type": "nghi_quyet",
+  "label": "Nghị quyết (NĐ30/2020, Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "can_cu",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "NGHỊ QUYẾT|NGHI QUYET",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'NGHỊ QUYẾT' đứng trên trích yếu",
+      "severity": "warn"
+    }
+  ]
+}

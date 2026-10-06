@@ -107,6 +107,9 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	// document IDs of their own, and the memory item IDs never leave the
 	// service, so there is nothing here for the model to hold a handle on.
 	"search_memory": {},
+	// check_document_format reads the session's own uploads by file name
+	// and returns a format report: no source or KB identifiers.
+	"check_document_format": {},
 	"query_knowledge_graph": {
 		sourceIDKeys: map[string]struct{}{"knowledge_base_ids": {}},
 		sourceOutput: true,

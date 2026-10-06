@@ -64,3 +64,8 @@ miniprogram/project.private.config.json
 # Locally built BrowserSkill runtime and extension bundles
 /artifacts/browserskill/
 
+
+# docformat skill bundle build output
+docformat/dist/
+# docformat evaluation corpora (synthetic output, real documents)
+docformat/evaluation/samples/

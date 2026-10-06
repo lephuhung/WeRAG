@@ -1,0 +1,45 @@
+{
+  "type": "bien_ban",
+  "label": "Biên bản (NĐ30/2020, Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "trich_yeu",
+    "noi_dung",
+    "signature"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "noi_nhan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "BIÊN BẢN|BIEN BAN",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'BIÊN BẢN' đứng trên trích yếu",
+      "severity": "warn"
+    },
+    {
+      "id": "signature.zone",
+      "kind": "prop",
+      "component": "signature",
+      "prop": "zone",
+      "op": "in",
+      "value": [
+        "left",
+        "right"
+      ],
+      "desc": "Biên bản có thể có nhiều người ký (thư ký bên trái, chủ trì bên phải)",
+      "severity": "error"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "type": "cong_van",
+  "label": "Công văn (NĐ30/2020, Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "do_mat",
+    "do_khan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "so_ky_hieu.pattern",
+      "kind": "prop",
+      "component": "so_ky_hieu",
+      "prop": "text",
+      "op": "regex",
+      "value": "^Số\\s*:|^\\d{1,5}\\s*/",
+      "mode": "any",
+      "desc": "Số, ký hiệu ghi 'Số: NNN/KH-CQ' hoặc 'NNN/CV-CQ'",
+      "severity": "warn"
+    }
+  ]
+}

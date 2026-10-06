@@ -121,6 +121,7 @@ type agentService struct {
 	sandboxPolicy        WorkspaceSandboxPolicy
 	abbreviationService  interfaces.AbbreviationService
 	peopleService        *people.Service
+	temporaryDocuments   interfaces.TemporaryDocumentService
 }
 
 // NewAgentService creates a new agent service
@@ -151,6 +152,7 @@ func NewAgentService(
 	userRepo interfaces.UserRepository,
 	abbreviationService interfaces.AbbreviationService,
 	peopleService *people.Service,
+	temporaryDocuments interfaces.TemporaryDocumentService,
 ) interfaces.AgentService {
 	return &agentService{
 		browserSkill:         browserSkill,
@@ -179,6 +181,7 @@ func NewAgentService(
 		sandboxPolicy:        sandboxPolicy,
 		abbreviationService:  abbreviationService,
 		peopleService:        peopleService,
+		temporaryDocuments:   temporaryDocuments,
 	}
 }
 
@@ -1183,9 +1186,35 @@ func (s *agentService) registerTools(
 		registry.RegisterTool(tools.NewPeopleLookupTool(s.peopleService))
 		logger.Infof(ctx, "Registered people_lookup tool (system-admin caller)")
 	}
+	// check_document_format is offered only in a conversation that holds an
+	// uploaded .docx: it reads this session's uploads alone, and its
+	// description limits it to explicit format-review requests, so a
+	// document attached for Q&A is not checked unasked.
+	if s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID) {
+		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, chatModel, sessionID))
+	}
 
 	logger.Infof(ctx, "Registered %d tools", len(registry.ListTools()))
 	return nil
+}
+
+// sessionHasDocx reports whether the conversation has an uploaded .docx.
+func (s *agentService) sessionHasDocx(ctx context.Context, sessionID string) bool {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return false
+	}
+	docs, err := s.temporaryDocuments.List(ctx, tenantID, sessionID)
+	if err != nil {
+		logger.Warnf(ctx, "List session uploads for check_document_format: %v", err)
+		return false
+	}
+	for _, d := range docs {
+		if tools.IsDocx(d) {
+			return true
+		}
+	}
+	return false
 }
 
 // withoutWikiWriteTools drops the tools that write Wiki state. They execute

@@ -414,6 +414,7 @@ const TOOL_NAME_KEYS: Record<string, LocaleKey> = {
   data_analysis: "step.tool.dataAnalysis",
   data_schema: "step.tool.dataSchema",
   database_query: "step.tool.databaseQuery",
+  check_document_format: "step.tool.checkDocumentFormat",
   local_browser: "step.localBrowser",
 };
 

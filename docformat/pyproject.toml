@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docformat"
+version = "0.1.0"
+description = "Kiểm tra thể thức văn bản hành chính Việt Nam (.docx) theo Nghị định 30/2020/NĐ-CP"
+requires-python = ">=3.10"
+# Core pipeline (layout/segment/check) is pure stdlib — no runtime deps.
+dependencies = []
+
+[project.optional-dependencies]
+# Only needed for `python -m docformat.mcp_server`.
+mcp = ["mcp>=2,<3", "starlette>=0.27.0", "uvicorn>=0.24.0"]
+
+[project.scripts]
+docformat = "docformat.cli:main"
+docformat-mcp = "docformat.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["docformat*"]
+
+[tool.setuptools.package-data]
+docformat = ["rules_data/*.json"]

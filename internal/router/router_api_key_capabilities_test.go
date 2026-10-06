@@ -392,6 +392,50 @@ func TestTenantInfrastructureRoutesDeclareSpecificCapabilities(t *testing.T) {
 	}
 }
 
+// The workspace LLM completion endpoint is a chat surface: a key holding the
+// shared "chat" capability reaches it, and it is not platform-only (tenant
+// keys use their own workspace's chat model).
+func TestLLMChatRouteUsesChatCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	g := &rbacGuards{}
+	v1 := gin.New().Group("/api/v1")
+	RegisterModelRoutes(v1, &handler.ModelHandler{}, &handler.ModelCredentialsHandler{}, g)
+
+	policy := mustLookupAPIKeyPolicy(t, g, http.MethodPost, "/api/v1/llm/chat")
+	if policy.PlatformOnly {
+		t.Fatalf("llm chat must be usable by tenant keys: %#v", policy)
+	}
+	if !policy.RequireFullAccess {
+		t.Fatal("policy should require full access without a matching capability")
+	}
+	if !policyHasCapability(policy, types.APIKeyCapabilityChat) {
+		t.Fatalf("policy capabilities = %#v, want chat", policy.Capabilities)
+	}
+	if policyHasCapability(policy, types.APIKeyCapabilityManageModels) {
+		t.Fatal("calling a model must not grant or require model management")
+	}
+}
+
+// The thể-thức checker runs the workspace chat model on the caller's own
+// upload: same "chat" capability as the conversation flow, tenant keys only.
+func TestDocumentFormatRoutesUseChatCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	g := &rbacGuards{}
+	v1 := gin.New().Group("/api/v1")
+	RegisterDocumentFormatRoutes(v1, &handler.DocumentFormatHandler{}, g)
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/document-format/types"},
+		{http.MethodPost, "/api/v1/document-format/check"},
+	} {
+		policy := mustLookupAPIKeyPolicy(t, g, tc.method, tc.path)
+		if policy.PlatformOnly || !policy.RequireFullAccess ||
+			!policyHasCapability(policy, types.APIKeyCapabilityChat) {
+			t.Fatalf("%s %s policy = %#v, want chat capability", tc.method, tc.path, policy)
+		}
+	}
+}
+
 // Model configuration is platform-owned: every catalog mutation, credential
 // write, and model probe/download endpoint must be reachable only by a
 // platform API key carrying system_models_manage — never by a tenant-scoped

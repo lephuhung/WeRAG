@@ -44,6 +44,22 @@ func RegisterModelRoutes(
 		modelWrites.PUT("/:id/credentials", g.SystemAdmin(), credHandler.Put)
 		modelWrites.DELETE("/:id/credentials/:field", g.SystemAdmin(), credHandler.DeleteField)
 	}
+
+	// Completion through a workspace chat model (the default one unless
+	// model_id is given): integrations follow the model the workspace is set
+	// to without ever receiving its credentials. Same "chat" scope as the
+	// conversation flow; Member+ like the message routes.
+	llm := g.apiKeyGroup(r.Group("/llm"), apiKeyChat(apiKeyFullAccess()))
+	llm.POST("/chat", g.Member(), handler.LLMChat)
+}
+
+// RegisterDocumentFormatRoutes exposes the NĐ30 thể-thức checker. It runs
+// the workspace chat model on the caller's own upload, like a chat turn, so
+// it shares the "chat" API-key capability and the Member+ role.
+func RegisterDocumentFormatRoutes(r *gin.RouterGroup, h *handler.DocumentFormatHandler, g *rbacGuards) {
+	df := g.apiKeyGroup(r.Group("/document-format"), apiKeyChat(apiKeyFullAccess()))
+	df.GET("/types", g.Member(), h.ListTypes)
+	df.POST("/check", g.Member(), h.Check)
 }
 
 // Sandbox configs are workspace infrastructure that hold provider credentials.

@@ -1,0 +1,376 @@
+{
+  "type": "base",
+  "label": "Thể thức chung theo Nghị định 30/2020/NĐ-CP (Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "trich_yeu",
+    "noi_dung",
+    "signature"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "noi_nhan"
+  ],
+  "order": [
+    "do_mat",
+    "do_khan",
+    "co_quan_chu_quan",
+    "co_quan_ban_hanh",
+    "quoc_hieu",
+    "tieu_ngu",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "kinh_gui",
+    "can_cu",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "checks": [
+    {
+      "id": "page.size.width",
+      "kind": "page_setup",
+      "prop": "page_width_mm",
+      "op": "range",
+      "value": [209.0, 211.0],
+      "desc": "Khổ giấy A4 — chiều rộng 210mm",
+      "severity": "error"
+    },
+    {
+      "id": "page.size.height",
+      "kind": "page_setup",
+      "prop": "page_height_mm",
+      "op": "range",
+      "value": [296.0, 298.0],
+      "desc": "Khổ giấy A4 — chiều cao 297mm",
+      "severity": "error"
+    },
+    {
+      "id": "page.margin.top",
+      "kind": "page_setup",
+      "prop": "margin_top_mm",
+      "op": "range",
+      "value": [20.0, 25.0],
+      "desc": "Lề trên 20-25mm (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+    {
+      "id": "page.margin.bottom",
+      "kind": "page_setup",
+      "prop": "margin_bottom_mm",
+      "op": "range",
+      "value": [20.0, 25.0],
+      "desc": "Lề dưới 20-25mm (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+    {
+      "id": "page.margin.left",
+      "kind": "page_setup",
+      "prop": "margin_left_mm",
+      "op": "range",
+      "value": [30.0, 35.0],
+      "desc": "Lề trái 30-35mm (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+    {
+      "id": "page.margin.right",
+      "kind": "page_setup",
+      "prop": "margin_right_mm",
+      "op": "range",
+      "value": [15.0, 20.0],
+      "desc": "Lề phải 15-20mm (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+
+    {
+      "id": "co_quan_ban_hanh.zone",
+      "kind": "prop",
+      "component": "co_quan_ban_hanh",
+      "prop": "zone",
+      "op": "eq",
+      "value": "left",
+      "desc": "Tên cơ quan ban hành đặt ở cột trái, dưới tên cơ quan chủ quản",
+      "severity": "error"
+    },
+    {
+      "id": "co_quan_ban_hanh.bold",
+      "kind": "prop",
+      "component": "co_quan_ban_hanh",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "desc": "Tên cơ quan/tổ chức ban hành văn bản in đậm (NĐ30 Phụ lục I)",
+      "severity": "warn"
+    },
+    {
+      "id": "co_quan_ban_hanh.size",
+      "kind": "prop",
+      "component": "co_quan_ban_hanh",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [12.0, 14.0],
+      "desc": "Tên cơ quan ban hành cỡ chữ 12-13 (dung sai tới 14)",
+      "severity": "warn"
+    },
+
+    {
+      "id": "quoc_hieu.zone",
+      "kind": "prop",
+      "component": "quoc_hieu",
+      "prop": "zone",
+      "op": "eq",
+      "value": "right",
+      "desc": "Quốc hiệu đặt cột phải, phần trên của văn bản",
+      "severity": "error"
+    },
+    {
+      "id": "quoc_hieu.align",
+      "kind": "prop",
+      "component": "quoc_hieu",
+      "prop": "alignment",
+      "op": "in",
+      "value": ["center"],
+      "desc": "Quốc hiệu căn giữa theo cột phải",
+      "severity": "warn"
+    },
+    {
+      "id": "quoc_hieu.bold",
+      "kind": "prop",
+      "component": "quoc_hieu",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "desc": "Quốc hiệu in đậm, chữ hoa (NĐ30 Phụ lục I)",
+      "severity": "warn"
+    },
+    {
+      "id": "quoc_hieu.size",
+      "kind": "prop",
+      "component": "quoc_hieu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [12.0, 13.0],
+      "desc": "Quốc hiệu cỡ chữ 12-13",
+      "severity": "warn"
+    },
+
+    {
+      "id": "tieu_ngu.zone",
+      "kind": "prop",
+      "component": "tieu_ngu",
+      "prop": "zone",
+      "op": "eq",
+      "value": "right",
+      "desc": "Tiêu ngữ đặt cột phải, dưới Quốc hiệu",
+      "severity": "error"
+    },
+    {
+      "id": "tieu_ngu.bold",
+      "kind": "prop",
+      "component": "tieu_ngu",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "desc": "Tiêu ngữ in đậm (NĐ30 Phụ lục I)",
+      "severity": "warn"
+    },
+    {
+      "id": "tieu_ngu.size",
+      "kind": "prop",
+      "component": "tieu_ngu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [13.0, 14.0],
+      "desc": "Tiêu ngữ cỡ chữ 13-14",
+      "severity": "warn"
+    },
+
+    {
+      "id": "so_ky_hieu.zone",
+      "kind": "prop",
+      "component": "so_ky_hieu",
+      "prop": "zone",
+      "op": "eq",
+      "value": "left",
+      "desc": "Số, ký hiệu đặt cột trái, dưới tên cơ quan",
+      "severity": "warn"
+    },
+    {
+      "id": "so_ky_hieu.size",
+      "kind": "prop",
+      "component": "so_ky_hieu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [12.0, 14.0],
+      "desc": "Số, ký hiệu cỡ chữ 13 (dung sai 12-14)",
+      "severity": "warn"
+    },
+
+    {
+      "id": "dia_danh.zone",
+      "kind": "prop",
+      "component": "dia_danh_ngay_thang",
+      "prop": "zone",
+      "op": "eq",
+      "value": "right",
+      "desc": "Địa danh, ngày tháng năm đặt cột phải, dưới tiêu ngữ",
+      "severity": "error"
+    },
+    {
+      "id": "dia_danh.italic",
+      "kind": "prop",
+      "component": "dia_danh_ngay_thang",
+      "prop": "italic",
+      "op": "eq",
+      "value": true,
+      "desc": "Địa danh, ngày tháng năm in nghiêng (NĐ30 Phụ lục I)",
+      "severity": "warn"
+    },
+    {
+      "id": "dia_danh.size",
+      "kind": "prop",
+      "component": "dia_danh_ngay_thang",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [13.0, 14.0],
+      "desc": "Địa danh, ngày tháng năm cỡ chữ 13-14",
+      "severity": "warn"
+    },
+
+    {
+      "id": "trich_yeu.align",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "alignment",
+      "op": "eq",
+      "value": "center",
+      "desc": "Tên loại và trích yếu văn bản căn giữa (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+    {
+      "id": "trich_yeu.bold",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "mode": "majority",
+      "desc": "Tên loại và trích yếu in đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "trich_yeu.size",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [13.0, 14.0],
+      "mode": "majority",
+      "desc": "Tên loại và trích yếu cỡ chữ 13-14",
+      "severity": "warn"
+    },
+
+    {
+      "id": "noi_dung.font",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "font_name",
+      "op": "in",
+      "value": ["Times New Roman"],
+      "mode": "majority",
+      "desc": "Nội dung dùng kiểu chữ Times New Roman (NĐ30 Phụ lục I)",
+      "severity": "error"
+    },
+    {
+      "id": "noi_dung.size",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [13.0, 14.0],
+      "mode": "majority",
+      "desc": "Nội dung cỡ chữ 13-14",
+      "severity": "error"
+    },
+    {
+      "id": "noi_dung.align",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "alignment",
+      "op": "in",
+      "value": ["justify", "left"],
+      "mode": "majority",
+      "desc": "Nội dung căn đều hai bên",
+      "severity": "warn"
+    },
+
+    {
+      "id": "signature.zone",
+      "kind": "prop",
+      "component": "signature",
+      "prop": "zone",
+      "op": "eq",
+      "value": "right",
+      "desc": "Chữ ký, chức vụ đặt cột phải phần cuối văn bản",
+      "severity": "error"
+    },
+    {
+      "id": "chuc_danh.bold",
+      "kind": "prop",
+      "component": "chuc_danh",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "mode": "majority",
+      "desc": "Chức danh, cấp bậc người ký in đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "nguoi_ky.bold",
+      "kind": "prop",
+      "component": "nguoi_ky",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "desc": "Họ tên người ký in đậm (NĐ30 Phụ lục I)",
+      "severity": "warn"
+    },
+    {
+      "id": "nguoi_ky.size",
+      "kind": "prop",
+      "component": "nguoi_ky",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [13.0, 14.0],
+      "desc": "Họ tên người ký cỡ chữ 13-14",
+      "severity": "warn"
+    },
+
+    {
+      "id": "noi_nhan.zone",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "zone",
+      "op": "eq",
+      "value": "left",
+      "desc": "Nơi nhận đặt ở góc trái phần cuối văn bản",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_nhan.size",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [11.0, 13.0],
+      "mode": "majority",
+      "desc": "Nơi nhận cỡ chữ 11-12 (dung sai tới 13)",
+      "severity": "warn"
+    }
+  ]
+}

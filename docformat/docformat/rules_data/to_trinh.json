@@ -1,0 +1,35 @@
+{
+  "type": "to_trinh",
+  "label": "Tờ trình (NĐ30/2020, Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "kinh_gui",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "do_mat",
+    "do_khan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "TỜ TRÌNH|TO TRINH",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'TỜ TRÌNH' đứng trên trích yếu",
+      "severity": "warn"
+    }
+  ]
+}

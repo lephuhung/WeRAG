@@ -9,7 +9,8 @@ func CanRunConcurrently(name string) bool {
 		ToolQueryKnowledgeGraph, ToolSearchConversations,
 		ToolSearchMemory, ToolDataSchema, ToolWebSearch, ToolWebFetch,
 		ToolReadFile, ToolListSandboxFiles,
-		ToolWikiSearch, ToolWikiReadPage, ToolWikiReadIssue:
+		ToolWikiSearch, ToolWikiReadPage, ToolWikiReadIssue,
+		ToolCheckDocumentFormat:
 		return true
 	default:
 		return false

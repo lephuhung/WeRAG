@@ -58,6 +58,7 @@ type RouterParams struct {
 	MessageSuggestionHandler     *handler.MessageSuggestionHandler
 	ModelHandler                 *handler.ModelHandler
 	ModelCredentialsHandler      *handler.ModelCredentialsHandler
+	DocumentFormatHandler        *handler.DocumentFormatHandler
 	SandboxConfigHandler         *handler.SandboxConfigHandler
 	SandboxSkillHandler          *handler.SandboxSkillHandler
 	MeEnvVarHandler              *handler.MeEnvVarHandler
@@ -296,6 +297,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterChatRoutes(v1, params.SessionHandler, rbacGuards)
 		RegisterMessageRoutes(v1, params.MessageHandler, rbacGuards)
 		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, rbacGuards)
+		RegisterDocumentFormatRoutes(v1, params.DocumentFormatHandler, rbacGuards)
 		RegisterSandboxConfigRoutes(v1, params.SandboxConfigHandler, params.SandboxSkillHandler, rbacGuards)
 		RegisterMyEnvVarRoutes(v1, params.MeEnvVarHandler)
 		v1.GET("/me/browser", params.SessionHandler.BrowserSkillAccount)

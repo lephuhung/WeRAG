@@ -1,0 +1,33 @@
+{
+  "type": "chi_thi",
+  "label": "Chỉ thị (NĐ30/2020, Phụ lục I)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "can_cu",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "CHỈ THỊ|CHI THI",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'CHỈ THỊ' đứng trên trích yếu",
+      "severity": "warn"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "type": "thong_tu",
+  "label": "Thông tư (NĐ30/2020, Phụ lục I — văn bản QPPL)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "can_cu",
+    "noi_dung",
+    "signature"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "noi_nhan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "THÔNG TƯ|THONG TU",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'THÔNG TƯ' đứng trên trích yếu",
+      "severity": "warn"
+    }
+  ]
+}

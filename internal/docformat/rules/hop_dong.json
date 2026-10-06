@@ -1,0 +1,44 @@
+{
+  "type": "hop_dong",
+  "label": "Hợp đồng (NĐ30/2020, Điều 7)",
+  "required_components": [
+    "quoc_hieu",
+    "tieu_ngu",
+    "trich_yeu",
+    "noi_dung",
+    "signature"
+  ],
+  "optional_components": [
+    "co_quan_ban_hanh",
+    "co_quan_chu_quan",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "HỢP ĐỒNG|HOP DONG",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'HỢP ĐỒNG' đứng trên trích yếu",
+      "severity": "warn"
+    },
+    {
+      "id": "signature.zone",
+      "kind": "prop",
+      "component": "signature",
+      "prop": "zone",
+      "op": "in",
+      "value": [
+        "left",
+        "right"
+      ],
+      "desc": "Văn bản nhiều bên có chữ ký của các bên ở cả hai cột",
+      "severity": "error"
+    }
+  ]
+}

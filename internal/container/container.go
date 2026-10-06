@@ -552,6 +552,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewMessageSuggestionHandler))
 	must(container.Provide(handler.NewModelHandler))
+	must(container.Provide(handler.NewDocumentFormatHandler))
 	must(container.Provide(handler.NewSandboxConfigHandler))
 	must(container.Provide(func(
 		s *service.TenantSkillService, streams interfaces.StreamManager,
