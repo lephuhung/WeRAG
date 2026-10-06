@@ -1298,6 +1298,12 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		// Run VLM image analysis if applicable
 		h.runVLMAnalysisIfNeeded(streamCtx, reqCtx, mode)
 
+		// qaReq was built before the gate; attachment hydration and VLM
+		// analysis filled reqCtx since. Carry their results into the request
+		// the service runs, or the model never sees the uploaded files.
+		qaReq.Attachments = reqCtx.attachments
+		qaReq.ImageURLs, qaReq.ImageDescription = extractImageURLsAndOCRText(reqCtx.images)
+
 		var serviceErr error
 		var stageName string
 		if mode == qaModeNormal {
