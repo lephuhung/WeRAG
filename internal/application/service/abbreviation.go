@@ -3,20 +3,53 @@ package service
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	werrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
+// abbreviationDetectTimeout bounds one decision-model call during
+// detection; on timeout the heuristic takes over.
+const abbreviationDetectTimeout = 5 * time.Second
+
 type abbreviationService struct {
-	repo interfaces.AbbreviationRepository
+	repo   interfaces.AbbreviationRepository
+	models interfaces.ModelService
 }
 
-// NewAbbreviationService creates the abbreviation service.
-func NewAbbreviationService(repo interfaces.AbbreviationRepository) interfaces.AbbreviationService {
-	return &abbreviationService{repo: repo}
+// NewAbbreviationService creates the abbreviation service. models may be
+// nil; candidate detection then always uses the heuristic.
+func NewAbbreviationService(repo interfaces.AbbreviationRepository, models interfaces.ModelService) interfaces.AbbreviationService {
+	return &abbreviationService{repo: repo, models: models}
+}
+
+// DetectCandidates asks the tenant's Decision model (Jev / Clef) which
+// tokens are abbreviations. With no Decision model configured, or on any
+// model error, it returns the heuristic detection so chat never blocks.
+func (s *abbreviationService) DetectCandidates(ctx context.Context, text string) types.AbbreviationDetection {
+	if s.models == nil {
+		return types.AbbreviationDetection{}
+	}
+	decider, err := s.models.GetActiveDecisionModel(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "abbreviation detection: decision model unavailable, using heuristic: %v", err)
+		return types.AbbreviationDetection{}
+	}
+	if decider == nil {
+		return types.AbbreviationDetection{}
+	}
+	detectCtx, cancel := context.WithTimeout(ctx, abbreviationDetectTimeout)
+	defer cancel()
+	det, err := abbreviation.Detect(detectCtx, abbreviation.NewDecisionDetector(decider), text)
+	if err != nil {
+		logger.Warnf(ctx, "abbreviation detection: %s failed, using heuristic: %v", decider.Provider(), err)
+	}
+	return det
 }
 
 // Suggest creates an inactive abbreviation suggestion attributed to the

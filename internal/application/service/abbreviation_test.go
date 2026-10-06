@@ -59,7 +59,7 @@ func (r *fakeAbbreviationRepo) ListByShortForm(_ context.Context, short string) 
 
 func TestAbbreviationSuggestCreatesPendingWithAttribution(t *testing.T) {
 	repo := &fakeAbbreviationRepo{}
-	svc := NewAbbreviationService(repo)
+	svc := NewAbbreviationService(repo, nil)
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
 
 	row, err := svc.Suggest(ctx, &types.AbbreviationCreateRequest{
@@ -86,7 +86,7 @@ func TestAbbreviationSuggestIdempotentForIdenticalMeaning(t *testing.T) {
 	repo := &fakeAbbreviationRepo{rows: []*types.Abbreviation{
 		{ID: "existing", ShortForm: "UBND", FullForm: "Ủy Ban Nhân Dân", IsActive: false},
 	}}
-	svc := NewAbbreviationService(repo)
+	svc := NewAbbreviationService(repo, nil)
 
 	row, err := svc.Suggest(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "ubnd", FullForm: " ủy ban nhân dân ",
@@ -106,7 +106,7 @@ func TestAbbreviationSuggestAllowsDifferentMeaning(t *testing.T) {
 	repo := &fakeAbbreviationRepo{rows: []*types.Abbreviation{
 		{ID: "existing", ShortForm: "BCH", FullForm: "Ban chấp hành"},
 	}}
-	svc := NewAbbreviationService(repo)
+	svc := NewAbbreviationService(repo, nil)
 
 	row, err := svc.Suggest(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "BCH", FullForm: "Bệnh viện C Hòa",
@@ -120,7 +120,7 @@ func TestAbbreviationSuggestAllowsDifferentMeaning(t *testing.T) {
 }
 
 func TestAbbreviationSuggestValidatesRequest(t *testing.T) {
-	svc := NewAbbreviationService(&fakeAbbreviationRepo{})
+	svc := NewAbbreviationService(&fakeAbbreviationRepo{}, nil)
 	for _, req := range []*types.AbbreviationCreateRequest{
 		nil,
 		{ShortForm: "  ", FullForm: "x"},
@@ -141,7 +141,7 @@ func TestAbbreviationSuggestValidatesRequest(t *testing.T) {
 
 func TestAbbreviationCreateValidatesRequest(t *testing.T) {
 	repo := &fakeAbbreviationRepo{}
-	svc := NewAbbreviationService(repo)
+	svc := NewAbbreviationService(repo, nil)
 	if _, err := svc.Create(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "ABC", FullForm: " ",
 	}, true); err == nil {

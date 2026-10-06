@@ -34,7 +34,18 @@ import (
 //     Lifecycle fields (RequestID, message IDs, Version, ExpiresAt) stay zero;
 //     the coordinator assigns them.
 func Inspect(text string, active []*types.Abbreviation) types.AbbreviationResolution {
-	r := types.AbbreviationResolution{OriginalQuery: text}
+	return InspectDetected(text, active, types.AbbreviationDetection{})
+}
+
+// InspectDetected is Inspect with the candidate set chosen by a detection
+// (see Detect) instead of the heuristic. The detection is recorded on the
+// resolution so later coverage checks re-derive the same candidates.
+func InspectDetected(text string, active []*types.Abbreviation, det types.AbbreviationDetection) types.AbbreviationResolution {
+	r := types.AbbreviationResolution{
+		OriginalQuery: text,
+		Detector:      det.Detector,
+		DetectedKeys:  append([]string(nil), det.Keys...),
+	}
 	if text == "" {
 		r.Status = types.AbbreviationStatusReady
 		return r
@@ -48,8 +59,9 @@ func Inspect(text string, active []*types.Abbreviation) types.AbbreviationResolu
 	groups := map[string]*group{}
 	var order []string
 
+	isCandidate := candidateMatcher(det)
 	for _, span := range extractWordTokenSpans(text) {
-		if !IsLikelyAbbreviation(span.token) {
+		if !isCandidate(span.token) {
 			continue
 		}
 		if !isExpansionBoundary(text, span.start, span.end) {
@@ -256,7 +268,7 @@ func RenderResolvedQuery(r types.AbbreviationResolution) (string, error) {
 			return "", types.ErrAbbreviationNotReady
 		}
 	}
-	if err := validateCoverage(r.OriginalQuery, r.Terms); err != nil {
+	if err := validateCoverage(r.OriginalQuery, r.Terms, r.Detection()); err != nil {
 		return "", types.ErrAbbreviationNotReady
 	}
 	type span struct {
@@ -410,12 +422,14 @@ func checkDefinitionEvidence(term *types.AbbreviationTerm, def *types.Abbreviati
 }
 
 // expectedCoverage re-derives the candidate spans of text with the same
-// unchanged scanner, heuristic and per-occurrence protected boundaries the
-// inspector uses, without dictionary I/O.
-func expectedCoverage(text string) map[string][]types.AbbreviationOccurrence {
+// unchanged scanner, candidate predicate (heuristic or the recorded
+// detection) and per-occurrence protected boundaries the inspector uses,
+// without dictionary or classifier I/O.
+func expectedCoverage(text string, det types.AbbreviationDetection) map[string][]types.AbbreviationOccurrence {
 	groups := map[string][]types.AbbreviationOccurrence{}
+	isCandidate := candidateMatcher(det)
 	for _, span := range extractWordTokenSpans(text) {
-		if !IsLikelyAbbreviation(span.token) {
+		if !isCandidate(span.token) {
 			continue
 		}
 		if !isExpansionBoundary(text, span.start, span.end) {
@@ -432,8 +446,8 @@ func expectedCoverage(text string) map[string][]types.AbbreviationOccurrence {
 // appears exactly once in its term's spans — no duplicate keys, absent
 // spans, terms for non-candidates, spans over unrelated text, partial-rune
 // offsets, or overlap. Sorted global spans prove non-overlap in one pass.
-func validateCoverage(text string, terms []types.AbbreviationTerm) error {
-	expected := expectedCoverage(text)
+func validateCoverage(text string, terms []types.AbbreviationTerm, det types.AbbreviationDetection) error {
+	expected := expectedCoverage(text, det)
 	if len(terms) != len(expected) {
 		return fmt.Errorf("term count %d does not cover %d candidates", len(terms), len(expected))
 	}
@@ -545,5 +559,6 @@ func cloneResolution(r types.AbbreviationResolution) types.AbbreviationResolutio
 		out.Terms[i] = cp
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
+	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
 	return out
 }

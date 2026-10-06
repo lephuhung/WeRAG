@@ -7,6 +7,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/decision"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/models/vlm"
@@ -132,6 +133,12 @@ func (s *stubModelService) GetVLMModel(context.Context, string) (vlm.VLM, error)
 }
 
 func (s *stubModelService) GetASRModel(context.Context, string) (asr.ASR, error) {
+	return nil, nil
+}
+func (s *stubModelService) GetDecisionModel(context.Context, string) (decision.Decider, error) {
+	return nil, nil
+}
+func (s *stubModelService) GetActiveDecisionModel(context.Context) (decision.Decider, error) {
 	return nil, nil
 }
 

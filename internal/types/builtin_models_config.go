@@ -236,6 +236,7 @@ var validBuiltinModelTypes = map[ModelType]struct{}{
 	ModelTypeRerank:      {},
 	ModelTypeVLLM:        {},
 	ModelTypeASR:         {},
+	ModelTypeDecision:    {},
 }
 
 // validBuiltinModelStatuses is the set of statuses the loader accepts.

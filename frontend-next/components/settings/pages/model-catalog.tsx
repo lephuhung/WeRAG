@@ -22,7 +22,25 @@ import { Select } from "@/components/select";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { useT } from "@/lib/i18n";
 
-const EMPTY_FORM = { name: "", provider: "", type: "KnowledgeQA", baseUrl: "", apiKey: "" };
+const EMPTY_FORM = {
+  name: "",
+  provider: "",
+  type: "KnowledgeQA",
+  baseUrl: "",
+  apiKey: "",
+  accountId: "",
+};
+
+/* Decision models (Jev-API) only come from these two providers; Clef runs on
+ * Cloudflare Workers AI and also needs the account ID (extra_config). */
+const DECISION_PROVIDERS = [
+  { value: "jev", label: "TypeSafe Jev", model: "jev-latest", baseUrl: "https://api.typesafe.ai/v1" },
+  { value: "clef", label: "Cloudflare Clef", model: "clef-flash", baseUrl: "https://api.cloudflare.com/client/v4" },
+] as const;
+
+const DECISION_TEST_INPUT = "Thủ tục cấp GPLX và đóng bhxh tại UBND phường";
+
+type DecisionTokenScore = { token: string; probability: number; abbreviation: boolean };
 
 type UiModel = {
   id: string;
@@ -117,6 +135,23 @@ const IconModelASR = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const IconModelDecision = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className ?? "h-5 w-5"}
+  >
+    <path d="M6 3v12" />
+    <circle cx="18" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M18 9a9 9 0 0 1-9 9" />
+  </svg>
+);
+
 const IconModelDefault = ({ className }: { className?: string }) => (
   <svg
     viewBox="0 0 24 24"
@@ -176,6 +211,13 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
     bg: "bg-rose-50 dark:bg-rose-950/40",
     border: "border-rose-200 dark:border-rose-900/60",
     badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
+  },
+  Decision: {
+    icon: IconModelDecision,
+    color: "text-cyan-600 dark:text-cyan-400",
+    bg: "bg-cyan-50 dark:bg-cyan-950/40",
+    border: "border-cyan-200 dark:border-cyan-900/60",
+    badge: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20",
   },
 };
 
@@ -278,15 +320,39 @@ function SystemModels() {
       type: m.type,
       baseUrl: m.raw.parameters?.base_url ?? "",
       apiKey: "",
+      accountId: m.raw.parameters?.extra_config?.account_id ?? "",
     });
     setActionError("");
     setModalOpen(true);
   };
 
+  const isDecision = form.type === "Decision";
+  const needsAccountId = isDecision && form.provider === "clef";
+  const decisionProvider = DECISION_PROVIDERS.find((p) => p.value === form.provider);
+
+  const setType = (type: string) => {
+    if (type === "Decision") {
+      const first = DECISION_PROVIDERS[0];
+      setForm({ ...form, type, provider: first.value, name: form.name || first.model });
+    } else {
+      setForm({ ...form, type, provider: isDecision ? "" : form.provider });
+    }
+  };
+
   const save = async () => {
     if (!form.name.trim() || saving) return;
+    // A stored account ID may be hidden from this caller, so only require it
+    // on create; on edit an empty field keeps the stored value.
+    if (needsAccountId && !editing && !form.accountId.trim()) {
+      setActionError(t("mdl.accountIdRequired"));
+      return;
+    }
     setSaving(true);
     setActionError("");
+    const accountPatch =
+      needsAccountId && form.accountId.trim()
+        ? { extra_config: { account_id: form.accountId.trim() } }
+        : {};
     try {
       if (editing) {
         await updateModel(editing.id, {
@@ -296,6 +362,7 @@ function SystemModels() {
             provider: form.provider.trim() || editing.raw.parameters?.provider,
             base_url: form.baseUrl || editing.raw.parameters?.base_url,
             ...(form.apiKey ? { api_key: form.apiKey } : {}),
+            ...accountPatch,
           },
         });
       } else {
@@ -307,6 +374,7 @@ function SystemModels() {
             provider: form.provider.trim() || undefined,
             base_url: form.baseUrl || undefined,
             api_key: form.apiKey || undefined,
+            ...accountPatch,
           },
         });
       }
@@ -324,6 +392,27 @@ function SystemModels() {
     setTesting(true);
     setTestMsg(null);
     try {
+      if (editing.type === "Decision") {
+        // The backend runs the real abbreviation-detection questions.
+        const res = await debugModel(editing.id, { input: DECISION_TEST_INPUT });
+        if (!res.ok) {
+          setTestMsg(res.error || t("mdl.testFail"));
+        } else {
+          const scores = Array.isArray(res.raw_response)
+            ? (res.raw_response as DecisionTokenScore[])
+            : [];
+          const flagged = scores
+            .filter((s) => s.abbreviation)
+            .map((s) => `${s.token} (${s.probability.toFixed(2)})`);
+          setTestMsg(
+            t("mdl.decisionTestOk", {
+              input: DECISION_TEST_INPUT,
+              tokens: flagged.length ? flagged.join(", ") : t("mdl.decisionTestNone"),
+            }),
+          );
+        }
+        return;
+      }
       const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
       setTestMsg(res.ok ? t("mdl.testOk") : res.error || t("mdl.testFail"));
     } catch (e) {
@@ -383,6 +472,7 @@ function SystemModels() {
     { id: "Rerank", label: t("mdl.typeRerank") },
     { id: "VLLM", label: t("mdl.typeVlm") },
     { id: "ASR", label: t("mdl.typeAsr") },
+    { id: "Decision", label: t("mdl.typeDecision") },
   ];
 
   const typeMeta: Record<string, { name: string; sub: string }> = {
@@ -391,6 +481,7 @@ function SystemModels() {
     Rerank: { name: t("mdl.typeRerank"), sub: t("mdl.typeRerankSub") },
     VLLM: { name: t("mdl.typeVlm"), sub: t("mdl.typeVlmSub") },
     ASR: { name: t("mdl.typeAsr"), sub: t("mdl.typeAsrSub") },
+    Decision: { name: t("mdl.typeDecision"), sub: t("mdl.typeDecisionSub") },
   };
   const defaultTypeMeta = { name: t("mdl.typeDefault"), sub: t("mdl.typeDefaultSub") };
 
@@ -601,30 +692,63 @@ function SystemModels() {
           <Select
             value={form.type}
             disabled={!!editing}
-            onChange={(v) => setForm({ ...form, type: v })}
+            onChange={setType}
             options={[
               { value: "KnowledgeQA", label: t("mdl.optKnowledgeQA") },
               { value: "Embedding", label: t("mdl.optEmbedding") },
               { value: "Rerank", label: t("mdl.optRerank") },
               { value: "VLLM", label: t("mdl.optVlm") },
               { value: "ASR", label: t("mdl.optAsr") },
+              { value: "Decision", label: t("mdl.optDecision") },
             ]}
           />
         </label>
+        {isDecision && <p className="caption -mt-2 mb-4 text-muted-soft">{t("mdl.decisionHint")}</p>}
         <label className="mb-4 block">
           <span className="caption mb-1.5 block text-muted">{t("mdl.providerField")}</span>
-          <input
-            className="input"
-            placeholder={t("mdl.providerPh")}
-            value={form.provider}
-            onChange={(e) => setForm({ ...form, provider: e.target.value })}
-          />
+          {isDecision ? (
+            <Select
+              value={form.provider}
+              disabled={!!editing}
+              onChange={(v) => {
+                const next = DECISION_PROVIDERS.find((p) => p.value === v);
+                const isPresetName = DECISION_PROVIDERS.some((p) => p.model === form.name);
+                setForm({
+                  ...form,
+                  provider: v,
+                  name: next && (isPresetName || !form.name) ? next.model : form.name,
+                });
+              }}
+              options={DECISION_PROVIDERS.map((p) => ({ value: p.value, label: p.label }))}
+            />
+          ) : (
+            <input
+              className="input"
+              placeholder={t("mdl.providerPh")}
+              value={form.provider}
+              onChange={(e) => setForm({ ...form, provider: e.target.value })}
+            />
+          )}
         </label>
+        {needsAccountId && (
+          <label className="mb-4 block">
+            <span className="caption mb-1.5 block text-muted">
+              {t("mdl.accountId")}
+              {editing ? t("mdl.apiKeyKeep") : ""}
+            </span>
+            <input
+              className="input font-mono"
+              placeholder={t("mdl.accountIdPh")}
+              value={form.accountId}
+              onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+            />
+          </label>
+        )}
         <label className="mb-4 block">
           <span className="caption mb-1.5 block text-muted">{t("mdl.baseUrl")}</span>
           <input
             className="input"
-            placeholder="https://api.openai.com/v1"
+            placeholder={decisionProvider ? decisionProvider.baseUrl : "https://api.openai.com/v1"}
             value={form.baseUrl}
             onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
           />

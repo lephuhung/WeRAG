@@ -34,6 +34,19 @@ const (
 	AbbreviationSourceUserCurrent      = "user_current_request"
 )
 
+// AbbreviationDetectorHeuristic is the detector name of the built-in
+// heuristic. Any other name is a Decision model provider (jev, clef).
+const AbbreviationDetectorHeuristic = ""
+
+// AbbreviationDetection records which query tokens a classifier flagged as
+// abbreviations. It only selects tokens for dictionary lookup — it never
+// carries a meaning. With Detector empty the heuristic decides and Keys is
+// unused; otherwise Keys (term keys) is the authoritative candidate set.
+type AbbreviationDetection struct {
+	Detector string
+	Keys     []string
+}
+
 // Suggestion lifecycle states (written by the coordinator; the inspector
 // leaves them empty).
 const (
@@ -135,6 +148,19 @@ type AbbreviationResolution struct {
 	Terms                []AbbreviationTerm `json:"terms"`
 	UnknownTerms         []string           `json:"unknown_terms"`
 	ExpiresAt            time.Time          `json:"expires_at"`
+	// Detector and DetectedKeys persist the candidate detection the terms
+	// were built from, so coverage re-validation never calls the classifier
+	// again. Empty Detector (legacy payloads) means the heuristic.
+	Detector     string   `json:"detector,omitempty"`
+	DetectedKeys []string `json:"detected_keys,omitempty"`
+}
+
+// Detection returns the candidate detection the resolution was built from.
+func (r AbbreviationResolution) Detection() AbbreviationDetection {
+	return AbbreviationDetection{
+		Detector: r.Detector,
+		Keys:     append([]string(nil), r.DetectedKeys...),
+	}
 }
 
 // AbbreviationPublicTerm is the shared public projection of one resolved
@@ -174,6 +200,7 @@ func (r AbbreviationResolution) Clone() AbbreviationResolution {
 		}
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
+	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
 	return out
 }
 

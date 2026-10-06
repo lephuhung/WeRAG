@@ -3,9 +3,11 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/models/provider"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,8 +54,16 @@ func TestWireCompletionTokenField(t *testing.T) {
 		provider.ProviderNovita:       completionTokenFieldMaxCompletionTokens,
 		provider.ProviderAnthropic:    completionTokenFieldMaxCompletionTokens,
 	}
-	require.Len(t, want, len(provider.AllProviders()), "classify every AllProviders() name")
+	// Decision-only providers (jev, clef) never serve chat completions.
+	var chatProviders []provider.ProviderName
 	for _, name := range provider.AllProviders() {
+		if p, ok := provider.Get(name); ok && slices.Contains(p.Info().ModelTypes, types.ModelTypeDecision) {
+			continue
+		}
+		chatProviders = append(chatProviders, name)
+	}
+	require.Len(t, want, len(chatProviders), "classify every non-decision AllProviders() name")
+	for _, name := range chatProviders {
 		field, ok := want[name]
 		require.True(t, ok, "classify %s in TestWireCompletionTokenField", name)
 		assert.Equal(t, field, wireCompletionTokenField(name, "any"), string(name))

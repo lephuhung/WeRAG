@@ -40,6 +40,10 @@ type searchStubAbbreviationService struct {
 	actives []*types.Abbreviation
 }
 
+func (*searchStubAbbreviationService) DetectCandidates(context.Context, string) types.AbbreviationDetection {
+	return types.AbbreviationDetection{}
+}
+
 func (s *searchStubAbbreviationService) ListActive(context.Context) ([]*types.Abbreviation, error) {
 	return s.actives, nil
 }

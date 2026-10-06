@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -528,6 +529,30 @@ func (h *ModelHandler) DebugModel(c *gin.Context) {
 			observations["segment_count"] = len(result.Segments)
 		}
 		writeModelDebugResult(c, started, requestPreview, result, callErr, observations)
+	case types.ModelTypeDecision:
+		// Runs the abbreviation-detection questions on the input so admins
+		// can see exactly which tokens the model would flag.
+		if strings.TrimSpace(input) == "" {
+			c.Error(errors.NewBadRequestError("input cannot be empty"))
+			return
+		}
+		instance, callErr := h.service.GetDecisionModel(ctx, id)
+		if callErr != nil {
+			writeModelDebugResult(c, started, requestPreview, nil, callErr, observations)
+			return
+		}
+		tokens := abbreviation.ProposeTokens(input)
+		scores, callErr := abbreviation.ScoreTokens(ctx, instance, input, tokens)
+		flagged := 0
+		for _, sc := range scores {
+			if sc.Abbreviation {
+				flagged++
+			}
+		}
+		observations["token_count"] = len(tokens)
+		observations["abbreviation_count"] = flagged
+		observations["threshold"] = abbreviation.DecisionThreshold
+		writeModelDebugResult(c, started, requestPreview, scores, callErr, observations)
 	default:
 		c.Error(errors.NewBadRequestError("unsupported model type"))
 	}
@@ -957,6 +982,8 @@ func modelTypeToFrontend(mt types.ModelType) string {
 		return "vllm"
 	case types.ModelTypeASR:
 		return "asr"
+	case types.ModelTypeDecision:
+		return "decision"
 	default:
 		return string(mt)
 	}
@@ -994,6 +1021,8 @@ func (h *ModelHandler) ListModelProviders(c *gin.Context) {
 		backendModelType = types.ModelTypeVLLM
 	case "asr":
 		backendModelType = types.ModelTypeASR
+	case "decision":
+		backendModelType = types.ModelTypeDecision
 	default:
 		backendModelType = types.ModelType(modelType)
 	}

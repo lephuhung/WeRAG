@@ -21,6 +21,10 @@ type countingAbbrevSvc struct {
 	calls   int
 }
 
+func (*countingAbbrevSvc) DetectCandidates(context.Context, string) types.AbbreviationDetection {
+	return types.AbbreviationDetection{}
+}
+
 func (s *countingAbbrevSvc) ListActive(context.Context) ([]*types.Abbreviation, error) {
 	s.calls++
 	return s.actives, s.err

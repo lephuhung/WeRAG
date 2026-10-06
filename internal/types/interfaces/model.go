@@ -5,6 +5,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/decision"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/models/vlm"
@@ -44,6 +45,12 @@ type ModelService interface {
 	GetVLMModel(ctx context.Context, modelId string) (vlm.VLM, error)
 	// GetASRModel gets an automatic speech recognition model
 	GetASRModel(ctx context.Context, modelId string) (asr.ASR, error)
+	// GetDecisionModel gets a decision model (Jev / Clef) by ID
+	GetDecisionModel(ctx context.Context, modelId string) (decision.Decider, error)
+	// GetActiveDecisionModel returns the tenant's active Decision model, or
+	// nil (no error) when none is configured — features gated on a decision
+	// model stay off until one exists.
+	GetActiveDecisionModel(ctx context.Context) (decision.Decider, error)
 }
 
 // ModelRepository defines the model repository interface

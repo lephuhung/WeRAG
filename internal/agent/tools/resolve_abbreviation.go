@@ -129,13 +129,13 @@ func (t *ResolveAbbreviationTool) expand(
 	if sealed, ok := abbreviation.ResolutionFromContext(ctx); ok {
 		// Bound QA turn: reuse the validated mapping — the dictionary is not
 		// consulted again and model arguments cannot widen it.
-		res = abbreviation.Expand(input.Text, sealedAbbreviationActives(&sealed))
+		res = abbreviation.ExpandDetected(input.Text, sealedAbbreviationActives(&sealed), sealed.Detection())
 	} else {
 		actives, err := t.svc.ListActive(ctx)
 		if err != nil {
 			return t.fail(fmt.Sprintf("failed to load abbreviation dictionary: %v", err))
 		}
-		res = abbreviation.Expand(input.Text, actives)
+		res = abbreviation.ExpandDetected(input.Text, actives, t.svc.DetectCandidates(ctx, input.Text))
 	}
 
 	var b strings.Builder

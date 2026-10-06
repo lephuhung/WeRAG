@@ -65,6 +65,10 @@ const (
 	ProviderNovita ProviderName = "novita"
 	// Azure OpenAI
 	ProviderAzureOpenAI ProviderName = "azure_openai"
+	// TypeSafe Jev (decision model)
+	ProviderJev ProviderName = "jev"
+	// Cloudflare Clef (Jev-compatible decision model on Workers AI)
+	ProviderClef ProviderName = "clef"
 )
 
 // AllProviders 返回所有注册的提供者名称
@@ -97,6 +101,8 @@ func AllProviders() []ProviderName {
 		ProviderNvidia,
 		ProviderNovita,
 		ProviderAzureOpenAI,
+		ProviderJev,
+		ProviderClef,
 	}
 }
 

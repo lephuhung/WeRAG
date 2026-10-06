@@ -25,6 +25,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/decision"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/models/vlm"
@@ -3378,6 +3379,12 @@ func (s *installModelService) GetASRModel(context.Context, string) (asr.ASR, err
 type installChat struct{ id string }
 
 func (installChat) Chat(context.Context, []chat.Message, *chat.ChatOptions) (*types.ChatResponse, error) {
+	return nil, nil
+}
+func (s *installModelService) GetDecisionModel(context.Context, string) (decision.Decider, error) {
+	return nil, nil
+}
+func (s *installModelService) GetActiveDecisionModel(context.Context) (decision.Decider, error) {
 	return nil, nil
 }
 

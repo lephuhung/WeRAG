@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/decision"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
@@ -185,6 +186,9 @@ func (s *modelService) CreateModel(ctx context.Context, model *types.Model) erro
 	if !model.Type.Valid() {
 		return fmt.Errorf("invalid model type %q", model.Type)
 	}
+	if err := normalizeDecisionModel(model); err != nil {
+		return err
+	}
 
 	// Handle remote models (e.g., OpenAI, Azure)
 	if model.Source == types.ModelSourceRemote {
@@ -330,6 +334,9 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"model_id": model.ID,
 		})
+		return err
+	}
+	if err := normalizeDecisionModel(model); err != nil {
 		return err
 	}
 	if existingModel != nil && existingModel.IsBuiltin {
@@ -683,6 +690,75 @@ func (s *modelService) GetRerankModel(ctx context.Context, modelId string) (rera
 
 	logger.Info(ctx, "Rerank model initialized successfully")
 	return reranker, nil
+}
+
+// normalizeDecisionModel validates a Decision model: the provider must be
+// jev or clef, clef needs extra_config.account_id, and decision models are
+// always remote (never pulled through Ollama). Other types pass through.
+func normalizeDecisionModel(model *types.Model) error {
+	if model.Type != types.ModelTypeDecision {
+		return nil
+	}
+	model.Source = types.ModelSourceRemote
+	switch provider.ProviderName(model.Parameters.Provider) {
+	case provider.ProviderJev:
+	case provider.ProviderClef:
+		if strings.TrimSpace(model.Parameters.ExtraConfig[provider.ClefAccountIDKey]) == "" {
+			return fmt.Errorf("clef decision model requires extra_config.%s", provider.ClefAccountIDKey)
+		}
+	default:
+		return fmt.Errorf("decision model provider must be %q or %q, got %q",
+			provider.ProviderJev, provider.ProviderClef, model.Parameters.Provider)
+	}
+	return nil
+}
+
+// GetDecisionModel retrieves and initializes a decision model (Jev / Clef).
+func (s *modelService) GetDecisionModel(ctx context.Context, modelId string) (decision.Decider, error) {
+	model, err := s.GetModelByID(ctx, modelId)
+	if err != nil {
+		return nil, err
+	}
+	if model.Type != types.ModelTypeDecision {
+		return nil, fmt.Errorf("model %s is %s, not a decision model", model.ID, model.Type)
+	}
+	return decision.NewDecider(decision.ConfigFromModel(model))
+}
+
+// GetActiveDecisionModel picks the tenant's Decision model: active rows only,
+// is_default first, then tenant-owned before builtin, then oldest. Returns
+// nil, nil when the tenant has none (or no tenant is in ctx).
+func (s *modelService) GetActiveDecisionModel(ctx context.Context) (decision.Decider, error) {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	models, err := s.repo.List(ctx, tenantID, types.ModelTypeDecision, "")
+	if err != nil {
+		return nil, err
+	}
+	var best *types.Model
+	better := func(a, b *types.Model) bool {
+		if a.IsDefault != b.IsDefault {
+			return a.IsDefault
+		}
+		if a.IsBuiltin != b.IsBuiltin {
+			return !a.IsBuiltin
+		}
+		return a.CreatedAt.Before(b.CreatedAt)
+	}
+	for _, m := range models {
+		if m == nil || m.Status != types.ModelStatusActive {
+			continue
+		}
+		if best == nil || better(m, best) {
+			best = m
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	return decision.NewDecider(decision.ConfigFromModel(best))
 }
 
 // GetChatModel retrieves and initializes a chat model instance

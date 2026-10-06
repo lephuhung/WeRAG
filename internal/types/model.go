@@ -20,12 +20,15 @@ const (
 	ModelTypeKnowledgeQA ModelType = "KnowledgeQA" // KnowledgeQA model
 	ModelTypeVLLM        ModelType = "VLLM"        // VLLM model
 	ModelTypeASR         ModelType = "ASR"         // ASR (Automatic Speech Recognition) model
+	// ModelTypeDecision is a typed decision model (Jev-API: state + typed
+	// questions in, calibrated probabilities out; it never generates text).
+	ModelTypeDecision ModelType = "Decision"
 )
 
 // Valid reports whether t is one of the supported model types.
 func (t ModelType) Valid() bool {
 	switch t {
-	case ModelTypeEmbedding, ModelTypeRerank, ModelTypeKnowledgeQA, ModelTypeVLLM, ModelTypeASR:
+	case ModelTypeEmbedding, ModelTypeRerank, ModelTypeKnowledgeQA, ModelTypeVLLM, ModelTypeASR, ModelTypeDecision:
 		return true
 	}
 	return false

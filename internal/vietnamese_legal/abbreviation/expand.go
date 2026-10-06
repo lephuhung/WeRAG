@@ -41,6 +41,12 @@ type ExpandResult struct {
 //     left untouched — choosing a meaning is the caller's (or the user's) job;
 //   - candidates with no row land in Potential.
 func Expand(text string, actives []*types.Abbreviation) *ExpandResult {
+	return ExpandDetected(text, actives, types.AbbreviationDetection{})
+}
+
+// ExpandDetected is Expand with candidates chosen by a detection instead of
+// the heuristic.
+func ExpandDetected(text string, actives []*types.Abbreviation, det types.AbbreviationDetection) *ExpandResult {
 	res := &ExpandResult{Original: text, Expanded: text}
 	if text == "" {
 		return res
@@ -59,8 +65,9 @@ func Expand(text string, actives []*types.Abbreviation) *ExpandResult {
 		byShort[key] = append(byShort[key], a)
 	}
 
+	isCandidate := candidateMatcher(det)
 	for _, token := range extractWordTokens(text) {
-		if !IsLikelyAbbreviation(token) {
+		if !isCandidate(token) {
 			continue
 		}
 		matches := byShort[strings.ToLower(token)]

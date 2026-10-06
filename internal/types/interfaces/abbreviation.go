@@ -63,4 +63,9 @@ type AbbreviationService interface {
 
 	// ListByShortForm returns every row for a short form (any active state).
 	ListByShortForm(ctx context.Context, shortForm string) ([]*types.Abbreviation, error)
+
+	// DetectCandidates decides which tokens of text are abbreviations to
+	// look up. It never fails: a classifier error falls back to the
+	// heuristic detection (zero value).
+	DetectCandidates(ctx context.Context, text string) types.AbbreviationDetection
 }

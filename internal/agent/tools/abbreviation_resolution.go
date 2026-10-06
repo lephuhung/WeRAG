@@ -47,7 +47,11 @@ func ResolveToolQuery(
 	if sealed, ok := abbreviation.ResolutionFromContext(ctx); ok {
 		return applySealedAbbreviationMapping(query, &sealed), nil, nil
 	}
-	if len(abbreviation.FindCandidates(query)) == 0 {
+	var detection types.AbbreviationDetection
+	if svc != nil {
+		detection = svc.DetectCandidates(ctx, query)
+	}
+	if len(abbreviation.FindDetectedCandidates(query, detection)) == 0 {
 		return query, nil, nil
 	}
 	if svc == nil {
@@ -63,7 +67,7 @@ func ResolveToolQuery(
 				types.AbbreviationResolution{}), fmt.Errorf("%s: %v",
 				AbbreviationCodeDictionaryError, err)
 	}
-	res := abbreviation.Inspect(query, actives)
+	res := abbreviation.InspectDetected(query, actives, detection)
 	switch {
 	case res.Status == types.AbbreviationStatusReady:
 		out, err := abbreviation.RenderResolvedQuery(res)
@@ -152,7 +156,7 @@ func applySealedAbbreviationMapping(query string, res *types.AbbreviationResolut
 	if len(actives) == 0 {
 		return query
 	}
-	inspected := abbreviation.Inspect(query, actives)
+	inspected := abbreviation.InspectDetected(query, actives, res.Detection())
 	return renderResolvedAbbreviationTerms(query, inspected.Terms)
 }
 

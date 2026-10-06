@@ -122,7 +122,7 @@ func validateReadyResolution(r types.AbbreviationResolution) error {
 			return types.ErrAbbreviationNotReady
 		}
 	}
-	if err := validateCoverage(r.OriginalQuery, r.Terms); err != nil {
+	if err := validateCoverage(r.OriginalQuery, r.Terms, r.Detection()); err != nil {
 		return types.ErrAbbreviationNotReady
 	}
 	rendered, err := RenderResolvedQuery(r)

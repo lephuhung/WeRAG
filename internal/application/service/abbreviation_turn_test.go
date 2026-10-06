@@ -27,6 +27,10 @@ type turnDictionary struct {
 	suggestErr   error
 }
 
+func (*turnDictionary) DetectCandidates(context.Context, string) types.AbbreviationDetection {
+	return types.AbbreviationDetection{}
+}
+
 func (d *turnDictionary) ListActive(context.Context) ([]*types.Abbreviation, error) {
 	d.listCalls++
 	return d.active, d.listErr

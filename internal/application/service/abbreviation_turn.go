@@ -72,7 +72,13 @@ func (c *AbbreviationTurnCoordinator) Prepare(ctx context.Context, in Abbreviati
 
 func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in AbbreviationPrepareInput) (types.AbbreviationResolution, error) {
 	b := in.Binding
-	probe := abbreviation.Inspect(b.RawQuery, nil)
+	// The detector (Clef or heuristic) only picks which tokens to look up;
+	// meanings come from the dictionary or the user, never the classifier.
+	var detection types.AbbreviationDetection
+	if c.dictionary != nil {
+		detection = c.dictionary.DetectCandidates(ctx, b.RawQuery)
+	}
+	probe := abbreviation.InspectDetected(b.RawQuery, nil, detection)
 	candidates := make([]string, 0, len(probe.Terms))
 	for _, term := range probe.Terms {
 		candidates = append(candidates, term.ShortForm)
@@ -104,7 +110,7 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 		if c.dictionary == nil {
 			lookupFailed = true
 		} else if active, listErr := c.dictionary.ListActive(ctx); listErr == nil {
-			resolution = abbreviation.Inspect(b.RawQuery, active)
+			resolution = abbreviation.InspectDetected(b.RawQuery, active, detection)
 		} else {
 			lookupFailed = true
 		}

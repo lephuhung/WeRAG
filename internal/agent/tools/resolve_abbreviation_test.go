@@ -21,6 +21,10 @@ type stubAbbreviationService struct {
 	suggested *types.AbbreviationCreateRequest
 }
 
+func (*stubAbbreviationService) DetectCandidates(context.Context, string) types.AbbreviationDetection {
+	return types.AbbreviationDetection{}
+}
+
 func (s *stubAbbreviationService) ListActive(
 	_ context.Context,
 ) ([]*types.Abbreviation, error) {
