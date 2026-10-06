@@ -259,6 +259,11 @@ class TestDetectType(unittest.TestCase):
         self.assertEqual(S.detect_type("", "", "Số: 12/TTr-UBND"), "to_trinh")
         self.assertEqual(S.detect_type("", "", "Số: 12/UBND-VP"), "cong_van")
         self.assertEqual(S.detect_type("", "", "Số: 5/2025/NĐ-CP"), "nghi_dinh")
+        # Công an unit codes are not type codes: PA05 ≠ PA (phương án)
+        for so in ("Số:        /PA05-Đ4", "Số: 882/PV01-CNTT", "Số 12/PC06-TM"):
+            self.assertEqual(S.detect_type("", "", so), "cong_van", so)
+        self.assertEqual(S.detect_type("", "", "Số: 12/PA-UBND"), "phuong_an")
+        self.assertEqual(S.detect_type("", "", "Số: 24/2018/QH14"), "unknown")
 
     def test_agency_and_place_patterns(self):
         from importlib import import_module

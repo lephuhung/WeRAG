@@ -86,7 +86,7 @@ var (
 	wrapEndRe     = regexp.MustCompile(`[,\-–&]$|\s(VA|CUA)$`)
 	daKyNameRe    = regexp.MustCompile(`^\(?\s*(DA\s+KY|KY\s+SO|DAU)`)
 	daKyRe        = regexp.MustCompile(`^\(\s*(DA\s+KY|KY|DAU)`)
-	symbolCodeRe  = regexp.MustCompile(`/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)`)
+	symbolCodeRe  = regexp.MustCompile(`/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)(\d*)`)
 	docTypeLineRe []docTypePattern
 )
 
@@ -278,8 +278,9 @@ func typeFromLine(line string) string {
 	return ""
 }
 
-// typeFromSymbol: "Số: 12/QĐ-UBND" → quyet_dinh; "Số: 12/UBND-VP" (no type
-// code) → cong_van; "24/2018/QH14", "05/VBHN-BCT" → "".
+// typeFromSymbol: "Số: 12/QĐ-UBND" → quyet_dinh; "Số: 12/UBND-VP" and
+// "Số: 45/PA05-Đ4" (no type code, unit codes) → cong_van; "24/2018/QH14",
+// "05/VBHN-BCT" → "".
 func typeFromSymbol(soKyHieu string) string {
 	t := strings.ToUpper(norm.NFC.String(soKyHieu))
 	m := symbolCodeRe.FindStringSubmatch(t)
@@ -287,6 +288,15 @@ func typeFromSymbol(soKyHieu string) string {
 		return ""
 	}
 	code := m[1]
+	if m[2] != "" {
+		// letters run straight into digits: an issuing unit's code ("PA05",
+		// "PV01" of Công an units, "QH14"), never a type code — the type
+		// code stands alone before "-" ("QĐ-", "BC-")
+		if nonTypeSymbols[code] {
+			return ""
+		}
+		return "cong_van"
+	}
 	if d := vl.DocTypeBySymbol(code); d != nil {
 		return d.Slug
 	}

@@ -224,3 +224,20 @@ func TestRuleSetOverrideByID(t *testing.T) {
 		t.Fatalf("types = %v", AvailableTypes())
 	}
 }
+
+func TestTypeFromSymbolUnitCodes(t *testing.T) {
+	for so, want := range map[string]string{
+		"Số:        /PA05-Đ4": "cong_van", // Công an unit PA05, not phương án
+		"Số: 882/PV01-CNTT":   "cong_van",
+		"Số 12/PC06-TM":       "cong_van",
+		"Số: 12/PA-UBND":      "phuong_an",
+		"Số: 45/QĐ-UBND":      "quyet_dinh",
+		"Số: 5/2025/NĐ-CP":    "nghi_dinh",
+		"Số: 24/2018/QH14":    "unknown",
+		"Số: 7/UBND-VP":       "cong_van",
+	} {
+		if got := DetectType("", "", so); got != want {
+			t.Errorf("DetectType(%q) = %q, want %q", so, got, want)
+		}
+	}
+}

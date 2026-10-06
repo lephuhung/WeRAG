@@ -205,13 +205,19 @@ def _type_from_line(line: str) -> Optional[str]:
 
 def _type_from_symbol(so_ky_hieu: str) -> Optional[str]:
     """'Số: 12/QĐ-UBND' → quyet_dinh; 'Số: 12/UBND-VP' (no type code) →
-    cong_van (NĐ30: công văn ký hiệu = cơ quan-đơn vị soạn thảo);
-    'Số: 24/2018/QH14', '05/VBHN-BCT' → None (not a type code)."""
+    cong_van (NĐ30: công văn ký hiệu = cơ quan-đơn vị soạn thảo, also
+    "45/PA05-Đ4"); 'Số: 24/2018/QH14', '05/VBHN-BCT' → None (not a type
+    code)."""
     t = unicodedata.normalize("NFC", so_ky_hieu or "").upper()
-    m = re.search(r"/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)", t)
+    m = re.search(r"/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)(\d*)", t)
     if not m:
         return None
     code = m.group(1)
+    if m.group(2):
+        # letters run straight into digits: an issuing unit's code ("PA05",
+        # "PV01" of Công an units, "QH14"), never a type code — the type
+        # code stands alone before "-" ("QĐ-", "BC-")
+        return None if code in doctypes.NON_TYPE_SYMBOLS else "cong_van"
     if code in _SYMBOL_TYPES:
         return _SYMBOL_TYPES[code]
     if code in _SYMBOL_TYPES_FOLDED:
