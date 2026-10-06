@@ -89,6 +89,22 @@ def fixture_docs():
             docs["fx_cong_van_" + style] = captured["last"]
     finally:
         TR.comps_of = orig
+    import test_ky_thay as TK
+    kt_cases = {
+        "ok": (["KT. TRƯỞNG PHÒNG", "PHÓ TRƯỞNG PHÒNG"],
+               ["- Như trên;", "- Đ/c Trưởng phòng (để b/c);", "- Lưu: VT."]),
+        "missing_kt": (["TRƯỞNG PHÒNG", "PHÓ TRƯỞNG PHÒNG"],
+                       ["- Như trên;", "- Lưu: PA05 (Đ4)."]),
+        "mismatch": (["KT. GIÁM ĐỐC", "PHÓ TRƯỞNG PHÒNG"], ["- Giám đốc (để b/c);"]),
+        "tm_chain": (["TM. ỦY BAN NHÂN DÂN", "KT. CHỦ TỊCH", "PHÓ CHỦ TỊCH"],
+                     ["- CT UBND tỉnh (để báo cáo);", "- Lưu: VT."]),
+        "unmarked": (["KT. TRƯỞNG PHÒNG", "PHÓ TRƯỞNG PHÒNG"],
+                     ["- Trưởng phòng;", "- Lưu: VT."]),
+        "deputy_listed": (["KT. TRƯỞNG PHÒNG", "PHÓ TRƯỞNG PHÒNG"],
+                          ["- Phó Trưởng phòng (để b/c);", "- Lưu: VT."]),
+    }
+    for name, (sig, nn) in kt_cases.items():
+        docs["fx_ky_thay_" + name] = TK.signed_doc(sig, nn)
     return docs
 
 

@@ -17,7 +17,10 @@ import (
 // type check with the same id replaces the base one.
 //
 // Check kinds: prop (a paragraph property over a component's paragraphs;
-// mode all | majority (≥70%) | any) and page_setup (a section property).
+// mode all | majority (≥70%) | any), page_setup (a section property),
+// ky_thay (a deputy signs under "KT. <head's title>", NĐ30 Điều 13) and
+// ky_thay_noi_nhan (a document signed KT. lists the head in Nơi nhận
+// "(để báo cáo)").
 // Operators: eq, ne, in, range [min,max], regex, ge, le.
 
 //go:embed rules/*.json
@@ -719,6 +722,10 @@ func Evaluate(l *Layout, seg *Segmentation, rs *RuleSet) []CheckResult {
 			r, err = evalPageSetup(l, c)
 		case "prop", "":
 			r, err = evalProp(l, seg, c)
+		case "ky_thay":
+			r = evalKyThay(seg, c)
+		case "ky_thay_noi_nhan":
+			r = evalKyThayNoiNhan(seg, c)
 		default:
 			r = evalOut{status: StatusSkip, note: fmt.Sprintf("unknown check kind '%s'", kind)}
 		}
@@ -732,4 +739,182 @@ func Evaluate(l *Layout, seg *Segmentation, rs *RuleSet) []CheckResult {
 			Severity: "error"}, evalOrder(seg, rs.Order))
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// Ký thay (KT.)
+
+var (
+	ktLineRe     = regexp.MustCompile(`^KT\s*[.:]?\s+(.+)$`)
+	deputyRe     = regexp.MustCompile(`^PHO\s+(.+)$`)
+	ktPrefixRe   = regexp.MustCompile(`(?i)^\s*K\s*T\s*[.:]?\s*`)
+	deBaoCaoRe   = regexp.MustCompile(`DE\s+(BAO\s+CAO|B\s*/\s*C)\b|\(\s*B\s*/\s*C\s*\)`)
+	titleTokenRe = regexp.MustCompile(`[A-Z0-9]+`)
+)
+
+// NotApplicable prefixes the note of a check that does not apply to the
+// document (e.g. no deputy signs).
+const NotApplicable = "không áp dụng"
+
+func textLines(s string) []string {
+	var out []string
+	for _, ln := range strings.Split(s, "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+func sameTitle(a, b string) bool {
+	return a == b || strings.HasPrefix(a, b+" ") || strings.HasPrefix(b, a+" ")
+}
+
+type kyThaySigner struct {
+	deputy, kt  string // kt is "" when the KT. line is missing
+	head, shown string // head title folded / as written
+}
+
+// kyThaySigners finds deputies signing for a head in the chức danh lines.
+func kyThaySigners(seg *Segmentation) []kyThaySigner {
+	lines := textLines(seg.Comp("chuc_danh").Text)
+	var out []kyThaySigner
+	for i, line := range lines {
+		m := deputyRe.FindStringSubmatch(fold(line))
+		if m == nil {
+			continue
+		}
+		s := kyThaySigner{deputy: line, head: m[1], shown: strings.Join(strings.Fields(line)[1:], " ")}
+		if i > 0 {
+			if km := ktLineRe.FindStringSubmatch(fold(lines[i-1])); km != nil {
+				s.kt, s.head = lines[i-1], km[1]
+				s.shown = ktPrefixRe.ReplaceAllString(lines[i-1], "")
+			}
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func notApplicableKyThay() evalOut {
+	return evalOut{status: StatusSkip, note: NotApplicable + ": không có cấp phó ký thay"}
+}
+
+func evalKyThay(seg *Segmentation, c RuleCheck) evalOut {
+	signers := kyThaySigners(seg)
+	if len(signers) == 0 {
+		return notApplicableKyThay()
+	}
+	evidence := []map[string]any{}
+	actual := make([]any, 0, len(signers))
+	for _, s := range signers {
+		deputyTitle := deputyRe.FindStringSubmatch(fold(s.deputy))[1]
+		if s.kt == "" {
+			actual = append(actual, "(thiếu KT.)")
+			evidence = append(evidence, map[string]any{"text": s.deputy,
+				"actual": fmt.Sprintf("thiếu dòng 'KT. %s' phía trên", s.shown)})
+			continue
+		}
+		actual = append(actual, s.kt)
+		if !sameTitle(s.head, deputyTitle) {
+			evidence = append(evidence, map[string]any{"text": s.kt + " / " + s.deputy,
+				"actual": "chức vụ ký thay không khớp với chức vụ cấp phó"})
+		}
+	}
+	status := StatusPass
+	if len(evidence) > 0 {
+		status = failStatus(c.Severity)
+	}
+	return evalOut{status: status, actual: actual, evidence: evidence}
+}
+
+// headMentioned: the head's title — or its initials (TP, GD, CT) — appears
+// in a nơi nhận line as whole tokens, not as a deputy's title ("Phó Trưởng
+// phòng").
+func headMentioned(line, head string) bool {
+	tokens := titleTokenRe.FindAllString(fold(line), -1)
+	headTokens := titleTokenRe.FindAllString(head, -1)
+	if len(headTokens) == 0 {
+		return false
+	}
+	patterns := [][]string{headTokens}
+	if len(headTokens) >= 2 {
+		var ini strings.Builder
+		for _, t := range headTokens {
+			ini.WriteByte(t[0])
+		}
+		patterns = append(patterns, []string{ini.String()})
+	}
+	for _, pat := range patterns {
+		n := len(pat)
+	scan:
+		for i := 0; i+n <= len(tokens); i++ {
+			for k := range pat {
+				if tokens[i+k] != pat[k] {
+					continue scan
+				}
+			}
+			if i == 0 || tokens[i-1] != "PHO" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func evalKyThayNoiNhan(seg *Segmentation, c RuleCheck) evalOut {
+	signers := kyThaySigners(seg)
+	if len(signers) == 0 {
+		return notApplicableKyThay()
+	}
+	lines := textLines(seg.Comp("noi_nhan").Text)
+	if len(lines) == 0 {
+		return evalOut{status: StatusSkip, note: "component 'noi_nhan' not found"}
+	}
+	var heads, shown []string
+	seen := map[string]bool{}
+	for _, s := range signers {
+		if !seen[s.head] {
+			seen[s.head] = true
+			heads, shown = append(heads, s.head), append(shown, s.shown)
+		}
+	}
+	var missing, unmarked []map[string]any
+	for i, head := range heads {
+		var hits []string
+		for _, ln := range lines {
+			if headMentioned(ln, head) {
+				hits = append(hits, ln)
+			}
+		}
+		if len(hits) == 0 {
+			missing = append(missing, map[string]any{
+				"text":   truncateRunes(strings.Join(lines, " / "), 80),
+				"actual": fmt.Sprintf("thiếu '%s (để báo cáo)'", shown[i])})
+			continue
+		}
+		marked := false
+		for _, h := range hits {
+			if deBaoCaoRe.MatchString(fold(h)) {
+				marked = true
+				break
+			}
+		}
+		if !marked {
+			unmarked = append(unmarked, map[string]any{
+				"text": truncateRunes(hits[0], 80), "actual": "chưa ghi '(để báo cáo)'"})
+		}
+	}
+	status := StatusPass
+	switch {
+	case len(missing) > 0:
+		status = failStatus(c.Severity)
+	case len(unmarked) > 0:
+		status = StatusWarn
+	}
+	actual := make([]any, len(shown))
+	for i, s := range shown {
+		actual[i] = s
+	}
+	return evalOut{status: status, actual: actual, evidence: append(append([]map[string]any{}, missing...), unmarked...)}
 }

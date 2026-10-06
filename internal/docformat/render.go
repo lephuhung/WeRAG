@@ -84,7 +84,13 @@ func RenderText(r *Report) string {
 			b.WriteByte('\n')
 			for _, ev := range c.Evidence {
 				if txt, ok := ev["text"]; ok {
-					fmt.Fprintf(&b, "    · đoạn %v %q: %s\n", ev["para"], txt, compactJSON(ev["actual"]))
+					if para, ok := ev["para"]; ok {
+						fmt.Fprintf(&b, "    · đoạn %v %q: %s\n", para, txt, compactJSON(ev["actual"]))
+					} else if a, ok := ev["actual"].(string); ok {
+						fmt.Fprintf(&b, "    · %q: %s\n", txt, a)
+					} else {
+						fmt.Fprintf(&b, "    · %q: %s\n", txt, compactJSON(ev["actual"]))
+					}
 				} else {
 					fmt.Fprintf(&b, "    · %s\n", compactJSON(ev))
 				}
@@ -94,7 +100,8 @@ func RenderText(r *Report) string {
 	var skipped []string
 	for _, c := range r.Checks {
 		if c.Status == StatusSkip && c.Severity == "error" && c.Note != "" &&
-			!strings.HasPrefix(c.Note, "thành phần không bắt buộc") {
+			!strings.HasPrefix(c.Note, "thành phần không bắt buộc") &&
+			!strings.HasPrefix(c.Note, NotApplicable) {
 			skipped = append(skipped, c.ID)
 		}
 	}

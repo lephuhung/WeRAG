@@ -37,7 +37,10 @@
       "kind": "page_setup",
       "prop": "page_width_mm",
       "op": "range",
-      "value": [209.0, 211.0],
+      "value": [
+        209.0,
+        211.0
+      ],
       "desc": "Khổ giấy A4 — chiều rộng 210mm",
       "severity": "error"
     },
@@ -46,7 +49,10 @@
       "kind": "page_setup",
       "prop": "page_height_mm",
       "op": "range",
-      "value": [296.0, 298.0],
+      "value": [
+        296.0,
+        298.0
+      ],
       "desc": "Khổ giấy A4 — chiều cao 297mm",
       "severity": "error"
     },
@@ -55,7 +61,10 @@
       "kind": "page_setup",
       "prop": "margin_top_mm",
       "op": "range",
-      "value": [20.0, 25.0],
+      "value": [
+        20.0,
+        25.0
+      ],
       "desc": "Lề trên 20-25mm (NĐ30 Phụ lục I)",
       "severity": "error"
     },
@@ -64,7 +73,10 @@
       "kind": "page_setup",
       "prop": "margin_bottom_mm",
       "op": "range",
-      "value": [20.0, 25.0],
+      "value": [
+        20.0,
+        25.0
+      ],
       "desc": "Lề dưới 20-25mm (NĐ30 Phụ lục I)",
       "severity": "error"
     },
@@ -73,7 +85,10 @@
       "kind": "page_setup",
       "prop": "margin_left_mm",
       "op": "range",
-      "value": [30.0, 35.0],
+      "value": [
+        30.0,
+        35.0
+      ],
       "desc": "Lề trái 30-35mm (NĐ30 Phụ lục I)",
       "severity": "error"
     },
@@ -82,11 +97,13 @@
       "kind": "page_setup",
       "prop": "margin_right_mm",
       "op": "range",
-      "value": [15.0, 20.0],
+      "value": [
+        15.0,
+        20.0
+      ],
       "desc": "Lề phải 15-20mm (NĐ30 Phụ lục I)",
       "severity": "error"
     },
-
     {
       "id": "co_quan_ban_hanh.zone",
       "kind": "prop",
@@ -113,11 +130,13 @@
       "component": "co_quan_ban_hanh",
       "prop": "size_pt",
       "op": "range",
-      "value": [12.0, 14.0],
+      "value": [
+        12.0,
+        14.0
+      ],
       "desc": "Tên cơ quan ban hành cỡ chữ 12-13 (dung sai tới 14)",
       "severity": "warn"
     },
-
     {
       "id": "quoc_hieu.zone",
       "kind": "prop",
@@ -134,7 +153,9 @@
       "component": "quoc_hieu",
       "prop": "alignment",
       "op": "in",
-      "value": ["center"],
+      "value": [
+        "center"
+      ],
       "desc": "Quốc hiệu căn giữa theo cột phải",
       "severity": "warn"
     },
@@ -154,11 +175,13 @@
       "component": "quoc_hieu",
       "prop": "size_pt",
       "op": "range",
-      "value": [12.0, 13.0],
+      "value": [
+        12.0,
+        13.0
+      ],
       "desc": "Quốc hiệu cỡ chữ 12-13",
       "severity": "warn"
     },
-
     {
       "id": "tieu_ngu.zone",
       "kind": "prop",
@@ -185,11 +208,13 @@
       "component": "tieu_ngu",
       "prop": "size_pt",
       "op": "range",
-      "value": [13.0, 14.0],
+      "value": [
+        13.0,
+        14.0
+      ],
       "desc": "Tiêu ngữ cỡ chữ 13-14",
       "severity": "warn"
     },
-
     {
       "id": "so_ky_hieu.zone",
       "kind": "prop",
@@ -206,11 +231,13 @@
       "component": "so_ky_hieu",
       "prop": "size_pt",
       "op": "range",
-      "value": [12.0, 14.0],
+      "value": [
+        12.0,
+        14.0
+      ],
       "desc": "Số, ký hiệu cỡ chữ 13 (dung sai 12-14)",
       "severity": "warn"
     },
-
     {
       "id": "dia_danh.zone",
       "kind": "prop",
@@ -237,11 +264,13 @@
       "component": "dia_danh_ngay_thang",
       "prop": "size_pt",
       "op": "range",
-      "value": [13.0, 14.0],
+      "value": [
+        13.0,
+        14.0
+      ],
       "desc": "Địa danh, ngày tháng năm cỡ chữ 13-14",
       "severity": "warn"
     },
-
     {
       "id": "trich_yeu.align",
       "kind": "prop",
@@ -269,19 +298,23 @@
       "component": "trich_yeu",
       "prop": "size_pt",
       "op": "range",
-      "value": [13.0, 14.0],
+      "value": [
+        13.0,
+        14.0
+      ],
       "mode": "majority",
       "desc": "Tên loại và trích yếu cỡ chữ 13-14",
       "severity": "warn"
     },
-
     {
       "id": "noi_dung.font",
       "kind": "prop",
       "component": "noi_dung",
       "prop": "font_name",
       "op": "in",
-      "value": ["Times New Roman"],
+      "value": [
+        "Times New Roman"
+      ],
       "mode": "majority",
       "desc": "Nội dung dùng kiểu chữ Times New Roman (NĐ30 Phụ lục I)",
       "severity": "error"
@@ -292,7 +325,10 @@
       "component": "noi_dung",
       "prop": "size_pt",
       "op": "range",
-      "value": [13.0, 14.0],
+      "value": [
+        13.0,
+        14.0
+      ],
       "mode": "majority",
       "desc": "Nội dung cỡ chữ 13-14",
       "severity": "error"
@@ -303,12 +339,14 @@
       "component": "noi_dung",
       "prop": "alignment",
       "op": "in",
-      "value": ["justify", "left"],
+      "value": [
+        "justify",
+        "left"
+      ],
       "mode": "majority",
       "desc": "Nội dung căn đều hai bên",
       "severity": "warn"
     },
-
     {
       "id": "signature.zone",
       "kind": "prop",
@@ -346,11 +384,27 @@
       "component": "nguoi_ky",
       "prop": "size_pt",
       "op": "range",
-      "value": [13.0, 14.0],
+      "value": [
+        13.0,
+        14.0
+      ],
       "desc": "Họ tên người ký cỡ chữ 13-14",
       "severity": "warn"
     },
-
+    {
+      "id": "signature.ky_thay",
+      "kind": "ky_thay",
+      "component": "chuc_danh",
+      "desc": "Cấp phó ký thay người đứng đầu ghi 'KT. <chức vụ người đứng đầu>' phía trên chức vụ của mình (NĐ30, Điều 13)",
+      "severity": "error"
+    },
+    {
+      "id": "noi_nhan.bao_cao_cap_truong",
+      "kind": "ky_thay_noi_nhan",
+      "component": "noi_nhan",
+      "desc": "Văn bản ký thay gửi người đứng đầu để báo cáo: Nơi nhận có '<chức vụ người đứng đầu> (để báo cáo)'",
+      "severity": "error"
+    },
     {
       "id": "noi_nhan.zone",
       "kind": "prop",
@@ -367,7 +421,10 @@
       "component": "noi_nhan",
       "prop": "size_pt",
       "op": "range",
-      "value": [11.0, 13.0],
+      "value": [
+        11.0,
+        13.0
+      ],
       "mode": "majority",
       "desc": "Nơi nhận cỡ chữ 11-12 (dung sai tới 13)",
       "severity": "warn"

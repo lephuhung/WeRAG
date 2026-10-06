@@ -13,6 +13,10 @@ Check kinds
   ``any``.
 - ``page_setup``: evaluate a Section property (page size, margins).
 - ``order``: components must appear in the rule-set ``order`` list.
+- ``ky_thay``: a deputy signing for the head ("PHÓ TRƯỞNG PHÒNG") must sit
+  under "KT. <head's title>" (NĐ30 Điều 13, ký thay).
+- ``ky_thay_noi_nhan``: a document signed KT. must list the head in Nơi
+  nhận, marked "(để báo cáo)".
 
 Operators: ``eq``, ``ne``, ``in``, ``range`` ([min,max], inclusive),
 ``regex``, ``ge``, ``le``.
@@ -26,7 +30,7 @@ from importlib import resources
 from typing import Optional
 
 from .layout import DocLayout, Para
-from .segment import Segmented
+from .segment import Segmented, fold
 
 _RULES_PACKAGE = "docformat.rules_data"
 
@@ -249,6 +253,118 @@ def _eval_order(seg: Segmented, order: list) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Ký thay (KT.)
+
+_KT_RE = re.compile(r"^KT\s*[.:]?\s+(.+)$")
+_DEPUTY_RE = re.compile(r"^PHO\s+(.+)$")
+_DE_BAO_CAO_RE = re.compile(r"DE\s+(BAO\s+CAO|B\s*/\s*C)\b|\(\s*B\s*/\s*C\s*\)")
+NOT_APPLICABLE = "không áp dụng"
+
+
+def _lines(text: str) -> list:
+    return [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+
+
+def _same_title(a: str, b: str) -> bool:
+    """'TRUONG PHONG' ~ 'TRUONG PHONG' / 'CHU TICH' ~ 'CHU TICH THUONG TRUC'."""
+    return a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+
+def ky_thay_signers(seg: Segmented) -> list:
+    """Deputies signing for a head, from the chức danh lines in order:
+    [(deputy line, KT. line or None, head title folded, head title as
+    written)]."""
+    lines = _lines(seg.comp("chuc_danh")["text"])
+    out = []
+    for i, line in enumerate(lines):
+        m = _DEPUTY_RE.match(fold(line))
+        if not m:
+            continue
+        head, shown = m.group(1), " ".join(line.split()[1:])
+        kt = None
+        if i > 0 and _KT_RE.match(fold(lines[i - 1])):
+            kt = lines[i - 1]
+            head = _KT_RE.match(fold(kt)).group(1)
+            shown = re.sub(r"^\s*K\s*T\s*[.:]?\s*", "", kt, flags=re.I)
+        out.append((line, kt, head, shown))
+    return out
+
+
+def _eval_ky_thay(seg: Segmented, check: dict) -> dict:
+    signers = ky_thay_signers(seg)
+    if not signers:
+        return {"status": "skip", "actual": None, "evidence": [],
+                "note": NOT_APPLICABLE + ": không có cấp phó ký thay"}
+    bad = []
+    for deputy, kt, head, shown in signers:
+        deputy_title = _DEPUTY_RE.match(fold(deputy)).group(1)
+        if kt is None:
+            bad.append({"text": deputy, "actual": "thiếu dòng 'KT. %s' phía trên" % shown})
+        elif not _same_title(head, deputy_title):
+            bad.append({"text": kt + " / " + deputy,
+                        "actual": "chức vụ ký thay không khớp với chức vụ cấp phó"})
+    sev = check.get("severity")
+    return {
+        "status": "pass" if not bad else ("warn" if sev == "warn" else "fail"),
+        "actual": [kt or "(thiếu KT.)" for _, kt, _, _ in signers],
+        "evidence": bad,
+    }
+
+
+_TOKEN_RE = re.compile(r"[A-Z0-9]+")
+
+
+def _head_mentioned(line: str, head: str) -> bool:
+    """The head's title — or its initials (TP, GD, CT) — appears in a nơi
+    nhận line as whole tokens, and not as a deputy's title ("Phó Trưởng
+    phòng")."""
+    tokens = _TOKEN_RE.findall(fold(line))
+    head_tokens = _TOKEN_RE.findall(head)
+    if not head_tokens:
+        return False
+    patterns = [head_tokens]
+    if len(head_tokens) >= 2:
+        patterns.append(["".join(t[0] for t in head_tokens)])
+    for pat in patterns:
+        n = len(pat)
+        for i in range(len(tokens) - n + 1):
+            if tokens[i:i + n] == pat and (i == 0 or tokens[i - 1] != "PHO"):
+                return True
+    return False
+
+
+def _eval_ky_thay_noi_nhan(seg: Segmented, check: dict) -> dict:
+    signers = ky_thay_signers(seg)
+    if not signers:
+        return {"status": "skip", "actual": None, "evidence": [],
+                "note": NOT_APPLICABLE + ": không có cấp phó ký thay"}
+    lines = _lines(seg.comp("noi_nhan")["text"])
+    if not lines:
+        return {"status": "skip", "actual": None, "evidence": [],
+                "note": "component 'noi_nhan' not found"}
+    heads = {}
+    for _, _, head, shown in signers:
+        heads.setdefault(head, shown)
+    missing, unmarked = [], []
+    for head, shown in heads.items():
+        hits = [ln for ln in lines if _head_mentioned(ln, head)]
+        if not hits:
+            missing.append({"text": " / ".join(lines)[:80],
+                            "actual": "thiếu '%s (để báo cáo)'" % shown})
+        elif not any(_DE_BAO_CAO_RE.search(fold(ln)) for ln in hits):
+            unmarked.append({"text": hits[0][:80],
+                             "actual": "chưa ghi '(để báo cáo)'"})
+    if missing:
+        status = "warn" if check.get("severity") == "warn" else "fail"
+    elif unmarked:
+        status = "warn"
+    else:
+        status = "pass"
+    return {"status": status, "actual": list(heads.values()),
+            "evidence": missing + unmarked}
+
+
 def evaluate(layout: DocLayout, seg: Segmented, rule_set: dict) -> list:
     results = []
     for comp, sev in (
@@ -286,6 +402,10 @@ def evaluate(layout: DocLayout, seg: Segmented, rule_set: dict) -> list:
                 r = _eval_page_setup(layout, check)
             elif kind == "prop":
                 r = _eval_prop_check(layout, seg, check)
+            elif kind == "ky_thay":
+                r = _eval_ky_thay(seg, check)
+            elif kind == "ky_thay_noi_nhan":
+                r = _eval_ky_thay_noi_nhan(seg, check)
             else:
                 r = {"status": "skip", "note": "unknown check kind %r" % kind,
                      "actual": None, "evidence": []}
