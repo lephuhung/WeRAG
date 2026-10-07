@@ -298,7 +298,12 @@ func (s *sessionService) AgentQA(
 	// edits only a passage the user highlighted in this turn.
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
-		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID); doc != "" {
+		// codes in the highlighted passage locate text past the cut too
+		locate := effectiveQuery
+		if sel := req.DocumentSelection.Normalized(); sel != nil {
+			locate += "\n" + sel.Text
+		}
+		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, locate); doc != "" {
 			agentQuery += doc
 			logger.Infof(ctx, "Appended open document text (%d chars) to agent query", len(doc))
 		}
