@@ -290,9 +290,12 @@ func (s *documentWorkspaceService) View(
 			"key":      ws.EditorKey(),
 			"title":    ws.FileName,
 			"url":      s.cfg.BackendURL + "/r/" + grant,
+			// Only what editing the uploaded file needs: no DS-side download or
+			// print (the workspace bar has its own download), no Protection
+			// tab, no chat.
 			"permissions": map[string]interface{}{
 				"edit": true, "review": true, "comment": true,
-				"download": true, "print": true, "chat": false,
+				"download": false, "print": false, "protect": false, "chat": false,
 			},
 		},
 		"editorConfig": map[string]interface{}{
@@ -310,7 +313,14 @@ func (s *documentWorkspaceService) View(
 				// the Collaboration tab when they want to.
 				"review":   map[string]interface{}{"trackChanges": true, "showReviewChanges": false, "reviewDisplay": "markup"},
 				"features": map[string]interface{}{"spellcheck": false, "featuresTips": false},
-				"plugins":  true,
+				// Keep the surface to editing the file: no help/feedback links
+				// and no macros. Plugin support must stay on: turning it off
+				// also stops the autostarted assistant plugin (verified on 9.4).
+				"help":       false,
+				"feedback":   map[string]interface{}{"visible": false},
+				"macros":     false,
+				"macrosMode": "disable",
+				"plugins":    true,
 			},
 			"plugins": map[string]interface{}{
 				"autostart": []string{onlyOfficeAssistantPluginGUID},
