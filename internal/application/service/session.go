@@ -146,6 +146,9 @@ type sessionService struct {
 	abbreviationPreparer    AbbreviationPreparer
 	abbreviationCoordinator *AbbreviationTurnCoordinator
 	abbreviationStore       interfaces.AbbreviationTurnRepository
+	// documentWorkspaces holds the document-assistant session's editable
+	// document; its current text is put into every agent turn.
+	documentWorkspaces interfaces.DocumentWorkspaceService
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -174,6 +177,7 @@ func NewSessionService(cfg *config.Config,
 	peopleService *people.Service,
 	abbreviationCoordinator *AbbreviationTurnCoordinator,
 	abbreviationStore interfaces.AbbreviationTurnRepository,
+	documentWorkspaces interfaces.DocumentWorkspaceService,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                     cfg,
@@ -202,6 +206,7 @@ func NewSessionService(cfg *config.Config,
 		abbreviationPreparer:    abbreviationCoordinator,
 		abbreviationCoordinator: abbreviationCoordinator,
 		abbreviationStore:       abbreviationStore,
+		documentWorkspaces:      documentWorkspaces,
 	}
 }
 

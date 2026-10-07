@@ -297,6 +297,12 @@ func (s *sessionService) AgentQA(
 	// The document tools read the selection from ctx: rewrite_paragraphs
 	// edits only a passage the user highlighted in this turn.
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
+	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
+		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID); doc != "" {
+			agentQuery += doc
+			logger.Infof(ctx, "Appended open document text (%d chars) to agent query", len(doc))
+		}
+	}
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
 		agentQuery += manifest
 		logger.Infof(ctx, "Appended %d staged sandbox attachment path(s) to agent query", len(stagedAttachments))
