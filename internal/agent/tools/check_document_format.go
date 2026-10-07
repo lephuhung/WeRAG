@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -63,19 +64,49 @@ type checkDocumentFormatInput struct {
 	DocumentType string `json:"document_type"`
 }
 
-// CheckDocumentFormatTool reads a session attachment and runs the NĐ30
+// formatCheckSource loads the .docx to check: its bytes, its display name
+// and, for a workspace document, its revision (-1 otherwise). The error
+// text is shown to the agent as is.
+type formatCheckSource func(ctx context.Context, tenantID uint64, fileName string) ([]byte, string, int, error)
+
+// CheckDocumentFormatTool reads a session document and runs the NĐ30
 // format check, labelling components with the agent's chat model.
 type CheckDocumentFormatTool struct {
 	BaseTool
-	documents interfaces.TemporaryDocumentService
+	source    formatCheckSource
 	chatModel chat.Chat
 	sessionID string
 }
 
-// NewCheckDocumentFormatTool builds the tool for one session. chatModel may
-// be nil: the positional heuristic is used then.
+// NewCheckDocumentFormatTool builds the tool for one session, checking the
+// session's uploaded attachments. chatModel may be nil: the positional
+// heuristic is used then.
 func NewCheckDocumentFormatTool(documents interfaces.TemporaryDocumentService, chatModel chat.Chat, sessionID string) *CheckDocumentFormatTool {
-	return &CheckDocumentFormatTool{BaseTool: checkDocumentFormatTool, documents: documents, chatModel: chatModel, sessionID: sessionID}
+	t := &CheckDocumentFormatTool{BaseTool: checkDocumentFormatTool, chatModel: chatModel, sessionID: sessionID}
+	t.source = func(ctx context.Context, tenantID uint64, fileName string) ([]byte, string, int, error) {
+		content, name, err := loadUploadedDocx(ctx, documents, tenantID, sessionID, fileName)
+		return content, name, -1, err
+	}
+	return t
+}
+
+// NewCheckDocumentFormatToolForWorkspace builds the tool for a session with
+// an editable document: it checks the latest saved version of that
+// document instead of the uploads.
+func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, chatModel chat.Chat, sessionID string) *CheckDocumentFormatTool {
+	base := checkDocumentFormatTool
+	base.description = strings.Replace(base.description,
+		"administrative document the user uploaded in this conversation",
+		"administrative document — the document open in this conversation's editor (its latest saved version; file_name is ignored)", 1)
+	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID}
+	t.source = func(ctx context.Context, _ uint64, _ string) ([]byte, string, int, error) {
+		content, ws, err := readWorkspaceDocument(ctx, workspace, sessionID)
+		if err != nil {
+			return nil, "", -1, err
+		}
+		return content, ws.FileName, ws.Revision, nil
+	}
+	return t
 }
 
 // IsDocx reports whether a temporary document is a Word .docx file.
@@ -130,32 +161,12 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if !ok || t.sessionID == "" {
 		return &types.ToolResult{Success: false, Error: "no conversation context to read uploads from"}, nil
 	}
-	docs, err := t.documents.List(ctx, tenantID, t.sessionID)
+	content, fileName, revision, err := t.source(ctx, tenantID, in.FileName)
 	if err != nil {
-		return &types.ToolResult{Success: false, Error: "could not list the uploaded files"}, nil
-	}
-	doc, names := pickDocx(docs, in.FileName)
-	if doc == nil {
-		msg := "Không có file .docx nào được tải lên trong cuộc hội thoại này. Kiểm tra thể thức chỉ hỗ trợ file Word .docx (không hỗ trợ .doc, PDF hay ảnh)."
-		if len(names) > 0 {
-			msg = fmt.Sprintf("Không tìm thấy file %q. Các file .docx đã tải lên: %s", in.FileName, strings.Join(names, ", "))
-		}
-		return &types.ToolResult{Success: false, Error: msg}, nil
-	}
-	rc, _, err := t.documents.OpenFile(ctx, tenantID, t.sessionID, doc.ID)
-	if err != nil {
-		return &types.ToolResult{Success: false, Error: "could not open " + doc.FileName}, nil
-	}
-	defer rc.Close()
-	content, err := io.ReadAll(io.LimitReader(rc, maxFormatCheckBytes+1))
-	if err != nil {
-		return &types.ToolResult{Success: false, Error: "could not read " + doc.FileName}, nil
-	}
-	if len(content) > maxFormatCheckBytes {
-		return &types.ToolResult{Success: false, Error: doc.FileName + " is too large to check (max 30 MB)"}, nil
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 
-	opts := docformat.Options{DocumentType: in.DocumentType, SourceName: doc.FileName}
+	opts := docformat.Options{DocumentType: in.DocumentType, SourceName: fileName}
 	if t.chatModel != nil {
 		opts.LLM = docformat.ChatCompleter(t.chatModel)
 		opts.ModelName = t.chatModel.GetModelName()
@@ -165,18 +176,49 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 		return &types.ToolResult{Success: false, Error: docformat.RenderText(report)}, nil
 	}
 	output, evaluated := t.evaluate(ctx, report)
-	return &types.ToolResult{
-		Success: true,
-		Output:  output,
-		Data: map[string]interface{}{
-			"file_name":     doc.FileName,
-			"document_type": report.DocumentType,
-			"summary":       report.Summary,
-			"method":        report.Segmentation.Method,
-			"skills":        report.Skills,
-			"evaluated":     evaluated,
-		},
-	}, nil
+	data := map[string]interface{}{
+		"file_name":     fileName,
+		"document_type": report.DocumentType,
+		"summary":       report.Summary,
+		"method":        report.Segmentation.Method,
+		"skills":        report.Skills,
+		"evaluated":     evaluated,
+	}
+	if revision >= 0 {
+		data["document_revision"] = revision
+	}
+	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
+}
+
+// loadUploadedDocx reads the session upload to check (see pickDocx).
+func loadUploadedDocx(ctx context.Context, documents interfaces.TemporaryDocumentService,
+	tenantID uint64, sessionID, fileName string,
+) ([]byte, string, error) {
+	docs, err := documents.List(ctx, tenantID, sessionID)
+	if err != nil {
+		return nil, "", errors.New("could not list the uploaded files")
+	}
+	doc, names := pickDocx(docs, fileName)
+	if doc == nil {
+		msg := "Không có file .docx nào được tải lên trong cuộc hội thoại này. Kiểm tra thể thức chỉ hỗ trợ file Word .docx (không hỗ trợ .doc, PDF hay ảnh)."
+		if len(names) > 0 {
+			msg = fmt.Sprintf("Không tìm thấy file %q. Các file .docx đã tải lên: %s", fileName, strings.Join(names, ", "))
+		}
+		return nil, "", errors.New(msg)
+	}
+	rc, _, err := documents.OpenFile(ctx, tenantID, sessionID, doc.ID)
+	if err != nil {
+		return nil, "", errors.New("could not open " + doc.FileName)
+	}
+	defer rc.Close()
+	content, err := io.ReadAll(io.LimitReader(rc, maxFormatCheckBytes+1))
+	if err != nil {
+		return nil, "", errors.New("could not read " + doc.FileName)
+	}
+	if len(content) > maxFormatCheckBytes {
+		return nil, "", errors.New(doc.FileName + " is too large to check (max 30 MB)")
+	}
+	return content, doc.FileName, nil
 }
 
 // evaluateTimeout keeps the reasoning call inside the agent's tool budget

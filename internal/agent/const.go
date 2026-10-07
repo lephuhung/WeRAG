@@ -41,6 +41,14 @@ const (
 	// Qwen3.6-35B-A3B, more under load); the tool caps its own model call
 	// below this and falls back to returning the raw data.
 	checkDocumentFormatToolTimeout = 4 * time.Minute
+	// documentEditToolTimeout covers apply_format_fixes / rewrite_paragraphs:
+	// a write first force-saves the embedded editor (waiting up to 20s for
+	// its callback), may label the document with the chat model, then edits
+	// and stores the .docx.
+	documentEditToolTimeout = 4 * time.Minute
+	// documentOutlineToolTimeout covers reading and segmenting the workspace
+	// document with the positional heuristic (no model call).
+	documentOutlineToolTimeout = 30 * time.Second
 
 	// maxLLMRetries is the maximum number of retries for transient LLM errors.
 	maxLLMRetries = 2
@@ -71,8 +79,13 @@ func toolExecutionTimeout(toolName string, arguments ...string) time.Duration {
 	if toolName == "shell_exec" {
 		return shellExecToolTimeout
 	}
-	if toolName == "check_document_format" {
+	switch toolName {
+	case "check_document_format":
 		return checkDocumentFormatToolTimeout
+	case "apply_format_fixes", "rewrite_paragraphs":
+		return documentEditToolTimeout
+	case "read_document_outline":
+		return documentOutlineToolTimeout
 	}
 	return defaultToolExecTimeout
 }

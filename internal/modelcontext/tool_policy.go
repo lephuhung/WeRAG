@@ -110,6 +110,11 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	// check_document_format reads the session's own uploads by file name
 	// and returns a format report: no source or KB identifiers.
 	"check_document_format": {},
+	// The document-assistant tools work on the session's one editable
+	// document, addressed by paragraph index: no source or KB identifiers.
+	"read_document_outline": {},
+	"rewrite_paragraphs":    {},
+	"apply_format_fixes":    {},
 	"query_knowledge_graph": {
 		sourceIDKeys: map[string]struct{}{"knowledge_base_ids": {}},
 		sourceOutput: true,

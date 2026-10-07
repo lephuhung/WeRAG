@@ -179,6 +179,59 @@ builtin_agents:
       rerank_top_k: 10
       rerank_threshold: 0.3
 
+  - id: "builtin-document-assistant"
+    avatar: "📝"
+    is_builtin: true
+    i18n:
+      default:
+        name: "Document Assistant"
+        description: "Edit a Word document in place: normalise its layout to Decree 30/2020, rewrite highlighted passages, cite the legal basis"
+      vi:
+        name: "Soạn thảo văn bản"
+        description: "Chỉnh sửa tài liệu Word ngay trên trình soạn thảo: chuẩn hóa thể thức theo Nghị định 30/2020, viết lại đoạn đã bôi đen, tra cứu căn cứ pháp lý"
+      zh-CN:
+        name: "公文助手"
+        description: "在编辑器中直接修改 Word 文档：按越南第 30/2020 号议定规范版式，改写选中段落，引用法律依据"
+      zh-TW:
+        name: "公文助手"
+        description: "在編輯器中直接修改 Word 文件：依越南第 30/2020 號議定規範版式，改寫選取段落，引用法律依據"
+      ja-JP:
+        name: "文書アシスタント"
+        description: "Word 文書をエディター上で直接編集：政令 30/2020 に沿って書式を整え、選択した箇所を書き直し、法的根拠を引用します"
+      ko-KR:
+        name: "문서 도우미"
+        description: "편집기에서 Word 문서를 바로 수정: 시행령 30/2020에 맞춰 서식을 정리하고, 선택한 부분을 다시 쓰고, 법적 근거를 인용합니다"
+    config:
+      agent_mode: "smart-reasoning"
+      agent_type: "custom"
+      system_prompt_id: "document_assistant"
+      temperature: 0.2
+      max_completion_tokens: 0
+      max_iterations: 30
+      kb_selection_mode: "all"
+      retrieve_kb_only_when_mentioned: false
+      supported_file_types:
+        - "docx"
+        - "doc"
+      allowed_tools:
+        - "check_document_format"
+        - "read_document_outline"
+        - "apply_format_fixes"
+        - "rewrite_paragraphs"
+        - "search_knowledge"
+        - "read_document"
+        - "query_knowledge_graph"
+        - "resolve_abbreviation"
+      web_search_enabled: false
+      web_search_max_results: 0
+      reflection_enabled: false
+      multi_turn_enabled: true
+      embedding_top_k: 10
+      keyword_threshold: 0.3
+      vector_threshold: 0.5
+      rerank_top_k: 10
+      rerank_threshold: 0.3
+
   - id: "builtin-wiki-fixer"
     avatar: "🔧"
     is_builtin: true

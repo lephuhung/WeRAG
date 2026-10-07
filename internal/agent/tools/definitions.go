@@ -73,6 +73,12 @@ const (
 	ToolWikiFlagIssue   = "wiki_flag_issue"
 	ToolWikiReadIssue   = "wiki_read_issue"
 	ToolWikiUpdateIssue = "wiki_update_issue"
+	// Document-assistant tools work on the session's editable Word document
+	// (DocumentWorkspace) and are registered only when the session has one.
+	// The two writers record every edit as a Word tracked change.
+	ToolReadDocumentOutline = "read_document_outline"
+	ToolRewriteParagraphs   = "rewrite_paragraphs"
+	ToolApplyFormatFixes    = "apply_format_fixes"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -109,6 +115,21 @@ func AvailableToolDefinitions() []AvailableTool {
 		{Name: ToolWikiDeletePage, Label: "删除Wiki", Description: "删除Wiki页面并自动清理关联死链"},
 		{Name: ToolWikiReadIssue, Label: "查看Wiki问题", Description: "查看特定的Wiki页面问题详情"},
 		{Name: ToolWikiUpdateIssue, Label: "更新Wiki问题状态", Description: "更新特定的Wiki页面问题状态"},
+		{
+			Name:        ToolReadDocumentOutline,
+			Label:       "Đọc dàn ý văn bản",
+			Description: "Liệt kê các đoạn của tài liệu Word đang soạn thảo kèm thành phần thể thức và định dạng",
+		},
+		{
+			Name:        ToolApplyFormatFixes,
+			Label:       "Chuẩn hóa thể thức",
+			Description: "Sửa phông, cỡ chữ, căn lề, khổ giấy theo Nghị định 30/2020 dưới dạng track changes",
+		},
+		{
+			Name:        ToolRewriteParagraphs,
+			Label:       "Viết lại đoạn văn",
+			Description: "Sửa nội dung đoạn văn trong tài liệu đang soạn thảo dưới dạng track changes",
+		},
 	}
 }
 

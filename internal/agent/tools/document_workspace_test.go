@@ -1,0 +1,778 @@
+package tools
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/docformat"
+	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/types"
+)
+
+// fakeWorkspace is an in-memory DocumentWorkspaceSource.
+type fakeWorkspace struct {
+	ws        types.DocumentWorkspace
+	content   []byte
+	prepared  int
+	commits   int
+	conflict  bool // CommitExternalWrite reports a concurrent save
+	waited    time.Duration
+	sessionID string
+}
+
+func newFakeWorkspace(content []byte) *fakeWorkspace {
+	return &fakeWorkspace{ws: types.DocumentWorkspace{ID: "ws-1", FileName: "cong-van.docx", Revision: 3}, content: content}
+}
+
+func (f *fakeWorkspace) GetBySession(_ context.Context, _ uint64, sessionID string) (*types.DocumentWorkspace, error) {
+	f.sessionID = sessionID
+	ws := f.ws
+	return &ws, nil
+}
+
+func (f *fakeWorkspace) OpenCurrent(_ context.Context, _ uint64, sessionID string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+	f.sessionID = sessionID
+	ws := f.ws
+	return io.NopCloser(bytes.NewReader(f.content)), &ws, nil
+}
+
+func (f *fakeWorkspace) PrepareExternalWrite(_ context.Context, _ uint64, sessionID string, wait time.Duration) (*types.DocumentWorkspace, []byte, error) {
+	f.sessionID, f.waited = sessionID, wait
+	f.prepared++
+	ws := f.ws
+	return &ws, append([]byte(nil), f.content...), nil
+}
+
+func (f *fakeWorkspace) CommitExternalWrite(_ context.Context, _ uint64, _ string, expectedRevision int, data []byte) (*types.DocumentWorkspace, error) {
+	if f.conflict || expectedRevision != f.ws.Revision {
+		return nil, apperrors.NewConflictError("document changed since it was read; read it again")
+	}
+	f.commits++
+	f.content = append([]byte(nil), data...)
+	f.ws.Revision++
+	ws := f.ws
+	return &ws, nil
+}
+
+const testWNS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`
+
+// para renders one paragraph with uniform run properties.
+func testPara(text, align, font string, sizePt int, bold, italic bool) string {
+	var ppr, rpr string
+	if align != "" {
+		ppr = `<w:pPr><w:jc w:val="` + align + `"/></w:pPr>`
+	}
+	if font != "" {
+		rpr += `<w:rFonts w:ascii="` + font + `" w:hAnsi="` + font + `" w:cs="` + font + `"/>`
+	}
+	if bold {
+		rpr += `<w:b/>`
+	}
+	if italic {
+		rpr += `<w:i/>`
+	}
+	if sizePt > 0 {
+		sz := itoaTest(sizePt * 2)
+		rpr += `<w:sz w:val="` + sz + `"/><w:szCs w:val="` + sz + `"/>`
+	}
+	return `<w:p>` + ppr + `<w:r><w:rPr>` + rpr + `</w:rPr><w:t xml:space="preserve">` + text + `</w:t></w:r></w:p>`
+}
+
+func itoaTest(n int) string {
+	b, _ := json.Marshal(n)
+	return string(b)
+}
+
+// buildTestDocx zips a minimal .docx around body markup; margins are in
+// twips (top, right, bottom, left).
+func buildTestDocx(t *testing.T, body string, margins [4]int) []byte {
+	t.Helper()
+	doc := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ` + testWNS + `><w:body>` + body +
+		`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="` + itoaTest(margins[0]) + `" w:right="` + itoaTest(margins[1]) +
+		`" w:bottom="` + itoaTest(margins[2]) + `" w:left="` + itoaTest(margins[3]) + `" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range []struct{ name, data string }{
+		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`},
+		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`},
+		{"word/document.xml", doc},
+		{"word/styles.xml", `<?xml version="1.0" encoding="UTF-8"?><w:styles ` + testWNS + `><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="28"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`},
+	} {
+		w, err := zw.Create(e.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(w, e.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A4 with NĐ30 margins: top/bottom 20mm, right 15mm, left 30mm.
+var nd30Margins = [4]int{1134, 851, 1134, 1701}
+
+// testCongVan is a short công văn: header lines, số ký hiệu, trích yếu and
+// a body typed in Arial 12 with left alignment.
+func testCongVan(t *testing.T, margins [4]int) []byte {
+	body := strings.Join([]string{
+		testPara("UBND TỈNH THỪA THIÊN HUẾ", "center", "Times New Roman", 13, false, false),
+		testPara("SỞ NỘI VỤ", "center", "Times New Roman", 13, true, false),
+		testPara("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "center", "Times New Roman", 13, true, false),
+		testPara("Độc lập - Tự do - Hạnh phúc", "center", "Times New Roman", 14, true, false),
+		testPara("Số: 12/SNV-VP", "center", "Times New Roman", 13, false, false),
+		testPara("Huế, ngày 05 tháng 10 năm 2026", "center", "Times New Roman", 14, false, true),
+		testPara("V/v triển khai công tác cải cách hành chính", "left", "Times New Roman", 13, false, false),
+		testPara("Kính gửi: Ủy ban nhân dân các huyện.", "center", "Times New Roman", 14, false, false),
+		testPara("Sở Nội vụ đề nghị các đơn vị triển khai công tác cải cách hành chính năm 2026.", "left", "Arial", 12, false, false),
+		testPara("Đề nghị các đơn vị báo cáo kết quả trước ngày 30 tháng 11 năm 2026.", "left", "Arial", 12, false, false),
+		testPara("Trên đây là nội dung đề nghị của Sở Nội vụ./.", "left", "Arial", 12, false, false),
+		testPara("GIÁM ĐỐC", "center", "Times New Roman", 14, true, false),
+		testPara("Nguyễn Văn A", "center", "Times New Roman", 14, true, false),
+		testPara("Nơi nhận:", "left", "Times New Roman", 12, true, true),
+		testPara("- Như trên;", "left", "Times New Roman", 11, false, false),
+		testPara("- Lưu: VT.", "left", "Times New Roman", 11, false, false),
+	}, "")
+	return buildTestDocx(t, body, margins)
+}
+
+func toolCtx() context.Context {
+	return context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+}
+
+func runTool(t *testing.T, tool interface {
+	Execute(context.Context, json.RawMessage) (*types.ToolResult, error)
+}, args string,
+) *types.ToolResult {
+	t.Helper()
+	res, err := tool.Execute(toolCtx(), json.RawMessage(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// patchDocx rewrites word/document.xml of a package with old→new pairs.
+func patchDocx(t *testing.T, docx []byte, pairs ...string) []byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Name == "word/document.xml" {
+			s := string(data)
+			for i := 0; i+1 < len(pairs); i += 2 {
+				if !strings.Contains(s, pairs[i]) {
+					t.Fatalf("patch target %q not found", pairs[i])
+				}
+				s = strings.Replace(s, pairs[i], pairs[i+1], 1)
+			}
+			data = []byte(s)
+		}
+		w, err := zw.Create(f.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func documentPartXML(t *testing.T, docx []byte) string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rc.Close()
+			b, err := io.ReadAll(rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(b)
+		}
+	}
+	t.Fatal("no word/document.xml")
+	return ""
+}
+
+// ---------------------------------------------------------------------------
+// read_document_outline
+
+func TestReadDocumentOutlineListsParagraphs(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	res := runTool(t, NewReadDocumentOutlineTool(ws, nil, "sess-1"), `{}`)
+	if !res.Success {
+		t.Fatalf("result: %+v", res)
+	}
+	for _, want := range []string{
+		"cong-van.docx", "phiên bản 3",
+		"[2] (quoc_hieu) Times New Roman 13 đậm, giữa | CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+		"[6] (trich_yeu) Arial 14 đậm, giữa | CÔNG VĂN",
+		"[8] (noi_dung) Arial 14, đều | Phòng Quản lý Y",
+		"[10] (chuc_danh) Arial 14 đậm, phải | PHÒNG QUẢN LÝ Y",
+	} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("outline lacks %q:\n%s", want, res.Output)
+		}
+	}
+	if ws.sessionID != "sess-1" || ws.prepared != 0 {
+		t.Fatalf("outline must read through OpenCurrent of its session (session %q, prepared %d)", ws.sessionID, ws.prepared)
+	}
+	if res.Data["paragraph_count"] != 15 || res.Data["document_revision"] != 3 || res.Data["to"] != 15 {
+		t.Fatalf("data: %+v", res.Data)
+	}
+}
+
+func TestReadDocumentOutlinePagesAndFilters(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	res := runTool(t, NewReadDocumentOutlineTool(ws, nil, "s"), `{"from":10,"limit":2}`)
+	if !res.Success || !strings.Contains(res.Output, "[10] ") || !strings.Contains(res.Output, "[11] ") ||
+		strings.Contains(res.Output, "[12] ") || !strings.Contains(res.Output, "from=12") {
+		t.Fatalf("paging: %+v", res)
+	}
+	if res.Data["from"] != 10 || res.Data["to"] != 12 {
+		t.Fatalf("data: %+v", res.Data)
+	}
+	res = runTool(t, NewReadDocumentOutlineTool(ws, nil, "s"), `{"component":"signature"}`)
+	if !strings.Contains(res.Output, "[10] ") || !strings.Contains(res.Output, "[11] ") || strings.Contains(res.Output, "[9] ") {
+		t.Fatalf("aggregate component filter:\n%s", res.Output)
+	}
+	res = runTool(t, NewReadDocumentOutlineTool(ws, nil, "s"), `{"component":"noi_dung"}`)
+	lines := 0
+	for _, l := range strings.Split(res.Output, "\n") {
+		if strings.HasPrefix(l, "[") {
+			lines++
+			if !strings.Contains(l, "(noi_dung)") {
+				t.Errorf("component filter leaked %q", l)
+			}
+		}
+	}
+	if lines != 2 {
+		t.Fatalf("want the 2 body paragraphs:\n%s", res.Output)
+	}
+}
+
+func TestDocumentToolsNeedTenant(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	res, err := NewReadDocumentOutlineTool(ws, nil, "s").Execute(context.Background(), json.RawMessage(`{}`))
+	if err != nil || res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// rewrite_paragraphs
+
+func TestRewriteParagraphsByIndexAndMatch(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	res := runTool(t, NewRewriteParagraphsTool(ws, "sess-1"), `{"edits":[
+		{"paragraph":8,"old":"năm 2026","new":"năm 2027"},
+		{"match":"Trên đây là nội dung","new":"Trên đây là đề nghị của Sở Nội vụ, đề nghị các đơn vị thực hiện./."}
+	],"note":"cập nhật năm"}`)
+	if !res.Success {
+		t.Fatalf("result: %+v", res)
+	}
+	if ws.commits != 1 || ws.waited != prepareWriteWait || res.Data["document_revision"] != 4 {
+		t.Fatalf("commits=%d waited=%v data=%+v", ws.commits, ws.waited, res.Data)
+	}
+	if res.Data["applied"] != 2 || res.Data["failed"] != 0 {
+		t.Fatalf("data: %+v", res.Data)
+	}
+	for _, want := range []string{"Đoạn [8]: đã thay “năm 2026” → “năm 2027”", "Đoạn [10]: đã thay", "track changes", "cập nhật năm"} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("output lacks %q:\n%s", want, res.Output)
+		}
+	}
+	xml := documentPartXML(t, ws.content)
+	if !strings.Contains(xml, `w:author="Trợ lý AI (WeRAG)"`) || !strings.Contains(xml, "<w:delText") {
+		t.Fatalf("edits must be tracked changes signed by the assistant:\n%s", xml)
+	}
+	l := docformat.InspectDocx(ws.content)
+	if got := l.Paragraphs[8].Text; !strings.Contains(got, "năm 2027") || strings.Contains(got, "năm 2026") {
+		t.Fatalf("paragraph 8 = %q", got)
+	}
+	if got := l.Paragraphs[10].Text; got != "Trên đây là đề nghị của Sở Nội vụ, đề nghị các đơn vị thực hiện./." {
+		t.Fatalf("paragraph 10 = %q", got)
+	}
+}
+
+func TestRewriteParagraphsAmbiguousMatchFails(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	res := runTool(t, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"match":"các đơn vị","new":"x"}]}`)
+	if res.Success || ws.commits != 0 {
+		t.Fatalf("an ambiguous match must not be guessed: %+v", res)
+	}
+	for _, want := range []string{"khớp nhiều đoạn", "[8]", "[9]", "paragraph"} {
+		if !strings.Contains(res.Error, want) {
+			t.Errorf("error lacks %q: %s", want, res.Error)
+		}
+	}
+	if res.Data["failed"] != 1 || res.Data["document_revision"] != 3 {
+		t.Fatalf("data: %+v", res.Data)
+	}
+}
+
+func TestRewriteParagraphsPartialFailureStillCommits(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	res := runTool(t, NewRewriteParagraphsTool(ws, "s"), `{"edits":[
+		{"paragraph":9,"old":"không có","new":"x"},
+		{"paragraph":9,"old":"30 tháng 11","new":"15 tháng 12"}
+	]}`)
+	if !res.Success || ws.commits != 1 || res.Data["applied"] != 1 || res.Data["failed"] != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	if !strings.Contains(res.Output, "KHÔNG sửa") {
+		t.Fatalf("output must report the failed edit:\n%s", res.Output)
+	}
+}
+
+func TestRewriteParagraphsConflict(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	ws.conflict = true
+	before := append([]byte(nil), ws.content...)
+	res := runTool(t, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"paragraph":8,"new":"Nội dung mới."}]}`)
+	if res.Success || !strings.Contains(res.Error, "gọi lại") {
+		t.Fatalf("a conflict must ask for a retry: %+v", res)
+	}
+	if !bytes.Equal(before, ws.content) {
+		t.Fatal("content changed on conflict")
+	}
+}
+
+func TestRewriteParagraphsValidatesInput(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	var edits []string
+	for i := 0; i < maxRewriteEdits+1; i++ {
+		edits = append(edits, `{"paragraph":8,"new":"x"}`)
+	}
+	for name, args := range map[string]string{
+		"too many":        `{"edits":[` + strings.Join(edits, ",") + `]}`,
+		"empty new":       `{"edits":[{"paragraph":8,"new":"  "}]}`,
+		"missing new":     `{"edits":[{"paragraph":8}]}`,
+		"no edits":        `{"edits":[]}`,
+		"index too large": `{"edits":[{"paragraph":99,"new":"x"}]}`,
+	} {
+		res := runTool(t, NewRewriteParagraphsTool(ws, "s"), args)
+		if res.Success {
+			t.Errorf("%s: accepted: %+v", name, res)
+		}
+	}
+	if ws.commits != 0 {
+		t.Fatalf("invalid input committed %d times", ws.commits)
+	}
+	// deleting part of a paragraph is allowed
+	res := runTool(t, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"paragraph":9,"old":" trước ngày 30 tháng 11 năm 2026","new":""}]}`)
+	if !res.Success || ws.commits != 1 {
+		t.Fatalf("substring deletion: %+v", res)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// apply_format_fixes
+
+func appliedFixes(t *testing.T, res *types.ToolResult) map[string]AppliedFormatFix {
+	t.Helper()
+	list, ok := res.Data["applied"].([]AppliedFormatFix)
+	if !ok {
+		t.Fatalf("applied = %T", res.Data["applied"])
+	}
+	out := map[string]AppliedFormatFix{}
+	for _, f := range list {
+		out[f.CheckID] = f
+	}
+	return out
+}
+
+func TestApplyFormatFixesDryRunPlansWithoutWriting(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	before := append([]byte(nil), ws.content...)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"dry_run":true}`)
+	if !res.Success || ws.commits != 0 || !bytes.Equal(before, ws.content) {
+		t.Fatalf("dry run must not write: %+v", res)
+	}
+	if res.Data["dry_run"] != true || res.Data["document_revision"] != 3 || res.Data["document_type"] != "cong_van" {
+		t.Fatalf("data: %+v", res.Data)
+	}
+	fixes := appliedFixes(t, res)
+	if f := fixes["noi_dung.font"]; len(f.Paragraphs) != 2 || f.Paragraphs[0] != 8 || f.Paragraphs[1] != 9 ||
+		!strings.Contains(f.Change, "Times New Roman") {
+		t.Fatalf("noi_dung.font plan: %+v", f)
+	}
+	// công văn: trích yếu 12-13, not bold
+	if f := fixes["trich_yeu.size"]; len(f.Paragraphs) != 2 || f.Change != "cỡ chữ 13" {
+		t.Fatalf("trich_yeu.size plan: %+v", f)
+	}
+	if f := fixes["trich_yeu.bold"]; len(f.Paragraphs) != 2 || f.Change != "bỏ in đậm" {
+		t.Fatalf("trich_yeu.bold plan: %+v", f)
+	}
+	if !strings.Contains(res.Output, "KẾ HOẠCH") || !strings.Contains(res.Output, "dry_run=false") {
+		t.Fatalf("output: %s", res.Output)
+	}
+}
+
+func TestApplyFormatFixesWritesTrackedFormatting(t *testing.T) {
+	content := patchDocx(t, docxFixture(t),
+		// quốc hiệu left-aligned (rule: center)
+		`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="26"/><w:b/></w:rPr><w:t xml:space="preserve">CỘNG HÒA`,
+		`<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:sz w:val="26"/><w:b/></w:rPr><w:t xml:space="preserve">CỘNG HÒA`,
+		// closing body paragraph centered (rule: justify or left)
+		`<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Trên`,
+		`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Trên`,
+		// left margin 20mm (rule: 30-35mm), top margin 15mm (rule 20-25)
+		`w:top="1360"`, `w:top="850"`,
+		`w:left="1920"`, `w:left="1134"`,
+	)
+	ws := newFakeWorkspace(content)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	if !res.Success || ws.commits != 1 || res.Data["document_revision"] != 4 {
+		t.Fatalf("result: %+v", res)
+	}
+	fixes := appliedFixes(t, res)
+	for _, id := range []string{"noi_dung.font", "noi_dung.align", "quoc_hieu.align", "trich_yeu.size", "page.margin.left", "page.margin.top"} {
+		if _, ok := fixes[id]; !ok {
+			t.Errorf("%s not applied: %+v", id, fixes)
+		}
+	}
+	if _, ok := fixes["page.margin.right"]; ok {
+		t.Error("a passing margin must not be touched")
+	}
+	if !strings.Contains(res.Output, "Đã áp dụng") || !strings.Contains(res.Output, "track changes") {
+		t.Fatalf("output: %s", res.Output)
+	}
+
+	l := docformat.InspectDocx(ws.content)
+	p := l.Paragraphs
+	str := func(s *string) string {
+		if s == nil {
+			return "<nil>"
+		}
+		return *s
+	}
+	if str(p[8].FontName) != "Times New Roman" || str(p[9].FontName) != "Times New Roman" {
+		t.Errorf("body font = %s / %s", str(p[8].FontName), str(p[9].FontName))
+	}
+	if p[9].Alignment != "justify" || p[2].Alignment != "center" {
+		t.Errorf("alignment: body %q, quốc hiệu %q", p[9].Alignment, p[2].Alignment)
+	}
+	if p[6].SizePt == nil || *p[6].SizePt != 13 || p[6].Bold == nil || *p[6].Bold {
+		t.Errorf("trích yếu size=%v bold=%v", p[6].SizePt, p[6].Bold)
+	}
+	sec := l.Sections[0]
+	if sec.MarginLeftMM == nil || *sec.MarginLeftMM < 29.9 || *sec.MarginLeftMM > 30.1 {
+		t.Errorf("left margin = %v", sec.MarginLeftMM)
+	}
+	if sec.MarginTopMM == nil || *sec.MarginTopMM < 19.9 || *sec.MarginTopMM > 20.1 {
+		t.Errorf("top margin = %v", sec.MarginTopMM)
+	}
+	if sec.MarginRightMM == nil || *sec.MarginRightMM < 19 {
+		t.Errorf("right margin changed: %v", sec.MarginRightMM)
+	}
+	xml := documentPartXML(t, ws.content)
+	for _, tag := range []string{"<w:rPrChange", "<w:pPrChange", "<w:sectPrChange"} {
+		if !strings.Contains(xml, tag) {
+			t.Errorf("no %s: formatting must be tracked", tag)
+		}
+	}
+	// the checker itself now passes the fixed rules
+	after := docformat.Check(context.Background(), ws.content, docformat.Options{Segmenter: docformat.SegmenterHeuristic})
+	status := map[string]string{}
+	for _, c := range after.Checks {
+		status[c.ID] = c.Status
+	}
+	for id := range fixes {
+		if status[id] != docformat.StatusPass {
+			t.Errorf("%s after the fix: %s", id, status[id])
+		}
+	}
+	// re-checking finds no fixable failure left
+	again := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"dry_run":true}`)
+	if left := appliedFixes(t, again); len(left) != 0 {
+		t.Fatalf("fixes left after applying: %+v", left)
+	}
+}
+
+func TestApplyFormatFixesFiltersAndListsManualFixes(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"check_ids":["noi_dung.font","quoc_hieu.bold","no.such.rule"]}`)
+	if !res.Success || ws.commits != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	fixes := appliedFixes(t, res)
+	if len(fixes) != 1 || len(fixes["noi_dung.font"].Paragraphs) != 2 {
+		t.Fatalf("only the requested rule is applied: %+v", fixes)
+	}
+	skipped, _ := res.Data["skipped"].([]SkippedFormatFix)
+	reasons := map[string]string{}
+	for _, s := range skipped {
+		reasons[s.CheckID] = s.Reason
+	}
+	if !strings.Contains(reasons["quoc_hieu.bold"], "đang đạt") || !strings.Contains(reasons["no.such.rule"], "không có quy tắc") {
+		t.Fatalf("skipped: %+v", skipped)
+	}
+
+	// a flat document: missing components and their order cannot be fixed
+	flat := newFakeWorkspace(testCongVan(t, nd30Margins))
+	res = runTool(t, NewApplyFormatFixesTool(flat, nil, "s"), `{"dry_run":true}`)
+	manual, _ := res.Data["manual"].([]ManualFormatFix)
+	ids := map[string]bool{}
+	for _, m := range manual {
+		ids[m.CheckID] = true
+		if m.Desc == "" {
+			t.Errorf("%s has no description", m.CheckID)
+		}
+	}
+	if !ids["component.quoc_hieu.present"] || !ids["component.order"] {
+		t.Fatalf("manual: %+v", manual)
+	}
+	if !strings.Contains(res.Output, "Cần sửa thủ công") {
+		t.Fatalf("output: %s", res.Output)
+	}
+}
+
+func TestApplyFormatFixesSkipsTabSplitLines(t *testing.T) {
+	b, err := os.ReadFile("../../docformat/testdata/parity/fx_flat_cong_van.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := newFakeWorkspace(b)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"dry_run":true,"check_ids":["quoc_hieu.bold"]}`)
+	skipped, _ := res.Data["skipped"].([]SkippedFormatFix)
+	if len(skipped) != 1 || !strings.Contains(skipped[0].Reason, "tab") || len(appliedFixes(t, res)) != 0 {
+		t.Fatalf("a tab-split header line must be left for a manual fix: %+v", res.Data)
+	}
+}
+
+func TestApplyFormatFixesConflict(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	ws.conflict = true
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	if res.Success || !strings.Contains(res.Error, "gọi lại") {
+		t.Fatalf("result: %+v", res)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// check_document_format on the workspace
+
+func TestCheckDocumentFormatReadsWorkspace(t *testing.T) {
+	ws := newFakeWorkspace(docxFixture(t))
+	tool := NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9")
+	res := runTool(t, tool, `{"file_name":"ignored.docx"}`)
+	if !res.Success || res.Data["file_name"] != "cong-van.docx" || res.Data["document_revision"] != 3 {
+		t.Fatalf("result: %+v", res.Data)
+	}
+	if ws.sessionID != "sess-9" || ws.prepared != 0 {
+		t.Fatalf("checking must only read (session %q, prepared %d)", ws.sessionID, ws.prepared)
+	}
+	if !strings.Contains(tool.Description(), "open in this conversation's editor") {
+		t.Fatal("workspace description must name the editor document")
+	}
+	if strings.Contains(NewCheckDocumentFormatTool(nil, nil, "s").Description(), "editor") {
+		t.Fatal("the upload variant keeps its description")
+	}
+}
+
+func TestDocumentToolSchemasAreValidJSON(t *testing.T) {
+	for _, tool := range []BaseTool{readDocumentOutlineTool, rewriteParagraphsTool, applyFormatFixesTool} {
+		var parsed map[string]any
+		if err := json.Unmarshal(tool.schema, &parsed); err != nil || parsed["type"] != "object" {
+			t.Errorf("%s schema: %v", tool.name, err)
+		}
+	}
+	if !CanRunConcurrently(ToolReadDocumentOutline) || CanRunConcurrently(ToolRewriteParagraphs) || CanRunConcurrently(ToolApplyFormatFixes) {
+		t.Fatal("only the outline read may run concurrently")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// apply_format_fixes: structure guard and model labels
+
+func TestApplyFormatFixesRefusesAnUnrecognisedStructure(t *testing.T) {
+	// a flat document: the positional heuristic finds no quốc hiệu or chữ ký
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	before := append([]byte(nil), ws.content...)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	if !res.Success || ws.commits != 0 || !bytes.Equal(before, ws.content) {
+		t.Fatalf("an unreliable structure must not be written: %+v", res)
+	}
+	if res.Data["blocked"] != true || res.Data["dry_run"] != true || res.Data["document_revision"] != 3 {
+		t.Fatalf("data: %+v", res.Data)
+	}
+	missing, _ := res.Data["missing_components"].([]string)
+	if !containsString(missing, "quoc_hieu") {
+		t.Fatalf("missing_components = %v", missing)
+	}
+	if !strings.HasPrefix(res.Output, "⚠ CẢNH BÁO") || !strings.Contains(res.Output, "CHƯA sửa") ||
+		!strings.Contains(res.Output, "(quoc_hieu)") || !strings.Contains(res.Output, "force=true") ||
+		!strings.Contains(res.Output, "document_type") {
+		t.Fatalf("output: %s", res.Output)
+	}
+	if len(appliedFixes(t, res)) == 0 {
+		t.Fatal("the plan is still returned")
+	}
+
+	// the user confirmed: force applies the same plan
+	res = runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"force":true}`)
+	if !res.Success || ws.commits != 1 || res.Data["blocked"] != false || res.Data["dry_run"] != false ||
+		res.Data["document_revision"] != 4 || strings.Contains(res.Output, "CẢNH BÁO") {
+		t.Fatalf("force: %+v", res)
+	}
+}
+
+func TestApplyFormatFixesNotesLargeChanges(t *testing.T) {
+	body := `<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Trên`
+	extra := strings.Repeat(`<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Đề nghị các đơn vị thực hiện nghiêm nội dung này.</w:t></w:r></w:p>`, 10)
+	ws := newFakeWorkspace(patchDocx(t, docxFixture(t), body, extra+body))
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"check_ids":["noi_dung.font"]}`)
+	if !res.Success || ws.commits != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	if n := len(appliedFixes(t, res)["noi_dung.font"].Paragraphs); n != 12 {
+		t.Fatalf("noi_dung.font changed %d paragraphs", n)
+	}
+	if !strings.HasPrefix(res.Output, "Lưu ý: lần sửa này thay đổi định dạng của 12 đoạn") {
+		t.Fatalf("output: %s", res.Output)
+	}
+	// dry runs and small fixes carry no note
+	small := newFakeWorkspace(docxFixture(t))
+	if res := runTool(t, NewApplyFormatFixesTool(small, nil, "s"), `{}`); strings.Contains(res.Output, "Lưu ý") {
+		t.Fatalf("small fix noted: %s", res.Output)
+	}
+}
+
+// congVanLabels labels testCongVan the way a model would.
+const congVanLabels = `{"document_type":"cong_van","labels":{
+	"0":"co_quan_chu_quan","1":"co_quan_ban_hanh","2":"quoc_hieu","3":"tieu_ngu","4":"so_ky_hieu",
+	"5":"dia_danh_ngay_thang","6":"trich_yeu","7":"kinh_gui","8":"noi_dung","9":"noi_dung","10":"noi_dung",
+	"11":"chuc_danh","12":"nguoi_ky","13":"noi_nhan","14":"noi_nhan","15":"noi_nhan"}}`
+
+func TestDocumentToolsHonourModelLabels(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	model := &fakeChat{reply: congVanLabels}
+	res := runTool(t, NewReadDocumentOutlineTool(ws, model, "s"), `{}`)
+	if !res.Success {
+		t.Fatalf("result: %+v", res)
+	}
+	for _, want := range []string{"loại văn bản nhận dạng: cong_van", "[2] (quoc_hieu)", "[6] (trich_yeu)", "[11] (chuc_danh)", "[13] (noi_nhan)"} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("outline lacks %q:\n%s", want, res.Output)
+		}
+	}
+	if model.opts == nil || model.opts.Thinking == nil || *model.opts.Thinking {
+		t.Fatal("labelling must call the model with thinking off")
+	}
+
+	// with the structure recognised the fixes apply without force
+	res = runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{}`)
+	if !res.Success || ws.commits != 1 || res.Data["blocked"] != false || res.Data["segmentation"] != "llm" {
+		t.Fatalf("result: %+v", res)
+	}
+	fixes := appliedFixes(t, res)
+	if f := fixes["noi_dung.font"]; len(f.Paragraphs) != 3 || f.Paragraphs[0] != 8 {
+		t.Fatalf("noi_dung.font: %+v", fixes)
+	}
+	for id, f := range fixes {
+		for _, p := range f.Paragraphs {
+			if p == 11 || p == 12 {
+				t.Errorf("%s touched the signature block (paragraph %d): labels ignored", id, p)
+			}
+		}
+	}
+
+	// a failing model degrades to the heuristic
+	broken := newFakeWorkspace(testCongVan(t, nd30Margins))
+	res = runTool(t, NewApplyFormatFixesTool(broken, &fakeChat{err: errors.New("model down")}, "s"), `{}`)
+	if !res.Success || res.Data["segmentation"] != "heuristic" || res.Data["blocked"] != true {
+		t.Fatalf("fallback: %+v", res.Data)
+	}
+}
+
+func TestApplyFormatFixesKeepsGoingPastARejectedEdit(t *testing.T) {
+	content := docxFixture(t)
+	report, err := segmentReport(context.Background(), content, "", "x.docx", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs, err := docformat.RuleSetForReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := buildFormatPlan(report, rs, docformat.InspectDocx(content), nil)
+	// trích yếu gets size and bold from two checks: merged into one run edit
+	if e := plan.paras[6]; e == nil || e.run == nil || e.run.SizePt == nil || e.run.Bold == nil || len(e.runChecks) != 2 {
+		t.Fatalf("paragraph 6 edit not merged: %+v", e)
+	}
+	// an edit docxedit rejects, alongside the valid ones
+	bold := true
+	plan.addParaEdit(999, "inject.bad", paraEdit{run: &docxedit.RunProps{Bold: &bold}})
+	plan.applied = append(plan.applied, AppliedFormatFix{CheckID: "inject.bad", Paragraphs: []int{999}})
+
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := plan.apply(doc)
+	if err != nil || written == 0 {
+		t.Fatalf("written=%d err=%v", written, err)
+	}
+	var reason string
+	for _, s := range plan.skipped {
+		if s.CheckID == "inject.bad" {
+			reason = s.Reason
+		}
+	}
+	if !strings.Contains(reason, "đoạn [999]") {
+		t.Fatalf("the rejected edit must be reported: %+v", plan.skipped)
+	}
+	ids := map[string]bool{}
+	for _, f := range plan.applied {
+		ids[f.CheckID] = true
+	}
+	if ids["inject.bad"] || !ids["noi_dung.font"] || !ids["trich_yeu.size"] {
+		t.Fatalf("applied: %+v", plan.applied)
+	}
+	out, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := docformat.InspectDocx(out).Paragraphs
+	if p[8].FontName == nil || *p[8].FontName != "Times New Roman" || p[6].SizePt == nil || *p[6].SizePt != 13 {
+		t.Fatalf("the valid edits were not written: font=%v size=%v", p[8].FontName, p[6].SizePt)
+	}
+}
