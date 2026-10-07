@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import {
   DocumentWorkspaceError,
   documentRevisionFromToolData,
+  documentSelectionForDisplay,
+  selectionNeedsCollapse,
   openDocumentInNewSession,
   documentServerOrigin,
   isWordAttachment,
@@ -121,6 +123,25 @@ describe("openDocumentInNewSession", () => {
     });
     assert.equal(await openDocumentInNewSession("f.docx", deps), "s1");
     assert.ok(!calls.includes("delete:s1"));
+  });
+});
+
+describe("selection quote helpers", () => {
+  it("documentSelectionForDisplay keeps only non-empty text", () => {
+    assert.equal(documentSelectionForDisplay(undefined), undefined);
+    assert.equal(documentSelectionForDisplay({ text: "   " }), undefined);
+    assert.equal(documentSelectionForDisplay("x"), undefined);
+    assert.deepEqual(documentSelectionForDisplay({ text: " Điều 1 ", paragraph_hint: " " }), { text: "Điều 1" });
+    assert.deepEqual(documentSelectionForDisplay({ text: "a", paragraph_hint: "p2" }), { text: "a", paragraph_hint: "p2" });
+  });
+  it("selectionNeedsCollapse by length or line count", () => {
+    assert.equal(selectionNeedsCollapse("short"), false);
+    assert.equal(selectionNeedsCollapse(""), false);
+    assert.equal(selectionNeedsCollapse("x".repeat(281)), true);
+    assert.equal(selectionNeedsCollapse("x".repeat(280)), false);
+    assert.equal(selectionNeedsCollapse("a\nb\nc\nd"), false);
+    assert.equal(selectionNeedsCollapse("a\nb\nc\nd\ne"), true);
+    assert.equal(selectionNeedsCollapse("abcdef", 5), true);
   });
 });
 

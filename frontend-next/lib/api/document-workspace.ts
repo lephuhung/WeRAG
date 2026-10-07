@@ -220,3 +220,29 @@ export async function openDocumentInNewSession<F>(file: F, deps: OpenDocumentInN
     throw err;
   }
 }
+
+/** Normalizes a persisted/optimistic `document_selection` for display:
+ * undefined unless it carries non-empty text. */
+export function documentSelectionForDisplay(raw: unknown): DocumentSelection | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as { text?: unknown; paragraph_hint?: unknown };
+  const text = typeof r.text === "string" ? r.text.trim() : "";
+  if (!text) return undefined;
+  const hint = typeof r.paragraph_hint === "string" ? r.paragraph_hint.trim() : "";
+  return hint ? { text, paragraph_hint: hint } : { text };
+}
+
+/** Whether the quoted selection in a user bubble should start collapsed
+ * (~4 lines): more than `maxLines` lines, or longer than `maxChars`
+ * (wrapped lines). */
+export const SELECTION_PREVIEW_MAX_LINES = 4;
+export const SELECTION_PREVIEW_MAX_CHARS = 280;
+export function selectionNeedsCollapse(
+  text: string,
+  maxChars = SELECTION_PREVIEW_MAX_CHARS,
+  maxLines = SELECTION_PREVIEW_MAX_LINES,
+): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return t.length > maxChars || t.split(/\r?\n/).length > maxLines;
+}

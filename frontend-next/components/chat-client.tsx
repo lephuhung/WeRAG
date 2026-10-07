@@ -8,7 +8,12 @@ import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
-import { documentRevisionFromToolData, type DocumentSelection } from "@/lib/api/document-workspace";
+import {
+  documentRevisionFromToolData,
+  documentSelectionForDisplay,
+  selectionNeedsCollapse,
+  type DocumentSelection,
+} from "@/lib/api/document-workspace";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 import { useAuth } from "@/lib/auth";
@@ -63,6 +68,8 @@ type UiMessage = {
   abbreviationCandidates?: string[];
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
+  /** User turn: editor passage sent with it (document assistant). */
+  document_selection?: DocumentSelection;
   /** Tool/skill-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];
   /** History `is_completed`, or set when a live turn ends via a complete
@@ -218,6 +225,36 @@ function fileToDataUri(file: File): Promise<string> {
  * the real final answer — that is what collapses the thinking panel. */
 const PREAMBLE_MAX_CHARS = 240;
 
+/* Quoted editor passage above a user message (document assistant). */
+function SelectionQuote({ selection }: { selection: DocumentSelection }) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = selectionNeedsCollapse(selection.text);
+  return (
+    <figure className="mb-1.5 max-w-[80%] self-end rounded-lg bg-surface-strong/60 px-3 py-2">
+      <figcaption className="caption-uppercase mb-1 text-muted-soft">{t("docws.selectionLabel").replace(/:\s*$/, "")}</figcaption>
+      <blockquote
+        className={`border-l-2 border-hairline-strong pl-2.5 text-[12.5px] leading-relaxed text-muted break-words whitespace-pre-wrap ${
+          collapsible && !expanded ? "line-clamp-4" : ""
+        }`}
+        title={selection.paragraph_hint}
+      >
+        {selection.text}
+      </blockquote>
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-1 text-[12px] font-medium text-muted hover:text-ink cursor-pointer"
+        >
+          {expanded ? t("docws.showLess") : t("docws.showMore")}
+        </button>
+      )}
+    </figure>
+  );
+}
+
 const UserMessageBubble = memo(function UserMessageBubble({
   message,
   onFork,
@@ -258,6 +295,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
           ))}
         </div>
       )}
+      {message.document_selection && <SelectionQuote selection={message.document_selection} />}
       <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
         {message.content}
       </div>
@@ -759,6 +797,8 @@ function ChatBody({ id }: { id: string }) {
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
               attachments:
                 m.role === "user" ? attachmentsFromHistory(m) : undefined,
+              document_selection:
+                m.role === "user" ? documentSelectionForDisplay(m.document_selection) : undefined,
               artifacts:
                 /* History rows omit `index` — assign array position so the
                  * download endpoint and image hydration can address them. */
@@ -1145,7 +1185,10 @@ function ChatBody({ id }: { id: string }) {
       ...handoffNames.map((name) => ({ name })),
     ];
     stickBottomRef.current = true;
-    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
+    // Same gate as the request body below: the selection rides document-assistant turns only.
+    const sentSelection =
+      ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? documentSelectionForDisplay(pendingSelection) : undefined;
+    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
 

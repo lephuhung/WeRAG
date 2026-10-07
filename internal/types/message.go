@@ -369,6 +369,10 @@ type Message struct {
 	Images MessageImages `json:"images,omitempty" gorm:"type:jsonb;column:images"`
 	// Attached files (documents, audio, etc., for user messages)
 	Attachments MessageAttachments `json:"attachments,omitempty" gorm:"type:jsonb;column:attachments"`
+	// Editor passage the user highlighted in the embedded document editor when
+	// sending this message (user messages only), so history shows which
+	// passage the question referred to.
+	DocumentSelection *MessageDocumentSelection `json:"document_selection,omitempty" gorm:"type:jsonb;column:document_selection"`
 	// Skill-generated files produced during this assistant turn (assistant messages only).
 	// Populated by ArtifactCollector after the sandbox finishes, referenced by the
 	// artifact download endpoint. Empty for user messages and turns without skills.

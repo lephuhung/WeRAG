@@ -159,6 +159,8 @@ export type ChatMessage = {
   /** Total wall-clock time of the agent turn — shown in the steps header. */
   agent_duration_ms?: number;
   attachments?: ChatMessageAttachment[];
+  /** Document assistant: editor passage the user had selected for this turn. */
+  document_selection?: { text: string; paragraph_hint?: string };
   images?: { url?: string; caption?: string }[];
   /** Skill/tool-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];

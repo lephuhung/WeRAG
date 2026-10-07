@@ -49,8 +49,9 @@
     } catch (e) { /* host gone or origin mismatch */ }
   }
 
-  window.Asc.plugin.init = function (text) {
+  function consider(text) {
     var value = typeof text === "string" ? text.trim() : "";
+    window.__weragLastSelection = value;
     if (timer) clearTimeout(timer);
     if (!value) {
       lastSent = ""; // re-selecting the same passage later posts it again
@@ -62,7 +63,24 @@
       lastSent = value;
       post(value);
     }, DEBOUNCE_MS);
+  }
+
+  // The editor calls init(text) on every selection change (initOnSelectionChanged),
+  // but that callback has proved unreliable right after load and while a review
+  // balloon owns the focus, so the current selection is also polled.
+  window.Asc.plugin.init = function (text) {
+    consider(text);
   };
+
+  var POLL_MS = 800;
+  function poll() {
+    try {
+      window.Asc.plugin.executeMethod("GetSelectedText", [{ Numbering: false, Math: false }], function (text) {
+        consider(text);
+      });
+    } catch (e) { /* editor not ready yet */ }
+  }
+  setInterval(poll, POLL_MS);
 
   // Background plugin: no buttons/window, but the API expects a handler.
   window.Asc.plugin.button = function () {};

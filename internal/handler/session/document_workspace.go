@@ -202,9 +202,12 @@ func (h *DocumentWorkspaceHandler) fail(c *gin.Context, err error, message strin
 
 // editorHostOrigin is the origin of the page that mounts the editor, handed
 // to the assistant plugin as hostOrigin. Same-origin GETs (Next.js rewrite)
-// carry no Origin header, so fall back to FRONTEND_BASE_URL, then Referer.
+// carry no Origin header, so fall back to the Referer, then FRONTEND_BASE_URL.
 func (h *DocumentWorkspaceHandler) editorHostOrigin(c *gin.Context) string {
-	for _, candidate := range []string{c.GetHeader("Origin"), h.frontendBaseURL, os.Getenv("FRONTEND_BASE_URL"), c.GetHeader("Referer")} {
+	// The Referer names the page that actually embeds the editor (it may be
+	// reached by IP, hostname or localhost), so it ranks above the configured
+	// base URL: postMessage silently drops a mismatched target origin.
+	for _, candidate := range []string{c.GetHeader("Origin"), c.GetHeader("Referer"), h.frontendBaseURL, os.Getenv("FRONTEND_BASE_URL")} {
 		if origin := urlOrigin(candidate); origin != "" {
 			return origin
 		}

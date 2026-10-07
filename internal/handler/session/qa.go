@@ -991,6 +991,7 @@ func (h *Handler) persistTurnMessages(ctx context.Context, reqCtx *qaRequestCont
 			reqCtx.mentionedItems,
 			convertImageAttachments(reqCtx.images),
 			userMessageAttachments,
+			reqCtx.documentSelection,
 			reqCtx.channel,
 			reqCtx.suggestionAttribution,
 		)

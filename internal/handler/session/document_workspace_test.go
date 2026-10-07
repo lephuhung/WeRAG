@@ -241,20 +241,61 @@ func TestDocumentWorkspaceHostOriginFallback(t *testing.T) {
 	})
 	require.Equal(t, "https://origin.example", ws.gotOrigin)
 
-	// Same-origin GET: FRONTEND_BASE_URL next (reduced to its origin).
-	doJSON(r, http.MethodGet, "/sessions/mine/document", "", map[string]string{
-		"Referer": "https://referer.example/chat/1",
-	})
-	require.Equal(t, "https://frontend.example", ws.gotOrigin)
-
-	// No FRONTEND_BASE_URL: the Referer's origin.
-	r = newDocumentRoutes(t, ws, "")
+	// Same-origin GET: the Referer names the embedding page (reduced to its
+	// origin) and ranks above the configured base URL, which may differ by
+	// host (localhost vs IP) and would make postMessage drop the message.
 	doJSON(r, http.MethodGet, "/sessions/mine/document", "", map[string]string{
 		"Referer": "http://localhost:3000/chat/1?x=1",
 	})
 	require.Equal(t, "http://localhost:3000", ws.gotOrigin)
 
+	// No Referer: FRONTEND_BASE_URL.
+	doJSON(r, http.MethodGet, "/sessions/mine/document", "", nil)
+	require.Equal(t, "https://frontend.example", ws.gotOrigin)
+
+	r = newDocumentRoutes(t, ws, "")
+
 	// Nothing known.
 	doJSON(r, http.MethodGet, "/sessions/mine/document", "", nil)
 	require.Equal(t, "", ws.gotOrigin)
+}
+
+// The highlighted passage is persisted on the user message so chat history
+// shows which passage the question referred to.
+func TestPersistTurnMessagesStoresDocumentSelection(t *testing.T) {
+	h, _, msgs, _ := newAbbrevGateHandler()
+	reqCtx := newAbbrevReqCtx("Sửa đoạn này cho đúng thể thức")
+	reqCtx.documentSelection = (&types.DocumentSelection{
+		Text: "  Kính gửi: Phòng PV01  ", ParagraphHint: "Kính gửi: Phòng PV01 Công an tỉnh",
+	}).Normalized()
+
+	require.NoError(t, h.persistTurnMessages(context.Background(), reqCtx))
+
+	var user *types.Message
+	for _, m := range msgs.created {
+		if m.Role == "user" {
+			user = m
+		}
+	}
+	require.NotNil(t, user)
+	require.NotNil(t, user.DocumentSelection)
+	require.Equal(t, "Kính gửi: Phòng PV01", user.DocumentSelection.Text)
+	require.Equal(t, "Kính gửi: Phòng PV01 Công an tỉnh", user.DocumentSelection.ParagraphHint)
+
+	raw, err := json.Marshal(user)
+	require.NoError(t, err)
+	require.Contains(t, string(raw),
+		`"document_selection":{"text":"Kính gửi: Phòng PV01","paragraph_hint":"Kính gửi: Phòng PV01 Công an tỉnh"}`)
+}
+
+func TestPersistTurnMessagesWithoutSelectionLeavesItNil(t *testing.T) {
+	h, _, msgs, _ := newAbbrevGateHandler()
+	reqCtx := newAbbrevReqCtx("Câu hỏi thường")
+	require.NoError(t, h.persistTurnMessages(context.Background(), reqCtx))
+	for _, m := range msgs.created {
+		require.Nil(t, m.DocumentSelection)
+	}
+	raw, err := json.Marshal(msgs.created[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "document_selection")
 }

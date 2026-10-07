@@ -275,19 +275,20 @@ func createAgentQueryEvent(
 }
 
 // createUserMessage creates a user message and returns the created message.
-func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, requestID string, mentionedItems types.MentionedItems, images types.MessageImages, attachments types.MessageAttachments, channel string, attribution *types.SuggestionAttribution) (*types.Message, error) {
+func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, requestID string, mentionedItems types.MentionedItems, images types.MessageImages, attachments types.MessageAttachments, selection *types.DocumentSelection, channel string, attribution *types.SuggestionAttribution) (*types.Message, error) {
 	return h.messageService.CreateMessage(ctx, &types.Message{
-		SessionID:        sessionID,
-		Role:             "user",
-		Content:          query,
-		RequestID:        requestID,
-		CreatedAt:        time.Now(),
-		IsCompleted:      true,
-		MentionedItems:   mentionedItems,
-		Images:           images,
-		Attachments:      attachments,
-		Channel:          channel,
-		ExecutionContext: types.MessageExecutionContext{SuggestionAttribution: attribution},
+		SessionID:         sessionID,
+		Role:              "user",
+		Content:           query,
+		RequestID:         requestID,
+		CreatedAt:         time.Now(),
+		IsCompleted:       true,
+		MentionedItems:    mentionedItems,
+		Images:            images,
+		Attachments:       attachments,
+		DocumentSelection: types.NewMessageDocumentSelection(selection),
+		Channel:           channel,
+		ExecutionContext:  types.MessageExecutionContext{SuggestionAttribution: attribution},
 	})
 }
 

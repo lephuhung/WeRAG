@@ -1,6 +1,11 @@
 package types
 
-import "strings"
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
+	"strings"
+)
 
 // Limits for the editor selection injected into a chat turn.
 const (
@@ -56,4 +61,45 @@ func escapeDocumentSelection(s string) string {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s
+}
+
+// MessageDocumentSelection is the database form of a DocumentSelection
+// persisted on the user message, so chat history can show which passage a
+// question referred to. It has the same JSON shape as DocumentSelection.
+type MessageDocumentSelection DocumentSelection
+
+// NewMessageDocumentSelection converts a (normalized) selection for storage;
+// nil stays nil.
+func NewMessageDocumentSelection(s *DocumentSelection) *MessageDocumentSelection {
+	if s == nil {
+		return nil
+	}
+	stored := MessageDocumentSelection(*s)
+	return &stored
+}
+
+// Value implements the driver.Valuer interface for database serialization.
+func (s MessageDocumentSelection) Value() (driver.Value, error) {
+	return json.Marshal(s)
+}
+
+// Scan implements the sql.Scanner interface for database deserialization.
+func (s *MessageDocumentSelection) Scan(value any) error {
+	var b []byte
+	switch v := value.(type) {
+	case nil:
+		*s = MessageDocumentSelection{}
+		return nil
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return errors.New("types: cannot scan document selection from unsupported type")
+	}
+	if len(b) == 0 {
+		*s = MessageDocumentSelection{}
+		return nil
+	}
+	return json.Unmarshal(b, s)
 }
