@@ -631,6 +631,10 @@ export type KnowledgeDoc = {
     gist?: string;
     topics?: string[];
     doc_type?: string;
+    /** registry slug when doc_type is a Vietnamese legal/NĐ30 type ("ke_hoach") */
+    doc_type_code?: string;
+    /** the document's own số hiệu ("45/KH-UBND"), when it has one */
+    document_number?: string;
     typical_question?: string;
   };
   summary_status?: string;

@@ -90,10 +90,11 @@ Nhiệm vụ của bạn là trích xuất các thực thể (entities) và mố
 `
 
 // LegalKGUserPrompt is a port of AIRAG LEGAL_KG_USER_PROMPT. Placeholders
-// {document_title}, {document_number}, {issuing_agency}, {published_date},
-// {article_text} are filled by renderLegalUserPrompt.
+// {document_title}, {document_type}, {document_number}, {issuing_agency},
+// {published_date}, {article_text} are filled by renderLegalUserPrompt.
 const LegalKGUserPrompt = `## Thông tin văn bản (document_meta)
 Tiêu đề văn bản: "{document_title}"
+Loại văn bản: {document_type}
 Số hiệu: {document_number}
 Cơ quan ban hành: {issuing_agency}
 Ngày ban hành: {published_date}
@@ -148,6 +149,7 @@ Nhiệm vụ: Trích xuất thông tin cá nhân và quyết định liên quan 
 // PersonnelKGUserPrompt is a port of AIRAG PERSON_EXTRACT_USER_PROMPT.
 const PersonnelKGUserPrompt = `## Thông tin văn bản (document_meta)
 Tiêu đề văn bản: "{document_title}"
+Loại văn bản: {document_type}
 Số hiệu: {document_number}
 Cơ quan ban hành: {issuing_agency}
 Ngày ban hành: {published_date}
@@ -217,6 +219,7 @@ func NewLegalGraphExtractor(chatModel chat.Chat) *LegalGraphExtractor {
 func renderLegalUserPrompt(template string, doc *vietnamese_legal.LegalDocContext, articleText string) string {
 	return strings.NewReplacer(
 		"{document_title}", doc.Title,
+		"{document_type}", doc.DocTypeName,
 		"{document_number}", doc.DocumentNumber,
 		"{issuing_agency}", doc.IssuingAgency,
 		"{published_date}", doc.PublishedDate,

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"unicode"
+
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 const (
@@ -36,6 +38,13 @@ type KnowledgeProfile struct {
 	DocType string `json:"doc_type,omitempty"`
 	// TypicalQuestion is one natural-language question this document answers.
 	TypicalQuestion string `json:"typical_question,omitempty"`
+	// DocTypeCode is the vietnamese_legal.DocTypes slug ("ke_hoach") when
+	// DocType names a Vietnamese legal/administrative type; DocType is then
+	// rewritten to the canonical display name ("Kế hoạch").
+	DocTypeCode string `json:"doc_type_code,omitempty"`
+	// DocumentNumber is the document's own số hiệu ("45/KH-UBND",
+	// "53/2022/NĐ-CP"), empty when the document has none.
+	DocumentNumber string `json:"document_number,omitempty"`
 }
 
 // Value implements driver.Valuer.
@@ -84,7 +93,8 @@ func (p *KnowledgeProfile) IsEmpty() bool {
 	return strings.TrimSpace(p.Gist) == "" &&
 		len(p.Topics) == 0 &&
 		strings.TrimSpace(p.DocType) == "" &&
-		strings.TrimSpace(p.TypicalQuestion) == ""
+		strings.TrimSpace(p.TypicalQuestion) == "" &&
+		strings.TrimSpace(p.DocumentNumber) == ""
 }
 
 // Normalize trims, deduplicates and bounds every field so model output of
@@ -96,6 +106,11 @@ func (p *KnowledgeProfile) Normalize() *KnowledgeProfile {
 	}
 	p.Gist = truncateRunes(collapseWhitespace(p.Gist), knowledgeProfileMaxGistRunes)
 	p.DocType = truncateRunes(collapseWhitespace(p.DocType), knowledgeProfileMaxDocTypeRunes)
+	p.DocTypeCode = ""
+	if d := vietnamese_legal.DocTypeByName(p.DocType); d != nil {
+		p.DocType, p.DocTypeCode = d.Name, d.Slug
+	}
+	p.DocumentNumber = vietnamese_legal.NormalizeOwnDocumentNumber(p.DocumentNumber)
 	p.TypicalQuestion = truncateRunes(collapseWhitespace(p.TypicalQuestion), knowledgeProfileMaxQuestionRunes)
 	p.Topics = NormalizeTopicList(p.Topics, KnowledgeProfileMaxTopics)
 	if p.IsEmpty() {

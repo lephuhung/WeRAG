@@ -216,10 +216,6 @@ func capitalizeWord(w string) string {
 //     for a số hiệu.
 var DocNumberPattern = regexp.MustCompile(`\d+/\d+/[A-Za-z0-9Đđ\-]*[A-Za-zĐđ][A-Za-z0-9Đđ\-]*`)
 
-var legalDocPrefixRe = regexp.MustCompile(
-	`(?i)^(Luật|Bộ luật|Nghị định|Thông tư|Quyết định|Chỉ thị|Nghị quyết|Hiến pháp|Pháp lệnh)\b`,
-)
-
 // Names opening with a structural-part keyword are Article/clause REFERENCES,
 // not documents — even when they embed a số hiệu (e.g. "Khoản 4 Điều 3 Nghị
 // định 53/2022/NĐ-CP"). They must be typed Article so the số-hiệu Document
@@ -235,15 +231,16 @@ func IsArticleRefName(name string) bool {
 }
 
 // IsLegalDocName reports whether a raw entity name denotes a legal document —
-// it carries a số hiệu (e.g. "117/2025/QH15") or opens with a law-type prefix
-// ("Luật", "Nghị định", …) — and is NOT a clause reference. Such entities
+// it carries a số hiệu (e.g. "117/2025/QH15") or opens with a document-type
+// name from the DocTypes registry ("Luật …", "Kế hoạch 45/KH-UBND"; see
+// isDocTypePrefixedName) — and is NOT a clause reference. Such entities
 // MUST be typed Document regardless of how the LLM classified them.
 func IsLegalDocName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" || IsArticleRefName(name) {
 		return false
 	}
-	return DocNumberPattern.MatchString(name) || legalDocPrefixRe.MatchString(name)
+	return DocNumberPattern.MatchString(name) || isDocTypePrefixedName(name)
 }
 
 // ForceLegalType overrides an LLM-assigned type for legal-structure names:
@@ -420,7 +417,7 @@ func CleanEntityName(name string) string {
 // ---------------------------------------------------------------------------
 
 var preambleEndRe = regexp.MustCompile(
-	`(?i)(QUYẾT ĐỊNH:|QUY ĐỊNH:|THÔNG TƯ:|CHỈ THỊ:|CỬ\s+ÔNG|ĐIỀU 1\b)`,
+	`(?i)(QUYẾT ĐỊNH:|QUYẾT NGHỊ:|NGHỊ QUYẾT:|QUY ĐỊNH:|THÔNG TƯ:|CHỈ THỊ:|CỬ\s+ÔNG|ĐIỀU 1\b)`,
 )
 
 var ngayBanHanhRe = regexp.MustCompile(
@@ -444,6 +441,7 @@ type LegalHeaderMeta struct {
 	NgayBanHanh   string // DD/MM/YYYY
 	CoQuanBanHanh string // first all-caps line near the top
 	DocumentName  string // human-readable document name
+	DocType       DocTypeDetection
 }
 
 // ParseLegalHeaderMeta extracts document metadata from the top of a legal
@@ -455,6 +453,7 @@ func ParseLegalHeaderMeta(text string) LegalHeaderMeta {
 	}
 	var meta LegalHeaderMeta
 	meta.SoHieu = RecoverDocumentNumber(header)
+	meta.DocType = DetectDocType(header)
 	if m := ngayBanHanhRe.FindStringSubmatch(header); m != nil {
 		meta.NgayBanHanh = fmt.Sprintf("%02d/%02d/%s",
 			atoiSafe(m[1]), atoiSafe(m[2]), m[3])
@@ -547,6 +546,12 @@ type LegalDocContext struct {
 	Title string `json:"title,omitempty"`
 	// IssuingAgency is the cơ quan ban hành (used for BAN_HANH_BOI).
 	IssuingAgency string `json:"issuing_agency,omitempty"`
+	// DocType is the DocTypes slug ("quyet_dinh", "ke_hoach", …) and
+	// DocTypeName its display name; DocTypeSource is the deciding signal
+	// (see DocTypeDetection.Source). Empty when undetermined.
+	DocType       string `json:"doc_type,omitempty"`
+	DocTypeName   string `json:"doc_type_name,omitempty"`
+	DocTypeSource string `json:"doc_type_source,omitempty"`
 	// PublishedDate is the issue date DD/MM/YYYY.
 	PublishedDate string `json:"published_date,omitempty"`
 	// RootName is the canonical name of the document root node — số hiệu
@@ -583,9 +588,21 @@ func BuildLegalDocContext(headerText, title, fileName string, hasLegalStructureH
 		date = ref.Year
 	}
 
+	// Header detection first; the title's type is the fallback.
+	docType := meta.DocType
+	if docType.Slug == "" && ref.DocTypeSlug != "" {
+		docType = DocTypeDetection{Slug: ref.DocTypeSlug, Source: "title"}
+	}
+	docTypeName := ""
+	if d := DocTypeBySlug(docType.Slug); d != nil {
+		docTypeName = d.Name
+	}
+	docNum = RestoreDocumentNumberSymbol(docNum, docType.Slug)
+
 	isLegal := hasLegalStructureHint ||
 		HasLegalStructure(headerText) ||
 		docNum != "" ||
+		meta.DocType.Slug != "" ||
 		(ref.DocTypeSlug != "" && ref.NumberRaw != "") ||
 		IsPersonnelDocument(headerText) ||
 		IsPersonnelDocument(title)
@@ -604,6 +621,9 @@ func BuildLegalDocContext(headerText, title, fileName string, hasLegalStructureH
 		IsLegal:        isLegal,
 		IsPersonnel:    IsPersonnelDocument(headerText) || IsPersonnelDocument(title),
 		DocumentNumber: docNum,
+		DocType:        docType.Slug,
+		DocTypeName:    docTypeName,
+		DocTypeSource:  docType.Source,
 		Title:          title,
 		IssuingAgency:  agency,
 		PublishedDate:  date,

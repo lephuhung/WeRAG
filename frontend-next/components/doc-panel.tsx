@@ -219,6 +219,15 @@ export function DocPanel({
                   return dot >= 0 ? n.slice(dot + 1).toUpperCase() : "FILE";
                 })()}
               </span>
+              {doc.profile?.doc_type && <span className="badge-pill">{doc.profile.doc_type}</span>}
+              {doc.profile?.document_number && (
+                <span
+                  className="badge-pill font-mono"
+                  title={`${t("doc.documentNumber")}: ${doc.profile.document_number}`}
+                >
+                  {doc.profile.document_number}
+                </span>
+              )}
               <span className={`caption flex items-center gap-1.5 font-medium ${st.cls}`}>
                 <span
                   className="inline-block h-1.5 w-1.5 rounded-full"

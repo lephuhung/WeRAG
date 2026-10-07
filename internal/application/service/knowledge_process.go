@@ -780,6 +780,7 @@ type documentProfileOutput struct {
 	Gist            string   `json:"gist"`
 	Topics          []string `json:"topics"`
 	DocType         string   `json:"doc_type"`
+	DocumentNumber  string   `json:"document_number"`
 	TypicalQuestion string   `json:"typical_question"`
 }
 
@@ -798,6 +799,7 @@ func parseDocumentSummaryOutput(content string) *documentSummaryResult {
 		Gist:            out.Gist,
 		Topics:          out.Topics,
 		DocType:         out.DocType,
+		DocumentNumber:  out.DocumentNumber,
 		TypicalQuestion: out.TypicalQuestion,
 	}).Normalize()
 	if summary == "" && profile != nil {
@@ -1080,6 +1082,7 @@ func (s *knowledgeService) getSummary(ctx context.Context,
 		return nil, err
 	}
 	result := parseDocumentSummaryOutput(content)
+	result.Profile = applyLegalIdentity(result.Profile, chunkContents, contentWithMetadata)
 	logger.GetLogger(ctx).WithField("summary", result.Summary).
 		WithField("has_profile", result.Profile != nil).Infof("GetSummary success")
 	return result, nil

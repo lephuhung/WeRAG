@@ -159,3 +159,17 @@ func TestExtractTitleKeywords(t *testing.T) {
 		t.Errorf("keywords = %v", kw)
 	}
 }
+
+func TestRecoverDocumentNumber_HanhChinhWithoutYear(t *testing.T) {
+	cases := map[string]string{
+		"UBND TỈNH\nSố: 45/KH-UBND\nKẾ HOẠCH\nCăn cứ Quyết định số 12/2024/QĐ-UBND":                 "45/KH-UBND",
+		"| ỦY BAN NHÂN DÂN | CỘNG HÒA XÃ HỘI |\n| **Số:** 1234/UBND-VP | Độc lập |\nV/v triển khai": "1234/UBND-VP",
+		"SỞ Y TẾ\nSố: 08/TTr-SYT\nTỜ TRÌNH":                                                         "08/TTr-SYT",
+		"SỞ Y TẾ\nSố:     /BC-SYT\nBÁO CÁO (dự thảo)":                                               "",
+	}
+	for text, want := range cases {
+		if got := RecoverDocumentNumber(text); got != want {
+			t.Errorf("RecoverDocumentNumber(%q) = %q, want %q", text, got, want)
+		}
+	}
+}

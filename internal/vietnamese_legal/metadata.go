@@ -15,24 +15,6 @@ import (
 	"unicode/utf8"
 )
 
-// DocTypeKeywords maps a Vietnamese document-type keyword to its canonical
-// slug. Ordered longest-match first — "thông tư liên tịch" must be tried
-// before "thông tư".
-var DocTypeKeywords = []struct {
-	Keyword string
-	Slug    string
-}{
-	{"thông tư liên tịch", "thong_tu_lien_tich"},
-	{"bộ luật", "bo_luat"},
-	{"nghị quyết", "nghi_quyet"},
-	{"nghị định", "nghi_dinh"},
-	{"quyết định", "quyet_dinh"},
-	{"pháp lệnh", "phap_lenh"},
-	{"thông tư", "thong_tu"},
-	{"chỉ thị", "chi_thi"},
-	{"luật", "luat"},
-}
-
 // IssuingAgency maps an issuing-agency name to its document-number code and
 // the số hiệu suffixes that agency uses — ordered longest name first.
 var IssuingAgency = []struct {
@@ -110,9 +92,20 @@ var sectionPatterns = []*regexp.Regexp{
 }
 
 // A genuine số hiệu carries digits: "24/2018/QH14", "53/2022/NĐ-CP", labelled
-// by "Số:" / "Luật số:" near the top of the header.
+// by "Số:" / "Luật số:" near the top of the header. Văn bản hành chính are
+// numbered without the year ("Số: 45/KH-UBND", NĐ30 Phụ lục I), so the year
+// part is optional here — the "Số:" label is what makes a one-slash number
+// safe to accept. The label may sit in a markdown table cell or bold run
+// ("| **Số:** 45/KH-UBND |").
 var docNumLabelledRe = regexp.MustCompile(
-	`(?i)(?:^|\n)\s*(?:luật\s+số|số)\s*[:：]\s*(\d{1,4}\s*/\s*\d{2,4}\s*/\s*[\p{L}\p{N}_Đ\-]+)`,
+	`(?i)(?:^|\n)[\s|*_#>]*(?:luật\s+số|số)\s*[:：.][\s*_]*(\d{1,5}[a-z]?\s*/\s*(?:\d{2,4}\s*/\s*)?\p{L}[\p{L}\p{N}_Đ\-]*)`,
+)
+
+// docNumPartyRe matches a Party document's số hiệu, type-first and often
+// without a colon: "Số 57-NQ/TW", "Số: 12-CT/TU". The shape is distinctive
+// enough that the label alone (no colon) is safe.
+var docNumPartyRe = regexp.MustCompile(
+	`(?i)(?:^|\n)[\s|*_#>]*số\s*[:：.]?[\s*_]*(\d{1,5}\s*-\s*\p{L}+\s*/\s*\p{L}[\p{L}\p{N}\-]*)`,
 )
 
 // docNumBareRe finds a bare số hiệu. Python uses (?<!\d) — Go has no
@@ -147,6 +140,9 @@ func RecoverDocumentNumber(markdownText string) string {
 		region = region[:cut[0]]
 	}
 	if m := docNumLabelledRe.FindStringSubmatch(region); m != nil {
+		return stripWS(m[1])
+	}
+	if m := docNumPartyRe.FindStringSubmatch(region); m != nil {
 		return stripWS(m[1])
 	}
 	// Bare form only in the very top block (header), to avoid stray matches.
@@ -319,19 +315,19 @@ func ParseReference(reference string) ParsedReference {
 		}
 	}
 
-	// Document type — longest keyword match first.
-	textLower := strings.ToLower(text)
-	for _, dt := range DocTypeKeywords {
-		if strings.Contains(textLower, dt.Keyword) {
-			res.DocTypeSlug = dt.Slug
-			text = removeFirstCI(text, dt.Keyword)
-			break
-		}
+	// Document type — a type name at the start, else a legacy type
+	// anywhere (see matchDocTypeKeyword); failing both, the ký hiệu of an
+	// explicit số hiệu ("45/KH-UBND" ⇒ kế hoạch).
+	if dt := matchDocTypeKeyword(text, numberRaw != ""); dt != nil {
+		res.DocTypeSlug = dt.Slug
+		text = removeFirstCI(text, dt.Name)
+	} else if dt := DocTypeFromNumber(res.DocumentNumber); dt != nil {
+		res.DocTypeSlug = dt.Slug
 	}
 
 	// Issuing agency — longest name first.
 	var agencySuffixes []string
-	textLower = strings.ToLower(text)
+	textLower := strings.ToLower(text)
 	for _, ag := range IssuingAgency {
 		if strings.Contains(textLower, ag.Name) {
 			res.IssuingAgencyText = titleCase(ag.Name)

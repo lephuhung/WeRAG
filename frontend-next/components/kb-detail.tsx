@@ -786,6 +786,14 @@ const toast = useToast();
                                   <span className="truncate">{d.profile.doc_type}</span>
                                 </span>
                               )}
+                              {d.profile?.document_number && (
+                                <span
+                                  className="badge-pill min-w-0 max-w-full text-[10px] py-0 px-1 font-mono"
+                                  title={`${t("doc.documentNumber")}: ${d.profile.document_number}`}
+                                >
+                                  <span className="truncate">{d.profile.document_number}</span>
+                                </span>
+                              )}
                               <span className="text-[11px]">{docExt(d)}</span>
                               {d.file_size ? (
                                 <span className="text-muted-soft text-[11px]">· {fmtBytes(d.file_size)}</span>

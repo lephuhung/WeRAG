@@ -12,13 +12,17 @@ templates:
 
       ## Output
       Return strict JSON only, no prose before or after, with exactly these fields:
-      {"summary": "...", "gist": "...", "topics": ["..."], "doc_type": "...", "typical_question": "..."}
+      {"summary": "...", "gist": "...", "topics": ["..."], "doc_type": "...", "document_number": "...", "typical_question": "..."}
 
       - summary: 2-3 sentences (about 60-120 words) covering the document's subject, its key points and its main conclusion. Objective, third person, no preamble.
       - gist: one line (at most 25 words) stating what the document is about.
       - topics: 3-5 short topic keywords (1-4 words each) that a reader would use to find this document. Use the document's own terminology; do not pad with generic words such as "information" or "document".
       - doc_type: a short label for the kind of document, e.g. "user manual", "meeting notes", "contract", "research paper", "FAQ", "policy", "tutorial", "report".
-        For legal, regulatory or administrative documents, identify the SPECIFIC instrument type from its issuing formula or number line (e.g. "Luật số…", "Nghị định số…", "Quyết định số…"), never the generic category. Use exactly one of these labels when applicable: "Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh", "Nghị quyết", "Nghị định", "Quyết định", "Thông tư", "Thông tư liên tịch", "Chỉ thị", "Công văn", "Kế hoạch", "Đề án", "Quy chế", "Quyết định - Hướng dẫn", "Báo cáo", "Hướng dẫn", "Kết luận", "Đề xuất", "Chương trình", "Dự thảo". Match the type word that appears in the document itself (e.g. a document numbered "Nghị quyết số 12/NQ-CP" is "Nghị quyết", one numbered "Công văn số 123/CV-…" is "Công văn", a document titled "Kế hoạch triển khai…" is "Kế hoạch"). Only fall back to a generic label like "report" or "policy" when no specific type appears in the text.
+        For Vietnamese legal or administrative documents, use the type name printed on the document's own tên loại line (the uppercase line such as "QUYẾT ĐỊNH", "KẾ HOẠCH", "GIẤY MỜI") or implied by the ký hiệu in its own number ("45/KH-UBND" is "Kế hoạch", "12/TTr-UBND" is "Tờ trình"), never a type merely cited in the text. Use exactly one of these labels:
+        - the 29 administrative types of Nghị định 30/2020/NĐ-CP: "Nghị quyết", "Quyết định", "Chỉ thị", "Quy chế", "Quy định", "Thông cáo", "Thông báo", "Hướng dẫn", "Chương trình", "Kế hoạch", "Phương án", "Đề án", "Dự án", "Báo cáo", "Biên bản", "Tờ trình", "Hợp đồng", "Công văn", "Công điện", "Bản ghi nhớ", "Bản thỏa thuận", "Giấy ủy quyền", "Giấy mời", "Giấy giới thiệu", "Giấy nghỉ phép", "Phiếu gửi", "Phiếu chuyển", "Phiếu báo", "Thư công";
+        - legal normative types: "Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh", "Nghị định", "Thông tư liên tịch", "Thông tư".
+        A document with no tên loại line but a "V/v …" subject under its number is a "Công văn". Keep these labels in Vietnamese whatever the output language. Only fall back to a generic label like "report" or "policy" for documents that are not Vietnamese legal or administrative documents.
+      - document_number: the document's OWN number (số, ký hiệu) exactly as printed after "Số:" or "Luật số:" in its header, e.g. "45/KH-UBND", "53/2022/NĐ-CP", "24/2018/QH14" — without the "Số:" label. Never a number cited elsewhere (in "Căn cứ …", in the body or in the subject line). Use "" when the document has no own number or it is left blank (draft).
       - typical_question: one self-contained natural-language question that this document answers well. No pronouns such as "it" or "this document".
 
       ## Content Rules
@@ -31,7 +35,7 @@ templates:
       - A document whose only text comes from those blocks is NOT empty — profile it from the captions and OCR results.
 
       ## Empty or Insufficient Content
-      - Only when the content is genuinely empty, holds only bare image placeholders with no caption or OCR text, or otherwise carries no substantive text, return: {"summary": "No textual content was extractable from this document.", "gist": "", "topics": [], "doc_type": "", "typical_question": ""}
+      - Only when the content is genuinely empty, holds only bare image placeholders with no caption or OCR text, or otherwise carries no substantive text, return: {"summary": "No textual content was extractable from this document.", "gist": "", "topics": [], "doc_type": "", "document_number": "", "typical_question": ""}
       - Do NOT fabricate a topic and do NOT guess from any other clue. Refusing to profile absent content is correct and preferred over a plausible-sounding invention.
 
       ## Language
