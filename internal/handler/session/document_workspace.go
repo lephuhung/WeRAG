@@ -4,6 +4,7 @@ import (
 	stderrors "errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
@@ -203,7 +204,7 @@ func (h *DocumentWorkspaceHandler) fail(c *gin.Context, err error, message strin
 // to the assistant plugin as hostOrigin. Same-origin GETs (Next.js rewrite)
 // carry no Origin header, so fall back to FRONTEND_BASE_URL, then Referer.
 func (h *DocumentWorkspaceHandler) editorHostOrigin(c *gin.Context) string {
-	for _, candidate := range []string{c.GetHeader("Origin"), h.frontendBaseURL, c.GetHeader("Referer")} {
+	for _, candidate := range []string{c.GetHeader("Origin"), h.frontendBaseURL, os.Getenv("FRONTEND_BASE_URL"), c.GetHeader("Referer")} {
 		if origin := urlOrigin(candidate); origin != "" {
 			return origin
 		}

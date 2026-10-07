@@ -356,7 +356,12 @@ func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint6
 	if err != nil {
 		return err
 	}
-	_, err = s.forceSave(ctx, ws)
+	// The browser fires this from beforeunload/pagehide with keepalive and
+	// may drop the connection before the Document Server answers; detach
+	// from the request context so the command still reaches the server.
+	cmdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	_, err = s.forceSave(cmdCtx, ws)
 	return err
 }
 
