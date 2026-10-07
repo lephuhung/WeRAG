@@ -31,6 +31,9 @@ export type OnlyOfficeEditorEvents = {
 export type OnlyOfficeEditorHandle = {
   refreshFile: (config: Record<string, unknown>) => void;
   destroy: () => void;
+  /** postMessage to the editor iframe (DocsAPI frameEditor) with an exact
+   * target origin. False when the iframe is not there yet. */
+  postToEditor: (message: unknown, targetOrigin: string) => boolean;
 };
 
 /* Keyed by api.js src: each Document Server URL gets its own load. */
@@ -183,6 +186,17 @@ export const OnlyOfficeEditor = forwardRef<OnlyOfficeEditorHandle, Props>(functi
       if (api) create(api, cfg);
     },
     destroy,
+    postToEditor: (message: unknown, targetOrigin: string) => {
+      const frame = document.getElementById(`${containerId}-host`)?.querySelector("iframe");
+      const win = frame?.contentWindow;
+      if (!win) return false;
+      try {
+        win.postMessage(message, targetOrigin);
+        return true;
+      } catch {
+        return false;
+      }
+    },
   }));
 
   return <div id={`${containerId}-host`} className="h-full w-full [&>div]:h-full [&_iframe]:block" />;

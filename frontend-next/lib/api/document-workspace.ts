@@ -5,6 +5,8 @@
  *   POST /api/v1/sessions/:id/document            {attachment_id} → 201 view | 409 exists
  *   POST /api/v1/sessions/:id/document/forcesave  → 202 {revision}
  *   GET  /api/v1/sessions/:id/document/download   → docx bytes
+ *   GET  /api/v1/sessions/:id/document/revisions  → [{seq,label,source,created_at}]
+ *   POST /api/v1/sessions/:id/document/revisions/:seq/restore → {revision, editor_key}
  */
 import { ApiError, apiDownload, apiGet, apiPost, authHeaders } from "../api-client.ts";
 
@@ -154,20 +156,6 @@ export function parsePluginSelectionMessage(data: unknown): DocumentSelection | 
   return hint ? { text, paragraph_hint: hint } : { text };
 }
 
-/** Revision carried by a document tool result, or null when the chunk is not
- * one (tool name not in the editing set or no numeric revision). */
-export const DOCUMENT_EDIT_TOOLS = new Set(["apply_format_fixes", "rewrite_paragraphs"]);
-export function documentRevisionFromToolData(
-  toolName: string | undefined,
-  data: Record<string, unknown> | undefined,
-): number | null {
-  const name = toolName || (typeof data?.tool_name === "string" ? data.tool_name : "");
-  if (!DOCUMENT_EDIT_TOOLS.has(name)) return null;
-  const raw = data?.document_revision;
-  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
-  return Number.isFinite(n) ? n : null;
-}
-
 /** Whether the open editor should swap to the workspace's current version.
  * `editor_key` (not the revision) is the identity: a final save rotates the
  * key without any tool result, and the same key must never be applied twice.
@@ -245,4 +233,54 @@ export function selectionNeedsCollapse(
   const t = text.trim();
   if (!t) return false;
   return t.length > maxChars || t.split(/\r?\n/).length > maxLines;
+}
+
+
+/* ---------- snapshot timeline ---------- */
+
+export type DocumentRevisionSource = "ai" | "manual" | "close" | "restore";
+
+export interface DocumentRevisionEntry {
+  seq: number;
+  label: string;
+  source: DocumentRevisionSource | string;
+  created_at: string;
+}
+
+export async function listDocumentRevisions(sessionId: string): Promise<DocumentRevisionEntry[]> {
+  try {
+    const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId)}/revisions`);
+    return Array.isArray(res?.data) ? res.data : [];
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Restores snapshot `seq`; the server rotates the editor key, so the
+ * workspace re-check then reloads the editor through refreshFile(). */
+export async function restoreDocumentRevision(
+  sessionId: string,
+  seq: number,
+): Promise<{ revision: number; editor_key: string }> {
+  try {
+    const res = await apiPost<Envelope<{ revision: number; editor_key: string }>>(
+      `${base(sessionId)}/revisions/${encodeURIComponent(String(seq))}/restore`,
+      {},
+    );
+    return { revision: Number(res?.data?.revision) || 0, editor_key: String(res?.data?.editor_key ?? "") };
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Timeline order: newest (highest seq) first; does not mutate the input. */
+export function revisionsNewestFirst<T extends { seq: number }>(list: T[]): T[] {
+  return [...list].sort((a, b) => b.seq - a.seq);
+}
+
+/** Latest snapshot of `source` (highest seq), or null. */
+export function latestRevisionOf<T extends { seq: number; source: string }>(list: T[], source: string): T | null {
+  let best: T | null = null;
+  for (const r of list) if (r.source === source && (!best || r.seq > best.seq)) best = r;
+  return best;
 }

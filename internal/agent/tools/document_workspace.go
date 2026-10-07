@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
-	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
-	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -20,22 +18,20 @@ import (
 
 // DocumentWorkspaceSource is the part of the document workspace service the
 // document-assistant tools use (interfaces.DocumentWorkspaceService
-// satisfies it). Reads go through OpenCurrent; every write follows the
-// PrepareExternalWrite → edit → CommitExternalWrite protocol so unsaved
-// editor changes are flushed first and a concurrent save is detected.
+// satisfies it). The tools never write the file: an editing tool takes a
+// Snapshot (which force-saves the editor and records a revision), reads the
+// current version with OpenCurrent, and returns an edit plan
+// (document_ops) that the editor plugin applies inside ONLYOFFICE, where
+// Ctrl+Z undoes it.
 type DocumentWorkspaceSource interface {
 	GetBySession(ctx context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error)
 	OpenCurrent(ctx context.Context, tenantID uint64, sessionID string) (io.ReadCloser, *types.DocumentWorkspace, error)
-	PrepareExternalWrite(ctx context.Context, tenantID uint64, sessionID string, wait time.Duration) (*types.DocumentWorkspace, []byte, error)
-	CommitExternalWrite(ctx context.Context, tenantID uint64, sessionID string, expectedRevision int, data []byte) (*types.DocumentWorkspace, error)
+	Snapshot(ctx context.Context, tenantID uint64, sessionID, label, source string, wait time.Duration) (*types.DocumentRevision, error)
 }
 
-// documentEditAuthor signs every tracked change the agent writes.
-var documentEditAuthor = docxedit.Author{Name: "Trợ lý AI (WeRAG)"}
-
-// prepareWriteWait bounds how long a write waits for the editor to flush
-// unsaved changes before the agent edits the file.
-const prepareWriteWait = 20 * time.Second
+// snapshotWait bounds how long a snapshot waits for the editor to flush
+// unsaved changes before the agent plans an edit.
+const snapshotWait = 20 * time.Second
 
 const errNoWorkspace = "Cuộc hội thoại này chưa mở tài liệu nào trong trình soạn thảo."
 
@@ -60,32 +56,28 @@ func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, ses
 	return content, ws, nil
 }
 
-// prepareWorkspaceWrite flushes the editor and returns the bytes to edit
-// with the revision a commit must expect.
-func prepareWorkspaceWrite(ctx context.Context, src DocumentWorkspaceSource, sessionID string) (uint64, []byte, *types.DocumentWorkspace, error) {
+// snapshotDocument records a revision of the document as it is now (the
+// point the user can restore if the AI edit is unwanted) and reads that
+// version to plan the edit on. label is a short description of the edit.
+func snapshotDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, label string) ([]byte, *types.DocumentWorkspace, int, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || src == nil || sessionID == "" {
-		return 0, nil, nil, errors.New(errNoWorkspace)
+		return nil, nil, 0, errors.New(errNoWorkspace)
 	}
-	ws, content, err := src.PrepareExternalWrite(ctx, tenantID, sessionID, prepareWriteWait)
+	rev, err := src.Snapshot(ctx, tenantID, sessionID, "ai: "+label, types.DocumentRevisionSourceAI, snapshotWait)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("không chuẩn bị được tài liệu để sửa: %w", err)
+		return nil, nil, 0, fmt.Errorf("không lưu được bản chụp tài liệu trước khi sửa: %w", err)
 	}
-	if len(content) > maxFormatCheckBytes {
-		return 0, nil, nil, fmt.Errorf("%s quá lớn (tối đa 30 MB)", ws.FileName)
+	content, ws, err := readWorkspaceDocument(ctx, src, sessionID)
+	if err != nil {
+		return nil, nil, 0, err
 	}
-	return tenantID, content, ws, nil
+	seq := 0
+	if rev != nil {
+		seq = rev.Seq
+	}
+	return content, ws, seq, nil
 }
-
-// isWorkspaceConflict reports a commit refused because the document's
-// revision moved after it was read.
-func isWorkspaceConflict(err error) bool {
-	var appErr *apperrors.AppError
-	return errors.As(err, &appErr) && appErr.Code == apperrors.ErrConflict
-}
-
-const conflictRetryMessage = "Tài liệu vừa được lưu từ trình soạn thảo trong lúc sửa nên thay đổi chưa được ghi. " +
-	"Hãy gọi lại công cụ (đọc lại dàn ý nếu cần) để sửa trên bản mới nhất."
 
 func clipRunes(s string, n int) string {
 	r := []rune(s)

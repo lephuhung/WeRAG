@@ -294,6 +294,9 @@ func (s *sessionService) AgentQA(
 		agentQuery += selection
 		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
 	}
+	// The document tools read the selection from ctx: rewrite_paragraphs
+	// edits only a passage the user highlighted in this turn.
+	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
 		agentQuery += manifest
 		logger.Infof(ctx, "Appended %d staged sandbox attachment path(s) to agent query", len(stagedAttachments))

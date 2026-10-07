@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -102,4 +103,28 @@ func (s *MessageDocumentSelection) Scan(value any) error {
 		return nil
 	}
 	return json.Unmarshal(b, s)
+}
+
+// documentSelectionContextKey carries the turn's document selection to the
+// agent's tools (rewrite_paragraphs edits only the selected passage).
+const documentSelectionContextKey ContextKey = "DocumentSelection"
+
+// WithDocumentSelection returns ctx carrying the normalized selection; a nil
+// or empty selection leaves ctx unchanged.
+func WithDocumentSelection(ctx context.Context, sel *DocumentSelection) context.Context {
+	n := sel.Normalized()
+	if n == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, documentSelectionContextKey, n)
+}
+
+// DocumentSelectionFromContext returns the selection of the current turn, or
+// nil when the user highlighted nothing.
+func DocumentSelectionFromContext(ctx context.Context) *DocumentSelection {
+	if ctx == nil {
+		return nil
+	}
+	sel, _ := ctx.Value(documentSelectionContextKey).(*DocumentSelection)
+	return sel
 }

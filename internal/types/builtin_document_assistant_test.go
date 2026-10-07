@@ -69,7 +69,7 @@ func TestBuiltinDocumentAssistantLoadsFromYAML(t *testing.T) {
 	for _, p := range prompts.Templates {
 		if p.ID == "document_assistant" {
 			found = true
-			for _, want := range []string{"apply_format_fixes", "rewrite_paragraphs", "<document_selection>", "tracked change"} {
+			for _, want := range []string{"apply_format_fixes", "rewrite_paragraphs", "<document_selection>", "Ctrl+Z", "REVIEW"} {
 				if !strings.Contains(p.Content, want) {
 					t.Errorf("document_assistant prompt lacks %q", want)
 				}

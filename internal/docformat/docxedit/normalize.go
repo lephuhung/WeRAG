@@ -74,3 +74,7 @@ func nfcLatin(s string) string {
 func normalizeText(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(nfcLatin(s)), " "))
 }
+
+// NFCLatin is the canonical composition FindParagraph uses (see nfcLatin),
+// exported so callers can compare paragraph texts the same way.
+func NFCLatin(s string) string { return nfcLatin(s) }

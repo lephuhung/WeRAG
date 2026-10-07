@@ -25,8 +25,11 @@ import {
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
-import { IconDoc, IconDownload, IconRefresh } from "@/components/icons";
+import type { OpsBatch, OpsFailure } from "@/lib/api/document-ops";
+import { IconClock, IconDoc, IconDownload, IconRefresh } from "@/components/icons";
 import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-editor";
+import { RevisionHistoryPanel } from "./revision-history";
+import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
 
 type Phase =
   | { kind: "loading" }
@@ -38,7 +41,6 @@ type Phase =
 // The plugin already debounces selection changes (120ms); a second delay here
 // only makes the chip feel late, so messages are applied as they arrive.
 const SELECTION_DEBOUNCE_MS = 0;
-const UPDATED_TOAST_THROTTLE_MS = 3000;
 // Fallback polling of the workspace (SSE tool results can be lost when the
 // stream is cut while the backend still finishes the edit).
 const POLL_BUSY_MS = 20_000;
@@ -55,8 +57,10 @@ function errMessage(e: unknown): string {
 }
 
 /* Left pane of the document assistant: one ONLYOFFICE-backed .docx per chat
- * session. Loads (or lets the user create) the workspace, keeps the editor
- * in sync with assistant-made revisions, and forwards editor selections.
+ * session. Loads (or lets the user create) the workspace, applies the
+ * assistant's edit plans inside the editor (through the werag-assistant
+ * plugin, so Ctrl+Z undoes them), reloads on restores (editor_key change),
+ * and forwards editor selections.
  *
  * Pre-session mode (`sessionId` undefined, new-chat page): shows the drop
  * zone right away; picking a file creates the session, uploads it, opens the
@@ -66,7 +70,7 @@ export function DocWorkspace({
   onSessionCreated,
   onBusyChange,
   blocked = false,
-  revision,
+  opsBatches,
   recheckToken = 0,
   turnInFlight = false,
   onSelectionChange,
@@ -81,8 +85,9 @@ export function DocWorkspace({
   /** Host is busy (e.g. a first message is creating the session): the drop
    * zone and file picker are disabled. */
   blocked?: boolean;
-  /** Latest document revision reported by an editing tool in the chat. */
-  revision: number | null;
+  /** Edit plans from the chat's document tools (append-only per session),
+   * applied in the editor by the plugin, each batch once. */
+  opsBatches?: (OpsBatch & { rejected?: OpsFailure[] })[];
   /** Bumped by the chat when an assistant turn ends (complete, error, abort,
    * resumed stream done) → re-check the workspace for a new editor_key. */
   recheckToken?: number;
@@ -114,7 +119,6 @@ export function DocWorkspace({
   const editedRef = useRef(false);
   // One keepalive forcesave per unload: beforeunload and pagehide both fire.
   const unloadFlushedRef = useRef(false);
-  const lastUpdatedToastRef = useRef(0);
   const onSelectionRef = useRef(onSelectionChange);
   onSelectionRef.current = onSelectionChange;
   // editor_key of the version currently shown in the editor (mount config or
@@ -129,6 +133,9 @@ export function DocWorkspace({
   const checkingRef = useRef(false);
   const recheckAgainRef = useRef(false);
   const aliveRef = useRef(true);
+  // Set once useEditorOps runs (declared further down): refreshTo() drops
+  // pending edit plans when the document under the editor is replaced.
+  const resetOpsRef = useRef<() => void>(() => {});
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -291,16 +298,10 @@ export function DocWorkspace({
     }
   };
 
-  /* ---------- server revisions → refresh editor ---------- */
-  const notifyUpdated = useCallback(() => {
-    // A burst of revisions produces one toast.
-    const now = Date.now();
-    if (now - lastUpdatedToastRef.current >= UPDATED_TOAST_THROTTLE_MS) {
-      lastUpdatedToastRef.current = now;
-      toast.info(t("docws.updated"));
-    }
-  }, [toast, t]);
-
+  /* ---------- server key changes (restore, close/reopen) → refresh editor ----------
+   * AI edits no longer change the stored file: they arrive as edit plans
+   * (see useEditorOps), so a key change is silent here — the restore UI
+   * shows its own toast. */
   /* Swap the editor to `v` (already decided). Advances currentKeyRef first so
    * the same key is never applied twice, then holds further refreshes until
    * the editor reports ready again or the cooldown passes. */
@@ -308,6 +309,7 @@ export function DocWorkspace({
     if (!v.editor) return;
     currentKeyRef.current = v.editor_key || currentKeyRef.current;
     refreshInFlightRef.current = true;
+    resetOpsRef.current();
     if (refreshCooldownRef.current) clearTimeout(refreshCooldownRef.current);
     refreshCooldownRef.current = setTimeout(() => {
       refreshInFlightRef.current = false;
@@ -339,7 +341,6 @@ export function DocWorkspace({
         })
       ) {
         refreshTo(v);
-        notifyUpdated();
       }
       // Not ready / in flight: onDocumentReady or the next trigger re-checks.
     } catch {
@@ -351,16 +352,11 @@ export function DocWorkspace({
         void recheck();
       }
     }
-  }, [sessionId, refreshTo, notifyUpdated]);
+  }, [sessionId, refreshTo]);
   const recheckRef = useRef(recheck);
   recheckRef.current = recheck;
 
   const isEditor = phase.kind === "editor";
-
-  // Tool result in the chat stream.
-  useEffect(() => {
-    if (isEditor && revision !== null) void recheckRef.current();
-  }, [revision, isEditor]);
 
   // Chat turn ended (incl. dropped stream / abort): check now and again a
   // little later, since the backend may still be finishing the edit.
@@ -440,6 +436,36 @@ export function DocWorkspace({
       if (timer) clearTimeout(timer);
     };
   }, [dsUrl]);
+
+  /* ---------- AI edit plans → editor plugin ---------- */
+  const onOpsOutcome = useCallback(
+    (o: EditorOpsOutcome) => {
+      if (!aliveRef.current) return;
+      if (o.kind === "timeout") {
+        toast.error(t("docws.opsTimeout"));
+        return;
+      }
+      const firstError = o.failed[0]?.error ?? "";
+      if (o.failed.length === 0) toast.success(t("docws.opsApplied", { n: o.applied }));
+      else if (o.applied > 0)
+        toast.info(t("docws.opsPartial", { n: o.applied, total: o.total, failed: o.failed.length, error: firstError }));
+      else toast.error(t("docws.opsNone", { total: o.total, error: firstError }));
+    },
+    [toast, t],
+  );
+  const NO_BATCHES = useRef<(OpsBatch & { rejected?: OpsFailure[] })[]>([]).current;
+  const { pump: pumpOps, reset: resetOps } = useEditorOps({
+    sessionId,
+    origin: documentServerOrigin(dsUrl),
+    editorRef,
+    isReady: () => editorReadyRef.current && phase.kind === "editor",
+    batches: opsBatches ?? NO_BATCHES,
+    onOutcome: onOpsOutcome,
+  });
+  resetOpsRef.current = resetOps;
+
+  /* ---------- snapshot timeline ---------- */
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /* ---------- top-bar actions ---------- */
   const download = async () => {
@@ -606,6 +632,16 @@ export function DocWorkspace({
           <Pill tone={dirty ? "warn" : "ok"}>{dirty ? t("docws.saving") : t("docws.saved")}</Pill>
         )}
         {view && <Pill tone="muted">{t("docws.revision", { n: view.revision })}</Pill>}
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => setHistoryOpen(true)}
+          title={t("docws.history")}
+          disabled={!sessionId}
+        >
+          <IconClock className="h-3.5 w-3.5" />
+          <span className="hidden xl:inline">{t("docws.history")}</span>
+        </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void download()} title={t("docws.download")}>
           <IconDownload className="h-3.5 w-3.5" />
           <span className="hidden xl:inline">{t("docws.download")}</span>
@@ -633,8 +669,10 @@ export function DocWorkspace({
               onDocumentReady: () => {
                 editorReadyRef.current = true;
                 refreshInFlightRef.current = false;
-                // Catch up on a key change that arrived while loading.
+                // Catch up on a key change that arrived while loading, then
+                // send the edit plans queued meanwhile.
                 void recheckRef.current();
+                pumpOps();
               },
               onDocumentStateChange: (d) => {
                 setDirty(d);
@@ -664,6 +702,14 @@ export function DocWorkspace({
           />
         ) : null}
       </div>
+      {sessionId && (
+        <RevisionHistoryPanel
+          sessionId={sessionId}
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={() => void recheckRef.current()}
+        />
+      )}
     </div>
   );
 }

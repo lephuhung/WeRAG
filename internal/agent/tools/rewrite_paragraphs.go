@@ -7,29 +7,27 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var rewriteParagraphsTool = BaseTool{
 	name: ToolRewriteParagraphs,
-	description: `Rewrite text in the Word document open in this conversation's editor. Every edit is written as a Word tracked change (deletion + insertion signed "Trợ lý AI (WeRAG)") that the user accepts or rejects in the editor; the original text is never lost.
+	description: `Rewrite the passage the user highlighted in the Word document open in this conversation's editor. The tool plans the replacement; the editor applies it as an ordinary edit, which the user undoes with Ctrl+Z.
 
 ## When to Use
 
-- The user asks to rewrite, shorten, correct or reword a passage (often the passage in <document_selection>).
-- Fixing spelling or wording found while reviewing the document.
+ONLY when the user explicitly asks in this turn to rewrite, shorten, correct or reword text ("viết lại", "sửa câu này", "rút gọn") AND has highlighted the passage (the <document_selection> block). Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
 
 ## Input
 
 - edits: up to 30 edits, each with
-  - paragraph: the paragraph index from read_document_outline (preferred), or
-  - match: a distinctive piece of the paragraph's current text when the index is unknown (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
-  - old: the exact substring to replace inside that paragraph; omit to replace the whole paragraph text.
+  - paragraph: the paragraph index from read_document_outline, or
+  - match: a distinctive piece of the paragraph's current text (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
+  - old: the exact substring to replace inside that paragraph (preferred); omit to replace the whole paragraph text.
   - new: the replacement text (required; it may be empty only together with old, to delete that substring).
 - note: optional short reason for the change, shown back in the result.
 
-Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes. To point out a problem without changing the text, use mark_passages.`,
+Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -85,8 +83,8 @@ type rewriteParagraphsInput struct {
 	Note  string        `json:"note"`
 }
 
-// RewriteParagraphsTool replaces paragraph text in the session's workspace
-// document as tracked changes.
+// RewriteParagraphsTool plans text replacements in the user's selected
+// passage of the session's workspace document; the editor applies them.
 type RewriteParagraphsTool struct {
 	BaseTool
 	workspace DocumentWorkspaceSource
@@ -103,7 +101,7 @@ type rewriteChange struct {
 	Paragraph int    `json:"paragraph"`
 	Old       string `json:"old"`
 	New       string `json:"new"`
-	Status    string `json:"status"` // applied | unchanged | failed
+	Status    string `json:"status"` // planned | unchanged | failed
 	Error     string `json:"error,omitempty"`
 }
 
@@ -132,62 +130,51 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		}
 	}
 
-	tenantID, content, ws, err := prepareWorkspaceWrite(ctx, t.workspace, t.sessionID)
+	sel := types.DocumentSelectionFromContext(ctx)
+	if sel == nil {
+		return &types.ToolResult{Success: false, Error: errRewriteNeedsSelection}, nil
+	}
+
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, "viết lại đoạn văn")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 	doc, err := docxedit.Open(content)
 	if err != nil {
-		return &types.ToolResult{Success: false, Error: "không mở được tài liệu để sửa: " + err.Error()}, nil
+		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 	}
+	paras := doc.Paragraphs()
+	vdoc := newVirtualDoc(paras)
 
+	var ops []DocumentOp
 	changes := make([]rewriteChange, 0, len(in.Edits))
-	applied, failed := 0, 0
+	planned, failed := 0, 0
 	for _, e := range in.Edits {
-		ch := t.applyEdit(doc, e)
+		ch, op := planRewrite(doc, paras, vdoc, sel, e)
 		switch ch.Status {
-		case "applied":
-			applied++
+		case "planned":
+			planned++
+			ops = append(ops, op)
 		case "failed":
 			failed++
 		}
 		changes = append(changes, ch)
 	}
 
-	revision := ws.Revision
-	if applied > 0 {
-		data, err := doc.Bytes()
-		if err != nil {
-			return &types.ToolResult{Success: false, Error: "không ghi được tài liệu: " + err.Error()}, nil
-		}
-		next, err := t.workspace.CommitExternalWrite(ctx, tenantID, t.sessionID, ws.Revision, data)
-		if err != nil {
-			if isWorkspaceConflict(err) {
-				return &types.ToolResult{Success: false, Error: conflictRetryMessage}, nil
-			}
-			logger.Warnf(ctx, "rewrite_paragraphs: commit failed: %v", err)
-			return &types.ToolResult{Success: false, Error: "không lưu được tài liệu: " + err.Error()}, nil
-		}
-		revision = next.Revision
-	}
-
 	var out strings.Builder
 	switch {
-	case applied > 0:
-		fmt.Fprintf(&out, "Đã sửa %d đoạn trong %s (phiên bản %d) dưới dạng track changes; người dùng có thể chấp nhận/từ chối từng thay đổi trong trình soạn thảo.\n",
-			applied, ws.FileName, revision)
+	case planned > 0:
+		fmt.Fprintf(&out, "Sẽ sửa %d chỗ trong %s:\n", planned, ws.FileName)
 	default:
-		fmt.Fprintf(&out, "Chưa sửa được đoạn nào trong %s; tài liệu giữ nguyên.\n", ws.FileName)
+		fmt.Fprintf(&out, "Không có thay đổi nào cho %s; tài liệu giữ nguyên.\n", ws.FileName)
 	}
 	if note := strings.TrimSpace(in.Note); note != "" {
 		fmt.Fprintf(&out, "Lý do: %s\n", note)
 	}
-	out.WriteString("\n")
 	for _, ch := range changes {
 		switch ch.Status {
-		case "applied":
-			fmt.Fprintf(&out, "- Đoạn [%d]: đã thay “%s” → “%s” (dạng track changes, người dùng có thể chấp nhận/từ chối trong trình soạn thảo)\n",
-				ch.Paragraph, clipRunes(ch.Old, 120), clipRunes(ch.New, 120))
+		case "planned":
+			fmt.Fprintf(&out, "- Đoạn [%d]: “%s” → “%s”\n", ch.Paragraph, clipRunes(ch.Old, 120), clipRunes(ch.New, 120))
 		case "unchanged":
 			fmt.Fprintf(&out, "- Đoạn [%d]: nội dung mới trùng nội dung cũ, không thay đổi\n", ch.Paragraph)
 		default:
@@ -198,56 +185,86 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 			}
 		}
 	}
-	data := map[string]interface{}{
-		"file_name":         ws.FileName,
-		"document_revision": revision,
-		"applied":           applied,
-		"failed":            failed,
-		"changes":           changes,
+	if planned > 0 {
+		out.WriteString("\n" + editorAppliedNote + "\n")
 	}
-	if applied == 0 && failed > 0 {
+	data := opsData(ops, seq)
+	data["file_name"] = ws.FileName
+	data["planned"] = planned
+	data["failed"] = failed
+	data["changes"] = changes
+	if planned == 0 && failed > 0 {
 		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
 	}
 	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
 }
 
-// applyEdit resolves one edit's paragraph and writes it as a tracked change.
-func (t *RewriteParagraphsTool) applyEdit(doc *docxedit.Document, e rewriteEdit) rewriteChange {
+const errRewriteNeedsSelection = "Không viết lại: lượt này người dùng chưa bôi đen đoạn nào trong trình soạn thảo. " +
+	"Chỉ viết lại đoạn người dùng đã chọn — hãy nhắc họ bôi đen đoạn cần sửa rồi gửi lại yêu cầu; " +
+	"nếu chỉ cần chỉ ra lỗi, dùng mark_passages."
+
+// planRewrite resolves one edit against the document and the selection and
+// returns its op; vdoc follows the text the plugin will see.
+func planRewrite(doc *docxedit.Document, paras []docxedit.Paragraph, vdoc *virtualDoc, sel *types.DocumentSelection, e rewriteEdit) (rewriteChange, DocumentOp) {
 	ch := rewriteChange{Paragraph: -1, New: *e.New}
-	paras := doc.Paragraphs()
 	idx, msg := resolveParagraph(doc, paras, e)
 	if msg != "" {
 		ch.Status, ch.Error = "failed", msg
-		return ch
+		return ch, DocumentOp{}
 	}
 	ch.Paragraph = idx
-	current := paras[idx].Text
+	pos := vdoc.pos(idx)
+	current := vdoc.texts[pos]
+	target := current
+	if e.Old != nil {
+		target = *e.Old
+	}
+	if !selectionOverlaps(sel.Text, target) && !(e.Old == nil && sel.ParagraphHint != "" && selectionOverlaps(sel.ParagraphHint, current)) {
+		ch.Status = "failed"
+		ch.Error = fmt.Sprintf("đoạn này không nằm trong phần người dùng đã bôi đen (“%s”); chỉ được viết lại phần đã chọn",
+			clipRunes(sel.Text, 80))
+		return ch, DocumentOp{}
+	}
+	anchor := vdoc.anchor(pos)
 	if e.Old != nil {
 		ch.Old = *e.Old
 		if *e.Old == *e.New {
 			ch.Status = "unchanged"
-			return ch
+			return ch, DocumentOp{}
 		}
-		if err := doc.ReplaceSubstring(idx, *e.Old, *e.New, documentEditAuthor); err != nil {
+		next, ok := replaceFirst(current, *e.Old, *e.New)
+		if !ok {
 			ch.Status = "failed"
 			ch.Error = fmt.Sprintf("không tìm thấy “%s” trong đoạn; nội dung hiện tại: “%s”",
 				clipRunes(*e.Old, 80), clipRunes(current, 160))
-			return ch
+			return ch, DocumentOp{}
 		}
-		ch.Status = "applied"
-		return ch
+		vdoc.setText(pos, next)
+		ch.Status = "planned"
+		old, nw := *e.Old, *e.New
+		return ch, DocumentOp{Op: OpReplaceText, Anchor: anchor, Old: &old, New: &nw}
 	}
 	ch.Old = current
-	if current == *e.New {
+	if anchorText(current) == anchorText(*e.New) {
 		ch.Status = "unchanged"
-		return ch
+		return ch, DocumentOp{}
 	}
-	if err := doc.ReplaceText(idx, *e.New, documentEditAuthor); err != nil {
-		ch.Status, ch.Error = "failed", err.Error()
-		return ch
+	vdoc.setText(pos, *e.New)
+	ch.Status = "planned"
+	nw := *e.New
+	return ch, DocumentOp{Op: OpReplaceParagraph, Anchor: anchor, New: &nw}
+}
+
+// replaceFirst replaces the first occurrence of old in text, also when the
+// two differ only in whitespace runs.
+func replaceFirst(text, old, new string) (string, bool) {
+	if strings.Contains(text, old) {
+		return strings.Replace(text, old, new, 1), true
 	}
-	ch.Status = "applied"
-	return ch
+	if n := anchorText(old); n != "" && strings.Contains(anchorText(text), n) {
+		return strings.Replace(anchorText(text), n, new, 1), true
+	}
+	return "", false
 }
 
 // resolveParagraph picks the edit's paragraph: the index when given, else a

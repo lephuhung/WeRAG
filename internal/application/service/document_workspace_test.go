@@ -351,6 +351,7 @@ type dwFixture struct {
 	catalog  *dwFakeCatalog
 	attach   *dwFakeAttachments
 	messages *dwFakeMessages
+	revs     *dwFakeRevisions
 	ds       *fakeDocumentServer
 }
 
@@ -377,7 +378,8 @@ func newDWFixture(t *testing.T) *dwFixture {
 		JWTSecret: dwTestSecret, PublicURL: "https://docs.example", InternalURL: ds.srv.URL,
 		BackendURL: "http://app:8080", SaveWaitSeconds: 5,
 	}
-	fx.svc = newDocumentWorkspaceService(cfg, fx.repo, fx.files, fx.catalog, fx.attach, fx.messages)
+	fx.revs = &dwFakeRevisions{}
+	fx.svc = newDocumentWorkspaceService(cfg, fx.repo, fx.files, fx.catalog, fx.attach, fx.messages, fx.revs)
 	return fx
 }
 
@@ -483,7 +485,7 @@ func TestDocumentWorkspaceViewSignsEditorConfig(t *testing.T) {
 	require.Equal(t, "https://chat.example", options["all"].(map[string]interface{})["hostOrigin"])
 	require.Equal(t, "https://chat.example", options[onlyOfficeAssistantPluginGUID].(map[string]interface{})["hostOrigin"])
 	review := editor["customization"].(map[string]interface{})["review"].(map[string]interface{})
-	require.Equal(t, true, review["trackChanges"])
+	require.Equal(t, false, review["trackChanges"], "AI edits are undone via snapshots, not tracked changes")
 
 	callbackURL := editor["callbackUrl"].(string)
 	ticket, ok := strings.CutPrefix(callbackURL, "http://app:8080/onlyoffice/callback/")
@@ -653,7 +655,7 @@ func TestDocumentWorkspaceCallbackVerification(t *testing.T) {
 }
 
 func TestDocumentWorkspaceDisabled(t *testing.T) {
-	svc := newDocumentWorkspaceService(&config.OnlyOfficeConfig{}, newDWFakeRepo(), newDWFakeFiles(), &dwFakeCatalog{}, &dwFakeAttachments{}, nil)
+	svc := newDocumentWorkspaceService(&config.OnlyOfficeConfig{}, newDWFakeRepo(), newDWFakeFiles(), &dwFakeCatalog{}, &dwFakeAttachments{}, nil, nil)
 	require.False(t, svc.Enabled())
 	_, err := svc.CreateFromAttachment(context.Background(), 7, "s", "u", "a")
 	requireAppCode(t, err, apperrors.ErrServiceUnavailable)

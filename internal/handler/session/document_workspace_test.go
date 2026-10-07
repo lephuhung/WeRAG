@@ -48,6 +48,15 @@ func (f *callbackOnlyWorkspaces) PrepareExternalWrite(context.Context, uint64, s
 func (f *callbackOnlyWorkspaces) CommitExternalWrite(context.Context, uint64, string, int, []byte) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
+func (f *callbackOnlyWorkspaces) Snapshot(context.Context, uint64, string, string, string, time.Duration) (*types.DocumentRevision, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) ListRevisions(context.Context, uint64, string) ([]*types.DocumentRevision, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) Restore(context.Context, uint64, string, int) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
 func (f *callbackOnlyWorkspaces) HandleCallback(_ context.Context, ticket, auth string, body *types.OnlyOfficeCallback) error {
 	f.gotTicket, f.gotAuth, f.gotBody = ticket, auth, body
 	if ticket == "bad" {
@@ -298,4 +307,122 @@ func TestPersistTurnMessagesWithoutSelectionLeavesItNil(t *testing.T) {
 	raw, err := json.Marshal(msgs.created[0])
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "document_selection")
+}
+
+// ---- revision routes -----------------------------------------------------
+
+type revisionWorkspaces struct {
+	routeWorkspaces
+	revs         []*types.DocumentRevision
+	snapLabel    string
+	snapSource   string
+	restoredSeqs []int
+}
+
+func (f *revisionWorkspaces) ListRevisions(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentRevision, error) {
+	if _, err := f.GetBySession(ctx, tenantID, sessionID); err != nil {
+		return nil, err
+	}
+	return f.revs, nil
+}
+
+func (f *revisionWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sessionID, label, source string, _ time.Duration) (*types.DocumentRevision, error) {
+	if _, err := f.GetBySession(ctx, tenantID, sessionID); err != nil {
+		return nil, err
+	}
+	f.snapLabel, f.snapSource = label, source
+	rev := &types.DocumentRevision{Seq: len(f.revs) + 1, Label: label, Source: source}
+	f.revs = append([]*types.DocumentRevision{rev}, f.revs...)
+	return rev, nil
+}
+
+func (f *revisionWorkspaces) Restore(ctx context.Context, tenantID uint64, sessionID string, seq int) (*types.DocumentWorkspace, error) {
+	ws, err := f.GetBySession(ctx, tenantID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if seq > len(f.revs) {
+		return nil, apperrors.NewNotFoundError("Revision not found")
+	}
+	f.restoredSeqs = append(f.restoredSeqs, seq)
+	ws.Revision++
+	return ws, nil
+}
+
+func TestDocumentRevisionRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	created := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	ws := &revisionWorkspaces{
+		routeWorkspaces: routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{
+			"mine": {ID: "ws-mine", SessionID: "mine"},
+		}},
+		revs: []*types.DocumentRevision{{Seq: 1, Label: "Gốc", Source: "manual", FileSize: 42, CreatedAt: created, Ref: "resource://secret"}},
+	}
+	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true, "admin-view": false, "empty": true}}
+	h := NewDocumentWorkspaceHandler(sessions, ws, nil)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
+	r.GET("/sessions/:id/document/revisions", h.ListDocumentRevisions)
+	r.POST("/sessions/:session_id/document/revisions/:seq/restore", h.RestoreDocumentRevision)
+	r.POST("/sessions/:session_id/document/snapshot", h.SnapshotDocumentWorkspace)
+
+	// List: fields exposed, storage ref hidden.
+	rec := doJSON(r, http.MethodGet, "/sessions/mine/document/revisions", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var listed struct {
+		Success bool                     `json:"success"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.True(t, listed.Success)
+	require.Len(t, listed.Data, 1)
+	require.Equal(t, float64(1), listed.Data[0]["seq"])
+	require.Equal(t, "Gốc", listed.Data[0]["label"])
+	require.Equal(t, "manual", listed.Data[0]["source"])
+	require.Equal(t, float64(42), listed.Data[0]["file_size"])
+	require.Contains(t, listed.Data[0], "created_at")
+	require.NotContains(t, rec.Body.String(), "resource://")
+
+	// Snapshot: manual source, label passed through.
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/document/snapshot", `{"label":"Trước khi gửi"}`, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.JSONEq(t, `{"success":true,"data":{"seq":2}}`, rec.Body.String())
+	require.Equal(t, "Trước khi gửi", ws.snapLabel)
+	require.Equal(t, types.DocumentRevisionSourceManual, ws.snapSource)
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/document/snapshot", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code, "empty body means default label")
+
+	// Restore: returns the rotated key.
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/document/revisions/1/restore", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.JSONEq(t, `{"success":true,"data":{"revision":1,"editor_key":"ws-mine-1"}}`, rec.Body.String())
+	require.Equal(t, []int{1}, ws.restoredSeqs)
+
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/document/revisions/abc/restore", "", nil)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/document/revisions/99/restore", "", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	// Ownership: not-owned sessions cannot snapshot or restore; unknown
+	// sessions cannot list.
+	for _, path := range []string{
+		"/sessions/admin-view/document/snapshot",
+		"/sessions/admin-view/document/revisions/1/restore",
+		"/sessions/someone-else/document/snapshot",
+	} {
+		rec = doJSON(r, http.MethodPost, path, `{}`, nil)
+		require.Equal(t, http.StatusNotFound, rec.Code, path)
+	}
+	rec = doJSON(r, http.MethodGet, "/sessions/someone-else/document/revisions", "", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, []int{1}, ws.restoredSeqs, "rejected requests never reach the service")
+
+	// Session without a workspace: 404 on all three.
+	rec = doJSON(r, http.MethodGet, "/sessions/empty/document/revisions", "", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	rec = doJSON(r, http.MethodPost, "/sessions/empty/document/snapshot", `{}`, nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	rec = doJSON(r, http.MethodPost, "/sessions/empty/document/revisions/1/restore", "", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }

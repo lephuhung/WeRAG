@@ -126,6 +126,11 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// The authenticated MCP endpoint. Read only by the MCP tool handlers on
 	// the request context that authenticated it.
 	MCPEndpointContextKey: false,
+	// The passage the user highlighted in the document editor this turn.
+	// The agent run may be detached from the request; rewrite_paragraphs
+	// reads the selection inside it to edit only the highlighted passage,
+	// so it must travel with the run.
+	documentSelectionContextKey: true,
 }
 
 // ContextKeysClonedAcrossDetach returns the keys logger.CloneContext carries

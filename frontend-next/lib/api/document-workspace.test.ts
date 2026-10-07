@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 
 import {
   DocumentWorkspaceError,
-  documentRevisionFromToolData,
+  latestRevisionOf,
+  revisionsNewestFirst,
   documentSelectionForDisplay,
   selectionNeedsCollapse,
   openDocumentInNewSession,
@@ -30,15 +31,6 @@ describe("parsePluginSelectionMessage", () => {
       parsePluginSelectionMessage({ source: "werag-onlyoffice", type: "selection", text: " Điều 1 ", paragraphHint: "p3" }),
       { text: "Điều 1", paragraph_hint: "p3" },
     );
-  });
-});
-
-describe("documentRevisionFromToolData", () => {
-  it("reads numeric revisions of editing tools only", () => {
-    assert.equal(documentRevisionFromToolData("apply_format_fixes", { document_revision: 4 }), 4);
-    assert.equal(documentRevisionFromToolData(undefined, { tool_name: "rewrite_paragraphs", document_revision: "7" }), 7);
-    assert.equal(documentRevisionFromToolData("knowledge_search", { document_revision: 4 }), null);
-    assert.equal(documentRevisionFromToolData("apply_format_fixes", {}), null);
   });
 });
 
@@ -142,6 +134,22 @@ describe("selection quote helpers", () => {
     assert.equal(selectionNeedsCollapse("a\nb\nc\nd"), false);
     assert.equal(selectionNeedsCollapse("a\nb\nc\nd\ne"), true);
     assert.equal(selectionNeedsCollapse("abcdef", 5), true);
+  });
+});
+
+describe("revision timeline helpers", () => {
+  const revs = [
+    { seq: 1, source: "manual", label: "a", created_at: "" },
+    { seq: 3, source: "ai", label: "c", created_at: "" },
+    { seq: 2, source: "ai", label: "b", created_at: "" },
+  ];
+  it("sorts newest first without mutating", () => {
+    assert.deepEqual(revisionsNewestFirst(revs).map((r) => r.seq), [3, 2, 1]);
+    assert.equal(revs[0].seq, 1);
+  });
+  it("finds the latest snapshot of a source", () => {
+    assert.equal(latestRevisionOf(revs, "ai")?.seq, 3);
+    assert.equal(latestRevisionOf(revs, "close"), null);
   });
 });
 

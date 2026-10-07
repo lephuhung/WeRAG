@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -151,6 +153,91 @@ func (h *DocumentWorkspaceHandler) DownloadDocumentWorkspace(c *gin.Context) {
 	}); err != nil {
 		logger.Errorf(ctx, "Failed to stream document workspace: %v", err)
 	}
+}
+
+// DocumentRevisionResponse is one entry of the snapshot timeline.
+type DocumentRevisionResponse struct {
+	Seq       int       `json:"seq"`
+	Label     string    `json:"label"`
+	Source    string    `json:"source"`
+	FileSize  int64     `json:"file_size"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ListDocumentRevisions returns the snapshot timeline, newest first.
+// GET /sessions/:id/document/revisions
+func (h *DocumentWorkspaceHandler) ListDocumentRevisions(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	revisions, err := h.workspaces.ListRevisions(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
+	if err != nil {
+		h.fail(c, err, "Failed to list document revisions")
+		return
+	}
+	out := make([]DocumentRevisionResponse, 0, len(revisions))
+	for _, rev := range revisions {
+		out = append(out, DocumentRevisionResponse{
+			Seq: rev.Seq, Label: rev.Label, Source: rev.Source, FileSize: rev.FileSize, CreatedAt: rev.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
+// RestoreDocumentRevision makes a snapshot the current version; the new
+// editor_key makes the open editor reload.
+// POST /sessions/:session_id/document/revisions/:seq/restore
+func (h *DocumentWorkspaceHandler) RestoreDocumentRevision(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	seq, err := strconv.Atoi(c.Param("seq"))
+	if err != nil || seq <= 0 {
+		c.Error(apperrors.NewBadRequestError("invalid revision number"))
+		return
+	}
+	ws, err := h.workspaces.Restore(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, seq)
+	if err != nil {
+		h.fail(c, err, "Failed to restore document revision")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"revision": ws.Revision, "editor_key": ws.EditorKey()}})
+}
+
+// SnapshotDocumentWorkspaceRequest is a manual snapshot from the UI.
+type SnapshotDocumentWorkspaceRequest struct {
+	Label string `json:"label"`
+}
+
+// SnapshotDocumentWorkspace saves the editor and records a manual snapshot.
+// POST /sessions/:session_id/document/snapshot
+func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req SnapshotDocumentWorkspaceRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.Error(apperrors.NewBadRequestError("invalid snapshot request"))
+			return
+		}
+	}
+	rev, err := h.workspaces.Snapshot(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		req.Label, types.DocumentRevisionSourceManual, 0)
+	if err != nil {
+		h.fail(c, err, "Failed to snapshot document")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"seq": rev.Seq}})
 }
 
 // OnlyOfficeCallback receives Document Server save callbacks. It is public

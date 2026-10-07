@@ -11,14 +11,13 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var applyFormatFixesTool = BaseTool{
 	name: ToolApplyFormatFixes,
-	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and corrects what can be corrected mechanically, as Word tracked formatting changes the user accepts or rejects in the editor:
+	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and plans the corrections that can be made mechanically; the editor applies them as ordinary formatting edits, which the user undoes with Ctrl+Z. Use it only when the user explicitly asks to fix the format ("sửa thể thức", "chuẩn hóa"). It corrects:
 
 - font (Times New Roman), font size, bold/italic and paragraph alignment of each component (quốc hiệu, tiêu ngữ, trích yếu, nội dung, chữ ký, nơi nhận…) — every paragraph of the component that breaks the rule, not only the samples a check listed;
 - paper size (A4) and page margins.
@@ -68,8 +67,8 @@ type applyFormatFixesInput struct {
 	Force        bool     `json:"force"`
 }
 
-// ApplyFormatFixesTool corrects mechanically fixable NĐ30 findings in the
-// session's workspace document as tracked formatting changes.
+// ApplyFormatFixesTool plans the corrections of mechanically fixable NĐ30
+// findings in the session's workspace document; the editor applies them.
 type ApplyFormatFixesTool struct {
 	BaseTool
 	workspace DocumentWorkspaceSource
@@ -223,7 +222,17 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 			return &types.ToolResult{Success: false, Error: "invalid arguments: " + err.Error()}, nil
 		}
 	}
-	tenantID, content, ws, err := prepareWorkspaceWrite(ctx, t.workspace, t.sessionID)
+	// A real run snapshots first (the restore point, and a force-save so
+	// the plan sees the editor's latest text); a dry run only reads.
+	var content []byte
+	var ws *types.DocumentWorkspace
+	seq := 0
+	var err error
+	if in.DryRun {
+		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID)
+	} else {
+		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, "chuẩn hóa thể thức")
+	}
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -244,33 +253,13 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	unreliable := len(missing) > 0 || !typeKnown
 	dryRun := in.DryRun || (unreliable && !in.Force)
 
-	revision := ws.Revision
+	var ops []DocumentOp
 	if !dryRun && plan.hasEdits() {
 		doc, err := docxedit.Open(content)
 		if err != nil {
-			return &types.ToolResult{Success: false, Error: "không mở được tài liệu để sửa: " + err.Error()}, nil
+			return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 		}
-		written, err := plan.apply(doc)
-		if err != nil {
-			return &types.ToolResult{Success: false, Error: "không áp dụng được sửa thể thức: " + err.Error()}, nil
-		}
-		if written == 0 || !doc.Dirty() {
-			return &types.ToolResult{Success: false, Error: "không áp dụng được sửa thể thức nào:\n" +
-				renderFormatPlan(ws.FileName, ws.Revision, report, plan, true)}, nil
-		}
-		data, err := doc.Bytes()
-		if err != nil {
-			return &types.ToolResult{Success: false, Error: "không ghi được tài liệu: " + err.Error()}, nil
-		}
-		next, err := t.workspace.CommitExternalWrite(ctx, tenantID, t.sessionID, ws.Revision, data)
-		if err != nil {
-			if isWorkspaceConflict(err) {
-				return &types.ToolResult{Success: false, Error: conflictRetryMessage}, nil
-			}
-			logger.Warnf(ctx, "apply_format_fixes: commit failed: %v", err)
-			return &types.ToolResult{Success: false, Error: "không lưu được tài liệu: " + err.Error()}, nil
-		}
-		revision = next.Revision
+		ops = plan.ops(newVirtualDoc(doc.Paragraphs()))
 	}
 
 	applied := plan.applied
@@ -285,35 +274,33 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	if manual == nil {
 		manual = []ManualFormatFix{}
 	}
-	output := renderFormatPlan(ws.FileName, revision, report, plan, dryRun)
+	output := renderFormatPlan(ws.FileName, report, plan, dryRun)
 	blocked := unreliable && !in.Force && !in.DryRun
 	switch {
 	case unreliable && !in.Force:
 		output = structureWarning(report, missing, typeKnown, blocked) + "\n\n" + output
 	case !dryRun && !in.Force:
 		if n := plan.paragraphCount(); n > largeFixParagraphs {
-			output = fmt.Sprintf("Lưu ý: lần sửa này thay đổi định dạng của %d đoạn (nhiều hơn %d).\n", n, largeFixParagraphs) + output
+			output = fmt.Sprintf("Lưu ý: lần sửa này đổi định dạng của %d đoạn (nhiều hơn %d).\n", n, largeFixParagraphs) + output
 		}
 	}
 	if missing == nil {
 		missing = []string{}
 	}
-	return &types.ToolResult{
-		Success: true,
-		Output:  output,
-		Data: map[string]interface{}{
-			"file_name":          ws.FileName,
-			"document_revision":  revision,
-			"document_type":      report.DocumentType.Used,
-			"applied":            applied,
-			"skipped":            skipped,
-			"manual":             manual,
-			"dry_run":            dryRun,
-			"blocked":            blocked,
-			"missing_components": missing,
-			"segmentation":       report.Segmentation.Method,
-		},
-	}, nil
+	if len(ops) > 0 {
+		output += "\n" + editorAppliedNote + "\n"
+	}
+	data := opsData(ops, seq)
+	data["file_name"] = ws.FileName
+	data["document_type"] = report.DocumentType.Used
+	data["applied"] = applied
+	data["skipped"] = skipped
+	data["manual"] = manual
+	data["dry_run"] = dryRun
+	data["blocked"] = blocked
+	data["missing_components"] = missing
+	data["segmentation"] = report.Segmentation.Method
+	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
 }
 
 // largeFixParagraphs is the paragraph count above which an applied fix is
@@ -354,7 +341,7 @@ func structureWarning(report *docformat.Report, missing []string, typeKnown, blo
 	var b strings.Builder
 	b.WriteString("⚠ CẢNH BÁO: chưa xác định được cấu trúc văn bản một cách tin cậy")
 	if blocked {
-		b.WriteString(", nên CHƯA sửa tài liệu — dưới đây chỉ là kế hoạch")
+		b.WriteString(", nên CHƯA sửa gì — dưới đây chỉ là kế hoạch")
 	}
 	b.WriteString(".\n")
 	if len(missing) > 0 {
@@ -376,92 +363,47 @@ func structureWarning(report *docformat.Report, missing []string, typeKnown, blo
 	return b.String()
 }
 
-// apply writes the plan into doc as tracked formatting changes in one
-// docxedit batch (one rewrite of document.xml). An edit docxedit rejects, or
-// one that changes nothing (the document already has those values), is left
-// out — recorded under skipped and removed from applied — and the rest still
-// go through. It returns how many edits changed the document.
-func (p *formatPlan) apply(doc *docxedit.Document) (int, error) {
-	type failure struct {
-		checks       []string
-		para, sectIx int
-		err          error // nil: the edit changed nothing
-	}
-	var failures []failure
-	written := 0
-	// record files the outcome of one batch call; Pending tells a no-op.
-	record := func(b *docxedit.Batch, checks []string, para, sect int, call func() error) {
-		before := b.Pending()
-		switch err := call(); {
-		case err != nil:
-			failures = append(failures, failure{checks, para, sect, err})
-		case b.Pending() == before:
-			failures = append(failures, failure{checks, para, sect, nil})
-		default:
-			written++
-		}
-	}
-	err := doc.Batch(func(b *docxedit.Batch) error {
-		for _, i := range sortedKeys(p.paras) {
-			e := p.paras[i]
-			if e.run != nil {
-				record(b, e.runChecks, i, -1, func() error { return b.SetRunProps(i, *e.run, documentEditAuthor) })
+// ops turns the plan into editor ops: one formatParagraph per paragraph
+// (its run and paragraph changes merged) and one pageSetup for the page
+// changes of every section. Formatting changes no text, so every anchor is
+// computed on the document as read.
+func (p *formatPlan) ops(vdoc *virtualDoc) []DocumentOp {
+	var ops []DocumentOp
+	for _, i := range sortedKeys(p.paras) {
+		e := p.paras[i]
+		op := DocumentOp{Op: OpFormatParagraph, Anchor: vdoc.anchor(i)}
+		if r := e.run; r != nil {
+			if r.Font != nil {
+				op.Font = *r.Font
 			}
-			if e.pp != nil {
-				record(b, e.ppChecks, i, -1, func() error { return b.SetParaProps(i, *e.pp, documentEditAuthor) })
-			}
+			op.SizePt, op.Bold, op.Italic = r.SizePt, r.Bold, r.Italic
 		}
+		if e.pp != nil && e.pp.Alignment != nil {
+			op.Alignment = *e.pp.Alignment
+		}
+		ops = append(ops, op)
+	}
+	if len(p.sections) > 0 {
+		op := DocumentOp{Op: OpPageSetup}
+		mm := func(pt *float64) float64 { return round2(*pt * 20 / twipsPerMM) }
 		for _, i := range sortedKeys(p.sections) {
-			e := p.sections[i]
-			record(b, e.checks, -1, i, func() error { return b.SetSectionProps(i, e.props, documentEditAuthor) })
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	for _, f := range failures {
-		where := fmt.Sprintf("đoạn [%d]", f.para)
-		if f.para < 0 {
-			where = fmt.Sprintf("section %d", f.sectIx)
-		}
-		reason := where + " không có gì thay đổi (tài liệu đã có giá trị này)"
-		if f.err != nil {
-			reason = where + " không sửa được: " + f.err.Error()
-		}
-		for _, id := range f.checks {
-			p.skipped = append(p.skipped, SkippedFormatFix{CheckID: id, Reason: reason})
-			p.dropApplied(id, f.para, f.sectIx)
-		}
-	}
-	return written, nil
-}
-
-// dropApplied removes a failed paragraph (or section) from check id's
-// applied entry, and the entry itself once it is empty.
-func (p *formatPlan) dropApplied(id string, para, sect int) {
-	out := p.applied[:0]
-	for _, f := range p.applied {
-		if f.CheckID == id {
-			f.Paragraphs = withoutInt(f.Paragraphs, para)
-			f.Sections = withoutInt(f.Sections, sect)
-			if len(f.Paragraphs) == 0 && len(f.Sections) == 0 {
-				continue
+			sp := p.sections[i].props
+			for key, v := range map[string]*float64{"top": sp.MarginTopPt, "bottom": sp.MarginBottomPt,
+				"left": sp.MarginLeftPt, "right": sp.MarginRightPt} {
+				if v != nil {
+					if op.MarginsMm == nil {
+						op.MarginsMm = map[string]float64{}
+					}
+					op.MarginsMm[key] = mm(v)
+				}
+			}
+			if sp.PageWidthPt != nil || sp.PageHeightPt != nil {
+				op.A4 = true
 			}
 		}
-		out = append(out, f)
+		ops = append(ops, op)
 	}
-	p.applied = out
-}
-
-func withoutInt(xs []int, x int) []int {
-	out := []int{}
-	for _, v := range xs {
-		if v != x {
-			out = append(out, v)
-		}
-	}
-	return out
+	return ops
 }
 
 func sortedKeys[V any](m map[int]V) []int {
@@ -918,7 +860,7 @@ func joinInts(xs []int) string {
 	return strings.Join(parts, ", ")
 }
 
-func renderFormatPlan(fileName string, revision int, report *docformat.Report, plan *formatPlan, dryRun bool) string {
+func renderFormatPlan(fileName string, report *docformat.Report, plan *formatPlan, dryRun bool) string {
 	var b strings.Builder
 	nParas := plan.paragraphCount()
 	switch {
@@ -928,8 +870,8 @@ func renderFormatPlan(fileName string, revision int, report *docformat.Report, p
 		fmt.Fprintf(&b, "KẾ HOẠCH (chưa sửa tài liệu): %d sửa thể thức trên %d đoạn của %s (bộ quy tắc: %s). Gọi lại với dry_run=false để áp dụng.\n",
 			len(plan.applied), nParas, fileName, report.DocumentType.RuleSet)
 	default:
-		fmt.Fprintf(&b, "Đã áp dụng %d sửa thể thức dạng track changes trên %d đoạn của %s (phiên bản %d, bộ quy tắc: %s); người dùng có thể chấp nhận/từ chối từng thay đổi trong trình soạn thảo:\n",
-			len(plan.applied), nParas, fileName, revision, report.DocumentType.RuleSet)
+		fmt.Fprintf(&b, "Sẽ áp dụng %d sửa thể thức trên %d đoạn của %s (bộ quy tắc: %s):\n",
+			len(plan.applied), nParas, fileName, report.DocumentType.RuleSet)
 	}
 	for _, f := range plan.applied {
 		if len(f.Sections) > 0 {

@@ -301,7 +301,6 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
               persistKbScope();
               router.push(`/platform/chat/${sid}`);
             }}
-            revision={null}
             onSelectionChange={() => {}}
           />
         ) : null

@@ -322,6 +322,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewResourceRepository))
 	must(container.Provide(repository.NewTemporaryDocumentRepository))
 	must(container.Provide(repository.NewDocumentWorkspaceRepository))
+	must(container.Provide(repository.NewDocumentRevisionRepository))
 	must(container.Provide(service.NewResourceCatalog))
 	// TenantStoreOwnership adapter used by the retriever factory functions
 	// to verify that a resolved VectorStore belongs to the caller's tenant.

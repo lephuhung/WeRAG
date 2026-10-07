@@ -109,6 +109,7 @@ type documentWorkspaceService struct {
 	catalog     interfaces.ResourceCatalog
 	attachments interfaces.TemporaryDocumentService
 	messages    documentWorkspaceMessageStore
+	revisions   interfaces.DocumentRevisionRepository
 	httpClient  *http.Client
 
 	// waiters holds, per workspace ID, one saveWaiter per in-flight
@@ -126,6 +127,7 @@ func NewDocumentWorkspaceService(
 	catalog interfaces.ResourceCatalog,
 	attachments interfaces.TemporaryDocumentService,
 	messages interfaces.MessageRepository,
+	revisions interfaces.DocumentRevisionRepository,
 ) interfaces.DocumentWorkspaceService {
 	var oo *config.OnlyOfficeConfig
 	if cfg != nil {
@@ -135,7 +137,7 @@ func NewDocumentWorkspaceService(
 	if messages != nil {
 		store = messages
 	}
-	return newDocumentWorkspaceService(oo, repo, files, catalog, attachments, store)
+	return newDocumentWorkspaceService(oo, repo, files, catalog, attachments, store, revisions)
 }
 
 func newDocumentWorkspaceService(
@@ -145,10 +147,11 @@ func newDocumentWorkspaceService(
 	catalog interfaces.ResourceCatalog,
 	attachments interfaces.TemporaryDocumentService,
 	messages documentWorkspaceMessageStore,
+	revisions interfaces.DocumentRevisionRepository,
 ) *documentWorkspaceService {
 	return &documentWorkspaceService{
 		cfg: cfg, repo: repo, files: files, catalog: catalog,
-		attachments: attachments, messages: messages,
+		attachments: attachments, messages: messages, revisions: revisions,
 		httpClient: &http.Client{
 			Timeout: 2 * time.Minute,
 			// Download URLs are allowlisted per request (see
@@ -308,10 +311,10 @@ func (s *documentWorkspaceService) View(
 				"autosave":      true,
 				"compactHeader": true,
 				"hideRightMenu": false,
-				// Track every edit, show it inline as markup, but do not pop the
-				// "review changes" navigator on every open: the user reviews from
-				// the Collaboration tab when they want to.
-				"review":   map[string]interface{}{"trackChanges": true, "showReviewChanges": false, "reviewDisplay": "markup"},
+				// AI edits are applied in the editor and undone through the
+				// snapshot timeline (Restore), not tracked changes; existing
+				// markup in the file still shows inline.
+				"review":   map[string]interface{}{"trackChanges": false, "showReviewChanges": false, "reviewDisplay": "markup"},
 				"features": map[string]interface{}{"spellcheck": map[string]interface{}{"mode": false, "change": false}, "featuresTips": false},
 				// Keep the surface to editing the file: no help/feedback links
 				// and no macros. Plugin support must stay on: turning it off
@@ -374,18 +377,24 @@ func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint6
 	// from the request context so the command still reaches the server.
 	cmdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	_, err = s.forceSave(cmdCtx, ws)
+	_, err = s.forceSave(cmdCtx, ws, "")
 	return err
 }
 
 // forceSave sends the forcesave command. willCallback reports whether a
 // status-6 callback will follow (false when there was nothing to save or the
-// document is not open in any editor).
-func (s *documentWorkspaceService) forceSave(ctx context.Context, ws *types.DocumentWorkspace) (bool, error) {
+// document is not open in any editor). A non-empty snapshotTag (see
+// encodeSnapshotTag) travels in userdata, so the status-6 callback records a
+// revision for exactly that save.
+func (s *documentWorkspaceService) forceSave(ctx context.Context, ws *types.DocumentWorkspace, snapshotTag string) (bool, error) {
+	userdata := onlyOfficeUserdataPrefix + ws.ID
+	if snapshotTag != "" {
+		userdata += "|" + snapshotTag
+	}
 	body := map[string]interface{}{
 		"c":        "forcesave",
 		"key":      ws.EditorKey(),
-		"userdata": "werag:" + ws.ID,
+		"userdata": userdata,
 	}
 	var res struct {
 		Error int `json:"error"`
@@ -419,41 +428,9 @@ func (s *documentWorkspaceService) PrepareExternalWrite(
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.Enabled() {
-		// Register before asking: the callback may land before the command
-		// response does.
-		waiter := s.waiterFor(ws.ID)
-		willCallback, fsErr := s.forceSave(ctx, ws)
-		switch {
-		case fsErr != nil:
-			s.dropWaiter(ws.ID, waiter)
-			logger.Warnf(ctx, "[DocumentWorkspace] force-save before external write failed, proceeding: workspace=%s err=%v", ws.ID, fsErr)
-		case !willCallback:
-			s.dropWaiter(ws.ID, waiter)
-		default:
-			if wait <= 0 {
-				wait = s.cfg.SaveWait()
-			}
-			timer := time.NewTimer(wait)
-			select {
-			case <-waiter.ch:
-				if waiter.err != nil {
-					logger.Warnf(ctx, "[DocumentWorkspace] force-save reported an error, proceeding: workspace=%s err=%v", ws.ID, waiter.err)
-				}
-			case <-timer.C:
-				s.dropWaiter(ws.ID, waiter)
-				logger.Warnf(ctx, "[DocumentWorkspace] force-save callback did not arrive within %s, proceeding: workspace=%s", wait, ws.ID)
-			case <-ctx.Done():
-				timer.Stop()
-				s.dropWaiter(ws.ID, waiter)
-				return nil, nil, ctx.Err()
-			}
-			timer.Stop()
-			// The callback replaced CurrentRef; read the row again.
-			if fresh, err := s.repo.GetByID(ctx, ws.ID); err == nil && fresh != nil {
-				ws = fresh
-			}
-		}
+	ws, err = s.flushEditor(ctx, ws, "", wait)
+	if err != nil {
+		return nil, nil, err
 	}
 	reader, err := s.files.GetFile(ctx, ws.CurrentRef)
 	if err != nil {
@@ -465,6 +442,54 @@ func (s *documentWorkspaceService) PrepareExternalWrite(
 		return nil, nil, fmt.Errorf("read document: %w", err)
 	}
 	return ws, data, nil
+}
+
+// flushEditor force-saves the open editor and waits up to wait for the save
+// callback. It returns the workspace as stored after the save (unchanged
+// when there was nothing to save, the editor is not open, or the callback did
+// not arrive in time). Only a cancelled ctx is an error: a failed or slow
+// save is logged and the caller proceeds with the last stored version.
+func (s *documentWorkspaceService) flushEditor(
+	ctx context.Context, ws *types.DocumentWorkspace, snapshotTag string, wait time.Duration,
+) (*types.DocumentWorkspace, error) {
+	if !s.Enabled() {
+		return ws, nil
+	}
+	// Register before asking: the callback may land before the command
+	// response does.
+	waiter := s.waiterFor(ws.ID)
+	willCallback, fsErr := s.forceSave(ctx, ws, snapshotTag)
+	switch {
+	case fsErr != nil:
+		s.dropWaiter(ws.ID, waiter)
+		logger.Warnf(ctx, "[DocumentWorkspace] force-save failed, proceeding: workspace=%s err=%v", ws.ID, fsErr)
+		return ws, nil
+	case !willCallback:
+		s.dropWaiter(ws.ID, waiter)
+		return ws, nil
+	}
+	if wait <= 0 {
+		wait = s.cfg.SaveWait()
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-waiter.ch:
+		if waiter.err != nil {
+			logger.Warnf(ctx, "[DocumentWorkspace] force-save reported an error, proceeding: workspace=%s err=%v", ws.ID, waiter.err)
+		}
+	case <-timer.C:
+		s.dropWaiter(ws.ID, waiter)
+		logger.Warnf(ctx, "[DocumentWorkspace] force-save callback did not arrive within %s, proceeding: workspace=%s", wait, ws.ID)
+	case <-ctx.Done():
+		s.dropWaiter(ws.ID, waiter)
+		return nil, ctx.Err()
+	}
+	// The callback replaced CurrentRef; read the row again.
+	if fresh, err := s.repo.GetByID(ctx, ws.ID); err == nil && fresh != nil {
+		return fresh, nil
+	}
+	return ws, nil
 }
 
 func (s *documentWorkspaceService) CommitExternalWrite(
@@ -559,7 +584,16 @@ func (s *documentWorkspaceService) HandleCallback(
 			s.signal(ws.ID, nil)
 			return nil
 		}
-		err := s.storeEditorSave(ctx, ws, cb, final)
+		stored, err := s.storeEditorSave(ctx, ws, cb, final)
+		if stored {
+			// Record before releasing waiters: a Snapshot waiting on this
+			// save then finds the row and reuses it.
+			if final {
+				s.recordRevisionBestEffort(ctx, ws, documentRevisionLabelClose, types.DocumentRevisionSourceClose)
+			} else if label, source, ok := parseSnapshotUserdata(ws.ID, cb.UserData); ok {
+				s.recordRevisionBestEffort(ctx, ws, label, source)
+			}
+		}
 		s.signal(ws.ID, err)
 		return err
 
@@ -588,20 +622,23 @@ func (s *documentWorkspaceService) HandleCallback(
 }
 
 // storeEditorSave downloads the editor's file and makes it CurrentRef.
+// stored is false when nothing was written (error, or a concurrent external
+// write won the revision race); ws then holds unsaved field changes and must
+// not be persisted by the caller.
 func (s *documentWorkspaceService) storeEditorSave(
 	ctx context.Context, ws *types.DocumentWorkspace, cb *types.OnlyOfficeCallback, final bool,
-) error {
+) (stored bool, err error) {
 	if strings.TrimSpace(cb.URL) == "" {
-		return fmt.Errorf("callback status %d without url", cb.Status)
+		return false, fmt.Errorf("callback status %d without url", cb.Status)
 	}
 	// The DS link expires (~15 minutes): fetch it right away.
 	data, err := s.download(ctx, cb.URL)
 	if err != nil {
-		return fmt.Errorf("download saved document: %w", err)
+		return false, fmt.Errorf("download saved document: %w", err)
 	}
 	ref, err := s.files.SaveBytes(ctx, data, ws.TenantID, documentWorkspaceStorageName(ws.ID), false)
 	if err != nil {
-		return fmt.Errorf("store saved document: %w", err)
+		return false, fmt.Errorf("store saved document: %w", err)
 	}
 	s.bind(ctx, ref, ws.ID, types.ResourceRelationArtifact)
 
@@ -620,18 +657,18 @@ func (s *documentWorkspaceService) storeEditorSave(
 	}
 	ok, err := s.repo.UpdateIfRevision(ctx, ws, expected)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !ok {
 		logger.Warnf(ctx, "[DocumentWorkspace] editor save lost the race to an external write: workspace=%s", ws.ID)
-		return nil
+		return false, nil
 	}
 	logger.Infof(ctx, "[DocumentWorkspace] editor save stored: workspace=%s final=%t size=%d save_count=%d",
 		ws.ID, final, ws.FileSize, ws.SaveCount)
 	if final {
 		s.attachToLatestAnswer(ctx, ws, ref, data)
 	}
-	return nil
+	return true, nil
 }
 
 // attachToLatestAnswer records the final file as an artifact of the

@@ -4,20 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var insertParagraphsTool = BaseTool{
 	name: ToolInsertParagraphs,
-	description: `Insert new paragraphs into the Word document open in this conversation's editor, as Word tracked insertions (signed "Trợ lý AI (WeRAG)") the user accepts or rejects in the editor.
+	description: `Insert new paragraphs into the Word document open in this conversation's editor. The tool plans the insertion; the editor applies it as an ordinary edit, which the user undoes with Ctrl+Z.
 
 ## When to Use
 
+Only when the user explicitly asks in this turn to add or insert something ("chèn", "bổ sung", "thêm"):
 - A component is missing and must be added: the Nơi nhận block, a Căn cứ line, an Điều khoản thi hành article, a closing sentence, a signature line.
 - The user asks to add a sentence or paragraph at a given place.
 
@@ -37,7 +36,7 @@ It only adds paragraphs. To change the text of an existing paragraph use rewrite
 Formatting: a new paragraph copies the paragraph and run formatting of its ANCHOR (the paragraph it is inserted after) unless like, alignment, bold or italic say otherwise. When the anchor is a centred, bold or otherwise different line (a signature, a title), pass like pointing at a paragraph of the same component as the new text — e.g. an existing "- ...;" line of Nơi nhận, or a body paragraph for a new sentence of the body.
 - note: optional short reason, shown back in the result.
 
-Paragraph indices refer to the document as it is before this call; inserts in one call do not shift each other's anchors.`,
+Paragraph indices refer to the document as it is before this call; inserts in one call do not shift each other's anchors, and several inserts after the same paragraph keep their order.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -88,12 +87,12 @@ type insertParagraphsInput struct {
 type insertChange struct {
 	After  int    `json:"after"` // -1 = at the start
 	Text   string `json:"text"`
-	Status string `json:"status"` // applied | failed
+	Status string `json:"status"` // planned | failed
 	Error  string `json:"error,omitempty"`
 }
 
-// InsertParagraphsTool adds paragraphs to the session's workspace document
-// as tracked insertions.
+// InsertParagraphsTool plans new paragraphs for the session's workspace
+// document; the editor inserts them.
 type InsertParagraphsTool struct {
 	BaseTool
 	workspace DocumentWorkspaceSource
@@ -140,23 +139,27 @@ func (t *InsertParagraphsTool) Execute(ctx context.Context, args json.RawMessage
 		}
 	}
 
-	tenantID, content, ws, err := prepareWorkspaceWrite(ctx, t.workspace, t.sessionID)
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, "chèn đoạn văn")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 	doc, err := docxedit.Open(content)
 	if err != nil {
-		return &types.ToolResult{Success: false, Error: "không mở được tài liệu để sửa: " + err.Error()}, nil
+		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 	}
 
-	// Resolve every anchor against the document as it was read, then insert
-	// from the last anchor backwards so no insert shifts a later anchor.
+	// Anchors and like are original paragraph indices; vdoc follows the
+	// document as the plugin will see it while applying the ops in order.
+	// Inserts after the same paragraph chain after one another, so they
+	// keep the requested order.
 	paras := doc.Paragraphs()
+	vdoc := newVirtualDoc(paras)
+	lastAfter := map[int]int{} // anchor id → id of the last line inserted after it
+	var ops []DocumentOp
 	changes := make([]insertChange, len(in.Inserts))
-	anchors := make([]int, len(in.Inserts))
-	var order []int
 	for i, ins := range in.Inserts {
-		changes[i] = insertChange{After: -1, Text: strings.Join(insertLines(ins.Text), "\n")}
+		lines := insertLines(ins.Text)
+		changes[i] = insertChange{After: -1, Text: strings.Join(lines, "\n")}
 		anchor, msg := resolveInsertAnchor(doc, paras, ins)
 		if msg == "" && ins.Like != nil && (*ins.Like < 0 || *ins.Like >= len(paras)) {
 			msg = fmt.Sprintf("like=%d nằm ngoài phạm vi 0..%d", *ins.Like, len(paras)-1)
@@ -169,128 +172,68 @@ func (t *InsertParagraphsTool) Execute(ctx context.Context, args json.RawMessage
 			changes[i].Status, changes[i].Error = "failed", msg
 			continue
 		}
-		anchors[i] = anchor
-		order = append(order, i)
-	}
-	// descending anchor; equal anchors in reverse request order, so the
-	// first requested insert ends up first in the document
-	sort.SliceStable(order, func(a, b int) bool {
-		if anchors[order[a]] != anchors[order[b]] {
-			return anchors[order[a]] > anchors[order[b]]
+		key := anchor // -1 = the start
+		at := anchor
+		if last, ok := lastAfter[key]; ok {
+			at = last
 		}
-		return order[a] > order[b]
-	})
-
-	type done struct{ anchor, count int }
-	var inserted []done
-	shift := func(idx int) int { // original index → current index
-		out := idx
-		for _, d := range inserted {
-			if d.anchor < idx {
-				out += d.count
+		for _, line := range lines {
+			p := -1
+			if at != -1 {
+				p = vdoc.pos(at)
 			}
-		}
-		return out
-	}
-	wrote := false
-	for _, i := range order {
-		ins := in.Inserts[i]
-		np := docxedit.NewParagraph{}
-		if ins.Like != nil {
-			like := shift(*ins.Like)
-			np.InheritFrom = &like
-		}
-		if ins.Alignment != nil {
-			a := docxAlignment[*ins.Alignment]
-			np.Para = &docxedit.ParaProps{Alignment: &a}
-		}
-		if ins.Bold != nil || ins.Italic != nil {
-			np.Run = &docxedit.RunProps{Bold: ins.Bold, Italic: ins.Italic}
-		}
-		// anchors are processed from the last one back, so this anchor's
-		// index has not moved
-		at, count := anchors[i], 0
-		var insErr error
-		for _, line := range insertLines(ins.Text) {
-			np.Text = line
-			idx, err := doc.InsertParagraphAfter(at, np, documentEditAuthor)
-			if err != nil {
-				insErr = err
-				break
+			op := DocumentOp{Op: OpInsertAfter, Anchor: vdoc.anchor(p), Text: line,
+				Bold: ins.Bold, Italic: ins.Italic}
+			if ins.Like != nil {
+				op.Like = vdoc.anchor(vdoc.pos(*ins.Like))
 			}
-			at = idx
-			count++
+			if ins.Alignment != nil {
+				op.Alignment = docxAlignment[*ins.Alignment]
+			}
+			ops = append(ops, op)
+			at = vdoc.insertAfter(p, line)
 		}
-		if count > 0 {
-			inserted = append(inserted, done{anchors[i], count})
-			wrote = true
-		}
-		switch {
-		case insErr == nil:
-			changes[i].Status = "applied"
-		case count > 0:
-			changes[i].Status = "failed"
-			changes[i].Error = fmt.Sprintf("chỉ chèn được %d dòng đầu (đã ghi): %v", count, insErr)
-		default:
-			changes[i].Status, changes[i].Error = "failed", insErr.Error()
-		}
+		lastAfter[key] = at
+		changes[i].Status = "planned"
 	}
-	applied, failed := 0, 0
+	planned, failed := 0, 0
 	for _, c := range changes {
-		if c.Status == "applied" {
-			applied++
+		if c.Status == "planned" {
+			planned++
 		} else {
 			failed++
 		}
 	}
 
-	revision := ws.Revision
-	if wrote {
-		data, err := doc.Bytes()
-		if err != nil {
-			return &types.ToolResult{Success: false, Error: "không ghi được tài liệu: " + err.Error()}, nil
-		}
-		next, err := t.workspace.CommitExternalWrite(ctx, tenantID, t.sessionID, ws.Revision, data)
-		if err != nil {
-			if isWorkspaceConflict(err) {
-				return &types.ToolResult{Success: false, Error: conflictRetryMessage}, nil
-			}
-			logger.Warnf(ctx, "insert_paragraphs: commit failed: %v", err)
-			return &types.ToolResult{Success: false, Error: "không lưu được tài liệu: " + err.Error()}, nil
-		}
-		revision = next.Revision
-	}
-
 	var out strings.Builder
-	if wrote {
-		fmt.Fprintf(&out, "Đã chèn %d mục vào %s (phiên bản %d) dưới dạng track changes; người dùng có thể chấp nhận/từ chối trong trình soạn thảo.\n",
-			applied, ws.FileName, revision)
+	if planned > 0 {
+		fmt.Fprintf(&out, "Sẽ chèn %d mục (%d đoạn) vào %s:\n", planned, len(ops), ws.FileName)
 	} else {
-		fmt.Fprintf(&out, "Chưa chèn được đoạn nào vào %s; tài liệu giữ nguyên.\n", ws.FileName)
+		fmt.Fprintf(&out, "Không chèn được đoạn nào vào %s; tài liệu giữ nguyên.\n", ws.FileName)
 	}
 	if note := strings.TrimSpace(in.Note); note != "" {
 		fmt.Fprintf(&out, "Lý do: %s\n", note)
 	}
-	out.WriteString("\n")
 	for _, c := range changes {
 		where := fmt.Sprintf("sau đoạn [%d]", c.After)
 		if c.After < 0 {
 			where = "ở đầu văn bản"
 		}
-		if c.Status == "applied" {
-			fmt.Fprintf(&out, "- Đã chèn %s: “%s” (track changes)\n", where, clipRunes(strings.ReplaceAll(c.Text, "\n", " ↵ "), 160))
+		if c.Status == "planned" {
+			fmt.Fprintf(&out, "- Chèn %s: “%s”\n", where, clipRunes(strings.ReplaceAll(c.Text, "\n", " ↵ "), 160))
 		} else {
 			fmt.Fprintf(&out, "- KHÔNG chèn “%s”: %s\n", clipRunes(strings.ReplaceAll(c.Text, "\n", " ↵ "), 80), c.Error)
 		}
 	}
-	data := map[string]interface{}{
-		"file_name":         ws.FileName,
-		"document_revision": revision,
-		"applied":           applied,
-		"failed":            failed,
-		"changes":           changes,
+	if planned > 0 {
+		out.WriteString("\n" + editorAppliedNote + "\n")
 	}
-	if !wrote {
+	data := opsData(ops, seq)
+	data["file_name"] = ws.FileName
+	data["planned"] = planned
+	data["failed"] = failed
+	data["changes"] = changes
+	if planned == 0 {
 		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
 	}
 	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil

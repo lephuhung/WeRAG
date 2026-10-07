@@ -56,7 +56,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"mcp_services":       {"usage_instructions"},                                                                     // 000092
 }
 
-const expectedSQLiteMigrationVersion = 34
+const expectedSQLiteMigrationVersion = 35
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

@@ -9,11 +9,11 @@ import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
 import {
-  documentRevisionFromToolData,
   documentSelectionForDisplay,
   selectionNeedsCollapse,
   type DocumentSelection,
 } from "@/lib/api/document-workspace";
+import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 import { useAuth } from "@/lib/auth";
@@ -629,12 +629,14 @@ function ChatBody({ id }: { id: string }) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [abbreviationRefreshKey, setAbbreviationRefreshKey] = useState(0);
   // Document assistant: latest editor selection attached to the next turn,
-  // and the newest document revision reported by an editing tool.
+  // and the edit plans (document_ops) of editing tools, applied in the
+  // editor by DocWorkspace (append-only; it dedupes by batch id).
   const [pendingSelection, setPendingSelection] = useState<DocumentSelection | null>(null);
-  const [docRevision, setDocRevision] = useState<number | null>(null);
-  const noteDocRevision = (c: StreamChunk) => {
-    const rev = documentRevisionFromToolData(c.tool_name, c.data);
-    if (rev !== null) setDocRevision((prev) => (prev === null || rev > prev ? rev : prev));
+  const [docOpsBatches, setDocOpsBatches] = useState<(OpsBatch & { rejected?: OpsFailure[] })[]>([]);
+  const noteDocOps = (c: StreamChunk) => {
+    const batch = opsBatchFromToolData(c.tool_name, c.data);
+    if (!batch) return;
+    setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
   };
   // Bumped whenever an assistant turn ends (complete, error, abort, resumed
   // stream done): DocWorkspace re-GETs the workspace and refreshes the editor
@@ -732,7 +734,7 @@ function ChatBody({ id }: { id: string }) {
     setError(null);
     setBusy(false);
     setPendingSelection(null);
-    setDocRevision(null);
+    setDocOpsBatches([]);
     setDocRecheck(0);
     docPaneBusyRef.current = false;
     // Leaving (or unmounting) a session whose turn is still generating: flag
@@ -868,7 +870,7 @@ function ChatBody({ id }: { id: string }) {
             }
             if (kind === "agent_query") return;
             if (kind === "tool_result") {
-              noteDocRevision(c);
+              noteDocOps(c);
               const candidates = extractAbbreviationCandidates(c.data);
               if (candidates.length > 0) {
                 setMessages((m) =>
@@ -1398,7 +1400,7 @@ function ChatBody({ id }: { id: string }) {
         kind === "command_output"
       ) {
         const toolName = c.tool_name || (c.data?.tool_name as string) || "";
-        if (kind === "tool_result") noteDocRevision(c);
+        if (kind === "tool_result") noteDocOps(c);
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
           toolName === "people_lookup" ? extractPeopleRecords(c.data) : [];
@@ -1883,7 +1885,7 @@ function ChatBody({ id }: { id: string }) {
               docPaneBusyRef.current = b;
             }}
             blocked={id === "new" && busy}
-            revision={docRevision}
+            opsBatches={docOpsBatches}
             recheckToken={docRecheck}
             turnInFlight={busy}
             onSelectionChange={setPendingSelection}

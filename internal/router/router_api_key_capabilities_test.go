@@ -35,6 +35,9 @@ func TestConversationRoutesDeclareChatCapability(t *testing.T) {
 		{http.MethodGet, "/api/v1/sessions/:id/document"},
 		{http.MethodPost, "/api/v1/sessions/:session_id/document/forcesave"},
 		{http.MethodGet, "/api/v1/sessions/:id/document/download"},
+		{http.MethodGet, "/api/v1/sessions/:id/document/revisions"},
+		{http.MethodPost, "/api/v1/sessions/:session_id/document/revisions/:seq/restore"},
+		{http.MethodPost, "/api/v1/sessions/:session_id/document/snapshot"},
 		{http.MethodGet, "/api/v1/messages/:session_id/load"},
 		{http.MethodDelete, "/api/v1/messages/:session_id/:id"},
 	}

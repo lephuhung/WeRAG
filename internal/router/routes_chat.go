@@ -138,6 +138,9 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.GET("/:id/document", handler.GetDocumentWorkspace)
 		sessions.POST("/:session_id/document/forcesave", handler.ForceSaveDocumentWorkspace)
 		sessions.GET("/:id/document/download", handler.DownloadDocumentWorkspace)
+		sessions.GET("/:id/document/revisions", handler.ListDocumentRevisions)
+		sessions.POST("/:session_id/document/revisions/:seq/restore", handler.RestoreDocumentRevision)
+		sessions.POST("/:session_id/document/snapshot", handler.SnapshotDocumentWorkspace)
 	}
 }
 

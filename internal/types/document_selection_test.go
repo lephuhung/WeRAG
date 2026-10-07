@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -43,5 +44,16 @@ func TestDocumentSelectionNormalizedCapsLength(t *testing.T) {
 	same := (&DocumentSelection{Text: "abc", ParagraphHint: "abc"}).BuildPrompt()
 	if strings.Contains(same, "<paragraph_hint>") {
 		t.Fatalf("hint identical to text should be omitted:\n%s", same)
+	}
+}
+
+func TestDocumentSelectionContext(t *testing.T) {
+	ctx := context.Background()
+	if DocumentSelectionFromContext(ctx) != nil || DocumentSelectionFromContext(WithDocumentSelection(ctx, &DocumentSelection{Text: "  "})) != nil {
+		t.Fatal("no selection expected")
+	}
+	got := DocumentSelectionFromContext(WithDocumentSelection(ctx, &DocumentSelection{Text: "  đoạn chọn \n"}))
+	if got == nil || got.Text != "đoạn chọn" {
+		t.Fatalf("selection = %+v", got)
 	}
 }

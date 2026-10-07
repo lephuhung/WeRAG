@@ -64,4 +64,32 @@ type DocumentWorkspaceService interface {
 	// segment the callback URL was issued with; authorization is the raw
 	// Authorization header value (Document Server JWT).
 	HandleCallback(ctx context.Context, ticket string, authorization string, payload *types.OnlyOfficeCallback) error
+
+	// Snapshot force-saves the editor, waits up to wait for the save callback
+	// (no wait when there was nothing to save) and records a revision that
+	// points at the resulting CurrentRef. source is one of the
+	// types.DocumentRevisionSource* values. When the latest revision already
+	// points at the same file, that revision is returned instead of a new one.
+	Snapshot(ctx context.Context, tenantID uint64, sessionID, label, source string, wait time.Duration) (*types.DocumentRevision, error)
+
+	// ListRevisions returns the workspace timeline, newest first.
+	ListRevisions(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentRevision, error)
+
+	// Restore makes revision seq the current version: it snapshots the
+	// current state first, then points CurrentRef at the revision's file and
+	// bumps Revision (rotating the editor key so the editor reloads).
+	Restore(ctx context.Context, tenantID uint64, sessionID string, seq int) (*types.DocumentWorkspace, error)
+}
+
+// DocumentRevisionRepository persists the snapshot timeline of a workspace.
+type DocumentRevisionRepository interface {
+	// Create assigns rev.Seq (one more than the workspace's latest) and
+	// inserts the row.
+	Create(ctx context.Context, rev *types.DocumentRevision) error
+	// ListByWorkspace returns every revision, newest (highest seq) first.
+	ListByWorkspace(ctx context.Context, workspaceID string) ([]*types.DocumentRevision, error)
+	// GetBySeq returns (nil, nil) when the workspace has no such revision.
+	GetBySeq(ctx context.Context, workspaceID string, seq int) (*types.DocumentRevision, error)
+	// Latest returns the highest-seq revision, or (nil, nil) when none.
+	Latest(ctx context.Context, workspaceID string) (*types.DocumentRevision, error)
 }

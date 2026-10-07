@@ -53,3 +53,34 @@ the user's own selection, sent to the page that already shows it.
 
 Because `editorConfig` is covered by the JWT, these keys must be added
 server-side before signing.
+
+## AI edit plans (`apply_ops`)
+
+The editing tools of the document assistant return an edit plan instead of
+writing the file. WeRAG posts it to the editor iframe:
+
+```js
+{ source: "werag-host", type: "apply_ops", batchId: "…", ops: [/* Op[] */] }
+```
+
+The plugin listens on its same-origin ancestor frames (the editor frame),
+accepts the message only from `hostOrigin`, answers
+`{source:"werag-onlyoffice", type:"ops_ack", batchId}` at once, applies the
+whole batch in one `Asc.plugin.callCommand(func, false, true, cb)` (data via
+`Asc.scope`) and answers
+`{source:"werag-onlyoffice", type:"ops_result", batchId, applied, failed:[{index, error}]}`.
+A batch id is applied at most once per editor session (re-posts get the
+stored result).
+
+Office API used: `Api.GetDocument`, `ApiDocument.GetAllParagraphs/GetSections`,
+`ApiParagraph.GetText/Search/Copy/RemoveAllElements/AddText/InsertParagraph/
+GetElement/GetElementsCount/SetJc/SetFontFamily/SetFontSize/SetBold/SetItalic/
+SetUnderline/SetHighlight/SetColor`, `ApiRange.AddText/Delete/GetText/
+SetUnderline/SetHighlight/SetColor`, `ApiRun.GetTextPr/SetTextPr/SetBold/
+SetItalic`, `ApiSection.SetPageSize/SetPageMargins/GetPageMargin*`,
+`Api.HexColor` (falls back to `SetColor(r, g, b, false)` on older DS).
+
+Limitations: `SetUnderline` only takes a boolean (no wavy style or underline
+colour), so `mark` with `style: "underline"` is a plain underline in red text.
+Anchors are matched by whitespace-normalised NFC paragraph text
+(`normalizeAnchorText` in `frontend-next/lib/api/document-ops.ts`).

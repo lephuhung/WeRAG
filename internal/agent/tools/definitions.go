@@ -75,7 +75,8 @@ const (
 	ToolWikiUpdateIssue = "wiki_update_issue"
 	// Document-assistant tools work on the session's editable Word document
 	// (DocumentWorkspace) and are registered only when the session has one.
-	// The two writers record every edit as a Word tracked change.
+	// The editing tools never write the file: they return an edit plan
+	// (document_ops) that the editor plugin applies, undoable with Ctrl+Z.
 	ToolReadDocumentOutline = "read_document_outline"
 	ToolRewriteParagraphs   = "rewrite_paragraphs"
 	ToolApplyFormatFixes    = "apply_format_fixes"
@@ -125,22 +126,22 @@ func AvailableToolDefinitions() []AvailableTool {
 		{
 			Name:        ToolApplyFormatFixes,
 			Label:       "Chuẩn hóa thể thức",
-			Description: "Sửa phông, cỡ chữ, căn lề, khổ giấy theo Nghị định 30/2020 dưới dạng track changes",
+			Description: "Sửa phông, cỡ chữ, căn lề, khổ giấy theo Nghị định 30/2020 ngay trong trình soạn thảo",
 		},
 		{
 			Name:        ToolRewriteParagraphs,
 			Label:       "Viết lại đoạn văn",
-			Description: "Sửa nội dung đoạn văn trong tài liệu đang soạn thảo dưới dạng track changes",
+			Description: "Viết lại đoạn văn người dùng đã bôi đen trong trình soạn thảo",
 		},
 		{
 			Name:        ToolInsertParagraphs,
 			Label:       "Chèn đoạn văn",
-			Description: "Chèn đoạn văn mới (ví dụ Nơi nhận, Căn cứ) vào tài liệu đang soạn thảo dưới dạng track changes",
+			Description: "Chèn đoạn văn mới (ví dụ Nơi nhận, Căn cứ) vào tài liệu đang soạn thảo",
 		},
 		{
 			Name:        ToolMarkPassages,
 			Label:       "Đánh dấu đoạn cần xem lại",
-			Description: "Gạch chân lượn sóng đỏ hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
+			Description: "Gạch chân đỏ hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
 		},
 	}
 }
