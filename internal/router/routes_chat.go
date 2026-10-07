@@ -123,6 +123,35 @@ func RegisterSessionRoutes(
 	}
 }
 
+// RegisterDocumentWorkspaceRoutes registers the document-assistant
+// workspace of a session (the .docx open in the embedded ONLYOFFICE editor).
+// Same guards as the attachment routes: Member + the API-key chat capability,
+// with per-session ownership enforced in the handler. Wildcard names follow
+// the per-verb radix trees of /sessions (POST uses :session_id, GET uses :id).
+func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.DocumentWorkspaceHandler, g *rbacGuards) {
+	if handler == nil {
+		return
+	}
+	sessions := g.apiKeyGroup(r.Group("/sessions", g.Member()), apiKeyChat(apiKeyFullAccess()))
+	{
+		sessions.POST("/:session_id/document", handler.CreateDocumentWorkspace)
+		sessions.GET("/:id/document", handler.GetDocumentWorkspace)
+		sessions.POST("/:session_id/document/forcesave", handler.ForceSaveDocumentWorkspace)
+		sessions.GET("/:id/document/download", handler.DownloadDocumentWorkspace)
+	}
+}
+
+// RegisterOnlyOfficeCallbackRoutes registers the Document Server save
+// callback. Registered BEFORE the global auth middleware like the IM
+// callbacks: DS cannot send a WeKnora token. The :ticket segment is a JWT
+// issued for one workspace and the body is verified with the DS JWT secret.
+func RegisterOnlyOfficeCallbackRoutes(r *gin.Engine, handler *session.DocumentWorkspaceHandler) {
+	if handler == nil {
+		return
+	}
+	r.POST("/onlyoffice/callback/:ticket", handler.OnlyOfficeCallback)
+}
+
 // RegisterChatRoutes 注册路由。Chat endpoints are tenant-member usage
 // surfaces; Viewer+ is sufficient because per-session/per-agent
 // authorisation is enforced inside the handlers.

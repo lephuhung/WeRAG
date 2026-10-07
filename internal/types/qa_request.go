@@ -75,6 +75,9 @@ type QARequest struct {
 	QuotedContext          string             // Quoted message content from IM quote-reply (appended at LLM prompt stage, not used for retrieval)
 	Attachments            MessageAttachments // File attachments (processed and ready for prompt injection)
 	QuestionOrigin         *QuestionOrigin    // Source of a picked suggested question; a retrieval hint only
+	// DocumentSelection is the passage the user highlighted in the embedded
+	// document editor; rendered after the attachments in the user prompt.
+	DocumentSelection *DocumentSelection
 	// SteerSink, when set, enables mid-run message injection for this run:
 	// the engine drains user-appended messages at every round boundary and
 	// persists accepted ones through this sink. A structural interface so

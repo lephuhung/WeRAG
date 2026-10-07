@@ -54,6 +54,7 @@ type RouterParams struct {
 	AuditLogService              interfaces.AuditLogService
 	ChunkHandler                 *handler.ChunkHandler
 	SessionHandler               *session.Handler
+	DocumentWorkspaceHandler     *session.DocumentWorkspaceHandler
 	MessageHandler               *handler.MessageHandler
 	MessageSuggestionHandler     *handler.MessageSuggestionHandler
 	ModelHandler                 *handler.ModelHandler
@@ -195,6 +196,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// WeKnora authentication headers.
 	serveResourceGrants(r, params.ResourceCatalog, params.TenantService, params.FileService, params.StorageBackendResolver)
 
+	// ONLYOFFICE Document Server save callbacks (self-authenticated: signed
+	// ticket in the path + DS JWT on the body).
+	RegisterOnlyOfficeCallbackRoutes(r, params.DocumentWorkspaceHandler)
+
 	// Sandbox terminal WebSocket (self-authenticated via a short-lived
 	// query ticket — see RegisterSandboxTerminalRoutes; browsers cannot set
 	// auth headers on the WS handshake, so this must precede the global Auth
@@ -294,6 +299,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterFAQRoutes(v1, params.FAQHandler, rbacGuards)
 		RegisterChunkRoutes(v1, params.ChunkHandler, rbacGuards)
 		RegisterSessionRoutes(v1, params.SessionHandler, params.MessageSuggestionHandler, rbacGuards)
+		RegisterDocumentWorkspaceRoutes(v1, params.DocumentWorkspaceHandler, rbacGuards)
 		RegisterChatRoutes(v1, params.SessionHandler, rbacGuards)
 		RegisterMessageRoutes(v1, params.MessageHandler, rbacGuards)
 		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, rbacGuards)

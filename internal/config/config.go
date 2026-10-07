@@ -42,6 +42,44 @@ type Config struct {
 	// PeopleSearch configures the external MongoDB person-record store used
 	// by the people_lookup agent tool (AIRAG port). Env prefix PEOPLE_*.
 	PeopleSearch *PeopleSearchConfig `yaml:"people_search" json:"people_search"`
+	// OnlyOffice configures the embedded ONLYOFFICE Document Server used by
+	// the document assistant (edit a session's .docx in the chat UI). Env
+	// prefix ONLYOFFICE_*. Disabled unless PublicURL and JWTSecret are set.
+	OnlyOffice *OnlyOfficeConfig `yaml:"onlyoffice" json:"onlyoffice"`
+}
+
+// OnlyOfficeConfig locates the ONLYOFFICE Document Server (DS) from the three
+// directions traffic flows: browser→DS (PublicURL), backend→DS (InternalURL,
+// command and conversion APIs) and DS→backend (BackendURL, file download and
+// save callbacks).
+type OnlyOfficeConfig struct {
+	// JWTSecret is the DS JWT_SECRET; every editor config, callback and
+	// command is signed with it (HS256).
+	JWTSecret string `yaml:"jwt_secret" json:"-"`
+	// PublicURL is the browser-facing DS origin the frontend loads
+	// web-apps/apps/api/documents/api.js from.
+	PublicURL string `yaml:"public_url" json:"public_url"`
+	// InternalURL is how the backend reaches DS. Defaults to PublicURL.
+	InternalURL string `yaml:"internal_url" json:"internal_url"`
+	// BackendURL is how DS reaches this backend (e.g. http://app:8080).
+	// Defaults to APP_EXTERNAL_URL.
+	BackendURL string `yaml:"backend_url" json:"backend_url"`
+	// SaveWaitSeconds bounds how long an AI edit waits for the force-save
+	// callback before reading the file. Default 20.
+	SaveWaitSeconds int `yaml:"save_wait_seconds" json:"save_wait_seconds"`
+}
+
+// Enabled reports whether the document editor integration is configured.
+func (c *OnlyOfficeConfig) Enabled() bool {
+	return c != nil && strings.TrimSpace(c.PublicURL) != "" && strings.TrimSpace(c.JWTSecret) != ""
+}
+
+// SaveWait is SaveWaitSeconds as a duration (20s when unset).
+func (c *OnlyOfficeConfig) SaveWait() time.Duration {
+	if c == nil || c.SaveWaitSeconds <= 0 {
+		return 20 * time.Second
+	}
+	return time.Duration(c.SaveWaitSeconds) * time.Second
 }
 
 // PeopleSearchConfig holds the external MongoDB connection for people
@@ -622,6 +660,7 @@ func LoadConfig() (*Config, error) {
 	applyAuthAndTenantDefaults(&cfg)
 	applyAuditDefaults(&cfg)
 	applyPeopleSearchEnvOverrides(&cfg)
+	applyOnlyOfficeEnvOverrides(&cfg)
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -980,6 +1019,46 @@ func applyAuditDefaults(cfg *Config) {
 		if n, err := strconv.Atoi(value); err == nil && n >= 0 {
 			cfg.Audit.RetentionDays = n
 		}
+	}
+}
+
+// applyOnlyOfficeEnvOverrides wires the ONLYOFFICE_* env vars into the
+// onlyoffice section and fills defaults. The section always exists after this
+// call so callers can use cfg.OnlyOffice.Enabled() without a nil check.
+func applyOnlyOfficeEnvOverrides(cfg *Config) {
+	get := func(k string) string { return strings.TrimSpace(os.Getenv(k)) }
+	if cfg.OnlyOffice == nil {
+		cfg.OnlyOffice = &OnlyOfficeConfig{}
+	}
+	oo := cfg.OnlyOffice
+	if v := get("ONLYOFFICE_JWT_SECRET"); v != "" {
+		oo.JWTSecret = v
+	}
+	if v := get("ONLYOFFICE_PUBLIC_URL"); v != "" {
+		oo.PublicURL = v
+	}
+	if v := get("ONLYOFFICE_INTERNAL_URL"); v != "" {
+		oo.InternalURL = v
+	}
+	if v := get("ONLYOFFICE_BACKEND_URL"); v != "" {
+		oo.BackendURL = v
+	}
+	if v := get("ONLYOFFICE_SAVE_WAIT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			oo.SaveWaitSeconds = n
+		}
+	}
+	oo.PublicURL = strings.TrimRight(strings.TrimSpace(oo.PublicURL), "/")
+	oo.InternalURL = strings.TrimRight(strings.TrimSpace(oo.InternalURL), "/")
+	oo.BackendURL = strings.TrimRight(strings.TrimSpace(oo.BackendURL), "/")
+	if oo.InternalURL == "" {
+		oo.InternalURL = oo.PublicURL
+	}
+	if oo.BackendURL == "" {
+		oo.BackendURL = strings.TrimRight(get("APP_EXTERNAL_URL"), "/")
+	}
+	if oo.SaveWaitSeconds <= 0 {
+		oo.SaveWaitSeconds = 20
 	}
 }
 

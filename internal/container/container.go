@@ -320,6 +320,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewStorageBackendRepository))
 	must(container.Provide(repository.NewResourceRepository))
 	must(container.Provide(repository.NewTemporaryDocumentRepository))
+	must(container.Provide(repository.NewDocumentWorkspaceRepository))
 	must(container.Provide(service.NewResourceCatalog))
 	// TenantStoreOwnership adapter used by the retriever factory functions
 	// to verify that a resolved VectorStore belongs to the caller's tenant.
@@ -479,6 +480,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// path can resolve them at parse time.
 	must(container.Invoke(registerParseDefaultsProvider))
 	must(container.Provide(service.NewTemporaryDocumentService))
+	// Document assistant: the session's editable .docx and the ONLYOFFICE
+	// Document Server bridge (disabled unless ONLYOFFICE_* is configured).
+	must(container.Provide(service.NewDocumentWorkspaceService))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 
 	// Chat pipeline components for processing chat requests
@@ -549,6 +553,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewFAQHandler))
 	must(container.Provide(handler.NewTagHandler))
 	must(container.Provide(session.NewHandler))
+	must(container.Provide(session.NewDocumentWorkspaceHandler))
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewMessageSuggestionHandler))
 	must(container.Provide(handler.NewModelHandler))

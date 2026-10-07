@@ -290,6 +290,10 @@ func (s *sessionService) AgentQA(
 		agentQuery += req.Attachments.BuildPrompt()
 		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(req.Attachments))
 	}
+	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
+		agentQuery += selection
+		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
+	}
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
 		agentQuery += manifest
 		logger.Infof(ctx, "Appended %d staged sandbox attachment path(s) to agent query", len(stagedAttachments))

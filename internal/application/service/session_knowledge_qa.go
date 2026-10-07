@@ -162,6 +162,7 @@ func (s *sessionService) KnowledgeQA(
 			VLMModelID:              vlmModelID,
 			ChatModelSupportsVision: chatModelSupportsVision,
 			Attachments:             req.Attachments,
+			DocumentSelection:       req.DocumentSelection,
 			Language:                types.LanguageNameFromContext(ctx),
 			AbbreviationBinding:     abbreviationBinding,
 		},
@@ -218,6 +219,7 @@ func (s *sessionService) KnowledgeQA(
 		if len(req.Attachments) > 0 {
 			userContent += req.Attachments.BuildPrompt()
 		}
+		userContent += req.DocumentSelection.BuildPrompt()
 		chatManage.UserContent = userContent
 
 		pipeline = types.NewPipelineBuilder().

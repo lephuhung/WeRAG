@@ -60,6 +60,9 @@ type PipelineRequest struct {
 
 	// File attachments support
 	Attachments MessageAttachments `json:"-"`
+	// DocumentSelection is the passage highlighted in the embedded document
+	// editor; appended after the attachments in the user prompt.
+	DocumentSelection *DocumentSelection `json:"-"`
 
 	// IntentPromptOverrides holds agent-level intent prompt overrides for the
 	// query-understanding stage. Empty values fall back to tenant/global defaults.

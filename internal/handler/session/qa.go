@@ -65,6 +65,9 @@ type qaRequestContext struct {
 	attachmentMetas       types.MessageAttachments // Metadata-only view of attachmentIDs for the persisted user message
 	suggestionAttribution *types.SuggestionAttribution
 	questionOrigin        *types.QuestionOrigin
+	// documentSelection is the editor passage the user highlighted (already
+	// normalized: trimmed, capped); nil when none.
+	documentSelection *types.DocumentSelection
 	// resourceRewriter turns internal storage references in the outbound stream
 	// into directly loadable URLs when the caller asks for `resource_urls=public`.
 	// Disabled (a pass-through) in the default handle mode.
@@ -121,6 +124,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		LocalBrowserEnabled:    rc.localBrowserEnabled,
 		Attachments:            rc.attachments,
 		QuestionOrigin:         rc.questionOrigin,
+		DocumentSelection:      rc.documentSelection,
 		ClarificationRequestID: rc.clarificationRequestID,
 		ClarificationVersion:   rc.clarificationVersion,
 	}
@@ -452,6 +456,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		attachmentMetas:        attachmentMetas,
 		suggestionAttribution:  request.SuggestionAttribution,
 		questionOrigin:         request.QuestionOrigin,
+		documentSelection:      request.DocumentSelection.Normalized(),
 		reqAgentEnabled:        request.AgentEnabled,
 		reqAgentID:             request.AgentID,
 		resourceRewriter:       resourceRewriter,

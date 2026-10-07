@@ -122,6 +122,9 @@ type agentService struct {
 	abbreviationService  interfaces.AbbreviationService
 	peopleService        *people.Service
 	temporaryDocuments   interfaces.TemporaryDocumentService
+	// documentWorkspaces is the session's editable .docx (document
+	// assistant). Nil-safe: see sessionDocumentWorkspace.
+	documentWorkspaces interfaces.DocumentWorkspaceService
 }
 
 // NewAgentService creates a new agent service
@@ -153,6 +156,7 @@ func NewAgentService(
 	abbreviationService interfaces.AbbreviationService,
 	peopleService *people.Service,
 	temporaryDocuments interfaces.TemporaryDocumentService,
+	documentWorkspaces interfaces.DocumentWorkspaceService,
 ) interfaces.AgentService {
 	return &agentService{
 		browserSkill:         browserSkill,
@@ -182,7 +186,25 @@ func NewAgentService(
 		abbreviationService:  abbreviationService,
 		peopleService:        peopleService,
 		temporaryDocuments:   temporaryDocuments,
+		documentWorkspaces:   documentWorkspaces,
 	}
+}
+
+// sessionDocumentWorkspace returns the editable document bound to sessionID,
+// or nil when the session has none or the editor integration is disabled.
+func (s *agentService) sessionDocumentWorkspace(ctx context.Context, sessionID string) *types.DocumentWorkspace {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
+		return nil
+	}
+	ws, err := s.documentWorkspaces.GetBySession(ctx, tenantID, sessionID)
+	if err != nil {
+		return nil
+	}
+	return ws
 }
 
 // CreateAgentEngine creates an agent engine with the given configuration and EventBus.
@@ -1063,6 +1085,10 @@ func (s *agentService) registerTools(
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
 
+	// The document-assistant tools edit the session's one editable document;
+	// without a workspace they have nothing to work on and are not offered.
+	docWorkspace := s.sessionDocumentWorkspace(ctx, sessionID)
+
 	// logger.Infof(ctx, "Registering tools: %v, webSearchEnabled: %v", allowedTools, config.WebSearchEnabled)
 	// Register each allowed tool
 	for _, toolName := range allowedTools {
@@ -1150,6 +1176,32 @@ func (s *agentService) registerTools(
 		case tools.ToolWikiDeletePage:
 			toolToRegister = tools.NewWikiDeletePageTool(s.wikiPageService, writableWikiKBIDs, wikiRoutes)
 
+		// Document-assistant tools: only when the session has an editable
+		// document (see docWorkspace above).
+		case tools.ToolReadDocumentOutline:
+			if docWorkspace == nil {
+				continue
+			}
+			toolToRegister = tools.NewReadDocumentOutlineTool(
+				// heuristic labels are enough to locate paragraphs; a model
+				// call would not fit the outline's short timeout and it
+				// runs concurrently with other reads
+				s.documentWorkspaces, nil, sessionID)
+		case tools.ToolRewriteParagraphs:
+			if docWorkspace == nil {
+				continue
+			}
+			toolToRegister = tools.NewRewriteParagraphsTool(s.documentWorkspaces, sessionID)
+		case tools.ToolApplyFormatFixes:
+			if docWorkspace == nil {
+				continue
+			}
+			toolToRegister = tools.NewApplyFormatFixesTool(s.documentWorkspaces, chatModel, sessionID)
+		case tools.ToolCheckDocumentFormat:
+			// Registered below from the session's documents, not from the
+			// allowlist.
+			continue
+
 		case tools.ToolShellExec, tools.ToolReadFile, tools.LegacyToolReadSkill, tools.LegacyToolExecuteSkillScript,
 			tools.ToolListSandboxFiles, tools.LegacyToolReadSandboxFile, tools.ToolWriteSandboxFile,
 			tools.ToolEditSandboxFile:
@@ -1186,11 +1238,15 @@ func (s *agentService) registerTools(
 		registry.RegisterTool(tools.NewPeopleLookupTool(s.peopleService))
 		logger.Infof(ctx, "Registered people_lookup tool (system-admin caller)")
 	}
-	// check_document_format is offered only in a conversation that holds an
-	// uploaded .docx: it reads this session's uploads alone, and its
-	// description limits it to explicit format-review requests, so a
-	// document attached for Q&A is not checked unasked.
-	if s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID) {
+	// check_document_format is offered only in a conversation that holds a
+	// .docx: the editable document when the session has one (document
+	// assistant), else an uploaded .docx — it reads this session's uploads
+	// alone, and its description limits it to explicit format-review
+	// requests, so a document attached for Q&A is not checked unasked.
+	switch {
+	case docWorkspace != nil:
+		registry.RegisterTool(tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, chatModel, sessionID))
+	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
 		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, chatModel, sessionID))
 	}
 

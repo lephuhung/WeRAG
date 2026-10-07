@@ -369,6 +369,14 @@ services:
       - OIDC_USER_INFO_MAPPING_EMAIL=${OIDC_USER_INFO_MAPPING_EMAIL:-}
       # 飞书云文档解析模式 export：导出为docx，blocks：根据飞书云文档块解析为markdown。默认为:export
       - FEISHU_DOCX_PARSE_MODE=${FEISHU_DOCX_PARSE_MODE:-export}
+      # ========== Document assistant (ONLYOFFICE Document Server) ==========
+      # Enabled only when ONLYOFFICE_PUBLIC_URL and ONLYOFFICE_JWT_SECRET are set
+      # (start DS with: docker compose --profile onlyoffice up -d documentserver).
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-}
+      - ONLYOFFICE_PUBLIC_URL=${ONLYOFFICE_PUBLIC_URL:-}
+      - ONLYOFFICE_INTERNAL_URL=${ONLYOFFICE_INTERNAL_URL:-http://documentserver}
+      - ONLYOFFICE_BACKEND_URL=${ONLYOFFICE_BACKEND_URL:-http://app:8080}
+      - ONLYOFFICE_SAVE_WAIT_SECONDS=${ONLYOFFICE_SAVE_WAIT_SECONDS:-20}
     depends_on:
       redis:
         condition: service_started
@@ -513,6 +521,32 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # ONLYOFFICE Document Server for the document assistant (optional).
+  # Browser loads ${ONLYOFFICE_PUBLIC_URL}/web-apps/apps/api/documents/api.js;
+  # the app reaches it at http://documentserver and DS calls back to
+  # http://app:8080 (/r/<grant> downloads, /onlyoffice/callback/<ticket> saves).
+  # Fonts and the werag-assistant plugin: see docker/onlyoffice/README.md.
+  documentserver:
+    image: onlyoffice/documentserver:${ONLYOFFICE_VERSION:-9.4.0.1}
+    container_name: WeKnora-documentserver
+    profiles:
+      - onlyoffice
+    ports:
+      - "${ONLYOFFICE_PORT:-8090}:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - JWT_HEADER=Authorization
+      - JWT_IN_BODY=true
+      # DS downloads from / calls back to the app on the private Docker network.
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+    volumes:
+      - ./docker/onlyoffice/fonts:/usr/share/fonts/truetype/custom
+      - ./docker/onlyoffice/plugins/werag-assistant:/var/www/onlyoffice/documentserver/sdkjs-plugins/werag-assistant
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
 
   # OpenDataLoader hybrid backend (optional). Default --no-ocr (no EasyOCR/libGL).
   # Local build only — not published to Docker Hub; use --profile odl-hybrid --build.

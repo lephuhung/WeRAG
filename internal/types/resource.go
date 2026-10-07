@@ -28,6 +28,7 @@ const (
 	ResourceOwnerKnowledge         = "knowledge"
 	ResourceOwnerMessage           = "message"
 	ResourceOwnerTemporaryDocument = "temporary_document"
+	ResourceOwnerDocumentWorkspace = "document_workspace"
 )
 
 // Resource binding relations describe why an owner claims a resource.

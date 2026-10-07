@@ -164,6 +164,12 @@ func Logger() gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		raw := c.Request.URL.RawQuery
+		// The ONLYOFFICE callback path carries a capability ticket: never log
+		// it, nor the DS-signed body.
+		onlyOfficeCallback := strings.HasPrefix(path, "/onlyoffice/callback/")
+		if onlyOfficeCallback {
+			path = "/onlyoffice/callback/[REDACTED]"
+		}
 
 		isWikiStats := strings.HasPrefix(path, "/api/v1/knowledgebase/") && strings.HasSuffix(path, "/wiki/stats")
 		if strings.HasPrefix(path, "/assets/") || isWikiStats {
@@ -174,7 +180,8 @@ func Logger() gin.HandlerFunc {
 		// Browser traffic contains credentials, page content and screenshots.
 		// Keep access metadata, but never read or buffer these request/response bodies.
 		browserTraffic := strings.HasPrefix(path, "/api/v1/local-browser/") ||
-			path == "/api/v1/me/browser" || strings.HasSuffix(path, "/local-browser")
+			path == "/api/v1/me/browser" || strings.HasSuffix(path, "/local-browser") ||
+			onlyOfficeCallback
 		// 读取请求体（在Next之前读取，因为Next会消费body）
 		var requestBody string
 		if !browserTraffic && (c.Request.Method == "POST" || c.Request.Method == "PUT" || c.Request.Method == "PATCH") {
