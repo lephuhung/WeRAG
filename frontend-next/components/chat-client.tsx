@@ -1765,12 +1765,12 @@ function ChatBody({ id }: { id: string }) {
 
   const chatColumn = (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
-      <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-3" : "px-4 sm:px-8"}`}>
+      <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
         <h1 className="truncate text-[15px] font-medium text-ink">{title}</h1>
       </div>
 
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
-        <div className={compact ? "w-full px-3 py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
+        <div className={compact ? "w-full px-[17px] py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
           {messages.map((m, index) =>
             m.role === "user" ? (
               <UserMessageBubble
@@ -1801,7 +1801,7 @@ function ChatBody({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className={compact ? "shrink-0 px-3 pb-3 pt-2" : "shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6"}>
+      <div className={compact ? "shrink-0 px-[17px] pb-3 pt-2" : "shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6"}>
         <div className={compact ? "w-full" : "mx-auto w-full max-w-[768px]"}>
           <input
             ref={attachments.inputRef}
