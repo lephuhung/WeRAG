@@ -37,7 +37,7 @@ Do NOT call it just because a .docx is attached, nor to summarize, translate, an
 ## Input
 
 - file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).
-- document_type: optional rule set (cong_van, quyet_dinh, bao_cao, to_trinh, ke_hoach, thong_bao, …); omit to detect it.
+- document_type: optional rule set (cong_van, quyet_dinh, bao_cao, to_trinh, ke_hoach, thong_bao, …). Omit it: the type is detected from the document. Pass it only when the user names the type or confirms it after a result asked which type the document is — never guess it yourself.
 
 ## Output
 
@@ -53,7 +53,7 @@ If the evaluation was unavailable, the result instead holds the measured finding
     },
     "document_type": {
       "type": "string",
-      "description": "Optional rule set, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect"
+      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
     }
   }
 }`),
@@ -166,28 +166,108 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 
-	opts := docformat.Options{DocumentType: in.DocumentType, SourceName: fileName}
-	if t.chatModel != nil {
-		opts.LLM = docformat.ChatCompleter(t.chatModel)
-		opts.ModelName = t.chatModel.GetModelName()
+	out := t.check(ctx, content, fileName, in.DocumentType)
+	if out.result == nil {
+		return &types.ToolResult{Success: false, Error: out.failure}, nil
 	}
-	report := docformat.Check(ctx, content, opts)
-	if !report.OK {
-		return &types.ToolResult{Success: false, Error: docformat.RenderText(report)}, nil
-	}
-	output, evaluated := t.evaluate(ctx, report)
-	data := map[string]interface{}{
-		"file_name":     fileName,
-		"document_type": report.DocumentType,
-		"summary":       report.Summary,
-		"method":        report.Segmentation.Method,
-		"skills":        report.Skills,
-		"evaluated":     evaluated,
-	}
+	data := out.result.data()
 	if revision >= 0 {
 		data["document_revision"] = revision
 	}
-	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
+	return &types.ToolResult{Success: true, Output: out.result.Output, Data: data}, nil
+}
+
+func (t *CheckDocumentFormatTool) modelName() string {
+	if t.chatModel == nil {
+		return ""
+	}
+	return t.chatModel.GetModelName()
+}
+
+// check runs the format check of content, or returns the evaluation already
+// made for the same bytes, model and rule set (see formatCheckCache).
+func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fileName, docType string) formatCheckOutcome {
+	model := t.modelName()
+	key := formatCheckKey(content, model, docType)
+	return formatChecks.do(ctx, key, func(runCtx context.Context) formatCheckOutcome {
+		opts := docformat.Options{DocumentType: docType, SourceName: fileName}
+		if t.chatModel != nil {
+			opts.LLM = docformat.ChatCompleter(t.chatModel)
+			opts.ModelName = model
+		}
+		report := docformat.Check(runCtx, content, opts)
+		if !report.OK {
+			return formatCheckOutcome{failure: docformat.RenderText(report)}
+		}
+		output, evaluated := t.evaluate(runCtx, report)
+		r := &formatCheckResult{
+			Output: output, FileName: fileName, DocumentType: report.DocumentType, Summary: report.Summary,
+			Skills: report.Skills, Evaluated: evaluated, At: time.Now(),
+		}
+		if report.Segmentation != nil {
+			r.Method = report.Segmentation.Method
+		}
+		// only a finished evaluation is kept: the unevaluated fallback
+		// comes from a failed model call worth retrying
+		if evaluated {
+			keys := []string{key}
+			if report.DocumentType != nil && report.DocumentType.Used != "" {
+				// a later call naming the rule set that was used gets the same rules
+				keys = append(keys, formatCheckKey(content, model, report.DocumentType.Used))
+			}
+			formatChecks.put(runCtx, r, keys...)
+		}
+		return formatCheckOutcome{result: r}
+	})
+}
+
+// Prewarm runs the check of the session's document in the background, once
+// per session, so a later format question is answered from the cache; its
+// progress is reported by SessionFormatCheck. It returns at once.
+func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
+	if t.chatModel == nil || t.sessionID == "" {
+		return
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return
+	}
+	if _, done := formatChecks.prewarmed.LoadOrStore(t.sessionID, struct{}{}); done {
+		return
+	}
+	// checked before a restart (state kept in Redis), or running elsewhere
+	if SessionFormatCheck(ctx, t.sessionID) != nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		content, fileName, revision, err := t.source(ctx, tenantID, "")
+		if err != nil {
+			formatChecks.prewarmed.Delete(t.sessionID)
+			return
+		}
+		state := &types.DocumentFormatCheck{
+			Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: time.Now(),
+		}
+		formatChecks.storeState(ctx, t.sessionID, state)
+		out := t.check(ctx, content, fileName, "")
+		done := *state
+		finished := time.Now()
+		done.FinishedAt = &finished
+		if out.result == nil || !out.result.Evaluated {
+			done.Status = types.DocumentFormatCheckFailed
+			formatChecks.storeState(ctx, t.sessionID, &done)
+			logger.Warnf(ctx, "check_document_format: background check of %s failed: %s", fileName, out.failure)
+			return
+		}
+		done.Status = types.DocumentFormatCheckReady
+		if info := out.result.DocumentType; info != nil {
+			done.DocumentType = info.Used
+			done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
+		}
+		formatChecks.storeState(ctx, t.sessionID, &done)
+		logger.Infof(ctx, "check_document_format: background check of %s ready in %s", fileName, finished.Sub(state.StartedAt).Round(time.Second))
+	}()
 }
 
 // loadUploadedDocx reads the session upload to check (see pickDocx).

@@ -68,7 +68,7 @@ func (f *callbackOnlyWorkspaces) HandleCallback(_ context.Context, ticket, auth 
 func TestOnlyOfficeCallbackRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &callbackOnlyWorkspaces{}
-	h := NewDocumentWorkspaceHandler(nil, fake, nil)
+	h := NewDocumentWorkspaceHandler(nil, fake, nil, nil)
 	r := gin.New()
 	r.POST("/onlyoffice/callback/:ticket", h.OnlyOfficeCallback)
 
@@ -172,7 +172,7 @@ func newDocumentRoutes(t *testing.T, ws *routeWorkspaces, frontendBase string) *
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true, "admin-view": false}}
-	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{FrontendBaseURL: frontendBase})
+	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{FrontendBaseURL: frontendBase}, nil)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
@@ -359,7 +359,7 @@ func TestDocumentRevisionRoutes(t *testing.T) {
 		revs: []*types.DocumentRevision{{Seq: 1, Label: "Gốc", Source: "manual", FileSize: 42, CreatedAt: created, Ref: "resource://secret"}},
 	}
 	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true, "admin-view": false, "empty": true}}
-	h := NewDocumentWorkspaceHandler(sessions, ws, nil)
+	h := NewDocumentWorkspaceHandler(sessions, ws, nil, nil)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })

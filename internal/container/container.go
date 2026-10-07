@@ -35,6 +35,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	dorisRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/doris"
 	elasticsearchRepoV7 "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch/v7"
@@ -485,6 +486,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Document assistant: the session's editable .docx and the ONLYOFFICE
 	// Document Server bridge (disabled unless ONLYOFFICE_* is configured).
 	must(container.Provide(service.NewDocumentWorkspaceService))
+	must(container.Provide(service.NewDocumentFormatPrecheck))
+	// background format-check results and states outlive a restart in Redis
+	must(container.Invoke(func(rdb *redis.Client) { tools.UseFormatCheckRedis(rdb) }))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 
 	// Chat pipeline components for processing chat requests

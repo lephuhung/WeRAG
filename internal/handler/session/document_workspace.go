@@ -31,6 +31,9 @@ const maxOnlyOfficeCallbackBytes = 1 << 20
 type DocumentWorkspaceHandler struct {
 	sessionService interfaces.SessionService
 	workspaces     interfaces.DocumentWorkspaceService
+	// precheck runs the format check of an opened document in the
+	// background; nil disables it.
+	precheck *service.DocumentFormatPrecheck
 	// frontendBaseURL (FRONTEND_BASE_URL) is the editor host origin fallback
 	// when the request carries no Origin header.
 	frontendBaseURL string
@@ -41,8 +44,9 @@ func NewDocumentWorkspaceHandler(
 	sessionService interfaces.SessionService,
 	workspaces interfaces.DocumentWorkspaceService,
 	cfg *config.Config,
+	precheck *service.DocumentFormatPrecheck,
 ) *DocumentWorkspaceHandler {
-	h := &DocumentWorkspaceHandler{sessionService: sessionService, workspaces: workspaces}
+	h := &DocumentWorkspaceHandler{sessionService: sessionService, workspaces: workspaces, precheck: precheck}
 	if cfg != nil {
 		h.frontendBaseURL = cfg.FrontendBaseURL
 	}
@@ -81,6 +85,7 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to open document")
 		return
 	}
+	h.precheck.Start(ctx, ws.TenantID, sessionID)
 	view, err := h.view(c, ws)
 	if err != nil {
 		h.fail(c, err, "Failed to build editor config")
@@ -102,6 +107,10 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 	if err != nil {
 		h.fail(c, err, "Failed to load document")
 		return
+	}
+	if ws.Status == types.DocumentWorkspaceStatusOpen {
+		// a document opened before a server restart has no check yet
+		h.precheck.Start(ctx, ws.TenantID, sessionID)
 	}
 	view, err := h.view(c, ws)
 	if err != nil {
@@ -275,7 +284,11 @@ func (h *DocumentWorkspaceHandler) view(c *gin.Context, ws *types.DocumentWorksp
 		}
 		userName = user.Username
 	}
-	return h.workspaces.View(ctx, ws, userID, userName, editorLang(c.GetHeader("Accept-Language")))
+	view, err := h.workspaces.View(ctx, ws, userID, userName, editorLang(c.GetHeader("Accept-Language")))
+	if err == nil && view != nil {
+		view.FormatCheck = h.precheck.Status(ctx, ws.SessionID)
+	}
+	return view, err
 }
 
 func (h *DocumentWorkspaceHandler) fail(c *gin.Context, err error, message string) {

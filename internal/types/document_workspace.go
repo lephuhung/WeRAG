@@ -105,6 +105,31 @@ type DocumentWorkspaceView struct {
 	*DocumentWorkspace
 	EditorKey string                `json:"editor_key"`
 	Editor    *DocumentEditorConfig `json:"editor,omitempty"`
+	// FormatCheck is the background NĐ30 format check started when the
+	// document was opened; nil when none has run in this server process.
+	FormatCheck *DocumentFormatCheck `json:"format_check,omitempty"`
+}
+
+// Background format check statuses.
+const (
+	DocumentFormatCheckRunning = "running"
+	DocumentFormatCheckReady   = "ready"
+	DocumentFormatCheckFailed  = "failed"
+)
+
+// DocumentFormatCheck reports the background format check of a workspace
+// document, so the chat can tell the user the evaluation is ready to read.
+type DocumentFormatCheck struct {
+	Status string `json:"status"`
+	// Revision is the workspace revision that was checked; a newer
+	// revision makes the result stale.
+	Revision int `json:"revision"`
+	// DocumentType is the detected rule set slug, e.g. quy_che, and
+	// DocumentTypeLabel its Vietnamese name, e.g. "Quy chế".
+	DocumentType      string     `json:"document_type,omitempty"`
+	DocumentTypeLabel string     `json:"document_type_label,omitempty"`
+	StartedAt         time.Time  `json:"started_at"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
 }
 
 // DocumentSelection is the text a user highlighted in the embedded editor and

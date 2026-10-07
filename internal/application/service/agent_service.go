@@ -1255,7 +1255,11 @@ func (s *agentService) registerTools(
 	// requests, so a document attached for Q&A is not checked unasked.
 	switch {
 	case docWorkspace != nil:
-		registry.RegisterTool(tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, chatModel, sessionID))
+		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, chatModel, sessionID)
+		registry.RegisterTool(checkTool)
+		// the check takes about a minute; start it now so a format question
+		// later in the conversation is answered from its cache
+		checkTool.Prewarm(ctx)
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
 		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, chatModel, sessionID))
 	}

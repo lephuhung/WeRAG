@@ -90,6 +90,7 @@ func uploadsFixture(t *testing.T) *fakeUploads {
 
 func runFormatTool(t *testing.T, tool *CheckDocumentFormatTool, args string) *types.ToolResult {
 	t.Helper()
+	resetFormatChecks(t)
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
 	res, err := tool.Execute(ctx, json.RawMessage(args))
 	if err != nil {
