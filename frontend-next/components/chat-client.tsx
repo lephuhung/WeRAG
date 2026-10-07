@@ -1813,11 +1813,7 @@ function ChatBody({ id }: { id: string }) {
               selection={pendingSelection}
               label={tr("docws.selectionLabel")}
               clearLabel={tr("docws.selectionClear")}
-              rewriteLabel={tr("docws.rewrite")}
-              lookupLabel={tr("docws.lookup")}
               onClear={() => setPendingSelection(null)}
-              onRewrite={() => setInput(tr("docws.rewritePrompt"))}
-              onLookup={() => setInput(tr("docws.lookupPrompt"))}
             />
           )}
           <Composer
@@ -1885,46 +1881,29 @@ function SelectionChip({
   selection,
   label,
   clearLabel,
-  rewriteLabel,
-  lookupLabel,
   onClear,
-  onRewrite,
-  onLookup,
 }: {
   selection: DocumentSelection;
   label: string;
   clearLabel: string;
-  rewriteLabel: string;
-  lookupLabel: string;
   onClear: () => void;
-  onRewrite: () => void;
-  onLookup: () => void;
 }) {
   const flat = selection.text.replace(/\s+/g, " ").trim();
-  const preview = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
-      <div
-        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-strong py-1 pl-3 pr-1 text-[12.5px]"
-        title={selection.text}
+    <div
+      className="mb-2 flex w-full min-w-0 items-center gap-2.5 rounded-r-[8px] border-l-2 border-hairline-strong bg-surface-strong/50 px-3 py-2"
+      title={selection.text}
+    >
+      <span className="caption-uppercase shrink-0 text-muted-soft">{label.replace(/:\s*$/, "")}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] text-body">{flat}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={clearLabel}
+        title={clearLabel}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink cursor-pointer"
       >
-        <span className="shrink-0 text-muted">{label}</span>
-        <span className="min-w-0 truncate text-ink">“{preview}”</span>
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label={clearLabel}
-          title={clearLabel}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted hover:bg-hairline hover:text-ink"
-        >
-          <IconClose className="h-3 w-3" />
-        </button>
-      </div>
-      <button type="button" className="btn btn-outline btn-sm" onClick={onRewrite}>
-        {rewriteLabel}
-      </button>
-      <button type="button" className="btn btn-outline btn-sm" onClick={onLookup}>
-        {lookupLabel}
+        <IconClose className="h-3 w-3" />
       </button>
     </div>
   );

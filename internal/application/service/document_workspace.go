@@ -305,9 +305,12 @@ func (s *documentWorkspaceService) View(
 				"autosave":      true,
 				"compactHeader": true,
 				"hideRightMenu": false,
-				"review":        map[string]interface{}{"trackChanges": true, "showReviewChanges": true, "reviewDisplay": "markup"},
-				"features":      map[string]interface{}{"spellcheck": false},
-				"plugins":       true,
+				// Track every edit, show it inline as markup, but do not pop the
+				// "review changes" navigator on every open: the user reviews from
+				// the Collaboration tab when they want to.
+				"review":   map[string]interface{}{"trackChanges": true, "showReviewChanges": false, "reviewDisplay": "markup"},
+				"features": map[string]interface{}{"spellcheck": false},
+				"plugins":  true,
 			},
 			"plugins": map[string]interface{}{
 				"autostart": []string{onlyOfficeAssistantPluginGUID},
