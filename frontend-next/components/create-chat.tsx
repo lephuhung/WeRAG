@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { getSuggestedQuestions, type SuggestedQuestion } from "@/lib/api/extra";
-import { ChatProvider, useChatContext } from "@/lib/chat-context";
+import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
 import { Orb } from "@/components/orb";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments } from "@/components/use-attachments";
@@ -178,6 +178,9 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       <div className="relative w-full max-w-[768px]">
         <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
         <p className="mb-10 text-center text-muted">{t("cc.subtitle")}</p>
+        {ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID && (
+          <p className="body-sm -mt-6 mb-6 text-center text-muted">{t("docws.createChatHint")}</p>
+        )}
 
         <input
           ref={attachments.inputRef}

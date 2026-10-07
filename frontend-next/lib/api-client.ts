@@ -109,6 +109,19 @@ function storedTenantId(): string | null {
   }
 }
 
+/* Auth/tenant/locale headers for callers that must issue a raw fetch()
+ * (e.g. `keepalive` requests fired from beforeunload/pagehide, which cannot
+ * go through the async refresh-and-replay path of request()). */
+export function authHeaders(): Record<string, string> {
+  const { token } = getTokens();
+  const tenant = storedTenantId();
+  return {
+    ...acceptLanguageHeader(),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(tenant ? { "X-Tenant-ID": tenant } : {}),
+  };
+}
+
 export class ApiError extends Error {
   status: number;
   /** Raw response body, for callers that inspect error.code / error.details. */

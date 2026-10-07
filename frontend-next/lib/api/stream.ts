@@ -84,6 +84,8 @@ export type StreamParams = {
   suggestionAttribution?: { suggestion_set_id: string; question_id: string };
   questionOrigin?: { knowledge_base_id: string; knowledge_id?: string };
   abbreviationCandidates?: string[];
+  /** Document-assistant: the editor selection the user attached to this turn. */
+  documentSelection?: { text: string; paragraph_hint?: string };
   signal?: AbortSignal;
   onChunk: (c: StreamChunk) => void;
 };
@@ -163,6 +165,9 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
     ...(params.questionOrigin ? { question_origin: params.questionOrigin } : {}),
     ...(params.abbreviationCandidates?.length
       ? { abbreviation_candidates: params.abbreviationCandidates }
+      : {}),
+    ...(params.documentSelection?.text
+      ? { document_selection: params.documentSelection }
       : {}),
     channel: isEmbed ? "embed" : "web",
   };

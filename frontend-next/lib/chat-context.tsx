@@ -14,6 +14,8 @@ import type { SessionLastRequestState } from "@/lib/api/chat";
 
 export const BUILTIN_QUICK_ANSWER_ID = "builtin-quick-answer";
 export const BUILTIN_SMART_REASONING_ID = "builtin-smart-reasoning";
+/** Document assistant: chat + embedded ONLYOFFICE editor (two-pane workspace). */
+export const BUILTIN_DOCUMENT_ASSISTANT_ID = "builtin-document-assistant";
 
 export type MentionType = "kb" | "file" | "tag" | "mcp" | "skill";
 

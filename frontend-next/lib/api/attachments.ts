@@ -61,3 +61,16 @@ export function deleteTemporaryAttachment(
 ): Promise<void> {
   return apiDel(`/api/v1/sessions/${sessionId}/attachments/${attachmentId}`);
 }
+
+/** GET /api/v1/sessions/:id/attachments — every temporary attachment of the
+ * session. Tolerates both the `{success,data:[...]}` envelope and a bare
+ * array so a backend shape tweak does not blank the list. */
+export async function listTemporaryAttachments(
+  sessionId: string,
+): Promise<TemporaryAttachment[]> {
+  const res = await apiGet<{ success?: boolean; data?: TemporaryAttachment[] } | TemporaryAttachment[]>(
+    `/api/v1/sessions/${sessionId}/attachments`,
+  );
+  if (Array.isArray(res)) return res;
+  return Array.isArray(res?.data) ? res.data : [];
+}

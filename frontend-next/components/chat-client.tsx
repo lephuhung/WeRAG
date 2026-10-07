@@ -6,7 +6,11 @@ import { listMessages, stopSession, forkSession, createSession, getSession, type
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
-import { ChatProvider, useChatContext } from "@/lib/chat-context";
+import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
+import { useT } from "@/lib/i18n";
+import { documentRevisionFromToolData, type DocumentSelection } from "@/lib/api/document-workspace";
+import { SplitPane } from "@/components/doc-workspace/split-pane";
+import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments, formatFileSize } from "@/components/use-attachments";
@@ -27,7 +31,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit } from "@/components/icons";
+import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
@@ -566,6 +570,7 @@ function ChatBody({ id }: { id: string }) {
     handoffCacheRef.current.resolved,
   );
   const ctx = useChatContext();
+  const { t: tr } = useT();
   const { user } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
@@ -575,6 +580,14 @@ function ChatBody({ id }: { id: string }) {
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [abbreviationRefreshKey, setAbbreviationRefreshKey] = useState(0);
+  // Document assistant: latest editor selection attached to the next turn,
+  // and the newest document revision reported by an editing tool.
+  const [pendingSelection, setPendingSelection] = useState<DocumentSelection | null>(null);
+  const [docRevision, setDocRevision] = useState<number | null>(null);
+  const noteDocRevision = (c: StreamChunk) => {
+    const rev = documentRevisionFromToolData(c.tool_name, c.data);
+    if (rev !== null) setDocRevision((prev) => (prev === null || rev > prev ? rev : prev));
+  };
   const [input, setInput] = useState("");
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -662,6 +675,8 @@ function ChatBody({ id }: { id: string }) {
     setMessages([]);
     setError(null);
     setBusy(false);
+    setPendingSelection(null);
+    setDocRevision(null);
     // Leaving (or unmounting) a session whose turn is still generating: flag
     // its activity marker detached so the sidebar keeps reporting/polling it —
     // mirrors Vue clearData → sessionActivity.detach.
@@ -793,6 +808,7 @@ function ChatBody({ id }: { id: string }) {
             }
             if (kind === "agent_query") return;
             if (kind === "tool_result") {
+              noteDocRevision(c);
               const candidates = extractAbbreviationCandidates(c.data);
               if (candidates.length > 0) {
                 setMessages((m) =>
@@ -1318,6 +1334,7 @@ function ChatBody({ id }: { id: string }) {
         kind === "command_output"
       ) {
         const toolName = c.tool_name || (c.data?.tool_name as string) || "";
+        if (kind === "tool_result") noteDocRevision(c);
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
           toolName === "people_lookup" ? extractPeopleRecords(c.data) : [];
@@ -1460,6 +1477,11 @@ function ChatBody({ id }: { id: string }) {
       previousMessage?.role === "assistant"
         ? previousMessage.abbreviationCandidates
         : undefined;
+    // The selection chip rides exactly one turn (document assistant only).
+    // `pendingSelection` is this render's state, captured when send() ran.
+    const documentSelection =
+      selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? pendingSelection ?? undefined : undefined;
+    if (documentSelection) setPendingSelection(null);
     streamChat({
       sessionId: activeSessionId,
       query: t,
@@ -1486,6 +1508,7 @@ function ChatBody({ id }: { id: string }) {
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       images: inlineImages,
       abbreviationCandidates: priorCandidates?.slice(0, 10),
+      documentSelection,
       signal: ctrl.signal,
       onChunk: applyChunk,
     })
@@ -1665,7 +1688,10 @@ function ChatBody({ id }: { id: string }) {
       ? (initialQ ?? "New chat")
       : (sessionTitle || session?.title?.trim() || "New chat");
 
-  return (
+  const isDocumentAssistant =
+    id !== "new" && ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
+
+  const chatColumn = (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="hairline-b flex h-14 shrink-0 items-center px-4 sm:px-8">
         <h1 className="truncate text-[15px] font-medium text-ink">{title}</h1>
@@ -1724,6 +1750,18 @@ function ChatBody({ id }: { id: string }) {
               e.target.value = "";
             }}
           />
+          {isDocumentAssistant && pendingSelection && (
+            <SelectionChip
+              selection={pendingSelection}
+              label={tr("docws.selectionLabel")}
+              clearLabel={tr("docws.selectionClear")}
+              rewriteLabel={tr("docws.rewrite")}
+              lookupLabel={tr("docws.lookup")}
+              onClear={() => setPendingSelection(null)}
+              onRewrite={() => setInput(tr("docws.rewritePrompt"))}
+              onLookup={() => setInput(tr("docws.lookupPrompt"))}
+            />
+          )}
           <Composer
             sessionId={id === "new" ? undefined : id}
             value={input}
@@ -1755,6 +1793,74 @@ function ChatBody({ id }: { id: string }) {
         references={drawerRefs}
         activeKey={activeRefKey}
       />
+    </div>
+  );
+
+  // Always rendered through SplitPane so the chat column keeps its React
+  // identity when the agent (hydrated after getSession) flips the editor on.
+  return (
+    <SplitPane
+      left={
+        isDocumentAssistant ? (
+          <DocWorkspace
+            key={id}
+            sessionId={id}
+            revision={docRevision}
+            onSelectionChange={setPendingSelection}
+          />
+        ) : null
+      }
+      right={chatColumn}
+    />
+  );
+}
+
+/* Editor selection attached to the next turn (document assistant). */
+function SelectionChip({
+  selection,
+  label,
+  clearLabel,
+  rewriteLabel,
+  lookupLabel,
+  onClear,
+  onRewrite,
+  onLookup,
+}: {
+  selection: DocumentSelection;
+  label: string;
+  clearLabel: string;
+  rewriteLabel: string;
+  lookupLabel: string;
+  onClear: () => void;
+  onRewrite: () => void;
+  onLookup: () => void;
+}) {
+  const flat = selection.text.replace(/\s+/g, " ").trim();
+  const preview = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div
+        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-strong py-1 pl-3 pr-1 text-[12.5px]"
+        title={selection.text}
+      >
+        <span className="shrink-0 text-muted">{label}</span>
+        <span className="min-w-0 truncate text-ink">“{preview}”</span>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={clearLabel}
+          title={clearLabel}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted hover:bg-hairline hover:text-ink"
+        >
+          <IconClose className="h-3 w-3" />
+        </button>
+      </div>
+      <button type="button" className="btn btn-outline btn-sm" onClick={onRewrite}>
+        {rewriteLabel}
+      </button>
+      <button type="button" className="btn btn-outline btn-sm" onClick={onLookup}>
+        {lookupLabel}
+      </button>
     </div>
   );
 }

@@ -3,10 +3,12 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import {
+  BUILTIN_DOCUMENT_ASSISTANT_ID,
   BUILTIN_QUICK_ANSWER_ID,
   BUILTIN_SMART_REASONING_ID,
   useChatContext,
 } from "@/lib/chat-context";
+import { useT } from "@/lib/i18n";
 import { IconChevronDown } from "@/components/icons";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
@@ -36,15 +38,25 @@ export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
 
 export function AgentSelector({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { agents, settings, selectAgent } = useChatContext();
+  const { t } = useT();
 
   if (!open) return null;
   const builtins = agents.filter((a) => a.is_builtin);
   const customs = agents.filter((a) => !a.is_builtin);
   const quick = builtins.find((a) => a.id === BUILTIN_QUICK_ANSWER_ID);
   const smart = builtins.find((a) => a.id === BUILTIN_SMART_REASONING_ID);
-  const otherBuiltins = builtins.filter(
-    (a) => a.id !== BUILTIN_QUICK_ANSWER_ID && a.id !== BUILTIN_SMART_REASONING_ID,
-  );
+  // Backend order is kept (wiki/data builtins first); the document
+  // assistant is pinned last among the builtins.
+  const otherBuiltins = builtins
+    .filter((a) => a.id !== BUILTIN_QUICK_ANSWER_ID && a.id !== BUILTIN_SMART_REASONING_ID)
+    .sort(
+      (a, b) =>
+        Number(a.id === BUILTIN_DOCUMENT_ASSISTANT_ID) - Number(b.id === BUILTIN_DOCUMENT_ASSISTANT_ID),
+    );
+  const builtinName = (a: { id: string; name: string }) =>
+    a.name || (a.id === BUILTIN_DOCUMENT_ASSISTANT_ID ? t("docws.agentName") : a.id);
+  const builtinDesc = (a: { id: string; description?: string }) =>
+    a.description || (a.id === BUILTIN_DOCUMENT_ASSISTANT_ID ? t("docws.agentDesc") : undefined);
 
   const pick = (id: string) => {
     selectAgent(id);
@@ -64,7 +76,7 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
             <AgentRow name="Agent mode" desc={smart.description ?? "Reasoning with tools"} active={current(smart.id)} onClick={() => pick(smart.id)} />
           )}
           {otherBuiltins.map((a) => (
-            <AgentRow key={a.id} name={a.name} desc={a.description} active={current(a.id)} onClick={() => pick(a.id)} />
+            <AgentRow key={a.id} name={builtinName(a)} desc={builtinDesc(a)} active={current(a.id)} onClick={() => pick(a.id)} />
           ))}
           {customs.length > 0 && (
             <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">My agents</div>

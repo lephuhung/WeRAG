@@ -1,0 +1,18 @@
+{
+  "name": "WeRAG Assistant",
+  "guid": "asc.{7a4b3c2d-9e1f-4a5b-8c6d-0e1f2a3b4c5d}",
+  "baseUrl": "",
+  "variations": [
+    {
+      "description": "Gửi đoạn đã chọn sang trợ lý WeRAG",
+      "url": "index.html",
+      "type": "background",
+      "initDataType": "text",
+      "initOnSelectionChanged": true,
+      "isUpdateOleOnResize": false,
+      "EditorsSupport": ["word"],
+      "icons": [],
+      "size": [0, 0]
+    }
+  ]
+}
