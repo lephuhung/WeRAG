@@ -130,6 +130,10 @@ type rbacGuards struct {
 	chunkKBCreator       middleware.CreatorLookup
 	chunkKBCreatorFromID middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
 	wikiKBCreator        middleware.CreatorLookup
+	// Document uploader lookups (Knowledge.CreatedBy) for the
+	// admin-or-uploader guard on per-document mutations.
+	knowledgeUploader      middleware.UploaderLookup
+	chunkKnowledgeUploader middleware.UploaderLookup
 
 	// Services for the KB-access guard (own / granted / public). Captured
 	// here so route lines can reference g.KBAccess() without having to
@@ -172,10 +176,12 @@ func newRBACGuards(
 	}
 	if knowledgeHandler != nil {
 		g.knowledgeKBCreator = knowledgeHandler.KBCreatorLookupFromKnowledgeID
+		g.knowledgeUploader = knowledgeHandler.KnowledgeUploaderLookup
 	}
 	if chunkHandler != nil {
 		g.chunkKBCreator = chunkHandler.KBCreatorLookupFromKnowledgeIDParam
 		g.chunkKBCreatorFromID = chunkHandler.KBCreatorLookupFromChunkIDParam
+		g.chunkKnowledgeUploader = chunkHandler.KnowledgeUploaderLookupFromKnowledgeIDParam
 	}
 	if wikiHandler != nil {
 		g.wikiKBCreator = wikiHandler.KBCreatorLookupFromKBPath
@@ -207,6 +213,18 @@ func (g *rbacGuards) Admin() gin.HandlerFunc {
 // SuperAdmin passes. API-key principals defer to the APIKeyGate.
 func (g *rbacGuards) TenantAdmin() gin.HandlerFunc {
 	return middleware.RequireTenantAdmin(g.cfg)
+}
+
+// DocumentEditor lets a Tenant Admin change any document and a Member
+// change only the documents they uploaded. :id is the knowledge ID.
+func (g *rbacGuards) DocumentEditor() gin.HandlerFunc {
+	return middleware.RequireTenantAdminOrUploader(g.knowledgeUploader, g.cfg)
+}
+
+// ChunkDocumentEditor is DocumentEditor for chunk routes addressed by
+// :knowledge_id.
+func (g *rbacGuards) ChunkDocumentEditor() gin.HandlerFunc {
+	return middleware.RequireTenantAdminOrUploader(g.chunkKnowledgeUploader, g.cfg)
 }
 
 func (g *rbacGuards) AdminOrSystemAdmin() gin.HandlerFunc {

@@ -66,6 +66,15 @@ type KnowledgeBaseService interface {
 	// ListKnowledgeBasesByTenantID lists all knowledge bases for a specific tenant (e.g. for shared agent context).
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
+	// ListPublishedCatalog returns one page of tenant-published KBs with
+	// the caller's subscription flags filled in.
+	ListPublishedCatalog(ctx context.Context, page, pageSize int, keyword string) ([]*types.KnowledgeBase, int64, error)
+	// SubscribeKnowledgeBase puts a published KB into the caller's default
+	// retrieval scope; tenantWide subscribes the caller's whole tenant and
+	// needs Tenant Admin authority.
+	SubscribeKnowledgeBase(ctx context.Context, kbID string, tenantWide bool) error
+	// UnsubscribeKnowledgeBase removes that subscription.
+	UnsubscribeKnowledgeBase(ctx context.Context, kbID string, tenantWide bool) error
 	// ListPublicCatalog returns one bounded page of the platform-owned
 	// public catalog (owner 0 + public visibility) with the catalog total.
 	// Human callers only: anonymous contexts are unauthorized and API-key

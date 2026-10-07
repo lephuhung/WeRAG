@@ -95,32 +95,39 @@ func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler,
 	}
 }
 
-// RegisterKBAccessGrantRoutes registers the retired tenant-wide KB
-// grant endpoints. Mutations (request/review/revoke) are disabled: they
-// return 410 Gone, and the service layer rejects them with
-// ErrGrantDisabled as a second line of defence (migration 000111 revoked
-// every live row, so the remaining read paths can never authorize
-// access). The GET listings stay as read-only audit visibility into the
-// revoked rows.
+// RegisterKBAccessGrantRoutes registers tenant-wide KB grants. Grants
+// are owner-issued (POST /knowledge-bases/:id/grants) and revocable; the
+// old request/approve endpoints return 410 Gone and the service rejects
+// them with ErrGrantDisabled.
 func RegisterKBAccessGrantRoutes(r *gin.RouterGroup, grantHandler *handler.KBAccessGrantHandler, g *rbacGuards) {
 	if grantHandler == nil {
 		return
 	}
-	// Grantee side: tenant-wide access requests are retired.
+	// Owner-issued tenant-wide grants: the owning tenant's admin (or a
+	// SuperAdmin, on any KB) shares a KB read-only with another tenant.
+	// The service re-checks the caller manages the KB.
+	kbGrants := g.apiKeyGroup(r.Group("/knowledge-bases/:id/grants"), apiKeyFullAccess())
+	{
+		kbGrants.POST("", g.TenantAdmin(), grantHandler.GrantTenantAccess)
+		kbGrants.GET("", g.TenantAdmin(), grantHandler.ListKBGrants)
+		kbGrants.DELETE("/:grant_id", g.TenantAdmin(), grantHandler.RevokeGrant)
+	}
+
+	// Grantee side: the request/approve flow is retired.
 	grants := g.apiKeyGroup(r.Group("/knowledge-bases/:id/access-requests"), apiKeyFullAccess())
 	{
 		grants.POST("", g.TenantAdmin(), grantHandler.RequestAccessDisabled)
 	}
 
-	// Owner side: review/revoke are retired; incoming listing stays.
+	// Owner side: review is retired; listing and revoke stay.
 	tenantGrants := g.apiKeyGroup(r.Group("/tenants/:id/access-grants"), apiKeyFullAccess())
 	{
 		tenantGrants.GET("", g.TenantAdmin(), grantHandler.ListIncoming)
 		tenantGrants.PUT("/:grant_id", g.TenantAdmin(), grantHandler.ReviewDisabled)
-		tenantGrants.DELETE("/:grant_id", g.TenantAdmin(), grantHandler.RevokeDisabled)
+		tenantGrants.DELETE("/:grant_id", g.TenantAdmin(), grantHandler.RevokeIncomingGrant)
 	}
 
-	// Grantee side listing stays (read-only audit visibility).
+	// Grantee side listing: KBs other tenants shared with this tenant.
 	g.apiKeyRoute(r, http.MethodGet, "/access-grants",
 		apiKeyFullAccess(), g.TenantAdmin(), grantHandler.ListOutgoing)
 }

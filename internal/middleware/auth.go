@@ -97,6 +97,15 @@ func isTenantOptionalAPI(path, method string) bool {
 		return true
 	case path == "/api/v1/tenants" && method == http.MethodPost:
 		return true
+	case path == "/api/v1/tenants/directory" && method == http.MethodGet:
+		// Unit directory: a tenantless SuperAdmin picks units to manage.
+		return true
+	case strings.HasPrefix(path, "/api/v1/system/admin/tenants") ||
+		strings.HasPrefix(path, "/api/v1/system/admin/users"):
+		// Unit and account provisioning: a SuperAdmin needs no unit of
+		// their own to create the first one. The SystemAdmin group guard
+		// denies everyone else.
+		return true
 	case strings.HasPrefix(path, "/api/v1/me/invitations"):
 		return true
 	case path == "/api/v1/knowledge-bases/public" && method == http.MethodPost:
@@ -303,8 +312,16 @@ func isTenantlessKBLifecyclePath(path, method string) bool {
 		}
 		return method == http.MethodPut || method == http.MethodDelete
 	case 2:
+		if segs[1] == "grants" || segs[1] == "invites" {
+			// A tenantless SuperAdmin shares any KB; TenantAdmin route
+			// guards deny every other tenantless caller.
+			return true
+		}
 		return segs[1] == "visibility" && method == http.MethodPut
 	case 3:
+		if (segs[1] == "grants" || segs[1] == "invites") && method == http.MethodDelete {
+			return true
+		}
 		return segs[1] == "profile" && segs[2] == "generate" && method == http.MethodPost
 	default:
 		return false

@@ -37,12 +37,12 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 		chunkRead.GET("/by-id/:id", g.Member(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
 		chunkRead.GET("/:knowledge_id/:id/revisions", g.Member(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListChunkRevisions)
 		// Delete 分块 — Tenant Admin，且对父 KB 有 write 权限
-		chunks.DELETE("/:knowledge_id/:id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
+		chunks.DELETE("/:knowledge_id/:id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
 		// Delete 知识下的所有分块 — Tenant Admin，且对父 KB 有 write 权限
-		chunks.DELETE("/:knowledge_id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
+		chunks.DELETE("/:knowledge_id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
 		// Update 分块信息 — Tenant Admin，且对父 KB 有 write 权限
-		chunks.PUT("/:knowledge_id/:id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
-		chunks.POST("/:knowledge_id/:id/revert", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.RevertChunk)
+		chunks.PUT("/:knowledge_id/:id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
+		chunks.POST("/:knowledge_id/:id/revert", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.RevertChunk)
 		// Delete 单个生成的问题（通过分块 id） — 与其它 chunk mutation 一致：
 		// KB owner OR Admin+。早期这里因为链路 (chunk_id -> knowledge_id ->
 		// kb -> creator_id) 还没接通，被临时降级成 Contributor，导致一个
@@ -111,12 +111,12 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kRead.GET("/:id", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledge)
 		kRead.GET("/:id/stages", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
 		kRead.GET("/:id/spans", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
-		k.DELETE("/:id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
-		k.PUT("/:id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
-		k.POST("/:id/regenerate-summary", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.RegenerateKnowledgeSummary)
-		k.PUT("/manual/:id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
-		k.POST("/:id/reparse", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
-		k.POST("/:id/cancel-parse", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
+		k.DELETE("/:id", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
+		k.PUT("/:id", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
+		k.POST("/:id/regenerate-summary", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.RegenerateKnowledgeSummary)
+		k.PUT("/manual/:id", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
+		k.POST("/:id/reparse", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
+		k.POST("/:id/cancel-parse", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
 		// Downloading exposes the original source file through the dedicated
 		// download guard: same-owner-tenant callers keep the tenant download
 		// policy, platform-public Viewers may download, and invitation
@@ -126,7 +126,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// to the API-key gate.
 		kRead.GET("/:id/download", g.Member(), g.KBAccessDownloadFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
 		kRead.GET("/:id/preview", g.Member(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
-		k.PUT("/image/:id/:chunk_id", g.TenantAdmin(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
+		k.PUT("/image/:id/:chunk_id", g.DocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
 		kRead.GET("/search", g.Member(), handler.SearchKnowledge)
 		kRead.GET("/move/progress/:task_id", g.Member(), handler.GetKnowledgeMoveProgress)
 		// Batch / cross-KB content writes: JWT Admin+, or an API key
@@ -136,7 +136,9 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// can only touch KBs it is already permitted to write.
 		k.PUT("/tags", g.TenantAdmin(), handler.UpdateKnowledgeTagBatch)
 		k.POST("/batch-reparse", g.TenantAdmin(), handler.BatchReparseKnowledge)
-		k.POST("/batch-delete", g.TenantAdmin(), handler.BatchDeleteKnowledge)
+		// Members may batch-delete their own uploads; the handler checks
+		// every id's uploader when the caller is not a Tenant Admin.
+		k.POST("/batch-delete", g.Member(), handler.BatchDeleteKnowledge)
 		k.POST("/folder", g.TenantAdmin(), handler.MoveKnowledgeToFolder)
 		k.POST("/move", g.TenantAdmin(), handler.MoveKnowledge)
 	}
@@ -271,6 +273,13 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// removed accordingly. The route still requires KB read access
 		// so callers can't poke at KBs they can't see.
 		kb.PUT("/:id/pin", g.Member(), g.KBAccessRead("id"), handler.TogglePinKnowledgeBase)
+		// Subscribe to / unsubscribe from a published KB so chat searches
+		// it by default. ?scope=tenant (Tenant Admin, checked by the
+		// service) covers the whole workspace; the default covers the
+		// caller only. Human-only: registered on the raw group so no
+		// API-key policy is declared.
+		kbgrp.POST("/:id/subscription", g.Member(), g.KBAccessRead("id"), handler.SubscribeKnowledgeBase)
+		kbgrp.DELETE("/:id/subscription", g.Member(), handler.UnsubscribeKnowledgeBase)
 		// 混合搜索 — Viewer+ 且对 KB 有 read 权限 (read-only)
 		// POST is preferred; GET with JSON body is kept for backward compatibility (#1727).
 		kb.POST("/:id/hybrid-search", g.Member(), g.KBAccessRead("id"), handler.HybridSearch)

@@ -213,8 +213,8 @@ func TestCreateSystemUserResolvesDefaultTenantMode(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if users.gotProvisioning != types.TenantProvisioningCreatePersonal {
-		t.Fatalf("provisioning=%v, want create_personal default", users.gotProvisioning)
+	if users.gotProvisioning != types.TenantProvisioningTenantless {
+		t.Fatalf("provisioning=%v, want tenantless default", users.gotProvisioning)
 	}
 }
 

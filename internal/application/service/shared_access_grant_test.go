@@ -79,17 +79,22 @@ func seedKnowledge(t *testing.T, db *gorm.DB, knowledge *types.Knowledge) {
 	require.NoError(t, db.Create(knowledge).Error)
 }
 
-func TestGetKnowledgeBatchWithSharedAccessRejectsLegacyTenantGrant(t *testing.T) {
-	service, db := newKnowledgeSharedAccessService(t, &fakeKBGrantService{
+func TestGetKnowledgeBatchWithSharedAccessHonoursTenantGrant(t *testing.T) {
+	grants := &fakeKBGrantService{
 		allowedKBs: map[string]types.KBPermission{"kb-shared": types.KBPermissionViewer},
-	})
+	}
+	service, db := newKnowledgeSharedAccessService(t, grants)
 	seedKnowledge(t, db, &types.Knowledge{ID: "k1", TenantID: 2, KnowledgeBaseID: "kb-shared", Type: "file"})
 	seedKnowledge(t, db, &types.Knowledge{ID: "k2", TenantID: 2, KnowledgeBaseID: "kb-private", Type: "file"})
 
 	ctx := newSharedAccessContext()
 	rows, err := service.GetKnowledgeBatchWithSharedAccess(ctx, 2, []string{"k1", "k2"})
 	require.NoError(t, err)
-	require.Empty(t, rows, "legacy tenant-wide grant must not reveal foreign knowledge")
+	require.Len(t, rows, 1, "a tenant grant reveals only the granted KB's knowledge")
+	require.Equal(t, "k1", rows[0].ID)
+	for _, tenant := range grants.callers {
+		require.Equal(t, uint64(1), tenant, "grants are checked for the caller's tenant, never the data tenant")
+	}
 }
 
 // emptyWebSearchProviderRepo is a no-op WebSearchProviderRepository for

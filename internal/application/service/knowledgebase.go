@@ -52,6 +52,7 @@ type knowledgeBaseService struct {
 	audit                interfaces.AuditLogService
 	resourceCatalog      interfaces.ResourceCatalog
 	wikiRepo             interfaces.WikiPageRepository
+	subscriptionRepo     interfaces.KBSubscriptionRepository
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -76,6 +77,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	audit interfaces.AuditLogService,
 	resourceCatalog interfaces.ResourceCatalog,
 	wikiRepo interfaces.WikiPageRepository,
+	subscriptionRepo interfaces.KBSubscriptionRepository,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
 		repo:                 repo,
@@ -99,6 +101,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		audit:                audit,
 		resourceCatalog:      resourceCatalog,
 		wikiRepo:             wikiRepo,
+		subscriptionRepo:     subscriptionRepo,
 	}
 }
 
@@ -551,10 +554,12 @@ func requireKBLifecycleAccess(ctx context.Context, kb *types.KnowledgeBase) erro
 	return nil
 }
 
-// SetKnowledgeBaseVisibility changes a KB's owner/scope. Promotion
-// (tenant→public) and scope transfer (public→tenant) alike require an
-// explicit human SuperAdmin — tenant Admins, CanAccessAllTenants-only
-// operators, and API-key principals are all denied. A public→tenant
+// SetKnowledgeBaseVisibility changes a KB's owner/scope. Publishing a
+// tenant KB (tenant↔published) keeps its owner and is decided by the owning
+// tenant's admin or a SuperAdmin. Promotion to platform public
+// (tenant→public) and scope transfer (public→tenant) require an explicit
+// human SuperAdmin — tenant Admins, CanAccessAllTenants-only operators, and
+// API-key principals are all denied. A public→tenant
 // transition requires the nonzero destination tenant and verifies it
 // exists before touching the row; rejected transitions leave the stored
 // owner/visibility intact. Only owner/visibility metadata changes: the KB
@@ -577,13 +582,35 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		return nil, apperrors.NewNotFoundError("knowledge base not found")
 	}
 	caller := types.CallerFromContext(ctx)
+	oldScope := oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
+	// Publishing a tenant KB to every reader (and withdrawing it) keeps the
+	// owner: its Tenant Admin decides, as does a SuperAdmin.
+	if kb.OwnerTenantID != 0 && isTenantOwnedVisibility(kb.Visibility) && isTenantOwnedVisibility(visibility) &&
+		(kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished) {
+		if targetTenantID != 0 && targetTenantID != kb.OwnerTenantID {
+			return nil, apperrors.NewBadRequestError("publishing keeps the owning tenant; omit target tenant")
+		}
+		if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
+			if caller.TenantID == 0 {
+				return nil, apperrors.NewUnauthorizedError("Unauthorized")
+			}
+			return nil, apperrors.NewForbiddenError("only the owning tenant's admin may publish this knowledge base")
+		}
+		if kb.Visibility == visibility {
+			return kb, nil
+		}
+		kb.Visibility = visibility
+		return s.persistKBScopeChange(ctx, kb, oldScope, 0)
+	}
 	if !access.IsExplicitHumanSuperAdmin(ctx, caller) {
 		if caller.TenantID == 0 {
 			return nil, apperrors.NewUnauthorizedError("Unauthorized")
 		}
 		return nil, apperrors.NewForbiddenError("only an explicit platform SuperAdmin may change knowledge base scope")
 	}
-	oldScope := oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
+	if kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished {
+		return nil, apperrors.NewBadRequestError("withdraw the published knowledge base to tenant scope first")
+	}
 	switch {
 	case kb.Visibility == types.KBVisibilityPublic && visibility == types.KBVisibilityPublic:
 		if targetTenantID != 0 {
@@ -629,6 +656,19 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 	default:
 		return nil, apperrors.NewBadRequestError("invalid visibility")
 	}
+	return s.persistKBScopeChange(ctx, kb, oldScope, targetTenantID)
+}
+
+// isTenantOwnedVisibility reports whether v keeps a nonzero owner tenant.
+func isTenantOwnedVisibility(v types.KBVisibility) bool {
+	return v == types.KBVisibilityTenant || v == types.KBVisibilityPublished
+}
+
+// persistKBScopeChange validates and stores an owner/visibility change and
+// records the scope-change audit row.
+func (s *knowledgeBaseService) persistKBScopeChange(
+	ctx context.Context, kb *types.KnowledgeBase, oldScope oldKBScope, targetTenantID uint64,
+) (*types.KnowledgeBase, error) {
 	kb.EnsureDefaults()
 	// Validate owner/visibility before persistence.
 	if err := kb.ValidateOwnership(); err != nil {
@@ -702,10 +742,11 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 // ListKnowledgeBases returns the user-facing catalog for the caller's
 // active tenant: owner-tenant KBs, a bounded first page of the platform
 // public catalog (authenticated human callers only — never API-key or
-// machine principals), and accepted recipient-bound invites. Rows are
+// machine principals), accepted recipient-bound invites, and KBs other
+// tenants granted to this tenant (human callers only). Rows are
 // deduplicated by KB ID; temporary/deleted rows are excluded at the
-// repository layer. Foreign tenant-owned rows never enter through public
-// visibility or cross-tenant access.
+// repository layer. Foreign tenant-owned rows enter only through an
+// accepted invite or a live tenant grant.
 //
 // Count/status enrichment runs under each KB's stored data-scope
 // tenant_id (never the requesting tenant), so converted and invited rows
@@ -727,9 +768,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		// degrades to owned+invites (warned) rather than hiding the
 		// caller's own KBs — same best-effort convention as invites
 		// and processing counts below.
-		if pub, _, perr := s.repo.ListPlatformPublicCatalog(
-			ctx, "", types.PublicCatalogDefaultPageSize, 0,
-		); perr == nil {
+		if pub, perr := s.listAllPlatformPublic(ctx); perr == nil {
 			seen := make(map[string]struct{}, len(kbs)+len(pub))
 			for _, kb := range kbs {
 				if kb != nil {
@@ -777,6 +816,30 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 					}
 				}
 			}
+		}
+	}
+	if err == nil && human {
+		// Published KBs of other tenants that the caller or the caller's
+		// tenant subscribed to.
+		kbs = appendInvitedKBs(kbs, s.subscribedPublishedKBs(ctx))
+	}
+	if err == nil && human && s.kbAccessGrantService != nil {
+		// Tenant-wide grants: KBs other tenants shared with this tenant.
+		// Each row is re-checked through access.HasTenantGrant so an
+		// expired grant or an ownership change never lists a KB the caller
+		// cannot open. Errors degrade to "no granted KBs".
+		if granted, gerr := s.kbAccessGrantService.GrantedKBIDs(ctx, tenantID); gerr == nil && len(granted) > 0 {
+			if grantedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, granted); kerr == nil {
+				live := make([]*types.KnowledgeBase, 0, len(grantedKBs))
+				for _, kb := range grantedKBs {
+					if kb != nil && access.HasTenantGrant(ctx, caller, kb.ID, kb.OwnerTenantID, s.kbAccessGrantService) {
+						live = append(live, kb)
+					}
+				}
+				kbs = appendInvitedKBs(kbs, live)
+			}
+		} else if gerr != nil {
+			logger.Warnf(ctx, "Failed to list granted knowledge bases for tenant=%d: %v", tenantID, gerr)
 		}
 	}
 	if err != nil {
@@ -883,6 +946,32 @@ func (s *knowledgeBaseService) ListPublicCatalog(
 		}
 	}
 	return items, total, nil
+}
+
+// maxListedPlatformPublic bounds the platform public leg of
+// ListKnowledgeBases. Every platform KB (laws, decrees…) belongs to each
+// reader's default scope, so the listing pages through the whole catalog
+// rather than stopping at the first page.
+const maxListedPlatformPublic = 2000
+
+// listAllPlatformPublic returns the platform public catalog, up to
+// maxListedPlatformPublic rows.
+func (s *knowledgeBaseService) listAllPlatformPublic(ctx context.Context) ([]*types.KnowledgeBase, error) {
+	var all []*types.KnowledgeBase
+	for offset := 0; offset < maxListedPlatformPublic; offset += types.PublicCatalogMaxPageSize {
+		page, total, err := s.repo.ListPlatformPublicCatalog(ctx, "", types.PublicCatalogMaxPageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < types.PublicCatalogMaxPageSize || int64(len(all)) >= total {
+			break
+		}
+	}
+	if len(all) >= maxListedPlatformPublic {
+		logger.Warnf(ctx, "Platform public catalog truncated at %d knowledge bases", maxListedPlatformPublic)
+	}
+	return all, nil
 }
 
 // saturateCatalogOffset computes (page-1)*pageSize without wrapping: on
@@ -1317,6 +1406,11 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	if s.kbAccessGrantService != nil {
 		if delErr := s.kbAccessGrantService.DeleteAllForKB(ctx, id); delErr != nil {
 			logger.Warnf(ctx, "Failed to delete KB access grants for knowledge base %s: %v", id, delErr)
+		}
+	}
+	if s.subscriptionRepo != nil {
+		if delErr := s.subscriptionRepo.DeleteByKnowledgeBaseID(ctx, id); delErr != nil {
+			logger.Warnf(ctx, "Failed to delete KB subscriptions for knowledge base %s: %v", id, delErr)
 		}
 	}
 

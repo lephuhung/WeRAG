@@ -76,8 +76,8 @@ func TestExecutionTenantDoesNotGrantOwnershipOrChangeGrantIdentity(t *testing.T)
 	allowed, err := NewKBPermissions(ctx, grants).Check("private", 2, types.KBPermissionViewer)
 	require.NoError(t, err)
 	require.False(t, allowed)
-	require.Empty(t, grants.queriedKB, "legacy tenant grants are not consulted")
-	require.Zero(t, grants.queriedT, "legacy tenant grants are not consulted")
+	require.Equal(t, uint64(1), grants.queriedT,
+		"tenant grants are looked up for the caller's tenant, never the execution tenant")
 	ctx = types.WithExecutionTenant(context.Background(), 2)
 	allowed, err = NewKBPermissions(ctx, nil).Check("private", 2, types.KBPermissionViewer)
 	require.NoError(t, err)
@@ -116,9 +116,14 @@ func TestKBPermissionsPublicOwnerSemantics(t *testing.T) {
 			required: types.KBPermissionEditor, want: false,
 		},
 		{
-			name:     "tenant row with legacy grant map stays denied cross-tenant",
+			name:     "tenant row granted to the caller's tenant is readable",
 			scope:    &types.KBScope{TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant},
-			required: types.KBPermissionViewer, want: false,
+			required: types.KBPermissionViewer, want: true,
+		},
+		{
+			name:     "tenant-wide grant never confers writes",
+			scope:    &types.KBScope{TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant},
+			required: types.KBPermissionEditor, want: false,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

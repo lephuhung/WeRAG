@@ -44,14 +44,14 @@ func TestApplyAuthAndTenantDefaults_DisableRegistrationDrivesRegistrationMode(t 
 }
 
 func TestApplyAuthAndTenantDefaults_SelfServiceTenantCreation(t *testing.T) {
-	t.Run("defaults enabled", func(t *testing.T) {
+	t.Run("defaults disabled", func(t *testing.T) {
 		t.Setenv("WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED", "")
 		cfg := &Config{Tenant: &TenantConfig{}}
 
 		applyAuthAndTenantDefaults(cfg)
 
-		if !cfg.Tenant.IsSelfServiceCreationEnabled() {
-			t.Fatal("self-service tenant creation should default to enabled")
+		if cfg.Tenant.IsSelfServiceCreationEnabled() {
+			t.Fatal("self-service tenant creation should default to disabled")
 		}
 	})
 
@@ -69,14 +69,14 @@ func TestApplyAuthAndTenantDefaults_SelfServiceTenantCreation(t *testing.T) {
 }
 
 func TestApplyAuthAndTenantDefaults_DefaultTenantMode(t *testing.T) {
-	t.Run("historical default creates a personal tenant", func(t *testing.T) {
+	t.Run("default leaves new accounts tenantless", func(t *testing.T) {
 		t.Setenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE", "")
 		cfg := &Config{Auth: &AuthConfig{}}
 
 		applyAuthAndTenantDefaults(cfg)
 
-		if cfg.Auth.DefaultTenantMode != AuthDefaultTenantModeCreatePersonal {
-			t.Fatalf("default_tenant_mode = %q, want %q", cfg.Auth.DefaultTenantMode, AuthDefaultTenantModeCreatePersonal)
+		if cfg.Auth.DefaultTenantMode != AuthDefaultTenantModeTenantless {
+			t.Fatalf("default_tenant_mode = %q, want %q", cfg.Auth.DefaultTenantMode, AuthDefaultTenantModeTenantless)
 		}
 	})
 

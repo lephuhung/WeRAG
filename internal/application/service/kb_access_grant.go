@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/google/uuid"
 )
 
 // Sentinel errors returned by kbAccessGrantService. Handlers map them to
@@ -25,22 +28,29 @@ var (
 	ErrGrantSelfTarget = errors.New("cannot request access to a knowledge base your tenant owns")
 )
 
-// ErrGrantDisabled: tenant-wide KB grants are retired (migration 000111
-// revoked every live grant). Request/review/revoke entry points now
-// reject so no tenant-wide grant can ever authorize access again.
-// Cross-tenant reads use recipient-bound kb_invitations instead.
-var ErrGrantDisabled = errors.New("tenant-wide kb grants are retired; use recipient-bound kb invitations")
+// ErrGrantDisabled: the request/approve flow is retired. Tenant-wide grants
+// are issued only by the owning tenant's admin or a SuperAdmin
+// (GrantTenantAccess); a tenant can no longer ask for access.
+var ErrGrantDisabled = errors.New("access requests are retired; the owning tenant grants access directly")
+
+// ErrGrantNotManager: the caller is neither a Tenant Admin of the KB's
+// owning tenant nor a SuperAdmin.
+var ErrGrantNotManager = errors.New("only the owning tenant's admin or a system admin may share this knowledge base")
+
+// ErrGrantPlatformKB: platform-owned KBs are public and need no grant.
+var ErrGrantPlatformKB = errors.New("platform knowledge bases are readable by everyone and cannot be granted")
+
+// ErrGrantTenantNotFound: the grantee tenant does not exist.
+var ErrGrantTenantNotFound = errors.New("grantee tenant not found")
 
 // kbAccessGrantService implements interfaces.KBAccessGrantService. Route
 // gates (admin on the grantee side for requests, admin/owner on the owner
 // side for review) are enforced by middleware; the service still verifies
 // tenant ownership on every mutation.
 //
-// NOTE: tenant-wide grants are retired — RequestAccess, Review and Revoke
-// below unconditionally return ErrGrantDisabled (migration 000111 revoked
-// all live rows). List/read paths stay for audit visibility of revoked
-// rows; they never authorize access because only approved+unexpired rows
-// grant, and none can exist anymore.
+// Grants are owner-issued: GrantTenantAccess writes an approved row
+// directly and Revoke withdraws it. RequestAccess and Review (the old
+// request/approve flow) stay retired and return ErrGrantDisabled.
 type kbAccessGrantService struct {
 	grants  interfaces.KBAccessGrantRepository
 	kbs     interfaces.KnowledgeBaseRepository
@@ -101,12 +111,129 @@ func (s *kbAccessGrantService) Review(
 	return nil, ErrGrantDisabled
 }
 
-// Revoke is retired: all live tenant-wide grants were revoked by
-// migration 000111. Always returns ErrGrantDisabled.
+// GrantTenantAccess shares a tenant-owned KB read-only with every member of
+// another tenant. The grant is approved on creation; an existing live grant
+// for the pair is returned as ErrGrantExists.
+func (s *kbAccessGrantService) GrantTenantAccess(
+	ctx context.Context, caller types.Caller, kbID string, req *types.GrantKBAccessRequest,
+) (*types.KBAccessGrant, error) {
+	if req == nil || req.GranteeTenantID == 0 {
+		return nil, ErrGrantTenantNotFound
+	}
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil || kb == nil {
+		return nil, ErrGrantNotFound
+	}
+	if kb.OwnerTenantID == 0 {
+		return nil, ErrGrantPlatformKB
+	}
+	if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
+		return nil, ErrGrantNotManager
+	}
+	if req.GranteeTenantID == kb.OwnerTenantID {
+		return nil, ErrGrantSelfTarget
+	}
+	if s.tenants != nil {
+		if tenant, err := s.tenants.GetTenantByID(ctx, req.GranteeTenantID); err != nil || tenant == nil {
+			return nil, ErrGrantTenantNotFound
+		}
+	}
+	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
+		return nil, errors.New("expires_at must be in the future")
+	}
+	live, err := s.grants.GetLiveByPair(ctx, kbID, req.GranteeTenantID)
+	if err != nil {
+		return nil, err
+	}
+	if live != nil {
+		return nil, ErrGrantExists
+	}
+	// An approved row past its expiry still occupies the one-live-grant
+	// index; finalise it so the new grant can be written.
+	if stale, err := s.grants.ListByOwnerTenant(ctx, kb.OwnerTenantID,
+		[]types.GrantStatus{types.GrantStatusApproved}); err == nil {
+		for _, g := range stale {
+			if g.KBID == kbID && g.GranteeTenantID == req.GranteeTenantID && !g.IsLive() {
+				g.Status = types.GrantStatusExpired
+				_ = s.grants.UpdateStatus(ctx, g)
+			}
+		}
+	}
+
+	now := time.Now()
+	approver := caller.UserID
+	grant := &types.KBAccessGrant{
+		ID:              uuid.NewString(),
+		KBID:            kbID,
+		OwnerTenantID:   kb.OwnerTenantID,
+		GranteeTenantID: req.GranteeTenantID,
+		Permission:      types.KBPermissionViewer,
+		Status:          types.GrantStatusApproved,
+		RequestedBy:     caller.UserID,
+		ApprovedBy:      &approver,
+		Message:         req.Message,
+		ExpiresAt:       req.ExpiresAt,
+		RespondedAt:     &now,
+	}
+	if err := s.grants.Create(ctx, grant); err != nil {
+		return nil, err
+	}
+	s.emitAudit(ctx, kb.OwnerTenantID, types.AuditActionKBAccessApproved, caller, grant)
+	return grant, nil
+}
+
+// Revoke withdraws a grant on a KB the caller manages. Reads stop at once:
+// only approved rows authorize.
 func (s *kbAccessGrantService) Revoke(
 	ctx context.Context, caller types.Caller, grantID string,
 ) (*types.KBAccessGrant, error) {
-	return nil, ErrGrantDisabled
+	grant, err := s.grants.GetByID(ctx, grantID)
+	if err != nil {
+		return nil, err
+	}
+	if grant == nil {
+		return nil, ErrGrantNotFound
+	}
+	if !access.CanManageKBSharing(ctx, caller, grant.OwnerTenantID) {
+		return nil, ErrGrantNotFound
+	}
+	if grant.Status.IsTerminal() {
+		return nil, ErrGrantNotPending
+	}
+	now := time.Now()
+	revoker := caller.UserID
+	grant.Status = types.GrantStatusRevoked
+	grant.ApprovedBy = &revoker
+	grant.RespondedAt = &now
+	if err := s.grants.UpdateStatus(ctx, grant); err != nil {
+		return nil, err
+	}
+	s.emitAudit(ctx, grant.OwnerTenantID, types.AuditActionKBAccessRevoked, caller, grant)
+	return grant, nil
+}
+
+// ListByKB lists every grant on one KB for a caller who manages it.
+func (s *kbAccessGrantService) ListByKB(
+	ctx context.Context, caller types.Caller, kbID string,
+) ([]*types.KBAccessGrantResponse, error) {
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil || kb == nil || kb.OwnerTenantID == 0 {
+		return nil, ErrGrantNotFound
+	}
+	if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
+		return nil, ErrGrantNotManager
+	}
+	rows, err := s.grants.ListByOwnerTenant(ctx, kb.OwnerTenantID, nil)
+	if err != nil {
+		return nil, err
+	}
+	filtered := rows[:0]
+	for _, g := range rows {
+		if g.KBID == kbID {
+			filtered = append(filtered, g)
+		}
+	}
+	return s.toResponses(ctx, filtered), nil
 }
 
 // ListIncoming lists grants on KBs the caller's tenant owns.
@@ -203,6 +330,12 @@ func (s *kbAccessGrantService) ApprovedKBPermission(
 	}
 	if grant.Status != types.GrantStatusApproved {
 		return "", false, nil
+	}
+	// A grant speaks for the tenant that owned the KB when it was issued;
+	// after an ownership change it no longer authorizes.
+	if scope, err := s.kbs.GetKBScopeByID(ctx, kbID); err != nil || scope == nil ||
+		scope.OwnerTenantID != grant.OwnerTenantID {
+		return "", false, err
 	}
 	return grant.Permission, true, nil
 }

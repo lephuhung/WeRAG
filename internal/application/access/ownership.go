@@ -1,6 +1,7 @@
 package access
 
 import (
+	"context"
 	"errors"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -66,4 +67,20 @@ func CheckOwnershipOrRole(
 		return decision, nil
 	}
 	return decision, ErrOwnershipForbidden
+}
+
+// CanManageKBSharing reports whether caller may share a KB owned by
+// ownerTenantID with other tenants or users: a Tenant Admin of the owning
+// tenant, or an explicit human SuperAdmin for any KB (including
+// platform-owned rows). API-key principals never qualify.
+func CanManageKBSharing(ctx context.Context, caller types.Caller, ownerTenantID uint64) bool {
+	caller = caller.Normalize()
+	if IsExplicitHumanSuperAdmin(ctx, caller) {
+		return true
+	}
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		return false
+	}
+	return ownerTenantID != 0 && caller.TenantID == ownerTenantID &&
+		caller.Role.IsTenantAdmin() && IsHumanCaller(caller)
 }

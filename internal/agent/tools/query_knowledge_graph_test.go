@@ -193,6 +193,20 @@ func (s *stubKnowledgeBaseService) ListPublicCatalog(
 	return nil, 0, nil
 }
 
+func (s *stubKnowledgeBaseService) ListPublishedCatalog(
+	context.Context, int, int, string,
+) ([]*types.KnowledgeBase, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *stubKnowledgeBaseService) SubscribeKnowledgeBase(context.Context, string, bool) error {
+	return nil
+}
+
+func (s *stubKnowledgeBaseService) UnsubscribeKnowledgeBase(context.Context, string, bool) error {
+	return nil
+}
+
 func (s *stubKnowledgeBaseService) SetKnowledgeBaseVisibility(
 	ctx context.Context, id string, visibility types.KBVisibility, targetTenantID uint64,
 ) (*types.KnowledgeBase, error) {

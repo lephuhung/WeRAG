@@ -186,6 +186,10 @@ type Knowledge struct {
 	CustomMetadata JSON `json:"custom_metadata" gorm:"type:json;not null"`
 	// Last FAQ import result (for FAQ type knowledge only)
 	LastFAQImportResult JSON `json:"last_faq_import_result" gorm:"type:json"`
+	// CreatedBy is the user ID of the uploader. A Member may edit or
+	// delete only the documents they uploaded; '' (legacy rows, API keys,
+	// background imports) leaves the document to Tenant Admins.
+	CreatedBy string `json:"created_by" gorm:"type:varchar(36);not null;default:'';index"`
 	// Creation time of the knowledge
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the knowledge

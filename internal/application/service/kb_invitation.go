@@ -68,24 +68,11 @@ func (s *kbInvitationService) generateInviteToken() (string, error) {
 
 // requireOwnerAdmin verifies the caller may manage invites on the KB-owning
 // tenant. Route guards enforce this too; the service re-checks so direct
-// callers cannot bypass it. Ownership is the authorization owner
-// (OwnerTenantID): platform-owned rows (owner 0) admit only an explicit
-// human SuperAdmin (real non-synthetic user, no API-key identity),
-// regardless of active TenantID; tenant-owned rows require strict
-// same-tenant TenantAdmin membership, and platform-admin status never
-// overrides another tenant's ownership.
+// callers cannot bypass it. A Tenant Admin of the owning tenant manages its
+// KBs; an explicit human SuperAdmin manages invites on any KB (the
+// SuperAdmin-assigns path), including platform-owned rows.
 func (s *kbInvitationService) requireOwnerAdmin(ctx context.Context, caller types.Caller, ownerTenantID uint64) error {
-	caller = caller.Normalize()
-	if ownerTenantID == 0 {
-		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
-			return nil
-		}
-		return ErrKBInviteNotOwnerAdmin
-	}
-	if caller.TenantID != ownerTenantID {
-		return ErrKBInviteNotOwnerAdmin
-	}
-	if caller.Role.IsTenantAdmin() {
+	if access.CanManageKBSharing(ctx, caller, ownerTenantID) {
 		return nil
 	}
 	return ErrKBInviteNotOwnerAdmin

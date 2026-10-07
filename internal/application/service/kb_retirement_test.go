@@ -65,9 +65,9 @@ func TestSetKnowledgeBaseVisibilityPublicDenied(t *testing.T) {
 	}
 }
 
-// Tenant-wide grants are retired: request/review/revoke entry points must
-// reject so no tenant-wide grant can ever authorize access again.
-func TestKBGrantMutationsDisabled(t *testing.T) {
+// The request/approve flow is retired: a tenant cannot ask for access and
+// nobody reviews requests; the owning tenant grants directly instead.
+func TestKBGrantRequestFlowDisabled(t *testing.T) {
 	svc := NewKBAccessGrantService(nil, nil, nil, nil)
 	caller := types.Caller{TenantID: 2, UserID: "u1", Role: types.TenantRoleAdmin}
 	if _, err := svc.RequestAccess(context.Background(), caller, "kb-1", nil); !errors.Is(err, ErrGrantDisabled) {
@@ -77,9 +77,4 @@ func TestKBGrantMutationsDisabled(t *testing.T) {
 	if _, err := svc.Review(context.Background(), ownerCaller, "g-1", nil); !errors.Is(err, ErrGrantDisabled) {
 		t.Fatalf("Review must return ErrGrantDisabled, got %v", err)
 	}
-	if _, err := svc.Revoke(context.Background(), ownerCaller, "g-1"); !errors.Is(err, ErrGrantDisabled) {
-		t.Fatalf("Revoke must return ErrGrantDisabled, got %v", err)
-	}
-	// Read paths stay available for audit visibility (nil repos would
-	// panic, so only assert the mutation surface here).
 }

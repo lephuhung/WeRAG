@@ -34,7 +34,8 @@ var versionedSQLiteTables = []string{
 	"tenant_skill_snapshots",
 	"tenant_user_env_vars",
 	"tenant_skill_catalog",
-	"mcp_metadata", // 000030 (sqlite) / 000092 (versioned)
+	"mcp_metadata",     // 000030 (sqlite) / 000092 (versioned)
+	"kb_subscriptions", // 000034 (sqlite) / 000119 (versioned)
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -44,7 +45,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"memory_items":       {"replaces_id"},                                                                            // 000094
 	"tenants":            {"api_principal_config"},                                                                   // 000064
 	"users":              {"is_system_admin"},                                                                        // 000053
-	"knowledges":         {"pending_subtasks_count", "profile"},                                                      // 000056, 000101
+	"knowledges":         {"pending_subtasks_count", "profile", "created_by"},                                        // 000056, 000101, 000118
 	"knowledge_bases":    {"profile_config", "generated_profile"},                                                    // 000101
 	"messages":           {"attachments", "usage", "sandbox_checkpoint", "context_checkpoint", "document_selection"}, // 000034/085/097/105/117
 	"sessions":           {"parent_session_id", "forked_from_message_id", "fork_bootstrap"},                          // 000097
@@ -55,7 +56,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"mcp_services":       {"usage_instructions"},                                                                     // 000092
 }
 
-const expectedSQLiteMigrationVersion = 33
+const expectedSQLiteMigrationVersion = 34
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

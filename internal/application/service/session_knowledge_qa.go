@@ -404,7 +404,6 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		if err != nil {
 			logger.Warnf(ctx, "Failed to list all knowledge bases: %v", err)
 		}
-		kbIDSet := make(map[string]bool)
 		kbIDs := make([]string, 0, len(allKBs))
 		ownSkipped := 0
 		for _, kb := range allKBs {
@@ -413,59 +412,22 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 				continue
 			}
 			kbIDs = append(kbIDs, kb.ID)
-			kbIDSet[kb.ID] = true
 		}
 
-		// If the resolved agent belongs to a different tenant than the session
-		// (an anomaly — agents resolve to the caller's own tenant), only use the
-		// agent tenant's own KBs. Including the current user's granted KBs would
-		// leak unrelated KBs from other tenants into the agent's retrieval scope.
-		isSharedAgent := sessionTenantID != 0 && sessionTenantID != customAgent.TenantID
-		sharedSkipped := 0
-		if !isSharedAgent {
-			userIDVal := ctx.Value(types.UserIDContextKey)
-			if userIDVal != nil {
-				if userID, ok := userIDVal.(string); ok && userID != "" && s.kbAccessGrantService != nil {
-					caller := types.CallerFromContext(ctx)
-					granted, err := s.kbAccessGrantService.ListOutgoing(ctx, caller,
-						[]types.GrantStatus{types.GrantStatusApproved})
-					if err != nil {
-						logger.Warnf(ctx, "Failed to list granted knowledge bases: %v", err)
-					} else {
-						grantIDs := make([]string, 0, len(granted))
-						for _, g := range granted {
-							if g != nil && g.KBID != "" && !kbIDSet[g.KBID] {
-								grantIDs = append(grantIDs, g.KBID)
-							}
-						}
-						grantKBs, kerr := s.knowledgeBaseService.GetKnowledgeBasesByIDsOnly(ctx, grantIDs)
-						if kerr == nil {
-							for _, kb := range grantKBs {
-								if kb == nil || kbIDSet[kb.ID] {
-									continue
-								}
-								if !accept(kb) {
-									sharedSkipped++
-									continue
-								}
-								kbIDs = append(kbIDs, kb.ID)
-								kbIDSet[kb.ID] = true
-							}
-						}
-					}
-				}
-			}
-		} else {
-			logger.Infof(ctx, "Shared agent detected (session tenant %d != agent tenant %d): skipping user's shared KBs",
+		// ListKnowledgeBases above already covers every KB the caller may
+		// read by default: own tenant, platform public, accepted invites,
+		// live tenant grants and subscribed published KBs.
+		if sessionTenantID != 0 && sessionTenantID != customAgent.TenantID {
+			logger.Infof(ctx, "Shared agent detected (session tenant %d != agent tenant %d)",
 				sessionTenantID, customAgent.TenantID)
 		}
 
-		if ownSkipped+sharedSkipped > 0 {
+		if ownSkipped > 0 {
 			logger.Infof(ctx,
-				"KBSelectionMode=all: tool-capability filter removed %d own + %d shared KBs (agent=%s, tools=%v)",
-				ownSkipped, sharedSkipped, customAgent.ID, customAgent.Config.AllowedTools)
+				"KBSelectionMode=all: tool-capability filter removed %d KBs (agent=%s, tools=%v)",
+				ownSkipped, customAgent.ID, customAgent.Config.AllowedTools)
 		}
-		logger.Infof(ctx, "KBSelectionMode=all: loaded %d knowledge bases (own + shared)", len(kbIDs))
+		logger.Infof(ctx, "KBSelectionMode=all: loaded %d knowledge bases", len(kbIDs))
 		return kbIDs
 	case "selected":
 		logger.Infof(ctx, "KBSelectionMode=selected: using %d configured knowledge bases", len(customAgent.Config.KnowledgeBases))

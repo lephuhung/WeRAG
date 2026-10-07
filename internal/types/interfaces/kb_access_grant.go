@@ -50,6 +50,11 @@ type KBAccessGrantService interface {
 	Review(ctx context.Context, caller types.Caller, grantID string, req *types.ReviewKBAccessGrantRequest) (*types.KBAccessGrant, error)
 	// Revoke withdraws an approved grant owned by caller's tenant.
 	Revoke(ctx context.Context, caller types.Caller, grantID string) (*types.KBAccessGrant, error)
+	// GrantTenantAccess shares kbID read-only with another tenant. The
+	// caller must be a Tenant Admin of the owning tenant or a SuperAdmin.
+	GrantTenantAccess(ctx context.Context, caller types.Caller, kbID string, req *types.GrantKBAccessRequest) (*types.KBAccessGrant, error)
+	// ListByKB lists the grants on one KB for its managers.
+	ListByKB(ctx context.Context, caller types.Caller, kbID string) ([]*types.KBAccessGrantResponse, error)
 	// ListIncoming lists grants where caller's tenant owns the KB.
 	ListIncoming(ctx context.Context, caller types.Caller, statuses []types.GrantStatus) ([]*types.KBAccessGrantResponse, error)
 	// ListOutgoing lists grants where caller's tenant is the grantee.

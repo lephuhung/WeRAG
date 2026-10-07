@@ -153,6 +153,64 @@ func RequireTenantAdmin(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// UploaderLookup resolves the uploader (Knowledge.CreatedBy) of the
+// document a request targets. It returns ErrResourceNotFound when the
+// document does not resolve in the caller's tenant.
+type UploaderLookup func(c *gin.Context) (string, error)
+
+// RequireTenantAdminOrUploader guards per-document mutations: Tenant
+// Admins (and SuperAdmins) manage every document, a Member manages only the
+// documents they uploaded. Like RequireTenantAdmin the denial is
+// unconditional. A document that does not resolve proceeds so the KB access
+// guard and handler answer 404; lookup failures answer 503. Documents with
+// no recorded uploader stay admin-only.
+func RequireTenantAdminOrUploader(lookup UploaderLookup, cfg *config.Config) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		if _, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
+			c.Next()
+			return
+		}
+		if types.IsSystemAdminFromContext(ctx) {
+			c.Next()
+			return
+		}
+		caller := types.CallerFromContext(ctx)
+		if caller.Role.IsTenantAdmin() {
+			c.Next()
+			return
+		}
+		if caller.Role.HasPermission(types.TenantRoleMember) && lookup != nil &&
+			access.IsAuthenticatedHuman(ctx, caller) {
+			uploader, err := lookup(c)
+			switch {
+			case errors.Is(err, ErrResourceNotFound):
+				c.Next()
+				return
+			case err != nil:
+				logger.Errorf(ctx, "[rbac] uploader lookup failed: path=%s err=%v", c.Request.URL.Path, err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "permission lookup failed"})
+				c.Abort()
+				return
+			case uploader != "" && uploader == caller.UserID:
+				c.Next()
+				return
+			}
+		}
+		logger.Warnf(ctx,
+			"[rbac] tenant admin or document uploader required: user=%s have=%s path=%s",
+			caller.UserID, caller.Role, c.Request.URL.Path)
+		if svc := AuditServiceFromContext(c); svc != nil {
+			_ = svc.LogDenied(ctx, c, caller.TenantID, caller.UserID, string(caller.Role), types.TenantRoleAdmin)
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Forbidden: only a tenant admin or the uploader may change this document",
+		})
+		c.Abort()
+	}
+}
+
 // RequireRoleOrSystemAdmin applies the tenant role floor while also allowing
 // platform system administrators. Use it for routes that normally mutate
 // tenant infrastructure but have a narrowly-scoped platform-owned resource

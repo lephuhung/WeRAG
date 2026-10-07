@@ -296,8 +296,8 @@ type TenantConfig struct {
 	// applyAuthAndTenantDefaults for the semantics of <0 / 0 / >0.
 	MaxOwnedPerUser int `yaml:"max_owned_per_user" json:"max_owned_per_user" mapstructure:"max_owned_per_user"`
 	// SelfServiceCreationEnabled controls whether ordinary authenticated
-	// users may create a workspace for themselves. Nil preserves the
-	// historical default (enabled); cross-tenant superusers are exempt.
+	// users may create a workspace for themselves. Nil means disabled:
+	// workspaces are provisioned by SuperAdmins, who are always exempt.
 	SelfServiceCreationEnabled *bool `yaml:"self_service_creation_enabled" json:"self_service_creation_enabled" mapstructure:"self_service_creation_enabled"`
 }
 
@@ -315,9 +315,9 @@ func (t *TenantConfig) IsRBACEnforced() bool {
 }
 
 // IsSelfServiceCreationEnabled reports whether ordinary users may create
-// tenants. Nil keeps the historical behaviour enabled.
+// tenants. Nil means disabled: only SuperAdmins provision workspaces.
 func (t *TenantConfig) IsSelfServiceCreationEnabled() bool {
-	return t == nil || t.SelfServiceCreationEnabled == nil || *t.SelfServiceCreationEnabled
+	return t != nil && t.SelfServiceCreationEnabled != nil && *t.SelfServiceCreationEnabled
 }
 
 // AuditConfig governs durable audit log behaviour. Writes happen on
@@ -879,13 +879,13 @@ func applyAgentEnvOverrides(cfg *Config) {
 //
 // Defaults:
 //   - auth.registration_mode  -> "self_serve" (preserves pre-RBAC behaviour)
-//   - auth.default_tenant_mode -> "create_personal" (preserves the
-//     historical registration behaviour)
+//   - auth.default_tenant_mode -> "tenantless" (a new account joins a
+//     workspace only when a SuperAdmin or Tenant Admin adds it)
 //   - tenant.enable_rbac      -> true (enforce role checks unless an
 //     operator explicitly opts into the logging-only rollout window via
 //     config.yaml `enable_rbac: false` or `WEKNORA_TENANT_ENABLE_RBAC=false`).
-//   - tenant.self_service_creation_enabled -> true (preserves ordinary
-//     authenticated users' ability to create workspaces).
+//   - tenant.self_service_creation_enabled -> false (workspaces are
+//     provisioned by SuperAdmins).
 //
 // Env overrides (when set and non-empty):
 //   - WEKNORA_AUTH_DEFAULT_TENANT_MODE ("create_personal"/"tenantless")
@@ -939,7 +939,7 @@ func applyAuthAndTenantDefaults(cfg *Config) {
 		cfg.Auth.DefaultTenantMode = value
 	}
 	if strings.TrimSpace(cfg.Auth.DefaultTenantMode) == "" {
-		cfg.Auth.DefaultTenantMode = AuthDefaultTenantModeCreatePersonal
+		cfg.Auth.DefaultTenantMode = AuthDefaultTenantModeTenantless
 	}
 
 	if value := strings.TrimSpace(os.Getenv("WEKNORA_TENANT_ENABLE_RBAC")); value != "" {
@@ -974,8 +974,8 @@ func applyAuthAndTenantDefaults(cfg *Config) {
 		}
 	}
 	if cfg.Tenant.SelfServiceCreationEnabled == nil {
-		on := true
-		cfg.Tenant.SelfServiceCreationEnabled = &on
+		off := false
+		cfg.Tenant.SelfServiceCreationEnabled = &off
 	}
 
 	if value := strings.TrimSpace(os.Getenv("WEKNORA_TENANT_MAX_OWNED_PER_USER")); value != "" {

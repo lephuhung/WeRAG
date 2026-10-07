@@ -105,14 +105,18 @@ func TestResolveKBWithInviteNilLookupFailsClosed(t *testing.T) {
 	}
 }
 
-func TestResolveKBWithInviteLegacyTenantGrantFailsClosed(t *testing.T) {
+func TestResolveKBWithInviteHonoursTenantGrantForReadsOnly(t *testing.T) {
 	ctx := context.Background()
 	kb := testKB("kb-1", 100)
 	grants := &stubGrants{perm: map[string]types.KBPermission{"kb-1": types.KBPermissionViewer}}
 	invites := &stubInvites{}
 	recipient := KBRequest{Caller: types.Caller{TenantID: 200, UserID: "user-b", Role: types.TenantRoleMember}}
-	if _, err := ResolveKBWithInvite(ctx, recipient, kb, types.KBPermissionViewer, grants, invites); !errors.Is(err, ErrForbidden) {
-		t.Errorf("legacy tenant grant must not authorize cross-tenant read, got %v", err)
+	got, err := ResolveKBWithInvite(ctx, recipient, kb, types.KBPermissionViewer, grants, invites)
+	if err != nil || got.Permission != types.KBPermissionViewer {
+		t.Fatalf("tenant grant must authorize a read, got %+v, %v", got, err)
+	}
+	if _, err := ResolveKBWithInvite(ctx, recipient, kb, types.KBPermissionEditor, grants, invites); !errors.Is(err, ErrForbidden) {
+		t.Errorf("tenant grant must never authorize a write, got %v", err)
 	}
 }
 

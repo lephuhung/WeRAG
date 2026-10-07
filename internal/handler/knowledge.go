@@ -1399,9 +1399,15 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to delete knowledge"))
 		return
 	}
+	// A Member who is not the KB's creator may still delete documents they
+	// uploaded themselves; every id in the batch must then be theirs.
+	uploaderOnly := false
 	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
-		c.Error(err)
-		return
+		if appErr, ok := errors.IsAppError(err); !ok || appErr.HTTPCode != http.StatusForbidden || !isHumanMember(ctx) {
+			c.Error(err)
+			return
+		}
+		uploaderOnly = true
 	}
 	ctx = types.WithExecutionTenant(c.Request.Context(), effectiveTenantID)
 
@@ -1426,6 +1432,10 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 			c.Error(errors.NewBadRequestError(
 				fmt.Sprintf("Knowledge %s does not belong to knowledge base %s",
 					secutils.SanitizeForLog(k.ID), secutils.SanitizeForLog(kbID))))
+			return
+		}
+		if uploaderOnly && (k.CreatedBy == "" || k.CreatedBy != types.CallerFromContext(ctx).UserID) {
+			c.Error(errors.NewForbiddenError("Members may delete only the documents they uploaded"))
 			return
 		}
 	}
@@ -2725,4 +2735,12 @@ func tenantAPIKeySearchScopes(ctx context.Context) ([]types.KnowledgeSearchScope
 		scopes = append(scopes, types.KnowledgeSearchScope{TenantID: tenantID, KBID: kbID})
 	}
 	return scopes, true
+}
+
+// isHumanMember reports whether ctx is a human Member (not an API key or a
+// Tenant Admin), the caller the per-uploader document rules apply to.
+func isHumanMember(ctx context.Context) bool {
+	caller := types.CallerFromContext(ctx)
+	return caller.Role.HasPermission(types.TenantRoleMember) && !caller.Role.IsTenantAdmin() &&
+		access.IsAuthenticatedHuman(ctx, caller)
 }

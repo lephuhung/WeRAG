@@ -6,10 +6,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// KBGrantLookup is the legacy KB scope/grant lookup bundle. Public visibility
-// and tenant-wide grants are retired; access resolvers retain this interface
-// temporarily for compatibility, but do not use it to authorize cross-tenant
-// access.
+// KBGrantLookup resolves KB scopes and owner-issued tenant-wide grants. A
+// live grant confers Viewer on one tenant-owned KB to every human member of
+// the grantee tenant (see HasTenantGrant); it never confers writes.
 type KBGrantLookup interface {
 	// GetKBScope returns the scope of one KB; nil when it does not exist.
 	GetKBScope(ctx context.Context, kbID string) (*types.KBScope, error)

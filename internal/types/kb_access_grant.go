@@ -149,6 +149,15 @@ type RequestKBAccessRequest struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+// GrantKBAccessRequest is the body of POST /knowledge-bases/:id/grants: the
+// owning tenant's admin (or a SuperAdmin) shares the KB read-only with every
+// member of another tenant. The grant is live immediately.
+type GrantKBAccessRequest struct {
+	GranteeTenantID uint64     `json:"grantee_tenant_id" binding:"required"`
+	Message         string     `json:"message" binding:"omitempty,max=500"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+}
+
 // ReviewKBAccessGrantRequest is the body of PUT
 // /tenants/:id/access-grants/:grant_id. An admin/owner of the owning
 // tenant approves or rejects a pending request.

@@ -123,7 +123,7 @@ func (h *AuthHandler) resolveRegistrationMode(ctx context.Context) string {
 
 // resolveDefaultTenantMode returns the provisioning policy for a new
 // local user account.
-// Priority: DB system_settings > cfg.Auth > hard default (create_personal).
+// Priority: DB system_settings > cfg.Auth > hard default (tenantless).
 // Shared by public registration and the SystemAdmin create-user endpoint.
 //
 // Invitation registration never uses this value: the invitation itself
@@ -133,7 +133,7 @@ func resolveDefaultTenantMode(
 	configInfo *config.Config,
 	systemSettingSvc interfaces.SystemSettingService,
 ) types.TenantProvisioningMode {
-	def := config.AuthDefaultTenantModeCreatePersonal
+	def := config.AuthDefaultTenantModeTenantless
 	if configInfo != nil && configInfo.Auth != nil {
 		if mode := strings.TrimSpace(configInfo.Auth.DefaultTenantMode); mode != "" {
 			def = mode
@@ -148,10 +148,10 @@ func resolveDefaultTenantMode(
 			def,
 		)
 	}
-	if mode == config.AuthDefaultTenantModeTenantless {
-		return types.TenantProvisioningTenantless
+	if mode == config.AuthDefaultTenantModeCreatePersonal {
+		return types.TenantProvisioningCreatePersonal
 	}
-	return types.TenantProvisioningCreatePersonal
+	return types.TenantProvisioningTenantless
 }
 
 // resolveDefaultTenantMode returns the provisioning policy for ordinary
@@ -666,7 +666,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	// 同步返回当前用户的 memberships，让前端在页面刷新（仅命中 /auth/me）
 	// 后也能恢复 currentTenantRole，避免角色信息只在 login 那一刻可用。
 	memberships := h.userService.BuildLoginMemberships(ctx, user, tenant)
-	canCreateTenant := user.CanAccessAllTenants ||
+	canCreateTenant := user.IsSystemAdmin || user.CanAccessAllTenants ||
 		resolveTenantSelfServiceCreationEnabled(ctx, h.configInfo, h.systemSettingSvc)
 	autoAcceptInvitation := h.systemSettingSvc != nil &&
 		h.systemSettingSvc.GetBool(ctx, "tenant.auto_accept_invitation", "WEKNORA_TENANT_AUTO_ACCEPT_INVITATION", false)

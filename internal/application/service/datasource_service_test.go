@@ -766,3 +766,17 @@ func (s *processSyncKBService) ListPublicCatalog(
 ) ([]*types.KnowledgeBase, int64, error) {
 	return nil, 0, nil
 }
+
+func (s *processSyncKBService) ListPublishedCatalog(
+	context.Context, int, int, string,
+) ([]*types.KnowledgeBase, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *processSyncKBService) SubscribeKnowledgeBase(context.Context, string, bool) error {
+	return nil
+}
+
+func (s *processSyncKBService) UnsubscribeKnowledgeBase(context.Context, string, bool) error {
+	return nil
+}

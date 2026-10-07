@@ -244,3 +244,40 @@ func resolveKBCreatorByKnowledgeID(
 	}
 	return creatorID, nil
 }
+
+// KnowledgeUploaderLookup resolves :id (a knowledge ID) to the document's
+// uploader for RequireTenantAdminOrUploader.
+func (h *KnowledgeHandler) KnowledgeUploaderLookup(c *gin.Context) (string, error) {
+	return resolveKnowledgeUploader(c, h.kgService, c.Param("id"))
+}
+
+// KnowledgeUploaderLookupFromKnowledgeIDParam mirrors
+// KnowledgeUploaderLookup for chunk routes addressed by :knowledge_id.
+func (h *ChunkHandler) KnowledgeUploaderLookupFromKnowledgeIDParam(c *gin.Context) (string, error) {
+	return resolveKnowledgeUploader(c, h.kgService, c.Param("knowledge_id"))
+}
+
+// resolveKnowledgeUploader returns Knowledge.CreatedBy for a document of
+// the caller's tenant. Other tenants' documents report not-found so a
+// Member can never match on a foreign row.
+func resolveKnowledgeUploader(c *gin.Context, kgService interfaces.KnowledgeService, knowledgeID string) (string, error) {
+	if knowledgeID == "" {
+		return "", errors.New("missing knowledge id for uploader lookup")
+	}
+	ctx := c.Request.Context()
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return "", errors.New("workspace context missing")
+	}
+	knowledge, err := kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
+	if err != nil {
+		if errors.Is(err, apprepo.ErrKnowledgeNotFound) {
+			return "", middleware.ErrResourceNotFound
+		}
+		return "", err
+	}
+	if knowledge == nil || knowledge.TenantID != tenantID {
+		return "", middleware.ErrResourceNotFound
+	}
+	return knowledge.CreatedBy, nil
+}

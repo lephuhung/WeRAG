@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -244,7 +245,9 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	apiKeyScope, hasAPIKeyScope := types.TenantAPIKeyScopeFromContext(ctx)
 	platformCaller := hasAPIKeyScope && apiKeyScope.IsPlatform()
-	catalogManager := caller.CanAccessAllTenants || platformCaller
+	// SuperAdmins provision workspaces; CanAccessAllTenants keeps the
+	// legacy cross-tenant operator path working.
+	catalogManager := caller.IsSystemAdmin || caller.CanAccessAllTenants || platformCaller
 
 	// Deployment-level policy: ordinary users may be restricted to joining
 	// existing workspaces by invitation. This check is authoritative; the
@@ -392,7 +395,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 		// tenant + its membership so the bound holds in steady state.
 		// We only do this for non-superusers (the only path that has
 		// a cap) — superusers are exempt above.
-		if !caller.CanAccessAllTenants {
+		if !catalogManager {
 			memberships, listErr := h.memberService.ListByUser(ctx, caller.ID)
 			if listErr != nil {
 				logger.Errorf(ctx, "Post-create quota recount failed for user %s tenant %d: %v",
@@ -2008,4 +2011,40 @@ func validateParserEngineOutboundURLs(cfg *types.ParserEngineConfig) error {
 		}
 	}
 	return nil
+}
+
+// TenantDirectoryEntry is the public face of a workspace in the directory:
+// enough to pick a unit when sharing a knowledge base, nothing more.
+type TenantDirectoryEntry struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListTenantDirectory godoc
+// @Summary      List workspace names
+// @Description  Every workspace's id and name, for choosing which unit to share a knowledge base with. Human callers only.
+// @Tags         Tenant workspace管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/directory [get]
+func (h *TenantHandler) ListTenantDirectory(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !access.IsAuthenticatedHuman(ctx, types.CallerFromContext(ctx)) {
+		c.Error(errors.NewForbiddenError("the workspace directory is for signed-in users"))
+		return
+	}
+	tenants, err := h.service.ListTenants(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "ListTenantDirectory: %v", err)
+		c.Error(errors.NewInternalServerError("failed to list workspaces"))
+		return
+	}
+	items := make([]TenantDirectoryEntry, 0, len(tenants))
+	for _, t := range tenants {
+		if t != nil && t.Status != "disabled" {
+			items = append(items, TenantDirectoryEntry{ID: t.ID, Name: t.Name})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": items})
 }

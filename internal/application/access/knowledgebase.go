@@ -136,13 +136,14 @@ func (a *KBAccess) WithGrant(ctx context.Context) context.Context {
 // content retrieval after authorization succeeds. ResolveKB never treats an
 // effective resource tenant as the caller, and never lets public visibility
 // or legacy tenant-wide grants authorize cross-tenant access beyond the
-// platform-public read below: recipient-bound invites stay on the separate
-// ResolveKBWithInvite path. The grants argument remains for source
-// compatibility but is intentionally ignored: legacy approved rows cannot
-// confer access. ResolveKB never grants content writes on platform-owned
-// rows — not even to explicit SuperAdmins; management uses ResolveKBForManage.
+// platform-public read below and the tenant-wide grant read: an owner-issued,
+// live grant to the caller's tenant confers Viewer to that tenant's human
+// members (never a write, never to API-key principals). Recipient-bound
+// invites stay on the separate ResolveKBWithInvite path. ResolveKB never
+// grants content writes on platform-owned rows — not even to explicit
+// SuperAdmins; management uses ResolveKBForManage.
 func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, required types.KBPermission,
-	_ KBGrantLookup,
+	grants KBGrantLookup,
 ) (*KBAccess, error) {
 	if kb == nil || kb.ID == "" {
 		return nil, ErrNotFound
@@ -189,6 +190,13 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 		}
 		return nil, ErrForbidden
 	}
+	if required == types.KBPermissionViewer && CanReadPublishedKB(ctx, request.Caller, kb) {
+		return grant(types.KBPermissionViewer)
+	}
+	if required == types.KBPermissionViewer &&
+		HasTenantGrant(ctx, request.Caller, kb.ID, kb.OwnerTenantID, grants) {
+		return grant(types.KBPermissionViewer)
+	}
 	// Tenant-owned foreign rows, legacy public rows with a nonzero owner,
 	// and malformed owner/visibility pairs fail closed. Ordinary access
 	// without an authenticated tenant stays unauthorized.
@@ -196,6 +204,29 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 		return nil, ErrUnauthorized
 	}
 	return nil, ErrForbidden
+}
+
+// CanReadPublishedKB reports whether caller may read a tenant-published KB:
+// every authenticated human (tenantless included), never an API-key
+// principal. Writes stay with the owning tenant.
+func CanReadPublishedKB(ctx context.Context, caller types.Caller, kb *types.KnowledgeBase) bool {
+	return kb.IsTenantPublished() &&
+		(IsExplicitHumanSuperAdmin(ctx, caller) || IsAuthenticatedHuman(ctx, caller))
+}
+
+// HasTenantGrant reports whether a live owner-issued grant lets the
+// caller's tenant read a tenant-owned KB. Only authenticated humans with an
+// active tenant other than the owner qualify; lookup errors fail closed.
+func HasTenantGrant(ctx context.Context, caller types.Caller, kbID string, ownerTenantID uint64, grants KBGrantLookup) bool {
+	if grants == nil || kbID == "" || ownerTenantID == 0 ||
+		caller.TenantID == 0 || caller.TenantID == ownerTenantID {
+		return false
+	}
+	if !IsAuthenticatedHuman(ctx, caller) {
+		return false
+	}
+	permission, ok, err := grants.ApprovedKBPermission(ctx, kbID, caller.TenantID)
+	return err == nil && ok && permission.HasPermission(types.KBPermissionViewer)
 }
 
 // ResolveKBForDownload is the dedicated original-download decision,
@@ -241,6 +272,9 @@ func ResolveKBForDownload(ctx context.Context, request KBRequest, kb *types.Know
 			return nil, ErrUnauthorized
 		}
 		return nil, ErrForbidden
+	}
+	if CanReadPublishedKB(ctx, request.Caller, kb) {
+		return grant(types.KBPermissionViewer)
 	}
 	if request.Caller.TenantID == 0 {
 		return nil, ErrUnauthorized

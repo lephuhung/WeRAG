@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -55,6 +56,13 @@ func NewKnowledgeRepository(db *gorm.DB) interfaces.KnowledgeRepository {
 // CreateKnowledge creates knowledge
 func (r *knowledgeRepository) CreateKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
 	knowledge.ErrorMessage = common.CleanInvalidUTF8(knowledge.ErrorMessage)
+	// Record the uploading human; API keys and workers leave it empty so
+	// the document stays admin-managed.
+	if knowledge.CreatedBy == "" {
+		if caller := types.CallerFromContext(ctx); access.IsAuthenticatedHuman(ctx, caller) {
+			knowledge.CreatedBy = caller.UserID
+		}
+	}
 	err := r.db.WithContext(ctx).Create(knowledge).Error
 	return err
 }

@@ -72,6 +72,10 @@ func RegisterTenantRoutes(
 		g.apiKeyRoute(tenantRoutes, http.MethodPost, "",
 			apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), handler.CreateTenant)
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "", apiKeyManageTenantSettings(apiKeyFullAccess()), handler.ListTenants)
+		// Workspace directory (id + name) for picking a unit to share a
+		// KB with. Human-only: registered on the raw group so API keys are
+		// default-denied.
+		tenantRoutes.GET("/directory", g.Member(), handler.ListTenantDirectory)
 
 		// Generic KV configuration management (tenant-level). Tenant ID
 		// is obtained from authentication context; the URL :key is a
@@ -325,6 +329,13 @@ func RegisterSystemAdminRoutes(
 		// group gate replaces the per-tenant Owner requirement of the
 		// /tenants/:id/members/:user_id route.
 		adminRoutes.PUT("/tenants/:tenant_id/members/:user_id", handler.UpdateSystemUserRole)
+		// Workspace provisioning: only SuperAdmins create workspaces, and
+		// each one is born with its Tenant Admin (an existing account or
+		// one created here). The SuperAdmin does not join the workspace.
+		adminRoutes.POST("/tenants", handler.ProvisionTenant)
+		adminRoutes.GET("/tenants/:tenant_id/members", handler.ListSystemTenantMembers)
+		adminRoutes.POST("/tenants/:tenant_id/members", handler.AddSystemTenantMember)
+		adminRoutes.DELETE("/tenants/:tenant_id/members/:user_id", handler.RemoveSystemTenantMember)
 		adminRoutes.GET("/api-keys", handler.ListPlatformAPIKeys)
 		adminRoutes.POST("/api-keys", handler.CreatePlatformAPIKey)
 		adminRoutes.DELETE("/api-keys/:key_id", handler.DeletePlatformAPIKey)

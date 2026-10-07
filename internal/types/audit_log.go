@@ -128,9 +128,17 @@ const (
 	// password_generated=true only on the create path, idempotent=true
 	// marks a no-op hit on an already-existing identity.
 	// TenantID=0 (system-scope).
-	AuditActionSystemUserCreated   AuditAction = "system.user_created"
-	AuditActionSystemAPIKeyCreated AuditAction = "system.api_key_created"
-	AuditActionSystemAPIKeyRevoked AuditAction = "system.api_key_revoked"
+	AuditActionSystemUserCreated AuditAction = "system.user_created"
+	// AuditActionSystemTenantProvisioned fires when a SystemAdmin creates a
+	// workspace together with its first Tenant Admin. Details carry
+	// tenant_id, tenant_name and whether the admin account was created.
+	AuditActionSystemTenantProvisioned AuditAction = "system.tenant_provisioned"
+	// AuditActionSystemTenantMemberAdded / Removed fire when a SystemAdmin
+	// changes the membership of a workspace it does not belong to.
+	AuditActionSystemTenantMemberAdded   AuditAction = "system.tenant_member_added"
+	AuditActionSystemTenantMemberRemoved AuditAction = "system.tenant_member_removed"
+	AuditActionSystemAPIKeyCreated       AuditAction = "system.api_key_created"
+	AuditActionSystemAPIKeyRevoked       AuditAction = "system.api_key_revoked"
 
 	// Runtime queue mutations are privileged SystemAdmin actions. Retrying an
 	// archived task can repeat its original side effects; deleting one removes

@@ -156,6 +156,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTenantInvitationRepository))
 	must(container.Provide(repository.NewKBAccessGrantRepository))
 	must(container.Provide(repository.NewKBInvitationRepository))
+	must(container.Provide(repository.NewKBSubscriptionRepository))
 	must(container.Provide(repository.NewAuditLogRepository))
 	must(container.Provide(repository.NewKnowledgeBaseRepository))
 	must(container.Provide(repository.NewKnowledgeRepository))

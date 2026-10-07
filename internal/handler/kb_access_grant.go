@@ -98,14 +98,84 @@ func (h *KBAccessGrantHandler) Review(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": grant})
 }
 
-// Retired tenant-wide grant mutations. Each returns 410 Gone so clients
-// learn the flow is replaced by recipient-bound KB invitations
-// (POST /knowledge-bases/:id/invites). The service layer independently
+// GrantTenantAccess handles POST /knowledge-bases/:id/grants — the owning
+// tenant's admin (or a SuperAdmin) shares the KB read-only with every member
+// of another tenant.
+func (h *KBAccessGrantHandler) GrantTenantAccess(c *gin.Context) {
+	ctx := c.Request.Context()
+	kbID := c.Param("id")
+	var req types.GrantKBAccessRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid request body: " + err.Error()))
+		return
+	}
+	grant, err := h.grantService.GrantTenantAccess(ctx, middleware.KBAccessRequest(c).Caller, kbID, &req)
+	if err != nil {
+		c.Error(grantHTTPError(err))
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": grant})
+}
+
+// ListKBGrants handles GET /knowledge-bases/:id/grants.
+func (h *KBAccessGrantHandler) ListKBGrants(c *gin.Context) {
+	rows, err := h.grantService.ListByKB(c.Request.Context(), middleware.KBAccessRequest(c).Caller, c.Param("id"))
+	if err != nil {
+		c.Error(grantHTTPError(err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": rows})
+}
+
+// RevokeGrant handles DELETE /knowledge-bases/:id/grants/:grant_id. The
+// grant must belong to :id; the service re-checks that the caller manages
+// the KB before revoking.
+func (h *KBAccessGrantHandler) RevokeGrant(c *gin.Context) {
+	ctx := c.Request.Context()
+	caller := middleware.KBAccessRequest(c).Caller
+	grantID := c.Param("grant_id")
+	rows, err := h.grantService.ListByKB(ctx, caller, c.Param("id"))
+	if err != nil {
+		c.Error(grantHTTPError(err))
+		return
+	}
+	found := false
+	for _, row := range rows {
+		if row.ID == grantID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		c.Error(apperrors.NewNotFoundError("kb access grant not found"))
+		return
+	}
+	h.revoke(c, caller, grantID)
+}
+
+// RevokeIncomingGrant handles DELETE /tenants/:id/access-grants/:grant_id
+// for the owning tenant's admin.
+func (h *KBAccessGrantHandler) RevokeIncomingGrant(c *gin.Context) {
+	h.revoke(c, middleware.KBAccessRequest(c).Caller, c.Param("grant_id"))
+}
+
+func (h *KBAccessGrantHandler) revoke(c *gin.Context, caller types.Caller, grantID string) {
+	grant, err := h.grantService.Revoke(c.Request.Context(), caller, grantID)
+	if err != nil {
+		c.Error(grantHTTPError(err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": grant})
+}
+
+// Retired request/approve mutations. Each returns 410 Gone: a tenant can no
+// longer ask for access; the owning tenant grants it directly
+// (POST /knowledge-bases/:id/grants). The service layer independently
 // rejects these operations with ErrGrantDisabled.
 func (h *KBAccessGrantHandler) RequestAccessDisabled(c *gin.Context) {
 	c.Error(&apperrors.AppError{
 		Code:     apperrors.ErrNotFound,
-		Message:  "tenant-wide kb access requests are retired; ask the owning workspace admin for a recipient-bound invitation",
+		Message:  "kb access requests are retired; ask the owning workspace admin to grant access",
 		HTTPCode: http.StatusGone,
 	})
 }
@@ -114,16 +184,7 @@ func (h *KBAccessGrantHandler) RequestAccessDisabled(c *gin.Context) {
 func (h *KBAccessGrantHandler) ReviewDisabled(c *gin.Context) {
 	c.Error(&apperrors.AppError{
 		Code:     apperrors.ErrNotFound,
-		Message:  "tenant-wide kb grant review is retired; use recipient-bound kb invitations",
-		HTTPCode: http.StatusGone,
-	})
-}
-
-// RevokeDisabled handles DELETE /tenants/:id/access-grants/:grant_id.
-func (h *KBAccessGrantHandler) RevokeDisabled(c *gin.Context) {
-	c.Error(&apperrors.AppError{
-		Code:     apperrors.ErrNotFound,
-		Message:  "tenant-wide kb grants are retired; all live grants were revoked",
+		Message:  "kb access request review is retired; the owning workspace grants access directly",
 		HTTPCode: http.StatusGone,
 	})
 }
@@ -165,7 +226,7 @@ func grantHTTPError(err error) error {
 	case stderrors.Is(err, service.ErrGrantDisabled):
 		return &apperrors.AppError{
 			Code:     apperrors.ErrNotFound,
-			Message:  "tenant-wide kb grants are retired; ask the owning workspace admin for a recipient-bound invitation",
+			Message:  "kb access requests are retired; ask the owning workspace admin to grant access",
 			HTTPCode: http.StatusGone,
 		}
 	case stderrors.Is(err, service.ErrGrantNotFound):
@@ -175,7 +236,13 @@ func grantHTTPError(err error) error {
 	case stderrors.Is(err, service.ErrGrantNotPending):
 		return apperrors.NewConflictError("access grant is no longer pending")
 	case stderrors.Is(err, service.ErrGrantSelfTarget):
-		return apperrors.NewBadRequestError("cannot request access to a knowledge base your tenant owns")
+		return apperrors.NewBadRequestError("cannot grant a knowledge base to the tenant that owns it")
+	case stderrors.Is(err, service.ErrGrantNotManager):
+		return apperrors.NewForbiddenError(err.Error())
+	case stderrors.Is(err, service.ErrGrantPlatformKB):
+		return apperrors.NewBadRequestError(err.Error())
+	case stderrors.Is(err, service.ErrGrantTenantNotFound):
+		return apperrors.NewNotFoundError(err.Error())
 	default:
 		logger.ErrorWithFields(context.Background(), err, nil)
 		return apperrors.NewInternalServerError("internal error")

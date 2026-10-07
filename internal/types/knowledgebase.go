@@ -68,12 +68,18 @@ const (
 	// user of every tenant. Writes still belong to the owning tenant
 	// (and platform admins).
 	KBVisibilityPublic KBVisibility = "public"
+	// KBVisibilityPublished is a tenant-owned KB its Tenant Admin opened
+	// to every authenticated human (e.g. a provincial office's directives).
+	// The owning tenant keeps all writes. Unlike platform public KBs it is
+	// not searched by default: a reader's retrieval scope includes it only
+	// once the reader or their Tenant Admin subscribes to it.
+	KBVisibilityPublished KBVisibility = "published"
 )
 
 // IsValid checks if the visibility value is a known constant.
 func (v KBVisibility) IsValid() bool {
 	switch v {
-	case KBVisibilityTenant, KBVisibilityPublic:
+	case KBVisibilityTenant, KBVisibilityPublic, KBVisibilityPublished:
 		return true
 	default:
 		return false
@@ -191,6 +197,14 @@ type KnowledgeBase struct {
 	// ignores them on every CRUD call and the list handler stamps them
 	// after enriching with the caller's pin set.
 	IsPinned bool `yaml:"is_pinned"               json:"is_pinned"               gorm:"-"`
+	// SubscribedByMe / SubscribedByTenant are computed per caller for
+	// published KBs: whether the caller, or their whole tenant, has put
+	// the KB into the default retrieval scope.
+	SubscribedByMe     bool `yaml:"subscribed_by_me"     json:"subscribed_by_me,omitempty"     gorm:"-"`
+	SubscribedByTenant bool `yaml:"subscribed_by_tenant" json:"subscribed_by_tenant,omitempty" gorm:"-"`
+	// OwnerTenantName is the owning workspace's display name, filled on
+	// published-catalog rows so readers see which unit published them.
+	OwnerTenantName string `yaml:"owner_tenant_name" json:"owner_tenant_name,omitempty" gorm:"-"`
 	// PinnedAt records when the current caller pinned this knowledge
 	// base; nil when they have not.
 	PinnedAt *time.Time `yaml:"pinned_at"               json:"pinned_at"               gorm:"-"`
@@ -812,10 +826,10 @@ func (kb *KnowledgeBase) ValidateOwnership() error {
 				"knowledge base ownership: public visibility requires platform owner (owner_tenant_id = 0), got %d",
 				kb.OwnerTenantID)
 		}
-	case KBVisibilityTenant:
+	case KBVisibilityTenant, KBVisibilityPublished:
 		if kb.OwnerTenantID == 0 {
 			return fmt.Errorf(
-				"knowledge base ownership: tenant visibility requires a nonzero owner_tenant_id")
+				"knowledge base ownership: %s visibility requires a nonzero owner_tenant_id", kb.Visibility)
 		}
 	default:
 		return fmt.Errorf("knowledge base ownership: unknown visibility %q", kb.Visibility)
@@ -1031,4 +1045,10 @@ func (kb *KnowledgeBase) SharesStoreWith(other *KnowledgeBase) bool {
 	default:
 		return *a == *b
 	}
+}
+
+// IsTenantPublished reports whether kb is a tenant-owned KB opened to every
+// authenticated human (visibility published, nonzero owner).
+func (kb *KnowledgeBase) IsTenantPublished() bool {
+	return kb != nil && kb.Visibility == KBVisibilityPublished && kb.OwnerTenantID != 0
 }

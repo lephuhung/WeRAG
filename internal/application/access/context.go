@@ -87,7 +87,8 @@ func (p *KBPermissions) scopeOf(kbID string) *types.KBScope {
 	return s
 }
 
-// Check permits owning-tenant reads, platform-public reads, and exact grants
+// Check permits owning-tenant reads, platform-public reads, live tenant-wide
+// grants (Viewer only), and exact grants
 // established by an upstream authorization (including recipient-bound KB
 // invitations). Owner and visibility come from the scope lookup when
 // available; otherwise ownerTenantID is treated as a tenant-visibility
@@ -129,6 +130,13 @@ func (p *KBPermissions) Check(kbID string, ownerTenantID uint64, required types.
 	}
 	sameTenant := p.caller.TenantID != 0 && p.caller.TenantID == owner
 	if sameTenant && required == types.KBPermissionViewer {
+		return true, nil
+	}
+	if required == types.KBPermissionViewer && visibility == types.KBVisibilityPublished && owner != 0 &&
+		(IsExplicitHumanSuperAdmin(p.ctx, p.caller) || IsAuthenticatedHuman(p.ctx, p.caller)) {
+		return true, nil
+	}
+	if required == types.KBPermissionViewer && HasTenantGrant(p.ctx, p.caller, kbID, owner, p.lookup) {
 		return true, nil
 	}
 	return HasKBGrant(p.ctx, kbID, dataTenant, required), nil

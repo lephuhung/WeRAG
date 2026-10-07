@@ -110,8 +110,8 @@ func TestRegister_SelfServeAllowsRegistration(t *testing.T) {
 	us := &stubRegisterUserService{
 		register: func(_ context.Context, req *types.RegisterRequest) (*types.User, error) {
 			called = true
-			if req.TenantProvisioning != types.TenantProvisioningCreatePersonal {
-				t.Fatalf("default provisioning = %q, want create_personal", req.TenantProvisioning)
+			if req.TenantProvisioning != types.TenantProvisioningTenantless {
+				t.Fatalf("default provisioning = %q, want tenantless", req.TenantProvisioning)
 			}
 			return &types.User{ID: "u1", Email: "alice@example.com"}, nil
 		},

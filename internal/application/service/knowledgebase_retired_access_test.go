@@ -35,7 +35,9 @@ func (s *retiredAccessGrantList) GrantedKBIDs(context.Context, uint64) ([]string
 	return []string{"legacy-grant-kb"}, nil
 }
 
-func TestListKnowledgeBasesDoesNotExpandPublicOrTenantGrantAccess(t *testing.T) {
+// A machine (non-human) context lists only its own tenant's KBs: no legacy
+// public discovery and no tenant-wide grants.
+func TestListKnowledgeBasesNonHumanDoesNotExpandAccess(t *testing.T) {
 	repo := &retiredAccessListRepo{fakeKBRepo: newFakeKBRepo()}
 	grants := &retiredAccessGrantList{}
 	svc := &knowledgeBaseService{repo: repo, kbAccessGrantService: grants}
@@ -44,6 +46,6 @@ func TestListKnowledgeBasesDoesNotExpandPublicOrTenantGrantAccess(t *testing.T) 
 	require.NoError(t, err)
 	require.Empty(t, listed)
 	require.False(t, repo.publicListCalled, "retired public KBs must not be discovered across tenants")
-	require.False(t, grants.called, "retired tenant-wide grants must not expand the KB list")
-	require.False(t, repo.getIDsCalled, "legacy grant KB IDs must not be loaded")
+	require.False(t, grants.called, "tenant-wide grants are for human callers only")
+	require.False(t, repo.getIDsCalled, "granted KB IDs must not be loaded for a non-human caller")
 }

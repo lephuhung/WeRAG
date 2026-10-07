@@ -627,7 +627,12 @@ func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
 	}
 
 	page, pageSize := parseCatalogPagination(c)
-	items, total, err := h.service.ListPublicCatalog(ctx, page, pageSize, strings.TrimSpace(c.Query("q")))
+	list := h.service.ListPublicCatalog
+	if c.Query("kind") == types.PublicCatalogKindPublished {
+		// Tenant-published KBs, with the caller's subscription flags.
+		list = h.service.ListPublishedCatalog
+	}
+	items, total, err := list(ctx, page, pageSize, strings.TrimSpace(c.Query("q")))
 	if err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.Error(appErr)
@@ -654,6 +659,51 @@ func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
 			"page_size": pageSize,
 		},
 	})
+}
+
+// SubscribeKnowledgeBase godoc
+// @Summary      Subscribe to a published knowledge base
+// @Description  Adds a published KB to the default retrieval scope of the caller, or of the whole workspace with scope=tenant (Tenant Admin only).
+// @Tags         Knowledge Base
+// @Param        id     path   string  true   "Knowledge base ID"
+// @Param        scope  query  string  false  "me (default) or tenant"
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /knowledge-bases/{id}/subscription [post]
+func (h *KnowledgeBaseHandler) SubscribeKnowledgeBase(c *gin.Context) {
+	h.changeSubscription(c, h.service.SubscribeKnowledgeBase)
+}
+
+// UnsubscribeKnowledgeBase godoc
+// @Summary      Unsubscribe from a published knowledge base
+// @Tags         Knowledge Base
+// @Param        id     path   string  true   "Knowledge base ID"
+// @Param        scope  query  string  false  "me (default) or tenant"
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /knowledge-bases/{id}/subscription [delete]
+func (h *KnowledgeBaseHandler) UnsubscribeKnowledgeBase(c *gin.Context) {
+	h.changeSubscription(c, h.service.UnsubscribeKnowledgeBase)
+}
+
+func (h *KnowledgeBaseHandler) changeSubscription(
+	c *gin.Context, change func(ctx context.Context, kbID string, tenantWide bool) error,
+) {
+	scope := c.DefaultQuery("scope", "me")
+	if scope != "me" && scope != "tenant" {
+		c.Error(apperrors.NewBadRequestError("scope must be me or tenant"))
+		return
+	}
+	if err := change(c.Request.Context(), c.Param("id"), scope == "tenant"); err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(c.Request.Context(), err, nil)
+		c.Error(apperrors.NewInternalServerError("failed to update subscription"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // parseCatalogPagination normalizes page/page_size query parameters for
