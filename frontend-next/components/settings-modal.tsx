@@ -84,6 +84,7 @@ const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime
 
 const AdminOverviewPage = lazy(() => import("@/components/settings/pages/admin-overview"));
 const AdminUsersPage = lazy(() => import("@/components/settings/pages/admin-users"));
+const AdminTenantsPage = lazy(() => import("@/components/settings/pages/admin-tenants"));
 const AdminLogsPage = lazy(() => import("@/components/settings/pages/admin-logs"));
 
 type IconCmp = ComponentType<{ className?: string }>;
@@ -171,6 +172,7 @@ const GROUPS: SettingsGroup[] = [
     labelKey: "systemNav.admin",
     items: [
       { key: "overview", labelKey: "systemNav.overview", fallback: "Overview", icon: IconPulse, minRole: "system", render: () => <AdminOverviewPage />, route: `${SYS}/admin` },
+      { key: "tenants", labelKey: "systemNav.tenants", fallback: "Units", icon: IconUser, minRole: "system", render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
       { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, minRole: "system", render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
       { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, minRole: "system", render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
     ],

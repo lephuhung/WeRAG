@@ -96,7 +96,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
 const toast = useToast();
   const { isTenantAdmin, isSystemAdmin } = useTenantRole();
-  const { selectedTenantId, tenant } = useAuth();
+  const { selectedTenantId, tenant, user } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
@@ -391,6 +391,10 @@ const toast = useToast();
   const isPublicKb = kbCaps.kind === "public";
   const isForeignKb = kbCaps.kind === "invited";
   const canManageKb = kbCaps.canManage;
+  /* A Member edits/deletes the documents they uploaded in their own
+   * workspace's KBs (backend RequireTenantAdminOrUploader). */
+  const isOwnUpload = (d: KnowledgeDoc) =>
+    kbCaps.kind === "own" && !!user?.id && !!d.created_by && d.created_by === user.id;
   /* Render-time capability mirror for the global file-drop listener below:
    * the effect closure would otherwise keep a stale upload gate after the
    * KB loads. Public viewers and invited readers must not get the upload
@@ -749,7 +753,8 @@ const toast = useToast();
                         <DocActionsMenu
                           doc={d}
                           kbId={kbId}
-                          canMutate={canManageKb}
+                          canMutate={canManageKb || isOwnUpload(d)}
+                          canMoveFolder={canManageKb}
                           canDownloadOriginal={kbCaps.canDownloadOriginal}
                           onChanged={refreshAfterDocChange}
                           onDeleted={markDocDeleting}
@@ -895,6 +900,7 @@ const toast = useToast();
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         canManage={canManageKb}
+        onChanged={reloadKb}
       />
       <KbSettingsModal
         kbId={kbId}

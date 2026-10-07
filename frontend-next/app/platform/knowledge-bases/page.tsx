@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { listKnowledgeBases, listPublicCatalog, type KnowledgeBaseRow } from "@/lib/api/knowledge";
+import {
+  listKnowledgeBases,
+  listPublicCatalog,
+  subscribeKnowledgeBase,
+  unsubscribeKnowledgeBase,
+  type KnowledgeBaseRow,
+} from "@/lib/api/knowledge";
 import { getKBViewerCapabilities, type KBViewerCapabilities } from "@/lib/kb-capabilities";
 import { groupCatalogRows, selectPublicSection } from "@/lib/kb-public";
 import { useAuth, useTenantRole } from "@/lib/auth";
@@ -10,7 +16,7 @@ import { useT } from "@/lib/i18n";
 import { Orb } from "@/components/orb";
 import { Modal } from "@/components/modal";
 import { KbShareModal } from "@/components/knowledge/kb-share-modal";
-import { KBInvitePanel } from "@/components/knowledge/kb-invite-panel";
+import { KBAccessPanel } from "@/components/knowledge/kb-access-panel";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
 import { ParseDefaultsEditor } from "@/components/knowledge/parse-defaults-editor";
 import {
@@ -63,6 +69,16 @@ export default function KnowledgeBaseList() {
    * While loading or on error the mixed list's public window is the only
    * public data available. */
   const [pubOk, setPubOk] = useState(false);
+
+  /* Other units' published KBs: readable by everyone, searched in chat
+   * only once subscribed (by the caller, or by the unit's admin for the
+   * whole unit). */
+  const [pubdItems, setPubdItems] = useState<KnowledgeBaseRow[]>([]);
+  const [pubdTotal, setPubdTotal] = useState(0);
+  const [pubdPage, setPubdPage] = useState(1);
+  const [pubdError, setPubdError] = useState("");
+  const [pubdReload, setPubdReload] = useState(0);
+  const [subBusy, setSubBusy] = useState<string | null>(null);
 
   const reload = () => {
     listKnowledgeBases()
@@ -121,6 +137,46 @@ export default function KnowledgeBaseList() {
     };
   }, [pubPage, q]);
 
+  useEffect(() => {
+    let alive = true;
+    const timer = setTimeout(() => {
+      listPublicCatalog({ page: pubdPage, pageSize: PUBLIC_PAGE_SIZE, q, kind: "published" })
+        .then((res) => {
+          if (!alive) return;
+          setPubdItems(res.items);
+          setPubdTotal(res.total);
+          setPubdError("");
+        })
+        .catch((e) => {
+          if (!alive) return;
+          setPubdItems([]);
+          setPubdTotal(0);
+          setPubdError(e instanceof Error ? e.message : t("kbPublished.loadFailed"));
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [pubdPage, q, pubdReload]);
+
+  const toggleSubscription = async (row: KnowledgeBaseRow, scope: "me" | "tenant") => {
+    const key = `${row.id}:${scope}`;
+    if (subBusy) return;
+    setSubBusy(key);
+    try {
+      const subscribed = scope === "me" ? row.subscribed_by_me : row.subscribed_by_tenant;
+      if (subscribed) await unsubscribeKnowledgeBase(row.id, scope);
+      else await subscribeKnowledgeBase(row.id, scope);
+      setPubdReload((n) => n + 1);
+      reload();
+    } catch (e) {
+      setPubdError(e instanceof Error ? e.message : t("kbPublished.loadFailed"));
+    } finally {
+      setSubBusy(null);
+    }
+  };
+
   /* One shared search box scopes all three sections: workspace + invited
    * filter client-side by name; the public section goes through the
    * endpoint's q param (it's server-paginated, so client filtering would
@@ -162,9 +218,18 @@ export default function KnowledgeBaseList() {
 
   const workspaceCards = groups.workspace.filter(matchesQ).map(toCard);
   const invitedCards = groups.invited.filter(matchesQ).map(toCard);
+  const subscribedCards = groups.subscribed.filter(matchesQ).map(toCard);
+  /* The owning unit sees its own published KBs under "This workspace". */
+  const publishedCards = pubdItems
+    .filter((k) => String(k.owner_tenant_id ?? "") !== (hasTenant ? activeTenantId : ""))
+    .map(toCard);
+  const pubdPages = Math.max(1, Math.ceil(pubdTotal / PUBLIC_PAGE_SIZE));
   const publicCards = publicRows.map(toCard);
 
-  const renderCards = (cards: CardModel[], opts?: { hideShare?: boolean; append?: ReactNode }) => (
+  const renderCards = (
+    cards: CardModel[],
+    opts?: { hideShare?: boolean; append?: ReactNode; footer?: (kb: CardModel) => ReactNode },
+  ) => (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
       {cards.map((kb) => (
         <Link
@@ -222,7 +287,13 @@ export default function KnowledgeBaseList() {
               {kb.caps.kind === "invited" && (
                 <span className="badge-pill shrink-0 bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>
               )}
+              {kb.row.visibility === "published" && (
+                <span className="badge-pill shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t("kbPublished.badge")}</span>
+              )}
             </div>
+            {kb.caps.kind === "published" && kb.row.owner_tenant_name && (
+              <p className="caption mt-1 text-muted">{t("kbPublished.by", { name: kb.row.owner_tenant_name })}</p>
+            )}
             <p className="body-sm mt-1.5 line-clamp-2 text-body">{kb.description}</p>
             <div className="caption mt-5 flex items-center gap-4 text-muted">
               <span className="flex items-center gap-1.5">
@@ -231,6 +302,17 @@ export default function KnowledgeBaseList() {
               </span>
               <span className="ml-auto whitespace-nowrap">{fmtShortDate(kb.updatedAt)}</span>
             </div>
+            {opts?.footer && (
+              <div
+                className="mt-4 flex flex-wrap items-center gap-2"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              >
+                {opts.footer(kb)}
+              </div>
+            )}
           </div>
         </Link>
       ))}
@@ -299,6 +381,7 @@ export default function KnowledgeBaseList() {
             onChange={(e) => {
               setQ(e.target.value);
               setPubPage(1);
+              setPubdPage(1);
             }}
           />
         </div>
@@ -319,6 +402,77 @@ export default function KnowledgeBaseList() {
                 <h2 className="title-sm mb-4 mt-10">{t("kbPublic.invitedSection")}</h2>
                 {renderCards(invitedCards)}
               </>
+            )}
+            {subscribedCards.length > 0 && (
+              <>
+                <h2 className="title-sm mb-4 mt-10">{t("kbPublished.subscribedSection")}</h2>
+                {renderCards(subscribedCards, { hideShare: true })}
+              </>
+            )}
+          </>
+        )}
+
+        {hasTenant && (
+          <>
+            <div className="mb-4 mt-10">
+              <h2 className="title-sm">{t("kbPublished.section")}</h2>
+              <p className="caption mt-1 text-muted">{t("kbPublished.sectionDesc")}</p>
+            </div>
+            {pubdError && <p className="caption mb-4 text-error">{pubdError}</p>}
+            {renderCards(publishedCards, {
+              hideShare: true,
+              footer: (kb) => (
+                <>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${kb.row.subscribed_by_me ? "btn-outline" : "btn-primary"}`}
+                    disabled={subBusy !== null}
+                    onClick={() => void toggleSubscription(kb.row, "me")}
+                  >
+                    {kb.row.subscribed_by_me ? t("kbPublished.unsubscribe") : t("kbPublished.subscribe")}
+                  </button>
+                  {isTenantAdmin ? (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      disabled={subBusy !== null}
+                      onClick={() => void toggleSubscription(kb.row, "tenant")}
+                    >
+                      {kb.row.subscribed_by_tenant ? t("kbPublished.unsubscribeUnit") : t("kbPublished.subscribeUnit")}
+                    </button>
+                  ) : (
+                    kb.row.subscribed_by_tenant && (
+                      <span className="caption text-muted">{t("kbPublished.subscribedUnit")}</span>
+                    )
+                  )}
+                </>
+              ),
+            })}
+            {publishedCards.length === 0 && !pubdError && (
+              <p className="caption mb-6 mt-2 text-muted-soft">{t("kbPublished.empty")}</p>
+            )}
+            {pubdTotal > PUBLIC_PAGE_SIZE && (
+              <div className="caption mt-4 flex items-center gap-3 text-muted">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={pubdPage <= 1}
+                  onClick={() => setPubdPage((p) => Math.max(1, p - 1))}
+                >
+                  ←
+                </button>
+                <span>
+                  {pubdPage} / {pubdPages} · {pubdTotal}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={pubdPage >= pubdPages}
+                  onClick={() => setPubdPage((p) => p + 1)}
+                >
+                  →
+                </button>
+              </div>
             )}
           </>
         )}
@@ -391,13 +545,16 @@ export default function KnowledgeBaseList() {
         title={t("kbList.inviteModalTitle")}
         onClose={() => setInviteKb(null)}
       >
-        {inviteKb && <KBInvitePanel kbId={inviteKb.id} kbName={inviteKb.name} />}
+        {inviteKb && (
+          <KBAccessPanel kbId={inviteKb.id} kbName={inviteKb.name} ownerTenantId={inviteKb.owner_tenant_id} />
+        )}
       </Modal>
 
       <KbShareModal
         kb={shareKb}
         open={shareKb !== null}
         onClose={() => setShareKb(null)}
+        onChanged={reload}
         canManage={
           !!shareKb &&
           getKBViewerCapabilities(shareKb, {

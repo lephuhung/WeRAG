@@ -129,6 +129,39 @@ describe("getKBViewerCapabilities matrix", () => {
   });
 });
 
+describe("published tenant KBs", () => {
+  it("groups another unit's subscribed published KB apart from invites", () => {
+    const sub: KBViewerRow = { id: "sub", owner_tenant_id: 9, tenant_id: 9, visibility: "published" };
+    const own: KBViewerRow = { id: "mine", owner_tenant_id: 1, tenant_id: 1, visibility: "published" };
+    const g = groupCatalogRows([sub, own, invitedRow], 1);
+    assert.deepEqual(g.subscribed.map((r) => r.id), ["sub"]);
+    assert.deepEqual(g.workspace.map((r) => r.id), ["mine"]);
+    assert.deepEqual(g.invited.map((r) => r.id), ["inv"]);
+  });
+
+  const published: KBViewerRow = { id: "pubd", owner_tenant_id: 9, tenant_id: 9, visibility: "published" };
+
+  it("foreign readers view and download but never manage", () => {
+    const caps = getKBViewerCapabilities(published, {
+      activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: false,
+    });
+    assert.equal(caps.kind, "published");
+    assert.equal(caps.canView, true);
+    assert.equal(caps.canDownloadOriginal, true);
+    assert.equal(caps.canManage, false);
+    assert.equal(caps.canUpload, false);
+    assert.equal(isPublicKBRow(published), false, "published is not platform public");
+  });
+
+  it("the owning tenant keeps full control", () => {
+    const caps = getKBViewerCapabilities(published, {
+      activeTenantId: 9, isTenantAdmin: true, isSystemAdmin: false,
+    });
+    assert.equal(caps.kind, "own");
+    assert.equal(caps.canManage, true);
+  });
+});
+
 describe("groupCatalogRows", () => {
   it("groups workspace/public/invited and dedupes by id", async () => {
     const rows: KBViewerRow[] = [ownRow, publicRow, invitedRow, { ...publicRow }];
@@ -136,6 +169,7 @@ describe("groupCatalogRows", () => {
     assert.deepEqual(g.workspace.map((r) => r.id), ["own"]);
     assert.deepEqual(g.public.map((r) => r.id), ["pub"]);
     assert.deepEqual(g.invited.map((r) => r.id), ["inv"]);
+    assert.deepEqual(g.subscribed, []);
   });
 });
 

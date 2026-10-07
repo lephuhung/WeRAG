@@ -594,3 +594,18 @@ export function createInviteLink(
 ): Promise<CreateInviteLinkResponse> {
   return apiPost(`/api/v1/tenants/${tenantId}/invite-links`, body);
 }
+
+// ---- workspace directory -------------------------------------------------------
+
+export interface TenantDirectoryEntry {
+  id: number;
+  name: string;
+}
+
+/* GET /api/v1/tenants/directory — every workspace's id and name, used to
+ * pick the unit a knowledge base is shared with. */
+export function listTenantDirectory(): Promise<TenantDirectoryEntry[]> {
+  return apiGet<{ success: boolean; data?: TenantDirectoryEntry[] }>("/api/v1/tenants/directory").then(
+    (r) => r.data ?? [],
+  );
+}

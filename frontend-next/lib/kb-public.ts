@@ -12,6 +12,9 @@ import { isPublicKBRow, type KBViewerRow } from "./kb-capabilities.ts";
 export interface CatalogGroups<T extends KBViewerRow> {
   workspace: T[];
   public: T[];
+  /* Other units' published KBs the caller (or the caller's unit)
+   * subscribed to. */
+  subscribed: T[];
   invited: T[];
 }
 
@@ -38,7 +41,7 @@ export function groupCatalogRows<T extends KBViewerRow>(
   activeTenantId: number | string | null | undefined,
 ): CatalogGroups<T> {
   const active = activeTenantId === null || activeTenantId === undefined ? "" : String(activeTenantId).trim();
-  const groups: CatalogGroups<T> = { workspace: [], public: [], invited: [] };
+  const groups: CatalogGroups<T> = { workspace: [], public: [], subscribed: [], invited: [] };
   const seen = new Set<string>();
   for (const row of rows) {
     if (!row) continue;
@@ -52,6 +55,8 @@ export function groupCatalogRows<T extends KBViewerRow>(
     const owner = ownerOf(row);
     if ((owner !== "" && active !== "" && owner === active) || owner === "") {
       groups.workspace.push(row);
+    } else if (row.visibility === "published") {
+      groups.subscribed.push(row);
     } else {
       groups.invited.push(row);
     }

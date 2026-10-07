@@ -49,6 +49,7 @@ export function DocActionsMenu({
   doc,
   kbId,
   canMutate,
+  canMoveFolder,
   canDownloadOriginal = true,
   onChanged,
   onDeleted,
@@ -57,6 +58,9 @@ export function DocActionsMenu({
   doc: KnowledgeDoc;
   kbId: string;
   canMutate: boolean;
+  /* Folder moves stay with Tenant Admins even when canMutate is granted to
+   * the document's uploader. Defaults to canMutate. */
+  canMoveFolder?: boolean;
   /* Resource capability gate (UI affordance only — the backend still
    * authorizes /download). Foreign (invited, read-only) KBs pass false
    * so the original-download action is hidden. Defaults true so existing
@@ -331,10 +335,12 @@ export function DocActionsMenu({
                   {t("doc.cancelParse")}
                 </button>
               )}
-              <button type="button" className={itemCls} onClick={openFolderPicker}>
-                <IconFolder className="h-4 w-4 text-muted" />
-                {t("doc.moveToFolder")}
-              </button>
+              {(canMoveFolder ?? canMutate) && (
+                <button type="button" className={itemCls} onClick={openFolderPicker}>
+                  <IconFolder className="h-4 w-4 text-muted" />
+                  {t("doc.moveToFolder")}
+                </button>
+              )}
               <div className="mx-2 my-1 border-t border-hairline" />
               <button type="button" className={dangerCls} onClick={() => setMode("confirm-delete")}>
                 <IconTrash className="h-4 w-4" />

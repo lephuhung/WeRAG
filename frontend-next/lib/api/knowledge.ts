@@ -114,12 +114,11 @@ export function listKnowledgeBaseActivity(
 // ---- knowledge bases ----------------------------------------------------------
 
 /* Mirrors types.KBVisibility (internal/types/knowledgebase.go) for READS.
- * 'tenant' is the only writable scope: it limits read/search to the
- * owning workspace's members (plus recipient-bound kb_invitations).
- * 'public' is a legacy response value only — old rows may still decode
- * to it, but no create/update payload below accepts it. Writes always
- * stay with the owning tenant. */
-export type KBVisibility = "tenant" | "public";
+ * 'tenant': only the owning workspace (plus invites and tenant grants).
+ * 'published': owned by a workspace, readable by every signed-in user;
+ * searched by default only once subscribed. 'public': platform-owned
+ * (SuperAdmin). Writes always stay with the owner. */
+export type KBVisibility = "tenant" | "published" | "public";
 
 /* The only scope the UI may write when creating a KB. */
 export type KBVisibilityWrite = "tenant";
@@ -142,6 +141,12 @@ export type KnowledgeBaseRow = {
   creator_name?: string;
   type?: string;
   visibility?: KBVisibility;
+  /* Published rows: whether the caller, or the caller's whole workspace,
+   * subscribed (puts the KB into the default chat scope), and the
+   * publishing workspace's name. */
+  subscribed_by_me?: boolean;
+  subscribed_by_tenant?: boolean;
+  owner_tenant_name?: string;
   /* Owning workspace id — differs from the caller's tenant on KBs
    * shared from other tenants (legacy public rows or invite-shared KBs
    * that leak into the list). */
@@ -353,8 +358,12 @@ export function listPublicCatalog(params?: {
   page?: number;
   pageSize?: number;
   q?: string;
+  /* "published" lists other workspaces' published KBs instead of the
+   * platform catalog. */
+  kind?: "platform" | "published";
 }): Promise<PublicCatalogResult> {
   const query = new URLSearchParams();
+  if (params?.kind === "published") query.set("kind", "published");
   if (params?.page) query.set("page", String(params.page));
   if (params?.pageSize) query.set("page_size", String(params.pageSize));
   if (params?.q) query.set("q", params.q);
@@ -392,13 +401,64 @@ export function changeKnowledgeBaseVisibility(
   return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, data);
 }
 
-// ---- recipient-bound KB read invitations ----------------------------------
+/* Owning workspace's Tenant Admin: publish the KB to every signed-in user
+ * ("published") or withdraw it ("tenant"). The owner keeps all writes. */
+export function setKnowledgeBasePublished(id: string, published: boolean) {
+  return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, {
+    visibility: published ? "published" : "tenant",
+  });
+}
 
-/* Tenant-wide access grants (kb_access_grants) and the KB visibility
- * endpoint are retired: the request/review/revoke/list clients and the
- * visibility writer were removed here after confirming no UI callers
- * remained. Cross-workspace reads now use recipient-bound kb_invitations
- * below; tenant joins use the tenant invitation APIs in ./tenants. */
+/* Subscribe to a published KB so chat searches it by default. scope
+ * "tenant" covers the caller's whole workspace (Tenant Admin only). */
+export function subscribeKnowledgeBase(id: string, scope: "me" | "tenant" = "me") {
+  return apiPost(`/api/v1/knowledge-bases/${id}/subscription?scope=${scope}`, {});
+}
+
+export function unsubscribeKnowledgeBase(id: string, scope: "me" | "tenant" = "me") {
+  return apiDel(`/api/v1/knowledge-bases/${id}/subscription?scope=${scope}`);
+}
+
+// ---- tenant-wide KB grants --------------------------------------------------
+
+/* Owner-issued, read-only share of one KB with every member of another
+ * workspace (kb_access_grants). Only the owning workspace's Tenant Admin
+ * (or a SuperAdmin) grants and revokes; there is no request flow. */
+export type KBGrantStatus = "pending" | "approved" | "rejected" | "revoked" | "expired";
+
+export interface KBGrant {
+  id: string;
+  kb_id: string;
+  kb_name?: string;
+  owner_tenant_id: number;
+  owner_tenant_name?: string;
+  grantee_tenant_id: number;
+  grantee_tenant_name?: string;
+  permission: string;
+  status: KBGrantStatus;
+  message?: string;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export function listKBGrants(kbId: string): Promise<KBGrant[]> {
+  return apiGet<{ success: boolean; data?: KBGrant[] }>(`/api/v1/knowledge-bases/${kbId}/grants`).then(
+    (r) => r.data ?? [],
+  );
+}
+
+export function grantKBToTenant(
+  kbId: string,
+  data: { grantee_tenant_id: number; message?: string; expires_at?: string },
+) {
+  return apiPost<{ success: boolean; data?: KBGrant }>(`/api/v1/knowledge-bases/${kbId}/grants`, data);
+}
+
+export function revokeKBGrant(kbId: string, grantId: string) {
+  return apiDel(`/api/v1/knowledge-bases/${kbId}/grants/${grantId}`);
+}
+
+// ---- recipient-bound KB read invitations ----------------------------------
 
 /* Individual read invitations (kb_invitations — see internal/types/
  * kb_invitation.go). DISTINCT from tenant join invitations (see
@@ -550,6 +610,9 @@ export type KnowledgeDoc = {
   id: string;
   title?: string;
   file_name?: string;
+  /* Uploader user ID (types.Knowledge json:created_by). A Member may edit or
+   * delete only the documents they uploaded; '' (legacy rows) is admin-only. */
+  created_by?: string;
   /* Real backend field (types.Knowledge json:parse_status):
    * pending/processing/finalizing/completed/failed/cancelled. The phantom
    * `status` alias is kept for callers written against the old shape. */

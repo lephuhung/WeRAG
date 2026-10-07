@@ -59,11 +59,19 @@ function RegisterForm() {
       if (!res.success || !res.token) throw new Error(res.message ?? "Register failed");
       localStorage.setItem("weknora_token", res.token);
       if (res.refresh_token) localStorage.setItem("weknora_refresh_token", res.refresh_token);
-      // Mirror persistLoginResponse: probe /auth/me then enter or onboard.
-      const me = await apiGet<{ success: boolean; data?: { tenant?: unknown } }>(`/api/v1/auth/me`).catch(
-        () => null,
+      // Mirror persistLoginResponse: probe /auth/me, then onboard only when
+      // this deployment lets users create workspaces. Otherwise a new
+      // account waits (tenantless) until a SuperAdmin or Tenant Admin adds
+      // it to a unit; the KB list explains that.
+      const me = await apiGet<{
+        success: boolean;
+        data?: { tenant?: unknown; capabilities?: { can_create_tenant?: boolean } };
+      }>(`/api/v1/auth/me`).catch(() => null);
+      router.push(
+        me?.data?.tenant || !me?.data?.capabilities?.can_create_tenant
+          ? "/platform/knowledge-bases"
+          : "/onboarding/workspace",
       );
-      router.push(me?.data?.tenant ? "/platform/knowledge-bases" : "/onboarding/workspace");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Register failed");
     } finally {

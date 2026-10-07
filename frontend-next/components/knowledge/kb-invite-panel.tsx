@@ -14,8 +14,17 @@ import {
 } from "@/lib/api/knowledge";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/lib/i18n";
+import { TenantPicker } from "@/components/knowledge/tenant-picker";
 
-export function KBInvitePanel({ kbId, kbName }: { kbId: string; kbName?: string }) {
+export function KBInvitePanel({
+  kbId,
+  kbName,
+  ownerTenantId,
+}: {
+  kbId: string;
+  kbName?: string;
+  ownerTenantId?: number;
+}) {
   const { t } = useT();
   const [email, setEmail] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -113,17 +122,9 @@ export function KBInvitePanel({ kbId, kbName }: { kbId: string; kbName?: string 
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <label className="block w-36">
-          <span className="caption mb-1 block text-muted">Their workspace ID</span>
-          <input
-            type="number"
-            required
-            min={1}
-            className="input"
-            placeholder="e.g. 42"
-            value={tenantId}
-            onChange={(e) => setTenantId(e.target.value)}
-          />
+        <label className="block w-56">
+          <span className="caption mb-1 block text-muted">{t("kbGrant.unit")}</span>
+          <TenantPicker value={tenantId} onChange={setTenantId} excludeId={ownerTenantId} required />
         </label>
         <button type="submit" disabled={busy} className="btn btn-primary btn-sm">
           {busy ? "Inviting…" : "Invite"}

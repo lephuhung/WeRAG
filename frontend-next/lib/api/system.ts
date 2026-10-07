@@ -1202,3 +1202,56 @@ export function getConfigSkillGuidance(
 ): Promise<{ data: SkillInstallGuidanceState }> {
   return apiGet(`/api/v1/sandbox-configs/${configId}/skills/${skillId}/guidance`);
 }
+
+// ---- workspace provisioning (SuperAdmin) -------------------------------------
+
+/* Who becomes a workspace member: an existing account by user id or email,
+ * or a new local account (password optional — the server then generates
+ * one and returns it once). Exactly one of the three. */
+export type TenantMemberTarget =
+  | { user_id: string }
+  | { email: string }
+  | { new_user: { username: string; email: string; password?: string } };
+
+export interface ProvisionTenantResult {
+  tenant: { id: number; name: string; description?: string };
+  admin: SystemAdminUser;
+  admin_created: boolean;
+  generated_password?: string;
+}
+
+/* POST /api/v1/system/admin/tenants — only SuperAdmins create workspaces,
+ * each with its Tenant Admin. The SuperAdmin does not join it. */
+export function provisionTenant(req: {
+  name: string;
+  description?: string;
+  admin: TenantMemberTarget;
+}): Promise<ProvisionTenantResult> {
+  return apiPost("/api/v1/system/admin/tenants", req);
+}
+
+export interface SystemTenantMember {
+  user_id: string;
+  email: string;
+  username: string;
+  role: TenantRole;
+  status: string;
+  joined_at: string;
+}
+
+export function listSystemTenantMembers(tenantId: number): Promise<SystemTenantMember[]> {
+  return apiGet<{ success: boolean; data?: SystemTenantMember[] }>(
+    `/api/v1/system/admin/tenants/${tenantId}/members`,
+  ).then((r) => r.data ?? []);
+}
+
+export function addSystemTenantMember(
+  tenantId: number,
+  req: TenantMemberTarget & { role: "admin" | "member" },
+): Promise<{ success?: boolean; user_created?: boolean; generated_password?: string }> {
+  return apiPost(`/api/v1/system/admin/tenants/${tenantId}/members`, req);
+}
+
+export function removeSystemTenantMember(tenantId: number, userId: string) {
+  return apiDel(`/api/v1/system/admin/tenants/${tenantId}/members/${userId}`);
+}

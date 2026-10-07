@@ -26,7 +26,7 @@ export interface KBViewerRow {
   visibility?: string | null;
 }
 
-export type KBViewerKind = "own" | "public" | "invited" | "foreign";
+export type KBViewerKind = "own" | "public" | "published" | "invited" | "foreign";
 
 export interface KBViewerCapabilities {
   kind: KBViewerKind;
@@ -112,12 +112,24 @@ export function getKBViewerCapabilities(
       canInvite: admin,
     };
   }
+  // Another tenant's published KB: every human reads it and downloads
+  // originals; writes stay with the owning tenant.
+  if (row.visibility === "published") {
+    return {
+      kind: "published",
+      canView: true,
+      canDownloadOriginal: true,
+      canManage: false,
+      canUpload: false,
+      canShare: false,
+      canInvite: false,
+    };
+  }
   // Foreign tenant-owned rows (including accepted invites): read-only, no
   // original download, no mutation — regardless of admin or SuperAdmin
   // flags. UI affordances only; the backend enforces per-row access.
   // Labeled "invited": rows reachable outside the active tenant arrive
-  // through recipient-bound invitations (the catalog never leaks foreign
-  // tenant rows otherwise).
+  // through recipient-bound invitations or tenant-wide grants.
   return {
     kind: "invited",
     canView: true,
