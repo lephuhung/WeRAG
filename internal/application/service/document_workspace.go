@@ -312,7 +312,7 @@ func (s *documentWorkspaceService) View(
 				// "review changes" navigator on every open: the user reviews from
 				// the Collaboration tab when they want to.
 				"review":   map[string]interface{}{"trackChanges": true, "showReviewChanges": false, "reviewDisplay": "markup"},
-				"features": map[string]interface{}{"spellcheck": false, "featuresTips": false},
+				"features": map[string]interface{}{"spellcheck": map[string]interface{}{"mode": false, "change": false}, "featuresTips": false},
 				// Keep the surface to editing the file: no help/feedback links
 				// and no macros. Plugin support must stay on: turning it off
 				// also stops the autostarted assistant plugin (verified on 9.4).
