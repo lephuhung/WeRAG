@@ -593,6 +593,9 @@ function ChatBody({ id }: { id: string }) {
   // if editor_key moved — tool results can be lost on a dropped stream.
   const [docRecheck, setDocRecheck] = useState(0);
   const requestDocRecheck = () => setDocRecheck((v) => v + 1);
+  // "new" route: the pre-session document pane is opening a picked file (it
+  // creates the session) — send() must not create a second one meanwhile.
+  const docPaneBusyRef = useRef(false);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -683,6 +686,7 @@ function ChatBody({ id }: { id: string }) {
     setPendingSelection(null);
     setDocRevision(null);
     setDocRecheck(0);
+    docPaneBusyRef.current = false;
     // Leaving (or unmounting) a session whose turn is still generating: flag
     // its activity marker detached so the sidebar keeps reporting/polling it —
     // mirrors Vue clearData → sessionActivity.detach.
@@ -996,7 +1000,7 @@ function ChatBody({ id }: { id: string }) {
 
   const send = async (s: ComposerSend) => {
     const t = s.query.trim();
-    if (!t || busy) return;
+    if (!t || busy || docPaneBusyRef.current) return;
     setError(null);
     // A new send invalidates any previous stream's pending callbacks (e.g.
     // a resend right after stop()): they capture `gen` and skip their late
@@ -1698,8 +1702,9 @@ function ChatBody({ id }: { id: string }) {
       ? (initialQ ?? "New chat")
       : (sessionTitle || session?.title?.trim() || "New chat");
 
-  const isDocumentAssistant =
-    id !== "new" && ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
+  // On "new" the pane runs in pre-session mode: picking a file creates the
+  // session and navigates to it.
+  const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
   const chatColumn = (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -1814,7 +1819,12 @@ function ChatBody({ id }: { id: string }) {
         isDocumentAssistant ? (
           <DocWorkspace
             key={id}
-            sessionId={id}
+            sessionId={id === "new" ? undefined : id}
+            onSessionCreated={(sid) => router.push(`/platform/chat/${sid}`)}
+            onBusyChange={(b) => {
+              docPaneBusyRef.current = b;
+            }}
+            blocked={id === "new" && busy}
             revision={docRevision}
             recheckToken={docRecheck}
             turnInFlight={busy}

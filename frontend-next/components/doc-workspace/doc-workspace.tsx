@@ -9,6 +9,7 @@ import {
   uploadTemporaryAttachment,
   type TemporaryAttachment,
 } from "@/lib/api/attachments";
+import { createSession, deleteSession } from "@/lib/api/chat";
 import {
   DocumentWorkspaceError,
   createDocumentWorkspace,
@@ -18,6 +19,7 @@ import {
   forceSaveDocumentWorkspaceKeepalive,
   getDocumentWorkspace,
   isWordAttachment,
+  openDocumentInNewSession,
   parsePluginSelectionMessage,
   shouldRefreshEditor,
   type DocumentSelection,
@@ -52,15 +54,31 @@ function errMessage(e: unknown): string {
 
 /* Left pane of the document assistant: one ONLYOFFICE-backed .docx per chat
  * session. Loads (or lets the user create) the workspace, keeps the editor
- * in sync with assistant-made revisions, and forwards editor selections. */
+ * in sync with assistant-made revisions, and forwards editor selections.
+ *
+ * Pre-session mode (`sessionId` undefined, new-chat page): shows the drop
+ * zone right away; picking a file creates the session, uploads it, opens the
+ * workspace and hands the new id to `onSessionCreated` (which navigates). */
 export function DocWorkspace({
   sessionId,
+  onSessionCreated,
+  onBusyChange,
+  blocked = false,
   revision,
   recheckToken = 0,
   turnInFlight = false,
   onSelectionChange,
 }: {
-  sessionId: string;
+  /** Undefined → pre-session mode (no chat session exists yet). */
+  sessionId: string | undefined;
+  /** Pre-session mode: the session that now holds the opened document. */
+  onSessionCreated?: (sessionId: string) => void;
+  /** Pre-session mode: true while a picked file is being opened (the host
+   * must not create another session from its composer meanwhile). */
+  onBusyChange?: (busy: boolean) => void;
+  /** Host is busy (e.g. a first message is creating the session): the drop
+   * zone and file picker are disabled. */
+  blocked?: boolean;
   /** Latest document revision reported by an editing tool in the chat. */
   revision: number | null;
   /** Bumped by the chat when an assistant turn ends (complete, error, abort,
@@ -72,7 +90,7 @@ export function DocWorkspace({
 }) {
   const { t } = useT();
   const toast = useToast();
-  const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const [phase, setPhase] = useState<Phase>(() => (sessionId ? { kind: "loading" } : { kind: "empty" }));
   // `view` tracks the latest server state (badge, file name); `mounted` is the
   // view whose config the editor was created with — only replaced when the
   // document identity changes, revisions go through refreshFile().
@@ -84,6 +102,9 @@ export function DocWorkspace({
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Pre-session mode: last failure and the file kept for a retry.
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [retryFile, setRetryFile] = useState<File | null>(null);
   const editorRef = useRef<OnlyOfficeEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const revisionRef = useRef(0);
@@ -131,6 +152,7 @@ export function DocWorkspace({
   }, []);
 
   const loadAttachments = useCallback(async () => {
+    if (!sessionId) return;
     try {
       const list = await listTemporaryAttachments(sessionId);
       setAttachments(list.filter((a) => isWordAttachment(a.file_name, a.file_type) && a.status !== "failed"));
@@ -144,6 +166,10 @@ export function DocWorkspace({
     setEditorFailed(null);
     setMounted(null);
     editorReadyRef.current = false;
+    if (!sessionId) {
+      setPhase({ kind: "empty" });
+      return;
+    }
     try {
       const v = await getDocumentWorkspace(sessionId);
       if (v) {
@@ -174,6 +200,7 @@ export function DocWorkspace({
 
   /* ---------- create from an attachment ---------- */
   const openAttachment = async (attachmentId: string) => {
+    if (!sessionId) return;
     setBusyMsg(t("docws.opening"));
     try {
       applyView(await createDocumentWorkspace(sessionId, attachmentId));
@@ -190,9 +217,63 @@ export function DocWorkspace({
     }
   };
 
+  /* Pre-session: session → upload → workspace, then hand off (navigation).
+   * On failure the fresh session is deleted and the file kept for retry. */
+  const openingRef = useRef(false);
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  const openInNewSession = async (file: File) => {
+    if (openingRef.current || blocked) return;
+    openingRef.current = true;
+    onBusyChangeRef.current?.(true);
+    setOpenError(null);
+    setRetryFile(file);
+    setBusyMsg(t("docws.opening"));
+    try {
+      const sid = await openDocumentInNewSession(file, {
+        createSession: async () => {
+          const res = await createSession({});
+          return res?.data?.id ?? "";
+        },
+        upload: async (sid, f) => {
+          const res = await uploadTemporaryAttachment(sid, f, BUILTIN_DOCUMENT_ASSISTANT_ID, "auto", (p) =>
+            setBusyMsg(t("docws.uploading", { percent: Math.round(p) })),
+          );
+          setBusyMsg(t("docws.opening"));
+          return res?.data?.id ?? "";
+        },
+        createWorkspace: (sid, attachmentId) => createDocumentWorkspace(sid, attachmentId),
+        deleteSession: (sid) => deleteSession(sid),
+      });
+      if (!aliveRef.current) {
+        // Pane went away (agent switched) before navigating: nobody will
+        // open this session — remove it like a failed attempt.
+        openingRef.current = false;
+        onBusyChangeRef.current?.(false);
+        void deleteSession(sid).catch(() => {});
+        return;
+      }
+      setRetryFile(null);
+      // Keep the progress message (and the host blocked) until the route changes.
+      onSessionCreated?.(sid);
+    } catch (e) {
+      openingRef.current = false;
+      onBusyChangeRef.current?.(false);
+      if (!aliveRef.current) return;
+      setBusyMsg(null);
+      setOpenError(
+        e instanceof DocumentWorkspaceError && e.code === "editor_disabled" ? t("docws.disabledTitle") : errMessage(e),
+      );
+    }
+  };
+
   const uploadAndOpen = async (file: File) => {
     if (!isWordAttachment(file.name)) {
       toast.error(t("docws.onlyWord"));
+      return;
+    }
+    if (!sessionId) {
+      await openInNewSession(file);
       return;
     }
     setBusyMsg(t("docws.uploading", { percent: 0 }));
@@ -235,6 +316,7 @@ export function DocWorkspace({
   /* Re-GET the workspace; refresh the editor only when editor_key changed.
    * Always adopts the server view (status pill, revision badge). */
   const recheck = useCallback(async () => {
+    if (!sessionId) return;
     if (checkingRef.current) {
       recheckAgainRef.current = true;
       return;
@@ -309,7 +391,7 @@ export function DocWorkspace({
 
   /* ---------- flush pending edits when the page goes away ---------- */
   useEffect(() => {
-    if (!isEditor) return;
+    if (!isEditor || !sessionId) return;
     const flush = () => {
       if (unloadFlushedRef.current) return;
       unloadFlushedRef.current = true;
@@ -355,6 +437,7 @@ export function DocWorkspace({
 
   /* ---------- top-bar actions ---------- */
   const download = async () => {
+    if (!sessionId) return;
     try {
       const blob = await downloadDocumentWorkspace(sessionId);
       const url = URL.createObjectURL(blob);
@@ -371,6 +454,7 @@ export function DocWorkspace({
   };
 
   const saveNow = async () => {
+    if (!sessionId) return;
     setSaving(true);
     try {
       await forceSaveDocumentWorkspace(sessionId);
@@ -420,7 +504,7 @@ export function DocWorkspace({
           e.preventDefault();
           setDragOver(false);
           const file = e.dataTransfer.files?.[0];
-          if (file && !busyMsg) void uploadAndOpen(file);
+          if (file && !busyMsg && !blocked) void uploadAndOpen(file);
         }}
       >
         <input
@@ -431,7 +515,7 @@ export function DocWorkspace({
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
-            if (file) void uploadAndOpen(file);
+            if (file && !busyMsg && !blocked) void uploadAndOpen(file);
           }}
         />
         <div
@@ -443,11 +527,35 @@ export function DocWorkspace({
           <p className="text-[15px] font-medium text-ink">{dragOver ? t("docws.dropHere") : t("docws.emptyTitle")}</p>
           <p className="body-sm mt-1 text-muted">{t("docws.emptyDesc")}</p>
           {busyMsg ? (
-            <p className="body-sm mt-4 text-ink">{busyMsg}</p>
+            <p className="body-sm mt-4 text-ink" role="status">{busyMsg}</p>
           ) : (
-            <button type="button" className="btn btn-primary btn-sm mt-4" onClick={() => fileInputRef.current?.click()}>
-              {t("docws.pickFile")}
-            </button>
+            <>
+              {openError && (
+                <p className="body-sm mt-4 max-w-[420px] text-error" role="alert">
+                  {t("docws.openFailed")}: {openError}
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {openError && retryFile && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={blocked}
+                    onClick={() => void uploadAndOpen(retryFile)}
+                  >
+                    <IconRefresh className="h-3.5 w-3.5" /> {t("docws.retryFile", { name: retryFile.name })}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={blocked}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {t("docws.pickFile")}
+                </button>
+              </div>
+            </>
           )}
         </div>
         {attachments.length > 0 && (
@@ -534,6 +642,7 @@ export function DocWorkspace({
               onRequestRefreshFile: () => {
                 // The editor itself asks for a fresh config: apply it even if
                 // the key is unchanged (version change / reconnect).
+                if (!sessionId) return;
                 void getDocumentWorkspace(sessionId)
                   .then((v) => {
                     if (!aliveRef.current || !v?.editor) return;

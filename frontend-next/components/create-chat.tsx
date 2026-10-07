@@ -20,6 +20,8 @@ import {
 } from "@/lib/first-turn-handoff";
 import { questionOriginFromSuggestion } from "@/lib/question-origin";
 import { useT } from "@/lib/i18n";
+import { SplitPane } from "@/components/doc-workspace/split-pane";
+import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 
 const FALLBACK_SUGGESTIONS = [
   "Summarize the latest release notes",
@@ -32,6 +34,14 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  // The document pane is opening a picked file (it creates the session):
+  // the composer must not create a second one meanwhile.
+  const [docPaneBusy, setDocPaneBusyState] = useState(false);
+  const docPaneBusyRef = useRef(false);
+  const setDocPaneBusy = (v: boolean) => {
+    docPaneBusyRef.current = v;
+    setDocPaneBusyState(v);
+  };
   const [error, setError] = useState<string | null>(null);
   const [suggested, setSuggested] = useState<SuggestedQuestion[] | null>(null);
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
@@ -53,13 +63,28 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
     });
   };
 
+  // KB variant: the chat page reads its KB scope from WeKnora_settings.
+  const persistKbScope = () => {
+    if (!kbId) return;
+    try {
+      const raw = localStorage.getItem("WeKnora_settings");
+      const parsed = raw ? (JSON.parse(raw) as { selectedKnowledgeBases?: string[] }) : {};
+      const ids = parsed.selectedKnowledgeBases ?? [];
+      if (!ids.includes(kbId)) {
+        localStorage.setItem("WeKnora_settings", JSON.stringify({ ...parsed, selectedKnowledgeBases: [...ids, kbId] }));
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
   // Session create takes title/description only (CreateSessionRequest); the
   // KB scope + first question travel via ?q=… + chat context, like the Vue flow.
   // A picked suggestion's retrieval hint rides as qokb/qok (creatChat.vue
   // firstQuestionOrigin) so the first stream keeps question_origin.
   const send = async (s: ComposerSend) => {
     const q = s.query.trim();
-    if (!q || busy) return;
+    if (!q || busy || docPaneBusyRef.current) return;
     setBusy(true);
     setError(null);
     try {
@@ -128,18 +153,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
           return;
         }
       }
-      if (kbId) {
-        try {
-          const raw = localStorage.getItem("WeKnora_settings");
-          const parsed = raw ? (JSON.parse(raw) as { selectedKnowledgeBases?: string[] }) : {};
-          const ids = parsed.selectedKnowledgeBases ?? [];
-          if (!ids.includes(kbId)) {
-            localStorage.setItem("WeKnora_settings", JSON.stringify({ ...parsed, selectedKnowledgeBases: [...ids, kbId] }));
-          }
-        } catch {
-          /* ignore */
-        }
-      }
+      persistKbScope();
       // The question and its retrieval hint travel one-shot via the route
       // (the chat page consumes the staged file handoff on the first send
       // and the auto-send effect strips the query string). The URL carries
@@ -168,8 +182,9 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   if (suggested === null && typeof window !== "undefined") void loadSuggested();
 
   const suggestions = suggested?.length ? suggested.map((s) => s.question) : FALLBACK_SUGGESTIONS;
+  const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
-  return (
+  const column = (
     <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-4 sm:px-8">
       <Orb color="sky" size={560} className="-top-48 left-1/2 -translate-x-1/2" />
       <Orb color="rose" size={380} className="bottom-[-140px] right-[8%]" />
@@ -178,7 +193,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       <div className="relative w-full max-w-[768px]">
         <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
         <p className="mb-10 text-center text-muted">{t("cc.subtitle")}</p>
-        {ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID && (
+        {isDocumentAssistant && (
           <p className="body-sm -mt-6 mb-6 text-center text-muted">{t("docws.createChatHint")}</p>
         )}
 
@@ -222,6 +237,8 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
         />
         {error && <p className="body-sm mt-4 text-center text-error">{error}</p>}
 
+        {/* Generic suggestions do not apply to the document assistant. */}
+        {!isDocumentAssistant && (
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
           {suggested?.length
             ? suggested.map((item) => (
@@ -239,7 +256,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                       }),
                     )
                   }
-                  disabled={busy}
+                  disabled={busy || docPaneBusy}
                   className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
                 >
                   {item.question}
@@ -257,15 +274,40 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                       }),
                     )
                   }
-                  disabled={busy}
+                  disabled={busy || docPaneBusy}
                   className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
                 >
                   {s}
                 </button>
               ))}
         </div>
+        )}
       </div>
     </div>
+  );
+
+  // Always through SplitPane so the composer keeps its identity when the
+  // document assistant is (de)selected. Pre-session pane: picking a file
+  // creates the session and opens the chat on it (no first message).
+  return (
+    <SplitPane
+      left={
+        isDocumentAssistant ? (
+          <DocWorkspace
+            sessionId={undefined}
+            blocked={busy}
+            onBusyChange={setDocPaneBusy}
+            onSessionCreated={(sid) => {
+              persistKbScope();
+              router.push(`/platform/chat/${sid}`);
+            }}
+            revision={null}
+            onSelectionChange={() => {}}
+          />
+        ) : null
+      }
+      right={column}
+    />
   );
 }
 

@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DocumentWorkspaceError,
   documentRevisionFromToolData,
+  openDocumentInNewSession,
   documentServerOrigin,
   isWordAttachment,
   parsePluginSelectionMessage,
@@ -54,6 +56,71 @@ describe("shouldRefreshEditor", () => {
   });
   it("treats a missing current key as changed", () => {
     assert.equal(shouldRefreshEditor({ ...base, currentKey: null }), true);
+  });
+});
+
+describe("openDocumentInNewSession", () => {
+  const mkDeps = (over: Partial<Record<"upload" | "createWorkspace" | "deleteSession", () => Promise<unknown>>> = {}) => {
+    const calls: string[] = [];
+    const deps = {
+      createSession: async () => {
+        calls.push("create");
+        return "s1";
+      },
+      upload: async (sid: string, file: string) => {
+        calls.push(`upload:${sid}:${file}`);
+        if (over.upload) await over.upload();
+        return "a1";
+      },
+      createWorkspace: async (sid: string, aid: string) => {
+        calls.push(`workspace:${sid}:${aid}`);
+        if (over.createWorkspace) await over.createWorkspace();
+      },
+      deleteSession: async (sid: string) => {
+        calls.push(`delete:${sid}`);
+        if (over.deleteSession) await over.deleteSession();
+      },
+    };
+    return { calls, deps };
+  };
+
+  it("creates the session, uploads, opens the workspace", async () => {
+    const { calls, deps } = mkDeps();
+    assert.equal(await openDocumentInNewSession("f.docx", deps), "s1");
+    assert.deepEqual(calls, ["create", "upload:s1:f.docx", "workspace:s1:a1"]);
+  });
+
+  it("deletes the session when the upload fails", async () => {
+    const { calls, deps } = mkDeps({ upload: async () => { throw new Error("upload boom"); } });
+    await assert.rejects(openDocumentInNewSession("f.docx", deps), /upload boom/);
+    assert.deepEqual(calls, ["create", "upload:s1:f.docx", "delete:s1"]);
+  });
+
+  it("deletes the session when the workspace create fails, keeping the original error", async () => {
+    const { calls, deps } = mkDeps({
+      createWorkspace: async () => { throw new Error("ws boom"); },
+      deleteSession: async () => { throw new Error("delete boom"); },
+    });
+    await assert.rejects(openDocumentInNewSession("f.docx", deps), /ws boom/);
+    assert.deepEqual(calls, ["create", "upload:s1:f.docx", "workspace:s1:a1", "delete:s1"]);
+  });
+
+  it("throws without uploading or deleting when createSession returns no id", async () => {
+    const { calls, deps } = mkDeps();
+    deps.createSession = async () => {
+      calls.push("create");
+      return "";
+    };
+    await assert.rejects(openDocumentInNewSession("f.docx", deps), /Failed to create session/);
+    assert.deepEqual(calls, ["create"]);
+  });
+
+  it("treats an already-open workspace as success", async () => {
+    const { calls, deps } = mkDeps({
+      createWorkspace: async () => { throw new DocumentWorkspaceError("already_exists", 409, "exists"); },
+    });
+    assert.equal(await openDocumentInNewSession("f.docx", deps), "s1");
+    assert.ok(!calls.includes("delete:s1"));
   });
 });
 

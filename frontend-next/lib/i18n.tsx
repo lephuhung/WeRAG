@@ -1654,7 +1654,8 @@ const en = {
   "docws.lookupPrompt": "Look up the legal basis related to the selected passage",
   "docws.agentName": "Document assistant",
   "docws.agentDesc": "Edit a Word document side by side with the assistant",
-  "docws.createChatHint": "Send your first message — the document editor opens next to the conversation, where you can upload a .docx file.",
+  "docws.createChatHint": "Open a .docx file in the pane on the left — or just type to start the conversation.",
+  "docws.retryFile": "Retry “{name}”",
 };
 const vi: Record<keyof typeof en, string> = {
   "nav.chat": "Chat",
@@ -3301,7 +3302,8 @@ const vi: Record<keyof typeof en, string> = {
   "docws.lookupPrompt": "Tra cứu căn cứ pháp lý liên quan đến đoạn đã chọn",
   "docws.agentName": "Soạn thảo văn bản",
   "docws.agentDesc": "Soạn và chỉnh sửa văn bản Word cùng trợ lý",
-  "docws.createChatHint": "Gửi tin nhắn đầu tiên — khung soạn thảo sẽ mở bên cạnh cuộc trò chuyện để bạn tải lên tệp .docx.",
+  "docws.createChatHint": "Mở tệp .docx ở khung bên trái — hoặc nhập tin nhắn để bắt đầu trò chuyện.",
+  "docws.retryFile": "Thử lại “{name}”",
 };
 
 const dicts: Record<Locale, Partial<Record<keyof typeof en, string>>> = { en, vi };

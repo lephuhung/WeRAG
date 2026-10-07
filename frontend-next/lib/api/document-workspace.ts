@@ -182,3 +182,41 @@ export function shouldRefreshEditor(s: {
   if (!s.nextKey || s.nextKey === s.currentKey) return false;
   return s.editorReady && !s.inFlight;
 }
+
+export interface OpenDocumentInNewSessionDeps<F> {
+  /** POST /sessions {} → new session id. */
+  createSession: () => Promise<string>;
+  /** Upload `file` as a temporary attachment of the session → attachment id. */
+  upload: (sessionId: string, file: F) => Promise<string>;
+  /** POST /sessions/:id/document {attachment_id}. */
+  createWorkspace: (sessionId: string, attachmentId: string) => Promise<unknown>;
+  /** Best-effort cleanup of the fresh session when a later step fails. */
+  deleteSession: (sessionId: string) => Promise<unknown>;
+}
+
+/** Pre-session document assistant: pick a file → create a session → upload
+ * it → open the workspace. Resolves with the new session id. Any failure
+ * after the session exists deletes it best-effort (never masking the
+ * original error) and rethrows, so the caller can keep the file for retry.
+ * A 409 on the workspace means it is already open — treated as success. */
+export async function openDocumentInNewSession<F>(file: F, deps: OpenDocumentInNewSessionDeps<F>): Promise<string> {
+  const sessionId = await deps.createSession();
+  if (!sessionId) throw new Error("Failed to create session");
+  try {
+    const attachmentId = await deps.upload(sessionId, file);
+    if (!attachmentId) throw new Error("upload returned no attachment id");
+    try {
+      await deps.createWorkspace(sessionId, attachmentId);
+    } catch (err) {
+      if (!(err instanceof DocumentWorkspaceError && err.code === "already_exists")) throw err;
+    }
+    return sessionId;
+  } catch (err) {
+    try {
+      await deps.deleteSession(sessionId);
+    } catch {
+      /* orphan cleanup must not mask the original error */
+    }
+    throw err;
+  }
+}
