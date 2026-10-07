@@ -908,3 +908,37 @@ func TestLenientEntities(t *testing.T) {
 		t.Errorf("text %q", got)
 	}
 }
+
+func TestNoOpEditsLeaveTheDocumentClean(t *testing.T) {
+	d := mustOpen(t, makeDocx(t, `<w:p><w:r><w:t>Văn bản</w:t></w:r></w:p>`))
+	// right margin is 851 twips already: 851/20 pt asks for the same value
+	same := SectionProps{MarginRightPt: ptrTo(851.0 / 20)}
+	if err := d.Batch(func(b *Batch) error {
+		if err := b.SetSectionProps(0, same, testAuthor); err != nil {
+			return err
+		}
+		if b.Pending() != 0 {
+			t.Fatalf("a no-op edit was recorded: %d", b.Pending())
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if d.Dirty() {
+		t.Fatal("a batch of no-op edits must leave the document clean")
+	}
+	if err := d.Batch(func(b *Batch) error {
+		if err := b.SetSectionProps(0, SectionProps{MarginRightPt: ptrTo(852.0 / 20)}, testAuthor); err != nil {
+			return err
+		}
+		if b.Pending() != 1 {
+			t.Fatalf("pending = %d", b.Pending())
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !d.Dirty() {
+		t.Fatal("a real edit must mark the document dirty")
+	}
+}

@@ -8,6 +8,7 @@ import {
   documentServerOrigin,
   isWordAttachment,
   parsePluginSelectionMessage,
+  shouldRefreshEditor,
 } from "./document-workspace.ts";
 import { clampLeftPct } from "../../components/doc-workspace/split-pane-math.ts";
 
@@ -34,6 +35,25 @@ describe("documentRevisionFromToolData", () => {
     assert.equal(documentRevisionFromToolData(undefined, { tool_name: "rewrite_paragraphs", document_revision: "7" }), 7);
     assert.equal(documentRevisionFromToolData("knowledge_search", { document_revision: 4 }), null);
     assert.equal(documentRevisionFromToolData("apply_format_fixes", {}), null);
+  });
+});
+
+describe("shouldRefreshEditor", () => {
+  const base = { currentKey: "k1", nextKey: "k2", editorReady: true, inFlight: false };
+  it("refreshes on a new key once the editor is ready and idle", () => {
+    assert.equal(shouldRefreshEditor(base), true);
+  });
+  it("never refreshes for the same or an empty key", () => {
+    assert.equal(shouldRefreshEditor({ ...base, nextKey: "k1" }), false);
+    assert.equal(shouldRefreshEditor({ ...base, nextKey: "" }), false);
+    assert.equal(shouldRefreshEditor({ ...base, nextKey: undefined }), false);
+  });
+  it("waits while the editor is loading or a refresh is in flight", () => {
+    assert.equal(shouldRefreshEditor({ ...base, editorReady: false }), false);
+    assert.equal(shouldRefreshEditor({ ...base, inFlight: true }), false);
+  });
+  it("treats a missing current key as changed", () => {
+    assert.equal(shouldRefreshEditor({ ...base, currentKey: null }), true);
   });
 });
 

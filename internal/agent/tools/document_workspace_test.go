@@ -776,3 +776,225 @@ func TestApplyFormatFixesKeepsGoingPastARejectedEdit(t *testing.T) {
 		t.Fatalf("the valid edits were not written: font=%v size=%v", p[8].FontName, p[6].SizePt)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// apply_format_fixes: twip rounding and per-paragraph conformity
+
+func checkStatus(t *testing.T, content []byte) map[string]string {
+	t.Helper()
+	r := docformat.Check(context.Background(), content, docformat.Options{Segmenter: docformat.SegmenterHeuristic})
+	out := map[string]string{}
+	for _, c := range r.Checks {
+		out[c.ID] = c.Status
+	}
+	return out
+}
+
+func TestApplyFormatFixesMarginSurvivesTwipRounding(t *testing.T) {
+	// python-docx Mm(15) → 850 twips = 14.99mm: fails the 15-20mm rule, and
+	// 15mm written naively rounds back to the same 850 twips
+	content := testCongVan(t, [4]int{1134, 850, 1134, 1701})
+	if s := checkStatus(t, content)["page.margin.right"]; s != docformat.StatusFail {
+		t.Fatalf("fixture: page.margin.right = %s", s)
+	}
+	ws := newFakeWorkspace(content)
+	res := runTool(t, NewApplyFormatFixesTool(ws, &fakeChat{reply: congVanLabels}, "s"), `{"check_ids":["page.margin.right"]}`)
+	if !res.Success || ws.commits != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	f, ok := appliedFixes(t, res)["page.margin.right"]
+	if !ok || f.Change != "lề phải 15.01mm" {
+		t.Fatalf("page.margin.right: %+v\n%s", f, res.Output)
+	}
+	if xml := documentPartXML(t, ws.content); !strings.Contains(xml, `w:right="851"`) || !strings.Contains(xml, "<w:sectPrChange") {
+		t.Fatalf("margin not written as a tracked 851 twips: %s", xml)
+	}
+	if s := checkStatus(t, ws.content)["page.margin.right"]; s != docformat.StatusPass {
+		t.Fatalf("page.margin.right after the fix: %s", s)
+	}
+}
+
+func TestGridTargetStaysInRange(t *testing.T) {
+	readMM := func(n int) float64 { return round2(float64(n) / twipsPerMM) }
+	cur := 14.99
+	for _, c := range []struct {
+		lo, hi, target float64
+		cur            *float64
+		want           int
+	}{
+		{15, 20, 15, &cur, 851}, // lower bound: ceil(850.39)
+		{30, 35, 30, nil, 1701}, // ceil(1700.79)
+		{15, 20, 20, nil, 1133}, // upper bound: floor(1133.86)
+		{209, 211, 210, nil, 11906},
+	} {
+		n, ok := gridTarget(c.lo, c.hi, c.target, c.cur, twipsPerMM, readMM)
+		if !ok || n != c.want || readMM(n) < c.lo || readMM(n) > c.hi {
+			t.Errorf("%v-%v target %v: %d (%v mm) ok=%v, want %d", c.lo, c.hi, c.target, n, readMM(n), ok, c.want)
+		}
+	}
+	// a current value already on the rounded grid point moves one step in
+	at := 850.0 / twipsPerMM
+	if n, _ := gridTarget(15, 20, 15, &at, twipsPerMM, readMM); n != 851 {
+		t.Errorf("same as current: %d", n)
+	}
+	// font sizes on the half-point grid
+	half := func(n int) float64 { return float64(n) / 2 }
+	if n, ok := gridTarget(13.2, 14, 13.2, nil, 2, half); !ok || n != 27 {
+		t.Errorf("size lower bound 13.2 → %d half-points", n)
+	}
+	if n, ok := gridTarget(12, 13.7, 13.7, nil, 2, half); !ok || n != 27 {
+		t.Errorf("size upper bound 13.7 → %d half-points", n)
+	}
+	rule := docformat.RuleCheck{Prop: "size_pt", Op: "range", Value: []any{13.2, 14.0}}
+	if v := paraTarget(rule, 12.0); v != 13.5 {
+		t.Errorf("paraTarget size = %v", v)
+	}
+}
+
+func TestApplyFormatFixesDoesNotClaimNoOpEdits(t *testing.T) {
+	content := testCongVan(t, nd30Margins) // right margin 851 twips
+	report, err := segmentReport(context.Background(), content, "", "x.docx", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := newFormatPlan()
+	same := 851.0 / 20
+	plan.sections[0] = &sectionEdit{props: docxedit.SectionProps{MarginRightPt: &same}, checks: []string{"page.margin.right"}}
+	plan.applied = append(plan.applied, AppliedFormatFix{CheckID: "page.margin.right", Paragraphs: []int{}, Sections: []int{0}})
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := plan.apply(doc)
+	if err != nil || written != 0 || doc.Dirty() {
+		t.Fatalf("written=%d dirty=%v err=%v", written, doc.Dirty(), err)
+	}
+	if len(plan.applied) != 0 {
+		t.Fatalf("a no-op edit is claimed as applied: %+v", plan.applied)
+	}
+	if len(plan.skipped) != 1 || !strings.Contains(plan.skipped[0].Reason, "không có gì thay đổi") {
+		t.Fatalf("skipped: %+v", plan.skipped)
+	}
+	out, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if documentPartXML(t, out) != documentPartXML(t, content) {
+		t.Fatal("document.xml changed")
+	}
+	if out := renderFormatPlan("x.docx", 3, report, plan, false); strings.Contains(out, "Đã áp dụng") {
+		t.Fatalf("output claims a fix: %s", out)
+	}
+}
+
+// fourParaBody is a well-formed công văn whose body has four paragraphs,
+// the second typed in Arial.
+func fourParaBody(t *testing.T) []byte {
+	body := strings.Join([]string{
+		testPara("UBND TỈNH THỪA THIÊN HUẾ", "center", "Times New Roman", 13, false, false),
+		testPara("SỞ NỘI VỤ", "center", "Times New Roman", 13, true, false),
+		testPara("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "center", "Times New Roman", 13, true, false),
+		testPara("Độc lập - Tự do - Hạnh phúc", "center", "Times New Roman", 14, true, false),
+		testPara("Số: 12/SNV-VP", "center", "Times New Roman", 13, false, false),
+		testPara("Huế, ngày 05 tháng 10 năm 2026", "center", "Times New Roman", 14, false, true),
+		testPara("V/v triển khai công tác cải cách hành chính", "center", "Times New Roman", 12, false, false),
+		testPara("Kính gửi: Ủy ban nhân dân các huyện.", "center", "Times New Roman", 14, false, false),
+		testPara("Sở Nội vụ đề nghị các đơn vị triển khai công tác cải cách hành chính năm 2026.", "both", "Times New Roman", 14, false, false),
+		testPara("Các đơn vị rà soát thủ tục hành chính thuộc phạm vi quản lý.", "both", "Arial", 14, false, false),
+		testPara("Đề nghị các đơn vị báo cáo kết quả trước ngày 30 tháng 11 năm 2026.", "both", "Times New Roman", 14, false, false),
+		testPara("Trên đây là nội dung đề nghị của Sở Nội vụ./.", "both", "Times New Roman", 14, false, false),
+		testPara("GIÁM ĐỐC", "center", "Times New Roman", 14, true, false),
+		testPara("Nguyễn Văn A", "center", "Times New Roman", 14, true, false),
+		testPara("Nơi nhận:", "left", "Times New Roman", 12, true, true),
+		testPara("- Như trên;", "left", "Times New Roman", 11, false, false),
+		testPara("- Lưu: VT.", "left", "Times New Roman", 11, false, false),
+	}, "")
+	return buildTestDocx(t, body, nd30Margins)
+}
+
+const fourParaLabels = `{"document_type":"cong_van","labels":{
+	"0":"co_quan_chu_quan","1":"co_quan_ban_hanh","2":"quoc_hieu","3":"tieu_ngu","4":"so_ky_hieu",
+	"5":"dia_danh_ngay_thang","6":"trich_yeu","7":"kinh_gui","8":"noi_dung","9":"noi_dung","10":"noi_dung","11":"noi_dung",
+	"12":"chuc_danh","13":"nguoi_ky","14":"noi_nhan","15":"noi_nhan","16":"noi_nhan"}}`
+
+// paragraphXML returns the markup of the paragraph containing text.
+func paragraphXML(t *testing.T, xml, text string) string {
+	t.Helper()
+	for _, p := range strings.SplitAfter(xml, "</w:p>") {
+		if strings.Contains(p, text) {
+			return p
+		}
+	}
+	t.Fatalf("no paragraph with %q", text)
+	return ""
+}
+
+func TestApplyFormatFixesFixesEachNonConformingParagraph(t *testing.T) {
+	content := fourParaBody(t)
+	model := &fakeChat{reply: fourParaLabels}
+	before, err := segmentReport(context.Background(), content, "", "x.docx", model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range before.Checks {
+		if c.ID == "noi_dung.font" && c.Status != docformat.StatusPass {
+			t.Fatalf("fixture: noi_dung.font should pass by majority, got %s", c.Status)
+		}
+	}
+
+	ws := newFakeWorkspace(content)
+	res := runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{}`)
+	if !res.Success || ws.commits != 1 || res.Data["blocked"] != false {
+		t.Fatalf("result: %+v", res)
+	}
+	f, ok := appliedFixes(t, res)["noi_dung.font"]
+	if !ok || len(f.Paragraphs) != 1 || f.Paragraphs[0] != 9 || f.ComponentParagraphs != 4 {
+		t.Fatalf("noi_dung.font: %+v\n%s", f, res.Output)
+	}
+	if !strings.Contains(res.Output, "noi_dung.font: phông Times New Roman — 1/4 đoạn [9]") {
+		t.Fatalf("output: %s", res.Output)
+	}
+	for id, f := range appliedFixes(t, res) {
+		for _, p := range f.Paragraphs {
+			if p >= 8 && p <= 11 && p != 9 {
+				t.Errorf("%s touched conforming body paragraph %d", id, p)
+			}
+		}
+	}
+
+	xml := documentPartXML(t, ws.content)
+	if p := paragraphXML(t, xml, "Các đơn vị rà soát"); !strings.Contains(p, "<w:rPrChange") ||
+		!strings.Contains(p, `w:ascii="Times New Roman"`) {
+		t.Fatalf("the Arial paragraph has no tracked font change: %s", p)
+	}
+	for _, text := range []string{"Sở Nội vụ đề nghị", "Đề nghị các đơn vị", "Trên đây là"} {
+		if p := paragraphXML(t, xml, text); strings.Contains(p, "Change") {
+			t.Errorf("conforming paragraph %q was changed: %s", text, p)
+		}
+	}
+
+	// the labelled report on the fixed bytes: the whole body in Times New Roman
+	after, err := segmentReport(context.Background(), ws.content, "", "x.docx", &fakeChat{reply: fourParaLabels})
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := docformat.InspectDocx(ws.content)
+	body := after.Components["noi_dung"]
+	if body == nil || len(body.Paras) != 4 {
+		t.Fatalf("noi_dung after the fix: %+v", body)
+	}
+	for _, i := range body.Paras {
+		if fn := layout.Paragraphs[i].FontName; fn == nil || *fn != "Times New Roman" {
+			t.Errorf("body paragraph %d font = %v", i, fn)
+		}
+	}
+	// nothing left to fix paragraph by paragraph in the body
+	again := runTool(t, NewApplyFormatFixesTool(ws, &fakeChat{reply: fourParaLabels}, "s"), `{"dry_run":true,"check_ids":["noi_dung.font"]}`)
+	if left := appliedFixes(t, again); len(left) != 0 {
+		t.Fatalf("fixes left: %+v", left)
+	}
+	skipped, _ := again.Data["skipped"].([]SkippedFormatFix)
+	if len(skipped) != 1 || !strings.Contains(skipped[0].Reason, "đang đạt") {
+		t.Fatalf("an explicit passing rule keeps its skip reason: %+v", skipped)
+	}
+}

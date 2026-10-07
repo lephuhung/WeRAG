@@ -19,6 +19,7 @@ import {
   getDocumentWorkspace,
   isWordAttachment,
   parsePluginSelectionMessage,
+  shouldRefreshEditor,
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
@@ -34,6 +35,15 @@ type Phase =
 
 const SELECTION_DEBOUNCE_MS = 250;
 const UPDATED_TOAST_THROTTLE_MS = 3000;
+// Fallback polling of the workspace (SSE tool results can be lost when the
+// stream is cut while the backend still finishes the edit).
+const POLL_BUSY_MS = 20_000;
+const POLL_IDLE_MS = 30_000;
+// Follow-up re-checks after a chat turn ends: the backend may still be
+// committing the edit when a dropped stream surfaces client-side.
+const SETTLE_RECHECK_MS = [4_000, 12_000];
+// Minimum gap between two refreshFile() calls unless onDocumentReady fires.
+const REFRESH_COOLDOWN_MS = 1_500;
 const WORD_ACCEPT = ".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";
 
 function errMessage(e: unknown): string {
@@ -46,11 +56,18 @@ function errMessage(e: unknown): string {
 export function DocWorkspace({
   sessionId,
   revision,
+  recheckToken = 0,
+  turnInFlight = false,
   onSelectionChange,
 }: {
   sessionId: string;
   /** Latest document revision reported by an editing tool in the chat. */
   revision: number | null;
+  /** Bumped by the chat when an assistant turn ends (complete, error, abort,
+   * resumed stream done) → re-check the workspace for a new editor_key. */
+  recheckToken?: number;
+  /** A chat turn is streaming → poll faster. */
+  turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
 }) {
   const { t } = useT();
@@ -77,6 +94,25 @@ export function DocWorkspace({
   const lastUpdatedToastRef = useRef(0);
   const onSelectionRef = useRef(onSelectionChange);
   onSelectionRef.current = onSelectionChange;
+  // editor_key of the version currently shown in the editor (mount config or
+  // the last refreshFile()). Only ever advances, so a key is applied once.
+  const currentKeyRef = useRef<string | null>(null);
+  // onDocumentReady seen for the current editor instance.
+  const editorReadyRef = useRef(false);
+  // A refreshFile() was just issued (cleared on onDocumentReady or cooldown).
+  const refreshInFlightRef = useRef(false);
+  const refreshCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // GET serialization: one recheck at a time, a request during it re-runs once.
+  const checkingRef = useRef(false);
+  const recheckAgainRef = useRef(false);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      if (refreshCooldownRef.current) clearTimeout(refreshCooldownRef.current);
+    };
+  }, []);
 
   const applyView = useCallback((v: DocumentWorkspaceView) => {
     setView(v);
@@ -86,7 +122,11 @@ export function DocWorkspace({
       setPhase({ kind: "disabled" });
       return;
     }
-    setMounted((prev) => (prev && prev.id === v.id && prev.editor ? prev : v));
+    // Every caller mounts a fresh editor (load() clears `mounted` first).
+    currentKeyRef.current = v.editor_key || null;
+    editorReadyRef.current = false;
+    refreshInFlightRef.current = false;
+    setMounted(v);
     setPhase({ kind: "editor" });
   }, []);
 
@@ -102,6 +142,8 @@ export function DocWorkspace({
   const load = useCallback(async () => {
     setPhase({ kind: "loading" });
     setEditorFailed(null);
+    setMounted(null);
+    editorReadyRef.current = false;
     try {
       const v = await getDocumentWorkspace(sessionId);
       if (v) {
@@ -124,6 +166,7 @@ export function DocWorkspace({
     setAttachments([]);
     setBusyMsg(null);
     revisionRef.current = 0;
+    currentKeyRef.current = null;
     editedRef.current = false;
     unloadFlushedRef.current = false;
     void load();
@@ -165,34 +208,106 @@ export function DocWorkspace({
     }
   };
 
-  /* ---------- assistant revisions → refresh editor ---------- */
+  /* ---------- server revisions → refresh editor ---------- */
+  const notifyUpdated = useCallback(() => {
+    // A burst of revisions produces one toast.
+    const now = Date.now();
+    if (now - lastUpdatedToastRef.current >= UPDATED_TOAST_THROTTLE_MS) {
+      lastUpdatedToastRef.current = now;
+      toast.info(t("docws.updated"));
+    }
+  }, [toast, t]);
+
+  /* Swap the editor to `v` (already decided). Advances currentKeyRef first so
+   * the same key is never applied twice, then holds further refreshes until
+   * the editor reports ready again or the cooldown passes. */
+  const refreshTo = useCallback((v: DocumentWorkspaceView) => {
+    if (!v.editor) return;
+    currentKeyRef.current = v.editor_key || currentKeyRef.current;
+    refreshInFlightRef.current = true;
+    if (refreshCooldownRef.current) clearTimeout(refreshCooldownRef.current);
+    refreshCooldownRef.current = setTimeout(() => {
+      refreshInFlightRef.current = false;
+    }, REFRESH_COOLDOWN_MS);
+    editorRef.current?.refreshFile(v.editor.config);
+  }, []);
+
+  /* Re-GET the workspace; refresh the editor only when editor_key changed.
+   * Always adopts the server view (status pill, revision badge). */
+  const recheck = useCallback(async () => {
+    if (checkingRef.current) {
+      recheckAgainRef.current = true;
+      return;
+    }
+    checkingRef.current = true;
+    try {
+      const v = await getDocumentWorkspace(sessionId);
+      if (!aliveRef.current || !v) return;
+      revisionRef.current = v.revision;
+      setView(v);
+      if (!v.editor) return;
+      if (
+        shouldRefreshEditor({
+          currentKey: currentKeyRef.current,
+          nextKey: v.editor_key,
+          editorReady: editorReadyRef.current,
+          inFlight: refreshInFlightRef.current,
+        })
+      ) {
+        refreshTo(v);
+        notifyUpdated();
+      }
+      // Not ready / in flight: onDocumentReady or the next trigger re-checks.
+    } catch {
+      /* next trigger retries */
+    } finally {
+      checkingRef.current = false;
+      if (recheckAgainRef.current && aliveRef.current) {
+        recheckAgainRef.current = false;
+        void recheck();
+      }
+    }
+  }, [sessionId, refreshTo, notifyUpdated]);
+  const recheckRef = useRef(recheck);
+  recheckRef.current = recheck;
+
+  const isEditor = phase.kind === "editor";
+
+  // Tool result in the chat stream.
   useEffect(() => {
-    if (phase.kind !== "editor" || revision === null || revision <= revisionRef.current) return;
-    let alive = true;
-    getDocumentWorkspace(sessionId)
-      .then((v) => {
-        if (!alive || !v?.editor) return;
-        revisionRef.current = v.revision;
-        setView(v);
-        editorRef.current?.refreshFile(v.editor.config);
-        // A burst of tool revisions produces one toast.
-        const now = Date.now();
-        if (now - lastUpdatedToastRef.current >= UPDATED_TOAST_THROTTLE_MS) {
-          lastUpdatedToastRef.current = now;
-          toast.info(t("docws.updated"));
-        }
-      })
-      .catch(() => {
-        /* next revision bump retries */
-      });
-    return () => {
-      alive = false;
+    if (isEditor && revision !== null) void recheckRef.current();
+  }, [revision, isEditor]);
+
+  // Chat turn ended (incl. dropped stream / abort): check now and again a
+  // little later, since the backend may still be finishing the edit.
+  useEffect(() => {
+    if (!isEditor || !recheckToken) return;
+    void recheckRef.current();
+    const timers = SETTLE_RECHECK_MS.map((ms) => setTimeout(() => void recheckRef.current(), ms));
+    return () => timers.forEach(clearTimeout);
+  }, [recheckToken, isEditor]);
+
+  // Fallback polling + re-check when the tab/window comes back.
+  useEffect(() => {
+    if (!isEditor) return;
+    const tick = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void recheckRef.current();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revision, phase.kind, sessionId]);
+    const timer = setInterval(tick, turnInFlight ? POLL_BUSY_MS : POLL_IDLE_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+    };
+  }, [isEditor, turnInFlight]);
 
   /* ---------- flush pending edits when the page goes away ---------- */
-  const isEditor = phase.kind === "editor";
   useEffect(() => {
     if (!isEditor) return;
     const flush = () => {
@@ -401,6 +516,12 @@ export function DocWorkspace({
             config={ed.config}
             onLoadError={(e) => setEditorFailed(e.message)}
             events={{
+              onDocumentReady: () => {
+                editorReadyRef.current = true;
+                refreshInFlightRef.current = false;
+                // Catch up on a key change that arrived while loading.
+                void recheckRef.current();
+              },
               onDocumentStateChange: (d) => {
                 setDirty(d);
                 // "saved" (false) only means the DS has the edits, not WeRAG's
@@ -411,12 +532,16 @@ export function DocWorkspace({
                 }
               },
               onRequestRefreshFile: () => {
-                void getDocumentWorkspace(sessionId).then((v) => {
-                  if (!v?.editor) return;
-                  revisionRef.current = v.revision;
-                  setView(v);
-                  editorRef.current?.refreshFile(v.editor.config);
-                });
+                // The editor itself asks for a fresh config: apply it even if
+                // the key is unchanged (version change / reconnect).
+                void getDocumentWorkspace(sessionId)
+                  .then((v) => {
+                    if (!aliveRef.current || !v?.editor) return;
+                    revisionRef.current = v.revision;
+                    setView(v);
+                    refreshTo(v);
+                  })
+                  .catch(() => {});
               },
               onError: (code, desc) => console.error("[onlyoffice] error", code, desc),
               onWarning: (code, desc) => console.warn("[onlyoffice] warning", code, desc),

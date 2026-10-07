@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,7 +33,7 @@ After check_document_format (or when the user directly asks to normalise the lay
 
 ## Input
 
-- check_ids: rule ids to fix (as reported by the check, e.g. "noi_dung.font", "trich_yeu.size", "page.margin.left"); omit to fix every failed or warned rule that is fixable.
+- check_ids: rule ids to fix (as reported by the check, e.g. "noi_dung.font", "trich_yeu.size", "page.margin.left"); omit to fix every fixable rule. Font, size, bold/italic and alignment rules are applied paragraph by paragraph: each paragraph that breaks one is fixed even when the check as a whole passes (e.g. one body paragraph in Arial among paragraphs in Times New Roman).
 - document_type: rule set to apply (cong_van, quyet_dinh, …); omit to auto-detect.
 - dry_run: true to only return the plan without changing the document.
 - force: true to apply even though the structure could not be identified reliably; only after the user confirmed.`,
@@ -42,7 +43,7 @@ After check_document_format (or when the user directly asks to normalise the lay
     "check_ids": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Rule ids to fix, e.g. noi_dung.font, trich_yeu.size, page.margin.left; omit to fix every fixable failed/warned rule"
+      "description": "Rule ids to fix, e.g. noi_dung.font, trich_yeu.size, page.margin.left; omit to fix every fixable rule (formatting rules paragraph by paragraph)"
     },
     "document_type": {
       "type": "string",
@@ -88,6 +89,9 @@ type AppliedFormatFix struct {
 	Paragraphs []int  `json:"paragraphs"`
 	Sections   []int  `json:"sections,omitempty"`
 	Change     string `json:"change"`
+	// ComponentParagraphs is how many non-empty paragraphs of the rule's
+	// component were checked (Paragraphs are the ones that break the rule).
+	ComponentParagraphs int `json:"component_paragraphs,omitempty"`
 }
 
 // SkippedFormatFix is a fixable-kind rule that was not (fully) applied.
@@ -191,8 +195,14 @@ func appendUnique(list []string, s string) []string {
 	return append(list, s)
 }
 
-// mmToPt converts millimetres to points.
-const mmToPt = 2.8346
+// twipsPerMM converts millimetres to twips, as docformat reads them.
+const twipsPerMM = 1440.0 / 25.4
+
+// round2 rounds to two decimals like docformat's reader (Python round).
+func round2(x float64) float64 {
+	v, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'f', 2, 64), 64)
+	return v
+}
 
 // Conventional NĐ30 page setup, used as the target when a rule's range
 // contains it (else the nearest bound of the range).
@@ -244,7 +254,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		if err != nil {
 			return &types.ToolResult{Success: false, Error: "không áp dụng được sửa thể thức: " + err.Error()}, nil
 		}
-		if written == 0 {
+		if written == 0 || !doc.Dirty() {
 			return &types.ToolResult{Success: false, Error: "không áp dụng được sửa thể thức nào:\n" +
 				renderFormatPlan(ws.FileName, ws.Revision, report, plan, true)}, nil
 		}
@@ -367,42 +377,43 @@ func structureWarning(report *docformat.Report, missing []string, typeKnown, blo
 }
 
 // apply writes the plan into doc as tracked formatting changes in one
-// docxedit batch (one rewrite of document.xml). An edit docxedit rejects is
-// left out — recorded under skipped and removed from applied — and the rest
-// still go through. It returns how many edits were written.
+// docxedit batch (one rewrite of document.xml). An edit docxedit rejects, or
+// one that changes nothing (the document already has those values), is left
+// out — recorded under skipped and removed from applied — and the rest still
+// go through. It returns how many edits changed the document.
 func (p *formatPlan) apply(doc *docxedit.Document) (int, error) {
 	type failure struct {
 		checks       []string
 		para, sectIx int
-		err          error
+		err          error // nil: the edit changed nothing
 	}
 	var failures []failure
 	written := 0
+	// record files the outcome of one batch call; Pending tells a no-op.
+	record := func(b *docxedit.Batch, checks []string, para, sect int, call func() error) {
+		before := b.Pending()
+		switch err := call(); {
+		case err != nil:
+			failures = append(failures, failure{checks, para, sect, err})
+		case b.Pending() == before:
+			failures = append(failures, failure{checks, para, sect, nil})
+		default:
+			written++
+		}
+	}
 	err := doc.Batch(func(b *docxedit.Batch) error {
 		for _, i := range sortedKeys(p.paras) {
 			e := p.paras[i]
 			if e.run != nil {
-				if err := b.SetRunProps(i, *e.run, documentEditAuthor); err != nil {
-					failures = append(failures, failure{e.runChecks, i, -1, err})
-				} else {
-					written++
-				}
+				record(b, e.runChecks, i, -1, func() error { return b.SetRunProps(i, *e.run, documentEditAuthor) })
 			}
 			if e.pp != nil {
-				if err := b.SetParaProps(i, *e.pp, documentEditAuthor); err != nil {
-					failures = append(failures, failure{e.ppChecks, i, -1, err})
-				} else {
-					written++
-				}
+				record(b, e.ppChecks, i, -1, func() error { return b.SetParaProps(i, *e.pp, documentEditAuthor) })
 			}
 		}
 		for _, i := range sortedKeys(p.sections) {
 			e := p.sections[i]
-			if err := b.SetSectionProps(i, e.props, documentEditAuthor); err != nil {
-				failures = append(failures, failure{e.checks, -1, i, err})
-			} else {
-				written++
-			}
+			record(b, e.checks, -1, i, func() error { return b.SetSectionProps(i, e.props, documentEditAuthor) })
 		}
 		return nil
 	})
@@ -414,9 +425,12 @@ func (p *formatPlan) apply(doc *docxedit.Document) (int, error) {
 		if f.para < 0 {
 			where = fmt.Sprintf("section %d", f.sectIx)
 		}
+		reason := where + " không có gì thay đổi (tài liệu đã có giá trị này)"
+		if f.err != nil {
+			reason = where + " không sửa được: " + f.err.Error()
+		}
 		for _, id := range f.checks {
-			p.skipped = append(p.skipped, SkippedFormatFix{CheckID: id,
-				Reason: where + " không sửa được: " + f.err.Error()})
+			p.skipped = append(p.skipped, SkippedFormatFix{CheckID: id, Reason: reason})
 			p.dropApplied(id, f.para, f.sectIx)
 		}
 	}
@@ -463,8 +477,18 @@ func isFailing(status string) bool {
 	return status == docformat.StatusFail || status == docformat.StatusWarn
 }
 
-// buildFormatPlan turns the report's failed/warned checks into paragraph
-// and section edits; what cannot be fixed mechanically goes to manual.
+// perParagraphProps are the paragraph formatting props fixed paragraph by
+// paragraph: every paragraph of the component that breaks the rule is
+// scheduled, whatever the check's overall status. A rule with mode
+// "majority" or "any" passes while some paragraphs still break it (one body
+// paragraph in Arial among four in Times New Roman), and those are fixed too.
+var perParagraphProps = map[string]bool{"font_name": true, "size_pt": true, "bold": true, "italic": true, "alignment": true}
+
+// buildFormatPlan turns the report's checks into paragraph and section
+// edits: per-paragraph prop rules are planned for every paragraph that
+// breaks them, other fixable rules when their check failed/warned; what
+// cannot be fixed mechanically goes to manual. With only (explicit rule
+// ids) just those rules are considered.
 func buildFormatPlan(report *docformat.Report, rs *docformat.RuleSet, layout *docformat.Layout, only []string) *formatPlan {
 	plan := newFormatPlan()
 	wanted := map[string]bool{}
@@ -473,27 +497,45 @@ func buildFormatPlan(report *docformat.Report, rs *docformat.RuleSet, layout *do
 			wanted[id] = true
 		}
 	}
+	explicit := len(wanted) > 0
+	passing := func(c docformat.CheckResult) {
+		if explicit {
+			plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID,
+				Reason: "quy tắc này đang đạt (" + c.Status + "), không cần sửa"})
+		}
+	}
 	seen := map[string]bool{}
 	for _, c := range report.Checks {
 		seen[c.ID] = true
-		if len(wanted) > 0 && !wanted[c.ID] {
+		if explicit && !wanted[c.ID] {
 			continue
 		}
-		if !isFailing(c.Status) {
-			if len(wanted) > 0 {
-				plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID,
-					Reason: "quy tắc này đang đạt (" + c.Status + "), không cần sửa"})
+		failing := isFailing(c.Status)
+		rule := rs.CheckByID(c.ID)
+		if rule != nil && (rule.Kind == "prop" || rule.Kind == "") && perParagraphProps[rule.Prop] {
+			switch planPropFix(plan, report, layout, c, *rule, failing) {
+			case propNotFixable:
+				if failing {
+					plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+				} else {
+					passing(c)
+				}
+			case propNothing:
+				passing(c)
 			}
 			continue
 		}
-		rule := rs.CheckByID(c.ID)
+		if !failing {
+			passing(c)
+			continue
+		}
 		if rule == nil {
 			plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
 			continue
 		}
 		switch rule.Kind {
 		case "prop", "":
-			if !planPropFix(plan, report, layout, c, *rule) {
+			if planPropFix(plan, report, layout, c, *rule, true) == propNotFixable {
 				plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
 			}
 		case "page_setup":
@@ -607,23 +649,36 @@ func paraActual(p *docformat.Para, prop string) any {
 	return nil
 }
 
+// propFixResult is what planPropFix did with a rule.
+type propFixResult int
+
+const (
+	propNotFixable propFixResult = iota // no mechanical fix for this rule
+	propNothing                         // fixable, but nothing planned or reported
+	propPlanned                         // paragraphs scheduled and/or a skip reason recorded
+)
+
 // planPropFix plans a prop rule over every paragraph of its component that
-// breaks it. It returns false when the rule is not mechanically fixable.
-func planPropFix(plan *formatPlan, report *docformat.Report, layout *docformat.Layout, c docformat.CheckResult, rule docformat.RuleCheck) bool {
-	switch rule.Prop {
-	case "font_name", "size_pt", "bold", "italic", "alignment":
-	default:
-		return false
+// breaks it (ParaSatisfies), whatever the rule's mode. verbose records why
+// nothing was planned (component not found, no paragraph to fix); it is off
+// for a rule whose check passes, where that is expected. Paragraphs split
+// in two columns by a tab that break the rule are always reported.
+func planPropFix(plan *formatPlan, report *docformat.Report, layout *docformat.Layout, c docformat.CheckResult, rule docformat.RuleCheck, verbose bool) propFixResult {
+	if !perParagraphProps[rule.Prop] {
+		return propNotFixable
 	}
 	if t := ruleTarget(rule, nil); t == nil {
-		return false
+		return propNotFixable
 	} else if _, _, ok := propEdit(rule.Prop, t); !ok {
-		return false
+		return propNotFixable
 	}
 	comp := report.Components[rule.Component]
 	if comp == nil || !comp.Found {
+		if !verbose {
+			return propNothing
+		}
 		plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID, Reason: "không xác định được các đoạn của thành phần " + rule.Component})
-		return true
+		return propPlanned
 	}
 	fix := AppliedFormatFix{CheckID: c.ID, Paragraphs: []int{}}
 	var changes []string
@@ -636,14 +691,15 @@ func planPropFix(plan *formatPlan, report *docformat.Report, layout *docformat.L
 		if strings.TrimSpace(p.Text) == "" {
 			continue
 		}
+		fix.ComponentParagraphs++
+		if ok, err := docformat.ParaSatisfies(p, rule); err == nil && ok {
+			continue
+		}
 		if p.Zone == docformat.ZoneSplit {
 			split = append(split, strconv.Itoa(idx))
 			continue
 		}
-		if ok, err := docformat.ParaSatisfies(p, rule); err == nil && ok {
-			continue
-		}
-		edit, change, ok := propEdit(rule.Prop, ruleTarget(rule, paraActual(p, rule.Prop)))
+		edit, change, ok := propEdit(rule.Prop, paraTarget(rule, paraActual(p, rule.Prop)))
 		if !ok {
 			continue
 		}
@@ -658,14 +714,88 @@ func planPropFix(plan *formatPlan, report *docformat.Report, layout *docformat.L
 			Reason: "đoạn [" + strings.Join(split, "], [") + "] chia hai cột bằng tab: định dạng từng bên phải sửa thủ công (nên chuyển sang bảng hai cột)"})
 	}
 	if len(fix.Paragraphs) == 0 {
-		if len(split) == 0 {
-			plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID, Reason: "không có đoạn nào cần sửa"})
+		if len(split) > 0 {
+			return propPlanned
 		}
-		return true
+		if !verbose {
+			return propNothing
+		}
+		plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID, Reason: "không có đoạn nào cần sửa"})
+		return propPlanned
 	}
 	fix.Change = strings.Join(changes, "; ")
 	plan.applied = append(plan.applied, fix)
-	return true
+	return propPlanned
+}
+
+// paraTarget is ruleTarget for one paragraph, with a font size range bound
+// moved onto the half-point grid Word stores (w:sz) so that the written
+// size still satisfies the rule: a lower bound rounds up, an upper bound
+// down.
+func paraTarget(rule docformat.RuleCheck, actual any) any {
+	t := ruleTarget(rule, actual)
+	f, isNum := t.(float64)
+	if rule.Prop != "size_pt" || rule.Op != "range" || !isNum {
+		return t
+	}
+	lo, hi, ok := rangeBounds(rule.Value)
+	if !ok {
+		return t
+	}
+	var cur *float64
+	if a, ok := actual.(float64); ok {
+		cur = &a
+	}
+	steps, ok := gridTarget(lo, hi, f, cur, 2, func(n int) float64 { return float64(n) / 2 })
+	if !ok {
+		return t
+	}
+	return float64(steps) / 2
+}
+
+func rangeBounds(v any) (lo, hi float64, ok bool) {
+	list, isList := v.([]any)
+	if !isList || len(list) != 2 {
+		return 0, 0, false
+	}
+	l, ok1 := list[0].(float64)
+	h, ok2 := list[1].(float64)
+	return l, h, ok1 && ok2
+}
+
+// gridTarget chooses the value a fix writes for target — a bound of [lo,
+// hi] or a value inside it — on the integer grid the file stores (twips,
+// half-points…; perUnit grid steps per unit of target), so that the value
+// the checker reads back (read) still lies in the range: a lower bound
+// rounds up to the next step, an upper bound down, a value inside to the
+// nearest step. When that lands on current (the failing value, e.g. 15mm
+// rounded to 850 twips = 14.99mm) it moves one step further into the range.
+// ok is false when no nearby step reads back inside the range.
+func gridTarget(lo, hi, target float64, current *float64, perUnit float64, read func(steps int) float64) (int, bool) {
+	const eps = 1e-9
+	x := target * perUnit
+	var n, inward int
+	switch {
+	case target <= lo:
+		n, inward = int(math.Ceil(x-eps)), 1
+	case target >= hi:
+		n, inward = int(math.Floor(x+eps)), -1
+	default:
+		n = int(math.Round(x))
+		if read(n) < target {
+			inward = 1
+		} else {
+			inward = -1
+		}
+	}
+	if current != nil && n == int(math.Round(*current*perUnit)) && inward != 0 {
+		n += inward
+	}
+	in := func(n int) bool { v := read(n); return v >= lo-eps && v <= hi+eps }
+	for i := 0; i < 3 && !in(n); i++ {
+		n += inward
+	}
+	return n, in(n)
 }
 
 func sectionMM(s *docformat.Section, prop string) *float64 {
@@ -729,11 +859,19 @@ func planPageFix(plan *formatPlan, layout *docformat.Layout, c docformat.CheckRe
 		return false
 	}
 	fix := AppliedFormatFix{CheckID: c.ID, Paragraphs: []int{}, Sections: []int{}}
-	pt := target * mmToPt
+	written := target
 	for i, s := range layout.Sections {
-		if v := sectionMM(s, rule.Prop); v != nil && *v >= lo && *v <= hi {
+		cur := sectionMM(s, rule.Prop)
+		if cur != nil && *cur >= lo && *cur <= hi {
 			continue
 		}
+		// the value goes into the file in whole twips: pick one that still
+		// satisfies the rule as the checker reads it back
+		tw, ok := gridTarget(lo, hi, target, cur, twipsPerMM, func(n int) float64 { return round2(float64(n) / twipsPerMM) })
+		if !ok {
+			continue
+		}
+		written = round2(float64(tw) / twipsPerMM)
 		se := plan.sections[i]
 		if se == nil {
 			se = &sectionEdit{}
@@ -741,7 +879,7 @@ func planPageFix(plan *formatPlan, layout *docformat.Layout, c docformat.CheckRe
 		}
 		se.checks = appendUnique(se.checks, c.ID)
 		sp := &se.props
-		v := pt
+		v := float64(tw) / 20 // docxedit writes round(pt*20) twips: exactly tw
 		switch rule.Prop {
 		case "page_width_mm":
 			sp.PageWidthPt = &v
@@ -767,7 +905,7 @@ func planPageFix(plan *formatPlan, layout *docformat.Layout, c docformat.CheckRe
 		plan.skipped = append(plan.skipped, SkippedFormatFix{CheckID: c.ID, Reason: "không có section nào cần sửa"})
 		return true
 	}
-	fix.Change = pagePropVI[rule.Prop] + " " + strconv.FormatFloat(target, 'f', -1, 64) + "mm"
+	fix.Change = pagePropVI[rule.Prop] + " " + strconv.FormatFloat(written, 'f', -1, 64) + "mm"
 	plan.applied = append(plan.applied, fix)
 	return true
 }
@@ -797,7 +935,11 @@ func renderFormatPlan(fileName string, revision int, report *docformat.Report, p
 		if len(f.Sections) > 0 {
 			fmt.Fprintf(&b, "- %s: %s (section %s)\n", f.CheckID, f.Change, joinInts(f.Sections))
 		} else {
-			fmt.Fprintf(&b, "- %s: %s — đoạn [%s]\n", f.CheckID, f.Change, joinInts(f.Paragraphs))
+			if f.ComponentParagraphs > 0 {
+				fmt.Fprintf(&b, "- %s: %s — %d/%d đoạn [%s]\n", f.CheckID, f.Change, len(f.Paragraphs), f.ComponentParagraphs, joinInts(f.Paragraphs))
+			} else {
+				fmt.Fprintf(&b, "- %s: %s — đoạn [%s]\n", f.CheckID, f.Change, joinInts(f.Paragraphs))
+			}
 		}
 	}
 	if len(plan.skipped) > 0 {

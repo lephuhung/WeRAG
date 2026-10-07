@@ -40,6 +40,11 @@ func (d *Document) Batch(fn func(b *Batch) error) error {
 	return d.apply(all)
 }
 
+// Pending is the number of edits recorded so far that change the markup.
+// An edit whose values the document already has records nothing, so
+// comparing Pending before and after a call tells whether it was a no-op.
+func (b *Batch) Pending() int { return len(b.edits) }
+
 // add records the splices of one edit after checking them against every
 // earlier edit of the batch.
 func (b *Batch) add(what string, sp []splice, err error) error {

@@ -167,3 +167,18 @@ export function documentRevisionFromToolData(
   const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
   return Number.isFinite(n) ? n : null;
 }
+
+/** Whether the open editor should swap to the workspace's current version.
+ * `editor_key` (not the revision) is the identity: a final save rotates the
+ * key without any tool result, and the same key must never be applied twice.
+ * The swap waits while the editor is still loading (before onDocumentReady)
+ * or while a previous refresh is still in flight; the caller re-checks later. */
+export function shouldRefreshEditor(s: {
+  currentKey: string | null | undefined;
+  nextKey: string | null | undefined;
+  editorReady: boolean;
+  inFlight: boolean;
+}): boolean {
+  if (!s.nextKey || s.nextKey === s.currentKey) return false;
+  return s.editorReady && !s.inFlight;
+}

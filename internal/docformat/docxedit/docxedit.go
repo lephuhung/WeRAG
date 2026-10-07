@@ -128,6 +128,7 @@ type Document struct {
 	paras  []*para
 	sects  []*elem
 	nextID int
+	dirty  bool // an edit changed document.xml since Open
 }
 
 // Open parses .docx bytes.
@@ -331,8 +332,17 @@ func (d *Document) apply(sp []splice) error {
 	for _, s := range sp {
 		out = append(out[:s.start], append([]byte(s.text), out[s.end:]...)...)
 	}
-	return d.reload(out)
+	if err := d.reload(out); err != nil {
+		return err
+	}
+	d.dirty = true
+	return nil
 }
+
+// Dirty reports whether any edit changed document.xml since Open. An edit
+// asking for values the document already has records nothing, so a
+// document whose edits were all such no-ops stays clean.
+func (d *Document) Dirty() bool { return d.dirty }
 
 // overlaps reports whether two splices conflict: their ranges intersect, or
 // both are insertions at the same offset (their order would be undefined).

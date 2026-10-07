@@ -588,6 +588,11 @@ function ChatBody({ id }: { id: string }) {
     const rev = documentRevisionFromToolData(c.tool_name, c.data);
     if (rev !== null) setDocRevision((prev) => (prev === null || rev > prev ? rev : prev));
   };
+  // Bumped whenever an assistant turn ends (complete, error, abort, resumed
+  // stream done): DocWorkspace re-GETs the workspace and refreshes the editor
+  // if editor_key moved — tool results can be lost on a dropped stream.
+  const [docRecheck, setDocRecheck] = useState(0);
+  const requestDocRecheck = () => setDocRecheck((v) => v + 1);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -677,6 +682,7 @@ function ChatBody({ id }: { id: string }) {
     setBusy(false);
     setPendingSelection(null);
     setDocRevision(null);
+    setDocRecheck(0);
     // Leaving (or unmounting) a session whose turn is still generating: flag
     // its activity marker detached so the sidebar keeps reporting/polling it —
     // mirrors Vue clearData → sessionActivity.detach.
@@ -932,6 +938,7 @@ function ChatBody({ id }: { id: string }) {
               // flag or settle its rows.
               if (!alive || !isLive()) return;
               setAbbreviationRefreshKey((v) => v + 1);
+              requestDocRecheck();
               setBusy(false);
               setMessages((m) =>
                 m.map((msg) =>
@@ -1538,6 +1545,7 @@ function ChatBody({ id }: { id: string }) {
         // B's rows, or reroute — it simply drops out.
         if (!isLive()) return;
         setAbbreviationRefreshKey((v) => v + 1);
+        requestDocRecheck();
         setBusy(false);
         setAssistantMessageId(null);
         // Streams that end without a `complete` event (abort, socket drop)
@@ -1681,6 +1689,8 @@ function ChatBody({ id }: { id: string }) {
       }
     }
     setBusy(false);
+    // The server-side stop may land after the stream finalizer's re-check.
+    requestDocRecheck();
   };
 
   const title =
@@ -1806,6 +1816,8 @@ function ChatBody({ id }: { id: string }) {
             key={id}
             sessionId={id}
             revision={docRevision}
+            recheckToken={docRecheck}
+            turnInFlight={busy}
             onSelectionChange={setPendingSelection}
           />
         ) : null
