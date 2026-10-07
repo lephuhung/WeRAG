@@ -9,7 +9,8 @@ import {
   useChatContext,
 } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
-import { IconChevronDown } from "@/components/icons";
+import { IconChevronDown, IconLock } from "@/components/icons";
+import Link from "next/link";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
  * agents. Selecting writes selectedAgentId into the chat context, mirroring
@@ -17,22 +18,65 @@ import { IconChevronDown } from "@/components/icons";
  * refactor — the backend no longer exposes them.)
  */
 
-export function AgentModeButton({ onOpen }: { onOpen: () => void }) {
+export function AgentModeButton({ onOpen, locked = false }: { onOpen: () => void; locked?: boolean }) {
   const { selectedAgent, isAgentStreamMode } = useChatContext();
+  const { t } = useT();
   const label = selectedAgent?.name ?? (isAgentStreamMode ? "Agent mode" : "Normal mode");
   return (
     <button
       onClick={onOpen}
+      aria-haspopup="dialog"
       className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
         isAgentStreamMode
           ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]"
           : "text-body hover:bg-surface-strong hover:text-ink"
       }`}
-      title={selectedAgent?.description ?? label}
+      title={locked ? t("docws.modeLockedShort") : (selectedAgent?.description ?? label)}
     >
       <span className="min-w-0 truncate">{label}</span>
-      <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+      {locked ? (
+        <IconLock className="h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <IconChevronDown className="h-3.5 w-3.5 shrink-0" />
+      )}
     </button>
+  );
+}
+
+/* In place of the agent picker when the conversation holds an open
+ * document: the mode is fixed to the document assistant (another mode would
+ * drop the editor), and a new conversation is the way to another mode. */
+export function AgentLockNotice({
+  open,
+  fileName,
+  onClose,
+}: {
+  open: boolean;
+  fileName: string;
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  if (!open) return null;
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-label={t("docws.modeLockedShort")}
+        className="card absolute bottom-full left-0 z-50 mb-2 w-[300px] max-w-[calc(100vw-2.5rem)] p-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
+      >
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+          <IconLock className="h-3.5 w-3.5 shrink-0" />
+          {t("docws.modeLockedShort")}
+        </p>
+        <p className="mt-1.5 text-[12.5px] leading-snug text-muted">
+          {t("docws.modeLockedDesc", { name: fileName })}
+        </p>
+        <Link href="/platform/creatChat" onClick={onClose} className="btn btn-outline btn-sm mt-3 w-full">
+          {t("docws.modeLockedNewChat")}
+        </Link>
+      </div>
+    </>
   );
 }
 

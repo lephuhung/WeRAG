@@ -199,6 +199,11 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		return nil, nil, errors.NewNotFoundError("Session not found")
 	}
 
+	// A session that holds an editable document belongs to the document
+	// assistant: another agent has no tools for the document, so a request
+	// from a stale tab or the API naming one is run by the assistant.
+	request.AgentID = h.pinDocumentAssistant(ctx, session, request.AgentID)
+
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
 
@@ -608,6 +613,23 @@ func (h *Handler) resolveAgent(
 	logger.Warnf(ctx, "Failed to get agent, agent ID: %s, "+
 		"using default config", secutils.SanitizeForLog(agentID))
 	return nil, 0
+}
+
+// pinDocumentAssistant returns the document assistant's ID when the session
+// holds a document workspace (open or closed: a closed one reopens on the
+// next editor load and its text is still injected), else agentID unchanged.
+func (h *Handler) pinDocumentAssistant(ctx context.Context, session *types.Session, agentID string) string {
+	if agentID == types.BuiltinDocumentAssistantID || session == nil ||
+		h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+		return agentID
+	}
+	ws, err := h.documentWorkspaces.GetBySession(ctx, session.TenantID, session.ID)
+	if err != nil || ws == nil {
+		return agentID
+	}
+	logger.Infof(ctx, "Session %s holds document %q; agent %q replaced by the document assistant",
+		session.ID, ws.FileName, secutils.SanitizeForLog(agentID))
+	return types.BuiltinDocumentAssistantID
 }
 
 // mergeKnowledgeTargets merges request KB/knowledge IDs with @mentioned items into deduplicated slices.

@@ -35,6 +35,9 @@ type Handler struct {
 	modelService         interfaces.ModelService // Service for model management (VLM access)
 	attachmentProcessor  *AttachmentProcessor    // Processor for file attachments
 	temporaryDocuments   interfaces.TemporaryDocumentService
+	// documentWorkspaces pins a session holding an editable document to
+	// the document assistant (see pinDocumentAssistant).
+	documentWorkspaces interfaces.DocumentWorkspaceService
 	// artifactCollector drains skill-generated files from the session sandbox
 	// after an agent turn completes. May be nil when the sandbox backend does
 	// not support artifact collection; handlers must check before using.
@@ -101,6 +104,7 @@ func NewHandler(
 	rdb *redis.Client,
 	forkService *service.SessionForkService,
 	auditLog interfaces.AuditLogService,
+	documentWorkspaces interfaces.DocumentWorkspaceService,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -118,6 +122,7 @@ func NewHandler(
 		storageResolver:       storageResolver,
 		modelService:          modelService,
 		temporaryDocuments:    temporaryDocuments,
+		documentWorkspaces:    documentWorkspaces,
 		artifactCollector:     artifactCollector,
 		workspaceCheckpointer: workspaceCheckpointer,
 		sandboxIDLookup:       sandboxIDLookup,

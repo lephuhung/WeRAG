@@ -7,6 +7,10 @@ import {
   DocumentWorkspaceError,
   latestRevisionOf,
   revisionsNewestFirst,
+  formatCheckResultKey,
+  formatCheckProgress,
+  formatCheckIsCurrent,
+  FORMAT_CHECK_EXPECTED_MS,
   documentSelectionForDisplay,
   selectionNeedsCollapse,
   openDocumentInNewSession,
@@ -168,5 +172,49 @@ describe("misc helpers", () => {
     assert.equal(clampLeftPct(90), 75);
     assert.equal(clampLeftPct(Number.NaN), 66);
     assert.equal(clampLeftPct(60.4), 60.4);
+  });
+});
+
+describe("formatCheckResultKey", () => {
+  const ready = { status: "ready" as const, revision: 0, started_at: "t0", finished_at: "t1" };
+  it("changes when a new check finishes", () => {
+    assert.notEqual(formatCheckResultKey("s", ready), formatCheckResultKey("s", { ...ready, finished_at: "t2" }));
+    assert.notEqual(formatCheckResultKey("s", ready), formatCheckResultKey("s", { ...ready, revision: 1 }));
+  });
+  it("tells a running check from its finished result", () => {
+    const running = { status: "running" as const, revision: 0, started_at: "t0" };
+    assert.notEqual(formatCheckResultKey("s", running), formatCheckResultKey("s", ready));
+    assert.equal(formatCheckResultKey("s", running), formatCheckResultKey("s", { ...running }));
+  });
+});
+
+describe("formatCheckProgress", () => {
+  const start = "2026-10-07T15:00:00.000Z";
+  const at = (ms: number) => Date.parse(start) + ms;
+  it("starts low, grows, and never reaches full while running", () => {
+    const early = formatCheckProgress(start, at(1_000));
+    const mid = formatCheckProgress(start, at(FORMAT_CHECK_EXPECTED_MS / 2));
+    const late = formatCheckProgress(start, at(10 * FORMAT_CHECK_EXPECTED_MS));
+    assert.ok(early >= 0.05 && early < mid && mid < late);
+    assert.equal(late, 0.95);
+  });
+  it("tolerates a bad timestamp and a clock behind the server", () => {
+    assert.equal(formatCheckProgress("not a date", at(0)), 0.05);
+    assert.equal(formatCheckProgress(start, at(-5_000)), 0.05);
+  });
+});
+
+describe("formatCheckIsCurrent", () => {
+  const ready = { status: "ready" as const, revision: 2, started_at: "2026-10-07T15:00:00Z", finished_at: "2026-10-07T15:01:10Z" };
+  it("keeps a check of the saved document", () => {
+    assert.equal(formatCheckIsCurrent(ready, { revision: 2 }), true);
+    assert.equal(formatCheckIsCurrent(ready, { revision: 2, last_saved_at: "2026-10-07T14:59:00Z" }), true);
+  });
+  it("drops it once the document was saved or rewritten after the check started", () => {
+    assert.equal(formatCheckIsCurrent(ready, { revision: 2, last_saved_at: "2026-10-07T15:05:00Z" }), false);
+    assert.equal(formatCheckIsCurrent(ready, { revision: 3 }), false);
+  });
+  it("always shows a running check", () => {
+    assert.equal(formatCheckIsCurrent({ ...ready, status: "running" }, { revision: 9, last_saved_at: "2026-10-07T16:00:00Z" }), true);
   });
 });

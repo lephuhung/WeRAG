@@ -34,6 +34,21 @@ export interface DocumentWorkspaceView {
   updated_at: string;
   editor_key: string;
   editor?: DocumentEditorBootstrap;
+  /** Background NĐ30 format check started when the document was opened. */
+  format_check?: DocumentFormatCheck;
+}
+
+export type DocumentFormatCheckStatus = "running" | "ready" | "failed";
+
+export interface DocumentFormatCheck {
+  status: DocumentFormatCheckStatus;
+  /** Workspace revision that was checked; a newer revision makes it stale. */
+  revision: number;
+  /** Detected rule set slug (e.g. quy_che) and its name (e.g. "Quy chế"). */
+  document_type?: string;
+  document_type_label?: string;
+  started_at: string;
+  finished_at?: string;
 }
 
 /** Editor selection attached to a chat turn (`document_selection` in the body). */
@@ -283,4 +298,39 @@ export function latestRevisionOf<T extends { seq: number; source: string }>(list
   let best: T | null = null;
   for (const r of list) if (r.source === source && (!best || r.seq > best.seq)) best = r;
   return best;
+}
+
+/** Whether a background check still describes the document. AI edits are
+ * applied inside the editor and only show up as a save, so a finished check
+ * is stale once the document was saved after the check started (or an
+ * external write moved the revision past it). */
+export function formatCheckIsCurrent(
+  check: DocumentFormatCheck,
+  doc: { revision: number; last_saved_at?: string },
+): boolean {
+  if (check.status === "running") return true;
+  if (doc.revision > check.revision) return false;
+  const saved = doc.last_saved_at ? Date.parse(doc.last_saved_at) : NaN;
+  const started = Date.parse(check.started_at);
+  return !(Number.isFinite(saved) && Number.isFinite(started) && saved > started);
+}
+
+/** Identity of one background check result: the chat's format-check ring
+ * shows an unseen dot until this result is opened. */
+export function formatCheckResultKey(sessionId: string, check: DocumentFormatCheck): string {
+  return `${sessionId}|${check.status}|${check.revision}|${check.finished_at ?? check.started_at}`;
+}
+
+/** Typical duration of the background check (segmentation + reasoning). */
+export const FORMAT_CHECK_EXPECTED_MS = 75_000;
+
+/** Estimated progress (0–0.95) of a running check from its start time: the
+ * backend reports no percentage, so the ring follows the typical duration
+ * and stops short of full until the check reports done. */
+export function formatCheckProgress(startedAt: string, nowMs: number): number {
+  const start = Date.parse(startedAt);
+  if (!Number.isFinite(start)) return 0.05;
+  const ratio = Math.max(0, nowMs - start) / FORMAT_CHECK_EXPECTED_MS;
+  // eases out: fast at first, slows as it nears the cap
+  return Math.min(0.95, Math.max(0.05, 1 - Math.exp(-2.2 * ratio)));
 }

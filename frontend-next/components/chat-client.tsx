@@ -10,12 +10,16 @@ import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/l
 import { useT } from "@/lib/i18n";
 import {
   documentSelectionForDisplay,
+  getDocumentWorkspace,
+  formatCheckResultKey,
   selectionNeedsCollapse,
+  type DocumentFormatCheck,
   type DocumentSelection,
 } from "@/lib/api/document-workspace";
 import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
+import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments, formatFileSize } from "@/components/use-attachments";
@@ -637,6 +641,57 @@ function ChatBody({ id }: { id: string }) {
     const batch = opsBatchFromToolData(c.tool_name, c.data);
     if (!batch) return;
     setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
+  };
+  // The session's open document (file name), keyed by session so a stale
+  // value never leaks into the next chat. A session holding a document stays
+  // with the document assistant: switching mode would drop the editor.
+  const [sessionDoc, setSessionDoc] = useState<{ sessionId: string; fileName: string } | null>(null);
+  const docFileName = sessionDoc && sessionDoc.sessionId === id ? sessionDoc.fileName : null;
+  const noteSessionDocument = useCallback(
+    (fileName: string | null) => setSessionDoc(fileName ? { sessionId: id, fileName } : null),
+    [id],
+  );
+  useEffect(() => {
+    if (id === "new") return;
+    let alive = true;
+    getDocumentWorkspace(id)
+      .then((v) => {
+        if (alive) noteSessionDocument(v && v.status === "open" ? v.file_name : null);
+      })
+      .catch(() => {
+        /* editor disabled or offline: no lock */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, noteSessionDocument]);
+  useEffect(() => {
+    if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
+      ctx.selectAgent(BUILTIN_DOCUMENT_ASSISTANT_ID);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId]);
+
+  // Background format check of the open document → progress ring in the
+  // chat header; a finished result shows a dot until it is opened once.
+  const [formatCheck, setFormatCheck] = useState<DocumentFormatCheck | null>(null);
+  const [seenFormatCheck, setSeenFormatCheck] = useState<string | null>(null);
+  const formatCheckKey = formatCheck && id !== "new" ? formatCheckResultKey(id, formatCheck) : null;
+  useEffect(() => {
+    try {
+      setSeenFormatCheck(window.localStorage.getItem(`docws.fcSeen.${id}`));
+    } catch {
+      setSeenFormatCheck(null);
+    }
+  }, [id]);
+  const markFormatCheckSeen = () => {
+    if (!formatCheckKey) return;
+    setSeenFormatCheck(formatCheckKey);
+    try {
+      window.localStorage.setItem(`docws.fcSeen.${id}`, formatCheckKey);
+    } catch {
+      /* per-viewer convenience only */
+    }
   };
   // Bumped whenever an assistant turn ends (complete, error, abort, resumed
   // stream done): DocWorkspace re-GETs the workspace and refreshes the editor
@@ -1768,7 +1823,18 @@ function ChatBody({ id }: { id: string }) {
   const chatColumn = (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
       <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
-        <h1 className="truncate text-[15px] font-medium text-ink">{title}</h1>
+        <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
+        {isDocumentAssistant && formatCheck && (
+          <FormatCheckRing
+            check={formatCheck}
+            unseen={formatCheckKey !== seenFormatCheck}
+            disabled={busy}
+            onOpen={markFormatCheckSeen}
+            onAsk={(question) =>
+              void sendRef.current({ query: question, attachments: [], imageFiles: [], mentionedItems: [], modelId: "" })
+            }
+          />
+        )}
       </div>
 
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
@@ -1839,6 +1905,7 @@ function ChatBody({ id }: { id: string }) {
             value={input}
             onChange={setInput}
             onSend={(s) => void send(s)}
+            agentLockFileName={docFileName}
             onStop={() => void stop()}
             isReplying={busy}
             attachments={attachments.items}
@@ -1889,6 +1956,8 @@ function ChatBody({ id }: { id: string }) {
             recheckToken={docRecheck}
             turnInFlight={busy}
             onSelectionChange={setPendingSelection}
+            onFormatCheckChange={setFormatCheck}
+            onDocumentChange={noteSessionDocument}
           />
         ) : null
       }

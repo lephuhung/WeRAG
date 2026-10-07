@@ -5,7 +5,7 @@ import { IconDoc, IconGlobe, IconImage, IconPaperclip, IconSend } from "@/compon
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
-import { AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
+import { AgentLockNotice, AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
 import { useT } from "@/lib/i18n";
 
@@ -42,6 +42,7 @@ export function Composer({
   onPickImages,
   autoFocus = false,
   compact = false,
+  agentLockFileName = null,
 }: {
   sessionId?: string;
   value: string;
@@ -60,6 +61,8 @@ export function Composer({
   placeholder?: string;
   /** Document-assistant split view: phone-sized padding and type. */
   compact?: boolean;
+  /** The conversation holds this open document: the mode picker is locked. */
+  agentLockFileName?: string | null;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -271,8 +274,12 @@ export function Composer({
             right on the first row instead of dropping to a line of its own. */}
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2">
           <div className="relative">
-            <AgentModeButton onOpen={() => { closePopups(); setAgentOpen(true); }} />
-            <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
+            <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
+            {agentLockFileName ? (
+              <AgentLockNotice open={agentOpen} fileName={agentLockFileName} onClose={() => setAgentOpen(false)} />
+            ) : (
+              <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
+            )}
           </div>
 
           <button

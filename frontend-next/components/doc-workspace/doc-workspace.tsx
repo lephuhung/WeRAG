@@ -17,11 +17,13 @@ import {
   downloadDocumentWorkspace,
   forceSaveDocumentWorkspace,
   forceSaveDocumentWorkspaceKeepalive,
+  formatCheckIsCurrent,
   getDocumentWorkspace,
   isWordAttachment,
   openDocumentInNewSession,
   parsePluginSelectionMessage,
   shouldRefreshEditor,
+  type DocumentFormatCheck,
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
@@ -45,6 +47,9 @@ const SELECTION_DEBOUNCE_MS = 0;
 // stream is cut while the backend still finishes the edit).
 const POLL_BUSY_MS = 20_000;
 const POLL_IDLE_MS = 30_000;
+// While the background format check runs, poll faster so its result shows
+// up soon after it is ready.
+const POLL_FORMAT_CHECK_MS = 5_000;
 // Follow-up re-checks after a chat turn ends: the backend may still be
 // committing the edit when a dropped stream surfaces client-side.
 const SETTLE_RECHECK_MS = [4_000, 12_000];
@@ -74,6 +79,8 @@ export function DocWorkspace({
   recheckToken = 0,
   turnInFlight = false,
   onSelectionChange,
+  onFormatCheckChange,
+  onDocumentChange,
 }: {
   /** Undefined → pre-session mode (no chat session exists yet). */
   sessionId: string | undefined;
@@ -94,6 +101,10 @@ export function DocWorkspace({
   /** A chat turn is streaming → poll faster. */
   turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
+  /** Latest background format check of the document (null: none). */
+  onFormatCheckChange?: (check: DocumentFormatCheck | null) => void;
+  /** File name of the session's open document (null: none or closed). */
+  onDocumentChange?: (fileName: string | null) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -357,6 +368,29 @@ export function DocWorkspace({
   recheckRef.current = recheck;
 
   const isEditor = phase.kind === "editor";
+  const formatCheckRunning = view?.format_check?.status === "running";
+
+  // Tell the chat which document the session holds (locks the mode picker).
+  const onDocumentRef = useRef(onDocumentChange);
+  onDocumentRef.current = onDocumentChange;
+  const openFileName = view && view.status === "open" ? view.file_name : null;
+  useEffect(() => {
+    if (openFileName) onDocumentRef.current?.(openFileName);
+  }, [openFileName]);
+
+  // Hand the background format check to the chat (progress ring).
+  const onFormatCheckRef = useRef(onFormatCheckChange);
+  onFormatCheckRef.current = onFormatCheckChange;
+  // a finished check of a document edited since no longer describes it
+  const rawFormatCheck = view?.format_check ?? null;
+  const formatCheck = rawFormatCheck && view && formatCheckIsCurrent(rawFormatCheck, view) ? rawFormatCheck : null;
+  const formatCheckSig = formatCheck
+    ? `${formatCheck.status}|${formatCheck.revision}|${formatCheck.finished_at ?? ""}`
+    : "";
+  useEffect(() => {
+    onFormatCheckRef.current?.(formatCheck);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formatCheckSig]);
 
   // Chat turn ended (incl. dropped stream / abort): check now and again a
   // little later, since the backend may still be finishing the edit.
@@ -374,7 +408,10 @@ export function DocWorkspace({
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       void recheckRef.current();
     };
-    const timer = setInterval(tick, turnInFlight ? POLL_BUSY_MS : POLL_IDLE_MS);
+    const timer = setInterval(
+      tick,
+      formatCheckRunning ? POLL_FORMAT_CHECK_MS : turnInFlight ? POLL_BUSY_MS : POLL_IDLE_MS,
+    );
     const onVisible = () => {
       if (document.visibilityState === "visible") tick();
     };
@@ -385,7 +422,7 @@ export function DocWorkspace({
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", tick);
     };
-  }, [isEditor, turnInFlight]);
+  }, [isEditor, turnInFlight, formatCheckRunning]);
 
   /* ---------- flush pending edits when the page goes away ---------- */
   useEffect(() => {
