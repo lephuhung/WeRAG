@@ -35,7 +35,9 @@ type Phase =
   | { kind: "empty" }
   | { kind: "editor" };
 
-const SELECTION_DEBOUNCE_MS = 250;
+// The plugin already debounces selection changes (120ms); a second delay here
+// only makes the chip feel late, so messages are applied as they arrive.
+const SELECTION_DEBOUNCE_MS = 0;
 const UPDATED_TOAST_THROTTLE_MS = 3000;
 // Fallback polling of the workspace (SSE tool results can be lost when the
 // stream is cut while the backend still finishes the edit).
@@ -426,6 +428,10 @@ export function DocWorkspace({
       const sel = parsePluginSelectionMessage(event.data);
       if (!sel) return; // not ours, or an empty selection — keep the last one
       if (timer) clearTimeout(timer);
+      if (SELECTION_DEBOUNCE_MS <= 0) {
+        onSelectionRef.current(sel);
+        return;
+      }
       timer = setTimeout(() => onSelectionRef.current(sel), SELECTION_DEBOUNCE_MS);
     };
     window.addEventListener("message", onMessage);

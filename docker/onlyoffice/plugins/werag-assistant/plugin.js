@@ -21,7 +21,7 @@
 (function (window) {
   "use strict";
 
-  var DEBOUNCE_MS = 300;
+  var DEBOUNCE_MS = 120;
   var timer = null;
   var lastSent = "";
 
@@ -72,7 +72,7 @@
     consider(text);
   };
 
-  var POLL_MS = 800;
+  var POLL_MS = 400;
   function poll() {
     try {
       window.Asc.plugin.executeMethod("GetSelectedText", [{ Numbering: false, Math: false }], function (text) {
