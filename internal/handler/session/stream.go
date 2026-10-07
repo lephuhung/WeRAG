@@ -165,12 +165,20 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	logger.Debug(ctx, "Starting event update monitoring")
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
 
 	for {
 		select {
 		case <-c.Request.Context().Done():
 			logger.Debug(ctx, "Client connection closed")
 			return
+
+		case <-heartbeat.C:
+			if _, err := c.Writer.WriteString(": ping\n\n"); err != nil {
+				return
+			}
+			c.Writer.Flush()
 
 		case <-ticker.C:
 			// Get new events from current offset
@@ -325,6 +333,10 @@ func (h *Handler) StopSession(c *gin.Context) {
 	})
 }
 
+// sseHeartbeatInterval is how often an idle stream emits an SSE comment line
+// so proxies with an idle timeout keep the connection open during long tool calls.
+const sseHeartbeatInterval = 15 * time.Second
+
 // handleAgentEventsForSSE handles agent events for SSE streaming using an existing handler
 // The handler is already subscribed to events and AgentQA is already running
 // This function polls StreamManager and pushes events to SSE, allowing graceful handling of disconnections
@@ -339,6 +351,12 @@ func (h *Handler) handleAgentEventsForSSE(
 ) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	// A long-running tool (format evaluation, docx rewrite) can keep the
+	// stream silent for a minute; reverse proxies with an idle timeout then
+	// drop the connection. An SSE comment line is ignored by every parser
+	// and keeps the connection alive.
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
 
 	lastOffset := 0
 	log := logger.GetLogger(ctx)
@@ -355,6 +373,16 @@ func (h *Handler) handleAgentEventsForSSE(
 				assistantMessageID,
 			)
 			return
+
+		case <-heartbeat.C:
+			if c.Request.Context().Err() != nil {
+				return
+			}
+			if _, err := c.Writer.WriteString(": ping\n\n"); err != nil {
+				log.Info("Connection closed during heartbeat, stopping")
+				return
+			}
+			c.Writer.Flush()
 
 		case <-ticker.C:
 			// Get new events from StreamManager using offset
