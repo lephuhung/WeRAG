@@ -29,6 +29,31 @@
       "mode": "any",
       "desc": "Số, ký hiệu ghi 'Số: NNN/KH-CQ' hoặc 'NNN/CV-CQ'",
       "severity": "warn"
+    },
+    {
+      "id": "trich_yeu.size",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        12.0,
+        13.0
+      ],
+      "mode": "majority",
+      "desc": "Trích yếu công văn (V/v) cỡ chữ 12-13",
+      "severity": "warn"
+    },
+    {
+      "id": "trich_yeu.bold",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "bold",
+      "op": "ne",
+      "value": true,
+      "mode": "majority",
+      "desc": "Trích yếu công văn (V/v) chữ đứng, không in đậm",
+      "severity": "warn"
     }
   ]
 }

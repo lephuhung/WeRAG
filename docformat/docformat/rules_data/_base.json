@@ -392,20 +392,6 @@
       "severity": "warn"
     },
     {
-      "id": "signature.ky_thay",
-      "kind": "ky_thay",
-      "component": "chuc_danh",
-      "desc": "Cấp phó ký thay người đứng đầu ghi 'KT. <chức vụ người đứng đầu>' phía trên chức vụ của mình (NĐ30, Điều 13)",
-      "severity": "error"
-    },
-    {
-      "id": "noi_nhan.bao_cao_cap_truong",
-      "kind": "ky_thay_noi_nhan",
-      "component": "noi_nhan",
-      "desc": "Văn bản ký thay gửi người đứng đầu để báo cáo: Nơi nhận có '<chức vụ người đứng đầu> (để báo cáo)'",
-      "severity": "error"
-    },
-    {
       "id": "noi_nhan.zone",
       "kind": "prop",
       "component": "noi_nhan",
@@ -427,6 +413,12 @@
       ],
       "mode": "majority",
       "desc": "Nơi nhận cỡ chữ 11-12 (dung sai tới 13)",
+      "severity": "warn"
+    },
+    {
+      "id": "text.stray_chars",
+      "kind": "stray_chars",
+      "desc": "Không có ký tự lạ chen giữa chữ (lỗi gõ như 'Chính p`hủ')",
       "severity": "warn"
     }
   ]

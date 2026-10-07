@@ -3,6 +3,7 @@ package docformat
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -100,8 +101,7 @@ func RenderText(r *Report) string {
 	var skipped []string
 	for _, c := range r.Checks {
 		if c.Status == StatusSkip && c.Severity == "error" && c.Note != "" &&
-			!strings.HasPrefix(c.Note, "thành phần không bắt buộc") &&
-			!strings.HasPrefix(c.Note, NotApplicable) {
+			!strings.HasPrefix(c.Note, "thành phần không bắt buộc") {
 			skipped = append(skipped, c.ID)
 		}
 	}
@@ -118,4 +118,104 @@ func RenderText(r *Report) string {
 	}
 	b.WriteString("\nLưu ý: kiểm tra tự động theo NĐ30/2020 Phụ lục I trên file .docx; con dấu, chữ ký, đánh số trang cần rà soát thủ công.\n")
 	return b.String()
+}
+
+func fmtLine(lf LineFormat) string {
+	var attrs []string
+	if lf.SizePt != nil {
+		attrs = append(attrs, strconv.FormatFloat(*lf.SizePt, 'f', -1, 64)+"pt")
+	}
+	if lf.Font != nil {
+		attrs = append(attrs, *lf.Font)
+	}
+	if lf.Bold {
+		attrs = append(attrs, "đậm")
+	}
+	if lf.Italic {
+		attrs = append(attrs, "nghiêng")
+	}
+	attrs = append(attrs, "căn "+lf.Align, "cột "+lf.Zone)
+	// a line break inside one paragraph matters (two signature lines in one
+	// paragraph): keep it visible
+	return fmt.Sprintf("%q [%s]", strings.ReplaceAll(lf.Text, "\n", " ⏎ "), strings.Join(attrs, ", "))
+}
+
+// RenderData renders the measured findings and the format data of every
+// component, line by line — what the evaluation skills judge.
+func RenderData(r *Report) string {
+	if !r.OK {
+		return RenderText(r)
+	}
+	var b strings.Builder
+	b.WriteString("# Kết quả đo thể thức\n\n")
+	findings := RenderText(r)
+	if i := strings.Index(findings, "\n## Thành phần bóc tách được"); i >= 0 {
+		findings = findings[:i] + "\n"
+	}
+	b.WriteString(findings)
+
+	var passed []string
+	for _, c := range r.Checks {
+		if c.Status == StatusPass && !strings.HasPrefix(c.ID, "component.") {
+			passed = append(passed, "- "+c.Desc)
+		}
+	}
+	if len(passed) > 0 {
+		b.WriteString("\n## Mục đo đạc đã đạt (không chấm lại)\n")
+		b.WriteString(strings.Join(passed, "\n") + "\n")
+	}
+
+	b.WriteString("\n# Dữ liệu thể thức (đo từ file)\n")
+	for _, s := range r.Sections {
+		fmt.Fprintf(&b, "Trang: %s × %s mm; lề trên %s, dưới %s, trái %s, phải %s mm\n",
+			fmtMM(s.PageWidthMM), fmtMM(s.PageHeightMM), fmtMM(s.MarginTopMM),
+			fmtMM(s.MarginBottomMM), fmtMM(s.MarginLeftMM), fmtMM(s.MarginRightMM))
+	}
+	for _, cf := range r.Format {
+		fmt.Fprintf(&b, "\n## %s (%s)\n", cf.Name, cf.Key)
+		for i, lf := range cf.Lines {
+			if cf.Omitted > 0 && i == len(cf.Lines)-bodyTailLines {
+				fmt.Fprintf(&b, "- … (lược %d đoạn nội dung ở giữa)\n", cf.Omitted)
+			}
+			b.WriteString("- " + fmtLine(lf) + "\n")
+		}
+	}
+	var missing []string
+	for _, c := range Components {
+		if comp, ok := r.Components[c.Key]; (!ok || !comp.Found) && c.Key != "khac" {
+			missing = append(missing, ComponentName(c.Key))
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(&b, "\nKhông tìm thấy: %s\n", strings.Join(missing, ", "))
+	}
+	return b.String()
+}
+
+// RenderSkills renders the evaluation skills of a document type.
+func RenderSkills(docType string) string {
+	var b strings.Builder
+	for _, s := range SkillsFor(docType) {
+		fmt.Fprintf(&b, "<skill name=%q>\n%s\n</skill>\n\n", s.Name, strings.TrimSpace(s.Body))
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// RenderForAgent renders the data together with the skills so the agent
+// can judge them itself — the fallback when EvaluateWithSkills is unavailable.
+func RenderForAgent(r *Report) string {
+	if !r.OK {
+		return RenderText(r)
+	}
+	return RenderData(r) + "\n# Hướng dẫn đánh giá\n" +
+		"Áp dụng các skill dưới đây vào dữ liệu thể thức ở trên; giữ nguyên các lỗi đo đạc đã nêu, " +
+		"bổ sung các lỗi về thẩm quyền ký, nơi nhận, thành phần, cách ghi, viết hoa và chính tả.\n\n" +
+		RenderSkills(r.DocumentType.Used) + "\n"
+}
+
+func fmtMM(v *float64) string {
+	if v == nil {
+		return "?"
+	}
+	return strconv.FormatFloat(*v, 'f', -1, 64)
 }

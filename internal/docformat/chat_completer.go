@@ -41,3 +41,41 @@ func (c chatCompleter) Complete(ctx context.Context, messages []Message) (string
 	}
 	return resp.Content, nil
 }
+
+// evalTemperature is the sampling Qwen-style reasoning models are tuned
+// for; greedy decoding makes their thinking loop.
+const evalTemperature = 0.6
+
+// evalMaxTokens leaves room for the reasoning (~5-7k tokens on a công
+// văn) plus the written evaluation.
+const evalMaxTokens = 16384
+
+// chatEvaluator runs the skill evaluation on a WeKnora chat model with
+// thinking on: the judgments (who signs for whom, whether Nơi nhận lists
+// the head) are unreliable without it — measured on Qwen3.6-35B-A3B:
+// 4-7 false alarms in 10 on a correct document without thinking, none
+// with it.
+type chatEvaluator struct{ model chat.Chat }
+
+// ChatEvaluator adapts a workspace chat model for skill evaluation.
+func ChatEvaluator(model chat.Chat) Completer { return chatEvaluator{model} }
+
+func (c chatEvaluator) Complete(ctx context.Context, messages []Message) (string, error) {
+	msgs := make([]chat.Message, 0, len(messages))
+	for _, m := range messages {
+		msgs = append(msgs, chat.Message{Role: m.Role, Content: m.Content})
+	}
+	thinking := true
+	resp, err := c.model.Chat(ctx, msgs, &chat.ChatOptions{
+		Temperature: evalTemperature,
+		MaxTokens:   evalMaxTokens,
+		Thinking:    &thinking,
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil {
+		return "", fmt.Errorf("empty model response")
+	}
+	return resp.Content, nil
+}

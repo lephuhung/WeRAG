@@ -42,12 +42,22 @@ type chatBase interface{ chat.Chat }
 
 type fakeChat struct {
 	chatBase
-	opts  *chat.ChatOptions
-	reply string
-	err   error
+	opts       *chat.ChatOptions // labeling call (thinking off)
+	evalOpts   *chat.ChatOptions // evaluation call (thinking on)
+	evalSystem string
+	reply      string
+	evaluation string // answer to the thinking call; "" → error
+	err        error
 }
 
-func (f *fakeChat) Chat(_ context.Context, _ []chat.Message, opts *chat.ChatOptions) (*types.ChatResponse, error) {
+func (f *fakeChat) Chat(_ context.Context, msgs []chat.Message, opts *chat.ChatOptions) (*types.ChatResponse, error) {
+	if opts.Thinking != nil && *opts.Thinking {
+		f.evalOpts, f.evalSystem = opts, msgs[0].Content
+		if f.evaluation == "" {
+			return nil, errors.New("evaluation down")
+		}
+		return &types.ChatResponse{Content: f.evaluation}, nil
+	}
 	f.opts = opts
 	if f.err != nil {
 		return nil, f.err
@@ -98,13 +108,45 @@ func TestCheckDocumentFormatPicksNewestDocx(t *testing.T) {
 	if up.opened != "new" || up.session != "sess-1" {
 		t.Fatalf("opened %q in session %q", up.opened, up.session)
 	}
-	for _, want := range []string{"Cong van so 45.docx", "noi_dung.font", "Arial", "model down"} {
+	// labeling and evaluation both fail: heuristic labels, and the agent
+	// gets the data with the skills to judge itself
+	for _, want := range []string{"Cong van so 45.docx", "noi_dung.font", "Arial", "model down",
+		"# Dữ liệu thể thức", `<skill name="the-thuc-cong-van">`} {
 		if !strings.Contains(res.Output, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.Output)
 		}
 	}
 	if model.opts == nil || model.opts.Thinking == nil || *model.opts.Thinking {
 		t.Fatal("labeling must call the agent model with thinking off")
+	}
+	if res.Data["evaluated"] != false {
+		t.Fatalf("evaluated = %v", res.Data["evaluated"])
+	}
+}
+
+func TestCheckDocumentFormatEvaluatesWithThinking(t *testing.T) {
+	up := uploadsFixture(t)
+	model := &fakeChat{err: errors.New("labels down"),
+		evaluation: "## Kết luận\nChưa đạt: thiếu KT. TRƯỞNG PHÒNG."}
+	res := runFormatTool(t, NewCheckDocumentFormatTool(up, model, "s"), `{}`)
+	if !res.Success || res.Data["evaluated"] != true {
+		t.Fatalf("result: %+v", res)
+	}
+	if !strings.Contains(res.Output, "thiếu KT. TRƯỞNG PHÒNG") || !strings.Contains(res.Output, "không tự chấm lại") {
+		t.Fatalf("output: %s", res.Output)
+	}
+	if strings.Contains(res.Output, "<skill") {
+		t.Fatal("an evaluated result must not hand the skills to the agent again")
+	}
+	if model.evalOpts == nil || model.evalOpts.MaxTokens < 8192 {
+		t.Fatalf("evaluation options = %+v", model.evalOpts)
+	}
+	if !strings.Contains(model.evalSystem, `<skill name="the-thuc-cong-van">`) {
+		t.Fatal("evaluation must receive the document-type skill")
+	}
+	skills, _ := res.Data["skills"].([]string)
+	if len(skills) != 2 {
+		t.Fatalf("skills = %v", res.Data["skills"])
 	}
 }
 

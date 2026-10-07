@@ -7,8 +7,10 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -38,7 +40,9 @@ Do NOT call it just because a .docx is attached, nor to summarize, translate, an
 
 ## Output
 
-Findings first (errors, then warnings) with the rule, the measured value and the offending lines, then the components found. Explain the errors to the user in plain language with the quoted lines; say that seals, signatures and page numbers still need a manual review.`,
+Usually a finished evaluation: the file's measured formatting judged by a reasoning model against the NĐ30 skills of the document's type (signing authority, Nơi nhận, required parts, wording, spelling, plus the measured font/size/alignment/margin findings). Present it to the user as is — do not re-judge it. The check takes about a minute.
+
+If the evaluation was unavailable, the result instead holds the measured findings, the format data line by line and the <skill> blocks: apply the skills to the data yourself, keep the measured findings, and answer grouped by component with the rule, the quoted line and the fix. Either way, say that seals, signatures and page numbers still need a manual review.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -160,14 +164,40 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if !report.OK {
 		return &types.ToolResult{Success: false, Error: docformat.RenderText(report)}, nil
 	}
+	output, evaluated := t.evaluate(ctx, report)
 	return &types.ToolResult{
 		Success: true,
-		Output:  docformat.RenderText(report),
+		Output:  output,
 		Data: map[string]interface{}{
 			"file_name":     doc.FileName,
 			"document_type": report.DocumentType,
 			"summary":       report.Summary,
 			"method":        report.Segmentation.Method,
+			"skills":        report.Skills,
+			"evaluated":     evaluated,
 		},
 	}, nil
+}
+
+// evaluateTimeout keeps the reasoning call inside the agent's tool budget
+// (checkDocumentFormatToolTimeout) with room left for the fallback.
+const evaluateTimeout = 3*time.Minute + 30*time.Second
+
+// evaluate has the chat model judge the report against the document-type
+// skills with thinking on. Without a model, or when the call fails, the
+// agent gets the data and the skills to judge itself.
+func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docformat.Report) (string, bool) {
+	if t.chatModel != nil {
+		evalCtx, cancel := context.WithTimeout(ctx, evaluateTimeout)
+		defer cancel()
+		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(t.chatModel), report)
+		if err == nil {
+			report.Evaluation = text
+			return "# Đánh giá thể thức văn bản " + report.Source + "\n" +
+				"(đã thẩm định theo NĐ30/2020/NĐ-CP: số đo từ file và các skill " + strings.Join(report.Skills, ", ") + ")\n\n" +
+				text + "\n\n---\nTrình bày đánh giá trên cho người dùng; giữ nguyên các kết luận, không tự chấm lại.", true
+		}
+		logger.Warnf(ctx, "check_document_format: skill evaluation failed, returning data: %v", err)
+	}
+	return docformat.RenderForAgent(report), false
 }

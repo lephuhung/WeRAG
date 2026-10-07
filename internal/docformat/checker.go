@@ -87,6 +87,96 @@ type Report struct {
 	Sections     []*Section            `json:"sections,omitempty"`
 	Components   map[string]*Component `json:"components,omitempty"`
 	Checks       []CheckResult         `json:"checks,omitempty"`
+	// Format is the measured formatting of every component, line by line —
+	// the data the evaluation skills judge.
+	Format []ComponentFormat `json:"format,omitempty"`
+	// Evaluation is the skill-based judgment written by a reasoning model
+	// (EvaluateWithSkills), when one was requested.
+	Evaluation string `json:"evaluation,omitempty"`
+	// Skills are the evaluation skills of the document's type.
+	Skills []string `json:"skills,omitempty"`
+}
+
+// LineFormat is one line of a component with its measured formatting.
+type LineFormat struct {
+	Para   int      `json:"para"`
+	Text   string   `json:"text"`
+	Zone   string   `json:"zone"`
+	Align  string   `json:"align"`
+	Font   *string  `json:"font,omitempty"`
+	SizePt *float64 `json:"size_pt,omitempty"`
+	Bold   bool     `json:"bold"`
+	Italic bool     `json:"italic"`
+}
+
+// ComponentFormat is one component's lines, in document order.
+type ComponentFormat struct {
+	Key     string       `json:"key"`
+	Name    string       `json:"name"`
+	Lines   []LineFormat `json:"lines"`
+	Omitted int          `json:"omitted,omitempty"` // body lines left out
+}
+
+// maxBodyLines caps the nội dung lines carried in the format data: the
+// body's formatting is checked by the rules; the skills need its opening
+// and closing, not every paragraph.
+const maxBodyLines = 12
+
+// bodyTailLines of the capped body are its last lines.
+const bodyTailLines = 4
+
+// ExtractFormat lists each found component's lines with their measured
+// formatting, in NĐ30 reading order. A tab-split line reports its own side.
+func ExtractFormat(l *Layout, seg *Segmentation) []ComponentFormat {
+	var out []ComponentFormat
+	for _, def := range Components {
+		comp, ok := seg.Components[def.Key]
+		if !ok || !comp.Found {
+			continue
+		}
+		cf := ComponentFormat{Key: def.Key, Name: ComponentName(def.Key)}
+		for i, idx := range comp.Paras {
+			if idx < 0 || idx >= len(l.Paragraphs) {
+				continue
+			}
+			p := l.Paragraphs[idx]
+			zone := p.Zone
+			if i < len(comp.Zones) {
+				zone = comp.Zones[i]
+			}
+			lf := LineFormat{Para: idx, Text: strings.TrimSpace(p.Text), Zone: zone, Align: p.Alignment,
+				Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)}
+			if p.Zone == ZoneSplit && (zone == ZoneLeft || zone == ZoneRight) {
+				side := p.LeftProps
+				lf.Text = p.LeftText
+				if zone == ZoneRight {
+					side, lf.Text = p.RightProps, p.RightText
+				}
+				if side.Present {
+					lf.Font, lf.SizePt = side.FontName, side.SizePt
+					lf.Bold, lf.Italic = isTrue(side.Bold), isTrue(side.Italic)
+				}
+			}
+			if lf.Text == "" {
+				continue
+			}
+			if def.Key == "noi_dung" && runeLen(lf.Text) > 200 {
+				// mark the cut so a clipped word is not read as a typo
+				lf.Text = truncateRunes(lf.Text, 200) + "…"
+			}
+			cf.Lines = append(cf.Lines, lf)
+		}
+		if def.Key == "noi_dung" && len(cf.Lines) > maxBodyLines {
+			// keep the opening and the closing ("Trên đây là …", "./.")
+			head, tail := maxBodyLines-bodyTailLines, bodyTailLines
+			cf.Omitted = len(cf.Lines) - head - tail
+			cf.Lines = append(cf.Lines[:head:head], cf.Lines[len(cf.Lines)-tail:]...)
+		}
+		if len(cf.Lines) > 0 {
+			out = append(out, cf)
+		}
+	}
+	return out
 }
 
 // LabelWithLLM asks the model to label the task's units, retrying once
@@ -200,5 +290,15 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 		DocumentType: &DocumentTypeInfo{Requested: requested, Detected: seg.DetectedType, Used: used, RuleSet: label},
 		Segmentation: info, Summary: sum, Sections: l.Sections,
 		Components: seg.Components, Checks: checks,
+		Format: ExtractFormat(l, seg),
+		Skills: skillNamesFor(used),
 	}
+}
+
+func skillNamesFor(docType string) []string {
+	var out []string
+	for _, s := range SkillsFor(docType) {
+		out = append(out, s.Name)
+	}
+	return out
 }

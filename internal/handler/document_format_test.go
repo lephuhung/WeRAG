@@ -123,3 +123,30 @@ func TestDocumentFormatCheckRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestDocumentFormatCheckEvaluate(t *testing.T) {
+	_, models := llmChatFixture()
+	models.chat.result = &types.ChatResponse{Content: "## Kết luận\nChưa đạt thể thức."}
+	w := formatCheckRequest(t, NewDocumentFormatHandler(models), "cv.docx", formatFixture(t),
+		map[string]string{"evaluate": "true"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp struct {
+		Data struct {
+			Evaluation string   `json:"evaluation"`
+			Skills     []string `json:"skills"`
+			Format     []any    `json:"format"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, "## Kết luận\nChưa đạt thể thức.", resp.Data.Evaluation)
+	require.Equal(t, []string{"the-thuc-chung", "the-thuc-cong-van"}, resp.Data.Skills)
+	require.NotEmpty(t, resp.Data.Format)
+	require.True(t, *models.chat.options.Thinking, "the evaluation runs with thinking on")
+
+	// without evaluate=true no reasoning call is made
+	_, models = llmChatFixture()
+	w = formatCheckRequest(t, NewDocumentFormatHandler(models), "cv.docx", formatFixture(t), nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotContains(t, w.Body.String(), `"evaluation"`)
+	require.False(t, *models.chat.options.Thinking)
+}

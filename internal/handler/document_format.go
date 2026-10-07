@@ -1,20 +1,26 @@
 package handler
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 )
 
 // maxFormatCheckUpload caps a .docx sent to the format checker.
 const maxFormatCheckUpload = 30 << 20
+
+// formatEvaluateTimeout caps the optional skill evaluation (evaluate=true).
+const formatEvaluateTimeout = 3*time.Minute + 30*time.Second
 
 // DocumentFormatHandler checks uploaded .docx files against the thể thức
 // of Nghị định 30/2020/NĐ-CP. Components are labelled by the workspace
@@ -46,15 +52,19 @@ func (h *DocumentFormatHandler) ListTypes(c *gin.Context) {
 // Check godoc
 // @Summary      Check the thể thức of a .docx (NĐ30/2020)
 // @Description  Multipart upload: file (.docx), optional document_type
-// @Description  (auto by default) and segmenter (auto | heuristic). Returns
-// @Description  every rule with pass/fail/warn/skip, the measured value and
-// @Description  the offending lines.
+// @Description  (auto by default), segmenter (auto | heuristic) and
+// @Description  evaluate=true (judge the format data against the document-type
+// @Description  skills with the workspace chat model, thinking on; ~1 min).
+// @Description  Returns every rule with pass/fail/warn/skip, the measured
+// @Description  value, the offending lines, the format data and, with
+// @Description  evaluate, the written evaluation.
 // @Tags         Document format
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        file           formData  file    true   ".docx file"
 // @Param        document_type  formData  string  false  "rule set, e.g. cong_van"
 // @Param        segmenter      formData  string  false  "auto | heuristic"
+// @Param        evaluate       formData  bool    false  "skill evaluation (thinking)"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  errors.AppError
 // @Security     Bearer
@@ -95,6 +105,8 @@ func (h *DocumentFormatHandler) Check(c *gin.Context) {
 		return
 	}
 
+	evaluate := c.PostForm("evaluate") == "true"
+	var chatModel chat.Chat
 	opts := docformat.Options{
 		DocumentType: c.PostForm("document_type"),
 		Segmenter:    segmenter,
@@ -106,6 +118,7 @@ func (h *DocumentFormatHandler) Check(c *gin.Context) {
 		if models, err := h.models.ListModels(ctx); err == nil {
 			if m := selectChatModel(models, ""); m != nil {
 				if model, err := h.models.GetChatModel(ctx, m.ID); err == nil {
+					chatModel = model
 					opts.LLM = docformat.ChatCompleter(model)
 					opts.ModelName = m.Name
 				} else {
@@ -118,6 +131,17 @@ func (h *DocumentFormatHandler) Check(c *gin.Context) {
 	if !report.OK {
 		_ = c.Error(errors.NewBadRequestError(report.Error))
 		return
+	}
+	if evaluate && chatModel != nil {
+		// skill evaluation with thinking on: about a minute
+		evalCtx, cancel := context.WithTimeout(ctx, formatEvaluateTimeout)
+		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(chatModel), report)
+		cancel()
+		if err != nil {
+			logger.Warnf(ctx, "document format: skill evaluation failed: %v", err)
+		} else {
+			report.Evaluation = text
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": report})
 }

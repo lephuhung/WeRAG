@@ -36,6 +36,11 @@ const (
 	// 600-second command timeout so the tool can return a structured timeout
 	// result instead of being cancelled first by the generic agent wrapper.
 	shellExecToolTimeout = 10*time.Minute + 5*time.Second
+	// checkDocumentFormatToolTimeout covers the skill evaluation the format
+	// checker runs on the chat model with thinking on (~1 min on
+	// Qwen3.6-35B-A3B, more under load); the tool caps its own model call
+	// below this and falls back to returning the raw data.
+	checkDocumentFormatToolTimeout = 4 * time.Minute
 
 	// maxLLMRetries is the maximum number of retries for transient LLM errors.
 	maxLLMRetries = 2
@@ -65,6 +70,9 @@ func toolExecutionTimeout(toolName string, arguments ...string) time.Duration {
 	}
 	if toolName == "shell_exec" {
 		return shellExecToolTimeout
+	}
+	if toolName == "check_document_format" {
+		return checkDocumentFormatToolTimeout
 	}
 	return defaultToolExecTimeout
 }

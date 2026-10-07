@@ -89,7 +89,7 @@ def fixture_docs():
             docs["fx_cong_van_" + style] = captured["last"]
     finally:
         TR.comps_of = orig
-    import test_ky_thay as TK
+    import ky_thay_docs as TK
     kt_cases = {
         "ok": (["KT. TRƯỞNG PHÒNG", "PHÓ TRƯỞNG PHÒNG"],
                ["- Như trên;", "- Đ/c Trưởng phòng (để b/c);", "- Lưu: VT."]),
@@ -105,6 +105,12 @@ def fixture_docs():
     }
     for name, (sig, nn) in kt_cases.items():
         docs["fx_ky_thay_" + name] = TK.signed_doc(sig, nn)
+    docs["fx_stray_chars"] = TC.build_docx(TC.doc(
+        TC.p("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", align="center", bold=True)
+        + TC.p("Độc lập - Tự do - Hạnh phúc", align="center", bold=True)
+        + TC.p("Nghị định 13/2023/NĐ-CP của Chính p`hủ quy định về bảo vệ "
+               "dữ liệu cá nhân; số liệu 3^2 và đường dẫn a\\b.", align="both")
+        + TC.p("Ủy ban nhân dân tỉnh Hà Tĩ~nh đề nghị.", align="both")))
     return docs
 
 

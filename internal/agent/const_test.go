@@ -18,3 +18,14 @@ func TestToolExecutionTimeout(t *testing.T) {
 		assert.Equal(t, 60*time.Second, toolExecutionTimeout("local_browser", args))
 	}
 }
+
+func TestCheckDocumentFormatGetsReasoningBudget(t *testing.T) {
+	// the format check runs a thinking-mode evaluation (~1 min): the
+	// default 60s tool budget would cut it off
+	if got := toolExecutionTimeout("check_document_format"); got < 3*time.Minute {
+		t.Fatalf("check_document_format timeout = %v", got)
+	}
+	if got := toolExecutionTimeout("web_fetch"); got != defaultToolExecTimeout {
+		t.Fatalf("other tools keep the default, got %v", got)
+	}
+}
