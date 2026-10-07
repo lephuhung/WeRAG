@@ -5,8 +5,9 @@ import "fmt"
 // Batch collects edits against one snapshot of the document and applies
 // them with a single rewrite and re-tokenization (see Document.Batch).
 type Batch struct {
-	d     *Document
-	edits []batchEdit
+	d       *Document
+	edits   []batchEdit
+	inserts map[int]bool // anchors of planned paragraph insertions
 }
 
 type batchEdit struct {
@@ -94,4 +95,39 @@ func (b *Batch) SetParaProps(index int, p ParaProps, a Author) error {
 func (b *Batch) SetSectionProps(sectIndex int, p SectionProps, a Author) error {
 	sp, err := b.d.planSetSectionProps(sectIndex, p, a)
 	return b.add(fmt.Sprintf("SetSectionProps on section %d", sectIndex), sp, err)
+}
+
+// InsertParagraphAfter is Document.InsertParagraphAfter, deferred to the
+// end of the batch. Like every batch edit, index (and NewParagraph.
+// InheritFrom) refer to the paragraph numbering at the start of the batch:
+// insertions are applied together with the other splices in descending
+// offset order, so they never shift the paragraphs other edits address. The
+// new index is not returned (re-read Paragraphs after the batch). Two
+// insertions anchored on the same paragraph are rejected, since their
+// order would be undefined.
+func (b *Batch) InsertParagraphAfter(index int, p NewParagraph, a Author) error {
+	if b.inserts[index] {
+		return fmt.Errorf("docxedit: batch: a paragraph is already inserted after paragraph %d; apply the second insertion in another batch", index)
+	}
+	ins, err := b.d.planInsertParagraphAfter(index, p, a)
+	if err := b.add(fmt.Sprintf("InsertParagraphAfter paragraph %d", index), ins.sp, err); err != nil {
+		return err
+	}
+	if b.inserts == nil {
+		b.inserts = map[int]bool{}
+	}
+	b.inserts[index] = true
+	return nil
+}
+
+// MarkSubstring is Document.MarkSubstring, deferred to the end of the batch.
+func (b *Batch) MarkSubstring(index int, old string, m Mark, a Author) error {
+	sp, err := b.d.planMarkSubstring(index, old, m, a)
+	return b.add(fmt.Sprintf("MarkSubstring on paragraph %d", index), sp, err)
+}
+
+// MarkParagraph is Document.MarkParagraph, deferred to the end of the batch.
+func (b *Batch) MarkParagraph(index int, m Mark, a Author) error {
+	sp, err := b.d.planMarkParagraph(index, m, a)
+	return b.add(fmt.Sprintf("MarkParagraph on paragraph %d", index), sp, err)
 }

@@ -29,7 +29,7 @@ var rewriteParagraphsTool = BaseTool{
   - new: the replacement text (required; it may be empty only together with old, to delete that substring).
 - note: optional short reason for the change, shown back in the result.
 
-Keep the administrative register and the original meaning; change only what was asked. Formatting (font, size, alignment) is handled by apply_format_fixes, not here. Paragraphs cannot be added or removed.`,
+Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes. To point out a problem without changing the text, use mark_passages.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {

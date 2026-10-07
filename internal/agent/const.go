@@ -46,6 +46,9 @@ const (
 	// its callback), may label the document with the chat model, then edits
 	// and stores the .docx.
 	documentEditToolTimeout = 4 * time.Minute
+	// documentInsertMarkToolTimeout covers insert_paragraphs / mark_passages:
+	// the editor force-save wait plus the edit (no model call).
+	documentInsertMarkToolTimeout = 2 * time.Minute
 	// documentOutlineToolTimeout covers reading and segmenting the workspace
 	// document with the positional heuristic (no model call).
 	documentOutlineToolTimeout = 30 * time.Second
@@ -84,6 +87,8 @@ func toolExecutionTimeout(toolName string, arguments ...string) time.Duration {
 		return checkDocumentFormatToolTimeout
 	case "apply_format_fixes", "rewrite_paragraphs":
 		return documentEditToolTimeout
+	case "insert_paragraphs", "mark_passages":
+		return documentInsertMarkToolTimeout
 	case "read_document_outline":
 		return documentOutlineToolTimeout
 	}

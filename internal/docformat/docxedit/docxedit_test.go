@@ -942,3 +942,346 @@ func TestNoOpEditsLeaveTheDocumentClean(t *testing.T) {
 		t.Fatal("a real edit must mark the document dirty")
 	}
 }
+
+func TestInsertParagraphAfter(t *testing.T) {
+	body := `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="26"/></w:rPr><w:t>Tiêu đề</w:t></w:r></w:p>` +
+		`<w:p><w:pPr><w:spacing w:before="120"/><w:ind w:firstLine="567"/><w:jc w:val="both"/><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr>` +
+		`<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="28"/><w:rPrChange w:id="3" w:author="X" w:date="2026-01-01T00:00:00Z"><w:rPr/></w:rPrChange></w:rPr><w:t>Nội dung</w:t></w:r></w:p>` +
+		`<w:tbl><w:tr><w:tc><w:p><w:r><w:rPr><w:i/><w:sz w:val="24"/></w:rPr><w:t>Ô 1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Ô 2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+		`<w:p><w:r><w:t>Cuối</w:t></w:r></w:p>`
+	src := makeDocx(t, body)
+	cases := []struct {
+		name     string
+		anchor   int
+		np       NewParagraph
+		wantIdx  int
+		font     string
+		size     float64
+		align    string
+		inTable  bool
+		firstMM  float64 // expected first-line indent, 0 = none
+		boldWant bool
+	}{
+		{name: "after body paragraph", anchor: 1, np: NewParagraph{Text: "Đoạn mới & <chèn>"},
+			wantIdx: 2, font: "Times New Roman", size: 14, align: "justify", firstMM: 10.0},
+		{name: "at -1", anchor: -1, np: NewParagraph{Text: "Đầu tiên"},
+			wantIdx: 0, font: "Arial", size: 13, align: "center", boldWant: true},
+		{name: "inside table cell", anchor: 2, np: NewParagraph{Text: "Ô 1b"},
+			wantIdx: 3, font: "Arial", size: 12, align: "left", inTable: true},
+		{name: "inherit from other with overrides", anchor: 4,
+			np: NewParagraph{Text: "Ghi chú", InheritFrom: ptrTo(1),
+				Para: &ParaProps{Alignment: ptrTo("right")}, Run: &RunProps{SizePt: ptrTo(12.0), Italic: ptrTo(true)}},
+			wantIdx: 5, font: "Times New Roman", size: 12, align: "right", firstMM: 10.0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := mustOpen(t, src)
+			n := len(d.Paragraphs())
+			idx, err := d.InsertParagraphAfter(c.anchor, c.np, testAuthor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if idx != c.wantIdx {
+				t.Fatalf("index = %d, want %d", idx, c.wantIdx)
+			}
+			out := mustBytes(t, d)
+			x := documentXML(t, out)
+			wellFormed(t, x)
+			assertIDsUnique(t, x)
+			if strings.Count(x, "<w:sectPr>") != 2 {
+				t.Errorf("sectPr duplicated or lost:\n%s", x)
+			}
+			if !regexp.MustCompile(`<w:pPr>(?:(?:<[^>]*>)*?)<w:rPr><w:ins w:id="\d+" w:author="[^"]+" w:date="2026-10-07T08:30:00Z"/>.*?</w:rPr>(?:<w:sectPr>.*?</w:sectPr>)?</w:pPr><w:ins w:id="\d+" [^>]*><w:r>`).MatchString(x) {
+				t.Errorf("paragraph-mark / run insertion missing:\n%s", x)
+			}
+			lay := docformat.InspectDocx(out)
+			if len(lay.Paragraphs) != n+1 {
+				t.Fatalf("docformat paragraphs = %d, want %d", len(lay.Paragraphs), n+1)
+			}
+			p := lay.Paragraphs[idx]
+			if p.Text != c.np.Text || deref(p.FontName) != c.font || deref(p.SizePt) != c.size ||
+				p.Alignment != c.align || p.InTable != c.inTable || (p.Bold != nil && *p.Bold) != c.boldWant {
+				t.Errorf("docformat sees text=%q font=%v size=%v align=%s table=%v bold=%v",
+					p.Text, deref(p.FontName), deref(p.SizePt), p.Alignment, p.InTable, deref(p.Bold))
+			}
+			if c.firstMM != 0 && (p.IndentFirstLineMM == nil || math.Abs(*p.IndentFirstLineMM-c.firstMM) > 0.05) {
+				t.Errorf("first-line indent = %v", deref(p.IndentFirstLineMM))
+			}
+			if got := d.Paragraphs()[idx].Text; got != c.np.Text {
+				t.Errorf("Paragraphs()[%d] = %q", idx, got)
+			}
+			if c.np.Run != nil && !strings.Contains(x, `<w:i/><w:iCs/><w:sz w:val="24"/>`) {
+				t.Errorf("run overrides missing:\n%s", x)
+			}
+		})
+	}
+	// empty text: mark only
+	d := mustOpen(t, src)
+	idx, err := d.InsertParagraphAfter(4, NewParagraph{}, testAuthor)
+	if err != nil || idx != 5 || !d.Paragraphs()[5].Empty {
+		t.Fatalf("empty insert: %d %v", idx, err)
+	}
+	if _, err := d.InsertParagraphAfter(99, NewParagraph{Text: "x"}, testAuthor); err == nil {
+		t.Error("out of range anchor: want error")
+	}
+}
+
+func TestMarkSubstring(t *testing.T) {
+	body := `<w:p><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Căn cứ Luật </w:t></w:r>` +
+		`<w:r><w:rPr><w:i/></w:rPr><w:t>Tổ chức chính quyền</w:t></w:r><w:r><w:t xml:space="preserve"> địa phương</w:t></w:r></w:p>`
+	d := mustOpen(t, makeDocx(t, body))
+	m := Mark{Underline: ptrTo("wave"), UnderlineColor: ptrTo("ff0000"), Color: ptrTo("#C00000"), Highlight: ptrTo("yellow")}
+	if err := d.MarkSubstring(0, "Luật Tổ chức", m, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	out := mustBytes(t, d)
+	x := documentXML(t, out)
+	wellFormed(t, x)
+	assertIDsUnique(t, x)
+	if got := d.Paragraphs()[0].Text; got != "Căn cứ Luật Tổ chức chính quyền địa phương" {
+		t.Errorf("text changed: %q", got)
+	}
+	marked := `<w:color w:val="C00000"/><w:sz w:val="28"/><w:highlight w:val="yellow"/><w:u w:val="wave" w:color="FF0000"/>`
+	wantRuns := []string{
+		`<w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Căn cứ </w:t></w:r>`,
+		`<w:r><w:rPr><w:b/>` + marked + `<w:rPrChange w:id="0" [^>]*><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:rPrChange></w:rPr><w:t xml:space="preserve">Luật </w:t></w:r>`,
+		`<w:r><w:rPr><w:i/><w:color w:val="C00000"/><w:highlight w:val="yellow"/><w:u w:val="wave" w:color="FF0000"/><w:rPrChange w:id="1" [^>]*><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr><w:t xml:space="preserve">Tổ chức</w:t></w:r>`,
+		`<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> chính quyền</w:t></w:r>`,
+		`<w:r><w:t xml:space="preserve"> địa phương</w:t></w:r>`,
+	}
+	if !regexp.MustCompile(strings.Join(wantRuns, "")).MatchString(x) {
+		t.Errorf("unexpected markup:\n%s", x)
+	}
+	if n := strings.Count(x, "<w:rPrChange "); n != 2 {
+		t.Errorf("rPrChange count = %d, want 2", n)
+	}
+	lay := docformat.InspectDocx(out)
+	if len(lay.Errors) > 0 || lay.Paragraphs[0].Text != d.Paragraphs()[0].Text {
+		t.Errorf("docformat: %v %q", lay.Errors, lay.Paragraphs[0].Text)
+	}
+	// marking the same text again records nothing
+	before := string(d.xml)
+	if err := d.MarkSubstring(0, "Tổ chức", m, testAuthor); err != nil || string(d.xml) != before {
+		t.Errorf("re-mark changed the document (err %v)", err)
+	}
+	// splitting a run that already has a tracked change keeps ids unique
+	if err := d.MarkSubstring(0, "chính", Mark{Highlight: ptrTo("red")}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.MarkSubstring(0, "Căn", Mark{Highlight: ptrTo("red")}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.MarkSubstring(0, "ứ L", Mark{Color: ptrTo("auto")}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	x = documentXML(t, mustBytes(t, d))
+	wellFormed(t, x)
+	assertIDsUnique(t, x)
+	for _, bad := range []Mark{{}, {Underline: ptrTo("zigzag")}, {Color: ptrTo("red")}, {Highlight: ptrTo("orange")}} {
+		if err := d.MarkSubstring(0, "Căn", bad, testAuthor); err == nil {
+			t.Errorf("mark %+v: want error", bad)
+		}
+	}
+	if err := d.MarkSubstring(0, "không có", m, testAuthor); err == nil {
+		t.Error("missing text: want error")
+	}
+	// NFC retry
+	if err := d.MarkSubstring(0, "địa", Mark{Underline: ptrTo("double")}, testAuthor); err != nil {
+		t.Errorf("decomposed needle: %v", err)
+	}
+}
+
+func TestMarkParagraph(t *testing.T) {
+	body := `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Một</w:t></w:r><w:r><w:t xml:space="preserve"> hai</w:t></w:r><w:r><w:drawing/></w:r></w:p>`
+	d := mustOpen(t, makeDocx(t, body))
+	if err := d.MarkParagraph(0, Mark{Underline: ptrTo("single"), Highlight: ptrTo("cyan")}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	x := documentXML(t, mustBytes(t, d))
+	wellFormed(t, x)
+	assertIDsUnique(t, x)
+	want := `<w:r><w:rPr><w:b/><w:highlight w:val="cyan"/><w:u w:val="single"/><w:rPrChange w:id="0" [^>]*><w:rPr><w:b/></w:rPr></w:rPrChange></w:rPr><w:t>Một</w:t></w:r>` +
+		`<w:r><w:rPr><w:highlight w:val="cyan"/><w:u w:val="single"/><w:rPrChange w:id="1" [^>]*><w:rPr></w:rPr></w:rPrChange></w:rPr><w:t xml:space="preserve"> hai</w:t></w:r><w:r><w:drawing/></w:r>`
+	if !regexp.MustCompile(want).MatchString(x) {
+		t.Errorf("unexpected markup:\n%s", x)
+	}
+}
+
+func TestBatchInsertAndMark(t *testing.T) {
+	var body strings.Builder
+	for i := 0; i < 20; i++ {
+		body.WriteString(fmt.Sprintf(`<w:p><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>Đoạn %d có lỗi</w:t></w:r></w:p>`, i))
+	}
+	src := makeDocx(t, body.String())
+	a := testAuthor
+	seq := mustOpen(t, src)
+	// sequential: descending anchors so earlier indices stay valid
+	for i := 19; i >= 0; i-- {
+		switch i % 3 {
+		case 0:
+			if _, err := seq.InsertParagraphAfter(i, NewParagraph{Text: fmt.Sprintf("Chèn sau %d", i)}, a); err != nil {
+				t.Fatal(err)
+			}
+		case 1:
+			if err := seq.MarkSubstring(i, "lỗi", Mark{Underline: ptrTo("wave"), UnderlineColor: ptrTo("FF0000")}, a); err != nil {
+				t.Fatal(err)
+			}
+		case 2:
+			if err := seq.MarkParagraph(i, Mark{Highlight: ptrTo("yellow")}, a); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	bat := mustOpen(t, src)
+	err := bat.Batch(func(b *Batch) error {
+		for i := 19; i >= 0; i-- {
+			var err error
+			switch i % 3 {
+			case 0:
+				err = b.InsertParagraphAfter(i, NewParagraph{Text: fmt.Sprintf("Chèn sau %d", i)}, a)
+			case 1:
+				err = b.MarkSubstring(i, "lỗi", Mark{Underline: ptrTo("wave"), UnderlineColor: ptrTo("FF0000")}, a)
+			case 2:
+				err = b.MarkParagraph(i, Mark{Highlight: ptrTo("yellow")}, a)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		// insertion next to an edit of the anchor itself is fine
+		return b.SetParaProps(0, ParaProps{Alignment: ptrTo("center")}, a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seq.SetParaProps(0, ParaProps{Alignment: ptrTo("center")}, a); err != nil {
+		t.Fatal(err)
+	}
+	xs, xb := documentXML(t, mustBytes(t, seq)), documentXML(t, mustBytes(t, bat))
+	if xs != xb {
+		t.Fatalf("batch differs from sequential\nseq:   %s\nbatch: %s", xs, xb)
+	}
+	wellFormed(t, xb)
+	assertIDsUnique(t, xb)
+	out := mustBytes(t, bat)
+	if lay := docformat.InspectDocx(out); len(lay.Paragraphs) != 27 || lay.Paragraphs[1].Text != "Chèn sau 0" {
+		t.Errorf("docformat: %d paragraphs", len(lay.Paragraphs))
+	}
+	// two insertions on one anchor are rejected
+	if err := bat.Batch(func(b *Batch) error {
+		if err := b.InsertParagraphAfter(2, NewParagraph{Text: "a"}, a); err != nil {
+			return err
+		}
+		return b.InsertParagraphAfter(2, NewParagraph{Text: "b"}, a)
+	}); err == nil || !strings.Contains(err.Error(), "already inserted after paragraph 2") {
+		t.Errorf("want same-anchor error, got %v", err)
+	}
+	if documentXML(t, mustBytes(t, bat)) != xb {
+		t.Error("rejected batch changed the document")
+	}
+}
+
+func TestInsertAndMarkKeepOtherEntries(t *testing.T) {
+	in, err := os.ReadFile("../testdata/parity/synth_000_cong_van_table2rows_table.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := mustOpen(t, in)
+	n := len(d.Paragraphs())
+	idx := firstTextPara(t, d)
+	if _, err := d.InsertParagraphAfter(idx, NewParagraph{Text: "Bổ sung"}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.MarkParagraph(idx, Mark{Highlight: ptrTo("yellow")}, testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	out := mustBytes(t, d)
+	zin, _ := zip.NewReader(bytes.NewReader(in), int64(len(in)))
+	zout, _ := zip.NewReader(bytes.NewReader(out), int64(len(out)))
+	for i, f := range zin.File {
+		g := zout.File[i]
+		if f.Name != g.Name || (f.Name != "word/document.xml" && (f.CRC32 != g.CRC32 || f.CompressedSize64 != g.CompressedSize64)) {
+			t.Errorf("entry %s changed", f.Name)
+		}
+	}
+	if lay := docformat.InspectDocx(out); len(lay.Paragraphs) != n+1 {
+		t.Errorf("paragraphs %d, want %d", len(lay.Paragraphs), n+1)
+	}
+	x := documentXML(t, out)
+	wellFormed(t, x)
+	assertIDsUnique(t, x)
+}
+
+func TestInsertParagraphMovesSectionBreak(t *testing.T) {
+	body := `<w:p><w:pPr><w:jc w:val="both"/><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr><w:r><w:t>Cuối mục 1</w:t></w:r></w:p>` +
+		`<w:p><w:r><w:t>Mục 2</w:t></w:r></w:p>`
+	d := mustOpen(t, makeDocx(t, body))
+	idx, err := d.InsertParagraphAfter(0, NewParagraph{Text: "Thêm vào mục 1"}, testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := mustBytes(t, d)
+	x := documentXML(t, out)
+	wellFormed(t, x)
+	if !strings.Contains(x, `<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>Cuối mục 1</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:ins `) ||
+		!regexp.MustCompile(`</w:rPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr><w:ins `).MatchString(x) {
+		t.Errorf("sectPr not moved to the new paragraph:\n%s", x)
+	}
+	lay := docformat.InspectDocx(out)
+	if len(lay.Sections) != 2 || lay.Paragraphs[0].Section != 0 || lay.Paragraphs[idx].Section != 0 || lay.Paragraphs[2].Section != 1 {
+		t.Errorf("sections: %d, paragraph sections %d %d %d", len(lay.Sections),
+			lay.Paragraphs[0].Section, lay.Paragraphs[idx].Section, lay.Paragraphs[2].Section)
+	}
+	if len(d.sects) != 2 {
+		t.Errorf("docxedit sections = %d", len(d.sects))
+	}
+	// in a batch, the move conflicts with an edit of that section
+	d = mustOpen(t, makeDocx(t, body))
+	err = d.Batch(func(b *Batch) error {
+		if err := b.SetSectionProps(0, SectionProps{MarginLeftPt: ptrTo(85.0)}, testAuthor); err != nil {
+			return err
+		}
+		return b.InsertParagraphAfter(0, NewParagraph{Text: "x"}, testAuthor)
+	})
+	if err == nil || !strings.Contains(err.Error(), "overlaps") {
+		t.Errorf("want overlap error, got %v", err)
+	}
+}
+
+func TestInsertParagraphStripsInheritedLayout(t *testing.T) {
+	body := `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:pageBreakBefore/><w:framePr w:w="2000"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:jc w:val="both"/></w:pPr><w:r><w:t>Mục danh sách</w:t></w:r></w:p>`
+	cases := []struct {
+		name    string
+		np      NewParagraph
+		wantNum bool
+	}{
+		{"anchor default drops numbering", NewParagraph{Text: "a"}, false},
+		{"explicit InheritFrom keeps numbering", NewParagraph{Text: "a", InheritFrom: ptrTo(0)}, true},
+		{"KeepNumbering", NewParagraph{Text: "a", KeepNumbering: true}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := mustOpen(t, makeDocx(t, body))
+			idx, err := d.InsertParagraphAfter(0, c.np, testAuthor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			x := documentXML(t, mustBytes(t, d))
+			wellFormed(t, x)
+			newP := x[strings.Index(x, "</w:p>")+len("</w:p>"):]
+			newP = newP[:strings.Index(newP, "</w:p>")]
+			if strings.Contains(newP, "pageBreakBefore") || strings.Contains(newP, "framePr") {
+				t.Errorf("page break / frame inherited: %s", newP)
+			}
+			if got := strings.Contains(newP, `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr>`); got != c.wantNum {
+				t.Errorf("numPr kept = %v, want %v: %s", got, c.wantNum, newP)
+			}
+			if !strings.HasPrefix(newP, `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>`) || !strings.Contains(newP, `<w:jc w:val="both"/>`) {
+				t.Errorf("other props not inherited: %s", newP)
+			}
+			if lay := docformat.InspectDocx(mustBytes(t, d)); lay.Paragraphs[idx].PageBreakBefore {
+				t.Error("docformat sees page break before")
+			}
+		})
+	}
+}

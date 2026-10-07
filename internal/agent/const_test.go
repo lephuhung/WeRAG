@@ -34,4 +34,6 @@ func TestDocumentAssistantToolTimeouts(t *testing.T) {
 	assert.Equal(t, 4*time.Minute, toolExecutionTimeout("apply_format_fixes"))
 	assert.Equal(t, 4*time.Minute, toolExecutionTimeout("rewrite_paragraphs"))
 	assert.Equal(t, 30*time.Second, toolExecutionTimeout("read_document_outline"))
+	assert.Equal(t, 2*time.Minute, toolExecutionTimeout("insert_paragraphs"))
+	assert.Equal(t, 2*time.Minute, toolExecutionTimeout("mark_passages"))
 }

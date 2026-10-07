@@ -53,6 +53,15 @@
 // one w:del. When the anchor run sits in a w:hyperlink the inserted run is
 // placed inside the same hyperlink (it keeps the link).
 //
+// # Insertions and marks
+//
+// InsertParagraphAfter adds a paragraph as Word does for a tracked new
+// paragraph: its mark carries w:pPr/w:rPr/w:ins and its run sits in w:ins.
+// Inserting after a paragraph that ends a section (w:pPr/w:sectPr) puts the
+// new paragraph at the start of the next section. MarkSubstring and
+// MarkParagraph apply review formatting (underline style/colour, text
+// colour, highlight) as w:rPrChange revisions, so rejecting removes them.
+//
 // # Revision ids
 //
 // w:id values continue above the largest numeric w:id found in

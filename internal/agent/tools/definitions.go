@@ -79,6 +79,8 @@ const (
 	ToolReadDocumentOutline = "read_document_outline"
 	ToolRewriteParagraphs   = "rewrite_paragraphs"
 	ToolApplyFormatFixes    = "apply_format_fixes"
+	ToolInsertParagraphs    = "insert_paragraphs"
+	ToolMarkPassages        = "mark_passages"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -129,6 +131,16 @@ func AvailableToolDefinitions() []AvailableTool {
 			Name:        ToolRewriteParagraphs,
 			Label:       "Viết lại đoạn văn",
 			Description: "Sửa nội dung đoạn văn trong tài liệu đang soạn thảo dưới dạng track changes",
+		},
+		{
+			Name:        ToolInsertParagraphs,
+			Label:       "Chèn đoạn văn",
+			Description: "Chèn đoạn văn mới (ví dụ Nơi nhận, Căn cứ) vào tài liệu đang soạn thảo dưới dạng track changes",
+		},
+		{
+			Name:        ToolMarkPassages,
+			Label:       "Đánh dấu đoạn cần xem lại",
+			Description: "Gạch chân lượn sóng đỏ hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
 		},
 	}
 }

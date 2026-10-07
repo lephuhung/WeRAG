@@ -1192,6 +1192,16 @@ func (s *agentService) registerTools(
 				continue
 			}
 			toolToRegister = tools.NewRewriteParagraphsTool(s.documentWorkspaces, sessionID)
+		case tools.ToolInsertParagraphs:
+			if docWorkspace == nil {
+				continue
+			}
+			toolToRegister = tools.NewInsertParagraphsTool(s.documentWorkspaces, sessionID)
+		case tools.ToolMarkPassages:
+			if docWorkspace == nil {
+				continue
+			}
+			toolToRegister = tools.NewMarkPassagesTool(s.documentWorkspaces, sessionID)
 		case tools.ToolApplyFormatFixes:
 			if docWorkspace == nil {
 				continue

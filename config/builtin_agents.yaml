@@ -218,6 +218,8 @@ builtin_agents:
         - "read_document_outline"
         - "apply_format_fixes"
         - "rewrite_paragraphs"
+        - "insert_paragraphs"
+        - "mark_passages"
         - "search_knowledge"
         - "read_document"
         - "query_knowledge_graph"

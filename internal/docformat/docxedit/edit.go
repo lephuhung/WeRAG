@@ -367,11 +367,8 @@ func (d *Document) planSetRunProps(index int, p RunProps, a Author) ([]splice, e
 	if err != nil {
 		return nil, err
 	}
-	if p.Font != nil && strings.TrimSpace(*p.Font) == "" {
-		return nil, errors.New("docxedit: empty font name")
-	}
-	if p.SizePt != nil && (*p.SizePt <= 0 || *p.SizePt > 1638) {
-		return nil, fmt.Errorf("docxedit: font size %.1fpt out of range", *p.SizePt)
+	if err := validateRunProps(p); err != nil {
+		return nil, err
 	}
 	var sp []splice
 	for _, r := range pp.runs {
@@ -402,6 +399,16 @@ func (d *Document) planSetRunProps(index int, p RunProps, a Author) ([]splice, e
 		}
 	}
 	return sp, nil
+}
+
+func validateRunProps(p RunProps) error {
+	if p.Font != nil && strings.TrimSpace(*p.Font) == "" {
+		return errors.New("docxedit: empty font name")
+	}
+	if p.SizePt != nil && (*p.SizePt <= 0 || *p.SizePt > 1638) {
+		return fmt.Errorf("docxedit: font size %.1fpt out of range", *p.SizePt)
+	}
+	return nil
 }
 
 func (d *Document) applyRunProps(ks []kid, p RunProps) []kid {

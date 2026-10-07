@@ -47,6 +47,12 @@ func TestRegisterToolsOffersDocumentToolsWithAWorkspace(t *testing.T) {
 	require.Contains(t, names, tools.ToolCheckDocumentFormat)
 	require.Contains(t, names, tools.ToolSearchKnowledge)
 	require.NotContains(t, names, tools.ToolRewriteParagraphs, "the allowlist still decides the writers")
+	require.NotContains(t, names, tools.ToolInsertParagraphs)
+	require.NotContains(t, names, tools.ToolMarkPassages)
+
+	names = registerDocumentTools(t, ws, tools.ToolInsertParagraphs, tools.ToolMarkPassages)
+	require.Contains(t, names, tools.ToolInsertParagraphs)
+	require.Contains(t, names, tools.ToolMarkPassages)
 	require.Equal(t, 1, countName(names, tools.ToolCheckDocumentFormat))
 
 	// check_document_format follows the workspace, not the allowlist
@@ -56,9 +62,9 @@ func TestRegisterToolsOffersDocumentToolsWithAWorkspace(t *testing.T) {
 func TestRegisterToolsHidesDocumentToolsWithoutAWorkspace(t *testing.T) {
 	names := registerDocumentTools(t, nil,
 		tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline, tools.ToolApplyFormatFixes,
-		tools.ToolRewriteParagraphs, tools.ToolSearchKnowledge)
+		tools.ToolRewriteParagraphs, tools.ToolInsertParagraphs, tools.ToolMarkPassages, tools.ToolSearchKnowledge)
 	for _, name := range []string{tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline,
-		tools.ToolApplyFormatFixes, tools.ToolRewriteParagraphs} {
+		tools.ToolApplyFormatFixes, tools.ToolRewriteParagraphs, tools.ToolInsertParagraphs, tools.ToolMarkPassages} {
 		require.NotContains(t, names, name)
 	}
 	require.Contains(t, names, tools.ToolSearchKnowledge)

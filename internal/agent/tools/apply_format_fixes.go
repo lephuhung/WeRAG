@@ -25,7 +25,7 @@ var applyFormatFixesTool = BaseTool{
 
 If the document's structure cannot be identified reliably (a required component such as quốc hiệu or chữ ký was not found, or the document type is unknown), nothing is changed: the result is the plan with a warning. Confirm with the user — ideally ask them which document type it is and pass document_type — then call again with force=true.
 
-Position (left/right column), wording, missing components, component order and lines split in two columns by a tab cannot be fixed this way: they are listed as needing a manual fix.
+It does NOT change line spacing, spacing before/after paragraphs or indents. Position (left/right column), wording, missing components, component order and lines split in two columns by a tab cannot be fixed this way either: they are listed as needing a manual fix (missing parts can be added with insert_paragraphs).
 
 ## When to Use
 
