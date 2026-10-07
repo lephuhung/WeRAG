@@ -309,7 +309,7 @@ func (s *documentWorkspaceService) View(
 				// "review changes" navigator on every open: the user reviews from
 				// the Collaboration tab when they want to.
 				"review":   map[string]interface{}{"trackChanges": true, "showReviewChanges": false, "reviewDisplay": "markup"},
-				"features": map[string]interface{}{"spellcheck": false},
+				"features": map[string]interface{}{"spellcheck": false, "featuresTips": false},
 				"plugins":  true,
 			},
 			"plugins": map[string]interface{}{
