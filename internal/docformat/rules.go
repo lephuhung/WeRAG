@@ -51,6 +51,34 @@ type RuleSet struct {
 	Checks             []RuleCheck `json:"checks"`
 }
 
+// CheckByID returns the rule with the given id, nil when the set has none.
+func (rs *RuleSet) CheckByID(id string) *RuleCheck {
+	if rs == nil {
+		return nil
+	}
+	for i := range rs.Checks {
+		if rs.Checks[i].ID == id {
+			c := rs.Checks[i]
+			return &c
+		}
+	}
+	return nil
+}
+
+// ParaSatisfies reports whether paragraph p, taken as a whole, satisfies the
+// prop rule c with the same comparison Evaluate uses. The sides of a
+// tab-split paragraph are not considered.
+func ParaSatisfies(p *Para, c RuleCheck) (bool, error) {
+	if p == nil {
+		return false, fmt.Errorf("no paragraph")
+	}
+	actual := paraAttr(p, c.Prop)
+	if c.Prop == "font_name" && actual == nil {
+		return false, nil
+	}
+	return compare(c.Op, actual, c.Value)
+}
+
 // AvailableTypes lists the document types with their own rule set.
 func AvailableTypes() []string {
 	entries, err := rulesFS.ReadDir("rules")

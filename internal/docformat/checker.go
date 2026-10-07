@@ -256,13 +256,7 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if requested == "auto" || requested == "detect" {
 		used = seg.DetectedType
 	}
-	rulesName := "base"
-	for _, t := range AvailableTypes() {
-		if t == used {
-			rulesName = used
-			break
-		}
-	}
+	rulesName := ruleSetName(used)
 	rs, err := LoadRuleSet(rulesName)
 	if err != nil {
 		return &Report{Source: opts.SourceName, Error: err.Error()}
@@ -293,6 +287,26 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 		Format: ExtractFormat(l, seg),
 		Skills: skillNamesFor(used),
 	}
+}
+
+// ruleSetName is the rule set Check applies to a document of type used:
+// its own when one exists, else the shared base.
+func ruleSetName(used string) string {
+	for _, t := range AvailableTypes() {
+		if t == used {
+			return used
+		}
+	}
+	return "base"
+}
+
+// RuleSetForReport returns the rule set Check evaluated to produce r, so a
+// caller can read the rule (prop, op, value) behind each CheckResult.
+func RuleSetForReport(r *Report) (*RuleSet, error) {
+	if r == nil || r.DocumentType == nil {
+		return nil, fmt.Errorf("report has no document type")
+	}
+	return LoadRuleSet(ruleSetName(r.DocumentType.Used))
 }
 
 func skillNamesFor(docType string) []string {
