@@ -343,8 +343,14 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 		return fmt.Errorf("decode temporary document task: %w", err)
 	}
 	document, err := s.repo.GetByID(ctx, payload.TenantID, payload.DocumentID)
-	if err != nil || document == nil {
+	if err != nil {
 		return err
+	}
+	if document == nil {
+		// Deleted, or enqueued by a server on another database that shares
+		// this Redis: the task is dropped and the row (if any) stays uploaded.
+		logger.Warnf(ctx, "temporary document %s (tenant %d) not found; parse task dropped", payload.DocumentID, payload.TenantID)
+		return nil
 	}
 	if document.Status == types.TemporaryDocumentStatusReady {
 		return nil
