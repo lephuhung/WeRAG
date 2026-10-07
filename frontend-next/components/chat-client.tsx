@@ -259,8 +259,11 @@ const UserMessageBubble = memo(function UserMessageBubble({
   message,
   onFork,
   onEdit,
+  compact = false,
 }: {
   message: UiMessage;
+  /** Document-assistant split view: mobile-sized, full-width column. */
+  compact?: boolean;
   onFork?: (m: UiMessage) => void;
   onEdit?: (content: string) => void;
 }) {
@@ -275,7 +278,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
   };
 
   return (
-    <div className="group mb-4 flex flex-col items-end">
+    <div className={`group flex flex-col items-end ${compact ? "mb-3" : "mb-4"}`}>
       {(message.attachments?.length ?? 0) > 0 && (
         <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {message.attachments!.map((a, i) => (
@@ -296,7 +299,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
         </div>
       )}
       {message.document_selection && <SelectionQuote selection={message.document_selection} />}
-      <div className="max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] px-4 py-2.5 text-[14px] leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap">
+      <div className={`max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] ${compact ? "px-3 py-2 text-[13px]" : "px-4 py-2.5 text-[14px]"} leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap`}>
         {message.content}
       </div>
       {/* Touch has no hover — actions stay visible on phones; on desktop they
@@ -478,9 +481,12 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork,
   onRegenerate,
   onAsk,
+  compact = false,
 }: {
   m: UiMessage;
   index: number;
+  /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
+  compact?: boolean;
   sessionId: string;
   /** Chat route id — artifact downloads are scoped to the session. */
   chatId: string;
@@ -494,12 +500,15 @@ const AssistantMessage = memo(function AssistantMessage({
   const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
   const shownContent = stripPeopleDump(m.content, hasPeopleCard);
   return (
-    <div data-message-id={m.id} className="mb-4 flex gap-3 sm:gap-4">
-      {/* Avatar hidden on phones — every pixel of width goes to the text. */}
-      <div className="display-sm mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px] sm:flex">
-        W
-      </div>
-      <div className="w-full min-w-0 flex-1 pt-1.5">
+    <div data-message-id={m.id} className={compact ? "mb-3 flex" : "mb-4 flex gap-3 sm:gap-4"}>
+      {/* Avatar hidden on phones (and in the compact split view) — every
+          pixel of width goes to the text. */}
+      {!compact && (
+        <div className="display-sm mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px] sm:flex">
+          W
+        </div>
+      )}
+      <div className={`w-full min-w-0 flex-1 ${compact ? "" : "pt-1.5"}`}>
         {(m.thinking ||
           (m.steps?.length ?? 0) > 0 ||
           (m.references?.length ?? 0) > 0 ||
@@ -519,18 +528,19 @@ const AssistantMessage = memo(function AssistantMessage({
             durationMs={m.agentDurationMs}
             references={m.references}
             onViewReferences={() => onOpenDrawer(m.references || [])}
+            compact={compact}
           />
         )}
         {/* Faint rule separating the reasoning timeline from the answer. */}
         {(m.thinking || (m.steps?.length ?? 0) > 0) && shownContent && (
-          <div className="my-3 h-px w-full bg-hairline" aria-hidden="true" />
+          <div className={`${compact ? "my-2" : "my-3"} h-px w-full bg-hairline`} aria-hidden="true" />
         )}
         {shownContent ? (
           <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
             <Markdown text={shownContent} streaming={m.streaming} artifacts={m.artifacts} imageContext={m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null} />
           </div>
         ) : (
-          <p className="text-[14px] leading-relaxed text-body">{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
+          <p className={`${compact ? "text-[13px]" : "text-[14px]"} leading-relaxed text-body`}>{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
         )}
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
@@ -555,7 +565,7 @@ const AssistantMessage = memo(function AssistantMessage({
             onRegenerate={!busy ? () => onRegenerate(index) : undefined}
           />
         )}
-        {sessionId !== "new" && (
+        {sessionId !== "new" && !compact && (
           <FollowUpSuggestions
             sessionId={sessionId}
             messageId={m.assistantMessageId ?? null}
@@ -1749,14 +1759,18 @@ function ChatBody({ id }: { id: string }) {
   // session and navigates to it.
   const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
+  // Split view (editor on the left): the chat column renders like the phone
+  // layout — base (unprefixed) classes only, full column width, smaller type.
+  const compact = isDocumentAssistant;
+
   const chatColumn = (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="hairline-b flex h-14 shrink-0 items-center px-4 sm:px-8">
+    <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
+      <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-3" : "px-4 sm:px-8"}`}>
         <h1 className="truncate text-[15px] font-medium text-ink">{title}</h1>
       </div>
 
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8">
+        <div className={compact ? "w-full px-3 py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
           {messages.map((m, index) =>
             m.role === "user" ? (
               <UserMessageBubble
@@ -1764,6 +1778,7 @@ function ChatBody({ id }: { id: string }) {
                 message={m}
                 onEdit={handleEditQuestion}
                 onFork={id !== "new" ? handleFork : undefined}
+                compact={compact}
               />
             ) : (
               <AssistantMessage
@@ -1778,6 +1793,7 @@ function ChatBody({ id }: { id: string }) {
                 onFork={handleFork}
                 onRegenerate={handleRegenerate}
                 onAsk={handleAskFollowUp}
+                compact={compact}
               />
             ),
           )}
@@ -1785,8 +1801,8 @@ function ChatBody({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6">
-        <div className="mx-auto w-full max-w-[768px]">
+      <div className={compact ? "shrink-0 px-3 pb-3 pt-2" : "shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6"}>
+        <div className={compact ? "w-full" : "mx-auto w-full max-w-[768px]"}>
           <input
             ref={attachments.inputRef}
             type="file"
@@ -1834,10 +1850,13 @@ function ChatBody({ id }: { id: string }) {
             }
             onPickFiles={() => attachments.trigger()}
             onPickImages={() => imageInputRef.current?.click()}
+            compact={compact}
           />
-          <p className="caption mt-3 text-center text-muted-soft">
-            Answers are grounded in your knowledge bases — verify important details.
-          </p>
+          {!compact && (
+            <p className="caption mt-3 text-center text-muted-soft">
+              Answers are grounded in your knowledge bases — verify important details.
+            </p>
+          )}
         </div>
       </div>
 

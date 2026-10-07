@@ -64,6 +64,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
   durationMs,
   references = [],
   onViewReferences,
+  compact = false,
 }: {
   content: string;
   streaming?: boolean;
@@ -71,6 +72,8 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
   durationMs?: number;
   references?: KnowledgeReferenceItem[];
   onViewReferences?: () => void;
+  /** Document-assistant split view: tighter header spacing. */
+  compact?: boolean;
 }) {
   const { t } = useT();
   // Open while streaming; finished thinking (history or completed turns)
@@ -201,13 +204,13 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
     steps[steps.length - 1].type !== "compacted";
 
   return (
-    <div className="mb-4 text-left">
+    <div className={`${compact ? "mb-2" : "mb-4"} text-left`}>
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex min-w-0 items-center gap-2 py-1.5 text-xs font-medium text-muted transition-colors select-none hover:text-ink"
+          className={`flex min-w-0 items-center gap-2 ${compact ? "py-1" : "py-1.5"} text-xs font-medium text-muted transition-colors select-none hover:text-ink`}
         >
           {streaming ? (
             <span className="relative flex h-2 w-2 shrink-0">

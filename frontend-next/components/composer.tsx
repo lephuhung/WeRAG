@@ -41,6 +41,7 @@ export function Composer({
   onPickFiles,
   onPickImages,
   autoFocus = false,
+  compact = false,
 }: {
   sessionId?: string;
   value: string;
@@ -57,6 +58,8 @@ export function Composer({
   onPickImages: () => void;
   autoFocus?: boolean;
   placeholder?: string;
+  /** Document-assistant split view: phone-sized padding and type. */
+  compact?: boolean;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -184,7 +187,7 @@ export function Composer({
   const showStop = isReplying && canStop !== false && !value.trim();
 
   return (
-    <div className="card relative flex flex-col gap-2 p-3 sm:p-4" onClick={() => closePopups()}>
+    <div className={`card relative flex flex-col gap-2 ${compact ? "p-2.5" : "p-3 sm:p-4"}`} onClick={() => closePopups()}>
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {images.map((img, i) => (
@@ -249,7 +252,7 @@ export function Composer({
           onKeyDown={onKeyDown}
           rows={Math.min(6, Math.max(1, value.split("\n").length))}
           placeholder={placeholder}
-          className="max-h-[160px] w-full flex-1 resize-none bg-transparent py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-muted-soft"
+          className={`max-h-[160px] w-full flex-1 resize-none bg-transparent ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed text-ink outline-none placeholder:text-muted-soft`}
         />
         <MentionPicker
           open={mentionOpen}

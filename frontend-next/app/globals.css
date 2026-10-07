@@ -491,6 +491,46 @@ html.dark {
     min-height: 160px;
     background: var(--color-surface-strong);
   }
+
+  /* Document-assistant split view: the chat column renders phone-sized
+   * (one step down) — scoped to .chat-compact so other agents are unchanged. */
+  .chat-compact .chat-markdown {
+    font-size: 13px;
+    line-height: 1.65;
+  }
+  .chat-compact .chat-markdown p {
+    margin-bottom: 10px;
+  }
+  .chat-compact .chat-markdown h1 {
+    font-size: 17px;
+  }
+  .chat-compact .chat-markdown h2 {
+    font-size: 15.5px;
+  }
+  .chat-compact .chat-markdown h3 {
+    font-size: 14px;
+  }
+  .chat-compact .chat-markdown h1,
+  .chat-compact .chat-markdown h2,
+  .chat-compact .chat-markdown h3,
+  .chat-compact .chat-markdown h4 {
+    margin: 10px 0 4px;
+  }
+  .chat-compact .chat-markdown ul,
+  .chat-compact .chat-markdown ol {
+    padding-left: 20px;
+  }
+  .chat-compact .chat-markdown pre {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .chat-compact .chat-markdown blockquote {
+    padding: 4px 10px;
+  }
+  .chat-compact .chat-markdown th,
+  .chat-compact .chat-markdown td {
+    font-size: 12.5px;
+  }
 }
 
 @keyframes shimmerSweep {
