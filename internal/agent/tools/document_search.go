@@ -76,6 +76,8 @@ type searchTerm struct {
 }
 
 type searchCode struct {
+	// raw is the code as the question wrote it, for messages
+	raw    string
 	text   string // folded, digit separators removed
 	weight float64
 }
@@ -157,7 +159,7 @@ func parseSearchQuery(query string, extra ...string) *searchQuery {
 	q := &searchQuery{}
 	seenTerm := map[string]bool{}
 	seenCode := map[string]bool{}
-	addCode := func(text string, w float64) {
+	addCode := func(text string, w float64, raw ...string) {
 		text = strings.TrimSpace(text)
 		if text == "" || seenCode[text] {
 			return
@@ -169,7 +171,11 @@ func parseSearchQuery(query string, extra ...string) *searchQuery {
 			}
 		}
 		seenCode[text] = true
-		q.codes = append(q.codes, searchCode{text: text, weight: w})
+		r := strings.ToUpper(text)
+		if len(raw) > 0 && raw[0] != "" {
+			r = raw[0]
+		}
+		q.codes = append(q.codes, searchCode{text: text, weight: w, raw: r})
 	}
 	for _, src := range append([]string{query}, extra...) {
 		folded := foldSearch(src)
@@ -191,7 +197,7 @@ func parseSearchQuery(query string, extra ...string) *searchQuery {
 			if isDigits(f) {
 				continue // a bare number is weighed below
 			}
-			addCode(f, w)
+			addCode(f, w, strings.Trim(c, "-–/"))
 		}
 		for _, m := range searchFigureRe.FindAllStringSubmatch(folded, -1) {
 			if m[2] == "%" {
@@ -308,6 +314,29 @@ func (q *searchQuery) qualifies(matchedW float64, anyCode, strongHit bool) bool 
 		return true
 	}
 	return matchedW >= math.Max(1, 0.34*nt)
+}
+
+// missingStrongCodes returns the strong codes of q that occur in none of
+// texts (folded with foldSearch and padded with spaces), as the question
+// wrote them, and whether q has any strong code at all.
+func (q *searchQuery) missingStrongCodes(texts []string) (missing []string, anyStrong bool) {
+	for _, c := range q.codes {
+		if c.weight < searchStrongCode {
+			continue
+		}
+		anyStrong = true
+		found := false
+		for _, t := range texts {
+			if containsCode(t, c.text) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, c.raw)
+		}
+	}
+	return missing, anyStrong
 }
 
 // strong reports whether the query names a strong code.

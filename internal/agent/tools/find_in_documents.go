@@ -43,6 +43,9 @@ type sessionDocUnits struct {
 // lines). Each unit's header is its chunk heading or the title of the
 // section holding it. ctx must carry the tenant.
 func loadDocumentUnits(ctx context.Context, src DocumentWorkspaceSource, sessionID string, d *types.DocumentWorkspace, doc int) (*sessionDocUnits, error) {
+	if du := turnUnits(ctx, d, doc); du != nil {
+		return du, nil
+	}
 	out := &sessionDocUnits{ws: d, profile: SessionDocumentProfile(ctx, d.ID)}
 	var detected []types.DocumentProfileSection
 	if d.IsSource() {
@@ -92,6 +95,38 @@ func loadDocumentUnits(ctx context.Context, src DocumentWorkspaceSource, session
 		}
 	}
 	return out, nil
+}
+
+type turnUnitsKey struct{}
+
+// withTurnUnits keeps the units the router loaded for the rest of the
+// turn (the prompt builder reads the same documents right after).
+func withTurnUnits(ctx context.Context, loaded []*sessionDocUnits) context.Context {
+	if len(loaded) == 0 {
+		return ctx
+	}
+	m := make(map[string]*sessionDocUnits, len(loaded))
+	for _, du := range loaded {
+		m[du.ws.ID] = du
+	}
+	return context.WithValue(ctx, turnUnitsKey{}, m)
+}
+
+// turnUnits returns d's units loaded earlier in this turn when they still
+// describe the same version, renumbered as document doc; nil otherwise.
+func turnUnits(ctx context.Context, d *types.DocumentWorkspace, doc int) *sessionDocUnits {
+	m, _ := ctx.Value(turnUnitsKey{}).(map[string]*sessionDocUnits)
+	du := m[d.ID]
+	if du == nil || du.ws.Revision != d.Revision || du.ws.SaveCount != d.SaveCount || du.ws.Role != d.Role || du.ws.TextStatus != d.TextStatus {
+		return nil
+	}
+	out := *du
+	out.units = make([]searchUnit, len(du.units))
+	for i, u := range du.units {
+		u.Doc = doc
+		out.units[i] = u
+	}
+	return &out
 }
 
 // sectionTitleAt is the title of the last section whose range holds index.

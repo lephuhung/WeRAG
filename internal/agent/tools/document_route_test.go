@@ -354,3 +354,38 @@ func TestRouteFollowsTheDocumentTypeTheQuestionNames(t *testing.T) {
 		t.Fatalf("the passages must not outvote the cards (%v): %+v", scores, scope)
 	}
 }
+
+// "PA04" in no document: no scope, no model, no stored scope kept.
+func TestRouteUnknownCodeGivesNoScope(t *testing.T) {
+	freshDocProfiles(t)
+	l := func(text string) string { return testPara(text, "left", "Times New Roman", 14, false, false) }
+	ws := newFakeWorkspace(buildTestDocx(t, l("BIÊN BẢN LÀM VIỆC")+l("Thành phần tham gia: Phòng PA05 Công an tỉnh, đại diện các đơn vị."), [4]int{20, 15, 30, 20}))
+	ws.addDocument("ws-2", "quy-che.docx", buildTestDocx(t, l("QUY CHẾ BỐC THĂM")+
+		l("Thành phần tham gia bốc thăm gồm đại diện các đơn vị có tên trong danh sách.")+
+		l("Đơn vị tham gia phải cử người có thẩm quyền."), [4]int{20, 15, 30, 20}))
+
+	const q = "Đơn vị PA04 có thành phần tham gia là ai?"
+	docs, _ := ws.List(toolCtx(), 7, "s")
+	var loaded []*sessionDocUnits
+	for i, d := range docs {
+		du, _ := loadDocumentUnits(toolCtx(), ws, "s", d, i)
+		loaded = append(loaded, du)
+	}
+	if missing, all := unknownStrongCodes(parseSearchQuery(q), loaded); !all || strings.Join(missing, ",") != "PA04" {
+		t.Fatalf("missing %v all %v", missing, all)
+	}
+
+	SetSessionDocumentScope(toolCtx(), "s-pa04", &types.DocumentScope{DocumentIDs: []string{"ws-2"}, SetBy: types.DocumentScopeSetByRouter})
+	model := &fakeRouter{reply: `{"documents":[{"handle":"vb2"}],"confidence":0.9}`}
+	if _, scope := ApplyDocumentScope(toolCtx(), ws, 7, "s-pa04", DocumentRouteInput{Query: q, Model: model}); scope != nil || model.calls != 0 {
+		t.Fatalf("an unknown code gives no scope and asks no model: %+v (calls %d)", scope, model.calls)
+	}
+	if SessionDocumentScope(toolCtx(), "s-pa04") != nil {
+		t.Fatal("the stored router scope is dropped")
+	}
+
+	// the known code routes to its document
+	if _, scope := ApplyDocumentScope(toolCtx(), ws, 7, "s-pa05", DocumentRouteInput{Query: "Đơn vị PA05 có thành phần tham gia là ai?", Model: model}); scope == nil || scope.DocumentIDs[0] != "ws-1" {
+		t.Fatalf("PA05: %+v", scope)
+	}
+}

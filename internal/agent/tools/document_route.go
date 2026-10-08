@@ -110,7 +110,17 @@ func ApplyDocumentScope(ctx context.Context, src DocumentWorkspaceSource, tenant
 		}
 		loaded = append(loaded, du)
 	}
+	ctx = withTurnUnits(ctx, loaded)
 	if len(loaded) < 2 {
+		return ctx, nil
+	}
+	if missing, all := unknownStrongCodes(parseSearchQuery(in.Query), loaded); all {
+		// "PA04" in no document: no document is about it, and neither the
+		// stored scope nor the model can say otherwise
+		if stored != nil {
+			ClearSessionDocumentScope(ctx, sessionID)
+		}
+		logger.Infof(ctx, "[DocumentRoute] session=%s codes %v occur in no document; no scope", sessionID, missing)
 		return ctx, nil
 	}
 
@@ -195,6 +205,9 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.Docu
 	if q.empty() {
 		return nil, scores, "", 0
 	}
+	if _, all := unknownStrongCodes(q, loaded); all {
+		return nil, scores, "", 0
+	}
 	cards := make([]searchUnit, len(loaded))
 	var units []searchUnit
 	for i, du := range loaded {
@@ -267,6 +280,35 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.Docu
 	return pick(best), scores, topID, topScore
 }
 
+// unknownStrongCodes lists the strong codes of q (số ký hiệu, references,
+// unit codes, figures) found in no unit or card of loaded; all is true
+// when q has such codes and none of them is found anywhere.
+func unknownStrongCodes(q *searchQuery, loaded []*sessionDocUnits) (missing []string, all bool) {
+	if !q.strong() {
+		return nil, false
+	}
+	var texts []string
+	for _, du := range loaded {
+		text, header := cardText(du)
+		texts = append(texts, " "+foldSearch(text+" \n "+header)+" ")
+		for _, u := range du.units {
+			texts = append(texts, " "+foldSearch(u.Header+" \n "+u.Text)+" ")
+		}
+	}
+	missing, _ = q.missingStrongCodes(texts)
+	return missing, len(missing) == strongCodeCount(q)
+}
+
+func strongCodeCount(q *searchQuery) int {
+	n := 0
+	for _, c := range q.codes {
+		if c.weight >= searchStrongCode {
+			n++
+		}
+	}
+	return n
+}
+
 func argmax(v []float64) int {
 	best := 0
 	for i := range v {
@@ -319,13 +361,32 @@ func documentTypeSlug(du *sessionDocUnits) string {
 }
 
 // namedByQuery returns the documents the question names: by số ký hiệu,
-// or by a type only that document has.
+// by a strong code only that document holds, or by a type only that
+// document has.
 func namedByQuery(query string, loaded []*sessionDocUnits) []int {
 	folded := " " + foldSearch(query) + " "
 	named := map[int]bool{}
 	for i, du := range loaded {
 		if p := du.profile; p != nil && p.DocumentNumber != "" && containsCode(folded, foldSearch(p.DocumentNumber)) {
 			named[i] = true
+		}
+	}
+	// a strong code (PA05, a số ký hiệu, a figure) found in one document
+	// only names that document
+	if q := parseSearchQuery(query); q.strong() {
+		var holders []int
+		for i, du := range loaded {
+			text, header := cardText(du)
+			texts := []string{" " + foldSearch(text+" \n "+header) + " "}
+			for _, u := range du.units {
+				texts = append(texts, " "+foldSearch(u.Header+" \n "+u.Text)+" ")
+			}
+			if missing, _ := q.missingStrongCodes(texts); len(missing) < strongCodeCount(q) {
+				holders = append(holders, i)
+			}
+		}
+		if len(holders) == 1 {
+			named[holders[0]] = true
 		}
 	}
 	if types := queryDocTypes(query); len(types) > 0 {
