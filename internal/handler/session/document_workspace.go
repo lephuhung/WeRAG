@@ -37,6 +37,8 @@ type DocumentWorkspaceHandler struct {
 	// frontendBaseURL (FRONTEND_BASE_URL) is the editor host origin fallback
 	// when the request carries no Origin header.
 	frontendBaseURL string
+	// scopes holds the session's document scope (see DocumentScopeService).
+	scopes *service.DocumentScopeService
 }
 
 // NewDocumentWorkspaceHandler wires the document workspace routes.
@@ -46,7 +48,8 @@ func NewDocumentWorkspaceHandler(
 	cfg *config.Config,
 	precheck *service.DocumentFormatPrecheck,
 ) *DocumentWorkspaceHandler {
-	h := &DocumentWorkspaceHandler{sessionService: sessionService, workspaces: workspaces, precheck: precheck}
+	h := &DocumentWorkspaceHandler{sessionService: sessionService, workspaces: workspaces, precheck: precheck,
+		scopes: service.NewDocumentScopeService(workspaces)}
 	if cfg != nil {
 		h.frontendBaseURL = cfg.FrontendBaseURL
 	}
@@ -140,9 +143,47 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"documents": out, "active_id": activeID, "max_documents": types.MaxDocumentWorkspacesPerSession,
+		"scope":          h.scopes.Get(ctx, tenantID, sessionID, docs),
 		"max_sources":    types.MaxDocumentSourcesPerSession,
 		"max_file_bytes": types.MaxDocumentWorkspaceFileBytes, "max_media_bytes": types.MaxDocumentWorkspaceMediaBytes,
 	}})
+}
+
+// SetDocumentScope sets the session's document scope from the user (the
+// scope chip): the documents (ID or handle) and optionally sections and a
+// task a turn without @ is about. It wins over the router until cleared.
+// PUT /sessions/:id/documents/scope
+func (h *DocumentWorkspaceHandler) SetDocumentScope(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req types.DocumentScope
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid scope: " + err.Error()))
+		return
+	}
+	scope, err := h.scopes.Set(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, &req)
+	if err != nil {
+		h.fail(c, err, "Failed to set the document scope")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": scope})
+}
+
+// ClearDocumentScope removes the session's document scope (the user's or
+// the router's). DELETE /sessions/:id/documents/scope
+func (h *DocumentWorkspaceHandler) ClearDocumentScope(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	h.scopes.Clear(ctx, sessionID)
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // ActivateDocumentWorkspace records the tab the user switched to: the agent

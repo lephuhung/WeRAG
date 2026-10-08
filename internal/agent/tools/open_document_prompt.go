@@ -88,6 +88,12 @@ func attachedSources(ctx context.Context) map[string]bool {
 //     ban hành" is answered from them. find_in_documents and
 //     read_document_outline read the rest. Naming only sources with @
 //     narrows the passages to them.
+//  3. A document scope applied to the turn (see ApplyDocumentScope; never
+//     with rule 1) replaces rule 2: its line heads the index, the scoped
+//     sections follow in full as <document_sections> blocks (one budget of
+//     openDocumentPromptRunes), a scoped target without sections is
+//     injected whole when it is the only scoped document, and the other
+//     scoped documents give their matching passages. The rest are cards.
 //
 // A source is never injected whole. It returns "" when the session has no
 // document or nothing can be rendered.
@@ -114,6 +120,11 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	if len(chosen) == 0 && len(docs) == 1 && len(targets) == 1 {
 		chosen = targets // the only document
 	}
+	// the scope routes a turn that names nothing (rule 3)
+	var scope *types.DocumentScope
+	if len(chosen) == 0 {
+		scope = liveScope(types.DocumentScopeFromContext(ctx), docs)
+	}
 
 	var sb strings.Builder
 	indexed := len(docs) > 1 || len(targets) < len(docs)
@@ -125,6 +136,10 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		attached := attachedSources(ctx)
 		sb.WriteString("\n\n<session_documents>\n")
 		sb.WriteString("<instruction>" + sessionDocumentsInstruction + "</instruction>\n")
+		if line := scopeLine(scope, docs); line != "" {
+			sb.WriteString(escapeOpenDocument(line) + "\n")
+			sb.WriteString("<scope_note>" + scopeInstruction + "</scope_note>\n")
+		}
 		for _, d := range docs {
 			var line strings.Builder
 			line.WriteString("- " + DocumentLabel(d))
@@ -152,36 +167,52 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 
 	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	rendered := 0
-	if len(chosen) > 0 {
-		budget, matchBudget := openDocumentPromptRunes, openDocumentMatchRunes
-		if n := len(chosen); n > 1 {
-			budget = max(openDocumentPromptRunes/n, openDocumentMinRunes)
-			matchBudget = openDocumentMatchRunes / n
+	switch {
+	case len(chosen) > 0:
+		rendered += renderFullDocuments(&sb, ctx, readCtx, src, sessionID, chosen, query)
+	case scope != nil:
+		rendered += renderScope(&sb, ctx, readCtx, src, sessionID, docs, profiles, scope, query)
+	default:
+		if block := relevantPassages(ctx, readCtx, src, sessionID, passageDocuments(docs, named), profiles, query); block != "" {
+			sb.WriteString(block)
+			rendered++
 		}
-		sel := types.DocumentSelectionFromContext(ctx)
-		for _, d := range chosen {
-			_, layout, ws, err := readWorkspaceLayout(readCtx, src, sessionID, d)
-			if err != nil {
-				logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
-				continue
-			}
-			var window *paragraphWindow
-			if sel != nil && sel.DocumentID == d.ID {
-				window = selectionWindow(layout, sel)
-			}
-			if block := renderOpenDocument(ws, layout, query, budget, matchBudget, window); block != "" {
-				sb.WriteString(block)
-				rendered++
-			}
-		}
-	} else if block := relevantPassages(ctx, readCtx, src, sessionID, passageDocuments(docs, named), profiles, query); block != "" {
-		sb.WriteString(block)
-		rendered++
 	}
 	if rendered == 0 && !indexed {
 		return ""
 	}
 	return sb.String()
+}
+
+// renderFullDocuments writes the <open_document> blocks of rule 1: each
+// target's text within its share of openDocumentPromptRunes, a selected
+// one as the window around the selection. It returns the blocks written.
+func renderFullDocuments(sb *strings.Builder, ctx, readCtx context.Context, src DocumentWorkspaceSource, sessionID string,
+	chosen []*types.DocumentWorkspace, query string,
+) int {
+	budget, matchBudget := openDocumentPromptRunes, openDocumentMatchRunes
+	if n := len(chosen); n > 1 {
+		budget = max(openDocumentPromptRunes/n, openDocumentMinRunes)
+		matchBudget = openDocumentMatchRunes / n
+	}
+	sel := types.DocumentSelectionFromContext(ctx)
+	rendered := 0
+	for _, d := range chosen {
+		_, layout, ws, err := readWorkspaceLayout(readCtx, src, sessionID, d)
+		if err != nil {
+			logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
+			continue
+		}
+		var window *paragraphWindow
+		if sel != nil && sel.DocumentID == d.ID {
+			window = selectionWindow(layout, sel)
+		}
+		if block := renderOpenDocument(ws, layout, query, budget, matchBudget, window); block != "" {
+			sb.WriteString(block)
+			rendered++
+		}
+	}
+	return rendered
 }
 
 // passageDocuments are the documents rule 2 searches: the sources the user
@@ -507,7 +538,7 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 // escapeOpenDocument neutralises closing tags so document text cannot end
 // the block early.
 func escapeOpenDocument(s string) string {
-	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>", "</relevant_passages>"} {
+	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>", "</relevant_passages>", "</document_sections>"} {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s

@@ -134,6 +134,9 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// Same for the documents the user named with @: the editing tools in
 	// the detached run refuse a document that was not named.
 	mentionedDocumentsContextKey: true,
+	// The document scope the router applied to this turn: read once by the
+	// prompt builder before the run starts, on the same context.
+	documentScopeContextKey: false,
 }
 
 // ContextKeysClonedAcrossDetach returns the keys logger.CloneContext carries

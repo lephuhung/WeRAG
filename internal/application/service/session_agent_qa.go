@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -308,6 +309,14 @@ func (s *sessionService) AgentQA(
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
+		// the document router (no model, then one short thinking-off call
+		// when unclear): a turn that names no document of a session with
+		// several reads the scoped part of them instead of passages of all
+		ctx, _ = tools.ApplyDocumentScope(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, tools.DocumentRouteInput{
+			Query:   effectiveQuery,
+			History: documentRouteHistory(llmContext),
+			Model:   docformat.ChatCompleter(summaryModel),
+		})
 		// codes in the highlighted passage locate text past the cut too
 		locate := effectiveQuery
 		if sel := req.DocumentSelection.Normalized(); sel != nil {
@@ -857,6 +866,18 @@ func mergeDocumentIDs(ids, extra []string) []string {
 		if id != "" && !seen[id] {
 			seen[id] = true
 			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// documentRouteHistory gives the document router the turns already loaded
+// for the agent (it keeps the last user and assistant messages).
+func documentRouteHistory(msgs []chat.Message) []tools.DocumentRouteTurn {
+	out := make([]tools.DocumentRouteTurn, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "user" || m.Role == "assistant" {
+			out = append(out, tools.DocumentRouteTurn{Role: m.Role, Content: m.Content})
 		}
 	}
 	return out
