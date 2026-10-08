@@ -13,7 +13,7 @@ func TestBuildOpenDocumentPromptCarriesCurrentText(t *testing.T) {
 		t.Fatalf("read session %q, want s-1", ws.sessionID)
 	}
 	for _, want := range []string{
-		`<open_document name="cong-van.docx" revision="3">`,
+		`<open_document handle="vb1" name="cong-van.docx" revision="3">`,
 		"Sở Nội vụ đề nghị các đơn vị triển khai công tác cải cách hành chính năm 2026.",
 		"] Nguyễn Văn A\n",
 		"</open_document>",

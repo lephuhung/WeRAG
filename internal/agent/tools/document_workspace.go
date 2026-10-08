@@ -18,15 +18,18 @@ import (
 
 // DocumentWorkspaceSource is the part of the document workspace service the
 // document-assistant tools use (interfaces.DocumentWorkspaceService
-// satisfies it). The tools never write the file: an editing tool takes a
-// Snapshot (which force-saves the editor and records a revision), reads the
-// current version with OpenCurrent, and returns an edit plan
-// (document_ops) that the editor plugin applies inside ONLYOFFICE, where
-// Ctrl+Z undoes it.
+// satisfies it). A session may hold several documents (editor tabs); every
+// tool resolves its target with resolveDocument and passes its ID on. The
+// tools never write the file: an editing tool takes a Snapshot (which
+// force-saves the editor and records a revision), reads the current version
+// with OpenCurrent, and returns an edit plan (document_ops) that the editor
+// plugin of that document applies inside ONLYOFFICE, where Ctrl+Z undoes it.
 type DocumentWorkspaceSource interface {
 	GetBySession(ctx context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error)
-	OpenCurrent(ctx context.Context, tenantID uint64, sessionID string) (io.ReadCloser, *types.DocumentWorkspace, error)
-	Snapshot(ctx context.Context, tenantID uint64, sessionID, label, source string, wait time.Duration) (*types.DocumentRevision, error)
+	Get(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspace, error)
+	List(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentWorkspace, error)
+	OpenCurrent(ctx context.Context, tenantID uint64, sessionID, documentID string) (io.ReadCloser, *types.DocumentWorkspace, error)
+	Snapshot(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, error)
 }
 
 // snapshotWait bounds how long a snapshot waits for the editor to flush
@@ -35,13 +38,153 @@ const snapshotWait = 20 * time.Second
 
 const errNoWorkspace = "Cuộc hội thoại này chưa mở tài liệu nào trong trình soạn thảo."
 
-// readWorkspaceDocument returns the latest bytes of the session's document.
-func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID string) ([]byte, *types.DocumentWorkspace, error) {
+// documentParamSchema is the "document" property every document tool takes.
+const documentParamSchema = `"document": {
+      "type": "string",
+      "description": "Target document: its handle from <session_documents> (vb1, vb2, …). Required when the conversation holds more than one document; for an edit it must be a document the user named with @ (or selected text in) in this request"
+    }`
+
+// DocumentLabel names a document for the model: "vb2 · Tờ trình.docx".
+func DocumentLabel(ws *types.DocumentWorkspace) string {
+	if ws == nil {
+		return ""
+	}
+	return ws.Label()
+}
+
+func documentList(docs []*types.DocumentWorkspace) string {
+	labels := make([]string, 0, len(docs))
+	for _, d := range docs {
+		labels = append(labels, DocumentLabel(d))
+	}
+	return strings.Join(labels, "; ")
+}
+
+// matchDocument finds ref among docs: a handle (vb2), a workspace ID, then
+// an exact and finally a unique partial file-name match.
+func matchDocument(docs []*types.DocumentWorkspace, ref string) *types.DocumentWorkspace {
+	ref = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ref), "@"))
+	if ref == "" {
+		return nil
+	}
+	lower := strings.ToLower(ref)
+	for _, d := range docs {
+		if strings.EqualFold(d.Handle(), ref) || d.ID == ref || strings.EqualFold(DocumentLabel(d), ref) {
+			return d
+		}
+	}
+	for _, d := range docs {
+		if strings.ToLower(d.FileName) == lower {
+			return d
+		}
+	}
+	var found *types.DocumentWorkspace
+	for _, d := range docs {
+		if strings.Contains(strings.ToLower(d.FileName), lower) {
+			if found != nil {
+				return nil
+			}
+			found = d
+		}
+	}
+	return found
+}
+
+// namedDocuments returns the IDs of the documents the user designated in
+// this turn: the @-mentioned ones and the one their selection is in.
+func namedDocuments(ctx context.Context) map[string]bool {
+	named := map[string]bool{}
+	for _, id := range types.MentionedDocumentsFromContext(ctx) {
+		named[id] = true
+	}
+	if sel := types.DocumentSelectionFromContext(ctx); sel != nil && sel.DocumentID != "" {
+		named[sel.DocumentID] = true
+	}
+	return named
+}
+
+// resolveDocument picks the document a tool works on. ref is the tool's
+// "document" argument ("" when omitted). Without one it falls back to the
+// document the user designated in this turn (selection, then a single
+// @-mention), then to the only document, then — for reading only — to the
+// active tab. With forEdit and several documents, the target must be one
+// the user designated in this turn: an edit never lands on a document the
+// user did not name. The error text is shown to the agent.
+func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, ref string, forEdit bool) (*types.DocumentWorkspace, error) {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || src == nil || sessionID == "" {
+		return nil, errors.New(errNoWorkspace)
+	}
+	docs, err := src.List(ctx, tenantID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("không đọc được danh sách văn bản đang mở: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil, errors.New(errNoWorkspace)
+	}
+	byID := make(map[string]*types.DocumentWorkspace, len(docs))
+	for _, d := range docs {
+		byID[d.ID] = d
+	}
+	named := namedDocuments(ctx)
+
+	var target *types.DocumentWorkspace
+	switch {
+	case strings.TrimSpace(ref) != "":
+		target = matchDocument(docs, ref)
+		if target == nil {
+			return nil, fmt.Errorf("không có văn bản %q trong cuộc hội thoại; các văn bản đang mở: %s", ref, documentList(docs))
+		}
+	case len(docs) == 1:
+		target = docs[0]
+	default:
+		if sel := types.DocumentSelectionFromContext(ctx); sel != nil && byID[sel.DocumentID] != nil {
+			target = byID[sel.DocumentID]
+		} else if mentioned := types.MentionedDocumentsFromContext(ctx); len(mentioned) == 1 && byID[mentioned[0]] != nil {
+			target = byID[mentioned[0]]
+		} else if forEdit {
+			return nil, fmt.Errorf("cuộc hội thoại đang mở %d văn bản (%s); hãy truyền tham số document là văn bản người dùng đã gọi đích danh bằng @", len(docs), documentList(docs))
+		} else {
+			active, err := src.GetBySession(ctx, tenantID, sessionID)
+			if err != nil || active == nil {
+				return nil, errors.New(errNoWorkspace)
+			}
+			target = active
+		}
+	}
+	if forEdit && len(docs) > 1 && !named[target.ID] {
+		return nil, fmt.Errorf("không được sửa %s: cuộc hội thoại đang mở %d văn bản và người dùng chưa gọi đích danh văn bản này trong yêu cầu. "+
+			"Đừng sửa; hãy hỏi người dùng muốn sửa văn bản nào và nhắc họ gõ @ trong ô chat để chọn văn bản đó.",
+			DocumentLabel(target), len(docs))
+	}
+	return target, nil
+}
+
+// selectionIn reports whether the turn's selection was made in ws (a
+// selection from a client that does not say where counts as in it).
+func selectionIn(sel *types.DocumentSelection, ws *types.DocumentWorkspace) bool {
+	return sel != nil && ws != nil && (sel.DocumentID == "" || sel.DocumentID == ws.ID)
+}
+
+// errSelectionElsewhere is shown when the passage the user highlighted is
+// in another document than the one a tool was asked to change.
+func errSelectionElsewhere(sel *types.DocumentSelection, ws *types.DocumentWorkspace) string {
+	where := sel.Document
+	if where == "" {
+		where = "một văn bản khác"
+	}
+	return fmt.Sprintf("Đoạn người dùng bôi đen nằm ở %s, không phải %s; hãy dùng đúng văn bản chứa đoạn bôi đen hoặc hỏi lại người dùng.",
+		where, DocumentLabel(ws))
+}
+
+// readWorkspaceDocument returns the latest bytes of one document of the
+// session ("" = the active one).
+func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, documentID string) ([]byte, *types.DocumentWorkspace, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || src == nil || sessionID == "" {
 		return nil, nil, errors.New(errNoWorkspace)
 	}
-	rc, ws, err := src.OpenCurrent(ctx, tenantID, sessionID)
+	rc, ws, err := src.OpenCurrent(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("không mở được tài liệu đang soạn thảo: %w", err)
 	}
@@ -59,16 +202,16 @@ func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, ses
 // snapshotDocument records a revision of the document as it is now (the
 // point the user can restore if the AI edit is unwanted) and reads that
 // version to plan the edit on. label is a short description of the edit.
-func snapshotDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, label string) ([]byte, *types.DocumentWorkspace, int, error) {
+func snapshotDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, documentID, label string) ([]byte, *types.DocumentWorkspace, int, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || src == nil || sessionID == "" {
 		return nil, nil, 0, errors.New(errNoWorkspace)
 	}
-	rev, err := src.Snapshot(ctx, tenantID, sessionID, "ai: "+label, types.DocumentRevisionSourceAI, snapshotWait)
+	rev, err := src.Snapshot(ctx, tenantID, sessionID, documentID, "ai: "+label, types.DocumentRevisionSourceAI, snapshotWait)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("không lưu được bản chụp tài liệu trước khi sửa: %w", err)
 	}
-	content, ws, err := readWorkspaceDocument(ctx, src, sessionID)
+	content, ws, err := readWorkspaceDocument(ctx, src, sessionID, documentID)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -139,7 +282,7 @@ func segmentReport(ctx context.Context, content []byte, docType, name string, ch
 
 var readDocumentOutlineTool = BaseTool{
 	name: ToolReadDocumentOutline,
-	description: `List the paragraphs of the Word document open in this conversation's editor, numbered, with the NĐ30 component each belongs to (quoc_hieu, trich_yeu, noi_dung, …) and its formatting (font, size, bold/italic, alignment).
+	description: `List the paragraphs of a Word document open in this conversation's editor (the "document" argument picks which), numbered, with the NĐ30 component each belongs to (quoc_hieu, trich_yeu, noi_dung, …) and its formatting (font, size, bold/italic, alignment).
 
 ## When to Use
 
@@ -158,6 +301,7 @@ Lines like ` + "`[12] (trich_yeu) Times New Roman 14 đậm, giữa | V/v …`" 
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "from": {
       "type": "integer",
       "minimum": 0,
@@ -181,6 +325,7 @@ type readDocumentOutlineInput struct {
 	From      int    `json:"from"`
 	Limit     int    `json:"limit"`
 	Component string `json:"component"`
+	Document  string `json:"document"`
 }
 
 // ReadDocumentOutlineTool lists the paragraphs of the session's workspace
@@ -256,7 +401,11 @@ func (t *ReadDocumentOutlineTool) Execute(ctx context.Context, args json.RawMess
 	}
 	in.Component = strings.TrimSpace(in.Component)
 
-	content, ws, err := readWorkspaceDocument(ctx, t.workspace, t.sessionID)
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, false)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	content, ws, err := readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}

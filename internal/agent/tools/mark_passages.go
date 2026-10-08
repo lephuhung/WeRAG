@@ -33,6 +33,7 @@ The reason is NOT written into the document: explain each mark in your answer (t
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "marks": {
       "type": "array",
       "minItems": 1,
@@ -65,7 +66,8 @@ type markSpec struct {
 }
 
 type markPassagesInput struct {
-	Marks []markSpec `json:"marks"`
+	Marks    []markSpec `json:"marks"`
+	Document string     `json:"document"`
 }
 
 // markResult is one mark's outcome, reported in Data.marks.
@@ -117,7 +119,11 @@ func (t *MarkPassagesTool) Execute(ctx context.Context, args json.RawMessage) (*
 		}
 	}
 
-	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, "đánh dấu chỗ cần xem lại")
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, true)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "đánh dấu chỗ cần xem lại")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -191,7 +197,7 @@ func (t *MarkPassagesTool) Execute(ctx context.Context, args json.RawMessage) (*
 	if planned > 0 {
 		out.WriteString("\nDấu chỉ là định dạng, không sửa nội dung; lý do chỉ nằm trong câu trả lời này. " + editorAppliedNote + "\n")
 	}
-	data := opsData(ops, seq)
+	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
 	data["planned"] = planned
 	data["failed"] = failed

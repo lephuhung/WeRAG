@@ -15,19 +15,42 @@ const (
 	DocumentWorkspaceStatusClosed = "closed"
 )
 
-// DocumentWorkspace is the one editable .docx a chat session works on in the
-// document-assistant agent. Only two files ever exist for it: the original
-// upload (OriginalRef) and the latest version (CurrentRef). All AI edits are
-// written into CurrentRef as Word tracked changes, so the file itself carries
-// the history and the user reverts by rejecting a change in the editor.
+// Limits of the editable documents of one session. A document is a Word
+// file the user edits, so heavy embedded pictures (scans pasted into the
+// body) are refused: they slow the editor and every AI read, and a seal or
+// signature image is far below the media cap.
+const (
+	MaxDocumentWorkspacesPerSession = 4
+	MaxDocumentWorkspaceFileBytes   = 10 << 20
+	MaxDocumentWorkspaceMediaBytes  = 3 << 20
+	// DocumentHandlePrefix + position names a document for the agent.
+	DocumentHandlePrefix = "vb"
+	// MentionTypeDocument is the @mention type of an editable document
+	// (MentionedItem.ID is its workspace ID).
+	MentionTypeDocument = "document"
+)
+
+// DocumentWorkspace is one editable .docx of a chat session in the
+// document-assistant agent; a session holds up to
+// MaxDocumentWorkspacesPerSession of them, one editor tab each. OriginalRef
+// is the uploaded copy and CurrentRef the latest version; the snapshot
+// timeline (DocumentRevision) keeps the versions the user can restore.
 type DocumentWorkspace struct {
-	ID          string `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID    uint64 `json:"tenant_id" gorm:"not null;index"`
-	SessionID   string `json:"session_id" gorm:"type:varchar(36);not null;uniqueIndex"`
-	UserID      string `json:"user_id" gorm:"type:varchar(36);not null;default:''"`
-	OriginalRef string `json:"-" gorm:"type:text;not null"`
-	CurrentRef  string `json:"-" gorm:"type:text;not null"`
-	FileName    string `json:"file_name" gorm:"type:varchar(1024);not null"`
+	ID        string `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID  uint64 `json:"tenant_id" gorm:"not null;index"`
+	SessionID string `json:"session_id" gorm:"type:varchar(36);not null;index"`
+	// AttachmentID is the session upload the document was opened from.
+	AttachmentID string `json:"attachment_id" gorm:"type:varchar(36);not null;default:''"`
+	// Position is the 1-based order the document was opened in within the
+	// session, never reused; the agent names the document vb<Position>.
+	Position int `json:"position" gorm:"not null;default:1"`
+	// ActiveAt is when the user last switched to the document's tab; the
+	// most recent one is the session's active document.
+	ActiveAt    *time.Time `json:"active_at,omitempty"`
+	UserID      string     `json:"user_id" gorm:"type:varchar(36);not null;default:''"`
+	OriginalRef string     `json:"-" gorm:"type:text;not null"`
+	CurrentRef  string     `json:"-" gorm:"type:text;not null"`
+	FileName    string     `json:"file_name" gorm:"type:varchar(1024);not null"`
 	// FileType is always "docx": a legacy .doc upload is converted when the
 	// workspace is created so every tool works on OOXML.
 	FileType string `json:"file_type" gorm:"type:varchar(16);not null;default:'docx'"`
@@ -61,6 +84,16 @@ func (w *DocumentWorkspace) BeforeCreate(_ *gorm.DB) error {
 		w.FileType = "docx"
 	}
 	return nil
+}
+
+// Handle is the short name the agent uses for the document, e.g. "vb2".
+func (w *DocumentWorkspace) Handle() string {
+	return DocumentHandlePrefix + itoa(w.Position)
+}
+
+// Label names the document for the model: "vb2 · Tờ trình.docx".
+func (w *DocumentWorkspace) Label() string {
+	return w.Handle() + " · " + w.FileName
 }
 
 // EditorKey is the ONLYOFFICE document.key for the current revision. It must
@@ -105,6 +138,8 @@ type DocumentWorkspaceView struct {
 	*DocumentWorkspace
 	EditorKey string                `json:"editor_key"`
 	Editor    *DocumentEditorConfig `json:"editor,omitempty"`
+	// Handle is the agent's name for the document (vb1, vb2, …).
+	Handle string `json:"handle"`
 	// FormatCheck is the background NĐ30 format check started when the
 	// document was opened; nil when none has run in this server process.
 	FormatCheck *DocumentFormatCheck `json:"format_check,omitempty"`
@@ -147,6 +182,12 @@ type DocumentSelection struct {
 	// capture (for example the whole paragraph), used to locate the passage
 	// when Text alone is ambiguous.
 	ParagraphHint string `json:"paragraph_hint,omitempty"`
+	// DocumentID is the workspace (editor tab) the text was selected in;
+	// empty from a client that predates multi-document sessions.
+	DocumentID string `json:"document_id,omitempty"`
+	// Document names that workspace for the model ("vb2 · Tờ trình.docx");
+	// set by the server after it checked DocumentID, never by the client.
+	Document string `json:"document,omitempty"`
 }
 
 // OnlyOfficeCallback is the JSON body the Document Server POSTs to the

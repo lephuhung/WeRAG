@@ -30,6 +30,8 @@ func (s *DocumentSelection) Normalized() *DocumentSelection {
 	return &DocumentSelection{
 		Text:          text,
 		ParagraphHint: truncateRunes(strings.TrimSpace(s.ParagraphHint), documentSelectionMaxHintRunes),
+		DocumentID:    truncateRunes(strings.TrimSpace(s.DocumentID), 64),
+		Document:      truncateRunes(strings.TrimSpace(s.Document), 300),
 	}
 }
 
@@ -43,6 +45,9 @@ func (s *DocumentSelection) BuildPrompt() string {
 	var sb strings.Builder
 	sb.WriteString("\n\n<document_selection>\n")
 	sb.WriteString("<instruction>" + documentSelectionInstruction + "</instruction>\n")
+	if n.Document != "" {
+		sb.WriteString("<document>" + escapeDocumentSelection(n.Document) + "</document>\n")
+	}
 	sb.WriteString("<text>\n")
 	sb.WriteString(escapeDocumentSelection(n.Text))
 	sb.WriteString("\n</text>\n")
@@ -58,7 +63,7 @@ func (s *DocumentSelection) BuildPrompt() string {
 // escapeDocumentSelection neutralises closing tags so selected text cannot
 // end the block early.
 func escapeDocumentSelection(s string) string {
-	for _, tag := range []string{"</text>", "</paragraph_hint>", "</document_selection>"} {
+	for _, tag := range []string{"</text>", "</paragraph_hint>", "</document>", "</document_selection>"} {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s
@@ -127,4 +132,27 @@ func DocumentSelectionFromContext(ctx context.Context) *DocumentSelection {
 	}
 	sel, _ := ctx.Value(documentSelectionContextKey).(*DocumentSelection)
 	return sel
+}
+
+// mentionedDocumentsContextKey carries the workspace IDs of the documents the
+// user named (@) in the current turn to the agent's document tools.
+const mentionedDocumentsContextKey ContextKey = "MentionedDocuments"
+
+// WithMentionedDocuments returns ctx carrying the workspace IDs the user named
+// in this turn; an empty list leaves ctx unchanged.
+func WithMentionedDocuments(ctx context.Context, ids []string) context.Context {
+	if len(ids) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, mentionedDocumentsContextKey, append([]string(nil), ids...))
+}
+
+// MentionedDocumentsFromContext returns the workspace IDs the user named in
+// the current turn, in mention order.
+func MentionedDocumentsFromContext(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	ids, _ := ctx.Value(mentionedDocumentsContextKey).([]string)
+	return ids
 }

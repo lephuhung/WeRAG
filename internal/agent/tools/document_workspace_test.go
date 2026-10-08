@@ -17,27 +17,67 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// fakeWorkspace is an in-memory DocumentWorkspaceSource.
+// fakeWorkspace is an in-memory DocumentWorkspaceSource. ws/content is the
+// session's first (and active) document; addDocument adds more tabs.
 type fakeWorkspace struct {
 	ws        types.DocumentWorkspace
 	content   []byte
 	waited    time.Duration
 	sessionID string
 	snapshots []string // labels of the snapshots taken
+	// documentID is the document the last OpenCurrent/Snapshot targeted.
+	documentID string
+	others     []fakeDocument
+}
+
+type fakeDocument struct {
+	ws      types.DocumentWorkspace
+	content []byte
+}
+
+// addDocument adds another open document (next position) to the session.
+func (f *fakeWorkspace) addDocument(id, fileName string, content []byte) *types.DocumentWorkspace {
+	f.others = append(f.others, fakeDocument{
+		ws:      types.DocumentWorkspace{ID: id, FileName: fileName, Position: 2 + len(f.others), Revision: 1},
+		content: content,
+	})
+	return &f.others[len(f.others)-1].ws
+}
+
+func (f *fakeWorkspace) find(documentID string) (*types.DocumentWorkspace, []byte, error) {
+	if documentID == "" || documentID == f.ws.ID {
+		ws := f.ws
+		return &ws, f.content, nil
+	}
+	for _, d := range f.others {
+		if d.ws.ID == documentID {
+			ws := d.ws
+			return &ws, d.content, nil
+		}
+	}
+	return nil, nil, errors.New("document not found")
 }
 
 // Snapshot records the label and returns the next revision sequence.
-func (f *fakeWorkspace) Snapshot(_ context.Context, _ uint64, sessionID, label, source string, wait time.Duration) (*types.DocumentRevision, error) {
+func (f *fakeWorkspace) Snapshot(_ context.Context, _ uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, error) {
 	if source != types.DocumentRevisionSourceAI {
 		return nil, errors.New("source must be ai")
 	}
-	f.sessionID, f.waited = sessionID, wait
+	f.sessionID, f.waited, f.documentID = sessionID, wait, documentID
 	f.snapshots = append(f.snapshots, label)
 	return &types.DocumentRevision{Seq: 10 + len(f.snapshots), Label: label, Source: source}, nil
 }
 
 func newFakeWorkspace(content []byte) *fakeWorkspace {
-	return &fakeWorkspace{ws: types.DocumentWorkspace{ID: "ws-1", FileName: "cong-van.docx", Revision: 3}, content: content}
+	return &fakeWorkspace{ws: types.DocumentWorkspace{ID: "ws-1", FileName: "cong-van.docx", Revision: 3, Position: 1}, content: content}
+}
+
+// fakeWorkspaceWithID is newFakeWorkspace with its own document ID, for
+// tests whose format-check state must not collide.
+func fakeWorkspaceWithID(content []byte, id string) *fakeWorkspace {
+	f := newFakeWorkspace(content)
+	f.ws.ID = id
+	return f
 }
 
 func (f *fakeWorkspace) GetBySession(_ context.Context, _ uint64, sessionID string) (*types.DocumentWorkspace, error) {
@@ -46,10 +86,30 @@ func (f *fakeWorkspace) GetBySession(_ context.Context, _ uint64, sessionID stri
 	return &ws, nil
 }
 
-func (f *fakeWorkspace) OpenCurrent(_ context.Context, _ uint64, sessionID string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+func (f *fakeWorkspace) Get(_ context.Context, _ uint64, sessionID, documentID string) (*types.DocumentWorkspace, error) {
 	f.sessionID = sessionID
-	ws := f.ws
-	return io.NopCloser(bytes.NewReader(f.content)), &ws, nil
+	ws, _, err := f.find(documentID)
+	return ws, err
+}
+
+func (f *fakeWorkspace) List(_ context.Context, _ uint64, sessionID string) ([]*types.DocumentWorkspace, error) {
+	f.sessionID = sessionID
+	first := f.ws
+	out := []*types.DocumentWorkspace{&first}
+	for _, d := range f.others {
+		ws := d.ws
+		out = append(out, &ws)
+	}
+	return out, nil
+}
+
+func (f *fakeWorkspace) OpenCurrent(_ context.Context, _ uint64, sessionID, documentID string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+	f.sessionID, f.documentID = sessionID, documentID
+	ws, content, err := f.find(documentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return io.NopCloser(bytes.NewReader(content)), ws, nil
 }
 
 const testWNS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`

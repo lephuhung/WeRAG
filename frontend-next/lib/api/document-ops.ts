@@ -9,7 +9,13 @@
  * normalizeAnchorText / findAnchorParagraph are mirrored in
  * docker/onlyoffice/plugins/werag-assistant/plugin.js — keep them in sync. */
 
-export const DOCUMENT_OPS_TOOLS = new Set(["insert_paragraphs", "rewrite_paragraphs", "mark_passages", "apply_format_fixes"]);
+export const DOCUMENT_OPS_TOOLS = new Set([
+  "insert_paragraphs",
+  "rewrite_paragraphs",
+  "mark_passages",
+  "apply_format_fixes",
+  "check_spelling",
+]);
 
 export type ParagraphAnchor = { text: string; occurrence?: number };
 export type StartAnchor = { atStart: true };
@@ -47,7 +53,9 @@ export type DocumentOp =
     }
   | { op: "pageSetup"; marginsMm?: { top?: number; bottom?: number; left?: number; right?: number }; a4?: true };
 
-export type OpsBatch = { batchId: string; ops: DocumentOp[] };
+/** documentId routes the batch to that document's editor tab; absent on
+ * results from before multi-document sessions (→ the active tab). */
+export type OpsBatch = { batchId: string; ops: DocumentOp[]; documentId?: string };
 
 export type OpsFailure = { index: number; error: string };
 export type OpsResult = { batchId: string; applied: number; failed: OpsFailure[] };
@@ -159,7 +167,8 @@ export function opsBatchFromToolData(
     else if (op.op === "insertAfter" && op.text === undefined) ops.push({ ...op, text: "" } as DocumentOp);
     else ops.push(op as DocumentOp);
   });
-  return { batchId, ops, rejected };
+  const documentId = isStr(data.document_id) && data.document_id.trim() ? data.document_id.trim() : undefined;
+  return documentId ? { batchId, ops, rejected, documentId } : { batchId, ops, rejected };
 }
 
 /* ---------- plugin messages ---------- */

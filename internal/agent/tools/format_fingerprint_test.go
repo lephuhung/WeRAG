@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -66,6 +67,24 @@ func (w *recheckWorkspace) GetBySession(ctx context.Context, tenantID uint64, se
 	return w.fakeWorkspace.GetBySession(ctx, tenantID, sessionID)
 }
 
+func (w *recheckWorkspace) Get(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspace, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fakeWorkspace.Get(ctx, tenantID, sessionID, documentID)
+}
+
+func (w *recheckWorkspace) List(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentWorkspace, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fakeWorkspace.List(ctx, tenantID, sessionID)
+}
+
+func (w *recheckWorkspace) OpenCurrent(ctx context.Context, tenantID uint64, sessionID, documentID string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fakeWorkspace.OpenCurrent(ctx, tenantID, sessionID, documentID)
+}
+
 func waitState(t *testing.T, sessionID string, ok func(*types.DocumentFormatCheck) bool) *types.DocumentFormatCheck {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -88,9 +107,9 @@ func TestRecheckOnlyWhenTheFormatChanged(t *testing.T) {
 	m := [4]int{20, 15, 30, 20}
 	ws := &recheckWorkspace{fakeWorkspace: newFakeWorkspace(longDoc(t, "UBND TỈNH", "Nội dung cũ.", "Times New Roman", m))}
 	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
-	tool := NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-rc")
+	tool := NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-rc").ForDocument("ws-1")
 	tool.Prewarm(toolCtx())
-	first := waitState(t, "sess-rc", func(st *types.DocumentFormatCheck) bool { return st.Status == types.DocumentFormatCheckReady })
+	first := waitState(t, "ws-1", func(st *types.DocumentFormatCheck) bool { return st.Status == types.DocumentFormatCheckReady })
 	if first.Fingerprint == "" {
 		t.Fatal("the check must record its fingerprint")
 	}
@@ -99,20 +118,20 @@ func TestRecheckOnlyWhenTheFormatChanged(t *testing.T) {
 	saved := time.Now().Add(time.Second)
 	ws.set(longDoc(t, "UBND TỈNH", "Nội dung đã viết lại.", "Times New Roman", m), saved)
 	tool.Recheck(toolCtx())
-	kept := waitState(t, "sess-rc", func(st *types.DocumentFormatCheck) bool {
+	kept := waitState(t, "ws-1", func(st *types.DocumentFormatCheck) bool {
 		return st.CheckedSavedAt != nil && !st.CheckedSavedAt.Before(saved)
 	})
 	if kept.Status != types.DocumentFormatCheckReady || model.evalCount() != 1 {
 		t.Fatalf("wording edit re-evaluated: state %+v, evaluations %d", kept, model.evalCount())
 	}
-	if FormatCheckNeedsRecheck(context.Background(), "sess-rc", &saved) {
+	if FormatCheckNeedsRecheck(context.Background(), "ws-1", &saved) {
 		t.Fatal("a covered save needs no re-check")
 	}
 
 	// a font change: checked again after the quiet period
 	ws.set(longDoc(t, "UBND TỈNH", "Nội dung đã viết lại.", "Arial", m), time.Now().Add(2*time.Second))
 	tool.Recheck(toolCtx())
-	waitState(t, "sess-rc", func(st *types.DocumentFormatCheck) bool {
+	waitState(t, "ws-1", func(st *types.DocumentFormatCheck) bool {
 		return st.Status == types.DocumentFormatCheckReady && st.Fingerprint != first.Fingerprint
 	})
 	if n := model.evalCount(); n != 2 {

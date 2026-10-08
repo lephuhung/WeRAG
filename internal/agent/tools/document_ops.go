@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 )
 
@@ -74,16 +75,22 @@ type DocumentOp struct {
 	A4        bool               `json:"a4,omitempty"`
 }
 
-// opsData is the ToolResult.Data part of an edit plan.
-func opsData(ops []DocumentOp, snapshotSeq int) map[string]interface{} {
+// opsData is the ToolResult.Data part of an edit plan. document_id routes
+// the plan to the editor tab of ws.
+func opsData(ops []DocumentOp, snapshotSeq int, ws *types.DocumentWorkspace) map[string]interface{} {
 	if ops == nil {
 		ops = []DocumentOp{}
 	}
-	return map[string]interface{}{
+	data := map[string]interface{}{
 		"document_ops": ops,
 		"ops_batch_id": uuid.NewString(),
 		"snapshot_seq": snapshotSeq,
 	}
+	if ws != nil {
+		data["document_id"] = ws.ID
+		data["document"] = DocumentLabel(ws)
+	}
+	return data
 }
 
 // editorAppliedNote ends the Output of a tool that returned ops.

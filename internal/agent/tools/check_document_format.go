@@ -63,11 +63,27 @@ If the evaluation was unavailable, the result instead holds the measured finding
 type checkDocumentFormatInput struct {
 	FileName     string `json:"file_name"`
 	DocumentType string `json:"document_type"`
+	// Document picks the editable document (workspace variant only).
+	Document string `json:"document"`
 }
 
+// checkWorkspaceFormatSchema is the workspace variant's schema: the target
+// is an open document, not an upload.
+var checkWorkspaceFormatSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    ` + documentParamSchema + `,
+    "document_type": {
+      "type": "string",
+      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
+    }
+  }
+}`)
+
 // formatCheckSource loads the .docx to check: its bytes, its display name
-// and, for a workspace document, its revision (-1 otherwise). The error
-// text is shown to the agent as is.
+// and, for a workspace document, its revision (-1 otherwise). ref is the
+// upload's file name, or the workspace document reference (see
+// resolveDocument). The error text is shown to the agent as is.
 type formatCheckSource func(ctx context.Context, tenantID uint64, fileName string) ([]byte, string, int, error)
 
 // CheckDocumentFormatTool reads a session document and runs the NĐ30
@@ -80,6 +96,9 @@ type CheckDocumentFormatTool struct {
 	// workspace is the editable document's source (nil for uploads); the
 	// background re-check reads its save time.
 	workspace DocumentWorkspaceSource
+	// documentID is the workspace document Prewarm and Recheck work on
+	// (see ForDocument); their state is kept under it.
+	documentID string
 }
 
 // NewCheckDocumentFormatTool builds the tool for one session, checking the
@@ -95,22 +114,38 @@ func NewCheckDocumentFormatTool(documents interfaces.TemporaryDocumentService, c
 }
 
 // NewCheckDocumentFormatToolForWorkspace builds the tool for a session with
-// an editable document: it checks the latest saved version of that
-// document instead of the uploads.
+// editable documents: it checks the latest saved version of one of them
+// (the "document" argument) instead of the uploads.
 func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, chatModel chat.Chat, sessionID string) *CheckDocumentFormatTool {
 	base := checkDocumentFormatTool
 	base.description = strings.Replace(base.description,
 		"administrative document the user uploaded in this conversation",
-		"administrative document — the document open in this conversation's editor (its latest saved version; file_name is ignored)", 1)
+		"administrative document — a document open in this conversation's editor (its latest saved version)", 1)
+	base.description = strings.Replace(base.description,
+		"- file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).",
+		"- document: the open document to check (vb1, vb2, …); omit when only one is open.", 1)
+	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
-	t.source = func(ctx context.Context, _ uint64, _ string) ([]byte, string, int, error) {
-		content, ws, err := readWorkspaceDocument(ctx, workspace, sessionID)
+	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {
+		target, err := resolveDocument(ctx, workspace, sessionID, ref, false)
+		if err != nil {
+			return nil, "", -1, err
+		}
+		content, ws, err := readWorkspaceDocument(ctx, workspace, sessionID, target.ID)
 		if err != nil {
 			return nil, "", -1, err
 		}
 		return content, ws.FileName, ws.Revision, nil
 	}
 	return t
+}
+
+// ForDocument returns a copy of the workspace tool bound to one document,
+// for the background Prewarm and Recheck.
+func (t *CheckDocumentFormatTool) ForDocument(documentID string) *CheckDocumentFormatTool {
+	c := *t
+	c.documentID = documentID
+	return &c
 }
 
 // IsDocx reports whether a temporary document is a Word .docx file.
@@ -165,7 +200,11 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if !ok || t.sessionID == "" {
 		return &types.ToolResult{Success: false, Error: "no conversation context to read uploads from"}, nil
 	}
-	content, fileName, revision, err := t.source(ctx, tenantID, in.FileName)
+	ref := in.FileName
+	if t.workspace != nil {
+		ref = in.Document
+	}
+	content, fileName, revision, err := t.source(ctx, tenantID, ref)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -225,29 +264,30 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 	})
 }
 
-// Prewarm runs the check of the session's document in the background, once
-// per session, so a later format question is answered from the cache; its
-// progress is reported by SessionFormatCheck. It returns at once.
+// Prewarm runs the check of the bound document (see ForDocument) in the
+// background, once per document, so a later format question is answered
+// from the cache; its progress is reported by SessionFormatCheck under the
+// document's ID. It returns at once.
 func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
-	if t.chatModel == nil || t.sessionID == "" {
+	if t.chatModel == nil || t.sessionID == "" || t.documentID == "" {
 		return
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
 		return
 	}
-	if _, done := formatChecks.prewarmed.LoadOrStore(t.sessionID, struct{}{}); done {
+	if _, done := formatChecks.prewarmed.LoadOrStore(t.documentID, struct{}{}); done {
 		return
 	}
 	// checked before a restart (state kept in Redis), or running elsewhere
-	if SessionFormatCheck(ctx, t.sessionID) != nil {
+	if SessionFormatCheck(ctx, t.documentID) != nil {
 		return
 	}
 	ctx = context.WithoutCancel(ctx)
 	go func() {
-		content, fileName, revision, err := t.source(ctx, tenantID, "")
+		content, fileName, revision, err := t.source(ctx, tenantID, t.documentID)
 		if err != nil {
-			formatChecks.prewarmed.Delete(t.sessionID)
+			formatChecks.prewarmed.Delete(t.documentID)
 			return
 		}
 		t.runBackground(ctx, content, fileName, revision)
@@ -255,21 +295,21 @@ func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
 }
 
 // runBackground checks content and records its progress and result as the
-// session's format-check state.
+// bound document's format-check state.
 func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []byte, fileName string, revision int) {
 	started := time.Now()
 	state := &types.DocumentFormatCheck{
 		Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: started,
 		CheckedSavedAt: &started, Fingerprint: formatFingerprint(content),
 	}
-	formatChecks.storeState(ctx, t.sessionID, state)
+	formatChecks.storeState(ctx, t.documentID, state)
 	out := t.check(ctx, content, fileName, "")
 	done := *state
 	finished := time.Now()
 	done.FinishedAt = &finished
 	if out.result == nil || !out.result.Evaluated {
 		done.Status = types.DocumentFormatCheckFailed
-		formatChecks.storeState(ctx, t.sessionID, &done)
+		formatChecks.storeState(ctx, t.documentID, &done)
 		logger.Warnf(ctx, "check_document_format: background check of %s failed: %s", fileName, out.failure)
 		return
 	}
@@ -278,7 +318,7 @@ func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []b
 		done.DocumentType = info.Used
 		done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
 	}
-	formatChecks.storeState(ctx, t.sessionID, &done)
+	formatChecks.storeState(ctx, t.documentID, &done)
 	logger.Infof(ctx, "check_document_format: background check of %s ready in %s", fileName, finished.Sub(started).Round(time.Second))
 }
 
@@ -291,17 +331,17 @@ var (
 	formatRecheckPoll    = 5 * time.Second
 )
 
-// formatRechecking holds the sessions whose re-check is under way here.
+// formatRechecking holds the documents whose re-check is under way here.
 var formatRechecking sync.Map
 
-// FormatCheckNeedsRecheck reports whether the session's document was saved
-// after its finished background check, so Recheck has work to do. It reads
-// only the state, so callers can test it before resolving a model.
-func FormatCheckNeedsRecheck(ctx context.Context, sessionID string, lastSavedAt *time.Time) bool {
+// FormatCheckNeedsRecheck reports whether the document (workspace ID) was
+// saved after its finished background check, so Recheck has work to do. It
+// reads only the state, so callers can test it before resolving a model.
+func FormatCheckNeedsRecheck(ctx context.Context, documentID string, lastSavedAt *time.Time) bool {
 	if lastSavedAt == nil {
 		return false
 	}
-	st := SessionFormatCheck(ctx, sessionID)
+	st := SessionFormatCheck(ctx, documentID)
 	if st == nil || st.Status == types.DocumentFormatCheckRunning {
 		return false
 	}
@@ -317,26 +357,26 @@ func FormatCheckNeedsRecheck(ctx context.Context, sessionID string, lastSavedAt 
 // result is kept and marked as covering the save; otherwise the check runs
 // again once editing settles. It returns at once.
 func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
-	if t.chatModel == nil || t.workspace == nil || t.sessionID == "" {
+	if t.chatModel == nil || t.workspace == nil || t.sessionID == "" || t.documentID == "" {
 		return
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
 		return
 	}
-	ws, err := t.workspace.GetBySession(ctx, tenantID, t.sessionID)
-	if err != nil || ws == nil || !FormatCheckNeedsRecheck(ctx, t.sessionID, ws.LastSavedAt) {
+	ws, err := t.workspace.Get(ctx, tenantID, t.sessionID, t.documentID)
+	if err != nil || ws == nil || !FormatCheckNeedsRecheck(ctx, t.documentID, ws.LastSavedAt) {
 		return
 	}
-	if _, busy := formatRechecking.LoadOrStore(t.sessionID, struct{}{}); busy {
+	if _, busy := formatRechecking.LoadOrStore(t.documentID, struct{}{}); busy {
 		return
 	}
-	prev := SessionFormatCheck(ctx, t.sessionID)
+	prev := SessionFormatCheck(ctx, t.documentID)
 	savedAt := *ws.LastSavedAt
 	ctx = context.WithoutCancel(ctx)
 	go func() {
-		defer formatRechecking.Delete(t.sessionID)
-		content, _, revision, err := t.source(ctx, tenantID, "")
+		defer formatRechecking.Delete(t.documentID)
+		content, _, revision, err := t.source(ctx, tenantID, t.documentID)
 		if err != nil || prev == nil {
 			return
 		}
@@ -344,31 +384,31 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 			kept := *prev
 			kept.CheckedSavedAt = &savedAt
 			kept.Revision = revision
-			formatChecks.storeState(ctx, t.sessionID, &kept)
-			logger.Infof(ctx, "check_document_format: save of session %s kept the format; evaluation still current", t.sessionID)
+			formatChecks.storeState(ctx, t.documentID, &kept)
+			logger.Infof(ctx, "check_document_format: save of document %s kept the format; evaluation still current", t.documentID)
 			return
 		}
 		// show progress at once, then wait for the editing to settle
 		now := time.Now()
-		formatChecks.storeState(ctx, t.sessionID, &types.DocumentFormatCheck{
+		formatChecks.storeState(ctx, t.documentID, &types.DocumentFormatCheck{
 			Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: now, CheckedSavedAt: &now,
 		})
 		for deadline := now.Add(formatRecheckWaitMax); time.Now().Before(deadline); {
-			cur, err := t.workspace.GetBySession(ctx, tenantID, t.sessionID)
+			cur, err := t.workspace.Get(ctx, tenantID, t.sessionID, t.documentID)
 			if err != nil || cur == nil || cur.LastSavedAt == nil || time.Since(*cur.LastSavedAt) >= formatRecheckQuiet {
 				break
 			}
 			time.Sleep(formatRecheckPoll)
 		}
-		content, fileName, revision, err := t.source(ctx, tenantID, "")
+		content, fileName, revision, err := t.source(ctx, tenantID, t.documentID)
 		if err != nil {
 			failed := time.Now()
-			formatChecks.storeState(ctx, t.sessionID, &types.DocumentFormatCheck{
+			formatChecks.storeState(ctx, t.documentID, &types.DocumentFormatCheck{
 				Status: types.DocumentFormatCheckFailed, Revision: revision, StartedAt: now, FinishedAt: &failed, CheckedSavedAt: &now,
 			})
 			return
 		}
-		logger.Infof(ctx, "check_document_format: format of session %s changed; checking again", t.sessionID)
+		logger.Infof(ctx, "check_document_format: format of document %s changed; checking again", t.documentID)
 		t.runBackground(ctx, content, fileName, revision)
 	}()
 }

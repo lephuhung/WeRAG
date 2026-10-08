@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID } from "@/lib/chat-context";
 import {
   listTemporaryAttachments,
@@ -12,64 +13,57 @@ import {
 import { createSession, deleteSession } from "@/lib/api/chat";
 import {
   DocumentWorkspaceError,
+  MAX_DOCUMENTS_PER_SESSION,
+  MAX_DOCUMENT_FILE_BYTES,
+  activateDocumentWorkspace,
+  closeDocumentWorkspace,
   createDocumentWorkspace,
-  documentServerOrigin,
-  downloadDocumentWorkspace,
-  forceSaveDocumentWorkspace,
-  forceSaveDocumentWorkspaceKeepalive,
+  documentFileTooLarge,
   formatCheckIsCurrent,
-  getDocumentWorkspace,
   isWordAttachment,
+  listDocumentWorkspaces,
   openDocumentInNewSession,
-  parsePluginSelectionMessage,
-  shouldRefreshEditor,
   type DocumentFormatCheck,
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
-import type { OpsBatch, OpsFailure } from "@/lib/api/document-ops";
-import { IconClock, IconDoc, IconDownload, IconRefresh } from "@/components/icons";
-import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-editor";
-import { RevisionHistoryPanel } from "./revision-history";
-import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
+import { readAppliedBatches, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
+import { IconClose, IconDoc, IconPlus, IconRefresh } from "@/components/icons";
+import { DocumentPane } from "./document-pane";
 
 type Phase =
   | { kind: "loading" }
   | { kind: "disabled" }
   | { kind: "error"; message: string }
   | { kind: "empty" }
-  | { kind: "editor" };
+  | { kind: "tabs" };
 
-// The plugin already debounces selection changes (120ms); a second delay here
-// only makes the chip feel late, so messages are applied as they arrive.
-const SELECTION_DEBOUNCE_MS = 0;
-// Fallback polling of the workspace (SSE tool results can be lost when the
-// stream is cut while the backend still finishes the edit).
-const POLL_BUSY_MS = 20_000;
-const POLL_IDLE_MS = 30_000;
-// While the background format check runs, poll faster so its result shows
-// up soon after it is ready.
-const POLL_FORMAT_CHECK_MS = 5_000;
-// Follow-up re-checks after a chat turn ends: the backend may still be
-// committing the edit when a dropped stream surfaces client-side.
-const SETTLE_RECHECK_MS = [4_000, 12_000];
-// Minimum gap between two refreshFile() calls unless onDocumentReady fires.
-const REFRESH_COOLDOWN_MS = 1_500;
+/** A document of the session as the chat sees it (mention picker, lock). */
+export type SessionDocument = { id: string; file_name: string; handle?: string };
+
 const WORD_ACCEPT = ".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";
 
 function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/* Left pane of the document assistant: one ONLYOFFICE-backed .docx per chat
- * session. Loads (or lets the user create) the workspace, applies the
- * assistant's edit plans inside the editor (through the werag-assistant
- * plugin, so Ctrl+Z undoes them), reloads on restores (editor_key change),
- * and forwards editor selections.
+function storage(): Storage | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/* Left pane of the document assistant: the session's Word documents (up to
+ * 4), one ONLYOFFICE editor tab each (DocumentPane). Lists the documents,
+ * lets the user open more (upload, or an earlier upload of the session),
+ * switch and close tabs, and routes each edit plan of the assistant to the
+ * tab of its document — switching to that tab so the user sees the edit.
  *
  * Pre-session mode (`sessionId` undefined, new-chat page): shows the drop
  * zone right away; picking a file creates the session, uploads it, opens the
- * workspace and hands the new id to `onSessionCreated` (which navigates). */
+ * document and hands the new id to `onSessionCreated` (which navigates). */
 export function DocWorkspace({
   sessionId,
   onSessionCreated,
@@ -81,6 +75,7 @@ export function DocWorkspace({
   onSelectionChange,
   onFormatCheckChange,
   onDocumentChange,
+  onDocumentsChange,
 }: {
   /** Undefined → pre-session mode (no chat session exists yet). */
   sessionId: string | undefined;
@@ -93,151 +88,217 @@ export function DocWorkspace({
    * zone and file picker are disabled. */
   blocked?: boolean;
   /** Edit plans from the chat's document tools (append-only per session),
-   * applied in the editor by the plugin, each batch once. */
+   * applied in the editor of their document by the plugin, each batch once. */
   opsBatches?: (OpsBatch & { rejected?: OpsFailure[] })[];
   /** Bumped by the chat when an assistant turn ends (complete, error, abort,
-   * resumed stream done) → re-check the workspace for a new editor_key. */
+   * resumed stream done) → re-check the documents for a new editor_key. */
   recheckToken?: number;
   /** A chat turn is streaming → poll faster. */
   turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
-  /** Latest background format check of the document (null: none). */
-  onFormatCheckChange?: (check: DocumentFormatCheck | null) => void;
-  /** File name of the session's open document (null: none or closed). */
+  /** Background format check of the visible document (null: none). */
+  onFormatCheckChange?: (check: DocumentFormatCheck | null, doc: SessionDocument | null) => void;
+  /** File name of a document the session holds (null: none) — locks the mode. */
   onDocumentChange?: (fileName: string | null) => void;
+  /** The session's documents in tab order and the visible one. */
+  onDocumentsChange?: (docs: SessionDocument[], activeId: string | null) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
+  const confirm = useConfirm();
   const [phase, setPhase] = useState<Phase>(() => (sessionId ? { kind: "loading" } : { kind: "empty" }));
-  // `view` tracks the latest server state (badge, file name); `mounted` is the
-  // view whose config the editor was created with — only replaced when the
-  // document identity changes, revisions go through refreshFile().
-  const [view, setView] = useState<DocumentWorkspaceView | null>(null);
-  const [mounted, setMounted] = useState<DocumentWorkspaceView | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [editorFailed, setEditorFailed] = useState<string | null>(null);
+  const [docs, setDocs] = useState<DocumentWorkspaceView[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [maxDocs, setMaxDocs] = useState(MAX_DOCUMENTS_PER_SESSION);
+  const [maxFileBytes, setMaxFileBytes] = useState(MAX_DOCUMENT_FILE_BYTES);
+  // Tabs opened at least once: their editors stay mounted (hidden) so each
+  // keeps its undo history.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set());
+  // Latest view each pane reported (status, revision, format check).
+  const [views, setViews] = useState<Record<string, DocumentWorkspaceView>>({});
   const [attachments, setAttachments] = useState<TemporaryAttachment[]>([]);
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   // Pre-session mode: last failure and the file kept for a retry.
   const [openError, setOpenError] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
-  const editorRef = useRef<OnlyOfficeEditorHandle>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const revisionRef = useRef(0);
-  // Edits not yet persisted by a successful forcesave (gates the unmount flush).
-  const editedRef = useRef(false);
-  // One keepalive forcesave per unload: beforeunload and pagehide both fire.
-  const unloadFlushedRef = useRef(false);
-  const onSelectionRef = useRef(onSelectionChange);
-  onSelectionRef.current = onSelectionChange;
-  // editor_key of the version currently shown in the editor (mount config or
-  // the last refreshFile()). Only ever advances, so a key is applied once.
-  const currentKeyRef = useRef<string | null>(null);
-  // onDocumentReady seen for the current editor instance.
-  const editorReadyRef = useRef(false);
-  // A refreshFile() was just issued (cleared on onDocumentReady or cooldown).
-  const refreshInFlightRef = useRef(false);
-  const refreshCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // GET serialization: one recheck at a time, a request during it re-runs once.
-  const checkingRef = useRef(false);
-  const recheckAgainRef = useRef(false);
   const aliveRef = useRef(true);
-  // Set once useEditorOps runs (declared further down): refreshTo() drops
-  // pending edit plans when the document under the editor is replaced.
-  const resetOpsRef = useRef<() => void>(() => {});
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
-      if (refreshCooldownRef.current) clearTimeout(refreshCooldownRef.current);
     };
-  }, []);
-
-  const applyView = useCallback((v: DocumentWorkspaceView) => {
-    setView(v);
-    revisionRef.current = v.revision;
-    if (!v.editor) {
-      // Workspace exists but the server did not hand out an editor config.
-      setPhase({ kind: "disabled" });
-      return;
-    }
-    // Every caller mounts a fresh editor (load() clears `mounted` first).
-    currentKeyRef.current = v.editor_key || null;
-    editorReadyRef.current = false;
-    refreshInFlightRef.current = false;
-    setMounted(v);
-    setPhase({ kind: "editor" });
   }, []);
 
   const loadAttachments = useCallback(async () => {
     if (!sessionId) return;
     try {
       const list = await listTemporaryAttachments(sessionId);
+      if (!aliveRef.current) return;
       setAttachments(list.filter((a) => isWordAttachment(a.file_name, a.file_type) && a.status !== "failed"));
     } catch {
       setAttachments([]);
     }
   }, [sessionId]);
 
-  const load = useCallback(async () => {
-    setPhase({ kind: "loading" });
-    setEditorFailed(null);
-    setMounted(null);
-    editorReadyRef.current = false;
-    if (!sessionId) {
-      setPhase({ kind: "empty" });
-      return;
-    }
-    try {
-      const v = await getDocumentWorkspace(sessionId);
-      if (v) {
-        applyView(v);
-      } else {
+  /* Reload the list; `focus` makes that document the visible tab. */
+  const loadDocs = useCallback(
+    async (focus?: string) => {
+      if (!sessionId) {
         setPhase({ kind: "empty" });
-        void loadAttachments();
+        return;
       }
-    } catch (e) {
-      if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
-      else setPhase({ kind: "error", message: errMessage(e) });
-    }
-  }, [sessionId, applyView, loadAttachments]);
+      try {
+        const list = await listDocumentWorkspaces(sessionId);
+        if (!aliveRef.current) return;
+        setDocs(list.documents);
+        setMaxDocs(list.max_documents);
+        setMaxFileBytes(list.max_file_bytes);
+        void loadAttachments();
+        if (list.documents.length === 0) {
+          setActiveId(null);
+          setPhase({ kind: "empty" });
+          return;
+        }
+        const ids = new Set(list.documents.map((d) => d.id));
+        setActiveId((cur) => {
+          if (focus && ids.has(focus)) return focus;
+          if (cur && ids.has(cur)) return cur;
+          return ids.has(list.active_id) ? list.active_id : list.documents[list.documents.length - 1].id;
+        });
+        setPhase({ kind: "tabs" });
+      } catch (e) {
+        if (!aliveRef.current) return;
+        if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
+        else setPhase({ kind: "error", message: errMessage(e) });
+      }
+    },
+    [sessionId, loadAttachments],
+  );
 
   // Fresh state per session.
   useEffect(() => {
-    setView(null);
-    setMounted(null);
-    setDirty(false);
+    setDocs([]);
+    setActiveId(null);
+    setVisited(new Set());
+    setViews({});
     setAttachments([]);
     setBusyMsg(null);
-    revisionRef.current = 0;
-    currentKeyRef.current = null;
-    editedRef.current = false;
-    unloadFlushedRef.current = false;
-    void load();
-  }, [load]);
+    setPhase(sessionId ? { kind: "loading" } : { kind: "empty" });
+    void loadDocs();
+  }, [sessionId, loadDocs]);
 
-  /* ---------- create from an attachment ---------- */
+  useEffect(() => {
+    if (!activeId) return;
+    setVisited((prev) => (prev.has(activeId) ? prev : new Set(prev).add(activeId)));
+  }, [activeId]);
+
+  const switchTo = useCallback(
+    (docId: string) => {
+      setActiveId(docId);
+      setAddOpen(false);
+      if (sessionId) void activateDocumentWorkspace(sessionId, docId).catch(() => {});
+    },
+    [sessionId],
+  );
+
+  /* ---------- report to the chat ---------- */
+  const onDocumentRef = useRef(onDocumentChange);
+  onDocumentRef.current = onDocumentChange;
+  const lockName = docs.find((d) => (views[d.id] ?? d).status === "open")?.file_name ?? null;
+  useEffect(() => {
+    if (lockName) onDocumentRef.current?.(lockName);
+  }, [lockName]);
+
+  const onDocumentsRef = useRef(onDocumentsChange);
+  onDocumentsRef.current = onDocumentsChange;
+  const docsSig = docs.map((d) => `${d.id}:${d.file_name}`).join("|") + `#${activeId ?? ""}`;
+  useEffect(() => {
+    onDocumentsRef.current?.(
+      docs.map((d) => ({ id: d.id, file_name: d.file_name, handle: d.handle })),
+      activeId,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docsSig]);
+
+  // Hand the visible document's format check to the chat (progress ring);
+  // a finished check of a document edited since no longer describes it.
+  const onFormatCheckRef = useRef(onFormatCheckChange);
+  onFormatCheckRef.current = onFormatCheckChange;
+  const activeView = activeId ? (views[activeId] ?? docs.find((d) => d.id === activeId) ?? null) : null;
+  const rawCheck = activeView?.format_check ?? null;
+  const formatCheck = rawCheck && activeView && formatCheckIsCurrent(rawCheck, activeView) ? rawCheck : null;
+  const formatCheckSig = formatCheck
+    ? `${activeView?.id}|${formatCheck.status}|${formatCheck.revision}|${formatCheck.finished_at ?? ""}`
+    : `${activeView?.id ?? ""}|none`;
+  useEffect(() => {
+    onFormatCheckRef.current?.(
+      formatCheck,
+      activeView ? { id: activeView.id, file_name: activeView.file_name, handle: activeView.handle } : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formatCheckSig]);
+
+  const onPaneView = useCallback((v: DocumentWorkspaceView) => {
+    setViews((prev) => ({ ...prev, [v.id]: v }));
+  }, []);
+
+  /* ---------- edit plans → the tab of their document ----------
+   * A batch without a document (older results) goes to the tab visible when
+   * it arrived; the routing is fixed on first sight. A new batch for another
+   * tab switches to it, so the user sees the edit land. */
+  const routeRef = useRef<Map<string, string>>(new Map());
+  const appliedRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    routeRef.current = new Map();
+    appliedRef.current = null;
+  }, [sessionId]);
+  const batchesByDoc = useMemo(() => {
+    const out: Record<string, (OpsBatch & { rejected?: OpsFailure[] })[]> = {};
+    if (!opsBatches || docs.length === 0) return out;
+    const ids = new Set(docs.map((d) => d.id));
+    for (const b of opsBatches) {
+      let target = routeRef.current.get(b.batchId);
+      if (!target) {
+        target = b.documentId && ids.has(b.documentId) ? b.documentId : (activeId ?? undefined);
+        if (!target) continue;
+        routeRef.current.set(b.batchId, target);
+      }
+      (out[target] ??= []).push(b);
+    }
+    return out;
+  }, [opsBatches, docs, activeId]);
+  const switchedForRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!sessionId || !opsBatches?.length) return;
+    if (!appliedRef.current) appliedRef.current = new Set(readAppliedBatches(storage(), sessionId));
+    for (const b of opsBatches) {
+      if (switchedForRef.current.has(b.batchId) || appliedRef.current.has(b.batchId)) continue;
+      switchedForRef.current.add(b.batchId);
+      const target = routeRef.current.get(b.batchId);
+      if (target && target !== activeId) switchTo(target);
+    }
+  }, [opsBatches, sessionId, activeId, switchTo]);
+
+  /* ---------- open documents ---------- */
   const openAttachment = async (attachmentId: string) => {
     if (!sessionId) return;
     setBusyMsg(t("docws.opening"));
     try {
-      applyView(await createDocumentWorkspace(sessionId, attachmentId));
+      const v = await createDocumentWorkspace(sessionId, attachmentId);
+      await loadDocs(v.id);
     } catch (e) {
-      if (e instanceof DocumentWorkspaceError && e.code === "already_exists") {
-        await load();
-      } else if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") {
-        setPhase({ kind: "disabled" });
-      } else {
-        toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
-      }
+      if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
+      else toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
     } finally {
       setBusyMsg(null);
     }
   };
 
-  /* Pre-session: session → upload → workspace, then hand off (navigation).
+  /* Pre-session: session → upload → document, then hand off (navigation).
    * On failure the fresh session is deleted and the file kept for retry. */
   const openingRef = useRef(false);
   const onBusyChangeRef = useRef(onBusyChange);
@@ -287,13 +348,24 @@ export function DocWorkspace({
     }
   };
 
+  const atLimit = docs.length >= maxDocs;
+
   const uploadAndOpen = async (file: File) => {
+    setAddOpen(false);
     if (!isWordAttachment(file.name)) {
       toast.error(t("docws.onlyWord"));
       return;
     }
+    if (documentFileTooLarge(file, maxFileBytes)) {
+      toast.error(t("docws.tooLarge", { name: file.name, max: Math.round(maxFileBytes / (1024 * 1024)) }));
+      return;
+    }
     if (!sessionId) {
       await openInNewSession(file);
+      return;
+    }
+    if (atLimit) {
+      toast.error(t("docws.limitReached", { n: maxDocs }));
       return;
     }
     setBusyMsg(t("docws.uploading", { percent: 0 }));
@@ -309,236 +381,58 @@ export function DocWorkspace({
     }
   };
 
-  /* ---------- server key changes (restore, close/reopen) → refresh editor ----------
-   * AI edits no longer change the stored file: they arrive as edit plans
-   * (see useEditorOps), so a key change is silent here — the restore UI
-   * shows its own toast. */
-  /* Swap the editor to `v` (already decided). Advances currentKeyRef first so
-   * the same key is never applied twice, then holds further refreshes until
-   * the editor reports ready again or the cooldown passes. */
-  const refreshTo = useCallback((v: DocumentWorkspaceView) => {
-    if (!v.editor) return;
-    currentKeyRef.current = v.editor_key || currentKeyRef.current;
-    refreshInFlightRef.current = true;
-    resetOpsRef.current();
-    if (refreshCooldownRef.current) clearTimeout(refreshCooldownRef.current);
-    refreshCooldownRef.current = setTimeout(() => {
-      refreshInFlightRef.current = false;
-    }, REFRESH_COOLDOWN_MS);
-    editorRef.current?.refreshFile(v.editor.config);
-  }, []);
-
-  /* Re-GET the workspace; refresh the editor only when editor_key changed.
-   * Always adopts the server view (status pill, revision badge). */
-  const recheck = useCallback(async () => {
+  const closeTab = async (doc: DocumentWorkspaceView) => {
     if (!sessionId) return;
-    if (checkingRef.current) {
-      recheckAgainRef.current = true;
-      return;
-    }
-    checkingRef.current = true;
+    const ok = await confirm({
+      title: t("docws.closeTabTitle"),
+      message: t("docws.closeTabConfirm", { name: doc.file_name }),
+      confirmLabel: t("docws.closeTab"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      const v = await getDocumentWorkspace(sessionId);
-      if (!aliveRef.current || !v) return;
-      revisionRef.current = v.revision;
-      setView(v);
-      if (!v.editor) return;
-      if (
-        shouldRefreshEditor({
-          currentKey: currentKeyRef.current,
-          nextKey: v.editor_key,
-          editorReady: editorReadyRef.current,
-          inFlight: refreshInFlightRef.current,
-        })
-      ) {
-        refreshTo(v);
-      }
-      // Not ready / in flight: onDocumentReady or the next trigger re-checks.
-    } catch {
-      /* next trigger retries */
-    } finally {
-      checkingRef.current = false;
-      if (recheckAgainRef.current && aliveRef.current) {
-        recheckAgainRef.current = false;
-        void recheck();
-      }
-    }
-  }, [sessionId, refreshTo]);
-  const recheckRef = useRef(recheck);
-  recheckRef.current = recheck;
-
-  const isEditor = phase.kind === "editor";
-  const formatCheckRunning = view?.format_check?.status === "running";
-
-  // Tell the chat which document the session holds (locks the mode picker).
-  const onDocumentRef = useRef(onDocumentChange);
-  onDocumentRef.current = onDocumentChange;
-  const openFileName = view && view.status === "open" ? view.file_name : null;
-  useEffect(() => {
-    if (openFileName) onDocumentRef.current?.(openFileName);
-  }, [openFileName]);
-
-  // Hand the background format check to the chat (progress ring).
-  const onFormatCheckRef = useRef(onFormatCheckChange);
-  onFormatCheckRef.current = onFormatCheckChange;
-  // a finished check of a document edited since no longer describes it
-  const rawFormatCheck = view?.format_check ?? null;
-  const formatCheck = rawFormatCheck && view && formatCheckIsCurrent(rawFormatCheck, view) ? rawFormatCheck : null;
-  const formatCheckSig = formatCheck
-    ? `${formatCheck.status}|${formatCheck.revision}|${formatCheck.finished_at ?? ""}`
-    : "";
-  useEffect(() => {
-    onFormatCheckRef.current?.(formatCheck);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formatCheckSig]);
-
-  // Chat turn ended (incl. dropped stream / abort): check now and again a
-  // little later, since the backend may still be finishing the edit.
-  useEffect(() => {
-    if (!isEditor || !recheckToken) return;
-    void recheckRef.current();
-    const timers = SETTLE_RECHECK_MS.map((ms) => setTimeout(() => void recheckRef.current(), ms));
-    return () => timers.forEach(clearTimeout);
-  }, [recheckToken, isEditor]);
-
-  // Fallback polling + re-check when the tab/window comes back.
-  useEffect(() => {
-    if (!isEditor) return;
-    const tick = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void recheckRef.current();
-    };
-    const timer = setInterval(
-      tick,
-      formatCheckRunning ? POLL_FORMAT_CHECK_MS : turnInFlight ? POLL_BUSY_MS : POLL_IDLE_MS,
-    );
-    const onVisible = () => {
-      if (document.visibilityState === "visible") tick();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", tick);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", tick);
-    };
-  }, [isEditor, turnInFlight, formatCheckRunning]);
-
-  /* ---------- flush pending edits when the page goes away ---------- */
-  useEffect(() => {
-    if (!isEditor || !sessionId) return;
-    const flush = () => {
-      if (unloadFlushedRef.current) return;
-      unloadFlushedRef.current = true;
-      void forceSaveDocumentWorkspaceKeepalive(sessionId).then((ok) => {
-        if (ok) editedRef.current = false;
+      await closeDocumentWorkspace(sessionId, doc.id);
+      setVisited((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
       });
-    };
-    // A page restored from bfcache is live again: allow the next unload.
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) unloadFlushedRef.current = false;
-    };
-    window.addEventListener("beforeunload", flush);
-    window.addEventListener("pagehide", flush);
-    window.addEventListener("pageshow", onPageShow);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      window.removeEventListener("pagehide", flush);
-      window.removeEventListener("pageshow", onPageShow);
-      // In-app navigation (session switch) unmounts without an unload event.
-      if (editedRef.current) flush();
-    };
-  }, [isEditor, sessionId]);
-
-  /* ---------- editor selection (werag-assistant plugin) → chat ---------- */
-  const dsUrl = mounted?.editor?.document_server_url;
-  useEffect(() => {
-    const origin = documentServerOrigin(dsUrl);
-    if (!origin) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== origin) return;
-      const sel = parsePluginSelectionMessage(event.data);
-      if (!sel) return; // not ours, or an empty selection — keep the last one
-      if (timer) clearTimeout(timer);
-      if (SELECTION_DEBOUNCE_MS <= 0) {
-        onSelectionRef.current(sel);
-        return;
+      if (activeId === doc.id) {
+        const rest = docs.filter((d) => d.id !== doc.id);
+        const idx = docs.findIndex((d) => d.id === doc.id);
+        const next = rest[Math.min(idx, rest.length - 1)];
+        if (next) switchTo(next.id);
       }
-      timer = setTimeout(() => onSelectionRef.current(sel), SELECTION_DEBOUNCE_MS);
-    };
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("message", onMessage);
-      if (timer) clearTimeout(timer);
-    };
-  }, [dsUrl]);
+      await loadDocs();
+    } catch (e) {
+      toast.error(`${t("docws.closeTabFailed")}: ${errMessage(e)}`);
+    }
+  };
 
-  /* ---------- AI edit plans → editor plugin ---------- */
-  const onOpsOutcome = useCallback(
-    (o: EditorOpsOutcome) => {
-      if (!aliveRef.current) return;
-      if (o.kind === "timeout") {
-        toast.error(t("docws.opsTimeout"));
-        return;
-      }
-      const firstError = o.failed[0]?.error ?? "";
-      if (o.failed.length === 0) toast.success(t("docws.opsApplied", { n: o.applied }));
-      else if (o.applied > 0)
-        toast.info(t("docws.opsPartial", { n: o.applied, total: o.total, failed: o.failed.length, error: firstError }));
-      else toast.error(t("docws.opsNone", { total: o.total, error: firstError }));
-    },
-    [toast, t],
+  const openedAttachmentIds = new Set(docs.map((d) => d.attachment_id).filter(Boolean));
+  const unopened = attachments.filter((a) => !openedAttachmentIds.has(a.id));
+
+  const fileInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept={WORD_ACCEPT}
+      className="hidden"
+      onChange={(e) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (file && !busyMsg && !blocked) void uploadAndOpen(file);
+      }}
+    />
   );
-  const NO_BATCHES = useRef<(OpsBatch & { rejected?: OpsFailure[] })[]>([]).current;
-  const { pump: pumpOps, reset: resetOps } = useEditorOps({
-    sessionId,
-    origin: documentServerOrigin(dsUrl),
-    editorRef,
-    isReady: () => editorReadyRef.current && phase.kind === "editor",
-    batches: opsBatches ?? NO_BATCHES,
-    onOutcome: onOpsOutcome,
-  });
-  resetOpsRef.current = resetOps;
-
-  /* ---------- snapshot timeline ---------- */
-  const [historyOpen, setHistoryOpen] = useState(false);
-
-  /* ---------- top-bar actions ---------- */
-  const download = async () => {
-    if (!sessionId) return;
-    try {
-      const blob = await downloadDocumentWorkspace(sessionId);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = view?.file_name || "document.docx";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      toast.error(`${t("docws.downloadFailed")}: ${errMessage(e)}`);
-    }
-  };
-
-  const saveNow = async () => {
-    if (!sessionId) return;
-    setSaving(true);
-    try {
-      await forceSaveDocumentWorkspace(sessionId);
-      editedRef.current = false;
-      toast.success(t("docws.saveRequested"));
-    } catch (e) {
-      toast.error(`${t("docws.saveFailed")}: ${errMessage(e)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   /* ---------- render ---------- */
   if (phase.kind === "loading") {
-    return <Centered><p className="body-sm text-muted">{t("docws.loading")}</p></Centered>;
+    return (
+      <Centered>
+        <p className="body-sm text-muted">{t("docws.loading")}</p>
+      </Centered>
+    );
   }
   if (phase.kind === "disabled") {
     return (
@@ -554,7 +448,7 @@ export function DocWorkspace({
       <Centered>
         <p className="text-[15px] font-medium text-ink">{t("docws.loadFailed")}</p>
         <p className="body-sm mt-1 max-w-[420px] text-center text-muted">{phase.message}</p>
-        <button type="button" className="btn btn-outline btn-sm mt-4" onClick={() => void load()}>
+        <button type="button" className="btn btn-outline btn-sm mt-4" onClick={() => void loadDocs()}>
           <IconRefresh className="h-3.5 w-3.5" /> {t("docws.retry")}
         </button>
       </Centered>
@@ -576,17 +470,7 @@ export function DocWorkspace({
           if (file && !busyMsg && !blocked) void uploadAndOpen(file);
         }}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={WORD_ACCEPT}
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file && !busyMsg && !blocked) void uploadAndOpen(file);
-          }}
-        />
+        {fileInput}
         <div
           className={`flex w-full max-w-[520px] flex-col items-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
             dragOver ? "border-ink/40 bg-surface-strong" : "border-hairline"
@@ -595,8 +479,13 @@ export function DocWorkspace({
           <IconDoc className="mb-3 h-9 w-9 text-muted-soft" />
           <p className="text-[15px] font-medium text-ink">{dragOver ? t("docws.dropHere") : t("docws.emptyTitle")}</p>
           <p className="body-sm mt-1 text-muted">{t("docws.emptyDesc")}</p>
+          <p className="caption mt-2 text-muted-soft">
+            {t("docws.limitsHint", { n: maxDocs, max: Math.round(maxFileBytes / (1024 * 1024)) })}
+          </p>
           {busyMsg ? (
-            <p className="body-sm mt-4 text-ink" role="status">{busyMsg}</p>
+            <p className="body-sm mt-4 text-ink" role="status">
+              {busyMsg}
+            </p>
           ) : (
             <>
               {openError && (
@@ -627,11 +516,11 @@ export function DocWorkspace({
             </>
           )}
         </div>
-        {attachments.length > 0 && (
+        {unopened.length > 0 && (
           <div className="mt-6 w-full max-w-[520px]">
             <p className="caption-uppercase mb-2 text-muted-soft">{t("docws.existingTitle")}</p>
             <ul className="flex flex-col gap-1.5">
-              {attachments.map((a) => (
+              {unopened.map((a) => (
                 <li key={a.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
                   <IconDoc className="h-4 w-4 shrink-0 text-muted" />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={a.file_name}>
@@ -654,113 +543,142 @@ export function DocWorkspace({
     );
   }
 
-  // editor
-  const ed = mounted?.editor;
+  // tabs
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="hairline-b flex h-14 shrink-0 items-center gap-2 px-3 sm:px-4">
-        <IconDoc className="h-4 w-4 shrink-0 text-muted" />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink" title={view?.file_name}>
-          {view?.file_name}
-        </span>
-        {view?.status === "closed" ? (
-          <Pill tone="muted">{t("docws.closed")}</Pill>
-        ) : (
-          <Pill tone={dirty ? "warn" : "ok"}>{dirty ? t("docws.saving") : t("docws.saved")}</Pill>
-        )}
-        {view && <Pill tone="muted">{t("docws.revision", { n: view.revision })}</Pill>}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setHistoryOpen(true)}
-          title={t("docws.history")}
-          disabled={!sessionId}
-        >
-          <IconClock className="h-3.5 w-3.5" />
-          <span className="hidden xl:inline">{t("docws.history")}</span>
-        </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void download()} title={t("docws.download")}>
-          <IconDownload className="h-3.5 w-3.5" />
-          <span className="hidden xl:inline">{t("docws.download")}</span>
-        </button>
-        <button type="button" className="btn btn-outline btn-sm" disabled={saving} onClick={() => void saveNow()}>
-          {t("docws.saveNow")}
-        </button>
+    <div
+      className="flex h-full flex-col overflow-hidden"
+      onDragOver={(e) => {
+        if (Array.from(e.dataTransfer.types).includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        e.preventDefault();
+        if (!busyMsg) void uploadAndOpen(file);
+      }}
+    >
+      {fileInput}
+      <div className="hairline-b flex h-14 shrink-0 items-center gap-2 px-2 sm:px-3">
+        <div role="tablist" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {docs.map((d) => {
+            const selected = d.id === activeId;
+            return (
+              <div
+                key={d.id}
+                role="tab"
+                aria-selected={selected}
+                tabIndex={0}
+                title={d.file_name}
+                onClick={() => !selected && switchTo(d.id)}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && !selected) {
+                    e.preventDefault();
+                    switchTo(d.id);
+                  }
+                }}
+                className={`group flex h-9 min-w-[96px] max-w-[200px] shrink cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] transition-colors ${
+                  selected ? "bg-surface-strong font-medium text-ink" : "text-muted hover:bg-surface-strong/60 hover:text-ink"
+                }`}
+              >
+                <IconDoc className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{d.file_name}</span>
+                <button
+                  type="button"
+                  className={`shrink-0 rounded p-0.5 text-muted hover:bg-hairline hover:text-ink ${
+                    selected ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  }`}
+                  aria-label={t("docws.closeTabOf", { name: d.file_name })}
+                  title={t("docws.closeTab")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void closeTab(d);
+                  }}
+                >
+                  <IconClose className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm h-9 w-9 p-0"
+              disabled={Boolean(busyMsg) || atLimit}
+              title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
+              aria-label={t("docws.addDocument")}
+              onClick={() => (unopened.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
+            >
+              <IconPlus className="h-4 w-4" />
+            </button>
+            {addOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setAddOpen(false)} />
+                <div className="card absolute left-0 top-full z-[60] mt-1 w-[280px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong"
+                    onClick={() => {
+                      setAddOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <IconPlus className="h-3.5 w-3.5" /> {t("docws.uploadNew")}
+                  </button>
+                  <p className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">{t("docws.existingTitle")}</p>
+                  {unopened.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong"
+                      title={a.file_name}
+                      onClick={() => {
+                        setAddOpen(false);
+                        void openAttachment(a.id);
+                      }}
+                    >
+                      <IconDoc className="h-3.5 w-3.5 shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1 truncate">{a.file_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {busyMsg && (
+            <span className="caption shrink-0 truncate text-muted" role="status">
+              {busyMsg}
+            </span>
+          )}
+        {/* the visible tab's actions (history, download, save) */}
+        <div ref={setToolbarSlot} className="flex shrink-0 items-center gap-1.5" />
       </div>
       <div className="relative min-h-0 flex-1">
-        {editorFailed ? (
-          <Centered>
-            <p className="text-[15px] font-medium text-ink">{t("docws.editorLoadFailed")}</p>
-            <p className="body-sm mt-1 max-w-[420px] text-center text-muted">{editorFailed}</p>
-            <button type="button" className="btn btn-outline btn-sm mt-4" onClick={() => void load()}>
-              <IconRefresh className="h-3.5 w-3.5" /> {t("docws.retry")}
-            </button>
-          </Centered>
-        ) : ed ? (
-          <OnlyOfficeEditor
-            ref={editorRef}
-            documentServerUrl={ed.document_server_url}
-            config={ed.config}
-            onLoadError={(e) => setEditorFailed(e.message)}
-            events={{
-              onDocumentReady: () => {
-                editorReadyRef.current = true;
-                refreshInFlightRef.current = false;
-                // Catch up on a key change that arrived while loading, then
-                // send the edit plans queued meanwhile.
-                void recheckRef.current();
-                pumpOps();
-              },
-              onDocumentStateChange: (d) => {
-                setDirty(d);
-                // "saved" (false) only means the DS has the edits, not WeRAG's
-                // stored file — editedRef clears on a successful forcesave only.
-                if (d) {
-                  editedRef.current = true;
-                  unloadFlushedRef.current = false; // new edits re-arm the unload flush
-                }
-              },
-              onRequestRefreshFile: () => {
-                // The editor itself asks for a fresh config: apply it even if
-                // the key is unchanged (version change / reconnect).
-                if (!sessionId) return;
-                void getDocumentWorkspace(sessionId)
-                  .then((v) => {
-                    if (!aliveRef.current || !v?.editor) return;
-                    revisionRef.current = v.revision;
-                    setView(v);
-                    refreshTo(v);
-                  })
-                  .catch(() => {});
-              },
-              onError: (code, desc) => console.error("[onlyoffice] error", code, desc),
-              onWarning: (code, desc) => console.warn("[onlyoffice] warning", code, desc),
-            }}
-          />
-        ) : null}
+        {sessionId &&
+          docs
+            .filter((d) => visited.has(d.id) || d.id === activeId)
+            .map((d) => (
+              <DocumentPane
+                key={d.id}
+                sessionId={sessionId}
+                documentId={d.id}
+                active={d.id === activeId}
+                toolbarSlot={toolbarSlot}
+                opsBatches={batchesByDoc[d.id] ?? NO_BATCHES}
+                recheckToken={recheckToken}
+                turnInFlight={turnInFlight}
+                onSelectionChange={onSelectionChange}
+                onViewChange={onPaneView}
+                onEditorDisabled={() => setPhase({ kind: "disabled" })}
+              />
+            ))}
       </div>
-      {sessionId && (
-        <RevisionHistoryPanel
-          sessionId={sessionId}
-          open={historyOpen}
-          onClose={() => setHistoryOpen(false)}
-          onRestored={() => void recheckRef.current()}
-        />
-      )}
     </div>
   );
 }
 
+const NO_BATCHES: (OpsBatch & { rejected?: OpsFailure[] })[] = [];
+
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex h-full flex-col items-center justify-center p-6">{children}</div>;
-}
-
-function Pill({ tone, children }: { tone: "ok" | "warn" | "muted"; children: React.ReactNode }) {
-  const cls =
-    tone === "ok"
-      ? "bg-success/10 text-success"
-      : tone === "warn"
-        ? "bg-amber-500/15 text-amber-600" // same as processing chips in knowledge/processing-timeline
-        : "bg-surface-strong text-muted";
-  return <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${cls}`}>{children}</span>;
 }

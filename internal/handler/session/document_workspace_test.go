@@ -38,23 +38,33 @@ func (f *callbackOnlyWorkspaces) GetBySession(context.Context, uint64, string) (
 func (f *callbackOnlyWorkspaces) View(context.Context, *types.DocumentWorkspace, string, string, string) (*types.DocumentWorkspaceView, error) {
 	return nil, nil
 }
-func (f *callbackOnlyWorkspaces) OpenCurrent(context.Context, uint64, string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+func (f *callbackOnlyWorkspaces) OpenCurrent(context.Context, uint64, string, string) (io.ReadCloser, *types.DocumentWorkspace, error) {
 	return nil, nil, nil
 }
-func (f *callbackOnlyWorkspaces) ForceSave(context.Context, uint64, string) error { return nil }
-func (f *callbackOnlyWorkspaces) PrepareExternalWrite(context.Context, uint64, string, time.Duration) (*types.DocumentWorkspace, []byte, error) {
+func (f *callbackOnlyWorkspaces) ForceSave(context.Context, uint64, string, string) error { return nil }
+func (f *callbackOnlyWorkspaces) Get(context.Context, uint64, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) List(context.Context, uint64, string) ([]*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) Activate(context.Context, uint64, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) Remove(context.Context, uint64, string, string) error { return nil }
+func (f *callbackOnlyWorkspaces) PrepareExternalWrite(context.Context, uint64, string, string, time.Duration) (*types.DocumentWorkspace, []byte, error) {
 	return nil, nil, nil
 }
-func (f *callbackOnlyWorkspaces) CommitExternalWrite(context.Context, uint64, string, int, []byte) (*types.DocumentWorkspace, error) {
+func (f *callbackOnlyWorkspaces) CommitExternalWrite(context.Context, uint64, string, string, int, []byte) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
-func (f *callbackOnlyWorkspaces) Snapshot(context.Context, uint64, string, string, string, time.Duration) (*types.DocumentRevision, error) {
+func (f *callbackOnlyWorkspaces) Snapshot(context.Context, uint64, string, string, string, string, time.Duration) (*types.DocumentRevision, error) {
 	return nil, nil
 }
-func (f *callbackOnlyWorkspaces) ListRevisions(context.Context, uint64, string) ([]*types.DocumentRevision, error) {
+func (f *callbackOnlyWorkspaces) ListRevisions(context.Context, uint64, string, string) ([]*types.DocumentRevision, error) {
 	return nil, nil
 }
-func (f *callbackOnlyWorkspaces) Restore(context.Context, uint64, string, int) (*types.DocumentWorkspace, error) {
+func (f *callbackOnlyWorkspaces) Restore(context.Context, uint64, string, string, int) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
 func (f *callbackOnlyWorkspaces) HandleCallback(_ context.Context, ticket, auth string, body *types.OnlyOfficeCallback) error {
@@ -163,6 +173,22 @@ func (f *routeWorkspaces) GetBySession(_ context.Context, _ uint64, sessionID st
 	return nil, apperrors.NewNotFoundError("Document workspace not found")
 }
 
+// Get resolves "" to the session's document like the service does.
+func (f *routeWorkspaces) Get(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspace, error) {
+	ws, err := f.GetBySession(ctx, tenantID, sessionID)
+	if err != nil || (documentID != "" && ws.ID != documentID) {
+		return nil, apperrors.NewNotFoundError("Document workspace not found")
+	}
+	return ws, nil
+}
+
+func (f *routeWorkspaces) List(_ context.Context, _ uint64, sessionID string) ([]*types.DocumentWorkspace, error) {
+	if ws := f.bySess[sessionID]; ws != nil {
+		return []*types.DocumentWorkspace{ws}, nil
+	}
+	return nil, nil
+}
+
 func (f *routeWorkspaces) View(ctx context.Context, ws *types.DocumentWorkspace, _, _, _ string) (*types.DocumentWorkspaceView, error) {
 	f.gotOrigin = service.DocumentEditorOrigin(ctx)
 	return &types.DocumentWorkspaceView{DocumentWorkspace: ws, EditorKey: ws.EditorKey()}, nil
@@ -178,6 +204,8 @@ func newDocumentRoutes(t *testing.T, ws *routeWorkspaces, frontendBase string) *
 	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
 	r.POST("/sessions/:session_id/document", h.CreateDocumentWorkspace)
 	r.GET("/sessions/:id/document", h.GetDocumentWorkspace)
+	r.GET("/sessions/:id/documents", h.ListDocumentWorkspaces)
+	r.GET("/sessions/:id/documents/:doc_id", h.GetDocumentWorkspace)
 	return r
 }
 
@@ -319,14 +347,14 @@ type revisionWorkspaces struct {
 	restoredSeqs []int
 }
 
-func (f *revisionWorkspaces) ListRevisions(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentRevision, error) {
+func (f *revisionWorkspaces) ListRevisions(ctx context.Context, tenantID uint64, sessionID, _ string) ([]*types.DocumentRevision, error) {
 	if _, err := f.GetBySession(ctx, tenantID, sessionID); err != nil {
 		return nil, err
 	}
 	return f.revs, nil
 }
 
-func (f *revisionWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sessionID, label, source string, _ time.Duration) (*types.DocumentRevision, error) {
+func (f *revisionWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sessionID, _, label, source string, _ time.Duration) (*types.DocumentRevision, error) {
 	if _, err := f.GetBySession(ctx, tenantID, sessionID); err != nil {
 		return nil, err
 	}
@@ -336,7 +364,7 @@ func (f *revisionWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sess
 	return rev, nil
 }
 
-func (f *revisionWorkspaces) Restore(ctx context.Context, tenantID uint64, sessionID string, seq int) (*types.DocumentWorkspace, error) {
+func (f *revisionWorkspaces) Restore(ctx context.Context, tenantID uint64, sessionID, _ string, seq int) (*types.DocumentWorkspace, error) {
 	ws, err := f.GetBySession(ctx, tenantID, sessionID)
 	if err != nil {
 		return nil, err

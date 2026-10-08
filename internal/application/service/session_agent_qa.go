@@ -297,6 +297,8 @@ func (s *sessionService) AgentQA(
 	// The document tools read the selection from ctx: rewrite_paragraphs
 	// edits only a passage the user highlighted in this turn.
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
+	// the documents the user named with @: the tools edit only these
+	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
 		// codes in the highlighted passage locate text past the cut too
 		locate := effectiveQuery

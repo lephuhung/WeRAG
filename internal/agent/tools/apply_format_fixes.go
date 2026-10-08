@@ -39,6 +39,7 @@ After check_document_format (or when the user directly asks to normalise the lay
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "check_ids": {
       "type": "array",
       "items": {"type": "string"},
@@ -65,6 +66,7 @@ type applyFormatFixesInput struct {
 	DocumentType string   `json:"document_type"`
 	DryRun       bool     `json:"dry_run"`
 	Force        bool     `json:"force"`
+	Document     string   `json:"document"`
 }
 
 // ApplyFormatFixesTool plans the corrections of mechanically fixable NĐ30
@@ -227,11 +229,14 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	var content []byte
 	var ws *types.DocumentWorkspace
 	seq := 0
-	var err error
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, !in.DryRun)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
 	if in.DryRun {
-		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID)
+		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
 	} else {
-		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, "chuẩn hóa thể thức")
+		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "chuẩn hóa thể thức")
 	}
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
@@ -290,7 +295,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	if len(ops) > 0 {
 		output += "\n" + editorAppliedNote + "\n"
 	}
-	data := opsData(ops, seq)
+	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
 	data["document_type"] = report.DocumentType.Used
 	data["applied"] = applied

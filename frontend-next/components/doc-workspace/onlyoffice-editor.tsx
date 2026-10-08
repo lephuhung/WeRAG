@@ -34,6 +34,9 @@ export type OnlyOfficeEditorHandle = {
   /** postMessage to the editor iframe (DocsAPI frameEditor) with an exact
    * target origin. False when the iframe is not there yet. */
   postToEditor: (message: unknown, targetOrigin: string) => boolean;
+  /** Whether a postMessage came from inside this editor (its iframe or a
+   * plugin frame nested in it) — several editors can be open at once. */
+  ownsMessageSource: (source: MessageEventSource | null) => boolean;
 };
 
 /* Keyed by api.js src: each Document Server URL gets its own load. */
@@ -186,6 +189,20 @@ export const OnlyOfficeEditor = forwardRef<OnlyOfficeEditorHandle, Props>(functi
       if (api) create(api, cfg);
     },
     destroy,
+    ownsMessageSource: (source: MessageEventSource | null) => {
+      const frame = document.getElementById(`${containerId}-host`)?.querySelector("iframe");
+      const win = frame?.contentWindow;
+      if (!win || !source) return false;
+      // parent is readable on a cross-origin window; plugins sit a few
+      // frames below the editor iframe
+      let w = source as Window;
+      for (let depth = 0; depth < 6 && w; depth++) {
+        if (w === win) return true;
+        if (w === window || w.parent === w) return false;
+        w = w.parent;
+      }
+      return false;
+    },
     postToEditor: (message: unknown, targetOrigin: string) => {
       const frame = document.getElementById(`${containerId}-host`)?.querySelector("iframe");
       const win = frame?.contentWindow;

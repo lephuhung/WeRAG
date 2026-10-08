@@ -18,7 +18,9 @@ export const BUILTIN_SMART_REASONING_ID = "builtin-smart-reasoning";
 /** Document assistant: chat + embedded ONLYOFFICE editor (two-pane workspace). */
 export const BUILTIN_DOCUMENT_ASSISTANT_ID = "builtin-document-assistant";
 
-export type MentionType = "kb" | "file" | "tag" | "mcp" | "skill";
+// "document": an editable document of the session (document assistant);
+// managed per turn by the chat, not stored in the settings below.
+export type MentionType = "kb" | "file" | "tag" | "mcp" | "skill" | "document";
 
 export type MentionRequestItem = {
   id: string;

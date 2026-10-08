@@ -163,24 +163,25 @@ func (c *formatCheckCache) put(ctx context.Context, r *formatCheckResult, keys .
 	}
 }
 
-func (c *formatCheckCache) storeState(ctx context.Context, sessionID string, st *types.DocumentFormatCheck) {
+func (c *formatCheckCache) storeState(ctx context.Context, documentID string, st *types.DocumentFormatCheck) {
 	if c.rdb == nil {
-		c.states.Store(sessionID, st)
+		c.states.Store(documentID, st)
 		return
 	}
-	c.redisSet(ctx, formatCheckStateKeyPrefix+sessionID, st)
+	c.redisSet(ctx, formatCheckStateKeyPrefix+documentID, st)
 }
 
-// SessionFormatCheck returns the background format check of a session's
-// document, or nil when none was started or the run that started it died.
-func SessionFormatCheck(ctx context.Context, sessionID string) *types.DocumentFormatCheck {
+// SessionFormatCheck returns the background format check of an editable
+// document (workspace ID), or nil when none was started or the run that
+// started it died.
+func SessionFormatCheck(ctx context.Context, documentID string) *types.DocumentFormatCheck {
 	var st types.DocumentFormatCheck
 	if formatChecks.rdb != nil {
-		if !formatChecks.redisGet(ctx, formatCheckStateKeyPrefix+sessionID, &st) {
+		if !formatChecks.redisGet(ctx, formatCheckStateKeyPrefix+documentID, &st) {
 			return nil
 		}
 	} else {
-		v, ok := formatChecks.states.Load(sessionID)
+		v, ok := formatChecks.states.Load(documentID)
 		if !ok {
 			return nil
 		}

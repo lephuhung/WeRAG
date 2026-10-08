@@ -1,14 +1,20 @@
-/* Document-assistant workspace: one editable .docx per chat session, opened
- * in an embedded ONLYOFFICE editor.
+/* Document-assistant workspaces: up to 4 editable .docx files per chat
+ * session, one ONLYOFFICE editor tab each.
  *
- *   GET  /api/v1/sessions/:id/document            → 200 view | 404 none | 503 editor disabled
- *   POST /api/v1/sessions/:id/document            {attachment_id} → 201 view | 409 exists
- *   POST /api/v1/sessions/:id/document/forcesave  → 202 {revision}
- *   GET  /api/v1/sessions/:id/document/download   → docx bytes
- *   GET  /api/v1/sessions/:id/document/revisions  → [{seq,label,source,created_at}]
- *   POST /api/v1/sessions/:id/document/revisions/:seq/restore → {revision, editor_key}
+ *   GET    /api/v1/sessions/:id/documents             → {documents, active_id, max_documents, …}
+ *   POST   /api/v1/sessions/:id/documents             {attachment_id} → 201 view | 409 limit | 400 too large
+ *   GET    /api/v1/sessions/:id/documents/:doc        → 200 view | 404 none | 503 editor disabled
+ *   DELETE /api/v1/sessions/:id/documents/:doc        → closes the tab
+ *   POST   /api/v1/sessions/:id/documents/:doc/activate
+ *   POST   /api/v1/sessions/:id/documents/:doc/forcesave  → 202 {revision}
+ *   GET    /api/v1/sessions/:id/documents/:doc/download   → docx bytes
+ *   GET    /api/v1/sessions/:id/documents/:doc/revisions  → [{seq,label,source,created_at}]
+ *   POST   /api/v1/sessions/:id/documents/:doc/revisions/:seq/restore → {revision, editor_key}
+ *
+ * Every per-document call takes an optional documentId; without one it uses
+ * the legacy /document routes, which act on the session's active document.
  */
-import { ApiError, apiDownload, apiGet, apiPost, authHeaders } from "../api-client.ts";
+import { ApiError, apiDel, apiDownload, apiGet, apiPost, authHeaders } from "../api-client.ts";
 
 export type DocumentWorkspaceStatus = "open" | "closed";
 
@@ -22,6 +28,11 @@ export interface DocumentEditorBootstrap {
 export interface DocumentWorkspaceView {
   id: string;
   session_id: string;
+  /** The agent's name for the document (vb1, vb2, …). */
+  handle?: string;
+  /** 1-based order the document was opened in (tab order). */
+  position?: number;
+  attachment_id?: string;
   file_name: string;
   file_type: "docx";
   file_size: number;
@@ -58,7 +69,24 @@ export interface DocumentFormatCheck {
 export interface DocumentSelection {
   text: string;
   paragraph_hint?: string;
+  /** Workspace (tab) the text was selected in. */
+  document_id?: string;
+  /** Server-side label of that document ("vb2 · Tờ trình.docx"), on stored messages. */
+  document?: string;
 }
+
+/** GET /sessions/:id/documents. */
+export interface DocumentWorkspaceList {
+  documents: DocumentWorkspaceView[];
+  active_id: string;
+  max_documents: number;
+  max_file_bytes: number;
+  max_media_bytes: number;
+}
+
+/** Fallback limits (the server's are authoritative). */
+export const MAX_DOCUMENTS_PER_SESSION = 4;
+export const MAX_DOCUMENT_FILE_BYTES = 10 * 1024 * 1024;
 
 export type DocumentWorkspaceErrorCode = "editor_disabled" | "already_exists" | "request_failed";
 
@@ -74,7 +102,11 @@ export class DocumentWorkspaceError extends Error {
 
 type Envelope<T> = { success?: boolean; data?: T };
 
-const base = (sessionId: string) => `/api/v1/sessions/${encodeURIComponent(sessionId)}/document`;
+const sessionBase = (sessionId: string) => `/api/v1/sessions/${encodeURIComponent(sessionId)}`;
+const base = (sessionId: string, documentId?: string) =>
+  documentId
+    ? `${sessionBase(sessionId)}/documents/${encodeURIComponent(documentId)}`
+    : `${sessionBase(sessionId)}/document`;
 
 function toWorkspaceError(err: unknown): unknown {
   if (err instanceof ApiError) {
@@ -85,11 +117,15 @@ function toWorkspaceError(err: unknown): unknown {
   return err;
 }
 
-/** Returns null when the session has no workspace yet (404). Throws
- * DocumentWorkspaceError{code:"editor_disabled"} on 503. */
-export async function getDocumentWorkspace(sessionId: string): Promise<DocumentWorkspaceView | null> {
+/** Returns null when the session has no such document (404). Throws
+ * DocumentWorkspaceError{code:"editor_disabled"} on 503. Without
+ * documentId it loads the session's active document. */
+export async function getDocumentWorkspace(
+  sessionId: string,
+  documentId?: string,
+): Promise<DocumentWorkspaceView | null> {
   try {
-    const res = await apiGet<Envelope<DocumentWorkspaceView>>(base(sessionId));
+    const res = await apiGet<Envelope<DocumentWorkspaceView>>(base(sessionId, documentId));
     return res?.data ?? null;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
@@ -97,14 +133,33 @@ export async function getDocumentWorkspace(sessionId: string): Promise<DocumentW
   }
 }
 
-/** Opens a workspace from an already-uploaded session attachment. A 409
- * surfaces as DocumentWorkspaceError{code:"already_exists"}. */
+/** The session's documents in tab order (no editor configs). */
+export async function listDocumentWorkspaces(sessionId: string): Promise<DocumentWorkspaceList> {
+  try {
+    const res = await apiGet<Envelope<Partial<DocumentWorkspaceList>>>(`${sessionBase(sessionId)}/documents`);
+    const d = res?.data ?? {};
+    return {
+      documents: Array.isArray(d.documents) ? d.documents : [],
+      active_id: typeof d.active_id === "string" ? d.active_id : "",
+      max_documents: Number(d.max_documents) || MAX_DOCUMENTS_PER_SESSION,
+      max_file_bytes: Number(d.max_file_bytes) || MAX_DOCUMENT_FILE_BYTES,
+      max_media_bytes: Number(d.max_media_bytes) || 0,
+    };
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Opens an already-uploaded session attachment as a new document (tab);
+ * opening the same upload again returns its existing document. A 409 (the
+ * session already holds the maximum) surfaces as
+ * DocumentWorkspaceError{code:"already_exists"} with the server's message. */
 export async function createDocumentWorkspace(
   sessionId: string,
   attachmentId: string,
 ): Promise<DocumentWorkspaceView> {
   try {
-    const res = await apiPost<Envelope<DocumentWorkspaceView>>(base(sessionId), {
+    const res = await apiPost<Envelope<DocumentWorkspaceView>>(`${sessionBase(sessionId)}/documents`, {
       attachment_id: attachmentId,
     });
     if (!res?.data) throw new DocumentWorkspaceError("request_failed", 0, "Empty workspace response");
@@ -114,24 +169,42 @@ export async function createDocumentWorkspace(
   }
 }
 
-export async function forceSaveDocumentWorkspace(sessionId: string): Promise<{ revision: number }> {
+/** Records the tab the user switched to (the agent's default document). */
+export async function activateDocumentWorkspace(sessionId: string, documentId: string): Promise<void> {
   try {
-    const res = await apiPost<Envelope<{ revision: number }>>(`${base(sessionId)}/forcesave`, {});
+    await apiPost(`${base(sessionId, documentId)}/activate`, {});
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Closes a document's tab (the server snapshots it first). */
+export async function closeDocumentWorkspace(sessionId: string, documentId: string): Promise<void> {
+  try {
+    await apiDel(base(sessionId, documentId));
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+export async function forceSaveDocumentWorkspace(sessionId: string, documentId?: string): Promise<{ revision: number }> {
+  try {
+    const res = await apiPost<Envelope<{ revision: number }>>(`${base(sessionId, documentId)}/forcesave`, {});
     return { revision: Number(res?.data?.revision) || 0 };
   } catch (err) {
     throw toWorkspaceError(err);
   }
 }
 
-export function downloadDocumentWorkspace(sessionId: string): Promise<Blob> {
-  return apiDownload(`${base(sessionId)}/download`);
+export function downloadDocumentWorkspace(sessionId: string, documentId?: string): Promise<Blob> {
+  return apiDownload(`${base(sessionId, documentId)}/download`);
 }
 
 /** Fire-and-forget forcesave for beforeunload/pagehide: `keepalive` lets the
  * request outlive the page; no refresh/replay is possible at that point. */
-export function forceSaveDocumentWorkspaceKeepalive(sessionId: string): Promise<boolean> {
+export function forceSaveDocumentWorkspaceKeepalive(sessionId: string, documentId?: string): Promise<boolean> {
   try {
-    return fetch(`${base(sessionId)}/forcesave`, {
+    return fetch(`${base(sessionId, documentId)}/forcesave`, {
       method: "POST",
       keepalive: true,
       headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -194,7 +267,7 @@ export interface OpenDocumentInNewSessionDeps<F> {
   createSession: () => Promise<string>;
   /** Upload `file` as a temporary attachment of the session → attachment id. */
   upload: (sessionId: string, file: F) => Promise<string>;
-  /** POST /sessions/:id/document {attachment_id}. */
+  /** POST /sessions/:id/documents {attachment_id}. */
   createWorkspace: (sessionId: string, attachmentId: string) => Promise<unknown>;
   /** Best-effort cleanup of the fresh session when a later step fails. */
   deleteSession: (sessionId: string) => Promise<unknown>;
@@ -231,11 +304,21 @@ export async function openDocumentInNewSession<F>(file: F, deps: OpenDocumentInN
  * undefined unless it carries non-empty text. */
 export function documentSelectionForDisplay(raw: unknown): DocumentSelection | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const r = raw as { text?: unknown; paragraph_hint?: unknown };
+  const r = raw as { text?: unknown; paragraph_hint?: unknown; document_id?: unknown; document?: unknown };
   const text = typeof r.text === "string" ? r.text.trim() : "";
   if (!text) return undefined;
+  const out: DocumentSelection = { text };
   const hint = typeof r.paragraph_hint === "string" ? r.paragraph_hint.trim() : "";
-  return hint ? { text, paragraph_hint: hint } : { text };
+  if (hint) out.paragraph_hint = hint;
+  if (typeof r.document_id === "string" && r.document_id) out.document_id = r.document_id;
+  if (typeof r.document === "string" && r.document.trim()) out.document = r.document.trim();
+  return out;
+}
+
+/** Client-side guard before uploading a document (the server also checks
+ * embedded pictures, which only it can measure). */
+export function documentFileTooLarge(file: { size: number }, maxBytes = MAX_DOCUMENT_FILE_BYTES): boolean {
+  return file.size > maxBytes;
 }
 
 /** Whether the quoted selection in a user bubble should start collapsed
@@ -265,9 +348,9 @@ export interface DocumentRevisionEntry {
   created_at: string;
 }
 
-export async function listDocumentRevisions(sessionId: string): Promise<DocumentRevisionEntry[]> {
+export async function listDocumentRevisions(sessionId: string, documentId?: string): Promise<DocumentRevisionEntry[]> {
   try {
-    const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId)}/revisions`);
+    const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId, documentId)}/revisions`);
     return Array.isArray(res?.data) ? res.data : [];
   } catch (err) {
     throw toWorkspaceError(err);
@@ -279,10 +362,11 @@ export async function listDocumentRevisions(sessionId: string): Promise<Document
 export async function restoreDocumentRevision(
   sessionId: string,
   seq: number,
+  documentId?: string,
 ): Promise<{ revision: number; editor_key: string }> {
   try {
     const res = await apiPost<Envelope<{ revision: number; editor_key: string }>>(
-      `${base(sessionId)}/revisions/${encodeURIComponent(String(seq))}/restore`,
+      `${base(sessionId, documentId)}/revisions/${encodeURIComponent(String(seq))}/restore`,
       {},
     );
     return { revision: Number(res?.data?.revision) || 0, editor_key: String(res?.data?.editor_key ?? "") };
@@ -322,8 +406,8 @@ export function formatCheckIsCurrent(
 
 /** Identity of one background check result: the chat's format-check ring
  * shows an unseen dot until this result is opened. */
-export function formatCheckResultKey(sessionId: string, check: DocumentFormatCheck): string {
-  return `${sessionId}|${check.status}|${check.revision}|${check.finished_at ?? check.started_at}`;
+export function formatCheckResultKey(scopeId: string, check: DocumentFormatCheck): string {
+  return `${scopeId}|${check.status}|${check.revision}|${check.finished_at ?? check.started_at}`;
 }
 
 /** Typical duration of the background check (segmentation + reasoning). */

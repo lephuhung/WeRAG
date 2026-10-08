@@ -160,7 +160,9 @@ export type ChatMessage = {
   agent_duration_ms?: number;
   attachments?: ChatMessageAttachment[];
   /** Document assistant: editor passage the user had selected for this turn. */
-  document_selection?: { text: string; paragraph_hint?: string };
+  document_selection?: { text: string; paragraph_hint?: string; document_id?: string; document?: string };
+  /** @-mentions sent with a user turn (type "document" = an open document). */
+  mentioned_items?: { id?: string; name?: string; type?: string }[];
   images?: { url?: string; caption?: string }[];
   /** Skill/tool-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];

@@ -31,6 +31,7 @@ Keep the administrative register and the original meaning; change only what was 
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "edits": {
       "type": "array",
       "minItems": 1,
@@ -79,8 +80,9 @@ type rewriteEdit struct {
 }
 
 type rewriteParagraphsInput struct {
-	Edits []rewriteEdit `json:"edits"`
-	Note  string        `json:"note"`
+	Edits    []rewriteEdit `json:"edits"`
+	Note     string        `json:"note"`
+	Document string        `json:"document"`
 }
 
 // RewriteParagraphsTool plans text replacements in the user's selected
@@ -135,7 +137,14 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		return &types.ToolResult{Success: false, Error: errRewriteNeedsSelection}, nil
 	}
 
-	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, "viết lại đoạn văn")
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, true)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	if !selectionIn(sel, target) {
+		return &types.ToolResult{Success: false, Error: errSelectionElsewhere(sel, target)}, nil
+	}
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "viết lại đoạn văn")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -188,7 +197,7 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 	if planned > 0 {
 		out.WriteString("\n" + editorAppliedNote + "\n")
 	}
-	data := opsData(ops, seq)
+	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
 	data["planned"] = planned
 	data["failed"] = failed

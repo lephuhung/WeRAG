@@ -68,6 +68,9 @@ type qaRequestContext struct {
 	// documentSelection is the editor passage the user highlighted (already
 	// normalized: trimmed, capped); nil when none.
 	documentSelection *types.DocumentSelection
+	// mentionedDocumentIDs are the editable documents (workspace IDs) the
+	// user named with @ in this turn, checked against the session.
+	mentionedDocumentIDs []string
 	// resourceRewriter turns internal storage references in the outbound stream
 	// into directly loadable URLs when the caller asks for `resource_urls=public`.
 	// Disabled (a pass-through) in the default handle mode.
@@ -125,6 +128,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		Attachments:            rc.attachments,
 		QuestionOrigin:         rc.questionOrigin,
 		DocumentSelection:      rc.documentSelection,
+		MentionedDocumentIDs:   rc.mentionedDocumentIDs,
 		ClarificationRequestID: rc.clarificationRequestID,
 		ClarificationVersion:   rc.clarificationVersion,
 	}
@@ -461,7 +465,6 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		attachmentMetas:        attachmentMetas,
 		suggestionAttribution:  request.SuggestionAttribution,
 		questionOrigin:         request.QuestionOrigin,
-		documentSelection:      request.DocumentSelection.Normalized(),
 		reqAgentEnabled:        request.AgentEnabled,
 		reqAgentID:             request.AgentID,
 		resourceRewriter:       resourceRewriter,
@@ -469,7 +472,58 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		clarificationVersion:   request.ClarificationVersion,
 	}
 
+	reqCtx.mentionedDocumentIDs, reqCtx.documentSelection = h.resolveDocumentReferences(
+		ctx, session, request.MentionedItems, request.DocumentSelection.Normalized())
+
 	return reqCtx, &request, nil
+}
+
+// resolveDocumentReferences checks the turn's references to the session's
+// editable documents: the @-mentioned documents (type "document", ID = the
+// workspace ID) and the document the selection was made in. References to a
+// document the session does not hold are dropped; the selection gets the
+// document's name for the prompt.
+func (h *Handler) resolveDocumentReferences(
+	ctx context.Context, session *types.Session, items []MentionedItemRequest, sel *types.DocumentSelection,
+) ([]string, *types.DocumentSelection) {
+	if sel != nil {
+		sel.Document = ""
+	}
+	if session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+		if sel != nil {
+			sel.DocumentID = ""
+		}
+		return nil, sel
+	}
+	wanted := mentionedIDsByType(items, types.MentionTypeDocument)
+	if len(wanted) == 0 && (sel == nil || sel.DocumentID == "") {
+		return nil, sel
+	}
+	docs, err := h.documentWorkspaces.List(ctx, session.TenantID, session.ID)
+	if err != nil {
+		logger.Warnf(ctx, "List documents of session %s for @mentions failed: %v", session.ID, err)
+		docs = nil
+	}
+	byID := make(map[string]*types.DocumentWorkspace, len(docs))
+	for _, d := range docs {
+		byID[d.ID] = d
+	}
+	var ids []string
+	seen := map[string]bool{}
+	for _, id := range wanted {
+		if byID[id] != nil && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if sel != nil && sel.DocumentID != "" {
+		if d := byID[sel.DocumentID]; d != nil {
+			sel.Document = d.Label()
+		} else {
+			sel.DocumentID = ""
+		}
+	}
+	return ids, sel
 }
 
 func decodeAndValidateAttachmentUploads(

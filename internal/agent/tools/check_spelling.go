@@ -39,6 +39,7 @@ A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it 
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "scope": {"type": "string", "enum": ["document", "selection"], "description": "selection: only the highlighted passage; document: the paragraph window. Default: selection when present, else document"},
     "from": {"type": "integer", "minimum": 0, "description": "First paragraph index for scope=document (default 0)"},
     "limit": {"type": "integer", "minimum": 1, "maximum": 150, "description": "Paragraphs to review for scope=document (default 60, max 150)"},
@@ -110,6 +111,8 @@ type checkSpellingInput struct {
 	From  int    `json:"from"`
 	Limit int    `json:"limit"`
 	Mark  *bool  `json:"mark"`
+	// Document is the target document handle (see resolveDocument).
+	Document string `json:"document"`
 }
 
 // SpellingFinding is one validated spelling error.
@@ -177,10 +180,21 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		seq     int
 		err     error
 	)
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, mark)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	if sel != nil && !selectionIn(sel, target) {
+		// the highlighted passage is in another tab
+		if in.Scope == "selection" {
+			return &types.ToolResult{Success: false, Error: errSelectionElsewhere(sel, target)}, nil
+		}
+		sel, scope = nil, "document"
+	}
 	if mark {
-		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, "kiểm tra chính tả")
+		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "kiểm tra chính tả")
 	} else {
-		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID)
+		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
 	}
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
@@ -283,7 +297,7 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 
 	data := map[string]interface{}{}
 	if mark {
-		data = opsData(ops, seq)
+		data = opsData(ops, seq, ws)
 	}
 	if findings == nil {
 		findings = []SpellingFinding{}

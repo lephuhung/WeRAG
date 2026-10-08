@@ -12,8 +12,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// DocumentFormatPrecheck runs the NĐ30 format check of a document-assistant
-// session's document as soon as it is opened, with the document assistant's
+// DocumentFormatPrecheck runs the NĐ30 format check of each document of a
+// document-assistant session as soon as it is opened, with the document assistant's
 // chat model, so the chat can tell the user the evaluation is ready before
 // they ask. The result lands in the check_document_format cache the agent
 // tool reads.
@@ -21,7 +21,7 @@ type DocumentFormatPrecheck struct {
 	workspaces interfaces.DocumentWorkspaceService
 	agents     interfaces.CustomAgentService
 	models     interfaces.ModelService
-	// started holds the sessions already handed to a check, so the
+	// started holds the documents already handed to a check, so the
 	// editor's polling does not resolve the model again and again.
 	started sync.Map
 }
@@ -35,16 +35,17 @@ func NewDocumentFormatPrecheck(
 	return &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models}
 }
 
-// Start begins the check of the session's document in the background, at
-// most once per session in this process. It returns at once.
-func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, sessionID string) {
-	if p == nil || p.workspaces == nil || !p.workspaces.Enabled() || tenantID == 0 || sessionID == "" {
+// Start begins the check of one document (workspace ID) of the session in
+// the background, at most once per document in this process. It returns at
+// once.
+func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, sessionID, documentID string) {
+	if p == nil || p.workspaces == nil || !p.workspaces.Enabled() || tenantID == 0 || sessionID == "" || documentID == "" {
 		return
 	}
-	if tools.SessionFormatCheck(ctx, sessionID) != nil {
+	if tools.SessionFormatCheck(ctx, documentID) != nil {
 		return
 	}
-	if _, done := p.started.LoadOrStore(sessionID, struct{}{}); done {
+	if _, done := p.started.LoadOrStore(documentID, struct{}{}); done {
 		return
 	}
 	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, tenantID)
@@ -54,14 +55,14 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 			return
 		}
 		if !agent.Config.FormatCheckOnOpenEnabled() {
-			logger.Infof(ctx, "[DocumentFormatPrecheck] format_check_on_open is off; not checking session %s", sessionID)
+			logger.Infof(ctx, "[DocumentFormatPrecheck] format_check_on_open is off; not checking document %s", documentID)
 			return
 		}
 		chatModel := p.chatModel(ctx, agent)
 		if chatModel == nil {
 			return
 		}
-		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).Prewarm(ctx)
+		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).ForDocument(documentID).Prewarm(ctx)
 	}()
 }
 
@@ -71,7 +72,7 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 // when nothing was saved since: it reads only the check state.
 func (p *DocumentFormatPrecheck) Refresh(ctx context.Context, ws *types.DocumentWorkspace) {
 	if p == nil || ws == nil || ws.Status != types.DocumentWorkspaceStatusOpen ||
-		!tools.FormatCheckNeedsRecheck(ctx, ws.SessionID, ws.LastSavedAt) {
+		!tools.FormatCheckNeedsRecheck(ctx, ws.ID, ws.LastSavedAt) {
 		return
 	}
 	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, ws.TenantID)
@@ -80,16 +81,16 @@ func (p *DocumentFormatPrecheck) Refresh(ctx context.Context, ws *types.Document
 		if chatModel == nil {
 			return
 		}
-		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, ws.SessionID).Recheck(ctx)
+		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, ws.SessionID).ForDocument(ws.ID).Recheck(ctx)
 	}()
 }
 
-// Status reports the session's background check, or nil when none ran.
-func (p *DocumentFormatPrecheck) Status(ctx context.Context, sessionID string) *types.DocumentFormatCheck {
+// Status reports a document's background check, or nil when none ran.
+func (p *DocumentFormatPrecheck) Status(ctx context.Context, documentID string) *types.DocumentFormatCheck {
 	if p == nil {
 		return nil
 	}
-	return tools.SessionFormatCheck(ctx, sessionID)
+	return tools.SessionFormatCheck(ctx, documentID)
 }
 
 // agent loads the document assistant's (tenant) configuration.

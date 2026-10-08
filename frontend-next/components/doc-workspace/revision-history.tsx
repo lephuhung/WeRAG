@@ -29,11 +29,17 @@ const SOURCE_KEYS: Record<string, LocaleKey> = {
  * the editor key; `onRestored` lets the workspace re-check and reload. */
 export function RevisionHistoryPanel({
   sessionId,
+  documentId,
+  title,
   open,
   onClose,
   onRestored,
 }: {
   sessionId: string;
+  /** Document (tab) whose timeline is shown. */
+  documentId?: string;
+  /** File name shown under the panel title. */
+  title?: string;
   open: boolean;
   onClose: () => void;
   onRestored: () => void;
@@ -48,12 +54,12 @@ export function RevisionHistoryPanel({
   const load = useCallback(async () => {
     setError(null);
     try {
-      setItems(revisionsNewestFirst(await listDocumentRevisions(sessionId)));
+      setItems(revisionsNewestFirst(await listDocumentRevisions(sessionId, documentId)));
     } catch (e) {
       setItems([]);
       setError(errMessage(e));
     }
-  }, [sessionId]);
+  }, [sessionId, documentId]);
 
   useEffect(() => {
     if (open) void load();
@@ -76,7 +82,7 @@ export function RevisionHistoryPanel({
     if (!ok) return;
     setRestoring(rev.seq);
     try {
-      await restoreDocumentRevision(sessionId, rev.seq);
+      await restoreDocumentRevision(sessionId, rev.seq, documentId);
       toast.success(t("docws.restored"));
       onRestored();
       void load();
@@ -101,6 +107,11 @@ export function RevisionHistoryPanel({
         }
       />
       <div className="border-b border-hairline px-5 py-3">
+        {title && (
+          <p className="caption mb-2 truncate text-muted" title={title}>
+            {title}
+          </p>
+        )}
         <button
           type="button"
           className="btn btn-outline btn-sm w-full"

@@ -40,6 +40,7 @@ Paragraph indices refer to the document as it is before this call; inserts in on
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    ` + documentParamSchema + `,
     "inserts": {
       "type": "array",
       "minItems": 1,
@@ -79,8 +80,9 @@ type insertSpec struct {
 }
 
 type insertParagraphsInput struct {
-	Inserts []insertSpec `json:"inserts"`
-	Note    string       `json:"note"`
+	Inserts  []insertSpec `json:"inserts"`
+	Note     string       `json:"note"`
+	Document string       `json:"document"`
 }
 
 // insertChange is one insert's outcome, reported in Data.changes.
@@ -139,7 +141,11 @@ func (t *InsertParagraphsTool) Execute(ctx context.Context, args json.RawMessage
 		}
 	}
 
-	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, "chèn đoạn văn")
+	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, true)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "chèn đoạn văn")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -228,7 +234,7 @@ func (t *InsertParagraphsTool) Execute(ctx context.Context, args json.RawMessage
 	if planned > 0 {
 		out.WriteString("\n" + editorAppliedNote + "\n")
 	}
-	data := opsData(ops, seq)
+	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
 	data["planned"] = planned
 	data["failed"] = failed

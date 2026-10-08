@@ -100,17 +100,17 @@ func TestCheckDocumentFormatReusesEvaluation(t *testing.T) {
 func TestCheckDocumentFormatPrewarmFeedsTheTool(t *testing.T) {
 	resetFormatChecks(t)
 	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
-	tool := NewCheckDocumentFormatToolForWorkspace(newFakeWorkspace(docxFixture(t)), model, "sess-p")
+	tool := NewCheckDocumentFormatToolForWorkspace(fakeWorkspaceWithID(docxFixture(t), "ws-sess-p"), model, "sess-p").ForDocument("ws-sess-p")
 	tool.Prewarm(toolCtx())
-	tool.Prewarm(toolCtx()) // once per session
+	tool.Prewarm(toolCtx()) // once per document
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if st := SessionFormatCheck(context.Background(), "sess-p"); st != nil && st.Status == types.DocumentFormatCheckReady {
+		if st := SessionFormatCheck(context.Background(), "ws-sess-p"); st != nil && st.Status == types.DocumentFormatCheckReady {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	st := SessionFormatCheck(context.Background(), "sess-p")
+	st := SessionFormatCheck(context.Background(), "ws-sess-p")
 	if st == nil || st.Status != types.DocumentFormatCheckReady || st.Revision != 3 ||
 		st.DocumentType != "cong_van" || st.DocumentTypeLabel != "Công văn" || st.FinishedAt == nil {
 		t.Fatalf("state = %+v", st)
@@ -141,19 +141,19 @@ func TestCheckDocumentFormatDoesNotCacheFallback(t *testing.T) {
 func TestCheckDocumentFormatPrewarmReportsFailure(t *testing.T) {
 	resetFormatChecks(t)
 	model := &countingChat{fakeChat: fakeChat{reply: "{}"}} // evaluation fails
-	tool := NewCheckDocumentFormatToolForWorkspace(newFakeWorkspace(docxFixture(t)), model, "sess-x")
-	if SessionFormatCheck(context.Background(), "sess-x") != nil {
+	tool := NewCheckDocumentFormatToolForWorkspace(fakeWorkspaceWithID(docxFixture(t), "ws-sess-x"), model, "sess-x").ForDocument("ws-sess-x")
+	if SessionFormatCheck(context.Background(), "ws-sess-x") != nil {
 		t.Fatal("no state before a check")
 	}
 	tool.Prewarm(toolCtx())
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if st := SessionFormatCheck(context.Background(), "sess-x"); st != nil && st.Status != types.DocumentFormatCheckRunning {
+		if st := SessionFormatCheck(context.Background(), "ws-sess-x"); st != nil && st.Status != types.DocumentFormatCheckRunning {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if st := SessionFormatCheck(context.Background(), "sess-x"); st == nil || st.Status != types.DocumentFormatCheckFailed {
+	if st := SessionFormatCheck(context.Background(), "ws-sess-x"); st == nil || st.Status != types.DocumentFormatCheckFailed {
 		t.Fatalf("state = %+v", st)
 	}
 }
@@ -171,18 +171,18 @@ func TestFormatCheckSurvivesRestartInRedis(t *testing.T) {
 	resetFormatChecks(t)
 	mr := useMiniRedis(t)
 	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
-	tool := NewCheckDocumentFormatToolForWorkspace(newFakeWorkspace(docxFixture(t)), model, "sess-r")
+	tool := NewCheckDocumentFormatToolForWorkspace(fakeWorkspaceWithID(docxFixture(t), "ws-sess-r"), model, "sess-r").ForDocument("ws-sess-r")
 	tool.Prewarm(toolCtx())
-	if st := waitFormatCheck(t, "sess-r"); st == nil || st.Status != types.DocumentFormatCheckReady || st.DocumentTypeLabel != "Công văn" {
+	if st := waitFormatCheck(t, "ws-sess-r"); st == nil || st.Status != types.DocumentFormatCheckReady || st.DocumentTypeLabel != "Công văn" {
 		t.Fatalf("state = %+v", st)
 	}
-	if ttl := mr.TTL(formatCheckStateKeyPrefix + "sess-r"); ttl < time.Hour {
+	if ttl := mr.TTL(formatCheckStateKeyPrefix + "ws-sess-r"); ttl < time.Hour {
 		t.Fatalf("state TTL = %s, want at least an hour", ttl)
 	}
 
 	restartProcess()
 	// the reloaded page and a new turn find the state and do not run again
-	if st := SessionFormatCheck(context.Background(), "sess-r"); st == nil || st.Status != types.DocumentFormatCheckReady {
+	if st := SessionFormatCheck(context.Background(), "ws-sess-r"); st == nil || st.Status != types.DocumentFormatCheckReady {
 		t.Fatalf("state after restart = %+v", st)
 	}
 	tool.Prewarm(toolCtx())

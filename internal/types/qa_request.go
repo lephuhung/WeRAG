@@ -78,6 +78,10 @@ type QARequest struct {
 	// DocumentSelection is the passage the user highlighted in the embedded
 	// document editor; rendered after the attachments in the user prompt.
 	DocumentSelection *DocumentSelection
+	// MentionedDocumentIDs are the editable documents (workspace IDs) the
+	// user named with @ in this turn; an edit tool may only change one of
+	// these (or the selection's document) when the session holds several.
+	MentionedDocumentIDs []string
 	// SteerSink, when set, enables mid-run message injection for this run:
 	// the engine drains user-appended messages at every round boundary and
 	// persists accepted ones through this sink. A structural interface so

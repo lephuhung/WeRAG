@@ -12,6 +12,8 @@ import {
   formatCheckIsCurrent,
   FORMAT_CHECK_EXPECTED_MS,
   documentSelectionForDisplay,
+  documentFileTooLarge,
+  MAX_DOCUMENT_FILE_BYTES,
   selectionNeedsCollapse,
   openDocumentInNewSession,
   documentServerOrigin,
@@ -123,6 +125,19 @@ describe("openDocumentInNewSession", () => {
 });
 
 describe("selection quote helpers", () => {
+  it("documentSelectionForDisplay keeps the document the passage is in", () => {
+    assert.deepEqual(documentSelectionForDisplay({ text: " a ", document_id: "ws-2", document: "vb2 · b.docx" }), {
+      text: "a",
+      document_id: "ws-2",
+      document: "vb2 · b.docx",
+    });
+  });
+
+  it("documentFileTooLarge guards the 10 MB limit", () => {
+    assert.equal(documentFileTooLarge({ size: MAX_DOCUMENT_FILE_BYTES }), false);
+    assert.equal(documentFileTooLarge({ size: MAX_DOCUMENT_FILE_BYTES + 1 }), true);
+  });
+
   it("documentSelectionForDisplay keeps only non-empty text", () => {
     assert.equal(documentSelectionForDisplay(undefined), undefined);
     assert.equal(documentSelectionForDisplay({ text: "   " }), undefined);

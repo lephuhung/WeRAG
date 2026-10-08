@@ -58,8 +58,15 @@ type CreateDocumentWorkspaceRequest struct {
 	AttachmentID string `json:"attachment_id" binding:"required"`
 }
 
-// CreateDocumentWorkspace copies a .docx/.doc attachment into the session's
-// document workspace. POST /sessions/:session_id/document
+// documentIDParam is the :doc_id of the per-document routes; "" on the
+// legacy /document routes, which act on the session's active document.
+func documentIDParam(c *gin.Context) string {
+	return strings.TrimSpace(c.Param("doc_id"))
+}
+
+// CreateDocumentWorkspace opens a .docx/.doc attachment as a new editable
+// document of the session (a new editor tab), or shows the one already
+// opened from it. POST /sessions/:session_id/documents (and /document)
 func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	if !h.workspaces.Enabled() {
@@ -85,7 +92,7 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to open document")
 		return
 	}
-	h.precheck.Start(ctx, ws.TenantID, sessionID)
+	h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
 	view, err := h.view(c, ws)
 	if err != nil {
 		h.fail(c, err, "Failed to build editor config")
@@ -94,8 +101,79 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": view})
 }
 
-// GetDocumentWorkspace returns the workspace and a signed editor config.
-// GET /sessions/:id/document
+// ListDocumentWorkspaces returns the session's documents in tab order,
+// without editor configs (each tab loads its own), with the background
+// format check of each and the active document's ID.
+// GET /sessions/:id/documents
+func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	docs, err := h.workspaces.List(ctx, tenantID, sessionID)
+	if err != nil {
+		h.fail(c, err, "Failed to list documents")
+		return
+	}
+	out := make([]*types.DocumentWorkspaceView, 0, len(docs))
+	for _, ws := range docs {
+		out = append(out, &types.DocumentWorkspaceView{
+			DocumentWorkspace: ws, EditorKey: ws.EditorKey(), Handle: ws.Handle(),
+			FormatCheck: h.precheck.Status(ctx, ws.ID),
+		})
+	}
+	activeID := ""
+	if len(docs) > 0 {
+		if active, err := h.workspaces.GetBySession(ctx, tenantID, sessionID); err == nil && active != nil {
+			activeID = active.ID
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"documents": out, "active_id": activeID, "max_documents": types.MaxDocumentWorkspacesPerSession,
+		"max_file_bytes": types.MaxDocumentWorkspaceFileBytes, "max_media_bytes": types.MaxDocumentWorkspaceMediaBytes,
+	}})
+}
+
+// ActivateDocumentWorkspace records the tab the user switched to: the agent
+// treats it as the document a request without @ is about.
+// POST /sessions/:session_id/documents/:doc_id/activate
+func (h *DocumentWorkspaceHandler) ActivateDocumentWorkspace(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	ws, err := h.workspaces.Activate(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
+	if err != nil {
+		h.fail(c, err, "Failed to switch document")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"id": ws.ID}})
+}
+
+// DeleteDocumentWorkspace closes a document's tab (after a snapshot of its
+// current state). DELETE /sessions/:id/documents/:doc_id
+func (h *DocumentWorkspaceHandler) DeleteDocumentWorkspace(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	if err := h.workspaces.Remove(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c)); err != nil {
+		h.fail(c, err, "Failed to close document")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// GetDocumentWorkspace returns one document (the active one on the legacy
+// route) and a signed editor config.
+// GET /sessions/:id/documents/:doc_id (and /document)
 func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -103,14 +181,14 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	ws, err := h.workspaces.GetBySession(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
+	ws, err := h.workspaces.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
 	if err != nil {
 		h.fail(c, err, "Failed to load document")
 		return
 	}
 	if ws.Status == types.DocumentWorkspaceStatusOpen {
 		// a document opened before a server restart has no check yet
-		h.precheck.Start(ctx, ws.TenantID, sessionID)
+		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
 		// a save since the check: keep it or check again (format changed)
 		h.precheck.Refresh(ctx, ws)
 	}
@@ -123,7 +201,7 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 }
 
 // ForceSaveDocumentWorkspace asks the Document Server to flush unsaved edits.
-// POST /sessions/:session_id/document/forcesave
+// POST /sessions/:session_id/documents/:doc_id/forcesave (and /document/forcesave)
 func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -132,11 +210,11 @@ func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {
 		return
 	}
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
-	if err := h.workspaces.ForceSave(ctx, tenantID, sessionID); err != nil {
+	if err := h.workspaces.ForceSave(ctx, tenantID, sessionID, documentIDParam(c)); err != nil {
 		h.fail(c, err, "Failed to save document")
 		return
 	}
-	ws, err := h.workspaces.GetBySession(ctx, tenantID, sessionID)
+	ws, err := h.workspaces.Get(ctx, tenantID, sessionID, documentIDParam(c))
 	if err != nil {
 		h.fail(c, err, "Failed to load document")
 		return
@@ -145,7 +223,7 @@ func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {
 }
 
 // DownloadDocumentWorkspace streams the latest version of the document.
-// GET /sessions/:id/document/download
+// GET /sessions/:id/documents/:doc_id/download (and /document/download)
 func (h *DocumentWorkspaceHandler) DownloadDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -153,7 +231,7 @@ func (h *DocumentWorkspaceHandler) DownloadDocumentWorkspace(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	reader, ws, err := h.workspaces.OpenCurrent(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
+	reader, ws, err := h.workspaces.OpenCurrent(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
 	if err != nil {
 		h.fail(c, err, "Failed to open document")
 		return
@@ -176,7 +254,7 @@ type DocumentRevisionResponse struct {
 }
 
 // ListDocumentRevisions returns the snapshot timeline, newest first.
-// GET /sessions/:id/document/revisions
+// GET /sessions/:id/documents/:doc_id/revisions (and /document/revisions)
 func (h *DocumentWorkspaceHandler) ListDocumentRevisions(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -184,7 +262,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentRevisions(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	revisions, err := h.workspaces.ListRevisions(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
+	revisions, err := h.workspaces.ListRevisions(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
 	if err != nil {
 		h.fail(c, err, "Failed to list document revisions")
 		return
@@ -200,7 +278,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentRevisions(c *gin.Context) {
 
 // RestoreDocumentRevision makes a snapshot the current version; the new
 // editor_key makes the open editor reload.
-// POST /sessions/:session_id/document/revisions/:seq/restore
+// POST /sessions/:session_id/documents/:doc_id/revisions/:seq/restore (and /document/…)
 func (h *DocumentWorkspaceHandler) RestoreDocumentRevision(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -213,7 +291,7 @@ func (h *DocumentWorkspaceHandler) RestoreDocumentRevision(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("invalid revision number"))
 		return
 	}
-	ws, err := h.workspaces.Restore(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, seq)
+	ws, err := h.workspaces.Restore(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c), seq)
 	if err != nil {
 		h.fail(c, err, "Failed to restore document revision")
 		return
@@ -227,7 +305,7 @@ type SnapshotDocumentWorkspaceRequest struct {
 }
 
 // SnapshotDocumentWorkspace saves the editor and records a manual snapshot.
-// POST /sessions/:session_id/document/snapshot
+// POST /sessions/:session_id/documents/:doc_id/snapshot (and /document/snapshot)
 func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
@@ -242,7 +320,7 @@ func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
 			return
 		}
 	}
-	rev, err := h.workspaces.Snapshot(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+	rev, err := h.workspaces.Snapshot(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c),
 		req.Label, types.DocumentRevisionSourceManual, 0)
 	if err != nil {
 		h.fail(c, err, "Failed to snapshot document")
@@ -288,7 +366,8 @@ func (h *DocumentWorkspaceHandler) view(c *gin.Context, ws *types.DocumentWorksp
 	}
 	view, err := h.workspaces.View(ctx, ws, userID, userName, editorLang(c.GetHeader("Accept-Language")))
 	if err == nil && view != nil {
-		view.FormatCheck = h.precheck.Status(ctx, ws.SessionID)
+		view.Handle = ws.Handle()
+		view.FormatCheck = h.precheck.Status(ctx, ws.ID)
 	}
 	return view, err
 }

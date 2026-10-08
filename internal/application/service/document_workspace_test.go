@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -31,33 +32,98 @@ const dwTestSecret = "test-onlyoffice-secret"
 type dwFakeRepo struct {
 	mu   sync.Mutex
 	rows map[string]types.DocumentWorkspace
+	// maxPos is the highest position ever used per session (deleted rows
+	// included), like NextPosition on the real table.
+	maxPos map[string]int
 }
 
-func newDWFakeRepo() *dwFakeRepo { return &dwFakeRepo{rows: map[string]types.DocumentWorkspace{}} }
+func newDWFakeRepo() *dwFakeRepo {
+	return &dwFakeRepo{rows: map[string]types.DocumentWorkspace{}, maxPos: map[string]int{}}
+}
 
 func (r *dwFakeRepo) Create(_ context.Context, ws *types.DocumentWorkspace) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, row := range r.rows {
-		if row.SessionID == ws.SessionID {
+		if row.SessionID == ws.SessionID && ws.AttachmentID != "" && row.AttachmentID == ws.AttachmentID {
 			return errors.New("UNIQUE constraint failed")
 		}
 	}
 	_ = ws.BeforeCreate(nil)
 	r.rows[ws.ID] = *ws
+	if ws.Position > r.maxPos[ws.SessionID] {
+		r.maxPos[ws.SessionID] = ws.Position
+	}
 	return nil
 }
 
+// GetBySession returns the most recently activated row of the session.
 func (r *dwFakeRepo) GetBySession(_ context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var best *types.DocumentWorkspace
+	for _, row := range r.rows {
+		if row.TenantID != tenantID || row.SessionID != sessionID {
+			continue
+		}
+		cp := row
+		if best == nil || activeAfter(&cp, best) {
+			best = &cp
+		}
+	}
+	return best, nil
+}
+
+func activeAfter(a, b *types.DocumentWorkspace) bool {
+	switch {
+	case a.ActiveAt != nil && b.ActiveAt == nil:
+		return true
+	case a.ActiveAt == nil && b.ActiveAt != nil:
+		return false
+	case a.ActiveAt != nil && !a.ActiveAt.Equal(*b.ActiveAt):
+		return a.ActiveAt.After(*b.ActiveAt)
+	}
+	return a.Position > b.Position
+}
+
+func (r *dwFakeRepo) ListBySession(_ context.Context, tenantID uint64, sessionID string) ([]*types.DocumentWorkspace, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*types.DocumentWorkspace
 	for _, row := range r.rows {
 		if row.TenantID == tenantID && row.SessionID == sessionID {
 			cp := row
-			return &cp, nil
+			out = append(out, &cp)
 		}
 	}
-	return nil, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
+	return out, nil
+}
+
+func (r *dwFakeRepo) NextPosition(_ context.Context, _ uint64, sessionID string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maxPos[sessionID] + 1, nil
+}
+
+func (r *dwFakeRepo) SetActive(_ context.Context, id string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row, ok := r.rows[id]
+	if ok {
+		row.ActiveAt = &at
+		r.rows[id] = row
+	}
+	return nil
+}
+
+func (r *dwFakeRepo) DeleteByID(_ context.Context, tenantID uint64, sessionID, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if row, ok := r.rows[id]; ok && row.TenantID == tenantID && row.SessionID == sessionID {
+		delete(r.rows, id)
+	}
+	return nil
 }
 
 func (r *dwFakeRepo) GetByID(_ context.Context, id string) (*types.DocumentWorkspace, error) {
@@ -326,7 +392,7 @@ func (ds *fakeDocumentServer) serve(w http.ResponseWriter, r *http.Request) {
 		ds.mu.Lock()
 		ds.converts = append(ds.converts, body)
 		ds.mu.Unlock()
-		url := ds.put("converted.docx", []byte("PK-converted-docx"))
+		url := ds.put("converted.docx", dwConvertedDocx)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"endConvert": true, "fileUrl": url, "fileType": "docx", "percent": 100,
 		})
@@ -366,7 +432,7 @@ func newDWFixture(t *testing.T) *dwFixture {
 				"att-pdf":  {ID: "att-pdf", SessionID: "sess-1", FileName: "a.pdf", FileType: ".pdf"},
 			},
 			bytes: map[string][]byte{
-				"att-docx": []byte("PK-original-docx"),
+				"att-docx": dwOriginalDocx,
 				"att-doc":  []byte("legacy-doc-bytes"),
 				"att-pdf":  []byte("%PDF"),
 			},
@@ -423,13 +489,14 @@ func TestDocumentWorkspaceCreateFromDocxCopiesBytes(t *testing.T) {
 	require.Equal(t, "docx", ws.FileType)
 	require.Equal(t, types.DocumentWorkspaceStatusOpen, ws.Status)
 	require.Equal(t, ws.OriginalRef, ws.CurrentRef)
-	require.Equal(t, []byte("PK-original-docx"), fx.files.get(ws.CurrentRef))
+	require.Equal(t, dwOriginalDocx, fx.files.get(ws.CurrentRef))
 	require.False(t, fx.files.temp[ws.CurrentRef], "workspace copy must outlive the 24h attachment")
 	require.True(t, fx.catalog.bound(ws.OriginalRef, types.ResourceOwnerDocumentWorkspace, ws.ID))
 	require.Equal(t, ws.ID+"-0", ws.EditorKey())
 
-	_, err := fx.svc.CreateFromAttachment(context.Background(), 7, "sess-1", "user-1", "att-docx")
-	requireAppCode(t, err, apperrors.ErrConflict)
+	again, err := fx.svc.CreateFromAttachment(context.Background(), 7, "sess-1", "user-1", "att-docx")
+	require.NoError(t, err)
+	require.Equal(t, ws.ID, again.ID, "the same upload opens its existing document")
 
 	_, err = fx.svc.CreateFromAttachment(context.Background(), 7, "sess-2", "user-1", "att-pdf")
 	require.Error(t, err)
@@ -441,7 +508,7 @@ func TestDocumentWorkspaceCreateFromDocConverts(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "old.docx", ws.FileName)
-	require.Equal(t, []byte("PK-converted-docx"), fx.files.get(ws.CurrentRef))
+	require.Equal(t, dwConvertedDocx, fx.files.get(ws.CurrentRef))
 	require.Len(t, fx.ds.converts, 1)
 	conv := fx.ds.converts[0]
 	require.Equal(t, "doc", conv["filetype"])
@@ -511,17 +578,17 @@ func TestDocumentWorkspaceForceSaveNothingToSave(t *testing.T) {
 		require.Equal(t, ws.EditorKey(), body["key"])
 		return onlyOfficeCommandNoChanges
 	}
-	require.NoError(t, fx.svc.ForceSave(context.Background(), 7, "sess-1"))
+	require.NoError(t, fx.svc.ForceSave(context.Background(), 7, "sess-1", ""))
 
 	start := time.Now()
-	got, data, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", 5*time.Second)
+	got, data, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", "", 5*time.Second)
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), 2*time.Second, "error 4 means no callback is coming")
-	require.Equal(t, []byte("PK-original-docx"), data)
+	require.Equal(t, dwOriginalDocx, data)
 	require.Equal(t, 0, got.Revision)
 
 	fx.ds.onCommand = func(map[string]interface{}) int { return 5 }
-	require.Error(t, fx.svc.ForceSave(context.Background(), 7, "sess-1"))
+	require.Error(t, fx.svc.ForceSave(context.Background(), 7, "sess-1", ""))
 }
 
 func TestDocumentWorkspaceForceSavedCallbackSignalsWaiter(t *testing.T) {
@@ -540,7 +607,7 @@ func TestDocumentWorkspaceForceSavedCallbackSignalsWaiter(t *testing.T) {
 		return onlyOfficeCommandOK
 	}
 
-	got, data, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", 5*time.Second)
+	got, data, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", "", 5*time.Second)
 	require.NoError(t, err)
 	require.NoError(t, <-callbackErr)
 	require.Equal(t, []byte("PK-human-edits"), data)
@@ -551,7 +618,7 @@ func TestDocumentWorkspaceForceSavedCallbackSignalsWaiter(t *testing.T) {
 	require.Equal(t, types.DocumentWorkspaceStatusOpen, got.Status)
 
 	// AI edit on top of the saved bytes.
-	committed, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", got.Revision, []byte("PK-ai-edit"))
+	committed, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", "", got.Revision, []byte("PK-ai-edit"))
 	require.NoError(t, err)
 	require.Equal(t, 1, committed.Revision)
 	require.Equal(t, ws.ID+"-1", committed.EditorKey())
@@ -596,7 +663,7 @@ func TestDocumentWorkspaceStaleKeySaveIgnored(t *testing.T) {
 	fx := newDWFixture(t)
 	ws := fx.create(t)
 	staleKey := ws.EditorKey()
-	committed, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", 0, []byte("PK-ai"))
+	committed, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", "", 0, []byte("PK-ai"))
 	require.NoError(t, err)
 
 	url := fx.ds.put("stale.docx", []byte("PK-stale"))
@@ -614,9 +681,9 @@ func TestDocumentWorkspaceStaleKeySaveIgnored(t *testing.T) {
 func TestDocumentWorkspaceCommitConflict(t *testing.T) {
 	fx := newDWFixture(t)
 	fx.create(t)
-	_, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", 0, []byte("PK-a"))
+	_, err := fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", "", 0, []byte("PK-a"))
 	require.NoError(t, err)
-	_, err = fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", 0, []byte("PK-b"))
+	_, err = fx.svc.CommitExternalWrite(context.Background(), 7, "sess-1", "", 0, []byte("PK-b"))
 	requireAppCode(t, err, apperrors.ErrConflict)
 }
 
@@ -741,7 +808,7 @@ func TestDocumentWorkspaceConcurrentPrepareAllReleased(t *testing.T) {
 	results := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			_, _, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", 5*time.Second)
+			_, _, err := fx.svc.PrepareExternalWrite(context.Background(), 7, "sess-1", "", 5*time.Second)
 			results <- err
 		}()
 	}

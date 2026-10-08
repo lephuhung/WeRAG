@@ -72,7 +72,7 @@ func TestDocumentRevisionSnapshotDedupe(t *testing.T) {
 	ws := fx.create(t)
 	fx.ds.onCommand = func(map[string]interface{}) int { return onlyOfficeCommandNoChanges }
 
-	first, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "Bản đầu", types.DocumentRevisionSourceManual, time.Second)
+	first, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "", "Bản đầu", types.DocumentRevisionSourceManual, time.Second)
 	require.NoError(t, err)
 	require.Equal(t, 1, first.Seq)
 	require.Equal(t, ws.CurrentRef, first.Ref)
@@ -80,7 +80,7 @@ func TestDocumentRevisionSnapshotDedupe(t *testing.T) {
 	require.Equal(t, types.DocumentRevisionSourceManual, first.Source)
 
 	// Nothing changed: the same row comes back.
-	again, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "AI: sửa điều 3", types.DocumentRevisionSourceAI, time.Second)
+	again, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "", "AI: sửa điều 3", types.DocumentRevisionSourceAI, time.Second)
 	require.NoError(t, err)
 	require.Equal(t, first.ID, again.ID)
 	require.Len(t, fx.revs.rows, 1)
@@ -89,7 +89,7 @@ func TestDocumentRevisionSnapshotDedupe(t *testing.T) {
 	last := fx.ds.commands[len(fx.ds.commands)-1]
 	require.Equal(t, "werag:"+ws.ID+"|ai:AI: sửa điều 3", last["userdata"])
 
-	_, err = fx.svc.Snapshot(context.Background(), 7, "sess-1", "x", "bogus", time.Second)
+	_, err = fx.svc.Snapshot(context.Background(), 7, "sess-1", "", "x", "bogus", time.Second)
 	requireAppCode(t, err, apperrors.ErrBadRequest)
 }
 
@@ -107,7 +107,7 @@ func TestDocumentRevisionSnapshotAfterForceSave(t *testing.T) {
 		return onlyOfficeCommandOK
 	}
 
-	rev, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "Trước khi AI sửa", types.DocumentRevisionSourceAI, 5*time.Second)
+	rev, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "", "Trước khi AI sửa", types.DocumentRevisionSourceAI, 5*time.Second)
 	require.NoError(t, err)
 	got, _ := fx.repo.GetByID(context.Background(), ws.ID)
 	require.Equal(t, got.CurrentRef, rev.Ref, "snapshot points at the freshly saved file")
@@ -142,7 +142,7 @@ func TestDocumentRevisionCallbackUserdataLabel(t *testing.T) {
 	cb = &types.OnlyOfficeCallback{Key: ws.EditorKey(), Status: 2, URL: url}
 	require.NoError(t, fx.svc.HandleCallback(context.Background(), fx.ticket(t, ws), dwBearer(t, dwTestSecret, cb), cb))
 
-	list, err := fx.svc.ListRevisions(context.Background(), 7, "sess-1")
+	list, err := fx.svc.ListRevisions(context.Background(), 7, "sess-1", "")
 	require.NoError(t, err)
 	require.Len(t, list, 3)
 	require.Equal(t, []int{3, 2, 1}, []int{list[0].Seq, list[1].Seq, list[2].Seq}, "newest first")
@@ -160,7 +160,7 @@ func TestDocumentRevisionRestoreRotatesKey(t *testing.T) {
 	fx := newDWFixture(t)
 	ws := fx.create(t)
 	fx.ds.onCommand = func(map[string]interface{}) int { return onlyOfficeCommandNoChanges }
-	original, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "Gốc", types.DocumentRevisionSourceManual, time.Second)
+	original, err := fx.svc.Snapshot(context.Background(), 7, "sess-1", "", "Gốc", types.DocumentRevisionSourceManual, time.Second)
 	require.NoError(t, err)
 
 	// The user edits in the editor (saved through a callback).
@@ -169,13 +169,13 @@ func TestDocumentRevisionRestoreRotatesKey(t *testing.T) {
 	require.NoError(t, fx.svc.HandleCallback(context.Background(), fx.ticket(t, ws), dwBearer(t, dwTestSecret, cb), cb))
 	edited, _ := fx.repo.GetByID(context.Background(), ws.ID)
 
-	restored, err := fx.svc.Restore(context.Background(), 7, "sess-1", original.Seq)
+	restored, err := fx.svc.Restore(context.Background(), 7, "sess-1", "", original.Seq)
 	require.NoError(t, err)
 	require.Equal(t, original.Ref, restored.CurrentRef)
 	require.Equal(t, 1, restored.Revision)
 	require.Equal(t, ws.ID+"-1", restored.EditorKey(), "new key makes the editor reload")
 
-	list, _ := fx.svc.ListRevisions(context.Background(), 7, "sess-1")
+	list, _ := fx.svc.ListRevisions(context.Background(), 7, "sess-1", "")
 	require.Len(t, list, 3)
 	require.Equal(t, "Khôi phục bản #1", list[0].Label)
 	require.Equal(t, types.DocumentRevisionSourceRestore, list[0].Source)
@@ -184,7 +184,7 @@ func TestDocumentRevisionRestoreRotatesKey(t *testing.T) {
 	require.Equal(t, types.DocumentRevisionSourceRestore, list[1].Source)
 	require.Equal(t, edited.CurrentRef, list[1].Ref, "the replaced edit stays restorable")
 
-	_, err = fx.svc.Restore(context.Background(), 7, "sess-1", 99)
+	_, err = fx.svc.Restore(context.Background(), 7, "sess-1", "", 99)
 	requireAppCode(t, err, apperrors.ErrNotFound)
 }
 

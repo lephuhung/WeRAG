@@ -1085,8 +1085,8 @@ func (s *agentService) registerTools(
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
 
-	// The document-assistant tools edit the session's one editable document;
-	// without a workspace they have nothing to work on and are not offered.
+	// The document-assistant tools edit the session's editable documents;
+	// without one they have nothing to work on and are not offered.
 	docWorkspace := s.sessionDocumentWorkspace(ctx, sessionID)
 	// The format check and the spellcheck may run on their own models
 	// (format_check_model_id / spellcheck_model_id), else on the run's.
@@ -1272,9 +1272,16 @@ func (s *agentService) registerTools(
 	case docWorkspace != nil:
 		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, formatModel, sessionID)
 		registry.RegisterTool(checkTool)
-		// the check takes about a minute; start it now so a format question
-		// later in the conversation is answered from its cache
-		checkTool.Prewarm(ctx)
+		// the check takes about a minute; start it now for every open
+		// document so a format question later in the conversation is
+		// answered from its cache
+		if tenantID, ok := types.TenantIDFromContext(ctx); ok {
+			if docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID); err == nil {
+				for _, d := range docs {
+					checkTool.ForDocument(d.ID).Prewarm(ctx)
+				}
+			}
+		}
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
 		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, formatModel, sessionID))
 	}

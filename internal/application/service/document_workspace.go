@@ -181,12 +181,21 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 	if tenantID == 0 || sessionID == "" || attachmentID == "" {
 		return nil, apperrors.NewBadRequestError("attachment_id is required")
 	}
-	existing, err := s.repo.GetBySession(ctx, tenantID, sessionID)
+	existing, err := s.repo.ListBySession(ctx, tenantID, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		return nil, apperrors.NewConflictError("session already has a document workspace")
+	for _, ws := range existing {
+		if ws.AttachmentID == attachmentID {
+			// opening the same upload again shows its tab
+			s.markActive(ctx, ws)
+			return ws, nil
+		}
+	}
+	if len(existing) >= types.MaxDocumentWorkspacesPerSession {
+		return nil, apperrors.NewConflictError(fmt.Sprintf(
+			"Cuộc hội thoại đã mở tối đa %d văn bản; hãy đóng bớt một văn bản trước khi mở thêm.",
+			types.MaxDocumentWorkspacesPerSession))
 	}
 	doc, err := s.attachments.Get(ctx, tenantID, sessionID, attachmentID)
 	if err != nil {
@@ -208,6 +217,9 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 	if err != nil {
 		return nil, fmt.Errorf("read attachment: %w", err)
 	}
+	if int64(len(data)) > types.MaxDocumentWorkspaceFileBytes {
+		return nil, checkDocumentWorkspaceSize(doc.FileName, data)
+	}
 	if strings.TrimSpace(fileName) == "" {
 		fileName = doc.FileName
 	}
@@ -221,34 +233,59 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 		}
 		fileName = strings.TrimSuffix(fileName, filepath.Ext(fileName)) + ".docx"
 	}
+	if err := checkDocumentWorkspaceSize(fileName, data); err != nil {
+		return nil, err
+	}
+	position, err := s.repo.NextPosition(ctx, tenantID, sessionID)
+	if err != nil {
+		return nil, err
+	}
 
 	ref, err := s.files.SaveBytes(ctx, data, tenantID, documentWorkspaceStorageName(wsID), false)
 	if err != nil {
 		return nil, fmt.Errorf("save document copy: %w", err)
 	}
+	now := time.Now()
 	ws := &types.DocumentWorkspace{
-		ID: wsID, TenantID: tenantID, SessionID: sessionID, UserID: userID,
+		ID: wsID, TenantID: tenantID, SessionID: sessionID, AttachmentID: attachmentID, Position: position,
+		ActiveAt: &now, UserID: userID,
 		OriginalRef: ref, CurrentRef: ref, FileName: fileName, FileType: "docx",
 		FileSize: int64(len(data)), Status: types.DocumentWorkspaceStatusOpen,
 	}
 	if err := s.repo.Create(ctx, ws); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") ||
 			strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return nil, apperrors.NewConflictError("session already has a document workspace")
+			return nil, apperrors.NewConflictError("this file is already open in the conversation")
 		}
 		return nil, err
 	}
 	s.bind(ctx, ref, ws.ID, types.ResourceRelationSourceFile)
 	s.bind(ctx, ref, ws.ID, types.ResourceRelationArtifact)
-	logger.Infof(ctx, "[DocumentWorkspace] created workspace=%s session=%s file=%s size=%d",
-		ws.ID, sessionID, secutils.SanitizeForLog(fileName), ws.FileSize)
+	logger.Infof(ctx, "[DocumentWorkspace] created workspace=%s session=%s position=%d file=%s size=%d",
+		ws.ID, sessionID, ws.Position, secutils.SanitizeForLog(fileName), ws.FileSize)
 	return ws, nil
 }
 
 func (s *documentWorkspaceService) GetBySession(
 	ctx context.Context, tenantID uint64, sessionID string,
 ) (*types.DocumentWorkspace, error) {
-	ws, err := s.repo.GetBySession(ctx, tenantID, sessionID)
+	return s.Get(ctx, tenantID, sessionID, "")
+}
+
+func (s *documentWorkspaceService) Get(
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
+) (*types.DocumentWorkspace, error) {
+	documentID = strings.TrimSpace(documentID)
+	var ws *types.DocumentWorkspace
+	var err error
+	if documentID == "" {
+		ws, err = s.repo.GetBySession(ctx, tenantID, sessionID)
+	} else {
+		ws, err = s.repo.GetByID(ctx, documentID)
+		if ws != nil && (ws.TenantID != tenantID || ws.SessionID != sessionID) {
+			ws = nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +293,63 @@ func (s *documentWorkspaceService) GetBySession(
 		return nil, apperrors.NewNotFoundError("Document workspace not found")
 	}
 	return ws, nil
+}
+
+func (s *documentWorkspaceService) List(
+	ctx context.Context, tenantID uint64, sessionID string,
+) ([]*types.DocumentWorkspace, error) {
+	return s.repo.ListBySession(ctx, tenantID, sessionID)
+}
+
+func (s *documentWorkspaceService) Activate(
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
+) (*types.DocumentWorkspace, error) {
+	if strings.TrimSpace(documentID) == "" {
+		return nil, apperrors.NewBadRequestError("document id is required")
+	}
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	s.markActive(ctx, ws)
+	return ws, nil
+}
+
+// markActive makes ws the session's active document (best effort: a failed
+// update only leaves another tab active for the agent).
+func (s *documentWorkspaceService) markActive(ctx context.Context, ws *types.DocumentWorkspace) {
+	now := time.Now()
+	if err := s.repo.SetActive(ctx, ws.ID, now); err != nil {
+		logger.Warnf(ctx, "[DocumentWorkspace] activate workspace=%s failed: %v", ws.ID, err)
+		return
+	}
+	ws.ActiveAt = &now
+}
+
+func (s *documentWorkspaceService) Remove(
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
+) error {
+	if strings.TrimSpace(documentID) == "" {
+		return apperrors.NewBadRequestError("document id is required")
+	}
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return err
+	}
+	// Keep the user's last edits in the timeline before the tab goes; the
+	// file itself stays in the resource catalog.
+	if s.revisions != nil {
+		if _, err := s.Snapshot(ctx, tenantID, sessionID, ws.ID, documentRevisionLabelClose,
+			types.DocumentRevisionSourceClose, 0); err != nil {
+			logger.Warnf(ctx, "[DocumentWorkspace] snapshot before closing workspace=%s failed: %v", ws.ID, err)
+		}
+	}
+	if err := s.repo.DeleteByID(ctx, tenantID, sessionID, ws.ID); err != nil {
+		return err
+	}
+	logger.Infof(ctx, "[DocumentWorkspace] closed workspace=%s session=%s file=%s",
+		ws.ID, sessionID, secutils.SanitizeForLog(ws.FileName))
+	return nil
 }
 
 func (s *documentWorkspaceService) View(
@@ -347,9 +441,9 @@ func (s *documentWorkspaceService) View(
 }
 
 func (s *documentWorkspaceService) OpenCurrent(
-	ctx context.Context, tenantID uint64, sessionID string,
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
 ) (io.ReadCloser, *types.DocumentWorkspace, error) {
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -364,11 +458,11 @@ func (s *documentWorkspaceService) OpenCurrent(
 // Saves and external writes
 // ---------------------------------------------------------------------------
 
-func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint64, sessionID string) error {
+func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint64, sessionID, documentID string) error {
 	if !s.Enabled() {
 		return apperrors.NewServiceUnavailableError("document editor is not configured")
 	}
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return err
 	}
@@ -422,9 +516,9 @@ func (s *documentWorkspaceService) forceSave(ctx context.Context, ws *types.Docu
 // rather than allowed to overwrite the AI edit). Closing the window would
 // need an editor lock, which ONLYOFFICE does not offer to the backend.
 func (s *documentWorkspaceService) PrepareExternalWrite(
-	ctx context.Context, tenantID uint64, sessionID string, wait time.Duration,
+	ctx context.Context, tenantID uint64, sessionID, documentID string, wait time.Duration,
 ) (*types.DocumentWorkspace, []byte, error) {
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -493,12 +587,12 @@ func (s *documentWorkspaceService) flushEditor(
 }
 
 func (s *documentWorkspaceService) CommitExternalWrite(
-	ctx context.Context, tenantID uint64, sessionID string, expectedRevision int, data []byte,
+	ctx context.Context, tenantID uint64, sessionID, documentID string, expectedRevision int, data []byte,
 ) (*types.DocumentWorkspace, error) {
 	if len(data) == 0 {
 		return nil, apperrors.NewBadRequestError("document is empty")
 	}
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}

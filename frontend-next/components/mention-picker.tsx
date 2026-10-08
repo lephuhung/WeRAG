@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiGet } from "@/lib/api-client";
+import { useT } from "@/lib/i18n";
 import { useChatContext, type MentionRequestItem, type MentionType } from "@/lib/chat-context";
 import { IconDoc } from "@/components/icons";
 
@@ -53,7 +54,7 @@ function TypeBadge({ fileType }: { fileType?: string }) {
   );
 }
 
-function useMentionData(open: boolean, keyword: string) {
+function useMentionData(open: boolean, keyword: string, documents: MentionRequestItem[]) {
   const ctx = useChatContext();
   const [items, setItems] = useState<PickerItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -133,22 +134,26 @@ function useMentionData(open: boolean, keyword: string) {
         .slice(0, 10)
         .map((s) => ({ id: s.name, name: s.name, type: "skill", skill_name: s.name, description: s.description }));
       if (seq.current !== my) return;
-      setItems([...kbItems, ...fileItems, ...tagItems, ...mcpItems, ...skillItems]);
+      const docItems: PickerItem[] = documents.filter((d) => match(d.name)).map((d) => ({ ...d, file_type: "docx" }));
+      setItems([...docItems, ...kbItems, ...fileItems, ...tagItems, ...mcpItems, ...skillItems]);
       setLoading(false);
     };
     void run();
-  }, [open, keyword, ctx.knowledgeBases, ctx.mcpServices, ctx.skills]);
+  }, [open, keyword, ctx.knowledgeBases, ctx.mcpServices, ctx.skills, documents]);
 
   return { items, loading };
 }
 
 const GROUP_LABEL: Record<MentionType, string> = {
+  document: "",
   kb: "Knowledge bases",
   file: "Files",
   tag: "Tags",
   mcp: "MCP services",
   skill: "Skills",
 };
+
+const NO_DOCUMENTS: MentionRequestItem[] = [];
 
 export function MentionPicker({
   open,
@@ -157,6 +162,7 @@ export function MentionPicker({
   onActiveIndex,
   onSelect,
   onClose,
+  documents = NO_DOCUMENTS,
 }: {
   open: boolean;
   keyword: string;
@@ -164,10 +170,13 @@ export function MentionPicker({
   onActiveIndex: (i: number) => void;
   onSelect: (item: MentionResolved) => void;
   onClose: () => void;
+  /** The session's open documents (document assistant), listed first. */
+  documents?: MentionRequestItem[];
 }) {
+  const { t } = useT();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const { items, loading } = useMentionData(open, keyword || search);
+  const { items, loading } = useMentionData(open, keyword || search, documents);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,7 +191,7 @@ export function MentionPicker({
   }, [activeIndex]);
 
   if (!open) return null;
-  const groups: MentionType[] = ["kb", "file", "tag", "mcp", "skill"];
+  const groups: MentionType[] = ["document", "kb", "file", "tag", "mcp", "skill"];
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -214,7 +223,9 @@ export function MentionPicker({
             if (rows.length === 0) return null;
             return (
               <div key={g}>
-                <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">{GROUP_LABEL[g]}</div>
+                <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">
+                  {g === "document" ? t("docws.mentionGroup") : GROUP_LABEL[g]}
+                </div>
                 {rows.map((item) => {
                   const idx = items.indexOf(item);
                   return (
@@ -227,7 +238,7 @@ export function MentionPicker({
                         idx === activeIndex ? "bg-surface-strong" : "hover:bg-surface-strong"
                       }`}
                     >
-                      {item.type === "file" ? (
+                      {item.type === "file" || item.type === "document" ? (
                         <TypeBadge fileType={item.file_type} />
                       ) : item.type === "kb" ? (
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">

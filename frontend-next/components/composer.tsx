@@ -43,6 +43,9 @@ export function Composer({
   autoFocus = false,
   compact = false,
   agentLockFileName = null,
+  documents = NO_DOCUMENT_MENTIONS,
+  documentMentions = NO_DOCUMENT_MENTIONS,
+  onDocumentMentionsChange,
 }: {
   sessionId?: string;
   value: string;
@@ -63,6 +66,11 @@ export function Composer({
   compact?: boolean;
   /** The conversation holds this open document: the mode picker is locked. */
   agentLockFileName?: string | null;
+  /** Document assistant: the session's open documents, offered first by @. */
+  documents?: MentionRequestItem[];
+  /** Documents named with @ for the next turn (sent as mentioned items). */
+  documentMentions?: MentionRequestItem[];
+  onDocumentMentionsChange?: (items: MentionRequestItem[]) => void;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -106,7 +114,9 @@ export function Composer({
   };
 
   const commitMention = (item: MentionRequestItem) => {
-    if (item.type === "kb") ctx.addKnowledgeBase(item.id);
+    if (item.type === "document") {
+      if (!documentMentions.some((d) => d.id === item.id)) onDocumentMentionsChange?.([...documentMentions, item]);
+    } else if (item.type === "kb") ctx.addKnowledgeBase(item.id);
     else if (item.type === "file") ctx.addFile(item.id, item.kb_id, item.name);
     else if (item.type === "tag" && item.kb_id) ctx.addTag({ id: item.id, name: item.name, kbId: item.kb_id, kbName: item.kb_name });
     else if (item.type === "mcp") ctx.addMCPService(item.id);
@@ -155,7 +165,9 @@ export function Composer({
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
   const websearchOn = settings.webSearchEnabled;
   const placeholder =
-    selectedAgent && !selectedAgent.is_builtin
+    documents.length > 1 && documentMentions.length === 0
+      ? t("docws.mentionHint")
+      : selectedAgent && !selectedAgent.is_builtin
       ? selectedAgent.description || t("composer.askAgent", { name: selectedAgent.name })
       : mentionItems.length > 0
         ? t("composer.askContext")
@@ -181,7 +193,7 @@ export function Composer({
     onSend({
       query: value.trim(),
       modelId: settings.selectedChatModelId || "",
-      mentionedItems: mentionItems,
+      mentionedItems: [...documentMentions, ...mentionItems],
       imageFiles: images.map((i) => i.file),
       attachments,
     });
@@ -244,6 +256,31 @@ export function Composer({
 
       {sendBlockMsg && <p className="caption text-error">{sendBlockMsg}</p>}
 
+      {documentMentions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {documentMentions.map((d) => (
+            <span
+              key={d.id}
+              className="flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[13px] font-medium text-ink"
+              title={d.name}
+            >
+              <IconDoc className="h-3.5 w-3.5 text-muted" />
+              <span className="max-w-[220px] truncate">@{d.name}</span>
+              <button
+                className="text-muted hover:text-ink"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDocumentMentionsChange?.(documentMentions.filter((x) => x.id !== d.id));
+                }}
+                aria-label={t("docws.mentionRemove", { name: d.name })}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <MentionChips />
 
       <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -264,9 +301,15 @@ export function Composer({
           onActiveIndex={setMentionIndex}
           onSelect={commitMention}
           onClose={() => setMentionOpen(false)}
+          documents={documents}
         />
         {/* count bridge for arrow-key clamp (picker owns the list) */}
-        <MentionCounter keyword={mentionKeyword} open={mentionOpen} onCount={setMentionItemsCount} />
+        <MentionCounter
+          keyword={mentionKeyword}
+          open={mentionOpen}
+          onCount={setMentionItemsCount}
+          extra={documents.length}
+        />
       </div>
 
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -370,7 +413,19 @@ export function Composer({
   );
 }
 
-function MentionCounter({ keyword, open, onCount }: { keyword: string; open: boolean; onCount: (n: number) => void }) {
+const NO_DOCUMENT_MENTIONS: MentionRequestItem[] = [];
+
+function MentionCounter({
+  keyword,
+  open,
+  onCount,
+  extra = 0,
+}: {
+  keyword: string;
+  open: boolean;
+  onCount: (n: number) => void;
+  extra?: number;
+}) {
   const { knowledgeBases, mcpServices, skills } = useChatContext();
   useEffect(() => {
     if (!open) return;
@@ -380,8 +435,9 @@ function MentionCounter({ keyword, open, onCount }: { keyword: string; open: boo
       knowledgeBases.filter((k) => match(k.name)).length +
         mcpServices.filter((m) => match(m.name)).length +
         skills.filter((s) => match(s.name)).length +
-        20 /* files+tags fetched remotely */,
+        20 /* files+tags fetched remotely */ +
+        extra /* open documents */,
     );
-  }, [keyword, open, knowledgeBases, mcpServices, skills, onCount]);
+  }, [keyword, open, knowledgeBases, mcpServices, skills, onCount, extra]);
   return null;
 }

@@ -131,6 +131,9 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// reads the selection inside it to edit only the highlighted passage,
 	// so it must travel with the run.
 	documentSelectionContextKey: true,
+	// Same for the documents the user named with @: the editing tools in
+	// the detached run refuse a document that was not named.
+	mentionedDocumentsContextKey: true,
 }
 
 // ContextKeysClonedAcrossDetach returns the keys logger.CloneContext carries

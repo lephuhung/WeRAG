@@ -124,7 +124,8 @@ func RegisterSessionRoutes(
 }
 
 // RegisterDocumentWorkspaceRoutes registers the document-assistant
-// workspace of a session (the .docx open in the embedded ONLYOFFICE editor).
+// workspaces of a session (the .docx files open in the embedded ONLYOFFICE
+// editor, one tab each).
 // Same guards as the attachment routes: Member + the API-key chat capability,
 // with per-session ownership enforced in the handler. Wildcard names follow
 // the per-verb radix trees of /sessions (POST uses :session_id, GET uses :id).
@@ -141,6 +142,19 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.GET("/:id/document/revisions", handler.ListDocumentRevisions)
 		sessions.POST("/:session_id/document/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/document/snapshot", handler.SnapshotDocumentWorkspace)
+
+		// Several documents per session (editor tabs): the legacy routes
+		// above act on the active document, these on one named document.
+		sessions.GET("/:id/documents", handler.ListDocumentWorkspaces)
+		sessions.POST("/:session_id/documents", handler.CreateDocumentWorkspace)
+		sessions.GET("/:id/documents/:doc_id", handler.GetDocumentWorkspace)
+		sessions.DELETE("/:id/documents/:doc_id", handler.DeleteDocumentWorkspace)
+		sessions.POST("/:session_id/documents/:doc_id/activate", handler.ActivateDocumentWorkspace)
+		sessions.POST("/:session_id/documents/:doc_id/forcesave", handler.ForceSaveDocumentWorkspace)
+		sessions.GET("/:id/documents/:doc_id/download", handler.DownloadDocumentWorkspace)
+		sessions.GET("/:id/documents/:doc_id/revisions", handler.ListDocumentRevisions)
+		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
+		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
 	}
 }
 

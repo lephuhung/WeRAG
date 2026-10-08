@@ -25,28 +25,96 @@ const (
 	openDocumentMatchRunes  = 8000
 )
 
-const openDocumentInstruction = "This is the current text of the Word document open in the editor next to this conversation. " +
+// openDocumentMinRunes is the least text each document gets when several
+// documents are injected in one turn (the budget above is split among them).
+const openDocumentMinRunes = 8000
+
+const openDocumentInstruction = "This is the current text of a Word document open in the editor next to this conversation. " +
 	"Answer questions about the document from this text. Names, unit codes and abbreviations that appear in it " +
 	"(for example a department code such as PA05) take their meaning from the document; do not ask the user to explain them. " +
 	"Paragraph numbers in [ ] are the indexes rewrite_paragraphs takes."
 
-// BuildOpenDocumentPrompt renders the current text of the session's editable
-// document as an <open_document> block for the agent's user turn, so a
-// question about the document is answered from it without a tool call. It
-// returns "" when the session has no document or the file cannot be read.
+const sessionDocumentsInstruction = "The conversation holds these Word documents, one editor tab each. " +
+	"Pass a document's handle (vb1, vb2, …) as the \"document\" argument of the document tools. " +
+	"Edit only a document the user named with @ (or selected text in) in this request; when the user asks for an edit " +
+	"without naming the document, do not edit — ask which document, and tell them to type @ in the chat box to pick it. " +
+	"Reading and comparing any of them needs no @."
+
+// BuildOpenDocumentPrompt renders the session's editable documents for the
+// agent's user turn: a <session_documents> index when there are several,
+// then the current text of the documents the user designated in this turn
+// (@-mentions and the selection's document, see namedDocuments) — or of the
+// active tab when none — as <open_document> blocks, so a question about a
+// document is answered without a tool call. It returns "" when the session
+// has no document or none can be read.
 func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, tenantID uint64, sessionID, query string) string {
 	if src == nil || tenantID == 0 || strings.TrimSpace(sessionID) == "" {
 		return ""
 	}
-	ws, err := src.GetBySession(ctx, tenantID, sessionID)
-	if err != nil || ws == nil {
+	docs, err := src.List(ctx, tenantID, sessionID)
+	if err != nil || len(docs) == 0 {
 		return ""
 	}
-	content, ws, err := readWorkspaceDocument(context.WithValue(ctx, types.TenantIDContextKey, tenantID), src, sessionID)
-	if err != nil {
-		logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s: %v", sessionID, err)
+	active, _ := src.GetBySession(ctx, tenantID, sessionID)
+	named := namedDocuments(ctx)
+	var chosen []*types.DocumentWorkspace
+	for _, d := range docs {
+		if named[d.ID] {
+			chosen = append(chosen, d)
+		}
+	}
+	if len(chosen) == 0 {
+		if active == nil {
+			active = docs[len(docs)-1]
+		}
+		chosen = []*types.DocumentWorkspace{active}
+	}
+
+	var sb strings.Builder
+	if len(docs) > 1 {
+		sb.WriteString("\n\n<session_documents>\n")
+		sb.WriteString("<instruction>" + sessionDocumentsInstruction + "</instruction>\n")
+		for _, d := range docs {
+			sb.WriteString("- " + escapeOpenDocument(DocumentLabel(d)))
+			if active != nil && d.ID == active.ID {
+				sb.WriteString(" (tab đang xem)")
+			}
+			if named[d.ID] {
+				sb.WriteString(" (người dùng gọi đích danh trong yêu cầu này)")
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("</session_documents>\n")
+	}
+
+	budget, matchBudget := openDocumentPromptRunes, openDocumentMatchRunes
+	if n := len(chosen); n > 1 {
+		budget = max(openDocumentPromptRunes/n, openDocumentMinRunes)
+		matchBudget = openDocumentMatchRunes / n
+	}
+	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+	rendered := 0
+	for _, d := range chosen {
+		content, ws, err := readWorkspaceDocument(readCtx, src, sessionID, d.ID)
+		if err != nil {
+			logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
+			continue
+		}
+		if block := renderOpenDocument(ws, content, query, budget, matchBudget); block != "" {
+			sb.WriteString(block)
+			rendered++
+		}
+	}
+	if rendered == 0 && len(docs) == 1 {
 		return ""
 	}
+	return sb.String()
+}
+
+// renderOpenDocument renders one document's text as an <open_document>
+// block: the paragraphs up to budget runes, then up to matchBudget runes of
+// later paragraphs naming a code from query.
+func renderOpenDocument(ws *types.DocumentWorkspace, content []byte, query string, budget, matchBudget int) string {
 	layout := docformat.InspectDocx(content)
 	if len(layout.Paragraphs) == 0 {
 		return ""
@@ -62,7 +130,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		}
 		line := fmt.Sprintf("[%d] %s\n", i, flat.Replace(text))
 		n := utf8.RuneCountInString(line)
-		if used+n > openDocumentPromptRunes {
+		if used+n > budget {
 			cutAt = i
 			break
 		}
@@ -95,7 +163,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			}
 			line := fmt.Sprintf("[%d] %s\n", i, flat.Replace(text))
 			n := utf8.RuneCountInString(line)
-			if extra+n > openDocumentMatchRunes {
+			if extra+n > matchBudget {
 				break
 			}
 			matched.WriteString(line)
@@ -104,7 +172,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "\n\n<open_document name=%q revision=\"%d\">\n", ws.FileName, ws.Revision)
+	fmt.Fprintf(&sb, "\n\n<open_document handle=%q name=%q revision=\"%d\">\n", ws.Handle(), ws.FileName, ws.Revision)
 	sb.WriteString("<instruction>" + openDocumentInstruction + "</instruction>\n")
 	sb.WriteString("<text>\n")
 	sb.WriteString(escapeOpenDocument(body.String()))
@@ -115,8 +183,8 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		sb.WriteString("</matching_paragraphs>\n")
 	}
 	if cutAt >= 0 {
-		fmt.Fprintf(&sb, "<truncated>The text above stops before paragraph %d of %d; read the rest with read_document_outline from=%d.</truncated>\n",
-			cutAt, len(layout.Paragraphs), cutAt)
+		fmt.Fprintf(&sb, "<truncated>The text above stops before paragraph %d of %d; read the rest with read_document_outline document=%s from=%d.</truncated>\n",
+			cutAt, len(layout.Paragraphs), ws.Handle(), cutAt)
 	}
 	sb.WriteString("</open_document>\n")
 	return sb.String()
@@ -125,7 +193,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 // escapeOpenDocument neutralises closing tags so document text cannot end
 // the block early.
 func escapeOpenDocument(s string) string {
-	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>"} {
+	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>"} {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s

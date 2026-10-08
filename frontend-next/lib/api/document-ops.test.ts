@@ -93,6 +93,21 @@ describe("opsBatchFromToolData", () => {
     assert.equal(opsBatchFromToolData("mark_passages", { ops_batch_id: "b", document_ops: [] }), null);
     assert.equal(opsBatchFromToolData(undefined, { tool_name: "mark_passages", document_ops: [{}] }), null);
   });
+
+  it("carries the target document and accepts check_spelling marks", () => {
+    const b = opsBatchFromToolData("check_spelling", {
+      ops_batch_id: "b3",
+      document_id: "ws-2",
+      document_ops: [{ op: "mark", anchor: { text: "x" }, text: "x", style: "underline" }],
+    });
+    assert.equal(b?.documentId, "ws-2");
+    assert.equal(b?.ops.length, 1);
+    const legacy = opsBatchFromToolData("mark_passages", {
+      ops_batch_id: "b4",
+      document_ops: [{ op: "mark", anchor: { text: "x" }, style: "underline" }],
+    });
+    assert.equal(legacy?.documentId, undefined);
+  });
 });
 
 describe("plugin messages", () => {

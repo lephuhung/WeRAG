@@ -1,12 +1,12 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
-import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
+import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
 import { chatErrorKey } from "@/lib/api/chat-errors";
 import {
@@ -19,7 +19,7 @@ import {
 } from "@/lib/api/document-workspace";
 import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
-import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
+import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { useAuth } from "@/lib/auth";
 import { Composer, type ComposerSend } from "@/components/composer";
@@ -41,7 +41,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose } from "@/components/icons";
+import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose, IconDoc } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
@@ -56,6 +56,8 @@ import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat
 import { copyToClipboard } from "@/lib/clipboard";
 
 type UiAttachment = { name: string; size?: number; title?: string; isImage?: boolean };
+
+const NO_SESSION_DOCS: SessionDocument[] = [];
 
 type UiMessage = {
   id: string;
@@ -75,6 +77,8 @@ type UiMessage = {
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
   document_selection?: DocumentSelection;
+  /** User turn: file names of the documents named with @ (document assistant). */
+  document_mentions?: string[];
   /** Tool/skill-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];
   /** History `is_completed`, or set when a live turn ends via a complete
@@ -216,6 +220,20 @@ function attachmentsFromHistory(m: ChatMessage): UiAttachment[] | undefined {
   return all.length > 0 ? all : undefined;
 }
 
+// Documents named with @ in a stored user turn.
+function documentMentionsFromHistory(m: ChatMessage): string[] | undefined {
+  const names = (m.mentioned_items ?? [])
+    .filter((it) => it.type === "document" && it.name)
+    .map((it) => it.name!);
+  return names.length > 0 ? names : undefined;
+}
+
+/* "vb2 · Tờ trình.docx" (stored selection label) → "Tờ trình.docx". */
+function documentNameOfLabel(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  return label.replace(/^vb\d+\s*·\s*/, "") || undefined;
+}
+
 function fileToDataUri(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -235,9 +253,13 @@ function SelectionQuote({ selection }: { selection: DocumentSelection }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
   const collapsible = selectionNeedsCollapse(selection.text);
+  const docName = documentNameOfLabel(selection.document);
   return (
     <figure className="mb-1.5 max-w-[80%] self-end rounded-lg bg-surface-strong/60 px-3 py-2">
-      <figcaption className="caption-uppercase mb-1 text-muted-soft">{t("docws.selectionLabel").replace(/:\s*$/, "")}</figcaption>
+      <figcaption className="caption-uppercase mb-1 truncate text-muted-soft" title={docName}>
+        {t("docws.selectionLabel").replace(/:\s*$/, "")}
+        {docName ? ` · ${docName}` : ""}
+      </figcaption>
       <blockquote
         className={`border-l-2 border-hairline-strong pl-2.5 text-[12.5px] leading-relaxed text-muted break-words whitespace-pre-wrap ${
           collapsible && !expanded ? "line-clamp-4" : ""
@@ -299,6 +321,20 @@ const UserMessageBubble = memo(function UserMessageBubble({
                 }}
               />
               <span className="max-w-[180px] truncate">{a.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {(message.document_mentions?.length ?? 0) > 0 && (
+        <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
+          {message.document_mentions!.map((name, i) => (
+            <span
+              key={`${name}-${i}`}
+              title={name}
+              className="flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[12px] font-medium text-ink"
+            >
+              <IconDoc className="h-3.5 w-3.5 text-muted" />
+              <span className="max-w-[200px] truncate">@{name}</span>
             </span>
           ))}
         </div>
@@ -647,6 +683,31 @@ function ChatBody({ id }: { id: string }) {
   // value never leaks into the next chat. A session holding a document stays
   // with the document assistant: switching mode would drop the editor.
   const [sessionDoc, setSessionDoc] = useState<{ sessionId: string; fileName: string } | null>(null);
+  // The session's open documents (tabs) and the visible one, for the @
+  // picker; documents named with @ ride the next turn only.
+  const [sessionDocs, setSessionDocs] = useState<{ sessionId: string; docs: SessionDocument[]; activeId: string | null }>({
+    sessionId: "",
+    docs: [],
+    activeId: null,
+  });
+  const openDocs = sessionDocs.sessionId === id ? sessionDocs.docs : NO_SESSION_DOCS;
+  const noteSessionDocuments = useCallback(
+    (docs: SessionDocument[], activeId: string | null) => setSessionDocs({ sessionId: id, docs, activeId }),
+    [id],
+  );
+  const documentMentionOptions = useMemo<MentionRequestItem[]>(
+    () => openDocs.map((d) => ({ id: d.id, name: d.file_name, type: "document" as const })),
+    [openDocs],
+  );
+  const [docMentions, setDocMentions] = useState<MentionRequestItem[]>([]);
+  useEffect(() => setDocMentions([]), [id]);
+  // a closed tab cannot be named any more
+  useEffect(() => {
+    setDocMentions((prev) => {
+      const next = prev.filter((m) => openDocs.some((d) => d.id === m.id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [openDocs]);
   const docFileName = sessionDoc && sessionDoc.sessionId === id ? sessionDoc.fileName : null;
   const noteSessionDocument = useCallback(
     (fileName: string | null) => setSessionDoc(fileName ? { sessionId: id, fileName } : null),
@@ -675,9 +736,16 @@ function ChatBody({ id }: { id: string }) {
 
   // Background format check of the open document → progress ring in the
   // chat header; a finished result shows a dot until it is opened once.
-  const [formatCheck, setFormatCheck] = useState<DocumentFormatCheck | null>(null);
+  const [formatCheck, setFormatCheckState] = useState<DocumentFormatCheck | null>(null);
+  // the document (tab) the format check belongs to
+  const [formatCheckDoc, setFormatCheckDoc] = useState<SessionDocument | null>(null);
+  const setFormatCheck = useCallback((check: DocumentFormatCheck | null, doc: SessionDocument | null) => {
+    setFormatCheckState(check);
+    setFormatCheckDoc(doc);
+  }, []);
   const [seenFormatCheck, setSeenFormatCheck] = useState<string | null>(null);
-  const formatCheckKey = formatCheck && id !== "new" ? formatCheckResultKey(id, formatCheck) : null;
+  const formatCheckKey =
+    formatCheck && id !== "new" ? formatCheckResultKey(`${id}:${formatCheckDoc?.id ?? ""}`, formatCheck) : null;
   useEffect(() => {
     try {
       setSeenFormatCheck(window.localStorage.getItem(`docws.fcSeen.${id}`));
@@ -867,6 +935,7 @@ function ChatBody({ id }: { id: string }) {
                 m.role === "user" ? attachmentsFromHistory(m) : undefined,
               document_selection:
                 m.role === "user" ? documentSelectionForDisplay(m.document_selection) : undefined,
+              document_mentions: m.role === "user" ? documentMentionsFromHistory(m) : undefined,
               artifacts:
                 /* History rows omit `index` — assign array position so the
                  * download endpoint and image hydration can address them. */
@@ -1256,11 +1325,19 @@ function ChatBody({ id }: { id: string }) {
     ];
     stickBottomRef.current = true;
     // Same gate as the request body below: the selection rides document-assistant turns only.
-    const sentSelection =
+    const sentSelectionRaw =
       ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? documentSelectionForDisplay(pendingSelection) : undefined;
-    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection }, { id: asstId, role: "assistant", content: "", streaming: true }]);
+    // the bubble names the tab the passage came from
+    const selectionDoc = sentSelectionRaw?.document_id ? openDocs.find((d) => d.id === sentSelectionRaw.document_id) : undefined;
+    const sentSelection =
+      sentSelectionRaw && selectionDoc && openDocs.length > 1
+        ? { ...sentSelectionRaw, document: selectionDoc.file_name }
+        : sentSelectionRaw;
+    const sentDocMentions = s.mentionedItems.filter((it) => it.type === "document").map((it) => it.name);
+    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection, document_mentions: sentDocMentions.length > 0 ? sentDocMentions : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
+    setDocMentions([]);
 
     // Covered by the commit gate above (no await intervenes, so liveness
     // cannot change here): reaching this point means the turn is live, and
@@ -1835,7 +1912,17 @@ function ChatBody({ id }: { id: string }) {
             disabled={busy}
             onOpen={markFormatCheckSeen}
             onAsk={(question) =>
-              void sendRef.current({ query: question, attachments: [], imageFiles: [], mentionedItems: [], modelId: "" })
+              void sendRef.current({
+                query: question,
+                attachments: [],
+                imageFiles: [],
+                // the ring is about the visible tab: name it, so a fix is
+                // allowed on it when several documents are open
+                mentionedItems: formatCheckDoc
+                  ? [{ id: formatCheckDoc.id, name: formatCheckDoc.file_name, type: "document" }]
+                  : [],
+                modelId: "",
+              })
             }
           />
         )}
@@ -1899,7 +1986,13 @@ function ChatBody({ id }: { id: string }) {
           {isDocumentAssistant && pendingSelection && (
             <SelectionChip
               selection={pendingSelection}
-              label={tr("docws.selectionLabel")}
+              label={
+                openDocs.length > 1 && pendingSelection.document_id
+                  ? tr("docws.selectionLabelIn", {
+                      name: openDocs.find((d) => d.id === pendingSelection.document_id)?.file_name ?? "",
+                    })
+                  : tr("docws.selectionLabel")
+              }
               clearLabel={tr("docws.selectionClear")}
               onClear={() => setPendingSelection(null)}
             />
@@ -1924,6 +2017,9 @@ function ChatBody({ id }: { id: string }) {
             onPickFiles={() => attachments.trigger()}
             onPickImages={() => imageInputRef.current?.click()}
             compact={compact}
+            documents={isDocumentAssistant ? documentMentionOptions : undefined}
+            documentMentions={docMentions}
+            onDocumentMentionsChange={setDocMentions}
           />
           {!compact && (
             <p className="caption mt-3 text-center text-muted-soft">
@@ -1962,6 +2058,7 @@ function ChatBody({ id }: { id: string }) {
             onSelectionChange={setPendingSelection}
             onFormatCheckChange={setFormatCheck}
             onDocumentChange={noteSessionDocument}
+            onDocumentsChange={noteSessionDocuments}
           />
         ) : null
       }

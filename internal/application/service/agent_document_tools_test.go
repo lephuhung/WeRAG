@@ -23,7 +23,7 @@ func (f *fakeDocumentWorkspaces) Enabled() bool { return true }
 
 // OpenCurrent fails: the format check's background prewarm reads the
 // document when a model is available.
-func (f *fakeDocumentWorkspaces) OpenCurrent(context.Context, uint64, string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+func (f *fakeDocumentWorkspaces) OpenCurrent(context.Context, uint64, string, string) (io.ReadCloser, *types.DocumentWorkspace, error) {
 	return nil, nil, errors.New("no document in this test")
 }
 
@@ -32,6 +32,13 @@ func (f *fakeDocumentWorkspaces) GetBySession(context.Context, uint64, string) (
 		return nil, apperrors.NewNotFoundError("no workspace")
 	}
 	return f.ws, nil
+}
+
+func (f *fakeDocumentWorkspaces) List(context.Context, uint64, string) ([]*types.DocumentWorkspace, error) {
+	if f.ws == nil {
+		return nil, nil
+	}
+	return []*types.DocumentWorkspace{f.ws}, nil
 }
 
 func registerDocumentTools(t *testing.T, ws *types.DocumentWorkspace, allowed ...string) []string {

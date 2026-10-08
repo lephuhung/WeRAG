@@ -89,7 +89,7 @@ func defaultRevisionLabel(source string) string {
 }
 
 func (s *documentWorkspaceService) Snapshot(
-	ctx context.Context, tenantID uint64, sessionID, label, source string, wait time.Duration,
+	ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration,
 ) (*types.DocumentRevision, error) {
 	if s.revisions == nil {
 		return nil, apperrors.NewServiceUnavailableError("document revisions are not configured")
@@ -104,7 +104,7 @@ func (s *documentWorkspaceService) Snapshot(
 	if label == "" {
 		label = defaultRevisionLabel(source)
 	}
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +118,12 @@ func (s *documentWorkspaceService) Snapshot(
 }
 
 func (s *documentWorkspaceService) ListRevisions(
-	ctx context.Context, tenantID uint64, sessionID string,
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
 ) ([]*types.DocumentRevision, error) {
 	if s.revisions == nil {
 		return nil, nil
 	}
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +131,12 @@ func (s *documentWorkspaceService) ListRevisions(
 }
 
 func (s *documentWorkspaceService) Restore(
-	ctx context.Context, tenantID uint64, sessionID string, seq int,
+	ctx context.Context, tenantID uint64, sessionID, documentID string, seq int,
 ) (*types.DocumentWorkspace, error) {
 	if s.revisions == nil {
 		return nil, apperrors.NewServiceUnavailableError("document revisions are not configured")
 	}
-	ws, err := s.GetBySession(ctx, tenantID, sessionID)
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,11 +149,11 @@ func (s *documentWorkspaceService) Restore(
 	}
 	// Keep the state being replaced restorable, including unsaved editor
 	// changes.
-	if _, err := s.Snapshot(ctx, tenantID, sessionID, documentRevisionLabelBeforeRestore,
+	if _, err := s.Snapshot(ctx, tenantID, sessionID, ws.ID, documentRevisionLabelBeforeRestore,
 		types.DocumentRevisionSourceRestore, 0); err != nil {
 		return nil, fmt.Errorf("snapshot before restore: %w", err)
 	}
-	ws, err = s.GetBySession(ctx, tenantID, sessionID)
+	ws, err = s.Get(ctx, tenantID, sessionID, ws.ID)
 	if err != nil {
 		return nil, err
 	}
