@@ -25,7 +25,7 @@ const (
 	documentHeadLineRunes  = 200
 )
 
-const relevantPassagesInstruction = "No document is injected whole this turn. Each <relevant_passages> block holds the passages of one document " +
+const relevantPassagesInstruction = "Each <relevant_passages> block holds, for one document not given whole this turn, the passages " +
 	"that match the question by keyword (with the passage before and after), and, for a document whose card is still being made, its opening lines. " +
 	"[i] is a paragraph index of a working document (as rewrite_paragraphs takes) or a chunk/line number of a source. " +
 	"Answer from these passages and the cards when they suffice; otherwise search with find_in_documents or read a part with read_document_outline document=vbN from=<i>. " +

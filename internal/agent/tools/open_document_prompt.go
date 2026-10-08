@@ -39,8 +39,8 @@ const sessionDocumentsInstruction = "The conversation holds these documents, one
 	"Use the cards to tell which document and which section a question is about; a card says what a document contains, not its exact wording — quote the text, never the card. " +
 	"\"(hồ sơ đang được lập)\" means the card is still being made; \"(đã sửa sau lần đọc)\" means the document was edited after its card was made, so its text wins over the card. " +
 	"A working document (văn bản làm việc) is a Word file open in an editor tab, the only kind you may check or edit; " +
-	"the text of the one the user named (or of the conversation's only document) follows in an <open_document> block. " +
-	"Otherwise no document is given whole: the passages matching the question follow in <relevant_passages> blocks, " +
+	"the text of the one the user named (or of the only editor tab) follows in an <open_document> block. " +
+	"Other documents are not given whole: the passages matching the question follow in <relevant_passages> blocks, " +
 	"and find_in_documents searches every document for the rest. " +
 	"A source (tài liệu nguồn) is a file the user uploaded at chat: read-only, never edited or format-checked; search it with " +
 	"find_in_documents or read it with read_document_outline document=vbN, and cite it by file name or số ký hiệu when you use it. " +
@@ -76,12 +76,15 @@ func attachedSources(ctx context.Context) map[string]bool {
 // or any is a source, then text, by these rules:
 //
 //  1. A target the user designated in this turn (@-mention, the
-//     selection's document, see namedDocuments), or the only document of
-//     the session, is injected as an <open_document> block: its text up to
-//     openDocumentPromptRunes — with a selection, the window around the
-//     selected paragraphs plus the document's opening lines.
-//  2. Otherwise (several documents, or sources next to a tab, nothing
-//     named) no document is injected whole: the passages of every document
+//     selection's document, see namedDocuments), or the only editor tab
+//     (the only target, whatever sources sit next to it) unless a scope
+//     routes the turn elsewhere, is injected as an <open_document> block:
+//     its text up to openDocumentPromptRunes — with a selection, the
+//     window around the selected paragraphs plus the document's opening
+//     lines. Next to the only tab, the sources give their matching
+//     passages as in rule 2 (the ones named with @, if any).
+//  2. Otherwise (several tabs, nothing named) no document is injected
+//     whole: the passages of every document
 //     that match the question (see searchDocuments) follow as
 //     <relevant_passages> blocks under one shared budget, and a document
 //     without a card yet also shows its opening lines, so "do đơn vị nào
@@ -117,13 +120,21 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			chosen = append(chosen, d)
 		}
 	}
-	if len(chosen) == 0 && len(docs) == 1 && len(targets) == 1 {
-		chosen = targets // the only document
-	}
-	// the scope routes a turn that names nothing (rule 3)
+	// the scope routes a turn that names no tab (rule 3)
 	var scope *types.DocumentScope
 	if len(chosen) == 0 {
 		scope = liveScope(types.DocumentScopeFromContext(ctx), docs)
+	}
+	// the only tab is always present unless the scope leaves it out; the
+	// sources next to it are searched (rule 1)
+	var sources []*types.DocumentWorkspace
+	if len(chosen) == 0 && len(targets) == 1 && (scope == nil || scope.Includes(targets[0].ID)) {
+		chosen, scope = targets, nil
+		for _, d := range docs {
+			if d.IsSource() {
+				sources = append(sources, d)
+			}
+		}
 	}
 
 	var sb strings.Builder
@@ -170,6 +181,12 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	switch {
 	case len(chosen) > 0:
 		rendered += renderFullDocuments(&sb, ctx, readCtx, src, sessionID, chosen, query)
+		if len(sources) > 0 {
+			if block := relevantPassages(ctx, readCtx, src, sessionID, passageDocuments(sources, named), profiles, query); block != "" {
+				sb.WriteString(block)
+				rendered++
+			}
+		}
 	case scope != nil:
 		rendered += renderScope(&sb, ctx, readCtx, src, sessionID, docs, profiles, scope, query)
 	default:
