@@ -134,7 +134,9 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
         .slice(0, 10)
         .map((s) => ({ id: s.name, name: s.name, type: "skill", skill_name: s.name, description: s.description }));
       if (seq.current !== my) return;
-      const docItems: PickerItem[] = documents.filter((d) => match(d.name)).map((d) => ({ ...d, file_type: "docx" }));
+      const docItems: PickerItem[] = documents
+        .filter((d) => match(d.name))
+        .map((d) => ({ ...d, file_type: d.file_type || "docx" }));
       setItems([...docItems, ...kbItems, ...fileItems, ...tagItems, ...mcpItems, ...skillItems]);
       setLoading(false);
     };

@@ -18,9 +18,19 @@ export interface TemporaryAttachment {
   expires_at: string;
 }
 
+/** The source document a chat upload of the document assistant became. */
+export interface AttachmentSourceDocument {
+  id: string;
+  handle?: string;
+  role?: "target" | "source";
+  file_type?: string;
+}
+
 export interface AttachmentResponse {
   success: boolean;
   data: TemporaryAttachment;
+  /** Document assistant: the upload was recorded as a source document. */
+  document?: AttachmentSourceDocument;
 }
 
 export function uploadTemporaryAttachment(
@@ -29,11 +39,15 @@ export function uploadTemporaryAttachment(
   agentId?: string,
   parserEngine?: string,
   onProgress?: (percent: number) => void,
+  /** "target": the editor pane opens the upload as a tab right after, so the
+   * document assistant must not record it as a source first. */
+  documentRole?: "target",
 ): Promise<AttachmentResponse> {
   const form = new FormData();
   form.append("file", file);
   if (agentId) form.append("agent_id", agentId);
   if (parserEngine) form.append("parser_engine", parserEngine);
+  if (documentRole) form.append("document_role", documentRole);
   return apiUpload<AttachmentResponse>(
     `/api/v1/sessions/${sessionId}/attachments`,
     form,

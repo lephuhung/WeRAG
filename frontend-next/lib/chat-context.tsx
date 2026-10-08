@@ -31,6 +31,10 @@ export type MentionRequestItem = {
   kb_name?: string;
   service_id?: string;
   skill_name?: string;
+  /** Display only (document assistant @ picker): the document's type and a
+   * role label such as "Nguồn". */
+  file_type?: string;
+  description?: string;
 };
 
 export type SelectedTag = { id: string; name: string; kbId: string; kbName?: string };

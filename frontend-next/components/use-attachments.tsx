@@ -7,6 +7,7 @@ import {
   uploadTemporaryAttachment,
   type TemporaryAttachment,
 } from "@/lib/api/attachments";
+import { closeDocumentWorkspace } from "@/lib/api/document-workspace";
 import { useChatContext } from "@/lib/chat-context";
 
 /* Ports AttachmentUpload.vue: hidden file input + preview bar with
@@ -24,6 +25,9 @@ export type PendingAttachment = {
   status: "local" | "uploading" | "uploaded" | "processing" | "ready" | "failed";
   progress?: number;
   error?: string;
+  /** Document assistant: the source document the upload became (role
+   * "target" once opened for editing). */
+  source?: { id: string; handle?: string; role: "source" | "target" };
 };
 
 const MAX_FILES = 5;
@@ -87,7 +91,10 @@ export function useAttachments(sessionId?: string) {
         await deleteTemporaryAttachment(sessionId, data.id).catch(() => undefined);
         return;
       }
-      patch(localId, { documentId: data.id, status: data.status, progress: 100 });
+      const source = res.document?.id
+        ? { id: res.document.id, handle: res.document.handle, role: res.document.role === "target" ? ("target" as const) : ("source" as const) }
+        : undefined;
+      patch(localId, { documentId: data.id, status: data.status, progress: 100, source });
       if (data.status !== "ready" && data.status !== "failed") poll(localId, data.id);
     } catch (e) {
       patch(localId, { status: "failed", error: e instanceof Error ? e.message : "Upload failed" });
@@ -115,6 +122,8 @@ export function useAttachments(sessionId?: string) {
     timers.current.delete(localId);
     setItems((prev) => prev.filter((a) => a.localId !== localId));
     if (sessionId && found?.documentId) void deleteTemporaryAttachment(sessionId, found.documentId).catch(() => undefined);
+    // removed before sending: the source it became goes too (a tab stays)
+    if (sessionId && found?.source?.role === "source") void closeDocumentWorkspace(sessionId, found.source.id).catch(() => undefined);
   };
 
   const clear = () => {

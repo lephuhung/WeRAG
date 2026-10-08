@@ -14,6 +14,7 @@ import {
   getDocumentWorkspace,
   formatCheckResultKey,
   selectionNeedsCollapse,
+  setDocumentWorkspaceRole,
   type DocumentFormatCheck,
   type DocumentSelection,
 } from "@/lib/api/document-workspace";
@@ -22,8 +23,9 @@ import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/toast";
 import { Composer, type ComposerSend } from "@/components/composer";
-import { useAttachments, formatFileSize } from "@/components/use-attachments";
+import { useAttachments, formatFileSize, type PendingAttachment } from "@/components/use-attachments";
 import { useBrowserKnownOffline } from "@/components/use-browser-status";
 import {
   combinedCapError,
@@ -696,8 +698,17 @@ function ChatBody({ id }: { id: string }) {
     [id],
   );
   const documentMentionOptions = useMemo<MentionRequestItem[]>(
-    () => openDocs.map((d) => ({ id: d.id, name: d.file_name, type: "document" as const })),
-    [openDocs],
+    () =>
+      openDocs.map((d) => ({
+        id: d.id,
+        name: d.file_name,
+        type: "document" as const,
+        file_type: d.file_type,
+        description: [d.handle, d.role === "source" ? tr("docws.roleSource") : tr("docws.roleTarget")]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+    [openDocs, tr],
   );
   const [docMentions, setDocMentions] = useState<MentionRequestItem[]>([]);
   useEffect(() => setDocMentions([]), [id]);
@@ -815,6 +826,24 @@ function ChatBody({ id }: { id: string }) {
   const pendingKbIds = useRef<string[]>([]);
   const router = useRouter();
   const attachments = useAttachments(id === "new" ? undefined : id);
+  const toast = useToast();
+  // Document assistant: chat uploads become source documents; the pane
+  // reloads its list when one is recorded or opened for editing.
+  const [docsBump, setDocsBump] = useState(0);
+  const sourcesToken =
+    attachments.items.map((a) => (a.source ? `${a.source.id}:${a.source.role}` : "")).join("|") + `#${docsBump}`;
+  const openAttachmentForEditing = async (a: PendingAttachment) => {
+    if (!a.source || id === "new") return;
+    try {
+      await setDocumentWorkspaceRole(id, a.source.id, "target");
+      attachments.setItems((prev) =>
+        prev.map((x) => (x.localId === a.localId && x.source ? { ...x, source: { ...x.source, role: "target" } } : x)),
+      );
+      setDocsBump((n) => n + 1);
+    } catch (e) {
+      toast.error(`${tr("docws.roleChangeFailed")}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   // index.vue:1395 gates local_browser_enabled on !knownOffline so an offline
   // extension never claims browser sources.
   const browserKnownOffline = useBrowserKnownOffline();
@@ -2020,6 +2049,8 @@ function ChatBody({ id }: { id: string }) {
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
             documentMentions={docMentions}
             onDocumentMentionsChange={setDocMentions}
+            uploadsBecomeSources={isDocumentAssistant}
+            onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
           />
           {!compact && (
             <p className="caption mt-3 text-center text-muted-soft">
@@ -2059,6 +2090,7 @@ function ChatBody({ id }: { id: string }) {
             onFormatCheckChange={setFormatCheck}
             onDocumentChange={noteSessionDocument}
             onDocumentsChange={noteSessionDocuments}
+            refreshToken={sourcesToken}
           />
         ) : null
       }

@@ -1,8 +1,12 @@
-/* Document-assistant workspaces: up to 4 editable .docx files per chat
- * session, one ONLYOFFICE editor tab each.
+/* Document-assistant workspaces. Every document of a session has a role:
+ * a target (văn bản làm việc) is an editable .docx with its own ONLYOFFICE
+ * editor tab (up to 4); a source (tài liệu nguồn) is a file uploaded at chat
+ * (docx, pdf, xlsx, scans…, up to 10) that the assistant only looks up — no
+ * tab, never edited. Both share the vb1…vbN handles.
  *
- *   GET    /api/v1/sessions/:id/documents             → {documents, active_id, max_documents, …}
- *   POST   /api/v1/sessions/:id/documents             {attachment_id} → 201 view | 409 limit | 400 too large
+ *   GET    /api/v1/sessions/:id/documents             → {documents (both roles), active_id, max_documents, max_sources, …}
+ *   POST   /api/v1/sessions/:id/documents             {attachment_id} → 201 view (a source of that upload is promoted) | 409 limit | 400 too large
+ *   POST   /api/v1/sessions/:id/documents/:doc/role   {role: "target"|"source"} → view | 409 limit | 400 not Word
  *   GET    /api/v1/sessions/:id/documents/:doc        → 200 view | 404 none | 503 editor disabled
  *   DELETE /api/v1/sessions/:id/documents/:doc        → closes the tab
  *   POST   /api/v1/sessions/:id/documents/:doc/activate
@@ -17,6 +21,12 @@
 import { ApiError, apiDel, apiDownload, apiGet, apiPost, authHeaders } from "../api-client.ts";
 
 export type DocumentWorkspaceStatus = "open" | "closed";
+
+/** target: editor tab; source: chat upload, looked up only. */
+export type DocumentWorkspaceRole = "target" | "source";
+
+/** A source's parsed text: copied from the upload once parsed. */
+export type DocumentSourceTextStatus = "processing" | "ready" | "failed";
 
 export interface DocumentEditorBootstrap {
   /** Public base URL of the ONLYOFFICE Document Server (no trailing slash needed). */
@@ -34,7 +44,12 @@ export interface DocumentWorkspaceView {
   position?: number;
   attachment_id?: string;
   file_name: string;
-  file_type: "docx";
+  /** "docx" for a target; a source keeps its extension (pdf, xlsx, …). */
+  file_type: string;
+  /** Missing on servers that predate roles: a target. */
+  role?: DocumentWorkspaceRole;
+  /** Sources only. */
+  text_status?: DocumentSourceTextStatus;
   file_size: number;
   revision: number;
   status: DocumentWorkspaceStatus;
@@ -82,12 +97,14 @@ export interface DocumentWorkspaceList {
   documents: DocumentWorkspaceView[];
   active_id: string;
   max_documents: number;
+  max_sources: number;
   max_file_bytes: number;
   max_media_bytes: number;
 }
 
 /** Fallback limits (the server's are authoritative). */
 export const MAX_DOCUMENTS_PER_SESSION = 4;
+export const MAX_SOURCES_PER_SESSION = 10;
 export const MAX_DOCUMENT_FILE_BYTES = 10 * 1024 * 1024;
 
 export type DocumentWorkspaceErrorCode = "editor_disabled" | "already_exists" | "request_failed";
@@ -144,6 +161,7 @@ export async function listDocumentWorkspaces(sessionId: string): Promise<Documen
       documents: Array.isArray(d.documents) ? d.documents : [],
       active_id: typeof d.active_id === "string" ? d.active_id : "",
       max_documents: Number(d.max_documents) || MAX_DOCUMENTS_PER_SESSION,
+      max_sources: Number(d.max_sources) || MAX_SOURCES_PER_SESSION,
       max_file_bytes: Number(d.max_file_bytes) || MAX_DOCUMENT_FILE_BYTES,
       max_media_bytes: Number(d.max_media_bytes) || 0,
     };
@@ -169,6 +187,38 @@ export async function createDocumentWorkspace(
   } catch (err) {
     throw toWorkspaceError(err);
   }
+}
+
+/** Switches a document's role: "target" opens a Word source in the editor
+ * (it keeps its handle), "source" takes a tab out of the editor and keeps
+ * its text for lookups. A 409 (limit reached) surfaces as
+ * DocumentWorkspaceError{code:"already_exists"} with the server's message. */
+export async function setDocumentWorkspaceRole(
+  sessionId: string,
+  documentId: string,
+  role: DocumentWorkspaceRole,
+): Promise<DocumentWorkspaceView> {
+  try {
+    const res = await apiPost<Envelope<DocumentWorkspaceView>>(`${base(sessionId, documentId)}/role`, { role });
+    if (!res?.data) throw new DocumentWorkspaceError("request_failed", 0, "Empty workspace response");
+    return res.data;
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** A source document (chat upload); a row without a role is a target. */
+export function isSourceDocument(doc: { role?: string | null } | null | undefined): boolean {
+  return doc?.role === "source";
+}
+
+/** Splits the session's documents (handle order kept): targets are the
+ * editor tabs, sources the lookup-only uploads. */
+export function splitDocumentsByRole<T extends { role?: string | null }>(docs: T[]): { targets: T[]; sources: T[] } {
+  const targets: T[] = [];
+  const sources: T[] = [];
+  for (const d of docs) (isSourceDocument(d) ? sources : targets).push(d);
+  return { targets, sources };
 }
 
 /** Records the tab the user switched to (the agent's default document). */

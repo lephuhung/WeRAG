@@ -19,6 +19,8 @@ import {
   openDocumentInNewSession,
   documentServerOrigin,
   isWordAttachment,
+  isSourceDocument,
+  splitDocumentsByRole,
   parsePluginSelectionMessage,
   shouldRefreshEditor,
 } from "./document-workspace.ts";
@@ -248,5 +250,25 @@ describe("formatCheckInProgress", () => {
     assert.equal(formatCheckInProgress({ ...at, status: "running" }), true);
     assert.equal(formatCheckInProgress({ ...at, status: "ready" }), false);
     assert.equal(formatCheckInProgress({ ...at, status: "failed" }), false);
+  });
+});
+
+describe("document roles", () => {
+  it("a row without a role is a target", () => {
+    assert.equal(isSourceDocument({ role: "source" }), true);
+    assert.equal(isSourceDocument({ role: "target" }), false);
+    assert.equal(isSourceDocument({}), false);
+    assert.equal(isSourceDocument(null), false);
+  });
+  it("splits targets (tabs) from sources, keeping the handle order", () => {
+    const docs = [
+      { id: "a", role: "target" },
+      { id: "b", role: "source" },
+      { id: "c" },
+      { id: "d", role: "source" },
+    ];
+    const { targets, sources } = splitDocumentsByRole(docs);
+    assert.deepEqual(targets.map((d) => d.id), ["a", "c"]);
+    assert.deepEqual(sources.map((d) => d.id), ["b", "d"]);
   });
 });

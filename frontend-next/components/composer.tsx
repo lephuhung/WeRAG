@@ -7,6 +7,7 @@ import type { QuestionOrigin } from "@/lib/question-origin";
 import { MentionChips, MentionPicker } from "@/components/mention-picker";
 import { AgentLockNotice, AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
+import { isWordAttachment } from "@/lib/api/document-workspace";
 import { useT } from "@/lib/i18n";
 
 /* Ports Input-field.vue's composer: textarea + @mention picker + image/file
@@ -46,6 +47,8 @@ export function Composer({
   documents = NO_DOCUMENT_MENTIONS,
   documentMentions = NO_DOCUMENT_MENTIONS,
   onDocumentMentionsChange,
+  uploadsBecomeSources = false,
+  onOpenAttachmentForEditing,
 }: {
   sessionId?: string;
   value: string;
@@ -71,6 +74,10 @@ export function Composer({
   /** Documents named with @ for the next turn (sent as mentioned items). */
   documentMentions?: MentionRequestItem[];
   onDocumentMentionsChange?: (items: MentionRequestItem[]) => void;
+  /** Document assistant: a parsed upload becomes a source document. */
+  uploadsBecomeSources?: boolean;
+  /** Opens a Word source in the editor ("Mở để soạn thảo"). */
+  onOpenAttachmentForEditing?: (a: PendingAttachment) => void;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -229,7 +236,15 @@ export function Composer({
           {attachments.map((a) => (
             <div key={a.localId} className="flex items-center gap-3 rounded-[8px] border border-hairline px-3 py-2">
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-medium text-ink">{a.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[14px] font-medium text-ink">{a.name}</span>
+                  {a.source && (
+                    <span className="caption shrink-0 rounded-full bg-surface-strong px-1.5 py-px text-muted">
+                      {a.source.handle ? `${a.source.handle} · ` : ""}
+                      {a.source.role === "target" ? t("docws.roleTarget") : t("docws.roleSource")}
+                    </span>
+                  )}
+                </span>
                 <span className="caption text-muted">
                   {formatFileSize(a.size)} ·{" "}
                   {a.status === "uploading"
@@ -245,6 +260,11 @@ export function Composer({
               </span>
               {(a.status === "uploading" || a.status === "processing" || a.status === "uploaded") && (
                 <span className="caption text-muted">…</span>
+              )}
+              {a.source?.role === "source" && onOpenAttachmentForEditing && isWordAttachment(a.name) && (
+                <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => onOpenAttachmentForEditing(a)}>
+                  {t("docws.openForEditing")}
+                </button>
               )}
               <button className="text-muted hover:text-ink" onClick={() => onRemoveAttachment(a.localId)} aria-label="Remove file">
                 ×
@@ -342,7 +362,13 @@ export function Composer({
                 closePopups();
                 setAttachOpen(next);
               }}
-              title={sessionId ? "Attach files or images" : "Attach (upload after session is created)"}
+              title={
+                uploadsBecomeSources
+                  ? t("composer.uploadsBecomeSourcesHint")
+                  : sessionId
+                    ? "Attach files or images"
+                    : "Attach (upload after session is created)"
+              }
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
                 images.length + attachments.length > 0 ? "bg-surface-strong text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
@@ -366,7 +392,9 @@ export function Composer({
                     <IconDoc className="h-4 w-4 shrink-0" />
                     <span className="min-w-0 flex-1 leading-tight">
                       <span className="block whitespace-nowrap">Upload file</span>
-                      <span className="caption block whitespace-nowrap text-muted">PDF, DOCX, XLSX…</span>
+                      <span className={`caption block text-muted ${uploadsBecomeSources ? "" : "whitespace-nowrap"}`}>
+                        {uploadsBecomeSources ? t("composer.uploadsBecomeSources") : "PDF, DOCX, XLSX…"}
+                      </span>
                     </span>
                   </button>
                   <button

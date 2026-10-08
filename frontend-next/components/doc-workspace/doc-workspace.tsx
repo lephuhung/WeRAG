@@ -5,16 +5,13 @@ import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-dialog";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID } from "@/lib/chat-context";
-import {
-  listTemporaryAttachments,
-  uploadTemporaryAttachment,
-  type TemporaryAttachment,
-} from "@/lib/api/attachments";
+import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { createSession, deleteSession } from "@/lib/api/chat";
 import {
   DocumentWorkspaceError,
   MAX_DOCUMENTS_PER_SESSION,
   MAX_DOCUMENT_FILE_BYTES,
+  MAX_SOURCES_PER_SESSION,
   activateDocumentWorkspace,
   closeDocumentWorkspace,
   createDocumentWorkspace,
@@ -23,12 +20,15 @@ import {
   isWordAttachment,
   listDocumentWorkspaces,
   openDocumentInNewSession,
+  setDocumentWorkspaceRole,
+  splitDocumentsByRole,
   type DocumentFormatCheck,
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
 import { readAppliedBatches, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
-import { IconClose, IconDoc, IconPlus, IconRefresh } from "@/components/icons";
+import { IconBookmark, IconClose, IconDoc, IconPlus, IconRefresh } from "@/components/icons";
+import { formatFileSize } from "@/components/use-attachments";
 import { DocumentPane } from "./document-pane";
 
 type Phase =
@@ -39,7 +39,14 @@ type Phase =
   | { kind: "tabs" };
 
 /** A document of the session as the chat sees it (mention picker, lock). */
-export type SessionDocument = { id: string; file_name: string; handle?: string };
+export type SessionDocument = {
+  id: string;
+  file_name: string;
+  handle?: string;
+  /** "source": a chat upload, looked up only (no tab). */
+  role?: "target" | "source";
+  file_type?: string;
+};
 
 const WORD_ACCEPT = ".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";
 
@@ -55,10 +62,12 @@ function storage(): Storage | null {
   }
 }
 
-/* Left pane of the document assistant: the session's Word documents (up to
- * 4), one ONLYOFFICE editor tab each (DocumentPane). Lists the documents,
- * lets the user open more (upload, or an earlier upload of the session),
- * switch and close tabs, and routes each edit plan of the assistant to the
+/* Left pane of the document assistant: the session's working documents
+ * (targets, up to 4), one ONLYOFFICE editor tab each (DocumentPane), and its
+ * sources (chat uploads the assistant only looks up, up to 10), which never
+ * get a tab. Lists the documents, lets the user open more (upload, or a Word
+ * source "Mở để soạn thảo"), switch and close tabs, turn a tab into a source
+ * ("Chỉ dùng làm nguồn"), and routes each edit plan of the assistant to the
  * tab of its document — switching to that tab so the user sees the edit.
  *
  * Pre-session mode (`sessionId` undefined, new-chat page): shows the drop
@@ -76,6 +85,7 @@ export function DocWorkspace({
   onFormatCheckChange,
   onDocumentChange,
   onDocumentsChange,
+  refreshToken,
 }: {
   /** Undefined → pre-session mode (no chat session exists yet). */
   sessionId: string | undefined;
@@ -100,14 +110,21 @@ export function DocWorkspace({
   onFormatCheckChange?: (check: DocumentFormatCheck | null, doc: SessionDocument | null) => void;
   /** File name of a document the session holds (null: none) — locks the mode. */
   onDocumentChange?: (fileName: string | null) => void;
-  /** The session's documents in tab order and the visible one. */
+  /** The session's documents of both roles in handle order and the visible tab. */
   onDocumentsChange?: (docs: SessionDocument[], activeId: string | null) => void;
+  /** Changes when the chat recorded or promoted a source → reload the list. */
+  refreshToken?: string;
 }) {
   const { t } = useT();
   const toast = useToast();
   const confirm = useConfirm();
   const [phase, setPhase] = useState<Phase>(() => (sessionId ? { kind: "loading" } : { kind: "empty" }));
+  // docs: the targets (tabs); sources: the lookup-only uploads; allDocs:
+  // both in handle order (for the chat's @ picker).
   const [docs, setDocs] = useState<DocumentWorkspaceView[]>([]);
+  const [sources, setSources] = useState<DocumentWorkspaceView[]>([]);
+  const [allDocs, setAllDocs] = useState<DocumentWorkspaceView[]>([]);
+  const [maxSources, setMaxSources] = useState(MAX_SOURCES_PER_SESSION);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [maxDocs, setMaxDocs] = useState(MAX_DOCUMENTS_PER_SESSION);
   const [maxFileBytes, setMaxFileBytes] = useState(MAX_DOCUMENT_FILE_BYTES);
@@ -116,7 +133,6 @@ export function DocWorkspace({
   const [visited, setVisited] = useState<Set<string>>(() => new Set());
   // Latest view each pane reported (status, revision, format check).
   const [views, setViews] = useState<Record<string, DocumentWorkspaceView>>({});
-  const [attachments, setAttachments] = useState<TemporaryAttachment[]>([]);
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -133,17 +149,6 @@ export function DocWorkspace({
     };
   }, []);
 
-  const loadAttachments = useCallback(async () => {
-    if (!sessionId) return;
-    try {
-      const list = await listTemporaryAttachments(sessionId);
-      if (!aliveRef.current) return;
-      setAttachments(list.filter((a) => isWordAttachment(a.file_name, a.file_type) && a.status !== "failed"));
-    } catch {
-      setAttachments([]);
-    }
-  }, [sessionId]);
-
   /* Reload the list; `focus` makes that document the visible tab. */
   const loadDocs = useCallback(
     async (focus?: string) => {
@@ -154,20 +159,23 @@ export function DocWorkspace({
       try {
         const list = await listDocumentWorkspaces(sessionId);
         if (!aliveRef.current) return;
-        setDocs(list.documents);
+        const { targets, sources: srcs } = splitDocumentsByRole(list.documents);
+        setDocs(targets);
+        setSources(srcs);
+        setAllDocs(list.documents);
         setMaxDocs(list.max_documents);
+        setMaxSources(list.max_sources);
         setMaxFileBytes(list.max_file_bytes);
-        void loadAttachments();
-        if (list.documents.length === 0) {
+        if (targets.length === 0) {
           setActiveId(null);
           setPhase({ kind: "empty" });
           return;
         }
-        const ids = new Set(list.documents.map((d) => d.id));
+        const ids = new Set(targets.map((d) => d.id));
         setActiveId((cur) => {
           if (focus && ids.has(focus)) return focus;
           if (cur && ids.has(cur)) return cur;
-          return ids.has(list.active_id) ? list.active_id : list.documents[list.documents.length - 1].id;
+          return ids.has(list.active_id) ? list.active_id : targets[targets.length - 1].id;
         });
         setPhase({ kind: "tabs" });
       } catch (e) {
@@ -176,16 +184,17 @@ export function DocWorkspace({
         else setPhase({ kind: "error", message: errMessage(e) });
       }
     },
-    [sessionId, loadAttachments],
+    [sessionId],
   );
 
   // Fresh state per session.
   useEffect(() => {
     setDocs([]);
+    setSources([]);
+    setAllDocs([]);
     setActiveId(null);
     setVisited(new Set());
     setViews({});
-    setAttachments([]);
     setBusyMsg(null);
     setPhase(sessionId ? { kind: "loading" } : { kind: "empty" });
     void loadDocs();
@@ -195,6 +204,24 @@ export function DocWorkspace({
     if (!activeId) return;
     setVisited((prev) => (prev.has(activeId) ? prev : new Set(prev).add(activeId)));
   }, [activeId]);
+
+  // the chat recorded or promoted a source
+  const firstRefreshRef = useRef(true);
+  useEffect(() => {
+    if (firstRefreshRef.current) {
+      firstRefreshRef.current = false;
+      return;
+    }
+    void loadDocs();
+  }, [refreshToken, loadDocs]);
+
+  // a source is being read: poll until its text is in
+  const reading = sources.some((d) => d.text_status === "processing");
+  useEffect(() => {
+    if (!reading) return;
+    const timer = setTimeout(() => void loadDocs(), 3000);
+    return () => clearTimeout(timer);
+  }, [reading, sources, loadDocs]);
 
   const switchTo = useCallback(
     (docId: string) => {
@@ -215,10 +242,16 @@ export function DocWorkspace({
 
   const onDocumentsRef = useRef(onDocumentsChange);
   onDocumentsRef.current = onDocumentsChange;
-  const docsSig = docs.map((d) => `${d.id}:${d.file_name}`).join("|") + `#${activeId ?? ""}`;
+  const docsSig = allDocs.map((d) => `${d.id}:${d.file_name}:${d.role ?? ""}`).join("|") + `#${activeId ?? ""}`;
   useEffect(() => {
     onDocumentsRef.current?.(
-      docs.map((d) => ({ id: d.id, file_name: d.file_name, handle: d.handle })),
+      allDocs.map((d) => ({
+        id: d.id,
+        file_name: d.file_name,
+        handle: d.handle,
+        role: d.role === "source" ? "source" : "target",
+        file_type: d.file_type,
+      })),
       activeId,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -317,8 +350,13 @@ export function DocWorkspace({
           return res?.data?.id ?? "";
         },
         upload: async (sid, f) => {
-          const res = await uploadTemporaryAttachment(sid, f, BUILTIN_DOCUMENT_ASSISTANT_ID, "auto", (p) =>
-            setBusyMsg(t("docws.uploading", { percent: Math.round(p) })),
+          const res = await uploadTemporaryAttachment(
+            sid,
+            f,
+            BUILTIN_DOCUMENT_ASSISTANT_ID,
+            "auto",
+            (p) => setBusyMsg(t("docws.uploading", { percent: Math.round(p) })),
+            "target",
           );
           setBusyMsg(t("docws.opening"));
           return res?.data?.id ?? "";
@@ -370,8 +408,13 @@ export function DocWorkspace({
     }
     setBusyMsg(t("docws.uploading", { percent: 0 }));
     try {
-      const res = await uploadTemporaryAttachment(sessionId, file, BUILTIN_DOCUMENT_ASSISTANT_ID, "auto", (p) =>
-        setBusyMsg(t("docws.uploading", { percent: Math.round(p) })),
+      const res = await uploadTemporaryAttachment(
+        sessionId,
+        file,
+        BUILTIN_DOCUMENT_ASSISTANT_ID,
+        "auto",
+        (p) => setBusyMsg(t("docws.uploading", { percent: Math.round(p) })),
+        "target",
       );
       if (!res?.data?.id) throw new Error("upload returned no attachment id");
       await openAttachment(res.data.id);
@@ -409,8 +452,79 @@ export function DocWorkspace({
     }
   };
 
-  const openedAttachmentIds = new Set(docs.map((d) => d.attachment_id).filter(Boolean));
-  const unopened = attachments.filter((a) => !openedAttachmentIds.has(a.id));
+  /* ---------- roles ---------- */
+  const roleError = (e: unknown) => {
+    if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
+    else toast.error(`${t("docws.roleChangeFailed")}: ${errMessage(e)}`);
+  };
+
+  /* "Mở để soạn thảo": a Word source becomes a tab, keeping its handle. */
+  const openSource = async (src: DocumentWorkspaceView) => {
+    if (!sessionId) return;
+    setAddOpen(false);
+    if (atLimit) {
+      toast.error(t("docws.limitReached", { n: maxDocs }));
+      return;
+    }
+    setBusyMsg(t("docws.opening"));
+    try {
+      const v = await setDocumentWorkspaceRole(sessionId, src.id, "target");
+      await loadDocs(v.id);
+    } catch (e) {
+      roleError(e);
+    } finally {
+      setBusyMsg(null);
+    }
+  };
+
+  /* "Chỉ dùng làm nguồn": the tab leaves the editor, its text stays for lookups. */
+  const demoteTab = async (doc: DocumentWorkspaceView) => {
+    if (!sessionId) return;
+    const ok = await confirm({
+      title: t("docws.useAsSourceTitle"),
+      message: t("docws.useAsSourceConfirm", { name: doc.file_name }),
+      confirmLabel: t("docws.useAsSource"),
+    });
+    if (!ok) return;
+    try {
+      await setDocumentWorkspaceRole(sessionId, doc.id, "source");
+      setVisited((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+      if (activeId === doc.id) {
+        const rest = docs.filter((d) => d.id !== doc.id);
+        const idx = docs.findIndex((d) => d.id === doc.id);
+        const next = rest[Math.min(idx, rest.length - 1)];
+        if (next) switchTo(next.id);
+      }
+      await loadDocs();
+    } catch (e) {
+      roleError(e);
+    }
+  };
+
+  const removeSource = async (src: DocumentWorkspaceView) => {
+    if (!sessionId) return;
+    try {
+      await closeDocumentWorkspace(sessionId, src.id);
+      await loadDocs();
+    } catch (e) {
+      toast.error(`${t("docws.closeTabFailed")}: ${errMessage(e)}`);
+    }
+  };
+
+  const sourcesList = (
+    <SourcesList
+      sources={sources}
+      max={maxSources}
+      busy={Boolean(busyMsg)}
+      canOpen={!atLimit}
+      onOpen={(d) => void openSource(d)}
+      onRemove={(d) => void removeSource(d)}
+    />
+  );
 
   const fileInput = (
     <input
@@ -516,29 +630,7 @@ export function DocWorkspace({
             </>
           )}
         </div>
-        {unopened.length > 0 && (
-          <div className="mt-6 w-full max-w-[520px]">
-            <p className="caption-uppercase mb-2 text-muted-soft">{t("docws.existingTitle")}</p>
-            <ul className="flex flex-col gap-1.5">
-              {unopened.map((a) => (
-                <li key={a.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
-                  <IconDoc className="h-4 w-4 shrink-0 text-muted" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={a.file_name}>
-                    {a.file_name}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    disabled={Boolean(busyMsg)}
-                    onClick={() => void openAttachment(a.id)}
-                  >
-                    {t("docws.openThis")}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {sources.length > 0 && <div className="mt-6 w-full max-w-[520px]">{sourcesList}</div>}
       </div>
     );
   }
@@ -587,6 +679,20 @@ export function DocWorkspace({
                   className={`shrink-0 rounded p-0.5 text-muted hover:bg-hairline hover:text-ink ${
                     selected ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
                   }`}
+                  aria-label={t("docws.useAsSourceOf", { name: d.file_name })}
+                  title={t("docws.useAsSource")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void demoteTab(d);
+                  }}
+                >
+                  <IconBookmark className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  className={`shrink-0 rounded p-0.5 text-muted hover:bg-hairline hover:text-ink ${
+                    selected ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  }`}
                   aria-label={t("docws.closeTabOf", { name: d.file_name })}
                   title={t("docws.closeTab")}
                   onClick={(e) => {
@@ -604,20 +710,22 @@ export function DocWorkspace({
             <button
               type="button"
               className="btn btn-ghost btn-sm h-9 w-9 p-0"
-              disabled={Boolean(busyMsg) || atLimit}
+              disabled={Boolean(busyMsg) || (atLimit && sources.length === 0)}
               title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
               aria-label={t("docws.addDocument")}
-              onClick={() => (unopened.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
+              onClick={() => (sources.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
             >
               <IconPlus className="h-4 w-4" />
             </button>
             {addOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setAddOpen(false)} />
-                <div className="card absolute left-0 top-full z-[60] mt-1 w-[280px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+                <div className="card absolute left-0 top-full z-[60] mt-1 max-h-[70vh] w-[320px] overflow-y-auto p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong"
+                    disabled={atLimit}
+                    title={atLimit ? t("docws.limitReached", { n: maxDocs }) : undefined}
+                    className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong disabled:opacity-50 disabled:hover:bg-transparent"
                     onClick={() => {
                       setAddOpen(false);
                       fileInputRef.current?.click();
@@ -625,22 +733,7 @@ export function DocWorkspace({
                   >
                     <IconPlus className="h-3.5 w-3.5" /> {t("docws.uploadNew")}
                   </button>
-                  <p className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">{t("docws.existingTitle")}</p>
-                  {unopened.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong"
-                      title={a.file_name}
-                      onClick={() => {
-                        setAddOpen(false);
-                        void openAttachment(a.id);
-                      }}
-                    >
-                      <IconDoc className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      <span className="min-w-0 flex-1 truncate">{a.file_name}</span>
-                    </button>
-                  ))}
+                  <div className="px-1.5 pb-1 pt-2">{sourcesList}</div>
                 </div>
               </>
             )}
@@ -678,6 +771,77 @@ export function DocWorkspace({
 }
 
 const NO_BATCHES: (OpsBatch & { rejected?: OpsFailure[] })[] = [];
+
+/* "Tài liệu nguồn": the session's sources with type, size and reading
+ * state; a Word source can be opened for editing. */
+function SourcesList({
+  sources,
+  max,
+  busy,
+  canOpen,
+  onOpen,
+  onRemove,
+}: {
+  sources: DocumentWorkspaceView[];
+  max: number;
+  busy: boolean;
+  canOpen: boolean;
+  onOpen: (d: DocumentWorkspaceView) => void;
+  onRemove: (d: DocumentWorkspaceView) => void;
+}) {
+  const { t } = useT();
+  if (sources.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <p className="caption-uppercase text-muted-soft">{t("docws.sourcesTitle")}</p>
+        <span className="caption text-muted-soft">{t("docws.sourcesCount", { n: sources.length, max })}</span>
+      </div>
+      <p className="caption mb-2 text-muted">{t("docws.sourcesHint")}</p>
+      <ul className="flex flex-col gap-1.5">
+        {sources.map((d) => (
+          <li key={d.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
+            <IconDoc className="h-4 w-4 shrink-0 text-muted" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] text-ink" title={d.file_name}>
+                {d.handle ? `${d.handle} · ` : ""}
+                {d.file_name}
+              </span>
+              <span className="caption block truncate text-muted">
+                {(d.file_type || "").toUpperCase()} · {formatFileSize(d.file_size)}
+                {d.text_status === "processing"
+                  ? ` · ${t("docws.sourceReading")}`
+                  : d.text_status === "failed"
+                    ? ` · ${t("docws.sourceFailed")}`
+                    : ""}
+              </span>
+            </span>
+            {isWordAttachment(d.file_name, d.file_type) && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm shrink-0"
+                disabled={busy || !canOpen}
+                onClick={() => onOpen(d)}
+              >
+                {t("docws.openForEditing")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="shrink-0 rounded p-1 text-muted hover:bg-hairline hover:text-ink"
+              aria-label={t("docws.removeSourceOf", { name: d.file_name })}
+              title={t("docws.removeSource")}
+              disabled={busy}
+              onClick={() => onRemove(d)}
+            >
+              <IconClose className="h-3 w-3" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex h-full flex-col items-center justify-center p-6">{children}</div>;
