@@ -114,6 +114,12 @@ export function RewriteProposalCard({
         )}
       </div>
 
+      {live && (
+        <p className="caption mt-1 text-muted-soft">
+          {proposal.variants.length > 1 ? t("docws.proposal.hintMany") : t("docws.proposal.hintOne")}
+        </p>
+      )}
+
       {original && (
         <div className="mt-2">
           <span className="caption text-muted-soft">{t("docws.proposal.original")}</span>
