@@ -34,7 +34,8 @@ const openDocumentInstruction = "This is the current text of a Word document ope
 	"(for example a department code such as PA05) take their meaning from the document; do not ask the user to explain them. " +
 	"Paragraph numbers in [ ] are the indexes rewrite_paragraphs takes."
 
-const sessionDocumentsInstruction = "The conversation holds these Word documents, one editor tab each. " +
+const sessionDocumentsInstruction = "The conversation holds these Word documents, one editor tab each; the text of each follows in its own <open_document> block. " +
+	"When the user asks about several or all of them (\"hai văn bản này\", \"các văn bản\"), answer for every document, naming each. " +
 	"Pass a document's handle (vb1, vb2, …) as the \"document\" argument of the document tools. " +
 	"Edit only a document the user named with @ (or selected text in) in this request; when the user asks for an edit " +
 	"without naming the document, do not edit — ask which document, and tell them to type @ in the chat box to pick it. " +
@@ -64,10 +65,18 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		}
 	}
 	if len(chosen) == 0 {
+		// Nothing named: carry every open document, the viewed tab first, so a
+		// question about "hai văn bản này" is answered for each of them. The
+		// per-document budget below shrinks with the count (at most four).
 		if active == nil {
 			active = docs[len(docs)-1]
 		}
-		chosen = []*types.DocumentWorkspace{active}
+		chosen = append(chosen, active)
+		for _, d := range docs {
+			if d.ID != active.ID {
+				chosen = append(chosen, d)
+			}
+		}
 	}
 
 	var sb strings.Builder

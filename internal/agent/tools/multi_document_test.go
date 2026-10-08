@@ -98,8 +98,11 @@ func TestBuildOpenDocumentPromptListsDocumentsAndInjectsTheNamedOnes(t *testing.
 			t.Fatalf("prompt lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, `handle="vb2"`) {
-		t.Fatal("without @ only the active document's text is injected")
+	// Without @ every open document is carried, the viewed tab first, so a
+	// question about "hai văn bản này" can be answered for both.
+	i1, i2 := strings.Index(got, `handle="vb1"`), strings.Index(got, `handle="vb2"`)
+	if i1 < 0 || i2 < 0 || i2 < i1 {
+		t.Fatalf("without @ both documents are injected, the active one first:\n%s", got)
 	}
 
 	ctx := types.WithMentionedDocuments(context.Background(), []string{"ws-1", "ws-2"})
