@@ -17,6 +17,7 @@
  *   GET    /api/v1/sessions/:id/documents/:doc/revisions  → [{seq,label,source,created_at}]
  *   GET    /api/v1/sessions/:id/documents/:doc/format-check → {check, report}
  *   POST   /api/v1/sessions/:id/documents/:doc/revisions/:seq/restore → {revision, editor_key}
+ *   POST   /api/v1/sessions/:id/documents/:doc/proposals/apply {batch_id, variant_id} → {snapshot_seq}
  *
  * Every per-document call takes an optional documentId; without one it uses
  * the legacy /document routes, which act on the session's active document.
@@ -483,6 +484,25 @@ export async function listDocumentRevisions(sessionId: string, documentId?: stri
   try {
     const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId, documentId)}/revisions`);
     return Array.isArray(res?.data) ? res.data : [];
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Takes the AI snapshot (undo point) before the user's chosen version of a
+ * rewrite proposal is applied in the editor. */
+export async function applyRewriteProposal(
+  sessionId: string,
+  documentId: string,
+  batchId: string,
+  variantId: string,
+): Promise<{ snapshotSeq: number }> {
+  try {
+    const res = await apiPost<Envelope<{ snapshot_seq: number }>>(`${base(sessionId, documentId)}/proposals/apply`, {
+      batch_id: batchId,
+      variant_id: variantId,
+    });
+    return { snapshotSeq: Number(res?.data?.snapshot_seq) || 0 };
   } catch (err) {
     throw toWorkspaceError(err);
   }

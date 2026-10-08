@@ -156,6 +156,8 @@ export function opsBatchFromToolData(
 ): (OpsBatch & { rejected: OpsFailure[] }) | null {
   const name = toolName || (isStr(data?.tool_name) ? data.tool_name : "");
   if (!DOCUMENT_OPS_TOOLS.has(name) || !data) return null;
+  // a rewrite proposal applies only when the user picks a version
+  if (data.proposal === true) return null;
   const raw = data.document_ops;
   const batchId = isStr(data.ops_batch_id) ? data.ops_batch_id.trim() : "";
   if (!Array.isArray(raw) || raw.length === 0 || !batchId) return null;
@@ -169,6 +171,115 @@ export function opsBatchFromToolData(
   });
   const documentId = isStr(data.document_id) && data.document_id.trim() ? data.document_id.trim() : undefined;
   return documentId ? { batchId, ops, rejected, documentId } : { batchId, ops, rejected };
+}
+
+/* ---------- rewrite proposals ---------- */
+
+/* rewrite_paragraphs on a highlighted passage proposes (Data.proposal):
+ * nothing is applied until the user picks a version in the chat card. The
+ * card then asks the server for a snapshot (proposals/apply) and feeds the
+ * version's ops to the editor as the batch `${batchId}:${variantId}`. */
+
+export type RewriteVariant = { id: string; label: string; old: string; new: string; ops: DocumentOp[] };
+
+export type RewriteProposal = {
+  documentId: string;
+  /** "vb1 · file.docx" */
+  document: string;
+  batchId: string;
+  selectionText: string;
+  variants: RewriteVariant[];
+};
+
+/** The rewrite proposal a tool result carries, or null. A version whose ops
+ * do not all validate is dropped (it would apply only in part). */
+export function rewriteProposalFromToolData(
+  toolName: string | undefined,
+  data: Record<string, unknown> | undefined,
+): RewriteProposal | null {
+  const name = toolName || (isStr(data?.tool_name) ? data.tool_name : "");
+  if (name !== "rewrite_paragraphs" || !data || data.proposal !== true) return null;
+  const batchId = isStr(data.ops_batch_id) ? data.ops_batch_id.trim() : "";
+  const documentId = isStr(data.document_id) ? data.document_id.trim() : "";
+  if (!batchId || !documentId || !Array.isArray(data.variants)) return null;
+  const variants: RewriteVariant[] = [];
+  const seen = new Set<string>();
+  for (const v of data.variants) {
+    if (!isObj(v) || !isStr(v.id) || !v.id.trim() || seen.has(v.id) || !Array.isArray(v.ops) || v.ops.length === 0) continue;
+    if (v.ops.some((op) => opValidationError(op) !== null)) continue;
+    seen.add(v.id);
+    variants.push({
+      id: v.id,
+      label: isStr(v.label) && v.label.trim() ? v.label.trim() : v.id,
+      old: isStr(v.old) ? v.old : "",
+      new: isStr(v.new) ? v.new : "",
+      ops: v.ops as DocumentOp[],
+    });
+  }
+  if (variants.length === 0) return null;
+  return {
+    documentId,
+    document: isStr(data.document) ? data.document : "",
+    batchId,
+    selectionText: isStr(data.selection_text) ? data.selection_text : "",
+    variants,
+  };
+}
+
+/** Batch id of one version of a proposal, as the editor ledger records it. */
+export function proposalBatchId(batchId: string, variantId: string): string {
+  return `${batchId}:${variantId}`;
+}
+
+/** The edit batch that applies `variant` of `proposal` in its document. */
+export function proposalOpsBatch(proposal: RewriteProposal, variant: RewriteVariant): OpsBatch {
+  return { batchId: proposalBatchId(proposal.batchId, variant.id), ops: variant.ops, documentId: proposal.documentId };
+}
+
+/** Whether an editor outcome means the version landed (at least one op). */
+export function proposalOutcomeApplied(o: { kind: "result"; applied: number } | { kind: "timeout" }): boolean {
+  return o.kind === "result" && o.applied > 0;
+}
+
+/** Proposals of one session that the user applied: batchId → variantId. */
+const proposalsKey = (sessionId: string) => `werag.docops.proposals.${sessionId}`;
+
+export function readAppliedProposals(store: KV | null | undefined, sessionId: string): Record<string, string> {
+  try {
+    const raw = store?.getItem(proposalsKey(sessionId));
+    const v = raw ? JSON.parse(raw) : {};
+    if (!isObj(v)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, id] of Object.entries(v)) if (isStr(id)) out[k] = id;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function rememberAppliedProposal(
+  store: KV | null | undefined,
+  sessionId: string,
+  batchId: string,
+  variantId: string,
+): void {
+  try {
+    const all = readAppliedProposals(store, sessionId);
+    delete all[batchId];
+    all[batchId] = variantId;
+    const entries = Object.entries(all).slice(-LEDGER_MAX);
+    store?.setItem(proposalsKey(sessionId), JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    /* storage unavailable: the card keeps the state until a reload */
+  }
+}
+
+/** Batch id of the newest proposal of each document, in message order: only
+ * that card can apply; older ones are read-only. */
+export function newestProposalByDocument(proposals: Iterable<RewriteProposal>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of proposals) out.set(p.documentId, p.batchId);
+  return out;
 }
 
 /* ---------- plugin messages ---------- */

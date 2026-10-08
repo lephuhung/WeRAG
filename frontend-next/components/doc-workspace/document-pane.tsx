@@ -61,6 +61,7 @@ export function DocumentPane({
   onSelectionChange,
   onViewChange,
   onEditorDisabled,
+  onOpsOutcome: reportOpsOutcome,
 }: {
   sessionId: string;
   documentId: string;
@@ -74,6 +75,8 @@ export function DocumentPane({
   /** Latest server view of the document (status, revision, format check). */
   onViewChange: (view: DocumentWorkspaceView) => void;
   onEditorDisabled: () => void;
+  /** Every edit batch's outcome, also reported to the chat (proposal cards). */
+  onOpsOutcome?: (o: EditorOpsOutcome) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -309,6 +312,7 @@ export function DocumentPane({
   const fileName = view?.file_name ?? "";
   const onOpsOutcome = useCallback(
     (o: EditorOpsOutcome) => {
+      reportOpsOutcome?.(o);
       if (!aliveRef.current) return;
       const where = fileName ? `${fileName}: ` : "";
       if (o.kind === "timeout") {
@@ -321,7 +325,7 @@ export function DocumentPane({
         toast.info(where + t("docws.opsPartial", { n: o.applied, total: o.total, failed: o.failed.length, error: firstError }));
       else toast.error(where + t("docws.opsNone", { total: o.total, error: firstError }));
     },
-    [toast, t, fileName],
+    [toast, t, fileName, reportOpsOutcome],
   );
   const { pump: pumpOps, reset: resetOps } = useEditorOps({
     sessionId,

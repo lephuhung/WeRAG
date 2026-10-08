@@ -14,6 +14,7 @@ import { chatErrorKey } from "@/lib/api/chat-errors";
 import {
   clearDocumentScope,
   documentSelectionForDisplay,
+  applyRewriteProposal,
   getDocumentWorkspace,
   listDocumentWorkspaces,
   setDocumentScope,
@@ -38,7 +39,20 @@ import {
   type ScopeClarification,
 } from "@/lib/document-scope";
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
-import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
+import {
+  newestProposalByDocument,
+  opsBatchFromToolData,
+  proposalOpsBatch,
+  readAppliedBatches,
+  readAppliedProposals,
+  rememberAppliedProposal,
+  rewriteProposalFromToolData,
+  type OpsBatch,
+  type OpsFailure,
+  type RewriteProposal,
+  type RewriteVariant,
+} from "@/lib/api/document-ops";
+import { RewriteProposalCard, type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
@@ -98,6 +112,8 @@ type UiMessage = {
   abbreviationCandidates?: string[];
   /** Document assistant: the scope clarification card this turn answered with. */
   scopeCard?: ScopeClarification;
+  /** Document assistant: rewrite proposals of this turn (applied with a button). */
+  rewriteProposals?: UiRewriteProposal[];
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
@@ -113,6 +129,38 @@ type UiMessage = {
    * instead of read-only GET (Vue: onTurnComplete → ensure=true). */
   suggestionEnsure?: boolean;
 };
+
+type UiRewriteProposal = RewriteProposal & { appliedVariantId?: string };
+
+function safeLocalStorage(): Storage | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Adds a proposal to a message once; the applied version comes from the ledger. */
+function withRewriteProposal(
+  existing: UiRewriteProposal[] | undefined,
+  proposal: RewriteProposal,
+  applied: Record<string, string>,
+): UiRewriteProposal[] {
+  if (existing?.some((p) => p.batchId === proposal.batchId)) return existing;
+  const appliedVariantId = applied[proposal.batchId];
+  return [...(existing ?? []), appliedVariantId ? { ...proposal, appliedVariantId } : proposal];
+}
+
+function rewriteProposalsFromHistory(m: ChatMessage, applied: Record<string, string>): UiRewriteProposal[] | undefined {
+  let out: UiRewriteProposal[] | undefined;
+  for (const step of m.agent_steps ?? []) {
+    for (const call of step.tool_calls ?? []) {
+      const proposal = rewriteProposalFromToolData(call.name, call.result?.data as Record<string, unknown> | undefined);
+      if (proposal) out = withRewriteProposal(out, proposal, applied);
+    }
+  }
+  return out;
+}
 
 function extractPeopleRecords(data: unknown): PeopleRecord[] {
   if (!data || typeof data !== "object") return [];
@@ -559,6 +607,11 @@ const AssistantMessage = memo(function AssistantMessage({
   onAsk,
   onScopeAction,
   scopeCardActive = false,
+  activeProposalIds = "",
+  proposalsDisabled = false,
+  proposalOutcomeFor,
+  onProposalApply,
+  onProposalApplied,
   compact = false,
 }: {
   m: UiMessage;
@@ -567,6 +620,13 @@ const AssistantMessage = memo(function AssistantMessage({
   onScopeAction?: (action: ScopeCardAction) => Promise<void>;
   /** The card is live only on the last turn; older ones show their text. */
   scopeCardActive?: boolean;
+  /** Comma-joined batch ids of this turn's proposals that are the newest of
+   * their document (only those can apply). */
+  activeProposalIds?: string;
+  proposalsDisabled?: boolean;
+  proposalOutcomeFor?: (batchId: string) => ProposalOutcome | undefined;
+  onProposalApply?: (proposal: RewriteProposal, variant: RewriteVariant) => Promise<void>;
+  onProposalApplied?: (proposal: RewriteProposal, variantId: string) => void;
   /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
   compact?: boolean;
   sessionId: string;
@@ -630,6 +690,22 @@ const AssistantMessage = memo(function AssistantMessage({
         {!m.streaming && m.scopeCard && scopeCardActive && onScopeAction && (
           <DocumentScopeCard card={m.scopeCard} disabled={busy} onAction={onScopeAction} />
         )}
+        {!m.streaming &&
+          proposalOutcomeFor &&
+          onProposalApply &&
+          onProposalApplied &&
+          m.rewriteProposals?.map((p) => (
+            <RewriteProposalCard
+              key={p.batchId}
+              proposal={p}
+              appliedVariantId={p.appliedVariantId}
+              active={activeProposalIds.split(",").includes(p.batchId)}
+              disabled={proposalsDisabled}
+              outcomeFor={proposalOutcomeFor}
+              onApply={onProposalApply}
+              onApplied={onProposalApplied}
+            />
+          ))}
         {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
           <AbbreviationSuggestionCard
             candidates={m.abbreviationCandidates!}
@@ -723,6 +799,17 @@ function ChatBody({ id }: { id: string }) {
     if (!batch) return;
     setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
   };
+  // Rewrite proposals: the editor's outcome of each applied version (by its
+  // batch id "<proposal>:<variant>"), read by the proposal cards.
+  const [proposalOutcomes, setProposalOutcomes] = useState<Record<string, ProposalOutcome>>({});
+  const noteOpsOutcome = useCallback((o: ProposalOutcome) => {
+    if (!o.batchId.includes(":")) return;
+    setProposalOutcomes((prev) => ({ ...prev, [o.batchId]: o }));
+  }, []);
+  const proposalOutcomeFor = useCallback((batchId: string) => proposalOutcomes[batchId], [proposalOutcomes]);
+  /** The rewrite proposal a tool result carries, added to the turn's message. */
+  const proposalOfChunk = (c: StreamChunk): RewriteProposal | null =>
+    rewriteProposalFromToolData(c.tool_name, c.data as Record<string, unknown> | undefined);
   // The session's open document (file name), keyed by session so a stale
   // value never leaks into the next chat. A session holding a document stays
   // with the document assistant: switching mode would drop the editor.
@@ -751,6 +838,47 @@ function ChatBody({ id }: { id: string }) {
           .join(" · "),
       })),
     [openDocs, tr],
+  );
+  /* Applying a version of a rewrite proposal: snapshot on the server, then
+   * the version's ops go to the editor like any edit plan (DocWorkspace
+   * switches to the document's tab); the outcome comes back to the card. */
+  const applyProposal = useCallback(
+    async (proposal: RewriteProposal, variant: RewriteVariant) => {
+      if (id === "new") throw new Error(tr("docws.proposal.docClosed"));
+      if (!openDocs.some((d) => d.id === proposal.documentId && d.role !== "source")) {
+        throw new Error(tr("docws.proposal.docClosed"));
+      }
+      const batch = proposalOpsBatch(proposal, variant);
+      // sent before without landing (the editor skips a batch it has seen)
+      if (readAppliedBatches(safeLocalStorage(), id).includes(batch.batchId)) {
+        throw new Error(tr("docws.proposal.notFound"));
+      }
+      await applyRewriteProposal(id, proposal.documentId, proposal.batchId, variant.id);
+      setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
+    },
+    [id, openDocs, tr],
+  );
+  const markProposalApplied = useCallback(
+    (proposal: RewriteProposal, variantId: string) => {
+      rememberAppliedProposal(safeLocalStorage(), id, proposal.batchId, variantId);
+      setMessages((ms) =>
+        ms.map((msg) =>
+          msg.rewriteProposals?.some((p) => p.batchId === proposal.batchId)
+            ? {
+                ...msg,
+                rewriteProposals: msg.rewriteProposals.map((p) =>
+                  p.batchId === proposal.batchId ? { ...p, appliedVariantId: variantId } : p,
+                ),
+              }
+            : msg,
+        ),
+      );
+    },
+    [id],
+  );
+  const newestProposals = useMemo(
+    () => newestProposalByDocument(messages.flatMap((m) => m.rewriteProposals ?? [])),
+    [messages],
   );
   const docFileName = sessionDoc && sessionDoc.sessionId === id ? sessionDoc.fileName : null;
   const noteSessionDocument = useCallback(
@@ -975,6 +1103,7 @@ function ChatBody({ id }: { id: string }) {
     setBusy(false);
     setPendingSelection(null);
     setDocOpsBatches([]);
+    setProposalOutcomes({});
     setDocRecheck(0);
     docPaneBusyRef.current = false;
     // Leaving (or unmounting) a session whose turn is still generating: flag
@@ -1016,6 +1145,7 @@ function ChatBody({ id }: { id: string }) {
       .then((res) => {
         if (!alive) return;
         const rows = res.data ?? [];
+        const appliedProposals = readAppliedProposals(safeLocalStorage(), id);
         setMessages((prev) => {
           const streamingMsgs = prev.filter((m) => m.streaming);
           const mapped: UiMessage[] = rows.map((m, i) => {
@@ -1033,7 +1163,11 @@ function ChatBody({ id }: { id: string }) {
               ...(m.role === "assistant"
                 ? (() => {
                     const { card, steps } = takeScopeClarification(stepsFromHistory(m));
-                    return { steps: steps?.length ? steps : undefined, scopeCard: card ?? undefined };
+                    return {
+                      steps: steps?.length ? steps : undefined,
+                      scopeCard: card ?? undefined,
+                      rewriteProposals: rewriteProposalsFromHistory(m, appliedProposals),
+                    };
                   })()
                 : {}),
               agentDurationMs: m.agent_duration_ms || undefined,
@@ -1118,6 +1252,17 @@ function ChatBody({ id }: { id: string }) {
                 return;
               }
               noteDocOps(c);
+              const proposal = proposalOfChunk(c);
+              if (proposal) {
+                const applied = readAppliedProposals(safeLocalStorage(), id);
+                setMessages((m) =>
+                  m.map((msg) =>
+                    msg.assistantMessageId === inflightId
+                      ? { ...msg, rewriteProposals: withRewriteProposal(msg.rewriteProposals, proposal, applied) }
+                      : msg,
+                  ),
+                );
+              }
               const candidates = extractAbbreviationCandidates(c.data);
               if (candidates.length > 0) {
                 setMessages((m) =>
@@ -1668,7 +1813,20 @@ function ChatBody({ id }: { id: string }) {
           );
           return;
         }
-        if (kind === "tool_result") noteDocOps(c);
+        if (kind === "tool_result") {
+          noteDocOps(c);
+          const proposal = proposalOfChunk(c);
+          if (proposal) {
+            const applied = readAppliedProposals(safeLocalStorage(), id);
+            setMessages((m) =>
+              m.map((msg) =>
+                matchAssistant(msg)
+                  ? { ...msg, rewriteProposals: withRewriteProposal(msg.rewriteProposals, proposal, applied) }
+                  : msg,
+              ),
+            );
+          }
+        }
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
           toolName === "people_lookup" ? extractPeopleRecords(c.data) : [];
@@ -2156,6 +2314,14 @@ function ChatBody({ id }: { id: string }) {
                 onAsk={handleAskFollowUp}
                 onScopeAction={runScopeAction}
                 scopeCardActive={index === messages.length - 1}
+                activeProposalIds={(m.rewriteProposals ?? [])
+                  .filter((p) => newestProposals.get(p.documentId) === p.batchId)
+                  .map((p) => p.batchId)
+                  .join(",")}
+                proposalsDisabled={busy}
+                proposalOutcomeFor={proposalOutcomeFor}
+                onProposalApply={applyProposal}
+                onProposalApplied={markProposalApplied}
                 compact={compact}
               />
             ),
@@ -2302,6 +2468,7 @@ function ChatBody({ id }: { id: string }) {
             onDocumentChange={noteSessionDocument}
             onDocumentsChange={noteSessionDocuments}
             refreshToken={sourcesToken}
+            onOpsOutcome={noteOpsOutcome}
           />
         ) : null
       }

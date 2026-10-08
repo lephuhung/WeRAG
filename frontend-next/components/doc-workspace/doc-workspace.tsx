@@ -35,6 +35,7 @@ import {
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
 import { readAppliedBatches, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
+import type { EditorOpsOutcome } from "./use-editor-ops";
 import { IconBookmark, IconClose, IconDoc, IconPlus, IconRefresh } from "@/components/icons";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { formatFileSize } from "@/components/use-attachments";
@@ -97,6 +98,7 @@ export function DocWorkspace({
   onDocumentChange,
   onDocumentsChange,
   refreshToken,
+  onOpsOutcome,
 }: {
   /** Undefined → pre-session mode (no chat session exists yet). */
   sessionId: string | undefined;
@@ -129,6 +131,8 @@ export function DocWorkspace({
   onDocumentsChange?: (docs: SessionDocument[], activeId: string | null) => void;
   /** Changes when the chat recorded or promoted a source → reload the list. */
   refreshToken?: string;
+  /** Outcome of each edit batch in its editor (the chat's proposal cards). */
+  onOpsOutcome?: (o: EditorOpsOutcome) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -808,6 +812,7 @@ export function DocWorkspace({
                 onSelectionChange={onSelectionChange}
                 onViewChange={onPaneView}
                 onEditorDisabled={() => setPhase({ kind: "disabled" })}
+                onOpsOutcome={onOpsOutcome}
               />
             ))}
       </div>
