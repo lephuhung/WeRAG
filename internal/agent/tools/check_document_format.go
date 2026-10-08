@@ -131,7 +131,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 		if err != nil {
 			return nil, "", -1, err
 		}
-		content, ws, err := readWorkspaceDocument(ctx, workspace, sessionID, target.ID)
+		content, ws, err := readListedDocument(ctx, workspace, sessionID, target)
 		if err != nil {
 			return nil, "", -1, err
 		}

@@ -178,17 +178,60 @@ func errSelectionElsewhere(sel *types.DocumentSelection, ws *types.DocumentWorks
 }
 
 // readWorkspaceDocument returns the latest bytes of one document of the
-// session ("" = the active one).
+// session ("" = the active one). The bytes come from workspaceDocs when the row OpenCurrent
+// returns still describes the cached file; the reader is then closed
+// unread, so the file is not downloaded again.
 func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, documentID string) ([]byte, *types.DocumentWorkspace, error) {
+	doc, ws, err := openWorkspaceDoc(ctx, src, sessionID, documentID, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc.content, ws, nil
+}
+
+// readListedDocument is readWorkspaceDocument for a row the caller already
+// has from List (resolveDocument, the session's tabs): when that row still
+// describes the cached file, storage is not touched at all.
+func readListedDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID string, listed *types.DocumentWorkspace) ([]byte, *types.DocumentWorkspace, error) {
+	doc, ws, err := openWorkspaceDoc(ctx, src, sessionID, listed.ID, listed)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc.content, ws, nil
+}
+
+// readWorkspaceLayout is readListedDocument plus the parsed layout, parsed
+// once per file version. The bytes and the layout are shared: read only.
+func readWorkspaceLayout(ctx context.Context, src DocumentWorkspaceSource, sessionID string, listed *types.DocumentWorkspace) ([]byte, *docformat.Layout, *types.DocumentWorkspace, error) {
+	doc, ws, err := openWorkspaceDoc(ctx, src, sessionID, listed.ID, listed)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return doc.content, workspaceDocs.layoutOf(doc), ws, nil
+}
+
+// openWorkspaceDoc returns the cached document and the freshest row known
+// for it, reading the file only when its version changed.
+func openWorkspaceDoc(ctx context.Context, src DocumentWorkspaceSource, sessionID, documentID string, listed *types.DocumentWorkspace) (*workspaceDoc, *types.DocumentWorkspace, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || src == nil || sessionID == "" {
 		return nil, nil, errors.New(errNoWorkspace)
+	}
+	key := workspaceDocKey(tenantID, sessionID, documentID)
+	if listed != nil {
+		if doc := workspaceDocs.get(key, workspaceDocVersion(listed)); doc != nil {
+			return doc, listed, nil
+		}
 	}
 	rc, ws, err := src.OpenCurrent(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("không mở được tài liệu đang soạn thảo: %w", err)
 	}
 	defer rc.Close()
+	key = workspaceDocKey(tenantID, sessionID, ws.ID) // documentID may be "" (active tab)
+	if doc := workspaceDocs.get(key, workspaceDocVersion(ws)); doc != nil {
+		return doc, ws, nil
+	}
 	content, err := io.ReadAll(io.LimitReader(rc, maxFormatCheckBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("không đọc được tài liệu đang soạn thảo: %w", err)
@@ -196,7 +239,7 @@ func readWorkspaceDocument(ctx context.Context, src DocumentWorkspaceSource, ses
 	if len(content) > maxFormatCheckBytes {
 		return nil, nil, fmt.Errorf("%s quá lớn (tối đa 30 MB)", ws.FileName)
 	}
-	return content, ws, nil
+	return workspaceDocs.put(key, ws, content), ws, nil
 }
 
 // snapshotDocument records a revision of the document as it is now (the
@@ -405,11 +448,10 @@ func (t *ReadDocumentOutlineTool) Execute(ctx context.Context, args json.RawMess
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
-	content, ws, err := readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
+	content, layout, ws, err := readWorkspaceLayout(ctx, t.workspace, t.sessionID, target)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
-	layout := docformat.InspectDocx(content)
 	if len(layout.Paragraphs) == 0 && len(layout.Errors) > 0 {
 		return &types.ToolResult{Success: false, Error: "không phân tích được tài liệu: " + strings.Join(layout.Errors, "; ")}, nil
 	}

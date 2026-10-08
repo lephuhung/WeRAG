@@ -234,7 +234,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 	if in.DryRun {
-		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
+		content, ws, err = readListedDocument(ctx, t.workspace, t.sessionID, target)
 	} else {
 		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "chuẩn hóa thể thức")
 	}

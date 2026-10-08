@@ -194,7 +194,7 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 	if mark {
 		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "kiểm tra chính tả")
 	} else {
-		content, ws, err = readWorkspaceDocument(ctx, t.workspace, t.sessionID, target.ID)
+		content, ws, err = readListedDocument(ctx, t.workspace, t.sessionID, target)
 	}
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil

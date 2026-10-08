@@ -104,12 +104,12 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	rendered := 0
 	for _, d := range chosen {
-		content, ws, err := readWorkspaceDocument(readCtx, src, sessionID, d.ID)
+		_, layout, ws, err := readWorkspaceLayout(readCtx, src, sessionID, d)
 		if err != nil {
 			logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
 			continue
 		}
-		if block := renderOpenDocument(ws, content, query, budget, matchBudget); block != "" {
+		if block := renderOpenDocument(ws, layout, query, budget, matchBudget); block != "" {
 			sb.WriteString(block)
 			rendered++
 		}
@@ -123,8 +123,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 // renderOpenDocument renders one document's text as an <open_document>
 // block: the paragraphs up to budget runes, then up to matchBudget runes of
 // later paragraphs naming a code from query.
-func renderOpenDocument(ws *types.DocumentWorkspace, content []byte, query string, budget, matchBudget int) string {
-	layout := docformat.InspectDocx(content)
+func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, query string, budget, matchBudget int) string {
 	if len(layout.Paragraphs) == 0 {
 		return ""
 	}
