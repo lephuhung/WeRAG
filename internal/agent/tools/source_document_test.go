@@ -138,14 +138,22 @@ func TestBuildOpenDocumentPromptIndexesSourcesWithoutTheirText(t *testing.T) {
 		"A source (tài liệu nguồn) is a file the user uploaded at chat",
 		"- vb1 · cong-van.docx (văn bản làm việc, tab đang xem)",
 		"- vb2 · bao-cao.pdf (tài liệu nguồn, chỉ tra cứu, pdf, 2.0 MB; tra cứu bằng read_document_outline document=vb2)",
-		`handle="vb1"`,
+		// a tab next to sources is not "the only document": nothing is
+		// injected whole, documents without a card show their first lines
+		`<relevant_passages handle="vb1"`,
+		`<relevant_passages handle="vb2" name="bao-cao.pdf" role="tài liệu nguồn" unit="chunk">`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, `handle="vb2"`) || strings.Contains(got, "1.250 tỷ") {
+	if strings.Contains(got, "<open_document handle") {
 		t.Fatalf("a source is never injected in full:\n%s", got)
+	}
+	// a question about the source brings its matching chunk
+	got = BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "chi đầu tư phát triển bao nhiêu")
+	if !strings.Contains(got, "[1] (Chương II) Điều 5. Chi đầu tư phát triển 430 tỷ đồng.") {
+		t.Fatalf("the matching chunk of the source:\n%s", got)
 	}
 
 	// @-naming a source does not inject it either; attached now, the index
@@ -153,8 +161,9 @@ func TestBuildOpenDocumentPromptIndexesSourcesWithoutTheirText(t *testing.T) {
 	ctx := types.WithMentionedDocuments(context.Background(), []string{"ws-src"})
 	ctx = WithAttachedSources(ctx, []string{"ws-src"})
 	got = BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", "")
-	if strings.Contains(got, `handle="vb2"`) || !strings.Contains(got, `handle="vb1"`) {
-		t.Fatalf("a named source is not injected, the target still is:\n%s", got)
+	if strings.Contains(got, "<open_document handle") || strings.Contains(got, `<relevant_passages handle="vb1"`) ||
+		!strings.Contains(got, `<relevant_passages handle="vb2"`) {
+		t.Fatalf("a named source is not injected whole; the passages come from it alone:\n%s", got)
 	}
 	if !strings.Contains(got, "- vb2 · bao-cao.pdf (tài liệu nguồn, chỉ tra cứu, pdf, 2.0 MB; nội dung đính kèm trong tin nhắn này) (người dùng gọi đích danh trong yêu cầu này)") {
 		t.Fatalf("the attached source's index line:\n%s", got)

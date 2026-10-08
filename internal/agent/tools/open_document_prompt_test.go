@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func TestBuildOpenDocumentPromptCarriesCurrentText(t *testing.T) {
@@ -75,5 +78,32 @@ func TestQueryCodes(t *testing.T) {
 	want := []string{"PA05", "CNTT", "NĐ30", "30/2020"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestBuildOpenDocumentPromptInjectsTheWindowAroundTheSelection(t *testing.T) {
+	var body strings.Builder
+	for i := 0; i < 100; i++ {
+		body.WriteString(testPara(fmt.Sprintf("Đoạn số %d của văn bản.", i), "left", "Times New Roman", 14, false, false))
+	}
+	ws := newFakeWorkspace(buildTestDocx(t, body.String(), [4]int{20, 15, 30, 20}))
+	ctx := types.WithDocumentSelection(context.Background(), &types.DocumentSelection{Text: "Đoạn số 70 của văn bản.", DocumentID: "ws-1"})
+
+	got := BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", "viết lại đoạn này")
+	for _, want := range []string{"<window>", "[0] Đoạn số 0 ", "[5] Đoạn số 5 ", "…\n[55] Đoạn số 55 ", "[70] Đoạn số 70 ", "[85] Đoạn số 85 ", "read_document_outline document=vb1 from=<index>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt lacks %q:\n%s", want, got)
+		}
+	}
+	for _, absent := range []string{"[6] ", "[54] ", "[86] "} {
+		if strings.Contains(got, absent) {
+			t.Fatalf("prompt has %q outside the window:\n%s", absent, got)
+		}
+	}
+
+	// a selection elsewhere (not found) injects from the start as before
+	ctx = types.WithDocumentSelection(context.Background(), &types.DocumentSelection{Text: "không có trong văn bản", DocumentID: "ws-1"})
+	if got := BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", ""); strings.Contains(got, "<window>") || !strings.Contains(got, "[99] ") {
+		t.Fatalf("selection not found:\n%s", got)
 	}
 }

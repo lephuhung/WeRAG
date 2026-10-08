@@ -38,10 +38,12 @@ const sessionDocumentsInstruction = "The conversation holds these documents, one
 	"Section ranges are paragraph indexes of a working document and chunk (or line) indexes of a source: read a section with read_document_outline document=vbN from=<from>. " +
 	"Use the cards to tell which document and which section a question is about; a card says what a document contains, not its exact wording — quote the text, never the card. " +
 	"\"(hồ sơ đang được lập)\" means the card is still being made; \"(đã sửa sau lần đọc)\" means the document was edited after its card was made, so its text wins over the card. " +
-	"A working document (văn bản làm việc) is a Word file open in an editor tab: " +
-	"its text follows in its own <open_document> block, and it is the only kind you may check or edit. " +
-	"A source (tài liệu nguồn) is a file the user uploaded at chat: read-only, never edited or format-checked; read it with " +
-	"read_document_outline document=vbN, and cite it by file name or số ký hiệu when you use it. " +
+	"A working document (văn bản làm việc) is a Word file open in an editor tab, the only kind you may check or edit; " +
+	"the text of the one the user named (or of the conversation's only document) follows in an <open_document> block. " +
+	"Otherwise no document is given whole: the passages matching the question follow in <relevant_passages> blocks, " +
+	"and find_in_documents searches every document for the rest. " +
+	"A source (tài liệu nguồn) is a file the user uploaded at chat: read-only, never edited or format-checked; search it with " +
+	"find_in_documents or read it with read_document_outline document=vbN, and cite it by file name or số ký hiệu when you use it. " +
 	"When the user asks about several or all of them (\"hai văn bản này\", \"các văn bản\"), answer for every document, naming each. " +
 	"Pass a document's handle (vb1, vb2, …) as the \"document\" argument of the document tools. " +
 	"Edit only a document the user named with @ (or selected text in) in this request; when the user asks for an edit " +
@@ -70,14 +72,25 @@ func attachedSources(ctx context.Context) map[string]bool {
 }
 
 // BuildOpenDocumentPrompt renders the session's documents for the agent's
-// user turn: a <session_documents> index when there are several or any is
-// a source, then the current text of the targets (editor tabs) the user
-// designated in this turn (@-mentions and the selection's document, see
-// namedDocuments) — or of every target, the active tab first, when none —
-// as <open_document> blocks, so a question about a document is answered
-// without a tool call. A source is never injected: the index names it with
-// its role, type and size and how to read it. It returns "" when the
-// session has no document or nothing can be rendered.
+// user turn: a <session_documents> index of cards when there are several
+// or any is a source, then text, by these rules:
+//
+//  1. A target the user designated in this turn (@-mention, the
+//     selection's document, see namedDocuments), or the only document of
+//     the session, is injected as an <open_document> block: its text up to
+//     openDocumentPromptRunes — with a selection, the window around the
+//     selected paragraphs plus the document's opening lines.
+//  2. Otherwise (several documents, or sources next to a tab, nothing
+//     named) no document is injected whole: the passages of every document
+//     that match the question (see searchDocuments) follow as
+//     <relevant_passages> blocks under one shared budget, and a document
+//     without a card yet also shows its opening lines, so "do đơn vị nào
+//     ban hành" is answered from them. find_in_documents and
+//     read_document_outline read the rest. Naming only sources with @
+//     narrows the passages to them.
+//
+// A source is never injected whole. It returns "" when the session has no
+// document or nothing can be rendered.
 func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, tenantID uint64, sessionID, query string) string {
 	if src == nil || tenantID == 0 || strings.TrimSpace(sessionID) == "" {
 		return ""
@@ -98,23 +111,16 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			chosen = append(chosen, d)
 		}
 	}
-	if len(chosen) == 0 && len(targets) > 0 {
-		// No target named: carry every open document, the viewed tab first,
-		// so a question about "hai văn bản này" is answered for each of them.
-		// The per-document budget below shrinks with the count (at most four).
-		if active == nil || active.IsSource() {
-			active = targets[len(targets)-1]
-		}
-		chosen = append(chosen, active)
-		for _, d := range targets {
-			if d.ID != active.ID {
-				chosen = append(chosen, d)
-			}
-		}
+	if len(chosen) == 0 && len(docs) == 1 && len(targets) == 1 {
+		chosen = targets // the only document
 	}
 
 	var sb strings.Builder
 	indexed := len(docs) > 1 || len(targets) < len(docs)
+	profiles := make(map[string]*types.DocumentProfile, len(docs))
+	for _, d := range docs {
+		profiles[d.ID] = SessionDocumentProfile(ctx, d.ID)
+	}
 	if indexed {
 		attached := attachedSources(ctx)
 		sb.WriteString("\n\n<session_documents>\n")
@@ -134,7 +140,7 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			if named[d.ID] {
 				line.WriteString(" (người dùng gọi đích danh trong yêu cầu này)")
 			}
-			profile := SessionDocumentProfile(ctx, d.ID)
+			profile := profiles[d.ID]
 			if profile != nil && !profile.Describes(d) && profile.TextHash != "" && d.IsTarget() {
 				// edited since its card: refresh now rather than at the mark
 				PromoteDocumentProfileRefresh(d.ID)
@@ -144,28 +150,54 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		sb.WriteString("</session_documents>\n")
 	}
 
-	budget, matchBudget := openDocumentPromptRunes, openDocumentMatchRunes
-	if n := len(chosen); n > 1 {
-		budget = max(openDocumentPromptRunes/n, openDocumentMinRunes)
-		matchBudget = openDocumentMatchRunes / n
-	}
 	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	rendered := 0
-	for _, d := range chosen {
-		_, layout, ws, err := readWorkspaceLayout(readCtx, src, sessionID, d)
-		if err != nil {
-			logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
-			continue
+	if len(chosen) > 0 {
+		budget, matchBudget := openDocumentPromptRunes, openDocumentMatchRunes
+		if n := len(chosen); n > 1 {
+			budget = max(openDocumentPromptRunes/n, openDocumentMinRunes)
+			matchBudget = openDocumentMatchRunes / n
 		}
-		if block := renderOpenDocument(ws, layout, query, budget, matchBudget); block != "" {
-			sb.WriteString(block)
-			rendered++
+		sel := types.DocumentSelectionFromContext(ctx)
+		for _, d := range chosen {
+			_, layout, ws, err := readWorkspaceLayout(readCtx, src, sessionID, d)
+			if err != nil {
+				logger.Warnf(ctx, "[DocumentWorkspace] open document text unavailable for session=%s document=%s: %v", sessionID, d.ID, err)
+				continue
+			}
+			var window *paragraphWindow
+			if sel != nil && sel.DocumentID == d.ID {
+				window = selectionWindow(layout, sel)
+			}
+			if block := renderOpenDocument(ws, layout, query, budget, matchBudget, window); block != "" {
+				sb.WriteString(block)
+				rendered++
+			}
 		}
+	} else if block := relevantPassages(ctx, readCtx, src, sessionID, passageDocuments(docs, named), profiles, query); block != "" {
+		sb.WriteString(block)
+		rendered++
 	}
 	if rendered == 0 && !indexed {
 		return ""
 	}
 	return sb.String()
+}
+
+// passageDocuments are the documents rule 2 searches: the sources the user
+// named with @ when they named any (a source is never injected whole, so
+// naming one narrows the passages to it), else every document.
+func passageDocuments(docs []*types.DocumentWorkspace, named map[string]bool) []*types.DocumentWorkspace {
+	var out []*types.DocumentWorkspace
+	for _, d := range docs {
+		if named[d.ID] {
+			out = append(out, d)
+		}
+	}
+	if len(out) == 0 {
+		return docs
+	}
+	return out
 }
 
 // Card bounds: a card stays near documentCardRunes so ten documents cost
@@ -185,7 +217,7 @@ const (
 // made. A card longer than documentCardRunes loses its key points, then
 // section titles are shortened and the list cut.
 func documentCard(line string, d *types.DocumentWorkspace, p *types.DocumentProfile) string {
-	hasContent := p != nil && (p.Gist != "" || p.Subject != "" || len(p.Sections) > 0)
+	hasContent := profileHasContent(p)
 	if !hasContent {
 		if p == nil || p.InProgress() {
 			if !(d.IsSource() && d.TextStatus == types.DocumentSourceTextFailed) {
@@ -298,10 +330,80 @@ func humanSize(n int64) string {
 	}
 }
 
+// paragraphWindow is the part of a document injected around a selection:
+// paragraphs From..To (inclusive) after the Head paragraphs (the opening
+// lines, when they are not in the window).
+type paragraphWindow struct {
+	From, To int
+	Head     []int
+}
+
+// Selection window bounds: the selected paragraphs ± selectionWindowParas,
+// after the first selectionHeadParas non-empty paragraphs.
+const (
+	selectionWindowParas = 15
+	selectionHeadParas   = 6
+)
+
+// selectionWindow locates the selected paragraphs in layout (as
+// check_spelling does: a paragraph wholly inside the selection, else the
+// one holding it) and returns the window around them; nil when the
+// selection is not found (the text is then injected from the start).
+func selectionWindow(layout *docformat.Layout, sel *types.DocumentSelection) *paragraphWindow {
+	s := foldForOverlap(sel.Text)
+	if s == "" || layout == nil {
+		return nil
+	}
+	first, last := -1, -1
+	mark := func(i int) {
+		if first < 0 || i < first {
+			first = i
+		}
+		if i > last {
+			last = i
+		}
+	}
+	hint := foldForOverlap(sel.ParagraphHint)
+	partial := -1
+	for i, p := range layout.Paragraphs {
+		t := foldForOverlap(p.Text)
+		if t == "" {
+			continue
+		}
+		switch {
+		case strings.Contains(s, t) && utf8.RuneCountInString(t) >= 8 || s == t:
+			mark(i)
+		case strings.Contains(t, s):
+			// a passage inside one paragraph: the paragraph hint tells
+			// which of several holding it
+			if partial < 0 || (hint != "" && strings.Contains(t, hint)) {
+				partial = i
+			}
+		}
+	}
+	if first < 0 {
+		if partial < 0 {
+			return nil
+		}
+		first, last = partial, partial
+	}
+	w := &paragraphWindow{From: max(0, first-selectionWindowParas), To: min(len(layout.Paragraphs)-1, last+selectionWindowParas)}
+	for i, p := range layout.Paragraphs {
+		if len(w.Head) >= selectionHeadParas || i >= w.From {
+			break
+		}
+		if strings.TrimSpace(p.Text) != "" {
+			w.Head = append(w.Head, i)
+		}
+	}
+	return w
+}
+
 // renderOpenDocument renders one document's text as an <open_document>
-// block: the paragraphs up to budget runes, then up to matchBudget runes of
-// later paragraphs naming a code from query.
-func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, query string, budget, matchBudget int) string {
+// block: the paragraphs up to budget runes (with a window, its head
+// paragraphs then the window), then up to matchBudget runes of the other
+// paragraphs naming a code from query.
+func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, query string, budget, matchBudget int, window *paragraphWindow) string {
 	if len(layout.Paragraphs) == 0 {
 		return ""
 	}
@@ -309,12 +411,29 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 	flat := strings.NewReplacer("\t", " ", "\n", " ")
 	var body strings.Builder
 	used, cutAt := 0, -1
-	for i, p := range layout.Paragraphs {
-		text := strings.TrimSpace(p.Text)
+	shown := map[int]bool{}
+	order := make([]int, 0, len(layout.Paragraphs))
+	from := 0
+	if window != nil {
+		order = append(order, window.Head...)
+		from = window.From
+	}
+	for i := from; i < len(layout.Paragraphs); i++ {
+		if window != nil && i > window.To {
+			break
+		}
+		order = append(order, i)
+	}
+	prev := -1
+	for _, i := range order {
+		text := strings.TrimSpace(layout.Paragraphs[i].Text)
 		if text == "" {
 			continue
 		}
 		line := fmt.Sprintf("[%d] %s\n", i, flat.Replace(text))
+		if prev >= 0 && i > prev+1 && window != nil && i == window.From {
+			line = "…\n" + line
+		}
 		n := utf8.RuneCountInString(line)
 		if used+n > budget {
 			cutAt = i
@@ -322,27 +441,29 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 		}
 		body.WriteString(line)
 		used += n
+		shown[i] = true
+		prev = i
 	}
-
-	// past the cut, keep the paragraphs that name a code from the question,
-	// with their neighbours (the next one often goes on without the code)
+	// outside the text shown, keep the paragraphs that name a code from
+	// the question, with their neighbours (the next one often goes on
+	// without the code)
 	var matched strings.Builder
-	if codes := queryCodes(query); cutAt >= 0 && len(codes) > 0 {
+	if codes := queryCodes(query); (cutAt >= 0 || window != nil) && len(codes) > 0 {
 		keep := map[int]bool{}
-		var order []int
-		for i := cutAt; i < len(layout.Paragraphs); i++ {
-			if !containsAnyFold(layout.Paragraphs[i].Text, codes) {
+		var picked []int
+		for i := range layout.Paragraphs {
+			if shown[i] || !containsAnyFold(layout.Paragraphs[i].Text, codes) {
 				continue
 			}
 			for j := i - 1; j <= i+1; j++ {
-				if j >= cutAt && j < len(layout.Paragraphs) && !keep[j] {
+				if j >= 0 && j < len(layout.Paragraphs) && !shown[j] && !keep[j] {
 					keep[j] = true
-					order = append(order, j)
+					picked = append(picked, j)
 				}
 			}
 		}
 		extra := 0
-		for _, i := range order {
+		for _, i := range picked {
 			text := strings.TrimSpace(layout.Paragraphs[i].Text)
 			if text == "" {
 				continue
@@ -360,17 +481,24 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "\n\n<open_document handle=%q name=%q revision=\"%d\">\n", ws.Handle(), ws.FileName, ws.Revision)
 	sb.WriteString("<instruction>" + openDocumentInstruction + "</instruction>\n")
+	if window != nil {
+		fmt.Fprintf(&sb, "<window>The text below is the document's opening lines and paragraphs %d–%d around the passage the user highlighted, not the whole document.</window>\n", window.From, window.To)
+	}
 	sb.WriteString("<text>\n")
 	sb.WriteString(escapeOpenDocument(body.String()))
 	sb.WriteString("</text>\n")
 	if matched.Len() > 0 {
-		sb.WriteString("<matching_paragraphs>Later paragraphs that mention a code from the question:\n")
+		sb.WriteString("<matching_paragraphs>Other paragraphs that mention a code from the question:\n")
 		sb.WriteString(escapeOpenDocument(matched.String()))
 		sb.WriteString("</matching_paragraphs>\n")
 	}
-	if cutAt >= 0 {
+	switch {
+	case cutAt >= 0:
 		fmt.Fprintf(&sb, "<truncated>The text above stops before paragraph %d of %d; read the rest with read_document_outline document=%s from=%d.</truncated>\n",
 			cutAt, len(layout.Paragraphs), ws.Handle(), cutAt)
+	case window != nil:
+		fmt.Fprintf(&sb, "<truncated>The document has %d paragraphs; read others with read_document_outline document=%s from=<index>, or search it with find_in_documents.</truncated>\n",
+			len(layout.Paragraphs), ws.Handle())
 	}
 	sb.WriteString("</open_document>\n")
 	return sb.String()
@@ -379,7 +507,7 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 // escapeOpenDocument neutralises closing tags so document text cannot end
 // the block early.
 func escapeOpenDocument(s string) string {
-	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>"} {
+	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>", "</relevant_passages>"} {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s

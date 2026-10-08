@@ -46,9 +46,11 @@ func TestDocumentCardRendersTheProfile(t *testing.T) {
 	if strings.Contains(got, "Ý thứ tư") {
 		t.Fatal("a card carries three key points")
 	}
-	// the full text of the targets is still injected
-	if !strings.Contains(got, `handle="vb1"`) || !strings.Contains(got, `handle="vb2"`) {
-		t.Fatalf("cards do not change which texts are injected:\n%s", got)
+	// without @ no text is injected whole; the document without a card
+	// shows its opening lines, the one with a card does not
+	if strings.Contains(got, "<open_document handle") || strings.Contains(got, `<relevant_passages handle="vb1"`) ||
+		!strings.Contains(got, `<relevant_passages handle="vb2"`) {
+		t.Fatalf("a card stands for its document:\n%s", got)
 	}
 
 	// a turn that finds the card older than the document flags it and runs
