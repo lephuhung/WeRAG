@@ -30,15 +30,16 @@ const dwTestSecret = "test-onlyoffice-secret"
 // ---- fakes ---------------------------------------------------------------
 
 type dwFakeRepo struct {
-	mu   sync.Mutex
-	rows map[string]types.DocumentWorkspace
+	mu    sync.Mutex
+	rows  map[string]types.DocumentWorkspace
+	texts map[string]types.DocumentWorkspaceText
 	// maxPos is the highest position ever used per session (deleted rows
 	// included), like NextPosition on the real table.
 	maxPos map[string]int
 }
 
 func newDWFakeRepo() *dwFakeRepo {
-	return &dwFakeRepo{rows: map[string]types.DocumentWorkspace{}, maxPos: map[string]int{}}
+	return &dwFakeRepo{rows: map[string]types.DocumentWorkspace{}, maxPos: map[string]int{}, texts: map[string]types.DocumentWorkspaceText{}}
 }
 
 func (r *dwFakeRepo) Create(_ context.Context, ws *types.DocumentWorkspace) error {
@@ -57,13 +58,13 @@ func (r *dwFakeRepo) Create(_ context.Context, ws *types.DocumentWorkspace) erro
 	return nil
 }
 
-// GetBySession returns the most recently activated row of the session.
+// GetBySession returns the most recently activated target of the session.
 func (r *dwFakeRepo) GetBySession(_ context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var best *types.DocumentWorkspace
 	for _, row := range r.rows {
-		if row.TenantID != tenantID || row.SessionID != sessionID {
+		if row.TenantID != tenantID || row.SessionID != sessionID || row.IsSource() {
 			continue
 		}
 		cp := row
@@ -162,6 +163,23 @@ func (r *dwFakeRepo) Delete(_ context.Context, tenantID uint64, sessionID string
 		}
 	}
 	return nil
+}
+
+func (r *dwFakeRepo) SaveText(_ context.Context, text *types.DocumentWorkspaceText) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.texts[text.WorkspaceID] = *text
+	return nil
+}
+
+func (r *dwFakeRepo) GetText(_ context.Context, id string) (*types.DocumentWorkspaceText, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	text, ok := r.texts[id]
+	if !ok {
+		return nil, nil
+	}
+	return &text, nil
 }
 
 type dwFakeFiles struct {

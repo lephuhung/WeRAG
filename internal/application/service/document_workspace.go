@@ -149,7 +149,7 @@ func newDocumentWorkspaceService(
 	messages documentWorkspaceMessageStore,
 	revisions interfaces.DocumentRevisionRepository,
 ) *documentWorkspaceService {
-	return &documentWorkspaceService{
+	s := &documentWorkspaceService{
 		cfg: cfg, repo: repo, files: files, catalog: catalog,
 		attachments: attachments, messages: messages, revisions: revisions,
 		httpClient: &http.Client{
@@ -160,6 +160,12 @@ func newDocumentWorkspaceService(
 		},
 		waiters: map[string][]*saveWaiter{},
 	}
+	// a source copies its upload's text as soon as parsing ends, while the
+	// upload (24h TTL) still exists
+	if n, ok := attachments.(temporaryDocumentReadyNotifier); ok {
+		n.OnDocumentParsed(s.onAttachmentParsed)
+	}
+	return s
 }
 
 func (s *documentWorkspaceService) Enabled() bool { return s != nil && s.cfg.Enabled() }
@@ -187,15 +193,18 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 	}
 	for _, ws := range existing {
 		if ws.AttachmentID == attachmentID {
+			if ws.IsSource() {
+				// the upload is a source: opening it in the editor
+				// promotes it, keeping its handle
+				return s.promote(ctx, ws)
+			}
 			// opening the same upload again shows its tab
 			s.markActive(ctx, ws)
 			return ws, nil
 		}
 	}
-	if len(existing) >= types.MaxDocumentWorkspacesPerSession {
-		return nil, apperrors.NewConflictError(fmt.Sprintf(
-			"Cuộc hội thoại đã mở tối đa %d văn bản; hãy đóng bớt một văn bản trước khi mở thêm.",
-			types.MaxDocumentWorkspacesPerSession))
+	if countRole(existing, false) >= types.MaxDocumentWorkspacesPerSession {
+		return nil, errTooManyTargets()
 	}
 	doc, err := s.attachments.Get(ctx, tenantID, sessionID, attachmentID)
 	if err != nil {
@@ -251,10 +260,10 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 		ActiveAt: &now, UserID: userID,
 		OriginalRef: ref, CurrentRef: ref, FileName: fileName, FileType: "docx",
 		FileSize: int64(len(data)), Status: types.DocumentWorkspaceStatusOpen,
+		Role: types.DocumentWorkspaceRoleTarget,
 	}
 	if err := s.repo.Create(ctx, ws); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") ||
-			strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+		if isUniqueViolation(err) {
 			return nil, apperrors.NewConflictError("this file is already open in the conversation")
 		}
 		return nil, err
@@ -295,6 +304,21 @@ func (s *documentWorkspaceService) Get(
 	return ws, nil
 }
 
+// getTarget is Get for an editor-only action: a source is refused with a
+// 409 (it has no editor file, see SourceDocumentRefusal).
+func (s *documentWorkspaceService) getTarget(
+	ctx context.Context, tenantID uint64, sessionID, documentID string,
+) (*types.DocumentWorkspace, error) {
+	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if ws.IsSource() {
+		return nil, errSourceDocument(ws)
+	}
+	return ws, nil
+}
+
 func (s *documentWorkspaceService) List(
 	ctx context.Context, tenantID uint64, sessionID string,
 ) ([]*types.DocumentWorkspace, error) {
@@ -307,7 +331,7 @@ func (s *documentWorkspaceService) Activate(
 	if strings.TrimSpace(documentID) == "" {
 		return nil, apperrors.NewBadRequestError("document id is required")
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -337,8 +361,8 @@ func (s *documentWorkspaceService) Remove(
 		return err
 	}
 	// Keep the user's last edits in the timeline before the tab goes; the
-	// file itself stays in the resource catalog.
-	if s.revisions != nil {
+	// file itself stays in the resource catalog. A source has no edits.
+	if s.revisions != nil && !ws.IsSource() {
 		if _, err := s.Snapshot(ctx, tenantID, sessionID, ws.ID, documentRevisionLabelClose,
 			types.DocumentRevisionSourceClose, 0); err != nil {
 			logger.Warnf(ctx, "[DocumentWorkspace] snapshot before closing workspace=%s failed: %v", ws.ID, err)
@@ -359,6 +383,10 @@ func (s *documentWorkspaceService) View(
 		return nil, apperrors.NewNotFoundError("Document workspace not found")
 	}
 	view := &types.DocumentWorkspaceView{DocumentWorkspace: ws, EditorKey: ws.EditorKey()}
+	if ws.IsSource() {
+		// no editor for a source: the view is its row alone
+		return view, nil
+	}
 	if !s.Enabled() {
 		return view, nil
 	}
@@ -462,7 +490,7 @@ func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint6
 	if !s.Enabled() {
 		return apperrors.NewServiceUnavailableError("document editor is not configured")
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return err
 	}
@@ -518,7 +546,7 @@ func (s *documentWorkspaceService) forceSave(ctx context.Context, ws *types.Docu
 func (s *documentWorkspaceService) PrepareExternalWrite(
 	ctx context.Context, tenantID uint64, sessionID, documentID string, wait time.Duration,
 ) (*types.DocumentWorkspace, []byte, error) {
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -592,7 +620,7 @@ func (s *documentWorkspaceService) CommitExternalWrite(
 	if len(data) == 0 {
 		return nil, apperrors.NewBadRequestError("document is empty")
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -647,6 +675,12 @@ func (s *documentWorkspaceService) HandleCallback(
 	}
 	if ws == nil || ws.TenantID != claims.tenantID || ws.SessionID != claims.sessionID {
 		logger.Warnf(ctx, "[DocumentWorkspace] callback for missing workspace=%s ignored", claims.workspaceID)
+		return nil
+	}
+	if ws.IsSource() {
+		// demoted while an editor was still open: its saves are not kept
+		logger.Warnf(ctx, "[DocumentWorkspace] callback status=%d for source=%s ignored", cb.Status, ws.ID)
+		s.signal(ws.ID, nil)
 		return nil
 	}
 	keyRevision, ok := parseEditorKeyRevision(ws.ID, cb.Key)

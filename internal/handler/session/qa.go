@@ -670,17 +670,19 @@ func (h *Handler) resolveAgent(
 }
 
 // pinDocumentAssistant returns the document assistant's ID when the session
-// holds a document workspace (open or closed: a closed one reopens on the
-// next editor load and its text is still injected), else agentID unchanged.
+// holds a document workspace of either role (open or closed: a closed one
+// reopens on the next editor load and its text is still injected), else
+// agentID unchanged.
 func (h *Handler) pinDocumentAssistant(ctx context.Context, session *types.Session, agentID string) string {
 	if agentID == types.BuiltinDocumentAssistantID || session == nil ||
 		h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
 		return agentID
 	}
-	ws, err := h.documentWorkspaces.GetBySession(ctx, session.TenantID, session.ID)
-	if err != nil || ws == nil {
+	docs, err := h.documentWorkspaces.List(ctx, session.TenantID, session.ID)
+	if err != nil || len(docs) == 0 {
 		return agentID
 	}
+	ws := docs[0]
 	logger.Infof(ctx, "Session %s holds document %q; agent %q replaced by the document assistant",
 		session.ID, ws.FileName, secutils.SanitizeForLog(agentID))
 	return types.BuiltinDocumentAssistantID

@@ -113,6 +113,31 @@ type temporaryDocumentService struct {
 	taskEnqueuer       interfaces.TaskEnqueuer
 	sessionAttachments sessionAttachmentLookup
 	auditLog           interfaces.AuditLogService
+
+	// parsedMu guards onParsed, the listeners told when an upload's parsing
+	// ended (the document workspace copies a source's text from it).
+	parsedMu sync.RWMutex
+	onParsed []func(ctx context.Context, tenantID uint64, sessionID, documentID string)
+}
+
+// OnDocumentParsed registers fn to be called after an upload's parsing
+// ends, ready or failed for good. fn runs in the parse worker.
+func (s *temporaryDocumentService) OnDocumentParsed(fn func(ctx context.Context, tenantID uint64, sessionID, documentID string)) {
+	if fn == nil {
+		return
+	}
+	s.parsedMu.Lock()
+	s.onParsed = append(s.onParsed, fn)
+	s.parsedMu.Unlock()
+}
+
+func (s *temporaryDocumentService) notifyParsed(ctx context.Context, document *types.TemporaryDocument) {
+	s.parsedMu.RLock()
+	listeners := append([]func(context.Context, uint64, string, string){}, s.onParsed...)
+	s.parsedMu.RUnlock()
+	for _, fn := range listeners {
+		fn(ctx, document.TenantID, document.SessionID, document.ID)
+	}
 }
 
 func NewTemporaryDocumentService(
@@ -386,6 +411,7 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 		_ = s.repo.MarkFailed(ctx, payload.TenantID, payload.DocumentID, message)
 		s.auditParseFailure(ctx, document, "parse", message)
 		logger.Errorf(ctx, "temporary document parse failed: document_id=%s err=%v", payload.DocumentID, parseErr)
+		s.notifyParsed(ctx, document)
 		if hasRetryCount && hasMaxRetry {
 			return parseErr
 		}
@@ -416,9 +442,13 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	chunksJSON, _ := json.Marshal(chunks)
 	imagesJSON, _ := json.Marshal(images)
 	metadataJSON, _ := json.Marshal(metadata)
-	return s.repo.MarkReady(ctx, payload.TenantID, payload.DocumentID, content,
+	if err := s.repo.MarkReady(ctx, payload.TenantID, payload.DocumentID, content,
 		types.JSON(chunksJSON), types.JSON(imagesJSON), types.JSON(metadataJSON),
-		chunker.ApproxTokenCount(content, lang), len(chunks), time.Now())
+		chunker.ApproxTokenCount(content, lang), len(chunks), time.Now()); err != nil {
+		return err
+	}
+	s.notifyParsed(ctx, document)
+	return nil
 }
 
 // auditParseFailure records a terminal attachment parsing failure in the audit

@@ -35,6 +35,15 @@ func (f *callbackOnlyWorkspaces) CreateFromAttachment(context.Context, uint64, s
 func (f *callbackOnlyWorkspaces) GetBySession(context.Context, uint64, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
+func (f *callbackOnlyWorkspaces) CreateSourceFromAttachment(context.Context, uint64, string, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) SetRole(context.Context, uint64, string, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) SourceText(context.Context, uint64, string, string) (*types.DocumentWorkspaceText, *types.DocumentWorkspace, error) {
+	return nil, nil, nil
+}
 func (f *callbackOnlyWorkspaces) View(context.Context, *types.DocumentWorkspace, string, string, string) (*types.DocumentWorkspaceView, error) {
 	return nil, nil
 }

@@ -38,6 +38,12 @@ const snapshotWait = 20 * time.Second
 
 const errNoWorkspace = "Cuộc hội thoại này chưa mở tài liệu nào trong trình soạn thảo."
 
+// SourceDocumentRefusal is the error an editing, marking or format tool
+// gives for a source document (a chat upload, looked up only).
+func SourceDocumentRefusal(ws *types.DocumentWorkspace) string {
+	return fmt.Sprintf("%s là tài liệu nguồn, chỉ tra cứu được; mở nó để soạn thảo nếu cần sửa.", ws.Handle())
+}
+
 // documentParamSchema is the "document" property every document tool takes.
 const documentParamSchema = `"document": {
       "type": "string",

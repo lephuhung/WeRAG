@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/filetransport"
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -78,15 +80,66 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 			options.OCRMaxPages = agent.Config.AttachmentOCRMaxPages
 		}
 	}
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	// In the document assistant a chat upload becomes a source document of
+	// the session; check the source limit before storing and parsing it.
+	asSource := h.uploadBecomesSource(agent, ext, c.PostForm("document_role"))
+	if asSource {
+		if docs, err := h.documentWorkspaces.List(ctx, tenantID, sessionID); err == nil {
+			if capErr := service.SourceCapacityError(docs); capErr != nil {
+				c.Error(capErr)
+				return
+			}
+		}
+	}
 	document, err := h.temporaryDocuments.Create(
-		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		ctx, tenantID, sessionID,
 		fileHeader.Filename, fileHeader.Header.Get("Content-Type"), fileHeader.Size, file, options,
 	)
 	if err != nil {
 		c.Error(apperrors.NewBadRequestError(err.Error()))
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": document})
+	resp := gin.H{"success": true, "data": document}
+	if asSource && document != nil && document.Status != types.TemporaryDocumentStatusFailed {
+		userID, _ := types.UserIDFromContext(ctx)
+		ws, err := h.documentWorkspaces.CreateSourceFromAttachment(ctx, tenantID, sessionID, userID, document.ID)
+		switch {
+		case err == nil:
+			resp["document"] = &types.DocumentWorkspaceView{DocumentWorkspace: ws, EditorKey: ws.EditorKey(), Handle: ws.Handle()}
+		case isConflict(err):
+			// another upload took the last source slot meanwhile
+			_ = h.temporaryDocuments.Delete(ctx, tenantID, sessionID, document.ID)
+			c.Error(err)
+			return
+		default:
+			// the file still works as a plain attachment of this turn
+			logger.Warnf(ctx, "Upload %s of session %s not recorded as a source document: %v",
+				document.ID, sessionID, err)
+		}
+	}
+	c.JSON(http.StatusAccepted, resp)
+}
+
+// uploadBecomesSource reports whether a chat upload is recorded as a source
+// document: in a document-assistant session with the document workspace
+// on, for any parsed document (not an image sent for vision, not audio).
+// The editor pane's own uploads pass document_role=target: they are opened
+// as an editor tab right after the upload.
+func (h *Handler) uploadBecomesSource(agent *types.CustomAgent, ext, role string) bool {
+	if agent == nil || agent.ID != types.BuiltinDocumentAssistantID ||
+		h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+		return false
+	}
+	if strings.TrimSpace(role) == types.DocumentWorkspaceRoleTarget {
+		return false
+	}
+	return !docparser.IsImageFormat(ext) && !isAudioExtension(ext)
+}
+
+func isConflict(err error) bool {
+	appErr, ok := apperrors.IsAppError(err)
+	return ok && appErr.Code == apperrors.ErrConflict
 }
 
 func (h *Handler) ListTemporaryDocuments(c *gin.Context) {

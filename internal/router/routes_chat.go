@@ -150,6 +150,8 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.GET("/:id/documents/:doc_id", handler.GetDocumentWorkspace)
 		sessions.DELETE("/:id/documents/:doc_id", handler.DeleteDocumentWorkspace)
 		sessions.POST("/:session_id/documents/:doc_id/activate", handler.ActivateDocumentWorkspace)
+		// target ↔ source (see SetDocumentRole)
+		sessions.POST("/:session_id/documents/:doc_id/role", handler.SetDocumentRole)
 		sessions.POST("/:session_id/documents/:doc_id/forcesave", handler.ForceSaveDocumentWorkspace)
 		sessions.GET("/:id/documents/:doc_id/download", handler.DownloadDocumentWorkspace)
 		sessions.GET("/:id/documents/:doc_id/revisions", handler.ListDocumentRevisions)

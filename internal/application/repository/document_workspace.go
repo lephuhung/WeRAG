@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type documentWorkspaceRepository struct{ db *gorm.DB }
@@ -22,15 +23,15 @@ func (r *documentWorkspaceRepository) Create(ctx context.Context, ws *types.Docu
 	return r.db.WithContext(ctx).Create(ws).Error
 }
 
-// GetBySession returns the session's active document — the one whose tab
-// was activated last, else the latest opened — or (nil, nil) when the
-// session has none.
+// GetBySession returns the session's active document — the target whose
+// tab was activated last, else the latest opened — or (nil, nil) when the
+// session has no target. Sources have no tab and are never active.
 func (r *documentWorkspaceRepository) GetBySession(
 	ctx context.Context, tenantID uint64, sessionID string,
 ) (*types.DocumentWorkspace, error) {
 	var ws types.DocumentWorkspace
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND session_id = ?", tenantID, sessionID).
+		Where("tenant_id = ? AND session_id = ? AND role <> ?", tenantID, sessionID, types.DocumentWorkspaceRoleSource).
 		Order("active_at DESC NULLS LAST").Order("position DESC").
 		First(&ws).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -42,7 +43,8 @@ func (r *documentWorkspaceRepository) GetBySession(
 	return &ws, nil
 }
 
-// ListBySession returns the session's documents in tab order (position).
+// ListBySession returns the session's documents of both roles in handle
+// order (position).
 func (r *documentWorkspaceRepository) ListBySession(
 	ctx context.Context, tenantID uint64, sessionID string,
 ) ([]*types.DocumentWorkspace, error) {
@@ -136,8 +138,39 @@ func documentWorkspaceColumns(ws *types.DocumentWorkspace) map[string]interface{
 		"revision":      ws.Revision,
 		"status":        ws.Status,
 		"save_count":    ws.SaveCount,
+		"role":          ws.Role,
+		"text_status":   ws.TextStatus,
 		"last_saved_at": ws.LastSavedAt,
 		"closed_at":     ws.ClosedAt,
 		"updated_at":    ws.UpdatedAt,
 	}
+}
+
+// SaveText stores (or replaces) the text of a source document.
+func (r *documentWorkspaceRepository) SaveText(ctx context.Context, text *types.DocumentWorkspaceText) error {
+	if len(text.Chunks) == 0 {
+		text.Chunks = types.JSON(`[]`)
+	}
+	now := time.Now()
+	if text.CreatedAt.IsZero() {
+		text.CreatedAt = now
+	}
+	text.UpdatedAt = now
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "workspace_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"content", "chunks", "token_count", "chunk_count", "updated_at"}),
+	}).Create(text).Error
+}
+
+// GetText returns the stored text of a source, or (nil, nil) when none.
+func (r *documentWorkspaceRepository) GetText(ctx context.Context, workspaceID string) (*types.DocumentWorkspaceText, error) {
+	var text types.DocumentWorkspaceText
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&text).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &text, nil
 }

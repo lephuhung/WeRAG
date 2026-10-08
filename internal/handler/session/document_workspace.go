@@ -101,9 +101,9 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": view})
 }
 
-// ListDocumentWorkspaces returns the session's documents in tab order,
-// without editor configs (each tab loads its own), with the background
-// format check of each and the active document's ID.
+// ListDocumentWorkspaces returns the session's documents of both roles in
+// handle order, without editor configs (each tab loads its own), with the
+// background format check of each target and the active target's ID.
 // GET /sessions/:id/documents
 func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -120,10 +120,11 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 	}
 	out := make([]*types.DocumentWorkspaceView, 0, len(docs))
 	for _, ws := range docs {
-		out = append(out, &types.DocumentWorkspaceView{
-			DocumentWorkspace: ws, EditorKey: ws.EditorKey(), Handle: ws.Handle(),
-			FormatCheck: h.precheck.Status(ctx, ws.ID),
-		})
+		view := &types.DocumentWorkspaceView{DocumentWorkspace: ws, EditorKey: ws.EditorKey(), Handle: ws.Handle()}
+		if ws.IsTarget() {
+			view.FormatCheck = h.precheck.Status(ctx, ws.ID)
+		}
+		out = append(out, view)
 	}
 	activeID := ""
 	if len(docs) > 0 {
@@ -133,6 +134,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"documents": out, "active_id": activeID, "max_documents": types.MaxDocumentWorkspacesPerSession,
+		"max_sources":    types.MaxDocumentSourcesPerSession,
 		"max_file_bytes": types.MaxDocumentWorkspaceFileBytes, "max_media_bytes": types.MaxDocumentWorkspaceMediaBytes,
 	}})
 }
@@ -186,7 +188,7 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to load document")
 		return
 	}
-	if ws.Status == types.DocumentWorkspaceStatusOpen {
+	if ws.IsTarget() && ws.Status == types.DocumentWorkspaceStatusOpen {
 		// a document opened before a server restart has no check yet
 		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
 		// a save since the check: keep it or check again (format changed)
@@ -236,12 +238,54 @@ func (h *DocumentWorkspaceHandler) DownloadDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to open document")
 		return
 	}
+	contentType := docxContentType
+	if ws.IsSource() {
+		contentType = "" // by file name: a source keeps its own type
+	}
 	if err := filetransport.Serve(c.Writer, c.Request, reader, filetransport.Options{
-		Filename: ws.FileName, Download: true, ContentType: docxContentType,
+		Filename: ws.FileName, Download: true, ContentType: contentType,
 		CacheControl: "private, no-store", Size: ws.FileSize,
 	}); err != nil {
 		logger.Errorf(ctx, "Failed to stream document workspace: %v", err)
 	}
+}
+
+// SetDocumentRoleRequest switches a document between target and source.
+type SetDocumentRoleRequest struct {
+	Role string `json:"role" binding:"required"`
+}
+
+// SetDocumentRole promotes a Word source to a target ("Mở để soạn thảo": it
+// gets an editor tab, keeping its handle) or demotes a target to a source
+// ("Chỉ dùng làm nguồn": snapshot, then it leaves the tab strip). A limit
+// reached answers 409. POST /sessions/:session_id/documents/:doc_id/role
+func (h *DocumentWorkspaceHandler) SetDocumentRole(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req SetDocumentRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("role is required"))
+		return
+	}
+	ws, err := h.workspaces.SetRole(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), strings.TrimSpace(req.Role))
+	if err != nil {
+		h.fail(c, err, "Failed to change the document role")
+		return
+	}
+	if ws.IsTarget() {
+		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
+	}
+	view, err := h.view(c, ws)
+	if err != nil {
+		h.fail(c, err, "Failed to build editor config")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
 }
 
 // DocumentRevisionResponse is one entry of the snapshot timeline.
@@ -367,7 +411,9 @@ func (h *DocumentWorkspaceHandler) view(c *gin.Context, ws *types.DocumentWorksp
 	view, err := h.workspaces.View(ctx, ws, userID, userName, editorLang(c.GetHeader("Accept-Language")))
 	if err == nil && view != nil {
 		view.Handle = ws.Handle()
-		view.FormatCheck = h.precheck.Status(ctx, ws.ID)
+		if ws.IsTarget() {
+			view.FormatCheck = h.precheck.Status(ctx, ws.ID)
+		}
 	}
 	return view, err
 }

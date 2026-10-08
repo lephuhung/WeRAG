@@ -11,10 +11,11 @@ import (
 // DocumentWorkspaceRepository persists DocumentWorkspace rows.
 type DocumentWorkspaceRepository interface {
 	Create(ctx context.Context, ws *types.DocumentWorkspace) error
-	// GetBySession returns the session's active document (last activated,
-	// else latest opened), or (nil, nil).
+	// GetBySession returns the session's active target (last activated,
+	// else latest opened), or (nil, nil). Sources are never active.
 	GetBySession(ctx context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error)
-	// ListBySession returns the session's documents in tab order.
+	// ListBySession returns the session's documents of both roles in
+	// handle order (position).
 	ListBySession(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentWorkspace, error)
 	// NextPosition is the position of the next document opened in the
 	// session (positions are never reused).
@@ -30,6 +31,10 @@ type DocumentWorkspaceRepository interface {
 	// expectedRevision; it returns (false, nil) when another writer won.
 	UpdateIfRevision(ctx context.Context, ws *types.DocumentWorkspace, expectedRevision int) (bool, error)
 	Delete(ctx context.Context, tenantID uint64, sessionID string) error
+	// SaveText stores or replaces the text of a source document.
+	SaveText(ctx context.Context, text *types.DocumentWorkspaceText) error
+	// GetText returns a source's stored text, or (nil, nil).
+	GetText(ctx context.Context, workspaceID string) (*types.DocumentWorkspaceText, error)
 }
 
 // DocumentWorkspaceService owns the editable documents of a chat session and
@@ -53,7 +58,28 @@ type DocumentWorkspaceService interface {
 	// refused (see checkDocumentWorkspaceSize).
 	CreateFromAttachment(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID string) (*types.DocumentWorkspace, error)
 
-	// GetBySession returns the session's active workspace or an
+	// CreateSourceFromAttachment records a chat upload of the session as a
+	// source document: a copy of the file now, its parsed text once the
+	// upload is parsed (TextStatus processing until then). An upload that
+	// already has a document returns it. A session holds at most
+	// MaxDocumentSourcesPerSession sources (409 beyond); image uploads are
+	// refused (they stay plain attachments).
+	CreateSourceFromAttachment(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID string) (*types.DocumentWorkspace, error)
+
+	// SetRole switches a document's role. To target: a Word source gets an
+	// editor file (a .doc is converted) and keeps its handle; refused for a
+	// non-Word file or at MaxDocumentWorkspacesPerSession targets. To
+	// source: the target is snapshotted, its paragraphs become its stored
+	// text and it leaves the tab strip.
+	SetRole(ctx context.Context, tenantID uint64, sessionID, documentID, role string) (*types.DocumentWorkspace, error)
+
+	// SourceText returns a source's stored text (copied from the upload
+	// first when its parsing finished since), with the row. A target is a
+	// bad request; a source still being parsed, or whose parsing failed, a
+	// conflict.
+	SourceText(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspaceText, *types.DocumentWorkspace, error)
+
+	// GetBySession returns the session's active target or an
 	// ErrNotFound-coded error.
 	GetBySession(ctx context.Context, tenantID uint64, sessionID string) (*types.DocumentWorkspace, error)
 
@@ -62,11 +88,13 @@ type DocumentWorkspaceService interface {
 	// documentID resolves it the same way.
 	Get(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspace, error)
 
-	// List returns the session's workspaces in tab order.
+	// List returns the session's documents of both roles in handle order.
 	List(ctx context.Context, tenantID uint64, sessionID string) ([]*types.DocumentWorkspace, error)
 
-	// Activate makes the workspace the session's active one (the tab the
-	// user is looking at).
+	// Activate makes the target the session's active one (the tab the
+	// user is looking at). The editor-only methods below (Activate, View's
+	// editor config, ForceSave, PrepareExternalWrite, CommitExternalWrite,
+	// Snapshot, ListRevisions, Restore) answer a source with a 409.
 	Activate(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentWorkspace, error)
 
 	// Remove closes a document's tab: it snapshots the current state and

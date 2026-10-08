@@ -35,9 +35,9 @@ func NewDocumentFormatPrecheck(
 	return &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models}
 }
 
-// Start begins the check of one document (workspace ID) of the session in
-// the background, at most once per document in this process. It returns at
-// once.
+// Start begins the check of one target (workspace ID) of the session in
+// the background, at most once per document in this process; a source is
+// skipped (it may be checked once promoted). It returns at once.
 func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, sessionID, documentID string) {
 	if p == nil || p.workspaces == nil || !p.workspaces.Enabled() || tenantID == 0 || sessionID == "" || documentID == "" {
 		return
@@ -50,6 +50,11 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 	}
 	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, tenantID)
 	go func() {
+		// a source (chat upload) is never format-checked
+		if ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID); err != nil || ws.IsSource() {
+			p.started.Delete(documentID)
+			return
+		}
 		agent := p.agent(ctx)
 		if agent == nil {
 			return

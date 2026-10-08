@@ -22,7 +22,7 @@ func newDocumentWorkspaceTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	_, file, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	for _, name := range []string{"000032_document_workspaces.up.sql", "000036_document_workspaces_multi.up.sql"} {
+	for _, name := range []string{"000032_document_workspaces.up.sql", "000036_document_workspaces_multi.up.sql", "000037_document_workspace_roles.up.sql"} {
 		up, err := os.ReadFile(filepath.Join(root, "migrations", "sqlite", name))
 		require.NoError(t, err)
 		require.NoError(t, db.Exec(string(up)).Error, name)
@@ -124,4 +124,73 @@ func TestDocumentWorkspaceRepositorySeveralDocuments(t *testing.T) {
 	pos, err = repo.NextPosition(ctx, 1, "s1")
 	require.NoError(t, err)
 	require.Equal(t, 3, pos, "positions of closed documents are not reused")
+}
+
+func TestDocumentWorkspaceRepositoryRolesAndSourceText(t *testing.T) {
+	ctx := context.Background()
+	repo := NewDocumentWorkspaceRepository(newDocumentWorkspaceTestDB(t))
+
+	target := &types.DocumentWorkspace{TenantID: 1, SessionID: "s1", AttachmentID: "a", Position: 1,
+		OriginalRef: "a", CurrentRef: "a", FileName: "a.docx"}
+	require.NoError(t, repo.Create(ctx, target))
+	require.Equal(t, types.DocumentWorkspaceRoleTarget, target.Role, "a row without a role is a target")
+	now := time.Now()
+	source := &types.DocumentWorkspace{TenantID: 1, SessionID: "s1", AttachmentID: "b", Position: 2, ActiveAt: &now,
+		OriginalRef: "b", CurrentRef: "b", FileName: "b.pdf", FileType: "pdf",
+		Role: types.DocumentWorkspaceRoleSource, TextStatus: types.DocumentSourceTextProcessing}
+	require.NoError(t, repo.Create(ctx, source))
+
+	active, err := repo.GetBySession(ctx, 1, "s1")
+	require.NoError(t, err)
+	require.Equal(t, target.ID, active.ID, "a source is never the active tab")
+	list, err := repo.ListBySession(ctx, 1, "s1")
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	require.Equal(t, types.DocumentWorkspaceRoleSource, list[1].Role)
+	require.Equal(t, "pdf", list[1].FileType)
+
+	onlySource := &types.DocumentWorkspace{TenantID: 1, SessionID: "s2", AttachmentID: "c", Position: 1,
+		OriginalRef: "c", CurrentRef: "c", FileName: "c.xlsx", Role: types.DocumentWorkspaceRoleSource}
+	require.NoError(t, repo.Create(ctx, onlySource))
+	none, err := repo.GetBySession(ctx, 1, "s2")
+	require.NoError(t, err)
+	require.Nil(t, none, "a session holding only sources has no active document")
+
+	missing, err := repo.GetText(ctx, source.ID)
+	require.NoError(t, err)
+	require.Nil(t, missing)
+	require.NoError(t, repo.SaveText(ctx, &types.DocumentWorkspaceText{WorkspaceID: source.ID, TenantID: 1,
+		Content: "bản đầu", Chunks: types.JSON(`[{"seq":0,"content":"bản đầu"}]`), ChunkCount: 1}))
+	require.NoError(t, repo.SaveText(ctx, &types.DocumentWorkspaceText{WorkspaceID: source.ID, TenantID: 1,
+		Content: "bản sau", ChunkCount: 0}))
+	text, err := repo.GetText(ctx, source.ID)
+	require.NoError(t, err)
+	require.Equal(t, "bản sau", text.Content, "saving again replaces the text")
+	require.JSONEq(t, `[]`, string(text.Chunks))
+
+	// the role and text status are written by Update (promotion, parse end)
+	source.Role = types.DocumentWorkspaceRoleTarget
+	source.TextStatus = ""
+	require.NoError(t, repo.Update(ctx, source))
+	got, err := repo.GetByID(ctx, source.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.DocumentWorkspaceRoleTarget, got.Role)
+	require.Equal(t, "", got.TextStatus)
+}
+
+func TestDocumentWorkspaceRolesMigrationRollsBack(t *testing.T) {
+	db := newDocumentWorkspaceTestDB(t)
+	_, file, _, _ := runtime.Caller(0)
+	dir := filepath.Join(filepath.Dir(file), "..", "..", "..", "migrations", "sqlite")
+	require.NoError(t, db.Exec(`INSERT INTO document_workspaces (id, tenant_id, session_id, original_ref, current_ref, file_name, status, role)
+		VALUES ('t', 1, 's', 'r', 'r', 'a.docx', 'open', 'target'), ('src', 1, 's', 'r2', 'r2', 'b.pdf', 'open', 'source')`).Error)
+	down, err := os.ReadFile(filepath.Join(dir, "000037_document_workspace_roles.down.sql"))
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(string(down)).Error)
+	var live int64
+	require.NoError(t, db.Raw(`SELECT COUNT(*) FROM document_workspaces WHERE deleted_at IS NULL`).Scan(&live).Error)
+	require.EqualValues(t, 1, live, "the source is dropped with the role column")
+	up, err := os.ReadFile(filepath.Join(dir, "000037_document_workspace_roles.up.sql"))
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(string(up)).Error, "up again after down")
 }

@@ -104,7 +104,7 @@ func (s *documentWorkspaceService) Snapshot(
 	if label == "" {
 		label = defaultRevisionLabel(source)
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (s *documentWorkspaceService) ListRevisions(
 	if s.revisions == nil {
 		return nil, nil
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s *documentWorkspaceService) Restore(
 	if s.revisions == nil {
 		return nil, apperrors.NewServiceUnavailableError("document revisions are not configured")
 	}
-	ws, err := s.Get(ctx, tenantID, sessionID, documentID)
+	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return nil, err
 	}
