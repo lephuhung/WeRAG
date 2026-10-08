@@ -149,6 +149,41 @@ type MessageAttachment struct {
 	// document, or content with no readable text). BuildPrompt renders it as
 	// an explicit failure block so the LLM knows not to fabricate an answer.
 	ParseError string `json:"parse_error,omitempty"`
+	// HistoryOmission is set only while history is replayed, never stored:
+	// the attachment's content was shown in an earlier turn, so BuildPrompt
+	// renders its metadata and a note on how to read it again instead of
+	// the content (and not the "extraction failed" note of an empty one).
+	HistoryOmission *AttachmentHistoryOmission `json:"-"`
+}
+
+// AttachmentContentOmittedInHistory is the status BuildPrompt shows for an
+// attachment whose content history leaves out.
+const AttachmentContentOmittedInHistory = "omitted_in_history"
+
+// AttachmentHistoryOmission says how a replayed attachment whose content
+// is left out can still be read.
+type AttachmentHistoryOmission struct {
+	// Handle names the session document the upload was opened as (vb2),
+	// "" when it is none (other agents, or not opened).
+	Handle string
+	// Target: the document is open in an editor tab (its text reaches the
+	// turn from the tab, never from the attachment).
+	Target bool
+}
+
+// Note is the line BuildPrompt shows instead of the content.
+func (o *AttachmentHistoryOmission) Note() string {
+	switch {
+	case o == nil || o.Handle == "":
+		return "Nội dung tệp đã được hiển thị ở lượt trước và không lặp lại; nếu cần, hỏi lại người dùng hoặc, " +
+			"trong trợ lý soạn thảo, tra cứu bằng find_in_documents (tài liệu nguồn vbN) / read_document_outline."
+	case o.Target:
+		return fmt.Sprintf("Nội dung tệp không lặp lại trong lịch sử; tệp đang mở trong tab soạn thảo %[1]s: "+
+			"đọc bằng read_document_outline (document=%[1]s) hoặc tra cứu bằng find_in_documents (document=%[1]s).", o.Handle)
+	default:
+		return fmt.Sprintf("Nội dung tệp đã được hiển thị ở lượt trước và không lặp lại; tệp là tài liệu nguồn %[1]s của phiên: "+
+			"tra cứu bằng find_in_documents (document=%[1]s) hoặc read_document_outline (document=%[1]s).", o.Handle)
+	}
 }
 
 // MessageAttachments is a slice of MessageAttachment for database storage
@@ -182,6 +217,9 @@ func (attachments MessageAttachments) BuildPrompt() string {
 			sb.WriteString("<status>unavailable</status>\n")
 			sb.WriteString(fmt.Sprintf("<error>%s</error>\n", html.EscapeString(att.ParseError)))
 			sb.WriteString("<instruction>This attachment could not be read. Do not guess, infer, or fabricate its contents. Tell the user the file could not be processed, briefly explain why if a reason is given above, and ask them to re-upload the file, provide a different file, or paste the relevant text directly.</instruction>\n")
+		} else if att.HistoryOmission != nil {
+			sb.WriteString(fmt.Sprintf("<status>%s</status>\n", AttachmentContentOmittedInHistory))
+			sb.WriteString(fmt.Sprintf("<note>%s</note>\n", html.EscapeString(att.HistoryOmission.Note())))
 		} else if att.Content != "" {
 			sb.WriteString("<content>\n")
 			content := strings.ReplaceAll(att.Content, "</content>", "&lt;/content&gt;")

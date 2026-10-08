@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/compaction"
@@ -66,6 +67,12 @@ var agentHistoryThinkTagRegex = regexp.MustCompile(`(?s)<think>.*?</think>`)
 // first compaction check uses the same scale. Budget and trigger must agree,
 // or turns the loader drops can sit below a trigger that never fires.
 //
+// An uploaded file's content is replayed once: only the newest turn of the
+// window whose attachments carry content keeps it; every older turn shows
+// the attachments' metadata and a note on how to read them again (see
+// types.AttachmentHistoryOmission). An upload open as an editor tab never
+// replays its content, the tab brings it. What is stored is unchanged.
+//
 // DB is treated as the single source of truth — there is no Redis/in-memory
 // cache layer above this function. Callers are expected to invoke it once
 // per turn before handing the messages to the agent engine.
@@ -75,6 +82,7 @@ func LoadAgentHistory(
 	sessionID string,
 	tokenBudget int,
 	retainRetrievalHistory bool,
+	opts ...AgentHistoryOption,
 ) ([]chat.Message, float64, error) {
 	if tokenBudget <= 0 {
 		return []chat.Message{}, 0, nil
@@ -104,6 +112,9 @@ func LoadAgentHistory(
 		used         int
 		replay       = newHistoryReplay(estimator, 0, retainRetrievalHistory)
 	)
+	for _, opt := range opts {
+		opt(replay)
+	}
 	for len(rows) < agentHistoryMaxRows {
 		page, err := messageRepo.ListMessagesBySessionBeforeCursor(
 			ctx, sessionID, before, beforeID, agentHistoryPageSize,
@@ -253,6 +264,24 @@ func sortsAtOrBefore(msg, boundary *types.Message) bool {
 		(msg.CreatedAt.Equal(boundary.CreatedAt) && msg.ID <= boundary.ID)
 }
 
+// AgentHistoryOption adjusts how LoadAgentHistory replays turns.
+type AgentHistoryOption func(*historyReplay)
+
+// WithHistoryDocuments gives the replay the session's documents (the
+// document assistant): an attachment opened as one of them is named by its
+// handle in the note that replaces its content, and one open as an editor
+// tab never replays its content. Without it attachments are matched to no
+// document (other agents, IM, MCP, embed).
+func WithHistoryDocuments(docs []*types.DocumentWorkspace) AgentHistoryOption {
+	return func(r *historyReplay) {
+		for _, d := range docs {
+			if d != nil && d.AttachmentID != "" {
+				r.documents[d.AttachmentID] = d
+			}
+		}
+	}
+}
+
 // historyReplay builds and prices each turn's replayed messages once, however
 // many pages the read takes.
 type historyReplay struct {
@@ -263,6 +292,24 @@ type historyReplay struct {
 	tokens                 map[string]int
 	// full holds stored rows by ID until their turn is replayed.
 	full map[string]*types.Message
+	// documents are the session documents by the upload they were opened
+	// from (WithHistoryDocuments).
+	documents map[string]*types.DocumentWorkspace
+	// withContent holds the user rows whose attachments carry content.
+	withContent map[string]bool
+	// contentTurn is the assistant ID of the newest turn of the window whose
+	// attachments carry content, the one turn that replays it; "" until one
+	// is found, and then every attachment keeps its content.
+	contentTurn string
+	// trims records what each built turn left out (see historyTrim).
+	trims map[string]historyTrim
+}
+
+// historyTrim is what the replay of one turn left out.
+type historyTrim struct {
+	// attachments: an attachment's content was replaced by its note.
+	attachments     bool
+	attachmentRunes int
 }
 
 func newHistoryReplay(
@@ -275,6 +322,9 @@ func newHistoryReplay(
 		built:                  make(map[string][]chat.Message),
 		tokens:                 make(map[string]int),
 		full:                   make(map[string]*types.Message),
+		documents:              make(map[string]*types.DocumentWorkspace),
+		withContent:            make(map[string]bool),
+		trims:                  make(map[string]historyTrim),
 	}
 }
 
@@ -282,6 +332,9 @@ func newHistoryReplay(
 // copy grouping works on.
 func (r *historyReplay) track(msg *types.Message) *types.Message {
 	r.full[msg.ID] = msg
+	if msg.Role == "user" && r.replaysContent(msg.Attachments) {
+		r.withContent[msg.ID] = true
+	}
 	return &types.Message{
 		ID:          msg.ID,
 		RequestID:   msg.RequestID,
@@ -302,9 +355,11 @@ func (r *historyReplay) messages(t *agentHistoryTurn) []chat.Message {
 		return msgs
 	}
 	users := make([]*types.Message, len(t.users))
+	var trim historyTrim
 	for i, u := range t.users {
-		users[i] = r.stored(u)
+		users[i] = r.historyAttachments(id, r.stored(u), &trim)
 	}
+	r.trims[id] = trim
 	msgs := append([]chat.Message{buildUserHistoryMessage(users[0])},
 		buildTurnBodyMessages(r.stored(t.assistant), users[1:])...)
 	for i := range msgs {
@@ -324,6 +379,72 @@ func (r *historyReplay) messages(t *agentHistoryTurn) []chat.Message {
 	return sent
 }
 
+// replaysContent reports whether any of atts would replay its content: it
+// has some, could be read, and is not open as an editor tab.
+func (r *historyReplay) replaysContent(atts types.MessageAttachments) bool {
+	for _, att := range atts {
+		if att.Content != "" && att.ParseError == "" && !r.documents[att.ID].IsTarget() {
+			return true
+		}
+	}
+	return false
+}
+
+// chooseContentTurn picks, once, the newest of turns whose attachments carry
+// content. Pages are read backwards, so a later call only sees older turns
+// besides the ones already built, which carry none.
+func (r *historyReplay) chooseContentTurn(turns []*agentHistoryTurn) {
+	if r.contentTurn != "" {
+		return
+	}
+	for i := len(turns) - 1; i >= 0; i-- {
+		for _, u := range turns[i].users {
+			if r.withContent[u.ID] {
+				r.contentTurn = turns[i].assistant.ID
+				return
+			}
+		}
+	}
+}
+
+// historyAttachments returns u as turn turnID replays it: the attachments of
+// any turn but the content turn, and every attachment open as an editor tab,
+// lose their content to a note (types.AttachmentHistoryOmission). u itself,
+// the stored row, is left as it is.
+func (r *historyReplay) historyAttachments(turnID string, u *types.Message, trim *historyTrim) *types.Message {
+	if len(u.Attachments) == 0 {
+		return u
+	}
+	olderTurn := r.contentTurn != "" && turnID != r.contentTurn
+	atts := make(types.MessageAttachments, len(u.Attachments))
+	changed := false
+	for i, att := range u.Attachments {
+		atts[i] = att
+		doc := r.documents[att.ID]
+		// an older turn's empty attachment keeps its own note: it never
+		// had content to show
+		if att.ParseError != "" || !(doc.IsTarget() || (olderTurn && att.Content != "")) {
+			continue
+		}
+		omission := &types.AttachmentHistoryOmission{}
+		if doc != nil {
+			omission.Handle, omission.Target = doc.Handle(), doc.IsTarget()
+		}
+		atts[i].Content = ""
+		atts[i].HistoryOmission = omission
+		changed = true
+	}
+	if !changed {
+		return u
+	}
+	trim.attachments = true
+	trim.attachmentRunes += utf8.RuneCountInString(u.Attachments.BuildPrompt()) -
+		utf8.RuneCountInString(atts.BuildPrompt())
+	cp := *u
+	cp.Attachments = atts
+	return &cp
+}
+
 // stored returns the full row behind msg, or msg itself when it is not a
 // tracked slim copy (callers that group full rows directly).
 func (r *historyReplay) stored(msg *types.Message) *types.Message {
@@ -339,6 +460,7 @@ func (r *historyReplay) stored(msg *types.Message) *types.Message {
 // it is what the next message most likely refers to, and compaction can split
 // a turn too large to fit on its own.
 func (r *historyReplay) newestWithin(turns []*agentHistoryTurn) ([]*agentHistoryTurn, bool) {
+	r.chooseContentTurn(turns)
 	used := 0
 	for i := len(turns) - 1; i >= 0; i-- {
 		r.messages(turns[i])

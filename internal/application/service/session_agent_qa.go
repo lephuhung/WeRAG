@@ -166,6 +166,7 @@ func (s *sessionService) AgentQA(
 		budget := agent.HistoryTokenBudget(agentConfig)
 		llmContext, agentConfig.ContextTokenScale, err = LoadAgentHistory(
 			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory,
+			s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID)...,
 		)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to load agent history from DB: %v, continuing without history", err)
@@ -862,6 +863,26 @@ func (s *sessionService) attachmentsOutsideOpenDocuments(
 		logger.Infof(ctx, "Dropped %d attachment(s) already open as an editor tab from the agent query", len(openDocs))
 	}
 	return kept, openDocs, sources
+}
+
+// historyDocumentsOption gives LoadAgentHistory the session documents of a
+// document-assistant session (WithHistoryDocuments), so an older upload's
+// note names its handle; none when documents are off or cannot be listed.
+func (s *sessionService) historyDocumentsOption(
+	ctx context.Context, tenantID uint64, sessionID string,
+) []AgentHistoryOption {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
+		return nil
+	}
+	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)
+	if err != nil {
+		logger.Warnf(ctx, "History without the session documents: %v", err)
+		return nil
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	return []AgentHistoryOption{WithHistoryDocuments(docs)}
 }
 
 // mergeDocumentIDs appends extra to ids without duplicates, keeping the
