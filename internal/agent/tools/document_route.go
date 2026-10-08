@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // The document router picks which documents (and sections) a turn that
@@ -179,6 +180,15 @@ func cardText(du *sessionDocUnits) (text, header string) {
 // routeByKeywords is tier 1. scores lists each document's total (handle →
 // score) for the log; topID and topScore are the best document and its
 // total, whether or not it won.
+//
+// A document the question names — by its số ký hiệu, or by its type ("kế
+// hoạch …") when it is the only document of that type — is the scope
+// outright; two documents named so leave tier 1 unclear. Otherwise the
+// card scores lead: the passage scores add at most as much as the best
+// card score (routeFloor while no card matches), and a passage winner the
+// cards disagree with leaves tier 1 unclear. A body that merely repeats a
+// word of the question ("xây dựng kế hoạch …" in a công văn) thus cannot
+// outvote the cards.
 func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.DocumentScope, scores map[string]float64, topID string, topScore float64) {
 	q := parseSearchQuery(query)
 	scores = map[string]float64{}
@@ -192,43 +202,151 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.Docu
 		cards[i] = searchUnit{Doc: i, Index: i, Text: text, Header: header}
 		units = append(units, du.units...)
 	}
-	total := make([]float64, len(loaded))
+	card := make([]float64, len(loaded))
 	for _, h := range rankSearchUnits(q, cards) {
-		total[h.Doc] += h.Score
+		card[h.Doc] += h.Score
 	}
 	// the text: the best passage of each document, and a quarter of the
 	// next two
+	text := make([]float64, len(loaded))
 	taken := make([]int, len(loaded))
 	for _, h := range rankSearchUnits(q, units) {
 		switch taken[h.Doc] {
 		case 0:
-			total[h.Doc] += routeUnitWeight * h.Score
+			text[h.Doc] += routeUnitWeight * h.Score
 		case 1, 2:
-			total[h.Doc] += routeUnitWeight * 0.25 * h.Score
+			text[h.Doc] += routeUnitWeight * 0.25 * h.Score
 		}
 		taken[h.Doc]++
 	}
-	order := make([]int, len(loaded))
-	for i := range order {
-		order[i] = i
+	bestCard := 0.0
+	for _, c := range card {
+		bestCard = max(bestCard, c)
+	}
+	textCap := bestCard
+	if textCap == 0 {
+		textCap = routeFloor
+	}
+	total := make([]float64, len(loaded))
+	for i := range loaded {
+		total[i] = card[i] + min(text[i], textCap)
 		scores[loaded[i].ws.Handle()] = float64(int(total[i]*100)) / 100
 	}
-	sort.SliceStable(order, func(a, b int) bool { return total[order[a]] > total[order[b]] })
-	best := order[0]
-	second := 0.0
-	if len(order) > 1 {
-		second = total[order[1]]
-	}
+	best := argmax(total)
 	topID, topScore = loaded[best].ws.ID, total[best]
+
+	pick := func(i int) *types.DocumentScope {
+		du := loaded[i]
+		s := &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
+		if sec := bestSection(q, du.sections); sec != nil {
+			s.Sections = []types.DocumentScopeSection{{DocumentID: du.ws.ID, From: sec.From, To: sec.To, Title: sec.Title}}
+		}
+		return s
+	}
+	switch named := namedByQuery(query, loaded); len(named) {
+	case 1:
+		topID, topScore = loaded[named[0]].ws.ID, max(topScore, routeFloor)
+		return pick(named[0]), scores, topID, topScore
+	case 0:
+	default:
+		return nil, scores, topID, topScore
+	}
+
+	second := 0.0
+	for i, t := range total {
+		if i != best {
+			second = max(second, t)
+		}
+	}
 	if total[best] < routeFloor || total[best] < routeMargin*second {
 		return nil, scores, topID, topScore
 	}
-	du := loaded[best]
-	scope = &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
-	if s := bestSection(q, du.sections); s != nil {
-		scope.Sections = []types.DocumentScopeSection{{DocumentID: du.ws.ID, From: s.From, To: s.To, Title: s.Title}}
+	if bestCard > 0 && argmax(card) != best {
+		return nil, scores, topID, topScore // the cards point elsewhere
 	}
-	return scope, scores, topID, topScore
+	return pick(best), scores, topID, topScore
+}
+
+func argmax(v []float64) int {
+	best := 0
+	for i := range v {
+		if v[i] > v[best] {
+			best = i
+		}
+	}
+	return best
+}
+
+// docTypesByNameLength lists the document types longest name first, so
+// "thông tư liên tịch" is read before "thông tư".
+var docTypesByNameLength = func() []*vietnamese_legal.DocTypeDef {
+	out := make([]*vietnamese_legal.DocTypeDef, 0, len(vietnamese_legal.DocTypes))
+	for i := range vietnamese_legal.DocTypes {
+		out = append(out, &vietnamese_legal.DocTypes[i])
+	}
+	sort.SliceStable(out, func(a, b int) bool { return len(out[a].Name) > len(out[b].Name) })
+	return out
+}()
+
+// queryDocTypes returns the slugs of the document types the question names.
+func queryDocTypes(query string) map[string]bool {
+	f := " " + foldSearch(query) + " "
+	out := map[string]bool{}
+	for _, d := range docTypesByNameLength {
+		name := foldSearch(d.Name)
+		for containsCode(f, name) {
+			out[d.Slug] = true
+			f = strings.Replace(f, name, strings.Repeat(" ", len(name)), 1)
+		}
+	}
+	return out
+}
+
+// documentTypeSlug is a document's type: its card's, else read from its
+// first lines.
+func documentTypeSlug(du *sessionDocUnits) string {
+	if p := du.profile; p != nil && p.DocTypeCode != "" {
+		return p.DocTypeCode
+	}
+	var head []string
+	for i, u := range du.units {
+		if i >= 15 {
+			break
+		}
+		head = append(head, u.Text)
+	}
+	return vietnamese_legal.DetectDocType(strings.Join(head, "\n")).Slug
+}
+
+// namedByQuery returns the documents the question names: by số ký hiệu,
+// or by a type only that document has.
+func namedByQuery(query string, loaded []*sessionDocUnits) []int {
+	folded := " " + foldSearch(query) + " "
+	named := map[int]bool{}
+	for i, du := range loaded {
+		if p := du.profile; p != nil && p.DocumentNumber != "" && containsCode(folded, foldSearch(p.DocumentNumber)) {
+			named[i] = true
+		}
+	}
+	if types := queryDocTypes(query); len(types) > 0 {
+		byType := map[string][]int{}
+		for i, du := range loaded {
+			if slug := documentTypeSlug(du); slug != "" {
+				byType[slug] = append(byType[slug], i)
+			}
+		}
+		for slug := range types {
+			if docs := byType[slug]; len(docs) == 1 {
+				named[docs[0]] = true
+			}
+		}
+	}
+	out := make([]int, 0, len(named))
+	for i := range named {
+		out = append(out, i)
+	}
+	sort.Ints(out)
+	return out
 }
 
 var (

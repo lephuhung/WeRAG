@@ -285,3 +285,72 @@ func routeByKeywordsFor(t *testing.T, ws DocumentWorkspaceSource, query string) 
 	}
 	return routeByKeywords(query, loaded)
 }
+
+// typedWorkspace holds a Kế hoạch (vb1) and a Công văn (vb2) whose body
+// keeps saying "xây dựng kế hoạch … nhiệm vụ được giao".
+func typedWorkspace(t *testing.T, secondType string) *fakeWorkspace {
+	t.Helper()
+	c := func(text string) string { return testPara(text, "center", "Times New Roman", 13, true, false) }
+	l := func(text string) string { return testPara(text, "left", "Times New Roman", 14, false, false) }
+	plan := strings.Join([]string{
+		c("ỦY BAN NHÂN DÂN PHƯỜNG PHÚ HỘI"), c("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), c("Số: 12/KH-UBND"),
+		c("KẾ HOẠCH"), c("Triển khai công tác chuyển đổi số năm 2026"),
+		l("Giao các tổ dân phố rà soát hộ gia đình, hoàn thành trước ngày 30/6/2026."),
+	}, "")
+	var body []string
+	body = append(body, c("BAN QUẢN LÝ KHU KINH TẾ"), c("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"))
+	if secondType == "ke_hoach" {
+		body = append(body, c("Số: 45/KH-BQL"), c("KẾ HOẠCH"))
+	} else {
+		body = append(body, c("Số: 45/BQL-VP"), l("V/v phối hợp thực hiện nhiệm vụ"))
+	}
+	for i := 0; i < 6; i++ {
+		body = append(body, l("Đề nghị các đơn vị xây dựng kế hoạch thực hiện nhiệm vụ được giao, giao nhiệm vụ cụ thể cho các đơn vị và báo cáo thời hạn hoàn thành."))
+	}
+	ws := newFakeWorkspace(buildTestDocx(t, plan, [4]int{20, 15, 30, 20}))
+	ws.addDocument("ws-2", "cong-van.docx", buildTestDocx(t, strings.Join(body, ""), [4]int{20, 15, 30, 20}))
+	ws.ws.FileName = "ke-hoach.docx"
+	return ws
+}
+
+func TestRouteFollowsTheDocumentTypeTheQuestionNames(t *testing.T) {
+	freshDocProfiles(t)
+	const q = "kế hoạch giao nhiệm vụ gì cho các đơn vị, thời hạn bao giờ"
+	ws := typedWorkspace(t, "cong_van")
+	scope, scores, _, _ := routeByKeywordsFor(t, ws, q)
+	if scope == nil || scope.DocumentIDs[0] != "ws-1" {
+		t.Fatalf("the only Kế hoạch is the scope despite vb2's body (%v): %+v", scores, scope)
+	}
+	// from the cards' doc_type_code too
+	docs, _ := ws.List(toolCtx(), 7, "s")
+	for i, code := range []string{"ke_hoach", "cong_van"} {
+		p := readyProfile(docs[i], 1)
+		p.DocTypeCode, p.DocumentNumber = code, []string{"12/KH-UBND", "45/BQL-VP"}[i]
+		docProfiles.storeState(toolCtx(), docs[i].ID, p)
+	}
+	if scope, scores, _, _ = routeByKeywordsFor(t, ws, q); scope == nil || scope.DocumentIDs[0] != "ws-1" {
+		t.Fatalf("by the card's type (%v): %+v", scores, scope)
+	}
+	// a số ký hiệu names a document as well; naming both is unclear
+	if scope, _, _, _ = routeByKeywordsFor(t, ws, "công văn 45/BQL-VP đề nghị gì"); scope == nil || scope.DocumentIDs[0] != "ws-2" {
+		t.Fatalf("by number: %+v", scope)
+	}
+	if scope, _, _, _ = routeByKeywordsFor(t, ws, "kế hoạch và công văn giao nhiệm vụ gì"); scope != nil {
+		t.Fatalf("two documents named: %+v", scope)
+	}
+
+	// two Kế hoạch: the type names neither; vb2's repeated body alone
+	// cannot decide against the cards
+	freshDocProfiles(t)
+	same := typedWorkspace(t, "ke_hoach")
+	docs, _ = same.List(toolCtx(), 7, "s")
+	p := readyProfile(docs[0], 1)
+	p.DocTypeCode, p.Subject = "ke_hoach", "giao nhiệm vụ chuyển đổi số cho các tổ dân phố, thời hạn 30/6/2026"
+	docProfiles.storeState(toolCtx(), docs[0].ID, p)
+	p2 := readyProfile(docs[1], 1)
+	p2.DocTypeCode, p2.Gist, p2.Subject, p2.KeyPoints = "ke_hoach", "Phối hợp của Ban quản lý", "", nil
+	docProfiles.storeState(toolCtx(), docs[1].ID, p2)
+	if scope, scores, _, _ = routeByKeywordsFor(t, same, q); scope != nil && scope.DocumentIDs[0] == "ws-2" {
+		t.Fatalf("the passages must not outvote the cards (%v): %+v", scores, scope)
+	}
+}
