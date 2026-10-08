@@ -28,13 +28,13 @@ It does NOT change line spacing, spacing before/after paragraphs or indents. Pos
 
 ## When to Use
 
-After check_document_format (or when the user directly asks to normalise the layout). Run with dry_run=true first to show the plan when it would change many paragraphs and the user has not already asked to fix everything.
+After check_document_format (or when the user directly asks to normalise the layout). When the user asked to fix the format, apply at once and report what changed (Ctrl+Z or the revision history undo it); use dry_run=true only when the user explicitly asks to see the plan first ("chỉ xem kế hoạch").
 
 ## Input
 
 - check_ids: rule ids to fix (as reported by the check, e.g. "noi_dung.font", "trich_yeu.size", "page.margin.left"); omit to fix every fixable rule. Font, size, bold/italic and alignment rules are applied paragraph by paragraph: each paragraph that breaks one is fixed even when the check as a whole passes (e.g. one body paragraph in Arial among paragraphs in Times New Roman).
 - document_type: rule set to apply (cong_van, quyet_dinh, …); omit to auto-detect.
-- dry_run: true to only return the plan without changing the document.
+- dry_run: true to only return the plan without changing the document — only when the user explicitly asks to see the plan first.
 - force: true to apply even though the structure could not be identified reliably; only after the user confirmed.`,
 	schema: json.RawMessage(`{
   "type": "object",

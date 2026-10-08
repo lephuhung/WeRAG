@@ -22,6 +22,10 @@ Only when the user explicitly asks in this turn to add or insert something ("ch�
 
 It only adds paragraphs. To change the text of an existing paragraph use rewrite_paragraphs; paragraphs cannot be deleted.
 
+## Wording
+
+When the user does not dictate the wording, write the text yourself in Vietnamese administrative, courteous register (văn phong hành chính, lịch sự), matching the document's existing register and numbering — ONE version, inserted at once. Never offer alternative wordings or ask about style; ask back only for a fact you cannot know or find (a name, a number, a date, a document number), and then ask for that fact only.
+
 ## Input
 
 - inserts: up to 20 inserts, each with
