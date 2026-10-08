@@ -1188,7 +1188,8 @@ func (s *agentService) registerTools(
 		// Document-assistant tools: only when the session has an editable
 		// document (see docWorkspace above).
 		case tools.ToolReadDocumentOutline:
-			if docWorkspace == nil {
+			// also reads the sources (chat uploads) of a session without a tab
+			if docWorkspace == nil && !s.sessionHasSourceDocuments(ctx, sessionID) {
 				continue
 			}
 			toolToRegister = tools.NewReadDocumentOutlineTool(
@@ -1278,7 +1279,9 @@ func (s *agentService) registerTools(
 		if tenantID, ok := types.TenantIDFromContext(ctx); ok {
 			if docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID); err == nil {
 				for _, d := range docs {
-					checkTool.ForDocument(d.ID).Prewarm(ctx)
+					if d.IsTarget() { // a source is never format-checked
+						checkTool.ForDocument(d.ID).Prewarm(ctx)
+					}
 				}
 			}
 		}

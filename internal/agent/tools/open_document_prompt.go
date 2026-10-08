@@ -34,20 +34,46 @@ const openDocumentInstruction = "This is the current text of a Word document ope
 	"(for example a department code such as PA05) take their meaning from the document; do not ask the user to explain them. " +
 	"Paragraph numbers in [ ] are the indexes rewrite_paragraphs takes."
 
-const sessionDocumentsInstruction = "The conversation holds these Word documents, one editor tab each; the text of each follows in its own <open_document> block. " +
+const sessionDocumentsInstruction = "The conversation holds these documents. A working document (văn bản làm việc) is a Word file open in an editor tab: " +
+	"its text follows in its own <open_document> block, and it is the only kind you may check or edit. " +
+	"A source (tài liệu nguồn) is a file the user uploaded at chat: read-only, never edited or format-checked; read it with " +
+	"read_document_outline document=vbN, and cite it by file name or số ký hiệu when you use it. " +
 	"When the user asks about several or all of them (\"hai văn bản này\", \"các văn bản\"), answer for every document, naming each. " +
 	"Pass a document's handle (vb1, vb2, …) as the \"document\" argument of the document tools. " +
 	"Edit only a document the user named with @ (or selected text in) in this request; when the user asks for an edit " +
 	"without naming the document, do not edit — ask which document, and tell them to type @ in the chat box to pick it. " +
 	"Reading and comparing any of them needs no @."
 
-// BuildOpenDocumentPrompt renders the session's editable documents for the
-// agent's user turn: a <session_documents> index when there are several,
-// then the current text of the documents the user designated in this turn
-// (@-mentions and the selection's document, see namedDocuments) — or of the
-// active tab when none — as <open_document> blocks, so a question about a
-// document is answered without a tool call. It returns "" when the session
-// has no document or none can be read.
+type attachedSourcesKey struct{}
+
+// WithAttachedSources records the source documents (workspace IDs) whose
+// upload is attached to this turn's message: their parsed text is in the
+// message's attachment block this turn, which the index says.
+func WithAttachedSources(ctx context.Context, ids []string) context.Context {
+	if len(ids) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, attachedSourcesKey{}, append([]string(nil), ids...))
+}
+
+func attachedSources(ctx context.Context) map[string]bool {
+	ids, _ := ctx.Value(attachedSourcesKey{}).([]string)
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// BuildOpenDocumentPrompt renders the session's documents for the agent's
+// user turn: a <session_documents> index when there are several or any is
+// a source, then the current text of the targets (editor tabs) the user
+// designated in this turn (@-mentions and the selection's document, see
+// namedDocuments) — or of every target, the active tab first, when none —
+// as <open_document> blocks, so a question about a document is answered
+// without a tool call. A source is never injected: the index names it with
+// its role, type and size and how to read it. It returns "" when the
+// session has no document or nothing can be rendered.
 func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, tenantID uint64, sessionID, query string) string {
 	if src == nil || tenantID == 0 || strings.TrimSpace(sessionID) == "" {
 		return ""
@@ -56,23 +82,27 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	if err != nil || len(docs) == 0 {
 		return ""
 	}
-	active, _ := src.GetBySession(ctx, tenantID, sessionID)
+	targets := targetDocuments(docs)
+	var active *types.DocumentWorkspace
+	if len(targets) > 0 {
+		active, _ = src.GetBySession(ctx, tenantID, sessionID)
+	}
 	named := namedDocuments(ctx)
 	var chosen []*types.DocumentWorkspace
-	for _, d := range docs {
+	for _, d := range targets {
 		if named[d.ID] {
 			chosen = append(chosen, d)
 		}
 	}
-	if len(chosen) == 0 {
-		// Nothing named: carry every open document, the viewed tab first, so a
-		// question about "hai văn bản này" is answered for each of them. The
-		// per-document budget below shrinks with the count (at most four).
-		if active == nil {
-			active = docs[len(docs)-1]
+	if len(chosen) == 0 && len(targets) > 0 {
+		// No target named: carry every open document, the viewed tab first,
+		// so a question about "hai văn bản này" is answered for each of them.
+		// The per-document budget below shrinks with the count (at most four).
+		if active == nil || active.IsSource() {
+			active = targets[len(targets)-1]
 		}
 		chosen = append(chosen, active)
-		for _, d := range docs {
+		for _, d := range targets {
 			if d.ID != active.ID {
 				chosen = append(chosen, d)
 			}
@@ -80,13 +110,21 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 	}
 
 	var sb strings.Builder
-	if len(docs) > 1 {
+	indexed := len(docs) > 1 || len(targets) < len(docs)
+	if indexed {
+		attached := attachedSources(ctx)
 		sb.WriteString("\n\n<session_documents>\n")
 		sb.WriteString("<instruction>" + sessionDocumentsInstruction + "</instruction>\n")
 		for _, d := range docs {
 			sb.WriteString("- " + escapeOpenDocument(DocumentLabel(d)))
-			if active != nil && d.ID == active.ID {
-				sb.WriteString(" (tab đang xem)")
+			if d.IsSource() {
+				sb.WriteString(" (" + sourceIndexNote(d, attached[d.ID]) + ")")
+			} else {
+				sb.WriteString(" (văn bản làm việc")
+				if active != nil && d.ID == active.ID {
+					sb.WriteString(", tab đang xem")
+				}
+				sb.WriteString(")")
 			}
 			if named[d.ID] {
 				sb.WriteString(" (người dùng gọi đích danh trong yêu cầu này)")
@@ -114,10 +152,45 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			rendered++
 		}
 	}
-	if rendered == 0 && len(docs) == 1 {
+	if rendered == 0 && !indexed {
 		return ""
 	}
 	return sb.String()
+}
+
+// sourceIndexNote describes a source in the <session_documents> index: its
+// role, type, size and how to read it (or that its text is attached to this
+// message).
+func sourceIndexNote(d *types.DocumentWorkspace, attachedNow bool) string {
+	note := "tài liệu nguồn, chỉ tra cứu"
+	if t := strings.TrimSpace(d.FileType); t != "" {
+		note += ", " + t
+	}
+	if d.FileSize > 0 {
+		note += ", " + humanSize(d.FileSize)
+	}
+	switch {
+	case attachedNow:
+		note += "; nội dung đính kèm trong tin nhắn này"
+	case d.TextStatus == types.DocumentSourceTextProcessing:
+		note += "; đang đọc nội dung, chưa tra cứu được"
+	case d.TextStatus == types.DocumentSourceTextFailed:
+		note += "; không đọc được nội dung"
+	default:
+		note += "; tra cứu bằng read_document_outline document=" + d.Handle()
+	}
+	return note
+}
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%d KB", n/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // renderOpenDocument renders one document's text as an <open_document>

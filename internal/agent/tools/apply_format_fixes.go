@@ -229,7 +229,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	var content []byte
 	var ws *types.DocumentWorkspace
 	seq := 0
-	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, !in.DryRun)
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, in.Document, !in.DryRun)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}

@@ -127,7 +127,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {
-		target, err := resolveDocument(ctx, workspace, sessionID, ref, false)
+		target, err := resolveTargetDocument(ctx, workspace, sessionID, ref, false)
 		if err != nil {
 			return nil, "", -1, err
 		}

@@ -286,7 +286,7 @@ func (s *sessionService) AgentQA(
 	// Inject attachment content (documents, audio transcripts, etc.) so the agent
 	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
 	// (see chat_pipeline/into_chat_message.go).
-	attachments, attachedDocs := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments)
+	attachments, attachedDocs, attachedSources := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments)
 	if len(attachments) > 0 {
 		agentQuery += attachments.BuildPrompt()
 		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(attachments))
@@ -295,6 +295,9 @@ func (s *sessionService) AgentQA(
 	// its text then comes from BuildOpenDocumentPrompt and the editing
 	// tools accept it as a target
 	req.MentionedDocumentIDs = mergeDocumentIDs(req.MentionedDocumentIDs, attachedDocs)
+	// a source attached now keeps its attachment text for this turn only;
+	// the document index says so instead of pointing at the outline tool
+	ctx = tools.WithAttachedSources(ctx, attachedSources)
 	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
 		agentQuery += selection
 		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
@@ -799,31 +802,39 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 }
 
 // attachmentsOutsideOpenDocuments drops the attachments that are already
-// open as an editor tab of the session: BuildOpenDocumentPrompt carries
-// their current text, so the upload's (older) parsed text would only send
-// the same document twice. openDocs are the workspace IDs of the dropped
-// ones, in attachment order: the caller treats them as named documents.
-// Without document workspaces nothing changes.
+// open as an editor tab (a target) of the session: BuildOpenDocumentPrompt
+// carries their current text, so the upload's (older) parsed text would
+// only send the same document twice. openDocs are the workspace IDs of the
+// dropped ones, in attachment order: the caller treats them as named
+// documents. An attachment recorded as a source stays (its parsed text is
+// this turn's attachment prompt) and is not named: sources are the
+// workspace IDs of those, for the document index. Without document
+// workspaces nothing changes.
 func (s *sessionService) attachmentsOutsideOpenDocuments(
 	ctx context.Context, tenantID uint64, sessionID string, attachments types.MessageAttachments,
-) (kept types.MessageAttachments, openDocs []string) {
+) (kept types.MessageAttachments, openDocs, sources []string) {
 	if len(attachments) == 0 || s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
-		return attachments, nil
+		return attachments, nil, nil
 	}
 	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)
 	if err != nil || len(docs) == 0 {
-		return attachments, nil
+		return attachments, nil, nil
 	}
-	open := make(map[string]string, len(docs)) // attachment ID → workspace ID
+	byAttachment := make(map[string]*types.DocumentWorkspace, len(docs))
 	for _, d := range docs {
 		if d.AttachmentID != "" {
-			open[d.AttachmentID] = d.ID
+			byAttachment[d.AttachmentID] = d
 		}
 	}
 	kept = make(types.MessageAttachments, 0, len(attachments))
 	for _, att := range attachments {
-		if wsID := open[att.ID]; att.ID != "" && wsID != "" {
-			openDocs = append(openDocs, wsID)
+		d := byAttachment[att.ID]
+		switch {
+		case att.ID == "" || d == nil:
+		case d.IsSource():
+			sources = append(sources, d.ID)
+		default:
+			openDocs = append(openDocs, d.ID)
 			continue
 		}
 		kept = append(kept, att)
@@ -831,7 +842,7 @@ func (s *sessionService) attachmentsOutsideOpenDocuments(
 	if len(openDocs) > 0 {
 		logger.Infof(ctx, "Dropped %d attachment(s) already open as an editor tab from the agent query", len(openDocs))
 	}
-	return kept, openDocs
+	return kept, openDocs, sources
 }
 
 // mergeDocumentIDs appends extra to ids without duplicates, keeping the

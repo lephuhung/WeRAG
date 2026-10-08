@@ -93,7 +93,7 @@ func TestBuildOpenDocumentPromptListsDocumentsAndInjectsTheNamedOnes(t *testing.
 	ws := twoDocWorkspace(t)
 
 	got := BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "")
-	for _, want := range []string{"<session_documents>", "vb1 · cong-van.docx (tab đang xem)", "vb2 · to-trinh.docx", `handle="vb1"`} {
+	for _, want := range []string{"<session_documents>", "vb1 · cong-van.docx (văn bản làm việc, tab đang xem)", "vb2 · to-trinh.docx", `handle="vb1"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, got)
 		}
@@ -110,7 +110,7 @@ func TestBuildOpenDocumentPromptListsDocumentsAndInjectsTheNamedOnes(t *testing.
 	if !strings.Contains(got, `handle="vb1"`) || !strings.Contains(got, `handle="vb2"`) {
 		t.Fatalf("both named documents are injected:\n%s", got)
 	}
-	if !strings.Contains(got, "vb2 · to-trinh.docx (người dùng gọi đích danh trong yêu cầu này)") {
+	if !strings.Contains(got, "vb2 · to-trinh.docx (văn bản làm việc) (người dùng gọi đích danh trong yêu cầu này)") {
 		t.Fatalf("the index marks the named documents:\n%s", got)
 	}
 }

@@ -17,7 +17,7 @@ func TestAgentQueryDropsAttachmentsOpenAsTabs(t *testing.T) {
 		ws: &types.DocumentWorkspace{ID: "ws", SessionID: "s", FileName: "to-trinh.docx", AttachmentID: "att-tab"},
 	}}
 
-	kept, openDocs := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
+	kept, openDocs, _ := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
 	require.Len(t, kept, 1)
 	require.Equal(t, "att-pdf", kept[0].ID)
 	require.Equal(t, []string{"ws"}, openDocs)
@@ -37,7 +37,7 @@ func TestAttachedOpenTabJoinsTheNamedDocuments(t *testing.T) {
 	svc := &sessionService{documentWorkspaces: &fakeDocumentWorkspaces{
 		ws: &types.DocumentWorkspace{ID: "ws-a", SessionID: "s", FileName: "a.docx", AttachmentID: "att-a", Position: 1},
 	}}
-	kept, openDocs := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
+	kept, openDocs, _ := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
 	require.NotContains(t, kept.BuildPrompt(), "Nội dung văn bản A")
 
 	mentioned := mergeDocumentIDs([]string{"ws-b", "ws-a"}, openDocs)
@@ -51,7 +51,7 @@ func TestAgentQueryKeepsAttachmentsWithoutTabs(t *testing.T) {
 	attachments := types.MessageAttachments{{ID: "att-1", FileName: "a.docx", Content: "x"}}
 	check := func(svc *sessionService) {
 		t.Helper()
-		kept, openDocs := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
+		kept, openDocs, _ := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
 		require.Equal(t, attachments, kept)
 		require.Empty(t, openDocs)
 	}
@@ -64,4 +64,21 @@ func TestAgentQueryKeepsAttachmentsWithoutTabs(t *testing.T) {
 		ws: &types.DocumentWorkspace{ID: "ws", AttachmentID: "att-2"},
 	}})
 	require.Nil(t, mergeDocumentIDs(nil, nil))
+}
+
+// An upload recorded as a source keeps its attachment text for the turn it
+// is attached to, and is neither named nor dropped.
+func TestAttachedSourceKeepsItsTextAndIsNotNamed(t *testing.T) {
+	attachments := types.MessageAttachments{
+		{ID: "att-src", FileName: "so-lieu.pdf", FileType: ".pdf", Content: "Số liệu nguồn 2025"},
+	}
+	svc := &sessionService{documentWorkspaces: &fakeDocumentWorkspaces{
+		ws: &types.DocumentWorkspace{ID: "ws-src", SessionID: "s", FileName: "so-lieu.pdf", AttachmentID: "att-src",
+			Position: 3, Role: types.DocumentWorkspaceRoleSource},
+	}}
+	kept, openDocs, sources := svc.attachmentsOutsideOpenDocuments(context.Background(), 7, "s", attachments)
+	require.Equal(t, attachments, kept)
+	require.Contains(t, kept.BuildPrompt(), "Số liệu nguồn 2025")
+	require.Empty(t, openDocs, "a source is not a named document")
+	require.Equal(t, []string{"ws-src"}, sources)
 }

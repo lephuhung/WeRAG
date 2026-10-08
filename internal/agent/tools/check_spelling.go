@@ -180,7 +180,7 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		seq     int
 		err     error
 	)
-	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, mark)
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, in.Document, mark)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}

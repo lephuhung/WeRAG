@@ -113,9 +113,11 @@ func namedDocuments(ctx context.Context) map[string]bool {
 // "document" argument ("" when omitted). Without one it falls back to the
 // document the user designated in this turn (selection, then a single
 // @-mention), then to the only document, then — for reading only — to the
-// active tab. With forEdit and several documents, the target must be one
-// the user designated in this turn: an edit never lands on a document the
-// user did not name. The error text is shown to the agent.
+// active tab. With forEdit only targets qualify: a source (a chat upload)
+// is refused with SourceDocumentRefusal, and with several targets the one
+// edited must be designated by the user in this turn: an edit never lands
+// on a document the user did not name. The error text is shown to the
+// agent.
 func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, ref string, forEdit bool) (*types.DocumentWorkspace, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || src == nil || sessionID == "" {
@@ -127,6 +129,17 @@ func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID
 	}
 	if len(docs) == 0 {
 		return nil, errors.New(errNoWorkspace)
+	}
+	all := docs
+	if forEdit && strings.TrimSpace(ref) == "" {
+		// only a target can be edited: the fallbacks below pick among them
+		docs = targetDocuments(docs)
+		if len(docs) == 0 {
+			if len(all) == 1 {
+				return nil, errors.New(SourceDocumentRefusal(all[0]))
+			}
+			return nil, fmt.Errorf("cuộc hội thoại chưa có văn bản làm việc nào để sửa; các tài liệu nguồn (%s) chỉ tra cứu được", documentList(all))
+		}
 	}
 	byID := make(map[string]*types.DocumentWorkspace, len(docs))
 	for _, d := range docs {
@@ -153,10 +166,16 @@ func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID
 		} else {
 			active, err := src.GetBySession(ctx, tenantID, sessionID)
 			if err != nil || active == nil {
-				return nil, errors.New(errNoWorkspace)
+				return nil, fmt.Errorf("cuộc hội thoại có %d tài liệu (%s); hãy truyền tham số document", len(docs), documentList(docs))
 			}
 			target = active
 		}
+	}
+	if forEdit && target.IsSource() {
+		return nil, errors.New(SourceDocumentRefusal(target))
+	}
+	if forEdit {
+		docs = targetDocuments(all)
 	}
 	if forEdit && len(docs) > 1 && !named[target.ID] {
 		return nil, fmt.Errorf("không được sửa %s: cuộc hội thoại đang mở %d văn bản và người dùng chưa gọi đích danh văn bản này trong yêu cầu. "+
@@ -164,6 +183,31 @@ func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID
 			DocumentLabel(target), len(docs))
 	}
 	return target, nil
+}
+
+// resolveTargetDocument is resolveDocument for a tool that only works on a
+// target's Word file (format check, spelling, format fixes) even when it
+// only reads: a source is refused.
+func resolveTargetDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID, ref string, forEdit bool) (*types.DocumentWorkspace, error) {
+	target, err := resolveDocument(ctx, src, sessionID, ref, forEdit)
+	if err != nil {
+		return nil, err
+	}
+	if target.IsSource() {
+		return nil, errors.New(SourceDocumentRefusal(target))
+	}
+	return target, nil
+}
+
+// targetDocuments keeps the targets (editor tabs) of docs, in order.
+func targetDocuments(docs []*types.DocumentWorkspace) []*types.DocumentWorkspace {
+	out := make([]*types.DocumentWorkspace, 0, len(docs))
+	for _, d := range docs {
+		if d.IsTarget() {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // selectionIn reports whether the turn's selection was made in ws (a
@@ -331,7 +375,7 @@ func segmentReport(ctx context.Context, content []byte, docType, name string, ch
 
 var readDocumentOutlineTool = BaseTool{
 	name: ToolReadDocumentOutline,
-	description: `List the paragraphs of a Word document open in this conversation's editor (the "document" argument picks which), numbered, with the NĐ30 component each belongs to (quoc_hieu, trich_yeu, noi_dung, …) and its formatting (font, size, bold/italic, alignment).
+	description: `List the paragraphs of a Word document open in this conversation's editor (the "document" argument picks which), numbered, with the NĐ30 component each belongs to (quoc_hieu, trich_yeu, noi_dung, …) and its formatting (font, size, bold/italic, alignment). For a source document (tài liệu nguồn, a file uploaded at chat: pdf, xlsx, scan, …) it returns the stored text instead, as numbered chunks (or lines), in full; that is how a source is read.
 
 ## When to Use
 
@@ -346,7 +390,9 @@ var readDocumentOutlineTool = BaseTool{
 
 ## Output
 
-Lines like ` + "`[12] (trich_yeu) Times New Roman 14 đậm, giữa | V/v …`" + `: the index in brackets is the paragraph number the editing tools take. Long texts are cut at 160 characters. Empty paragraphs are not listed.`,
+Lines like ` + "`[12] (trich_yeu) Times New Roman 14 đậm, giữa | V/v …`" + `: the index in brackets is the paragraph number the editing tools take. Long texts are cut at 160 characters. Empty paragraphs are not listed.
+
+For a source: ` + "`[3] (chunk) <heading> | <text>`" + ` blocks; from/limit count chunks (default 6, max 20). A source cannot be edited, so its numbers are not paragraph indexes.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -442,6 +488,7 @@ func (t *ReadDocumentOutlineTool) Execute(ctx context.Context, args json.RawMess
 	if in.From < 0 {
 		in.From = 0
 	}
+	limitArg := in.Limit // a source pages by its own default
 	if in.Limit <= 0 {
 		in.Limit = outlineDefaultLimit
 	}
@@ -453,6 +500,9 @@ func (t *ReadDocumentOutlineTool) Execute(ctx context.Context, args json.RawMess
 	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, false)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	if target.IsSource() {
+		return outlineSource(ctx, t.workspace, t.sessionID, target, in.From, limitArg, in.Component), nil
 	}
 	content, layout, ws, err := readWorkspaceLayout(ctx, t.workspace, t.sessionID, target)
 	if err != nil {
