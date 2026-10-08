@@ -50,7 +50,7 @@ func TestRewriteProposeTakesNoSnapshotAndListsVariants(t *testing.T) {
 	long := "Sở Nội vụ đề nghị các cơ quan, đơn vị, địa phương khẩn trương triển khai đồng bộ, hiệu quả các nhiệm vụ cải cách hành chính năm 2026 theo kế hoạch đã được Ủy ban nhân dân tỉnh phê duyệt."
 	res := runToolCtx(t, selectionCtx(proposalP8), NewRewriteParagraphsTool(ws, "s"), `{"edits":[
 		{"paragraph":8,"new":"Sở Nội vụ đề nghị các đơn vị triển khai cải cách hành chính năm 2026."}],
-		"variants":["`+long+`"],"labels":["Gọn hơn"]}`)
+		"options_requested":true,"variants":["`+long+`"],"labels":["Gọn hơn"]}`)
 	if !res.Success {
 		t.Fatalf("result: %+v", res)
 	}
@@ -103,7 +103,7 @@ func TestRewriteProposeIsTheDefaultWithASelection(t *testing.T) {
 	}
 	vs := proposalVariants(t, res)
 	// several edits make one version holding every op
-	if len(vs) != 1 || len(vs[0].Ops) != 2 || vs[0].Old != "năm 2026\nSở Nội vụ" || vs[0].New != "năm 2027\nSở Nội vụ tỉnh" {
+	if len(vs) != 1 || vs[0].Label != singleRewriteLabel || len(vs[0].Ops) != 2 || vs[0].Old != "năm 2026\nSở Nội vụ" || vs[0].New != "năm 2027\nSở Nội vụ tỉnh" {
 		t.Fatalf("variants: %+v", vs)
 	}
 	// the user explicitly asked to apply at once: today's behaviour
@@ -126,12 +126,12 @@ func TestRewriteVariantsValidation(t *testing.T) {
 	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
 	ctx := selectionCtx(proposalP8)
 	for name, args := range map[string]string{
-		"two edits":      `{"edits":[{"paragraph":8,"old":"năm 2026","new":"a"},{"paragraph":8,"old":"Sở","new":"b"}],"variants":["c"]}`,
-		"four versions":  `{"edits":[{"paragraph":8,"new":"a"}],"variants":["b","c","d"]}`,
-		"empty variant":  `{"edits":[{"paragraph":8,"new":"a"}],"variants":[" "]}`,
-		"with apply":     `{"mode":"apply","edits":[{"paragraph":8,"new":"a"}],"variants":["b"]}`,
+		"two edits":      `{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"a"},{"paragraph":8,"old":"Sở","new":"b"}],"variants":["c"]}`,
+		"four versions":  `{"options_requested":true,"edits":[{"paragraph":8,"new":"a"}],"variants":["b","c","d"]}`,
+		"empty variant":  `{"options_requested":true,"edits":[{"paragraph":8,"new":"a"}],"variants":[" "]}`,
+		"with apply":     `{"mode":"apply","options_requested":true,"edits":[{"paragraph":8,"new":"a"}],"variants":["b"]}`,
 		"unknown mode":   `{"mode":"later","edits":[{"paragraph":8,"new":"a"}]}`,
-		"outside select": `{"edits":[{"paragraph":12,"new":"Trần Văn B"}],"variants":["Trần Văn C"]}`,
+		"outside select": `{"options_requested":true,"edits":[{"paragraph":12,"new":"Trần Văn B"}],"variants":["Trần Văn C"]}`,
 	} {
 		if res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), args); res.Success {
 			t.Errorf("%s: accepted: %+v", name, res)
@@ -143,7 +143,7 @@ func TestRewriteVariantsValidation(t *testing.T) {
 	// variants[0] repeating edits[0].new is version 1, not a second one;
 	// three versions in all are fine
 	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
-		`{"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"variants":["năm 2027","năm 2028","trong năm 2027"]}`)
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"variants":["năm 2027","năm 2028","trong năm 2027"]}`)
 	if !res.Success {
 		t.Fatalf("result: %+v", res)
 	}
@@ -153,8 +153,51 @@ func TestRewriteVariantsValidation(t *testing.T) {
 	}
 	// a version equal to the current text is no version
 	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
-		`{"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2026"}],"variants":["năm 2027"]}`)
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2026"}],"variants":["năm 2027"]}`)
 	if vs := proposalVariants(t, res); !res.Success || len(vs) != 1 || vs[0].ID != "v1" || vs[0].New != "năm 2027" {
 		t.Fatalf("unchanged version: %+v", res)
+	}
+}
+
+func TestRewriteProposesOneVersionUnlessOptionsRequested(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	ctx := selectionCtx(proposalP8)
+	// variants without options_requested: version 1 only, said in the output
+	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"variants":["năm 2028","trong năm 2027"]}`)
+	vs := proposalVariants(t, res)
+	if !res.Success || len(vs) != 1 || vs[0].New != "năm 2027" || vs[0].Label != singleRewriteLabel {
+		t.Fatalf("variants: %+v", res)
+	}
+	if !strings.Contains(res.Output, noteVariantsIgnored) || strings.Contains(res.Output, "năm 2028") {
+		t.Fatalf("output:\n%s", res.Output)
+	}
+	// one version: the output asks for the button, not for a choice
+	if !strings.Contains(res.Output, "Đề xuất viết lại đoạn đã bôi đen") || strings.Contains(res.Output, "chọn một phương án") ||
+		!strings.Contains(res.Output, rewriteSingleProposalNote) {
+		t.Fatalf("output:\n%s", res.Output)
+	}
+	// the variants check is skipped too: two edits with stray variants propose both edits
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"},{"paragraph":8,"old":"Sở Nội vụ","new":"Sở Nội vụ tỉnh"}],"variants":["x"]}`)
+	if vs := proposalVariants(t, res); !res.Success || len(vs) != 1 || len(vs[0].Ops) != 2 {
+		t.Fatalf("two edits: %+v", res)
+	}
+	// an agent label is kept for the single version
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"labels":["Gọn hơn"]}`)
+	if vs := proposalVariants(t, res); len(vs) != 1 || vs[0].Label != "Gọn hơn" {
+		t.Fatalf("label: %+v", vs)
+	}
+	// with options_requested the variants are kept and named Phương án N
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"variants":["năm 2028"]}`)
+	vs = proposalVariants(t, res)
+	if len(vs) != 2 || vs[0].Label != "Phương án 1" || vs[1].Label != "Phương án 2" || strings.Contains(res.Output, noteVariantsIgnored) ||
+		!strings.Contains(res.Output, "Đề xuất 2 phương án") {
+		t.Fatalf("options: %+v", res)
+	}
+	if len(ws.snapshots) != 0 {
+		t.Fatalf("snapshots: %v", ws.snapshots)
 	}
 }

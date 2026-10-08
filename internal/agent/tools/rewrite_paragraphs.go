@@ -31,8 +31,10 @@ ONLY when the user explicitly asks in this turn to rewrite, shorten, correct or 
   - match: a distinctive piece of the paragraph's current text (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
   - old: the exact substring to replace inside that paragraph (preferred); omit to replace the whole paragraph text.
   - new: the replacement text (required; it may be empty only together with old, to delete that substring).
-- variants: propose mode, exactly one edit only: other wordings of that edit's new text, so the user can choose. edits[0].new is version 1; give at most 3 versions in all (e.g. version 1 "giữ nguyên ý, gọn hơn", version 2 "đầy đủ hơn").
-- labels: optional short names of the versions in order (version 1 = edits[0].new), e.g. ["Gọn hơn", "Đầy đủ hơn"]; default "Phương án 1", "Phương án 2"…
+- One version is the default: edits[0].new, written in Vietnamese administrative register (văn phong hành chính) or as the user's guidance says ("gọn hơn", "bỏ câu cuối").
+- options_requested: true ONLY when the user explicitly asked for several options in this turn ("vài phương án", "2 cách viết", "cho tôi lựa chọn"). Without it, variants are ignored and only edits[0].new is proposed.
+- variants: with options_requested and exactly one edit: other wordings of that edit's new text. edits[0].new is version 1; at most 3 versions in all.
+- labels: optional short names of the versions in order (version 1 = edits[0].new); default "Văn phong hành chính" for a single version, "Phương án 1", "Phương án 2"… for options.
 - note: optional short reason for the change, shown back in the result.
 
 Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes.`,
@@ -74,11 +76,15 @@ Keep the administrative register and the original meaning; change only what was 
       "enum": ["propose", "apply"],
       "description": "propose (default with a highlighted passage): show the versions for the user to choose, the document is not changed; apply: change the document at once — only when the user explicitly asked to apply immediately"
     },
+    "options_requested": {
+      "type": "boolean",
+      "description": "true only when the user explicitly asked for several options; variants are ignored otherwise"
+    },
     "variants": {
       "type": "array",
       "maxItems": 3,
       "items": {"type": "string"},
-      "description": "Propose mode with exactly one edit: alternative wordings of edits[0].new (which is version 1); at most 3 versions in all"
+      "description": "Only with options_requested and exactly one edit: alternative wordings of edits[0].new (which is version 1); at most 3 versions in all"
     },
     "labels": {
       "type": "array",
@@ -111,7 +117,16 @@ type rewriteParagraphsInput struct {
 	Mode     string        `json:"mode"`
 	Variants []string      `json:"variants"`
 	Labels   []string      `json:"labels"`
+	// OptionsRequested: the user asked for several versions; without it
+	// variants are dropped (one version is the default).
+	OptionsRequested bool `json:"options_requested"`
 }
+
+// singleRewriteLabel names the one version of a proposal by default.
+const singleRewriteLabel = "Văn phong hành chính"
+
+// noteVariantsIgnored is said when variants came without options_requested.
+const noteVariantsIgnored = "Chỉ đề xuất một phương án (các phương án khác bị bỏ qua: người dùng không yêu cầu nhiều lựa chọn)."
 
 // Rewrite modes: a proposal leaves the document as it is and lets the user
 // apply one version from the chat; apply hands the ops to the editor now.
@@ -230,6 +245,10 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 	default:
 		return &types.ToolResult{Success: false, Error: fmt.Sprintf("mode %q: use propose or apply", in.Mode)}, nil
 	}
+	variantsIgnored := false
+	if len(in.Variants) > 0 && !in.OptionsRequested {
+		in.Variants, variantsIgnored = nil, true
+	}
 	versions, msg := rewriteVersions(in)
 	if msg != "" {
 		return &types.ToolResult{Success: false, Error: msg}, nil
@@ -248,7 +267,7 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		return &types.ToolResult{Success: false, Error: errSelectionElsewhere(sel, target)}, nil
 	}
 	if rewriteMode(in.Mode, sel, target) == rewriteModePropose {
-		return t.propose(ctx, in, versions, sel, target)
+		return t.propose(ctx, in, versions, sel, target, variantsIgnored)
 	}
 	if len(versions) > 0 {
 		return &types.ToolResult{Success: false, Error: "variants chỉ dùng khi đề xuất (mode propose): khi áp dụng ngay chỉ có một nội dung mới"}, nil
@@ -328,7 +347,11 @@ func writeRewriteSkip(out *strings.Builder, ch rewriteChange) {
 	}
 }
 
-// rewriteProposalNote ends the Output of a proposal.
+// rewriteSingleProposalNote ends the Output of a one-version proposal.
+const rewriteSingleProposalNote = "Văn bản CHƯA thay đổi. Người dùng bấm nút “Thay vào văn bản” dưới câu trả lời để thay đoạn đã bôi đen; " +
+	"hãy nói ngắn là đã viết lại đoạn đó (theo văn phong hành chính hoặc theo yêu cầu) và mời họ bấm nút — không nói là đã sửa."
+
+// rewriteProposalNote ends the Output of a proposal with several versions.
 const rewriteProposalNote = "Văn bản CHƯA thay đổi. Người dùng chọn một phương án bằng nút “Thay vào văn bản” dưới câu trả lời; " +
 	"hãy giới thiệu ngắn các phương án và mời họ chọn — không nói là đã sửa."
 
@@ -336,7 +359,7 @@ const rewriteProposalNote = "Văn bản CHƯA thay đổi. Người dùng chọn
 // no snapshot and changes nothing: the user applies one version from the
 // chat (the proposals/apply route snapshots first).
 func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraphsInput, versions []string,
-	sel *types.DocumentSelection, target *types.DocumentWorkspace,
+	sel *types.DocumentSelection, target *types.DocumentWorkspace, variantsIgnored bool,
 ) (*types.ToolResult, error) {
 	content, ws, err := readListedDocument(ctx, t.workspace, t.sessionID, target)
 	if err != nil {
@@ -377,7 +400,10 @@ func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraph
 				olds, news = append(olds, ch.Old), append(news, ch.New)
 			}
 		}
-		label := fmt.Sprintf("Phương án %d", len(variants)+1)
+		label := singleRewriteLabel
+		if len(versions) > 1 {
+			label = fmt.Sprintf("Phương án %d", len(variants)+1)
+		}
 		if k < len(in.Labels) && strings.TrimSpace(in.Labels[k]) != "" {
 			label = clipRunes(strings.TrimSpace(in.Labels[k]), 60)
 		}
@@ -388,9 +414,12 @@ func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraph
 	}
 
 	var out strings.Builder
-	if len(variants) > 0 {
+	switch {
+	case len(variants) == 1:
+		fmt.Fprintf(&out, "Đề xuất viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", ws.FileName)
+	case len(variants) > 1:
 		fmt.Fprintf(&out, "Đề xuất %d phương án viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", len(variants), ws.FileName)
-	} else {
+	default:
 		fmt.Fprintf(&out, "Không có thay đổi nào cho %s; tài liệu giữ nguyên.\n", ws.FileName)
 	}
 	if note := strings.TrimSpace(in.Note); note != "" {
@@ -407,7 +436,13 @@ func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraph
 			writeRewriteSkip(&out, ch)
 		}
 	}
-	if len(variants) > 0 {
+	if variantsIgnored {
+		out.WriteString(noteVariantsIgnored + "\n")
+	}
+	switch {
+	case len(variants) == 1:
+		out.WriteString("\n" + rewriteSingleProposalNote + "\n")
+	case len(variants) > 1:
 		out.WriteString("\n" + rewriteProposalNote + "\n")
 	}
 	if variants == nil {
