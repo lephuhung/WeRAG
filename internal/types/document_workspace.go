@@ -130,6 +130,13 @@ type DocumentFormatCheck struct {
 	DocumentTypeLabel string     `json:"document_type_label,omitempty"`
 	StartedAt         time.Time  `json:"started_at"`
 	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	// CheckedSavedAt is the latest document save the result still
+	// describes: the check's start, moved forward when a later save left
+	// the format fingerprint unchanged (body wording only).
+	CheckedSavedAt *time.Time `json:"checked_saved_at,omitempty"`
+	// Fingerprint identifies the checked content's format (page setup,
+	// paragraph formatting, the text at both ends).
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // DocumentSelection is the text a user highlighted in the embedded editor and

@@ -214,6 +214,11 @@ describe("formatCheckIsCurrent", () => {
     assert.equal(formatCheckIsCurrent(ready, { revision: 2, last_saved_at: "2026-10-07T15:05:00Z" }), false);
     assert.equal(formatCheckIsCurrent(ready, { revision: 3 }), false);
   });
+  it("follows the save the backend marked as covered", () => {
+    const kept = { ...ready, checked_saved_at: "2026-10-07T15:06:00Z" };
+    assert.equal(formatCheckIsCurrent(kept, { revision: 2, last_saved_at: "2026-10-07T15:05:00Z" }), true);
+    assert.equal(formatCheckIsCurrent(kept, { revision: 2, last_saved_at: "2026-10-07T15:07:00Z" }), false);
+  });
   it("always shows a running check", () => {
     assert.equal(formatCheckIsCurrent({ ...ready, status: "running" }, { revision: 9, last_saved_at: "2026-10-07T16:00:00Z" }), true);
   });

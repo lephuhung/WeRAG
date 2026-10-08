@@ -49,6 +49,9 @@ export interface DocumentFormatCheck {
   document_type_label?: string;
   started_at: string;
   finished_at?: string;
+  /** Latest save the result still describes (moved forward when a save
+   * left the format unchanged); defaults to started_at. */
+  checked_saved_at?: string;
 }
 
 /** Editor selection attached to a chat turn (`document_selection` in the body). */
@@ -302,8 +305,10 @@ export function latestRevisionOf<T extends { seq: number; source: string }>(list
 
 /** Whether a background check still describes the document. AI edits are
  * applied inside the editor and only show up as a save, so a finished check
- * is stale once the document was saved after the check started (or an
- * external write moved the revision past it). */
+ * is stale once the document was saved after the save it covers (or an
+ * external write moved the revision past it). The backend moves the covered
+ * save forward when an edit left the format unchanged, and starts a new
+ * check when it did not. */
 export function formatCheckIsCurrent(
   check: DocumentFormatCheck,
   doc: { revision: number; last_saved_at?: string },
@@ -311,7 +316,7 @@ export function formatCheckIsCurrent(
   if (check.status === "running") return true;
   if (doc.revision > check.revision) return false;
   const saved = doc.last_saved_at ? Date.parse(doc.last_saved_at) : NaN;
-  const started = Date.parse(check.started_at);
+  const started = Date.parse(check.checked_saved_at ?? check.started_at);
   return !(Number.isFinite(saved) && Number.isFinite(started) && saved > started);
 }
 

@@ -8,6 +8,7 @@ import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
+import { chatErrorKey } from "@/lib/api/chat-errors";
 import {
   documentSelectionForDisplay,
   getDocumentWorkspace,
@@ -993,7 +994,7 @@ function ChatBody({ id }: { id: string }) {
               return;
             }
             if (kind === "error") {
-              const errorText = c.content || (c.data?.error as string) || "Stream failed";
+              const errorText = c.content || (c.data?.error as string) || tr("chat.err.generic");
               setMessages((m) =>
                 m.map((msg) =>
                   msg.assistantMessageId === inflightId
@@ -1160,7 +1161,8 @@ function ChatBody({ id }: { id: string }) {
       } catch (e) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
-        setError(e instanceof Error ? e.message : "Failed to create session");
+        const key = chatErrorKey(e);
+        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
         return;
       }
@@ -1220,7 +1222,8 @@ function ChatBody({ id }: { id: string }) {
       } catch (e) {
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
-        setError(e instanceof Error ? e.message : "Attachment upload failed");
+        const key = chatErrorKey(e);
+        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
         return;
       }
@@ -1341,7 +1344,7 @@ function ChatBody({ id }: { id: string }) {
         Boolean(c.tool_call_id || c.tool_name || c.data?.tool_call_id || c.data?.tool_name);
 
       if (kind === "error" && !toolScopedError) {
-        const errorText = c.content || (c.data?.error as string) || "Stream failed";
+        const errorText = c.content || (c.data?.error as string) || tr("chat.err.generic");
         console.error("[applyChunk] Error event received:", errorText, c);
         setError(errorText);
         setMessages((m) =>
@@ -1637,7 +1640,8 @@ function ChatBody({ id }: { id: string }) {
         // Stale turns never surface errors into the new session.
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
-        const errorText = e instanceof Error ? e.message : "Stream failed";
+        const errorKey = chatErrorKey(e);
+        const errorText = errorKey ? tr(errorKey) : e instanceof Error ? e.message : tr("chat.err.generic");
         console.error("[streamChat] Error:", e);
         setError(errorText);
         setMessages((m) =>

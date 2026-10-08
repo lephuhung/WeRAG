@@ -21,6 +21,7 @@ import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer
  * rotates the refresh token on every call — storing only the access token
  * silently desyncs the next rotation). Embed streams never refresh. */
 import { refreshAccessToken } from "../api-client.ts";
+import { ChatStreamError, parseErrorEnvelope } from "./chat-errors.ts";
 
 export type StreamChunk = {
   id?: string;
@@ -229,11 +230,13 @@ async function readSSE(res: Response, onChunk: (c: StreamChunk) => void) {
 }
 
 function streamError(res: Response, body = ""): Error {
-  const err = new Error(
-    res.status === 401 ? "unauthorized" : `HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
-  ) as Error & { status?: number };
-  err.status = res.status;
-  return err;
+  if (res.status === 401) {
+    const err = new Error("unauthorized") as Error & { status?: number };
+    err.status = 401;
+    return err;
+  }
+  const { code, message } = parseErrorEnvelope(body);
+  return new ChatStreamError(res.status, code, message);
 }
 
 async function openChatStream(

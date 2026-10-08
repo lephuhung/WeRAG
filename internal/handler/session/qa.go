@@ -748,10 +748,20 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext, generateTitle bool, m
 		)
 		reqCtx.steerSink = streamCtx.steerSink
 
-		if err := h.streamManager.SetLiveRun(
+		err := h.streamManager.SetLiveRun(
 			logger.CloneContext(baseCtx), reqCtx.sessionID,
 			reqCtx.assistantMessage.ID, reqCtx.requestID,
-		); err != nil {
+		)
+		if stderrors.Is(err, stream.ErrLiveRunExists) && h.clearDeadLiveRun(baseCtx, reqCtx.sessionID) {
+			err = h.streamManager.SetLiveRun(
+				logger.CloneContext(baseCtx), reqCtx.sessionID,
+				reqCtx.assistantMessage.ID, reqCtx.requestID,
+			)
+		}
+		if err == nil {
+			h.startLiveRunHeartbeat(baseCtx, reqCtx.sessionID, reqCtx.assistantMessage.ID)
+		}
+		if err != nil {
 			logger.ErrorWithFields(reqCtx.ctx, err, map[string]interface{}{
 				"session_id": reqCtx.sessionID,
 			})
@@ -1080,6 +1090,10 @@ func (h *Handler) rejectIfOtherAgentRunLive(ctx context.Context, reqCtx *qaReque
 		self = reqCtx.assistantMessage.ID
 	}
 	if liveID == self {
+		return nil
+	}
+	// a turn whose process died leaves its marker behind
+	if h.clearDeadLiveRun(ctx, reqCtx.sessionID) {
 		return nil
 	}
 	return errors.NewConflictError("another turn is already running in this session")

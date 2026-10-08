@@ -961,6 +961,8 @@ func (h *Handler) claimNextSteerFollowUp(
 		h.rollbackTurnMessages(ctx, &followUp, true, true)
 		return nil, false
 	}
+	// the follow-up is alive from the claim on, before its stream setup
+	h.startLiveRunHeartbeat(ctx, followUp.sessionID, followUp.assistantMessage.ID)
 
 	h.markSteerEventsConsumed(ctx, prevReqCtx.sessionID, prevMessageID, backlog)
 

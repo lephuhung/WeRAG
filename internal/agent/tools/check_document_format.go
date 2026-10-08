@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
@@ -76,6 +77,9 @@ type CheckDocumentFormatTool struct {
 	source    formatCheckSource
 	chatModel chat.Chat
 	sessionID string
+	// workspace is the editable document's source (nil for uploads); the
+	// background re-check reads its save time.
+	workspace DocumentWorkspaceSource
 }
 
 // NewCheckDocumentFormatTool builds the tool for one session, checking the
@@ -98,7 +102,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.description = strings.Replace(base.description,
 		"administrative document the user uploaded in this conversation",
 		"administrative document — the document open in this conversation's editor (its latest saved version; file_name is ignored)", 1)
-	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID}
+	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, _ string) ([]byte, string, int, error) {
 		content, ws, err := readWorkspaceDocument(ctx, workspace, sessionID)
 		if err != nil {
@@ -246,27 +250,126 @@ func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
 			formatChecks.prewarmed.Delete(t.sessionID)
 			return
 		}
-		state := &types.DocumentFormatCheck{
-			Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: time.Now(),
-		}
-		formatChecks.storeState(ctx, t.sessionID, state)
-		out := t.check(ctx, content, fileName, "")
-		done := *state
-		finished := time.Now()
-		done.FinishedAt = &finished
-		if out.result == nil || !out.result.Evaluated {
-			done.Status = types.DocumentFormatCheckFailed
-			formatChecks.storeState(ctx, t.sessionID, &done)
-			logger.Warnf(ctx, "check_document_format: background check of %s failed: %s", fileName, out.failure)
+		t.runBackground(ctx, content, fileName, revision)
+	}()
+}
+
+// runBackground checks content and records its progress and result as the
+// session's format-check state.
+func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []byte, fileName string, revision int) {
+	started := time.Now()
+	state := &types.DocumentFormatCheck{
+		Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: started,
+		CheckedSavedAt: &started, Fingerprint: formatFingerprint(content),
+	}
+	formatChecks.storeState(ctx, t.sessionID, state)
+	out := t.check(ctx, content, fileName, "")
+	done := *state
+	finished := time.Now()
+	done.FinishedAt = &finished
+	if out.result == nil || !out.result.Evaluated {
+		done.Status = types.DocumentFormatCheckFailed
+		formatChecks.storeState(ctx, t.sessionID, &done)
+		logger.Warnf(ctx, "check_document_format: background check of %s failed: %s", fileName, out.failure)
+		return
+	}
+	done.Status = types.DocumentFormatCheckReady
+	if info := out.result.DocumentType; info != nil {
+		done.DocumentType = info.Used
+		done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
+	}
+	formatChecks.storeState(ctx, t.sessionID, &done)
+	logger.Infof(ctx, "check_document_format: background check of %s ready in %s", fileName, finished.Sub(started).Round(time.Second))
+}
+
+// A format-relevant edit is checked again once the document has stayed
+// unsaved for formatRecheckQuiet (the user or the assistant may still be
+// editing), waiting at most formatRecheckWaitMax.
+var (
+	formatRecheckQuiet   = 30 * time.Second
+	formatRecheckWaitMax = 5 * time.Minute
+	formatRecheckPoll    = 5 * time.Second
+)
+
+// formatRechecking holds the sessions whose re-check is under way here.
+var formatRechecking sync.Map
+
+// FormatCheckNeedsRecheck reports whether the session's document was saved
+// after its finished background check, so Recheck has work to do. It reads
+// only the state, so callers can test it before resolving a model.
+func FormatCheckNeedsRecheck(ctx context.Context, sessionID string, lastSavedAt *time.Time) bool {
+	if lastSavedAt == nil {
+		return false
+	}
+	st := SessionFormatCheck(ctx, sessionID)
+	if st == nil || st.Status == types.DocumentFormatCheckRunning {
+		return false
+	}
+	covered := st.StartedAt
+	if st.CheckedSavedAt != nil {
+		covered = *st.CheckedSavedAt
+	}
+	return lastSavedAt.After(covered)
+}
+
+// Recheck follows a save of the document after its background check: when
+// the format fingerprint is unchanged (only body wording changed) the
+// result is kept and marked as covering the save; otherwise the check runs
+// again once editing settles. It returns at once.
+func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
+	if t.chatModel == nil || t.workspace == nil || t.sessionID == "" {
+		return
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return
+	}
+	ws, err := t.workspace.GetBySession(ctx, tenantID, t.sessionID)
+	if err != nil || ws == nil || !FormatCheckNeedsRecheck(ctx, t.sessionID, ws.LastSavedAt) {
+		return
+	}
+	if _, busy := formatRechecking.LoadOrStore(t.sessionID, struct{}{}); busy {
+		return
+	}
+	prev := SessionFormatCheck(ctx, t.sessionID)
+	savedAt := *ws.LastSavedAt
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		defer formatRechecking.Delete(t.sessionID)
+		content, _, revision, err := t.source(ctx, tenantID, "")
+		if err != nil || prev == nil {
 			return
 		}
-		done.Status = types.DocumentFormatCheckReady
-		if info := out.result.DocumentType; info != nil {
-			done.DocumentType = info.Used
-			done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
+		if prev.Fingerprint != "" && formatFingerprint(content) == prev.Fingerprint {
+			kept := *prev
+			kept.CheckedSavedAt = &savedAt
+			kept.Revision = revision
+			formatChecks.storeState(ctx, t.sessionID, &kept)
+			logger.Infof(ctx, "check_document_format: save of session %s kept the format; evaluation still current", t.sessionID)
+			return
 		}
-		formatChecks.storeState(ctx, t.sessionID, &done)
-		logger.Infof(ctx, "check_document_format: background check of %s ready in %s", fileName, finished.Sub(state.StartedAt).Round(time.Second))
+		// show progress at once, then wait for the editing to settle
+		now := time.Now()
+		formatChecks.storeState(ctx, t.sessionID, &types.DocumentFormatCheck{
+			Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: now, CheckedSavedAt: &now,
+		})
+		for deadline := now.Add(formatRecheckWaitMax); time.Now().Before(deadline); {
+			cur, err := t.workspace.GetBySession(ctx, tenantID, t.sessionID)
+			if err != nil || cur == nil || cur.LastSavedAt == nil || time.Since(*cur.LastSavedAt) >= formatRecheckQuiet {
+				break
+			}
+			time.Sleep(formatRecheckPoll)
+		}
+		content, fileName, revision, err := t.source(ctx, tenantID, "")
+		if err != nil {
+			failed := time.Now()
+			formatChecks.storeState(ctx, t.sessionID, &types.DocumentFormatCheck{
+				Status: types.DocumentFormatCheckFailed, Revision: revision, StartedAt: now, FinishedAt: &failed, CheckedSavedAt: &now,
+			})
+			return
+		}
+		logger.Infof(ctx, "check_document_format: format of session %s changed; checking again", t.sessionID)
+		t.runBackground(ctx, content, fileName, revision)
 	}()
 }
 

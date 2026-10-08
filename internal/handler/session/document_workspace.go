@@ -111,6 +111,8 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 	if ws.Status == types.DocumentWorkspaceStatusOpen {
 		// a document opened before a server restart has no check yet
 		h.precheck.Start(ctx, ws.TenantID, sessionID)
+		// a save since the check: keep it or check again (format changed)
+		h.precheck.Refresh(ctx, ws)
 	}
 	view, err := h.view(c, ws)
 	if err != nil {

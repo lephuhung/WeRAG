@@ -65,6 +65,25 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 	}()
 }
 
+// Refresh follows a save of the document made after its background check:
+// an edit that left the format fingerprint unchanged keeps the result,
+// another one checks again once editing settles (see tools Recheck). Cheap
+// when nothing was saved since: it reads only the check state.
+func (p *DocumentFormatPrecheck) Refresh(ctx context.Context, ws *types.DocumentWorkspace) {
+	if p == nil || ws == nil || ws.Status != types.DocumentWorkspaceStatusOpen ||
+		!tools.FormatCheckNeedsRecheck(ctx, ws.SessionID, ws.LastSavedAt) {
+		return
+	}
+	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, ws.TenantID)
+	go func() {
+		chatModel := p.chatModel(ctx, p.agent(ctx))
+		if chatModel == nil {
+			return
+		}
+		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, ws.SessionID).Recheck(ctx)
+	}()
+}
+
 // Status reports the session's background check, or nil when none ran.
 func (p *DocumentFormatPrecheck) Status(ctx context.Context, sessionID string) *types.DocumentFormatCheck {
 	if p == nil {
