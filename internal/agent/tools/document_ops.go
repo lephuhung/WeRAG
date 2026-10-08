@@ -66,6 +66,9 @@ type DocumentOp struct {
 	SizePt    *float64 `json:"sizePt,omitempty"`
 	// mark: underline | highlight | color
 	Style string `json:"style,omitempty"`
+	// mark: which occurrence of text inside the paragraph to mark (1-based);
+	// omitted means the first
+	TextOccurrence int `json:"textOccurrence,omitempty"`
 	// pageSetup
 	MarginsMm map[string]float64 `json:"marginsMm,omitempty"`
 	A4        bool               `json:"a4,omitempty"`

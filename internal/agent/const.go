@@ -46,6 +46,9 @@ const (
 	// its callback), may label the document with the chat model, then edits
 	// and stores the .docx.
 	documentEditToolTimeout = 4 * time.Minute
+	// checkSpellingToolTimeout covers check_spelling: a snapshot, then one
+	// spellcheck model call per batch of 40 paragraphs (up to 4 batches).
+	checkSpellingToolTimeout = 4 * time.Minute
 	// documentInsertMarkToolTimeout covers insert_paragraphs / mark_passages:
 	// the editor force-save wait plus the edit (no model call).
 	documentInsertMarkToolTimeout = 2 * time.Minute
@@ -87,6 +90,8 @@ func toolExecutionTimeout(toolName string, arguments ...string) time.Duration {
 		return checkDocumentFormatToolTimeout
 	case "apply_format_fixes", "rewrite_paragraphs":
 		return documentEditToolTimeout
+	case "check_spelling":
+		return checkSpellingToolTimeout
 	case "insert_paragraphs", "mark_passages":
 		return documentInsertMarkToolTimeout
 	case "read_document_outline":

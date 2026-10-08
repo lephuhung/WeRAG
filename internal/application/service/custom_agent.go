@@ -349,11 +349,15 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	// only system admins (or platform keys) may change it. Tenant admins keep
 	// the rest of the config surface — an update that leaves model_id
 	// untouched is never blocked by this check.
-	currentModelID := defaultAgent.Config.ModelID
+	// The document assistant's format-check and spellcheck models are the
+	// same kind of assignment.
+	current := defaultAgent.Config
 	if existingAgent != nil {
-		currentModelID = existingAgent.Config.ModelID
+		current = existingAgent.Config
 	}
-	if agent.Config.ModelID != currentModelID && !types.CanManageModelConfig(ctx) {
+	if (agent.Config.ModelID != current.ModelID ||
+		agent.Config.FormatCheckModelID != current.FormatCheckModelID ||
+		agent.Config.SpellcheckModelID != current.SpellcheckModelID) && !types.CanManageModelConfig(ctx) {
 		return nil, ErrBuiltinModelManagedByAdmin
 	}
 

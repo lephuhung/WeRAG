@@ -1,6 +1,10 @@
 package types
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestCustomAgentConfigResolveChatParserEngine(t *testing.T) {
 	config := &CustomAgentConfig{ChatParserEngineRules: []ParserEngineRule{
@@ -104,5 +108,34 @@ func TestEnsureDefaults_CitationsDefaultEnabledAndPreserveFalse(t *testing.T) {
 	explicit.EnsureDefaults()
 	if explicit.Config.CitationEnabled == nil || *explicit.Config.CitationEnabled {
 		t.Fatal("EnsureDefaults must preserve explicit citation_enabled=false")
+	}
+}
+
+func TestCustomAgentDocumentAssistantSettings(t *testing.T) {
+	var nilCfg *CustomAgentConfig
+	if !nilCfg.FormatCheckOnOpenEnabled() || nilCfg.OpenDocumentMaxRunes() != 0 || nilCfg.FormatCheckModel() != "" {
+		t.Fatal("nil config defaults")
+	}
+	off := false
+	cfg := &CustomAgentConfig{ModelID: "chat", FormatCheckModelID: " thinker ", FormatCheckOnOpen: &off, OpenDocumentMaxRunesLimit: 9000}
+	if cfg.FormatCheckOnOpenEnabled() || cfg.FormatCheckModel() != "thinker" || cfg.SpellcheckModel() != "chat" || cfg.OpenDocumentMaxRunes() != 9000 {
+		t.Fatalf("config: %+v", cfg)
+	}
+	if err := cfg.ValidateDocumentAssistant(); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []int{-1, MaxOpenDocumentRunes + 1} {
+		if (&CustomAgentConfig{OpenDocumentMaxRunesLimit: n}).ValidateDocumentAssistant() == nil {
+			t.Errorf("open_document_max_runes=%d accepted", n)
+		}
+	}
+	// JSON names
+	b, _ := json.Marshal(CustomAgentConfig{FormatCheckModelID: "a", SpellcheckModelID: "b", FormatCheckOnOpen: &off,
+		WebSearchDefaultOn: true, OpenDocumentMaxRunesLimit: 7})
+	for _, key := range []string{`"format_check_model_id":"a"`, `"spellcheck_model_id":"b"`, `"format_check_on_open":false`,
+		`"web_search_default_on":true`, `"open_document_max_runes":7`} {
+		if !strings.Contains(string(b), key) {
+			t.Errorf("JSON lacks %s: %s", key, b)
+		}
 	}
 }

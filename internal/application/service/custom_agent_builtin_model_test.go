@@ -127,3 +127,35 @@ func TestUpdateBuiltinAgentAllowsModelChangeForSystemAdmin(t *testing.T) {
 	assert.Equal(t, "mode-chat", got.Config.ModelID)
 	assert.NotNil(t, repo.saved)
 }
+
+// The document assistant's format-check and spellcheck models are platform
+// assignments like model_id.
+func TestUpdateBuiltinAgentRejectsDocumentModelChangeForNonAdmin(t *testing.T) {
+	restore := withBuiltinModelAgent(t, "mode-chat")
+	defer restore()
+	for _, cfg := range []types.CustomAgentConfig{
+		{ModelID: "mode-chat", FormatCheckModelID: "thinking-model"},
+		{ModelID: "mode-chat", SpellcheckModelID: "small-model"},
+	} {
+		repo := &builtinModelAgentRepo{stored: &types.CustomAgent{
+			ID: "builtin-quick-answer", IsBuiltin: true, TenantID: 1,
+			Config: types.CustomAgentConfig{ModelID: "mode-chat"},
+		}}
+		svc := &customAgentService{repo: repo}
+		_, err := svc.UpdateAgent(builtinModelTestCtx(false), &types.CustomAgent{ID: "builtin-quick-answer", Config: cfg}, nil)
+		require.ErrorIs(t, err, ErrBuiltinModelManagedByAdmin)
+	}
+	// format_check_on_open and the other switches stay editable
+	repo := &builtinModelAgentRepo{stored: &types.CustomAgent{
+		ID: "builtin-quick-answer", IsBuiltin: true, TenantID: 1,
+		Config: types.CustomAgentConfig{ModelID: "mode-chat"},
+	}}
+	off := false
+	got, err := (&customAgentService{repo: repo}).UpdateAgent(builtinModelTestCtx(false), &types.CustomAgent{
+		ID:     "builtin-quick-answer",
+		Config: types.CustomAgentConfig{ModelID: "mode-chat", FormatCheckOnOpen: &off, WebSearchDefaultOn: true, OpenDocumentMaxRunesLimit: 5000},
+	}, nil)
+	require.NoError(t, err)
+	assert.False(t, got.Config.FormatCheckOnOpenEnabled())
+	assert.Equal(t, 5000, got.Config.OpenDocumentMaxRunes())
+}

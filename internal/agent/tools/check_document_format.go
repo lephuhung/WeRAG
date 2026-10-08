@@ -32,7 +32,7 @@ var checkDocumentFormatTool = BaseTool{
 
 ONLY when the user explicitly asks to check, review or evaluate the format of an uploaded document — e.g. "kiểm tra thể thức", "văn bản này đúng thể thức chưa", "soát lỗi trình bày / căn lề / cỡ chữ / font", "đúng Nghị định 30 không".
 
-Do NOT call it just because a .docx is attached, nor to summarize, translate, answer questions about or extract content from a document — read the attachment content for that. It checks layout only: for spelling (chính tả) questions, proofread the attachment text yourself.
+Do NOT call it just because a .docx is attached, nor to summarize, translate, answer questions about or extract content from a document — read the attachment content for that. It checks layout only: for spelling (chính tả) questions use check_spelling when it is available, otherwise proofread the text yourself.
 
 ## Input
 

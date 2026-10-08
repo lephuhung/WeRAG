@@ -1088,6 +1088,15 @@ func (s *agentService) registerTools(
 	// The document-assistant tools edit the session's one editable document;
 	// without a workspace they have nothing to work on and are not offered.
 	docWorkspace := s.sessionDocumentWorkspace(ctx, sessionID)
+	// The format check and the spellcheck may run on their own models
+	// (format_check_model_id / spellcheck_model_id), else on the run's.
+	var formatModel, spellModel chat.Chat = chatModel, chatModel
+	if docWorkspace != nil || s.temporaryDocuments != nil {
+		formatModel = s.documentToolModel(ctx, config.FormatCheckModelID, chatModel, "format check")
+	}
+	if docWorkspace != nil {
+		spellModel = s.documentToolModel(ctx, config.SpellcheckModelID, chatModel, "spellcheck")
+	}
 
 	// logger.Infof(ctx, "Registering tools: %v, webSearchEnabled: %v", allowedTools, config.WebSearchEnabled)
 	// Register each allowed tool
@@ -1202,11 +1211,17 @@ func (s *agentService) registerTools(
 				continue
 			}
 			toolToRegister = tools.NewMarkPassagesTool(s.documentWorkspaces, sessionID)
+		case tools.ToolCheckSpelling:
+			if docWorkspace == nil || spellModel == nil {
+				continue
+			}
+			toolToRegister = tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
+				WithPrompt(s.spellcheckPrompt())
 		case tools.ToolApplyFormatFixes:
 			if docWorkspace == nil {
 				continue
 			}
-			toolToRegister = tools.NewApplyFormatFixesTool(s.documentWorkspaces, chatModel, sessionID)
+			toolToRegister = tools.NewApplyFormatFixesTool(s.documentWorkspaces, formatModel, sessionID)
 		case tools.ToolCheckDocumentFormat:
 			// Registered below from the session's documents, not from the
 			// allowlist.
@@ -1255,17 +1270,49 @@ func (s *agentService) registerTools(
 	// requests, so a document attached for Q&A is not checked unasked.
 	switch {
 	case docWorkspace != nil:
-		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, chatModel, sessionID)
+		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, formatModel, sessionID)
 		registry.RegisterTool(checkTool)
 		// the check takes about a minute; start it now so a format question
 		// later in the conversation is answered from its cache
 		checkTool.Prewarm(ctx)
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
-		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, chatModel, sessionID))
+		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, formatModel, sessionID))
 	}
 
 	logger.Infof(ctx, "Registered %d tools", len(registry.ListTools()))
 	return nil
+}
+
+// spellcheckPrompt is the configured spellcheck_review template, "" when
+// none (the tool then uses its built-in prompt).
+func (s *agentService) spellcheckPrompt() string {
+	if s.cfg == nil || s.cfg.PromptTemplates == nil {
+		return ""
+	}
+	if t := config.DefaultTemplate(s.cfg.PromptTemplates.SpellcheckReview); t != nil {
+		return t.Content
+	}
+	return ""
+}
+
+// documentToolModel resolves a document tool's dedicated model. An empty id
+// uses the run's chat model as built for this session (it honours a
+// per-request model override; the agent's model_id is not reloaded), as do
+// an id equal to the run's model and a model that cannot be loaded.
+func (s *agentService) documentToolModel(ctx context.Context, modelID string, fallback chat.Chat, purpose string) chat.Chat {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" || s.modelService == nil {
+		return fallback
+	}
+	if fallback != nil && fallback.GetModelID() == modelID {
+		return fallback
+	}
+	m, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil || m == nil {
+		logger.Warnf(ctx, "%s model %s unavailable, using the agent's model: %v", purpose, modelID, err)
+		return fallback
+	}
+	return m
 }
 
 // sessionHasDocx reports whether the conversation has an uploaded .docx.

@@ -147,7 +147,14 @@ type AgentConfig struct {
 	// Runtime-only fields (not persisted)
 	ChatModelSupportsVision bool   `json:"-"` // Resolved model capability, never supplied by tool input.
 	VLMModelID              string `json:"-"` // VLM model ID for tool images, resolved from CustomAgent config.
-	SandboxConfigID         string `json:"-"` // Workspace sandbox config ID for skill execution.
+	// FormatCheckModelID / SpellcheckModelID are the dedicated models the
+	// document tools use, copied as stored (CustomAgentConfig
+	// FormatCheckModelID / SpellcheckModelID, not the FormatCheckModel
+	// fallback): empty uses the run's chat model, which already honours a
+	// per-request model override.
+	FormatCheckModelID string `json:"-"`
+	SpellcheckModelID  string `json:"-"`
+	SandboxConfigID    string `json:"-"` // Workspace sandbox config ID for skill execution.
 	// TenantSkills are the skills installed into the selected sandbox config's
 	// snapshot image, already narrowed to the ones this run can actually
 	// invoke. Runtime only: it is derived per turn from the config the agent

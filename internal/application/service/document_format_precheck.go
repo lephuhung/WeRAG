@@ -49,7 +49,15 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 	}
 	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, tenantID)
 	go func() {
-		chatModel := p.chatModel(ctx)
+		agent := p.agent(ctx)
+		if agent == nil {
+			return
+		}
+		if !agent.Config.FormatCheckOnOpenEnabled() {
+			logger.Infof(ctx, "[DocumentFormatPrecheck] format_check_on_open is off; not checking session %s", sessionID)
+			return
+		}
+		chatModel := p.chatModel(ctx, agent)
 		if chatModel == nil {
 			return
 		}
@@ -65,9 +73,9 @@ func (p *DocumentFormatPrecheck) Status(ctx context.Context, sessionID string) *
 	return tools.SessionFormatCheck(ctx, sessionID)
 }
 
-// chatModel resolves the document assistant's configured chat model.
-func (p *DocumentFormatPrecheck) chatModel(ctx context.Context) chat.Chat {
-	if p.agents == nil || p.models == nil {
+// agent loads the document assistant's (tenant) configuration.
+func (p *DocumentFormatPrecheck) agent(ctx context.Context) *types.CustomAgent {
+	if p.agents == nil {
 		return nil
 	}
 	agent, err := p.agents.GetAgentByID(ctx, types.BuiltinDocumentAssistantID)
@@ -75,15 +83,26 @@ func (p *DocumentFormatPrecheck) chatModel(ctx context.Context) chat.Chat {
 		logger.Warnf(ctx, "[DocumentFormatPrecheck] document assistant not found: %v", err)
 		return nil
 	}
-	modelID := strings.TrimSpace(agent.Config.ModelID)
-	if modelID == "" {
-		logger.Warnf(ctx, "[DocumentFormatPrecheck] document assistant has no chat model; skipping")
+	return agent
+}
+
+// chatModel resolves the model of the document assistant's format check:
+// format_check_model_id, else its chat model. A dedicated model that cannot
+// be loaded falls back to the chat model.
+func (p *DocumentFormatPrecheck) chatModel(ctx context.Context, agent *types.CustomAgent) chat.Chat {
+	if agent == nil || p.models == nil {
 		return nil
 	}
-	m, err := p.models.GetChatModel(ctx, modelID)
-	if err != nil || m == nil {
+	for _, modelID := range []string{strings.TrimSpace(agent.Config.FormatCheckModelID), strings.TrimSpace(agent.Config.ModelID)} {
+		if modelID == "" {
+			continue
+		}
+		m, err := p.models.GetChatModel(ctx, modelID)
+		if err == nil && m != nil {
+			return m
+		}
 		logger.Warnf(ctx, "[DocumentFormatPrecheck] chat model %s unavailable: %v", modelID, err)
-		return nil
 	}
-	return m
+	logger.Warnf(ctx, "[DocumentFormatPrecheck] document assistant has no usable chat model; skipping")
+	return nil
 }

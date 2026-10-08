@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
@@ -17,6 +20,12 @@ type fakeDocumentWorkspaces struct {
 }
 
 func (f *fakeDocumentWorkspaces) Enabled() bool { return true }
+
+// OpenCurrent fails: the format check's background prewarm reads the
+// document when a model is available.
+func (f *fakeDocumentWorkspaces) OpenCurrent(context.Context, uint64, string) (io.ReadCloser, *types.DocumentWorkspace, error) {
+	return nil, nil, errors.New("no document in this test")
+}
 
 func (f *fakeDocumentWorkspaces) GetBySession(context.Context, uint64, string) (*types.DocumentWorkspace, error) {
 	if f.ws == nil {
@@ -68,4 +77,62 @@ func TestRegisterToolsHidesDocumentToolsWithoutAWorkspace(t *testing.T) {
 		require.NotContains(t, names, name)
 	}
 	require.Contains(t, names, tools.ToolSearchKnowledge)
+}
+
+type docChatBase interface{ chat.Chat }
+
+type docModelChat struct {
+	docChatBase
+	id string
+}
+
+func (c docModelChat) GetModelID() string   { return c.id }
+func (c docModelChat) GetModelName() string { return c.id }
+
+type docModelService struct {
+	interfaces.ModelService
+	asked []string
+}
+
+func (m *docModelService) GetChatModel(_ context.Context, id string) (chat.Chat, error) {
+	m.asked = append(m.asked, id)
+	if id == "missing" {
+		return nil, errors.New("not found")
+	}
+	return docModelChat{id: id}, nil
+}
+
+func TestDocumentToolModelResolution(t *testing.T) {
+	models := &docModelService{}
+	svc := &agentService{modelService: models}
+	run := docModelChat{id: "run"}
+	ctx := t.Context()
+	require.Equal(t, run, svc.documentToolModel(ctx, "", run, "x"), "empty id → the run's model")
+	require.Equal(t, run, svc.documentToolModel(ctx, "run", run, "x"), "same id → no second load")
+	require.Equal(t, run, svc.documentToolModel(ctx, "missing", run, "x"), "unloadable → the run's model")
+	require.Equal(t, docModelChat{id: "thinker"}, svc.documentToolModel(ctx, " thinker ", run, "x"))
+	require.Equal(t, []string{"missing", "thinker"}, models.asked)
+}
+
+func TestRegisterToolsOffersCheckSpellingWithItsModel(t *testing.T) {
+	ws := &types.DocumentWorkspace{ID: "ws", SessionID: "session", FileName: "a.docx"}
+	kb := &types.KnowledgeBase{ID: "kb"}
+	kb.IndexingStrategy.VectorEnabled = true
+	svc := newToolSurfaceService(kb)
+	svc.documentWorkspaces = &fakeDocumentWorkspaces{ws: ws}
+	models := &docModelService{}
+	svc.modelService = models
+	ctx := context.WithValue(t.Context(), types.TenantIDContextKey, uint64(7))
+	cfg := toolSurfaceConfig(tools.ToolCheckSpelling)
+	cfg.SpellcheckModelID = "spell"
+	cfg.FormatCheckModelID = "format"
+	registry := tools.NewToolRegistry()
+	require.NoError(t, svc.registerTools(ctx, registry, cfg, nil, nil, "session"))
+	require.Contains(t, registry.ListTools(), tools.ToolCheckSpelling)
+	require.ElementsMatch(t, []string{"format", "spell"}, models.asked)
+
+	// without a model at all the spellcheck is not offered
+	require.NotContains(t, registerDocumentTools(t, ws, tools.ToolCheckSpelling), tools.ToolCheckSpelling)
+	// nor without a workspace
+	require.NotContains(t, registerDocumentTools(t, nil, tools.ToolCheckSpelling), tools.ToolCheckSpelling)
 }

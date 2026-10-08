@@ -82,6 +82,7 @@ const (
 	ToolApplyFormatFixes    = "apply_format_fixes"
 	ToolInsertParagraphs    = "insert_paragraphs"
 	ToolMarkPassages        = "mark_passages"
+	ToolCheckSpelling       = "check_spelling"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -137,6 +138,11 @@ func AvailableToolDefinitions() []AvailableTool {
 			Name:        ToolInsertParagraphs,
 			Label:       "Chèn đoạn văn",
 			Description: "Chèn đoạn văn mới (ví dụ Nơi nhận, Căn cứ) vào tài liệu đang soạn thảo",
+		},
+		{
+			Name:        ToolCheckSpelling,
+			Label:       "Kiểm tra chính tả",
+			Description: "Soát lỗi chính tả, lỗi gõ, sai dấu trong tài liệu đang soạn thảo và gạch chân đỏ, không sửa nội dung",
 		},
 		{
 			Name:        ToolMarkPassages,

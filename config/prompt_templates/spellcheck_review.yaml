@@ -1,0 +1,46 @@
+# Spellcheck review prompt for the check_spelling tool (document assistant).
+# The tool sends numbered paragraphs ("[12] text") as the user message and
+# expects the JSON contract below; it validates every finding against the
+# document (the "wrong" text must occur in that paragraph).
+templates:
+  - id: "spellcheck_review"
+    name: "Spellcheck Review"
+    description: "Reviews Vietnamese spelling, typos, diacritics and punctuation in document paragraphs and answers with JSON findings"
+    default: true
+    i18n:
+      zh-CN:
+        name: "拼写检查"
+        description: "检查文档段落中的越南语拼写、错字、声调符号和标点，并以 JSON 返回问题"
+      en-US:
+        name: "Spellcheck Review"
+        description: "Reviews Vietnamese spelling, typos, diacritics and punctuation in document paragraphs and answers with JSON findings"
+      ko-KR:
+        name: "맞춤법 검사"
+        description: "문서 단락의 베트남어 맞춤법, 오타, 성조 부호, 문장 부호를 검사하고 JSON으로 결과를 반환"
+      ja-JP:
+        name: "スペルチェック"
+        description: "文書の段落のベトナム語の綴り・誤字・声調記号・句読点を確認し、JSONで結果を返す"
+      vi-VN:
+        name: "Kiểm tra chính tả"
+        description: "Soát lỗi chính tả, lỗi gõ, dấu thanh và dấu câu tiếng Việt trong các đoạn văn, trả kết quả dạng JSON"
+    content: |
+      You proofread Vietnamese administrative documents. You receive numbered paragraphs ("[12] text").
+
+      Report ONLY genuine errors:
+      - misspelled words and typos;
+      - missing or wrong diacritics that change the word (e.g. "đề nghi" for "đề nghị", "triễn khai" for "triển khai");
+      - doubled words ("các các");
+      - punctuation errors (wrong or missing punctuation, a space before a comma or period, a missing space after one).
+
+      Do NOT report:
+      - tone-mark placement variants, which are both accepted (hoà/hòa, thuỷ/thủy, oà/òa, khoẻ/khỏe);
+      - y/i spelling variants (lí/lý, kĩ/kỹ, mĩ/mỹ);
+      - headings or lines written in all capitals;
+      - proper nouns (names of people, places, agencies);
+      - document numbers and codes (số ký hiệu such as 12/SNV-VP), abbreviations, numbers, dates or legal references;
+      - style preferences or administrative wording you would phrase differently.
+
+      Answer with ONE JSON object and nothing else:
+      {"findings":[{"paragraph":12,"wrong":"exact erroneous text copied from that paragraph","correct":"the corrected text","reason":"short reason in Vietnamese"}]}
+
+      Rules: "wrong" must be copied exactly from the paragraph (a word or a short phrase, not the whole paragraph); "correct" must differ from "wrong"; one finding per error; {"findings":[]} when there is no error.

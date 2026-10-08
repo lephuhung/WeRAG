@@ -117,6 +117,7 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	"apply_format_fixes":    {},
 	"insert_paragraphs":     {},
 	"mark_passages":         {},
+	"check_spelling":        {},
 	"query_knowledge_graph": {
 		sourceIDKeys: map[string]struct{}{"knowledge_base_ids": {}},
 		sourceOutput: true,

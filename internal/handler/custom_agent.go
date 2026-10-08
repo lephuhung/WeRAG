@@ -34,6 +34,9 @@ type CustomAgentHandler struct {
 	// sandboxConfigs validates an agent's sandbox backend selection. Optional —
 	// nil in partially-wired unit tests, where the selection is left unchecked.
 	sandboxConfigs sandboxConfigLookup
+	// models validates the document-assistant model selections. Optional —
+	// nil in partially-wired unit tests, where they are left unchecked.
+	models interfaces.ModelService
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
@@ -42,12 +45,14 @@ func NewCustomAgentHandler(
 	imService *im.Service,
 	userService interfaces.UserService,
 	sandboxConfigs *service.TenantSandboxConfigService,
+	models interfaces.ModelService,
 ) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:        service,
 		imService:      imService,
 		userService:    userService,
 		sandboxConfigs: sandboxConfigs,
+		models:         models,
 	}
 }
 
@@ -100,6 +105,10 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		return
 	}
 	if err := h.validateAgentSandboxConfig(ctx, req.Config); err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.validateDocumentAssistantConfig(ctx, req.Config); err != nil {
 		c.Error(err)
 		return
 	}
@@ -350,6 +359,10 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 	if err := h.validateAgentSandboxConfig(ctx, req.Config); err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.validateDocumentAssistantConfig(ctx, req.Config); err != nil {
 		c.Error(err)
 		return
 	}
@@ -728,6 +741,36 @@ func (h *CustomAgentHandler) validateAgentSandboxConfig(
 	}
 	if stored == nil {
 		return errors.NewBadRequestError("所选沙箱后端配置不存在，请重新选择")
+	}
+	return nil
+}
+
+// validateDocumentAssistantConfig checks the document-assistant settings:
+// format_check_model_id and spellcheck_model_id, when set, must name a chat
+// (KnowledgeQA) model the workspace can use; open_document_max_runes must
+// be in range.
+func (h *CustomAgentHandler) validateDocumentAssistantConfig(ctx context.Context, cfg types.CustomAgentConfig) error {
+	if err := cfg.ValidateDocumentAssistant(); err != nil {
+		return errors.NewBadRequestError(err.Error())
+	}
+	if h.models == nil {
+		return nil
+	}
+	for field, id := range map[string]string{
+		"format_check_model_id": cfg.FormatCheckModelID,
+		"spellcheck_model_id":   cfg.SpellcheckModelID,
+	} {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		model, err := h.models.GetModelByID(ctx, id)
+		if err != nil || model == nil {
+			return errors.NewBadRequestError(field + ": model not found")
+		}
+		if model.Type != types.ModelTypeKnowledgeQA {
+			return errors.NewBadRequestError(field + ": must be a chat (KnowledgeQA) model")
+		}
 	}
 	return nil
 }

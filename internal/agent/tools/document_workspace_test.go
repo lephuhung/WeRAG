@@ -650,14 +650,15 @@ func TestCheckDocumentFormatReadsWorkspace(t *testing.T) {
 
 func TestDocumentToolSchemasAreValidJSON(t *testing.T) {
 	for _, tool := range []BaseTool{readDocumentOutlineTool, rewriteParagraphsTool, applyFormatFixesTool,
-		insertParagraphsTool, markPassagesTool} {
+		insertParagraphsTool, markPassagesTool, checkSpellingTool} {
 		var parsed map[string]any
 		if err := json.Unmarshal(tool.schema, &parsed); err != nil || parsed["type"] != "object" {
 			t.Errorf("%s schema: %v", tool.name, err)
 		}
 	}
 	if !CanRunConcurrently(ToolReadDocumentOutline) || CanRunConcurrently(ToolRewriteParagraphs) ||
-		CanRunConcurrently(ToolApplyFormatFixes) || CanRunConcurrently(ToolInsertParagraphs) || CanRunConcurrently(ToolMarkPassages) {
+		CanRunConcurrently(ToolApplyFormatFixes) || CanRunConcurrently(ToolInsertParagraphs) || CanRunConcurrently(ToolMarkPassages) ||
+		CanRunConcurrently(ToolCheckSpelling) {
 		t.Fatal("only the outline read may run concurrently")
 	}
 }

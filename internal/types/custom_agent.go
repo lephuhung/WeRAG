@@ -316,6 +316,25 @@ type CustomAgentConfig struct {
 	// under config/prompt_templates/intent_prompts.yaml.
 	IntentPrompts map[string]string `yaml:"intent_prompts" json:"intent_prompts,omitempty"`
 
+	// ===== Document Assistant Settings =====
+	// FormatCheckModelID is the KnowledgeQA model that runs the NĐ30 format
+	// evaluation: check_document_format, the background check when a
+	// document is opened, and the component labelling in apply_format_fixes
+	// and read_document_outline. Empty uses ModelID.
+	FormatCheckModelID string `yaml:"format_check_model_id" json:"format_check_model_id,omitempty"`
+	// FormatCheckOnOpen runs the format check in the background as soon as a
+	// document is opened. Nil (unset) and true mean on.
+	FormatCheckOnOpen *bool `yaml:"format_check_on_open" json:"format_check_on_open,omitempty"`
+	// SpellcheckModelID is the KnowledgeQA model check_spelling uses. Empty
+	// uses ModelID.
+	SpellcheckModelID string `yaml:"spellcheck_model_id" json:"spellcheck_model_id,omitempty"`
+	// WebSearchDefaultOn makes the chat's Web toggle start on when this agent
+	// is selected. Read by the frontend only.
+	WebSearchDefaultOn bool `yaml:"web_search_default_on" json:"web_search_default_on,omitempty"`
+	// OpenDocumentMaxRunesLimit caps the <open_document> head given to the
+	// model; 0 uses the tools package default (see OpenDocumentMaxRunes).
+	OpenDocumentMaxRunesLimit int `yaml:"open_document_max_runes" json:"open_document_max_runes,omitempty"`
+
 	// ===== Conversation Question Suggestions =====
 	// QuestionSuggestions owns both the static/knowledge-backed prompts shown
 	// before the first user turn and the contextual follow-up questions shown
@@ -444,6 +463,60 @@ func oneOf(value string, allowed ...string) bool {
 		}
 	}
 	return false
+}
+
+// MaxOpenDocumentRunes bounds open_document_max_runes.
+const MaxOpenDocumentRunes = 200000
+
+// OpenDocumentMaxRunes is the configured cap of the <open_document> head;
+// 0 means "use the tools package default".
+func (c *CustomAgentConfig) OpenDocumentMaxRunes() int {
+	if c == nil || c.OpenDocumentMaxRunesLimit < 0 {
+		return 0
+	}
+	return c.OpenDocumentMaxRunesLimit
+}
+
+// FormatCheckOnOpenEnabled reports whether a document opened with this agent
+// is checked in the background (nil means on).
+func (c *CustomAgentConfig) FormatCheckOnOpenEnabled() bool {
+	return c == nil || c.FormatCheckOnOpen == nil || *c.FormatCheckOnOpen
+}
+
+// FormatCheckModel is the model id for the NĐ30 format evaluation: the
+// dedicated one when set, else the agent's chat model.
+func (c *CustomAgentConfig) FormatCheckModel() string {
+	if c == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(c.FormatCheckModelID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(c.ModelID)
+}
+
+// SpellcheckModel is the model id for check_spelling: the dedicated one when
+// set, else the agent's chat model.
+func (c *CustomAgentConfig) SpellcheckModel() string {
+	if c == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(c.SpellcheckModelID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(c.ModelID)
+}
+
+// ValidateDocumentAssistant checks the document-assistant settings that need
+// no lookup (model ids are checked against the model store by the handler).
+func (c *CustomAgentConfig) ValidateDocumentAssistant() error {
+	if c == nil {
+		return nil
+	}
+	if c.OpenDocumentMaxRunesLimit < 0 || c.OpenDocumentMaxRunesLimit > MaxOpenDocumentRunes {
+		return fmt.Errorf("open_document_max_runes must be between 0 and %d", MaxOpenDocumentRunes)
+	}
+	return nil
 }
 
 // ResolveChatParserEngine returns the agent-configured parser engine for a

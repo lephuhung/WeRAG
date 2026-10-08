@@ -438,6 +438,8 @@ type PromptTemplatesConfig struct {
 	GenerateQuestions     []PromptTemplate `yaml:"generate_questions"     json:"generate_questions,omitempty"`
 	// IntentPrompts holds per-intent system prompt overrides (template ID = intent value).
 	IntentPrompts []PromptTemplate `yaml:"intent_prompts" json:"intent_prompts,omitempty"`
+	// SpellcheckReview is the system prompt of the check_spelling tool.
+	SpellcheckReview []PromptTemplate `yaml:"spellcheck_review" json:"spellcheck_review,omitempty"`
 }
 
 // DefaultTemplate returns the first template marked as default in the list,
@@ -1295,6 +1297,7 @@ func loadPromptTemplates(configDir string) (*PromptTemplatesConfig, error) {
 		"graph_extraction.yaml":        &config.GraphExtraction,
 		"generate_questions.yaml":      &config.GenerateQuestions,
 		"intent_prompts.yaml":          &config.IntentPrompts,
+		"spellcheck_review.yaml":       &config.SpellcheckReview,
 	}
 
 	// 加载每个模板文件
