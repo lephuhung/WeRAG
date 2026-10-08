@@ -9,6 +9,7 @@ import {
   documentServerOrigin,
   downloadDocumentWorkspace,
   formatCheckInProgress,
+  profileInProgress,
   forceSaveDocumentWorkspace,
   forceSaveDocumentWorkspaceKeepalive,
   getDocumentWorkspace,
@@ -218,7 +219,10 @@ export function DocumentPane({
   recheckRef.current = recheck;
 
   const isEditor = phase.kind === "editor";
-  const formatCheckRunning = !!view?.format_check && formatCheckInProgress(view.format_check);
+  // the background format check or the profile runs: poll faster so the
+  // header ring follows it
+  const formatCheckRunning =
+    (!!view?.format_check && formatCheckInProgress(view.format_check)) || profileInProgress(view?.profile);
 
   // Chat turn ended (incl. dropped stream / abort): check now and again a
   // little later, since the backend may still be finishing the edit.

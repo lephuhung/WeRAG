@@ -206,6 +206,9 @@ type DocumentWorkspaceView struct {
 	// FormatCheck is the background NĐ30 format check started when the
 	// document was opened; nil when none has run in this server process.
 	FormatCheck *DocumentFormatCheck `json:"format_check,omitempty"`
+	// Profile is the document's card (DocumentProfile.Public: no hash,
+	// stale when edited since); nil before one was started.
+	Profile *DocumentProfile `json:"profile,omitempty"`
 }
 
 // Background format check statuses. Queued: the document waits for one of

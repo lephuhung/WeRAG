@@ -62,6 +62,44 @@ export interface DocumentWorkspaceView {
   editor?: DocumentEditorBootstrap;
   /** Background NĐ30 format check started when the document was opened. */
   format_check?: DocumentFormatCheck;
+  /** The document's card (both roles), made in the background. */
+  profile?: DocumentProfile;
+}
+
+/** queued: waiting for a background slot (shared with the format check). */
+export type DocumentProfileStatus = "queued" | "running" | "ready" | "failed";
+
+export interface DocumentProfileSection {
+  title: string;
+  /** Inclusive paragraph (target) or chunk/line (source) indexes. */
+  from: number;
+  to: number;
+  summary?: string;
+}
+
+/** The card of a session document: identity, gist, sections and the
+ * questions it answers. Shown fields are empty until status is "ready". */
+export interface DocumentProfile {
+  status: DocumentProfileStatus;
+  document_number?: string;
+  issuer?: string;
+  date?: string;
+  doc_type?: string;
+  doc_type_code?: string;
+  subject?: string;
+  gist?: string;
+  key_points?: string[];
+  sections?: DocumentProfileSection[];
+  topics?: string[];
+  entities?: { units?: string[]; cited_numbers?: string[]; dates?: string[]; figures?: string[] };
+  typical_questions?: string[];
+  unit?: "paragraph" | "chunk" | "line";
+  model?: string;
+  generated_at?: string;
+  /** Edited since the profile was made (a refresh is planned). */
+  stale?: boolean;
+  error?: string;
+  started_at?: string;
 }
 
 /** queued: waiting for one of the few background check slots (several
@@ -472,6 +510,57 @@ export function formatCheckIsCurrent(
   return !(Number.isFinite(saved) && Number.isFinite(started) && saved > started);
 }
 
+/** A profile that has not finished yet (waiting for a slot or running). */
+export function profileInProgress(p: { status?: string } | null | undefined): boolean {
+  return p?.status === "queued" || p?.status === "running";
+}
+
+/** The header ring shows "reading the document" while the visible
+ * document's profile is made and its format check has not started yet
+ * (none, or still waiting for a slot): the profile runs first. */
+export function profileReadingPhase(
+  check: { status: string } | null | undefined,
+  profile: { status?: string } | null | undefined,
+): boolean {
+  return profileInProgress(profile) && (!check || check.status === "queued");
+}
+
+/** One line under a source in the sources panel: its số ký hiệu and gist,
+ * once its profile is ready ("" otherwise). */
+export function sourceProfileLine(p: DocumentProfile | null | undefined): string {
+  if (!p || p.status !== "ready") return "";
+  return [p.document_number, p.gist || p.subject].filter((x) => x && x.trim()).join(" · ");
+}
+
+export interface SourceQuestionChip {
+  documentId: string;
+  handle?: string;
+  fileName: string;
+  question: string;
+}
+
+/** Suggestion chips for sources uploaded in this view (freshIds) whose
+ * profile is ready: their typical questions, at most `perSource` each and
+ * `limit` in all, in handle order. */
+export function sourceQuestionChips(
+  docs: { id: string; file_name: string; handle?: string; role?: string; profile?: { status?: string; typical_questions?: string[] } }[],
+  freshIds: ReadonlySet<string>,
+  perSource = 3,
+  limit = 3,
+): SourceQuestionChip[] {
+  const out: SourceQuestionChip[] = [];
+  for (const d of docs) {
+    if (d.role !== "source" || !freshIds.has(d.id) || d.profile?.status !== "ready") continue;
+    for (const q of (d.profile.typical_questions ?? []).slice(0, perSource)) {
+      const question = q.trim();
+      if (!question) continue;
+      out.push({ documentId: d.id, handle: d.handle, fileName: d.file_name, question });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 /** Identity of one background check result: the chat's format-check ring
  * shows an unseen dot until this result is opened. */
 export function formatCheckResultKey(scopeId: string, check: DocumentFormatCheck): string {
@@ -481,13 +570,16 @@ export function formatCheckResultKey(scopeId: string, check: DocumentFormatCheck
 /** Typical duration of the background check (segmentation + reasoning). */
 export const FORMAT_CHECK_EXPECTED_MS = 75_000;
 
+/** Typical duration of a document profile (one thinking-off call). */
+export const PROFILE_EXPECTED_MS = 25_000;
+
 /** Estimated progress (0–0.95) of a running check from its start time: the
  * backend reports no percentage, so the ring follows the typical duration
  * and stops short of full until the check reports done. */
-export function formatCheckProgress(startedAt: string, nowMs: number): number {
+export function formatCheckProgress(startedAt: string, nowMs: number, expectedMs = FORMAT_CHECK_EXPECTED_MS): number {
   const start = Date.parse(startedAt);
   if (!Number.isFinite(start)) return 0.05;
-  const ratio = Math.max(0, nowMs - start) / FORMAT_CHECK_EXPECTED_MS;
+  const ratio = Math.max(0, nowMs - start) / expectedMs;
   // eases out: fast at first, slows as it nears the cap
   return Math.min(0.95, Math.max(0.05, 1 - Math.exp(-2.2 * ratio)));
 }

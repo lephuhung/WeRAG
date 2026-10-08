@@ -13,10 +13,14 @@ import {
   documentSelectionForDisplay,
   getDocumentWorkspace,
   formatCheckResultKey,
+  profileReadingPhase,
   selectionNeedsCollapse,
   setDocumentWorkspaceRole,
+  sourceQuestionChips,
   type DocumentFormatCheck,
+  type DocumentProfile,
   type DocumentSelection,
+  type SourceQuestionChip,
 } from "@/lib/api/document-workspace";
 import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
@@ -750,10 +754,17 @@ function ChatBody({ id }: { id: string }) {
   const [formatCheck, setFormatCheckState] = useState<DocumentFormatCheck | null>(null);
   // the document (tab) the format check belongs to
   const [formatCheckDoc, setFormatCheckDoc] = useState<SessionDocument | null>(null);
-  const setFormatCheck = useCallback((check: DocumentFormatCheck | null, doc: SessionDocument | null) => {
-    setFormatCheckState(check);
-    setFormatCheckDoc(doc);
-  }, []);
+  // the visible document's profile: the ring shows "reading" while it runs
+  const [docProfile, setDocProfile] = useState<DocumentProfile | null>(null);
+  const setFormatCheck = useCallback(
+    (check: DocumentFormatCheck | null, doc: SessionDocument | null, profile: DocumentProfile | null) => {
+      setFormatCheckState(check);
+      setFormatCheckDoc(doc);
+      setDocProfile(profile);
+    },
+    [],
+  );
+  const readingProfile = profileReadingPhase(formatCheck, docProfile) ? docProfile : null;
   const [seenFormatCheck, setSeenFormatCheck] = useState<string | null>(null);
   const formatCheckKey =
     formatCheck && id !== "new" ? formatCheckResultKey(`${id}:${formatCheckDoc?.id ?? ""}`, formatCheck) : null;
@@ -832,6 +843,40 @@ function ChatBody({ id }: { id: string }) {
   const [docsBump, setDocsBump] = useState(0);
   const sourcesToken =
     attachments.items.map((a) => (a.source ? `${a.source.id}:${a.source.role}` : "")).join("|") + `#${docsBump}`;
+  // Sources uploaded in this view: once their profile is ready, their
+  // typical questions are offered as chips above the composer (a click
+  // fills the composer; dismissing or using one drops that source's chips).
+  const [freshSources, setFreshSources] = useState<{ sessionId: string; ids: Set<string>; dropped: Set<string> }>({
+    sessionId: "",
+    ids: new Set(),
+    dropped: new Set(),
+  });
+  const uploadedSourceSig = attachments.items
+    .filter((a) => a.source?.role === "source")
+    .map((a) => a.source?.id)
+    .join("|");
+  useEffect(() => {
+    const ids = uploadedSourceSig ? uploadedSourceSig.split("|") : [];
+    setFreshSources((prev) => {
+      const same = prev.sessionId === id;
+      const base = same ? prev.ids : new Set<string>();
+      const dropped = same ? prev.dropped : new Set<string>();
+      const added = ids.filter((x) => !base.has(x) && !dropped.has(x));
+      if (same && added.length === 0) return prev;
+      return { sessionId: id, ids: new Set([...base, ...added]), dropped };
+    });
+  }, [uploadedSourceSig, id]);
+  const dropFreshSource = useCallback((docId: string | null) => {
+    setFreshSources((prev) => {
+      const gone = docId === null ? [...prev.ids] : [docId];
+      const ids = new Set([...prev.ids].filter((x) => !gone.includes(x)));
+      return { sessionId: prev.sessionId, ids, dropped: new Set([...prev.dropped, ...gone]) };
+    });
+  }, []);
+  const sourceChips = useMemo(
+    () => (freshSources.sessionId === id ? sourceQuestionChips(openDocs, freshSources.ids) : []),
+    [freshSources, openDocs, id],
+  );
   const openAttachmentForEditing = async (a: PendingAttachment) => {
     if (!a.source || id === "new") return;
     try {
@@ -1934,9 +1979,10 @@ function ChatBody({ id }: { id: string }) {
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
       <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
         <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
-        {isDocumentAssistant && formatCheck && (
+        {isDocumentAssistant && (formatCheck || readingProfile) && (
           <FormatCheckRing
             check={formatCheck}
+            reading={readingProfile ? { startedAt: readingProfile.started_at } : null}
             unseen={formatCheckKey !== seenFormatCheck}
             disabled={busy}
             onOpen={markFormatCheckSeen}
@@ -2026,6 +2072,18 @@ function ChatBody({ id }: { id: string }) {
               onClear={() => setPendingSelection(null)}
             />
           )}
+          {isDocumentAssistant && sourceChips.length > 0 && (
+            <SourceQuestionChips
+              chips={sourceChips}
+              title={tr("docws.sourceQuestionsTitle")}
+              dismissLabel={tr("docws.sourceQuestionsDismiss")}
+              onPick={(chip) => {
+                setInput(chip.question);
+                dropFreshSource(chip.documentId);
+              }}
+              onDismiss={() => dropFreshSource(null)}
+            />
+          )}
           <Composer
             sessionId={id === "new" ? undefined : id}
             value={input}
@@ -2096,6 +2154,49 @@ function ChatBody({ id }: { id: string }) {
       }
       right={chatColumn}
     />
+  );
+}
+
+/* Typical questions of the sources just uploaded (their profile is ready):
+ * clicking one fills the composer. Styled like the follow-up suggestions. */
+function SourceQuestionChips({
+  chips,
+  title,
+  dismissLabel,
+  onPick,
+  onDismiss,
+}: {
+  chips: SourceQuestionChip[];
+  title: string;
+  dismissLabel: string;
+  onPick: (chip: SourceQuestionChip) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mb-2 flex w-full min-w-0 flex-wrap items-center gap-1.5">
+      <span className="caption-uppercase shrink-0 text-muted-soft">{title}</span>
+      {chips.map((c) => (
+        <button
+          key={`${c.documentId}:${c.question}`}
+          type="button"
+          onClick={() => onPick(c)}
+          title={c.handle ? `${c.handle} · ${c.fileName}` : c.fileName}
+          className="flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3 py-1 text-[12.5px] text-body transition-colors hover:border-ink hover:text-ink"
+        >
+          <span className="text-muted-soft">›</span>
+          <span className="min-w-0 max-w-[360px] truncate">{c.question}</span>
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={dismissLabel}
+        title={dismissLabel}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink cursor-pointer"
+      >
+        <IconClose className="h-3 w-3" />
+      </button>
+    </div>
   );
 }
 

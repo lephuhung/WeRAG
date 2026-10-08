@@ -3,26 +3,32 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { DocumentFormatCheck } from "@/lib/api/document-workspace";
-import { formatCheckInProgress, formatCheckProgress } from "@/lib/api/document-workspace";
+import { PROFILE_EXPECTED_MS, formatCheckInProgress, formatCheckProgress } from "@/lib/api/document-workspace";
 
 const SIZE = 22;
 const STROKE = 2;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-/* Background NĐ30 format check of the open document, as a small progress
- * ring in the chat header. Queued (other documents are being checked
- * first): an empty ring. Running: the ring fills over the expected run
- * time. A hover explains either. Finished: a click opens the actions that
- * read or apply the evaluation. */
+/* Background work on the open document, as a small progress ring in the
+ * chat header. Reading (its profile is being made, before the format
+ * check starts): the ring fills over the profile's expected time. Then the
+ * NĐ30 format check: queued (other documents are being checked first) is
+ * an empty ring, running fills over the expected run time. A hover
+ * explains each. Finished: a click opens the actions that read or apply
+ * the evaluation. */
 export function FormatCheckRing({
   check,
+  reading = null,
   unseen,
   disabled,
   onAsk,
   onOpen,
 }: {
-  check: DocumentFormatCheck;
+  /** null while only the profile runs (no format check yet). */
+  check: DocumentFormatCheck | null;
+  /** The document's profile is being made: start time of that run. */
+  reading?: { startedAt?: string } | null;
   /** The finished result was not opened yet → a small dot. */
   unseen: boolean;
   /** A chat turn is running: the actions wait. */
@@ -34,9 +40,10 @@ export function FormatCheckRing({
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const rootRef = useRef<HTMLDivElement>(null);
-  const running = check.status === "running";
-  // queued or running: nothing to open yet
-  const busy = formatCheckInProgress(check);
+  const isReading = Boolean(reading);
+  const running = isReading || check?.status === "running";
+  // reading, queued or running: nothing to open yet
+  const busy = isReading || !check || formatCheckInProgress(check);
 
   useEffect(() => {
     if (!running) return;
@@ -58,9 +65,17 @@ export function FormatCheckRing({
     };
   }, [open]);
 
-  const progress = check.status === "queued" ? 0 : running ? formatCheckProgress(check.started_at, now) : 1;
-  const label =
-    check.status === "queued"
+  const progress = isReading
+    ? formatCheckProgress(reading?.startedAt ?? "", now, PROFILE_EXPECTED_MS)
+    : !check || check.status === "queued"
+      ? 0
+      : running
+        ? formatCheckProgress(check.started_at, now)
+        : 1;
+  const status = isReading || !check ? "reading" : check.status;
+  const label = isReading || !check
+    ? t("docws.fcReading")
+    : check.status === "queued"
       ? t("docws.fcQueued")
       : running
         ? t("docws.fcRunning")
@@ -110,19 +125,19 @@ export function FormatCheckRing({
             strokeDasharray={CIRCUMFERENCE}
             strokeDashoffset={CIRCUMFERENCE * (1 - progress)}
             className="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
-            style={{ stroke: check.status === "failed" ? "var(--color-error)" : "var(--color-primary)" }}
+            style={{ stroke: status === "failed" ? "var(--color-error)" : "var(--color-primary)" }}
           />
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-ink" aria-hidden="true">
-          {check.status === "ready" ? (
+          {status === "ready" ? (
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12.5l4.5 4.5L19 7.5" />
             </svg>
-          ) : check.status === "failed" ? (
+          ) : status === "failed" ? (
             <span className="text-error">!</span>
           ) : null}
         </span>
-        {unseen && check.status === "ready" && (
+        {unseen && status === "ready" && (
           <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-error" aria-hidden="true" />
         )}
       </button>
@@ -142,7 +157,7 @@ export function FormatCheckRing({
           className="card absolute right-0 top-full z-50 mt-1 w-[260px] max-w-[calc(100vw-2.5rem)] p-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
         >
           <p className="text-[13px] font-medium leading-snug text-ink">{label}</p>
-          {check.status === "ready" && (
+          {status === "ready" && (
             <p className="mt-1 text-[12px] leading-snug text-muted">{t("docws.fcReadyHint")}</p>
           )}
           <div className="mt-2.5 flex flex-col gap-1.5">
@@ -153,9 +168,9 @@ export function FormatCheckRing({
               onClick={() => ask(t("docws.fcAskView"))}
               className="btn btn-primary btn-sm w-full disabled:opacity-50"
             >
-              {check.status === "failed" ? t("docws.fcRetry") : t("docws.fcView")}
+              {status === "failed" ? t("docws.fcRetry") : t("docws.fcView")}
             </button>
-            {check.status === "ready" && (
+            {status === "ready" && (
               <button
                 type="button"
                 role="menuitem"

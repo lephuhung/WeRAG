@@ -129,6 +129,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 		// restart, or its state expired) gets one; an edited target's
 		// refresh is planned
 		h.precheck.StartProfile(ctx, ws)
+		view.Profile = h.precheck.Profile(ctx, ws)
 		out = append(out, view)
 	}
 	activeID := ""
@@ -428,6 +429,7 @@ func (h *DocumentWorkspaceHandler) view(c *gin.Context, ws *types.DocumentWorksp
 		if ws.IsTarget() {
 			view.FormatCheck = h.precheck.Status(ctx, ws.ID)
 		}
+		view.Profile = h.precheck.Profile(ctx, ws)
 	}
 	return view, err
 }

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -103,4 +105,56 @@ func TestSetDocumentRoleRoute(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	rec = doJSON(r, http.MethodPost, "/sessions/admin-view/documents/ws-a/role", `{"role":"source"}`, nil)
 	require.Equal(t, http.StatusNotFound, rec.Code, "only the owner switches roles")
+}
+
+// GET /documents and /documents/:doc_id carry each document's profile; a
+// document without one gets it started (here it fails: no assistant
+// model), and the hash never leaves the server.
+func TestDocumentRoutesIncludeTheProfile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	src := &types.DocumentWorkspace{ID: "ws-prof-src", TenantID: 7, SessionID: "mine", Position: 1, FileName: "bao-cao.pdf",
+		FileType: "pdf", Role: types.DocumentWorkspaceRoleSource, TextStatus: types.DocumentSourceTextReady}
+	ws := &routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{"mine": src}}
+	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true}}
+	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{}, service.NewDocumentFormatPrecheck(ws, nil, nil))
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
+	r.GET("/sessions/:session_id/documents", h.ListDocumentWorkspaces)
+	r.GET("/sessions/:session_id/documents/:doc_id", h.GetDocumentWorkspace)
+
+	type profileView struct {
+		Status   string `json:"status"`
+		Error    string `json:"error"`
+		TextHash string `json:"text_hash"`
+	}
+	var list struct {
+		Data struct {
+			Documents []struct {
+				ID      string       `json:"id"`
+				Profile *profileView `json:"profile"`
+			} `json:"documents"`
+		} `json:"data"`
+	}
+	require.Eventually(t, func() bool {
+		rec := doJSON(r, http.MethodGet, "/sessions/mine/documents", "", nil)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+		require.Len(t, list.Data.Documents, 1)
+		p := list.Data.Documents[0].Profile
+		return p != nil && p.Status == types.DocumentProfileFailed
+	}, 5*time.Second, 20*time.Millisecond)
+	require.Equal(t, "no model", list.Data.Documents[0].Profile.Error)
+
+	rec := doJSON(r, http.MethodGet, "/sessions/mine/documents/ws-prof-src", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var one struct {
+		Data struct {
+			Profile *profileView `json:"profile"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &one))
+	require.NotNil(t, one.Data.Profile)
+	require.Equal(t, types.DocumentProfileFailed, one.Data.Profile.Status)
+	require.Empty(t, one.Data.Profile.TextHash)
 }

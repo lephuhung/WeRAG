@@ -22,12 +22,15 @@ import {
   documentFileTooLarge,
   formatCheckIsCurrent,
   isWordAttachment,
+  profileInProgress,
+  sourceProfileLine,
   listDocumentWorkspaces,
   openDocumentInNewSession,
   setDocumentWorkspaceRole,
   splitDocumentsByRole,
   unopenedWordUploads,
   type DocumentFormatCheck,
+  type DocumentProfile,
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
@@ -51,6 +54,8 @@ export type SessionDocument = {
   /** "source": a chat upload, looked up only (no tab). */
   role?: "target" | "source";
   file_type?: string;
+  /** The document's card, as far as the chat uses it (suggestion chips). */
+  profile?: Pick<DocumentProfile, "status" | "gist" | "document_number" | "typical_questions">;
 };
 
 const WORD_ACCEPT = ".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";
@@ -111,8 +116,12 @@ export function DocWorkspace({
   /** A chat turn is streaming → poll faster. */
   turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
-  /** Background format check of the visible document (null: none). */
-  onFormatCheckChange?: (check: DocumentFormatCheck | null, doc: SessionDocument | null) => void;
+  /** Background format check and profile of the visible document (null: none). */
+  onFormatCheckChange?: (
+    check: DocumentFormatCheck | null,
+    doc: SessionDocument | null,
+    profile: DocumentProfile | null,
+  ) => void;
   /** File name of a document the session holds (null: none) — locks the mode. */
   onDocumentChange?: (fileName: string | null) => void;
   /** The session's documents of both roles in handle order and the visible tab. */
@@ -227,8 +236,8 @@ export function DocWorkspace({
     void loadDocs();
   }, [refreshToken, loadDocs]);
 
-  // a source is being read: poll until its text is in
-  const reading = sources.some((d) => d.text_status === "processing");
+  // a source is being read or profiled: poll until its text and card are in
+  const reading = sources.some((d) => d.text_status === "processing" || profileInProgress(d.profile));
   useEffect(() => {
     if (!reading) return;
     const timer = setTimeout(() => void loadDocs(), 3000);
@@ -254,7 +263,10 @@ export function DocWorkspace({
 
   const onDocumentsRef = useRef(onDocumentsChange);
   onDocumentsRef.current = onDocumentsChange;
-  const docsSig = allDocs.map((d) => `${d.id}:${d.file_name}:${d.role ?? ""}`).join("|") + `#${activeId ?? ""}`;
+  const docsSig =
+    allDocs
+      .map((d) => `${d.id}:${d.file_name}:${d.role ?? ""}:${d.profile?.status ?? ""}:${d.profile?.typical_questions?.length ?? 0}`)
+      .join("|") + `#${activeId ?? ""}`;
   useEffect(() => {
     onDocumentsRef.current?.(
       allDocs.map((d) => ({
@@ -263,6 +275,14 @@ export function DocWorkspace({
         handle: d.handle,
         role: d.role === "source" ? "source" : "target",
         file_type: d.file_type,
+        profile: d.profile
+          ? {
+              status: d.profile.status,
+              gist: d.profile.gist,
+              document_number: d.profile.document_number,
+              typical_questions: d.profile.typical_questions,
+            }
+          : undefined,
       })),
       activeId,
     );
@@ -276,13 +296,16 @@ export function DocWorkspace({
   const activeView = activeId ? (views[activeId] ?? docs.find((d) => d.id === activeId) ?? null) : null;
   const rawCheck = activeView?.format_check ?? null;
   const formatCheck = rawCheck && activeView && formatCheckIsCurrent(rawCheck, activeView) ? rawCheck : null;
-  const formatCheckSig = formatCheck
-    ? `${activeView?.id}|${formatCheck.status}|${formatCheck.revision}|${formatCheck.finished_at ?? ""}`
-    : `${activeView?.id ?? ""}|none`;
+  const activeProfile = activeView?.profile ?? null;
+  const formatCheckSig =
+    (formatCheck
+      ? `${activeView?.id}|${formatCheck.status}|${formatCheck.revision}|${formatCheck.finished_at ?? ""}`
+      : `${activeView?.id ?? ""}|none`) + `|${activeProfile?.status ?? ""}|${activeProfile?.started_at ?? ""}`;
   useEffect(() => {
     onFormatCheckRef.current?.(
       formatCheck,
       activeView ? { id: activeView.id, file_name: activeView.file_name, handle: activeView.handle } : null,
+      activeProfile,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formatCheckSig]);
@@ -838,8 +861,15 @@ function SourcesList({
                       ? ` · ${t("docws.sourceReading")}`
                       : d.text_status === "failed"
                         ? ` · ${t("docws.sourceFailed")}`
-                        : ""}
+                        : profileInProgress(d.profile)
+                          ? ` · ${t("docws.sourceProfiling")}`
+                          : ""}
                   </span>
+                  {sourceProfileLine(d.profile) && (
+                    <span className="caption mt-0.5 line-clamp-2 text-body" title={sourceProfileLine(d.profile)}>
+                      {sourceProfileLine(d.profile)}
+                    </span>
+                  )}
                 </span>
                 {isWordAttachment(d.file_name, d.file_type) && (
                   <button

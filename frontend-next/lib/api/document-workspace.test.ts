@@ -24,6 +24,11 @@ import {
   unopenedWordUploads,
   parsePluginSelectionMessage,
   shouldRefreshEditor,
+  profileInProgress,
+  profileReadingPhase,
+  sourceProfileLine,
+  sourceQuestionChips,
+  PROFILE_EXPECTED_MS,
 } from "./document-workspace.ts";
 import { clampLeftPct } from "../../components/doc-workspace/split-pane-math.ts";
 
@@ -286,5 +291,49 @@ describe("unopenedWordUploads", () => {
     ];
     const docs = [{ attachment_id: "tab" }, { attachment_id: "src" }, { attachment_id: "" }];
     assert.deepEqual(unopenedWordUploads(uploads, docs).map((a) => a.id), ["old", "doc"]);
+  });
+});
+
+describe("document profile helpers", () => {
+  it("knows when a profile is still being made", () => {
+    assert.equal(profileInProgress({ status: "queued" }), true);
+    assert.equal(profileInProgress({ status: "running" }), true);
+    assert.equal(profileInProgress({ status: "ready" }), false);
+    assert.equal(profileInProgress(null), false);
+  });
+  it("shows the reading phase before the format check starts", () => {
+    const running = { status: "running" };
+    assert.equal(profileReadingPhase(null, running), true);
+    assert.equal(profileReadingPhase({ status: "queued" }, running), true);
+    assert.equal(profileReadingPhase({ status: "running" }, running), false);
+    assert.equal(profileReadingPhase({ status: "ready" }, running), false, "a refresh does not hide a finished check");
+    assert.equal(profileReadingPhase(null, { status: "ready" }), false);
+  });
+  it("reads the ring's progress over the profile's expected time", () => {
+    const start = "2026-10-08T09:00:00Z";
+    const at = Date.parse(start) + PROFILE_EXPECTED_MS / 2;
+    assert.ok(formatCheckProgress(start, at, PROFILE_EXPECTED_MS) > formatCheckProgress(start, at));
+  });
+  it("puts the number and gist of a ready source under it", () => {
+    assert.equal(sourceProfileLine({ status: "ready", document_number: "15/BC-STC", gist: "Báo cáo thu chi" }), "15/BC-STC · Báo cáo thu chi");
+    assert.equal(sourceProfileLine({ status: "ready", subject: "V/v kinh phí" }), "V/v kinh phí");
+    assert.equal(sourceProfileLine({ status: "running", gist: "x" }), "");
+    assert.equal(sourceProfileLine(undefined), "");
+  });
+  it("offers the questions of fresh, ready sources only", () => {
+    const docs = [
+      { id: "t", file_name: "a.docx", role: "target", profile: { status: "ready", typical_questions: ["q-target"] } },
+      { id: "s1", file_name: "b.pdf", handle: "vb2", role: "source", profile: { status: "ready", typical_questions: ["Hạn nộp?", " ", "Ai ký?"] } },
+      { id: "s2", file_name: "c.pdf", role: "source", profile: { status: "running" } },
+      { id: "s3", file_name: "d.pdf", role: "source", profile: { status: "ready", typical_questions: ["Cũ?"] } },
+    ];
+    const chips = sourceQuestionChips(docs, new Set(["t", "s1", "s2"]));
+    assert.deepEqual(
+      chips.map((c) => `${c.documentId}:${c.question}`),
+      ["s1:Hạn nộp?", "s1:Ai ký?"],
+    );
+    assert.equal(chips[0].handle, "vb2");
+    assert.equal(sourceQuestionChips(docs, new Set(["s1", "s3"]), 3, 2).length, 2, "capped in all");
+    assert.deepEqual(sourceQuestionChips(docs, new Set()), []);
   });
 });
