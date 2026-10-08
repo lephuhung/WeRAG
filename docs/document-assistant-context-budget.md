@@ -97,3 +97,9 @@ Các case upload tại chat: kèm câu hỏi cụ thể và file ngắn thì n�
 Ước lượng 4 tài liệu, không gọi tên: khối văn bản mỗi lượt từ ≈40k rune xuống ≈11k rune; attachment lặp trong lịch sử từ tới 12k token mỗi lượt xuống chỉ lượt mới nhất; upload 4 file từ 8 cuộc gọi LLM cùng lúc xuống 4 hồ sơ xếp hàng và 1 thẩm định.
 
 Ràng buộc chung: UI chỉ sửa ở `frontend-next` (en, vi); backend dev chạy bằng air, không reload khi sửa `.md`/`.json`; khóa Redis tiền tố `werag:`; mỗi bước có test Go và test frontend đi kèm.
+
+## 11. Việc còn lại
+
+- `find_in_documents` chưa có mục trong `internal/modelcontext/tool_policy.go` (và danh sách của `tool_policy_coverage_test.go`), `internal/agent/tools/execution_policy.go` (chạy song song như các tool đọc khác), `internal/im/tool_display.go` và `frontend-next/components/chat/agent-steps.tsx` (nhãn bước, en + vi); các file này đang có thay đổi chưa commit của phiên khác, bổ sung sau khi phiên đó commit.
+- Bước 3: cổng làm rõ cho văn bản dài (mục 6) và chip phạm vi phía trên ô soạn ở `frontend-next`, dùng `PUT`/`DELETE /sessions/:id/documents/scope` và trường `scope` của `GET /sessions/:id/documents`; tầng 3 của bộ định tuyến (hỏi người dùng khi tin cậy thấp).
+- Bước 4: cắt lịch sử attachment (`buildUserHistoryMessage`) và rút gọn output tool trong lịch sử (mục 9).
