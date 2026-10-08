@@ -4,7 +4,10 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	agenttoken "github.com/Tencent/WeKnora/internal/agent/token"
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -120,4 +123,56 @@ func TestHistoryTrimLetsAnOlderAttachmentTurnFit(t *testing.T) {
 	got, _, err := LoadAgentHistory(context.Background(), &historyRepo{rows: rows}, "s1", 1500, false)
 	require.NoError(t, err)
 	assert.Len(t, userContents(got), 3)
+}
+
+// outlineStep is a past read_document_outline call with a long listing.
+func outlineStep() types.AgentStep {
+	return types.AgentStep{ToolCalls: []types.ToolCall{{
+		ID: "call-1", Name: agenttools.ToolReadDocumentOutline, Args: map[string]interface{}{"document": "vb1"},
+		Result: &types.ToolResult{
+			Success: true,
+			Output:  "# Dàn ý tài liệu A.docx\n" + strings.Repeat("[1] đoạn văn bản dài | nội dung\n", 200),
+			Data: map[string]interface{}{"file_name": "A.docx", "paragraph_count": 300.0,
+				"from": 0.0, "to": 200.0},
+		},
+	}}}
+}
+
+func TestHistoryReplaysAPastOutlineAsASummary(t *testing.T) {
+	rows := storedTurns(2)
+	rows[1].AgentSteps = []types.AgentStep{outlineStep()}
+	got, _, err := LoadAgentHistory(context.Background(), &historyRepo{rows: rows}, "s1", unlimitedBudget, false)
+	require.NoError(t, err)
+	var tool string
+	for _, m := range got {
+		if m.Role == "tool" {
+			tool = m.Content
+		}
+	}
+	assert.Equal(t, "Đã đọc đoạn 0–199 (200 đoạn) của vb1 · A.docx; tài liệu có 300 đoạn "+
+		"(nội dung không lưu trong lịch sử; đọc lại bằng read_document_outline khi cần).", tool)
+	// the stored step keeps the listing
+	assert.Contains(t, rows[1].AgentSteps[0].ToolCalls[0].Result.Output, "[1] đoạn văn bản dài")
+}
+
+func TestHistoryTrimTotalsCountWhatTheReplayLeftOut(t *testing.T) {
+	rows := attachmentTurns()
+	rows[3].AgentSteps = []types.AgentStep{outlineStep()} // turn 2's answer
+	est, err := agenttoken.NewEstimator()
+	require.NoError(t, err)
+	replay := newHistoryReplay(est, unlimitedBudget, false)
+	slim := make([]*types.Message, 0, len(rows))
+	for _, m := range rows {
+		slim = append(slim, replay.track(m))
+	}
+	turns, _ := replay.newestWithin(completeHistoryTurns(slim, true))
+	totals := replay.trimTotals(turns)
+
+	assert.Equal(t, 1, totals.attachmentTurns)
+	full := utf8.RuneCountInString(rows[0].Attachments.BuildPrompt())
+	assert.Greater(t, totals.attachmentRunes, full/2)
+	assert.Less(t, totals.attachmentRunes, full)
+	listing := utf8.RuneCountInString(rows[3].AgentSteps[0].ToolCalls[0].Result.Output)
+	assert.Greater(t, totals.toolRunes, listing*9/10)
+	assert.Less(t, totals.toolRunes, listing)
 }

@@ -157,6 +157,10 @@ func LoadAgentHistory(
 	logger.Infof(ctx, "Agent history: %d turn(s), ~%d of %d tokens (scale %.2f), %d row(s) read, "+
 		"checkpoint=%q, older turns dropped for the budget=%v",
 		len(turns), used, tokenBudget, estimator.Scale(), len(rows), checkpointID, dropped)
+	trims := replay.trimTotals(turns)
+	logger.Infof(ctx, "Agent history trim: %d older attachment turn(s) replayed without their content "+
+		"(~%d runes left out), document tool outputs summarized (~%d runes left out)",
+		trims.attachmentTurns, trims.attachmentRunes, trims.toolRunes)
 	if checkpoint != nil && dropped {
 		// Turns between the summary and the kept ones are missing. Normal
 		// compaction keeps this from happening; it takes several turns in a
@@ -310,6 +314,47 @@ type historyTrim struct {
 	// attachments: an attachment's content was replaced by its note.
 	attachments     bool
 	attachmentRunes int
+	// toolRunes is what the document tools' summaries saved
+	// (agenttools.HistoryToolOutput).
+	toolRunes int
+}
+
+// historyTrimTotals adds up what the replayed turns left out, for the log.
+type historyTrimTotals struct {
+	attachmentTurns int
+	attachmentRunes int
+	toolRunes       int
+}
+
+// trimTotals is what turns, as replayed, left out.
+func (r *historyReplay) trimTotals(turns []*agentHistoryTurn) historyTrimTotals {
+	var total historyTrimTotals
+	for _, t := range turns {
+		trim := r.trims[t.assistant.ID]
+		if trim.attachments {
+			total.attachmentTurns++
+		}
+		total.attachmentRunes += trim.attachmentRunes
+		total.toolRunes += trim.toolRunes
+	}
+	return total
+}
+
+// toolSummaryRunes is how many runes the replay of assistant's tool calls
+// saves by summarizing the document tools (toolCallOutput against the
+// output CompactToolOutputForHistory alone would replay).
+func toolSummaryRunes(assistant *types.Message) int {
+	saved := 0
+	for _, step := range assistant.AgentSteps {
+		for _, tc := range filterNonTerminalToolCalls(step.ToolCalls) {
+			if tc.Result == nil {
+				continue
+			}
+			saved += utf8.RuneCountInString(agenttools.CompactToolOutputForHistory(tc.Name, tc.Result)) -
+				utf8.RuneCountInString(toolCallOutput(tc))
+		}
+	}
+	return saved
 }
 
 func newHistoryReplay(
@@ -359,6 +404,7 @@ func (r *historyReplay) messages(t *agentHistoryTurn) []chat.Message {
 	for i, u := range t.users {
 		users[i] = r.historyAttachments(id, r.stored(u), &trim)
 	}
+	trim.toolRunes = toolSummaryRunes(r.stored(t.assistant))
 	r.trims[id] = trim
 	msgs := append([]chat.Message{buildUserHistoryMessage(users[0])},
 		buildTurnBodyMessages(r.stored(t.assistant), users[1:])...)
