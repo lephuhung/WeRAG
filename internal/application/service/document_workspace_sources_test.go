@@ -218,10 +218,13 @@ func TestDocumentTargetDemotedToSourceKeepsItsText(t *testing.T) {
 	_, err = fx.svc.GetBySession(ctx, 7, "sess-1")
 	requireAppCode(t, err, apperrors.ErrNotFound)
 
-	// and back: a Word source opens in the editor again
+	// and back: a Word source opens in the editor again, under a new
+	// editor key (the Document Server caches the key of the closed editor)
 	back, err := fx.svc.SetRole(ctx, 7, "sess-1", src.ID, types.DocumentWorkspaceRoleTarget)
 	require.NoError(t, err)
 	require.True(t, back.IsTarget())
+	require.NotEqual(t, tab.EditorKey(), back.EditorKey())
+	require.Equal(t, tab.Revision+1, back.Revision)
 }
 
 // A save callback that reaches a document demoted while its editor was

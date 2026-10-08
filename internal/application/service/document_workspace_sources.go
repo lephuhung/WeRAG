@@ -355,8 +355,16 @@ func (s *documentWorkspaceService) demote(ctx context.Context, ws *types.Documen
 	ws.Role = types.DocumentWorkspaceRoleSource
 	ws.TextStatus = types.DocumentSourceTextReady
 	ws.ActiveAt = nil
-	if err := s.repo.Update(ctx, ws); err != nil {
+	// A new editor key: the Document Server caches the key of the editor
+	// that just closed, and a later promotion must not open that copy.
+	expected := ws.Revision
+	ws.Revision = expected + 1
+	ok, err := s.repo.UpdateIfRevision(ctx, ws, expected)
+	if err != nil {
 		return nil, err
+	}
+	if !ok {
+		return nil, apperrors.NewConflictError("document changed while it was being turned into a source; try again")
 	}
 	logger.Infof(ctx, "[DocumentWorkspace] target=%s demoted to source (%s)", ws.ID, ws.Handle())
 	return ws, nil
