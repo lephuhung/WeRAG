@@ -221,6 +221,17 @@ export function splitDocumentsByRole<T extends { role?: string | null }>(docs: T
   return { targets, sources };
 }
 
+/** Session uploads that are Word files, parsed or parsing (not failed),
+ * and have no document of either role — e.g. uploaded before roles existed.
+ * They can still be opened for editing through POST /documents. */
+export function unopenedWordUploads<A extends { id: string; file_name: string; file_type?: string; status?: string }>(
+  attachments: A[],
+  docs: { attachment_id?: string }[],
+): A[] {
+  const used = new Set(docs.map((d) => d.attachment_id).filter(Boolean));
+  return attachments.filter((a) => isWordAttachment(a.file_name, a.file_type) && a.status !== "failed" && !used.has(a.id));
+}
+
 /** Records the tab the user switched to (the agent's default document). */
 export async function activateDocumentWorkspace(sessionId: string, documentId: string): Promise<void> {
   try {

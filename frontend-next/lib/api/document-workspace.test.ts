@@ -21,6 +21,7 @@ import {
   isWordAttachment,
   isSourceDocument,
   splitDocumentsByRole,
+  unopenedWordUploads,
   parsePluginSelectionMessage,
   shouldRefreshEditor,
 } from "./document-workspace.ts";
@@ -270,5 +271,20 @@ describe("document roles", () => {
     const { targets, sources } = splitDocumentsByRole(docs);
     assert.deepEqual(targets.map((d) => d.id), ["a", "c"]);
     assert.deepEqual(sources.map((d) => d.id), ["b", "d"]);
+  });
+});
+
+describe("unopenedWordUploads", () => {
+  it("keeps Word uploads without a document of either role", () => {
+    const uploads = [
+      { id: "old", file_name: "cu.docx", status: "ready" },
+      { id: "doc", file_name: "x", file_type: ".doc", status: "processing" },
+      { id: "tab", file_name: "tab.docx", status: "ready" },
+      { id: "src", file_name: "nguon.docx", status: "ready" },
+      { id: "pdf", file_name: "a.pdf", status: "ready" },
+      { id: "bad", file_name: "hong.docx", status: "failed" },
+    ];
+    const docs = [{ attachment_id: "tab" }, { attachment_id: "src" }, { attachment_id: "" }];
+    assert.deepEqual(unopenedWordUploads(uploads, docs).map((a) => a.id), ["old", "doc"]);
   });
 });

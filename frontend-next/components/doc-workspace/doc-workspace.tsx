@@ -5,7 +5,11 @@ import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-dialog";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID } from "@/lib/chat-context";
-import { uploadTemporaryAttachment } from "@/lib/api/attachments";
+import {
+  listTemporaryAttachments,
+  uploadTemporaryAttachment,
+  type TemporaryAttachment,
+} from "@/lib/api/attachments";
 import { createSession, deleteSession } from "@/lib/api/chat";
 import {
   DocumentWorkspaceError,
@@ -22,6 +26,7 @@ import {
   openDocumentInNewSession,
   setDocumentWorkspaceRole,
   splitDocumentsByRole,
+  unopenedWordUploads,
   type DocumentFormatCheck,
   type DocumentSelection,
   type DocumentWorkspaceView,
@@ -125,6 +130,9 @@ export function DocWorkspace({
   const [sources, setSources] = useState<DocumentWorkspaceView[]>([]);
   const [allDocs, setAllDocs] = useState<DocumentWorkspaceView[]>([]);
   const [maxSources, setMaxSources] = useState(MAX_SOURCES_PER_SESSION);
+  // Session uploads (all of them); the Word ones without a document — e.g.
+  // uploaded before roles existed — stay openable.
+  const [attachments, setAttachments] = useState<TemporaryAttachment[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [maxDocs, setMaxDocs] = useState(MAX_DOCUMENTS_PER_SESSION);
   const [maxFileBytes, setMaxFileBytes] = useState(MAX_DOCUMENT_FILE_BYTES);
@@ -159,6 +167,9 @@ export function DocWorkspace({
       try {
         const list = await listDocumentWorkspaces(sessionId);
         if (!aliveRef.current) return;
+        void listTemporaryAttachments(sessionId)
+          .then((a) => aliveRef.current && setAttachments(a))
+          .catch(() => aliveRef.current && setAttachments([]));
         const { targets, sources: srcs } = splitDocumentsByRole(list.documents);
         setDocs(targets);
         setSources(srcs);
@@ -192,6 +203,7 @@ export function DocWorkspace({
     setDocs([]);
     setSources([]);
     setAllDocs([]);
+    setAttachments([]);
     setActiveId(null);
     setVisited(new Set());
     setViews({});
@@ -515,9 +527,15 @@ export function DocWorkspace({
     }
   };
 
+  const uploads = unopenedWordUploads(attachments, allDocs);
   const sourcesList = (
     <SourcesList
       sources={sources}
+      uploads={uploads}
+      onOpenUpload={(a) => {
+        setAddOpen(false);
+        void openAttachment(a.id);
+      }}
       max={maxSources}
       busy={Boolean(busyMsg)}
       canOpen={!atLimit}
@@ -630,7 +648,7 @@ export function DocWorkspace({
             </>
           )}
         </div>
-        {sources.length > 0 && <div className="mt-6 w-full max-w-[520px]">{sourcesList}</div>}
+        {sources.length + uploads.length > 0 && <div className="mt-6 w-full max-w-[520px]">{sourcesList}</div>}
       </div>
     );
   }
@@ -710,10 +728,10 @@ export function DocWorkspace({
             <button
               type="button"
               className="btn btn-ghost btn-sm h-9 w-9 p-0"
-              disabled={Boolean(busyMsg) || (atLimit && sources.length === 0)}
+              disabled={Boolean(busyMsg) || (atLimit && sources.length + uploads.length === 0)}
               title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
               aria-label={t("docws.addDocument")}
-              onClick={() => (sources.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
+              onClick={() => (sources.length + uploads.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
             >
               <IconPlus className="h-4 w-4" />
             </button>
@@ -776,69 +794,104 @@ const NO_BATCHES: (OpsBatch & { rejected?: OpsFailure[] })[] = [];
  * state; a Word source can be opened for editing. */
 function SourcesList({
   sources,
+  uploads,
   max,
   busy,
   canOpen,
   onOpen,
+  onOpenUpload,
   onRemove,
 }: {
   sources: DocumentWorkspaceView[];
+  /** Word uploads without a document (e.g. from before roles existed). */
+  uploads: TemporaryAttachment[];
   max: number;
   busy: boolean;
   canOpen: boolean;
   onOpen: (d: DocumentWorkspaceView) => void;
+  onOpenUpload: (a: TemporaryAttachment) => void;
   onRemove: (d: DocumentWorkspaceView) => void;
 }) {
   const { t } = useT();
-  if (sources.length === 0) return null;
+  if (sources.length === 0 && uploads.length === 0) return null;
   return (
     <div>
-      <div className="mb-1 flex items-baseline justify-between gap-2">
-        <p className="caption-uppercase text-muted-soft">{t("docws.sourcesTitle")}</p>
-        <span className="caption text-muted-soft">{t("docws.sourcesCount", { n: sources.length, max })}</span>
-      </div>
-      <p className="caption mb-2 text-muted">{t("docws.sourcesHint")}</p>
-      <ul className="flex flex-col gap-1.5">
-        {sources.map((d) => (
-          <li key={d.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
-            <IconDoc className="h-4 w-4 shrink-0 text-muted" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] text-ink" title={d.file_name}>
-                {d.handle ? `${d.handle} · ` : ""}
-                {d.file_name}
-              </span>
-              <span className="caption block truncate text-muted">
-                {(d.file_type || "").toUpperCase()} · {formatFileSize(d.file_size)}
-                {d.text_status === "processing"
-                  ? ` · ${t("docws.sourceReading")}`
-                  : d.text_status === "failed"
-                    ? ` · ${t("docws.sourceFailed")}`
-                    : ""}
-              </span>
-            </span>
-            {isWordAttachment(d.file_name, d.file_type) && (
-              <button
-                type="button"
-                className="btn btn-outline btn-sm shrink-0"
-                disabled={busy || !canOpen}
-                onClick={() => onOpen(d)}
-              >
-                {t("docws.openForEditing")}
-              </button>
-            )}
-            <button
-              type="button"
-              className="shrink-0 rounded p-1 text-muted hover:bg-hairline hover:text-ink"
-              aria-label={t("docws.removeSourceOf", { name: d.file_name })}
-              title={t("docws.removeSource")}
-              disabled={busy}
-              onClick={() => onRemove(d)}
-            >
-              <IconClose className="h-3 w-3" />
-            </button>
-          </li>
-        ))}
-      </ul>
+      {sources.length > 0 && (
+        <>
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <p className="caption-uppercase text-muted-soft">{t("docws.sourcesTitle")}</p>
+            <span className="caption text-muted-soft">{t("docws.sourcesCount", { n: sources.length, max })}</span>
+          </div>
+          <p className="caption mb-2 text-muted">{t("docws.sourcesHint")}</p>
+          <ul className="flex flex-col gap-1.5">
+            {sources.map((d) => (
+              <li key={d.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
+                <IconDoc className="h-4 w-4 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] text-ink" title={d.file_name}>
+                    {d.handle ? `${d.handle} · ` : ""}
+                    {d.file_name}
+                  </span>
+                  <span className="caption block truncate text-muted">
+                    {(d.file_type || "").toUpperCase()} · {formatFileSize(d.file_size)}
+                    {d.text_status === "processing"
+                      ? ` · ${t("docws.sourceReading")}`
+                      : d.text_status === "failed"
+                        ? ` · ${t("docws.sourceFailed")}`
+                        : ""}
+                  </span>
+                </span>
+                {isWordAttachment(d.file_name, d.file_type) && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm shrink-0"
+                    disabled={busy || !canOpen}
+                    onClick={() => onOpen(d)}
+                  >
+                    {t("docws.openForEditing")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-1 text-muted hover:bg-hairline hover:text-ink"
+                  aria-label={t("docws.removeSourceOf", { name: d.file_name })}
+                  title={t("docws.removeSource")}
+                  disabled={busy}
+                  onClick={() => onRemove(d)}
+                >
+                  <IconClose className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {uploads.length > 0 && (
+        <div className={sources.length > 0 ? "mt-3" : ""}>
+          <p className="caption-uppercase mb-2 text-muted-soft">{t("docws.uploadsTitle")}</p>
+          <ul className="flex flex-col gap-1.5">
+            {uploads.map((a) => (
+              <li key={a.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
+                <IconDoc className="h-4 w-4 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] text-ink" title={a.file_name}>
+                    {a.file_name}
+                  </span>
+                  <span className="caption block truncate text-muted">{formatFileSize(a.file_size)}</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm shrink-0"
+                  disabled={busy || !canOpen}
+                  onClick={() => onOpenUpload(a)}
+                >
+                  {t("docws.openForEditing")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
