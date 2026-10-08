@@ -111,6 +111,22 @@ func TestHistoryToolOutputRules(t *testing.T) {
 			absent: []string{"Đoạn [9]"},
 		},
 		{
+			name: "rewrite proposal", tool: ToolRewriteParagraphs,
+			data: map[string]interface{}{
+				"proposal": true, "ops_batch_id": "b-1", "document_id": "ws-2", "document": "vb2 · To-trinh.docx",
+				"file_name": "To-trinh.docx", "selection_text": "năm 2025", "planned": 1, "failed": 0,
+				"changes": []rewriteChange{{Paragraph: 4, Old: "năm 2025", New: "năm 2026", Status: "planned"}},
+				"variants": []rewriteVariant{
+					{ID: "v1", Label: "Gọn hơn", Old: "năm 2025", New: "năm 2026", Ops: []DocumentOp{{Op: OpReplaceText}}},
+					{ID: "v2", Label: "Phương án 2", Old: "năm 2025", New: "trong năm 2026", Ops: []DocumentOp{{Op: OpReplaceText}}},
+				},
+			},
+			output: longOutput("Đề xuất 2 phương án"),
+			want: []string{"Đã đề xuất 2 phương án viết lại cho đoạn “năm 2025” trong vb2 · To-trinh.docx (chưa áp dụng)",
+				"- Gọn hơn: “năm 2026”", "- Phương án 2: “trong năm 2026”", "Thay vào văn bản"},
+			absent: []string{"Đã áp dụng", "replaceText"},
+		},
+		{
 			name: "insert from Data", tool: ToolInsertParagraphs,
 			data: ops(2, map[string]interface{}{"planned": 2, "failed": 0, "changes": []insertChange{
 				{After: -1, Text: "Kính gửi", Status: "planned"}, {After: 7, Text: "Điều 2\nĐiều 3", Status: "planned"},

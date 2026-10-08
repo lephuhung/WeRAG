@@ -280,6 +280,9 @@ func compactFormatFixesHistory(data, args map[string]interface{}, output string)
 }
 
 func compactRewriteHistory(data, args map[string]interface{}, output string) string {
+	if proposal, _ := data["proposal"].(bool); proposal {
+		return compactRewriteProposalHistory(data, args)
+	}
 	if !hasField(data, "changes") {
 		return historyHead(output, historyCompactFallbackRunes)
 	}
@@ -328,4 +331,22 @@ func compactMarkHistory(data, args map[string]interface{}, output string) string
 		lines = append(lines, line+": "+clipRunes(stringField(m, "reason"), 80))
 	}
 	return compactEditsHistory(data, args, intField(data, "planned"), lines, intField(data, "failed"))
+}
+
+// compactRewriteProposalHistory summarizes a rewrite proposal: versions the
+// user may apply with the chat's button, not changes made by the tool.
+func compactRewriteProposalHistory(data, args map[string]interface{}) string {
+	variants := listField(data, "variants")
+	var b strings.Builder
+	passage := stringField(data, "selection_text")
+	if len(variants) > 0 && stringField(variants[0], "old") != "" {
+		passage = stringField(variants[0], "old")
+	}
+	fmt.Fprintf(&b, "Đã đề xuất %d phương án viết lại cho đoạn “%s” trong %s (chưa áp dụng)",
+		len(variants), clipRunes(strings.ReplaceAll(passage, "\n", " "), 80), historyDocumentName(data, args))
+	for _, v := range variants {
+		fmt.Fprintf(&b, "\n- %s: “%s”", stringField(v, "label"), clipRunes(strings.ReplaceAll(stringField(v, "new"), "\n", " "), 100))
+	}
+	b.WriteString("\n(người dùng chọn bằng nút “Thay vào văn bản”; nếu đã chọn, văn bản giữ nội dung mới — đọc lại khi cần)")
+	return b.String()
 }
