@@ -4,7 +4,9 @@
  * (docx, pdf, xlsx, scans…, up to 10) that the assistant only looks up — no
  * tab, never edited. Both share the vb1…vbN handles.
  *
- *   GET    /api/v1/sessions/:id/documents             → {documents (both roles), active_id, max_documents, max_sources, …}
+ *   GET    /api/v1/sessions/:id/documents             → {documents (both roles), active_id, max_documents, max_sources, scope, …}
+ *   PUT    /api/v1/sessions/:id/documents/scope       {document_ids, sections, task, set_by: "user"} → scope
+ *   DELETE /api/v1/sessions/:id/documents/scope
  *   POST   /api/v1/sessions/:id/documents             {attachment_id} → 201 view (a source of that upload is promoted) | 409 limit | 400 too large
  *   POST   /api/v1/sessions/:id/documents/:doc/role   {role: "target"|"source"} → view | 409 limit | 400 not Word
  *   GET    /api/v1/sessions/:id/documents/:doc        → 200 view | 404 none | 503 editor disabled
@@ -18,7 +20,8 @@
  * Every per-document call takes an optional documentId; without one it uses
  * the legacy /document routes, which act on the session's active document.
  */
-import { ApiError, apiDel, apiDownload, apiGet, apiPost, authHeaders } from "../api-client.ts";
+import { ApiError, apiDel, apiDownload, apiGet, apiPost, apiPut, authHeaders } from "../api-client.ts";
+import { parseDocumentScope, type DocumentScope, type DocumentScopeSection, type DocumentScopeTask } from "../document-scope.ts";
 
 export type DocumentWorkspaceStatus = "open" | "closed";
 
@@ -138,6 +141,8 @@ export interface DocumentWorkspaceList {
   max_sources: number;
   max_file_bytes: number;
   max_media_bytes: number;
+  /** The session's document scope (user or router), null when none. */
+  scope: DocumentScope | null;
 }
 
 /** Fallback limits (the server's are authoritative). */
@@ -202,7 +207,31 @@ export async function listDocumentWorkspaces(sessionId: string): Promise<Documen
       max_sources: Number(d.max_sources) || MAX_SOURCES_PER_SESSION,
       max_file_bytes: Number(d.max_file_bytes) || MAX_DOCUMENT_FILE_BYTES,
       max_media_bytes: Number(d.max_media_bytes) || 0,
+      scope: parseDocumentScope((d as { scope?: unknown }).scope),
     };
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Sets the session's scope from the user (the clarification card, the
+ * scope chip); the next turns read it until it is cleared. */
+export async function setDocumentScope(
+  sessionId: string,
+  scope: { document_ids: string[]; sections?: DocumentScopeSection[]; task?: DocumentScopeTask; set_by: "user" },
+): Promise<DocumentScope | null> {
+  try {
+    const res = await apiPut<Envelope<unknown>>(`${sessionBase(sessionId)}/documents/scope`, scope);
+    return parseDocumentScope(res?.data);
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Clears the session's scope (the user's or the router's). */
+export async function clearDocumentScope(sessionId: string): Promise<void> {
+  try {
+    await apiDel(`${sessionBase(sessionId)}/documents/scope`);
   } catch (err) {
     throw toWorkspaceError(err);
   }

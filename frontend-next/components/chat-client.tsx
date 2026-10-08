@@ -10,8 +10,11 @@ import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type Menti
 import { useT } from "@/lib/i18n";
 import { chatErrorKey } from "@/lib/api/chat-errors";
 import {
+  clearDocumentScope,
   documentSelectionForDisplay,
   getDocumentWorkspace,
+  listDocumentWorkspaces,
+  setDocumentScope,
   formatCheckResultKey,
   profileReadingPhase,
   selectionNeedsCollapse,
@@ -20,8 +23,19 @@ import {
   type DocumentFormatCheck,
   type DocumentProfile,
   type DocumentSelection,
+  type DocumentWorkspaceView,
   type SourceQuestionChip,
 } from "@/lib/api/document-workspace";
+import {
+  parseScopeClarification,
+  scopeCardFromDocuments,
+  scopeChipParts,
+  takeScopeClarification,
+  type DocumentScope,
+  type ScopeCardAction,
+  type ScopeClarification,
+} from "@/lib/document-scope";
+import { DocumentScopeCard } from "@/components/chat/document-scope-card";
 import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
@@ -79,6 +93,8 @@ type UiMessage = {
   assistantMessageId?: string;
   references?: KnowledgeReferenceItem[];
   abbreviationCandidates?: string[];
+  /** Document assistant: the scope clarification card this turn answered with. */
+  scopeCard?: ScopeClarification;
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
@@ -528,10 +544,16 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork,
   onRegenerate,
   onAsk,
+  onScopeAction,
+  scopeCardActive = false,
   compact = false,
 }: {
   m: UiMessage;
   index: number;
+  /** Runs a confirmed choice of the scope clarification card. */
+  onScopeAction?: (action: ScopeCardAction) => Promise<void>;
+  /** The card is live only on the last turn; older ones show their text. */
+  scopeCardActive?: boolean;
   /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
   compact?: boolean;
   sessionId: string;
@@ -591,6 +613,9 @@ const AssistantMessage = memo(function AssistantMessage({
         )}
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
+        )}
+        {!m.streaming && m.scopeCard && scopeCardActive && onScopeAction && (
+          <DocumentScopeCard card={m.scopeCard} disabled={busy} onAction={onScopeAction} />
         )}
         {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
           <AbbreviationSuggestionCard
@@ -988,13 +1013,12 @@ function ChatBody({ id }: { id: string }) {
               role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
               content: parsed.content,
               thinking: parsed.thinking,
-              steps:
-                m.role === "assistant"
-                  ? (() => {
-                      const s = stepsFromHistory(m);
-                      return s.length ? s : undefined;
-                    })()
-                  : undefined,
+              ...(m.role === "assistant"
+                ? (() => {
+                    const { card, steps } = takeScopeClarification(stepsFromHistory(m));
+                    return { steps: steps?.length ? steps : undefined, scopeCard: card ?? undefined };
+                  })()
+                : {}),
               agentDurationMs: m.agent_duration_ms || undefined,
               references: refs?.length ? refs : undefined,
               assistantMessageId: m.role === "assistant" ? (m.id ?? undefined) : undefined,
@@ -1069,6 +1093,13 @@ function ChatBody({ id }: { id: string }) {
             }
             if (kind === "agent_query") return;
             if (kind === "tool_result") {
+              const scopeCard = parseScopeClarification(c.data);
+              if (scopeCard) {
+                setMessages((m) =>
+                  m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, scopeCard } : msg)),
+                );
+                return;
+              }
               noteDocOps(c);
               const candidates = extractAbbreviationCandidates(c.data);
               if (candidates.length > 0) {
@@ -1609,6 +1640,18 @@ function ChatBody({ id }: { id: string }) {
         kind === "command_output"
       ) {
         const toolName = c.tool_name || (c.data?.tool_name as string) || "";
+        // the scope clarification card is the turn's answer, not a step
+        const scopeCard = kind === "tool_result" ? parseScopeClarification(c.data) : null;
+        if (scopeCard) {
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg)
+                ? { ...msg, scopeCard, assistantMessageId: incomingAsstId ?? msg.assistantMessageId }
+                : msg,
+            ),
+          );
+          return;
+        }
         if (kind === "tool_result") noteDocOps(c);
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
@@ -1844,6 +1887,74 @@ function ChatBody({ id }: { id: string }) {
 
   const handleEditQuestion = useCallback((content: string) => setInput(content), []);
 
+  // Document assistant: the session's document scope (`scope` of GET
+  // /documents), re-read after every turn, when the documents change and
+  // after the chip or the clarification card changes it.
+  const [docScope, setDocScope] = useState<{ sessionId: string; scope: DocumentScope | null; docs: DocumentWorkspaceView[] }>({
+    sessionId: "",
+    scope: null,
+    docs: [],
+  });
+  const [scopeBump, setScopeBump] = useState(0);
+  const [scopeEditing, setScopeEditing] = useState(false);
+  const docAssistantSelected = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
+  const openDocsSig = openDocs.map((d) => d.id).join("|");
+  useEffect(() => setScopeEditing(false), [id]);
+  useEffect(() => {
+    if (id === "new" || !docAssistantSelected) return;
+    let alive = true;
+    listDocumentWorkspaces(id)
+      .then((list) => {
+        if (alive) setDocScope({ sessionId: id, scope: list.scope, docs: list.documents });
+      })
+      .catch(() => {
+        /* editor disabled or offline: no chip */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, docAssistantSelected, docRecheck, scopeBump, openDocsSig]);
+  const currentScope = docScope.sessionId === id ? docScope.scope : null;
+  const scopeDocs = useMemo(() => (docScope.sessionId === id ? docScope.docs : []), [docScope, id]);
+  const scopeChip = scopeChipParts(currentScope, scopeDocs);
+  const scopeEditCard = useMemo(
+    () => (scopeEditing ? scopeCardFromDocuments(scopeDocs, currentScope, SCOPE_CHIP_TASKS) : null),
+    [scopeEditing, scopeDocs, currentScope],
+  );
+  const composerBoxRef = useRef<HTMLDivElement>(null);
+  // A confirmed card choice: a user scope is stored and the question asked
+  // again (the next turn reads that scope); format and spelling send their
+  // request; "something else" hands the composer back.
+  const runScopeAction = useCallback(async (action: ScopeCardAction) => {
+    const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
+    if (action.kind === "compose") {
+      composerBoxRef.current?.querySelector("textarea")?.focus();
+      return;
+    }
+    if (action.kind === "message") {
+      setScopeEditing(false);
+      void sendRef.current({ query: action.text, ...blank });
+      return;
+    }
+    const sid = idRef.current;
+    if (sid === "new") return;
+    await setDocumentScope(sid, action.scope);
+    setScopeEditing(false);
+    setScopeBump((v) => v + 1);
+    if (action.resend.trim()) void sendRef.current({ query: action.resend, ...blank });
+  }, []);
+  const clearScope = async () => {
+    if (id === "new") return;
+    setScopeEditing(false);
+    try {
+      await clearDocumentScope(id);
+      setDocScope((prev) => (prev.sessionId === id ? { ...prev, scope: null } : prev));
+      setScopeBump((v) => v + 1);
+    } catch (e) {
+      toast.error(`${tr("docws.scope.clearFailed")}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const handleFork = useCallback(
     (m: UiMessage) => {
       // User bubbles fork by row id; assistant turns fork by assistant_message_id.
@@ -2027,6 +2138,8 @@ function ChatBody({ id }: { id: string }) {
                 onFork={handleFork}
                 onRegenerate={handleRegenerate}
                 onAsk={handleAskFollowUp}
+                onScopeAction={runScopeAction}
+                scopeCardActive={index === messages.length - 1}
                 compact={compact}
               />
             ),
@@ -2072,6 +2185,30 @@ function ChatBody({ id }: { id: string }) {
               onClear={() => setPendingSelection(null)}
             />
           )}
+          {isDocumentAssistant && scopeChip && !scopeEditCard && (
+            <ScopeChip
+              documents={scopeChip.documents}
+              sections={scopeChip.sections}
+              task={SCOPE_TASK_KEYS[scopeChip.task] ? tr(SCOPE_TASK_KEYS[scopeChip.task]) : ""}
+              byUser={scopeChip.byUser}
+              label={tr("docws.scope.label")}
+              byLabel={scopeChip.byUser ? tr("docws.scope.byUser") : tr("docws.scope.byRouter")}
+              changeLabel={tr("docws.scope.change")}
+              clearLabel={tr("docws.scope.clear")}
+              onOpen={() => setScopeEditing(true)}
+              onClear={() => void clearScope()}
+            />
+          )}
+          {isDocumentAssistant && scopeEditCard && (
+            <div className="mb-2">
+              <DocumentScopeCard
+                card={scopeEditCard}
+                disabled={busy}
+                onAction={runScopeAction}
+                onCancel={() => setScopeEditing(false)}
+              />
+            </div>
+          )}
           {isDocumentAssistant && sourceChips.length > 0 && (
             <SourceQuestionChips
               chips={sourceChips}
@@ -2084,6 +2221,7 @@ function ChatBody({ id }: { id: string }) {
               onDismiss={() => dropFreshSource(null)}
             />
           )}
+          <div ref={composerBoxRef}>
           <Composer
             sessionId={id === "new" ? undefined : id}
             value={input}
@@ -2110,6 +2248,7 @@ function ChatBody({ id }: { id: string }) {
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
           />
+          </div>
           {!compact && (
             <p className="caption mt-3 text-center text-muted-soft">
               Answers are grounded in your knowledge bases — verify important details.
@@ -2192,6 +2331,80 @@ function SourceQuestionChips({
         onClick={onDismiss}
         aria-label={dismissLabel}
         title={dismissLabel}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink cursor-pointer"
+      >
+        <IconClose className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+/* Tasks offered when the scope chip opens the card (format and spelling
+ * are requests, not scopes). */
+const SCOPE_CHIP_TASKS: ScopeClarification["tasks"] = [
+  { key: "summary", label: "summary" },
+  { key: "part", label: "part" },
+  { key: "compare", label: "compare" },
+];
+
+const SCOPE_TASK_KEYS: Record<string, Parameters<ReturnType<typeof useT>["t"]>[0]> = {
+  format: "docws.scope.task.format",
+  spelling: "docws.scope.task.spelling",
+  summary: "docws.scope.task.summary",
+  lookup: "docws.scope.task.lookup",
+  compare: "docws.scope.task.compare",
+  edit: "docws.scope.task.edit",
+};
+
+/* The session's document scope above the composer (document assistant):
+ * "Phạm vi: vb1 · Điều 3–5 · Đối chiếu". A scope the user chose is drawn
+ * solid, one the router guessed dashed. Clicking opens the scope card; X
+ * clears it. */
+function ScopeChip({
+  documents,
+  sections,
+  task,
+  byUser,
+  label,
+  byLabel,
+  changeLabel,
+  clearLabel,
+  onOpen,
+  onClear,
+}: {
+  documents: string;
+  sections: string;
+  task: string;
+  byUser: boolean;
+  label: string;
+  byLabel: string;
+  changeLabel: string;
+  clearLabel: string;
+  onOpen: () => void;
+  onClear: () => void;
+}) {
+  const text = [documents, sections, task].filter(Boolean).join(" · ");
+  return (
+    <div
+      className={`mb-2 flex w-full min-w-0 items-center gap-2.5 rounded-r-[8px] border-l-2 px-3 py-2 ${
+        byUser ? "border-ink bg-surface-strong/60" : "border-dashed border-hairline-strong bg-surface-strong/30"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        title={changeLabel}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+      >
+        <span className="caption-uppercase shrink-0 text-muted-soft">{label}</span>
+        <span className="min-w-0 truncate text-[13px] text-body">{text}</span>
+        <span className={`caption shrink-0 ${byUser ? "text-muted" : "italic text-muted-soft"}`}>({byLabel})</span>
+      </button>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={clearLabel}
+        title={clearLabel}
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink cursor-pointer"
       >
         <IconClose className="h-3 w-3" />

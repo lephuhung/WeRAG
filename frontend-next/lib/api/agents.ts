@@ -112,6 +112,7 @@ export interface CustomAgentConfig {
   // ===== document assistant =====
   format_check_model_id?: string; // "" = the agent's chat model
   format_check_on_open?: boolean | null; // null/unset = on
+  ask_scope_for_long_documents?: boolean | null; // null/unset = on
   spellcheck_model_id?: string; // "" = the agent's chat model
   open_document_max_runes?: number; // 0 = server default
 

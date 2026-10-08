@@ -62,6 +62,7 @@ type Draft = {
   format_check_model_id: string;
   spellcheck_model_id: string;
   format_check_on_open: boolean;
+  ask_scope_for_long_documents: boolean;
   web_search_default_on: boolean;
   open_document_max_runes: number;
 };
@@ -102,6 +103,7 @@ function draftFrom(a: CustomAgent | null): Draft {
     spellcheck_model_id: a?.config?.spellcheck_model_id ?? "",
     // null / unset = on
     format_check_on_open: a?.config?.format_check_on_open !== false,
+    ask_scope_for_long_documents: a?.config?.ask_scope_for_long_documents !== false,
     web_search_default_on: a?.config?.web_search_default_on ?? false,
     open_document_max_runes: clampOpenDocumentMaxRunes(a?.config?.open_document_max_runes ?? 0),
   };
@@ -326,6 +328,7 @@ export function AgentEditorModal({
               format_check_model_id: draft.format_check_model_id || undefined,
               spellcheck_model_id: draft.spellcheck_model_id || undefined,
               format_check_on_open: draft.format_check_on_open,
+              ask_scope_for_long_documents: draft.ask_scope_for_long_documents,
               web_search_default_on: draft.web_search_default_on,
               open_document_max_runes:
                 draft.open_document_max_runes > 0 ? clampOpenDocumentMaxRunes(draft.open_document_max_runes) : undefined,
@@ -675,6 +678,15 @@ export function AgentEditorModal({
                       onChange={(e) => patch("format_check_on_open", e.target.checked)}
                     />
                     <span>{t("agent.docAssist.formatOnOpen")}</span>
+                  </label>
+                  <label className={`flex items-center gap-2 text-ink select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={draft.ask_scope_for_long_documents}
+                      disabled={readOnly}
+                      onChange={(e) => patch("ask_scope_for_long_documents", e.target.checked)}
+                    />
+                    <span>{t("agent.docAssist.askScope")}</span>
                   </label>
                   <label
                     className={`flex items-start gap-2 select-none ${
