@@ -286,9 +286,9 @@ func (s *sessionService) AgentQA(
 	// Inject attachment content (documents, audio transcripts, etc.) so the agent
 	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
 	// (see chat_pipeline/into_chat_message.go).
-	if len(req.Attachments) > 0 {
-		agentQuery += req.Attachments.BuildPrompt()
-		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(req.Attachments))
+	if attachments := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments); len(attachments) > 0 {
+		agentQuery += attachments.BuildPrompt()
+		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(attachments))
 	}
 	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
 		agentQuery += selection
@@ -791,4 +791,36 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 		}
 	}
 	return false
+}
+
+// attachmentsOutsideOpenDocuments drops the attachments that are already
+// open as an editor tab of the session: BuildOpenDocumentPrompt carries
+// their current text, so the upload's (older) parsed text would only send
+// the same document twice. Without document workspaces nothing changes.
+func (s *sessionService) attachmentsOutsideOpenDocuments(
+	ctx context.Context, tenantID uint64, sessionID string, attachments types.MessageAttachments,
+) types.MessageAttachments {
+	if len(attachments) == 0 || s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
+		return attachments
+	}
+	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)
+	if err != nil || len(docs) == 0 {
+		return attachments
+	}
+	open := make(map[string]bool, len(docs))
+	for _, d := range docs {
+		if d.AttachmentID != "" {
+			open[d.AttachmentID] = true
+		}
+	}
+	kept := make(types.MessageAttachments, 0, len(attachments))
+	for _, att := range attachments {
+		if att.ID == "" || !open[att.ID] {
+			kept = append(kept, att)
+		}
+	}
+	if dropped := len(attachments) - len(kept); dropped > 0 {
+		logger.Infof(ctx, "Dropped %d attachment(s) already open as an editor tab from the agent query", dropped)
+	}
+	return kept
 }
