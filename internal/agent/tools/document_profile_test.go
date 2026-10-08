@@ -276,3 +276,18 @@ func TestGenerateDocumentProfileFailsWithoutAnswer(t *testing.T) {
 		t.Fatal("an empty document has no profile")
 	}
 }
+
+func TestProfileDate(t *testing.T) {
+	for in, want := range map[string]string{
+		"Hà Nội, ngày 5 tháng 3 năm 2024":          "05/03/2024",
+		"Thành phố Huế, ngày   tháng 06 năm 2026":  "tháng 06 năm 2026",
+		"Thành phố Huế, ngày ... tháng 6 năm 2026": "tháng 06 năm 2026",
+		"Phú Hội, ngày      tháng      năm 2026":   "",
+		"Thành phố Huế":                            "",
+		"ngày 30 tháng 11 năm 2026":                "30/11/2026",
+	} {
+		if got := profileDate(in); got != want {
+			t.Errorf("profileDate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

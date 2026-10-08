@@ -121,15 +121,26 @@ func sourceProfileInput(ws *types.DocumentWorkspace, text *types.DocumentWorkspa
 
 var (
 	profileDateRe   = regexp.MustCompile(`(?i)ngày\s*(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{4})`)
+	profileMonthRe  = regexp.MustCompile(`(?i)tháng\s*(\d{1,2})\s*năm\s*(\d{4})`)
 	profileSubjVVRe = regexp.MustCompile(`(?i)^v/v\.?\s*`)
 )
 
-// profileDate turns "Hà Nội, ngày 5 tháng 3 năm 2024" into "05/03/2024";
-// a line without a full date is kept as written.
+// profileDate turns "Hà Nội, ngày 5 tháng 3 năm 2024" into "05/03/2024".
+// A line without a full date (a template with the day left blank: "Thành
+// phố Huế, ngày   tháng 06 năm 2026") keeps only its "tháng 06 năm 2026",
+// without the place; "" when it has no month and year either.
 func profileDate(line string) string {
 	m := profileDateRe.FindStringSubmatch(line)
 	if m == nil {
-		return strings.TrimSpace(line)
+		if i := strings.Index(line, ","); i >= 0 {
+			line = line[i+1:]
+		}
+		mm := profileMonthRe.FindStringSubmatch(line)
+		if mm == nil {
+			return ""
+		}
+		mo, _ := strconv.Atoi(mm[1])
+		return fmt.Sprintf("tháng %02d năm %s", mo, mm[2])
 	}
 	d, _ := strconv.Atoi(m[1])
 	mo, _ := strconv.Atoi(m[2])
