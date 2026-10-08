@@ -49,7 +49,9 @@ export interface DocumentWorkspaceView {
   format_check?: DocumentFormatCheck;
 }
 
-export type DocumentFormatCheckStatus = "running" | "ready" | "failed";
+/** queued: waiting for one of the few background check slots (several
+ * documents opened at once are checked a couple at a time). */
+export type DocumentFormatCheckStatus = "queued" | "running" | "ready" | "failed";
 
 export interface DocumentFormatCheck {
   status: DocumentFormatCheckStatus;
@@ -393,11 +395,16 @@ export function latestRevisionOf<T extends { seq: number; source: string }>(list
  * external write moved the revision past it). The backend moves the covered
  * save forward when an edit left the format unchanged, and starts a new
  * check when it did not. */
+/** A check that has not finished yet (waiting for a slot or running). */
+export function formatCheckInProgress(check: DocumentFormatCheck): boolean {
+  return check.status === "queued" || check.status === "running";
+}
+
 export function formatCheckIsCurrent(
   check: DocumentFormatCheck,
   doc: { revision: number; last_saved_at?: string },
 ): boolean {
-  if (check.status === "running") return true;
+  if (formatCheckInProgress(check)) return true;
   if (doc.revision > check.revision) return false;
   const saved = doc.last_saved_at ? Date.parse(doc.last_saved_at) : NaN;
   const started = Date.parse(check.checked_saved_at ?? check.started_at);

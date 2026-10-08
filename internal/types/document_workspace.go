@@ -145,8 +145,11 @@ type DocumentWorkspaceView struct {
 	FormatCheck *DocumentFormatCheck `json:"format_check,omitempty"`
 }
 
-// Background format check statuses.
+// Background format check statuses. Queued: the document waits for one of
+// the few check slots (each check makes two model calls, the second up to
+// minutes long), StartedAt is then refreshed while it waits.
 const (
+	DocumentFormatCheckQueued  = "queued"
 	DocumentFormatCheckRunning = "running"
 	DocumentFormatCheckReady   = "ready"
 	DocumentFormatCheckFailed  = "failed"
@@ -172,6 +175,11 @@ type DocumentFormatCheck struct {
 	// Fingerprint identifies the checked content's format (page setup,
 	// paragraph formatting, the text at both ends).
 	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// InProgress reports a check that has not finished: queued or running.
+func (c *DocumentFormatCheck) InProgress() bool {
+	return c != nil && (c.Status == DocumentFormatCheckQueued || c.Status == DocumentFormatCheckRunning)
 }
 
 // DocumentSelection is the text a user highlighted in the embedded editor and

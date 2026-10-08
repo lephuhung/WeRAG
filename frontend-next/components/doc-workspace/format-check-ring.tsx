@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { DocumentFormatCheck } from "@/lib/api/document-workspace";
-import { formatCheckProgress } from "@/lib/api/document-workspace";
+import { formatCheckInProgress, formatCheckProgress } from "@/lib/api/document-workspace";
 
 const SIZE = 22;
 const STROKE = 2;
@@ -11,8 +11,9 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /* Background NĐ30 format check of the open document, as a small progress
- * ring in the chat header. Running: the ring fills over the expected run
- * time and a hover explains it. Finished: a click opens the actions that
+ * ring in the chat header. Queued (other documents are being checked
+ * first): an empty ring. Running: the ring fills over the expected run
+ * time. A hover explains either. Finished: a click opens the actions that
  * read or apply the evaluation. */
 export function FormatCheckRing({
   check,
@@ -34,6 +35,8 @@ export function FormatCheckRing({
   const [now, setNow] = useState(() => Date.now());
   const rootRef = useRef<HTMLDivElement>(null);
   const running = check.status === "running";
+  // queued or running: nothing to open yet
+  const busy = formatCheckInProgress(check);
 
   useEffect(() => {
     if (!running) return;
@@ -55,15 +58,17 @@ export function FormatCheckRing({
     };
   }, [open]);
 
-  const progress = running ? formatCheckProgress(check.started_at, now) : 1;
+  const progress = check.status === "queued" ? 0 : running ? formatCheckProgress(check.started_at, now) : 1;
   const label =
-    running
-      ? t("docws.fcRunning")
-      : check.status === "failed"
-        ? t("docws.fcFailed")
-        : check.document_type_label
-          ? t("docws.fcReadyType", { type: check.document_type_label })
-          : t("docws.fcReady");
+    check.status === "queued"
+      ? t("docws.fcQueued")
+      : running
+        ? t("docws.fcRunning")
+        : check.status === "failed"
+          ? t("docws.fcFailed")
+          : check.document_type_label
+            ? t("docws.fcReadyType", { type: check.document_type_label })
+            : t("docws.fcReady");
 
   const ask = (question: string) => {
     setOpen(false);
@@ -75,15 +80,15 @@ export function FormatCheckRing({
       <button
         type="button"
         aria-label={label}
-        aria-haspopup={running ? undefined : "menu"}
-        aria-expanded={running ? undefined : open}
+        aria-haspopup={busy ? undefined : "menu"}
+        aria-expanded={busy ? undefined : open}
         onClick={() => {
-          if (running) return;
+          if (busy) return;
           setOpen((v) => !v);
           onOpen();
         }}
         className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-          running ? "cursor-default" : "cursor-pointer hover:bg-surface-strong"
+          busy ? "cursor-default" : "cursor-pointer hover:bg-surface-strong"
         }`}
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" className="-rotate-90">

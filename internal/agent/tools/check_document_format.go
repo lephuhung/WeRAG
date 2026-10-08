@@ -295,13 +295,23 @@ func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
 }
 
 // runBackground checks content and records its progress and result as the
-// bound document's format-check state.
+// bound document's format-check state, after waiting for a format-check
+// slot (see formatCheckSlots).
 func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []byte, fileName string, revision int) {
-	started := time.Now()
+	// the result describes the content as read now, however long it queues
+	readAt := time.Now()
 	state := &types.DocumentFormatCheck{
-		Status: types.DocumentFormatCheckRunning, Revision: revision, StartedAt: started,
-		CheckedSavedAt: &started, Fingerprint: formatFingerprint(content),
+		Revision: revision, StartedAt: readAt, CheckedSavedAt: &readAt, Fingerprint: formatFingerprint(content),
 	}
+	release, ok := t.waitFormatCheckSlot(ctx, formatCheckKey(content, t.modelName(), ""), state)
+	if !ok {
+		return
+	}
+	if release != nil {
+		defer release()
+	}
+	started := time.Now()
+	state.Status, state.StartedAt = types.DocumentFormatCheckRunning, started
 	formatChecks.storeState(ctx, t.documentID, state)
 	out := t.check(ctx, content, fileName, "")
 	done := *state
@@ -342,7 +352,7 @@ func FormatCheckNeedsRecheck(ctx context.Context, documentID string, lastSavedAt
 		return false
 	}
 	st := SessionFormatCheck(ctx, documentID)
-	if st == nil || st.Status == types.DocumentFormatCheckRunning {
+	if st == nil || st.InProgress() {
 		return false
 	}
 	covered := st.StartedAt

@@ -7,6 +7,7 @@ import {
   DocumentWorkspaceError,
   latestRevisionOf,
   revisionsNewestFirst,
+  formatCheckInProgress,
   formatCheckResultKey,
   formatCheckProgress,
   formatCheckIsCurrent,
@@ -234,7 +235,18 @@ describe("formatCheckIsCurrent", () => {
     assert.equal(formatCheckIsCurrent(kept, { revision: 2, last_saved_at: "2026-10-07T15:05:00Z" }), true);
     assert.equal(formatCheckIsCurrent(kept, { revision: 2, last_saved_at: "2026-10-07T15:07:00Z" }), false);
   });
-  it("always shows a running check", () => {
+  it("always shows a running or queued check", () => {
     assert.equal(formatCheckIsCurrent({ ...ready, status: "running" }, { revision: 9, last_saved_at: "2026-10-07T16:00:00Z" }), true);
+    assert.equal(formatCheckIsCurrent({ ...ready, status: "queued" }, { revision: 9, last_saved_at: "2026-10-07T16:00:00Z" }), true);
+  });
+});
+
+describe("formatCheckInProgress", () => {
+  it("counts a queued check as unfinished", () => {
+    const at = { revision: 0, started_at: "t0" };
+    assert.equal(formatCheckInProgress({ ...at, status: "queued" }), true);
+    assert.equal(formatCheckInProgress({ ...at, status: "running" }), true);
+    assert.equal(formatCheckInProgress({ ...at, status: "ready" }), false);
+    assert.equal(formatCheckInProgress({ ...at, status: "failed" }), false);
   });
 });

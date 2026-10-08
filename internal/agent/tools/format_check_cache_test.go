@@ -46,7 +46,7 @@ func waitFormatCheck(t *testing.T, sessionID string) *types.DocumentFormatCheck 
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if st := SessionFormatCheck(context.Background(), sessionID); st != nil && st.Status != types.DocumentFormatCheckRunning {
+		if st := SessionFormatCheck(context.Background(), sessionID); st != nil && !st.InProgress() {
 			return st
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -148,7 +148,7 @@ func TestCheckDocumentFormatPrewarmReportsFailure(t *testing.T) {
 	tool.Prewarm(toolCtx())
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if st := SessionFormatCheck(context.Background(), "ws-sess-x"); st != nil && st.Status != types.DocumentFormatCheckRunning {
+		if st := SessionFormatCheck(context.Background(), "ws-sess-x"); st != nil && !st.InProgress() {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

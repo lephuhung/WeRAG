@@ -187,7 +187,7 @@ func SessionFormatCheck(ctx context.Context, documentID string) *types.DocumentF
 		}
 		st = *v.(*types.DocumentFormatCheck)
 	}
-	if st.Status == types.DocumentFormatCheckRunning && time.Since(st.StartedAt) > formatCheckRunTimeout {
+	if st.InProgress() && time.Since(st.StartedAt) > formatCheckRunTimeout {
 		return nil
 	}
 	return &st

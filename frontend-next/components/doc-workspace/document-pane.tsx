@@ -8,6 +8,7 @@ import {
   DocumentWorkspaceError,
   documentServerOrigin,
   downloadDocumentWorkspace,
+  formatCheckInProgress,
   forceSaveDocumentWorkspace,
   forceSaveDocumentWorkspaceKeepalive,
   getDocumentWorkspace,
@@ -217,7 +218,7 @@ export function DocumentPane({
   recheckRef.current = recheck;
 
   const isEditor = phase.kind === "editor";
-  const formatCheckRunning = view?.format_check?.status === "running";
+  const formatCheckRunning = !!view?.format_check && formatCheckInProgress(view.format_check);
 
   // Chat turn ended (incl. dropped stream / abort): check now and again a
   // little later, since the backend may still be finishing the edit.
