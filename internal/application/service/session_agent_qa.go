@@ -178,6 +178,71 @@ func (s *sessionService) AgentQA(
 		llmContext = []chat.Message{}
 	}
 
+	// The user turn as the agent reads it, with the session documents: built
+	// before the sandbox and the engine, because the document gate below
+	// may answer the turn without them.
+	agentQuery := effectiveQuery
+	var agentImageURLs []string
+	if agentModelSupportsVision && len(req.ImageURLs) > 0 {
+		agentImageURLs = req.ImageURLs
+		logger.Infof(ctx, "Agent model supports vision, passing %d image(s) directly", len(agentImageURLs))
+	} else if req.ImageDescription != "" {
+		agentQuery = effectiveQuery + "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		logger.Infof(ctx, "Agent model does not support vision, appending image description (%d chars)", len(req.ImageDescription))
+	}
+	if req.QuotedContext != "" {
+		agentQuery += "\n\n" + req.QuotedContext
+	}
+	// Inject attachment content (documents, audio transcripts, etc.) so the agent
+	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
+	// (see chat_pipeline/into_chat_message.go).
+	attachments, attachedDocs, attachedSources := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments)
+	if len(attachments) > 0 {
+		agentQuery += attachments.BuildPrompt()
+		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(attachments))
+	}
+	// attaching a file that is open as a tab names that tab, like an @:
+	// its text then comes from BuildOpenDocumentPrompt and the editing
+	// tools accept it as a target
+	req.MentionedDocumentIDs = mergeDocumentIDs(req.MentionedDocumentIDs, attachedDocs)
+	// a source attached now keeps its attachment text for this turn only;
+	// the document index says so instead of pointing at the outline tool
+	ctx = tools.WithAttachedSources(ctx, attachedSources)
+	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
+		agentQuery += selection
+		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
+	}
+	// The document tools read the selection from ctx: rewrite_paragraphs
+	// edits only a passage the user highlighted in this turn.
+	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
+	// the documents the user named with @: the tools edit only these
+	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
+	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
+		// the document router (no model, then one short thinking-off call
+		// when unclear): a turn that names no document of a session with
+		// several reads the scoped part of them instead of passages of all
+		ctx, _ = tools.ApplyDocumentScope(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, tools.DocumentRouteInput{
+			Query:   effectiveQuery,
+			History: documentRouteHistory(llmContext),
+			Model:   docformat.ChatCompleter(summaryModel),
+		})
+		// a generic request about a long document that names no part of
+		// it is answered with a question about the scope; the engine
+		// never starts (no model, see tools.DocumentScopeClarification)
+		if asked, err := s.documentScopeClarification(ctx, req, eventBus); asked || err != nil {
+			return err
+		}
+		// codes in the highlighted passage locate text past the cut too
+		locate := effectiveQuery
+		if sel := req.DocumentSelection.Normalized(); sel != nil {
+			locate += "\n" + sel.Text
+		}
+		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, locate); doc != "" {
+			agentQuery += doc
+			logger.Infof(ctx, "Appended open document text (%d chars) to agent query", len(doc))
+		}
+	}
+
 	// Hold the sandbox across this turn so an install that finishes while we
 	// are running cannot rebuild the VM between tool calls. Staging below is
 	// the first resolve: if the previous turn left a stale mark, that is
@@ -272,61 +337,6 @@ func (s *sessionService) AgentQA(
 		engine.SetContextCheckpointSink(messageCheckpointSink{repo: s.messageRepo, sessionID: sessionID})
 	}
 
-	agentQuery := effectiveQuery
-	var agentImageURLs []string
-	if agentModelSupportsVision && len(req.ImageURLs) > 0 {
-		agentImageURLs = req.ImageURLs
-		logger.Infof(ctx, "Agent model supports vision, passing %d image(s) directly", len(agentImageURLs))
-	} else if req.ImageDescription != "" {
-		agentQuery = effectiveQuery + "\n\n[用户上传图片内容]\n" + req.ImageDescription
-		logger.Infof(ctx, "Agent model does not support vision, appending image description (%d chars)", len(req.ImageDescription))
-	}
-	if req.QuotedContext != "" {
-		agentQuery += "\n\n" + req.QuotedContext
-	}
-	// Inject attachment content (documents, audio transcripts, etc.) so the agent
-	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
-	// (see chat_pipeline/into_chat_message.go).
-	attachments, attachedDocs, attachedSources := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments)
-	if len(attachments) > 0 {
-		agentQuery += attachments.BuildPrompt()
-		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(attachments))
-	}
-	// attaching a file that is open as a tab names that tab, like an @:
-	// its text then comes from BuildOpenDocumentPrompt and the editing
-	// tools accept it as a target
-	req.MentionedDocumentIDs = mergeDocumentIDs(req.MentionedDocumentIDs, attachedDocs)
-	// a source attached now keeps its attachment text for this turn only;
-	// the document index says so instead of pointing at the outline tool
-	ctx = tools.WithAttachedSources(ctx, attachedSources)
-	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
-		agentQuery += selection
-		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
-	}
-	// The document tools read the selection from ctx: rewrite_paragraphs
-	// edits only a passage the user highlighted in this turn.
-	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
-	// the documents the user named with @: the tools edit only these
-	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
-	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
-		// the document router (no model, then one short thinking-off call
-		// when unclear): a turn that names no document of a session with
-		// several reads the scoped part of them instead of passages of all
-		ctx, _ = tools.ApplyDocumentScope(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, tools.DocumentRouteInput{
-			Query:   effectiveQuery,
-			History: documentRouteHistory(llmContext),
-			Model:   docformat.ChatCompleter(summaryModel),
-		})
-		// codes in the highlighted passage locate text past the cut too
-		locate := effectiveQuery
-		if sel := req.DocumentSelection.Normalized(); sel != nil {
-			locate += "\n" + sel.Text
-		}
-		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, locate); doc != "" {
-			agentQuery += doc
-			logger.Infof(ctx, "Appended open document text (%d chars) to agent query", len(doc))
-		}
-	}
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
 		agentQuery += manifest
 		logger.Infof(ctx, "Appended %d staged sandbox attachment path(s) to agent query", len(stagedAttachments))

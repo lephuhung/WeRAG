@@ -230,6 +230,7 @@ builtin_agents:
       # Document assistant components. Empty model ids use model_id.
       format_check_model_id: ""
       format_check_on_open: true
+      ask_scope_for_long_documents: true
       spellcheck_model_id: ""
       web_search_default_on: true
       reflection_enabled: false

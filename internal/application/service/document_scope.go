@@ -62,7 +62,8 @@ func (s *DocumentScopeService) Get(ctx context.Context, tenantID uint64, session
 
 // Set stores a user scope. Documents (and the document of each section)
 // may be given by workspace ID or handle (vb2); each must be a document of
-// the session. The stored scope is returned.
+// the session. The stored scope is returned, and the documents and task
+// count as answered for the clarification gate.
 func (s *DocumentScopeService) Set(ctx context.Context, tenantID uint64, sessionID string, in *types.DocumentScope) (*types.DocumentScope, error) {
 	if in == nil {
 		return nil, apperrors.NewBadRequestError("scope is required")
@@ -100,6 +101,9 @@ func (s *DocumentScopeService) Set(ctx context.Context, tenantID uint64, session
 		return nil, apperrors.NewBadRequestError(err.Error())
 	}
 	tools.SetSessionDocumentScope(ctx, sessionID, scope)
+	// a scope the user chose answers the long-document question for its
+	// documents and task (see tools.DocumentScopeClarification)
+	tools.MarkScopeClarificationAnswered(ctx, sessionID, scope.DocumentIDs, scope.Task)
 	return scope, nil
 }
 

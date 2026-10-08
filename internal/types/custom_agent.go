@@ -325,6 +325,11 @@ type CustomAgentConfig struct {
 	// FormatCheckOnOpen runs the format check in the background as soon as a
 	// document is opened. Nil (unset) and true mean on.
 	FormatCheckOnOpen *bool `yaml:"format_check_on_open" json:"format_check_on_open,omitempty"`
+	// AskScopeForLongDocuments lets a generic request about a long document
+	// that names no part of it be answered with a question about the scope
+	// (tasks, sections) instead of running the agent. Nil (unset) and true
+	// mean on.
+	AskScopeForLongDocuments *bool `yaml:"ask_scope_for_long_documents" json:"ask_scope_for_long_documents,omitempty"`
 	// SpellcheckModelID is the KnowledgeQA model check_spelling uses. Empty
 	// uses ModelID.
 	SpellcheckModelID string `yaml:"spellcheck_model_id" json:"spellcheck_model_id,omitempty"`
@@ -481,6 +486,12 @@ func (c *CustomAgentConfig) OpenDocumentMaxRunes() int {
 // is checked in the background (nil means on).
 func (c *CustomAgentConfig) FormatCheckOnOpenEnabled() bool {
 	return c == nil || c.FormatCheckOnOpen == nil || *c.FormatCheckOnOpen
+}
+
+// AskScopeForLongDocumentsEnabled reports whether the scope clarification
+// gate may ask before a long document is read (nil means on).
+func (c *CustomAgentConfig) AskScopeForLongDocumentsEnabled() bool {
+	return c == nil || c.AskScopeForLongDocuments == nil || *c.AskScopeForLongDocuments
 }
 
 // FormatCheckModel is the model id for the NĐ30 format evaluation: the
