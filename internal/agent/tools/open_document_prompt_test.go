@@ -107,3 +107,24 @@ func TestBuildOpenDocumentPromptInjectsTheWindowAroundTheSelection(t *testing.T)
 		t.Fatalf("selection not found:\n%s", got)
 	}
 }
+
+func TestBuildOpenDocumentPromptSaysWhichCodesNoDocumentHas(t *testing.T) {
+	freshDocProfiles(t)
+	l := func(text string) string { return testPara(text, "left", "Times New Roman", 14, false, false) }
+	ws := newFakeWorkspace(buildTestDocx(t, l("BIÊN BẢN LÀM VIỆC")+l("Thành phần: Phòng PA05 Công an tỉnh."), [4]int{20, 15, 30, 20}))
+
+	got := BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "Đơn vị PA04 có thành phần tham gia là ai?")
+	if !strings.Contains(got, "<not_found>Không tìm thấy mã/số sau trong bất kỳ tài liệu nào của phiên: PA04.") {
+		t.Fatalf("one document: the not-found block:\n%s", got)
+	}
+	if got = BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "Đơn vị pa05 có ai?"); strings.Contains(got, "Không tìm thấy mã/số") {
+		t.Fatalf("a code the document has (any case):\n%s", got)
+	}
+
+	ws.addDocument("ws-2", "quy-che.docx", buildTestDocx(t, l("QUY CHẾ BỐC THĂM"), [4]int{20, 15, 30, 20}))
+	got = BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "PA04 và PA05 khác gì nhau")
+	i := strings.Index(got, "Không tìm thấy mã/số sau trong bất kỳ tài liệu nào của phiên: PA04.")
+	if i < 0 || i > strings.Index(got, "</session_documents>") || strings.Contains(got, "<not_found>") || strings.Contains(got, "PA04, PA05") {
+		t.Fatalf("several documents: the line inside the index, PA05 not listed:\n%s", got)
+	}
+}

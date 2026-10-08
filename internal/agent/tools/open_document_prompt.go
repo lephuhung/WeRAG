@@ -137,6 +137,9 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		}
 	}
 
+	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+	notFound := notFoundLine(ctx, readCtx, src, sessionID, docs, query)
+
 	var sb strings.Builder
 	indexed := len(docs) > 1 || len(targets) < len(docs)
 	profiles := make(map[string]*types.DocumentProfile, len(docs))
@@ -173,10 +176,14 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 			}
 			sb.WriteString(escapeOpenDocument(documentCard(line.String(), d, profile)))
 		}
+		if notFound != "" {
+			sb.WriteString(notFound + "\n")
+		}
 		sb.WriteString("</session_documents>\n")
+	} else if notFound != "" {
+		sb.WriteString("\n\n<not_found>" + notFound + "</not_found>\n")
 	}
 
-	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	rendered := 0
 	switch {
 	case len(chosen) > 0:
@@ -199,6 +206,59 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		return ""
 	}
 	return sb.String()
+}
+
+// notFoundMaxCodes bounds the codes the not-found line names.
+const notFoundMaxCodes = 5
+
+// notFoundLine names the codes of the question (see queryCodes) that occur
+// in no document of the session, compared without diacritics as whole
+// tokens, so the model says the documents do not mention them instead of
+// guessing. "" when every code is found, the question has none, or a
+// document cannot be read (it might hold them).
+func notFoundLine(ctx, readCtx context.Context, src DocumentWorkspaceSource, sessionID string, docs []*types.DocumentWorkspace, query string) string {
+	codes := queryCodes(query)
+	if len(codes) == 0 {
+		return ""
+	}
+	var texts []string
+	for i, d := range docs {
+		if d.IsSource() && d.TextStatus != types.DocumentSourceTextReady {
+			return ""
+		}
+		du, err := loadDocumentUnits(readCtx, src, sessionID, d, i)
+		if err != nil {
+			logger.Warnf(ctx, "[DocumentWorkspace] code check skipped, session=%s document=%s unreadable: %v", sessionID, d.ID, err)
+			return ""
+		}
+		text, header := cardText(du)
+		texts = append(texts, " "+foldSearch(text+" \n "+header)+" ")
+		for _, u := range du.units {
+			texts = append(texts, " "+foldSearch(u.Header+" \n "+u.Text)+" ")
+		}
+	}
+	var missing []string
+	for _, c := range codes {
+		f := foldSearch(strings.Trim(c, "-–/"))
+		found := false
+		for _, t := range texts {
+			if containsCode(t, f) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, c)
+			if len(missing) == notFoundMaxCodes {
+				break
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return "Không tìm thấy mã/số sau trong bất kỳ tài liệu nào của phiên: " + escapeOpenDocument(strings.Join(missing, ", ")) +
+		". Hãy nói rõ là tài liệu không nhắc tới, không suy đoán (tra cứu văn bản pháp luật trong kho tri thức vẫn được nếu câu hỏi cần)."
 }
 
 // renderFullDocuments writes the <open_document> blocks of rule 1: each
@@ -555,7 +615,7 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 // escapeOpenDocument neutralises closing tags so document text cannot end
 // the block early.
 func escapeOpenDocument(s string) string {
-	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>", "</relevant_passages>", "</document_sections>"} {
+	for _, tag := range []string{"</text>", "</matching_paragraphs>", "</open_document>", "</session_documents>", "</relevant_passages>", "</document_sections>", "</not_found>"} {
 		s = strings.ReplaceAll(s, tag, strings.ReplaceAll(strings.ReplaceAll(tag, "<", "&lt;"), ">", "&gt;"))
 	}
 	return s
