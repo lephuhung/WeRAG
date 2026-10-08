@@ -11,6 +11,9 @@ import {
   createAgent,
   updateAgent,
   isBuiltinAgent,
+  isDocumentAssistantAgent,
+  clampOpenDocumentMaxRunes,
+  OPEN_DOCUMENT_MAX_RUNES_LIMIT,
   type CustomAgent,
 } from "@/lib/api/agents";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
@@ -55,6 +58,12 @@ type Draft = {
   image_storage_provider: string;
   audio_upload_enabled: boolean;
   asr_model_id: string;
+  // Document assistant (sent only when that section is shown)
+  format_check_model_id: string;
+  spellcheck_model_id: string;
+  format_check_on_open: boolean;
+  web_search_default_on: boolean;
+  open_document_max_runes: number;
 };
 
 function draftFrom(a: CustomAgent | null): Draft {
@@ -89,6 +98,12 @@ function draftFrom(a: CustomAgent | null): Draft {
     image_storage_provider: a?.config?.image_storage_provider ?? "",
     audio_upload_enabled: a?.config?.audio_upload_enabled ?? false,
     asr_model_id: a?.config?.asr_model_id ?? "",
+    format_check_model_id: a?.config?.format_check_model_id ?? "",
+    spellcheck_model_id: a?.config?.spellcheck_model_id ?? "",
+    // null / unset = on
+    format_check_on_open: a?.config?.format_check_on_open !== false,
+    web_search_default_on: a?.config?.web_search_default_on ?? false,
+    open_document_max_runes: clampOpenDocumentMaxRunes(a?.config?.open_document_max_runes ?? 0),
   };
 }
 
@@ -109,6 +124,9 @@ export function AgentEditorModal({
 }) {
   const { t } = useT();
   const isBuiltin = agent ? isBuiltinAgent(agent.id) : false;
+  // "Document assistant" settings: the built-in one or any agent allowed to
+  // run check_document_format. Its fields are saved only when shown.
+  const showDocSection = agent ? isDocumentAssistantAgent(agent.id, agent.config) : false;
   const [tab, setTab] = useState<TabKey>("basic");
   const [draft, setDraft] = useState<Draft>(() => draftFrom(agent));
   const [saving, setSaving] = useState(false);
@@ -138,6 +156,27 @@ export function AgentEditorModal({
     const qaModels = modelList.filter((m) => m.type === "KnowledgeQA");
     return qaModels.length > 0 ? qaModels : modelList;
   }, [modelList]);
+
+  // KnowledgeQA model options with an "agent's chat model" empty choice and
+  // the usual "(Current)" fallback for an id that is not listed.
+  const qaModelOptions = (current: string, emptyLabel: string) => [
+    { value: "", label: emptyLabel },
+    ...chatModels
+      .filter((m) => m.id)
+      .map((m) => {
+        const label = m.display_name?.trim() || m.name;
+        const meta = [
+          m.parameters?.parameter_size,
+          m.parameters?.provider || (m.source === "local" ? "local" : ""),
+          m.is_default ? "default" : "",
+          m.is_builtin ? "built-in" : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        return { value: m.id!, label: meta ? `${label} (${meta})` : label };
+      }),
+    ...(current && !chatModels.some((m) => m.id === current) ? [{ value: current, label: `${current} (Current)` }] : []),
+  ];
 
   const rerankModels = useMemo(() => {
     return modelList.filter((m) => m.type === "Rerank");
@@ -280,6 +319,18 @@ export function AgentEditorModal({
         image_storage_provider: draft.image_storage_provider || undefined,
         audio_upload_enabled: draft.audio_upload_enabled,
         asr_model_id: draft.asr_model_id || undefined,
+        // Absent keys keep the stored config on edit (buildAgentConfigForSave),
+        // so other agents never send or clear these.
+        ...(showDocSection
+          ? {
+              format_check_model_id: draft.format_check_model_id || undefined,
+              spellcheck_model_id: draft.spellcheck_model_id || undefined,
+              format_check_on_open: draft.format_check_on_open,
+              web_search_default_on: draft.web_search_default_on,
+              open_document_max_runes:
+                draft.open_document_max_runes > 0 ? clampOpenDocumentMaxRunes(draft.open_document_max_runes) : undefined,
+            }
+          : {}),
       };
 
       // The backend PUT replaces the whole config: on EDIT merge the edited
@@ -570,6 +621,83 @@ export function AgentEditorModal({
                 <span>{t("agent.thinking")}</span>
               </label>
             </div>
+
+            {showDocSection && (
+              <div className="rounded-[12px] border border-hairline bg-surface-strong/30 p-4 space-y-3">
+                <div>
+                  <span className="font-medium text-ink block text-[13px]">{t("agent.docAssist.title")}</span>
+                  <span className="caption text-muted">{t("agent.docAssist.desc")}</span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="caption mb-1.5 block text-muted">{t("agent.docAssist.formatModel")}</span>
+                    <Select
+                      className="w-full"
+                      value={draft.format_check_model_id}
+                      disabled={readOnly}
+                      onChange={(v) => patch("format_check_model_id", v)}
+                      placeholder={t("agent.docAssist.useChatModel")}
+                      options={qaModelOptions(draft.format_check_model_id, t("agent.docAssist.useChatModel"))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="caption mb-1.5 block text-muted">{t("agent.docAssist.spellModel")}</span>
+                    <Select
+                      className="w-full"
+                      value={draft.spellcheck_model_id}
+                      disabled={readOnly}
+                      onChange={(v) => patch("spellcheck_model_id", v)}
+                      placeholder={t("agent.docAssist.useChatModel")}
+                      options={qaModelOptions(draft.spellcheck_model_id, t("agent.docAssist.useChatModel"))}
+                    />
+                  </label>
+                </div>
+                <label className="block sm:w-1/2">
+                  <span className="caption mb-1.5 block text-muted">{t("agent.docAssist.maxRunes")}</span>
+                  <input
+                    className="input w-full"
+                    type="number"
+                    min={0}
+                    max={OPEN_DOCUMENT_MAX_RUNES_LIMIT}
+                    step={1000}
+                    value={draft.open_document_max_runes}
+                    disabled={readOnly}
+                    onChange={(e) => patch("open_document_max_runes", clampOpenDocumentMaxRunes(e.target.value))}
+                  />
+                  <span className="caption mt-1 block text-muted">{t("agent.docAssist.maxRunesHint")}</span>
+                </label>
+                <div className="flex flex-col gap-2">
+                  <label className={`flex items-center gap-2 text-ink select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={draft.format_check_on_open}
+                      disabled={readOnly}
+                      onChange={(e) => patch("format_check_on_open", e.target.checked)}
+                    />
+                    <span>{t("agent.docAssist.formatOnOpen")}</span>
+                  </label>
+                  <label
+                    className={`flex items-start gap-2 select-none ${
+                      !draft.web_search_enabled ? "opacity-50" : ""
+                    } ${readOnly || !draft.web_search_enabled ? "cursor-default" : "cursor-pointer"} text-ink`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={draft.web_search_default_on && draft.web_search_enabled}
+                      disabled={readOnly || !draft.web_search_enabled}
+                      onChange={(e) => patch("web_search_default_on", e.target.checked)}
+                    />
+                    <span>
+                      {t("agent.docAssist.webDefault")}
+                      {!draft.web_search_enabled && (
+                        <span className="caption block text-muted">{t("agent.docAssist.webDefaultHint")}</span>
+                      )}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

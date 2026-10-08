@@ -316,9 +316,12 @@
         var p = mustFind(op.anchor);
         var target = p;
         if (op.text) {
+          // textOccurrence: 1-based instance inside the paragraph (default
+          // first); fewer hits than requested fails the op (no fallback).
+          var nth = Math.max(1, Math.floor(op.textOccurrence || 1));
           var hits = p.Search(op.text, true) || [];
-          if (!hits.length) throw new Error("text not found");
-          target = hits[0];
+          if (hits.length < nth) throw new Error(hits.length ? "text occurrence not found" : "text not found");
+          target = hits[nth - 1];
         }
         if (op.style === "highlight") {
           target.SetHighlight("yellow");

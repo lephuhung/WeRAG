@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { apiGet } from "@/lib/api-client";
 import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { SessionLastRequestState } from "@/lib/api/chat";
+import { defaultWebSearchFor } from "@/lib/api/agent-doc-defaults";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -48,6 +49,8 @@ export type AgentSummary = {
     selected_skills?: string[];
     allowed_tools?: string[];
     web_search_enabled?: boolean;
+    /** Per-chat web search starts on when this agent is picked. */
+    web_search_default_on?: boolean;
     web_search_provider_id?: string;
     image_upload_enabled?: boolean;
     supported_file_types?: string[];
@@ -353,13 +356,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
   const selectAgent = useCallback(
     (id: string) => {
-      // Mirrors settings.selectAgent: switching agent resets the per-turn websearch flag.
+      // Mirrors settings.selectAgent: switching agent resets the per-turn
+      // websearch flag — to the agent's default (web_search_default_on &&
+      // web_search_enabled) instead of always off.
       const isQuickAnswer = id === BUILTIN_QUICK_ANSWER_ID;
       const targetAgent = agents.find((a) => a.id === id);
       const agentModelId = targetAgent?.config?.model_id;
       update({
         selectedAgentId: id,
-        webSearchEnabled: false,
+        webSearchEnabled: defaultWebSearchFor(targetAgent?.config),
         isAgentEnabled: !isQuickAnswer,
         ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
       });
@@ -384,6 +389,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const hydrateSessionState = useCallback(
     (state?: SessionLastRequestState | null) => {
       if (!state) return;
+      const hydrateAgent = agents.find((a) => a.id === (state.agent_id || settings.selectedAgentId));
       update({
         ...(typeof state.agent_enabled === "boolean" ? { isAgentEnabled: state.agent_enabled } : {}),
         ...(state.agent_id ? { selectedAgentId: state.agent_id } : {}),
@@ -392,11 +398,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...(Array.isArray(state.knowledge_ids) ? { selectedFiles: [...state.knowledge_ids] } : {}),
         ...(Array.isArray(state.mcp_service_ids) ? { selectedMCPServices: [...state.mcp_service_ids] } : {}),
         ...(Array.isArray(state.skill_names) ? { selectedSkills: [...state.skill_names] } : {}),
-        ...(typeof state.web_search_enabled === "boolean" ? { webSearchEnabled: state.web_search_enabled } : {}),
+        // Stored per-session value wins; without one, the session's agent
+        // default (left untouched while the agent list is not loaded yet).
+        ...(typeof state.web_search_enabled === "boolean"
+          ? { webSearchEnabled: state.web_search_enabled }
+          : hydrateAgent
+            ? { webSearchEnabled: defaultWebSearchFor(hydrateAgent.config) }
+            : {}),
         ...(typeof state.local_browser_enabled === "boolean" ? { localBrowserEnabled: state.local_browser_enabled } : {}),
       });
     },
-    [update],
+    [agents, settings.selectedAgentId, update],
   );
 
   const selectedAgent = useMemo<AgentSummary | null>(

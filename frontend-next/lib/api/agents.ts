@@ -1,6 +1,13 @@
 /* Ported from frontend/src/api/agent/index.ts. */
 import { apiDel, apiGet, apiPost, apiPut } from "@/lib/api-client";
 
+export {
+  isDocumentAssistantAgent,
+  defaultWebSearchFor,
+  clampOpenDocumentMaxRunes,
+  OPEN_DOCUMENT_MAX_RUNES_LIMIT,
+} from "./agent-doc-defaults";
+
 // Type presets for smart-reasoning mode:
 //   'rag-qa'          : classic document/FAQ chunked RAG
 //   'wiki-qa'         : wiki graph-navigation QA
@@ -98,6 +105,15 @@ export interface CustomAgentConfig {
   web_search_enabled?: boolean;
   web_search_provider_id?: string;
   web_search_max_results?: number;
+  // Turn the per-chat web-search toggle on when this agent is picked
+  // (only effective when web_search_enabled).
+  web_search_default_on?: boolean;
+
+  // ===== document assistant =====
+  format_check_model_id?: string; // "" = the agent's chat model
+  format_check_on_open?: boolean | null; // null/unset = on
+  spellcheck_model_id?: string; // "" = the agent's chat model
+  open_document_max_runes?: number; // 0 = server default
 
   // ===== multi-turn =====
   multi_turn_enabled?: boolean;

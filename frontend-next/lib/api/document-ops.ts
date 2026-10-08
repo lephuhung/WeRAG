@@ -28,7 +28,14 @@ export type DocumentOp =
       bold?: boolean;
       italic?: boolean;
     }
-  | { op: "mark"; anchor: ParagraphAnchor; text?: string; style: MarkStyle }
+  | {
+      op: "mark";
+      anchor: ParagraphAnchor;
+      text?: string;
+      /** 1-based instance of `text` inside the paragraph (omitted = first). */
+      textOccurrence?: number;
+      style: MarkStyle;
+    }
   | {
       op: "formatParagraph";
       anchor: ParagraphAnchor;
@@ -109,6 +116,11 @@ export function opValidationError(raw: unknown): string | null {
     case "mark":
       if (!validAnchor(raw.anchor)) return "bad anchor";
       if (raw.text !== undefined && !isStr(raw.text)) return "bad text";
+      if (
+        raw.textOccurrence !== undefined &&
+        !(typeof raw.textOccurrence === "number" && Number.isInteger(raw.textOccurrence) && raw.textOccurrence >= 1)
+      )
+        return "bad textOccurrence";
       return isStr(raw.style) && MARK_STYLES.has(raw.style) ? null : "bad style";
     case "formatParagraph":
       if (!validAnchor(raw.anchor)) return "bad anchor";
