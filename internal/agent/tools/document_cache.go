@@ -41,6 +41,12 @@ type workspaceDoc struct {
 	version string
 	content []byte
 	layout  *docformat.Layout // parsed on first use
+	// lines and sections are read from layout on first search (see
+	// outlineOf): the non-empty paragraphs with their heuristic NĐ30
+	// labels and the detected sections.
+	outlined bool
+	lines    []profileLine
+	sections []types.DocumentProfileSection
 }
 
 type workspaceDocCache struct {
@@ -121,4 +127,23 @@ func (c *workspaceDocCache) layoutOf(doc *workspaceDoc) *docformat.Layout {
 	l = doc.layout
 	c.mu.Unlock()
 	return l
+}
+
+// outlineOf reads doc's paragraphs (with their heuristic NĐ30 labels) and
+// detected sections once; later callers share the result.
+func (c *workspaceDocCache) outlineOf(doc *workspaceDoc, ws *types.DocumentWorkspace) ([]profileLine, []types.DocumentProfileSection) {
+	c.mu.Lock()
+	if doc.outlined {
+		lines, sections := doc.lines, doc.sections
+		c.mu.Unlock()
+		return lines, sections
+	}
+	c.mu.Unlock()
+	in := targetProfileInput(ws, c.layoutOf(doc))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !doc.outlined {
+		doc.lines, doc.sections, doc.outlined = in.lines, in.sections, true
+	}
+	return doc.lines, doc.sections
 }

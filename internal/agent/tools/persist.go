@@ -361,6 +361,15 @@ func compactToolSummary(success bool, errMsg string, data map[string]interface{}
 			}
 			return fmt.Sprintf("Edited %s (%d replacement(s), %d bytes)", path, n, size)
 		}
+	case "document_search":
+		// find_in_documents: the passages served their turn; later turns
+		// search again rather than replay them
+		where := stringField(data, "searched")
+		if where == "" {
+			where = "các tài liệu"
+		}
+		return fmt.Sprintf("đã tìm '%s' trong %s: %d kết quả (nội dung không lưu trong lịch sử; tìm lại khi cần)",
+			stringField(data, "query"), where, intField(data, "hit_count"))
 	case "attachment_parsing":
 		parsed := intField(data, "parsed_count")
 		skipped := intField(data, "skipped_count")

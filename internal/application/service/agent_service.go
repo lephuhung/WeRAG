@@ -1264,6 +1264,12 @@ func (s *agentService) registerTools(
 		registry.RegisterTool(tools.NewPeopleLookupTool(s.peopleService))
 		logger.Infof(ctx, "Registered people_lookup tool (system-admin caller)")
 	}
+	// find_in_documents rides on read_document_outline: both read the
+	// session's documents (tabs and chat sources), so it is offered exactly
+	// when the outline is, with no allowlist entry of its own.
+	if _, err := registry.GetTool(tools.ToolReadDocumentOutline); err == nil {
+		registry.RegisterTool(tools.NewFindInDocumentsTool(s.documentWorkspaces, sessionID))
+	}
 	// check_document_format is offered only in a conversation that holds a
 	// .docx: the editable document when the session has one (document
 	// assistant), else an uploaded .docx — it reads this session's uploads

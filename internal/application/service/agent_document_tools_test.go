@@ -59,6 +59,7 @@ func TestRegisterToolsOffersDocumentToolsWithAWorkspace(t *testing.T) {
 		tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline, tools.ToolApplyFormatFixes,
 		tools.ToolSearchKnowledge)
 	require.Contains(t, names, tools.ToolReadDocumentOutline)
+	require.Contains(t, names, tools.ToolFindInDocuments, "find_in_documents rides on the outline")
 	require.Contains(t, names, tools.ToolApplyFormatFixes)
 	require.Contains(t, names, tools.ToolCheckDocumentFormat)
 	require.Contains(t, names, tools.ToolSearchKnowledge)
@@ -79,7 +80,7 @@ func TestRegisterToolsHidesDocumentToolsWithoutAWorkspace(t *testing.T) {
 	names := registerDocumentTools(t, nil,
 		tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline, tools.ToolApplyFormatFixes,
 		tools.ToolRewriteParagraphs, tools.ToolInsertParagraphs, tools.ToolMarkPassages, tools.ToolSearchKnowledge)
-	for _, name := range []string{tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline,
+	for _, name := range []string{tools.ToolCheckDocumentFormat, tools.ToolReadDocumentOutline, tools.ToolFindInDocuments,
 		tools.ToolApplyFormatFixes, tools.ToolRewriteParagraphs, tools.ToolInsertParagraphs, tools.ToolMarkPassages} {
 		require.NotContains(t, names, name)
 	}
