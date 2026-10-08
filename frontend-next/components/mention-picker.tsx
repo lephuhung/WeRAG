@@ -5,6 +5,7 @@ import { apiGet } from "@/lib/api-client";
 import { useT } from "@/lib/i18n";
 import { useChatContext, type MentionRequestItem, type MentionType } from "@/lib/chat-context";
 import { IconDoc } from "@/components/icons";
+import { FileTypeIcon } from "@/components/files/file-type-icon";
 
 /* Ports MentionSelector.vue + the @-menu half of Input-field.vue:
  * - button opens a grouped picker (KB / file / tag / MCP / skill)
@@ -15,44 +16,7 @@ import { IconDoc } from "@/components/icons";
 
 export type MentionResolved = MentionRequestItem;
 
-type PickerItem = MentionRequestItem & { description?: string; count?: number; file_type?: string };
-
-/* Soft-tinted badge per file type; falls back to a doc glyph for unknown types. */
-const FILE_TYPE_STYLES: Record<string, { label: string; cls: string }> = {
-  pdf: { label: "PDF", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
-  doc: { label: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  docx: { label: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  xls: { label: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  xlsx: { label: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  csv: { label: "CSV", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  ppt: { label: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
-  pptx: { label: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
-  md: { label: "MD", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  txt: { label: "TXT", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  html: { label: "HTML", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  png: { label: "PNG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
-  jpg: { label: "JPG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
-  jpeg: { label: "JPG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
-  audio: { label: "AUD", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
-  video: { label: "VID", cls: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
-};
-
-function TypeBadge({ fileType }: { fileType?: string }) {
-  const key = (fileType || "").toLowerCase().replace(/^\./, "");
-  const style = FILE_TYPE_STYLES[key];
-  if (!style) {
-    return (
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink">
-        <IconDoc className="h-3.5 w-3.5" />
-      </span>
-    );
-  }
-  return (
-    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[8.5px] font-bold tracking-tight ${style.cls}`}>
-      {style.label}
-    </span>
-  );
-}
+export type PickerItem = MentionRequestItem & { description?: string; count?: number; file_type?: string };
 
 function useMentionData(open: boolean, keyword: string, documents: MentionRequestItem[]) {
   const ctx = useChatContext();
@@ -67,6 +31,9 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
     const q = keyword.trim().toLowerCase();
     const match = (name: string) => !q || name.toLowerCase().includes(q);
     const run = async () => {
+      const docItems: PickerItem[] = documents
+        .filter((d) => match(d.name))
+        .map((d) => ({ ...d, file_type: d.file_type || "docx" }));
       const kbItems: PickerItem[] = ctx.knowledgeBases
         .filter((k) => match(k.name))
         .slice(0, 20)
@@ -78,6 +45,8 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
           count: k.type === "faq" ? (k.chunk_count ?? 0) : (k.knowledge_count ?? 0),
           description: k.org_name ? `Shared · ${k.org_name}` : undefined,
         }));
+      // open documents and KBs are local: list them before the searches return
+      setItems([...docItems, ...kbItems]);
       let fileItems: PickerItem[] = [];
       try {
         const params = new URLSearchParams({
@@ -134,9 +103,6 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
         .slice(0, 10)
         .map((s) => ({ id: s.name, name: s.name, type: "skill", skill_name: s.name, description: s.description }));
       if (seq.current !== my) return;
-      const docItems: PickerItem[] = documents
-        .filter((d) => match(d.name))
-        .map((d) => ({ ...d, file_type: d.file_type || "docx" }));
       setItems([...docItems, ...kbItems, ...fileItems, ...tagItems, ...mcpItems, ...skillItems]);
       setLoading(false);
     };
@@ -164,6 +130,7 @@ export function MentionPicker({
   onActiveIndex,
   onSelect,
   onClose,
+  onItems,
   documents = NO_DOCUMENTS,
 }: {
   open: boolean;
@@ -172,6 +139,8 @@ export function MentionPicker({
   onActiveIndex: (i: number) => void;
   onSelect: (item: MentionResolved) => void;
   onClose: () => void;
+  /** The listed items in display order, for keyboard selection by index. */
+  onItems?: (items: PickerItem[]) => void;
   /** The session's open documents (document assistant), listed first. */
   documents?: MentionRequestItem[];
 }) {
@@ -181,12 +150,16 @@ export function MentionPicker({
   const { items, loading } = useMentionData(open, keyword || search, documents);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // Focus stays in the composer: typing after @ filters, arrows move and
+  // Enter picks (the composer handles the keys). The search box is for a
+  // click.
   useEffect(() => {
-    if (open) {
-      setSearch("");
-      searchRef.current?.focus();
-    }
+    if (open) setSearch("");
   }, [open]);
+
+  useEffect(() => {
+    onItems?.(items);
+  }, [items, onItems]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-idx="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
@@ -209,8 +182,17 @@ export function MentionPicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Escape") onClose();
                 e.stopPropagation();
+                if (e.key === "Escape") onClose();
+                else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const last = Math.max(0, items.length - 1);
+                  onActiveIndex(e.key === "ArrowDown" ? Math.min(last, activeIndex + 1) : Math.max(0, activeIndex - 1));
+                } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  const item = items[activeIndex];
+                  if (item) onSelect(item);
+                }
               }}
               placeholder="Tìm KB, file, tag…"
               className="w-full rounded-[8px] bg-surface-strong py-1.5 pl-8 pr-3 text-[13px] text-ink placeholder:text-muted-soft focus:outline-none focus:ring-1 focus:ring-primary/40"
@@ -241,7 +223,7 @@ export function MentionPicker({
                       }`}
                     >
                       {item.type === "file" || item.type === "document" ? (
-                        <TypeBadge fileType={item.file_type} />
+                        <FileTypeIcon name={item.name} fileType={item.file_type} />
                       ) : item.type === "kb" ? (
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

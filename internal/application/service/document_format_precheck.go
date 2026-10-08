@@ -166,6 +166,15 @@ func (p *DocumentFormatPrecheck) Status(ctx context.Context, documentID string) 
 	return tools.SessionFormatCheck(ctx, documentID)
 }
 
+// Report returns the evaluation of a document's finished background check,
+// or nil when none is kept.
+func (p *DocumentFormatPrecheck) Report(ctx context.Context, documentID string) *types.DocumentFormatReport {
+	if p == nil {
+		return nil
+	}
+	return tools.SessionFormatCheckReport(ctx, documentID)
+}
+
 // agent loads the document assistant's (tenant) configuration.
 func (p *DocumentFormatPrecheck) agent(ctx context.Context) *types.CustomAgent {
 	if p.agents == nil {

@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconDoc, IconGlobe, IconImage, IconPaperclip, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import type { QuestionOrigin } from "@/lib/question-origin";
-import { MentionChips, MentionPicker } from "@/components/mention-picker";
+import { MentionChips, MentionPicker, type PickerItem } from "@/components/mention-picker";
 import { AgentLockNotice, AgentModeButton, AgentSelector, useAgentModelSync } from "@/components/agent-selector";
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
 import { isWordAttachment } from "@/lib/api/document-workspace";
 import { useT } from "@/lib/i18n";
+import { FileTypeIcon } from "@/components/files/file-type-icon";
+import { DOC_MENTION_COLOR, DocMentionIcon } from "@/components/doc-mention";
+import { documentsNamedIn, splitDocumentMentions } from "@/lib/document-mentions";
 
 /* Ports Input-field.vue's composer: textarea + @mention picker + image/file
  * attachments + agent-mode switch + websearch toggle + model picker + send/stop.
@@ -45,8 +48,6 @@ export function Composer({
   compact = false,
   agentLockFileName = null,
   documents = NO_DOCUMENT_MENTIONS,
-  documentMentions = NO_DOCUMENT_MENTIONS,
-  onDocumentMentionsChange,
   uploadsBecomeSources = false,
   onOpenAttachmentForEditing,
 }: {
@@ -69,11 +70,10 @@ export function Composer({
   compact?: boolean;
   /** The conversation holds this open document: the mode picker is locked. */
   agentLockFileName?: string | null;
-  /** Document assistant: the session's open documents, offered first by @. */
+  /** Document assistant: the session's open documents, offered first by @.
+   *  Picking one writes "@<name>" into the text; the names left in the text
+   *  on send are the mentioned documents. */
   documents?: MentionRequestItem[];
-  /** Documents named with @ for the next turn (sent as mentioned items). */
-  documentMentions?: MentionRequestItem[];
-  onDocumentMentionsChange?: (items: MentionRequestItem[]) => void;
   /** Document assistant: a parsed upload becomes a source document. */
   uploadsBecomeSources?: boolean;
   /** Opens a Word source in the editor ("Mở để soạn thảo"). */
@@ -88,10 +88,11 @@ export function Composer({
   const [mentionKeyword, setMentionKeyword] = useState("");
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionAnchor, setMentionAnchor] = useState(0);
-  const [mentionItemsCount, setMentionItemsCount] = useState(0);
+  const [mentionList, setMentionList] = useState<PickerItem[]>([]);
   const [agentOpen, setAgentOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -120,17 +121,30 @@ export function Composer({
     }
   };
 
+  const documentMentions = useMemo(() => documentsNamedIn(value, documents), [value, documents]);
+
   const commitMention = (item: MentionRequestItem) => {
+    const el = textareaRef.current;
+    const cursor = el?.selectionStart ?? value.length;
     if (item.type === "document") {
-      if (!documentMentions.some((d) => d.id === item.id)) onDocumentMentionsChange?.([...documentMentions, item]);
-    } else if (item.type === "kb") ctx.addKnowledgeBase(item.id);
+      // Keep the document inline where it was typed, so the sentence reads on.
+      const token = `@${item.name} `;
+      const rest = value.slice(cursor);
+      onChange(value.slice(0, mentionAnchor) + token + (rest.startsWith(" ") ? rest.slice(1) : rest));
+      setMentionOpen(false);
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.selectionStart = el.selectionEnd = mentionAnchor + token.length;
+        el.focus();
+      });
+      return;
+    }
+    if (item.type === "kb") ctx.addKnowledgeBase(item.id);
     else if (item.type === "file") ctx.addFile(item.id, item.kb_id, item.name);
     else if (item.type === "tag" && item.kb_id) ctx.addTag({ id: item.id, name: item.name, kbId: item.kb_id, kbName: item.kb_name });
     else if (item.type === "mcp") ctx.addMCPService(item.id);
     else if (item.type === "skill") ctx.addSkill(item.skill_name ?? item.id);
     // Strip the @query from the text like onMentionSelect.
-    const el = textareaRef.current;
-    const cursor = el?.selectionStart ?? value.length;
     onChange(value.slice(0, mentionAnchor) + value.slice(cursor));
     setMentionOpen(false);
     requestAnimationFrame(() => {
@@ -144,7 +158,7 @@ export function Composer({
     if (mentionOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMentionIndex((i) => Math.min(mentionItemsCount - 1, i + 1));
+        setMentionIndex((i) => Math.min(Math.max(0, mentionList.length - 1), i + 1));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -157,16 +171,45 @@ export function Composer({
         setMentionOpen(false);
         return;
       }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        document.querySelector(`[data-idx="${mentionIndex}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        return;
+      if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
+        const item = mentionList[mentionIndex];
+        if (item) {
+          e.preventDefault();
+          commitMention(item);
+          return;
+        }
+        // nothing listed yet: Tab moves on, Enter does not send half a mention
+        if (e.key === "Enter") {
+          e.preventDefault();
+          return;
+        }
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit();
+      return;
     }
+    if (e.key === "Backspace" && documents.length > 0) dropMentionBeforeCursor(e);
+  };
+
+  /* Backspace right after "@name" (or "@name ") removes the whole mention. */
+  const dropMentionBeforeCursor = (e: React.KeyboardEvent) => {
+    const el = textareaRef.current;
+    if (!el || el.selectionStart !== el.selectionEnd) return;
+    const cursor = el.selectionStart;
+    const segs = splitDocumentMentions(value.slice(0, cursor), documents.map((d) => d.name));
+    const last = segs[segs.length - 1];
+    const prev = segs[segs.length - 2];
+    let start = -1;
+    if (last?.mention) start = cursor - last.text.length;
+    else if (last?.text === " " && prev?.mention) start = cursor - 1 - prev.text.length;
+    if (start < 0) return;
+    e.preventDefault();
+    onChange(value.slice(0, start) + value.slice(cursor));
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start;
+    });
   };
 
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
@@ -235,6 +278,7 @@ export function Composer({
         <div className="flex flex-col gap-1.5">
           {attachments.map((a) => (
             <div key={a.localId} className="flex items-center gap-3 rounded-[8px] border border-hairline px-3 py-2">
+              <FileTypeIcon name={a.name} />
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-[14px] font-medium text-ink">{a.name}</span>
@@ -276,43 +320,45 @@ export function Composer({
 
       {sendBlockMsg && <p className="caption text-error">{sendBlockMsg}</p>}
 
-      {documentMentions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {documentMentions.map((d) => (
-            <span
-              key={d.id}
-              className="flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[13px] font-medium text-ink"
-              title={d.name}
-            >
-              <IconDoc className="h-3.5 w-3.5 text-muted" />
-              <span className="max-w-[220px] truncate">@{d.name}</span>
-              <button
-                className="text-muted hover:text-ink"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDocumentMentionsChange?.(documentMentions.filter((x) => x.id !== d.id));
-                }}
-                aria-label={t("docws.mentionRemove", { name: d.name })}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
       <MentionChips />
 
       <div className="relative" onClick={(e) => e.stopPropagation()}>
+        {documentMentions.length > 0 && (
+          // The visible text, drawn behind the textarea (its own text is
+          // transparent; only the caret and selection show). Glyph widths
+          // must match the textarea's: the "@" stays as an invisible
+          // placeholder under the file icon, and the bold is a stroke.
+          <div
+            ref={highlightRef}
+            aria-hidden
+            className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed text-ink`}
+          >
+            {splitDocumentMentions(value, documents.map((d) => d.name)).map((seg, i) =>
+              seg.mention ? (
+                <span key={i} className={`relative ${DOC_MENTION_COLOR}`} style={{ WebkitTextStroke: "0.35px currentColor" }}>
+                  <span className="text-transparent">@</span>
+                  <DocMentionIcon name={seg.text.slice(1)} className="absolute left-0 top-[0.2em]" />
+                  {seg.text.slice(1)}
+                </span>
+              ) : (
+                <span key={i}>{seg.text}</span>
+              ),
+            )}
+            {"\n"}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           value={value}
           autoFocus={autoFocus}
           onChange={handleInput}
           onKeyDown={onKeyDown}
+          onScroll={(e) => {
+            if (highlightRef.current) highlightRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
           rows={Math.min(6, Math.max(1, value.split("\n").length))}
           placeholder={placeholder}
-          className={`max-h-[160px] w-full flex-1 resize-none bg-transparent ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed text-ink outline-none placeholder:text-muted-soft`}
+          className={`relative max-h-[160px] w-full flex-1 resize-none break-words bg-transparent ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed ${documentMentions.length > 0 ? "text-transparent caret-ink" : "text-ink"} outline-none placeholder:text-muted-soft`}
         />
         <MentionPicker
           open={mentionOpen}
@@ -321,14 +367,8 @@ export function Composer({
           onActiveIndex={setMentionIndex}
           onSelect={commitMention}
           onClose={() => setMentionOpen(false)}
+          onItems={setMentionList}
           documents={documents}
-        />
-        {/* count bridge for arrow-key clamp (picker owns the list) */}
-        <MentionCounter
-          keyword={mentionKeyword}
-          open={mentionOpen}
-          onCount={setMentionItemsCount}
-          extra={documents.length}
         />
       </div>
 
@@ -443,29 +483,3 @@ export function Composer({
 
 const NO_DOCUMENT_MENTIONS: MentionRequestItem[] = [];
 
-function MentionCounter({
-  keyword,
-  open,
-  onCount,
-  extra = 0,
-}: {
-  keyword: string;
-  open: boolean;
-  onCount: (n: number) => void;
-  extra?: number;
-}) {
-  const { knowledgeBases, mcpServices, skills } = useChatContext();
-  useEffect(() => {
-    if (!open) return;
-    const q = keyword.trim().toLowerCase();
-    const match = (n: string) => !q || n.toLowerCase().includes(q);
-    onCount(
-      knowledgeBases.filter((k) => match(k.name)).length +
-        mcpServices.filter((m) => match(m.name)).length +
-        skills.filter((s) => match(s.name)).length +
-        20 /* files+tags fetched remotely */ +
-        extra /* open documents */,
-    );
-  }, [keyword, open, knowledgeBases, mcpServices, skills, onCount, extra]);
-  return null;
-}

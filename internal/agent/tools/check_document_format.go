@@ -258,7 +258,7 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		output, evaluated := t.evaluate(runCtx, report)
 		r := &formatCheckResult{
 			Output: output, FileName: fileName, DocumentType: report.DocumentType, Summary: report.Summary,
-			Skills: report.Skills, Evaluated: evaluated, At: time.Now(),
+			Skills: report.Skills, Evaluated: evaluated, Evaluation: report.Evaluation, At: time.Now(),
 		}
 		if report.Segmentation != nil {
 			r.Method = report.Segmentation.Method
@@ -363,6 +363,8 @@ func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []b
 		return
 	}
 	done.Status = types.DocumentFormatCheckReady
+	// the result shown by the chat's format-check view
+	formatChecks.put(ctx, out.result, formatCheckDocumentKey(t.documentID))
 	if info := out.result.DocumentType; info != nil {
 		done.DocumentType = info.Used
 		done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
@@ -434,6 +436,11 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 			kept.CheckedSavedAt = &savedAt
 			kept.Revision = revision
 			formatChecks.storeState(ctx, t.documentID, &kept)
+			// keep the shown result as long as the state that points to it
+			docKey := formatCheckDocumentKey(t.documentID)
+			if r := formatChecks.get(ctx, docKey); r != nil {
+				formatChecks.put(ctx, r, docKey)
+			}
 			logger.Infof(ctx, "check_document_format: save of document %s kept the format; evaluation still current", t.documentID)
 			return
 		}

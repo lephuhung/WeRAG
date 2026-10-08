@@ -243,6 +243,26 @@ type DocumentFormatCheck struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
+// DocumentFormatReport is the evaluation of a finished background format
+// check, shown to the user as information (not as a chat answer).
+type DocumentFormatReport struct {
+	FileName          string                 `json:"file_name"`
+	DocumentType      string                 `json:"document_type,omitempty"`
+	DocumentTypeLabel string                 `json:"document_type_label,omitempty"`
+	Summary           *DocumentFormatSummary `json:"summary,omitempty"`
+	// Evaluation is the Markdown judgment against NĐ30/2020/NĐ-CP.
+	Evaluation string    `json:"evaluation"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
+// DocumentFormatSummary counts the measured checks by status.
+type DocumentFormatSummary struct {
+	Pass int `json:"pass"`
+	Fail int `json:"fail"`
+	Warn int `json:"warn"`
+	Skip int `json:"skip"`
+}
+
 // InProgress reports a check that has not finished: queued or running.
 func (c *DocumentFormatCheck) InProgress() bool {
 	return c != nil && (c.Status == DocumentFormatCheckQueued || c.Status == DocumentFormatCheckRunning)

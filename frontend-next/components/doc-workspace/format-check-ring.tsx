@@ -15,14 +15,15 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * check starts): the ring fills over the profile's expected time. Then the
  * NĐ30 format check: queued (other documents are being checked first) is
  * an empty ring, running fills over the expected run time. A hover
- * explains each. Finished: a click opens the actions that read or apply
- * the evaluation. */
+ * explains each. Finished: a click opens the actions — read the evaluation
+ * (onView: a modal, not a chat turn) or have the assistant apply it. */
 export function FormatCheckRing({
   check,
   reading = null,
   unseen,
   disabled,
   onAsk,
+  onView,
   onOpen,
 }: {
   /** null while only the profile runs (no format check yet). */
@@ -34,6 +35,8 @@ export function FormatCheckRing({
   /** A chat turn is running: the actions wait. */
   disabled: boolean;
   onAsk: (question: string) => void;
+  /** Shows the finished evaluation. */
+  onView: () => void;
   onOpen: () => void;
 }) {
   const { t } = useT();
@@ -164,8 +167,15 @@ export function FormatCheckRing({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
-              onClick={() => ask(t("docws.fcAskView"))}
+              disabled={status === "failed" && disabled}
+              onClick={() => {
+                if (status === "failed") {
+                  ask(t("docws.fcAskView"));
+                  return;
+                }
+                setOpen(false);
+                onView();
+              }}
               className="btn btn-primary btn-sm w-full disabled:opacity-50"
             >
               {status === "failed" ? t("docws.fcRetry") : t("docws.fcView")}

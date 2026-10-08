@@ -45,7 +45,25 @@ type formatCheckResult struct {
 	Method       string                      `json:"method"`
 	Skills       []string                    `json:"skills"`
 	Evaluated    bool                        `json:"evaluated"`
-	At           time.Time                   `json:"at"`
+	// Evaluation is the model's judgment alone (Output wraps it for the
+	// agent); empty on results cached before it was kept.
+	Evaluation string    `json:"evaluation,omitempty"`
+	At         time.Time `json:"at"`
+}
+
+// evaluation is the judgment to show the user, without the agent framing.
+func (r *formatCheckResult) evaluation() string {
+	if r.Evaluation != "" {
+		return r.Evaluation
+	}
+	out := r.Output
+	if i := strings.Index(out, "\n\n"); i >= 0 && strings.HasPrefix(out, "# ") {
+		out = out[i+2:]
+	}
+	if i := strings.LastIndex(out, "\n\n---\n"); i >= 0 {
+		out = out[:i]
+	}
+	return strings.TrimSpace(out)
 }
 
 // data is the tool result data of the check.
@@ -191,6 +209,30 @@ func SessionFormatCheck(ctx context.Context, documentID string) *types.DocumentF
 		return nil
 	}
 	return &st
+}
+
+// formatCheckDocumentKey holds a document's latest background result
+// (workspace ID), so it can be shown without the file bytes.
+func formatCheckDocumentKey(documentID string) string {
+	return "doc:" + documentID
+}
+
+// SessionFormatCheckReport returns the evaluation of a document's finished
+// background check (workspace ID), or nil when none is kept.
+func SessionFormatCheckReport(ctx context.Context, documentID string) *types.DocumentFormatReport {
+	r := formatChecks.get(ctx, formatCheckDocumentKey(documentID))
+	if r == nil || !r.Evaluated {
+		return nil
+	}
+	report := &types.DocumentFormatReport{FileName: r.FileName, Evaluation: r.evaluation(), CheckedAt: r.At}
+	if info := r.DocumentType; info != nil {
+		report.DocumentType = info.Used
+		report.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
+	}
+	if s := r.Summary; s != nil {
+		report.Summary = &types.DocumentFormatSummary{Pass: s.Pass, Fail: s.Fail, Warn: s.Warn, Skip: s.Skip}
+	}
+	return report
 }
 
 // documentTypeLabel turns a rule set label such as

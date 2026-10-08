@@ -254,6 +254,33 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
 }
 
+// GetDocumentFormatCheck returns a target's background format check and,
+// once it is ready, its evaluation (report is null when none is kept), so
+// the chat shows the result without asking the assistant.
+// GET /sessions/:id/documents/:doc_id/format-check
+func (h *DocumentWorkspaceHandler) GetDocumentFormatCheck(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	ws, err := h.workspaces.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
+	if err != nil {
+		h.fail(c, err, "Failed to load document")
+		return
+	}
+	var check *types.DocumentFormatCheck
+	var report *types.DocumentFormatReport
+	if ws.IsTarget() {
+		check = h.precheck.Status(ctx, ws.ID)
+		if check != nil && check.Status == types.DocumentFormatCheckReady {
+			report = h.precheck.Report(ctx, ws.ID)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"check": check, "report": report}})
+}
+
 // ForceSaveDocumentWorkspace asks the Document Server to flush unsaved edits.
 // POST /sessions/:session_id/documents/:doc_id/forcesave (and /document/forcesave)
 func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {

@@ -6,6 +6,8 @@ import { listMessages, stopSession, forkSession, createSession, getSession, type
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
+import { DOC_MENTION_COLOR, DocMention, DocMentionIcon } from "@/components/doc-mention";
+import { splitDocumentMentions } from "@/lib/document-mentions";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
 import { chatErrorKey } from "@/lib/api/chat-errors";
@@ -40,6 +42,7 @@ import { opsBatchFromToolData, type OpsBatch, type OpsFailure } from "@/lib/api/
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
+import { FormatCheckReportModal } from "@/components/doc-workspace/format-check-report";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/toast";
 import { Composer, type ComposerSend } from "@/components/composer";
@@ -61,7 +64,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose, IconDoc } from "@/components/icons";
+import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
@@ -317,6 +320,10 @@ const UserMessageBubble = memo(function UserMessageBubble({
   onEdit?: (content: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const mentionNames = message.document_mentions ?? [];
+  const segments = splitDocumentMentions(message.content, mentionNames);
+  // Turns sent before mentions went inline carry the names only as items.
+  const detachedMentions = mentionNames.filter((n) => !segments.some((seg) => seg.mention && seg.text === `@${n}`));
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(message.content);
@@ -347,23 +354,29 @@ const UserMessageBubble = memo(function UserMessageBubble({
           ))}
         </div>
       )}
-      {(message.document_mentions?.length ?? 0) > 0 && (
+      {detachedMentions.length > 0 && (
         <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
-          {message.document_mentions!.map((name, i) => (
+          {detachedMentions.map((name, i) => (
             <span
               key={`${name}-${i}`}
               title={name}
-              className="flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[12px] font-medium text-ink"
+              className={`flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[12px] font-semibold ${DOC_MENTION_COLOR}`}
             >
-              <IconDoc className="h-3.5 w-3.5 text-muted" />
-              <span className="max-w-[200px] truncate">@{name}</span>
+              <DocMentionIcon name={name} />
+              <span className="max-w-[200px] truncate">{name}</span>
             </span>
           ))}
         </div>
       )}
       {message.document_selection && <SelectionQuote selection={message.document_selection} />}
       <div className={`max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] ${compact ? "px-3 py-2 text-[13px]" : "px-4 py-2.5 text-[14px]"} leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap`}>
-        {message.content}
+        {segments.map((seg, i) =>
+          seg.mention ? (
+            <DocMention key={i} token={seg.text} />
+          ) : (
+            seg.text
+          ),
+        )}
       </div>
       {/* Touch has no hover — actions stay visible on phones; on desktop they
           appear only while hovering the user message. */}
@@ -739,15 +752,6 @@ function ChatBody({ id }: { id: string }) {
       })),
     [openDocs, tr],
   );
-  const [docMentions, setDocMentions] = useState<MentionRequestItem[]>([]);
-  useEffect(() => setDocMentions([]), [id]);
-  // a closed tab cannot be named any more
-  useEffect(() => {
-    setDocMentions((prev) => {
-      const next = prev.filter((m) => openDocs.some((d) => d.id === m.id));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [openDocs]);
   const docFileName = sessionDoc && sessionDoc.sessionId === id ? sessionDoc.fileName : null;
   const noteSessionDocument = useCallback(
     (fileName: string | null) => setSessionDoc(fileName ? { sessionId: id, fileName } : null),
@@ -800,6 +804,19 @@ function ChatBody({ id }: { id: string }) {
       setSeenFormatCheck(null);
     }
   }, [id]);
+  const [formatReportOpen, setFormatReportOpen] = useState(false);
+  useEffect(() => setFormatReportOpen(false), [id]);
+  // A request about the check (fix it, or check again) is a chat turn; the
+  // ring is about the visible tab: name it, so a fix is allowed on it when
+  // several documents are open.
+  const askAboutFormatCheck = (question: string) =>
+    void sendRef.current({
+      query: question,
+      attachments: [],
+      imageFiles: [],
+      mentionedItems: formatCheckDoc ? [{ id: formatCheckDoc.id, name: formatCheckDoc.file_name, type: "document" }] : [],
+      modelId: "",
+    });
   const markFormatCheckSeen = () => {
     if (!formatCheckKey) return;
     setSeenFormatCheck(formatCheckKey);
@@ -1442,7 +1459,6 @@ function ChatBody({ id }: { id: string }) {
     setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection, document_mentions: sentDocMentions.length > 0 ? sentDocMentions : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
     setInput("");
     setImages([]);
-    setDocMentions([]);
 
     // Covered by the commit gate above (no await intervenes, so liveness
     // cannot change here): reaching this point means the turn is live, and
@@ -2097,19 +2113,19 @@ function ChatBody({ id }: { id: string }) {
             unseen={formatCheckKey !== seenFormatCheck}
             disabled={busy}
             onOpen={markFormatCheckSeen}
-            onAsk={(question) =>
-              void sendRef.current({
-                query: question,
-                attachments: [],
-                imageFiles: [],
-                // the ring is about the visible tab: name it, so a fix is
-                // allowed on it when several documents are open
-                mentionedItems: formatCheckDoc
-                  ? [{ id: formatCheckDoc.id, name: formatCheckDoc.file_name, type: "document" }]
-                  : [],
-                modelId: "",
-              })
-            }
+            onAsk={askAboutFormatCheck}
+            onView={() => setFormatReportOpen(true)}
+          />
+        )}
+        {isDocumentAssistant && id !== "new" && (
+          <FormatCheckReportModal
+            open={formatReportOpen}
+            sessionId={id}
+            document={formatCheckDoc}
+            fixDisabled={busy}
+            onClose={() => setFormatReportOpen(false)}
+            onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
+            onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
           />
         )}
       </div>
@@ -2243,8 +2259,6 @@ function ChatBody({ id }: { id: string }) {
             onPickImages={() => imageInputRef.current?.click()}
             compact={compact}
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
-            documentMentions={docMentions}
-            onDocumentMentionsChange={setDocMentions}
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
           />

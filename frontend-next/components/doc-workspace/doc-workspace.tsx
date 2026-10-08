@@ -36,6 +36,7 @@ import {
 } from "@/lib/api/document-workspace";
 import { readAppliedBatches, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { IconBookmark, IconClose, IconDoc, IconPlus, IconRefresh } from "@/components/icons";
+import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { formatFileSize } from "@/components/use-attachments";
 import { DocumentPane } from "./document-pane";
 
@@ -709,11 +710,14 @@ export function DocWorkspace({
                     switchTo(d.id);
                   }
                 }}
-                className={`group flex h-9 min-w-[96px] max-w-[200px] shrink cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] transition-colors ${
-                  selected ? "bg-surface-strong font-medium text-ink" : "text-muted hover:bg-surface-strong/60 hover:text-ink"
+                className={`group relative flex h-9 min-w-[96px] max-w-[200px] shrink cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[13px] transition-colors ${
+                  selected
+                    ? // the open document: blue like the chat's own turns, with an underline accent
+                      "border-[#cfe1fd] bg-[#edf5ff] font-semibold text-[#0f2d59] shadow-2xs after:absolute after:inset-x-2.5 after:-bottom-px after:h-[2px] after:rounded-full after:bg-[#1d5bd8] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] dark:after:bg-[#8ab4ff]"
+                    : "border-transparent text-muted hover:bg-surface-strong hover:text-ink"
                 }`}
               >
-                <IconDoc className="h-3.5 w-3.5 shrink-0" />
+                <FileTypeIcon name={d.file_name} fileType={d.file_type} className="h-4 w-3.5" />
                 <span className="min-w-0 flex-1 truncate">{d.file_name}</span>
                 <button
                   type="button"
@@ -849,7 +853,7 @@ function SourcesList({
           <ul className="flex flex-col gap-1.5">
             {sources.map((d) => (
               <li key={d.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
-                <IconDoc className="h-4 w-4 shrink-0 text-muted" />
+                <FileTypeIcon name={d.file_name} fileType={d.file_type} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] text-ink" title={d.file_name}>
                     {d.handle ? `${d.handle} · ` : ""}
@@ -902,7 +906,7 @@ function SourcesList({
           <ul className="flex flex-col gap-1.5">
             {uploads.map((a) => (
               <li key={a.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
-                <IconDoc className="h-4 w-4 shrink-0 text-muted" />
+                <FileTypeIcon name={a.file_name} fileType={a.file_type} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] text-ink" title={a.file_name}>
                     {a.file_name}

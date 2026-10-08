@@ -15,6 +15,7 @@
  *   POST   /api/v1/sessions/:id/documents/:doc/forcesave  → 202 {revision}
  *   GET    /api/v1/sessions/:id/documents/:doc/download   → docx bytes
  *   GET    /api/v1/sessions/:id/documents/:doc/revisions  → [{seq,label,source,created_at}]
+ *   GET    /api/v1/sessions/:id/documents/:doc/format-check → {check, report}
  *   POST   /api/v1/sessions/:id/documents/:doc/revisions/:seq/restore → {revision, editor_key}
  *
  * Every per-document call takes an optional documentId; without one it uses
@@ -482,6 +483,33 @@ export async function listDocumentRevisions(sessionId: string, documentId?: stri
   try {
     const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId, documentId)}/revisions`);
     return Array.isArray(res?.data) ? res.data : [];
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** The evaluation of a finished background format check. */
+export interface DocumentFormatReport {
+  file_name: string;
+  document_type?: string;
+  document_type_label?: string;
+  summary?: { pass: number; fail: number; warn: number; skip: number };
+  /** Markdown judgment against NĐ30/2020/NĐ-CP. */
+  evaluation: string;
+  checked_at: string;
+}
+
+/** GET …/documents/:doc/format-check: the check state and, once ready, its
+ * evaluation (null when the server no longer keeps it). */
+export async function getDocumentFormatCheck(
+  sessionId: string,
+  documentId: string,
+): Promise<{ check: DocumentFormatCheck | null; report: DocumentFormatReport | null }> {
+  try {
+    const res = await apiGet<Envelope<{ check: DocumentFormatCheck | null; report: DocumentFormatReport | null }>>(
+      `${base(sessionId, documentId)}/format-check`,
+    );
+    return { check: res?.data?.check ?? null, report: res?.data?.report ?? null };
   } catch (err) {
     throw toWorkspaceError(err);
   }
