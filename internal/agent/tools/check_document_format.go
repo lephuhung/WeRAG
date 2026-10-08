@@ -298,14 +298,37 @@ func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
 // bound document's format-check state, after waiting for a format-check
 // slot (see formatCheckSlots).
 func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []byte, fileName string, revision int) {
-	// the result describes the content as read now, however long it queues
 	readAt := time.Now()
 	state := &types.DocumentFormatCheck{
 		Revision: revision, StartedAt: readAt, CheckedSavedAt: &readAt, Fingerprint: formatFingerprint(content),
 	}
-	release, ok := t.waitFormatCheckSlot(ctx, formatCheckKey(content, t.modelName(), ""), state)
-	if !ok {
-		return
+	release, free := tryFormatCheckSlot()
+	if !free {
+		// Queued: hold no private copy of the file (up to 30 MB) for the
+		// minutes the wait can take; read it again once a slot is free —
+		// from workspaceDocs, so usually without a download — which also
+		// checks a save made while waiting.
+		key := formatCheckKey(content, t.modelName(), "")
+		content = nil
+		var ok bool
+		if release, ok = t.waitFormatCheckSlot(ctx, key, state); !ok {
+			return
+		}
+		tenantID, _ := types.TenantIDFromContext(ctx)
+		var err error
+		content, fileName, revision, err = t.source(ctx, tenantID, t.documentID)
+		if err != nil {
+			if release != nil {
+				release()
+			}
+			failed := time.Now()
+			state.Status, state.FinishedAt = types.DocumentFormatCheckFailed, &failed
+			formatChecks.storeState(ctx, t.documentID, state)
+			logger.Warnf(ctx, "check_document_format: background check of document %s could not read it: %v", t.documentID, err)
+			return
+		}
+		readAt = time.Now()
+		state.Revision, state.CheckedSavedAt, state.Fingerprint = revision, &readAt, formatFingerprint(content)
 	}
 	if release != nil {
 		defer release()

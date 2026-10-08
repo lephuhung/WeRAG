@@ -32,17 +32,23 @@ func envPositiveInt(key string, def int) int {
 	return def
 }
 
+// tryFormatCheckSlot takes a free slot without waiting.
+func tryFormatCheckSlot() (release func(), ok bool) {
+	slots := formatCheckSlots
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, true
+	default:
+		return nil, false
+	}
+}
+
 // waitFormatCheckSlot blocks until a slot is free, recording state as
 // queued meanwhile. It returns release (nil when no slot was taken because
 // the result key got cached while waiting, e.g. by the agent's own call).
 func (t *CheckDocumentFormatTool) waitFormatCheckSlot(ctx context.Context, key string, state *types.DocumentFormatCheck) (release func(), ok bool) {
 	slots := formatCheckSlots
 	release = func() { <-slots }
-	select {
-	case slots <- struct{}{}:
-		return release, true
-	default:
-	}
 	queued := *state
 	queued.Status = types.DocumentFormatCheckQueued
 	ticker := time.NewTicker(formatCheckQueuePoll)

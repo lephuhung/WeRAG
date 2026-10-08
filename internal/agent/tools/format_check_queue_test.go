@@ -106,3 +106,38 @@ func TestBackgroundFormatChecksQueueBeyondTheSlots(t *testing.T) {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+// A queued check reads the document again once it gets a slot: it holds no
+// copy while waiting, and a save made meanwhile is what gets checked.
+func TestQueuedFormatCheckReadsTheDocumentAgain(t *testing.T) {
+	resetFormatChecks(t)
+	useFormatCheckSlots(t, 1)
+	model := &blockingChat{gate: make(chan struct{}), entered: make(chan struct{}, 16)}
+	opened := false
+	t.Cleanup(func() {
+		if !opened {
+			close(model.gate)
+		}
+	})
+
+	toolA := NewCheckDocumentFormatToolForWorkspace(fakeWorkspaceWithID(docxFixture(t), "ws-r-a"), model, "sess-r").ForDocument("ws-r-a")
+	wsB := fakeWorkspaceWithID(testCongVan(t, [4]int{20, 15, 30, 20}), "ws-r-b")
+	toolB := NewCheckDocumentFormatToolForWorkspace(wsB, model, "sess-r").ForDocument("ws-r-b")
+
+	toolA.Prewarm(toolCtx())
+	<-model.entered
+	toolB.Prewarm(toolCtx())
+	waitState(t, "ws-r-b", func(st *types.DocumentFormatCheck) bool { return st.Status == types.DocumentFormatCheckQueued })
+
+	// saved while queued
+	saved := testCongVan(t, [4]int{25, 15, 30, 20})
+	wsB.content = saved
+	wsB.ws.Revision = 4
+
+	opened = true
+	close(model.gate)
+	st := waitState(t, "ws-r-b", func(st *types.DocumentFormatCheck) bool { return st.Status == types.DocumentFormatCheckReady })
+	if st.Revision != 4 || st.Fingerprint != formatFingerprint(saved) {
+		t.Fatalf("queued check must check the document as saved meanwhile: %+v", st)
+	}
+}
