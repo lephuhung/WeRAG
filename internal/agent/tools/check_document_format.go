@@ -99,6 +99,9 @@ type CheckDocumentFormatTool struct {
 	// documentID is the workspace document Prewarm and Recheck work on
 	// (see ForDocument); their state is kept under it.
 	documentID string
+	// profiler makes the document's first profile inside the background
+	// run's slot, before the evaluation (see WithProfiler); nil skips it.
+	profiler *DocumentProfiler
 }
 
 // NewCheckDocumentFormatTool builds the tool for one session, checking the
@@ -145,6 +148,16 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 func (t *CheckDocumentFormatTool) ForDocument(documentID string) *CheckDocumentFormatTool {
 	c := *t
 	c.documentID = documentID
+	return &c
+}
+
+// WithProfiler returns a copy whose background run first makes the bound
+// document's profile when it has none ready: the profile is the cheap
+// call the chat needs to tell documents apart, the evaluation the long
+// one, and both share the format-check slots.
+func (t *CheckDocumentFormatTool) WithProfiler(p *DocumentProfiler) *CheckDocumentFormatTool {
+	c := *t
+	c.profiler = p
 	return &c
 }
 
@@ -332,6 +345,9 @@ func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []b
 	}
 	if release != nil {
 		defer release()
+	}
+	if t.profiler != nil && t.documentID != "" {
+		t.profiler.ensureFirst(ctx, t.documentID)
 	}
 	started := time.Now()
 	state.Status, state.StartedAt = types.DocumentFormatCheckRunning, started

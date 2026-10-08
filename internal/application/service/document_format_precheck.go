@@ -24,6 +24,9 @@ type DocumentFormatPrecheck struct {
 	// started holds the documents already handed to a check, so the
 	// editor's polling does not resolve the model again and again.
 	started sync.Map
+	// profiling holds the documents whose profile job is being handed over
+	// (model resolution), for the same reason.
+	profiling sync.Map
 }
 
 // NewDocumentFormatPrecheck wires the background format check.
@@ -32,7 +35,14 @@ func NewDocumentFormatPrecheck(
 	agents interfaces.CustomAgentService,
 	models interfaces.ModelService,
 ) *DocumentFormatPrecheck {
-	return &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models}
+	p := &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models}
+	// a chat upload's profile starts once its text is stored
+	if n, ok := workspaces.(interface {
+		OnSourceTextReady(func(context.Context, *types.DocumentWorkspace))
+	}); ok {
+		n.OnSourceTextReady(p.StartProfile)
+	}
+	return p
 }
 
 // Start begins the check of one target (workspace ID) of the session in
@@ -67,8 +77,66 @@ func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, ses
 		if chatModel == nil {
 			return
 		}
-		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).ForDocument(documentID).Prewarm(ctx)
+		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).ForDocument(documentID).
+			WithProfiler(p.profiler(sessionID, chatModel)).Prewarm(ctx)
 	}()
+}
+
+// profiler is the session's document profiler with the knowledge-base
+// profile's reconciliation of số hiệu and type.
+func (p *DocumentFormatPrecheck) profiler(sessionID string, chatModel chat.Chat) *tools.DocumentProfiler {
+	return tools.NewDocumentProfiler(p.workspaces, chatModel, sessionID).WithIdentity(applyLegalIdentity)
+}
+
+// StartProfile makes sure a document of either role has a profile: it
+// queues one when none exists (or a source's text changed, or the role
+// changed), and for a target edited since its profile plans the refresh
+// (a fixed docProfileRefreshDelay after the first save it does not cover;
+// see tools.ScheduleDocumentProfileRefresh). Cheap when nothing is due: it
+// reads only the profile state. It returns at once.
+func (p *DocumentFormatPrecheck) StartProfile(ctx context.Context, ws *types.DocumentWorkspace) {
+	if p == nil || p.workspaces == nil || ws == nil || ws.ID == "" || ws.TenantID == 0 {
+		return
+	}
+	start, refresh := tools.DocumentProfileNeed(ctx, ws)
+	if !start && !refresh {
+		return
+	}
+	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, ws.TenantID)
+	if refresh {
+		sessionID, documentID := ws.SessionID, ws.ID
+		tools.ScheduleDocumentProfileRefresh(ctx, ws, func() {
+			p.profiler(sessionID, p.chatModel(ctx, p.agent(ctx))).Refresh(ctx, documentID)
+		})
+		return
+	}
+	if _, busy := p.profiling.LoadOrStore(ws.ID, struct{}{}); busy {
+		return
+	}
+	row := *ws
+	go func() {
+		defer p.profiling.Delete(row.ID)
+		// no model: the profile fails with "no model", shown as such
+		p.profiler(row.SessionID, p.chatModel(ctx, p.agent(ctx))).Start(ctx, &row)
+	}()
+}
+
+// StopProfile cancels a document's planned profile refresh (its tab was
+// closed or it became a source); the last profile is kept.
+func (p *DocumentFormatPrecheck) StopProfile(documentID string) {
+	if p == nil {
+		return
+	}
+	tools.CancelDocumentProfileRefresh(documentID)
+}
+
+// Profile reports a document's profile for the API (no hash; stale when
+// the document was edited since), or nil when none was made.
+func (p *DocumentFormatPrecheck) Profile(ctx context.Context, ws *types.DocumentWorkspace) *types.DocumentProfile {
+	if p == nil || ws == nil {
+		return nil
+	}
+	return tools.SessionDocumentProfile(ctx, ws.ID).Public(ws)
 }
 
 // Refresh follows a save of the document made after its background check:

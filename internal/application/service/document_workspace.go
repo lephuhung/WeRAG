@@ -117,6 +117,11 @@ type documentWorkspaceService struct {
 	// that times out removes only its own.
 	waitersMu sync.Mutex
 	waiters   map[string][]*saveWaiter
+
+	// sourceTextReady are called once a source's text is stored (see
+	// OnSourceTextReady).
+	sourceTextMu    sync.Mutex
+	sourceTextReady []func(ctx context.Context, ws *types.DocumentWorkspace)
 }
 
 // NewDocumentWorkspaceService wires the document-assistant workspace service.

@@ -93,6 +93,7 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 		return
 	}
 	h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
+	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
 	if err != nil {
 		h.fail(c, err, "Failed to build editor config")
@@ -124,6 +125,10 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 		if ws.IsTarget() {
 			view.FormatCheck = h.precheck.Status(ctx, ws.ID)
 		}
+		// a document of either role without a profile (opened before a
+		// restart, or its state expired) gets one; an edited target's
+		// refresh is planned
+		h.precheck.StartProfile(ctx, ws)
 		out = append(out, view)
 	}
 	activeID := ""
@@ -170,6 +175,9 @@ func (h *DocumentWorkspaceHandler) DeleteDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to close document")
 		return
 	}
+	if id := documentIDParam(c); id != "" {
+		h.precheck.StopProfile(id)
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -194,6 +202,8 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 		// a save since the check: keep it or check again (format changed)
 		h.precheck.Refresh(ctx, ws)
 	}
+	// no profile yet, or a save since it: start one or plan its refresh
+	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
 	if err != nil {
 		h.fail(c, err, "Failed to build editor config")
@@ -279,7 +289,11 @@ func (h *DocumentWorkspaceHandler) SetDocumentRole(c *gin.Context) {
 	}
 	if ws.IsTarget() {
 		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
+	} else {
+		// a source is never refreshed on a schedule
+		h.precheck.StopProfile(ws.ID)
 	}
+	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
 	if err != nil {
 		h.fail(c, err, "Failed to build editor config")

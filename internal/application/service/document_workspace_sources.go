@@ -143,6 +143,28 @@ func (s *documentWorkspaceService) CreateSourceFromAttachment(
 	return ws, nil
 }
 
+// OnSourceTextReady registers fn to be called once a source's text is
+// stored (upload parsed, or a target turned into a source), so its profile
+// can be made. fn must return quickly.
+func (s *documentWorkspaceService) OnSourceTextReady(fn func(ctx context.Context, ws *types.DocumentWorkspace)) {
+	if fn == nil {
+		return
+	}
+	s.sourceTextMu.Lock()
+	defer s.sourceTextMu.Unlock()
+	s.sourceTextReady = append(s.sourceTextReady, fn)
+}
+
+func (s *documentWorkspaceService) notifySourceTextReady(ctx context.Context, ws *types.DocumentWorkspace) {
+	s.sourceTextMu.Lock()
+	fns := append([]func(context.Context, *types.DocumentWorkspace){}, s.sourceTextReady...)
+	s.sourceTextMu.Unlock()
+	for _, fn := range fns {
+		row := *ws
+		fn(ctx, &row)
+	}
+}
+
 // onAttachmentParsed copies the parsed text of an upload into its source
 // row, if the upload is one.
 func (s *documentWorkspaceService) onAttachmentParsed(ctx context.Context, tenantID uint64, sessionID, attachmentID string) {
@@ -194,6 +216,10 @@ func (s *documentWorkspaceService) syncSourceText(ctx context.Context, ws *types
 	}
 	if err := s.repo.Update(ctx, ws); err != nil {
 		logger.Warnf(ctx, "[DocumentWorkspace] update text status of source=%s failed: %v", ws.ID, err)
+		return
+	}
+	if ws.TextStatus == types.DocumentSourceTextReady {
+		s.notifySourceTextReady(ctx, ws)
 	}
 }
 
@@ -367,6 +393,7 @@ func (s *documentWorkspaceService) demote(ctx context.Context, ws *types.Documen
 		return nil, apperrors.NewConflictError("document changed while it was being turned into a source; try again")
 	}
 	logger.Infof(ctx, "[DocumentWorkspace] target=%s demoted to source (%s)", ws.ID, ws.Handle())
+	s.notifySourceTextReady(ctx, ws)
 	return ws, nil
 }
 
