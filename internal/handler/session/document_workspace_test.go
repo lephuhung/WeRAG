@@ -463,3 +463,55 @@ func TestDocumentRevisionRoutes(t *testing.T) {
 	rec = doJSON(r, http.MethodPost, "/sessions/empty/document/revisions/1/restore", "", nil)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// proposalWorkspaces records the document, label, source and wait of the
+// snapshot the apply route takes.
+type proposalWorkspaces struct {
+	revisionWorkspaces
+	snapDocID string
+	snapWait  time.Duration
+}
+
+func (f *proposalWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, error) {
+	f.snapDocID, f.snapWait = documentID, wait
+	return f.revisionWorkspaces.Snapshot(ctx, tenantID, sessionID, documentID, label, source, wait)
+}
+
+func TestApplyRewriteProposalSnapshotsAsAI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ws := &proposalWorkspaces{revisionWorkspaces: revisionWorkspaces{
+		routeWorkspaces: routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{
+			"mine": {ID: "ws-mine", SessionID: "mine"},
+		}},
+		revs: []*types.DocumentRevision{{Seq: 1, Label: "Gốc", Source: "manual"}},
+	}}
+	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true, "admin-view": false}}
+	h := NewDocumentWorkspaceHandler(sessions, ws, nil, nil)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
+	r.POST("/sessions/:session_id/documents/:doc_id/proposals/apply", h.ApplyRewriteProposal)
+
+	rec := doJSON(r, http.MethodPost, "/sessions/mine/documents/ws-mine/proposals/apply", `{"batch_id":"b-1","variant_id":"v2"}`, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.JSONEq(t, `{"success":true,"data":{"snapshot_seq":2}}`, rec.Body.String())
+	require.Equal(t, "ai: viết lại (phương án 2)", ws.snapLabel)
+	require.Equal(t, types.DocumentRevisionSourceAI, ws.snapSource)
+	require.Equal(t, "ws-mine", ws.snapDocID)
+	require.Equal(t, proposalSnapshotWait, ws.snapWait, "the snapshot waits for the editor to flush")
+
+	for name, body := range map[string]string{
+		"no body":     "",
+		"no batch":    `{"variant_id":"v1"}`,
+		"bad variant": `{"batch_id":"b-1","variant_id":"x"}`,
+		"no variant":  `{"batch_id":"b-1"}`,
+	} {
+		rec = doJSON(r, http.MethodPost, "/sessions/mine/documents/ws-mine/proposals/apply", body, nil)
+		require.Equal(t, http.StatusBadRequest, rec.Code, name)
+	}
+	for _, sess := range []string{"admin-view", "someone-else"} {
+		rec = doJSON(r, http.MethodPost, "/sessions/"+sess+"/documents/ws-mine/proposals/apply", `{"batch_id":"b","variant_id":"v1"}`, nil)
+		require.Equal(t, http.StatusNotFound, rec.Code, sess)
+	}
+	require.Len(t, ws.revs, 2, "rejected requests take no snapshot")
+}

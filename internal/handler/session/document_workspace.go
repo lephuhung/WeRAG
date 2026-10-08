@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -454,6 +455,54 @@ func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"seq": rev.Seq}})
+}
+
+// ApplyRewriteProposalRequest names the version of a rewrite proposal
+// (rewrite_paragraphs in propose mode) the user is about to apply.
+type ApplyRewriteProposalRequest struct {
+	BatchID   string `json:"batch_id"`
+	VariantID string `json:"variant_id"`
+}
+
+// proposalVariantID is the id rewrite_paragraphs gives a version: v1, v2, …
+var proposalVariantID = regexp.MustCompile(`^v([1-9])$`)
+
+// proposalSnapshotWait bounds how long the snapshot waits for the editor to
+// flush unsaved changes, as the editing tools' snapshot does.
+const proposalSnapshotWait = 20 * time.Second
+
+// ApplyRewriteProposal takes the AI snapshot (undo point and timeline entry)
+// before the browser applies a proposed rewrite through the editor plugin.
+// Nothing else is recorded: which version was applied lives in the client.
+// POST /sessions/:session_id/documents/:doc_id/proposals/apply
+func (h *DocumentWorkspaceHandler) ApplyRewriteProposal(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req ApplyRewriteProposalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid proposal request"))
+		return
+	}
+	m := proposalVariantID.FindStringSubmatch(strings.TrimSpace(req.VariantID))
+	if strings.TrimSpace(req.BatchID) == "" || m == nil {
+		c.Error(apperrors.NewBadRequestError("batch_id and variant_id (v1, v2, …) are required"))
+		return
+	}
+	rev, err := h.workspaces.Snapshot(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c),
+		"ai: viết lại (phương án "+m[1]+")", types.DocumentRevisionSourceAI, proposalSnapshotWait)
+	if err != nil {
+		h.fail(c, err, "Failed to snapshot document")
+		return
+	}
+	seq := 0
+	if rev != nil {
+		seq = rev.Seq
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"snapshot_seq": seq}})
 }
 
 // OnlyOfficeCallback receives Document Server save callbacks. It is public

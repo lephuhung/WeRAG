@@ -365,7 +365,7 @@ func TestRewriteParagraphsPlansOpsForTheSelection(t *testing.T) {
 	before := append([]byte(nil), ws.content...)
 	ctx := selectionCtx("Sở Nội vụ đề nghị các đơn vị triển khai công tác cải cách hành chính năm 2026.\n" +
 		"Đề nghị các đơn vị báo cáo kết quả trước ngày 30 tháng 11 năm 2026.\nTrên đây là nội dung đề nghị")
-	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "sess-1"), `{"edits":[
+	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "sess-1"), `{"mode":"apply","edits":[
 		{"paragraph":8,"old":"năm 2026","new":"năm 2027"},
 		{"match":"Trên đây là nội dung","new":"Trên đây là đề nghị của Sở Nội vụ./."},
 		{"paragraph":8,"old":"Sở Nội vụ","new":"Sở Nội vụ tỉnh"}
@@ -416,7 +416,7 @@ func TestRewriteParagraphsNeedsASelection(t *testing.T) {
 	}
 	// an edit outside the selected passage is refused
 	ctx := selectionCtx("Đề nghị các đơn vị báo cáo kết quả")
-	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"paragraph":12,"new":"Trần Văn B"}]}`)
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"mode":"apply","edits":[{"paragraph":12,"new":"Trần Văn B"}]}`)
 	if res.Success || !strings.Contains(res.Error, "không nằm trong phần người dùng đã bôi đen") || res.Data["failed"] != 1 {
 		t.Fatalf("an edit outside the selection: %+v", res)
 	}
@@ -424,7 +424,7 @@ func TestRewriteParagraphsNeedsASelection(t *testing.T) {
 		t.Fatalf("ops: %+v", ops)
 	}
 	// inside it, the same call works
-	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"paragraph":9,"old":"báo cáo kết quả","new":"gửi báo cáo kết quả"}]}`)
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"mode":"apply","edits":[{"paragraph":9,"old":"báo cáo kết quả","new":"gửi báo cáo kết quả"}]}`)
 	if !res.Success || len(resultOps(t, res)) != 1 {
 		t.Fatalf("an edit inside the selection: %+v", res)
 	}
@@ -432,7 +432,7 @@ func TestRewriteParagraphsNeedsASelection(t *testing.T) {
 
 func TestRewriteParagraphsAmbiguousMatchFails(t *testing.T) {
 	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
-	res := runToolCtx(t, selectionCtx("các đơn vị"), NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"match":"các đơn vị","new":"x"}]}`)
+	res := runToolCtx(t, selectionCtx("các đơn vị"), NewRewriteParagraphsTool(ws, "s"), `{"mode":"apply","edits":[{"match":"các đơn vị","new":"x"}]}`)
 	if res.Success {
 		t.Fatalf("an ambiguous match must not be guessed: %+v", res)
 	}
@@ -448,7 +448,7 @@ func TestRewriteParagraphsAmbiguousMatchFails(t *testing.T) {
 
 func TestRewriteParagraphsPartialFailure(t *testing.T) {
 	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
-	res := runToolCtx(t, selectionCtx("Đề nghị các đơn vị báo cáo kết quả trước ngày 30 tháng 11 năm 2026."), NewRewriteParagraphsTool(ws, "s"), `{"edits":[
+	res := runToolCtx(t, selectionCtx("Đề nghị các đơn vị báo cáo kết quả trước ngày 30 tháng 11 năm 2026."), NewRewriteParagraphsTool(ws, "s"), `{"mode":"apply","edits":[
 		{"paragraph":9,"old":"không có","new":"x"},
 		{"paragraph":9,"old":"30 tháng 11","new":"15 tháng 12"}
 	]}`)
@@ -479,7 +479,7 @@ func TestRewriteParagraphsValidatesInput(t *testing.T) {
 		}
 	}
 	// deleting part of a paragraph is allowed: an empty replacement
-	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"edits":[{"paragraph":8,"old":"Sở Nội vụ ","new":""}]}`)
+	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"), `{"mode":"apply","edits":[{"paragraph":8,"old":"Sở Nội vụ ","new":""}]}`)
 	ops := resultOps(t, res)
 	if !res.Success || len(ops) != 1 || ops[0].New == nil || *ops[0].New != "" {
 		t.Fatalf("substring deletion: %+v", res)

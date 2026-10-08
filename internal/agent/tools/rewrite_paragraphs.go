@@ -8,15 +8,21 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
 )
 
 var rewriteParagraphsTool = BaseTool{
 	name: ToolRewriteParagraphs,
-	description: `Rewrite the passage the user highlighted in the Word document open in this conversation's editor. The tool plans the replacement; the editor applies it as an ordinary edit, which the user undoes with Ctrl+Z.
+	description: `Rewrite the passage the user highlighted in the Word document open in this conversation's editor.
 
 ## When to Use
 
 ONLY when the user explicitly asks in this turn to rewrite, shorten, correct or reword text ("viết lại", "sửa câu này", "rút gọn") AND has highlighted the passage (the <document_selection> block). Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
+
+## Propose or apply
+
+- mode "propose" (the default for a highlighted passage): the document is NOT changed. The rewritten versions are shown to the user under your answer, each with a "Thay vào văn bản" button; the user picks one and it replaces the highlighted passage. Never say the text was changed — tell the user to choose a version with the button.
+- mode "apply": the edit is applied in the editor at once (the user undoes it with Ctrl+Z). Pass it ONLY when the user explicitly asked to apply the change right away ("sửa luôn", "thay luôn vào văn bản").
 
 ## Input
 
@@ -25,6 +31,8 @@ ONLY when the user explicitly asks in this turn to rewrite, shorten, correct or 
   - match: a distinctive piece of the paragraph's current text (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
   - old: the exact substring to replace inside that paragraph (preferred); omit to replace the whole paragraph text.
   - new: the replacement text (required; it may be empty only together with old, to delete that substring).
+- variants: propose mode, exactly one edit only: other wordings of that edit's new text, so the user can choose. edits[0].new is version 1; give at most 3 versions in all (e.g. version 1 "giữ nguyên ý, gọn hơn", version 2 "đầy đủ hơn").
+- labels: optional short names of the versions in order (version 1 = edits[0].new), e.g. ["Gọn hơn", "Đầy đủ hơn"]; default "Phương án 1", "Phương án 2"…
 - note: optional short reason for the change, shown back in the result.
 
 Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes.`,
@@ -61,6 +69,23 @@ Keep the administrative register and the original meaning; change only what was 
         "required": ["new"]
       }
     },
+    "mode": {
+      "type": "string",
+      "enum": ["propose", "apply"],
+      "description": "propose (default with a highlighted passage): show the versions for the user to choose, the document is not changed; apply: change the document at once — only when the user explicitly asked to apply immediately"
+    },
+    "variants": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {"type": "string"},
+      "description": "Propose mode with exactly one edit: alternative wordings of edits[0].new (which is version 1); at most 3 versions in all"
+    },
+    "labels": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {"type": "string"},
+      "description": "Optional short names of the versions in order (version 1 = edits[0].new)"
+    },
     "note": {
       "type": "string",
       "description": "Optional short reason for the edits"
@@ -83,6 +108,74 @@ type rewriteParagraphsInput struct {
 	Edits    []rewriteEdit `json:"edits"`
 	Note     string        `json:"note"`
 	Document string        `json:"document"`
+	Mode     string        `json:"mode"`
+	Variants []string      `json:"variants"`
+	Labels   []string      `json:"labels"`
+}
+
+// Rewrite modes: a proposal leaves the document as it is and lets the user
+// apply one version from the chat; apply hands the ops to the editor now.
+const (
+	rewriteModePropose = "propose"
+	rewriteModeApply   = "apply"
+)
+
+// maxRewriteVariants caps the versions of one proposal.
+const maxRewriteVariants = 3
+
+// rewriteMode is the mode a call runs in: the one asked for, else propose
+// when the user's selection is in the target document, else apply.
+func rewriteMode(asked string, sel *types.DocumentSelection, target *types.DocumentWorkspace) string {
+	switch asked {
+	case rewriteModePropose, rewriteModeApply:
+		return asked
+	}
+	if selectionIn(sel, target) {
+		return rewriteModePropose
+	}
+	return rewriteModeApply
+}
+
+// rewriteVersions is the list of new texts a proposal offers: edits[0].new
+// then the variants (a variant repeating an earlier text is dropped).
+func rewriteVersions(in rewriteParagraphsInput) ([]string, string) {
+	if len(in.Variants) == 0 {
+		return nil, ""
+	}
+	if len(in.Edits) != 1 {
+		return nil, "variants chỉ dùng được khi edits có đúng một chỗ sửa"
+	}
+	versions := []string{*in.Edits[0].New}
+	for i, v := range in.Variants {
+		if in.Edits[0].Old == nil && strings.TrimSpace(v) == "" {
+			return nil, fmt.Sprintf("variants[%d] is empty", i)
+		}
+		dup := false
+		for _, have := range versions {
+			if anchorText(have) == anchorText(v) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			versions = append(versions, v)
+		}
+	}
+	if len(versions) > maxRewriteVariants {
+		return nil, fmt.Sprintf("too many versions (%d): at most %d in all, edits[0].new counting as version 1",
+			len(versions), maxRewriteVariants)
+	}
+	return versions, ""
+}
+
+// rewriteVariant is one version of a proposal, reported in Data.variants:
+// the frontend applies its ops when the user picks it.
+type rewriteVariant struct {
+	ID    string       `json:"id"`
+	Label string       `json:"label"`
+	Old   string       `json:"old"`
+	New   string       `json:"new"`
+	Ops   []DocumentOp `json:"ops"`
 }
 
 // RewriteParagraphsTool plans text replacements in the user's selected
@@ -132,6 +225,16 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		}
 	}
 
+	switch in.Mode {
+	case "", rewriteModePropose, rewriteModeApply:
+	default:
+		return &types.ToolResult{Success: false, Error: fmt.Sprintf("mode %q: use propose or apply", in.Mode)}, nil
+	}
+	versions, msg := rewriteVersions(in)
+	if msg != "" {
+		return &types.ToolResult{Success: false, Error: msg}, nil
+	}
+
 	sel := types.DocumentSelectionFromContext(ctx)
 	if sel == nil {
 		return &types.ToolResult{Success: false, Error: errRewriteNeedsSelection}, nil
@@ -144,6 +247,12 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 	if !selectionIn(sel, target) {
 		return &types.ToolResult{Success: false, Error: errSelectionElsewhere(sel, target)}, nil
 	}
+	if rewriteMode(in.Mode, sel, target) == rewriteModePropose {
+		return t.propose(ctx, in, versions, sel, target)
+	}
+	if len(versions) > 0 {
+		return &types.ToolResult{Success: false, Error: "variants chỉ dùng khi đề xuất (mode propose): khi áp dụng ngay chỉ có một nội dung mới"}, nil
+	}
 	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "viết lại đoạn văn")
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
@@ -153,22 +262,7 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 	}
 	paras := doc.Paragraphs()
-	vdoc := newVirtualDoc(paras)
-
-	var ops []DocumentOp
-	changes := make([]rewriteChange, 0, len(in.Edits))
-	planned, failed := 0, 0
-	for _, e := range in.Edits {
-		ch, op := planRewrite(doc, paras, vdoc, sel, e)
-		switch ch.Status {
-		case "planned":
-			planned++
-			ops = append(ops, op)
-		case "failed":
-			failed++
-		}
-		changes = append(changes, ch)
-	}
+	ops, changes, planned, failed := planRewrites(doc, paras, sel, in.Edits)
 
 	var out strings.Builder
 	switch {
@@ -184,14 +278,8 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		switch ch.Status {
 		case "planned":
 			fmt.Fprintf(&out, "- Đoạn [%d]: “%s” → “%s”\n", ch.Paragraph, clipRunes(ch.Old, 120), clipRunes(ch.New, 120))
-		case "unchanged":
-			fmt.Fprintf(&out, "- Đoạn [%d]: nội dung mới trùng nội dung cũ, không thay đổi\n", ch.Paragraph)
 		default:
-			if ch.Paragraph >= 0 {
-				fmt.Fprintf(&out, "- Đoạn [%d]: KHÔNG sửa — %s\n", ch.Paragraph, ch.Error)
-			} else {
-				fmt.Fprintf(&out, "- KHÔNG sửa — %s\n", ch.Error)
-			}
+			writeRewriteSkip(&out, ch)
 		}
 	}
 	if planned > 0 {
@@ -203,6 +291,141 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 	data["failed"] = failed
 	data["changes"] = changes
 	if planned == 0 && failed > 0 {
+		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
+	}
+	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
+}
+
+// planRewrites plans the edits in order on one virtual copy of paras.
+func planRewrites(doc *docxedit.Document, paras []docxedit.Paragraph, sel *types.DocumentSelection, edits []rewriteEdit) ([]DocumentOp, []rewriteChange, int, int) {
+	vdoc := newVirtualDoc(paras)
+	var ops []DocumentOp
+	changes := make([]rewriteChange, 0, len(edits))
+	planned, failed := 0, 0
+	for _, e := range edits {
+		ch, op := planRewrite(doc, paras, vdoc, sel, e)
+		switch ch.Status {
+		case "planned":
+			planned++
+			ops = append(ops, op)
+		case "failed":
+			failed++
+		}
+		changes = append(changes, ch)
+	}
+	return ops, changes, planned, failed
+}
+
+// writeRewriteSkip reports an edit that was not planned.
+func writeRewriteSkip(out *strings.Builder, ch rewriteChange) {
+	switch {
+	case ch.Status == "unchanged":
+		fmt.Fprintf(out, "- Đoạn [%d]: nội dung mới trùng nội dung cũ, không thay đổi\n", ch.Paragraph)
+	case ch.Paragraph >= 0:
+		fmt.Fprintf(out, "- Đoạn [%d]: KHÔNG sửa — %s\n", ch.Paragraph, ch.Error)
+	default:
+		fmt.Fprintf(out, "- KHÔNG sửa — %s\n", ch.Error)
+	}
+}
+
+// rewriteProposalNote ends the Output of a proposal.
+const rewriteProposalNote = "Văn bản CHƯA thay đổi. Người dùng chọn một phương án bằng nút “Thay vào văn bản” dưới câu trả lời; " +
+	"hãy giới thiệu ngắn các phương án và mời họ chọn — không nói là đã sửa."
+
+// propose plans every version of the rewrite on the document as stored, takes
+// no snapshot and changes nothing: the user applies one version from the
+// chat (the proposals/apply route snapshots first).
+func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraphsInput, versions []string,
+	sel *types.DocumentSelection, target *types.DocumentWorkspace,
+) (*types.ToolResult, error) {
+	content, ws, err := readListedDocument(ctx, t.workspace, t.sessionID, target)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
+	}
+	paras := doc.Paragraphs()
+	if len(versions) == 0 {
+		versions = []string{*in.Edits[0].New}
+	}
+	var (
+		variants []rewriteVariant
+		changes  []rewriteChange
+		planned  int
+		failed   int
+	)
+	for k, text := range versions {
+		edits := in.Edits
+		if len(in.Variants) > 0 {
+			e := in.Edits[0]
+			nw := text
+			e.New = &nw
+			edits = []rewriteEdit{e}
+		}
+		ops, chs, p, f := planRewrites(doc, paras, sel, edits)
+		if k == 0 {
+			changes, planned, failed = chs, p, f
+		}
+		if len(ops) == 0 {
+			continue
+		}
+		var olds, news []string
+		for _, ch := range chs {
+			if ch.Status == "planned" {
+				olds, news = append(olds, ch.Old), append(news, ch.New)
+			}
+		}
+		label := fmt.Sprintf("Phương án %d", len(variants)+1)
+		if k < len(in.Labels) && strings.TrimSpace(in.Labels[k]) != "" {
+			label = clipRunes(strings.TrimSpace(in.Labels[k]), 60)
+		}
+		variants = append(variants, rewriteVariant{
+			ID: fmt.Sprintf("v%d", len(variants)+1), Label: label,
+			Old: strings.Join(olds, "\n"), New: strings.Join(news, "\n"), Ops: ops,
+		})
+	}
+
+	var out strings.Builder
+	if len(variants) > 0 {
+		fmt.Fprintf(&out, "Đề xuất %d phương án viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", len(variants), ws.FileName)
+	} else {
+		fmt.Fprintf(&out, "Không có thay đổi nào cho %s; tài liệu giữ nguyên.\n", ws.FileName)
+	}
+	if note := strings.TrimSpace(in.Note); note != "" {
+		fmt.Fprintf(&out, "Lý do: %s\n", note)
+	}
+	if len(variants) > 0 {
+		fmt.Fprintf(&out, "Đoạn gốc: “%s”\n", variants[0].Old)
+		for _, v := range variants {
+			fmt.Fprintf(&out, "- %s: “%s”\n", v.Label, v.New)
+		}
+	}
+	for _, ch := range changes {
+		if ch.Status != "planned" {
+			writeRewriteSkip(&out, ch)
+		}
+	}
+	if len(variants) > 0 {
+		out.WriteString("\n" + rewriteProposalNote + "\n")
+	}
+	if variants == nil {
+		variants = []rewriteVariant{}
+	}
+	data := map[string]interface{}{
+		"proposal":       true,
+		"ops_batch_id":   uuid.NewString(),
+		"document_id":    ws.ID,
+		"document":       DocumentLabel(ws),
+		"file_name":      ws.FileName,
+		"selection_text": sel.Text,
+		"variants":       variants,
+		"planned":        planned,
+		"failed":         failed,
+		"changes":        changes,
+	}
+	if len(variants) == 0 && failed > 0 {
 		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
 	}
 	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
