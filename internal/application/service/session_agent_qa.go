@@ -286,10 +286,15 @@ func (s *sessionService) AgentQA(
 	// Inject attachment content (documents, audio transcripts, etc.) so the agent
 	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
 	// (see chat_pipeline/into_chat_message.go).
-	if attachments := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments); len(attachments) > 0 {
+	attachments, attachedDocs := s.attachmentsOutsideOpenDocuments(ctx, req.Session.TenantID, sessionID, req.Attachments)
+	if len(attachments) > 0 {
 		agentQuery += attachments.BuildPrompt()
 		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(attachments))
 	}
+	// attaching a file that is open as a tab names that tab, like an @:
+	// its text then comes from BuildOpenDocumentPrompt and the editing
+	// tools accept it as a target
+	req.MentionedDocumentIDs = mergeDocumentIDs(req.MentionedDocumentIDs, attachedDocs)
 	if selection := req.DocumentSelection.BuildPrompt(); selection != "" {
 		agentQuery += selection
 		logger.Infof(ctx, "Appended document selection (%d chars) to agent query", len(selection))
@@ -796,31 +801,52 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 // attachmentsOutsideOpenDocuments drops the attachments that are already
 // open as an editor tab of the session: BuildOpenDocumentPrompt carries
 // their current text, so the upload's (older) parsed text would only send
-// the same document twice. Without document workspaces nothing changes.
+// the same document twice. openDocs are the workspace IDs of the dropped
+// ones, in attachment order: the caller treats them as named documents.
+// Without document workspaces nothing changes.
 func (s *sessionService) attachmentsOutsideOpenDocuments(
 	ctx context.Context, tenantID uint64, sessionID string, attachments types.MessageAttachments,
-) types.MessageAttachments {
+) (kept types.MessageAttachments, openDocs []string) {
 	if len(attachments) == 0 || s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
-		return attachments
+		return attachments, nil
 	}
 	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)
 	if err != nil || len(docs) == 0 {
-		return attachments
+		return attachments, nil
 	}
-	open := make(map[string]bool, len(docs))
+	open := make(map[string]string, len(docs)) // attachment ID → workspace ID
 	for _, d := range docs {
 		if d.AttachmentID != "" {
-			open[d.AttachmentID] = true
+			open[d.AttachmentID] = d.ID
 		}
 	}
-	kept := make(types.MessageAttachments, 0, len(attachments))
+	kept = make(types.MessageAttachments, 0, len(attachments))
 	for _, att := range attachments {
-		if att.ID == "" || !open[att.ID] {
-			kept = append(kept, att)
+		if wsID := open[att.ID]; att.ID != "" && wsID != "" {
+			openDocs = append(openDocs, wsID)
+			continue
+		}
+		kept = append(kept, att)
+	}
+	if len(openDocs) > 0 {
+		logger.Infof(ctx, "Dropped %d attachment(s) already open as an editor tab from the agent query", len(openDocs))
+	}
+	return kept, openDocs
+}
+
+// mergeDocumentIDs appends extra to ids without duplicates, keeping the
+// order; it returns a new slice.
+func mergeDocumentIDs(ids, extra []string) []string {
+	if len(extra) == 0 {
+		return ids
+	}
+	out := make([]string, 0, len(ids)+len(extra))
+	seen := make(map[string]bool, len(ids)+len(extra))
+	for _, id := range append(append([]string{}, ids...), extra...) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
 		}
 	}
-	if dropped := len(attachments) - len(kept); dropped > 0 {
-		logger.Infof(ctx, "Dropped %d attachment(s) already open as an editor tab from the agent query", dropped)
-	}
-	return kept
+	return out
 }
