@@ -83,9 +83,9 @@ func targetProfileInput(ws *types.DocumentWorkspace, layout *docformat.Layout) *
 		c := seg.Comp(key)
 		return strings.Join(strings.Fields(strings.ReplaceAll(c.Text, "\n", " ")), " ")
 	}
-	in.ident.Issuer = join("co_quan_ban_hanh")
+	in.ident.Issuer = headerNoiseFree(draftMarkRe.ReplaceAllString(join("co_quan_ban_hanh"), " "))
 	in.ident.Date = profileDate(join("dia_danh_ngay_thang"))
-	in.ident.Subject = profileSubject(seg.Comp("trich_yeu").Texts)
+	in.ident.Subject = headerNoiseFree(profileSubject(seg.Comp("trich_yeu").Texts))
 	return in
 }
 
@@ -124,6 +124,37 @@ var (
 	profileMonthRe  = regexp.MustCompile(`(?i)tháng\s*(\d{1,2})\s*năm\s*(\d{4})`)
 	profileSubjVVRe = regexp.MustCompile(`(?i)^v/v\.?\s*`)
 )
+
+var (
+	// draftMarkRe is a "DỰ THẢO" mark; draftMarksRe two or more in a row
+	// (a watermark or a stamp read into the header, often glued:
+	// "DỰ THẢODỰ THẢO DỰ THẢO").
+	draftMarkRe  = regexp.MustCompile(`(?i)dự\s*thảo`)
+	draftMarksRe = regexp.MustCompile(`(?i)(dự\s*thảo[\s.,;:]*){2,}`)
+)
+
+// headerNoiseFree cleans a header field read without a model: repeated
+// "DỰ THẢO" marks go, and a word repeated three times or more in a row is
+// kept once. (The issuer drops every "DỰ THẢO" before this: no issuer is
+// called that; a trích yếu may be "góp ý dự thảo …".)
+func headerNoiseFree(s string) string {
+	s = draftMarksRe.ReplaceAllString(s, " ")
+	words := strings.Fields(s)
+	out := words[:0]
+	for i := 0; i < len(words); {
+		j := i
+		for j < len(words) && strings.EqualFold(words[j], words[i]) {
+			j++
+		}
+		if j-i >= 3 {
+			out = append(out, words[i])
+		} else {
+			out = append(out, words[i:j]...)
+		}
+		i = j
+	}
+	return strings.Join(out, " ")
+}
 
 // profileDate turns "Hà Nội, ngày 5 tháng 3 năm 2024" into "05/03/2024".
 // A line without a full date (a template with the day left blank: "Thành

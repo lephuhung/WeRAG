@@ -291,3 +291,20 @@ func TestProfileDate(t *testing.T) {
 		}
 	}
 }
+
+func TestHeaderNoiseFree(t *testing.T) {
+	issuer := headerNoiseFree(draftMarkRe.ReplaceAllString("QUỸ ĐẦU TƯ PHÁT TRIỂN DỰ THẢODỰ THẢO DỰ THẢO", " "))
+	if issuer != "QUỸ ĐẦU TƯ PHÁT TRIỂN" {
+		t.Fatalf("issuer %q", issuer)
+	}
+	for in, want := range map[string]string{
+		"Về việc góp ý dự thảo Nghị quyết":       "Về việc góp ý dự thảo Nghị quyết",
+		"Kế hoạch DỰ THẢO DỰ THẢO chuyển đổi số": "Kế hoạch chuyển đổi số",
+		"Quy chế bốc thăm thăm thăm thăm":        "Quy chế bốc thăm",
+		"Ban hành ban hành quy chế":              "Ban hành ban hành quy chế",
+	} {
+		if got := headerNoiseFree(in); got != want {
+			t.Errorf("headerNoiseFree(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
