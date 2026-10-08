@@ -34,7 +34,11 @@ const openDocumentInstruction = "This is the current text of a Word document ope
 	"(for example a department code such as PA05) take their meaning from the document; do not ask the user to explain them. " +
 	"Paragraph numbers in [ ] are the indexes rewrite_paragraphs takes."
 
-const sessionDocumentsInstruction = "The conversation holds these documents. A working document (văn bản làm việc) is a Word file open in an editor tab: " +
+const sessionDocumentsInstruction = "The conversation holds these documents, one card each: handle and file name, role, then when known the document type, số ký hiệu, issuer and date, a one-line gist, key points, and its sections as \"title [from–to]\". " +
+	"Section ranges are paragraph indexes of a working document and chunk (or line) indexes of a source: read a section with read_document_outline document=vbN from=<from>. " +
+	"Use the cards to tell which document and which section a question is about; a card says what a document contains, not its exact wording — quote the text, never the card. " +
+	"\"(hồ sơ đang được lập)\" means the card is still being made; \"(đã sửa sau lần đọc)\" means the document was edited after its card was made, so its text wins over the card. " +
+	"A working document (văn bản làm việc) is a Word file open in an editor tab: " +
 	"its text follows in its own <open_document> block, and it is the only kind you may check or edit. " +
 	"A source (tài liệu nguồn) is a file the user uploaded at chat: read-only, never edited or format-checked; read it with " +
 	"read_document_outline document=vbN, and cite it by file name or số ký hiệu when you use it. " +
@@ -116,20 +120,26 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		sb.WriteString("\n\n<session_documents>\n")
 		sb.WriteString("<instruction>" + sessionDocumentsInstruction + "</instruction>\n")
 		for _, d := range docs {
-			sb.WriteString("- " + escapeOpenDocument(DocumentLabel(d)))
+			var line strings.Builder
+			line.WriteString("- " + DocumentLabel(d))
 			if d.IsSource() {
-				sb.WriteString(" (" + sourceIndexNote(d, attached[d.ID]) + ")")
+				line.WriteString(" (" + sourceIndexNote(d, attached[d.ID]) + ")")
 			} else {
-				sb.WriteString(" (văn bản làm việc")
+				line.WriteString(" (văn bản làm việc")
 				if active != nil && d.ID == active.ID {
-					sb.WriteString(", tab đang xem")
+					line.WriteString(", tab đang xem")
 				}
-				sb.WriteString(")")
+				line.WriteString(")")
 			}
 			if named[d.ID] {
-				sb.WriteString(" (người dùng gọi đích danh trong yêu cầu này)")
+				line.WriteString(" (người dùng gọi đích danh trong yêu cầu này)")
 			}
-			sb.WriteString("\n")
+			profile := SessionDocumentProfile(ctx, d.ID)
+			if profile != nil && !profile.Describes(d) && profile.TextHash != "" && d.IsTarget() {
+				// edited since its card: refresh now rather than at the mark
+				PromoteDocumentProfileRefresh(d.ID)
+			}
+			sb.WriteString(escapeOpenDocument(documentCard(line.String(), d, profile)))
 		}
 		sb.WriteString("</session_documents>\n")
 	}
@@ -156,6 +166,101 @@ func BuildOpenDocumentPrompt(ctx context.Context, src DocumentWorkspaceSource, t
 		return ""
 	}
 	return sb.String()
+}
+
+// Card bounds: a card stays near documentCardRunes so ten documents cost
+// ~6k runes a turn.
+const (
+	documentCardRunes        = 600
+	documentCardSections     = 12
+	documentCardSectionsCut  = 10
+	documentCardKeyPoints    = 3
+	documentCardSectionRunes = 60
+)
+
+// documentCard renders a document's <session_documents> entry: its index
+// line, then from its profile the identity (type, số ký hiệu, issuer,
+// date), the gist, for a ready profile three key points, and the section
+// list "title [from–to]". Without a profile the line says one is being
+// made. A card longer than documentCardRunes loses its key points, then
+// section titles are shortened and the list cut.
+func documentCard(line string, d *types.DocumentWorkspace, p *types.DocumentProfile) string {
+	hasContent := p != nil && (p.Gist != "" || p.Subject != "" || len(p.Sections) > 0)
+	if !hasContent {
+		if p == nil || p.InProgress() {
+			if !(d.IsSource() && d.TextStatus == types.DocumentSourceTextFailed) {
+				line += " (hồ sơ đang được lập)"
+			}
+		}
+		return line + "\n"
+	}
+	var ident []string
+	if p.DocType != "" {
+		ident = append(ident, p.DocType)
+	}
+	if p.DocumentNumber != "" {
+		ident = append(ident, "số "+p.DocumentNumber)
+	}
+	if p.Issuer != "" {
+		ident = append(ident, p.Issuer)
+	}
+	if p.Date != "" {
+		ident = append(ident, "ngày "+p.Date)
+	}
+	gist := p.Gist
+	if gist == "" {
+		gist = p.Subject
+	}
+	var points []string
+	if p.Status == types.DocumentProfileReady {
+		points = p.KeyPoints[:min(len(p.KeyPoints), documentCardKeyPoints)]
+	}
+	stale := !p.Describes(d) || p.InProgress()
+	render := func(points []string, titleRunes, maxSections int, gistRunes int) string {
+		var b strings.Builder
+		b.WriteString(line)
+		if stale {
+			b.WriteString(" (đã sửa sau lần đọc)")
+		}
+		b.WriteString("\n")
+		if len(ident) > 0 {
+			b.WriteString("  " + strings.Join(ident, " · ") + "\n")
+		}
+		if gist != "" {
+			b.WriteString("  Nội dung: " + clipRunes(gist, gistRunes) + "\n")
+		}
+		if len(points) > 0 {
+			b.WriteString("  Ý chính: " + strings.Join(points, "; ") + "\n")
+		}
+		if n := len(p.Sections); n > 0 {
+			shown := p.Sections
+			if n > maxSections {
+				shown = p.Sections[:min(documentCardSectionsCut, maxSections)]
+			}
+			parts := make([]string, 0, len(shown)+1)
+			for _, s := range shown {
+				parts = append(parts, fmt.Sprintf("%s [%d–%d]", clipRunes(s.Title, titleRunes), s.From, s.To))
+			}
+			if len(shown) < n {
+				parts = append(parts, fmt.Sprintf("… (%d mục)", n))
+			}
+			b.WriteString("  Mục (" + unitLabel(p.Unit) + "): " + strings.Join(parts, "; ") + "\n")
+		}
+		return b.String()
+	}
+	card := render(points, documentCardSectionRunes, documentCardSections, 200)
+	for _, try := range []func() string{
+		func() string { return render(nil, documentCardSectionRunes, documentCardSections, 200) },
+		func() string { return render(nil, 30, documentCardSections, 160) },
+		func() string { return render(nil, 30, 6, 120) },
+		func() string { return render(nil, 24, 3, 100) },
+	} {
+		if utf8.RuneCountInString(card) <= documentCardRunes {
+			break
+		}
+		card = try()
+	}
+	return card
 }
 
 // sourceIndexNote describes a source in the <session_documents> index: its
