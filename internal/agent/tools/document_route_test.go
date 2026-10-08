@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,8 +68,8 @@ func TestRouteTier1PicksTheClearDocumentAndSection(t *testing.T) {
 	}
 
 	// a code alone decides too, and the task is read from the words
-	_, scope = ApplyDocumentScope(toolCtx(), ws, 7, "s-route-2", DocumentRouteInput{Query: "đối chiếu nhiệm vụ của PA05", Model: model})
-	if scope == nil || scope.DocumentIDs[0] != "ws-2" || scope.Task != types.DocumentScopeTaskCompare {
+	_, scope = ApplyDocumentScope(toolCtx(), ws, 7, "s-route-2", DocumentRouteInput{Query: "tóm tắt nhiệm vụ của PA05", Model: model})
+	if scope == nil || scope.DocumentIDs[0] != "ws-2" || scope.Task != types.DocumentScopeTaskSummary {
 		t.Fatalf("PA05: %+v", scope)
 	}
 	_, scope = ApplyDocumentScope(toolCtx(), ws, 7, "s-route-3", DocumentRouteInput{Query: "Sở Nội vụ chủ trì việc gì trong cải cách hành chính"})
@@ -181,7 +182,7 @@ func TestDocumentScopeStoreRoundTrip(t *testing.T) {
 func TestBuildOpenDocumentPromptInjectsTheScope(t *testing.T) {
 	freshDocProfiles(t)
 	ws := routeWorkspace(t)
-	_, scope := ApplyDocumentScope(toolCtx(), ws, 7, "s-scope-1", DocumentRouteInput{Query: "chi đầu tư phát triển bao nhiêu, đối chiếu"})
+	_, scope := ApplyDocumentScope(toolCtx(), ws, 7, "s-scope-1", DocumentRouteInput{Query: "chi đầu tư phát triển bao nhiêu so với dự toán"})
 	if scope == nil || len(scope.Sections) != 1 {
 		t.Fatalf("scope: %+v", scope)
 	}
@@ -212,4 +213,75 @@ func TestBuildOpenDocumentPromptInjectsTheScope(t *testing.T) {
 	if got = BuildOpenDocumentPrompt(named, ws, 7, "s-scope-1", ""); strings.Contains(got, "Phạm vi hiện tại") || !strings.Contains(got, `<open_document handle="vb2"`) {
 		t.Fatalf("@ over scope:\n%s", got)
 	}
+}
+
+func TestRouteDropsAStoredScopeForOtherQuestions(t *testing.T) {
+	freshDocProfiles(t)
+	ws := routeWorkspace(t)
+	stored := func(session string) {
+		SetSessionDocumentScope(toolCtx(), session, &types.DocumentScope{DocumentIDs: []string{"ws-2"}, SetBy: types.DocumentScopeSetByRouter})
+	}
+
+	// questions about every document clear a router scope and give none
+	for i, q := range []string{
+		"tóm tắt các văn bản", "hai văn bản này do ai ban hành", "cả hai nói gì về ngân sách",
+		"tất cả tài liệu có thống nhất không", "so sánh số liệu", "từng tài liệu giao việc gì",
+	} {
+		session := fmt.Sprintf("s-all-%d", i)
+		stored(session)
+		model := &fakeRouter{reply: `{"documents":[{"handle":"vb2"}],"confidence":0.9}`}
+		if _, scope := ApplyDocumentScope(toolCtx(), ws, 7, session, DocumentRouteInput{Query: q, Model: model}); scope != nil || model.calls != 0 {
+			t.Fatalf("%q: no scope expected, got %+v (calls %d)", q, scope, model.calls)
+		}
+		if SessionDocumentScope(toolCtx(), session) != nil {
+			t.Fatalf("%q: the router scope must be cleared", q)
+		}
+	}
+	// a comparison naming a document is not about all of them
+	named := []*types.DocumentWorkspace{{FileName: "bao-cao.docx"}}
+	if allDocumentsQuery("so sánh vb1 với vb2", nil) || allDocumentsQuery("đối chiếu số liệu với bao-cao", named) {
+		t.Fatal("a comparison naming a handle or a file keeps routing")
+	}
+
+	// two documents both about the budget: tier 1 leans, does not decide
+	p := func(text string) string { return testPara(text, "left", "Times New Roman", 14, false, false) }
+	budget := newFakeWorkspace(buildTestDocx(t, p("Ngân sách tỉnh năm 2026 được giao đúng hạn.")+p("Ngân sách tỉnh bổ sung cho xã."), [4]int{20, 15, 30, 20}))
+	budget.addDocument("ws-2", "huyen.docx", buildTestDocx(t, p("Ngân sách huyện năm 2026."), [4]int{20, 15, 30, 20}))
+	const q = "ngân sách tỉnh năm 2026"
+	if _, scores, top, _ := routeByKeywordsFor(t, budget, q); top != "ws-1" || scores["vb2"] == 0 {
+		t.Fatalf("fixture: vb1 must lead, vb2 match: %v %s", scores, top)
+	}
+
+	// the stored scope is on vb2, tier 1 leans to vb1: dropped, tier 2 asked
+	stored("s-away")
+	model := &fakeRouter{reply: `{"documents":[{"handle":"vb1"}],"confidence":0.3}`}
+	_, scope := ApplyDocumentScope(toolCtx(), budget, 7, "s-away", DocumentRouteInput{Query: q, Model: model})
+	if scope != nil || SessionDocumentScope(toolCtx(), "s-away") != nil || model.calls != 1 {
+		t.Fatalf("a question leaning away drops the scope and asks tier 2: %+v (calls %d)", scope, model.calls)
+	}
+	// stored on vb1, the same lean keeps it without the model
+	SetSessionDocumentScope(toolCtx(), "s-stay", &types.DocumentScope{DocumentIDs: []string{"ws-1"}, SetBy: types.DocumentScopeSetByRouter})
+	model = &fakeRouter{}
+	if _, scope = ApplyDocumentScope(toolCtx(), budget, 7, "s-stay", DocumentRouteInput{Query: q, Model: model}); scope == nil || scope.DocumentIDs[0] != "ws-1" || model.calls != 0 {
+		t.Fatalf("a lean to the scoped document keeps it: %+v", scope)
+	}
+	// a follow-up matching nothing keeps it too
+	if _, scope = ApplyDocumentScope(toolCtx(), budget, 7, "s-stay", DocumentRouteInput{Query: "còn gì nữa", Model: model}); scope == nil || model.calls != 0 {
+		t.Fatalf("an all-zero follow-up keeps the scope: %+v", scope)
+	}
+}
+
+// routeByKeywordsFor runs tier 1 on a workspace's documents.
+func routeByKeywordsFor(t *testing.T, ws DocumentWorkspaceSource, query string) (*types.DocumentScope, map[string]float64, string, float64) {
+	t.Helper()
+	docs, _ := ws.List(toolCtx(), 7, "s")
+	var loaded []*sessionDocUnits
+	for i, d := range docs {
+		du, err := loadDocumentUnits(toolCtx(), ws, "s", d, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded = append(loaded, du)
+	}
+	return routeByKeywords(query, loaded)
 }

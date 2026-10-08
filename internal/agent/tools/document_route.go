@@ -86,6 +86,15 @@ func ApplyDocumentScope(ctx context.Context, src DocumentWorkspaceSource, tenant
 	if len(docs) < 2 || strings.TrimSpace(in.Query) == "" {
 		return ctx, nil
 	}
+	if allDocumentsQuery(in.Query, docs) {
+		// "các văn bản", "cả hai", a comparison naming none: every document
+		// (rule 2), and a router scope from an earlier question goes
+		if stored != nil {
+			ClearSessionDocumentScope(ctx, sessionID)
+			logger.Infof(ctx, "[DocumentRoute] session=%s question is about every document; router scope %v cleared", sessionID, stored.DocumentIDs)
+		}
+		return ctx, nil
+	}
 
 	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	var loaded []*sessionDocUnits
@@ -104,20 +113,29 @@ func ApplyDocumentScope(ctx context.Context, src DocumentWorkspaceSource, tenant
 		return ctx, nil
 	}
 
-	scope, scores := routeByKeywords(in.Query, loaded)
+	scope, scores, topID, topScore := routeByKeywords(in.Query, loaded)
 	tier := 1
 	if scope == nil {
 		if stored != nil {
-			logger.Infof(ctx, "[DocumentRoute] session=%s tier 1 unclear %v; keeping the router scope %v", sessionID, scores, stored.DocumentIDs)
-			return types.WithDocumentScope(ctx, stored), stored
+			// a follow-up that matches nothing ("còn gì nữa") stays in the
+			// stored scope, and so does one whose best document is in it;
+			// a question pointing elsewhere drops it
+			if topScore == 0 || stored.Includes(topID) {
+				logger.Infof(ctx, "[DocumentRoute] session=%s tier 1 unclear %v; keeping the router scope %v", sessionID, scores, stored.DocumentIDs)
+				return types.WithDocumentScope(ctx, stored), stored
+			}
+			ClearSessionDocumentScope(ctx, sessionID)
+			logger.Infof(ctx, "[DocumentRoute] session=%s tier 1 points away from the router scope %v (%v); dropped", sessionID, stored.DocumentIDs, scores)
 		}
 		if in.Model == nil || plainLookup(in.Query) {
 			logger.Infof(ctx, "[DocumentRoute] session=%s tier 1 unclear %v; no scope", sessionID, scores)
 			return ctx, nil
 		}
 		tier = 2
+		started := time.Now()
 		var err error
 		scope, err = routeByModel(ctx, in, loaded)
+		logger.Infof(ctx, "[DocumentRoute] session=%s tier 2 took %s", sessionID, time.Since(started).Round(time.Millisecond))
 		if err != nil || scope == nil {
 			logger.Infof(ctx, "[DocumentRoute] session=%s tier 2 gave no scope (%v); tier 1 scores %v", sessionID, err, scores)
 			return ctx, nil
@@ -159,12 +177,13 @@ func cardText(du *sessionDocUnits) (text, header string) {
 }
 
 // routeByKeywords is tier 1. scores lists each document's total (handle →
-// score) for the log.
-func routeByKeywords(query string, loaded []*sessionDocUnits) (*types.DocumentScope, map[string]float64) {
+// score) for the log; topID and topScore are the best document and its
+// total, whether or not it won.
+func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.DocumentScope, scores map[string]float64, topID string, topScore float64) {
 	q := parseSearchQuery(query)
-	scores := map[string]float64{}
+	scores = map[string]float64{}
 	if q.empty() {
-		return nil, scores
+		return nil, scores, "", 0
 	}
 	cards := make([]searchUnit, len(loaded))
 	var units []searchUnit
@@ -200,15 +219,46 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (*types.DocumentSc
 	if len(order) > 1 {
 		second = total[order[1]]
 	}
+	topID, topScore = loaded[best].ws.ID, total[best]
 	if total[best] < routeFloor || total[best] < routeMargin*second {
-		return nil, scores
+		return nil, scores, topID, topScore
 	}
 	du := loaded[best]
-	scope := &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
+	scope = &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
 	if s := bestSection(q, du.sections); s != nil {
 		scope.Sections = []types.DocumentScopeSection{{DocumentID: du.ws.ID, From: s.From, To: s.To, Title: s.Title}}
 	}
-	return scope, scores
+	return scope, scores, topID, topScore
+}
+
+var (
+	allDocumentsRe = regexp.MustCompile(`(?i)các (văn bản|tài liệu)|những (văn bản|tài liệu)|tất cả|cả (hai|ba|bốn)\b|` +
+		`\b(hai|ba|bốn|2|3|4) (văn bản|tài liệu)|mọi (văn bản|tài liệu)|từng (văn bản|tài liệu)`)
+	compareRe = regexp.MustCompile(`(?i)so sánh|đối chiếu`)
+	handleRe  = regexp.MustCompile(`(?i)\bvb\d+\b`)
+)
+
+// allDocumentsQuery reports a question about every document: "các văn
+// bản", "tất cả", "cả hai", "hai văn bản", "mọi/từng tài liệu", or a
+// comparison that names no document (no handle, no file name).
+func allDocumentsQuery(query string, docs []*types.DocumentWorkspace) bool {
+	if allDocumentsRe.MatchString(query) {
+		return true
+	}
+	if !compareRe.MatchString(query) || handleRe.MatchString(query) {
+		return false
+	}
+	lower := strings.ToLower(query)
+	for _, d := range docs {
+		name := strings.ToLower(d.FileName)
+		if i := strings.LastIndex(name, "."); i > 0 {
+			name = name[:i]
+		}
+		if utf8.RuneCountInString(name) >= 3 && strings.Contains(lower, name) {
+			return false
+		}
+	}
+	return true
 }
 
 // bestSection is the section whose title matches q clearly (at least
