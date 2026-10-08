@@ -710,11 +710,14 @@ func filterNonTerminalToolCalls(calls []types.ToolCall) []types.ToolCall {
 // toolCallOutput returns the textual content to use for a historical tool
 // message. Failures still go through CompactToolOutputForHistory so stdout
 // from a crashed skill script is not dropped in favor of a one-line exit code.
+// The document tools replay a short summary (agenttools.HistoryToolOutput);
+// this is the only place it is used, so what is stored and streamed for the
+// turn that ran them is unchanged.
 func toolCallOutput(tc types.ToolCall) string {
 	if tc.Result == nil {
 		return ""
 	}
-	return agenttools.CompactToolOutputForHistory(tc.Name, tc.Result)
+	return agenttools.HistoryToolOutput(tc.Name, tc.Args, tc.Result)
 }
 
 // extractImageCaptionsFromMessage concatenates non-empty Caption fields from
