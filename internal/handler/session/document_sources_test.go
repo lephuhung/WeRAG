@@ -40,8 +40,12 @@ func TestUploadBecomesSource(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
-	if (&Handler{documentWorkspaces: &routeWorkspaces{}}).uploadBecomesSource(assistant, "pdf", "") {
-		t.Error("editor disabled: no source")
+	// a source needs no Document Server (Word add-in deployments)
+	if !(&Handler{documentWorkspaces: &routeWorkspaces{}}).uploadBecomesSource(assistant, "pdf", "") {
+		t.Error("editor disabled: an upload is still a source")
+	}
+	if (&Handler{}).uploadBecomesSource(assistant, "pdf", "") {
+		t.Error("no document service: no source")
 	}
 }
 

@@ -19,7 +19,8 @@ type fakeDocumentWorkspaces struct {
 	ws *types.DocumentWorkspace
 }
 
-func (f *fakeDocumentWorkspaces) Enabled() bool { return true }
+func (f *fakeDocumentWorkspaces) Enabled() bool          { return true }
+func (f *fakeDocumentWorkspaces) DocumentsEnabled() bool { return true }
 
 // OpenCurrent fails: the format check's background prewarm reads the
 // document when a model is available.

@@ -158,3 +158,19 @@ func TestWordAddinRestoreNeedsReload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, got.Revision)
 }
+
+func TestSourceDocumentNeedsNoDocumentServer(t *testing.T) {
+	fx := newDWFixture(t)
+	fx.svc = newDocumentWorkspaceService(&config.OnlyOfficeConfig{}, fx.repo, fx.files, fx.catalog, fx.attach, fx.messages, fx.revs)
+	require.False(t, fx.svc.Enabled())
+	require.True(t, fx.svc.DocumentsEnabled())
+
+	ws, err := fx.svc.CreateSourceFromAttachment(context.Background(), 7, "sess-1", "user-1", "att-pdf")
+	require.NoError(t, err)
+	require.True(t, ws.IsSource())
+	require.Equal(t, []byte("%PDF"), fx.files.get(ws.CurrentRef))
+
+	// opening a source in the embedded editor still needs ONLYOFFICE
+	_, err = fx.svc.SetRole(context.Background(), 7, "sess-1", ws.ID, types.DocumentWorkspaceRoleTarget)
+	requireAppCode(t, err, apperrors.ErrServiceUnavailable)
+}

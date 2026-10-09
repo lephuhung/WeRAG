@@ -47,8 +47,14 @@ type DocumentWorkspaceRepository interface {
 // Commit stores the new bytes, bumps Revision (which rotates the editor key)
 // and fails with an ErrConflict-coded error (errors.NewConflictError) when the revision moved.
 type DocumentWorkspaceService interface {
-	// Enabled reports whether the ONLYOFFICE integration is configured.
+	// Enabled reports whether the ONLYOFFICE integration is configured: the
+	// embedded editor, its saves and .doc conversion need it.
 	Enabled() bool
+
+	// DocumentsEnabled reports whether session documents are on: sources,
+	// Word add-in targets, the format check and the document context in the
+	// prompt. They need no Document Server, so it does not depend on Enabled.
+	DocumentsEnabled() bool
 
 	// CreateFromAttachment copies a session's temporary attachment (.docx or
 	// .doc; .doc is converted to .docx) into a new workspace and makes it the

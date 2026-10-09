@@ -49,7 +49,7 @@ func NewDocumentFormatPrecheck(
 // the background, at most once per document in this process; a source is
 // skipped (it may be checked once promoted). It returns at once.
 func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, sessionID, documentID string) {
-	if p == nil || p.workspaces == nil || !p.workspaces.Enabled() || tenantID == 0 || sessionID == "" || documentID == "" {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() || tenantID == 0 || sessionID == "" || documentID == "" {
 		return
 	}
 	if tools.SessionFormatCheck(ctx, documentID) != nil {

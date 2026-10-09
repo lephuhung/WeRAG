@@ -218,7 +218,7 @@ func (s *sessionService) AgentQA(
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
-	if s.documentWorkspaces != nil && s.documentWorkspaces.Enabled() {
+	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		// the document router (no model, then one short thinking-off call
 		// when unclear): a turn that names no document of a session with
 		// several reads the scoped part of them instead of passages of all
@@ -833,7 +833,7 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 func (s *sessionService) attachmentsOutsideOpenDocuments(
 	ctx context.Context, tenantID uint64, sessionID string, attachments types.MessageAttachments,
 ) (kept types.MessageAttachments, openDocs, sources []string) {
-	if len(attachments) == 0 || s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
+	if len(attachments) == 0 || s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() {
 		return attachments, nil, nil
 	}
 	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)
@@ -871,7 +871,7 @@ func (s *sessionService) attachmentsOutsideOpenDocuments(
 func (s *sessionService) historyDocumentsOption(
 	ctx context.Context, tenantID uint64, sessionID string,
 ) []AgentHistoryOption {
-	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() {
 		return nil
 	}
 	docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID)

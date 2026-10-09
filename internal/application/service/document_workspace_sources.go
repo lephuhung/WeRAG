@@ -65,9 +65,7 @@ func SourceCapacityError(docs []*types.DocumentWorkspace) error {
 func (s *documentWorkspaceService) CreateSourceFromAttachment(
 	ctx context.Context, tenantID uint64, sessionID, userID, attachmentID string,
 ) (*types.DocumentWorkspace, error) {
-	if !s.Enabled() {
-		return nil, apperrors.NewServiceUnavailableError("document editor is not configured")
-	}
+	// a source is only looked up: no Document Server is needed
 	sessionID = strings.TrimSpace(sessionID)
 	attachmentID = strings.TrimSpace(attachmentID)
 	if tenantID == 0 || sessionID == "" || attachmentID == "" {

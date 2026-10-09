@@ -489,7 +489,7 @@ func (h *Handler) resolveDocumentReferences(
 	if sel != nil {
 		sel.Document = ""
 	}
-	if session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+	if session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
 		if sel != nil {
 			sel.DocumentID = ""
 		}
@@ -675,7 +675,7 @@ func (h *Handler) resolveAgent(
 // agentID unchanged.
 func (h *Handler) pinDocumentAssistant(ctx context.Context, session *types.Session, agentID string) string {
 	if agentID == types.BuiltinDocumentAssistantID || session == nil ||
-		h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+		h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
 		return agentID
 	}
 	docs, err := h.documentWorkspaces.List(ctx, session.TenantID, session.ID)

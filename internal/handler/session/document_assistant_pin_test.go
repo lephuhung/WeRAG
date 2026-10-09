@@ -29,8 +29,10 @@ func TestPinDocumentAssistant(t *testing.T) {
 			t.Errorf("session %s agent %q: got %q, want %q", c.session, c.agent, got, c.want)
 		}
 	}
+	// without ONLYOFFICE a session's documents (sources, Word add-in
+	// targets) still pin the document assistant
 	ws.enabled = false
-	if got := h.pinDocumentAssistant(ctx, &types.Session{ID: "with-doc"}, "x"); got != "x" {
+	if got := h.pinDocumentAssistant(ctx, &types.Session{ID: "with-doc", TenantID: 1}, "x"); got != types.BuiltinDocumentAssistantID {
 		t.Errorf("editor disabled: got %q", got)
 	}
 	if got := (&Handler{}).pinDocumentAssistant(ctx, &types.Session{ID: "with-doc"}, "x"); got != "x" {

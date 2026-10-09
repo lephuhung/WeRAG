@@ -11,7 +11,7 @@ import (
 // document (a chat upload of the document assistant), which
 // read_document_outline reads even when no target is open.
 func (s *agentService) sessionHasSourceDocuments(ctx context.Context, sessionID string) bool {
-	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() || strings.TrimSpace(sessionID) == "" {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() || strings.TrimSpace(sessionID) == "" {
 		return false
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)

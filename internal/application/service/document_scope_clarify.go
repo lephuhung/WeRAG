@@ -14,7 +14,7 @@ import (
 // router and before the document text is built. When it asks, the turn is
 // answered here and the engine never starts: true is returned.
 func (s *sessionService) documentScopeClarification(ctx context.Context, req *types.QARequest, bus *event.EventBus) (bool, error) {
-	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() || req == nil || req.Session == nil || bus == nil {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() || req == nil || req.Session == nil || bus == nil {
 		return false, nil
 	}
 	disabled := req.CustomAgent != nil && !req.CustomAgent.Config.AskScopeForLongDocumentsEnabled()

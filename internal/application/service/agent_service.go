@@ -191,9 +191,9 @@ func NewAgentService(
 }
 
 // sessionDocumentWorkspace returns the editable document bound to sessionID,
-// or nil when the session has none or the editor integration is disabled.
+// or nil when the session has none or session documents are off.
 func (s *agentService) sessionDocumentWorkspace(ctx context.Context, sessionID string) *types.DocumentWorkspace {
-	if s.documentWorkspaces == nil || !s.documentWorkspaces.Enabled() || strings.TrimSpace(sessionID) == "" {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() || strings.TrimSpace(sessionID) == "" {
 		return nil
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)

@@ -28,7 +28,8 @@ type callbackOnlyWorkspaces struct {
 	gotBody   *types.OnlyOfficeCallback
 }
 
-func (f *callbackOnlyWorkspaces) Enabled() bool { return true }
+func (f *callbackOnlyWorkspaces) Enabled() bool          { return true }
+func (f *callbackOnlyWorkspaces) DocumentsEnabled() bool { return true }
 func (f *callbackOnlyWorkspaces) CreateFromAttachment(context.Context, uint64, string, string, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
@@ -171,6 +172,10 @@ type routeWorkspaces struct {
 }
 
 func (f *routeWorkspaces) Enabled() bool { return f.enabled }
+
+// DocumentsEnabled does not depend on the editor: sources and Word targets
+// work without ONLYOFFICE.
+func (f *routeWorkspaces) DocumentsEnabled() bool { return true }
 
 func (f *routeWorkspaces) CreateFromAttachmentFor(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID, _ string) (*types.DocumentWorkspace, error) {
 	return f.CreateFromAttachment(ctx, tenantID, sessionID, userID, attachmentID)

@@ -122,13 +122,13 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 }
 
 // uploadBecomesSource reports whether a chat upload is recorded as a source
-// document: in a document-assistant session with the document workspace
-// on, for any parsed document (not an image sent for vision, not audio).
+// document: in a document-assistant session (no Document Server needed:
+// a source is only looked up), for any parsed document (not an image sent for vision, not audio).
 // The editor pane's own uploads pass document_role=target: they are opened
 // as an editor tab right after the upload.
 func (h *Handler) uploadBecomesSource(agent *types.CustomAgent, ext, role string) bool {
 	if agent == nil || agent.ID != types.BuiltinDocumentAssistantID ||
-		h.documentWorkspaces == nil || !h.documentWorkspaces.Enabled() {
+		h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
 		return false
 	}
 	if strings.TrimSpace(role) == types.DocumentWorkspaceRoleTarget {

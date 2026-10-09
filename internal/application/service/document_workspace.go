@@ -180,6 +180,11 @@ func newDocumentWorkspaceService(
 
 func (s *documentWorkspaceService) Enabled() bool { return s != nil && s.cfg.Enabled() }
 
+// DocumentsEnabled is on whenever the service is wired: sources, Word
+// add-in targets, the format check and the document context need no
+// Document Server. Enabled() still gates the embedded editor.
+func (s *documentWorkspaceService) DocumentsEnabled() bool { return s != nil }
+
 func maxDocumentWorkspaceBytes() int64 { return secutils.GetMaxFileSizeMB() * 1024 * 1024 }
 
 // ---------------------------------------------------------------------------
