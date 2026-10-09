@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
+	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -65,6 +66,9 @@ type checkDocumentFormatInput struct {
 	DocumentType string `json:"document_type"`
 	// Document picks the editable document (workspace variant only).
 	Document string `json:"document"`
+	// Mark marks the measured findings in the editor (workspace variant
+	// only; default true).
+	Mark *bool `json:"mark"`
 }
 
 // checkWorkspaceFormatSchema is the workspace variant's schema: the target
@@ -76,7 +80,8 @@ var checkWorkspaceFormatSchema = json.RawMessage(`{
     "document_type": {
       "type": "string",
       "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
-    }
+    },
+    "mark": {"type": "boolean", "description": "Mark the measured findings in the editor: red text on each paragraph that breaks a rule, a red underline on a stray character (default true)"}
   }
 }`)
 
@@ -127,6 +132,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.description = strings.Replace(base.description,
 		"- file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).",
 		"- document: the open document to check (vb1, vb2, …); omit when only one is open.", 1)
+	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also marked (unless mark=false): the paragraph's text turns red, a stray character inside a word is underlined in red; the content is not changed. Tell the user the red marks show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
 	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {
@@ -227,10 +233,53 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 		return &types.ToolResult{Success: false, Error: out.failure}, nil
 	}
 	data := out.result.data()
+	output := out.result.Output
+	if t.workspace != nil && (in.Mark == nil || *in.Mark) && len(out.result.Flags) > 0 {
+		if ops, ws, seq := t.markFindings(ctx, in.Document, content, out.result.Flags); len(ops) > 0 {
+			for k, v := range opsData(ops, seq, ws) {
+				data[k] = v
+			}
+			output += "\n\n" + formatMarksNote + "\n"
+		}
+	}
 	if revision >= 0 {
 		data["document_revision"] = revision
 	}
-	return &types.ToolResult{Success: true, Output: out.result.Output, Data: data}, nil
+	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
+}
+
+// markFindings plans the editor marks of the measured findings on the
+// checked version. Marking is an edit of the document the user named (or
+// the only one): otherwise, or when the snapshot before it fails, nothing
+// is marked and the check stands alone.
+func (t *CheckDocumentFormatTool) markFindings(
+	ctx context.Context, ref string, content []byte, flags []formatFlag,
+) ([]DocumentOp, *types.DocumentWorkspace, int) {
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, true)
+	if err != nil {
+		return nil, nil, 0
+	}
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		return nil, nil, 0
+	}
+	ops := formatMarkOps(newVirtualDoc(doc.Paragraphs()), flagSpots(flags))
+	if len(ops) == 0 {
+		return nil, nil, 0
+	}
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	// the undo point (and, for a Word document, the upload the next tool waits for)
+	rev, err := t.workspace.Snapshot(ctx, tenantID, t.sessionID, target.ID,
+		"ai: đánh dấu lỗi thể thức", types.DocumentRevisionSourceAI, snapshotWait)
+	if err != nil {
+		logger.Warnf(ctx, "check_document_format: no snapshot before marking, findings not marked: %v", err)
+		return nil, nil, 0
+	}
+	seq := 0
+	if rev != nil {
+		seq = rev.Seq
+	}
+	return ops, target, seq
 }
 
 func (t *CheckDocumentFormatTool) modelName() string {
@@ -263,6 +312,8 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		if report.Segmentation != nil {
 			r.Method = report.Segmentation.Method
 		}
+		rs, _ := docformat.RuleSetForReport(report)
+		r.Flags = formatFlags(report, rs)
 		// only a finished evaluation is kept: the unevaluated fallback
 		// comes from a failed model call worth retrying
 		if evaluated {

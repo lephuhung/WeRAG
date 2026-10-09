@@ -105,6 +105,22 @@ type SkippedFormatFix struct {
 type ManualFormatFix struct {
 	CheckID string `json:"check_id"`
 	Desc    string `json:"desc"`
+	// Paragraphs the finding names (its evidence), marked in the editor.
+	Paragraphs []int `json:"paragraphs,omitempty"`
+	spots      []formatSpot
+}
+
+// manualFix records a finding left for the user, with the places it names.
+func manualFix(c docformat.CheckResult, rule *docformat.RuleCheck) ManualFormatFix {
+	kind := ""
+	if rule != nil {
+		kind = rule.Kind
+	}
+	m := ManualFormatFix{CheckID: c.ID, Desc: c.Desc, spots: checkSpots(c, kind)}
+	for _, s := range m.spots {
+		m.Paragraphs = append(m.Paragraphs, s.Para)
+	}
+	return m
 }
 
 // paraEdit is one check's formatting change for a paragraph.
@@ -259,12 +275,25 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	dryRun := in.DryRun || (unreliable && !in.Force)
 
 	var ops []DocumentOp
-	if !dryRun && plan.hasEdits() {
+	var manualSpots []formatSpot
+	for _, m := range plan.manual {
+		manualSpots = append(manualSpots, m.spots...)
+	}
+	marks := 0
+	if !dryRun && (plan.hasEdits() || len(manualSpots) > 0) {
 		doc, err := docxedit.Open(content)
 		if err != nil {
 			return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 		}
-		ops = plan.ops(newVirtualDoc(doc.Paragraphs()))
+		// formatting changes no text: one virtual document serves both
+		vdoc := newVirtualDoc(doc.Paragraphs())
+		if plan.hasEdits() {
+			ops = plan.ops(vdoc)
+		}
+		// what is left for the user is marked where it is
+		markOps := formatMarkOps(vdoc, manualSpots)
+		marks = len(markOps)
+		ops = append(ops, markOps...)
 	}
 
 	applied := plan.applied
@@ -294,6 +323,9 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	}
 	if len(ops) > 0 {
 		output += "\n" + editorAppliedNote + "\n"
+	}
+	if marks > 0 {
+		output += "Những lỗi cần sửa thủ công đã được tô đỏ tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ đánh dấu).\n"
 	}
 	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
@@ -463,7 +495,7 @@ func buildFormatPlan(report *docformat.Report, rs *docformat.RuleSet, layout *do
 			switch planPropFix(plan, report, layout, c, *rule, failing) {
 			case propNotFixable:
 				if failing {
-					plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+					plan.manual = append(plan.manual, manualFix(c, rule))
 				} else {
 					passing(c)
 				}
@@ -477,20 +509,20 @@ func buildFormatPlan(report *docformat.Report, rs *docformat.RuleSet, layout *do
 			continue
 		}
 		if rule == nil {
-			plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+			plan.manual = append(plan.manual, manualFix(c, rule))
 			continue
 		}
 		switch rule.Kind {
 		case "prop", "":
 			if planPropFix(plan, report, layout, c, *rule, true) == propNotFixable {
-				plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+				plan.manual = append(plan.manual, manualFix(c, rule))
 			}
 		case "page_setup":
 			if !planPageFix(plan, layout, c, *rule) {
-				plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+				plan.manual = append(plan.manual, manualFix(c, rule))
 			}
 		default:
-			plan.manual = append(plan.manual, ManualFormatFix{CheckID: c.ID, Desc: c.Desc})
+			plan.manual = append(plan.manual, manualFix(c, rule))
 		}
 	}
 	for id := range wanted {

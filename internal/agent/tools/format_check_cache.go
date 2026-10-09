@@ -49,6 +49,10 @@ type formatCheckResult struct {
 	// agent); empty on results cached before it was kept.
 	Evaluation string    `json:"evaluation,omitempty"`
 	At         time.Time `json:"at"`
+	// Flags are the measured findings that name their paragraphs, marked
+	// in the editor when the user asks for the check (format_marks.go);
+	// empty on results cached before they were kept.
+	Flags []formatFlag `json:"flags,omitempty"`
 }
 
 // evaluation is the judgment to show the user, without the agent framing.

@@ -17,7 +17,7 @@ var rewriteParagraphsTool = BaseTool{
 
 ## When to Use
 
-ONLY when the user explicitly asks in this turn to rewrite, shorten, correct or reword text ("viết lại", "sửa câu này", "rút gọn") AND has highlighted the passage (the <document_selection> block). Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
+ONLY when the user asks in this turn to rewrite, shorten, correct or reword text, or asks for a suggestion of how to word it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "rút gọn"), AND has highlighted the passage (the <document_selection> block). Such a request on a highlighted passage always goes through this tool — never answer it by writing the new text in the chat, where it cannot be applied: a proposal does not change the document, it shows the text with a "Thay vào văn bản" button. Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
 
 ## Propose or apply
 

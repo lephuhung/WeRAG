@@ -693,7 +693,8 @@ func TestApplyFormatFixesSkipsTabSplitLines(t *testing.T) {
 func TestCheckDocumentFormatReadsWorkspace(t *testing.T) {
 	ws := newFakeWorkspace(docxFixture(t))
 	tool := NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9")
-	res := runTool(t, tool, `{"file_name":"ignored.docx"}`)
+	// mark=false: a check only reads (marking is covered in format_marks_test.go)
+	res := runTool(t, tool, `{"file_name":"ignored.docx","mark":false}`)
 	if !res.Success || res.Data["file_name"] != "cong-van.docx" || res.Data["document_revision"] != 3 {
 		t.Fatalf("result: %+v", res.Data)
 	}

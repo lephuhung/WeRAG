@@ -10,6 +10,8 @@
  * docker/onlyoffice/plugins/werag-assistant/plugin.js — keep them in sync. */
 
 export const DOCUMENT_OPS_TOOLS = new Set([
+  // marks the measured format findings where they are
+  "check_document_format",
   "insert_paragraphs",
   "rewrite_paragraphs",
   "mark_passages",
