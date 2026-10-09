@@ -2,6 +2,7 @@ package session
 
 import (
 	stderrors "errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -60,6 +61,9 @@ func NewDocumentWorkspaceHandler(
 // CreateDocumentWorkspaceRequest opens a session attachment in the editor.
 type CreateDocumentWorkspaceRequest struct {
 	AttachmentID string `json:"attachment_id" binding:"required"`
+	// EditorKind is "onlyoffice" (default) or "word_addin" (the document is
+	// edited in Microsoft Word, whose taskpane uploads its saves).
+	EditorKind string `json:"editor_kind"`
 }
 
 // documentIDParam is the :doc_id of the per-document routes; "" on the
@@ -73,7 +77,17 @@ func documentIDParam(c *gin.Context) string {
 // opened from it. POST /sessions/:session_id/documents (and /document)
 func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
-	if !h.workspaces.Enabled() {
+	var req CreateDocumentWorkspaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("attachment_id is required"))
+		return
+	}
+	editorKind := strings.TrimSpace(req.EditorKind)
+	if editorKind == "" {
+		editorKind = types.DocumentEditorKindOnlyOffice
+	}
+	// a Word add-in document needs no Document Server
+	if editorKind != types.DocumentEditorKindWordAddin && !h.workspaces.Enabled() {
 		c.Error(apperrors.NewServiceUnavailableError("document editor is not configured"))
 		return
 	}
@@ -83,14 +97,9 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	var req CreateDocumentWorkspaceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewBadRequestError("attachment_id is required"))
-		return
-	}
 	userID, _ := types.UserIDFromContext(ctx)
-	ws, err := h.workspaces.CreateFromAttachment(
-		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, userID, strings.TrimSpace(req.AttachmentID),
+	ws, err := h.workspaces.CreateFromAttachmentFor(
+		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, userID, strings.TrimSpace(req.AttachmentID), editorKind,
 	)
 	if err != nil {
 		h.fail(c, err, "Failed to open document")
@@ -425,6 +434,43 @@ func (h *DocumentWorkspaceHandler) RestoreDocumentRevision(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"revision": ws.Revision, "editor_key": ws.EditorKey()}})
+}
+
+// UploadDocumentContent stores the file the Word add-in uploaded as the
+// document's latest version. The body is the .docx itself; ?revision= is
+// the revision the taskpane last saw (a restore since then answers 409).
+// An unchanged file only releases the tools waiting for it.
+// POST /sessions/:session_id/documents/:doc_id/content
+func (h *DocumentWorkspaceHandler) UploadDocumentContent(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	revision, err := strconv.Atoi(strings.TrimSpace(c.Query("revision")))
+	if err != nil || revision < 0 {
+		c.Error(apperrors.NewBadRequestError("revision is required"))
+		return
+	}
+	// one byte over the limit is enough to refuse with the size message
+	data, err := io.ReadAll(io.LimitReader(c.Request.Body, types.MaxDocumentWorkspaceFileBytes+1))
+	if err != nil {
+		c.Error(apperrors.NewBadRequestError("could not read the uploaded document"))
+		return
+	}
+	ws, err := h.workspaces.StoreClientSave(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), revision, data)
+	if err != nil {
+		h.fail(c, err, "Failed to store document")
+		return
+	}
+	// an edited document gets its format check and profile refreshed
+	h.precheck.Refresh(ctx, ws)
+	h.precheck.StartProfile(ctx, ws)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"revision": ws.Revision, "file_size": ws.FileSize, "last_saved_at": ws.LastSavedAt,
+	}})
 }
 
 // SnapshotDocumentWorkspaceRequest is a manual snapshot from the UI.

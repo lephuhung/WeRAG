@@ -118,6 +118,10 @@ type documentWorkspaceService struct {
 	waitersMu sync.Mutex
 	waiters   map[string][]*saveWaiter
 
+	// client tracks the saves of Word add-in targets (see
+	// document_workspace_word_addin.go).
+	client clientSaves
+
 	// sourceTextReady are called once a source's text is stored (see
 	// OnSourceTextReady).
 	sourceTextMu    sync.Mutex
@@ -164,6 +168,7 @@ func newDocumentWorkspaceService(
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		waiters: map[string][]*saveWaiter{},
+		client:  newClientSaves(),
 	}
 	// a source copies its upload's text as soon as parsing ends, while the
 	// upload (24h TTL) still exists
@@ -184,7 +189,17 @@ func maxDocumentWorkspaceBytes() int64 { return secutils.GetMaxFileSizeMB() * 10
 func (s *documentWorkspaceService) CreateFromAttachment(
 	ctx context.Context, tenantID uint64, sessionID, userID, attachmentID string,
 ) (*types.DocumentWorkspace, error) {
-	if !s.Enabled() {
+	return s.CreateFromAttachmentFor(ctx, tenantID, sessionID, userID, attachmentID, types.DocumentEditorKindOnlyOffice)
+}
+
+func (s *documentWorkspaceService) CreateFromAttachmentFor(
+	ctx context.Context, tenantID uint64, sessionID, userID, attachmentID, editorKind string,
+) (*types.DocumentWorkspace, error) {
+	wordAddin := editorKind == types.DocumentEditorKindWordAddin
+	if !wordAddin && editorKind != types.DocumentEditorKindOnlyOffice && editorKind != "" {
+		return nil, apperrors.NewBadRequestError("invalid editor_kind")
+	}
+	if !wordAddin && !s.Enabled() {
 		return nil, apperrors.NewServiceUnavailableError("document editor is not configured")
 	}
 	sessionID = strings.TrimSpace(sessionID)
@@ -221,6 +236,10 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 	ext := strings.ToLower(filepath.Ext(doc.FileName))
 	if ext != ".docx" && ext != ".doc" {
 		return nil, apperrors.NewBadRequestError("only .docx and .doc files can be opened in the document editor")
+	}
+	if wordAddin && ext != ".docx" {
+		// converting needs the Document Server; Word always uploads .docx
+		return nil, apperrors.NewBadRequestError("the Word add-in uploads .docx files only")
 	}
 	reader, fileName, err := s.attachments.OpenFile(ctx, tenantID, sessionID, attachmentID)
 	if err != nil {
@@ -265,7 +284,10 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 		ActiveAt: &now, UserID: userID,
 		OriginalRef: ref, CurrentRef: ref, FileName: fileName, FileType: "docx",
 		FileSize: int64(len(data)), Status: types.DocumentWorkspaceStatusOpen,
-		Role: types.DocumentWorkspaceRoleTarget,
+		Role: types.DocumentWorkspaceRoleTarget, EditorKind: types.DocumentEditorKindOnlyOffice,
+	}
+	if wordAddin {
+		ws.EditorKind = types.DocumentEditorKindWordAddin
 	}
 	if err := s.repo.Create(ctx, ws); err != nil {
 		if isUniqueViolation(err) {
@@ -275,8 +297,11 @@ func (s *documentWorkspaceService) CreateFromAttachment(
 	}
 	s.bind(ctx, ref, ws.ID, types.ResourceRelationSourceFile)
 	s.bind(ctx, ref, ws.ID, types.ResourceRelationArtifact)
-	logger.Infof(ctx, "[DocumentWorkspace] created workspace=%s session=%s position=%d file=%s size=%d",
-		ws.ID, sessionID, ws.Position, secutils.SanitizeForLog(fileName), ws.FileSize)
+	if wordAddin {
+		s.client.stored(ws.ID, data)
+	}
+	logger.Infof(ctx, "[DocumentWorkspace] created workspace=%s session=%s position=%d editor=%s file=%s size=%d",
+		ws.ID, sessionID, ws.Position, ws.EditorKind, secutils.SanitizeForLog(fileName), ws.FileSize)
 	return ws, nil
 }
 
@@ -388,8 +413,8 @@ func (s *documentWorkspaceService) View(
 		return nil, apperrors.NewNotFoundError("Document workspace not found")
 	}
 	view := &types.DocumentWorkspaceView{DocumentWorkspace: ws, EditorKey: ws.EditorKey()}
-	if ws.IsSource() {
-		// no editor for a source: the view is its row alone
+	if ws.IsSource() || ws.IsWordAddin() {
+		// no editor config for a source, nor for a document Word holds
 		return view, nil
 	}
 	if !s.Enabled() {
@@ -492,12 +517,16 @@ func (s *documentWorkspaceService) OpenCurrent(
 // ---------------------------------------------------------------------------
 
 func (s *documentWorkspaceService) ForceSave(ctx context.Context, tenantID uint64, sessionID, documentID string) error {
-	if !s.Enabled() {
-		return apperrors.NewServiceUnavailableError("document editor is not configured")
-	}
 	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
 		return err
+	}
+	if ws.IsWordAddin() {
+		// Word saves through the taskpane's upload; nothing to ask for
+		return nil
+	}
+	if !s.Enabled() {
+		return apperrors.NewServiceUnavailableError("document editor is not configured")
 	}
 	// The browser fires this from beforeunload/pagehide with keepalive and
 	// may drop the connection before the Document Server answers; detach
@@ -579,6 +608,9 @@ func (s *documentWorkspaceService) PrepareExternalWrite(
 func (s *documentWorkspaceService) flushEditor(
 	ctx context.Context, ws *types.DocumentWorkspace, snapshotTag string, wait time.Duration,
 ) (*types.DocumentWorkspace, error) {
+	if ws.IsWordAddin() {
+		return s.awaitClientSave(ctx, ws, wait)
+	}
 	if !s.Enabled() {
 		return ws, nil
 	}

@@ -4,7 +4,7 @@
 "use client";
 
 import { useState } from "react";
-import { clearTokens } from "@/lib/api-client";
+import { clearTokens, signInPath } from "@/lib/api-client";
 import { changePassword } from "@/lib/api/auth";
 import { TwoFactorSettings } from "@/components/settings/two-factor-settings";
 import { useT } from "@/lib/i18n";
@@ -33,7 +33,7 @@ export function SecuritySettings() {
     // Backend revokes all sessions on password change — force re-login.
     setTimeout(() => {
       clearTokens();
-      window.location.href = "/login";
+      window.location.href = signInPath();
     }, 1200);
   };
 

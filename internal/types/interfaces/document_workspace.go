@@ -58,6 +58,17 @@ type DocumentWorkspaceService interface {
 	// refused (see checkDocumentWorkspaceSize).
 	CreateFromAttachment(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID string) (*types.DocumentWorkspace, error)
 
+	// CreateFromAttachmentFor is CreateFromAttachment for a given editor
+	// kind (types.DocumentEditorKind*). A Word add-in target needs no
+	// Document Server and takes .docx only.
+	CreateFromAttachmentFor(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID, editorKind string) (*types.DocumentWorkspace, error)
+
+	// StoreClientSave stores the file the Word add-in uploaded as a Word
+	// add-in target's latest version and releases the tools waiting for it.
+	// baseRevision is the revision the taskpane last saw; a restore since
+	// then answers a conflict.
+	StoreClientSave(ctx context.Context, tenantID uint64, sessionID, documentID string, baseRevision int, data []byte) (*types.DocumentWorkspace, error)
+
 	// CreateSourceFromAttachment records a chat upload of the session as a
 	// source document: a copy of the file now, its parsed text once the
 	// upload is parsed (TextStatus processing until then). An upload that

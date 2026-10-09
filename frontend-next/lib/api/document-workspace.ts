@@ -18,14 +18,20 @@
  *   GET    /api/v1/sessions/:id/documents/:doc/format-check → {check, report}
  *   POST   /api/v1/sessions/:id/documents/:doc/revisions/:seq/restore → {revision, editor_key}
  *   POST   /api/v1/sessions/:id/documents/:doc/proposals/apply {batch_id, variant_id} → {snapshot_seq}
+ *   POST   /api/v1/sessions/:id/documents/:doc/content?revision=N  <docx bytes> → {revision, file_size, last_saved_at}
+ *          (Word add-in: the taskpane uploads the file Word holds; 409 after a restore it has not loaded)
  *
  * Every per-document call takes an optional documentId; without one it uses
  * the legacy /document routes, which act on the session's active document.
  */
-import { ApiError, apiDel, apiDownload, apiGet, apiPost, apiPut, authHeaders } from "../api-client.ts";
+import { ApiError, apiDel, apiDownload, apiGet, apiPost, apiPut, authHeaders, refreshAccessToken } from "../api-client.ts";
 import { parseDocumentScope, type DocumentScope, type DocumentScopeSection, type DocumentScopeTask } from "../document-scope.ts";
 
 export type DocumentWorkspaceStatus = "open" | "closed";
+
+/** onlyoffice: the embedded editor; word_addin: Microsoft Word through the
+ * add-in, whose taskpane uploads the file. */
+export type DocumentEditorKind = "onlyoffice" | "word_addin";
 
 /** target: editor tab; source: chat upload, looked up only. */
 export type DocumentWorkspaceRole = "target" | "source";
@@ -58,6 +64,8 @@ export interface DocumentWorkspaceView {
   file_size: number;
   revision: number;
   status: DocumentWorkspaceStatus;
+  /** Missing on servers that predate the Word add-in: onlyoffice. */
+  editor_kind?: DocumentEditorKind;
   save_count: number;
   last_saved_at?: string;
   closed_at?: string;
@@ -246,10 +254,12 @@ export async function clearDocumentScope(sessionId: string): Promise<void> {
 export async function createDocumentWorkspace(
   sessionId: string,
   attachmentId: string,
+  editorKind?: DocumentEditorKind,
 ): Promise<DocumentWorkspaceView> {
   try {
     const res = await apiPost<Envelope<DocumentWorkspaceView>>(`${sessionBase(sessionId)}/documents`, {
       attachment_id: attachmentId,
+      ...(editorKind ? { editor_kind: editorKind } : {}),
     });
     if (!res?.data) throw new DocumentWorkspaceError("request_failed", 0, "Empty workspace response");
     return res.data;
@@ -326,6 +336,44 @@ export async function forceSaveDocumentWorkspace(sessionId: string, documentId?:
   } catch (err) {
     throw toWorkspaceError(err);
   }
+}
+
+/** Word add-in: stores the file Word holds as the document's latest
+ * version. `revision` is the one the taskpane last saw; a 409 means a
+ * restore happened since (reload the document into Word first). */
+export async function uploadDocumentContent(
+  sessionId: string,
+  documentId: string,
+  revision: number,
+  docx: Uint8Array,
+): Promise<{ revision: number; fileSize: number; lastSavedAt?: string }> {
+  const url = `${base(sessionId, documentId)}/content?revision=${encodeURIComponent(String(revision))}`;
+  const send = () =>
+    fetch(url, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      body: docx as BodyInit,
+    });
+  let res = await send();
+  if (res.status === 401) {
+    await refreshAccessToken();
+    res = await send();
+  }
+  const payload = (await res.json().catch(() => null)) as Envelope<{
+    revision: number;
+    file_size: number;
+    last_saved_at?: string;
+  }> & { error?: { message?: string } | string; message?: string } | null;
+  if (!res.ok) {
+    const msg =
+      (typeof payload?.error === "string" ? payload.error : payload?.error?.message) ?? payload?.message ?? "Upload failed";
+    throw toWorkspaceError(new ApiError(res.status, msg, payload));
+  }
+  return {
+    revision: Number(payload?.data?.revision) || 0,
+    fileSize: Number(payload?.data?.file_size) || 0,
+    lastSavedAt: payload?.data?.last_saved_at,
+  };
 }
 
 export function downloadDocumentWorkspace(sessionId: string, documentId?: string): Promise<Blob> {

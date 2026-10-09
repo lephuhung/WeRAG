@@ -114,7 +114,13 @@ func (s *documentWorkspaceService) Snapshot(
 	}
 	// When the save landed, the callback has already recorded this snapshot
 	// and recordRevision returns that row.
-	return s.recordRevision(ctx, ws, label, source, true)
+	rev, err := s.recordRevision(ctx, ws, label, source, true)
+	if err == nil && ws.IsWordAddin() && source == types.DocumentRevisionSourceAI {
+		// an AI edit is about to be applied in Word: the next flush waits
+		// for the taskpane to upload the result
+		s.client.expect(ws.ID)
+	}
+	return rev, err
 }
 
 func (s *documentWorkspaceService) ListRevisions(
@@ -171,6 +177,10 @@ func (s *documentWorkspaceService) Restore(
 		return nil, apperrors.NewConflictError("document changed during restore; try again")
 	}
 	s.bind(ctx, target.Ref, ws.ID, types.ResourceRelationArtifact)
+	if ws.IsWordAddin() {
+		// the taskpane writes the restored file into Word and uploads it
+		s.client.forget(ws.ID)
+	}
 	if _, err := s.recordRevision(ctx, ws, fmt.Sprintf("Khôi phục bản #%d", seq),
 		types.DocumentRevisionSourceRestore, false); err != nil {
 		logger.Warnf(ctx, "[DocumentWorkspace] record restore revision failed: workspace=%s err=%v", ws.ID, err)

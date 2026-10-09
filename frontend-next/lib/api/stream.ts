@@ -86,7 +86,7 @@ export type StreamParams = {
   questionOrigin?: { knowledge_base_id: string; knowledge_id?: string };
   abbreviationCandidates?: string[];
   /** Document-assistant: the editor selection the user attached to this turn. */
-  documentSelection?: { text: string; paragraph_hint?: string };
+  documentSelection?: { text: string; paragraph_hint?: string; document_id?: string };
   signal?: AbortSignal;
   onChunk: (c: StreamChunk) => void;
 };

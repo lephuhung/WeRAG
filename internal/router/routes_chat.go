@@ -161,6 +161,8 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.GET("/:id/documents/:doc_id/format-check", handler.GetDocumentFormatCheck)
 		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
+		// the Word add-in uploads the file Word holds (no Document Server)
+		sessions.POST("/:session_id/documents/:doc_id/content", handler.UploadDocumentContent)
 		// snapshot before the user applies a proposed rewrite from the chat
 		sessions.POST("/:session_id/documents/:doc_id/proposals/apply", handler.ApplyRewriteProposal)
 	}

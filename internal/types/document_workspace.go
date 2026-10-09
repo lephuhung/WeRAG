@@ -26,6 +26,16 @@ const (
 	DocumentWorkspaceRoleSource = "source"
 )
 
+// Editor kinds of a target: which editor holds the live document. An
+// ONLYOFFICE target is edited in the embedded Document Server, which saves
+// back through its callback; a Word add-in target is edited in Microsoft
+// Word, whose taskpane uploads the file (StoreClientSave) because the
+// backend cannot fetch it.
+const (
+	DocumentEditorKindOnlyOffice = "onlyoffice"
+	DocumentEditorKindWordAddin  = "word_addin"
+)
+
 // Text statuses of a source: its parsed text is copied from the upload once
 // parsing finishes (TextStatus is "" for a target).
 const (
@@ -91,6 +101,9 @@ type DocumentWorkspace struct {
 	SaveCount int `json:"save_count" gorm:"not null;default:0"`
 	// Role is DocumentWorkspaceRoleTarget or DocumentWorkspaceRoleSource.
 	Role string `json:"role" gorm:"type:varchar(16);not null;default:'target'"`
+	// EditorKind is DocumentEditorKindOnlyOffice ("" on rows written
+	// before it existed) or DocumentEditorKindWordAddin.
+	EditorKind string `json:"editor_kind" gorm:"type:varchar(16);not null;default:'onlyoffice'"`
 	// TextStatus is the state of a source's parsed text (see
 	// DocumentSourceText*); "" for a target.
 	TextStatus  string         `json:"text_status,omitempty" gorm:"type:varchar(16);not null;default:''"`
@@ -116,7 +129,16 @@ func (w *DocumentWorkspace) BeforeCreate(_ *gorm.DB) error {
 	if w.Role == "" {
 		w.Role = DocumentWorkspaceRoleTarget
 	}
+	if w.EditorKind == "" {
+		w.EditorKind = DocumentEditorKindOnlyOffice
+	}
 	return nil
+}
+
+// IsWordAddin reports a target edited in Microsoft Word through the WeRAG
+// add-in: the taskpane, not the Document Server, uploads its saves.
+func (w *DocumentWorkspace) IsWordAddin() bool {
+	return w != nil && w.EditorKind == DocumentEditorKindWordAddin
 }
 
 // IsSource reports a source document (a chat upload, looked up only).

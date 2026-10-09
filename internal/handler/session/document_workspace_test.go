@@ -32,6 +32,12 @@ func (f *callbackOnlyWorkspaces) Enabled() bool { return true }
 func (f *callbackOnlyWorkspaces) CreateFromAttachment(context.Context, uint64, string, string, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
+func (f *callbackOnlyWorkspaces) CreateFromAttachmentFor(context.Context, uint64, string, string, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
+func (f *callbackOnlyWorkspaces) StoreClientSave(context.Context, uint64, string, string, int, []byte) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
 func (f *callbackOnlyWorkspaces) GetBySession(context.Context, uint64, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
@@ -166,6 +172,9 @@ type routeWorkspaces struct {
 
 func (f *routeWorkspaces) Enabled() bool { return f.enabled }
 
+func (f *routeWorkspaces) CreateFromAttachmentFor(ctx context.Context, tenantID uint64, sessionID, userID, attachmentID, _ string) (*types.DocumentWorkspace, error) {
+	return f.CreateFromAttachment(ctx, tenantID, sessionID, userID, attachmentID)
+}
 func (f *routeWorkspaces) CreateFromAttachment(_ context.Context, tenantID uint64, sessionID, userID, _ string) (*types.DocumentWorkspace, error) {
 	if f.bySess[sessionID] != nil {
 		return nil, apperrors.NewConflictError("session already has a document workspace")

@@ -211,6 +211,19 @@ function isPublicAuthPath(path: string): boolean {
   return PUBLIC_AUTH_PATHS.some((p) => path.includes(p));
 }
 
+/* Where a dead session sends the user: the Word add-in (repo
+ * werag-word-addin, served at /word/ on this origin with a synced copy of
+ * this file) has its own sign-in screen and must not land on the web app. */
+export function signInPath(): string {
+  try {
+    const path = window.location.pathname ?? "";
+    if (path === "/word" || path.startsWith("/word/")) return "/word";
+  } catch {
+    /* no location (tests) */
+  }
+  return "/login";
+}
+
 let refreshPromise: Promise<string> | null = null;
 
 /* Only a confirmed-invalid refresh credential wipes the session: an
@@ -301,7 +314,7 @@ export async function refreshAccessToken(): Promise<string> {
         throw new ApiError(res.status || 0, envelopeMessage(data), data ?? undefined);
       }
       clearTokens();
-      window.location.href = "/login";
+      window.location.href = signInPath();
       throw new ApiError(res.status || 401, data?.message ?? "Session expired");
     }
     if (superseded()) throw staleFlight();
