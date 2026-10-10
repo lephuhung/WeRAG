@@ -107,6 +107,23 @@ type CheckDocumentFormatTool struct {
 	// profiler makes the document's first profile inside the background
 	// run's slot, before the evaluation (see WithProfiler); nil skips it.
 	profiler *DocumentProfiler
+	// speller reviews the spelling alongside a check that marks the
+	// editor (see WithSpelling); nil skips it.
+	speller *CheckSpellingTool
+}
+
+// WithSpelling returns a copy that also reviews the document's spelling
+// when it marks the editor: the spelling pass runs alongside the format
+// evaluation and its mistakes are underlined in red with the format
+// findings, whatever the model then writes — the agent model alone often
+// listed spelling mistakes in the chat without underlining any.
+func (t *CheckDocumentFormatTool) WithSpelling(s *CheckSpellingTool) *CheckDocumentFormatTool {
+	c := *t
+	c.speller = s
+	if s != nil {
+		c.description += "\n\nIt also reviews the spelling of the document in the same run: each mistake is underlined in red in the editor and listed in the result under \"Lỗi chính tả\". Present that list as the spelling part of your answer; do not call check_spelling again for the same document in this turn."
+	}
+	return &c
 }
 
 // NewCheckDocumentFormatTool builds the tool for one session, checking the
@@ -228,18 +245,41 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
 
+	// marking the editor: the spelling pass runs alongside the evaluation
+	mark := t.workspace != nil && (in.Mark == nil || *in.Mark)
+	var spelling chan *spellingPass
+	if mark && t.speller != nil {
+		spelling = make(chan *spellingPass, 1)
+		go func() { spelling <- t.speller.spellingPassOf(ctx, content) }()
+	}
+
 	out := t.check(ctx, content, fileName, in.DocumentType)
 	if out.result == nil {
 		return &types.ToolResult{Success: false, Error: out.failure}, nil
 	}
 	data := out.result.data()
 	output := out.result.Output
-	if t.workspace != nil && (in.Mark == nil || *in.Mark) && len(out.result.Flags) > 0 {
-		if ops, ws, seq := t.markFindings(ctx, in.Document, content, out.result.Flags); len(ops) > 0 {
+	if mark {
+		var sp *spellingPass
+		if spelling != nil {
+			select {
+			case sp = <-spelling:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		ops, ws, seq, formatMarks := t.markFindings(ctx, in.Document, content, out.result.Flags, sp)
+		if len(ops) > 0 {
 			for k, v := range opsData(ops, seq, ws) {
 				data[k] = v
 			}
+		}
+		if formatMarks > 0 {
 			output += "\n\n" + formatMarksNote + "\n"
+		}
+		if sp != nil {
+			output += "\n" + sp.render(len(ops) > 0)
+			data["spelling"] = sp.findings
 		}
 	}
 	if revision >= 0 {
@@ -248,24 +288,31 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
 }
 
-// markFindings plans the editor marks of the measured findings on the
-// checked version. Marking is an edit of the document the user named (or
-// the only one): otherwise, or when the snapshot before it fails, nothing
-// is marked and the check stands alone.
+// markFindings plans the editor marks on the checked version: the
+// measured format findings and the spelling pass's mistakes (one red
+// underline per place). Marking is an edit of the document the user named
+// (or the only one): otherwise, or when the snapshot before it fails,
+// nothing is marked and the check stands alone. formatMarks counts the
+// format findings' marks.
 func (t *CheckDocumentFormatTool) markFindings(
-	ctx context.Context, ref string, content []byte, flags []formatFlag,
-) ([]DocumentOp, *types.DocumentWorkspace, int) {
+	ctx context.Context, ref string, content []byte, flags []formatFlag, sp *spellingPass,
+) (ops []DocumentOp, target *types.DocumentWorkspace, seq int, formatMarks int) {
 	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, true)
 	if err != nil {
-		return nil, nil, 0
+		return nil, nil, 0, 0
 	}
 	doc, err := docxedit.Open(content)
 	if err != nil {
-		return nil, nil, 0
+		return nil, nil, 0, 0
 	}
-	ops := formatMarkOps(newVirtualDoc(doc.Paragraphs()), flagSpots(flags))
+	vdoc := newVirtualDoc(doc.Paragraphs())
+	ops = formatMarkOps(vdoc, flagSpots(flags))
+	formatMarks = len(ops)
+	if sp != nil {
+		ops = mergeMarkOps(ops, spellingMarkOps(vdoc, sp.findings))
+	}
 	if len(ops) == 0 {
-		return nil, nil, 0
+		return nil, nil, 0, 0
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	// the undo point (and, for a Word document, the upload the next tool waits for)
@@ -273,13 +320,12 @@ func (t *CheckDocumentFormatTool) markFindings(
 		"ai: đánh dấu lỗi thể thức", types.DocumentRevisionSourceAI, snapshotWait)
 	if err != nil {
 		logger.Warnf(ctx, "check_document_format: no snapshot before marking, findings not marked: %v", err)
-		return nil, nil, 0
+		return nil, nil, 0, 0
 	}
-	seq := 0
 	if rev != nil {
 		seq = rev.Seq
 	}
-	return ops, target, seq
+	return ops, target, seq, formatMarks
 }
 
 func (t *CheckDocumentFormatTool) modelName() string {

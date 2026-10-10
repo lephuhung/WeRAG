@@ -1,9 +1,13 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
+	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
 )
 
 // Format findings shown in the editor. A measured NĐ30 finding that names
@@ -134,4 +138,75 @@ func flagSpots(flags []formatFlag) []formatSpot {
 		out = append(out, f.Spots...)
 	}
 	return out
+}
+
+// mergeMarkOps appends extra to ops, skipping a mark already planned for
+// the same place (a stray character is found by both passes).
+func mergeMarkOps(ops, extra []DocumentOp) []DocumentOp {
+	key := func(op DocumentOp) string {
+		k := op.Text + "\x00" + op.Style
+		if op.Anchor != nil {
+			k += "\x00" + op.Anchor.Text + "\x00" + strconv.Itoa(op.Anchor.Occurrence)
+		}
+		return k + "\x00" + strconv.Itoa(max(op.TextOccurrence, 1))
+	}
+	seen := make(map[string]bool, len(ops))
+	for _, op := range ops {
+		seen[key(op)] = true
+	}
+	for _, op := range extra {
+		if k := key(op); !seen[k] {
+			seen[k] = true
+			ops = append(ops, op)
+		}
+	}
+	return ops
+}
+
+// spellingPass is the format check's companion spelling review.
+type spellingPass struct {
+	findings []SpellingFinding
+	checked  int  // paragraphs reviewed
+	ok       bool // false: the model answered no batch
+}
+
+// spellingPassOf reviews the spelling of a .docx's paragraphs.
+func (t *CheckSpellingTool) spellingPassOf(ctx context.Context, content []byte) *spellingPass {
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		return &spellingPass{}
+	}
+	findings, checked, ok := t.documentSpelling(ctx, doc.Paragraphs())
+	return &spellingPass{findings: findings, checked: checked, ok: ok}
+}
+
+// render is the spelling section of the format check's Output. marked says
+// whether the editor got the underlines.
+func (sp *spellingPass) render(marked bool) string {
+	var b strings.Builder
+	switch {
+	case !sp.ok:
+		b.WriteString("## Lỗi chính tả\nLần này không kiểm tra được chính tả (mô hình kiểm tra chính tả không trả lời). Không tự liệt kê lỗi chính tả; đề nghị người dùng thử lại.\n")
+		return b.String()
+	case len(sp.findings) == 0:
+		fmt.Fprintf(&b, "## Lỗi chính tả\nĐã rà %d đoạn: không phát hiện lỗi chính tả.\n", sp.checked)
+		return b.String()
+	}
+	if marked {
+		fmt.Fprintf(&b, "## Lỗi chính tả (%d lỗi, đã gạch chân đỏ trong trình soạn thảo, chưa sửa)\n", len(sp.findings))
+	} else {
+		fmt.Fprintf(&b, "## Lỗi chính tả (%d lỗi, CHƯA gạch chân được: hãy nêu tên văn bản cần đánh dấu)\n", len(sp.findings))
+	}
+	for i, f := range sp.findings {
+		fmt.Fprintf(&b, "%d. Đoạn [%d]: “%s” → “%s”", i+1, f.Paragraph, f.Wrong, f.Correct)
+		if f.Reason != "" {
+			fmt.Fprintf(&b, " (%s)", f.Reason)
+		}
+		if marked && f.Unmarked {
+			b.WriteString(" (không gạch chân được)")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("Khi trả lời, nêu lỗi chính tả theo đúng danh sách này. Nếu bạn thấy thêm lỗi chính tả khác, gạch chân bằng mark_passages trước khi nêu; không tự sửa.\n")
+	return b.String()
 }

@@ -218,6 +218,19 @@ func (s *sessionService) AgentQA(
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
+	// a request about a highlighted passage starts with the tool it needs:
+	// a rewrite with rewrite_paragraphs (a proposal with its apply button),
+	// a spelling check with check_spelling (red underlines). Left to itself
+	// the model often answered both in the chat (one short labeling call).
+	if sel := req.DocumentSelection.Normalized(); sel != nil && req.CustomAgent != nil &&
+		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&
+		s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
+		intent := tools.ClassifySelectionIntent(ctx, docformat.ChatCompleter(summaryModel), req.Query, sel.Text)
+		if tool := tools.FirstToolForSelection(intent); tool != "" {
+			ctx = types.WithFirstToolChoice(ctx, tool)
+			logger.Infof(ctx, "Highlighted passage, intent %s: the turn starts with %s", intent, tool)
+		}
+	}
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		// the document router (no model, then one short thinking-off call
 		// when unclear): a turn that names no document of a session with

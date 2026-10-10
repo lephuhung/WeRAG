@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	legalskillassets "github.com/Tencent/WeKnora/examples/skills"
@@ -1278,7 +1279,14 @@ func (s *agentService) registerTools(
 	switch {
 	case docWorkspace != nil:
 		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, formatModel, sessionID)
-		registry.RegisterTool(checkTool)
+		// a format check also underlines the spelling mistakes (a pass run
+		// alongside it), when the agent may check spelling at all
+		checked := checkTool
+		if spellModel != nil && slices.Contains(allowedTools, tools.ToolCheckSpelling) {
+			checked = checkTool.WithSpelling(tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
+				WithPrompt(s.spellcheckPrompt()))
+		}
+		registry.RegisterTool(checked)
 		// the check takes about a minute; start it now for every open
 		// document so a format question later in the conversation is
 		// answered from its cache

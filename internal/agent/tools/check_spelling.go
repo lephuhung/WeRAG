@@ -224,24 +224,10 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		}
 	}
 
-	findings := strayCharFindings(scoped)
-	failedBatches := 0
-	batches := 0
-	for start := 0; start < len(scoped); start += spellBatchSize {
-		batch := scoped[start:min(start+spellBatchSize, len(scoped))]
-		batches++
-		got, err := t.reviewBatch(ctx, batch)
-		if err != nil {
-			failedBatches++
-			logger.Warnf(ctx, "check_spelling: batch %d failed: %v", batches, err)
-			continue
-		}
-		findings = append(findings, got...)
-	}
+	findings, batches, failedBatches := t.review(ctx, scoped)
 	if batches > 0 && failedBatches == batches && len(findings) == 0 {
 		return &types.ToolResult{Success: false, Error: "Mô hình kiểm tra chính tả không trả lời được (hoặc trả lời sai định dạng). Hãy thử lại sau."}, nil
 	}
-	findings = dedupeFindings(findings)
 	truncated := len(findings) > spellMaxFindings
 	if truncated {
 		findings = findings[:spellMaxFindings]
@@ -249,18 +235,7 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 
 	var ops []DocumentOp
 	if mark {
-		vdoc := newVirtualDoc(paras)
-		for i, f := range findings {
-			if f.raw == "" {
-				findings[i].Unmarked = true
-				continue
-			}
-			op := DocumentOp{Op: OpMark, Anchor: vdoc.anchor(f.Paragraph), Text: f.raw, Style: "underline"}
-			if f.occurrence > 1 {
-				op.TextOccurrence = f.occurrence
-			}
-			ops = append(ops, op)
-		}
+		ops = spellingMarkOps(newVirtualDoc(paras), findings)
 	}
 
 	var out strings.Builder
@@ -312,6 +287,63 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		data["next_from"] = next
 	}
 	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
+}
+
+// review runs the stray-character scan and the model over the paragraphs,
+// in batches; a failed batch is logged and skipped. Findings are deduped.
+func (t *CheckSpellingTool) review(ctx context.Context, scoped []spellPara) (findings []SpellingFinding, batches, failed int) {
+	findings = strayCharFindings(scoped)
+	for start := 0; start < len(scoped); start += spellBatchSize {
+		batch := scoped[start:min(start+spellBatchSize, len(scoped))]
+		batches++
+		got, err := t.reviewBatch(ctx, batch)
+		if err != nil {
+			failed++
+			logger.Warnf(ctx, "check_spelling: batch %d failed: %v", batches, err)
+			continue
+		}
+		findings = append(findings, got...)
+	}
+	return dedupeFindings(findings), batches, failed
+}
+
+// spellingMarkOps underlines each finding in red where it is; a finding
+// that could not be located exactly is flagged Unmarked instead.
+func spellingMarkOps(vdoc *virtualDoc, findings []SpellingFinding) []DocumentOp {
+	var ops []DocumentOp
+	for i, f := range findings {
+		if f.raw == "" {
+			findings[i].Unmarked = true
+			continue
+		}
+		op := DocumentOp{Op: OpMark, Anchor: vdoc.anchor(f.Paragraph), Text: f.raw, Style: "underline"}
+		if f.occurrence > 1 {
+			op.TextOccurrence = f.occurrence
+		}
+		ops = append(ops, op)
+	}
+	return ops
+}
+
+// documentSpelling reviews the first spellMaxLimit non-empty paragraphs of
+// a document (the format check's companion pass, see
+// CheckDocumentFormatTool.WithSpelling). checked is how many were reviewed,
+// ok false when every batch failed.
+func (t *CheckSpellingTool) documentSpelling(ctx context.Context, paras []docxedit.Paragraph) (findings []SpellingFinding, checked int, ok bool) {
+	var scoped []spellPara
+	for i, p := range paras {
+		if len(scoped) >= spellMaxLimit {
+			break
+		}
+		if strings.TrimSpace(p.Text) != "" {
+			scoped = append(scoped, spellPara{Index: i, Text: p.Text})
+		}
+	}
+	findings, batches, failed := t.review(ctx, scoped)
+	if len(findings) > spellMaxFindings {
+		findings = findings[:spellMaxFindings]
+	}
+	return findings, len(scoped), batches == 0 || failed < batches || len(findings) > 0
 }
 
 // selectedParagraphs are the paragraphs the selection covers; a paragraph

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -212,5 +213,59 @@ func TestApplyFormatFixesReviewsBeforeChanging(t *testing.T) {
 	}
 	if !applied || res.Data["review"] != false {
 		t.Fatalf("apply: %+v", res.Data)
+	}
+}
+
+func TestCheckDocumentFormatUnderlinesSpellingMistakes(t *testing.T) {
+	// the spelling pass runs with the check: its mistakes are underlined
+	// in red however the model then words the answer
+	ws := newFakeWorkspace(spellDoc(t))
+	speller := &spellChat{replies: []string{spellReply}}
+	tool := NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9").WithSpelling(NewCheckSpellingTool(ws, speller, "sess-9"))
+	if !strings.Contains(tool.Description(), "reviews the spelling") {
+		t.Fatal("the description tells the model the spelling is covered")
+	}
+	res := runFormatTool(t, tool, `{}`)
+	if !res.Success || speller.calls != 1 {
+		t.Fatalf("result: %+v calls=%d", res, speller.calls)
+	}
+	found, _ := res.Data["spelling"].([]SpellingFinding)
+	if len(found) != 4 {
+		t.Fatalf("spelling: %+v", res.Data["spelling"])
+	}
+	underlined := map[string]bool{}
+	for _, m := range markOps(t, res.Data) {
+		if m.Style == "underline" && m.Text != "" {
+			underlined[m.Text] = true
+		}
+	}
+	for _, w := range []string{"đề nghi", "triễn khai", "p`hủ"} {
+		if !underlined[w] {
+			t.Errorf("%q not underlined: %+v", w, res.Data["document_ops"])
+		}
+	}
+	if !strings.Contains(res.Output, "## Lỗi chính tả (4 lỗi, đã gạch chân đỏ") || !strings.Contains(res.Output, "“đề nghi” → “đề nghị”") {
+		t.Fatalf("output: %s", res.Output)
+	}
+	if len(ws.snapshots) != 1 {
+		t.Fatalf("one undo point for all marks: %v", ws.snapshots)
+	}
+
+	// mark=false: nothing is reviewed or marked
+	ws = newFakeWorkspace(spellDoc(t))
+	speller = &spellChat{replies: []string{spellReply}}
+	tool = NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9").WithSpelling(NewCheckSpellingTool(ws, speller, "sess-9"))
+	if res := runFormatTool(t, tool, `{"mark":false}`); res.Data["spelling"] != nil || speller.calls != 0 {
+		t.Fatalf("mark=false: %+v calls=%d", res.Data, speller.calls)
+	}
+
+	// the spelling model does not answer: said so, nothing invented
+	ws = newFakeWorkspace(spellDoc(t))
+	down := &spellChat{err: errors.New("down")}
+	tool = NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9").WithSpelling(NewCheckSpellingTool(ws, down, "sess-9"))
+	res = runFormatTool(t, tool, `{}`)
+	// the stray character is still found by code, so the pass reports it
+	if !res.Success || !strings.Contains(res.Output, "## Lỗi chính tả") {
+		t.Fatalf("model down: %s", res.Output)
 	}
 }

@@ -265,6 +265,15 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		ParallelToolCalls:   &parallelToolCalls,
 		PromptCacheKey:      sessionID,
 	}
+	// The turn must start with a given tool (types.WithFirstToolChoice: a
+	// request about a highlighted passage). Thinking is off for that round:
+	// with it the model can spend the whole budget before calling.
+	if forced := firstRoundToolChoice(ctx, iteration, tools); forced != "" {
+		opts.ToolChoice = forced
+		noThinking := false
+		opts.Thinking = &noThinking
+		logger.Infof(ctx, "[Agent][Thinking] Iteration-1 must call %s", forced)
+	}
 
 	pendingToolCalls := make(map[string]bool)
 	thinkingToolIDs := make(map[string]string) // tool_call_id -> event ID for thinking tool streams
@@ -644,4 +653,24 @@ func reportModelContextLeaks(
 	}
 	logger.Warnf(ctx, "[%s][ModelContext] %d message field(s) carry raw identifiers after encoding: %s",
 		scope, len(leaks), modelcontext.SummarizeLeaks(leaks))
+}
+
+// firstRoundToolChoice is the tool the first round must call (see
+// types.WithFirstToolChoice), "" in later rounds or when it is not offered.
+func firstRoundToolChoice(ctx context.Context, iteration int, tools []chat.Tool) string {
+	forced := types.FirstToolChoiceFromContext(ctx)
+	if iteration != 0 || forced == "" || !hasChatTool(tools, forced) {
+		return ""
+	}
+	return forced
+}
+
+// hasChatTool reports whether name is among the tools offered this round.
+func hasChatTool(tools []chat.Tool, name string) bool {
+	for _, t := range tools {
+		if t.Function.Name == name {
+			return true
+		}
+	}
+	return false
 }
