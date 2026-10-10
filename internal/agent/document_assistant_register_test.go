@@ -33,6 +33,9 @@ func TestDocumentAssistantPromptDefaultsToOneAdministrativeVersion(t *testing.T)
 		// spelling mistakes named in an answer are underlined, not fixed
 		"Spelling mistakes are ALWAYS underlined in the editor, whoever found them",
 		"call mark_passages once in the same turn, before answering, with every one of them",
+		// the assistant never offers to edit on its own
+		"Never close an answer by offering to change the document yourself",
+		"Never offer to correct spelling mistakes",
 		"Call it first WITHOUT apply",
 		"Pass apply=true only when the user agrees in a later message",
 		"Use dry_run=true only when the user asks to see the plan alone",

@@ -23,6 +23,12 @@ import (
 // paragraph would otherwise paint the whole document.
 const maxFormatMarks = 40
 
+// pointOutClosing ends a format check's Output: the assistant points out and
+// suggests; it must not close by offering to make the changes itself, which
+// read as if it would edit the document unasked (seen on Qwen3.6 2026-10-10:
+// "Bạn có muốn tôi sửa tất cả 20 lỗi chính tả? … xác nhận để tôi tiến hành").
+const pointOutClosing = "CÁCH KẾT THÚC CÂU TRẢ LỜI: chỉ ra lỗi và gợi ý cách sửa, người dùng tự sửa trong văn bản. KHÔNG đề nghị tự sửa, tự chèn hay tự thay đổi văn bản, KHÔNG hỏi \"Bạn có muốn tôi sửa…\" hay \"xác nhận để tôi tiến hành\". Nếu hữu ích, chỉ nhắc: muốn có đề xuất viết lại cho một đoạn thì bôi đen đoạn đó và yêu cầu viết lại (đề xuất có nút thay vào văn bản)."
+
 // formatMarksNote ends the Output of a tool that returned format marks.
 const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được gạch chân đỏ trong trình soạn thảo để người dùng thấy vị trí; nội dung và định dạng không bị sửa (Ctrl+Z để bỏ gạch chân). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."
 
@@ -207,6 +213,6 @@ func (sp *spellingPass) render(marked bool) string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("Khi trả lời, nêu lỗi chính tả theo đúng danh sách này. Nếu bạn thấy thêm lỗi chính tả khác, gạch chân bằng mark_passages trước khi nêu; không tự sửa.\n")
+	b.WriteString("Khi trả lời, nêu lỗi chính tả theo đúng danh sách này, kèm từ đúng: đó là gợi ý để người dùng tự sửa. Nếu bạn thấy thêm lỗi chính tả khác, gạch chân bằng mark_passages trước khi nêu.\n")
 	return b.String()
 }

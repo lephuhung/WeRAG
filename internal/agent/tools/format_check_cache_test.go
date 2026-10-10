@@ -22,6 +22,7 @@ func resetFormatChecks(t *testing.T) {
 	formatChecks.prewarmed = sync.Map{}
 	formatChecks.states = sync.Map{}
 	formatChecks.rdb = nil
+	spellPasses.reset()
 }
 
 // restartProcess drops what a server restart loses: the process caches.

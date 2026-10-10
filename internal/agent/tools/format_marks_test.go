@@ -269,3 +269,22 @@ func TestCheckDocumentFormatUnderlinesSpellingMistakes(t *testing.T) {
 		t.Fatalf("model down: %s", res.Output)
 	}
 }
+
+func TestFormatToolsCloseWithoutOfferingToEdit(t *testing.T) {
+	// the assistant points out and suggests; it must not offer "để tôi sửa"
+	ws := newFakeWorkspace(docxFixture(t))
+	res := runFormatTool(t, NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9"), `{"mark":false}`)
+	if !strings.Contains(res.Output, "KHÔNG đề nghị tự sửa") {
+		t.Fatalf("check output: %s", res.Output)
+	}
+	// a review with fixes to agree to names only those (button or "đồng ý")
+	res = runTool(t, NewApplyFormatFixesTool(newFakeWorkspace(docxFixture(t)), nil, "s"), `{}`)
+	if !strings.Contains(res.Output, "Áp dụng các sửa thể thức này") || !strings.Contains(res.Output, "Không đề nghị sửa gì khác") {
+		t.Fatalf("review output: %s", res.Output)
+	}
+	// nothing mechanical to apply: nothing to offer
+	res = runTool(t, NewApplyFormatFixesTool(newFakeWorkspace(docxFixture(t)), nil, "s"), `{"check_ids":["no.such.rule"]}`)
+	if strings.Contains(res.Output, "Áp dụng các sửa thể thức này") || !strings.Contains(res.Output, "KHÔNG đề nghị sửa giúp") {
+		t.Fatalf("nothing to apply: %s", res.Output)
+	}
+}

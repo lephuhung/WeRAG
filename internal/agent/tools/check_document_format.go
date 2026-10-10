@@ -282,6 +282,9 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 			data["spelling"] = sp.findings
 		}
 	}
+	if t.workspace != nil {
+		output += "\n" + pointOutClosing + "\n"
+	}
 	if revision >= 0 {
 		data["document_revision"] = revision
 	}

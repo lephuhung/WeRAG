@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -51,10 +55,21 @@ A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it 
 const (
 	spellDefaultLimit   = 60
 	spellMaxLimit       = 150
-	spellBatchSize      = 40
+	spellBatchSize      = 20
 	spellMaxFindings    = 60
 	spellParagraphRunes = 2000
 	strayCharReason     = "ký tự lạ trong từ"
+	// spellMaxTokens caps one batch's reply: a batch of spellBatchSize
+	// paragraphs has a few findings. Under the 8192 of the shared labeling
+	// completer a reply once ran away for 90 s (Qwen3.6, 2026-10-10).
+	spellMaxTokens = 2048
+	// spellRetryEchoRunes is how much of a malformed reply the retry quotes.
+	spellRetryEchoRunes = 1500
+	// spellSplitMin: a batch larger than this that still fails is reviewed
+	// again in two halves.
+	spellSplitMin = 5
+	// spellConcurrency is how many batches run at once.
+	spellConcurrency = 3
 )
 
 // DefaultSpellcheckPrompt is the system prompt used when the spellcheck_review
@@ -290,21 +305,53 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 }
 
 // review runs the stray-character scan and the model over the paragraphs,
-// in batches; a failed batch is logged and skipped. Findings are deduped.
+// in batches (spellConcurrency at a time, findings kept in batch order); a
+// failed batch is logged and skipped. Findings are deduped.
 func (t *CheckSpellingTool) review(ctx context.Context, scoped []spellPara) (findings []SpellingFinding, batches, failed int) {
 	findings = strayCharFindings(scoped)
+	var chunks [][]spellPara
 	for start := 0; start < len(scoped); start += spellBatchSize {
-		batch := scoped[start:min(start+spellBatchSize, len(scoped))]
+		chunks = append(chunks, scoped[start:min(start+spellBatchSize, len(scoped))])
+	}
+	results := make([][]SpellingFinding, len(chunks))
+	errs := make([]error, len(chunks))
+	sem := make(chan struct{}, spellConcurrency)
+	var wg sync.WaitGroup
+	for i, batch := range chunks {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, batch []spellPara) {
+			defer func() { <-sem; wg.Done() }()
+			results[i], errs[i] = t.reviewBatchOrHalves(ctx, batch)
+		}(i, batch)
+	}
+	wg.Wait()
+	for i := range chunks {
 		batches++
-		got, err := t.reviewBatch(ctx, batch)
-		if err != nil {
+		if errs[i] != nil {
 			failed++
-			logger.Warnf(ctx, "check_spelling: batch %d failed: %v", batches, err)
+			logger.Warnf(ctx, "check_spelling: batch %d failed: %v", i+1, errs[i])
 			continue
 		}
-		findings = append(findings, got...)
+		findings = append(findings, results[i]...)
 	}
 	return dedupeFindings(findings), batches, failed
+}
+
+// reviewBatchOrHalves is reviewBatch; a larger batch that still fails is
+// reviewed again as two halves (a long reply is where the model derails).
+func (t *CheckSpellingTool) reviewBatchOrHalves(ctx context.Context, batch []spellPara) ([]SpellingFinding, error) {
+	got, err := t.reviewBatch(ctx, batch)
+	if err == nil || len(batch) <= spellSplitMin || ctx.Err() != nil {
+		return got, err
+	}
+	mid := len(batch) / 2
+	a, errA := t.reviewBatch(ctx, batch[:mid])
+	b, errB := t.reviewBatch(ctx, batch[mid:])
+	if errA != nil && errB != nil {
+		return nil, err
+	}
+	return append(a, b...), nil
 }
 
 // spellingMarkOps underlines each finding in red where it is; a finding
@@ -339,11 +386,89 @@ func (t *CheckSpellingTool) documentSpelling(ctx context.Context, paras []docxed
 			scoped = append(scoped, spellPara{Index: i, Text: p.Text})
 		}
 	}
+	key := spellPassKey(t, scoped)
+	if cached, hit := spellPasses.get(key); hit {
+		return cached, len(scoped), true
+	}
 	findings, batches, failed := t.review(ctx, scoped)
 	if len(findings) > spellMaxFindings {
 		findings = findings[:spellMaxFindings]
 	}
+	if failed == 0 {
+		// a complete pass only: a failed batch may have hidden mistakes
+		spellPasses.put(key, findings)
+	}
 	return findings, len(scoped), batches == 0 || failed < batches || len(findings) > 0
+}
+
+// spellPassTTL keeps a document's spelling pass as long as a format result.
+const spellPassTTL = formatCheckCacheTTL
+
+// spellPassMax bounds the cache; past it the oldest half is dropped.
+const spellPassMax = 500
+
+// spellPassCache keeps the format check's spelling passes by the reviewed
+// texts, model and prompt: a repeated check of an unchanged text (Word
+// re-saved the file, the marks were applied) costs no model call.
+type spellPassCache struct {
+	mu      sync.Mutex
+	entries map[string]spellPassEntry
+}
+
+type spellPassEntry struct {
+	findings []SpellingFinding
+	at       time.Time
+}
+
+var spellPasses = &spellPassCache{entries: map[string]spellPassEntry{}}
+
+func spellPassKey(t *CheckSpellingTool, scoped []spellPara) string {
+	h := sha256.New()
+	model := ""
+	if t.model != nil {
+		model = t.model.GetModelName()
+	}
+	fmt.Fprintf(h, "%s\x00%s\x00", model, t.prompt)
+	for _, p := range scoped {
+		fmt.Fprintf(h, "%d\x00%s\x00", p.Index, p.Text)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (c *spellPassCache) get(key string) ([]SpellingFinding, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok || time.Since(e.at) > spellPassTTL {
+		return nil, false
+	}
+	// callers flag Unmarked on their copy
+	return append([]SpellingFinding(nil), e.findings...), true
+}
+
+func (c *spellPassCache) put(key string, findings []SpellingFinding) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= spellPassMax {
+		oldest := make([]time.Time, 0, len(c.entries))
+		for _, e := range c.entries {
+			oldest = append(oldest, e.at)
+		}
+		sort.Slice(oldest, func(i, j int) bool { return oldest[i].Before(oldest[j]) })
+		cut := oldest[len(oldest)/2]
+		for k, e := range c.entries {
+			if e.at.Before(cut) {
+				delete(c.entries, k)
+			}
+		}
+	}
+	c.entries[key] = spellPassEntry{findings: append([]SpellingFinding(nil), findings...), at: time.Now()}
+}
+
+func (c *spellPassCache) reset() {
+	c.mu.Lock()
+	c.entries = map[string]spellPassEntry{}
+	c.mu.Unlock()
 }
 
 // selectedParagraphs are the paragraphs the selection covers; a paragraph
@@ -434,7 +559,7 @@ func (t *CheckSpellingTool) reviewBatch(ctx context.Context, batch []spellPara) 
 		}
 		fmt.Fprintf(&b, "[%d] %s\n", p.Index, clipRunes(strings.TrimSpace(text), spellParagraphRunes))
 	}
-	llm := docformat.ChatCompleter(t.model)
+	llm := spellCompleter{t.model}
 	msgs := []docformat.Message{{Role: "system", Content: t.prompt}, {Role: "user", Content: b.String()}}
 	text, err := llm.Complete(ctx, msgs)
 	if err != nil {
@@ -442,7 +567,9 @@ func (t *CheckSpellingTool) reviewBatch(ctx context.Context, batch []spellPara) 
 	}
 	raw, perr := parseSpellReply(text)
 	if perr != nil {
-		msgs = append(msgs, docformat.Message{Role: "assistant", Content: text},
+		// quote only the head of a malformed reply: a runaway one would
+		// make the retry as long as the failure
+		msgs = append(msgs, docformat.Message{Role: "assistant", Content: clipRunes(text, spellRetryEchoRunes)},
 			docformat.Message{Role: "user", Content: `Trả lời lại CHỈ bằng một JSON object hợp lệ dạng {"findings":[...]}.`})
 		if text, err = llm.Complete(ctx, msgs); err != nil {
 			return nil, err
@@ -653,4 +780,29 @@ func dedupeFindings(in []SpellingFinding) []SpellingFinding {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Paragraph < out[j].Paragraph })
 	return out
+}
+
+// spellCompleter runs one spelling batch: thinking off, near-greedy, JSON,
+// and a reply capped at spellMaxTokens.
+type spellCompleter struct{ model chat.Chat }
+
+func (c spellCompleter) Complete(ctx context.Context, messages []docformat.Message) (string, error) {
+	msgs := make([]chat.Message, 0, len(messages))
+	for _, m := range messages {
+		msgs = append(msgs, chat.Message{Role: m.Role, Content: m.Content})
+	}
+	thinking := false
+	resp, err := c.model.Chat(ctx, msgs, &chat.ChatOptions{
+		Temperature: 0.01,
+		MaxTokens:   spellMaxTokens,
+		Thinking:    &thinking,
+		Format:      json.RawMessage(`{"type":"object"}`),
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil {
+		return "", errors.New("empty model response")
+	}
+	return resp.Content, nil
 }

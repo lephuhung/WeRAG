@@ -51,3 +51,35 @@ func formatFingerprint(content []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
+
+// formatCheckIdentity keys a cached format evaluation by what the check
+// reads: page setup, every paragraph's formatting, position and full text,
+// headers and footers. It leaves out what the check never reads — the file's
+// save metadata (dates, rsids: Word changes them on every export) and run
+// formatting and paragraph underline (the assistant's red-underline marks;
+// no NĐ30 rule checks underline) — so a repeated check of an unchanged
+// document is answered from the cache instead of a new minute-long
+// evaluation. A file that cannot be read keys by its bytes.
+func formatCheckIdentity(content []byte) string {
+	l := docformat.InspectDocx(content)
+	if len(l.Paragraphs) == 0 {
+		sum := sha256.Sum256(content)
+		return "bytes:" + hex.EncodeToString(sum[:])
+	}
+	paras := make([]docformat.Para, 0, len(l.Paragraphs))
+	for _, p := range l.Paragraphs {
+		cp := *p
+		cp.Runs = nil
+		cp.Underline = nil
+		paras = append(paras, cp)
+	}
+	raw, _ := json.Marshal(struct {
+		Sections   []*docformat.Section
+		Paragraphs []docformat.Para
+		Headers    bool
+		Footers    bool
+		Errors     []string
+	}{l.Sections, paras, l.HasHeaders, l.HasFooters, l.Errors})
+	sum := sha256.Sum256(raw)
+	return "fmt:" + hex.EncodeToString(sum[:])
+}

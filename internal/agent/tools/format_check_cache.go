@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -106,8 +104,7 @@ func UseFormatCheckRedis(rdb *redis.Client) {
 // formatCheckKey identifies a check: the file bytes, the model that labels
 // and judges it, and the requested rule set ("" = detected).
 func formatCheckKey(content []byte, model, docType string) string {
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:]) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType))
+	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType))
 }
 
 func (c *formatCheckCache) redisGet(ctx context.Context, key string, into interface{}) bool {

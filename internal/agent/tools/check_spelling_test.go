@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,7 @@ import (
 // spellChat answers each call with the next reply.
 type spellChat struct {
 	chatBase
+	mu      sync.Mutex // batches run concurrently
 	replies []string
 	err     error
 	calls   int
@@ -26,6 +28,8 @@ type spellChat struct {
 }
 
 func (f *spellChat) Chat(_ context.Context, msgs []chat.Message, opts *chat.ChatOptions) (*types.ChatResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.opts = append(f.opts, opts)
 	f.users = append(f.users, msgs[len(msgs)-1].Content)
 	if f.err != nil {
@@ -188,11 +192,18 @@ func TestCheckSpellingWindowAndBatches(t *testing.T) {
 	ws := newFakeWorkspace(buildTestDocx(t, strings.Join(paras, ""), nd30Margins))
 	model := &spellChat{replies: []string{`{"findings":[]}`}}
 	res := runTool(t, NewCheckSpellingTool(ws, model, "s"), `{"from":5,"limit":70}`)
-	if !res.Success || model.calls != 2 || res.Data["next_from"] != 75 || !strings.Contains(res.Output, "from=75") {
+	// 70 paragraphs in batches of spellBatchSize, run concurrently
+	if !res.Success || model.calls != 4 || res.Data["next_from"] != 75 || !strings.Contains(res.Output, "from=75") {
 		t.Fatalf("result: %+v calls=%d", res.Data, model.calls)
 	}
-	if !strings.Contains(model.users[0], "[5] ") || !strings.Contains(model.users[1], "[74] ") || strings.Contains(model.users[1], "[75] ") {
+	all := strings.Join(model.users, "\n")
+	if !strings.Contains(all, "[5] ") || !strings.Contains(all, "[74] ") || strings.Contains(all, "[75] ") || strings.Contains(all, "[4] ") {
 		t.Fatal("window not respected")
+	}
+	for _, o := range model.opts {
+		if o.MaxTokens != spellMaxTokens {
+			t.Fatalf("a batch reply is capped: %+v", o)
+		}
 	}
 	if res := runTool(t, NewCheckSpellingTool(ws, nil, "s"), `{}`); res.Success {
 		t.Fatal("no model must refuse")
@@ -279,5 +290,27 @@ func TestCheckSpellingMarksRawTextAndOccurrence(t *testing.T) {
 	ops = resultOps(t, res)
 	if len(ops) != 1 || ops[0].Text != "Sở Nội vụ đề nghi" {
 		t.Fatalf("ops: %+v", ops)
+	}
+}
+
+func TestCheckSpellingRetryQuotesOnlyTheHeadAndSplits(t *testing.T) {
+	// a runaway reply: the retry quotes only its head; a large batch that
+	// still fails is reviewed again in two halves
+	var paras []string
+	for i := 0; i < 12; i++ {
+		paras = append(paras, testPara("Đoạn số "+itoaTest(i)+" đề nghi.", "both", "Times New Roman", 14, false, false))
+	}
+	ws := newFakeWorkspace(buildTestDocx(t, strings.Join(paras, ""), nd30Margins))
+	junk := strings.Repeat("lặp lặp lặp ", 2000)
+	model := &spellChat{replies: []string{junk, junk, `{"findings":[{"paragraph":0,"wrong":"đề nghi","correct":"đề nghị","reason":"thiếu dấu"}]}`}}
+	res := runTool(t, NewCheckSpellingTool(ws, model, "s"), `{"mark":false}`)
+	if !res.Success || model.calls != 4 || len(spellFindings(t, res)) == 0 {
+		t.Fatalf("result: %+v calls=%d", res.Data, model.calls)
+	}
+	if len([]rune(model.users[1])) > 200 { // the retry instruction itself
+		t.Fatalf("retry user message: %q", model.users[1])
+	}
+	if !strings.Contains(model.users[2], "[0] ") || strings.Contains(model.users[2], "[6] ") || !strings.Contains(model.users[3], "[6] ") {
+		t.Fatalf("halves: %q / %q", model.users[2], model.users[3])
 	}
 }

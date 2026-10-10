@@ -352,10 +352,16 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		output += "\n" + editorAppliedNote + "\n"
 	}
 	switch {
-	case marks > 0 && review:
-		output += "\nCHƯA SỬA GÌ: các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân đỏ trong trình soạn thảo. Hỏi người dùng có đồng ý áp dụng không; chỉ khi họ đồng ý mới gọi lại với apply=true.\n"
+	case review && len(plan.applied) > 0:
+		// the one change the user can agree to: these formatting fixes
+		output += "\nCHƯA SỬA GÌ"
+		if marks > 0 {
+			output += ": các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân đỏ trong trình soạn thảo"
+		}
+		output += ". Nói ngắn gọn với người dùng: nếu muốn áp dụng các sửa định dạng trong kế hoạch (chỉ font, cỡ chữ, in đậm/nghiêng, căn lề, khổ giấy, lề trang), bấm nút \"Áp dụng các sửa thể thức này\" hoặc trả lời \"đồng ý\"; chỉ khi họ đồng ý mới gọi lại với apply=true. Không đề nghị sửa gì khác (chính tả, nội dung, chèn dòng): những lỗi đó chỉ được chỉ ra kèm cách sửa để người dùng tự sửa.\n"
 	case review:
-		output += "\nCHƯA SỬA GÌ. Hỏi người dùng có đồng ý áp dụng không; chỉ khi họ đồng ý mới gọi lại với apply=true.\n"
+		// nothing mechanical to apply: nothing to offer either
+		output += "\nCHƯA SỬA GÌ và không có sửa định dạng nào áp dụng tự động được. Chỉ nêu các lỗi cần sửa thủ công kèm cách sửa để người dùng tự sửa; KHÔNG đề nghị sửa giúp, KHÔNG hỏi \"Bạn có muốn tôi sửa…\".\n"
 	case marks > 0:
 		output += "Những lỗi cần sửa thủ công được gạch chân đỏ tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ gạch chân).\n"
 	}
