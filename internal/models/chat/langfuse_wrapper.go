@@ -154,6 +154,10 @@ func buildLangfuseChatMetadata(
 		}
 	}
 	meta["tool_names"] = names
+	// Full definitions (description + JSON schema): a function-calling
+	// training sample is unusable without the tools the model was offered,
+	// and they change with agent config, MCP services and skills.
+	meta["tools"] = opts.Tools
 	return meta
 }
 

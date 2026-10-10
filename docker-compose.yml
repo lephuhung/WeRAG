@@ -940,6 +940,8 @@ services:
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      # 限制 ClickHouse 自身的 system.*_log 与文本日志，否则其体积远超 Langfuse 数据本身
+      - ./docker/langfuse/clickhouse/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -957,8 +959,8 @@ services:
     container_name: WeKnora-langfuse-minio
     restart: unless-stopped
     entrypoint: sh
-    # 启动前Create  `langfuse` 桶，Langfuse 开箱即用
-    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    # 启动前Create  LANGFUSE_S3_BUCKET 桶（默认 langfuse），Langfuse 开箱即用
+    command: -c 'mkdir -p /data/${LANGFUSE_S3_BUCKET:-langfuse} && minio server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-langfuseminio}
       MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
@@ -1031,17 +1033,19 @@ services:
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
       CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
       CLICKHOUSE_CLUSTER_ENABLED: "false"
-      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
-      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-langfuseminio}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
-      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      # S3 / MinIO：默认使用内置的 langfuse-minio，可在 .env 中改为外部 MinIO
+      #   LANGFUSE_S3_ENDPOINT（容器网络内可达）、LANGFUSE_S3_BUCKET、LANGFUSE_S3_ACCESS_KEY / LANGFUSE_S3_SECRET_KEY
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-${LANGFUSE_MINIO_USER:-langfuseminio}}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: ${LANGFUSE_S3_ENDPOINT:-http://langfuse-minio:9000}
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
-      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
-      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-langfuseminio}
-      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-${LANGFUSE_MINIO_USER:-langfuseminio}}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}}
       # 媒体上传用的外部 endpoint（浏览器直连），默认指向宿主机映射的 9100 端口
       LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://localhost:9100}
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
@@ -1088,6 +1092,40 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    networks:
+      - WeKnora-network
+    profiles:
+      - langfuse
+      - full
+
+  # 每天把 traces / observations / scores 按 UTC 日导出为 Parquet 到 MinIO（供训练/长期保存），
+  # 路径：s3://<bucket>/<prefix><table>/dt=YYYY-MM-DD/<table>.parquet
+  # 导出由 ClickHouse 服务端执行，因此 LANGFUSE_ARCHIVE_S3_ENDPOINT 必须能从 langfuse-clickhouse 容器访问。
+  # 手动执行一次：docker compose --profile langfuse exec langfuse-archiver bash /archive.sh once
+  langfuse-archiver:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: WeKnora-langfuse-archiver
+    restart: unless-stopped
+    depends_on:
+      langfuse-clickhouse:
+        condition: service_healthy
+    entrypoint: ["bash", "/archive.sh"]
+    command: ["loop"]
+    volumes:
+      - ./docker/langfuse/archiver/archive.sh:/archive.sh:ro
+    environment:
+      CLICKHOUSE_HOST: langfuse-clickhouse
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+      ARCHIVE_S3_ENDPOINT: ${LANGFUSE_ARCHIVE_S3_ENDPOINT:-${LANGFUSE_S3_ENDPOINT:-http://langfuse-minio:9000}}
+      ARCHIVE_S3_BUCKET: ${LANGFUSE_ARCHIVE_S3_BUCKET:-${LANGFUSE_S3_BUCKET:-langfuse}}
+      ARCHIVE_S3_PREFIX: ${LANGFUSE_ARCHIVE_S3_PREFIX:-archive/}
+      ARCHIVE_S3_ACCESS_KEY: ${LANGFUSE_ARCHIVE_S3_ACCESS_KEY:-${LANGFUSE_S3_ACCESS_KEY:-${LANGFUSE_MINIO_USER:-langfuseminio}}}
+      ARCHIVE_S3_SECRET_KEY: ${LANGFUSE_ARCHIVE_S3_SECRET_KEY:-${LANGFUSE_S3_SECRET_KEY:-${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}}}
+      ARCHIVE_HOUR_UTC: ${LANGFUSE_ARCHIVE_HOUR_UTC:-2}
+      ARCHIVE_LOOKBACK_DAYS: ${LANGFUSE_ARCHIVE_LOOKBACK_DAYS:-3}
+      # >0 时：超过该天数且已确认归档完整的数据会从 ClickHouse 删除（0 = 不删除）
+      ARCHIVE_RETENTION_DAYS: ${LANGFUSE_ARCHIVE_RETENTION_DAYS:-0}
     networks:
       - WeKnora-network
     profiles:

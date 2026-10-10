@@ -13,4 +13,6 @@ var (
 	ErrInvalidSessionID = errors.New("invalid session id")
 	// ErrInvalidTenantID invalid tenant ID error
 	ErrInvalidTenantID = errors.New("invalid tenant id")
+	// ErrFeedbackNotAllowed feedback was sent for a user message or an unfinished answer
+	ErrFeedbackNotAllowed = errors.New("feedback is only accepted on a completed assistant message")
 )

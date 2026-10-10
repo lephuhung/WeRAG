@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -260,6 +262,69 @@ func (s *messageService) UpdateMessageImages(ctx context.Context, sessionID, mes
 // UpdateMessageRenderedContent updates the rendered_content column for a user message.
 func (s *messageService) UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error {
 	return s.messageRepo.UpdateMessageRenderedContent(ctx, sessionID, messageID, renderedContent)
+}
+
+// langfuseFeedbackScore is the Langfuse score name user votes are recorded under.
+const langfuseFeedbackScore = "user-feedback"
+
+// SetMessageFeedback records the session owner's vote on a completed
+// assistant message. The database row is the source of truth; the Langfuse
+// score is mirrored in the background, so an unreachable Langfuse never fails
+// the vote.
+func (s *messageService) SetMessageFeedback(
+	ctx context.Context, sessionID, messageID string, feedback int, comment string,
+) (*types.Message, error) {
+	tenantID := types.MustTenantIDFromContext(ctx)
+	if _, err := s.sessionRepo.Get(ctx, tenantID, sessionUserIDForLookup(ctx), sessionID); err != nil {
+		return nil, err
+	}
+	msg, err := s.messageRepo.GetMessage(ctx, sessionID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if msg.Role != "assistant" || !msg.IsCompleted {
+		return nil, apperrors.ErrFeedbackNotAllowed
+	}
+
+	var at *time.Time
+	if feedback == 0 {
+		comment = ""
+	} else {
+		now := time.Now()
+		at = &now
+	}
+	if err := s.messageRepo.UpdateMessageFeedback(ctx, sessionID, messageID, feedback, comment, at); err != nil {
+		return nil, err
+	}
+	msg.Feedback, msg.FeedbackComment, msg.FeedbackAt = feedback, comment, at
+
+	if traceID := langfuse.TraceIDFromTraceparent(msg.ExecutionContext.LangfuseTraceparent); traceID != "" {
+		bgCtx := context.WithoutCancel(ctx)
+		go func() {
+			mgr := langfuse.GetManager()
+			scoreID := langfuseFeedbackScore + "-" + messageID
+			var err error
+			if feedback == 0 {
+				err = mgr.DeleteScore(bgCtx, scoreID)
+			} else {
+				err = mgr.UpsertScore(bgCtx, langfuse.Score{
+					ID:      scoreID,
+					TraceID: traceID,
+					Name:    langfuseFeedbackScore,
+					Value:   float64(feedback),
+					Comment: comment,
+					Metadata: map[string]interface{}{
+						"session_id": sessionID,
+						"message_id": messageID,
+					},
+				})
+			}
+			if err != nil {
+				logger.Warnf(bgCtx, "[feedback] mirror vote on message %s to Langfuse failed: %v", messageID, err)
+			}
+		}()
+	}
+	return msg, nil
 }
 
 // DeleteMessage removes a message from a session, also cleaning up its Knowledge entry in the chat history KB.

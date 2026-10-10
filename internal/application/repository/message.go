@@ -459,6 +459,20 @@ func (r *messageRepository) UpdateMessageImages(ctx context.Context, sessionID, 
 		Update("images", images).Error
 }
 
+// UpdateMessageFeedback updates only the feedback columns of a message.
+func (r *messageRepository) UpdateMessageFeedback(
+	ctx context.Context, sessionID, messageID string, feedback int, comment string, at *time.Time,
+) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
+		Updates(map[string]interface{}{
+			"feedback":         feedback,
+			"feedback_comment": comment,
+			"feedback_at":      at,
+		}).Error
+}
+
 // UpdateMessageRenderedContent updates only the rendered_content column for a message.
 func (r *messageRepository) UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error {
 	return r.db.WithContext(ctx).

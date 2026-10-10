@@ -42,6 +42,7 @@ func TestConversationRoutesDeclareChatCapability(t *testing.T) {
 		{http.MethodPost, "/api/v1/sessions/:session_id/documents/:doc_id/content"},
 		{http.MethodGet, "/api/v1/messages/:session_id/load"},
 		{http.MethodDelete, "/api/v1/messages/:session_id/:id"},
+		{http.MethodPut, "/api/v1/messages/:session_id/:id/feedback"},
 	}
 
 	for _, tc := range cases {

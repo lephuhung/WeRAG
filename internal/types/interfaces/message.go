@@ -38,6 +38,13 @@ type MessageService interface {
 	// DeleteMessage deletes a message
 	DeleteMessage(ctx context.Context, sessionID string, id string) error
 
+	// SetMessageFeedback records the session owner's vote (types.MessageFeedbackUp,
+	// types.MessageFeedbackDown, or 0 to clear) on a completed assistant
+	// message and mirrors it to Langfuse. Returns the updated message.
+	SetMessageFeedback(
+		ctx context.Context, sessionID, messageID string, feedback int, comment string,
+	) (*types.Message, error)
+
 	// ClearSessionMessages deletes all messages in a session, along with their chat history KB entries
 	ClearSessionMessages(ctx context.Context, sessionID string) error
 
@@ -112,6 +119,10 @@ type MessageRepository interface {
 	UpdateMessageImages(ctx context.Context, sessionID, messageID string, images types.MessageImages) error
 	// UpdateMessageRenderedContent updates the rendered_content column for a user message
 	UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error
+	// UpdateMessageFeedback writes only the feedback columns of a message.
+	UpdateMessageFeedback(
+		ctx context.Context, sessionID, messageID string, feedback int, comment string, at *time.Time,
+	) error
 	// UpdateMessageContextCheckpoint writes only the context_checkpoint column
 	// of an assistant message.
 	UpdateMessageContextCheckpoint(

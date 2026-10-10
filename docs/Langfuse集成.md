@@ -117,6 +117,18 @@ docker compose up -d app
 
 - **WeKnora-redis 的驱逐策略**：Langfuse 建议 `maxmemory-policy noeviction`（避免 Redis 在内存紧张时丢弃队列任务）。如果 WeKnora 的 redis 未配置该策略，建议在 `docker-compose.yml` 的 redis command 中加上 `--maxmemory-policy noeviction`。
 - **备份**：`pg_dump -d langfuse` 可独立备份 Langfuse 的元数据；事件数据在 ClickHouse 卷（`langfuse_clickhouse_data`）中。
+- **ClickHouse 自身日志**：`docker/langfuse/clickhouse/system-logs.xml` 关闭了 `text_log` / `trace_log` / `metric_log` 等 system 表，`query_log` / `part_log` 只保留 7 天，文本日志降为 `warning`（100 MB × 3 轮转）。未加该配置时，ClickHouse 自己的日志会比 Langfuse 数据大几百倍。对已有实例，挂载配置并重建容器后，需手动删除不再写入的旧表一次：
+  ```sql
+  DROP TABLE IF EXISTS system.text_log SYNC;  -- 同理：trace_log、metric_log、asynchronous_metric_log、
+                                              -- processors_profile_log、opentelemetry_span_log、asynchronous_insert_log、
+                                              -- 以及 TTL 变更后自动改名留下的 query_log_0 / part_log_0
+  ```
+- **S3 / MinIO 地址**：事件、媒体与归档使用的 MinIO 均通过 `.env` 配置（`LANGFUSE_S3_ENDPOINT`、`LANGFUSE_S3_BUCKET`、`LANGFUSE_S3_ACCESS_KEY` / `LANGFUSE_S3_SECRET_KEY`），默认指向内置 `langfuse-minio`。endpoint 必须能在 Docker 网络内访问。
+- **Parquet 归档（`langfuse-archiver`）**：每天 `LANGFUSE_ARCHIVE_HOUR_UTC` 点把 `traces` / `observations` / `scores` 按 UTC 日导出到 `s3://<bucket>/<prefix><table>/dt=YYYY-MM-DD/<table>.parquet`，可直接用 DuckDB / pandas / ClickHouse `s3()` 读取用于训练。
+  - 最近 `LANGFUSE_ARCHIVE_LOOKBACK_DAYS` 天每次都会重新导出（trace 在开始后仍会更新）；更早且尚无文件的日期会自动补导出。
+  - `LANGFUSE_ARCHIVE_RETENTION_DAYS>0` 时，超期且归档行数核对一致的日期会从 ClickHouse 删除；默认 0 不删除。
+  - 导出由 ClickHouse 服务端执行，所以 `LANGFUSE_ARCHIVE_S3_ENDPOINT` 要能从 `langfuse-clickhouse` 容器访问。
+  - 手动执行一次：`docker compose --profile langfuse exec langfuse-archiver bash /archive.sh once`
 - **想彻底隔离**（跨机部署、强运维隔离）：可以直接把 `langfuse-web` / `langfuse-worker` 的 `DATABASE_URL` 和 `REDIS_CONNECTION_STRING` 指向任意外部 pg/redis（例如 RDS + ElastiCache）；`langfuse-db-init` 容器可以选择不启动，手动在目标 pg 上 `CREATE DATABASE langfuse` 即可。
 
 #### （B）WeKnora Lite（单机）

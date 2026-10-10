@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -229,6 +230,72 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Message deleted successfully",
+	})
+}
+
+// messageFeedbackRequest is the body of PUT /messages/:session_id/:id/feedback.
+type messageFeedbackRequest struct {
+	// Value is 1 (helpful), -1 (not helpful) or 0 (clear the vote).
+	Value   *int   `json:"value" binding:"required"`
+	Comment string `json:"comment"`
+}
+
+// SetMessageFeedback godoc
+// @Summary      Rate an assistant answer
+// @Description  Records thumbs up (1), thumbs down (-1) or clears (0) the vote on a completed assistant message, with an optional note
+// @Tags         消息
+// @Accept       json
+// @Produce      json
+// @Param        session_id  path  string                  true  "会话ID"
+// @Param        id          path  string                  true  "消息ID"
+// @Param        request     body  messageFeedbackRequest  true  "Vote"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  errors.AppError
+// @Failure      404  {object}  errors.AppError
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /messages/{session_id}/{id}/feedback [put]
+func (h *MessageHandler) SetMessageFeedback(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
+	messageID := secutils.SanitizeForLog(c.Param("id"))
+
+	var request messageFeedbackRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.Error(errors.NewBadRequestError("value is required"))
+		return
+	}
+	value := *request.Value
+	if value != 0 && value != types.MessageFeedbackUp && value != types.MessageFeedbackDown {
+		c.Error(errors.NewBadRequestError("value must be 1, -1 or 0"))
+		return
+	}
+	comment := strings.TrimSpace(request.Comment)
+	if utf8.RuneCountInString(comment) > types.MessageFeedbackCommentMaxRunes {
+		c.Error(errors.NewBadRequestError("comment is too long"))
+		return
+	}
+
+	msg, err := h.MessageService.SetMessageFeedback(ctx, sessionID, messageID, value, comment)
+	if err != nil {
+		switch {
+		case stderrors.Is(err, errors.ErrSessionNotFound), stderrors.Is(err, gorm.ErrRecordNotFound):
+			c.Error(errors.NewNotFoundError(err.Error()))
+		case stderrors.Is(err, errors.ErrFeedbackNotAllowed):
+			c.Error(errors.NewBadRequestError(err.Error()))
+		default:
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"feedback":         msg.Feedback,
+			"feedback_comment": msg.FeedbackComment,
+			"feedback_at":      msg.FeedbackAt,
+		},
 	})
 }
 

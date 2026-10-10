@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -92,6 +93,24 @@ func TestBuildLangfuseChatMetadataIncludesMCPCatalog(t *testing.T) {
 	catalog, _ := meta["mcp_catalog"].(string)
 	if !strings.Contains(catalog, `"server_id":"svc"`) {
 		t.Fatalf("mcp_catalog = %q", catalog)
+	}
+}
+
+func TestBuildLangfuseChatMetadataKeepsToolSchemas(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`)
+	tools := []Tool{{Type: "function", Function: FunctionDef{Name: "knowledge_search", Description: "search kb", Parameters: schema}}}
+	meta := buildLangfuseChatMetadata("model-1", "agent_round", "fp", false, &ChatOptions{Tools: tools})
+
+	encoded, err := json.Marshal(meta["tools"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"type":"function","function":{"name":"knowledge_search","description":"search kb","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}]`
+	if string(encoded) != want {
+		t.Fatalf("tools = %s", encoded)
+	}
+	if _, ok := buildLangfuseChatMetadata("model-1", "summary", "", false, &ChatOptions{})["tools"]; ok {
+		t.Fatal("a call without tools must not record a tools key")
 	}
 }
 

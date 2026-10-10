@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
@@ -78,7 +78,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { Markdown } from "@/components/markdown";
-import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose } from "@/components/icons";
+import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose, IconThumbUp, IconThumbDown } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
 import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
@@ -122,6 +122,9 @@ type UiMessage = {
   document_mentions?: string[];
   /** Tool/skill-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];
+  /** Owner's rating of this answer as loaded from history. */
+  feedback?: MessageFeedback;
+  feedbackComment?: string;
   /** History `is_completed`, or set when a live turn ends via a complete
    * event — gates the suggestions fetch (Vue: message.is_completed). */
   isCompleted?: boolean;
@@ -469,16 +472,158 @@ const UserMessageBubble = memo(function UserMessageBubble({
   );
 });
 
+const ACTION_BUTTON =
+  "flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer";
+
+/** Thumbs up / down on a finished answer. A down vote opens an optional note;
+ * clicking the active thumb again removes the rating. The vote also lands in
+ * Langfuse as the "user-feedback" score of the turn's trace. */
+function AnswerFeedback({
+  sessionId,
+  messageId,
+  initial,
+  initialComment,
+}: {
+  sessionId: string;
+  messageId: string;
+  initial?: MessageFeedback;
+  initialComment?: string;
+}) {
+  const { t } = useT();
+  const toast = useToast();
+  const [vote, setVote] = useState<MessageFeedback>(initial ?? 0);
+  const [comment, setComment] = useState(initialComment ?? "");
+  const [askNote, setAskNote] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const save = async (next: MessageFeedback, note: string) => {
+    const previous = vote;
+    setVote(next);
+    setSaving(true);
+    try {
+      await setMessageFeedback(sessionId, messageId, next, note);
+      return true;
+    } catch {
+      setVote(previous);
+      toast.error(t("chat.feedback.failed"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onThumb = async (value: 1 | -1) => {
+    if (saving) return;
+    if (vote === value) {
+      setAskNote(false);
+      setComment("");
+      await save(0, "");
+      return;
+    }
+    const ok = await save(value, "");
+    if (!ok) return;
+    setComment("");
+    if (value === -1) {
+      setAskNote(true);
+    } else {
+      setAskNote(false);
+      toast.success(t("chat.feedback.thanks"));
+    }
+  };
+
+  const sendNote = async () => {
+    const note = comment.trim();
+    if (note && (await save(-1, note))) {
+      toast.success(t("chat.feedback.thanks"));
+    }
+    setAskNote(false);
+  };
+
+  const thumbClass = (active: boolean) =>
+    `${ACTION_BUTTON} disabled:cursor-default disabled:opacity-60 ${
+      active ? "border-hairline bg-surface-strong text-ink" : ""
+    }`;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => onThumb(1)}
+        disabled={saving}
+        aria-pressed={vote === 1}
+        className={thumbClass(vote === 1)}
+        title={vote === 1 ? t("chat.feedback.clear") : t("chat.feedback.up")}
+        aria-label={t("chat.feedback.up")}
+      >
+        <IconThumbUp className={`h-3.5 w-3.5 ${vote === 1 ? "fill-current" : ""}`} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onThumb(-1)}
+        disabled={saving}
+        aria-pressed={vote === -1}
+        className={thumbClass(vote === -1)}
+        title={vote === -1 ? t("chat.feedback.clear") : t("chat.feedback.down")}
+        aria-label={t("chat.feedback.down")}
+      >
+        <IconThumbDown className={`h-3.5 w-3.5 ${vote === -1 ? "fill-current" : ""}`} />
+      </button>
+      {askNote && (
+        <form
+          className="basis-full mt-1.5 flex max-w-[520px] flex-col gap-1.5 rounded-lg border border-hairline bg-surface-card p-2.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendNote();
+          }}
+        >
+          <label htmlFor={`feedback-${messageId}`} className="text-[12.5px] font-medium text-ink">
+            {t("chat.feedback.commentLabel")}
+          </label>
+          <textarea
+            id={`feedback-${messageId}`}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            maxLength={2000}
+            rows={2}
+            autoFocus
+            placeholder={t("chat.feedback.commentPlaceholder")}
+            className="input h-auto min-h-[56px] w-full resize-y text-[13px]"
+          />
+          <div className="flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => setAskNote(false)}
+              className="rounded-md px-2.5 py-1 text-[12.5px] text-muted hover:bg-surface-strong hover:text-ink cursor-pointer"
+            >
+              {t("chat.feedback.skip")}
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !comment.trim()}
+              className="rounded-md border border-hairline bg-surface-strong px-2.5 py-1 text-[12.5px] font-medium text-ink hover:border-hairline-strong disabled:cursor-default disabled:opacity-50 cursor-pointer"
+            >
+              {t("chat.feedback.send")}
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}
+
 function BotMessageActions({
   content,
   canFork,
   onFork,
   onRegenerate,
+  feedback,
 }: {
   content: string;
   canFork?: boolean;
   onFork?: () => void;
   onRegenerate?: () => void;
+  /** Present when the answer is finished and saved, so it can be rated. */
+  feedback?: { sessionId: string; messageId: string; initial?: MessageFeedback; initialComment?: string };
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -491,7 +636,7 @@ function BotMessageActions({
   };
 
   return (
-    <div className="mt-2.5 flex items-center gap-1.5 text-muted-soft">
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-muted-soft">
       <button
         type="button"
         onClick={handleCopy}
@@ -528,6 +673,16 @@ function BotMessageActions({
         >
           <IconRefresh className="h-3.5 w-3.5" />
         </button>
+      )}
+
+      {feedback && (
+        <AnswerFeedback
+          key={feedback.messageId}
+          sessionId={feedback.sessionId}
+          messageId={feedback.messageId}
+          initial={feedback.initial}
+          initialComment={feedback.initialComment}
+        />
       )}
     </div>
   );
@@ -724,6 +879,16 @@ const AssistantMessage = memo(function AssistantMessage({
             canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
             onFork={m.assistantMessageId ? () => onFork(m) : undefined}
             onRegenerate={!busy ? () => onRegenerate(index) : undefined}
+            feedback={
+              sessionId !== "new" && m.assistantMessageId && m.isCompleted === true && !m.isError
+                ? {
+                    sessionId,
+                    messageId: m.assistantMessageId,
+                    initial: m.feedback,
+                    initialComment: m.feedbackComment,
+                  }
+                : undefined
+            }
           />
         )}
         {sessionId !== "new" && !compact && (
@@ -1191,6 +1356,8 @@ function ChatBody({ id }: { id: string }) {
                 m.role === "assistant" && m.artifacts?.length
                   ? withArtifactIndexes(m.artifacts)
                   : undefined,
+              feedback: m.role === "assistant" ? m.feedback || undefined : undefined,
+              feedbackComment: m.role === "assistant" ? m.feedback_comment || undefined : undefined,
             };
           });
           if (streamingMsgs.length > 0) {

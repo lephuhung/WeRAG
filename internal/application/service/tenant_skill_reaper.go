@@ -2,14 +2,12 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/sandbox"
-	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/robfig/cron/v3"
 )
@@ -823,16 +821,15 @@ func (s *TenantSkillService) reconcileAllSnapshots(ctx context.Context) {
 	}
 }
 
+// runSkillReaper deliberately opens no Langfuse trace: it fires every few
+// minutes whether or not there is work, and a trace per sweep (plus the
+// sandbox spans nested under it) made up most of what Langfuse stored.
+// Failures are logged instead.
 func (s *TenantSkillService) runSkillReaper(ctx context.Context) {
-	ctx, span := langfuse.GetManager().StartSpan(ctx, langfuse.SpanOptions{Name: "skill.maintenance"})
-	var sweepErr error
-	defer func() { span.Finish(nil, nil, sweepErr) }()
 	if _, err := s.ReapStuckRuns(ctx); err != nil {
-		sweepErr = errors.Join(sweepErr, err)
 		logger.Warnf(ctx, "[skill] reap stuck runs failed: %v", err)
 	}
 	if _, err := s.PruneSupersededSnapshots(ctx); err != nil {
-		sweepErr = errors.Join(sweepErr, err)
 		logger.Warnf(ctx, "[skill] prune superseded snapshots failed: %v", err)
 	}
 	s.reconcileAllSnapshots(ctx)

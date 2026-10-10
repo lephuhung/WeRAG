@@ -166,6 +166,9 @@ export type ChatMessage = {
   images?: { url?: string; caption?: string }[];
   /** Skill/tool-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];
+  /** Owner's rating of an assistant answer: 1 helpful, -1 not helpful. */
+  feedback?: MessageFeedback;
+  feedback_comment?: string;
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {
@@ -173,6 +176,23 @@ export function listMessages(sessionId: string, limit = 30, beforeTime = "") {
     ? `?before_time=${encodeURIComponent(beforeTime)}&limit=${limit}`
     : `?limit=${limit}`;
   return apiGet<{ success: boolean; data?: ChatMessage[] }>(`/api/v1/messages/${sessionId}/load${qs}`);
+}
+
+// ---- answer feedback --------------------------------------------------------
+
+/** 1 = helpful, -1 = not helpful, 0 = no rating. */
+export type MessageFeedback = 1 | -1 | 0;
+
+export function setMessageFeedback(
+  sessionId: string,
+  messageId: string,
+  value: MessageFeedback,
+  comment = "",
+) {
+  return apiPut<{ success: boolean; data?: { feedback?: MessageFeedback; feedback_comment?: string } }>(
+    `/api/v1/messages/${sessionId}/${messageId}/feedback`,
+    { value, comment },
+  );
 }
 
 // ---- steer (append to a running agent turn) ---------------------------------

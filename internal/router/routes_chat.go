@@ -29,6 +29,7 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler, 
 		historyMessages.GET("/chat-history-stats", g.Member(), handler.GetChatHistoryKBStats)
 		chatMessages.GET("/:session_id/load", g.Member(), handler.LoadMessages)
 		chatMessages.DELETE("/:session_id/:id", g.Member(), handler.DeleteMessage)
+		chatMessages.PUT("/:session_id/:id/feedback", g.Member(), handler.SetMessageFeedback)
 	}
 }
 

@@ -429,6 +429,12 @@ type Message struct {
 	// assistant message. Persisted so history reads can attribute cost after the
 	// live stream is gone; NULL (nil) for user messages and pre-feature rows.
 	Usage *TokenUsage `json:"usage,omitempty" gorm:"type:jsonb;column:usage"`
+	// Feedback is the session owner's judgement of an assistant answer:
+	// MessageFeedbackUp, MessageFeedbackDown or 0 when none was given. It is
+	// mirrored to Langfuse as the "user-feedback" score on the turn's trace.
+	Feedback        int        `json:"feedback,omitempty" gorm:"column:feedback;default:0"`
+	FeedbackComment string     `json:"feedback_comment,omitempty" gorm:"column:feedback_comment;default:''"`
+	FeedbackAt      *time.Time `json:"feedback_at,omitempty" gorm:"column:feedback_at"`
 	// RenderedContent stores the full RAG-augmented user message (with retrieved context)
 	// sent to the LLM. Used to preserve retrieval context across conversation turns.
 	// Empty for non-retrieval intents or assistant messages.
@@ -480,6 +486,14 @@ type Message struct {
 	// Soft delete timestamp
 	DeletedAt gorm.DeletedAt `json:"deleted_at"            gorm:"index"`
 }
+
+// Values of Message.Feedback.
+const (
+	MessageFeedbackUp   = 1
+	MessageFeedbackDown = -1
+	// MessageFeedbackCommentMaxRunes bounds the optional note sent with a vote.
+	MessageFeedbackCommentMaxRunes = 2000
+)
 
 // MessageExecutionContext is a message-level snapshot of the non-secret
 // request state used by derived experiences such as follow-up suggestions.

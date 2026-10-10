@@ -484,6 +484,9 @@ func copyMessagesInto(newSessionID string, history []*types.Message) []*types.Me
 		// base. Clearing the link stops the copy from being re-indexed, which
 		// would both duplicate retrieval hits and burn embedding quota.
 		clone.KnowledgeID = ""
+		// Feedback judged the parent's turn and is tied to its trace; a copy
+		// carrying it would count the same vote twice in training exports.
+		clone.Feedback, clone.FeedbackComment, clone.FeedbackAt = 0, "", nil
 		if src.RequestID != "" {
 			mapped, ok := requestIDs[src.RequestID]
 			if !ok {

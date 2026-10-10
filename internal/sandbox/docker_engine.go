@@ -25,6 +25,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // dockerEngineAPI is the slice of the Docker Engine API the sandbox adapter
@@ -196,6 +197,11 @@ func newDockerEngineClient(endpoint dockerEndpoint) (*client.Client, error) {
 	// pulls, exec hijacks and archive streams honour the caller's context.
 	opts := []client.Opt{
 		client.WithHost(host),
+		// The moby client wraps its transport in otelhttp, which falls back to
+		// the caller's span provider and would record every /_ping and
+		// /images/json as a Langfuse span. Sandbox work is traced at the
+		// product level instead (see langfuse.go).
+		client.WithTraceProvider(noop.NewTracerProvider()),
 	}
 	if endpoint.TLSCertPath != "" {
 		// Certificates stay on the application host rather than in the
