@@ -259,3 +259,27 @@ func TestMarkPassagesValidatesInput(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkPassagesFindsTheTextNearAWrongParagraph(t *testing.T) {
+	// a spelling mistake the model places one paragraph off is still
+	// underlined where it is: the text decides
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	before := paraTexts(t, ws.content)
+	res := runTool(t, NewMarkPassagesTool(ws, "s"), `{"marks":[
+		{"paragraph":9,"text":"cải cách hành chính","reason":"→ x"},
+		{"paragraph":11,"text":"không có ở đâu","reason":"→ y"}
+	]}`)
+	if !res.Success || res.Data["planned"] != 1 || res.Data["failed"] != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	ops := resultOps(t, res)
+	if len(ops) != 1 || ops[0].Anchor.Text != before[8] || ops[0].Text != "cải cách hành chính" || ops[0].Style != "underline" {
+		t.Fatalf("ops: %+v", ops)
+	}
+	if marks, _ := res.Data["marks"].([]markResult); len(marks) != 2 || marks[0].Paragraph != 8 {
+		t.Fatalf("marks: %+v", res.Data["marks"])
+	}
+	if !strings.Contains(res.Output, "1. Đoạn [8]") {
+		t.Fatalf("output: %s", res.Output)
+	}
+}

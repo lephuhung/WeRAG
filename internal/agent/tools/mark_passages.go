@@ -159,8 +159,15 @@ func (t *MarkPassagesTool) Execute(ctx context.Context, args json.RawMessage) (*
 				if r.Text == "" {
 					msg = fmt.Sprintf("đoạn [%d] trống", idx)
 				}
-			case !strings.Contains(paras[idx].Text, m.Text) && !strings.Contains(anchorText(paras[idx].Text), anchorText(m.Text)):
-				msg = fmt.Sprintf("không tìm thấy “%s” trong đoạn [%d]: “%s”", clipRunes(m.Text, 80), idx, clipRunes(paras[idx].Text, 120))
+			case !paragraphHas(paras[idx], m.Text):
+				// a paragraph index recalled from an evaluation or an earlier
+				// turn may be a few paragraphs off: the text decides, nearest
+				// paragraph holding it first
+				if near := nearestParagraphWith(paras, idx, m.Text); near >= 0 {
+					idx, r.Paragraph = near, near
+				} else {
+					msg = fmt.Sprintf("không tìm thấy “%s” trong đoạn [%d]: “%s”", clipRunes(m.Text, 80), idx, clipRunes(paras[idx].Text, 120))
+				}
 			}
 		}
 		if msg != "" {
@@ -206,4 +213,26 @@ func (t *MarkPassagesTool) Execute(ctx context.Context, args json.RawMessage) (*
 		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
 	}
 	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
+}
+
+// paragraphHas reports whether text is in p, as written or with whitespace
+// and composition normalised.
+func paragraphHas(p docxedit.Paragraph, text string) bool {
+	return strings.Contains(p.Text, text) || strings.Contains(anchorText(p.Text), anchorText(text))
+}
+
+// nearestParagraphWith is the index of the paragraph holding text that is
+// closest to idx (the earlier one on a tie), or -1 when none does.
+func nearestParagraphWith(paras []docxedit.Paragraph, idx int, text string) int {
+	if strings.TrimSpace(text) == "" {
+		return -1
+	}
+	for d := 1; d < len(paras); d++ {
+		for _, i := range []int{idx - d, idx + d} {
+			if i >= 0 && i < len(paras) && paragraphHas(paras[i], text) {
+				return i
+			}
+		}
+	}
+	return -1
 }
