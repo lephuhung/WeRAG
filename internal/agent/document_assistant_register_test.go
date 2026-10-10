@@ -30,6 +30,9 @@ func TestDocumentAssistantPromptDefaultsToOneAdministrativeVersion(t *testing.T)
 		"Whenever you write or propose text for the document (a rewrite, a new paragraph, a draft reply), use văn phong hành chính, lịch sự by default and give one version",
 		"ask back only for a fact you cannot know or find",
 		// the assistant points out; the format changes once the user agreed
+		// spelling mistakes named in an answer are underlined, not fixed
+		"Spelling mistakes are ALWAYS underlined in the editor, whoever found them",
+		"call mark_passages once in the same turn, before answering, with every one of them",
 		"Call it first WITHOUT apply",
 		"Pass apply=true only when the user agrees in a later message",
 		"Use dry_run=true only when the user asks to see the plan alone",
