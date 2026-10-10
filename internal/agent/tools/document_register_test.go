@@ -19,8 +19,9 @@ func TestDocumentToolDescriptionsDefaultToOneAdministrativeVersion(t *testing.T)
 		t.Errorf("rewrite_paragraphs description: %s", rewrite)
 	}
 	fixes := applyFormatFixesTool.Description()
-	if strings.Contains(fixes, "Run with dry_run=true first") || !strings.Contains(fixes, "apply at once") ||
-		!strings.Contains(fixes, "chỉ xem kế hoạch") || !strings.Contains(fixes, "force") {
+	// the assistant points out; the format changes only once the user agreed
+	if strings.Contains(fixes, "apply at once") || !strings.Contains(fixes, "nothing is changed before the user agrees") ||
+		!strings.Contains(fixes, "apply=true") || !strings.Contains(fixes, "chỉ xem kế hoạch") || !strings.Contains(fixes, "force") {
 		t.Errorf("apply_format_fixes description: %s", fixes)
 	}
 }

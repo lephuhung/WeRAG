@@ -8,17 +8,19 @@ import (
 
 // Format findings shown in the editor. A measured NĐ30 finding that names
 // its paragraphs (the check's evidence) is marked there, so the user sees
-// where it is and not only the list in the chat: the paragraph's text turns
-// red, and a finding that quotes the offending characters (a stray symbol
-// inside a word) gets them underlined in red, as a spelling error. Findings
-// without a paragraph (a missing component, the margins) stay in the chat.
+// where it is and not only the list in the chat: the paragraph is
+// underlined in red, or, for a finding that quotes the offending characters
+// (a stray symbol inside a word), just those characters, as a spelling
+// error. The assistant points out; it changes neither the wording nor the
+// formatting. Findings without a paragraph (a missing component, the
+// margins) stay in the chat.
 
 // maxFormatMarks caps the marks of one check: a rule broken by every body
 // paragraph would otherwise paint the whole document.
 const maxFormatMarks = 40
 
 // formatMarksNote ends the Output of a tool that returned format marks.
-const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được tô đỏ trong trình soạn thảo để người dùng thấy vị trí; nội dung không bị sửa (Ctrl+Z để bỏ đánh dấu). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."
+const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được gạch chân đỏ trong trình soạn thảo để người dùng thấy vị trí; nội dung và định dạng không bị sửa (Ctrl+Z để bỏ gạch chân). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."
 
 // formatSpot is where one finding is: a paragraph index (as docxedit and
 // the layout number them) and, for a character-level finding, the exact
@@ -94,8 +96,8 @@ func formatFlags(report *docformat.Report, rs *docformat.RuleSet) []formatFlag {
 	return out
 }
 
-// formatMarkOps turns spots into mark ops on the document as read: a red
-// underline on a quoted text found in its paragraph, else red text on the
+// formatMarkOps turns spots into red-underline mark ops on the document as
+// read: the quoted text when it is found in its paragraph, else the whole
 // paragraph (once per paragraph). Empty paragraphs and indexes outside the
 // document are skipped; at most maxFormatMarks ops.
 func formatMarkOps(vdoc *virtualDoc, spots []formatSpot) []DocumentOp {
@@ -119,7 +121,7 @@ func formatMarkOps(vdoc *virtualDoc, spots []formatSpot) []DocumentOp {
 		}
 		if !marked[s.Para] {
 			marked[s.Para] = true
-			ops = append(ops, DocumentOp{Op: OpMark, Anchor: vdoc.anchor(s.Para), Style: "color"})
+			ops = append(ops, DocumentOp{Op: OpMark, Anchor: vdoc.anchor(s.Para), Style: "underline"})
 		}
 	}
 	return ops

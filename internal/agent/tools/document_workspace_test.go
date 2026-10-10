@@ -524,7 +524,7 @@ func TestApplyFormatFixesDryRunPlansWithoutWriting(t *testing.T) {
 	if f := fixes["trich_yeu.bold"]; len(f.Paragraphs) != 2 || f.Change != "bỏ in đậm" {
 		t.Fatalf("trich_yeu.bold plan: %+v", f)
 	}
-	if !strings.Contains(res.Output, "KẾ HOẠCH") || !strings.Contains(res.Output, "dry_run=false") {
+	if !strings.Contains(res.Output, "KẾ HOẠCH") || !strings.Contains(res.Output, "apply=true") {
 		t.Fatalf("output: %s", res.Output)
 	}
 }
@@ -542,7 +542,7 @@ func TestApplyFormatFixesPlansFormattingOps(t *testing.T) {
 		`w:left="1920"`, `w:left="1134"`,
 	)
 	ws := newFakeWorkspace(content)
-	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true}`)
 	if !res.Success || res.Data["snapshot_seq"] != 11 || len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: chuẩn hóa thể thức" {
 		t.Fatalf("result: %+v", res)
 	}
@@ -638,7 +638,7 @@ func TestApplyFormatFixesPlansFormattingOps(t *testing.T) {
 
 func TestApplyFormatFixesFiltersAndListsManualFixes(t *testing.T) {
 	ws := newFakeWorkspace(docxFixture(t))
-	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"check_ids":["noi_dung.font","quoc_hieu.bold","no.such.rule"]}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true,"check_ids":["noi_dung.font","quoc_hieu.bold","no.such.rule"]}`)
 	if !res.Success || len(applyPlan(t, ws, res)) != 2 {
 		t.Fatalf("result: %+v", res)
 	}
@@ -731,7 +731,7 @@ func TestApplyFormatFixesRefusesAnUnrecognisedStructure(t *testing.T) {
 	// a flat document: the positional heuristic finds no quốc hiệu or chữ ký
 	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
 	before := append([]byte(nil), ws.content...)
-	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true}`)
 	if !res.Success || !bytes.Equal(before, ws.content) || len(resultOps(t, res)) != 0 {
 		t.Fatalf("an unreliable structure gets no ops: %+v", res)
 	}
@@ -752,7 +752,7 @@ func TestApplyFormatFixesRefusesAnUnrecognisedStructure(t *testing.T) {
 	}
 
 	// the user confirmed: force applies the same plan
-	res = runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"force":true}`)
+	res = runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true,"force":true}`)
 	if !res.Success || len(applyPlan(t, ws, res)) == 0 || res.Data["blocked"] != false || res.Data["dry_run"] != false ||
 		strings.Contains(res.Output, "CẢNH BÁO") {
 		t.Fatalf("force: %+v", res)
@@ -763,7 +763,7 @@ func TestApplyFormatFixesNotesLargeChanges(t *testing.T) {
 	body := `<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Trên`
 	extra := strings.Repeat(`<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">Đề nghị các đơn vị thực hiện nghiêm nội dung này.</w:t></w:r></w:p>`, 10)
 	ws := newFakeWorkspace(patchDocx(t, docxFixture(t), body, extra+body))
-	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"check_ids":["noi_dung.font"]}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true,"check_ids":["noi_dung.font"]}`)
 	if !res.Success {
 		t.Fatalf("result: %+v", res)
 	}
@@ -793,7 +793,7 @@ func TestApplyFormatFixesNotesLargeChanges(t *testing.T) {
 	}
 	// dry runs and small fixes carry no note
 	small := newFakeWorkspace(docxFixture(t))
-	if res := runTool(t, NewApplyFormatFixesTool(small, nil, "s"), `{}`); strings.Contains(res.Output, "Lưu ý") {
+	if res := runTool(t, NewApplyFormatFixesTool(small, nil, "s"), `{"apply":true}`); strings.Contains(res.Output, "Lưu ý") {
 		t.Fatalf("small fix noted: %s", res.Output)
 	}
 }
@@ -821,7 +821,7 @@ func TestDocumentToolsHonourModelLabels(t *testing.T) {
 	}
 
 	// with the structure recognised the fixes apply without force
-	res = runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{}`)
+	res = runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{"apply":true}`)
 	if !res.Success || len(resultOps(t, res)) == 0 || res.Data["blocked"] != false || res.Data["segmentation"] != "llm" {
 		t.Fatalf("result: %+v", res)
 	}
@@ -839,7 +839,7 @@ func TestDocumentToolsHonourModelLabels(t *testing.T) {
 
 	// a failing model degrades to the heuristic
 	broken := newFakeWorkspace(testCongVan(t, nd30Margins))
-	res = runTool(t, NewApplyFormatFixesTool(broken, &fakeChat{err: errors.New("model down")}, "s"), `{}`)
+	res = runTool(t, NewApplyFormatFixesTool(broken, &fakeChat{err: errors.New("model down")}, "s"), `{"apply":true}`)
 	if !res.Success || res.Data["segmentation"] != "heuristic" || res.Data["blocked"] != true {
 		t.Fatalf("fallback: %+v", res.Data)
 	}
@@ -900,7 +900,7 @@ func TestApplyFormatFixesMarginSurvivesTwipRounding(t *testing.T) {
 		t.Fatalf("fixture: page.margin.right = %s", s)
 	}
 	ws := newFakeWorkspace(content)
-	res := runTool(t, NewApplyFormatFixesTool(ws, &fakeChat{reply: congVanLabels}, "s"), `{"check_ids":["page.margin.right"]}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, &fakeChat{reply: congVanLabels}, "s"), `{"apply":true,"check_ids":["page.margin.right"]}`)
 	if !res.Success {
 		t.Fatalf("result: %+v", res)
 	}
@@ -1013,7 +1013,7 @@ func TestApplyFormatFixesFixesEachNonConformingParagraph(t *testing.T) {
 	}
 
 	ws := newFakeWorkspace(content)
-	res := runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, model, "s"), `{"apply":true}`)
 	if !res.Success || res.Data["blocked"] != false {
 		t.Fatalf("result: %+v", res)
 	}

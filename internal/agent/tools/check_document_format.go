@@ -81,7 +81,7 @@ var checkWorkspaceFormatSchema = json.RawMessage(`{
       "type": "string",
       "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
     },
-    "mark": {"type": "boolean", "description": "Mark the measured findings in the editor: red text on each paragraph that breaks a rule, a red underline on a stray character (default true)"}
+    "mark": {"type": "boolean", "description": "Underline the measured findings in red in the editor: each paragraph that breaks a rule, or the stray character itself (default true)"}
   }
 }`)
 
@@ -132,7 +132,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.description = strings.Replace(base.description,
 		"- file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).",
 		"- document: the open document to check (vb1, vb2, …); omit when only one is open.", 1)
-	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also marked (unless mark=false): the paragraph's text turns red, a stray character inside a word is underlined in red; the content is not changed. Tell the user the red marks show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
+	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also underlined in red (unless mark=false): the paragraph, or just the stray character inside a word; the content and formatting are not changed. Tell the user the red underlines show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
 	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {

@@ -17,7 +17,12 @@ import (
 
 var applyFormatFixesTool = BaseTool{
 	name: ToolApplyFormatFixes,
-	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and plans the corrections that can be made mechanically; the editor applies them as ordinary formatting edits, which the user undoes with Ctrl+Z. Use it only when the user explicitly asks to fix the format ("sửa thể thức", "chuẩn hóa"). It corrects:
+	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and plans the corrections that can be made mechanically. It works in two steps, so nothing is changed before the user agrees:
+
+1. review (the default): the document is NOT changed. The result is the plan, and the editor underlines in red every paragraph the plan would change and every finding left for a manual fix, so the user sees where each one is.
+2. apply=true: the editor applies the planned corrections as ordinary formatting edits (Ctrl+Z undoes them); findings left for a manual fix stay underlined.
+
+Use it only when the user asks to fix the format ("sửa thể thức", "chuẩn hóa"). It corrects:
 
 - font (Times New Roman), font size, bold/italic and paragraph alignment of each component (quốc hiệu, tiêu ngữ, trích yếu, nội dung, chữ ký, nơi nhận…) — every paragraph of the component that breaks the rule, not only the samples a check listed;
 - paper size (A4) and page margins.
@@ -28,13 +33,14 @@ It does NOT change line spacing, spacing before/after paragraphs or indents. Pos
 
 ## When to Use
 
-After check_document_format (or when the user directly asks to normalise the layout). When the user asked to fix the format, apply at once and report what changed (Ctrl+Z or the revision history undo it); use dry_run=true only when the user explicitly asks to see the plan first ("chỉ xem kế hoạch").
+After check_document_format (or when the user directly asks to normalise the layout). Call it first WITHOUT apply: show the plan, say the red underlines show where, and ask whether to apply. Pass apply=true only when the user then agrees in a later message ("áp dụng", "đồng ý sửa", "sửa đi"), or when the current message itself says to apply without review ("sửa luôn", "áp dụng ngay", "tự sửa giúp"). Report what changed (Ctrl+Z or the revision history undo it). dry_run=true returns the plan without underlining anything — only when the user asks to see the plan alone ("chỉ xem kế hoạch").
 
 ## Input
 
 - check_ids: rule ids to fix (as reported by the check, e.g. "noi_dung.font", "trich_yeu.size", "page.margin.left"); omit to fix every fixable rule. Font, size, bold/italic and alignment rules are applied paragraph by paragraph: each paragraph that breaks one is fixed even when the check as a whole passes (e.g. one body paragraph in Arial among paragraphs in Times New Roman).
 - document_type: rule set to apply (cong_van, quyet_dinh, …); omit to auto-detect.
-- dry_run: true to only return the plan without changing the document — only when the user explicitly asks to see the plan first.
+- apply: true to change the document — only after the user agreed to the plan (see When to Use). Omitted: review only.
+- dry_run: true to only return the plan, without underlining — only when the user asks to see the plan alone.
 - force: true to apply even though the structure could not be identified reliably; only after the user confirmed.`,
 	schema: json.RawMessage(`{
   "type": "object",
@@ -49,9 +55,13 @@ After check_document_format (or when the user directly asks to normalise the lay
       "type": "string",
       "description": "Optional rule set, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect"
     },
+    "apply": {
+      "type": "boolean",
+      "description": "true: apply the planned corrections — only after the user agreed to the plan; omitted: review (plan + red underlines, nothing changed)"
+    },
     "dry_run": {
       "type": "boolean",
-      "description": "true: return the fix plan without changing the document"
+      "description": "true: return the fix plan only, without underlining anything"
     },
     "force": {
       "type": "boolean",
@@ -65,8 +75,10 @@ type applyFormatFixesInput struct {
 	CheckIDs     []string `json:"check_ids"`
 	DocumentType string   `json:"document_type"`
 	DryRun       bool     `json:"dry_run"`
-	Force        bool     `json:"force"`
-	Document     string   `json:"document"`
+	// Apply changes the document; without it a call only reviews.
+	Apply    bool   `json:"apply"`
+	Force    bool   `json:"force"`
+	Document string `json:"document"`
 }
 
 // ApplyFormatFixesTool plans the corrections of mechanically fixable NĐ30
@@ -249,9 +261,14 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
-	if in.DryRun {
+	// review (the default) changes nothing but underlines: it snapshots too
+	review := !in.DryRun && !in.Apply
+	switch {
+	case in.DryRun:
 		content, ws, err = readListedDocument(ctx, t.workspace, t.sessionID, target)
-	} else {
+	case review:
+		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "đánh dấu lỗi thể thức")
+	default:
 		content, ws, seq, err = snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "chuẩn hóa thể thức")
 	}
 	if err != nil {
@@ -272,26 +289,36 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	// when its structure is not recognised, only show the plan.
 	missing, typeKnown := structureGaps(report, rs)
 	unreliable := len(missing) > 0 || !typeKnown
-	dryRun := in.DryRun || (unreliable && !in.Force)
+	guarded := unreliable && !in.Force
+	dryRun := in.DryRun || review || guarded
 
 	var ops []DocumentOp
-	var manualSpots []formatSpot
+	// underlined where they are: what is left for a manual fix and, in a
+	// review, every paragraph the plan would change
+	var spots []formatSpot
+	if review {
+		for _, i := range sortedKeys(plan.paras) {
+			spots = append(spots, formatSpot{Para: i})
+		}
+	}
 	for _, m := range plan.manual {
-		manualSpots = append(manualSpots, m.spots...)
+		spots = append(spots, m.spots...)
+	}
+	if in.DryRun || guarded {
+		spots = nil
 	}
 	marks := 0
-	if !dryRun && (plan.hasEdits() || len(manualSpots) > 0) {
+	if (!dryRun && plan.hasEdits()) || len(spots) > 0 {
 		doc, err := docxedit.Open(content)
 		if err != nil {
 			return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
 		}
 		// formatting changes no text: one virtual document serves both
 		vdoc := newVirtualDoc(doc.Paragraphs())
-		if plan.hasEdits() {
+		if !dryRun && plan.hasEdits() {
 			ops = plan.ops(vdoc)
 		}
-		// what is left for the user is marked where it is
-		markOps := formatMarkOps(vdoc, manualSpots)
+		markOps := formatMarkOps(vdoc, spots)
 		marks = len(markOps)
 		ops = append(ops, markOps...)
 	}
@@ -309,7 +336,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		manual = []ManualFormatFix{}
 	}
 	output := renderFormatPlan(ws.FileName, report, plan, dryRun)
-	blocked := unreliable && !in.Force && !in.DryRun
+	blocked := guarded && in.Apply
 	switch {
 	case unreliable && !in.Force:
 		output = structureWarning(report, missing, typeKnown, blocked) + "\n\n" + output
@@ -324,8 +351,13 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	if len(ops) > 0 {
 		output += "\n" + editorAppliedNote + "\n"
 	}
-	if marks > 0 {
-		output += "Những lỗi cần sửa thủ công đã được tô đỏ tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ đánh dấu).\n"
+	switch {
+	case marks > 0 && review:
+		output += "\nCHƯA SỬA GÌ: các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân đỏ trong trình soạn thảo. Hỏi người dùng có đồng ý áp dụng không; chỉ khi họ đồng ý mới gọi lại với apply=true.\n"
+	case review:
+		output += "\nCHƯA SỬA GÌ. Hỏi người dùng có đồng ý áp dụng không; chỉ khi họ đồng ý mới gọi lại với apply=true.\n"
+	case marks > 0:
+		output += "Những lỗi cần sửa thủ công được gạch chân đỏ tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ gạch chân).\n"
 	}
 	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName
@@ -334,6 +366,7 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	data["skipped"] = skipped
 	data["manual"] = manual
 	data["dry_run"] = dryRun
+	data["review"] = review
 	data["blocked"] = blocked
 	data["missing_components"] = missing
 	data["segmentation"] = report.Segmentation.Method
@@ -904,7 +937,7 @@ func renderFormatPlan(fileName string, report *docformat.Report, plan *formatPla
 	case len(plan.applied) == 0:
 		fmt.Fprintf(&b, "Không có lỗi thể thức nào của %s sửa tự động được (bộ quy tắc: %s).\n", fileName, report.DocumentType.RuleSet)
 	case dryRun:
-		fmt.Fprintf(&b, "KẾ HOẠCH (chưa sửa tài liệu): %d sửa thể thức trên %d đoạn của %s (bộ quy tắc: %s). Gọi lại với dry_run=false để áp dụng.\n",
+		fmt.Fprintf(&b, "KẾ HOẠCH (chưa sửa tài liệu): %d sửa thể thức trên %d đoạn của %s (bộ quy tắc: %s). Chỉ áp dụng (apply=true) khi người dùng đồng ý.\n",
 			len(plan.applied), nParas, fileName, report.DocumentType.RuleSet)
 	default:
 		fmt.Fprintf(&b, "Sẽ áp dụng %d sửa thể thức trên %d đoạn của %s (bộ quy tắc: %s):\n",

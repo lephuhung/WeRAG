@@ -29,14 +29,17 @@ func TestDocumentAssistantPromptDefaultsToOneAdministrativeVersion(t *testing.T)
 	for _, want := range []string{
 		"Whenever you write or propose text for the document (a rewrite, a new paragraph, a draft reply), use văn phong hành chính, lịch sự by default and give one version",
 		"ask back only for a fact you cannot know or find",
-		"apply it at once and report what changed",
-		"use dry_run=true only when the user explicitly asks to see the plan first",
+		// the assistant points out; the format changes once the user agreed
+		"Call it first WITHOUT apply",
+		"Pass apply=true only when the user agrees in a later message",
+		"Use dry_run=true only when the user asks to see the plan alone",
 		"force=true", // the structure question stays
 		"Propose exactly ONE version by default",
 	} {
 		require.Contains(t, content, want)
 	}
 	require.NotContains(t, content, "When it would change more than 10 paragraphs")
+	require.NotContains(t, content, "apply it at once")
 	// the general rule sits right after the REVIEW default
 	review := strings.Index(content, "Your default behaviour is to REVIEW")
 	rule := strings.Index(content, "Whenever you write or propose text for the document")

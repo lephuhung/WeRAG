@@ -40,7 +40,7 @@ func TestFormatMarkOps(t *testing.T) {
 	ops := formatMarkOps(vdoc, []formatSpot{
 		{Para: 2, Text: "p`h"}, // a quoted typo: underlined
 		{Para: 2, Text: "p`h"}, // the same one again: once
-		{Para: 3},              // a paragraph-level finding: red text
+		{Para: 3},              // a paragraph-level finding: the whole paragraph
 		{Para: 3},              // twice for the same paragraph: once
 		{Para: 1},              // empty paragraph: skipped
 		{Para: 9},              // outside the document: skipped
@@ -52,11 +52,11 @@ func TestFormatMarkOps(t *testing.T) {
 	if ops[0].Style != "underline" || ops[0].Text != "p`h" || ops[0].Anchor.Text != "Chính p`hủ ban hành" {
 		t.Fatalf("typo mark: %+v", ops[0])
 	}
-	if ops[1].Style != "color" || ops[1].Text != "" || ops[1].Anchor.Text != "Nội dung" {
+	if ops[1].Style != "underline" || ops[1].Text != "" || ops[1].Anchor.Text != "Nội dung" {
 		t.Fatalf("paragraph mark: %+v", ops[1])
 	}
 	// quoted text not in the paragraph: the whole paragraph is marked
-	if ops[2].Style != "color" || ops[2].Anchor.Text != "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" {
+	if ops[2].Style != "underline" || ops[2].Text != "" || ops[2].Anchor.Text != "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" {
 		t.Fatalf("fallback mark: %+v", ops[2])
 	}
 
@@ -100,14 +100,15 @@ func TestCheckDocumentFormatMarksFindingsInTheEditor(t *testing.T) {
 		t.Fatalf("marks: %+v data: %+v", marks, res.Data)
 	}
 	for _, m := range marks {
-		if m.Style != "color" || m.Anchor == nil || m.Anchor.Text == "" {
+		// a red underline only: the assistant changes neither text nor color
+		if m.Style != "underline" || m.Anchor == nil || m.Anchor.Text == "" {
 			t.Fatalf("mark: %+v", m)
 		}
 	}
 	if len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: đánh dấu lỗi thể thức" {
 		t.Fatalf("an undo point before marking: %v", ws.snapshots)
 	}
-	if !strings.Contains(res.Output, "tô đỏ") {
+	if !strings.Contains(res.Output, "gạch chân đỏ") {
 		t.Fatalf("output: %s", res.Output)
 	}
 
@@ -127,9 +128,9 @@ func TestCheckDocumentFormatUnderlinesStrayCharacters(t *testing.T) {
 	}
 	underlined := 0
 	for _, m := range markOps(t, res.Data) {
-		if m.Style == "underline" {
+		if m.Style == "underline" && m.Text != "" {
 			underlined++
-			if m.Text == "" || !strings.Contains(m.Anchor.Text, m.Text) {
+			if !strings.Contains(m.Anchor.Text, m.Text) {
 				t.Fatalf("typo mark outside its paragraph: %+v", m)
 			}
 		}
@@ -143,7 +144,7 @@ func TestApplyFormatFixesMarksWhatIsLeftForTheUser(t *testing.T) {
 	// a stray character cannot be fixed mechanically: it is listed and
 	// underlined where it is
 	ws := newFakeWorkspace(strayCharsFixture(t))
-	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"force":true}`)
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true,"force":true}`)
 	if !res.Success {
 		t.Fatalf("result: %+v", res)
 	}
@@ -163,7 +164,7 @@ func TestApplyFormatFixesMarksWhatIsLeftForTheUser(t *testing.T) {
 			marked = true
 		}
 	}
-	if !marked || !strings.Contains(res.Output, "tô đỏ") {
+	if !marked || !strings.Contains(res.Output, "gạch chân đỏ") {
 		t.Fatalf("marks: %+v output: %s", res.Data["document_ops"], res.Output)
 	}
 
@@ -172,5 +173,44 @@ func TestApplyFormatFixesMarksWhatIsLeftForTheUser(t *testing.T) {
 	res = runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"dry_run":true,"force":true}`)
 	if len(markOps(t, res.Data)) != 0 {
 		t.Fatalf("dry run marked: %+v", res.Data["document_ops"])
+	}
+}
+
+func TestApplyFormatFixesReviewsBeforeChanging(t *testing.T) {
+	// the default call points out: no formatting change, only red
+	// underlines on the paragraphs the plan would change
+	ws := newFakeWorkspace(docxFixture(t))
+	res := runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{}`)
+	if !res.Success || res.Data["review"] != true || res.Data["dry_run"] != true {
+		t.Fatalf("data: %+v", res.Data)
+	}
+	all, _ := res.Data["document_ops"].([]DocumentOp)
+	if len(all) == 0 {
+		t.Fatal("a review underlines where the fixes would go")
+	}
+	for _, op := range all {
+		if op.Op != OpMark || op.Style != "underline" {
+			t.Fatalf("a review changes nothing but underlines: %+v", op)
+		}
+	}
+	if len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: đánh dấu lỗi thể thức" {
+		t.Fatalf("snapshots: %v", ws.snapshots)
+	}
+	if !strings.Contains(res.Output, "CHƯA SỬA GÌ") || !strings.Contains(res.Output, "apply=true") {
+		t.Fatalf("output: %s", res.Output)
+	}
+
+	// apply=true after the user agreed: the formatting is changed
+	ws = newFakeWorkspace(docxFixture(t))
+	res = runTool(t, NewApplyFormatFixesTool(ws, nil, "s"), `{"apply":true}`)
+	applied := false
+	all, _ = res.Data["document_ops"].([]DocumentOp)
+	for _, op := range all {
+		if op.Op == OpFormatParagraph {
+			applied = true
+		}
+	}
+	if !applied || res.Data["review"] != false {
+		t.Fatalf("apply: %+v", res.Data)
 	}
 }
