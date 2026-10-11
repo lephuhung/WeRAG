@@ -264,7 +264,8 @@ func RegisterSystemRoutes(
 	handler *handler.SystemHandler,
 	g *rbacGuards,
 ) {
-	systemRoutes := g.apiKeyGroup(r.Group("/system"), apiKeyManageVectorStores(apiKeyFullAccess()))
+	systemGroup := r.Group("/system")
+	systemRoutes := g.apiKeyGroup(systemGroup, apiKeyManageVectorStores(apiKeyFullAccess()))
 	{
 		systemRoutes.With(apiKeyAny()).GET("/capabilities", g.Member(), handler.GetDeploymentCapabilities)
 		systemRoutes.GET("/info", g.Member(), handler.GetSystemInfo)
@@ -279,6 +280,10 @@ func RegisterSystemRoutes(
 		// Member-readable: upload UIs poll this to decide whether the
 		// parse-settings dialog can be skipped (SystemAdmin-locked defaults).
 		systemRoutes.GET("/parse-defaults", g.Member(), handler.GetSystemParseDefaults)
+		// Public: no g.Member() — the theme name is not sensitive and must be
+		// readable before sign-in (login page, add-in first paint). Registered
+		// on the raw group so API keys stay default-denied.
+		systemGroup.GET("/ui-theme", handler.GetSystemUITheme)
 		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
 		systemRoutes.POST("/sandbox-check", g.Admin(), handler.CheckSandboxConfig)
 	}

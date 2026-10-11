@@ -2474,6 +2474,21 @@ func (h *SystemHandler) GetSystemParseDefaults(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": def})
 }
 
+// GetSystemUITheme godoc
+// @Summary      Get the platform-wide UI theme
+// @Description  Returns {"theme": "elevenlabs"|"anthropic"} via the 3-tier
+// @Description  system-setting resolver. Public (no auth) so the login page
+// @Description  and the Word add-in apply the same theme.
+// @Tags         System
+// @Produce      json
+// @Success      200 {object} map[string]interface{} "{ success, data: { theme } }"
+// @Router       /system/ui-theme [get]
+func (h *SystemHandler) GetSystemUITheme(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+	theme := h.systemSettingSvc.GetString(ctx, service.SystemUIThemeKey, "WEKNORA_UI_THEME", "elevenlabs")
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"theme": theme}})
+}
+
 // ApplyDefaultStorageQuotaToAllTenants godoc
 // @Summary      Apply the default storage quota to every existing workspace
 // @Description  Reads the current value of `tenant.default_storage_quota_gb`
