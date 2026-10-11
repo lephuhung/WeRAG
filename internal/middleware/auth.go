@@ -60,6 +60,10 @@ var noAuthAPI = map[string][]string{
 	// before GET to validate Content-Type / Content-Length when rendering
 	// image previews — both verbs must be allowed for image links to work.
 	"/api/v1/files/presigned": {"GET", "HEAD"},
+	// Platform UI theme: non-sensitive, and must be readable before sign-in
+	// (login page, Word add-in first paint). Registered public in
+	// RegisterSystemRoutes; the global Auth middleware must let it through.
+	"/api/v1/system/ui-theme": {"GET"},
 }
 
 // 检查请求是否在无需认证的APIList 中
