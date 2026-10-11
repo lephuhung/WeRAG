@@ -64,3 +64,30 @@ func TestValidateParseDefaults(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateUITheme(t *testing.T) {
+	spec, ok := registry[SystemUIThemeKey]
+	if !ok {
+		t.Fatal("ui.theme must be registered")
+	}
+	if spec.Type != "string" {
+		t.Fatalf("ui.theme type = %q, want string", spec.Type)
+	}
+	if spec.Default != "elevenlabs" {
+		t.Fatalf("ui.theme default = %v, want elevenlabs", spec.Default)
+	}
+	want := []string{"elevenlabs", "anthropic"}
+	if len(spec.Enum) != len(want) || spec.Enum[0] != want[0] || spec.Enum[1] != want[1] {
+		t.Fatalf("ui.theme enum = %v, want %v", spec.Enum, want)
+	}
+	// Update() enforces spec.Type via encodeForType before the enum check;
+	// assert both legal values encode and a non-string is rejected.
+	for _, v := range want {
+		if _, err := encodeForType(spec.Type, v); err != nil {
+			t.Fatalf("encodeForType(%q) = %v, want nil", v, err)
+		}
+	}
+	if _, err := encodeForType(spec.Type, 42); err == nil {
+		t.Fatal("encodeForType must reject a non-string value")
+	}
+}

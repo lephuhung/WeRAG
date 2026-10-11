@@ -38,6 +38,11 @@ const pubsubChannelBase = "weknora:system_settings:changed"
 // parse-config resolver hook.
 const SystemParseDefaultsKey = "knowledge.parse_defaults"
 
+// SystemUIThemeKey is the system_settings key holding the platform-wide UI
+// theme family. Read by the public GET /system/ui-theme endpoint so the web
+// app and the Word add-in render the same theme, login page included.
+const SystemUIThemeKey = "ui.theme"
+
 // pubsubChannel resolves the effective channel name (with optional
 // namespace suffix). Called both at publish time and inside the
 // subscriber loop — keep it pure.
@@ -107,6 +112,18 @@ type settingSpec struct {
 // the new value, no in-memory state bound at init time we cannot
 // re-derive)".
 var registry = map[string]settingSpec{
+	// ui.theme is the platform-wide UI theme family. "elevenlabs" is the
+	// built-in design language; "anthropic" is the Anthropic-derived preset.
+	// Read by GET /system/ui-theme; applied at <html data-theme>.
+	"ui.theme": {
+		Type:     "string",
+		EnvName:  "WEKNORA_UI_THEME",
+		Default:  "elevenlabs",
+		Enum:     []string{"elevenlabs", "anthropic"},
+		Category: "appearance",
+		Description: "平台级界面主题。elevenlabs = 内置设计语言；anthropic = Anthropic 风格预设。" +
+			"修改后立即对所有用户生效，无需重启。",
+	},
 	// NOTE: file.max_size_mb is intentionally NOT registered. Although
 	// the Go upload handlers accept a runtime override via
 	// systemSettingSvc.GetInt, the actual upload limit is gated end-to-end
