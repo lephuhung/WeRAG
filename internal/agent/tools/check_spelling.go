@@ -405,7 +405,7 @@ func (t *CheckSpellingTool) documentSpelling(ctx context.Context, paras []docxed
 const spellPassTTL = formatCheckCacheTTL
 
 // spellPassMax bounds the cache; past it the oldest half is dropped.
-const spellPassMax = 500
+const spellPassMax = 5000
 
 // spellPassCache keeps the format check's spelling passes by the reviewed
 // texts, model and prompt: a repeated check of an unchanged text (Word

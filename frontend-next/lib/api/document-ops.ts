@@ -53,7 +53,19 @@ export type DocumentOp =
       bold?: boolean;
       italic?: boolean;
     }
-  | { op: "pageSetup"; marginsMm?: { top?: number; bottom?: number; left?: number; right?: number }; a4?: true };
+  /** Clears the red underlines of an edited paragraph (live spellcheck). */
+  | { op: "unmark"; anchor: ParagraphAnchor }
+  | { op: "pageSetup"; marginsMm?: { top?: number; bottom?: number; left?: number; right?: number }; a4?: true }
+  | {
+      /** Built here from an illustration card, never sent by the server. */
+      op: "insertImage";
+      anchor: ParagraphAnchor | StartAnchor;
+      /** PNG/JPEG data URL */
+      src: string;
+      widthMm: number;
+      heightMm: number;
+      caption?: string;
+    };
 
 /** documentId routes the batch to that document's editor tab; absent on
  * results from before multi-document sessions (→ the active tab). */
@@ -132,6 +144,8 @@ export function opValidationError(raw: unknown): string | null {
       )
         return "bad textOccurrence";
       return isStr(raw.style) && MARK_STYLES.has(raw.style) ? null : "bad style";
+    case "unmark":
+      return validAnchor(raw.anchor) ? null : "bad anchor";
     case "formatParagraph":
       if (!validAnchor(raw.anchor)) return "bad anchor";
       if (!optAlign(raw.alignment)) return "bad alignment";
@@ -145,6 +159,12 @@ export function opValidationError(raw: unknown): string | null {
       if (!isObj(m)) return "bad marginsMm";
       return ["top", "bottom", "left", "right"].every((k) => optNum(m[k])) ? null : "bad marginsMm";
     }
+    case "insertImage":
+      if (!validAnchor(raw.anchor, true)) return "bad anchor";
+      if (!isStr(raw.src) || !/^data:image\/(png|jpeg);base64,/.test(raw.src)) return "bad src";
+      if (!(typeof raw.widthMm === "number" && raw.widthMm > 0) || !(typeof raw.heightMm === "number" && raw.heightMm > 0))
+        return "bad size";
+      return raw.caption === undefined || isStr(raw.caption) ? null : "bad caption";
     default:
       return `unknown op ${raw.op}`;
   }
@@ -174,6 +194,12 @@ export function opsBatchFromToolData(
   const documentId = isStr(data.document_id) && data.document_id.trim() ? data.document_id.trim() : undefined;
   return documentId ? { batchId, ops, rejected, documentId } : { batchId, ops, rejected };
 }
+
+/** Batch id prefix of the live spellcheck's underlines: applied silently
+ * and never written to the applied-batch ledger (there are many). */
+export const LIVE_SPELLING_BATCH_PREFIX = "spell-live-";
+
+export const isLiveSpellingBatch = (batchId: string) => batchId.startsWith(LIVE_SPELLING_BATCH_PREFIX);
 
 /* ---------- rewrite proposals ---------- */
 
@@ -284,6 +310,86 @@ export function newestProposalByDocument(proposals: Iterable<RewriteProposal>): 
   return out;
 }
 
+/* ---------- illustrations ---------- */
+
+/* draw_diagram / generate_illustration propose a picture (Data.illustration):
+ * a Mermaid diagram the browser draws, or an image the image model painted
+ * (persisted as a message artifact, found by its sha256). "Chèn vào văn bản"
+ * snapshots on the server (proposals/apply, kind illustration) and sends one
+ * insertImage op as the batch `${batchId}:v1`. */
+
+export type Illustration = {
+  kind: "diagram" | "image";
+  batchId: string;
+  /** "" when there is no document to insert into */
+  documentId: string;
+  document: string;
+  title: string;
+  caption: string;
+  /** null: no place known — download only */
+  anchor: ParagraphAnchor | null;
+  widthMm: number;
+  mermaid?: string;
+  prompt?: string;
+  imageSha256?: string;
+};
+
+export const ILLUSTRATION_TOOLS = new Set(["draw_diagram", "generate_illustration"]);
+
+/** The illustration a tool result proposes, or null. */
+export function illustrationFromToolData(
+  toolName: string | undefined,
+  data: Record<string, unknown> | undefined,
+): Illustration | null {
+  const name = toolName || (isStr(data?.tool_name) ? data.tool_name : "");
+  if (!ILLUSTRATION_TOOLS.has(name) || !data || !isObj(data.illustration)) return null;
+  const ill = data.illustration;
+  const batchId = isStr(data.ops_batch_id) ? data.ops_batch_id.trim() : "";
+  const kind = ill.kind === "diagram" || ill.kind === "image" ? ill.kind : null;
+  if (!batchId || !kind) return null;
+  if (kind === "diagram" && !(isStr(ill.mermaid) && ill.mermaid.trim())) return null;
+  if (kind === "image" && !(isStr(ill.image_sha256) && /^[0-9a-f]{64}$/.test(ill.image_sha256))) return null;
+  const anchor = validAnchor(ill.anchor) ? (ill.anchor as ParagraphAnchor) : null;
+  const width = typeof ill.width_mm === "number" && ill.width_mm > 20 && ill.width_mm <= 200 ? ill.width_mm : 150;
+  return {
+    kind,
+    batchId,
+    documentId: isStr(data.document_id) ? data.document_id.trim() : "",
+    document: isStr(data.document) ? data.document : "",
+    title: isStr(ill.title) ? ill.title : "",
+    caption: isStr(ill.caption) ? ill.caption : "",
+    anchor,
+    widthMm: width,
+    ...(kind === "diagram" ? { mermaid: ill.mermaid as string } : {}),
+    ...(kind === "image" ? { imageSha256: ill.image_sha256 as string, prompt: isStr(ill.prompt) ? ill.prompt : "" } : {}),
+  };
+}
+
+/** The edit batch inserting an illustration's picture (`src`, w×h pixels). */
+export function illustrationOpsBatch(
+  ill: Illustration,
+  src: string,
+  pixels: { width: number; height: number },
+): OpsBatch {
+  // a very tall diagram keeps to roughly one page
+  const MAX_HEIGHT_MM = 230;
+  let widthMm = ill.widthMm;
+  let heightMm = Math.round((widthMm * pixels.height) / Math.max(1, pixels.width));
+  if (heightMm > MAX_HEIGHT_MM) {
+    widthMm = Math.round((widthMm * MAX_HEIGHT_MM) / heightMm);
+    heightMm = MAX_HEIGHT_MM;
+  }
+  const op: DocumentOp = {
+    op: "insertImage",
+    anchor: ill.anchor ?? { atStart: true },
+    src,
+    widthMm,
+    heightMm,
+    ...(ill.caption ? { caption: ill.caption } : {}),
+  };
+  return { batchId: proposalBatchId(ill.batchId, "v1"), ops: [op], documentId: ill.documentId || undefined };
+}
+
 /* ---------- plugin messages ---------- */
 
 export type PluginOpsMessage =
@@ -301,6 +407,20 @@ export function parsePluginOpsMessage(data: unknown): PluginOpsMessage | null {
         .map((f) => ({ index: typeof f.index === "number" ? f.index : -1, error: isStr(f.error) ? f.error : "error" }))
     : [];
   return { type: "ops_result", batchId: data.batchId, applied, failed };
+}
+
+/* ---------- live spellcheck: paragraph texts from the plugin ---------- */
+
+export function readParagraphsMessage(requestId: string) {
+  return { source: "werag-host" as const, type: "read_paragraphs" as const, requestId };
+}
+
+/** The plugin's reply to read_paragraphs: texts null when the read failed. */
+export function parsePluginParagraphsMessage(data: unknown): { requestId: string; texts: string[] | null } | null {
+  if (!isObj(data) || data.source !== "werag-onlyoffice" || data.type !== "paragraphs") return null;
+  if (!isStr(data.requestId) || !data.requestId) return null;
+  const texts = Array.isArray(data.texts) ? data.texts.map((t) => (isStr(t) ? t : "")) : null;
+  return { requestId: data.requestId, texts };
 }
 
 export function applyOpsMessage(batch: OpsBatch) {

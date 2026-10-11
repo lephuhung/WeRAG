@@ -62,11 +62,14 @@ var ToolCapabilityRequirements = map[string]ToolRequirement{
 	"todo_write": {},
 
 	// ---- RAG / chunk retrieval (need at least one chunk-indexed KB) ----
-	"search_knowledge":      {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"read_document":         documentReaderRequirement,
-	"list_documents":        documentReaderRequirement,
-	"query_knowledge_graph": {AllOf: []KBCapability{CapGraph}, ConsumesFiles: true},
-	"database_query":        {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"search_knowledge": {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"read_document":    documentReaderRequirement,
+	"list_documents":   documentReaderRequirement,
+	// search_document_section reads stored chunks like read_document and
+	// rides on it (see registerTools), so it shares the reader requirement.
+	"search_document_section": documentReaderRequirement,
+	"query_knowledge_graph":   {AllOf: []KBCapability{CapGraph}, ConsumesFiles: true},
+	"database_query":          {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
 	// Retired names keep their requirement so a stored allowlist that has not
 	// been normalized yet still derives the same KB filter.
 	"knowledge_search":      {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},

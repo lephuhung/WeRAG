@@ -145,3 +145,60 @@ func TestRegisterToolsOffersCheckSpellingWithItsModel(t *testing.T) {
 	// nor without a workspace
 	require.NotContains(t, registerDocumentTools(t, nil, tools.ToolCheckSpelling), tools.ToolCheckSpelling)
 }
+
+func TestRegisterToolsReadOnlyDocumentsForReasoningInWord(t *testing.T) {
+	ws := &types.DocumentWorkspace{ID: "ws", SessionID: "session", FileName: "a.docx",
+		EditorKind: types.DocumentEditorKindWordAddin}
+	kb := &types.KnowledgeBase{ID: "kb"}
+	kb.IndexingStrategy.VectorEnabled = true
+	svc := newToolSurfaceService(kb)
+	svc.documentWorkspaces = &fakeDocumentWorkspaces{ws: ws}
+	ctx := context.WithValue(t.Context(), types.TenantIDContextKey, uint64(7))
+	cfg := toolSurfaceConfig(tools.ToolSearchKnowledge, tools.ToolRewriteParagraphs, tools.ToolMarkPassages,
+		tools.ToolApplyFormatFixes, tools.ToolDrawDiagram)
+	cfg.ReadOnlyDocuments = true
+	registry := tools.NewToolRegistry()
+	require.NoError(t, svc.registerTools(ctx, registry, cfg, nil, nil, "session"))
+	names := registry.ListTools()
+
+	require.Contains(t, names, tools.ToolSearchKnowledge)
+	require.Contains(t, names, tools.ToolReadDocumentOutline, "reading the document is added")
+	require.Contains(t, names, tools.ToolFindInDocuments)
+	require.Contains(t, names, tools.ToolCheckDocumentFormat)
+	for _, writer := range tools.ReadOnlyDocumentTools {
+		require.NotContains(t, names, writer, "no tool that changes the document")
+	}
+	check, err := registry.GetTool(tools.ToolCheckDocumentFormat)
+	require.NoError(t, err)
+	require.Contains(t, check.Description(), "ONLY REPORTS")
+}
+
+func TestQuickAnswerSelectionRules(t *testing.T) {
+	sel := &types.DocumentSelection{Text: "Điều 3. Hiệu lực thi hành"}
+	req := &types.QARequest{CustomAgent: &types.CustomAgent{ID: types.BuiltinQuickAnswerID}, DocumentSelection: sel}
+	got := quickAnswerSelectionRules(req)
+	require.Contains(t, got, "Trả lời nhanh không có công cụ phù hợp")
+	require.NotContains(t, got, "format_check_report")
+
+	req.DocumentSelection = nil
+	require.Empty(t, quickAnswerSelectionRules(req), "no selection, plain Q&A")
+	req.DocumentSelection = sel
+	req.CustomAgent = &types.CustomAgent{ID: types.BuiltinSmartReasoningID}
+	require.Empty(t, quickAnswerSelectionRules(req), "only quick answer takes this path")
+}
+
+func TestFallbackPromptKeepsSelection(t *testing.T) {
+	svc := &sessionService{}
+	req := &types.QARequest{CustomAgent: &types.CustomAgent{ID: types.BuiltinQuickAnswerID},
+		DocumentSelection: &types.DocumentSelection{Text: "Bước 2: Trong vòng 24 giờ, Trạm y tế xác minh thông tin."}}
+	cm := &types.ChatManage{}
+	cm.Query = "Sửa đoạn này cho ngắn gọn hơn"
+	cm.FallbackPrompt = "Câu hỏi: {{query}}"
+	cm.DocumentSelection = req.DocumentSelection
+	cm.DocumentContext = quickAnswerSelectionRules(req)
+	got, err := svc.renderFallbackPrompt(t.Context(), cm)
+	require.NoError(t, err)
+	require.Contains(t, got, "Câu hỏi: Sửa đoạn này")
+	require.Contains(t, got, "Trạm y tế xác minh", "an empty search must not drop the highlighted passage")
+	require.Contains(t, got, "không có công cụ phù hợp")
+}

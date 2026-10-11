@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
 import { Select } from "@/components/select";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import {
   createAgent,
   updateAgent,
@@ -18,6 +18,15 @@ import {
 } from "@/lib/api/agents";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { listMCPServices, type MCPService } from "@/lib/api/mcp";
+import {
+  AGENT_TOOLS,
+  DEFAULT_ALLOWED_TOOLS,
+  TOOL_GROUPS,
+  normalizeAllowedTools,
+  toggleTool,
+  toolInactiveReason,
+  unlistedTools,
+} from "@/lib/agent-tools";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { buildAgentConfigForSave } from "@/lib/api/agent-config";
 import { getStorageEngineStatus } from "@/lib/api/system";
@@ -49,6 +58,7 @@ type Draft = {
   web_search_enabled: boolean;
   mcp_selection_mode: "all" | "selected" | "none";
   mcp_services: string[];
+  allowed_tools: string[];
   // Multimodal / attachments
   image_upload_enabled: boolean;
   vlm_model_id: string;
@@ -61,6 +71,7 @@ type Draft = {
   // Document assistant (sent only when that section is shown)
   format_check_model_id: string;
   spellcheck_model_id: string;
+  illustration_mcp_service_id: string;
   format_check_on_open: boolean;
   ask_scope_for_long_documents: boolean;
   web_search_default_on: boolean;
@@ -91,6 +102,10 @@ function draftFrom(a: CustomAgent | null): Draft {
     web_search_enabled: a?.config?.web_search_enabled ?? true,
     mcp_selection_mode: a?.config?.mcp_selection_mode ?? "all",
     mcp_services: a?.config?.mcp_services ?? [],
+    // an agent stored without a list runs with the server defaults
+    allowed_tools: a?.config?.allowed_tools?.length
+      ? normalizeAllowedTools(a.config.allowed_tools)
+      : [...DEFAULT_ALLOWED_TOOLS],
     image_upload_enabled: a?.config?.image_upload_enabled ?? false,
     vlm_model_id: a?.config?.vlm_model_id ?? "",
     attachment_image_understanding: a?.config?.attachment_image_understanding ?? false,
@@ -101,6 +116,7 @@ function draftFrom(a: CustomAgent | null): Draft {
     asr_model_id: a?.config?.asr_model_id ?? "",
     format_check_model_id: a?.config?.format_check_model_id ?? "",
     spellcheck_model_id: a?.config?.spellcheck_model_id ?? "",
+    illustration_mcp_service_id: a?.config?.illustration_mcp_service_id ?? "",
     // null / unset = on
     format_check_on_open: a?.config?.format_check_on_open !== false,
     ask_scope_for_long_documents: a?.config?.ask_scope_for_long_documents !== false,
@@ -312,6 +328,7 @@ export function AgentEditorModal({
         rerank_threshold: draft.rerank_threshold,
         web_search_enabled: draft.web_search_enabled,
         mcp_selection_mode: draft.mcp_selection_mode,
+        allowed_tools: draft.allowed_tools,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
         image_upload_enabled: draft.image_upload_enabled,
         vlm_model_id: draft.vlm_model_id || undefined,
@@ -327,6 +344,8 @@ export function AgentEditorModal({
           ? {
               format_check_model_id: draft.format_check_model_id || undefined,
               spellcheck_model_id: draft.spellcheck_model_id || undefined,
+              // "" is sent: it switches back to picking the service automatically
+              illustration_mcp_service_id: draft.illustration_mcp_service_id,
               format_check_on_open: draft.format_check_on_open,
               ask_scope_for_long_documents: draft.ask_scope_for_long_documents,
               web_search_default_on: draft.web_search_default_on,
@@ -653,6 +672,23 @@ export function AgentEditorModal({
                       placeholder={t("agent.docAssist.useChatModel")}
                       options={qaModelOptions(draft.spellcheck_model_id, t("agent.docAssist.useChatModel"))}
                     />
+                  </label>
+                  <label className="block">
+                    <span className="caption mb-1.5 block text-muted">{t("agent.docAssist.illustrationService")}</span>
+                    <Select
+                      className="w-full"
+                      value={draft.illustration_mcp_service_id}
+                      disabled={readOnly}
+                      onChange={(v) => patch("illustration_mcp_service_id", v)}
+                      placeholder={t("agent.docAssist.illustrationAuto")}
+                      options={[
+                        { value: "", label: t("agent.docAssist.illustrationAuto") },
+                        ...mcpList
+                          .filter((m) => m.enabled || m.id === draft.illustration_mcp_service_id)
+                          .map((m) => ({ value: m.id, label: m.name })),
+                      ]}
+                    />
+                    <span className="caption mt-1 block text-muted-soft">{t("agent.docAssist.illustrationHint")}</span>
                   </label>
                 </div>
                 <label className="block sm:w-1/2">
@@ -1028,6 +1064,88 @@ export function AgentEditorModal({
         {/* Tab: Tools & MCP */}
         {tab === "tools" && (
           <div className="space-y-4">
+            <div>
+              <span className="caption mb-1 block text-muted">{t("agent.tools.allowed")}</span>
+              <p className="caption mb-2 text-muted-soft">
+                {draft.agent_mode === "smart-reasoning" ? t("agent.tools.allowedDesc") : t("agent.tools.needsSmartMode")}
+              </p>
+              <div className="space-y-3">
+                {TOOL_GROUPS.map((group) => {
+                  const tools = AGENT_TOOLS.filter((tool) => tool.group === group);
+                  const picked = tools.filter((tool) => draft.allowed_tools.includes(tool.name)).length;
+                  return (
+                    <section key={group} className="rounded-[12px] border border-hairline p-3">
+                      <header className="mb-2 flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-ink">{t(`agent.tools.group.${group}`)}</span>
+                        <span className="caption text-muted-soft">
+                          {picked}/{tools.length}
+                        </span>
+                        {group === "wiki_edit" && (
+                          <span className="caption text-error">{t("agent.tools.writeWarning")}</span>
+                        )}
+                      </header>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {tools.map((tool) => {
+                          const checked = draft.allowed_tools.includes(tool.name);
+                          const reason = checked
+                            ? toolInactiveReason(tool, {
+                                hasKb: draft.kb_selection_mode !== "none",
+                                agentMode: draft.agent_mode,
+                              })
+                            : null;
+                          const hint =
+                            reason === "kb"
+                              ? t("agent.tools.needsKb")
+                              : tool.needs === "document"
+                                ? t("agent.tools.needsDocument")
+                                : tool.needs === "imageService"
+                                  ? t("agent.tools.needsImageService")
+                                  : "";
+                          return (
+                            <label
+                              key={tool.name}
+                              className={`flex items-start gap-2.5 rounded-md border px-2.5 py-2 select-none ${
+                                checked ? "border-ink" : "border-hairline"
+                              } ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={checked}
+                                disabled={readOnly}
+                                onChange={() => patch("allowed_tools", toggleTool(draft.allowed_tools, tool.name))}
+                              />
+                              <span className="min-w-0">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="text-[13px] text-ink">{t(`agent.tool.${tool.name}` as LocaleKey)}</span>
+                                  {tool.danger && (
+                                    <span className="caption rounded bg-error/10 px-1 text-error">{t("agent.tools.danger")}</span>
+                                  )}
+                                </span>
+                                <span className="caption block text-muted">{t(`agent.tool.${tool.name}.desc` as LocaleKey)}</span>
+                                <span className="caption block font-mono text-muted-soft">{tool.name}</span>
+                                {hint && (
+                                  <span className={`caption block ${reason === "kb" ? "text-error" : "text-muted-soft"}`}>
+                                    {hint}
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+              {unlistedTools(draft.allowed_tools).length > 0 && (
+                <p className="caption mt-2 text-muted-soft">
+                  {t("agent.tools.unlisted")} {unlistedTools(draft.allowed_tools).join(", ")}
+                </p>
+              )}
+              <p className="caption mt-2 text-muted-soft">{t("agent.tools.autoNote")}</p>
+            </div>
+
             <div className="rounded-[12px] border border-hairline p-3">
               <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                 <input

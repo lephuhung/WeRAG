@@ -1,6 +1,7 @@
 "use client";
 
 import "highlight.js/styles/github.css";
+import "katex/dist/katex.min.css";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { renderChatMarkdown, setActiveArtifacts } from "@/lib/markdown";

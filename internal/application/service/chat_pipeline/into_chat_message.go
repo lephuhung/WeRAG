@@ -100,6 +100,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 			userContent += chatManage.Attachments.BuildPrompt()
 		}
 		userContent += chatManage.DocumentSelection.BuildPrompt()
+		userContent += chatManage.DocumentContext
 
 		if tpl := chatManage.SummaryConfig.ContextTemplate; tpl != "" {
 			chatManage.UserContent = types.RenderPromptPlaceholders(tpl, types.PlaceholderValues{
@@ -200,6 +201,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		userContent += chatManage.Attachments.BuildPrompt()
 	}
 	userContent += chatManage.DocumentSelection.BuildPrompt()
+	userContent += chatManage.DocumentContext
 
 	// Set formatted content back to chat management
 	chatManage.UserContent = userContent

@@ -18,7 +18,7 @@ func TestDocumentSourceTextReadyStartsItsProfile(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
 	var ready []string
 	fx.svc.OnSourceTextReady(func(_ context.Context, ws *types.DocumentWorkspace) { ready = append(ready, ws.ID) })
-	precheck := NewDocumentFormatPrecheck(fx.svc, nil, nil)
+	precheck := NewDocumentFormatPrecheck(fx.svc, nil, nil, nil)
 
 	doc := fx.attach.docs["att-pdf"]
 	doc.Status = types.TemporaryDocumentStatusProcessing

@@ -3,14 +3,17 @@ import DOMPurify from "dompurify";
 import hljs from "highlight.js";
 import { ARTIFACT_TRANSPARENT_PIXEL } from "@/lib/artifact-images";
 import type { ArtifactMeta } from "@/lib/api/chat";
+import { mathExtensions, preprocessMathDelimiters } from "@/lib/markdown-math";
 
 /* Minimal port of frontend/src/utils/chatMarkdownRenderer.ts +
  * security.ts sanitizeMarkdownHTML: GFM tables/breaks, fenced code with
- * highlight.js, DOMPurify allowlist. Mermaid/KaTeX/citation pills are
- * intentionally out of scope for this pass — raw blocks degrade to code.
+ * highlight.js, KaTeX math (lib/markdown-math.ts), DOMPurify allowlist.
+ * Mermaid/citation pills are intentionally out of scope for this pass —
+ * raw blocks degrade to code.
  */
 
 marked.setOptions({ breaks: true, gfm: true });
+marked.use({ extensions: mathExtensions });
 
 const renderer = new marked.Renderer();
 renderer.code = ({ text, lang }: { text?: string; lang?: string }) => {
@@ -107,7 +110,7 @@ export function renderChatMarkdown(raw: string): string {
     return `<a href="#" class="wiki-content-link" data-slug="${escapeHtml(slug)}">${escapeHtml(display)}</a>`;
   });
 
-  const html = marked.parse(withWikiLinks, { renderer, breaks: true, async: false }) as string;
+  const html = marked.parse(preprocessMathDelimiters(withWikiLinks), { renderer, breaks: true, async: false }) as string;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["pre", "code", "span", "table", "thead", "tbody", "tr", "th", "td", "img"],
     ADD_ATTR: ["class", "colspan", "rowspan", "data-slug", "src", "alt", "title", "loading", "decoding", "data-artifact-index", "data-img-loading"],

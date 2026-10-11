@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
   applyOpsMessage,
+  isLiveSpellingBatch,
   parsePluginOpsMessage,
   readAppliedBatches,
   rememberAppliedBatch,
@@ -91,7 +92,9 @@ export function useEditorOps({
       activeRef.current = null;
       if (retry) clearInterval(retry);
       if (timeout) clearTimeout(timeout);
-      if (o.kind === "result" && sessionId) rememberAppliedBatch(storage(), sessionId, batch.batchId);
+      // the live spellcheck's many small batches stay out of the ledger
+      if (o.kind === "result" && sessionId && !isLiveSpellingBatch(batch.batchId))
+        rememberAppliedBatch(storage(), sessionId, batch.batchId);
       onOutcomeRef.current(o);
       pump();
     };
@@ -144,7 +147,8 @@ export function useEditorOps({
       if (msg.type === "ops_ack") {
         // Ledger on receipt: a lost ops_result must not lead to a second
         // apply after a reload (the plugin is already running the batch).
-        if (!active.acked && sessionId) rememberAppliedBatch(storage(), sessionId, msg.batchId);
+        if (!active.acked && sessionId && !isLiveSpellingBatch(msg.batchId))
+          rememberAppliedBatch(storage(), sessionId, msg.batchId);
         active.acked = true;
         return;
       }

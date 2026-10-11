@@ -273,6 +273,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		noThinking := false
 		opts.Thinking = &noThinking
 		logger.Infof(ctx, "[Agent][Thinking] Iteration-1 must call %s", forced)
+		// not streamed: a model that ignores tool_choice would show its
+		// plain-text answer (see forced_tool.go)
+		if resp, ok := e.forcedToolRound(ctx, messages, tools, opts, forced, iteration, sessionID); ok {
+			return resp, nil
+		}
 	}
 
 	pendingToolCalls := make(map[string]bool)

@@ -38,15 +38,16 @@ func TestBuiltinDocumentAssistantLoadsFromYAML(t *testing.T) {
 
 	cfg := en.Config
 	wantTools := []string{"check_document_format", "read_document_outline", "apply_format_fixes", "rewrite_paragraphs",
-		"insert_paragraphs", "mark_passages", "check_spelling", "search_knowledge", "read_document", "query_knowledge_graph", "resolve_abbreviation"}
+		"insert_paragraphs", "mark_passages", "check_spelling", "draw_diagram", "generate_illustration",
+		"search_knowledge", "read_document", "query_knowledge_graph", "resolve_abbreviation"}
 	if !reflect.DeepEqual(cfg.AllowedTools, wantTools) {
 		t.Fatalf("allowed_tools = %v", cfg.AllowedTools)
 	}
-	if !cfg.FormatCheckOnOpenEnabled() || !cfg.WebSearchDefaultOn || cfg.FormatCheckModelID != "" || cfg.SpellcheckModelID != "" {
+	if !cfg.FormatCheckOnOpenEnabled() || !cfg.WebSearchDefaultOn || cfg.FormatCheckModelID != "" || cfg.SpellcheckModelID != "builtin-llm-spellcheck" {
 		t.Fatalf("document assistant settings: %+v", cfg)
 	}
-	if cfg.FormatCheckModel() != cfg.ModelID || cfg.SpellcheckModel() != cfg.ModelID {
-		t.Fatal("empty model ids must fall back to model_id")
+	if cfg.FormatCheckModel() != cfg.ModelID || cfg.SpellcheckModel() != "builtin-llm-spellcheck" {
+		t.Fatal("format check falls back to model_id; spellcheck uses its own model")
 	}
 	if !reflect.DeepEqual(cfg.SupportedFileTypes, []string{"docx", "doc"}) {
 		t.Fatalf("supported_file_types = %v", cfg.SupportedFileTypes)

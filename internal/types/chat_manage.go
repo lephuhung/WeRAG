@@ -63,6 +63,9 @@ type PipelineRequest struct {
 	// DocumentSelection is the passage highlighted in the embedded document
 	// editor; appended after the attachments in the user prompt.
 	DocumentSelection *DocumentSelection `json:"-"`
+	// DocumentContext is appended after the selection: quick answer's rules
+	// for answering from the selected passage only.
+	DocumentContext string `json:"-"`
 
 	// IntentPromptOverrides holds agent-level intent prompt overrides for the
 	// query-understanding stage. Empty values fall back to tenant/global defaults.

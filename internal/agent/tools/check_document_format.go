@@ -107,6 +107,9 @@ type CheckDocumentFormatTool struct {
 	// profiler makes the document's first profile inside the background
 	// run's slot, before the evaluation (see WithProfiler); nil skips it.
 	profiler *DocumentProfiler
+	// reportOnly never marks the editor (an agent that may read the
+	// document but not change it, see ReportOnly).
+	reportOnly bool
 	// speller reviews the spelling alongside a check that marks the
 	// editor (see WithSpelling); nil skips it.
 	speller *CheckSpellingTool
@@ -117,6 +120,17 @@ type CheckDocumentFormatTool struct {
 // evaluation and its mistakes are underlined in red with the format
 // findings, whatever the model then writes — the agent model alone often
 // listed spelling mistakes in the chat without underlining any.
+// ReportOnly returns a copy that reports the findings without marking the
+// editor and without the spelling pass: the agents that read a Word
+// document but do not change it (quick answer, reasoning).
+func (t *CheckDocumentFormatTool) ReportOnly() *CheckDocumentFormatTool {
+	c := *t
+	c.reportOnly = true
+	c.speller = nil
+	c.description += "\n\nIn this conversation the check ONLY REPORTS: nothing is underlined or marked in the document and mark is ignored. Never say the findings were marked; to have them marked or fixed the user switches to the document assistant (Soạn thảo văn bản)."
+	return &c
+}
+
 func (t *CheckDocumentFormatTool) WithSpelling(s *CheckSpellingTool) *CheckDocumentFormatTool {
 	c := *t
 	c.speller = s
@@ -246,7 +260,7 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	}
 
 	// marking the editor: the spelling pass runs alongside the evaluation
-	mark := t.workspace != nil && (in.Mark == nil || *in.Mark)
+	mark := t.workspace != nil && !t.reportOnly && (in.Mark == nil || *in.Mark)
 	var spelling chan *spellingPass
 	if mark && t.speller != nil {
 		spelling = make(chan *spellingPass, 1)

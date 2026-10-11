@@ -11,6 +11,8 @@ func TestPinDocumentAssistant(t *testing.T) {
 	ws := &routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{
 		"with-doc": {SessionID: "with-doc", FileName: "a.docx", Status: types.DocumentWorkspaceStatusOpen},
 		"closed":   {SessionID: "closed", FileName: "b.docx", Status: types.DocumentWorkspaceStatusClosed},
+		"word": {SessionID: "word", FileName: "c.docx", Status: types.DocumentWorkspaceStatusOpen,
+			EditorKind: types.DocumentEditorKindWordAddin},
 	}}
 	h := &Handler{documentWorkspaces: ws}
 	ctx := context.Background()
@@ -22,6 +24,11 @@ func TestPinDocumentAssistant(t *testing.T) {
 		{"with-doc", types.BuiltinDocumentAssistantID, types.BuiltinDocumentAssistantID},
 		{"no-doc", "builtin-smart-reasoning", "builtin-smart-reasoning"},
 		{"closed", "builtin-smart-reasoning", types.BuiltinDocumentAssistantID}, // a closed document is still the session's document
+		// in Word, quick answer and reasoning run as themselves
+		{"word", types.BuiltinSmartReasoningID, types.BuiltinSmartReasoningID},
+		{"word", types.BuiltinQuickAnswerID, types.BuiltinQuickAnswerID},
+		{"word", "builtin-data-analyst", types.BuiltinDocumentAssistantID},
+		{"with-doc", types.BuiltinQuickAnswerID, types.BuiltinDocumentAssistantID},
 	}
 	for _, c := range cases {
 		got := h.pinDocumentAssistant(ctx, &types.Session{ID: c.session, TenantID: 1}, c.agent)

@@ -221,6 +221,8 @@ builtin_agents:
         - "insert_paragraphs"
         - "mark_passages"
         - "check_spelling"
+        - "draw_diagram"
+        - "generate_illustration"
         - "search_knowledge"
         - "read_document"
         - "query_knowledge_graph"
@@ -231,7 +233,10 @@ builtin_agents:
       format_check_model_id: ""
       format_check_on_open: true
       ask_scope_for_long_documents: true
-      spellcheck_model_id: ""
+      spellcheck_model_id: "builtin-llm-spellcheck"
+      # MCP service generate_illustration paints with; empty = the first
+      # enabled service offering generate_image (e.g. Qwen-Image).
+      illustration_mcp_service_id: ""
       web_search_default_on: true
       reflection_enabled: false
       multi_turn_enabled: true

@@ -338,6 +338,29 @@ export async function forceSaveDocumentWorkspace(sessionId: string, documentId?:
   }
 }
 
+/** One paragraph of the open editor for the live spellcheck. */
+export type LiveSpellingParagraph = { text: string; occurrence?: number; edited?: boolean };
+
+/** Live spellcheck: reviews paragraphs the user typed and returns the ops
+ * that underline the mistakes in red (unmark first for edited ones).
+ * `failed`: the model answered nothing — ask again later. */
+export async function reviewDocumentSpelling(
+  sessionId: string,
+  documentId: string,
+  paragraphs: LiveSpellingParagraph[],
+): Promise<{ ops: unknown[]; found: number; failed: boolean }> {
+  try {
+    const res = await apiPost<Envelope<{ document_ops?: unknown[]; found?: number; failed?: boolean }>>(
+      `${base(sessionId, documentId)}/spelling`,
+      { paragraphs },
+    );
+    const d = res?.data;
+    return { ops: Array.isArray(d?.document_ops) ? d.document_ops : [], found: Number(d?.found) || 0, failed: d?.failed === true };
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
 /** Word add-in: stores the file Word holds as the document's latest
  * version. `revision` is the one the taskpane last saw; a 409 means a
  * restore happened since (reload the document into Word first). */
@@ -544,11 +567,14 @@ export async function applyRewriteProposal(
   documentId: string,
   batchId: string,
   variantId: string,
+  /** "illustration": a picture from draw_diagram / generate_illustration */
+  kind?: "illustration",
 ): Promise<{ snapshotSeq: number }> {
   try {
     const res = await apiPost<Envelope<{ snapshot_seq: number }>>(`${base(sessionId, documentId)}/proposals/apply`, {
       batch_id: batchId,
       variant_id: variantId,
+      ...(kind ? { kind } : {}),
     });
     return { snapshotSeq: Number(res?.data?.snapshot_seq) || 0 };
   } catch (err) {

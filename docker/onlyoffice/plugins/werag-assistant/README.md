@@ -72,13 +72,25 @@ whole batch in one `Asc.plugin.callCommand(func, false, true, cb)` (data via
 A batch id is applied at most once per editor session (re-posts get the
 stored result).
 
+Live spellcheck: `{source:"werag-host", type:"read_paragraphs", requestId}`
+is answered with `{source:"werag-onlyoffice", type:"paragraphs", requestId,
+texts:[...]}` (every paragraph's text, read-only). The host reviews the new
+or changed paragraphs and sends an `apply_ops` batch of `unmark` (clears the
+runs of a paragraph that are underlined and #FF0000, i.e. earlier red marks;
+needs `ApiTextPr.GetUnderline/GetColor`, DS 8.1+) and `mark` ops.
+
 Office API used: `Api.GetDocument`, `ApiDocument.GetAllParagraphs/GetSections`,
 `ApiParagraph.GetText/Search/Copy/RemoveAllElements/AddText/InsertParagraph/
 GetElement/GetElementsCount/SetJc/SetFontFamily/SetFontSize/SetBold/SetItalic/
 SetUnderline/SetHighlight/SetColor`, `ApiRange.AddText/Delete/GetText/
 SetUnderline/SetHighlight/SetColor`, `ApiRun.GetTextPr/SetTextPr/SetBold/
 SetItalic`, `ApiSection.SetPageSize/SetPageMargins/GetPageMargin*`,
-`Api.HexColor` (falls back to `SetColor(r, g, b, false)` on older DS).
+`Api.HexColor` (falls back to `SetColor(r, g, b, false)` on older DS),
+`Api.CreateParagraph/CreateImage`, `ApiParagraph.AddDrawing` (`insertImage`).
+
+`insertImage` (`{anchor, src, widthMm, heightMm?, caption?}`) is never sent by
+the server: the chat card of `draw_diagram` / `generate_illustration` builds
+it when the user clicks "Chèn vào văn bản", with `src` a PNG data URL.
 
 Limitations: `SetUnderline` only takes a boolean (no wavy style or underline
 colour), so `mark` with `style: "underline"` is a plain underline in red text.

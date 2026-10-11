@@ -2,28 +2,28 @@ package service
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// DocumentFormatPrecheck runs the NĐ30 format check of each document of a
-// document-assistant session as soon as it is opened, with the document assistant's
-// chat model, so the chat can tell the user the evaluation is ready before
-// they ask. The result lands in the check_document_format cache the agent
-// tool reads.
+// DocumentFormatPrecheck serves the document assistant's work outside the
+// chat: each document's profile (in the background), the live spellcheck
+// of what the user types, and the state of a format check. The NĐ30 format
+// check itself runs only when the user asks in the chat.
 type DocumentFormatPrecheck struct {
 	workspaces interfaces.DocumentWorkspaceService
 	agents     interfaces.CustomAgentService
 	models     interfaces.ModelService
-	// started holds the documents already handed to a check, so the
-	// editor's polling does not resolve the model again and again.
-	started sync.Map
+	cfg        *config.Config
 	// profiling holds the documents whose profile job is being handed over
 	// (model resolution), for the same reason.
 	profiling sync.Map
@@ -34,8 +34,9 @@ func NewDocumentFormatPrecheck(
 	workspaces interfaces.DocumentWorkspaceService,
 	agents interfaces.CustomAgentService,
 	models interfaces.ModelService,
+	cfg *config.Config,
 ) *DocumentFormatPrecheck {
-	p := &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models}
+	p := &DocumentFormatPrecheck{workspaces: workspaces, agents: agents, models: models, cfg: cfg}
 	// a chat upload's profile starts once its text is stored
 	if n, ok := workspaces.(interface {
 		OnSourceTextReady(func(context.Context, *types.DocumentWorkspace))
@@ -45,41 +46,47 @@ func NewDocumentFormatPrecheck(
 	return p
 }
 
-// Start begins the check of one target (workspace ID) of the session in
-// the background, at most once per document in this process; a source is
-// skipped (it may be checked once promoted). It returns at once.
-func (p *DocumentFormatPrecheck) Start(ctx context.Context, tenantID uint64, sessionID, documentID string) {
-	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() || tenantID == 0 || sessionID == "" || documentID == "" {
-		return
+// ReviewSpelling reviews paragraphs the user typed in a target document
+// (the live spellcheck, see tools.CheckSpellingTool.LiveMarks) with the
+// document assistant's spellcheck model, and returns the editor ops that
+// underline the mistakes in red. ok is false when the model answered
+// nothing. An agent that may not check spelling gets no ops.
+func (p *DocumentFormatPrecheck) ReviewSpelling(
+	ctx context.Context, tenantID uint64, sessionID, documentID string, paras []tools.LiveParagraph,
+) (ops []tools.DocumentOp, found int, ok bool, err error) {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
+		return nil, 0, false, errors.New("documents are disabled")
 	}
-	if tools.SessionFormatCheck(ctx, documentID) != nil {
-		return
+	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return nil, 0, false, err
 	}
-	if _, done := p.started.LoadOrStore(documentID, struct{}{}); done {
-		return
+	if !ws.IsTarget() || ws.Status != types.DocumentWorkspaceStatusOpen || len(paras) == 0 {
+		return nil, 0, true, nil
 	}
-	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, tenantID)
-	go func() {
-		// a source (chat upload) is never format-checked
-		if ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID); err != nil || ws.IsSource() {
-			p.started.Delete(documentID)
-			return
-		}
-		agent := p.agent(ctx)
-		if agent == nil {
-			return
-		}
-		if !agent.Config.FormatCheckOnOpenEnabled() {
-			logger.Infof(ctx, "[DocumentFormatPrecheck] format_check_on_open is off; not checking document %s", documentID)
-			return
-		}
-		chatModel := p.chatModel(ctx, agent)
-		if chatModel == nil {
-			return
-		}
-		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).ForDocument(documentID).
-			WithProfiler(p.profiler(sessionID, chatModel)).Prewarm(ctx)
-	}()
+	agent := p.agent(ctx)
+	if agent == nil || !slices.Contains(agent.Config.AllowedTools, tools.ToolCheckSpelling) {
+		return nil, 0, true, nil
+	}
+	spellModel := p.model(ctx, "spellcheck", agent.Config.SpellcheckModelID, agent.Config.ModelID)
+	if spellModel == nil {
+		return nil, 0, false, nil
+	}
+	ops, found, ok = tools.NewCheckSpellingTool(p.workspaces, spellModel, sessionID).
+		WithPrompt(p.spellcheckPrompt()).LiveMarks(ctx, paras)
+	return ops, found, ok, nil
+}
+
+// spellcheckPrompt is the configured spellcheck_review template, "" when
+// none (the tool then uses its built-in prompt).
+func (p *DocumentFormatPrecheck) spellcheckPrompt() string {
+	if p.cfg == nil || p.cfg.PromptTemplates == nil {
+		return ""
+	}
+	if t := config.DefaultTemplate(p.cfg.PromptTemplates.SpellcheckReview); t != nil {
+		return t.Content
+	}
+	return ""
 }
 
 // profiler is the session's document profiler with the knowledge-base
@@ -139,25 +146,6 @@ func (p *DocumentFormatPrecheck) Profile(ctx context.Context, ws *types.Document
 	return tools.SessionDocumentProfile(ctx, ws.ID).Public(ws)
 }
 
-// Refresh follows a save of the document made after its background check:
-// an edit that left the format fingerprint unchanged keeps the result,
-// another one checks again once editing settles (see tools Recheck). Cheap
-// when nothing was saved since: it reads only the check state.
-func (p *DocumentFormatPrecheck) Refresh(ctx context.Context, ws *types.DocumentWorkspace) {
-	if p == nil || ws == nil || ws.Status != types.DocumentWorkspaceStatusOpen ||
-		!tools.FormatCheckNeedsRecheck(ctx, ws.ID, ws.LastSavedAt) {
-		return
-	}
-	ctx = context.WithValue(logger.CloneContext(context.WithoutCancel(ctx)), types.TenantIDContextKey, ws.TenantID)
-	go func() {
-		chatModel := p.chatModel(ctx, p.agent(ctx))
-		if chatModel == nil {
-			return
-		}
-		tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, ws.SessionID).ForDocument(ws.ID).Recheck(ctx)
-	}()
-}
-
 // Status reports a document's background check, or nil when none ran.
 func (p *DocumentFormatPrecheck) Status(ctx context.Context, documentID string) *types.DocumentFormatCheck {
 	if p == nil {
@@ -188,14 +176,23 @@ func (p *DocumentFormatPrecheck) agent(ctx context.Context) *types.CustomAgent {
 	return agent
 }
 
-// chatModel resolves the model of the document assistant's format check:
-// format_check_model_id, else its chat model. A dedicated model that cannot
-// be loaded falls back to the chat model.
+// chatModel resolves the model of the document assistant's profile:
+// format_check_model_id, else its chat model.
 func (p *DocumentFormatPrecheck) chatModel(ctx context.Context, agent *types.CustomAgent) chat.Chat {
-	if agent == nil || p.models == nil {
+	if agent == nil {
 		return nil
 	}
-	for _, modelID := range []string{strings.TrimSpace(agent.Config.FormatCheckModelID), strings.TrimSpace(agent.Config.ModelID)} {
+	return p.model(ctx, "format check", agent.Config.FormatCheckModelID, agent.Config.ModelID)
+}
+
+// model loads the first usable chat model of modelIDs (a dedicated model
+// that cannot be loaded falls back to the next one).
+func (p *DocumentFormatPrecheck) model(ctx context.Context, purpose string, modelIDs ...string) chat.Chat {
+	if p.models == nil {
+		return nil
+	}
+	for _, modelID := range modelIDs {
+		modelID = strings.TrimSpace(modelID)
 		if modelID == "" {
 			continue
 		}
@@ -203,8 +200,8 @@ func (p *DocumentFormatPrecheck) chatModel(ctx context.Context, agent *types.Cus
 		if err == nil && m != nil {
 			return m
 		}
-		logger.Warnf(ctx, "[DocumentFormatPrecheck] chat model %s unavailable: %v", modelID, err)
+		logger.Warnf(ctx, "[DocumentFormatPrecheck] %s model %s unavailable: %v", purpose, modelID, err)
 	}
-	logger.Warnf(ctx, "[DocumentFormatPrecheck] document assistant has no usable chat model; skipping")
+	logger.Warnf(ctx, "[DocumentFormatPrecheck] document assistant has no usable %s model; skipping", purpose)
 	return nil
 }

@@ -93,12 +93,56 @@ func TestPostProcessLegalGraph_SelfRefFolding(t *testing.T) {
 			t.Fatalf("self-ref materialized as node: %q", n.Name)
 		}
 	}
-	if !hasRel(out, "Điều 5", "REFERENCES", "53/2022/NĐ-CP") {
+	// Clause nodes are scoped to the document root so "Điều 5" of another
+	// document in the same knowledge base never merges with this one.
+	if !hasRel(out, "Điều 5 (53/2022/NĐ-CP)", "REFERENCES", "53/2022/NĐ-CP") {
 		t.Fatalf("relation endpoint not folded to root: %+v", out.Relation)
 	}
 	// Article → PART_OF → root is synthesized.
-	if !hasRel(out, "Điều 5", "PART_OF", "53/2022/NĐ-CP") {
+	if !hasRel(out, "Điều 5 (53/2022/NĐ-CP)", "PART_OF", "53/2022/NĐ-CP") {
 		t.Fatal("PART_OF edge not synthesized")
+	}
+	if nodeByName(out, "Điều 5") != nil {
+		t.Fatal("unscoped clause node leaked")
+	}
+}
+
+func TestPostProcessLegalGraph_ClauseScoping(t *testing.T) {
+	g := &types.GraphData{
+		Node: []*types.GraphNode{
+			{Name: "Điều 5", Type: "Article"},
+			{Name: "khoản 2 Điều 5 của Nghị định này", Type: "Article"},
+			{Name: "Khoản 3 Điều 49 Luật An ninh mạng", Type: "Article"},
+		},
+		Relation: []*types.GraphRelation{
+			{Node1: "Điều 5", Type: "VIEN_DAN", Node2: "Khoản 3 Điều 49 Luật An ninh mạng"},
+			{Node1: "53/2022/NĐ-CP", Type: "BAI_BO", Node2: "Điều 7 Nghị định 13/2023/NĐ-CP"},
+		},
+	}
+	out := PostProcessLegalGraph(context.Background(), g, testDoc(), false)
+
+	own := "Điều 5 (53/2022/NĐ-CP)"
+	if nodeByName(out, own) == nil || nodeByName(out, "Khoản 2 Điều 5 (53/2022/NĐ-CP)") == nil {
+		t.Fatalf("own clauses not scoped to the root: %+v", out.Node)
+	}
+	if !hasRel(out, own, "PART_OF", "53/2022/NĐ-CP") ||
+		!hasRel(out, "Khoản 2 Điều 5 (53/2022/NĐ-CP)", "PART_OF", "53/2022/NĐ-CP") {
+		t.Fatalf("own clauses must be PART_OF the root: %+v", out.Relation)
+	}
+
+	// A clause of another document keeps its full name, is reachable from
+	// the relation, and is NOT attached to this document's structure.
+	ext := "Khoản 3 Điều 49 Luật An Ninh Mạng"
+	if nodeByName(out, ext) == nil || !hasRel(out, own, "VIEN_DAN", ext) {
+		t.Fatalf("external clause reference lost: %+v / %+v", out.Node, out.Relation)
+	}
+	if hasRel(out, ext, "PART_OF", "53/2022/NĐ-CP") {
+		t.Fatal("external clause must not be PART_OF this document")
+	}
+	// Relation-only endpoints go through the same scoping.
+	ext2 := "Điều 7 Nghị Định 13/2023/nđ-cp"
+	if !hasRel(out, "53/2022/NĐ-CP", "BAI_BO", ext2) || hasRel(out, ext2, "PART_OF", "53/2022/NĐ-CP") {
+		t.Fatalf("relation-only external clause mishandled: %+v", out.Relation)
 	}
 }
 

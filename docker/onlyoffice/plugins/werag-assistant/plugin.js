@@ -148,13 +148,47 @@
     }
   }
 
+  /* ===================== live spellcheck (read_paragraphs) =====================
+   *
+   * {source:"werag-host", type:"read_paragraphs", requestId} asks for the
+   * text of every paragraph; the reply is
+   *   {source:"werag-onlyoffice", type:"paragraphs", requestId, texts:[...]}
+   * The host reviews the new / changed ones and sends their red underlines
+   * back as an apply_ops batch (unmark + mark ops).
+   */
+  function readParagraphs(requestId) {
+    var done = function (raw) {
+      var texts = null;
+      try { texts = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { texts = null; }
+      reply({ type: "paragraphs", requestId: requestId, texts: Array.isArray(texts) ? texts : null });
+    };
+    try {
+      window.Asc.plugin.callCommand(readParagraphsCommand, false, false, done);
+    } catch (e) {
+      done(null);
+    }
+  }
+
+  /* Runs inside the editor via callCommand: no access to this closure. */
+  function readParagraphsCommand() {
+    var ps = Api.GetDocument().GetAllParagraphs();
+    var out = [];
+    for (var i = 0; i < ps.length; i++) out.push(ps[i].GetText());
+    return JSON.stringify(out);
+  }
+
   function onHostMessage(event) {
     var d = event && event.data;
-    if (!d || typeof d !== "object" || d.source !== "werag-host" || d.type !== "apply_ops") return;
+    if (!d || typeof d !== "object" || d.source !== "werag-host") return;
+    if (d.type !== "apply_ops" && d.type !== "read_paragraphs") return;
     // Edit plans need a known host: never act on "*" (selection posting
     // keeps that fallback, applying edits does not).
     if (hostOrigin() === "*") return;
     if (!originAllowed(event.origin)) return;
+    if (d.type === "read_paragraphs") {
+      if (typeof d.requestId === "string" && d.requestId) readParagraphs(d.requestId);
+      return;
+    }
     if (typeof d.batchId !== "string" || !d.batchId || !Array.isArray(d.ops)) return;
     reply({ type: "ops_ack", batchId: d.batchId });
     if (doneBatches[d.batchId]) {
@@ -312,6 +346,42 @@
         var inserted = ref.InsertParagraph(np, pos, true);
         lastInsert = { key: key, para: inserted || np };
       },
+      // A picture proposed by draw_diagram / generate_illustration, inserted
+      // when the user clicks "Chèn vào văn bản": op.src is a PNG data URL,
+      // centred in its own paragraph after the anchor, the caption (italic,
+      // the anchor's font) under it.
+      insertImage: function (op) {
+        var ref;
+        var pos = "after";
+        if (op.anchor && op.anchor.atStart) {
+          var all = doc.GetAllParagraphs();
+          if (!all.length) throw new Error("empty document");
+          ref = all[0];
+          pos = "before";
+        } else {
+          ref = mustFind(op.anchor);
+        }
+        if (typeof op.src !== "string" || op.src.indexOf("data:image/") !== 0) throw new Error("bad image");
+        var emu = function (mm) { return Math.round(mm * 36000); };
+        var wMm = op.widthMm > 0 ? op.widthMm : 150;
+        var hMm = op.heightMm > 0 ? op.heightMm : wMm * 0.75;
+        var pic = Api.CreateParagraph();
+        pic.SetJc("center");
+        pic.AddDrawing(Api.CreateImage(op.src, emu(wMm), emu(hMm)));
+        ref.InsertParagraph(pic, pos, true);
+        if (op.caption) {
+          var cap = Api.CreateParagraph();
+          cap.SetJc("center");
+          var run = cap.AddText(op.caption);
+          var fr = firstRun(ref);
+          if (fr && run) run.SetTextPr(fr.GetTextPr());
+          if (run) {
+            run.SetItalic(true);
+            run.SetBold(false);
+          }
+          pic.InsertParagraph(cap, "after", true);
+        }
+      },
       mark: function (op) {
         var p = mustFind(op.anchor);
         var target = p;
@@ -332,6 +402,27 @@
           // style / underline colour — so it is a plain underline in red text.
           target.SetUnderline(true);
           red(target);
+        }
+      },
+      // Clears the red underlines of a paragraph the user edited (the live
+      // spellcheck re-marks it): every run that is underlined AND pure red
+      // (#FF0000, the colour mark sets) loses both. Needs DS 8.1+ getters.
+      unmark: function (op) {
+        var p = mustFind(op.anchor);
+        var n = p.GetElementsCount();
+        for (var i = 0; i < n; i++) {
+          var e = p.GetElement(i);
+          if (!e || !e.GetClassType || e.GetClassType() !== "run") continue;
+          var tp = e.GetTextPr();
+          if (!tp || typeof tp.GetUnderline !== "function" || typeof tp.GetColor !== "function") {
+            throw new Error("unmark unsupported");
+          }
+          if (!tp.GetUnderline()) continue;
+          var c = tp.GetColor();
+          var rgb = c && typeof c.GetRGB === "function" && !(c.IsAutoColor && c.IsAutoColor()) ? c.GetRGB() : null;
+          if (!rgb || rgb.r !== 255 || rgb.g !== 0 || rgb.b !== 0) continue;
+          e.SetUnderline(false);
+          e.SetColor(0, 0, 0, true); // automatic (black) text
         }
       },
       formatParagraph: function (op) {

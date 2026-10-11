@@ -396,6 +396,74 @@ func (s *agentService) registerMCPTools(
 	}
 }
 
+// illustrationImageToolName is the MCP tool generate_illustration calls.
+const illustrationImageToolName = "generate_image"
+
+// illustrationImageTool returns the MCP tool generate_illustration paints
+// with, and its service's name; nil when no image service is usable. The
+// service is the agent's illustration_mcp_service_id, else the first enabled
+// service whose synced directory lists generate_image. The platform MCP
+// switch and an agent set to no MCP turn it off like every MCP tool.
+func (s *agentService) illustrationImageTool(ctx context.Context, config *types.AgentConfig) (tools.ImageGenerator, string) {
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	if tenantID == 0 || s.mcpServiceService == nil || s.mcpManager == nil || config.MCPSelectionMode == "none" {
+		return nil, ""
+	}
+	metadata, _ := s.mcpServiceService.(interfaces.MCPMetadataService)
+	definition := func(svc *types.MCPService) *types.MCPTool {
+		if metadata == nil {
+			return nil
+		}
+		meta, err := metadata.GetMCPMetadata(ctx, tenantID, svc.ID)
+		if err != nil || meta == nil {
+			return nil
+		}
+		for _, t := range meta.Tools {
+			if t != nil && t.Name == illustrationImageToolName {
+				return t
+			}
+		}
+		return nil
+	}
+	build := func(svc *types.MCPService, def *types.MCPTool) (tools.ImageGenerator, string) {
+		return tools.NewMCPTool(svc, def, s.mcpManager, s.toolApprovalGate, config.MCPAuthWaitTimeout), svc.Name
+	}
+
+	if id := strings.TrimSpace(config.IllustrationMCPServiceID); id != "" {
+		svcs, err := s.mcpServiceService.ListMCPServicesByIDs(ctx, tenantID, []string{id})
+		if err != nil || len(svcs) == 0 || svcs[0] == nil || !svcs[0].Enabled {
+			logger.Warnf(ctx, "illustration MCP service %s is missing or disabled", id)
+			return nil, ""
+		}
+		def := definition(svcs[0])
+		if def == nil {
+			// never synced here yet: the configured service is trusted to
+			// offer generate_image; a wrong guess fails the call, not the turn
+			def = &types.MCPTool{Name: illustrationImageToolName}
+		}
+		return build(svcs[0], def)
+	}
+
+	svcs, err := s.mcpServiceService.ListMCPServices(ctx, tenantID)
+	if err != nil {
+		logger.Warnf(ctx, "list MCP services for illustrations: %v", err)
+		return nil, ""
+	}
+	selected := map[string]bool{}
+	for _, id := range config.MCPServices {
+		selected[id] = true
+	}
+	for _, svc := range svcs {
+		if svc == nil || !svc.Enabled || (config.MCPSelectionMode == "selected" && !selected[svc.ID]) {
+			continue
+		}
+		if def := definition(svc); def != nil {
+			return build(svc, def)
+		}
+	}
+	return nil, ""
+}
+
 // resolveKBAndDocInfos loads knowledge base metadata and selected document info for prompt.
 func (s *agentService) resolveKBAndDocInfos(
 	ctx context.Context,
@@ -781,6 +849,12 @@ func (s *agentService) skillEnvCapture(config *types.AgentConfig) tools.SkillEnv
 	}
 	configID := config.SandboxConfigID
 	return func(ctx context.Context, skillName string, pairs map[string]string) {
+		// Values are configuration, and only the SuperAdmin configures: a
+		// member's values typed into a conversation are used for that call
+		// but never stored, so they cannot override the shared setup.
+		if !types.IsSystemAdminFromContext(ctx) {
+			return
+		}
 		svc := NewUserEnvService(
 			repository.NewTenantSkillRepository(s.db),
 			repository.NewTenantSandboxConfigRepository(s.db),
@@ -945,13 +1019,14 @@ func (s *agentService) registerTools(
 	if !hasKnowledge {
 		filteredTools := make([]string, 0)
 		kbTools := map[string]bool{
-			tools.ToolSearchKnowledge:     true,
-			tools.ToolReadDocument:        true,
-			tools.ToolListDocuments:       true,
-			tools.ToolQueryKnowledgeGraph: true,
-			tools.ToolDatabaseQuery:       true,
-			tools.ToolDataAnalysis:        true,
-			tools.ToolDataSchema:          true,
+			tools.ToolSearchKnowledge:       true,
+			tools.ToolReadDocument:          true,
+			tools.ToolListDocuments:         true,
+			tools.ToolSearchDocumentSection: true,
+			tools.ToolQueryKnowledgeGraph:   true,
+			tools.ToolDatabaseQuery:         true,
+			tools.ToolDataAnalysis:          true,
+			tools.ToolDataSchema:            true,
 			// Wiki tools also require at least one KB in scope.
 			tools.ToolWikiReadPage:    true,
 			tools.ToolWikiSearch:      true,
@@ -1019,8 +1094,9 @@ func (s *agentService) registerTools(
 	// its indexing strategy, so a wiki-only scope keeps them: they are how a
 	// wiki reader checks the source documents a page cites.
 	documentToolSet := map[string]bool{
-		tools.ToolReadDocument:  true,
-		tools.ToolListDocuments: true,
+		tools.ToolReadDocument:          true,
+		tools.ToolListDocuments:         true,
+		tools.ToolSearchDocumentSection: true,
 	}
 	allWikiToolSet := map[string]bool{
 		tools.ToolWikiReadPage:    true,
@@ -1086,9 +1162,24 @@ func (s *agentService) registerTools(
 	allowedTools = withoutString(allowedTools, tools.ToolResolveAbbreviation)
 	allowedTools = withoutString(allowedTools, tools.ToolCheckLegalStatus)
 	allowedTools = withoutString(allowedTools, tools.ToolPeopleLookup)
+	// search_document_section is a companion of read_document (registered
+	// below whenever that reader is), not an allowlist entry of its own.
+	allowedTools = withoutString(allowedTools, tools.ToolSearchDocumentSection)
 
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
+
+	// A general agent on a Word document (reasoning) reads it — outline,
+	// find_in_documents riding on it, a report-only format check — and has
+	// none of the tools that change it, whatever its allowlist says.
+	if config.ReadOnlyDocuments {
+		for _, name := range tools.ReadOnlyDocumentTools {
+			allowedTools = withoutString(allowedTools, name)
+		}
+		if !slices.Contains(allowedTools, tools.ToolReadDocumentOutline) {
+			allowedTools = append(allowedTools, tools.ToolReadDocumentOutline)
+		}
+	}
 
 	// The document-assistant tools edit the session's editable documents;
 	// without one they have nothing to work on and are not offered.
@@ -1101,6 +1192,11 @@ func (s *agentService) registerTools(
 	}
 	if docWorkspace != nil {
 		spellModel = s.documentToolModel(ctx, config.SpellcheckModelID, chatModel, "spellcheck")
+	}
+
+	var illustrationDocs tools.DocumentWorkspaceSource
+	if docWorkspace != nil {
+		illustrationDocs = s.documentWorkspaces
 	}
 
 	// logger.Infof(ctx, "Registering tools: %v, webSearchEnabled: %v", allowedTools, config.WebSearchEnabled)
@@ -1232,6 +1328,16 @@ func (s *agentService) registerTools(
 			// Registered below from the session's documents, not from the
 			// allowlist.
 			continue
+		// Illustrations propose a picture; without a document it can still
+		// be shown and downloaded, so they do not need one.
+		case tools.ToolDrawDiagram:
+			toolToRegister = tools.NewDrawDiagramTool(illustrationDocs, sessionID)
+		case tools.ToolGenerateIllustration:
+			images, serviceName := s.illustrationImageTool(ctx, config)
+			if images == nil {
+				continue
+			}
+			toolToRegister = tools.NewGenerateIllustrationTool(images, serviceName, illustrationDocs, sessionID)
 
 		case tools.ToolShellExec, tools.ToolReadFile, tools.LegacyToolReadSkill, tools.LegacyToolExecuteSkillScript,
 			tools.ToolListSandboxFiles, tools.LegacyToolReadSandboxFile, tools.ToolWriteSandboxFile,
@@ -1254,6 +1360,14 @@ func (s *agentService) registerTools(
 		}
 	}
 
+	// search_document_section rides on read_document: same services, same
+	// scope, same read-only reach into stored chunks — it only resolves a
+	// Điều/Khoản/Điểm citation exactly where read_document would need a
+	// text search. Offering it alongside the reader needs no checkbox.
+	if _, err := registry.GetTool(tools.ToolReadDocument); err == nil {
+		registry.RegisterTool(tools.NewSearchDocumentSectionTool(
+			s.knowledgeService, s.chunkService, config.SearchTargets))
+	}
 	// resolve_abbreviation rides on every agent: the dictionary is global,
 	// expansion is read-only, and suggestions stay inactive until an admin
 	// approves them.
@@ -1286,7 +1400,12 @@ func (s *agentService) registerTools(
 	// alone, and its description limits it to explicit format-review
 	// requests, so a document attached for Q&A is not checked unasked.
 	switch {
+	case docWorkspace != nil && config.ReadOnlyDocuments:
+		registry.RegisterTool(tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, formatModel, sessionID).
+			ReportOnly())
 	case docWorkspace != nil:
+		// the format check runs only when the user asks (nothing is checked
+		// in the background; the spelling pass is, see DocumentFormatPrecheck)
 		checkTool := tools.NewCheckDocumentFormatToolForWorkspace(s.documentWorkspaces, formatModel, sessionID)
 		// a format check also underlines the spelling mistakes (a pass run
 		// alongside it), when the agent may check spelling at all
@@ -1296,18 +1415,6 @@ func (s *agentService) registerTools(
 				WithPrompt(s.spellcheckPrompt()))
 		}
 		registry.RegisterTool(checked)
-		// the check takes about a minute; start it now for every open
-		// document so a format question later in the conversation is
-		// answered from its cache
-		if tenantID, ok := types.TenantIDFromContext(ctx); ok {
-			if docs, err := s.documentWorkspaces.List(ctx, tenantID, sessionID); err == nil {
-				for _, d := range docs {
-					if d.IsTarget() { // a source is never format-checked
-						checkTool.ForDocument(d.ID).Prewarm(ctx)
-					}
-				}
-			}
-		}
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
 		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, formatModel, sessionID))
 	}

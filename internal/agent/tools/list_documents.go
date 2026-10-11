@@ -193,7 +193,19 @@ const listDocumentsScopeCap = 1000
 func (t *ListDocumentsTool) listScoped(
 	ctx context.Context, kbID, keyword string, page, pageSize int,
 ) ([]*types.Knowledge, int64, error) {
-	tenantID := t.searchTargets.GetTenantIDForKB(kbID)
+	return listKnowledgeInScope(ctx, t.knowledgeService, t.searchTargets, kbID, keyword, page, pageSize)
+}
+
+// listKnowledgeInScope pages the documents of one knowledge base that the
+// search targets expose: the whole base, or only the pinned / tagged
+// documents. Shared by list_documents and search_document_section.
+func listKnowledgeInScope(
+	ctx context.Context,
+	knowledgeService interfaces.KnowledgeService,
+	searchTargets types.SearchTargets,
+	kbID, keyword string, page, pageSize int,
+) ([]*types.Knowledge, int64, error) {
+	tenantID := searchTargets.GetTenantIDForKB(kbID)
 	// Documents live under the knowledge base owner, which may differ from the
 	// caller's tenant for organization-shared bases.
 	listCtx := ctx
@@ -202,7 +214,7 @@ func (t *ListDocumentsTool) listScoped(
 	}
 	listPage := func(filter types.KnowledgeListFilter, p, size int) ([]*types.Knowledge, int64, error) {
 		filter.Keyword = keyword
-		result, err := t.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(
+		result, err := knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(
 			listCtx, kbID, &types.Pagination{Page: p, PageSize: size}, filter,
 		)
 		if err != nil || result == nil {
@@ -213,7 +225,7 @@ func (t *ListDocumentsTool) listScoped(
 	}
 
 	var explicitIDs, tagIDs []string
-	for _, target := range t.searchTargets {
+	for _, target := range searchTargets {
 		if target == nil || target.KnowledgeBaseID != kbID {
 			continue
 		}
@@ -237,7 +249,7 @@ func (t *ListDocumentsTool) listScoped(
 	// Explicit documents (plus any tagged ones) form a small union that is
 	// paged in memory with the same newest-first order as the database.
 	union := make(map[string]*types.Knowledge)
-	explicit, err := t.knowledgeService.GetKnowledgeBatch(listCtx, tenantID, explicitIDs)
+	explicit, err := knowledgeService.GetKnowledgeBatch(listCtx, tenantID, explicitIDs)
 	if err != nil {
 		return nil, 0, err
 	}

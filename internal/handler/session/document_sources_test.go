@@ -120,7 +120,7 @@ func TestDocumentRoutesIncludeTheProfile(t *testing.T) {
 		FileType: "pdf", Role: types.DocumentWorkspaceRoleSource, TextStatus: types.DocumentSourceTextReady}
 	ws := &routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{"mine": src}}
 	sessions := &ownerOnlySessions{owned: map[string]bool{"mine": true}}
-	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{}, service.NewDocumentFormatPrecheck(ws, nil, nil))
+	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{}, service.NewDocumentFormatPrecheck(ws, nil, nil, nil))
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })

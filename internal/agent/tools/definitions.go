@@ -15,17 +15,21 @@ const (
 	// and hybrid retrieval over chunk-indexed knowledge bases; read_document
 	// reads a document's metadata and chunks (by page, by chunk handle, or by
 	// an in-document text search); list_documents browses one knowledge base.
-	ToolSearchKnowledge     = "search_knowledge"
-	ToolReadDocument        = "read_document"
-	ToolListDocuments       = "list_documents"
-	ToolQueryKnowledgeGraph = "query_knowledge_graph"
-	ToolSearchConversations = "search_conversations"
-	ToolSearchMemory        = "search_memory"
-	ToolDatabaseQuery       = "database_query"
-	ToolDataAnalysis        = "data_analysis"
-	ToolDataSchema          = "data_schema"
-	ToolWebSearch           = "web_search"
-	ToolWebFetch            = "web_fetch"
+	ToolSearchKnowledge = "search_knowledge"
+	ToolReadDocument    = "read_document"
+	ToolListDocuments   = "list_documents"
+	// search_document_section resolves a Điều/Khoản/Điểm citation to the
+	// chunks that hold it. It rides on read_document: registered whenever
+	// that reader is, never chosen from an allowlist (see registerTools).
+	ToolSearchDocumentSection = "search_document_section"
+	ToolQueryKnowledgeGraph   = "query_knowledge_graph"
+	ToolSearchConversations   = "search_conversations"
+	ToolSearchMemory          = "search_memory"
+	ToolDatabaseQuery         = "database_query"
+	ToolDataAnalysis          = "data_analysis"
+	ToolDataSchema            = "data_schema"
+	ToolWebSearch             = "web_search"
+	ToolWebFetch              = "web_fetch"
 	// Unified reading: workspace access follows sandbox file capability;
 	// skill resources follow SkillsEnabled and do not require a sandbox.
 	ToolReadFile = "read_file"
@@ -83,6 +87,11 @@ const (
 	ToolInsertParagraphs    = "insert_paragraphs"
 	ToolMarkPassages        = "mark_passages"
 	ToolCheckSpelling       = "check_spelling"
+	// Illustrations: both propose a picture the user inserts from the chat.
+	// draw_diagram needs no service; generate_illustration needs an image
+	// MCP service (generate_image, e.g. Qwen-Image).
+	ToolDrawDiagram          = "draw_diagram"
+	ToolGenerateIllustration = "generate_illustration"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -148,6 +157,16 @@ func AvailableToolDefinitions() []AvailableTool {
 			Name:        ToolMarkPassages,
 			Label:       "Đánh dấu đoạn cần xem lại",
 			Description: "Gạch chân đỏ hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
+		},
+		{
+			Name:        ToolDrawDiagram,
+			Label:       "Vẽ sơ đồ",
+			Description: "Vẽ sơ đồ quy trình, sơ đồ tổ chức, dòng thời gian từ nội dung văn bản; người dùng bấm để chèn vào tài liệu",
+		},
+		{
+			Name:        ToolGenerateIllustration,
+			Label:       "Tạo hình minh họa",
+			Description: "Tạo hình minh họa bằng mô hình sinh ảnh (dịch vụ MCP generate_image, ví dụ Qwen-Image); người dùng bấm để chèn vào tài liệu",
 		},
 	}
 }

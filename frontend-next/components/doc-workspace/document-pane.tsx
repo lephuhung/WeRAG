@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
@@ -18,11 +18,12 @@ import {
   type DocumentSelection,
   type DocumentWorkspaceView,
 } from "@/lib/api/document-workspace";
-import type { OpsBatch, OpsFailure } from "@/lib/api/document-ops";
+import { isLiveSpellingBatch, type OpsBatch, type OpsFailure } from "@/lib/api/document-ops";
 import { IconClock, IconDownload, IconRefresh } from "@/components/icons";
 import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-editor";
 import { RevisionHistoryPanel } from "./revision-history";
 import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
+import { useLiveSpelling } from "./use-live-spelling";
 
 type Phase = { kind: "loading" } | { kind: "disabled" } | { kind: "error"; message: string } | { kind: "editor" };
 
@@ -312,6 +313,8 @@ export function DocumentPane({
   const fileName = view?.file_name ?? "";
   const onOpsOutcome = useCallback(
     (o: EditorOpsOutcome) => {
+      // the live spellcheck's underlines land silently
+      if (isLiveSpellingBatch(o.batchId)) return;
       reportOpsOutcome?.(o);
       if (!aliveRef.current) return;
       const where = fileName ? `${fileName}: ` : "";
@@ -327,12 +330,27 @@ export function DocumentPane({
     },
     [toast, t, fileName, reportOpsOutcome],
   );
+  // live spellcheck: what the user types is reviewed after each pause and
+  // its mistakes underlined in red, alongside the chat's edit plans
+  const liveSpelling = useLiveSpelling({
+    sessionId,
+    documentId,
+    origin: documentServerOrigin(dsUrl),
+    editorRef,
+    isReady: () => editorReadyRef.current && phase.kind === "editor",
+    enabled: phase.kind === "editor" && view?.status === "open" && view?.role !== "source",
+  });
+  const scheduleSpelling = liveSpelling.schedule;
+  const allBatches = useMemo(
+    () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),
+    [opsBatches, liveSpelling.batches],
+  );
   const { pump: pumpOps, reset: resetOps } = useEditorOps({
     sessionId,
     origin: documentServerOrigin(dsUrl),
     editorRef,
     isReady: () => editorReadyRef.current && phase.kind === "editor",
-    batches: opsBatches,
+    batches: allBatches,
     onOutcome: onOpsOutcome,
   });
   resetOpsRef.current = resetOps;
@@ -448,9 +466,11 @@ export function DocumentPane({
               // send the edit plans queued meanwhile.
               void recheckRef.current();
               pumpOps();
+              scheduleSpelling(1_500);
             },
             onDocumentStateChange: (d) => {
               setDirty(d);
+              scheduleSpelling();
               // "saved" (false) only means the DS has the edits, not WeRAG's
               // stored file — editedRef clears on a successful forcesave only.
               if (d) {

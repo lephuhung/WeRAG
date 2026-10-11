@@ -163,6 +163,7 @@ func (s *sessionService) KnowledgeQA(
 			ChatModelSupportsVision: chatModelSupportsVision,
 			Attachments:             req.Attachments,
 			DocumentSelection:       req.DocumentSelection,
+			DocumentContext:         quickAnswerSelectionRules(req),
 			Language:                types.LanguageNameFromContext(ctx),
 			AbbreviationBinding:     abbreviationBinding,
 		},
@@ -220,6 +221,7 @@ func (s *sessionService) KnowledgeQA(
 			userContent += req.Attachments.BuildPrompt()
 		}
 		userContent += req.DocumentSelection.BuildPrompt()
+		userContent += chatManage.DocumentContext
 		chatManage.UserContent = userContent
 
 		pipeline = types.NewPipelineBuilder().
@@ -1045,8 +1047,10 @@ func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) [
 	if strings.TrimSpace(promptContent) != "" {
 		messages = append(messages, chat.Message{
 			Role: "system",
+			// Long-term memory rides along: "what is my unit?" finds nothing
+			// in the knowledge base, which is exactly when this path answers.
 			Content: promptContent + "\n\n" + types.SourceDataBoundaryPrompt +
-				"\n\n" + types.SourcedAnswerOutputPrompt,
+				"\n\n" + types.SourcedAnswerOutputPrompt + chatManage.MemoryPrompt,
 		})
 	}
 
@@ -1088,6 +1092,14 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 	if chatManage.QuotedContext != "" {
 		result += "\n\n" + chatManage.QuotedContext
 	}
+	// Nothing was found in the knowledge bases, but the turn's own material
+	// still belongs to the question: without it a question about the
+	// highlighted passage is answered as if nothing had been highlighted.
+	if len(chatManage.Attachments) > 0 {
+		result += chatManage.Attachments.BuildPrompt()
+	}
+	result += chatManage.DocumentSelection.BuildPrompt()
+	result += chatManage.DocumentContext
 	return result, nil
 }
 
@@ -1314,4 +1326,34 @@ func (s *sessionService) resolveWebSearchMaxResults(ctx context.Context, req *ty
 		return types.EffectiveWebSearchConfig(tenantInfo.WebSearchConfig).MaxResults
 	}
 	return types.DefaultWebSearchMaxResults
+}
+
+// quickAnswerSelectionRules tells quick answer, when the user highlighted a
+// passage, to answer from that passage and to say it has no tool for
+// anything beyond it. It does not look at which document or editor the
+// passage came from. "" for any other agent or a turn without a selection.
+func quickAnswerSelectionRules(req *types.QARequest) string {
+	if req == nil || req.CustomAgent == nil || req.CustomAgent.ID != types.BuiltinQuickAnswerID ||
+		req.DocumentSelection.Normalized() == nil {
+		return ""
+	}
+	return tools.WordAgentCapabilities(req.CustomAgent.ID)
+}
+
+// sessionHasWordDocument reports a session holding a document opened from
+// the Word add-in.
+func (s *sessionService) sessionHasWordDocument(ctx context.Context, session *types.Session) bool {
+	if s.documentWorkspaces == nil || !s.documentWorkspaces.DocumentsEnabled() || session == nil {
+		return false
+	}
+	docs, err := s.documentWorkspaces.List(ctx, session.TenantID, session.ID)
+	if err != nil {
+		return false
+	}
+	for _, d := range docs {
+		if d.IsWordAddin() {
+			return true
+		}
+	}
+	return false
 }

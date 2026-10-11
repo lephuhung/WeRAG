@@ -19,6 +19,8 @@ func formatGroundingGuidance(names []string) string {
 		"satisfy a workflow. For current facts, source-specific claims, or factual deliverables such as " +
 		"presentations, reports, tutorials, and technical instructions, consult relevant available " +
 		"sources before drafting unsupported content.\n")
+	b.WriteString("- The remembered user notes (user_memory section) are evidence about the user (who they are, their unit, " +
+		"preferences). Answer questions about the user from them without searching.\n")
 	b.WriteString("- Follow the user's current source restrictions and explicit selections. Otherwise " +
 		"choose relevant bound knowledge bases or connected sources. A selected source does not exclude " +
 		"complementary sources unless the user says so. Directory entries, titles, and summaries are " +
@@ -34,6 +36,7 @@ func formatGroundingGuidance(names []string) string {
 	var kbTools []string
 	for _, name := range []string{
 		tools.ToolSearchKnowledge, tools.ToolReadDocument, tools.ToolListDocuments,
+		tools.ToolSearchDocumentSection,
 		tools.ToolWikiSearch, tools.ToolWikiReadPage, tools.ToolQueryKnowledgeGraph,
 		tools.ToolDataSchema, tools.ToolDataAnalysis, tools.ToolDatabaseQuery,
 	} {

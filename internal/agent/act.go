@@ -169,6 +169,7 @@ var toolDisplayNames = map[string]string{
 	agenttools.ToolSearchKnowledge:           "检索知识库",
 	agenttools.ToolReadDocument:              "阅读文档",
 	agenttools.ToolListDocuments:             "浏览文档列表",
+	agenttools.ToolSearchDocumentSection:     "Tra cứu điều khoản",
 	agenttools.ToolQueryKnowledgeGraph:       "查询知识图谱",
 	agenttools.LegacyToolGrepChunks:          "关键词搜索",
 	agenttools.LegacyToolKnowledgeSearch:     "知识搜索",

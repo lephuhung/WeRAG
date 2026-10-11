@@ -333,6 +333,10 @@ type CustomAgentConfig struct {
 	// SpellcheckModelID is the KnowledgeQA model check_spelling uses. Empty
 	// uses ModelID.
 	SpellcheckModelID string `yaml:"spellcheck_model_id" json:"spellcheck_model_id,omitempty"`
+	// IllustrationMCPServiceID is the MCP service generate_illustration
+	// paints with (its generate_image tool, e.g. Qwen-Image). Empty picks the
+	// first enabled service known to offer generate_image.
+	IllustrationMCPServiceID string `yaml:"illustration_mcp_service_id" json:"illustration_mcp_service_id,omitempty"`
 	// WebSearchDefaultOn makes the chat's Web toggle start on when this agent
 	// is selected. Read by the frontend only.
 	WebSearchDefaultOn bool `yaml:"web_search_default_on" json:"web_search_default_on,omitempty"`
@@ -716,4 +720,11 @@ func GetBuiltinAgent(id string, tenantID uint64) *CustomAgent {
 		return factory(tenantID)
 	}
 	return nil
+}
+
+// IsWordGeneralAgent reports the agents the Word add-in offers beside the
+// document assistant: they run as themselves on a Word document (quick
+// answer without tools, reasoning reading but never changing it).
+func IsWordGeneralAgent(agentID string) bool {
+	return agentID == BuiltinQuickAnswerID || agentID == BuiltinSmartReasoningID
 }

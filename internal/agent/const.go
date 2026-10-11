@@ -55,6 +55,10 @@ const (
 	// documentOutlineToolTimeout covers reading and segmenting the workspace
 	// document with the positional heuristic (no model call).
 	documentOutlineToolTimeout = 30 * time.Second
+	// generateIllustrationToolTimeout covers one picture from the image
+	// model (Qwen-Image, ~1–3 min on a free GPU, longer in a queue). The MCP
+	// call itself follows the service's advanced_config.timeout.
+	generateIllustrationToolTimeout = 10 * time.Minute
 
 	// maxLLMRetries is the maximum number of retries for transient LLM errors.
 	maxLLMRetries = 2
@@ -94,8 +98,10 @@ func toolExecutionTimeout(toolName string, arguments ...string) time.Duration {
 		return checkSpellingToolTimeout
 	case "insert_paragraphs", "mark_passages":
 		return documentInsertMarkToolTimeout
-	case "read_document_outline":
+	case "read_document_outline", "draw_diagram":
 		return documentOutlineToolTimeout
+	case "generate_illustration":
+		return generateIllustrationToolTimeout
 	}
 	return defaultToolExecTimeout
 }

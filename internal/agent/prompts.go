@@ -319,6 +319,15 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"observation, pause/resume and human help. Do not bypass a pause or browser challenge " +
 			"through another tool.\n")
 	}
+	if has("search_document_section") {
+		b.WriteString("When the user cites a part of a Vietnamese legal or administrative document " +
+			"(Điều, Khoản, Điểm, Chương, Mục — e.g. \"khoản 2 Điều 17 Nghị định 30/2020\"), call " +
+			"search_document_section with that citation first: it returns the exact section from the " +
+			"indexed structure, where search_knowledge only finds similar passages and read_document " +
+			"needs a text search. Name the document with document_number or its dN handle when the " +
+			"user gives one. Quote the returned section; if it comes back empty, fall back to " +
+			"search_knowledge or read_document.\n")
+	}
 	if has("check_legal_status") {
 		b.WriteString("When an answer rests on a Vietnamese legal document and its validity matters, " +
 			"check it with check_legal_status (by số ký hiệu) and tell the user when it has expired, " +

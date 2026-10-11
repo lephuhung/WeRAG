@@ -288,14 +288,18 @@ func (e *LegalGraphExtractor) Extract(
 //
 //  1. Canonicalize every entity name via ForceLegalType + NormalizeEntityID
 //     (số hiệu becomes the Document merge key, organizations get canonical
-//     casing) and dedupe on the canonical form.
+//     casing) and dedupe on the canonical form. Clause references of this
+//     document are scoped to its root ("Điều 5 (53/2022/NĐ-CP)") so they
+//     never merge with the same Điều of another document in the knowledge
+//     base; references to other documents keep their full name.
 //  2. Fold self-references ("văn bản này", same số hiệu, title aliases) onto
 //     the document root node instead of duplicating them.
 //  3. Drop generic/junk entities so they never materialize as nodes — and
 //     drop relations whose endpoints resolve to junk.
 //  4. Reroute relation endpoints through the canonical map and drop
 //     self-loops and relations with non-legal types.
-//  5. Synthesize the structural edges: Article→PART_OF→root,
+//  5. Synthesize the structural edges: Article→PART_OF→root (only for this
+//     document's own clauses, never for references to other documents),
 //     root→BAN_HANH_BOI→issuing agency, and root→CAN_CU→preamble refs
 //     (CAN_CU only when includeCanCu — the header chunk's task).
 //
@@ -313,6 +317,21 @@ func PostProcessLegalGraph(
 
 	nodeByKey := map[string]*types.GraphNode{}
 	dropped := map[string]bool{}
+	// externalArticle marks clause nodes that reference ANOTHER document
+	// ("Khoản 3 Điều 49 Luật An ninh mạng"): they get no PART_OF edge to
+	// this document's root.
+	externalArticle := map[string]bool{}
+
+	// articleKey scopes a clause reference to this document's root so the
+	// same Điều number in two documents of one knowledge base never merges
+	// (the graph store merges on {name, kb}).
+	articleKey := func(name string) string {
+		key, external := vietnamese_legal.ScopeClauseName(name, doc.RootName, doc.Title)
+		if external {
+			externalArticle[key] = true
+		}
+		return key
+	}
 
 	// canonicalOf maps a raw extracted name to its canonical node key.
 	canonicalOf := map[string]string{}
@@ -366,6 +385,9 @@ func PostProcessLegalGraph(
 			return nil, false
 		}
 		canonical := vietnamese_legal.NormalizeEntityID(name, etype)
+		if etype == vietnamese_legal.EntityTypeArticle {
+			canonical = articleKey(name)
+		}
 		return addNode(canonical, etype, nil), true
 	}
 
@@ -397,6 +419,9 @@ func PostProcessLegalGraph(
 			continue
 		}
 		canonical := vietnamese_legal.NormalizeEntityID(name, etype)
+		if etype == vietnamese_legal.EntityTypeArticle {
+			canonical = articleKey(name)
+		}
 		if etype == vietnamese_legal.EntityTypePerson &&
 			!strings.Contains(canonical, "(") {
 			canonical += " (không xác định)"
@@ -435,7 +460,7 @@ func PostProcessLegalGraph(
 	if doc.RootName != "" {
 		root := addNode(doc.RootName, vietnamese_legal.EntityTypeDocument, nil)
 		for _, n := range out.Node {
-			if n != root && n.Type == vietnamese_legal.EntityTypeArticle {
+			if n != root && n.Type == vietnamese_legal.EntityTypeArticle && !externalArticle[n.Name] {
 				out.Relation = append(out.Relation, &types.GraphRelation{
 					Node1: n.Name, Node2: root.Name, Type: vietnamese_legal.RelPartOf,
 				})
@@ -458,11 +483,12 @@ func PostProcessLegalGraph(
 					continue
 				}
 				etype := vietnamese_legal.EntityTypeDocument
+				key := vietnamese_legal.NormalizeEntityID(refName, etype)
 				if vietnamese_legal.IsArticleRefName(refName) {
 					etype = vietnamese_legal.EntityTypeArticle
+					key = articleKey(refName)
 				}
-				target := addNode(
-					vietnamese_legal.NormalizeEntityID(refName, etype), etype, nil)
+				target := addNode(key, etype, nil)
 				if target.Name != root.Name {
 					out.Relation = append(out.Relation, &types.GraphRelation{
 						Node1: root.Name, Node2: target.Name, Type: vietnamese_legal.RelCanCu,

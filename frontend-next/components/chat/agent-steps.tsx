@@ -386,6 +386,7 @@ const TOOL_NAME_KEYS: Record<string, LocaleKey> = {
   knowledge_search: "step.tool.searchKnowledge",
   read_document: "step.tool.readDocument",
   list_documents: "step.tool.listDocuments",
+  search_document_section: "step.tool.searchDocumentSection",
   grep_chunks: "step.tool.grepChunks",
   web_search: "step.tool.webSearch",
   web_fetch: "step.tool.webFetch",
@@ -812,6 +813,7 @@ export function toolStepIcon(step: ToolStep): ReactNode {
   if (
     name === "read_document" ||
     name === "list_documents" ||
+    name === "search_document_section" ||
     name === "get_document_info" ||
     name === "list_knowledge_chunks" ||
     name === "get_document_content" ||

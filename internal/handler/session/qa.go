@@ -683,6 +683,11 @@ func (h *Handler) pinDocumentAssistant(ctx context.Context, session *types.Sessi
 		return agentID
 	}
 	ws := docs[0]
+	// the Word add-in also offers quick answer and reasoning: they run as
+	// themselves (no tools / reading only), see tools.WordAgentCapabilities
+	if types.IsWordGeneralAgent(agentID) && ws.IsWordAddin() {
+		return agentID
+	}
 	logger.Infof(ctx, "Session %s holds document %q; agent %q replaced by the document assistant",
 		session.ID, ws.FileName, secutils.SanitizeForLog(agentID))
 	return types.BuiltinDocumentAssistantID
@@ -2114,6 +2119,15 @@ func (h *Handler) recordTurnMemory(
 ) {
 	if h.memoryService == nil {
 		return
+	}
+	// "Forget ..." removes the stored memory it names. It is how a user takes
+	// back a wrong memory in conversation; users have no memory settings.
+	if statement, ok := types.DetectForgetMemory(userQuery); ok {
+		if removed, err := h.memoryService.ForgetMatching(ctx, statement); err != nil {
+			logger.Warnf(ctx, "memory: forget failed for message %s: %v", assistantMessage.ID, err)
+		} else if removed != nil {
+			logger.Infof(ctx, "memory: forgot %s on request in message %s", removed.ID, assistantMessage.ID)
+		}
 	}
 	// An explicit "remember ..." directive is stored verbatim and immediately,
 	// with no model in the loop. This is what makes the default explicit_only

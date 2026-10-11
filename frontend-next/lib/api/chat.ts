@@ -137,6 +137,8 @@ export interface ArtifactMeta {
   file_name: string;
   file_type: string;
   file_size: number;
+  /** SHA-256 of the bytes: an illustration card finds its picture by it. */
+  content_hash?: string;
   source_path: string;
   mod_time: string;
   created_at: string;

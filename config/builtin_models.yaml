@@ -12,3 +12,33 @@ builtin_models:
       api_key: ${LLM_API_KEY}
       provider: ${LLM_PROVIDER:-openai}
       context_window: 128000
+
+  # Vietnamese spell-check model (Gemma-4-E4B-it + LoRA v2, training/spellcheck).
+  # Served by an OpenAI-compatible endpoint; point check_spelling at it via
+  # spellcheck_model_id in builtin_agents.yaml.
+  - id: builtin-llm-spellcheck
+    type: KnowledgeQA
+    source: remote
+    is_default: false
+    name: ${SPELLCHECK_MODEL_NAME:-spellcheck-gemma4-e4b-v2}
+    description: Gemma-4-E4B fine-tuned for Vietnamese spelling review
+    parameters:
+      base_url: ${SPELLCHECK_BASE_URL:-http://10.10.0.241:8003/v1}
+      api_key: ${SPELLCHECK_API_KEY:-none}
+      provider: generic
+      context_window: 32000
+
+  # The same vLLM container serves the base Gemma-4-E4B-it without the
+  # spelling LoRA, for general tasks (format check, wiki): one copy of the
+  # weights, the model name picks LoRA or not per request.
+  - id: builtin-llm-gemma4-e4b
+    type: KnowledgeQA
+    source: remote
+    is_default: false
+    name: ${GEMMA_E4B_MODEL_NAME:-gemma-4-e4b-it}
+    description: Gemma-4-E4B-it base (local vLLM, shares the spellcheck container)
+    parameters:
+      base_url: ${GEMMA_E4B_BASE_URL:-http://10.10.0.241:8003/v1}
+      api_key: ${GEMMA_E4B_API_KEY:-none}
+      provider: generic
+      context_window: 131072

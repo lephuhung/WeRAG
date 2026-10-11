@@ -114,6 +114,7 @@ export interface CustomAgentConfig {
   format_check_on_open?: boolean | null; // null/unset = on
   ask_scope_for_long_documents?: boolean | null; // null/unset = on
   spellcheck_model_id?: string; // "" = the agent's chat model
+  illustration_mcp_service_id?: string; // "" = first enabled service offering generate_image
   open_document_max_runes?: number; // 0 = server default
 
   // ===== multi-turn =====

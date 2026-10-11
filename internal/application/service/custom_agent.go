@@ -357,7 +357,8 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	}
 	if (agent.Config.ModelID != current.ModelID ||
 		agent.Config.FormatCheckModelID != current.FormatCheckModelID ||
-		agent.Config.SpellcheckModelID != current.SpellcheckModelID) && !types.CanManageModelConfig(ctx) {
+		agent.Config.SpellcheckModelID != current.SpellcheckModelID ||
+		agent.Config.IllustrationMCPServiceID != current.IllustrationMCPServiceID) && !types.CanManageModelConfig(ctx) {
 		return nil, ErrBuiltinModelManagedByAdmin
 	}
 

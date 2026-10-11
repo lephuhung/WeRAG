@@ -83,6 +83,12 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 		sourceIDKeys: map[string]struct{}{"knowledge_base_id": {}},
 		sourceOutput: true,
 	},
+	// search_document_section names its document with a dN handle and may
+	// narrow the scan to bN handles; its chunks are evidence like read_document's.
+	"search_document_section": {
+		sourceIDKeys: map[string]struct{}{"knowledge_id": {}, "knowledge_base_ids": {}},
+		sourceOutput: true,
+	},
 	// Retired retrieval tools keep their policies so stored histories that
 	// still carry their calls decode and compact exactly as they did.
 	"knowledge_search": {
@@ -118,6 +124,8 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	"insert_paragraphs":     {},
 	"mark_passages":         {},
 	"check_spelling":        {},
+	"draw_diagram":          {},
+	"generate_illustration": {},
 	"query_knowledge_graph": {
 		sourceIDKeys: map[string]struct{}{"knowledge_base_ids": {}},
 		sourceOutput: true,

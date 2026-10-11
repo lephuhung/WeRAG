@@ -128,3 +128,18 @@ func TestBuildOpenDocumentPromptSaysWhichCodesNoDocumentHas(t *testing.T) {
 		t.Fatalf("several documents: the line inside the index, PA05 not listed:\n%s", got)
 	}
 }
+
+func TestRestateRequestPutsTheQuestionLast(t *testing.T) {
+	if RestateRequest("  \n ") != "" {
+		t.Fatal("an empty query adds nothing")
+	}
+	got := RestateRequest(" Iphone 18 pro cấu hình như thế nào ")
+	if !strings.HasPrefix(got, "\n\n<user_request>\nIphone 18 pro cấu hình như thế nào\n</user_request>") {
+		t.Fatalf("request block: %q", got)
+	}
+	for _, want := range []string{"not the task", "search before answering", "Never say a document was changed"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}

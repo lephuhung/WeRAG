@@ -39,7 +39,10 @@ import {
   type ScopeClarification,
 } from "@/lib/document-scope";
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
+import { SavedMemoryNotice, parseSavedMemories, type SavedMemory } from "@/components/chat/saved-memory-notice";
 import {
+  illustrationFromToolData,
+  illustrationOpsBatch,
   newestProposalByDocument,
   opsBatchFromToolData,
   proposalOpsBatch,
@@ -47,12 +50,16 @@ import {
   readAppliedProposals,
   rememberAppliedProposal,
   rewriteProposalFromToolData,
+  type Illustration,
   type OpsBatch,
   type OpsFailure,
   type RewriteProposal,
   type RewriteVariant,
 } from "@/lib/api/document-ops";
 import { RewriteProposalCard, type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
+import { IllustrationCard } from "@/components/chat/illustration-card";
+import type { RasterImage } from "@/lib/illustration-render";
+import { selectionSuggestions, type SelectionSuggestionKey } from "@/lib/selection-suggestions";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
@@ -110,10 +117,14 @@ type UiMessage = {
   assistantMessageId?: string;
   references?: KnowledgeReferenceItem[];
   abbreviationCandidates?: string[];
+  /** Memories the assistant stored on its own since the last turn ("I just saved …"). */
+  savedMemories?: SavedMemory[];
   /** Document assistant: the scope clarification card this turn answered with. */
   scopeCard?: ScopeClarification;
   /** Document assistant: rewrite proposals of this turn (applied with a button). */
   rewriteProposals?: UiRewriteProposal[];
+  /** Document assistant: diagrams / pictures proposed this turn. */
+  illustrations?: UiIllustration[];
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
@@ -134,6 +145,29 @@ type UiMessage = {
 };
 
 type UiRewriteProposal = RewriteProposal & { appliedVariantId?: string };
+type UiIllustration = Illustration & { applied?: boolean };
+
+/** Adds an illustration to a message once; whether it was inserted comes
+ * from the proposal ledger (variant v1). */
+function withIllustration(
+  existing: UiIllustration[] | undefined,
+  ill: Illustration,
+  applied: Record<string, string>,
+): UiIllustration[] {
+  if (existing?.some((x) => x.batchId === ill.batchId)) return existing;
+  return [...(existing ?? []), applied[ill.batchId] ? { ...ill, applied: true } : ill];
+}
+
+function illustrationsFromHistory(m: ChatMessage, applied: Record<string, string>): UiIllustration[] | undefined {
+  let out: UiIllustration[] | undefined;
+  for (const step of m.agent_steps ?? []) {
+    for (const call of step.tool_calls ?? []) {
+      const ill = illustrationFromToolData(call.name, call.result?.data as Record<string, unknown> | undefined);
+      if (ill) out = withIllustration(out, ill, applied);
+    }
+  }
+  return out;
+}
 
 function safeLocalStorage(): Storage | null {
   try {
@@ -767,6 +801,9 @@ const AssistantMessage = memo(function AssistantMessage({
   proposalOutcomeFor,
   onProposalApply,
   onProposalApplied,
+  insertableDocIds = "",
+  onIllustrationInsert,
+  onIllustrationInserted,
   compact = false,
 }: {
   m: UiMessage;
@@ -782,6 +819,11 @@ const AssistantMessage = memo(function AssistantMessage({
   proposalOutcomeFor?: (batchId: string) => ProposalOutcome | undefined;
   onProposalApply?: (proposal: RewriteProposal, variant: RewriteVariant) => Promise<void>;
   onProposalApplied?: (proposal: RewriteProposal, variantId: string) => void;
+  /** Comma-joined ids of the documents open in an editor tab (an
+   * illustration can be inserted into those only). */
+  insertableDocIds?: string;
+  onIllustrationInsert?: (ill: Illustration, picture: RasterImage) => Promise<void>;
+  onIllustrationInserted?: (ill: Illustration) => void;
   /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
   compact?: boolean;
   sessionId: string;
@@ -842,6 +884,7 @@ const AssistantMessage = memo(function AssistantMessage({
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
+        {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
         {!m.streaming && m.scopeCard && scopeCardActive && onScopeAction && (
           <DocumentScopeCard card={m.scopeCard} disabled={busy} onAction={onScopeAction} />
         )}
@@ -859,6 +902,26 @@ const AssistantMessage = memo(function AssistantMessage({
               outcomeFor={proposalOutcomeFor}
               onApply={onProposalApply}
               onApplied={onProposalApplied}
+            />
+          ))}
+        {!m.streaming &&
+          proposalOutcomeFor &&
+          onIllustrationInsert &&
+          onIllustrationInserted &&
+          m.illustrations?.map((ill) => (
+            <IllustrationCard
+              key={ill.batchId}
+              illustration={ill}
+              applied={ill.applied}
+              canInsert={!!ill.documentId && insertableDocIds.split(",").includes(ill.documentId)}
+              disabled={proposalsDisabled}
+              artifacts={m.artifacts}
+              imageContext={
+                m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null
+              }
+              outcomeFor={proposalOutcomeFor}
+              onInsert={onIllustrationInsert}
+              onInserted={onIllustrationInserted}
             />
           ))}
         {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
@@ -975,6 +1038,9 @@ function ChatBody({ id }: { id: string }) {
   /** The rewrite proposal a tool result carries, added to the turn's message. */
   const proposalOfChunk = (c: StreamChunk): RewriteProposal | null =>
     rewriteProposalFromToolData(c.tool_name, c.data as Record<string, unknown> | undefined);
+  /** The illustration (diagram / picture) a tool result proposes. */
+  const illustrationOfChunk = (c: StreamChunk): Illustration | null =>
+    illustrationFromToolData(c.tool_name, c.data as Record<string, unknown> | undefined);
   // The session's open document (file name), keyed by session so a stale
   // value never leaks into the next chat. A session holding a document stays
   // with the document assistant: switching mode would drop the editor.
@@ -1040,6 +1106,43 @@ function ChatBody({ id }: { id: string }) {
       );
     },
     [id],
+  );
+  /* Inserting an illustration: snapshot on the server, then one insertImage
+   * op goes to the editor; the outcome comes back to the card. */
+  const insertIllustration = useCallback(
+    async (ill: Illustration, picture: RasterImage) => {
+      if (id === "new" || !ill.documentId || !ill.anchor) throw new Error(tr("docws.proposal.docClosed"));
+      if (!openDocs.some((d) => d.id === ill.documentId && d.role !== "source")) {
+        throw new Error(tr("docws.proposal.docClosed"));
+      }
+      const batch = illustrationOpsBatch(ill, picture.dataUrl, picture);
+      if (readAppliedBatches(safeLocalStorage(), id).includes(batch.batchId)) {
+        throw new Error(tr("docws.illustration.notInserted"));
+      }
+      await applyRewriteProposal(id, ill.documentId, ill.batchId, "v1", "illustration");
+      setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
+    },
+    [id, openDocs, tr],
+  );
+  const markIllustrationInserted = useCallback(
+    (ill: Illustration) => {
+      rememberAppliedProposal(safeLocalStorage(), id, ill.batchId, "v1");
+      setMessages((ms) =>
+        ms.map((msg) =>
+          msg.illustrations?.some((x) => x.batchId === ill.batchId)
+            ? { ...msg, illustrations: msg.illustrations.map((x) => (x.batchId === ill.batchId ? { ...x, applied: true } : x)) }
+            : msg,
+        ),
+      );
+    },
+    [id],
+  );
+  // Quick actions for the highlighted passage (shown while the composer is empty).
+  const selectionText = pendingSelection?.text ?? "";
+  const selectionActions = useMemo(() => selectionSuggestions(selectionText), [selectionText]);
+  const insertableDocIds = useMemo(
+    () => openDocs.filter((d) => d.role !== "source").map((d) => d.id).join(","),
+    [openDocs],
   );
   const newestProposals = useMemo(
     () => newestProposalByDocument(messages.flatMap((m) => m.rewriteProposals ?? [])),
@@ -1332,6 +1435,7 @@ function ChatBody({ id }: { id: string }) {
                       steps: steps?.length ? steps : undefined,
                       scopeCard: card ?? undefined,
                       rewriteProposals: rewriteProposalsFromHistory(m, appliedProposals),
+                      illustrations: illustrationsFromHistory(m, appliedProposals),
                     };
                   })()
                 : {}),
@@ -1410,6 +1514,15 @@ function ChatBody({ id }: { id: string }) {
               return;
             }
             if (kind === "agent_query") return;
+            if (kind === "memory_saved") {
+              const savedMemories = parseSavedMemories(c.data);
+              if (savedMemories.length > 0) {
+                setMessages((m) =>
+                  m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, savedMemories } : msg)),
+                );
+              }
+              return;
+            }
             if (kind === "tool_result") {
               const scopeCard = parseScopeClarification(c.data);
               if (scopeCard) {
@@ -1426,6 +1539,17 @@ function ChatBody({ id }: { id: string }) {
                   m.map((msg) =>
                     msg.assistantMessageId === inflightId
                       ? { ...msg, rewriteProposals: withRewriteProposal(msg.rewriteProposals, proposal, applied) }
+                      : msg,
+                  ),
+                );
+              }
+              const ill = illustrationOfChunk(c);
+              if (ill) {
+                const applied = readAppliedProposals(safeLocalStorage(), id);
+                setMessages((m) =>
+                  m.map((msg) =>
+                    msg.assistantMessageId === inflightId
+                      ? { ...msg, illustrations: withIllustration(msg.illustrations, ill, applied) }
                       : msg,
                   ),
                 );
@@ -1821,6 +1945,13 @@ function ChatBody({ id }: { id: string }) {
         }
         return;
       }
+      if (kind === "memory_saved") {
+        const savedMemories = parseSavedMemories(c.data);
+        if (savedMemories.length > 0) {
+          setMessages((m) => m.map((msg) => (matchAssistant(msg) ? { ...msg, savedMemories } : msg)));
+        }
+        return;
+      }
       if (kind === "agent_query") {
         if (incomingAsstId) {
           setMessages((m) =>
@@ -1993,6 +2124,15 @@ function ChatBody({ id }: { id: string }) {
               ),
             );
           }
+          const ill = illustrationOfChunk(c);
+          if (ill) {
+            const applied = readAppliedProposals(safeLocalStorage(), id);
+            setMessages((m) =>
+              m.map((msg) =>
+                matchAssistant(msg) ? { ...msg, illustrations: withIllustration(msg.illustrations, ill, applied) } : msg,
+              ),
+            );
+          }
         }
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
@@ -2109,8 +2249,12 @@ function ChatBody({ id }: { id: string }) {
       else if (item.type === "skill") skillSet.add(item.skill_name ?? item.id);
     }
     const selectedAgentId = ctx.settings.selectedAgentId || "builtin-quick-answer";
+    // The document assistant only works through its tools: it always takes
+    // the agent pipeline, whatever agent flag a restored session state left
+    // behind (its chip is locked on while a document is open).
     const isAgentMode =
       selectedAgentId === "builtin-smart-reasoning" ||
+      selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ||
       (selectedAgentId !== "builtin-quick-answer" && ctx.settings.isAgentEnabled);
     const attachmentIds = mergeAttachmentIds(
       s.attachments.map((a) => a.documentId).filter((x): x is string => Boolean(x)),
@@ -2489,6 +2633,9 @@ function ChatBody({ id }: { id: string }) {
                 proposalOutcomeFor={proposalOutcomeFor}
                 onProposalApply={applyProposal}
                 onProposalApplied={markProposalApplied}
+                insertableDocIds={insertableDocIds}
+                onIllustrationInsert={insertIllustration}
+                onIllustrationInserted={markIllustrationInserted}
                 compact={compact}
               />
             ),
@@ -2532,6 +2679,14 @@ function ChatBody({ id }: { id: string }) {
               }
               clearLabel={tr("docws.selectionClear")}
               onClear={() => setPendingSelection(null)}
+            />
+          )}
+          {isDocumentAssistant && pendingSelection && !busy && !input.trim() && selectionActions.length > 0 && (
+            <SelectionSuggestionChips
+              actions={selectionActions}
+              title={tr("docws.selSuggest.title")}
+              labelOf={(k) => tr(`docws.selSuggest.${k}`)}
+              onPick={(k) => setInput(tr(`docws.selSuggest.${k}.q`))}
             />
           )}
           {isDocumentAssistant && scopeChip && !scopeEditCard && (
@@ -2757,6 +2912,37 @@ function ScopeChip({
       >
         <IconClose className="h-3 w-3" />
       </button>
+    </div>
+  );
+}
+
+/* Quick actions for the highlighted passage: picking one fills the composer
+ * with its request (the user can add to it before sending). */
+function SelectionSuggestionChips({
+  actions,
+  title,
+  labelOf,
+  onPick,
+}: {
+  actions: SelectionSuggestionKey[];
+  title: string;
+  labelOf: (key: SelectionSuggestionKey) => string;
+  onPick: (key: SelectionSuggestionKey) => void;
+}) {
+  return (
+    <div className="mb-2 flex w-full min-w-0 flex-wrap items-center gap-1.5">
+      <span className="caption-uppercase shrink-0 text-muted-soft">{title}</span>
+      {actions.map((k) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onPick(k)}
+          className="flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3 py-1 text-[12.5px] text-body transition-colors hover:border-ink hover:text-ink"
+        >
+          <span className="text-muted-soft">›</span>
+          <span className="min-w-0 truncate">{labelOf(k)}</span>
+        </button>
+      ))}
     </div>
   );
 }

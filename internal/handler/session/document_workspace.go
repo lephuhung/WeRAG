@@ -2,6 +2,7 @@ package session
 
 import (
 	stderrors "errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,7 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -105,7 +108,6 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to open document")
 		return
 	}
-	h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
 	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
 	if err != nil {
@@ -248,12 +250,6 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 		h.fail(c, err, "Failed to load document")
 		return
 	}
-	if ws.IsTarget() && ws.Status == types.DocumentWorkspaceStatusOpen {
-		// a document opened before a server restart has no check yet
-		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
-		// a save since the check: keep it or check again (format changed)
-		h.precheck.Refresh(ctx, ws)
-	}
 	// no profile yet, or a save since it: start one or plan its refresh
 	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
@@ -366,9 +362,7 @@ func (h *DocumentWorkspaceHandler) SetDocumentRole(c *gin.Context) {
 		h.fail(c, err, "Failed to change the document role")
 		return
 	}
-	if ws.IsTarget() {
-		h.precheck.Start(ctx, ws.TenantID, sessionID, ws.ID)
-	} else {
+	if !ws.IsTarget() {
 		// a source is never refreshed on a schedule
 		h.precheck.StopProfile(ws.ID)
 	}
@@ -465,8 +459,7 @@ func (h *DocumentWorkspaceHandler) UploadDocumentContent(c *gin.Context) {
 		h.fail(c, err, "Failed to store document")
 		return
 	}
-	// an edited document gets its format check and profile refreshed
-	h.precheck.Refresh(ctx, ws)
+	// an edited document gets its profile refreshed
 	h.precheck.StartProfile(ctx, ws)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"revision": ws.Revision, "file_size": ws.FileSize, "last_saved_at": ws.LastSavedAt,
@@ -503,11 +496,59 @@ func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"seq": rev.Seq}})
 }
 
+// ReviewSpellingRequest carries the paragraphs of the open editor that are
+// new or changed since their last spelling review.
+type ReviewSpellingRequest struct {
+	Paragraphs []tools.LiveParagraph `json:"paragraphs"`
+}
+
+// ReviewDocumentSpelling reviews the spelling of paragraphs the user typed
+// (the live spellcheck of the document assistant) and returns the editor
+// ops that underline the mistakes in red; nothing is stored.
+// POST /sessions/:session_id/documents/:doc_id/spelling
+func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req ReviewSpellingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid spelling request"))
+		return
+	}
+	if len(req.Paragraphs) > tools.LiveSpellMaxParagraphs {
+		c.Error(apperrors.NewBadRequestError(fmt.Sprintf("at most %d paragraphs per request", tools.LiveSpellMaxParagraphs)))
+		return
+	}
+	for _, p := range req.Paragraphs {
+		if utf8.RuneCountInString(p.Text) > tools.LiveSpellMaxRunes {
+			c.Error(apperrors.NewBadRequestError(fmt.Sprintf("a paragraph is longer than %d characters", tools.LiveSpellMaxRunes)))
+			return
+		}
+	}
+	ops, found, ok, err := h.precheck.ReviewSpelling(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), req.Paragraphs)
+	if err != nil {
+		h.fail(c, err, "Failed to review spelling")
+		return
+	}
+	if ops == nil {
+		ops = []tools.DocumentOp{}
+	}
+	// failed: the model answered nothing; the editor asks again later
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"document_ops": ops, "found": found, "failed": !ok}})
+}
+
 // ApplyRewriteProposalRequest names the version of a rewrite proposal
-// (rewrite_paragraphs in propose mode) the user is about to apply.
+// (rewrite_paragraphs in propose mode) the user is about to apply. Kind
+// "illustration" is a picture proposed by draw_diagram /
+// generate_illustration (variant v1), inserted the same way.
 type ApplyRewriteProposalRequest struct {
 	BatchID   string `json:"batch_id"`
 	VariantID string `json:"variant_id"`
+	Kind      string `json:"kind,omitempty"`
 }
 
 // proposalVariantID is the id rewrite_paragraphs gives a version: v1, v2, …
@@ -538,8 +579,12 @@ func (h *DocumentWorkspaceHandler) ApplyRewriteProposal(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("batch_id and variant_id (v1, v2, …) are required"))
 		return
 	}
+	label := "ai: viết lại (phương án " + m[1] + ")"
+	if req.Kind == "illustration" {
+		label = "ai: chèn hình minh họa"
+	}
 	rev, err := h.workspaces.Snapshot(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c),
-		"ai: viết lại (phương án "+m[1]+")", types.DocumentRevisionSourceAI, proposalSnapshotWait)
+		label, types.DocumentRevisionSourceAI, proposalSnapshotWait)
 	if err != nil {
 		h.fail(c, err, "Failed to snapshot document")
 		return

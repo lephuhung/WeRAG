@@ -4,11 +4,16 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  illustrationFromToolData,
+  illustrationOpsBatch,
   applyOpsMessage,
   findAnchorParagraph,
   normalizeAnchorText,
   opValidationError,
   opsBatchFromToolData,
+  parsePluginParagraphsMessage,
+  readParagraphsMessage,
+  isLiveSpellingBatch,
   parsePluginOpsMessage,
   readAppliedBatches,
   rememberAppliedBatch,
@@ -246,5 +251,83 @@ describe("rewrite proposals", () => {
     const newest = newestProposalByDocument([p("a", "d1"), p("b", "d2"), p("c", "d1")]);
     assert.equal(newest.get("d1"), "c");
     assert.equal(newest.get("d2"), "b");
+  });
+});
+
+describe("illustrations", () => {
+  const sha = "a".repeat(64);
+  const diagramData = {
+    ops_batch_id: "b-1",
+    document_id: "ws-1",
+    document: "vb1 · To trinh.docx",
+    illustration: {
+      kind: "diagram",
+      title: "Quy trình",
+      caption: "Hình 1",
+      mermaid: "flowchart TD\n A-->B",
+      anchor: { text: "Đoạn tám", occurrence: 1 },
+      width_mm: 150,
+    },
+  };
+
+  it("reads a diagram proposal", () => {
+    const ill = illustrationFromToolData("draw_diagram", diagramData);
+    assert.ok(ill);
+    assert.equal(ill.kind, "diagram");
+    assert.equal(ill.documentId, "ws-1");
+    assert.deepEqual(ill.anchor, { text: "Đoạn tám", occurrence: 1 });
+    assert.equal(ill.mermaid, "flowchart TD\n A-->B");
+  });
+
+  it("reads an image proposal and rejects broken ones", () => {
+    const image = { ops_batch_id: "b-2", illustration: { kind: "image", title: "Ảnh", image_sha256: sha } };
+    const ill = illustrationFromToolData("generate_illustration", image);
+    assert.ok(ill);
+    assert.equal(ill.imageSha256, sha);
+    assert.equal(ill.anchor, null);
+    assert.equal(ill.documentId, "");
+    assert.equal(illustrationFromToolData("generate_illustration", { ...image, illustration: { kind: "image" } }), null);
+    assert.equal(illustrationFromToolData("rewrite_paragraphs", diagramData), null);
+    assert.equal(illustrationFromToolData("draw_diagram", { ...diagramData, ops_batch_id: "" }), null);
+  });
+
+  it("builds one valid insertImage op, kept to about a page", () => {
+    const ill = illustrationFromToolData("draw_diagram", diagramData)!;
+    const src = "data:image/png;base64,iVBORw0KGgo=";
+    const batch = illustrationOpsBatch(ill, src, { width: 1600, height: 800 });
+    assert.equal(batch.batchId, "b-1:v1");
+    assert.equal(batch.documentId, "ws-1");
+    assert.equal(batch.ops.length, 1);
+    assert.equal(opValidationError(batch.ops[0]), null);
+    assert.deepEqual(
+      { w: (batch.ops[0] as { widthMm: number }).widthMm, h: (batch.ops[0] as { heightMm: number }).heightMm },
+      { w: 150, h: 75 },
+    );
+    const tall = illustrationOpsBatch(ill, src, { width: 400, height: 2000 }).ops[0] as { widthMm: number; heightMm: number };
+    assert.equal(tall.heightMm, 230);
+    assert.equal(tall.widthMm, 46);
+  });
+
+  it("validates insertImage", () => {
+    const ok = { op: "insertImage", anchor: { text: "x" }, src: "data:image/png;base64,AAAA", widthMm: 100, heightMm: 50 };
+    assert.equal(opValidationError(ok), null);
+    assert.equal(opValidationError({ ...ok, src: "https://evil/x.png" }), "bad src");
+    assert.equal(opValidationError({ ...ok, widthMm: 0 }), "bad size");
+    assert.equal(opValidationError({ ...ok, caption: 3 }), "bad caption");
+  });
+});
+
+describe("live spellcheck messages", () => {
+  it("accepts unmark ops and the plugin's paragraph texts", () => {
+    assert.equal(opValidationError({ op: "unmark", anchor: { text: "Đoạn đã sửa" } }), null);
+    assert.equal(opValidationError({ op: "unmark", anchor: { text: " " } }), "bad anchor");
+    assert.deepEqual(
+      parsePluginParagraphsMessage({ source: "werag-onlyoffice", type: "paragraphs", requestId: "r1", texts: ["a", 3] }),
+      { requestId: "r1", texts: ["a", ""] },
+    );
+    assert.equal(parsePluginParagraphsMessage({ source: "werag-onlyoffice", type: "ops_ack", batchId: "b" }), null);
+    assert.deepEqual(readParagraphsMessage("r2"), { source: "werag-host", type: "read_paragraphs", requestId: "r2" });
+    assert.equal(isLiveSpellingBatch("spell-live-x"), true);
+    assert.equal(isLiveSpellingBatch("b-1"), false);
   });
 });

@@ -160,6 +160,7 @@ func (h *AgentStreamHandler) Subscribe() {
 	h.eventBus.On(event.EventAgentCommandOutput, h.handleCommandOutput)
 	h.eventBus.On(event.EventAgentReferences, h.handleReferences)
 	h.eventBus.On(event.EventMemoryRecalled, h.handleMemoryRecalled)
+	h.eventBus.On(event.EventMemorySaved, h.handleMemorySaved)
 	h.eventBus.On(event.EventContextCompacted, h.handleContextCompacted)
 	h.eventBus.On(event.EventUserMessageInjected, h.handleUserMessageInjected)
 	h.eventBus.On(event.EventAgentFinalAnswer, h.handleFinalAnswer)
@@ -502,6 +503,30 @@ func (h *AgentStreamHandler) handleMemoryRecalled(ctx context.Context, evt event
 		Data:      map[string]interface{}{"memories": used},
 	}); err != nil {
 		logger.GetLogger(h.ctx).Error("Append memory recalled event to stream failed", "error", err)
+	}
+	return nil
+}
+
+// handleMemorySaved streams the memories announced this turn ("I just saved
+// ..."). Not persisted on the message: the announcement belongs to the live
+// turn, and the memory itself stays reachable through the answer's recall.
+func (h *AgentStreamHandler) handleMemorySaved(_ context.Context, evt event.Event) error {
+	data, ok := evt.Data.(event.MemorySavedData)
+	if !ok {
+		return nil
+	}
+	saved, ok := data.Memories.(types.UsedMemories)
+	if !ok || len(saved) == 0 {
+		return nil
+	}
+	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
+		ID:        evt.ID,
+		Type:      types.ResponseTypeMemorySaved,
+		Done:      false,
+		Timestamp: time.Now(),
+		Data:      map[string]interface{}{"memories": saved},
+	}); err != nil {
+		logger.GetLogger(h.ctx).Error("Append memory saved event to stream failed", "error", err)
 	}
 	return nil
 }
@@ -1002,14 +1027,16 @@ func publicArtifactViews(list types.MessageArtifacts) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(list))
 	for i, a := range list {
 		out = append(out, map[string]interface{}{
-			"index":       i,
-			"handle":      artifactHandle(a),
-			"file_name":   a.FileName,
-			"file_type":   a.FileType,
-			"file_size":   a.FileSize,
-			"source_path": a.SourcePath,
-			"mod_time":    a.ModTime,
-			"created_at":  a.CreatedAt,
+			"index":     i,
+			"handle":    artifactHandle(a),
+			"file_name": a.FileName,
+			"file_type": a.FileType,
+			"file_size": a.FileSize,
+			// lets a card find the picture its tool made (generate_illustration)
+			"content_hash": a.ContentHash,
+			"source_path":  a.SourcePath,
+			"mod_time":     a.ModTime,
+			"created_at":   a.CreatedAt,
 		})
 	}
 	return out

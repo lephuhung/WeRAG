@@ -154,7 +154,13 @@ type AgentConfig struct {
 	// per-request model override.
 	FormatCheckModelID string `json:"-"`
 	SpellcheckModelID  string `json:"-"`
-	SandboxConfigID    string `json:"-"` // Workspace sandbox config ID for skill execution.
+	// IllustrationMCPServiceID: CustomAgentConfig.IllustrationMCPServiceID.
+	IllustrationMCPServiceID string `json:"-"`
+	// ReadOnlyDocuments: a general agent on a Word document (reasoning) —
+	// it gets the reading tools, a report-only format check and none of the
+	// tools that change the document.
+	ReadOnlyDocuments bool   `json:"-"`
+	SandboxConfigID   string `json:"-"` // Workspace sandbox config ID for skill execution.
 	// TenantSkills are the skills installed into the selected sandbox config's
 	// snapshot image, already narrowed to the ones this run can actually
 	// invoke. Runtime only: it is derived per turn from the config the agent

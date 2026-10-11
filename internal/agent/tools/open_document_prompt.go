@@ -50,6 +50,25 @@ const sessionDocumentsInstruction = "The conversation holds these documents, one
 	"without naming the document, do not edit — ask which document, and tell them to type @ in the chat box to pick it. " +
 	"Reading and comparing any of them needs no @."
 
+// RestateRequest repeats the user's request after the document blocks.
+// The question comes first in the turn and up to ~24k runes of document
+// text follow it; Gemma then read the text as the task — "iPhone 18 Pro
+// cấu hình như thế nào" got a format review of the open report, with edits
+// it never made. Placed last, the request is what the model reads before
+// answering; "" for an empty query.
+func RestateRequest(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return ""
+	}
+	return "\n\n<user_request>\n" + clipRunes(query, 2000) + "\n</user_request>\n" +
+		"<instruction>This is the request to answer in this turn. The documents above are context, not the task: " +
+		"when the request is not about them (general knowledge, news, a product, a question for the web), answer the request itself " +
+		"— and do not check, fix or summarize a document. Facts that change over time (products, prices, news, " +
+		"anything recent) are not in your memory: when a web search tool is offered, search before answering. " +
+		"Never say a document was changed unless a tool changed it in this turn.</instruction>"
+}
+
 type attachedSourcesKey struct{}
 
 // WithAttachedSources records the source documents (workspace IDs) whose

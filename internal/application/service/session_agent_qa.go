@@ -85,6 +85,10 @@ func (s *sessionService) AgentQA(
 	if err != nil {
 		return err
 	}
+	// reasoning on a Word document reads it but never changes it
+	wordReadOnly := req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinSmartReasoningID &&
+		s.sessionHasWordDocument(ctx, req.Session)
+	agentConfig.ReadOnlyDocuments = wordReadOnly
 
 	// Set VLM model ID for tool result image analysis (runtime-only field)
 	if req.CustomAgent != nil && req.CustomAgent.Config.VLMModelID != "" {
@@ -251,9 +255,21 @@ func (s *sessionService) AgentQA(
 		if sel := req.DocumentSelection.Normalized(); sel != nil {
 			locate += "\n" + sel.Text
 		}
+		docAppended := false
 		if doc := tools.BuildOpenDocumentPrompt(ctx, s.documentWorkspaces, req.Session.TenantID, sessionID, locate); doc != "" {
 			agentQuery += doc
+			docAppended = true
 			logger.Infof(ctx, "Appended open document text (%d chars) to agent query", len(doc))
+		}
+		// what reasoning can and cannot do on the Word document: a request
+		// beyond it is answered "no tool for that", not invented
+		if wordReadOnly {
+			agentQuery += tools.WordAgentCapabilities(req.CustomAgent.ID)
+		}
+		// the request again, last: after ~20k runes of document text the
+		// model otherwise takes the document for the task
+		if docAppended {
+			agentQuery += tools.RestateRequest(effectiveQuery)
 		}
 	}
 
@@ -322,6 +338,15 @@ func (s *sessionService) AgentQA(
 	// no-model read, and an agent may opt out of it entirely.
 	memoryCtx := types.ApplyAgentMemoryPreference(ctx, agentConfig.MemoryEnabled)
 	if s.memoryService != nil {
+		if saved := s.memoryService.TakeNewlySaved(memoryCtx); len(saved) > 0 {
+			if err := eventBus.Emit(ctx, event.Event{
+				Type:      event.EventMemorySaved,
+				SessionID: sessionID,
+				Data:      event.MemorySavedData{Memories: types.UsedMemoriesFromItems(saved)},
+			}); err != nil {
+				logger.Warnf(ctx, "Failed to emit memory saved event: %v", err)
+			}
+		}
 		recall := s.memoryService.Recall(memoryCtx, effectiveQuery)
 		if recall.Prompt != "" {
 			engine.SetMemoryPrompt(recall.Prompt)
@@ -400,6 +425,7 @@ func (s *sessionService) buildAgentConfig(
 		WebSearchEnabled:            customAgent.Config.WebSearchEnabled && req.WebSearchEnabled && platformWebSearch,
 		FormatCheckModelID:          customAgent.Config.FormatCheckModelID,
 		SpellcheckModelID:           customAgent.Config.SpellcheckModelID,
+		IllustrationMCPServiceID:    customAgent.Config.IllustrationMCPServiceID,
 		LocalBrowserEnabled:         req.LocalBrowserEnabled && platformWebSearch,
 		WebSearchMaxResults:         customAgent.Config.WebSearchMaxResults,
 		WebSearchProviderID:         customAgent.Config.WebSearchProviderID,
