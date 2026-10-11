@@ -28,6 +28,11 @@ export type { AuditLog, AuditAction, AuditOutcome, ListAuditLogParams, ListAudit
  * members read the resolved value via GET /system/parse-defaults. */
 export const PARSE_DEFAULTS_SETTING_KEY = "knowledge.parse_defaults";
 
+/* system_settings key holding the platform-wide UI theme ("elevenlabs" |
+ * "anthropic"). SuperAdmin writes it in Settings → General; every user (and
+ * the Word add-in) reads the resolved value via GET /system/ui-theme. */
+export const SYSTEM_UI_THEME_KEY = "ui.theme";
+
 /* Platform-wide default parse settings published by a SystemAdmin. When
  * `enabled` is true the backend ignores per-upload process_config and resolves
  * every parse against these overrides merged over the KB config — uploads and

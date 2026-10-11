@@ -8,6 +8,14 @@
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { Select } from "@/components/select";
+import { useAuth } from "@/lib/auth";
+import { getSystemSetting, updateSystemSetting, SYSTEM_UI_THEME_KEY } from "@/lib/api/system";
+import {
+  applyUiTheme,
+  dispatchUiThemeChanged,
+  normalizeUiTheme,
+  type UiTheme,
+} from "@/lib/ui-theme";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type FontSizeKey = "small" | "normal" | "large";
@@ -28,6 +36,31 @@ export function GeneralSettings() {
   const { t, locale, setLocale } = useT();
   const [theme, setThemeState] = useState<ThemeMode>("system");
   const [fontSize, setFontSizeState] = useState<FontSizeKey>("normal");
+
+  // Global theme — SuperAdmin only. Loaded once and applied for everyone by
+  // GlobalUiTheme; this control is the only writer.
+  const auth = useAuth();
+  const isSystemAdmin = auth.user?.is_system_admin === true;
+  const [systemTheme, setSystemTheme] = useState<UiTheme>("elevenlabs");
+  const [systemThemeError, setSystemThemeError] = useState(false);
+
+  useEffect(() => {
+    if (!isSystemAdmin) return;
+    getSystemSetting(SYSTEM_UI_THEME_KEY)
+      .then((row) => setSystemTheme(normalizeUiTheme(row.value)))
+      .catch(() => {
+        /* not persisted yet → keep the default */
+      });
+  }, [isSystemAdmin]);
+
+  const changeSystemTheme = (value: string) => {
+    const next = normalizeUiTheme(value);
+    setSystemTheme(next);
+    setSystemThemeError(false);
+    applyUiTheme(next);
+    dispatchUiThemeChanged(next);
+    updateSystemSetting(SYSTEM_UI_THEME_KEY, next).catch(() => setSystemThemeError(true));
+  };
 
   useEffect(() => {
     try {
@@ -104,6 +137,28 @@ export function GeneralSettings() {
           ]}
         />
       </div>
+
+      {/* system theme (SuperAdmin only, global) */}
+      {isSystemAdmin && (
+        <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+          <div className="min-w-0">
+            <label className="title-sm block">{t("settings.systemThemeTitle")}</label>
+            <p className="caption mt-1 text-muted">{t("settings.systemThemeDesc")}</p>
+            {systemThemeError && (
+              <p className="caption mt-1 text-error">{t("settings.systemThemeError")}</p>
+            )}
+          </div>
+          <Select
+            className="w-full sm:w-[280px] sm:shrink-0"
+            value={systemTheme}
+            onChange={changeSystemTheme}
+            options={[
+              { value: "elevenlabs", label: t("settings.systemThemeElevenlabs") },
+              { value: "anthropic", label: t("settings.systemThemeAnthropic") },
+            ]}
+          />
+        </div>
+      )}
 
       {/* font size */}
       <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
