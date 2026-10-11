@@ -275,7 +275,9 @@ module font là đồng bộ được.
 
 ### 11.2 Web
 
-- `cd frontend-next && npm run typecheck && npm test` xanh.
+- `cd frontend-next && npm run typecheck` xanh, và
+  `node --experimental-strip-types --test lib/ui-theme.test.ts` xanh (web không có
+  vitest; test chạy bằng node built-in như các test `lib/*.test.ts` khác).
 - Unit test cho `lib/ui-theme.ts`: chuẩn hoá giá trị, `applyUiTheme` gỡ attribute
   khi default, `fetchUiTheme` lỗi → default.
 - Thủ công: theme=anthropic → `<html data-theme="anthropic">`, nền ấm `#faf9f5`,
