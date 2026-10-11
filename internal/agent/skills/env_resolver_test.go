@@ -45,7 +45,7 @@ func TestApplySkillNodePathAppendsAfterTheCallersValue(t *testing.T) {
 }
 
 // The message is read by the agent and relayed verbatim to a person, so it has
-// to name the skill, the variables, and where to go and fix it.
+// to name the skill, the variables, and who can fix it.
 func TestMissingSkillEnvErrorMessageNamesSkillVarsAndWhereToSetThem(t *testing.T) {
 	err := error(&MissingSkillEnvError{
 		SkillName: "web-search",
@@ -57,6 +57,7 @@ func TestMissingSkillEnvErrorMessageNamesSkillVarsAndWhereToSetThem(t *testing.T
 	require.Contains(t, msg, "TAVILY_API_KEY")
 	require.Contains(t, msg, "SERP_TOKEN")
 	require.Contains(t, msg, "Sandbox secrets")
+	require.Contains(t, msg, "system administrator")
 
 	var typed *MissingSkillEnvError
 	require.True(t, errors.As(err, &typed))

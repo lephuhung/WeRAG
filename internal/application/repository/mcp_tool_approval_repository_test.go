@@ -25,6 +25,7 @@ func newMCPToolApprovalTestRepo(t *testing.T) interfaces.MCPToolApprovalReposito
 	// A busy timeout cannot resolve shared-cache SQLITE_LOCKED table conflicts.
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	require.NoError(t, db.Exec(tenantsScopeTestDDL).Error)
 	return NewMCPToolApprovalRepository(db)
 }
 

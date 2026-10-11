@@ -37,17 +37,17 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		// List smart-reasoning agent type presets (rag-qa / wiki-qa / hybrid / custom) — Viewer+
 		agentsRead.GET("/type-presets", g.Member(), agentHandler.GetAgentTypePresets)
 		// Create custom agent — SystemAdmin
-		agentsWrite.POST("", g.SystemAdmin(), agentHandler.CreateAgent)
+		agentsWrite.POST("", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CreateAgent)
 		// List all agents (including built-in) — Viewer+
 		agentsRead.GET("", g.Member(), agentHandler.ListAgents)
 		// Get agent by ID — Viewer+
 		agentsRead.GET("/:id", g.Member(), agentHandler.GetAgent)
 		// Update agent — SystemAdmin
-		agentsWrite.PUT("/:id", g.SystemAdmin(), agentHandler.UpdateAgent)
+		agentsWrite.PUT("/:id", g.SystemAdmin(), g.ConfigProfile(), agentHandler.UpdateAgent)
 		// Delete agent — SystemAdmin
-		agentsWrite.DELETE("/:id", g.SystemAdmin(), agentHandler.DeleteAgent)
+		agentsWrite.DELETE("/:id", g.SystemAdmin(), g.ConfigProfile(), agentHandler.DeleteAgent)
 		// Copy agent — SystemAdmin (a copy is still an authored agent)
-		agentsWrite.POST("/:id/copy", g.SystemAdmin(), agentHandler.CopyAgent)
+		agentsWrite.POST("/:id/copy", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CopyAgent)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	g.apiKeyRoute(r, http.MethodGet, "/agents/:id/suggested-questions",
@@ -74,7 +74,7 @@ func RegisterUserFavoriteRoutes(r *gin.RouterGroup, h *handler.UserResourceFavor
 // RegisterSkillRoutes registers skill routes.
 //
 // PR 2 currently only exposes a read-only `ListSkills`; gated to
-// Viewer+. Future skill upload / enable endpoints must use Admin+ since
+// Viewer+. Future skill upload / enable endpoints must use SystemAdmin since
 // skills run sandboxed code on tenant resources.
 func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler, g *rbacGuards) {
 	skills := r.Group("/skills")
@@ -87,11 +87,11 @@ func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler,
 	// Catalog writes bake into sandbox images; scoped API keys cannot hold them.
 	catalogWrite := g.apiKeyGroup(r.Group("/skills/catalog"), apiKeyFullAccess())
 	{
-		catalogWrite.POST("", g.Admin(), skillHandler.RegisterCatalog)
-		catalogWrite.POST("/:id/install", g.Admin(), skillHandler.InstallCatalog)
-		catalogWrite.GET("/:id/files", g.Admin(), skillHandler.ListCatalogFiles)
-		catalogWrite.GET("/:id/files/content", g.Admin(), skillHandler.GetCatalogFile)
-		catalogWrite.DELETE("/:id", g.Admin(), skillHandler.DeleteCatalog)
+		catalogWrite.POST("", g.SystemAdmin(), g.ConfigProfile(), skillHandler.RegisterCatalog)
+		catalogWrite.POST("/:id/install", g.SystemAdmin(), g.ConfigProfile(), skillHandler.InstallCatalog)
+		catalogWrite.GET("/:id/files", g.SystemAdmin(), g.ConfigProfile(), skillHandler.ListCatalogFiles)
+		catalogWrite.GET("/:id/files/content", g.SystemAdmin(), g.ConfigProfile(), skillHandler.GetCatalogFile)
+		catalogWrite.DELETE("/:id", g.SystemAdmin(), g.ConfigProfile(), skillHandler.DeleteCatalog)
 	}
 }
 
@@ -214,18 +214,18 @@ func RegisterEmbedChannelRoutes(r *gin.RouterGroup, embedHandler *handler.EmbedC
 	}
 	agentEmbed := g.apiKeyGroup(r.Group("/agents/:id/embed-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		agentEmbed.POST("", g.Admin(), embedHandler.CreateEmbedChannel)
-		agentEmbed.GET("", g.Admin(), embedHandler.ListEmbedChannels)
+		agentEmbed.POST("", g.SystemAdmin(), embedHandler.CreateEmbedChannel)
+		agentEmbed.GET("", g.SystemAdmin(), embedHandler.ListEmbedChannels)
 	}
 	channels := g.apiKeyGroup(r.Group("/embed-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		channels.GET("", g.Admin(), embedHandler.ListAllEmbedChannels)
-		channels.GET("/:channel_id", g.Admin(), embedHandler.GetEmbedChannel)
-		channels.PUT("/:channel_id", g.Admin(), embedHandler.UpdateEmbedChannel)
-		channels.DELETE("/:channel_id", g.Admin(), embedHandler.DeleteEmbedChannel)
-		channels.POST("/:channel_id/rotate-token", g.Admin(), embedHandler.RotateEmbedToken)
-		channels.POST("/:channel_id/preview-session", g.Admin(), embedHandler.IssuePreviewSession)
-		channels.GET("/:channel_id/stats", g.Admin(), embedHandler.GetEmbedChannelStats)
+		channels.GET("", g.SystemAdmin(), embedHandler.ListAllEmbedChannels)
+		channels.GET("/:channel_id", g.SystemAdmin(), embedHandler.GetEmbedChannel)
+		channels.PUT("/:channel_id", g.SystemAdmin(), embedHandler.UpdateEmbedChannel)
+		channels.DELETE("/:channel_id", g.SystemAdmin(), embedHandler.DeleteEmbedChannel)
+		channels.POST("/:channel_id/rotate-token", g.SystemAdmin(), embedHandler.RotateEmbedToken)
+		channels.POST("/:channel_id/preview-session", g.SystemAdmin(), embedHandler.IssuePreviewSession)
+		channels.GET("/:channel_id/stats", g.SystemAdmin(), embedHandler.GetEmbedChannelStats)
 	}
 }
 
@@ -243,30 +243,30 @@ func RegisterIMRoutes(r *gin.Engine, imHandler *handler.IMHandler) {
 //
 // IM channels carry external bot credentials (WeChat/Feishu/Slack/...);
 // listing is Viewer+ but any mutation, toggle, or QR-code login flow
-// (which can hijack a personal WeChat session) is Admin+.
+// (which can hijack a personal WeChat session) is SystemAdmin.
 func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g *rbacGuards) {
 	// Channel CRUD under agents
 	agentChannels := g.apiKeyGroup(r.Group("/agents/:id/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		agentChannels.POST("", g.Admin(), imHandler.CreateIMChannel)
-		agentChannels.GET("", g.Admin(), imHandler.ListIMChannels)
+		agentChannels.POST("", g.SystemAdmin(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.SystemAdmin(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := g.apiKeyGroup(r.Group("/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		channels.GET("", g.Admin(), imHandler.ListAllIMChannels)
-		channels.PUT("/:id", g.Admin(), imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", g.Admin(), imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", g.Admin(), imHandler.ToggleIMChannel)
+		channels.GET("", g.SystemAdmin(), imHandler.ListAllIMChannels)
+		channels.PUT("/:id", g.SystemAdmin(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.SystemAdmin(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.SystemAdmin(), imHandler.ToggleIMChannel)
 	}
 
-	// WeChat QR code login (requires authentication) — Admin+: a successful
+	// WeChat QR code login (requires authentication) — SystemAdmin: a successful
 	// scan binds a personal WeChat account to the tenant.
 	wechatGroup := g.apiKeyGroup(r.Group("/wechat"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.SystemAdmin(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.SystemAdmin(), imHandler.WeChatPollQRCodeStatus)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -406,17 +407,110 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 // Chat History Knowledge Base — Configuration-driven (via Tenant.ChatHistoryConfig)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// getChatHistoryConfig reads the chat history KB configuration from the tenant's settings.
-// Returns nil if the feature is not configured or disabled.
+// getChatHistoryConfig returns the chat history binding to search, or nil
+// when the feature is off or this workspace has nothing indexed yet. It never
+// creates a knowledge base; see chatHistoryBinding.
 func (s *messageService) getChatHistoryConfig(ctx context.Context) *types.ChatHistoryConfig {
+	return s.chatHistoryBinding(ctx, false)
+}
+
+// chatHistoryLocks serializes the lazy creation of a workspace's chat
+// history knowledge base, so a burst of first messages creates one, not many.
+var chatHistoryLocks sync.Map // tenant id -> *sync.Mutex
+
+// chatHistoryBinding resolves the chat history knowledge base for the
+// workspace in ctx.
+//
+// The SuperAdmin turns chat history on for every workspace through the
+// configuration profile, which holds only {enabled, embedding_model_id}. Each
+// workspace indexes into its own hidden knowledge base, recorded on its own
+// row; with create set, the first message after the feature is switched on
+// (or after the embedding model changes) creates it. A workspace whose
+// profile has no chat history config keeps its own legacy settings.
+func (s *messageService) chatHistoryBinding(ctx context.Context, create bool) *types.ChatHistoryConfig {
 	tenant, ok := types.TenantInfoFromContext(ctx)
-	if !ok {
+	if !ok || tenant == nil {
 		return nil
 	}
-	if tenant.ChatHistoryConfig == nil || !tenant.ChatHistoryConfig.IsConfigured() {
+	if s.tenantService == nil || tenant.ConfigProfileID == nil {
+		return configuredChatHistory(tenant.ChatHistoryConfig)
+	}
+	profile, err := s.tenantService.GetTenantByID(ctx, *tenant.ConfigProfileID)
+	if err != nil || profile == nil {
+		logger.Warnf(ctx, "chat history: cannot load configuration profile %d: %v", *tenant.ConfigProfileID, err)
 		return nil
 	}
-	return tenant.ChatHistoryConfig
+	platform := profile.ChatHistoryConfig
+	if platform == nil {
+		return configuredChatHistory(tenant.ChatHistoryConfig)
+	}
+	if !platform.Enabled || platform.EmbeddingModelID == "" {
+		return nil
+	}
+	if bound := matchingChatHistory(tenant.ChatHistoryConfig, platform); bound != nil {
+		return bound
+	}
+	if !create {
+		return nil
+	}
+
+	lock, _ := chatHistoryLocks.LoadOrStore(tenant.ID, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	// Another message may have created it while this one waited.
+	current, err := s.tenantService.GetTenantByID(ctx, tenant.ID)
+	if err != nil || current == nil {
+		return nil
+	}
+	if bound := matchingChatHistory(current.ChatHistoryConfig, platform); bound != nil {
+		return bound
+	}
+	kb, err := s.kbService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
+		Name:             "__chat_history__",
+		Type:             types.KnowledgeBaseTypeDocument,
+		IsTemporary:      true,
+		Description:      "Auto-managed knowledge base for chat history message indexing",
+		EmbeddingModelID: platform.EmbeddingModelID,
+	})
+	if err != nil {
+		logger.Warnf(ctx, "chat history: cannot create knowledge base for workspace %d: %v", tenant.ID, err)
+		return nil
+	}
+	current.ChatHistoryConfig = &types.ChatHistoryConfig{
+		Enabled:          true,
+		EmbeddingModelID: platform.EmbeddingModelID,
+		KnowledgeBaseID:  kb.ID,
+	}
+	if _, err := s.tenantService.UpdateTenant(ctx, current); err != nil {
+		logger.Warnf(ctx, "chat history: cannot record knowledge base %s for workspace %d: %v", kb.ID, tenant.ID, err)
+		return nil
+	}
+	logger.Infof(ctx, "chat history: created knowledge base %s for workspace %d", kb.ID, tenant.ID)
+	return current.ChatHistoryConfig
+}
+
+// configuredChatHistory returns cfg when it can be indexed into and searched.
+func configuredChatHistory(cfg *types.ChatHistoryConfig) *types.ChatHistoryConfig {
+	if cfg == nil || !cfg.IsConfigured() {
+		return nil
+	}
+	return cfg
+}
+
+// matchingChatHistory returns the workspace's binding when it points at a
+// knowledge base built with the platform's embedding model. A binding built
+// with another model is incompatible and is replaced, as the settings page
+// did when the model changed.
+func matchingChatHistory(own, platform *types.ChatHistoryConfig) *types.ChatHistoryConfig {
+	if own == nil || own.KnowledgeBaseID == "" || own.EmbeddingModelID != platform.EmbeddingModelID {
+		return nil
+	}
+	return &types.ChatHistoryConfig{
+		Enabled:          true,
+		EmbeddingModelID: own.EmbeddingModelID,
+		KnowledgeBaseID:  own.KnowledgeBaseID,
+	}
 }
 
 // getRetrievalConfig reads the global retrieval configuration from the tenant's settings.
@@ -447,7 +541,7 @@ func (s *messageService) IndexMessageToKB(ctx context.Context, userQuery string,
 		return
 	}
 
-	cfg := s.getChatHistoryConfig(ctx)
+	cfg := s.chatHistoryBinding(ctx, true)
 	if cfg == nil {
 		// Say why, otherwise an operator who enabled indexing in the UI sees
 		// "indexed messages: 0" with nothing in the logs to explain it: the
@@ -546,6 +640,21 @@ func (s *messageService) GetChatHistoryKBStats(ctx context.Context) (*types.Chat
 
 	stats := &types.ChatHistoryKBStats{}
 	cfg := tenant.ChatHistoryConfig
+	// A workspace on a profile follows the profile's switch and model; its
+	// own row only records which knowledge base it indexes into.
+	if tenant.ConfigProfileID != nil {
+		if profile, err := s.tenantService.GetTenantByID(ctx, *tenant.ConfigProfileID); err == nil &&
+			profile != nil && profile.ChatHistoryConfig != nil {
+			platform := profile.ChatHistoryConfig
+			if !platform.Enabled {
+				return stats, nil
+			}
+			cfg = &types.ChatHistoryConfig{Enabled: true, EmbeddingModelID: platform.EmbeddingModelID}
+			if bound := matchingChatHistory(tenant.ChatHistoryConfig, platform); bound != nil {
+				cfg.KnowledgeBaseID = bound.KnowledgeBaseID
+			}
+		}
+	}
 	if cfg == nil || !cfg.Enabled {
 		return stats, nil
 	}

@@ -46,12 +46,16 @@ func (r *tenantSandboxConfigRepository) Create(
 
 // GetByID returns nil (no error) when the config does not exist or belongs to
 // another workspace, so callers can render a 404 without inspecting errors.
+// A workspace also reaches the configs of the configuration profile it
+// inherits from; the returned row keeps the profile as its TenantID, which
+// is where its skills and snapshots live.
 func (r *tenantSandboxConfigRepository) GetByID(
 	ctx context.Context, tenantID uint64, id string,
 ) (*types.TenantSandboxConfigEntity, error) {
 	var e types.TenantSandboxConfigEntity
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Where("id = ?", id).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		First(&e).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -65,9 +69,12 @@ func (r *tenantSandboxConfigRepository) GetByID(
 func (r *tenantSandboxConfigRepository) ListByTenant(
 	ctx context.Context, tenantID uint64,
 ) ([]*types.TenantSandboxConfigEntity, error) {
+	// The workspace's own configs plus its configuration profile's. That
+	// includes the profile's scripts-policy row, so a SuperAdmin's kill
+	// switch reaches every workspace on the profile.
 	var list []*types.TenantSandboxConfigEntity
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		Order("created_at ASC").
 		Find(&list).Error
 	if err != nil {

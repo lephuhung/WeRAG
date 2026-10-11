@@ -24,13 +24,14 @@ func (r *vectorStoreRepository) Create(ctx context.Context, store *types.VectorS
 	return r.db.WithContext(ctx).Create(store).Error
 }
 
-// GetByID retrieves a vector store by ID within a tenant scope.
+// GetByID retrieves a vector store by ID within a tenant scope: the tenant's
+// own stores and those of the configuration profile it inherits from.
 // Returns (nil, nil) when the record is not found (not an error).
 func (r *vectorStoreRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.VectorStore, error) {
 	var store types.VectorStore
-	if err := r.db.WithContext(ctx).Where(
-		"id = ? AND tenant_id = ?", id, tenantID,
-	).First(&store).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		First(&store).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -39,12 +40,11 @@ func (r *vectorStoreRepository) GetByID(ctx context.Context, tenantID uint64, id
 	return &store, nil
 }
 
-// List lists all vector stores for a tenant (newest first)
+// List lists the vector stores a tenant can bind (its own and its
+// configuration profile's), newest first.
 func (r *vectorStoreRepository) List(ctx context.Context, tenantID uint64) ([]*types.VectorStore, error) {
 	var stores []*types.VectorStore
-	if err := r.db.WithContext(ctx).Where(
-		"tenant_id = ?", tenantID,
-	).Order("created_at DESC").Find(&stores).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).Order("created_at DESC").Find(&stores).Error; err != nil {
 		return nil, err
 	}
 	return stores, nil

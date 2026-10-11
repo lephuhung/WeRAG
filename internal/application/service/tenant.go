@@ -46,6 +46,17 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 	tenant.Status = "active"
 	tenant.CreatedAt = time.Now()
 	tenant.UpdatedAt = time.Now()
+	// Every new workspace inherits the platform configuration.
+	tenant.Kind = types.TenantKindWorkspace
+	if tenant.ConfigProfileID == nil {
+		profile, err := s.repo.GetDefaultConfigProfile(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if profile != nil {
+			tenant.ConfigProfileID = &profile.ID
+		}
+	}
 
 	if err := s.validateStorageBucketUniqueness(ctx, tenant); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -66,6 +77,11 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 		// avoids leaving a workspace that cannot bind new knowledge bases.
 		_ = s.repo.DeleteTenant(ctx, tenant.ID)
 		return nil, err
+	}
+	if tenant.ConfigProfileID != nil {
+		if _, err := s.repo.SyncProfileSettings(ctx, *tenant.ConfigProfileID, tenant.ID); err != nil {
+			logger.Warnf(ctx, "Tenant %d did not receive its profile settings: %v", tenant.ID, err)
+		}
 	}
 
 	logger.Infof(ctx, "Tenant created successfully, ID: %d, name: %s", tenant.ID, tenant.Name)
@@ -160,6 +176,17 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 		return nil, err
 	}
 
+	// A configuration profile's settings reach its workspaces by being
+	// copied onto them.
+	if tenant.IsConfigProfile() {
+		synced, err := s.repo.SyncProfileSettings(ctx, tenant.ID, 0)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{"profile_id": tenant.ID})
+			return nil, err
+		}
+		logger.Infof(ctx, "Configuration profile %d synced to %d workspace(s)", tenant.ID, synced)
+	}
+
 	logger.Infof(ctx, "Tenant updated successfully, ID: %d", tenant.ID)
 	return tenant, nil
 }
@@ -188,6 +215,11 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		}
 	} else {
 		logger.Infof(ctx, "Deleting tenant, ID: %d, name: %s", id, tenant.Name)
+		// Every workspace inherits its configuration from a profile, so a
+		// profile is never removed through the workspace API.
+		if tenant.IsConfigProfile() {
+			return werrors.NewForbiddenError("a configuration profile cannot be deleted")
+		}
 	}
 
 	err = s.repo.DeleteTenant(ctx, id)

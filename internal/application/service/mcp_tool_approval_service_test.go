@@ -16,7 +16,7 @@ import (
 func TestMCPDirectoryBatchPolicyUsesOneDatabaseQuery(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.MCPToolApproval{}))
 	mcpRepo := newFakeMCPRepo()
 	ctx := context.Background()
 	require.NoError(t, mcpRepo.Create(ctx, &types.MCPService{ID: "svc", TenantID: 7, Enabled: true}))
@@ -50,7 +50,7 @@ func newMCPToolApprovalServiceForTest(t *testing.T) (*mcpToolApprovalService, *f
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.MCPToolApproval{}))
 
 	mcpRepo := newFakeMCPRepo()
 	require.NoError(t, mcpRepo.Create(context.Background(), &types.MCPService{

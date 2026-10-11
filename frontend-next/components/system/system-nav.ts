@@ -209,7 +209,7 @@ export const SYSTEM_TABS: SystemTab[] = [
             label: "Environment variables",
             labelKey: "settingsNav.envvars",
             href: "/platform/system/extensions/envvars",
-            minRole: "member",
+            minRole: "system",
           },
           {
             key: "abbreviations",

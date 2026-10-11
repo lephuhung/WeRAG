@@ -21,7 +21,12 @@ func (r *storageBackendRepository) Create(ctx context.Context, backend *types.St
 
 func (r *storageBackendRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.StorageBackend, error) {
 	var backend types.StorageBackend
-	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&backend).Error; err != nil {
+	// A workspace also reaches the backends of its configuration profile:
+	// knowledge bases created while the profile's backend is the default
+	// are bound to it.
+	if err := r.db.WithContext(ctx).Where("id = ?", id).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		First(&backend).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -30,9 +35,15 @@ func (r *storageBackendRepository) GetByID(ctx context.Context, tenantID uint64,
 	return &backend, nil
 }
 
+// List lists the backends a tenant can use: its own and the configuration
+// profile's. The profile's legacy alias (its env-derived local row) is left
+// out: every workspace already has its own.
 func (r *storageBackendRepository) List(ctx context.Context, tenantID uint64) ([]*types.StorageBackend, error) {
 	var backends []*types.StorageBackend
-	err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&backends).Error
+	err := r.db.WithContext(ctx).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		Where("tenant_id = ? OR legacy_alias = ?", tenantID, false).
+		Order("created_at DESC").Find(&backends).Error
 	return backends, err
 }
 

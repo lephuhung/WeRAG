@@ -103,7 +103,9 @@ func effectiveTenantSkills(
 		return nil
 	}
 
-	rows, err := skills.ListSkillsByConfig(ctx, tenantID, configID)
+	// Skills are installed under the config's own tenant, which is the
+	// configuration profile when the workspace inherits the config.
+	rows, err := skills.ListSkillsByConfig(ctx, cfgEntity.TenantID, configID)
 	if err != nil {
 		logger.Warnf(ctx, "[skill] list skills of sandbox config %s failed: %v", configID, err)
 		return nil

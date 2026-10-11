@@ -59,7 +59,7 @@ func newAgentSkillBundleService(t *testing.T, files map[string][]byte) (*agentSe
 	dsn := "file:agent-skill-" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&types.Tenant{},
 		&types.TenantSkillEntity{}, &types.TenantSkillCatalogEntity{},
 		&types.TenantSkillSnapshotEntity{}, &types.TenantUserEnvVar{},
 	))

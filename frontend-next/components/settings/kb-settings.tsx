@@ -14,6 +14,7 @@ import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 import {
   getKnowledgeBase,
   updateKnowledgeBase,
@@ -76,6 +77,11 @@ export function KbSettingsModal({
   onSaved?: (row: KnowledgeBaseRow) => void;
 }) {
   const { t } = useT();
+  /* Tenant admins rename and describe the KB; everything that configures it
+   * (models, indexing, wiki, tagging, chunking) is the SuperAdmin's — the
+   * backend rejects a config block from anyone else. */
+  const isSystemAdmin = useAuth().user?.is_system_admin === true;
+  const sections = isSystemAdmin ? SECTIONS : SECTIONS.filter((s) => s.id === "basic");
 
   const [section, setSection] = useState<Section>("basic");
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
@@ -169,13 +175,15 @@ export function KbSettingsModal({
       await updateKnowledgeBase(kbId, {
         name: name.trim() || kb?.name || "",
         description,
-        config: {
-          indexing_strategy: draft.indexing_strategy,
-          wiki_config: draft.wiki_config,
-          auto_tag_config: draft.auto_tag_config,
-          profile_config: draft.profile_config,
-          chunking_config: draft.chunking_config,
-        },
+        ...(isSystemAdmin && {
+          config: {
+            indexing_strategy: draft.indexing_strategy,
+            wiki_config: draft.wiki_config,
+            auto_tag_config: draft.auto_tag_config,
+            profile_config: draft.profile_config,
+            chunking_config: draft.chunking_config,
+          },
+        }),
       });
       const fresh = await getKnowledgeBase(kbId);
       if (fresh) {
@@ -199,7 +207,7 @@ export function KbSettingsModal({
         <div className="flex min-h-[420px] gap-6">
           {/* section nav */}
           <div className="w-[170px] shrink-0 border-r border-hairline pr-4">
-            {SECTIONS.map((s) => (
+            {sections.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSection(s.id)}
@@ -232,6 +240,7 @@ export function KbSettingsModal({
                   {t("kbSettings.visibilityNote")}:{" "}
                   <span className="text-ink">{t("kbSettings.visTenant")}</span>
                 </div>
+                {!isSystemAdmin && <p className="caption text-muted-soft">{t("kbSettings.configBySuperAdmin")}</p>}
               </div>
             )}
 

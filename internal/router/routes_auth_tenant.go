@@ -83,7 +83,7 @@ func RegisterTenantRoutes(
 		// PathTenantMatch group. Tenant-level surface: full-access keys may
 		// call it, and scoped keys need manage_tenant_settings.
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Member(), handler.GetTenantKV)
-		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UpdateTenantKV)
+		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.SystemAdmin(), g.ConfigProfileForKV(), handler.UpdateTenantKV)
 
 		// Per-tenant endpoints share PathTenantMatch at the group level.
 		// Most /tenants/:id/* endpoints stay undeclared for API keys by
@@ -96,16 +96,16 @@ func RegisterTenantRoutes(
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
 				g.Member(), handler.GetTenant)
 			g.apiKeyRoute(tenantByID, http.MethodPut, "",
-				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Admin(), handler.UpdateTenant)
+				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.SystemAdmin(), handler.UpdateTenant)
 			g.apiKeyRoute(tenantByID, http.MethodDelete, "",
-				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Admin(), handler.DeleteTenant)
-			tenantByID.GET("/api-keys", g.Admin(), handler.ListAPIKeys)
-			tenantByID.POST("/api-keys", g.Admin(), handler.CreateAPIKey)
-			tenantByID.PUT("/api-keys/:key_id", g.Admin(), handler.UpdateAPIKey)
-			tenantByID.DELETE("/api-keys/:key_id", g.Admin(), handler.DeleteAPIKey)
-			tenantByID.GET("/api-principal-config", g.Admin(), handler.GetAPIPrincipalConfig)
-			tenantByID.PUT("/api-principal-config", g.Admin(), handler.UpdateAPIPrincipalConfig)
-			tenantByID.POST("/api-principal-test-token", g.Admin(), handler.CreateAPIPrincipalTestToken)
+				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.SystemAdmin(), handler.DeleteTenant)
+			tenantByID.GET("/api-keys", g.SystemAdmin(), handler.ListAPIKeys)
+			tenantByID.POST("/api-keys", g.SystemAdmin(), handler.CreateAPIKey)
+			tenantByID.PUT("/api-keys/:key_id", g.SystemAdmin(), handler.UpdateAPIKey)
+			tenantByID.DELETE("/api-keys/:key_id", g.SystemAdmin(), handler.DeleteAPIKey)
+			tenantByID.GET("/api-principal-config", g.SystemAdmin(), handler.GetAPIPrincipalConfig)
+			tenantByID.PUT("/api-principal-config", g.SystemAdmin(), handler.UpdateAPIPrincipalConfig)
+			tenantByID.POST("/api-principal-test-token", g.SystemAdmin(), handler.CreateAPIPrincipalTestToken)
 
 			// Tenant member management (PR 3 of #1303). Listing is
 			// Viewer+ so any active member can see the roster; mutation
@@ -190,17 +190,20 @@ func RegisterMyInvitationRoutes(r *gin.RouterGroup, invitationHandler *handler.T
 // derives whose they are from the context rather than the request.
 //
 // This deliberately does not reuse /sandbox-configs/:id/skills*, which is
-// Admin+ even for reads (see routes_infra.go): an upload there drives a root
+// SystemAdmin-only even for reads (see routes_infra.go): an upload there drives a root
 // shell whose output is baked into the image, and the listing names what that
 // image carries. This endpoint returns declarations and set/unset status only.
 //
 // h may be nil in environments built without the dependency wired; a no-op
 // registration is preferable to a startup crash, as with the invitation inbox.
-func RegisterMyEnvVarRoutes(r *gin.RouterGroup, h *handler.MeEnvVarHandler) {
+func RegisterMyEnvVarRoutes(r *gin.RouterGroup, h *handler.MeEnvVarHandler, g *rbacGuards) {
 	if h == nil {
 		return
 	}
-	me := r.Group("/me/env-vars")
+	// Personal skill/sandbox variables are tool configuration, which only
+	// the SuperAdmin manages; members and tenant admins inherit the
+	// platform setup.
+	me := r.Group("/me/env-vars", g.SystemAdmin())
 	{
 		me.GET("", h.List)
 		me.PUT("/skill", h.SetSkill)
@@ -258,7 +261,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 // are gated to Viewer+ — any tenant member can see "is the parser
 // reachable". The /*-check / /reconnect endpoints actively probe
 // remote services with tenant credentials and could trigger network
-// fanout, so they're Admin+.
+// fanout, so they're SystemAdmin.
 func RegisterSystemRoutes(
 	r *gin.RouterGroup,
 	handler *handler.SystemHandler,
@@ -284,8 +287,8 @@ func RegisterSystemRoutes(
 		// readable before sign-in (login page, add-in first paint). Registered
 		// on the raw group so API keys stay default-denied.
 		systemGroup.GET("/ui-theme", handler.GetSystemUITheme)
-		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
-		systemRoutes.POST("/sandbox-check", g.Admin(), handler.CheckSandboxConfig)
+		systemRoutes.POST("/storage-engine-check", g.SystemAdmin(), handler.CheckStorageEngine)
+		systemRoutes.POST("/sandbox-check", g.SystemAdmin(), handler.CheckSandboxConfig)
 	}
 }
 

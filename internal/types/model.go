@@ -87,18 +87,22 @@ const ModelUsageListLimit = 50
 // ModelUsageListLimit entries; KnowledgeBaseTotal and AgentTotal are the
 // untruncated counts used by the deletion guard and UI headings.
 type ModelUsageDetails struct {
-	KnowledgeBases     []ModelUsageResource `json:"knowledge_bases"`
-	Agents             []ModelUsageResource `json:"agents"`
-	LongTermMemory     ModelUsageMemory     `json:"long_term_memory"`
-	KnowledgeBaseTotal int64                `json:"knowledge_base_total"`
-	AgentTotal         int64                `json:"agent_total"`
+	KnowledgeBases []ModelUsageResource `json:"knowledge_bases"`
+	Agents         []ModelUsageResource `json:"agents"`
+	LongTermMemory ModelUsageMemory     `json:"long_term_memory"`
+	// Platform lists the platform settings that pin the model: the default
+	// parse settings (VLM/ASR) and the configuration profile's default
+	// models for new knowledge bases.
+	Platform           ModelUsageMemory `json:"platform"`
+	KnowledgeBaseTotal int64            `json:"knowledge_base_total"`
+	AgentTotal         int64            `json:"agent_total"`
 }
 
 // InUse reports whether at least one active object references the model.
 func (d ModelUsageDetails) InUse() bool {
 	return d.KnowledgeBaseTotal > 0 || d.AgentTotal > 0 ||
 		len(d.KnowledgeBases) > 0 || len(d.Agents) > 0 ||
-		len(d.LongTermMemory.Bindings) > 0
+		len(d.LongTermMemory.Bindings) > 0 || len(d.Platform.Bindings) > 0
 }
 
 // ModelSource represents the source of the model

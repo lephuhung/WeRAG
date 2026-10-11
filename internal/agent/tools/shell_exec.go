@@ -466,9 +466,10 @@ func (t *ShellExecTool) Execute(ctx context.Context, args json.RawMessage) (*typ
 			return &types.ToolResult{
 				Success: false,
 				Error: fmt.Sprintf(
-					"skill %q needs the environment variable(s) %s, which nobody has set yet. "+
-						"Ask the user for them and pass them in this call's env, "+
-						"or have them set the values under Settings → Sandbox secrets.",
+					"skill %q needs the environment variable(s) %s, which the system administrator "+
+						"has not set yet. Tell the user to ask the system administrator to set them "+
+						"on the skill's sandbox configuration (Sandbox secrets); do not ask the user "+
+						"for the values.",
 					input.SkillName, strings.Join(missing, ", ")),
 			}, nil
 		}

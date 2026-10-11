@@ -126,7 +126,7 @@ const GROUPS: SettingsGroup[] = [
       { key: "general", labelKey: "settingsNav.general", fallback: "General", icon: IconSettings, render: () => <GeneralSettings />, route: W },
       { key: "profile", labelKey: "userSettings.profile", fallback: "Profile", icon: IconUser, render: () => <ProfileSettings /> },
       { key: "security", labelKey: "userSettings.security", fallback: "Security", icon: IconLock, render: () => <SecuritySettings /> },
-      { key: "mymemory", labelKey: "settingsNav.mymemory", fallback: "My memory", icon: IconBookmark, render: () => <MemoryPersonalSettings />, route: `${W}/mymemory` },
+      { key: "mymemory", labelKey: "settingsNav.mymemory", fallback: "My memory", icon: IconBookmark, minRole: "system", render: () => <MemoryPersonalSettings />, route: `${W}/mymemory` },
     ],
   },
   {
@@ -136,9 +136,9 @@ const GROUPS: SettingsGroup[] = [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Workspace info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
       { key: "sharing", labelKey: "settingsNav.sharing", fallback: "Sharing", icon: IconGlobe, minRole: "admin", render: () => <SharingPage />, route: `${W}/sharing` },
-      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "admin", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
-      { key: "chathistory", labelKey: "systemNav.chathistory", fallback: "Chat history", icon: IconClock, minRole: "admin", render: () => <ChatHistorySettings />, route: `${W}/chathistory` },
-      { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "admin", render: () => <MemoryWorkspaceSettings />, route: `${W}/memory` },
+      { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "system", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
+      { key: "chathistory", labelKey: "systemNav.chathistory", fallback: "Chat history", icon: IconClock, minRole: "system", render: () => <ChatHistorySettings />, route: `${W}/chathistory` },
+      { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "system", render: () => <MemoryWorkspaceSettings />, route: `${W}/memory` },
     ],
   },
   {
@@ -146,7 +146,7 @@ const GROUPS: SettingsGroup[] = [
     labelKey: "systemNav.extensions",
     items: [
       { key: "browserconnection", labelKey: "systemNav.browserconnection", fallback: "Browser connection", icon: IconGlobe, render: () => <BrowserConnectionSettings />, route: `${E}/browserconnection` },
-      { key: "envvars", labelKey: "settingsNav.envvars", fallback: "Environment variables", icon: IconCode, render: () => <EnvVarsSettings />, route: `${E}/envvars` },
+      { key: "envvars", labelKey: "settingsNav.envvars", fallback: "Environment variables", icon: IconCode, minRole: "system", render: () => <EnvVarsSettings />, route: `${E}/envvars` },
       { key: "abbreviations", labelKey: "settingsNav.abbreviations", fallback: "Abbreviations", icon: IconBook, render: () => <AbbreviationsSettings />, route: `${E}/abbreviations` },
       { key: "skills", labelKey: "settingsNav.skills", fallback: "Skills", icon: IconBulb, minRole: "system", render: () => <SkillsSettings />, route: `${E}/skills` },
       { key: "mcp", labelKey: "systemNav.mcpServers", fallback: "MCP servers", icon: IconPulse, minRole: "system", render: () => <McpServersPage />, route: `${E}/mcp` },

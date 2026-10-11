@@ -17,7 +17,7 @@ import (
 func TestStorageBackendResolverScopesPathsAndTenant(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.StorageBackend{}))
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.StorageBackend{}))
 	repo := repository.NewStorageBackendRepository(db)
 	backend := &types.StorageBackend{TenantID: 7, Name: "Local A", Provider: "local", Config: types.StorageBackendConfig{}, LegacyAlias: true}
 	require.NoError(t, repo.Create(context.Background(), backend))

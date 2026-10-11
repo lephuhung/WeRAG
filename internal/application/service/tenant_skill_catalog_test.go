@@ -18,7 +18,7 @@ import (
 func TestListCatalogGroupsInstallsByDefinition(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:catalog-list?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&types.Tenant{},
 		&types.TenantSkillEntity{}, &types.TenantSkillCatalogEntity{},
 		&types.TenantSkillSnapshotEntity{}, &types.TenantUserEnvVar{},
 	))
@@ -48,7 +48,7 @@ func TestListCatalogGroupsInstallsByDefinition(t *testing.T) {
 func TestResolveCatalogFindsLegacySkillID(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:catalog-legacy?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&types.Tenant{},
 		&types.TenantSkillEntity{}, &types.TenantSkillCatalogEntity{},
 		&types.TenantSkillSnapshotEntity{}, &types.TenantUserEnvVar{},
 	))
@@ -72,7 +72,7 @@ func catalogTestRepo(t *testing.T, dsn string) repository.TenantSkillRepository 
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	require.NoError(t, db.AutoMigrate(&types.Tenant{},
 		&types.TenantSkillEntity{}, &types.TenantSkillCatalogEntity{},
 		&types.TenantSkillSnapshotEntity{}, &types.TenantUserEnvVar{},
 	))

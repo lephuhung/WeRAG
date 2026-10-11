@@ -153,6 +153,7 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	s.applyProfileDefaultModels(ctx, kb)
 	if err := s.validateKBVisibility(ctx, kb); err != nil {
 		return nil, err
 	}
@@ -1770,6 +1771,32 @@ func (s *knowledgeBaseService) deleteDataSourcesForKnowledgeBase(ctx context.Con
 		logger.Infof(ctx, "Data source deleted with knowledge base: ds=%s kb=%s", ds.ID, kbID)
 	}
 	return dataSourceIDs
+}
+
+// applyProfileDefaultModels fills a new knowledge base's embedding and
+// summary models from the configuration profile its tenant inherits from.
+// A knowledge base created from the UI carries no models, and ingestion
+// cannot embed without one; the SuperAdmin picks them once for everyone.
+// Lookup failures leave the fields empty, as before.
+func (s *knowledgeBaseService) applyProfileDefaultModels(ctx context.Context, kb *types.KnowledgeBase) {
+	if s.tenantRepo == nil || (kb.EmbeddingModelID != "" && kb.SummaryModelID != "") {
+		return
+	}
+	tenant, err := s.tenantRepo.GetTenantByID(ctx, kb.TenantID)
+	if err != nil || tenant == nil || tenant.ConfigProfileID == nil {
+		return
+	}
+	profile, err := s.tenantRepo.GetTenantByID(ctx, *tenant.ConfigProfileID)
+	if err != nil || profile == nil {
+		logger.Warnf(ctx, "[kb.create] cannot load configuration profile %d: %v", *tenant.ConfigProfileID, err)
+		return
+	}
+	if kb.EmbeddingModelID == "" {
+		kb.EmbeddingModelID = profile.DefaultEmbeddingModelID
+	}
+	if kb.SummaryModelID == "" {
+		kb.SummaryModelID = profile.DefaultSummaryModelID
+	}
 }
 
 // SetEmbeddingModel sets the embedding model for a knowledge base

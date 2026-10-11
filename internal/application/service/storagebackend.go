@@ -90,18 +90,19 @@ func (s *StorageBackendService) Update(ctx context.Context, incoming *types.Stor
 	}
 	if incoming.Status == types.StorageBackendStatusDisabled && existing.Status != types.StorageBackendStatusDisabled {
 		var references int64
-		if err := s.db.WithContext(ctx).Model(&types.Tenant{}).Where("id = ? AND default_storage_backend_id = ?", incoming.TenantID, incoming.ID).Count(&references).Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&types.Tenant{}).Where(tenantsOnProfileSQL+" AND default_storage_backend_id = ?", incoming.TenantID, incoming.TenantID, incoming.ID).Count(&references).Error; err != nil {
 			return err
 		}
 		if references == 0 {
-			if err := s.db.WithContext(ctx).Model(&types.KnowledgeBase{}).Where("tenant_id = ? AND storage_backend_id = ?", incoming.TenantID, incoming.ID).Count(&references).Error; err != nil {
+			if err := s.db.WithContext(ctx).Model(&types.KnowledgeBase{}).Where(rowsOnProfileSQL+" AND storage_backend_id = ?", incoming.TenantID, incoming.TenantID, incoming.ID).Count(&references).Error; err != nil {
 				return err
 			}
 		}
 		if references == 0 {
 			if err := s.db.WithContext(ctx).Model(&types.StoredResource{}).
 				Where(
-					"tenant_id = ? AND storage_backend_id = ? AND state = ?",
+					rowsOnProfileSQL+" AND storage_backend_id = ? AND state = ?",
+					incoming.TenantID,
 					incoming.TenantID,
 					incoming.ID,
 					types.ResourceStateActive,
@@ -144,14 +145,14 @@ func (s *StorageBackendService) Delete(ctx context.Context, tenantID uint64, id 
 			return apperrors.NewBadRequestError("environment storage backend is read-only")
 		}
 		var defaultCount int64
-		if err := tx.Model(&types.Tenant{}).Where("id = ? AND default_storage_backend_id = ?", tenantID, id).Count(&defaultCount).Error; err != nil {
+		if err := tx.Model(&types.Tenant{}).Where(tenantsOnProfileSQL+" AND default_storage_backend_id = ?", tenantID, tenantID, id).Count(&defaultCount).Error; err != nil {
 			return err
 		}
 		if defaultCount > 0 {
 			return apperrors.NewBadRequestError("default storage backend cannot be deleted")
 		}
 		var kbCount int64
-		if err := tx.Model(&types.KnowledgeBase{}).Where("tenant_id = ? AND storage_backend_id = ?", tenantID, id).Count(&kbCount).Error; err != nil {
+		if err := tx.Model(&types.KnowledgeBase{}).Where(rowsOnProfileSQL+" AND storage_backend_id = ?", tenantID, tenantID, id).Count(&kbCount).Error; err != nil {
 			return err
 		}
 		if kbCount > 0 {
@@ -159,7 +160,7 @@ func (s *StorageBackendService) Delete(ctx context.Context, tenantID uint64, id 
 		}
 		var resourceCount int64
 		if err := tx.Model(&types.StoredResource{}).
-			Where("tenant_id = ? AND storage_backend_id = ? AND state = ?", tenantID, id, types.ResourceStateActive).
+			Where(rowsOnProfileSQL+" AND storage_backend_id = ? AND state = ?", tenantID, tenantID, id, types.ResourceStateActive).
 			Count(&resourceCount).Error; err != nil {
 			return err
 		}
@@ -290,6 +291,49 @@ func (s *StorageBackendService) hydrateTenantStorage(ctx context.Context, tenant
 	return &out
 }
 
+// Usage guards for a backend owned by a configuration profile must count
+// every workspace that inherits from the profile; for a plain workspace the
+// subquery is empty. Both take the backend's tenant id twice.
+const (
+	rowsOnProfileSQL    = "(tenant_id = ? OR tenant_id IN (SELECT id FROM tenants WHERE config_profile_id = ?))"
+	tenantsOnProfileSQL = "(id = ? OR config_profile_id = ?)"
+)
+
+// defaultBackendID picks the backend new files go to when the caller names
+// none. A workspace that kept its env-derived legacy default follows the
+// default the SuperAdmin set on its configuration profile; a workspace whose
+// own default is a real backend keeps it. Existing knowledge bases are bound
+// to a backend explicitly and are not affected.
+func (s *StorageBackendService) defaultBackendID(ctx context.Context, tenant *types.Tenant) string {
+	own := storageBackendID(tenant.DefaultStorageBackendID)
+	if s.db == nil {
+		return own
+	}
+	if own != "" {
+		backend, err := s.repo.GetByID(ctx, tenant.ID, own)
+		if err != nil || backend == nil || !backend.LegacyAlias {
+			return own
+		}
+	}
+	var profileDefault struct {
+		ID *string `gorm:"column:default_storage_backend_id"`
+	}
+	err := s.db.WithContext(ctx).Model(&types.Tenant{}).
+		Select("p.default_storage_backend_id").
+		Joins("JOIN tenants p ON p.id = tenants.config_profile_id AND p.deleted_at IS NULL").
+		Where("tenants.id = ?", tenant.ID).
+		Take(&profileDefault).Error
+	candidate := storageBackendID(profileDefault.ID)
+	if err != nil || candidate == "" {
+		return own
+	}
+	backend, err := s.repo.GetByID(ctx, tenant.ID, candidate)
+	if err != nil || backend == nil || backend.LegacyAlias || backend.Status != types.StorageBackendStatusActive {
+		return own
+	}
+	return candidate
+}
+
 func (s *StorageBackendService) ResolveBackend(ctx context.Context, tenant *types.Tenant, backendID, provider string) (*types.StorageBackend, error) {
 	if tenant == nil {
 		return nil, fmt.Errorf("workspace context missing")
@@ -304,7 +348,7 @@ func (s *StorageBackendService) ResolveBackend(ctx context.Context, tenant *type
 		}
 	}
 	if backendID == "" {
-		backendID = storageBackendID(tenant.DefaultStorageBackendID)
+		backendID = s.defaultBackendID(ctx, tenant)
 	}
 	if backendID != "" {
 		backend, err := s.repo.GetByID(ctx, tenant.ID, backendID)

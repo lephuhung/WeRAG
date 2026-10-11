@@ -25,12 +25,13 @@ func (r *mcpServiceRepository) Create(ctx context.Context, service *types.MCPSer
 }
 
 // GetByID retrieves an MCP service by ID and tenant ID
-// Builtin MCP services are visible to all tenants
+// Builtin MCP services are visible to all tenants, and a tenant also sees
+// the services of the configuration profile it inherits from.
 func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.MCPService, error) {
 	var service types.MCPService
 	err := r.db.WithContext(ctx).
 		Where("id = ?", id).
-		Where("tenant_id = ? OR is_builtin = true", tenantID).
+		Where("("+configScopeSQL("tenant_id")+" OR is_builtin = true)", configScopeArgs(tenantID)...).
 		First(&service).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -47,7 +48,7 @@ func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id 
 func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? OR is_builtin = true", tenantID).
+		Where("("+configScopeSQL("tenant_id")+" OR is_builtin = true)", configScopeArgs(tenantID)...).
 		Order("created_at DESC").
 		Find(&services).Error
 	if err != nil {
@@ -62,7 +63,7 @@ func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*ty
 func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("(tenant_id = ? OR is_builtin = true) AND enabled = ?", tenantID, true).
+		Where("("+configScopeSQL("tenant_id")+" OR is_builtin = true) AND enabled = ?", append(configScopeArgs(tenantID), true)...).
 		Order("created_at DESC").
 		Find(&services).Error
 	if err != nil {
@@ -85,7 +86,7 @@ func (r *mcpServiceRepository) ListByIDs(
 
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("(tenant_id = ? OR is_builtin = true) AND id IN ?", tenantID, ids).
+		Where("("+configScopeSQL("tenant_id")+" OR is_builtin = true) AND id IN ?", append(configScopeArgs(tenantID), ids)...).
 		Find(&services).Error
 	if err != nil {
 		return nil, err

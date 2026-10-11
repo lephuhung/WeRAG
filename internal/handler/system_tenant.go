@@ -242,7 +242,8 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 		c.Error(apperrors.NewInternalServerError("membership service unavailable"))
 		return
 	}
-	if tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID); err != nil || tenant == nil {
+	// A configuration profile has no members.
+	if tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID); err != nil || tenant == nil || tenant.IsConfigProfile() {
 		c.Error(apperrors.NewNotFoundError("workspace not found"))
 		return
 	}

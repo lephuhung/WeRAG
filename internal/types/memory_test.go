@@ -101,6 +101,10 @@ func TestDetectExplicitMemory(t *testing.T) {
 		{"chinese helper", "帮我记住，接口超时统一设 30 秒", "接口超时统一设 30 秒", true},
 		{"english", "Remember that I prefer short answers", "I prefer short answers", true},
 		{"english note", "note that our staging cluster is in Frankfurt", "our staging cluster is in Frankfurt", true},
+		{"vietnamese", "Hãy nhớ rằng tôi làm ở phòng Kế hoạch", "tôi làm ở phòng Kế hoạch", true},
+		{"vietnamese colon", "hãy ghi nhớ: báo cáo tuần nộp thứ Sáu", "báo cáo tuần nộp thứ Sáu", true},
+		{"vietnamese polite", "Bạn hãy nhớ là tôi thích câu trả lời ngắn", "tôi thích câu trả lời ngắn", true},
+		{"vietnamese question", "Bạn còn nhớ câu hỏi lần trước không?", "", false},
 		{"not a directive", "你还记得我上次问的问题吗", "", false},
 		{"bare directive", "记住", "", false},
 		{"empty", "   ", "", false},
@@ -249,5 +253,26 @@ func TestMemoryCannotBreakOutOfEnvelope(t *testing.T) {
 	if !strings.Contains(got, "Remembered preferences can inform relevant defaults") ||
 		!strings.Contains(got, "A &amp; B") {
 		t.Fatalf("missing preference semantics or escaping: %s", got)
+	}
+}
+
+func TestDetectForgetMemory(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+		ok    bool
+	}{
+		{"Hãy quên rằng tôi làm ở phòng Kế hoạch", "tôi làm ở phòng Kế hoạch", true},
+		{"hãy quên đi chuyện tôi thích câu trả lời ngắn", "chuyện tôi thích câu trả lời ngắn", true},
+		{"Quên điều tôi ở phòng Kế hoạch đi", "tôi ở phòng Kế hoạch", true},
+		{"Forget that I prefer short answers.", "I prefer short answers", true},
+		{"Tôi hay quên mật khẩu", "", false},
+		{"hãy quên", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := DetectForgetMemory(tc.query)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("DetectForgetMemory(%q) = %q, %v; want %q, %v", tc.query, got, ok, tc.want, tc.ok)
+		}
 	}
 }

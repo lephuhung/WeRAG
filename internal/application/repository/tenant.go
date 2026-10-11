@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -108,13 +109,62 @@ func (r *tenantRepository) GetTenantsByIDs(ctx context.Context, ids []uint64) (m
 	return out, nil
 }
 
-// ListTenants lists all tenants
+// ListTenants lists all workspaces. Configuration profiles are hidden.
 func (r *tenantRepository) ListTenants(ctx context.Context) ([]*types.Tenant, error) {
 	var tenants []*types.Tenant
-	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&tenants).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("kind = ?", types.TenantKindWorkspace).
+		Order("created_at DESC").Find(&tenants).Error; err != nil {
 		return nil, err
 	}
 	return tenants, nil
+}
+
+// profileInheritedColumns are the tenant-row settings a workspace takes from
+// its configuration profile. Identity, quota, storage bindings, chat history
+// (which points at a per-workspace knowledge base) and API principals stay
+// per workspace.
+var profileInheritedColumns = []string{
+	"retriever_engines",
+	"web_search_config",
+	"parser_engine_config",
+	"retrieval_config",
+	"credentials",
+}
+
+// SyncProfileSettings copies the profile's inherited columns onto the
+// workspaces on it in one statement, so they never disagree half-way.
+// Workspaces keep reading their own row; this is what makes a SuperAdmin's
+// save reach them, including background jobs that reload the tenant.
+func (r *tenantRepository) SyncProfileSettings(ctx context.Context, profileID, workspaceID uint64) (int64, error) {
+	sets := make([]string, 0, len(profileInheritedColumns))
+	args := make([]any, 0, len(profileInheritedColumns)+2)
+	for _, col := range profileInheritedColumns {
+		sets = append(sets, col+" = (SELECT p."+col+" FROM tenants p WHERE p.id = ?)")
+		args = append(args, profileID)
+	}
+	sql := "UPDATE tenants SET " + strings.Join(sets, ", ") +
+		" WHERE config_profile_id = ? AND kind = ? AND deleted_at IS NULL"
+	args = append(args, profileID, types.TenantKindWorkspace)
+	if workspaceID != 0 {
+		sql += " AND id = ?"
+		args = append(args, workspaceID)
+	}
+	res := r.db.WithContext(ctx).Exec(sql, args...)
+	return res.RowsAffected, res.Error
+}
+
+// GetDefaultConfigProfile returns the oldest live configuration profile.
+func (r *tenantRepository) GetDefaultConfigProfile(ctx context.Context) (*types.Tenant, error) {
+	var profile types.Tenant
+	err := r.db.WithContext(ctx).Where("kind = ?", types.TenantKindConfigProfile).
+		Order("id ASC").First(&profile).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
 }
 
 // SearchTenants searches tenants with pagination and filters
@@ -122,7 +172,8 @@ func (r *tenantRepository) SearchTenants(ctx context.Context, keyword string, te
 	var tenants []*types.Tenant
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&types.Tenant{})
+	// Configuration profiles are not units: never searchable.
+	query := r.db.WithContext(ctx).Model(&types.Tenant{}).Where("kind = ?", types.TenantKindWorkspace)
 
 	// Build search conditions
 	if tenantID > 0 && keyword != "" {

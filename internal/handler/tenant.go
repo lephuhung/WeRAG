@@ -1391,7 +1391,7 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		// Parser engines are provider infrastructure (endpoints, API
 		// keys, model parameters) — same authority axis as the model
 		// catalog: system admins and platform keys only.
-		if !canManageParserEngineConfig(ctx) {
+		if !canManagePlatformConfig(ctx) {
 			c.Error(errors.NewForbiddenError("parser engine configuration requires system administrator access"))
 			return
 		}
@@ -1428,12 +1428,13 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 	}
 }
 
-// canManageParserEngineConfig reports whether the caller may change
-// parser/provider engine configuration (endpoints, credentials, model
-// parameters). It mirrors the model-catalog authority axis: system
-// admins on JWT, or platform API keys carrying system_models_manage.
-// Tenant roles — including Admin — never qualify.
-func canManageParserEngineConfig(ctx context.Context) bool {
+// canManagePlatformConfig reports whether the caller may change
+// configuration: parser/provider engines, knowledge-base models and parse
+// settings, and every other setting tenants inherit from the platform. It
+// mirrors the model-catalog authority axis: system admins on JWT, or
+// platform API keys carrying system_models_manage. Tenant roles —
+// including Admin — never qualify.
+func canManagePlatformConfig(ctx context.Context) bool {
 	if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok {
 		return scope.IsPlatform() && scope.HasCapability(types.APIKeyCapabilitySystemModelsManage)
 	}
@@ -1689,6 +1690,19 @@ func (h *TenantHandler) GetTenantChatHistoryConfig(c *gin.Context) {
 		return
 	}
 	data := tenant.ChatHistoryConfig
+	// The switch and the model come from the configuration profile; the
+	// workspace row only records its own knowledge base.
+	if tenant.ConfigProfileID != nil {
+		if profile, err := h.service.GetTenantByID(ctx, *tenant.ConfigProfileID); err == nil &&
+			profile != nil && profile.ChatHistoryConfig != nil {
+			merged := *profile.ChatHistoryConfig
+			merged.KnowledgeBaseID = ""
+			if own := tenant.ChatHistoryConfig; own != nil && own.EmbeddingModelID == merged.EmbeddingModelID {
+				merged.KnowledgeBaseID = own.KnowledgeBaseID
+			}
+			data = &merged
+		}
+	}
 	if data == nil {
 		data = &types.ChatHistoryConfig{}
 	}
@@ -1723,6 +1737,31 @@ func (h *TenantHandler) updateTenantChatHistoryConfigInternal(c *gin.Context) {
 	// this id via GetModelByID and would fail silently for every message.
 	if err := h.validateConfigModelID(ctx, "embedding_model_id", req.EmbeddingModelID, types.ModelTypeEmbedding); err != nil {
 		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	// On a configuration profile the setting is only the switch and the
+	// model. Each workspace creates its own hidden knowledge base the first
+	// time it indexes a message (messageService.chatHistoryBinding).
+	if tenant.IsConfigProfile() {
+		tenant.ChatHistoryConfig = &types.ChatHistoryConfig{
+			Enabled:          req.Enabled,
+			EmbeddingModelID: req.EmbeddingModelID,
+		}
+		if _, err := h.service.UpdateTenant(ctx, tenant); err != nil {
+			if appErr, ok := errors.IsAppError(err); ok {
+				c.Error(appErr)
+			} else {
+				logger.ErrorWithFields(ctx, err, nil)
+				c.Error(errors.NewInternalServerError("Failed to update chat history config").WithDetails(err.Error()))
+			}
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    tenant.ChatHistoryConfig,
+			"message": "Chat history configuration updated successfully",
+		})
 		return
 	}
 
@@ -1869,10 +1908,13 @@ func (h *TenantHandler) GetTenantMemoryConfig(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Workspace is empty"))
 		return
 	}
-	data := tenant.MemoryConfig
+	data := h.platformMemoryConfig(ctx)
 	if data == nil {
-		// Unset means the product default: memory is on for the workspace.
-		// An explicit admin save — including enabled=false — wins.
+		data = tenant.MemoryConfig
+	}
+	if data == nil {
+		// Unset means the product default: memory is on everywhere.
+		// An explicit SuperAdmin save — including enabled=false — wins.
 		data = types.DefaultMemoryConfig()
 	}
 	data.Normalize()
@@ -1882,7 +1924,7 @@ func (h *TenantHandler) GetTenantMemoryConfig(c *gin.Context) {
 	})
 }
 
-// updateTenantMemoryConfigInternal updates the workspace memory configuration.
+// updateTenantMemoryConfigInternal updates the platform-wide memory configuration.
 func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -1949,9 +1991,16 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 		return
 	}
 
-	tenant.MemoryConfig = &cfg
-	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
-	if err != nil {
+	// Memory is a platform setting: the save lands in system_settings and
+	// every workspace inherits it (the route is SystemAdmin-only).
+	if h.systemSettingSvc == nil {
+		c.Error(errors.NewInternalServerError("System settings are unavailable"))
+		return
+	}
+	var doc map[string]any
+	encoded, _ := json.Marshal(cfg)
+	_ = json.Unmarshal(encoded, &doc)
+	if _, err := h.systemSettingSvc.Update(ctx, types.MemoryConfigSettingKey, doc); err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 		} else {
@@ -1962,9 +2011,27 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    updatedTenant.MemoryConfig,
+		"data":    &cfg,
 		"message": "Memory configuration updated successfully",
 	})
+}
+
+// platformMemoryConfig returns the SuperAdmin's platform-wide memory
+// configuration, or nil when none has been saved yet.
+func (h *TenantHandler) platformMemoryConfig(ctx context.Context) *types.MemoryConfig {
+	if h.systemSettingSvc == nil {
+		return nil
+	}
+	raw, found := h.systemSettingSvc.GetJSON(ctx, types.MemoryConfigSettingKey)
+	if !found || len(raw) == 0 {
+		return nil
+	}
+	cfg, err := types.ParseMemoryConfig(raw)
+	if err != nil {
+		logger.Warnf(ctx, "[memory] cannot decode %s: %v", types.MemoryConfigSettingKey, err)
+		return nil
+	}
+	return cfg
 }
 
 // validateConfigModelID resolves a *_model_id config field against the models

@@ -18,6 +18,7 @@ func newSandboxConfigTestRepo(t *testing.T) (TenantSandboxConfigRepository, *gor
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.TenantSandboxConfigEntity{}))
+	require.NoError(t, db.Exec(tenantsScopeTestDDL).Error)
 	// AutoMigrate cannot express the partial unique index, so add it here to
 	// match the production migration.
 	require.NoError(t, db.Exec(

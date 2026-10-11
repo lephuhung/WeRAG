@@ -19,13 +19,13 @@ func RegisterMCPEndpointRoutes(r *gin.RouterGroup, h *handler.MCPEndpointHandler
 		return
 	}
 	grp := g.apiKeyGroup(r.Group("/mcp-endpoints"), apiKeyManageChannels(apiKeyFullAccess()))
-	grp.GET("", g.Admin(), h.ListMCPEndpoints)
-	grp.GET("/tools", g.Admin(), h.ListToolCatalog)
-	grp.POST("", g.Admin(), h.CreateMCPEndpoint)
-	grp.GET("/:endpoint_id", g.Admin(), h.GetMCPEndpoint)
-	grp.PUT("/:endpoint_id", g.Admin(), h.UpdateMCPEndpoint)
-	grp.DELETE("/:endpoint_id", g.Admin(), h.DeleteMCPEndpoint)
-	grp.POST("/:endpoint_id/rotate-token", g.Admin(), h.RotateMCPEndpointToken)
+	grp.GET("", g.SystemAdmin(), h.ListMCPEndpoints)
+	grp.GET("/tools", g.SystemAdmin(), h.ListToolCatalog)
+	grp.POST("", g.SystemAdmin(), h.CreateMCPEndpoint)
+	grp.GET("/:endpoint_id", g.SystemAdmin(), h.GetMCPEndpoint)
+	grp.PUT("/:endpoint_id", g.SystemAdmin(), h.UpdateMCPEndpoint)
+	grp.DELETE("/:endpoint_id", g.SystemAdmin(), h.DeleteMCPEndpoint)
+	grp.POST("/:endpoint_id/rotate-token", g.SystemAdmin(), h.RotateMCPEndpointToken)
 }
 
 // RegisterMCPServerRoutes mounts the public MCP server surface at

@@ -27,28 +27,65 @@ func (r *customAgentRepository) CreateAgent(ctx context.Context, agent *types.Cu
 	return r.db.WithContext(ctx).Create(agent).Error
 }
 
-// GetAgentByID gets an agent by id and tenant
+// GetAgentByID gets an agent by id for a tenant. The tenant's own row wins;
+// otherwise the row of the configuration profile the tenant inherits from is
+// returned, rebound to the tenant (see inheritAgent).
 func (r *customAgentRepository) GetAgentByID(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error) {
-	var agent types.CustomAgent
-	if err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&agent).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCustomAgentNotFound
-		}
+	var rows []*types.CustomAgent
+	if err := r.db.WithContext(ctx).
+		Where("id = ?", id).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return &agent, nil
+	var picked *types.CustomAgent
+	for _, row := range rows {
+		if picked == nil || row.TenantID == tenantID {
+			picked = row
+		}
+	}
+	if picked == nil {
+		return nil, ErrCustomAgentNotFound
+	}
+	return inheritAgent(picked, tenantID), nil
 }
 
-// ListAgentsByTenantID lists all agents for a specific tenant
+// ListAgentsByTenantID lists the agents a tenant sees: its own rows plus the
+// rows of its configuration profile that it has not overridden.
 func (r *customAgentRepository) ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error) {
-	var agents []*types.CustomAgent
+	var rows []*types.CustomAgent
 	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		Order("created_at DESC").
-		Find(&agents).Error; err != nil {
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	own := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row.TenantID == tenantID {
+			own[row.ID] = true
+		}
+	}
+	agents := make([]*types.CustomAgent, 0, len(rows))
+	for _, row := range rows {
+		if row.TenantID != tenantID && own[row.ID] {
+			continue
+		}
+		agents = append(agents, inheritAgent(row, tenantID))
+	}
 	return agents, nil
+}
+
+// inheritAgent rebinds an agent inherited from a configuration profile to the
+// tenant using it. Downstream code reads agent.TenantID as the tenant the
+// agent runs in — it picks the retrieval tenant from it and treats a mismatch
+// with the session as a cross-tenant shared agent — so an inherited agent
+// must look like the tenant's own.
+func inheritAgent(agent *types.CustomAgent, tenantID uint64) *types.CustomAgent {
+	if agent != nil && agent.TenantID != tenantID {
+		agent.TenantID = tenantID
+	}
+	return agent
 }
 
 // UpdateAgent updates an agent
@@ -68,7 +105,7 @@ func (r *customAgentRepository) CountByModelID(
 	var count int64
 	query := r.db.WithContext(ctx).
 		Model(&types.CustomAgent{}).
-		Where("tenant_id = ?", tenantID)
+		Where(configUsersSQL("tenant_id"), configScopeArgs(tenantID)...)
 	query = scopeCustomAgentsByModelID(query, modelID)
 	err := query.Count(&count).Error
 	return count, err
@@ -83,7 +120,7 @@ func (r *customAgentRepository) ListModelUsages(
 	query := r.db.WithContext(ctx).
 		Model(&types.CustomAgent{}).
 		Select("id", "name", "config").
-		Where("tenant_id = ?", tenantID)
+		Where(configUsersSQL("tenant_id"), configScopeArgs(tenantID)...)
 	query = scopeCustomAgentsByModelID(query, modelID)
 	if err := query.Order("name ASC, id ASC").Limit(types.ModelUsageListLimit).Find(&rows).Error; err != nil {
 		return nil, err
@@ -115,7 +152,7 @@ func (r *customAgentRepository) CountBySandboxConfigID(
 	var count int64
 	query := r.db.WithContext(ctx).
 		Model(&types.CustomAgent{}).
-		Where("tenant_id = ?", tenantID)
+		Where(configUsersSQL("tenant_id"), configScopeArgs(tenantID)...)
 	query = scopeCustomAgentsBySandboxConfigID(query, configID)
 	err := query.Count(&count).Error
 	return count, err
@@ -132,7 +169,7 @@ func (r *customAgentRepository) ListNamesBySandboxConfigID(
 	var names []string
 	query := r.db.WithContext(ctx).
 		Model(&types.CustomAgent{}).
-		Where("tenant_id = ?", tenantID)
+		Where(configUsersSQL("tenant_id"), configScopeArgs(tenantID)...)
 	query = scopeCustomAgentsBySandboxConfigID(query, configID)
 	err := query.Order("name ASC").Pluck("name", &names).Error
 	return names, err

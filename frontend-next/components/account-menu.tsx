@@ -33,7 +33,7 @@ export function AccountMenu() {
   const pathname = usePathname();
   const { t, locale, setLocale } = useT();
   const auth = useAuth();
-  const { role, isSystemAdmin, isTenantAdmin } = useTenantRole();
+  const { role, isSystemAdmin } = useTenantRole();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("general");
@@ -72,7 +72,7 @@ export function AccountMenu() {
   /* Pending count: on mount, every minute, and whenever the abbreviations
    * manager mutates (it dispatches weknora:abbreviations-changed). */
   useEffect(() => {
-    if (!isTenantAdmin) return;
+    if (!isSystemAdmin) return;
     void refreshPending();
     const timer = window.setInterval(() => void refreshPending(), PENDING_POLL_MS);
     const onChanged = () => void refreshPending();
@@ -81,7 +81,7 @@ export function AccountMenu() {
       window.clearInterval(timer);
       window.removeEventListener("weknora:abbreviations-changed", onChanged);
     };
-  }, [isTenantAdmin, refreshPending]);
+  }, [isSystemAdmin, refreshPending]);
 
   useEffect(() => setOpen(false), [pathname]);
 
@@ -159,7 +159,7 @@ export function AccountMenu() {
             {roleLabel}
           </span>
         </span>
-        {isTenantAdmin && pending > 0 && (
+        {isSystemAdmin && pending > 0 && (
           <span className="badge-pill shrink-0 border border-amber-500/20 bg-amber-500/10 text-amber-600">
             {pending}
           </span>
@@ -190,7 +190,7 @@ export function AccountMenu() {
           </div>
           <div className="my-1 border-t border-hairline" />
 
-          {isTenantAdmin && (
+          {isSystemAdmin && (
             <button
               type="button"
               className="nav-item"

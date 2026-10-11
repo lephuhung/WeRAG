@@ -24,7 +24,7 @@ func TestMCPMetadataRefreshAndOfflineEditing(t *testing.T) {
 	t.Cleanup(utils.ResetSSRFWhitelistForTest)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPService{}, &types.MCPMetadata{}))
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.MCPService{}, &types.MCPMetadata{}))
 	repo := repository.NewMCPServiceRepository(db)
 	manager := mcp.NewMCPManager(nil)
 	t.Cleanup(manager.Shutdown)

@@ -96,6 +96,16 @@ type Tenant struct {
 	RetrieverEngines RetrieverEngines `yaml:"retriever_engines"   json:"retriever_engines"   gorm:"type:json"`
 	// Business
 	Business string `yaml:"business"            json:"business"`
+	// Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile
+	// for a hidden configuration-only row that workspaces inherit from.
+	Kind string `yaml:"kind"                json:"kind"                gorm:"default:'workspace'"`
+	// ConfigProfileID is the configuration profile a workspace inherits its
+	// models, agents, engines and settings from. Nil on profiles.
+	ConfigProfileID *uint64 `yaml:"config_profile_id"   json:"config_profile_id,omitempty"`
+	// DefaultEmbeddingModelID / DefaultSummaryModelID are set on a profile:
+	// the models a new knowledge base gets when created without them.
+	DefaultEmbeddingModelID string `yaml:"default_embedding_model_id" json:"default_embedding_model_id,omitempty"`
+	DefaultSummaryModelID   string `yaml:"default_summary_model_id"   json:"default_summary_model_id,omitempty"`
 	// Storage quota (Bytes), default is 10GB, including vector, original file, text, index, etc.
 	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
@@ -126,6 +136,21 @@ type Tenant struct {
 	UpdatedAt time.Time `yaml:"updated_at"          json:"updated_at"`
 	// Deletion time
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at"          json:"deleted_at"          gorm:"index"`
+}
+
+// Tenant kinds.
+const (
+	// TenantKindWorkspace is a real unit: members, knowledge bases, sessions.
+	TenantKindWorkspace = "workspace"
+	// TenantKindConfigProfile is a configuration profile: a hidden tenant row
+	// that only owns shared configuration. It has no members or data and is
+	// never listed, joined or switched to.
+	TenantKindConfigProfile = "config_profile"
+)
+
+// IsConfigProfile reports whether the tenant row is a configuration profile.
+func (t *Tenant) IsConfigProfile() bool {
+	return t != nil && t.Kind == TenantKindConfigProfile
 }
 
 // RetrieverEngines represents the retriever engines for a tenant

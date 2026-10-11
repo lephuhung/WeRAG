@@ -39,12 +39,10 @@ export function AbbreviationsSettings() {
   const { t } = useT();
   const auth = useAuth();
 
-  const currentRole =
-    auth.memberships.find(
-      (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
-    )?.role ?? "";
   const isSystemAdmin = auth.user?.is_system_admin === true;
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  /* Approving, editing and deleting entries is SuperAdmin work; everyone
+   * else can browse the dictionary and suggest new entries. */
+  const canManage = isSystemAdmin;
 
   const [rows, setRows] = useState<Abbreviation[]>([]);
   const [total, setTotal] = useState(0);

@@ -23,50 +23,73 @@ func NewMCPToolApprovalRepository(db *gorm.DB) interfaces.MCPToolApprovalReposit
 	return &MCPToolApprovalRepository{db: db}
 }
 
-// ListByService returns all stored approval rows for an MCP service (may be empty).
+// ListByService returns the approval rows in force for an MCP service in a
+// tenant: its own rows, plus the configuration profile's rows for tools the
+// tenant has no row for (may be empty).
 func (r *MCPToolApprovalRepository) ListByService(ctx context.Context, tenantID uint64, serviceID string) ([]*types.MCPToolApproval, error) {
 	var rows []*types.MCPToolApproval
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND service_id = ?", tenantID, serviceID).
+		Where("service_id = ?", serviceID).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		Order("tool_name ASC").
 		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("list mcp tool approvals: %w", err)
 	}
-	return rows, nil
+	own := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row.TenantID == tenantID {
+			own[row.ToolName] = true
+		}
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if row.TenantID != tenantID && own[row.ToolName] {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
-// IsRequired returns true when a row exists with require_approval = true.
-func (r *MCPToolApprovalRepository) IsRequired(ctx context.Context, tenantID uint64, serviceID, toolName string) (bool, error) {
-	var row types.MCPToolApproval
+// policyRow returns the policy row in force for one tool: the tenant's own,
+// else its configuration profile's (the SuperAdmin sets policy there), or
+// nil when neither has one.
+func (r *MCPToolApprovalRepository) policyRow(ctx context.Context, tenantID uint64, serviceID, toolName string) (*types.MCPToolApproval, error) {
+	var rows []*types.MCPToolApproval
 	err := r.db.WithContext(ctx).
-		Select("require_approval").
-		Where("tenant_id = ? AND service_id = ? AND tool_name = ?", tenantID, serviceID, toolName).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
+		Where("service_id = ? AND tool_name = ?", serviceID, toolName).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
 	}
+	var picked *types.MCPToolApproval
+	for _, row := range rows {
+		if picked == nil || row.TenantID == tenantID {
+			picked = row
+		}
+	}
+	return picked, nil
+}
+
+// IsRequired returns true when the policy in force has require_approval = true.
+func (r *MCPToolApprovalRepository) IsRequired(ctx context.Context, tenantID uint64, serviceID, toolName string) (bool, error) {
+	row, err := r.policyRow(ctx, tenantID, serviceID, toolName)
 	if err != nil {
 		return false, fmt.Errorf("get mcp tool approval: %w", err)
 	}
-	return row.RequireApproval, nil
+	return row != nil && row.RequireApproval, nil
 }
 
 // IsEnabled returns true when a tool has no stored policy row. This preserves
 // the historical behaviour for tools discovered before per-tool settings.
 func (r *MCPToolApprovalRepository) IsEnabled(ctx context.Context, tenantID uint64, serviceID, toolName string) (bool, error) {
-	var row types.MCPToolApproval
-	err := r.db.WithContext(ctx).
-		Select("enabled").
-		Where("tenant_id = ? AND service_id = ? AND tool_name = ?", tenantID, serviceID, toolName).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return true, nil
-	}
+	row, err := r.policyRow(ctx, tenantID, serviceID, toolName)
 	if err != nil {
 		return false, fmt.Errorf("get mcp tool enabled state: %w", err)
 	}
-	return row.Enabled, nil
+	return row == nil || row.Enabled, nil
 }
 
 // UpsertPolicy creates or updates only the supplied policy columns.

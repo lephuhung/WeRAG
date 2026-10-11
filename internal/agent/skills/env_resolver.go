@@ -35,15 +35,14 @@ type MissingSkillEnvError struct {
 func (e *MissingSkillEnvError) Error() string {
 	// English, like every other error in this codebase: the agent relays this
 	// to the user and translates it into whatever language they are speaking.
-	// Naming the skill and passing a user-provided value in shell_exec's env
-	// runs the command and records it after success for the next run. Pointing
-	// at the settings page alone would strand IM users, who have no such page.
+	// Only the system administrator configures skills, sandbox values
+	// included, so the user is pointed there rather than asked for secrets.
 	return fmt.Sprintf(
-		"skill %q needs the environment variable(s) %s, which nobody has set yet. "+
-			"Ask the user for them, then run the skill through shell_exec with "+
-			"skill_name=%q and the values in env — they are stored for that user "+
-			"afterwards. They can also be set under Settings → Sandbox secrets.",
-		e.SkillName, strings.Join(e.Names, ", "), e.SkillName,
+		"skill %q needs the environment variable(s) %s, which the system administrator "+
+			"has not set yet. Tell the user to ask the system administrator to set them "+
+			"on the skill's sandbox configuration (Sandbox secrets); do not ask the user "+
+			"for the values.",
+		e.SkillName, strings.Join(e.Names, ", "),
 	)
 }
 

@@ -24,12 +24,13 @@ func (r *webSearchProviderRepository) Create(ctx context.Context, provider *type
 	return r.db.WithContext(ctx).Create(provider).Error
 }
 
-// GetByID retrieves a web search provider by ID within a tenant scope
+// GetByID retrieves a web search provider by ID among the tenant's own
+// providers and those of the configuration profile it inherits from.
 func (r *webSearchProviderRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.WebSearchProviderEntity, error) {
 	var provider types.WebSearchProviderEntity
-	if err := r.db.WithContext(ctx).Where(
-		"id = ? AND tenant_id = ?", id, tenantID,
-	).First(&provider).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -38,26 +39,32 @@ func (r *webSearchProviderRepository) GetByID(ctx context.Context, tenantID uint
 	return &provider, nil
 }
 
-// GetDefault retrieves the default provider (is_default=true) for a tenant, or nil if none.
+// GetDefault retrieves the default provider (is_default=true) for a tenant:
+// its own default if it has one, otherwise its configuration profile's.
+// Returns nil if neither has one.
 func (r *webSearchProviderRepository) GetDefault(ctx context.Context, tenantID uint64) (*types.WebSearchProviderEntity, error) {
-	var provider types.WebSearchProviderEntity
-	if err := r.db.WithContext(ctx).Where(
-		"tenant_id = ? AND is_default = ?", tenantID, true,
-	).First(&provider).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+	var providers []*types.WebSearchProviderEntity
+	if err := r.db.WithContext(ctx).Where("is_default = ?", true).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		Order("created_at ASC").Find(&providers).Error; err != nil {
 		return nil, err
 	}
-	return &provider, nil
+	var picked *types.WebSearchProviderEntity
+	for _, p := range providers {
+		if picked == nil || (p.TenantID == tenantID && picked.TenantID != tenantID) {
+			picked = p
+		}
+	}
+	return picked, nil
 }
 
-// List lists all web search providers for a tenant
+// List lists the web search providers a tenant can use: its own and those
+// of the configuration profile it inherits from.
 func (r *webSearchProviderRepository) List(ctx context.Context, tenantID uint64) ([]*types.WebSearchProviderEntity, error) {
 	var providers []*types.WebSearchProviderEntity
-	if err := r.db.WithContext(ctx).Where(
-		"tenant_id = ?", tenantID,
-	).Order("created_at ASC").Find(&providers).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
+		Order("created_at ASC").Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	return providers, nil

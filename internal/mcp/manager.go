@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,11 +71,13 @@ func NewMCPManager(oauthRepo interfaces.MCPOAuthRepository) *MCPManager {
 }
 
 // cacheKey computes the connection-cache key for a service. OAuth services are
-// keyed per principal (each identity connects with its own token); all other
-// services share a single connection per service ID.
-func cacheKey(service *types.MCPService, principal types.Principal) string {
+// keyed per tenant and principal: each identity connects with its own token,
+// and its tokens are stored per tenant, so one person in two workspaces that
+// share a service (through a configuration profile) holds two connections.
+// All other services share a single connection per service ID.
+func cacheKey(service *types.MCPService, tenantID uint64, principal types.Principal) string {
 	if service.AuthConfig.IsOAuth() {
-		return service.ID + "\x00" + principal.Normalize().StorageID()
+		return service.ID + "\x00" + strconv.FormatUint(tenantID, 10) + "\x00" + principal.Normalize().StorageID()
 	}
 	return service.ID
 }
@@ -109,7 +112,7 @@ func (m *MCPManager) GetOrCreateClient(ctx context.Context, service *types.MCPSe
 			return nil, fmt.Errorf("principal context is required to connect to OAuth MCP service %s", service.Name)
 		}
 	}
-	key := cacheKey(service, principal)
+	key := cacheKey(service, tenantID, principal)
 
 	m.clientsMu.Lock()
 	if err := m.ctx.Err(); err != nil {

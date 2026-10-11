@@ -466,6 +466,14 @@ func authenticateJWTUser(
 			return false
 		}
 	}
+	// A configuration profile holds shared settings only; nobody signs in to
+	// it. SuperAdmin configuration routes reach it through their own scope.
+	if tenant.IsConfigProfile() {
+		logger.Warnf(ctx, "[auth] refused configuration profile as workspace: tenant=%d user=%s", targetTenantID, user.ID)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: not a workspace"})
+		c.Abort()
+		return false
+	}
 
 	// 解析当前Tenant workspace内的角色 (issue #1303)
 	role, ok := resolveTenantRole(ctx, memberService, user, targetTenantID, crossTenantSwitch, cfg)

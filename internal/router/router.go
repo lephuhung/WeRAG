@@ -255,6 +255,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.KBAccessGrantService,
 			params.KBInvitationService,
 		)
+		rbacGuards.tenantService = params.TenantService
 
 		// API-key gate: single authority for X-API-Key principals. Runs
 		// first on every /api/v1 route (JWT sessions pass straight
@@ -306,7 +307,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, rbacGuards)
 		RegisterDocumentFormatRoutes(v1, params.DocumentFormatHandler, rbacGuards)
 		RegisterSandboxConfigRoutes(v1, params.SandboxConfigHandler, params.SandboxSkillHandler, rbacGuards)
-		RegisterMyEnvVarRoutes(v1, params.MeEnvVarHandler)
+		RegisterMyEnvVarRoutes(v1, params.MeEnvVarHandler, rbacGuards)
 		v1.GET("/me/browser", params.SessionHandler.BrowserSkillAccount)
 		v1.GET("/me/browser/extension", params.SessionHandler.BrowserSkillDownload)
 		v1.POST("/me/browser", params.SessionHandler.BrowserSkillAccount)
@@ -333,8 +334,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		RegisterAbbreviationRoutes(v1, params.AbbreviationHandler, rbacGuards)
-		RegisterChunkerDebugRoutes(v1, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
+		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
 		// template that does not actually exist (typo / path drift). A

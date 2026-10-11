@@ -415,7 +415,8 @@ func (r *tenantSkillRepository) GetCatalog(
 ) (*types.TenantSkillCatalogEntity, error) {
 	var e types.TenantSkillCatalogEntity
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND id = ?", tenantID, catalogID).
+		Where("id = ?", catalogID).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		First(&e).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -442,12 +443,14 @@ func (r *tenantSkillRepository) GetCatalogByName(
 	return &e, nil
 }
 
+// ListCatalogsByTenant lists the catalog entries a tenant sees: its own and
+// its configuration profile's, where the SuperAdmin registers them.
 func (r *tenantSkillRepository) ListCatalogsByTenant(
 	ctx context.Context, tenantID uint64,
 ) ([]*types.TenantSkillCatalogEntity, error) {
 	var list []*types.TenantSkillCatalogEntity
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID).
+		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...).
 		Order("created_at ASC").
 		Find(&list).Error
 	if err != nil {

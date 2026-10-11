@@ -128,6 +128,11 @@ const toast = useToast();
   const { enqueue } = useUploadTasks();
 
   const defaultsLocked = parseDefaults?.enabled === true;
+  /* Parse settings are SuperAdmin configuration: everyone else uploads and
+   * rebuilds without the dialog, on the system defaults when they are
+   * published and on the KB's own config otherwise (the backend drops any
+   * override they send). */
+  const skipParseDialog = defaultsLocked || !isSystemAdmin;
   /* Strip the `enabled` flag — the stored shape is
    * {enabled, ...KnowledgeProcessOverrides} so the rest can be sent as
    * process_config verbatim. */
@@ -256,8 +261,8 @@ const toast = useToast();
   const openReparse = async (doc: KnowledgeDoc) => {
     /* Locked mode: rebuild immediately with the system defaults — no dialog,
      * no per-document overrides to seed. */
-    if (defaultsLocked) {
-      reparseKnowledge(doc.id, { process_config: lockedProcessConfig })
+    if (skipParseDialog) {
+      reparseKnowledge(doc.id, defaultsLocked ? { process_config: lockedProcessConfig } : undefined)
         .then(reloadDocs)
         .catch(() => setError(t("doc.actionFailed")));
       return;
@@ -937,11 +942,11 @@ const toast = useToast();
           setUploadOpen(false);
           /* Locked mode: enqueue immediately with the system defaults —
            * the parse-settings dialog is bypassed entirely. */
-          if (defaultsLocked) {
+          if (skipParseDialog) {
             enqueue({
               kbId,
               kbName: kb?.name ?? "",
-              processConfig: lockedProcessConfig,
+              processConfig: defaultsLocked ? lockedProcessConfig : undefined,
               uploads: files.map((f) => ({
                 file: f,
                 fileName: buildUploadFileName(f, ""),

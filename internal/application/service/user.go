@@ -1189,6 +1189,10 @@ func (s *userService) SwitchTenant(
 	if err != nil {
 		return nil, fmt.Errorf("load target workspace: %w", err)
 	}
+	// A configuration profile is not a workspace anyone works in.
+	if tenant.IsConfigProfile() {
+		return nil, ErrMembershipNotFound
+	}
 
 	// Persist before minting tokens so a 200 response is also a
 	// durable landing-preference update. RefreshToken re-reads this

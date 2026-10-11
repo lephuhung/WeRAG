@@ -9,9 +9,9 @@ import (
 // vectorStoreRepoOwnership adapts a VectorStoreRepository to the
 // TenantStoreOwnership interface consumed by the factory functions.
 //
-// The repository's GetByID already scopes to the given tenantID
-// (WHERE id = ? AND tenant_id = ?), so "exists under this tenant"
-// is equivalent to "owned by this tenant" — no additional tenant
+// The repository's GetByID scopes to the given tenantID and the
+// configuration profile it inherits from, so "exists under this tenant"
+// is equivalent to "usable by this tenant" — no additional tenant
 // comparison is needed on top of the returned row.
 type vectorStoreRepoOwnership struct {
 	repo interfaces.VectorStoreRepository

@@ -60,7 +60,7 @@ func (s *statsService) loadAccountStats(ctx context.Context, stats *types.System
 		db.Model(&types.User{}).Where("is_system_admin = ?", true)); err != nil {
 		return fmt.Errorf("count system admins: %w", err)
 	}
-	if stats.Accounts.TotalTenants, err = count(db.Model(&types.Tenant{})); err != nil {
+	if stats.Accounts.TotalTenants, err = count(db.Model(&types.Tenant{}).Where("kind = ?", types.TenantKindWorkspace)); err != nil {
 		return fmt.Errorf("count tenants: %w", err)
 	}
 	if stats.Accounts.NewUsersLast30d, err = count(

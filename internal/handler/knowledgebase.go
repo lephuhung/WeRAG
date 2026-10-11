@@ -366,6 +366,16 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
+	// A Tenant Admin creates the knowledge base; the SuperAdmin configures
+	// it. Anything beyond its identity falls back to the platform defaults.
+	if !canManagePlatformConfig(ctx) {
+		req = types.KnowledgeBase{
+			Name:        req.Name,
+			Description: req.Description,
+			Type:        req.Type,
+			Visibility:  req.Visibility,
+		}
+	}
 	if err := validateExtractConfig(req.ExtractConfig); err != nil {
 		logger.Error(ctx, "Invalid extract configuration", err)
 		c.Error(err)
@@ -879,6 +889,13 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	// Name and description belong to whoever manages the knowledge base;
+	// its configuration (models, parsing, graph, wiki, tagging) is the
+	// SuperAdmin's.
+	if req.Config != nil && !canManagePlatformConfig(ctx) {
+		c.Error(apperrors.NewForbiddenError("Knowledge base configuration requires system administrator access"))
 		return
 	}
 	if req.Config != nil {

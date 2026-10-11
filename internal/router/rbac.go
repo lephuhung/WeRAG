@@ -113,6 +113,9 @@ import (
 type rbacGuards struct {
 	cfg *config.Config
 
+	// tenantService loads the configuration profile for ConfigProfile().
+	tenantService interfaces.TenantService
+
 	// Lookup closures resolve a request's :id into the resource's creator
 	// user ID. Captured up front so the handler-level methods don't have
 	// to be exported into every Register* function as well.
@@ -464,6 +467,38 @@ func (g *rbacGuards) assertAPIKeyPoliciesMatchRoutes(engine *gin.Engine) {
 	}
 	if len(missing) > 0 {
 		panic("api-key policy declared for non-existent route(s): " + strings.Join(missing, ", "))
+	}
+}
+
+// ConfigProfile moves a SuperAdmin's configuration write onto the
+// configuration profile the current workspace inherits from, so it applies
+// to every workspace on that profile. Place it after g.SystemAdmin().
+func (g *rbacGuards) ConfigProfile() gin.HandlerFunc {
+	return middleware.ConfigProfileScope(g.tenantService)
+}
+
+// profileKVKeys are the /tenants/kv settings workspaces inherit from their
+// configuration profile: copied by TenantRepository.SyncProfileSettings, or,
+// for chat history, read from the profile at index time (each workspace
+// keeps its own knowledge base). The legacy storage engine config stays per
+// workspace.
+var profileKVKeys = map[string]bool{
+	"web-search-config":    true,
+	"parser-engine-config": true,
+	"retrieval-config":     true,
+	"chat-history-config":  true,
+}
+
+// ConfigProfileForKV is ConfigProfile for PUT /tenants/kv/:key, applied
+// only to the keys workspaces inherit.
+func (g *rbacGuards) ConfigProfileForKV() gin.HandlerFunc {
+	scope := g.ConfigProfile()
+	return func(c *gin.Context) {
+		if profileKVKeys[c.Param("key")] {
+			scope(c)
+			return
+		}
+		c.Next()
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 // RegisterAbbreviationRoutes wires the global Vietnamese abbreviation
 // dictionary (AIRAG port). The dictionary is shared across tenants, so there
 // is no KB/tenant sub-resource scoping: reads and suggestions are Viewer+,
-// while edits, activation and deletes are Admin+ (mirroring AIRAG's
+// while edits, activation and deletes are SystemAdmin (mirroring AIRAG's
 // user-suggests / superadmin-approves workflow).
 func RegisterAbbreviationRoutes(r *gin.RouterGroup, h *handler.AbbreviationHandler, g *rbacGuards) {
 	if h == nil {
@@ -21,8 +21,8 @@ func RegisterAbbreviationRoutes(r *gin.RouterGroup, h *handler.AbbreviationHandl
 		abbr.GET("/:id", g.MemberOrSystemAdmin(), h.GetAbbreviation)
 		// POST creates an inactive suggestion — safe for any signed-in user.
 		abbr.POST("", g.MemberOrSystemAdmin(), h.CreateAbbreviation)
-		// PATCH flips is_active (approval) or edits content — admin only.
-		abbr.PATCH("/:id", g.OwnerOrSystemAdmin(), h.UpdateAbbreviation)
-		abbr.DELETE("/:id", g.OwnerOrSystemAdmin(), h.DeleteAbbreviation)
+		// PATCH flips is_active (approval) or edits content — SystemAdmin only.
+		abbr.PATCH("/:id", g.SystemAdmin(), h.UpdateAbbreviation)
+		abbr.DELETE("/:id", g.SystemAdmin(), h.DeleteAbbreviation)
 	}
 }

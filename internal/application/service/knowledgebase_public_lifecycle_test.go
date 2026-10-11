@@ -74,6 +74,14 @@ func (r *lifecycleTenantRepo) BulkSetStorageQuota(_ context.Context, _ int64) (i
 	return 0, nil
 }
 
+func (r *lifecycleTenantRepo) GetDefaultConfigProfile(context.Context) (*types.Tenant, error) {
+	return nil, nil
+}
+
+func (r *lifecycleTenantRepo) SyncProfileSettings(context.Context, uint64, uint64) (int64, error) {
+	return 0, nil
+}
+
 var _ interfaces.TenantRepository = (*lifecycleTenantRepo)(nil)
 
 type lifecycleAudit struct {

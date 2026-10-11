@@ -29,10 +29,22 @@ CREATE TABLE IF NOT EXISTS custom_agents (
 );
 `
 
+// tenantsScopeTestDDL is the slice of the tenants table the configuration
+// scope subqueries read.
+const tenantsScopeTestDDL = `
+CREATE TABLE IF NOT EXISTS tenants (
+    id INTEGER PRIMARY KEY,
+    kind VARCHAR(16) NOT NULL DEFAULT 'workspace',
+    config_profile_id INTEGER,
+    deleted_at DATETIME
+);
+`
+
 func setupModelUsageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := setupKBTestDB(t)
 	require.NoError(t, db.Exec(customAgentsTestDDL).Error)
+	require.NoError(t, db.Exec(tenantsScopeTestDDL).Error)
 	return db
 }
 

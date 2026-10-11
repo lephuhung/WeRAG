@@ -411,6 +411,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 			processOverrides.EnableMultimodel = enableMultimodel
 		}
 	}
+	processOverrides = platformProcessOverrides(ctx, processOverrides)
 
 	// 获取分类IDList （如果提供），逗号分隔，用于知识多标签分类管理
 	tagIDs := parseCommaSeparatedTagIDs(c.PostForm("tag_ids"))
@@ -515,9 +516,15 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		secutils.SanitizeForLog(req.URL),
 	)
 
+	enableMultimodel := req.EnableMultimodel
+	if !canManagePlatformConfig(ctx) {
+		enableMultimodel = nil
+	}
+
 	// Create knowledge entry from the URL
 	knowledge, err := h.kgService.CreateKnowledgeFromURL(
-		ctx, kbID, req.URL, req.FileName, req.FileType, req.EnableMultimodel, req.Title, req.TagIDs, req.Channel, req.ProcessConfig,
+		ctx, kbID, req.URL, req.FileName, req.FileType, enableMultimodel, req.Title, req.TagIDs, req.Channel,
+		platformProcessOverrides(ctx, req.ProcessConfig),
 	)
 	// Check for duplicate knowledge error
 	if err != nil {
@@ -1935,7 +1942,7 @@ func (h *KnowledgeHandler) ReparseKnowledge(c *gin.Context) {
 			c.Error(errors.NewBadRequestError("Invalid reparse request body").WithDetails(err.Error()))
 			return
 		}
-		processOverrides = req.ProcessConfig
+		processOverrides = platformProcessOverrides(ctx, req.ProcessConfig)
 	}
 
 	// Call service to reparse knowledge
@@ -2638,7 +2645,8 @@ func (h *KnowledgeHandler) BatchReparseKnowledge(c *gin.Context) {
 		}
 	}
 
-	taskID, err := h.enqueueKnowledgeListReparse(ctx, effectiveTenantID, kbID, ids, req.ProcessConfig)
+	taskID, err := h.enqueueKnowledgeListReparse(ctx, effectiveTenantID, kbID, ids,
+		platformProcessOverrides(ctx, req.ProcessConfig))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to enqueue batch knowledge reparse task: %v", err)
 		c.Error(errors.NewInternalServerError("Failed to enqueue batch reparse task"))
@@ -2743,4 +2751,19 @@ func isHumanMember(ctx context.Context) bool {
 	caller := types.CallerFromContext(ctx)
 	return caller.Role.HasPermission(types.TenantRoleMember) && !caller.Role.IsTenantAdmin() &&
 		access.IsAuthenticatedHuman(ctx, caller)
+}
+
+// platformProcessOverrides keeps per-upload parse overrides only for callers
+// who may configure the platform. Parse settings (models, chunking, graph,
+// OCR) are SuperAdmin configuration; everyone else parses with what the
+// knowledge base and the system defaults already say, so their overrides are
+// dropped rather than rejected — the upload itself is still theirs to make.
+func platformProcessOverrides(
+	ctx context.Context, overrides *types.KnowledgeProcessOverrides,
+) *types.KnowledgeProcessOverrides {
+	if overrides == nil || canManagePlatformConfig(ctx) {
+		return overrides
+	}
+	logger.Infof(ctx, "[knowledge] ignoring parse overrides from a caller who cannot configure the platform")
+	return nil
 }
