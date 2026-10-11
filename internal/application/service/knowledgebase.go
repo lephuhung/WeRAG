@@ -53,6 +53,9 @@ type knowledgeBaseService struct {
 	resourceCatalog      interfaces.ResourceCatalog
 	wikiRepo             interfaces.WikiPageRepository
 	subscriptionRepo     interfaces.KBSubscriptionRepository
+	// legalReviews annotates results from reviewed legal documents with
+	// their validity; nil in tests leaves results untouched.
+	legalReviews interfaces.LegalReviewService
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -78,6 +81,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	resourceCatalog interfaces.ResourceCatalog,
 	wikiRepo interfaces.WikiPageRepository,
 	subscriptionRepo interfaces.KBSubscriptionRepository,
+	legalReviews interfaces.LegalReviewService,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
 		repo:                 repo,
@@ -102,6 +106,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		resourceCatalog:      resourceCatalog,
 		wikiRepo:             wikiRepo,
 		subscriptionRepo:     subscriptionRepo,
+		legalReviews:         legalReviews,
 	}
 }
 
@@ -337,7 +342,7 @@ func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *typ
 // Only an explicit human SuperAdmin (is_system_admin plus a real
 // non-synthetic user, never an API-key principal) may invoke it —
 // CanAccessAllTenants alone never qualifies. The row is stamped with
-// owner and data scope 0 and resolved from platform/global defaults: the
+// owner 0 and the caller's workspace as data scope, and resolved from platform/global defaults: the
 // selected tenant's storage/model configuration is never inherited and no
 // tenant-scoped StorageBackendID binding is accepted.
 func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
@@ -353,17 +358,22 @@ func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
 		}
 		return nil, apperrors.NewForbiddenError("only an explicit platform SuperAdmin may create public knowledge bases")
 	}
+	// The KB's documents, files and indexes live in the creating
+	// SuperAdmin's workspace: file storage and resource registration need a
+	// real tenant, and tenant 0 is rejected there.
+	if caller.TenantID == 0 {
+		return nil, apperrors.NewBadRequestError("select a workspace before creating a public knowledge base")
+	}
 	if kb.ID == "" {
 		kb.ID = uuid.New().String()
 	}
 	now := time.Now()
 	kb.CreatedAt = now
 	kb.UpdatedAt = now
-	// Platform scope: no owning tenant and the reserved platform data
-	// scope. TenantID stays the immutable execution partition for the KB's
-	// documents and indexes.
+	// Platform owned (no owning tenant); TenantID is the immutable
+	// execution partition for the KB's documents and indexes.
 	kb.OwnerTenantID = 0
-	kb.TenantID = 0
+	kb.TenantID = caller.TenantID
 	kb.Visibility = types.KBVisibilityPublic
 	if uid, ok := types.UserIDFromContext(ctx); ok && !types.IsSyntheticUserID(uid) {
 		kb.CreatorID = uid

@@ -146,18 +146,24 @@ func TestPublicLifecycle_TenantAdminCannotCreatePublic(t *testing.T) {
 }
 
 func TestPublicLifecycle_SuperAdminCanCreatePublic(t *testing.T) {
-	for _, ctx := range []context.Context{superAdminLifecycleCtx(1), superAdminNoTenantLifecycleCtx()} {
-		repo := newFakeKBRepo()
-		audit := &lifecycleAudit{}
-		svc := newLifecycleService(repo, newLifecycleTenantRepo(1), audit)
-		kb, err := svc.CreatePublicKnowledgeBase(ctx, &types.KnowledgeBase{Name: "pub"})
-		require.NoError(t, err)
-		require.NotNil(t, kb)
-		assert.Equal(t, uint64(0), kb.OwnerTenantID)
-		assert.Equal(t, uint64(0), kb.TenantID, "public create uses platform data scope, never the active tenant")
-		assert.Equal(t, types.KBVisibilityPublic, kb.Visibility)
-		require.NoError(t, kb.ValidateOwnership())
-	}
+	repo := newFakeKBRepo()
+	audit := &lifecycleAudit{}
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), audit)
+	kb, err := svc.CreatePublicKnowledgeBase(superAdminLifecycleCtx(1), &types.KnowledgeBase{Name: "pub"})
+	require.NoError(t, err)
+	require.NotNil(t, kb)
+	assert.Equal(t, uint64(0), kb.OwnerTenantID)
+	assert.Equal(t, uint64(1), kb.TenantID, "documents and files live in the creator's workspace")
+	assert.Equal(t, types.KBVisibilityPublic, kb.Visibility)
+	require.NoError(t, kb.ValidateOwnership())
+}
+
+func TestPublicLifecycle_SuperAdminWithoutWorkspaceCannotCreatePublic(t *testing.T) {
+	repo := newFakeKBRepo()
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), &lifecycleAudit{})
+	_, err := svc.CreatePublicKnowledgeBase(superAdminNoTenantLifecycleCtx(), &types.KnowledgeBase{Name: "pub"})
+	require.Error(t, err, "tenant 0 cannot hold files")
+	assert.Empty(t, repo.rows)
 }
 
 func TestPublicLifecycle_PublicCreateIgnoresTenantDefaults(t *testing.T) {
@@ -363,7 +369,7 @@ func TestPublicLifecycle_PublicCreateAuditedAtTenantZero(t *testing.T) {
 	repo := newFakeKBRepo()
 	audit := &lifecycleAudit{}
 	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), audit)
-	kb, err := svc.CreatePublicKnowledgeBase(superAdminNoTenantLifecycleCtx(), &types.KnowledgeBase{Name: "pub"})
+	kb, err := svc.CreatePublicKnowledgeBase(superAdminLifecycleCtx(1), &types.KnowledgeBase{Name: "pub"})
 	require.NoError(t, err)
 	require.Len(t, audit.entries, 1, "tenant-zero events must be observed, not dropped")
 	entry := audit.entries[0]

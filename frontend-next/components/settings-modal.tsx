@@ -55,6 +55,7 @@ import {
   IconCode,
   IconDocReader,
   IconExternal,
+  IconFileSearch,
   IconGlobe,
   IconGraph,
   IconInfoCircle,
@@ -86,6 +87,7 @@ const AdminOverviewPage = lazy(() => import("@/components/settings/pages/admin-o
 const AdminUsersPage = lazy(() => import("@/components/settings/pages/admin-users"));
 const AdminTenantsPage = lazy(() => import("@/components/settings/pages/admin-tenants"));
 const AdminLogsPage = lazy(() => import("@/components/settings/pages/admin-logs"));
+const AdminLegalDocumentsPage = lazy(() => import("@/components/settings/pages/admin-legal-documents"));
 
 type IconCmp = ComponentType<{ className?: string }>;
 
@@ -175,6 +177,7 @@ const GROUPS: SettingsGroup[] = [
       { key: "tenants", labelKey: "systemNav.tenants", fallback: "Units", icon: IconUser, minRole: "system", render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
       { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, minRole: "system", render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
       { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, minRole: "system", render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
+      { key: "legal-documents", labelKey: "systemNav.legalDocuments", fallback: "Legal documents", icon: IconFileSearch, minRole: "system", render: () => <AdminLegalDocumentsPage />, route: `${SYS}/admin/legal-documents` },
     ],
   },
 ];

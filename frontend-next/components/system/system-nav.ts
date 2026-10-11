@@ -253,6 +253,13 @@ export const SYSTEM_TABS: SystemTab[] = [
             href: "/platform/system/admin/logs",
             minRole: "system",
           },
+          {
+            key: "legal-documents",
+            label: "Legal documents",
+            labelKey: "systemNav.legalDocuments",
+            href: "/platform/system/admin/legal-documents",
+            minRole: "system",
+          },
         ],
       },
     ],

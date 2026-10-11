@@ -319,6 +319,12 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"observation, pause/resume and human help. Do not bypass a pause or browser challenge " +
 			"through another tool.\n")
 	}
+	if has("check_legal_status") {
+		b.WriteString("When an answer rests on a Vietnamese legal document and its validity matters, " +
+			"check it with check_legal_status (by số ký hiệu) and tell the user when it has expired, " +
+			"been replaced or been amended, naming the newer document and the catalogue's snapshot date. " +
+			"A document the catalogue does not know is unknown, not repealed.\n")
+	}
 	if has("resolve_abbreviation") {
 		b.WriteString("Abbreviations in the user's message were already resolved and validated by " +
 			"the runtime before this turn; use the resolved mapping shown in the request or tool " +

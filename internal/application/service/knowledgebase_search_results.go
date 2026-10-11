@@ -85,6 +85,9 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 	searchResults := s.assembleSearchResults(ctx, chunks, chunkMap, knowledgeMap, index, skipEnrichment)
 
 	searchutil.EnrichSearchResultsImageInfo(ctx, s.chunkRepo, tenantID, searchResults)
+	if s.legalReviews != nil {
+		s.legalReviews.AnnotateSearchResults(ctx, searchResults)
+	}
 
 	logger.Infof(ctx, "Search results processed, total: %d", len(searchResults))
 	return searchResults, nil

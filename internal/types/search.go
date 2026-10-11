@@ -208,6 +208,11 @@ type SearchResult struct {
 	// KnowledgeBaseID is the ID of the knowledge base this result belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
 
+	// LegalSuperseded marks a result from a reviewed legal document that a
+	// newer one has replaced or ended; rerankers scale its score by
+	// LegalSupersededScoreFactor so in-force law ranks first.
+	LegalSuperseded bool `json:"legal_superseded,omitempty"`
+
 	// ContentRevision is the chunk edit revision at retrieval time.
 	// Internal only: used by the merge pipeline to decide whether source
 	// coordinates are still trustworthy.

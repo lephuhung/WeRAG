@@ -936,6 +936,12 @@ export function updateKnowledgeSummary(knowledgeId: string, description: string)
   return apiPut(`/api/v1/knowledge/${knowledgeId}`, { description });
 }
 
+/* Partial update of a document's display title / description. Leaves
+ * custom_metadata alone (changing it queues an LLM summary refresh). */
+export function updateKnowledgeDisplay(knowledgeId: string, data: { title?: string; description?: string }) {
+  return apiPut(`/api/v1/knowledge/${knowledgeId}`, data);
+}
+
 export function regenerateKnowledgeSummary(knowledgeId: string) {
   return apiPost(`/api/v1/knowledge/${knowledgeId}/regenerate-summary`, {});
 }

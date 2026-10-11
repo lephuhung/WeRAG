@@ -189,6 +189,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTaskPendingOpsRepository))
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
 	must(container.Provide(repository.NewAbbreviationRepository))
+	// Platform-wide legal catalogue (vbpl.vn metadata + relations) behind
+	// the check_legal_status agent tool.
+	must(container.Provide(repository.NewLegalCatalogRepository))
+	must(container.Provide(repository.NewLegalReviewRepository))
 	must(container.Provide(repository.NewAbbreviationTurnRepository))
 
 	// MCP manager for managing MCP client connections
@@ -243,6 +247,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Global Vietnamese abbreviation dictionary (AIRAG port) — feeds both the
 	// /abbreviations API and the resolve_abbreviation agent tool.
 	must(container.Provide(service.NewAbbreviationService))
+	must(container.Provide(service.NewLegalCatalogService))
+	must(container.Provide(service.NewLegalReviewService))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -594,6 +600,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
 	must(container.Provide(handler.NewStatsHandler))
+	must(container.Provide(handler.NewLegalReviewHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))

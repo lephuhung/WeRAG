@@ -121,6 +121,7 @@ type agentService struct {
 	sandboxPinner        *SessionSandboxPinner
 	sandboxPolicy        WorkspaceSandboxPolicy
 	abbreviationService  interfaces.AbbreviationService
+	legalCatalog         interfaces.LegalCatalogService
 	peopleService        *people.Service
 	temporaryDocuments   interfaces.TemporaryDocumentService
 	// documentWorkspaces is the session's editable .docx (document
@@ -158,6 +159,7 @@ func NewAgentService(
 	peopleService *people.Service,
 	temporaryDocuments interfaces.TemporaryDocumentService,
 	documentWorkspaces interfaces.DocumentWorkspaceService,
+	legalCatalog interfaces.LegalCatalogService,
 ) interfaces.AgentService {
 	return &agentService{
 		browserSkill:         browserSkill,
@@ -188,6 +190,7 @@ func NewAgentService(
 		peopleService:        peopleService,
 		temporaryDocuments:   temporaryDocuments,
 		documentWorkspaces:   documentWorkspaces,
+		legalCatalog:         legalCatalog,
 	}
 }
 
@@ -1081,6 +1084,7 @@ func (s *agentService) registerTools(
 	// tenant-editable tool checkbox. Strip both from any stored allowlist
 	// first so a stale config cannot resurrect them.
 	allowedTools = withoutString(allowedTools, tools.ToolResolveAbbreviation)
+	allowedTools = withoutString(allowedTools, tools.ToolCheckLegalStatus)
 	allowedTools = withoutString(allowedTools, tools.ToolPeopleLookup)
 
 	// Deduplicate while preserving original order.
@@ -1255,6 +1259,11 @@ func (s *agentService) registerTools(
 	// approves them.
 	if s.abbreviationService != nil {
 		registry.RegisterTool(tools.NewResolveAbbreviationTool(s.abbreviationService))
+	}
+	// check_legal_status rides on every agent too: the legal catalogue is
+	// public law, read-only and the same for every tenant.
+	if s.legalCatalog != nil {
+		registry.RegisterTool(tools.NewCheckLegalStatusTool(s.legalCatalog))
 	}
 	// people_lookup is PII. It is registered only when the deployment
 	// enabled PEOPLE_SEARCH_* AND the caller is a system admin — mirroring

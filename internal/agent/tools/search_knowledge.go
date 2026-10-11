@@ -1082,6 +1082,9 @@ func (t *SearchKnowledgeTool) compositeScore(
 
 	composite := 0.6*modelScore + 0.3*baseScore + 0.1*sourceWeight
 	composite *= positionPrior
+	if result.LegalSuperseded {
+		composite *= types.LegalSupersededScoreFactor
+	}
 	if composite < 0 {
 		composite = 0
 	}

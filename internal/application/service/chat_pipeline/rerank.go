@@ -445,6 +445,9 @@ func compositeScore(sr *types.SearchResult, modelScore, baseScore float64) float
 		sourceWeight = 1.0
 	}
 	composite := 0.6*modelScore + 0.3*baseScore + 0.1*sourceWeight
+	if sr.LegalSuperseded {
+		composite *= types.LegalSupersededScoreFactor
+	}
 	if composite < 0 {
 		composite = 0
 	}

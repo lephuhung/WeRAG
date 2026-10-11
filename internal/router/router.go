@@ -98,6 +98,7 @@ type RouterParams struct {
 	WikiPageHandler              *handler.WikiPageHandler
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
+	LegalReviewHandler           *handler.LegalReviewHandler
 }
 
 // NewRouter Create 新的路由
@@ -333,6 +334,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		RegisterAbbreviationRoutes(v1, params.AbbreviationHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
+		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
 		// template that does not actually exist (typo / path drift). A
