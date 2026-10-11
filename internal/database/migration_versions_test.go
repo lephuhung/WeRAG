@@ -16,9 +16,8 @@ import (
 // request CI runs on the merge with the current main.
 func TestMigrationDirectoriesLoad(t *testing.T) {
 	root := sqliteRepoRoot(t)
-	for _, dir := range []string{"versioned", "sqlite"} {
-		src, err := source.Open("file://" + filepath.Join(root, "migrations", dir))
-		require.NoError(t, err, "migrations/%s must load", dir)
-		require.NoError(t, src.Close())
-	}
+	// migrations/sqlite (Lite / desktop) is no longer maintained.
+	src, err := source.Open("file://" + filepath.Join(root, "migrations", "versioned"))
+	require.NoError(t, err, "migrations/versioned must load")
+	require.NoError(t, src.Close())
 }

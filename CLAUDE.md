@@ -12,6 +12,12 @@ The Vue front-end in `frontend/` is **legacy and frozen for the UI migration to 
 - Non-UI shared code (backend `internal/`, `cmd/`, etc.) is unaffected by this rule.
 <!-- gitnexus:end -->
 <!-- gitnexus:start -->
+# Database: Postgres only — SQLite is no longer maintained
+
+Deployments run `DB_DRIVER=postgres`. The SQLite path (WeKnora Lite, `cmd/desktop`) is unmaintained since 2026-10-11:
+
+- Write new migrations in `migrations/versioned/` only; do NOT add `migrations/sqlite/` mirrors or SQLite migration tests.
+- Take the next number after the highest **committed** version; a lower number is skipped on databases already past it.
 # GitNexus — Code Intelligence
 
 This project is indexed by GitNexus as **WeRAG-main** (83109 symbols, 463059 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
