@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Newsreader, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
+import { GlobalUiTheme } from "@/components/global-ui-theme";
+
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
   weight: ["400", "500", "600"],
@@ -51,6 +53,12 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+/* Runs before paint so a returning user never sees the default theme flash.
+   Keep in sync with UI_THEME_STORAGE_KEY / UI_THEME_ATTR in lib/ui-theme.ts. */
+const UI_THEME_BOOT_SCRIPT =
+  "try{var t=localStorage.getItem('weknora_ui_theme');" +
+  "if(t==='anthropic'){document.documentElement.setAttribute('data-theme','anthropic')}}catch(e){}";
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -59,7 +67,11 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${displaySerif.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
+        <GlobalUiTheme />
+        {children}
+      </body>
     </html>
   );
 }
