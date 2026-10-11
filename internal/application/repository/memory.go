@@ -975,6 +975,31 @@ func (r *memoryRepository) DeleteAllDocAffinity(
 	return r.scoped(ctx, scope).Delete(&types.MemoryDocAffinity{}).Error
 }
 
+func (r *memoryRepository) ListUnannounced(
+	ctx context.Context, scope interfaces.MemoryScope, limit int,
+) ([]*types.MemoryItem, error) {
+	var items []*types.MemoryItem
+	err := r.scoped(ctx, scope).
+		Where("status = ? AND origin = ? AND announced_at IS NULL",
+			types.MemoryStatusActive, types.MemoryOriginExtracted).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
+func (r *memoryRepository) MarkAnnounced(
+	ctx context.Context, scope interfaces.MemoryScope, ids []string, at time.Time,
+) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.scoped(ctx, scope).
+		Model(&types.MemoryItem{}).
+		Where("id IN ?", ids).
+		Update("announced_at", at).Error
+}
+
 func (r *memoryRepository) CountActive(
 	ctx context.Context, scope interfaces.MemoryScope,
 ) (int64, error) {

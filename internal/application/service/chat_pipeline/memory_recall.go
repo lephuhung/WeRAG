@@ -66,6 +66,16 @@ func (p *PluginMemoryRecall) OnEvent(ctx context.Context,
 		"query_preview": langfuse.TruncateRunes(chatManage.Query, 200),
 	})
 
+	if saved := p.memoryService.TakeNewlySaved(ctx); len(saved) > 0 && chatManage.EventBus != nil {
+		if err := chatManage.EventBus.Emit(ctx, types.Event{
+			Type:      types.EventType(event.EventMemorySaved),
+			SessionID: chatManage.SessionID,
+			Data:      event.MemorySavedData{Memories: types.UsedMemoriesFromItems(saved)},
+		}); err != nil {
+			pipelineWarn(ctx, "MemoryRecall", "emit_saved_failed", map[string]interface{}{"error": err.Error()})
+		}
+	}
+
 	recall := p.memoryService.Recall(ctx, chatManage.Query)
 	if recall.Prompt == "" {
 		pipelineInfo(ctx, "MemoryRecall", "output", map[string]interface{}{

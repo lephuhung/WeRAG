@@ -75,6 +75,11 @@ const (
 	// streams, so the UI can show which memories the answer saw.
 	EventMemoryRecalled EventType = "memory_recalled"
 
+	// Memories the background extraction stored since the user was last
+	// told. Emitted once at the start of a turn so the UI can say "I just
+	// saved ..." and let the user take a wrong one back.
+	EventMemorySaved EventType = "memory_saved"
+
 	// EventContextCompacted is emitted when older conversation was summarized
 	// away to fit the context window.
 	EventContextCompacted EventType = "context_compacted"

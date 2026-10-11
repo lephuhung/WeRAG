@@ -50,32 +50,36 @@ func TestRetrievalContextIsEmptyWhenConditioningIsOff(t *testing.T) {
 	require.NotEmpty(t, svc.Recall(ctx, "医学影像").Items)
 }
 
+// Users no longer review memory, so a guess that stands on its own is used
+// at once (and announced on the next turn, see announce_test.go). A guess that
+// would replace what the user said stays a pending proposal and never reaches
+// a prompt.
 func TestPendingMemoriesNeverReachAPrompt(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
+		Kind:    types.MemoryKindProfile,
+		Topic:   "职业",
+		Content: "我是后端工程师",
+		Origin:  types.MemoryOriginManual,
+	})
+	require.NoError(t, err)
+	proposal, err := svc.Remember(ctx, types.MemoryItem{
 		Kind:       types.MemoryKindProfile,
+		Topic:      "职业",
 		Content:    "可能在负责连锁门店的排班",
 		Importance: 3,
 		Origin:     types.MemoryOriginExtracted,
 		Inferred:   true,
 	})
 	require.NoError(t, err)
+	require.Equal(t, types.MemoryStatusPending, proposal.Status)
 
-	require.Empty(t, svc.Recall(ctx, "入库流程").Items,
-		"a guess about the user must not be asserted before they confirm it")
-	require.True(t, svc.RetrievalContextFor(ctx).Empty(),
-		"an unconfirmed guess must not steer retrieval either")
-
-	items, total, err := svc.ListItems(ctx, types.MemoryStatusPending, 10, 0)
-	require.NoError(t, err)
-	require.Equal(t, int64(1), total, "but it must be visible so the user can decide")
-
-	confirmed, err := svc.ConfirmItem(ctx, items[0].ID)
-	require.NoError(t, err)
-	require.Equal(t, types.MemoryStatusActive, confirmed.Status)
-	require.NotEmpty(t, svc.Recall(ctx, "入库流程").Items)
+	for _, item := range svc.Recall(ctx, "排班").Items {
+		require.NotEqual(t, proposal.ID, item.ID,
+			"a guess contradicting the user must not be asserted")
+	}
 }
 
 func TestRejectingAGuessStopsItComingBack(t *testing.T) {
@@ -248,7 +252,7 @@ func TestARepeatedGuessDoesNotStackUpInTheInbox(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first.ID, second.ID)
 
-	_, total, err := svc.ListItems(ctx, types.MemoryStatusPending, 10, 0)
+	_, total, err := svc.ListItems(ctx, types.MemoryStatusActive, 10, 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 }

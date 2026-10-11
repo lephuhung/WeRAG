@@ -488,6 +488,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// knowledge.parse_defaults) to the parse pipeline so every ingestion
 	// path can resolve them at parse time.
 	must(container.Invoke(registerParseDefaultsProvider))
+	must(container.Invoke(registerPlatformMemoryConfigProvider))
 	must(container.Provide(service.NewTemporaryDocumentService))
 	// Document assistant: the session's editable .docx and the ONLYOFFICE
 	// Document Server bridge (disabled unless ONLYOFFICE_* is configured).
@@ -599,8 +600,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
-	must(container.Provide(handler.NewStatsHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
+	must(container.Provide(handler.NewStatsHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))
@@ -772,6 +773,24 @@ func registerLiteModelConcurrencyLimiter(ss interfaces.SystemSettingService) {
 // settings service's cached resolver, so a hot parse path never hits the DB.
 // A missing or malformed row yields nil — the feature stays off and uploads
 // fall back to per-KB / per-upload configuration.
+// registerPlatformMemoryConfigProvider lets the model service see the
+// SuperAdmin's platform-wide memory configuration (system setting
+// memory.config) when it checks whether a model is still in use.
+func registerPlatformMemoryConfigProvider(ss interfaces.SystemSettingService) {
+	service.SetPlatformMemoryConfigProvider(func() *types.MemoryConfig {
+		raw, ok := ss.GetJSON(context.Background(), types.MemoryConfigSettingKey)
+		if !ok || len(raw) == 0 {
+			return nil
+		}
+		cfg, err := types.ParseMemoryConfig(raw)
+		if err != nil {
+			logger.Warnf(context.Background(), "[memory] cannot decode %q: %v", types.MemoryConfigSettingKey, err)
+			return nil
+		}
+		return cfg
+	})
+}
+
 func registerParseDefaultsProvider(ss interfaces.SystemSettingService) {
 	service.SetParseDefaultsProvider(func() *types.SystemParseDefaults {
 		raw, ok := ss.GetJSON(context.Background(), service.SystemParseDefaultsKey)

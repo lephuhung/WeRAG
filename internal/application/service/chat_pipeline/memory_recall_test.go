@@ -30,6 +30,8 @@ func (s *stubMemoryService) Recall(_ context.Context, query string) interfaces.M
 
 func (s *stubMemoryService) ScheduleExtraction(context.Context, string, string, string) {}
 
+func (s *stubMemoryService) TakeNewlySaved(context.Context) []*types.MemoryItem { return nil }
+
 func (s *stubMemoryService) Handle(context.Context, *asynq.Task) error { return nil }
 
 func newMemoryRecallPlugin(memoryService interfaces.MemoryService) *PluginMemoryRecall {

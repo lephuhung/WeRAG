@@ -8,17 +8,16 @@ import (
 
 // RegisterMemoryRoutes registers the personal long-term memory endpoints.
 //
-// There is no admin surface here and no subject parameter anywhere in the
-// paths: the memory space is derived from the caller's principal, so these
-// routes can only ever read or write the caller's own memories. That is why
-// Viewer is the only role gate they need. An API key must be full-access,
-// since a memory space belongs to a person and a scoped integration key has
-// no business inheriting one.
+// There is no subject parameter anywhere in the paths: the memory space is
+// derived from the caller's principal, so these routes can only ever read or
+// write the caller's own memories. Memory is configured platform-wide by the
+// SuperAdmin and users do not manage it themselves, so the whole group is
+// SystemAdmin-only; members still build memory through the conversation.
 func RegisterMemoryRoutes(r *gin.RouterGroup, memoryHandler *handler.MemoryHandler, g *rbacGuards) {
 	if memoryHandler == nil {
 		return
 	}
-	memoryGroup := g.apiKeyGroup(r.Group("/memory", g.Member()), apiKeyFullAccess())
+	memoryGroup := g.apiKeyGroup(r.Group("/memory", g.SystemAdmin()), apiKeyFullAccess())
 	{
 		memoryGroup.GET("/settings", memoryHandler.GetSettings)
 		memoryGroup.PUT("/settings", memoryHandler.UpdateSettings)
@@ -28,7 +27,6 @@ func RegisterMemoryRoutes(r *gin.RouterGroup, memoryHandler *handler.MemoryHandl
 		memoryGroup.PUT("/items/:id", memoryHandler.UpdateItem)
 		memoryGroup.DELETE("/items/:id", memoryHandler.DeleteItem)
 		memoryGroup.POST("/items/:id/confirm", memoryHandler.ConfirmItem)
-		memoryGroup.POST("/items/:id/reject", memoryHandler.RejectItem)
 		memoryGroup.GET("/topics", memoryHandler.ListTopics)
 		memoryGroup.DELETE("/topics/:id", memoryHandler.DeleteTopic)
 		memoryGroup.POST("/topics/:id/promote", memoryHandler.PromoteTopic)
@@ -37,4 +35,10 @@ func RegisterMemoryRoutes(r *gin.RouterGroup, memoryHandler *handler.MemoryHandl
 		memoryGroup.GET("/export", memoryHandler.Export)
 		memoryGroup.POST("/consolidate", memoryHandler.Consolidate)
 	}
+
+	// The one thing every user may do with their memory: take back a memory
+	// the assistant just announced it saved ("I just saved ... — not right?").
+	// The scope comes from the caller, so only the caller's own item can go.
+	correction := g.apiKeyGroup(r.Group("/memory", g.Member()), apiKeyFullAccess())
+	correction.POST("/items/:id/reject", memoryHandler.RejectItem)
 }

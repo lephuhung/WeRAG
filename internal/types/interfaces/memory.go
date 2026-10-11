@@ -213,6 +213,11 @@ type MemoryRepository interface {
 	ArchiveLowestRanked(ctx context.Context, scope MemoryScope, keep int) (int64, error)
 	// CountActive returns the number of active items in the scope.
 	CountActive(ctx context.Context, scope MemoryScope) (int64, error)
+	// ListUnannounced returns active, automatically distilled items the user
+	// has not been told about yet, oldest first.
+	ListUnannounced(ctx context.Context, scope MemoryScope, limit int) ([]*types.MemoryItem, error)
+	// MarkAnnounced records that the user has been told about the items.
+	MarkAnnounced(ctx context.Context, scope MemoryScope, ids []string, at time.Time) error
 }
 
 // MemoryExtractionFailure identifies an invalid-output range without retaining message text.
@@ -280,6 +285,13 @@ type MemoryService interface {
 	// calls and returns an empty recall (never an error) whenever memory is
 	// disabled at any level, so callers can use it unconditionally.
 	Recall(ctx context.Context, query string) MemoryRecall
+	// TakeNewlySaved returns the memories distilled since the user was last
+	// told, and marks them told. Empty whenever memory is off.
+	TakeNewlySaved(ctx context.Context) []*types.MemoryItem
+	// ForgetMatching deletes the stored memory that a "forget ..." request
+	// names, when one matches closely enough. Returns the deleted item, or
+	// nil when nothing matched.
+	ForgetMatching(ctx context.Context, statement string) (*types.MemoryItem, error)
 	// SearchMemory ranks the user's stored memories against an arbitrary
 	// query, for callers that need to reach past what Recall's per-turn budget
 	// admitted. Like Recall it performs no LLM call and never errors.

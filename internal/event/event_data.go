@@ -192,6 +192,11 @@ type MemoryRecalledData struct {
 	Memories interface{} `json:"memories"`
 }
 
+// MemorySavedData carries the memories announced to the user this turn.
+type MemorySavedData struct {
+	Memories interface{} `json:"memories"`
+}
+
 // AgentFinalAnswerData represents final answer streaming data
 type AgentFinalAnswerData struct {
 	Content    string `json:"content"`

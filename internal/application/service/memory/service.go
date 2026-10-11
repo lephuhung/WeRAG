@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -85,10 +86,22 @@ func (s *Service) platformEnabled(ctx context.Context) bool {
 	return s.systemSettings.GetBool(ctx, MemoryPlatformEnabledKey, "", true)
 }
 
-// workspaceConfig loads the workspace memory switch. A failed lookup yields
-// a zero-value config, which stays disabled rather than failing open; a
-// tenant that never saved a config gets the product default, which is on.
+// workspaceConfig loads the memory configuration a tenant runs under. The
+// SuperAdmin's platform-wide configuration wins; until one is saved, a
+// workspace keeps whatever it had stored before memory became a platform
+// setting, and otherwise the product default (on). A failed tenant lookup
+// yields a zero-value config, which stays disabled rather than failing open.
 func (s *Service) workspaceConfig(ctx context.Context, tenantID uint64) *types.MemoryConfig {
+	if s.systemSettings != nil {
+		if raw, found := s.systemSettings.GetJSON(ctx, types.MemoryConfigSettingKey); found && len(raw) > 0 {
+			cfg, err := types.ParseMemoryConfig(raw)
+			if err == nil {
+				return cfg
+			}
+			logger.Warnf(ctx, "memory: platform config unreadable, memory off: %v", err)
+			return &types.MemoryConfig{}
+		}
+	}
 	tenant, err := s.tenantRepo.GetTenantByID(ctx, tenantID)
 	if err != nil || tenant == nil {
 		return &types.MemoryConfig{}
@@ -119,16 +132,9 @@ func (s *Service) enabledScope(ctx context.Context) (interfaces.MemoryScope, *ty
 	if !types.MemoryAllowedForAgent(ctx) {
 		return scope, cfg, false
 	}
-	subject, err := s.repo.GetSubject(ctx, scope)
-	if err != nil {
-		logger.Warnf(ctx, "memory: load subject failed: %v", err)
-		return scope, cfg, false
-	}
-	// A subject row is created on first write. Its absence means the user has
-	// nothing stored yet, which is still "enabled" for the write path.
-	if subject != nil && !subject.Enabled {
-		return scope, cfg, false
-	}
+	// The per-user opt-out stored on the subject row is deliberately not
+	// consulted: memory is a platform setting the SuperAdmin owns, and users
+	// have no switch of their own.
 	return scope, cfg, true
 }
 
@@ -432,7 +438,7 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 		NormalizedKey:   normalizedKey,
 		Importance:      types.ClampMemoryImportance(item.Importance),
 		Origin:          item.Origin,
-		Status:          statusForWrite(item),
+		Status:          inferenceStatus(item, existing),
 		SourceSessionID: item.SourceSessionID,
 		SourceMessageID: item.SourceMessageID,
 		ValidFrom:       time.Now(),
@@ -507,6 +513,101 @@ func statusForWrite(item types.MemoryItem) string {
 		return types.MemoryStatusPending
 	}
 	return types.MemoryStatusActive
+}
+
+// forgetMatchThreshold is the share of the request's words a stored memory
+// must contain to be the one deleted. Forgetting the wrong memory is worse
+// than forgetting none, so a loose match is left alone.
+const forgetMatchThreshold = 0.6
+
+// ForgetMatching deletes the memory a "forget ..." request names: the best
+// search match, provided it contains most of the request's words.
+func (s *Service) ForgetMatching(ctx context.Context, statement string) (*types.MemoryItem, error) {
+	statement = strings.TrimSpace(statement)
+	if statement == "" {
+		return nil, nil
+	}
+	result := s.SearchMemory(ctx, statement, 3)
+	if !result.Available || len(result.Items) == 0 {
+		return nil, nil
+	}
+	best := result.Items[0]
+	if best == nil || wordOverlap(statement, best.Content) < forgetMatchThreshold {
+		return nil, nil
+	}
+	if err := s.DeleteItem(ctx, best.ID); err != nil {
+		return nil, err
+	}
+	return best, nil
+}
+
+// wordOverlap is the share of the words of want that also occur in have,
+// ignoring case and punctuation.
+func wordOverlap(want, have string) float64 {
+	split := func(text string) []string {
+		return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+	}
+	wantWords := split(want)
+	if len(wantWords) == 0 {
+		return 0
+	}
+	haveWords := make(map[string]bool)
+	for _, w := range split(have) {
+		haveWords[w] = true
+	}
+	matched := 0
+	for _, w := range wantWords {
+		if haveWords[w] {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(wantWords))
+}
+
+// inferenceStatus is statusForWrite once users stopped reviewing memory. An
+// inference that stands on its own is used at once and announced on the next
+// turn (TakeNewlySaved), so a wrong one can be taken back. An inference that
+// would replace something already stored stays a pending proposal: it is
+// never injected, and a guess must not overwrite what the user said.
+func inferenceStatus(item types.MemoryItem, replaces *types.MemoryItem) string {
+	status := statusForWrite(item)
+	if status == types.MemoryStatusPending && replaces == nil {
+		return types.MemoryStatusActive
+	}
+	return status
+}
+
+// newlySavedLimit bounds how many fresh memories one turn announces.
+const newlySavedLimit = 5
+
+// TakeNewlySaved returns the memories the background extraction stored since
+// the user was last told, and marks them told. A turn announces them so the
+// user can say when one is wrong; memory being off at any level (platform,
+// agent) means nothing to announce.
+func (s *Service) TakeNewlySaved(ctx context.Context) []*types.MemoryItem {
+	scope, _, ok := s.enabledScope(ctx)
+	if !ok {
+		return nil
+	}
+	items, err := s.repo.ListUnannounced(ctx, scope, newlySavedLimit)
+	if err != nil {
+		logger.Warnf(ctx, "memory: list unannounced failed: %v", err)
+		return nil
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	if err := s.repo.MarkAnnounced(ctx, scope, ids, time.Now()); err != nil {
+		logger.Warnf(ctx, "memory: mark announced failed: %v", err)
+		return nil
+	}
+	return items
 }
 
 // enforceCapacity archives the lowest ranked items once the subject exceeds
@@ -917,7 +1018,7 @@ func (s *Service) GetSettings(ctx context.Context) (*types.MemorySettings, error
 	cfg := s.workspaceConfig(ctx, scope.TenantID)
 	platform := s.platformEnabled(ctx)
 	settings := &types.MemorySettings{
-		PlatformEnabled: platform,
+		PlatformEnabled:  platform,
 		WorkspaceEnabled: cfg.MemoryEnabled(),
 		UserEnabled:      true,
 		WriteMode:        cfg.WriteMode,

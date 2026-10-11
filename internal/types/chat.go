@@ -263,6 +263,9 @@ const (
 	// MemoryRecalled: the long-term memories injected into this answer, so
 	// the UI can show and let the user delete what influenced it.
 	ResponseTypeMemoryRecalled ResponseType = "memory_recalled"
+	// MemorySaved: memories the system stored on its own since the user was
+	// last told, announced so a wrong one can be taken back.
+	ResponseTypeMemorySaved ResponseType = "memory_saved"
 	// ResponseTypeSteer is the per-run control signal a client POSTs while a
 	// turn is still running. It rides the same StreamManager keyspace as the
 	// stop event but in a dedicated sub-list (AppendSteerEvents/GetSteerEvents)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -331,21 +332,52 @@ func TestWorkspaceSwitchOffDisablesReadAndWrite(t *testing.T) {
 	require.ErrorIs(t, err, ErrMemoryDisabled)
 }
 
-func TestUserSwitchOffDisablesReadAndWrite(t *testing.T) {
+// Memory is a platform setting: a per-user opt-out stored before that change
+// must not keep switching memory off for the user, who has no way to undo it.
+func TestStoredUserSwitchIsIgnored(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	_, err := svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "记住的东西"})
 	require.NoError(t, err)
 
 	require.NoError(t, svc.SetEnabled(ctx, false))
-	require.Empty(t, svc.Recall(ctx, "记住的东西").Prompt)
-	_, err = svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "新的东西"})
-	require.ErrorIs(t, err, ErrMemoryDisabled)
-
-	// Turning it back on restores what was stored: an opt out pauses memory,
-	// it does not erase it.
-	require.NoError(t, svc.SetEnabled(ctx, true))
 	require.Contains(t, svc.Recall(ctx, "记住的东西").Prompt, "记住的东西")
+	_, err = svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "新的东西"})
+	require.NoError(t, err)
+}
+
+// stubPlatformSettings serves the platform memory settings; every other
+// SystemSettingService method is unused by the memory service.
+type stubPlatformSettings struct {
+	interfaces.SystemSettingService
+	memoryConfig []byte
+}
+
+func (s *stubPlatformSettings) GetBool(context.Context, string, string, bool) bool { return true }
+
+func (s *stubPlatformSettings) GetJSON(_ context.Context, key string) (types.JSON, bool) {
+	if key != types.MemoryConfigSettingKey || s.memoryConfig == nil {
+		return nil, false
+	}
+	return types.JSON(s.memoryConfig), true
+}
+
+// The SuperAdmin's platform configuration wins over whatever a workspace
+// stored before memory became a platform setting.
+func TestPlatformConfigOverridesWorkspaceConfig(t *testing.T) {
+	svc, _, tenantRepo := newMemoryHarness(t)
+	ctx := enabledCtx(t, tenantRepo, 1, "alice")
+	settings := &stubPlatformSettings{}
+	svc.systemSettings = settings
+
+	settings.memoryConfig = []byte(`{"enabled": false}`)
+	_, err := svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "记住的东西"})
+	require.ErrorIs(t, err, ErrMemoryDisabled, "the platform switched memory off")
+
+	tenantRepo.set(1, &types.MemoryConfig{Enabled: false})
+	settings.memoryConfig = []byte(`{"enabled": true}`)
+	_, err = svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "记住的东西"})
+	require.NoError(t, err, "the platform switched memory on for every workspace")
 }
 
 func TestAgentOptOutDisablesRecall(t *testing.T) {

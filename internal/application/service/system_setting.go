@@ -335,6 +335,18 @@ var registry = map[string]settingSpec{
 		Description: "平台级长期记忆总开关。关闭后所有空间和所有用户的长期记忆立即停用，" +
 			"个人与空间的记忆设置保留但不生效。修改后立即生效。",
 	},
+	// memory.config is the platform-wide memory configuration (on/off,
+	// write mode, extraction and embedding models, budgets). It replaces the
+	// per-workspace setting: tenants inherit it and users cannot opt out.
+	// Read live on every memory call, so edits apply without a restart.
+	types.MemoryConfigSettingKey: {
+		Type:     "json",
+		EnvName:  "",
+		Default:  map[string]any{"enabled": true},
+		Category: "memory",
+		Description: "Platform-wide long-term memory configuration (same fields as the former workspace " +
+			"memory config). Every workspace and user inherits it; edits apply immediately.",
+	},
 	// chat.web_search_enabled gates web search (network providers and the
 	// local-browser tool) platform-wide. The per-agent / per-request switches
 	// and the tenant provider config stay in place but are neutralised while
@@ -1434,6 +1446,14 @@ func validateRegistryEntry(key string, rawValue any) error {
 			return err
 		}
 		return utils.ValidateSSRFWhitelistEntries(entries)
+	case types.MemoryConfigSettingKey:
+		raw, err := json.Marshal(rawValue)
+		if err != nil {
+			return fmt.Errorf("cannot encode value: %w", err)
+		}
+		if _, err := types.ParseMemoryConfig(raw); err != nil {
+			return err
+		}
 	case SystemParseDefaultsKey:
 		// Strict-decode into SystemParseDefaults: unknown keys would be
 		// silently dropped at read time, which in a locked config means the

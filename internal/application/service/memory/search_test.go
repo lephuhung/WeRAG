@@ -126,15 +126,9 @@ func TestSearchTellsDisabledApartFromEmpty(t *testing.T) {
 // MemoryAvailable is what lets a caller decide not to offer a memory feature
 // at all. It has to track every switch the read path honours, or the agent
 // would keep being handed a tool that can only report that memory is off.
-func TestMemoryAvailableTracksAllThreeSwitches(t *testing.T) {
+func TestMemoryAvailableTracksEverySwitch(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
-	require.True(t, svc.MemoryAvailable(ctx))
-
-	// The user's own toggle in 我的记忆.
-	require.NoError(t, svc.SetEnabled(ctx, false))
-	require.False(t, svc.MemoryAvailable(ctx), "the user opted out")
-	require.NoError(t, svc.SetEnabled(ctx, true))
 	require.True(t, svc.MemoryAvailable(ctx))
 
 	// The agent handling this request.
@@ -159,7 +153,7 @@ func TestMemoryAvailableAgreesWithSearch(t *testing.T) {
 
 	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "数据库", 10).Available)
 
-	require.NoError(t, svc.SetEnabled(ctx, false))
+	tenantRepo.set(1, &types.MemoryConfig{Enabled: false})
 	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "数据库", 10).Available)
 	require.False(t, svc.SearchMemory(ctx, "数据库", 10).Available)
 }

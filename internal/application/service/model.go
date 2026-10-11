@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -497,9 +498,11 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 			agentCount = int64(len(usage.Agents))
 		}
 		memoryInUse := len(usage.LongTermMemory.Bindings) > 0
-		logger.Warnf(ctx, "Model %s is in use: kb=%d agent=%d memory=%t", id, kbCount, agentCount, memoryInUse)
+		platformInUse := len(usage.Platform.Bindings) > 0
+		logger.Warnf(ctx, "Model %s is in use: kb=%d agent=%d memory=%t platform=%t",
+			id, kbCount, agentCount, memoryInUse, platformInUse)
 		return apperrors.NewModelInUseError(
-			formatModelInUseMessage(kbCount, agentCount, memoryInUse),
+			formatModelInUseMessage(kbCount, agentCount, memoryInUse, platformInUse),
 			usage,
 		)
 	}
@@ -558,32 +561,84 @@ func (s *modelService) getModelUsageDetails(
 		}
 	}
 
-	if s.tenantService == nil {
-		return details, nil
+	details.Platform.Bindings = platformModelBindings(modelID)
+
+	var tenant *types.Tenant
+	if s.tenantService != nil {
+		if tenant, err = s.tenantService.GetTenantByID(ctx, tenantID); err != nil {
+			return details, err
+		}
 	}
-	tenant, err := s.tenantService.GetTenantByID(ctx, tenantID)
-	if err != nil {
-		return details, err
+	if tenant != nil && tenant.IsConfigProfile() {
+		if strings.TrimSpace(tenant.DefaultEmbeddingModelID) == modelID {
+			details.Platform.Bindings = append(details.Platform.Bindings, types.ModelUsageBindingEmbeddingModel)
+		}
+		if strings.TrimSpace(tenant.DefaultSummaryModelID) == modelID {
+			details.Platform.Bindings = append(details.Platform.Bindings, types.ModelUsageBindingSummaryModel)
+		}
 	}
-	if tenant == nil || tenant.MemoryConfig == nil {
+
+	// Memory runs on the platform-wide configuration once the SuperAdmin has
+	// saved one; before that, on the workspace's own.
+	memory := currentPlatformMemoryConfig()
+	if memory == nil && tenant != nil {
+		memory = tenant.MemoryConfig
+	}
+	if memory == nil {
 		return details, nil
 	}
 
 	// Both memory model pins have to be checked. Deleting either one leaves
-	// the workspace pointing at a model that no longer exists.
-	if strings.TrimSpace(tenant.MemoryConfig.EmbeddingModelID) == modelID {
+	// memory pointing at a model that no longer exists.
+	if strings.TrimSpace(memory.EmbeddingModelID) == modelID {
 		details.LongTermMemory.Bindings = append(
 			details.LongTermMemory.Bindings,
 			types.ModelUsageBindingEmbeddingModel,
 		)
 	}
-	if strings.TrimSpace(tenant.MemoryConfig.ExtractModelID) == modelID {
+	if strings.TrimSpace(memory.ExtractModelID) == modelID {
 		details.LongTermMemory.Bindings = append(
 			details.LongTermMemory.Bindings,
 			types.ModelUsageBindingExtractModel,
 		)
 	}
 	return details, nil
+}
+
+// platformMemoryConfigProvider resolves the SuperAdmin's platform-wide memory
+// configuration (system setting memory.config); it returns nil when none is
+// saved. Installed at startup like the parse-defaults provider.
+var platformMemoryConfigProvider atomic.Value // stores func() *types.MemoryConfig
+
+// SetPlatformMemoryConfigProvider installs the platform memory resolver.
+func SetPlatformMemoryConfigProvider(fn func() *types.MemoryConfig) {
+	platformMemoryConfigProvider.Store(fn)
+}
+
+func currentPlatformMemoryConfig() *types.MemoryConfig {
+	fn, _ := platformMemoryConfigProvider.Load().(func() *types.MemoryConfig)
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
+
+// platformModelBindings reports how the published default parse settings pin
+// a model: every upload parses with them, so deleting one breaks ingestion
+// for every workspace.
+func platformModelBindings(modelID string) []types.ModelUsageBinding {
+	bindings := make([]types.ModelUsageBinding, 0)
+	locked := lockedParseOverrides()
+	if locked == nil {
+		return bindings
+	}
+	if locked.VLMConfig != nil && strings.TrimSpace(locked.VLMConfig.ModelID) == modelID {
+		bindings = append(bindings, types.ModelUsageBindingVLMModel)
+	}
+	if locked.ASRConfig != nil && strings.TrimSpace(locked.ASRConfig.ModelID) == modelID {
+		bindings = append(bindings, types.ModelUsageBindingASRModel)
+	}
+	return bindings
 }
 
 // GetEmbeddingModel retrieves and initializes an embedding model instance
@@ -878,7 +933,7 @@ func (s *modelService) GetASRModel(ctx context.Context, modelId string) (asr.ASR
 	return sttModel, nil
 }
 
-func formatModelInUseMessage(kbCount, agentCount int64, memory bool) string {
+func formatModelInUseMessage(kbCount, agentCount int64, memory, platform bool) string {
 	var parts []string
 	if kbCount > 0 {
 		parts = append(parts, fmt.Sprintf("%d knowledge base(s)", kbCount))
@@ -888,6 +943,9 @@ func formatModelInUseMessage(kbCount, agentCount int64, memory bool) string {
 	}
 	if memory {
 		parts = append(parts, "long-term memory")
+	}
+	if platform {
+		parts = append(parts, "platform settings")
 	}
 	joined := strings.Join(parts, " and ")
 	return fmt.Sprintf(

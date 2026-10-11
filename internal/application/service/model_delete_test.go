@@ -441,19 +441,23 @@ func TestFormatModelInUseMessage(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t,
 		"model is used by 1 knowledge base(s); reconfigure or remove those references before deleting",
-		formatModelInUseMessage(1, 0, false),
+		formatModelInUseMessage(1, 0, false, false),
 	)
 	assert.Equal(t,
 		"model is used by 2 agent(s); reconfigure or remove those references before deleting",
-		formatModelInUseMessage(0, 2, false),
+		formatModelInUseMessage(0, 2, false, false),
 	)
 	assert.Equal(t,
 		"model is used by 1 knowledge base(s) and 1 agent(s); reconfigure or remove those references before deleting",
-		formatModelInUseMessage(1, 1, false),
+		formatModelInUseMessage(1, 1, false, false),
 	)
 	assert.Equal(t,
 		"model is used by long-term memory; reconfigure or remove those references before deleting",
-		formatModelInUseMessage(0, 0, true),
+		formatModelInUseMessage(0, 0, true, false),
+	)
+	assert.Equal(t,
+		"model is used by platform settings; reconfigure or remove those references before deleting",
+		formatModelInUseMessage(0, 0, false, true),
 	)
 }
 
