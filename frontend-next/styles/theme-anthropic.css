@@ -1,0 +1,78 @@
+/* Anthropic design preset — source: /home/windowsId/portal/anthropic-DESIGN.md.
+ *
+ * Selected by SuperAdmin via the system setting `ui.theme` and applied as
+ * <html data-theme="anthropic">. Overrides the same CSS variables the default
+ * ElevenLabs theme defines in app/globals.css, so every Tailwind utility
+ * (bg-canvas, text-ink, border-hairline, …) follows the theme with no
+ * component change. Unlayered, so it wins over Tailwind's @layer theme.
+ *
+ * Shared with the Word add-in (scripts/shared-files.json).
+ */
+
+html[data-theme="anthropic"] {
+  --color-canvas: #faf9f5;
+  --color-canvas-soft: #f5f4ee;
+  --color-canvas-deep: #141413;
+  --color-surface-card: #ffffff;
+  --color-surface-strong: #f1efe8;
+  --color-surface-dark: #141413;
+  --color-surface-dark-elevated: #26251f;
+
+  --color-primary: #141413;
+  --color-primary-active: #000000;
+  --color-ink: #141413;
+  --color-body: #4a4843;
+  --color-body-strong: #141413;
+  --color-muted: #6f6b64;
+  --color-muted-soft: #a5a099;
+  --color-on-primary: #ffffff;
+  --color-on-dark: #ffffff;
+  --color-on-dark-soft: #cfcbc3;
+
+  --color-hairline: #e6e3da;
+  --color-hairline-soft: #efede6;
+  --color-hairline-strong: #d5d1c6;
+
+  /* Anthropic radius scale: sm 8 / md 16 / lg 24 */
+  --radius-sm2: 8px;
+  --radius-md2: 8px;
+  --radius-lg2: 16px;
+  --radius-xl2: 16px;
+  --radius-xxl: 24px;
+
+  --shadow-soft-drop: rgba(0, 0, 0, 0.01) 0 2px 2px 0,
+    rgba(0, 0, 0, 0.02) 0 4px 4px 0, rgba(0, 0, 0, 0.04) 0 16px 24px 0;
+
+  /* Anthropic Sans/Mono are proprietary; IBM Plex is the substitute with
+   * Vietnamese coverage. Each app provides --ui-font-sans / --ui-font-mono. */
+  --font-sans: var(--ui-font-sans, ui-sans-serif), system-ui, "Segoe UI", Arial, sans-serif;
+  --font-display: var(--ui-font-sans, ui-sans-serif), system-ui, "Segoe UI", Arial, sans-serif;
+  --font-mono: var(--ui-font-mono, ui-monospace), Consolas, "Courier New", monospace;
+}
+
+html[data-theme="anthropic"].dark {
+  --color-canvas: #141413;
+  --color-canvas-soft: #1a1917;
+  --color-canvas-deep: #0c0b0a;
+  --color-surface-card: #1e1d1b;
+  --color-surface-strong: #26251f;
+  --color-surface-dark: #0f0e0d;
+  --color-surface-dark-elevated: #1e1d1b;
+
+  --color-primary: #faf9f5;
+  --color-primary-active: #ffffff;
+  --color-ink: #faf9f5;
+  --color-body: #c4c0b8;
+  --color-body-strong: #faf9f5;
+  --color-muted: #a5a099;
+  --color-muted-soft: #6f6b64;
+  --color-on-primary: #141413;
+  --color-on-dark: #faf9f5;
+  --color-on-dark-soft: #a5a099;
+
+  --color-hairline: #2e2d29;
+  --color-hairline-soft: #232220;
+  --color-hairline-strong: #3d3b36;
+
+  color-scheme: dark;
+}
