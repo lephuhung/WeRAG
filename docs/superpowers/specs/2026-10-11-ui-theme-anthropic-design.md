@@ -93,6 +93,12 @@ không cần logic mới. Không cần `RequiresRestart`.
   Vì khai báo ngoài `apiKeyGroup`, `assertAPIKeyPoliciesMatchRoutes` không đòi
   policy cho route này và API key mặc định bị từ chối. Route không nhạy cảm
   (chỉ là tên theme).
+- **Bắt buộc:** `middleware.Auth` chạy **toàn cục** (`r.Use` trong
+  `internal/router/router.go`) và chặn mọi request không nằm trong allowlist
+  `noAuthAPI` (`internal/middleware/auth.go`) bằng 401. Vì vậy phải thêm
+  `"/api/v1/system/ui-theme": {"GET"}` vào allowlist đó; nếu không route vẫn
+  401 dù đã bỏ `g.Member()`. Đây là điểm bản thiết kế đầu bỏ sót, phát hiện khi
+  chạy thử thực tế.
 
 ### 4.3 Kiểm thử backend
 
