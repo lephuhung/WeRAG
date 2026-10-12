@@ -17,7 +17,7 @@ func newSessionRepositoryForTest(t *testing.T) (interfaces.SessionRepository, *g
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	require.NoError(t, db.AutoMigrate(&types.Session{}, &types.DocumentWorkspace{}))
 
 	return NewSessionRepository(db), db
 }
@@ -244,6 +244,42 @@ func TestSessionRepositoryQueryPagedSplitsWebAndEmbedSessions(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{embed.ID}, listItemIDsForTest(embedItems))
+}
+
+// A session that ever held a Word add-in document is listed by the add-in
+// ("word") only: the console cannot show its document.
+func TestSessionRepositoryQueryPagedSplitsWebAndWordSessions(t *testing.T) {
+	repo, db := newSessionRepositoryForTest(t)
+	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
+	ctx := context.Background()
+
+	web := createSessionForTest(t, db, 1, "alice")
+	editor := createSessionForTest(t, db, 1, "alice")
+	word := createSessionForTest(t, db, 1, "alice")
+	closedWord := createSessionForTest(t, db, 1, "alice")
+	addDoc := func(sessionID, kind string) *types.DocumentWorkspace {
+		ws := &types.DocumentWorkspace{
+			TenantID: 1, SessionID: sessionID, FileName: "a.docx", FileType: "docx",
+			Status: types.DocumentWorkspaceStatusOpen, EditorKind: kind,
+		}
+		require.NoError(t, db.Create(ws).Error)
+		return ws
+	}
+	addDoc(editor.ID, types.DocumentEditorKindOnlyOffice)
+	addDoc(word.ID, types.DocumentEditorKindWordAddin)
+	require.NoError(t, db.Delete(addDoc(closedWord.ID, types.DocumentEditorKindWordAddin)).Error)
+
+	list := func(source string) []string {
+		items, total, err := repo.QueryPaged(ctx, &types.SessionListQuery{
+			TenantID: 1, UserID: "alice", Source: source, Page: 1, PageSize: 50,
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, len(items), total)
+		return listItemIDsForTest(items)
+	}
+	require.ElementsMatch(t, []string{web.ID, editor.ID}, list(""))
+	require.ElementsMatch(t, []string{web.ID, editor.ID}, list("web"))
+	require.ElementsMatch(t, []string{word.ID, closedWord.ID}, list("word"))
 }
 
 // The "web" source is user chats only; API-key sessions live in the

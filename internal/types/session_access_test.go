@@ -10,6 +10,7 @@ func TestSessionListSourceRequiresAdmin(t *testing.T) {
 		{"", false},
 		{"web", false},
 		{"WEB", false},
+		{"word", false},
 		{"api", true},
 		{"embed", true},
 		{"embed:ch-1", true},

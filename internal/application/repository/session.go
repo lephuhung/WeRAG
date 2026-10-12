@@ -69,6 +69,12 @@ func (r *sessionRepository) Get(ctx context.Context, tenantID uint64, userID str
 const webSessionPredicate = "ics.id IS NULL AND (s.description = '' OR s.description NOT LIKE ?) " +
 	"AND (s.user_id IS NULL OR (s.user_id NOT LIKE ? AND s.user_id NOT LIKE ?))"
 
+// wordSessionPredicate selects sessions that ever held a Word add-in
+// document. Soft-deleted rows count too: like an IM mapping, a session that
+// was once a Word session stays in the Word bucket after its document closes.
+const wordSessionPredicate = "EXISTS (SELECT 1 FROM document_workspaces dw " +
+	"WHERE dw.session_id = s.id AND dw.editor_kind = ?)"
+
 func webSessionPredicateArgs() []any {
 	return []any{
 		types.EmbedSessionMarkerPrefix + "%",
@@ -216,7 +222,10 @@ func (r *sessionRepository) QueryPaged(
 		embedPrefix := types.EmbedSessionMarkerPrefix
 		switch lower {
 		case "":
-			return db
+			// Word add-in chats are listed only by the add-in ("word"): their
+			// document lives in Word, so the console would show a conversation
+			// about a file it cannot open.
+			return db.Where("NOT "+wordSessionPredicate, types.DocumentEditorKindWordAddin)
 		case types.SessionSourceAPI:
 			// Tenant-wide view of API-key sessions. Requests without an
 			// external identity use an api_tenant_key owner; requests with a
@@ -229,7 +238,10 @@ func (r *sessionRepository) QueryPaged(
 				types.SessionOwnerAPIExternalUserPrefix+"%",
 			)
 		case "web":
-			return db.Where(webSessionPredicate, webSessionPredicateArgs()...)
+			return db.Where(webSessionPredicate, webSessionPredicateArgs()...).
+				Where("NOT "+wordSessionPredicate, types.DocumentEditorKindWordAddin)
+		case types.SessionSourceWord:
+			return db.Where("ics.id IS NULL").Where(wordSessionPredicate, types.DocumentEditorKindWordAddin)
 		case "embed":
 			return db.Where("ics.id IS NULL AND s.description LIKE ?", embedPrefix+"%")
 		default:

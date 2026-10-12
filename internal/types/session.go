@@ -169,11 +169,17 @@ const SessionSourceAPI = "api"
 // SessionSourceWeb is the source filter for a user's own Web-console chats.
 const SessionSourceWeb = "web"
 
+// SessionSourceWord is the source filter for a user's own Word add-in chats:
+// sessions that ever held a word_addin document. The Web console list (the
+// unfiltered listing and "web") leaves them out, since their document lives
+// in Word and the console cannot show it.
+const SessionSourceWord = "word"
+
 // SessionListSourceRequiresAdmin reports whether a session-list source filter
 // exposes tenant-wide channel traffic (API / IM / embed) in the Web console.
 func SessionListSourceRequiresAdmin(source string) bool {
 	src := strings.TrimSpace(source)
-	if src == "" || strings.EqualFold(src, SessionSourceWeb) {
+	if src == "" || strings.EqualFold(src, SessionSourceWeb) || strings.EqualFold(src, SessionSourceWord) {
 		return false
 	}
 	return true
@@ -224,7 +230,8 @@ func SanitizeClientSessionDescription(incoming, existing string) string {
 // SessionListQuery bundles the parameters for listing sessions.
 // UserID empty means "tenant-wide" (used by API-key callers / legacy rows).
 // Keyword matches title ILIKE '%keyword%'.
-// Source values: "web" (user chats, no IM/embed), "embed" / "embed:{channelID}",
+// Source values: "web" (user chats, no IM/embed/Word add-in), "word" (the
+// user's Word add-in chats), "embed" / "embed:{channelID}",
 // "api" (all API-key sessions, Admin+ only), or an IM platform name
 // (e.g. "feishu", "wechat"). IM and embed sources are also Admin+ only.
 // AgentID currently only filters sessions that have an IM channel mapping.
