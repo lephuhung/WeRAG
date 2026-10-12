@@ -152,7 +152,9 @@ func (p *PluginSearchParallel) OnEvent(ctx context.Context,
 
 	errs := RunParallel(tasks...)
 
-	// Merge results from both searches
+	// Merge results from both searches. The entity search ran on a clone:
+	// carry its graph (the relations it found) back for the prompt.
+	chatManage.GraphResult = entityCM.GraphResult
 	chatManage.SearchResult = append(chunkCM.SearchResult, entityCM.SearchResult...)
 	chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
 

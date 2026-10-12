@@ -137,3 +137,25 @@ func TestPrepareMessagesWithModelContextSuppressesCitationsWhenDisabled(t *testi
 	require.NotContains(t, messages[1].Content, "chunk-1")
 	require.Equal(t, "answer ", refs.DecodeOutputText(`answer <ref id="c1"/>`))
 }
+
+// The entity search's relations reach the prompt: the context the model
+// reads is rebuilt from the results here, so they must be added here too.
+func TestPrepareMessagesWithModelContextAddsGraphRelations(t *testing.T) {
+	rendered := `<context id="1">first content</context>`
+	manage := &types.ChatManage{
+		PipelineRequest: types.PipelineRequest{Query: "question", SummaryConfig: types.SummaryConfig{Prompt: "system"}},
+		PipelineState: types.PipelineState{
+			RenderedContexts: rendered,
+			UserContent:      "References:\n" + rendered + "\nQuestion: question",
+			MergeResult: []*types.SearchResult{
+				{ID: "chunk-1", KnowledgeID: "doc-1", KnowledgeBaseID: "kb-1", KnowledgeTitle: "Doc", ChunkIndex: 1, Content: "first content"},
+			},
+			GraphResult: &types.GraphData{Relation: []*types.GraphRelation{
+				{Node1: "29/2018/QH14", Type: "CAN_CU", Node2: "Hiến pháp"},
+			}},
+		},
+	}
+	messages, _ := prepareMessagesWithModelContext(context.Background(), manage)
+	require.Contains(t, messages[1].Content, "<knowledge_graph>\n29/2018/QH14 —CAN_CU→ Hiến pháp\n</knowledge_graph>")
+	require.Equal(t, 1, strings.Count(messages[1].Content, "<knowledge_graph>"))
+}

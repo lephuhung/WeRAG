@@ -78,6 +78,12 @@ func prepareMessagesWithModelContext(
 			},
 		}))
 	}
+	// Relations the entity search found in the knowledge graph. Their chunks
+	// are among the results; the edges (which document replaces or repeals
+	// which) exist only here.
+	if rels := graphRelationsContext(chatManage.GraphResult, chatManage.Entity); rels != "" {
+		contextParts = append(contextParts, "<knowledge_graph>\n"+registry.CompactKnownText(rels)+"</knowledge_graph>")
+	}
 	modelContexts := strings.Join(contextParts, "\n")
 	if strings.TrimSpace(modelContexts) == "" {
 		return messages, registry

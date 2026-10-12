@@ -234,16 +234,24 @@ func TestLegalKGUserPromptListsEveryDocumentRelation(t *testing.T) {
 }
 
 func TestGraphRelationsContext(t *testing.T) {
-	if graphRelationsContext(nil) != "" {
+	if graphRelationsContext(nil, nil) != "" {
 		t.Fatal("no graph, no context")
 	}
 	got := graphRelationsContext(&types.GraphData{Relation: []*types.GraphRelation{
+		{Node1: "Điều 2 (13/2023/NĐ-CP)", Type: "PART_OF", Node2: "13/2023/NĐ-CP"},
+		{Node1: "Điều 2 (13/2023/NĐ-CP)", Type: "CHU_TRI", Node2: "Bộ Công an"},
+		{Node1: "Bộ Công an", Type: "CHU_TRI", Node2: "13/2023/NĐ-CP"},
+		{Node1: "13/2023/NĐ-CP", Type: "VIEN_DAN", Node2: "Điều 4 (13/2023/NĐ-CP)"},
 		{Node1: "13/2023/NĐ-CP", Type: "THAY_THE", Node2: "52/2013/NĐ-CP"},
 		{Node1: "13/2023/NĐ-CP", Type: "THAY_THE", Node2: "52/2013/NĐ-CP"},
 		{Node1: "", Type: "CAN_CU", Node2: "x"},
 		nil,
-	}})
-	if got != "13/2023/NĐ-CP —THAY_THE→ 52/2013/NĐ-CP\n" {
+	}}, []string{"13/2023/NĐ-CP"})
+	want := "13/2023/NĐ-CP —THAY_THE→ 52/2013/NĐ-CP\n" +
+		"Bộ Công an —CHU_TRI→ 13/2023/NĐ-CP\n" +
+		"Điều 2 (13/2023/NĐ-CP) —CHU_TRI→ Bộ Công an\n" +
+		"13/2023/NĐ-CP —VIEN_DAN→ Điều 4 (13/2023/NĐ-CP)\n"
+	if got != want {
 		t.Fatalf("got %q", got)
 	}
 }

@@ -53,10 +53,7 @@ func (t *QueryKnowledgeGraphTool) searchGraph(
 			}
 		}
 	}
-	relations := graph.Relation
-	if len(relations) > graphQueryMaxRelations {
-		relations = relations[:graphQueryMaxRelations]
-	}
+	relations := types.RankGraphRelations(graph.Relation, terms, graphQueryMaxRelations)
 	if len(chunkIDs) == 0 || t.chunkService == nil {
 		return nil, relations, nil
 	}
