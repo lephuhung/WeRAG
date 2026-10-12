@@ -80,7 +80,7 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 	// Memory goes at the end of the system prompt, after the retrieved-context
 	// placeholders have been rendered, so a remembered sentence can never be
 	// substituted into prompt structure.
-	systemPrompt += chatManage.UserContextPrompt + chatManage.MemoryPrompt
+	systemPrompt += chatManage.UserContextPrompt + chatManage.LegalCatalogPrompt + chatManage.MemoryPrompt
 
 	chatMessages := []chat.Message{
 		{Role: "system", Content: systemPrompt},

@@ -179,6 +179,7 @@ func (s *sessionService) KnowledgeQA(
 		},
 	}
 	chatManage.UserContextPrompt = types.UserContextPrompt(ctx)
+	chatManage.LegalCatalogPrompt = s.legalCatalogPrompt(ctx, effectiveQuery)
 	if hasAbbreviationTurn {
 		resCopy := abbreviationResolution.Clone()
 		chatManage.AbbreviationResolution = &resCopy
@@ -1051,7 +1052,8 @@ func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) [
 			// Long-term memory rides along: "what is my unit?" finds nothing
 			// in the knowledge base, which is exactly when this path answers.
 			Content: promptContent + "\n\n" + types.SourceDataBoundaryPrompt +
-				"\n\n" + types.SourcedAnswerOutputPrompt + chatManage.UserContextPrompt + chatManage.MemoryPrompt,
+				"\n\n" + types.SourcedAnswerOutputPrompt + "\n\nCurrent date: " + time.Now().Format("2006-01-02") +
+				chatManage.UserContextPrompt + chatManage.LegalCatalogPrompt + chatManage.MemoryPrompt,
 		})
 	}
 

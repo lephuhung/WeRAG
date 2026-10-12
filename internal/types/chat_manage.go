@@ -147,6 +147,10 @@ type PipelineState struct {
 	// UserContextPrompt is the requester's profile (work unit, province),
 	// appended to the system prompt next to MemoryPrompt.
 	UserContextPrompt string `json:"-"`
+	// LegalCatalogPrompt holds the legal catalogue's entries for the
+	// documents the question names by số hiệu, appended next to
+	// UserContextPrompt; empty when it names none.
+	LegalCatalogPrompt string `json:"-"`
 	// UsedMemories mirrors MemoryPrompt in structured form so the answer can
 	// tell the user which memories it saw.
 	UsedMemories UsedMemories `json:"-"`
@@ -280,6 +284,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			SystemPromptOverride: c.SystemPromptOverride,
 			MemoryPrompt:         c.MemoryPrompt,
 			UserContextPrompt:    c.UserContextPrompt,
+			LegalCatalogPrompt:   c.LegalCatalogPrompt,
 			UsedMemories:         append(UsedMemories(nil), c.UsedMemories...),
 			RenderedContexts:     c.RenderedContexts,
 			Entity:               entity,

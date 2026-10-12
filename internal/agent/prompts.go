@@ -332,6 +332,10 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 		b.WriteString("When an answer rests on a Vietnamese legal document and its validity matters, " +
 			"check it with check_legal_status (by số ký hiệu) and tell the user when it has expired, " +
 			"been replaced or been amended, naming the newer document and the catalogue's snapshot date. " +
+			"When the user names a document by số ký hiệu, look it up with check_legal_status as well, even " +
+			"if the question is only about its content: the catalogue knows documents no knowledge base " +
+			"holds (most local NQ-HĐND / QĐ-UBND). Never say such a document does not exist or is dated in " +
+			"the future without that lookup. " +
 			"A document the catalogue does not know is unknown, not repealed.\n")
 	}
 	if has("query_knowledge_graph") {

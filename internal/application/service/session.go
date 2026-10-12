@@ -149,6 +149,8 @@ type sessionService struct {
 	// documentWorkspaces holds the document-assistant session's editable
 	// document; its current text is put into every agent turn.
 	documentWorkspaces interfaces.DocumentWorkspaceService
+	// legalCatalog answers for documents a question names by số hiệu.
+	legalCatalog interfaces.LegalCatalogService
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -178,6 +180,7 @@ func NewSessionService(cfg *config.Config,
 	abbreviationCoordinator *AbbreviationTurnCoordinator,
 	abbreviationStore interfaces.AbbreviationTurnRepository,
 	documentWorkspaces interfaces.DocumentWorkspaceService,
+	legalCatalog interfaces.LegalCatalogService,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                     cfg,
@@ -207,6 +210,7 @@ func NewSessionService(cfg *config.Config,
 		abbreviationCoordinator: abbreviationCoordinator,
 		abbreviationStore:       abbreviationStore,
 		documentWorkspaces:      documentWorkspaces,
+		legalCatalog:            legalCatalog,
 	}
 }
 

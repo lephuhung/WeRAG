@@ -24,12 +24,15 @@ var checkLegalStatusTool = BaseTool{
 	name: ToolCheckLegalStatus,
 	description: `Check whether a Vietnamese legal document is still in force, using the
 platform's legal catalogue (metadata imported from vbpl.vn, the Ministry of
-Justice portal — central-government documents only).
+Justice portal — central-government documents and the local documents of
+some provinces).
 
 ## When to Use
 
 - The user asks whether a document is still valid, when it takes or took
   effect, or what replaced, repealed, amended or guides it.
+- The user names a document by số ký hiệu that the knowledge bases do not
+  hold: its title, issuer and dates are here.
 - Before you base an answer on a legal document you found (search results,
   a citation in a document), check it here when its validity matters, and
   say so when it has expired, been replaced or been amended.
@@ -102,7 +105,8 @@ func (t *CheckLegalStatusTool) Execute(ctx context.Context, args json.RawMessage
 		return &types.ToolResult{
 			Success: true,
 			Output: "No document in the legal catalogue matches. The catalogue holds central-government " +
-				"documents only, so this one is unknown here — do not conclude it was repealed.",
+				"documents and few local ones, so this one is unknown here — do not conclude it was repealed " +
+				"or does not exist.",
 			Data: map[string]interface{}{"matches": 0},
 		}, nil
 	}
