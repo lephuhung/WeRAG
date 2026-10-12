@@ -959,7 +959,10 @@ func (s *agentService) registerTools(
 	//   - `config.AllowedTools` is the explicit, user-editable whitelist —
 	//     populated by the agent-type preset on create and freely editable
 	//     afterwards.
-	//   - We never silently *inject* tools the user didn't pick.
+	//   - We never silently *inject* tools the user didn't pick — except
+	//     query_knowledge_graph, which rides along with search_knowledge
+	//     whenever a graph-enabled KB is in scope (decided 2026-10-12: the
+	//     graph must serve every agent that searches knowledge).
 	//   - We still *filter out* tools whose capability prerequisites are missing
 	//     (no KB in scope, no Wiki-capable KB, etc.) so the LLM can't call tools
 	//     that would error at runtime.
@@ -1154,6 +1157,10 @@ func (s *agentService) registerTools(
 			allowedTools = trimmed
 			logger.Infof(ctx, "Dropped query_knowledge_graph because no graph-enabled KB is in scope")
 		}
+	} else if containsString(allowedTools, tools.ToolSearchKnowledge) &&
+		!containsString(allowedTools, tools.ToolQueryKnowledgeGraph) {
+		allowedTools = append(allowedTools, tools.ToolQueryKnowledgeGraph)
+		logger.Infof(ctx, "Added query_knowledge_graph: a graph-enabled KB is in scope")
 	}
 
 	// ---- AIRAG-ported tools: abbreviation dictionary + people lookup ----

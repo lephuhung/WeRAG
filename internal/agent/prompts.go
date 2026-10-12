@@ -334,6 +334,13 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"been replaced or been amended, naming the newer document and the catalogue's snapshot date. " +
 			"A document the catalogue does not know is unknown, not repealed.\n")
 	}
+	if has("query_knowledge_graph") {
+		b.WriteString("When the question is about how things in the documents relate — which document a text " +
+			"is based on, cites, amends, replaces or repeals, or which agency leads, coordinates or is " +
+			"responsible for a task — also call query_knowledge_graph with the entity names (a document by " +
+			"its số hiệu) and use the relations it returns together with the passages. A relation the graph " +
+			"lacks is unknown, not absent.\n")
+	}
 	if has("find_related_legal_documents") {
 		b.WriteString("When the user asks how a Vietnamese law is detailed or guided, what amended it or " +
 			"which version came before or after, call find_related_legal_documents; read the related " +
