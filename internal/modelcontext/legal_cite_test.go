@@ -21,7 +21,7 @@ func TestModelOutputCarriesLegalCiteAndNote(t *testing.T) {
 			"source_url": "https://vbpl.vn/van-ban/chi-tiet/142846?go=k6",
 		}},
 	}})
-	require.Contains(t, out, `role="amendment" cite="khoản 6 Điều 1 (sửa đổi Điều 9 Luật A)" `+
-		`source_url="https://vbpl.vn/van-ban/chi-tiet/142846?go=k6">`)
+	require.Contains(t, out, `role="amendment" cite="khoản 6 Điều 1 (sửa đổi Điều 9 Luật A)">`)
+	require.NotContains(t, out, "vbpl.vn") // citations name the provision; no links
 	require.Contains(t, out, "<note>Điều 9 is not a provision of this document.</note>\n</retrieval>")
 }

@@ -213,9 +213,8 @@ type modelChunk struct {
 	match     string
 	content   string
 	// cite names the legal provision the chunk sits in ("khoản 2 Điều
-	// 14"), sourceURL its official page; both empty for other documents.
+	// 14"); empty for other documents.
 	cite       string
-	sourceURL  string
 	question   string
 	answers    []string
 	images     []map[string]interface{}
@@ -274,7 +273,6 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 			match:      firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
 			content:    stringValue(row, "content"),
 			cite:       stringValue(row, "legal_cite"),
-			sourceURL:  stringValue(row, "source_url"),
 			question:   firstNonEmpty(stringValue(row, "faq_question"), stringValue(row, "faq_standard_question")),
 			answers:    stringSliceValue(row["faq_answers"]),
 			images:     mapsValue(row["images"]),
@@ -501,9 +499,6 @@ func renderKnowledgeChunks(mode string, chunks []modelChunk, info map[string]int
 			}
 			if chunk.cite != "" {
 				fmt.Fprintf(&b, " cite=\"%s\"", escapeAttr(chunk.cite))
-			}
-			if chunk.sourceURL != "" {
-				fmt.Fprintf(&b, " source_url=\"%s\"", escapeAttr(chunk.sourceURL))
 			}
 			b.WriteString(">\n")
 			if chunk.question != "" {

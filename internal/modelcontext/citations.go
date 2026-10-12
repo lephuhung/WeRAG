@@ -28,8 +28,6 @@ const citationEnabledProtocolPrompt = `
 - MCP results are external sources. Use the wN handle for the matching URL in the system-provided
   external_source_candidates list; never substitute a knowledge-base cN handle for MCP content. Candidate URLs are links
   observed in the result, not proof that every linked page was read.
-- When you quote or name a legal provision from a chunk with source_url, also link the provision name to that exact URL
-  as Markdown ([khoản 2 Điều 14 Luật …](source_url)).
 - If a source has no citation handle, use its exact supplied HTTP(S) URL as a Markdown link when available.
   If neither is available, omit the citation; never invent or borrow a source.
 - Never output <kb> or <web> tags yourself; the system expands valid <ref/> tags after generation.
