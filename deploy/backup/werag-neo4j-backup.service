@@ -1,0 +1,9 @@
+[Unit]
+Description=WeRAG: dump Neo4j (dừng vài phút) → MinIO qua container WeKnora-backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/WeRAG/deploy/backup/neo4j-dump.sh
+TimeoutStartSec=1h

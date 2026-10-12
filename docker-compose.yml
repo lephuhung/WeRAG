@@ -624,8 +624,26 @@ services:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
+    # Backup (deploy/backup/README.md): PG_ARCHIVE_MODE=on → WAL chép vào spool, container
+    # backup mã hoá + đẩy lên MinIO. wal_recycle=off: file WAL đóng sớm do archive_timeout
+    # có phần đuôi toàn số 0 thay vì WAL cũ → nén gần hết.
+    command:
+      - postgres
+      - -c
+      - archive_mode=${PG_ARCHIVE_MODE:-off}
+      - -c
+      - archive_command=/usr/local/bin/werag-archive-wal %p %f
+      - -c
+      - archive_timeout=${PG_ARCHIVE_TIMEOUT:-60}
+      - -c
+      - wal_recycle=off
+    # Dựng index HNSW song song (REINDEX, khôi phục pg_dump) cấp phát DSM trong /dev/shm;
+    # mặc định 64 MB của Docker → "could not resize shared memory segment".
+    shm_size: ${PG_SHM_SIZE:-2gb}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./deploy/backup/archive-wal.sh:/usr/local/bin/werag-archive-wal:ro
+      - backup-spool:/backup-spool
     networks:
       - WeKnora-network
     healthcheck:
@@ -1132,6 +1150,53 @@ services:
       - langfuse
       - full
 
+  # Backup → MinIO (bucket inventory-backups, prefix werag/), mã hoá age. Xem deploy/backup/README.md.
+  backup:
+    build:
+      context: ./deploy/backup
+    image: werag-backup:latest
+    container_name: WeKnora-backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: ${DB_NAME}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-inventory-backups}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_WAL_CRON: ${BACKUP_WAL_CRON:-* * * * *}
+      BACKUP_PG_CRON: ${BACKUP_PG_CRON:-15 0 * * *}
+      BACKUP_BASE_CRON: ${BACKUP_BASE_CRON:-0 1 * * 0}
+      BACKUP_FILES_CRON: ${BACKUP_FILES_CRON:-30 2 * * *}
+      BACKUP_ENV_CRON: ${BACKUP_ENV_CRON:-30 3 * * *}
+      BACKUP_RESTORE_CHECK_CRON: ${BACKUP_RESTORE_CHECK_CRON:-45 4 * * 0}
+      BACKUP_HOST_LABEL: ${BACKUP_HOST_LABEL:-werag}
+    volumes:
+      # Mọi file mount dưới /secrets được gói + mã hoá bởi job `env`.
+      - ./.env:/secrets/.env:ro
+      - backup-spool:/spool
+      - backup-work:/work
+      - data-files:/data/files:ro
+    restart: unless-stopped
+    # Root chỉ để chown /spool/wal lúc khởi động rồi hạ xuống uid 999 (entrypoint.sh).
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - WeKnora-network
+    profiles:
+      - backup
+
   mcp:
     build:
       context: ./mcp-server
@@ -1222,6 +1287,8 @@ networks:
 
 volumes:
   postgres-data:
+  backup-spool:
+  backup-work:
   data-files:
   docreader-tmp:
   minio_data:

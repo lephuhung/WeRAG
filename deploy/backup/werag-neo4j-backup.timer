@@ -1,0 +1,9 @@
+[Unit]
+Description=WeRAG: dump Neo4j hằng đêm
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+
+[Install]
+WantedBy=timers.target
