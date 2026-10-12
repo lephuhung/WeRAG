@@ -32,7 +32,7 @@ import (
 
 // ConverterVersion is recorded on ingested knowledge; bump it whenever the
 // Markdown or block layout changes so stale documents can be re-ingested.
-const ConverterVersion = 1
+const ConverterVersion = 2
 
 // BlockKind is the structural role of a block.
 type BlockKind string
@@ -96,6 +96,9 @@ type Block struct {
 	// Inferred is true when the structure was recognised from the text
 	// (attached documents, appendices, pages without vbpl markup).
 	Inferred bool `json:"inferred,omitempty"`
+	// Amend is, on quote blocks, what the quoted span amends; nil when the
+	// lead-in does not read as an amendment. Blocks of one span share it.
+	Amend *Amend `json:"amend,omitempty"`
 }
 
 // Document is the conversion result.
@@ -567,6 +570,7 @@ type builder struct {
 	item     int
 	appendix int // current appendix / attached-document heading
 	inQuote  bool
+	amend    *Amend // target of the open quote span
 	// lastHeading is a heading (or appendix title) that may still receive
 	// title continuation lines; titleLines counts the merged lines.
 	lastHeading int
@@ -914,6 +918,7 @@ func (b *builder) body(u unit, inferred bool) {
 	// Quote spans override classes.
 	if !b.inQuote && u.kind == uPara && quoteOpener(u.text) {
 		b.inQuote = true
+		b.amend = b.amendTarget(u.text)
 		b.doc.Stats.QuoteSpans++
 	} else if b.inQuote && u.class == "prov-article" && u.kind == uPara && !inferred &&
 		!strings.HasPrefix(u.text, "“") && !strings.HasPrefix(u.text, "\"") {
@@ -923,9 +928,10 @@ func (b *builder) body(u unit, inferred bool) {
 	if b.inQuote {
 		parent := b.innermost()
 		if u.kind == uTable {
-			b.emitTable(u, KindQuote, parent, "> ")
+			idx := b.emitTable(u, KindQuote, parent, "> ")
+			b.doc.Blocks[idx].Amend = b.amend
 		} else {
-			b.emit(Block{Kind: KindQuote, Text: u.text, Parent: parent, Inferred: inferred}, "> "+escapeLine(u.text))
+			b.emit(Block{Kind: KindQuote, Text: u.text, Parent: parent, Inferred: inferred, Amend: b.amend}, "> "+escapeLine(u.text))
 			if quoteCloser(u.text) && utf8.RuneCountInString(u.text) >= 3 {
 				b.inQuote = false
 			}

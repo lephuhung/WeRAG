@@ -332,3 +332,52 @@ func TestPlanHeadingWithoutRoomStandsAlone(t *testing.T) {
 		t.Fatalf("article chunk: %+v", chunks[2])
 	}
 }
+
+func TestAmendTargets(t *testing.T) {
+	d := convert(t, header+`
+<p id="a1" class="prov-article">Điều 1. Sửa đổi, bổ sung một số điều của Luật Phòng, chống thiên tai</p>
+<p id="k1" class="prov-clause">1. Sửa đổi, bổ sung một số khoản của Điều 3 như sau:</p>
+<p id="i1" class="prov-item">a) Sửa đổi, bổ sung khoản 1 như sau:</p>
+<p class="prov-content">“1. Thiên tai là hiện tượng tự nhiên.”;</p>
+<p id="k2" class="prov-clause">2. Bổ sung khoản 6 vào sau khoản 5 Điều 5 như sau:</p>
+<p class="prov-content">“6. Ưu tiên bố trí nguồn lực.”.</p>
+<p id="k3" class="prov-clause">3. Sửa đổi, bổ sung Điều 6 như sau:</p>
+<p class="prov-content">“Điều 6. Nguồn nhân lực</p>
+<p class="prov-content">1. Lực lượng xung kích.”.</p>
+<p id="a2" class="prov-article">Điều 2. Sửa đổi điểm b khoản 2 Điều 7 của Nghị định số 100/2016/NĐ-CP ngày 01 tháng 7 năm 2016 như sau:</p>
+<p class="prov-content">“b) Nội dung mới.”.</p>
+<p id="a3" class="prov-article">Điều 3. Hiệu lực thi hành</p>`+signature)
+	want := map[string]Amend{
+		"“1. Thiên tai":     {Document: "Luật Phòng, chống thiên tai", Article: "3", Khoan: "1"},
+		"“6. Ưu tiên":       {Document: "Luật Phòng, chống thiên tai", Article: "5", Khoan: "6"},
+		"“Điều 6. Nguồn":    {Document: "Luật Phòng, chống thiên tai", Article: "6"},
+		"1. Lực lượng":      {Document: "Luật Phòng, chống thiên tai", Article: "6"},
+		"“b) Nội dung mới.": {Document: "Nghị định số 100/2016/NĐ-CP", Article: "7", Khoan: "2", Diem: "b"},
+	}
+	for prefix, w := range want {
+		q := findBlock(d, KindQuote, prefix)
+		if q == nil || q.Amend == nil || *q.Amend != w {
+			t.Errorf("%q: amend = %+v, want %+v", prefix, q, w)
+		}
+	}
+
+	chunks := Plan(d, 2500)
+	var art1 *Chunk
+	for i := range chunks {
+		if chunks[i].ArticleNo == "1" {
+			art1 = &chunks[i]
+		}
+	}
+	if art1 == nil || len(art1.Amends) != 3 {
+		t.Fatalf("Điều 1 chunk amends: %+v", art1)
+	}
+	if cite := art1.Legal().Citation(); cite != "Điều 1 (khoản 1, 2, 3) (sửa đổi khoản 1 Điều 3, khoản 6 Điều 5, Điều 6 Luật Phòng, chống thiên tai)" {
+		t.Fatalf("citation = %q", cite)
+	}
+}
+
+func TestSentenceCaseKeepsNumber(t *testing.T) {
+	if got := sentenceCase("NGHỊ ĐỊNH SỐ 100/2016/NĐ-CP"); got != "Nghị định số 100/2016/NĐ-CP" {
+		t.Fatal(got)
+	}
+}

@@ -365,6 +365,14 @@ func (s *ChunkExtractService) Handle(ctx context.Context, t *asynq.Task) error {
 			headerText, knowledgeTitle, knowledgeFileName, hasLegalMeta)
 	}
 
+	// Quoted amending text speaks of the amended document's Điều: scope
+	// those references to it (chunks from the vbpl converter record them).
+	if dm, derr := chunk.DocumentMetadata(); derr == nil && dm != nil && dm.Legal != nil && len(dm.Legal.Amends) > 0 {
+		perChunk := *legalDoc
+		perChunk.OwnArticles, perChunk.Amends = dm.Legal.ArticleNos, dm.Legal.Amends
+		legalDoc = &perChunk
+	}
+
 	var graph *types.GraphData
 	if legalDoc.IsLegal {
 		// Vietnamese legal path: AIRAG-style closed-ontology prompt +

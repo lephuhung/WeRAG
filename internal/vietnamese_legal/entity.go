@@ -560,6 +560,12 @@ type LegalDocContext struct {
 	// CanCu lists the preamble legal-basis citations (deterministic regex
 	// extraction); injected as CAN_CU edges by the header chunk's task.
 	CanCu []string `json:"can_cu,omitempty"`
+
+	// Per chunk, never stored: the chunk's own Điều numbers and what its
+	// quoted text amends, so "Điều 9" quoted from the amended document is
+	// not scoped to this document (see ScopeAmendedClause).
+	OwnArticles []string   `json:"-"`
+	Amends      []AmendRef `json:"-"`
 }
 
 // BuildLegalDocContext computes the document-level legal context once, at

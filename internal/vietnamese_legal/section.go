@@ -141,6 +141,29 @@ func (r SectionRef) Matches(meta *LegalMetadata) bool {
 	return true
 }
 
+// MatchesAmendment reports whether a chunk carrying meta holds amending text
+// that rewrites the referenced Điều of another document ("Điều 9" asked of
+// an amending law, whose khoản 6 Điều 1 rewrites Điều 9 of the amended
+// law). An amendment of a whole Điều or khoản holds every part below it.
+func (r SectionRef) MatchesAmendment(meta *LegalMetadata) bool {
+	if meta == nil || r.Article == "" {
+		return false
+	}
+	for _, a := range meta.Amends {
+		if !strings.EqualFold(a.Article, r.Article) {
+			continue
+		}
+		if r.Khoan != "" && a.Khoan != "" && !strings.EqualFold(a.Khoan, r.Khoan) {
+			continue
+		}
+		if r.Diem != "" && a.Diem != "" && !strings.EqualFold(a.Diem, r.Diem) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // ContentPattern is the fallback for documents indexed before the legal
 // chunker recorded metadata: a line-anchored match on the Điều heading or,
 // without a Điều, on the Chương/Mục/Phần heading. Khoản and Điểm cannot be

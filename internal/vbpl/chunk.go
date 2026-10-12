@@ -32,6 +32,8 @@ type Chunk struct {
 	Appendix string `json:"appendix,omitempty"`
 	// Quoted is true when the chunk carries quoted (amending) text.
 	Quoted bool `json:"quoted,omitempty"`
+	// Amends lists what the chunk's quoted spans amend, in order.
+	Amends []Amend `json:"amends,omitempty"`
 }
 
 // ContextHeader joins Path for the chunk's embedding/display prefix.
@@ -216,10 +218,31 @@ func (c *Chunk) addStructure(blocks []Block, s, e int) {
 	if blocks[s].Kind == KindArticle && blocks[s].ID != "" {
 		c.setID("dieu", blocks[s].ID)
 	}
+	// the clause / item still open where the chunk starts comes first
+	openClause, openItem := -1, -1
+	for i := s; i < e && blocks[i].Start < c.Start; i++ {
+		switch blocks[i].Kind {
+		case KindClause:
+			openClause, openItem = i, -1
+		case KindItem:
+			openItem = i
+		}
+	}
+	if openClause >= 0 {
+		c.addClause(blocks[openClause])
+	}
+	if openItem >= 0 {
+		c.addItem(blocks, blocks[openItem])
+	}
+	var lastAmend *Amend
 	for i := s; i < e && blocks[i].Start < c.End; i++ {
 		b := blocks[i]
 		if b.Kind == KindQuote && b.End > c.Start {
 			c.Quoted = true
+			if b.Amend != nil && b.Amend != lastAmend {
+				c.addAmend(*b.Amend)
+			}
+			lastAmend = b.Amend
 		}
 		if b.Start < c.Start {
 			continue
@@ -231,22 +254,15 @@ func (c *Chunk) addStructure(blocks []Block, s, e int) {
 			c.addItem(blocks, b)
 		}
 	}
-	// the clause / item still open where the chunk starts
-	openClause, openItem := -1, -1
-	for i := s; i < e && blocks[i].Start < c.Start; i++ {
-		switch blocks[i].Kind {
-		case KindClause:
-			openClause, openItem = i, -1
-		case KindItem:
-			openItem = i
+}
+
+func (c *Chunk) addAmend(a Amend) {
+	for _, have := range c.Amends {
+		if have == a {
+			return
 		}
 	}
-	if openClause >= 0 && blocks[openClause].Start < c.Start {
-		c.addClause(blocks[openClause])
-	}
-	if openItem >= 0 && blocks[openItem].Start < c.Start {
-		c.addItem(blocks, blocks[openItem])
-	}
+	c.Amends = append(c.Amends, a)
 }
 
 func (c *Chunk) addClause(b Block) {
@@ -455,6 +471,11 @@ func (c Chunk) Legal() *vietnamese_legal.LegalMetadata {
 		ProvisionIDs:    c.IDs,
 		Appendix:        c.Appendix,
 		Quoted:          c.Quoted,
+	}
+	for _, a := range c.Amends {
+		m.Amends = append(m.Amends, vietnamese_legal.AmendRef{
+			Document: a.Document, Article: a.Article, Khoan: a.Khoan, Diem: a.Diem,
+		})
 	}
 	if c.ArticleNo != "" {
 		m.ArticleNos = []string{strings.ToLower(c.ArticleNo)}

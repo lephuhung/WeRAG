@@ -1027,6 +1027,7 @@ func (t *SearchKnowledgeTool) formatOutput(
 		} else {
 			row["chunk_id"] = result.ID
 			row["chunk_index"] = result.ChunkIndex
+			addLegalCitation(row, legalMetadataFromJSON(result.ChunkMetadata))
 		}
 		formattedResults = append(formattedResults, row)
 	}

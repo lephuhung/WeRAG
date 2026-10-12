@@ -51,3 +51,19 @@ func TestScopeClauseName(t *testing.T) {
 		t.Errorf("no root: got %q", key)
 	}
 }
+
+func TestScopeAmendedClause(t *testing.T) {
+	amends := []AmendRef{{Document: "Luật Phòng, chống thiên tai", Article: "9"}}
+	own := []string{"1"}
+	if key, ok := ScopeAmendedClause("khoản 2 Điều 9", own, amends); !ok || key != NormalizeOrgName("Khoản 2 Điều 9 Luật Phòng, chống thiên tai") {
+		t.Fatalf("got %q %v", key, ok)
+	}
+	for _, name := range []string{"Điều 1", "Điều 10", "Điều 9 Luật Đê điều", "Bộ Công an"} {
+		if _, ok := ScopeAmendedClause(name, own, amends); ok {
+			t.Errorf("%q must not be scoped to the amended document", name)
+		}
+	}
+	if _, ok := ScopeAmendedClause("Điều 9", own, nil); ok {
+		t.Error("no amendments, no scoping")
+	}
+}

@@ -326,6 +326,10 @@ func PostProcessLegalGraph(
 	// same Điều number in two documents of one knowledge base never merges
 	// (the graph store merges on {name, kb}).
 	articleKey := func(name string) string {
+		if key, ok := vietnamese_legal.ScopeAmendedClause(name, doc.OwnArticles, doc.Amends); ok {
+			externalArticle[key] = true
+			return key
+		}
 		key, external := vietnamese_legal.ScopeClauseName(name, doc.RootName, doc.Title)
 		if external {
 			externalArticle[key] = true

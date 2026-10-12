@@ -77,15 +77,18 @@ func (s *knowledgeService) processVBPLFile(
 		"parser":    "vbpl",
 	})
 	planned := vbpl.Plan(doc, vbplChunkSize(eff.ChunkingConfig))
+	sourceDocID := vbplSourceDocID(knowledge)
 	chunks := make([]types.ParsedChunk, len(planned))
 	for i, c := range planned {
+		legal := c.Legal()
+		legal.SourceDocID = sourceDocID
 		chunks[i] = types.ParsedChunk{
 			Content:       c.Content,
 			ContextHeader: c.ContextHeader(),
 			Seq:           i,
 			Start:         c.Start,
 			End:           c.End,
-			Legal:         c.Legal(),
+			Legal:         legal,
 		}
 	}
 	s.endStage(ctx, knowledge.ID, types.StageDocReader, types.JSONMap{
@@ -127,4 +130,19 @@ func (s *knowledgeService) recordVBPLConverterVersion(ctx context.Context, knowl
 	if err := s.repo.UpdateKnowledgeColumn(ctx, knowledge.ID, "metadata", knowledge.Metadata); err != nil {
 		logger.Warnf(ctx, "[vbpl] knowledge %s: record converter version: %v", knowledge.ID, err)
 	}
+}
+
+// vbplSourceDocID is the vbpl.vn document id of the knowledge: its
+// external_id, as set by scripts/legal_catalog/ingest_vbpl.py. Citations
+// deep-link to the vbpl.vn page with it.
+func vbplSourceDocID(knowledge *types.Knowledge) string {
+	if len(knowledge.Metadata) == 0 {
+		return ""
+	}
+	m, err := knowledge.Metadata.Map()
+	if err != nil {
+		return ""
+	}
+	id, _ := m["external_id"].(string)
+	return strings.TrimSpace(id)
 }

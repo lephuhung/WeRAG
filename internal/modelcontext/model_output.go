@@ -201,17 +201,21 @@ func (r *sourceRegistry) modelDocumentInfoOutput(data map[string]interface{}, fa
 }
 
 type modelChunk struct {
-	handle     string
-	docHandle  string
-	kbHandle   string
-	title      string
-	metadata   string
-	chunkType  string
-	index      int
-	view       string
-	role       string
-	match      string
-	content    string
+	handle    string
+	docHandle string
+	kbHandle  string
+	title     string
+	metadata  string
+	chunkType string
+	index     int
+	view      string
+	role      string
+	match     string
+	content   string
+	// cite names the legal provision the chunk sits in ("khoản 2 Điều
+	// 14"), sourceURL its official page; both empty for other documents.
+	cite       string
+	sourceURL  string
 	question   string
 	answers    []string
 	images     []map[string]interface{}
@@ -269,6 +273,8 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 			role:       stringValue(row, "role"),
 			match:      firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
 			content:    stringValue(row, "content"),
+			cite:       stringValue(row, "legal_cite"),
+			sourceURL:  stringValue(row, "source_url"),
 			question:   firstNonEmpty(stringValue(row, "faq_question"), stringValue(row, "faq_standard_question")),
 			answers:    stringSliceValue(row["faq_answers"]),
 			images:     mapsValue(row["images"]),
@@ -353,6 +359,12 @@ func (r *sourceRegistry) modelKnowledgeChunksOutput(data map[string]interface{},
 		return r.CompactKnownText(fallback)
 	}
 	output := renderKnowledgeChunks("deep_read", chunks, info)
+	// A tool's explanation of what the chunks are (search_document_section:
+	// amending text rather than the asked Điều itself).
+	if note := stringValue(data, "model_note"); note != "" {
+		output = strings.TrimSuffix(output, "</retrieval>") +
+			"  <note>" + escapeText(r.CompactKnownText(note)) + "</note>\n</retrieval>"
+	}
 	if info == nil {
 		// Legacy list_knowledge_chunks payloads carry no document header.
 		remaining := intValue(data, "total_chunks") - intValue(data, "fetched_chunks")
@@ -486,6 +498,12 @@ func renderKnowledgeChunks(mode string, chunks []modelChunk, info map[string]int
 			}
 			if chunk.role != "" {
 				fmt.Fprintf(&b, " role=\"%s\"", escapeAttr(chunk.role))
+			}
+			if chunk.cite != "" {
+				fmt.Fprintf(&b, " cite=\"%s\"", escapeAttr(chunk.cite))
+			}
+			if chunk.sourceURL != "" {
+				fmt.Fprintf(&b, " source_url=\"%s\"", escapeAttr(chunk.sourceURL))
 			}
 			b.WriteString(">\n")
 			if chunk.question != "" {

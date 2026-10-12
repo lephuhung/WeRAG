@@ -87,3 +87,33 @@ func docRefersToRoot(doc, rootName, title string) bool {
 	}
 	return IsDocRootAlias(doc, rootName, title)
 }
+
+// clauseArticleRe reads the Điều number of a canonical clause lead.
+var clauseArticleRe = regexp.MustCompile(`Điều (\d+[a-zđ]?)`)
+
+// ScopeAmendedClause scopes a clause reference written inside quoted
+// amending text to the amended document: in a chunk of Điều 1 whose quoted
+// text rewrites Điều 9 of Luật Phòng, chống thiên tai, an unqualified
+// "Khoản 2 Điều 9" is "Khoản 2 Điều 9 Luật Phòng, chống thiên tai" — an
+// external reference, not this document's Điều 9. ok is false when the
+// reference names a document, names one of the chunk's own Điều, or no
+// amendment of the chunk covers it.
+func ScopeAmendedClause(name string, ownArticles []string, amends []AmendRef) (key string, ok bool) {
+	if len(amends) == 0 {
+		return "", false
+	}
+	lead, doc := SplitClauseRef(name)
+	if lead == "" || doc != "" {
+		return "", false
+	}
+	m := clauseArticleRe.FindStringSubmatch(lead)
+	if m == nil || containsFold(ownArticles, m[1]) {
+		return "", false
+	}
+	for _, a := range amends {
+		if a.Document != "" && strings.EqualFold(a.Article, m[1]) {
+			return NormalizeOrgName(lead + " " + a.Document), true
+		}
+	}
+	return "", false
+}

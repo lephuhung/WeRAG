@@ -315,3 +315,29 @@ func TestPostProcessLegalGraphEnforcesRelationEndpoints(t *testing.T) {
 		t.Errorf("clause citing another law must stay: %+v", out.Relation)
 	}
 }
+
+func TestPostProcessLegalGraph_QuotedAmendedClause(t *testing.T) {
+	doc := testDoc()
+	doc.OwnArticles = []string{"1"}
+	doc.Amends = []vietnamese_legal.AmendRef{{Document: "Nghị định 13/2023/NĐ-CP", Article: "9"}}
+	g := &types.GraphData{
+		Node: []*types.GraphNode{
+			{Name: "Điều 1", Type: "Article"},
+			{Name: "khoản 2 Điều 9", Type: "Article"},
+		},
+		Relation: []*types.GraphRelation{
+			{Node1: "Điều 1", Type: "SUA_DOI", Node2: "khoản 2 Điều 9"},
+		},
+	}
+	out := PostProcessLegalGraph(context.Background(), g, doc, false)
+	amended := vietnamese_legal.NormalizeOrgName("Khoản 2 Điều 9 Nghị định 13/2023/NĐ-CP")
+	if nodeByName(out, "Điều 1 (53/2022/NĐ-CP)") == nil || nodeByName(out, amended) == nil {
+		t.Fatalf("nodes = %+v", out.Node)
+	}
+	if nodeByName(out, "Khoản 2 Điều 9 (53/2022/NĐ-CP)") != nil || hasRel(out, amended, "PART_OF", "53/2022/NĐ-CP") {
+		t.Fatalf("quoted clause of the amended document scoped to this one: %+v / %+v", out.Node, out.Relation)
+	}
+	if !hasRel(out, "Điều 1 (53/2022/NĐ-CP)", "SUA_DOI", amended) {
+		t.Fatalf("relations = %+v", out.Relation)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // Shared helpers for the knowledge retrieval tools (search_knowledge,
@@ -323,6 +324,7 @@ func chunkDataMap(seq int, c *types.Chunk) map[string]interface{} {
 		"end_at":          c.EndAt,
 		"parent_chunk_id": c.ParentChunkID,
 	}
+	addLegalCitation(chunkData, legalChunkMetadata(c))
 	appendFAQChunkData(chunkData, c)
 	normalizeFAQChunkDataMap(chunkData, c)
 	if images := chunkImageList(c.ImageInfo); len(images) > 0 {
@@ -351,4 +353,32 @@ func writeChunkXML(b *strings.Builder, c *types.Chunk, extraAttrs string) {
 	fmt.Fprintf(b, "<content>%s</content>\n", content)
 	writeChunkImagesMarkdown(b, c)
 	b.WriteString("</chunk>\n")
+}
+
+// addLegalCitation adds the chunk's legal citation ("khoản 2 Điều 14") and
+// its source deep link (vbpl.vn ?go=) to a result row, so the model names
+// the provision a passage sits in without guessing it from the text.
+func addLegalCitation(row map[string]interface{}, meta *vietnamese_legal.LegalMetadata) {
+	if meta == nil {
+		return
+	}
+	if cite := meta.Citation(); cite != "" {
+		row["legal_cite"] = cite
+	}
+	if u := meta.SourceURL(); u != "" {
+		row["source_url"] = u
+	}
+}
+
+// legalMetadataFromJSON reads the legal metadata of a search result's chunk
+// metadata; nil when absent.
+func legalMetadataFromJSON(raw types.JSON) *vietnamese_legal.LegalMetadata {
+	if len(raw) == 0 {
+		return nil
+	}
+	var meta types.DocumentChunkMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return nil
+	}
+	return meta.Legal
 }

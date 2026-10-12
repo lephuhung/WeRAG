@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -80,6 +81,12 @@ func newSectionFixture(t *testing.T) (*SearchDocumentSectionTool, *readDocChunkR
 		}),
 		legalChunk(t, "c53b-1", "doc-53b", 1, "Điều 17. Sửa đổi", &vietnamese_legal.LegalMetadata{
 			HeadingPath: []string{"Điều 17. Sửa đổi"}, ArticleNos: []string{"17"},
+		}),
+		legalChunk(t, "c53b-2", "doc-53b", 2, "6. Sửa đổi, bổ sung Điều 9 như sau:\n> “Điều 9. Ngân sách", &vietnamese_legal.LegalMetadata{
+			HeadingPath: []string{"Điều 1. Sửa đổi Nghị định 53/2022"}, ArticleNos: []string{"1"}, KhoanNos: []string{"6"},
+			SubdivisionRefs: []string{"khoan:6"}, Quoted: true, Source: "vbpl", SourceDocID: "999",
+			ProvisionIDs: map[string]string{"dieu": "p-d1", "khoan:6": "p-k6"},
+			Amends:       []vietnamese_legal.AmendRef{{Document: "Nghị định số 53/2022/NĐ-CP", Article: "9"}},
 		}),
 		legalChunk(t, "cold-1", "doc-old", 1, "## Điều 3. Phạm vi\nnội dung điều 3", nil),
 		legalChunk(t, "cold-2", "doc-old", 2, "## Điều 30. Hiệu lực\ntheo Điều 3 của Luật", nil),
@@ -239,5 +246,51 @@ func TestSearchDocumentSectionRejectsOutOfScopeDocument(t *testing.T) {
 	}
 	if ids := sectionChunkIDs(t, res); len(ids) != 1 || ids[0] != "c53b-1" {
 		t.Fatalf("scope scan = %v", ids)
+	}
+}
+
+func TestSearchDocumentSectionFindsAmendingText(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"section":"khoản 2 Điều 9","knowledge_id":"doc-53b"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if ids := sectionChunkIDs(t, res); len(ids) != 1 || ids[0] != "c53b-2" {
+		t.Fatalf("amending chunk not returned: %v", ids)
+	}
+	if res.Data["match_mode"] != "amendment" || !strings.Contains(fmt.Sprint(res.Data["model_note"]), "not a provision") {
+		t.Fatalf("data = %+v", res.Data)
+	}
+	rows, _ := res.Data["chunks"].([]map[string]interface{})
+	if rows[0]["role"] != "amendment" ||
+		rows[0]["legal_cite"] != "khoản 6 Điều 1 (sửa đổi Điều 9 Nghị định số 53/2022/NĐ-CP)" ||
+		rows[0]["source_url"] != "https://vbpl.vn/van-ban/chi-tiet/999?go=p-k6" {
+		t.Fatalf("row = %+v", rows[0])
+	}
+	// The document's own Điều wins over amending text.
+	res, _ = tool.Execute(context.Background(), json.RawMessage(`{"section":"Điều 17","knowledge_id":"doc-53b"}`))
+	if ids := sectionChunkIDs(t, res); len(ids) != 1 || ids[0] != "c53b-1" || res.Data["match_mode"] != "metadata" {
+		t.Fatalf("own Điều 17 = %v %v", ids, res.Data["match_mode"])
+	}
+}
+
+func TestSearchDocumentSectionLinksTheAskedKhoan(t *testing.T) {
+	tool, repo := newSectionFixture(t)
+	repo.ordered = append(repo.ordered, legalChunk(t, "c53-9", "doc-53", 9, "Điều 14. Nổ súng\n1. ...\n2. ...", &vietnamese_legal.LegalMetadata{
+		ArticleNos: []string{"14"}, KhoanNos: []string{"1", "2"}, SubdivisionRefs: []string{"khoan:1", "khoan:2"},
+		Source: "vbpl", SourceDocID: "136051",
+		ProvisionIDs: map[string]string{"dieu": "p-d14", "khoan:1": "p-k1", "khoan:2": "p-k2"},
+	}))
+	res, _ := tool.Execute(context.Background(), json.RawMessage(`{"section":"khoản 2 Điều 14","knowledge_id":"doc-53"}`))
+	rows, _ := res.Data["chunks"].([]map[string]interface{})
+	if len(rows) != 1 || rows[0]["legal_cite"] != "khoản 2 Điều 14" ||
+		rows[0]["source_url"] != "https://vbpl.vn/van-ban/chi-tiet/136051?go=p-k2" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	res, _ = tool.Execute(context.Background(), json.RawMessage(`{"section":"Điều 14","knowledge_id":"doc-53"}`))
+	rows, _ = res.Data["chunks"].([]map[string]interface{})
+	if len(rows) != 1 || rows[0]["legal_cite"] != "Điều 14 (khoản 1, 2)" ||
+		rows[0]["source_url"] != "https://vbpl.vn/van-ban/chi-tiet/136051?go=p-d14" {
+		t.Fatalf("rows = %+v", rows)
 	}
 }

@@ -397,6 +397,38 @@ type LegalMetadata struct {
 	// Quoted is true when the chunk carries quoted amending text, i.e.
 	// wording of another document's provision.
 	Quoted bool `json:"quoted,omitempty"`
+	// Amends lists what the quoted text of this chunk amends in another
+	// document ("Điều 9 of Luật Phòng, chống thiên tai").
+	Amends []AmendRef `json:"amends,omitempty"`
+	// SourceDocID is the vbpl.vn document id (the knowledge's external_id).
+	SourceDocID string `json:"source_doc_id,omitempty"`
+}
+
+// AmendRef is one provision of another document written by quoted text.
+type AmendRef struct {
+	Document string `json:"document,omitempty"`
+	Article  string `json:"article,omitempty"`
+	Khoan    string `json:"khoan,omitempty"`
+	Diem     string `json:"diem,omitempty"`
+}
+
+// String renders the reference as Vietnamese legal text: "khoản 2 Điều 9
+// Luật Phòng, chống thiên tai".
+func (a AmendRef) String() string {
+	var parts []string
+	if a.Diem != "" {
+		parts = append(parts, "điểm "+a.Diem)
+	}
+	if a.Khoan != "" {
+		parts = append(parts, "khoản "+a.Khoan)
+	}
+	if a.Article != "" {
+		parts = append(parts, "Điều "+a.Article)
+	}
+	if a.Document != "" {
+		parts = append(parts, a.Document)
+	}
+	return strings.Join(parts, " ")
 }
 
 // SubdivisionParseStats records accept/reject counts for diagnostics.

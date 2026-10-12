@@ -100,9 +100,11 @@ func NewSearchDocumentSectionTool(
 type sectionHit struct {
 	knowledge *types.Knowledge
 	chunks    []*types.Chunk
-	// mode is "metadata" when the chunks carry legal metadata, "content"
-	// when the document predates it and only the Điều heading was matched
-	// in the body text, "none" when the document has neither.
+	// mode is "metadata" when the chunks carry legal metadata, "amendment"
+	// when the Điều is not the document's own but its quoted text rewrites
+	// that Điều of the amended document, "content" when the document
+	// predates the metadata and only the Điều heading was matched in the
+	// body text, "none" when the document has neither.
 	mode string
 }
 
@@ -333,6 +335,7 @@ func (t *SearchDocumentSectionTool) sectionChunks(
 		return hit, fmt.Errorf("failed to list chunks of %s: %w", knowledge.ID, err)
 	}
 	hasMeta := false
+	var amending []*types.Chunk
 	for _, c := range chunks {
 		if c == nil || !c.IsEnabled {
 			continue
@@ -344,10 +347,17 @@ func (t *SearchDocumentSectionTool) sectionChunks(
 		hasMeta = true
 		if ref.Matches(meta) {
 			hit.chunks = append(hit.chunks, c)
+		} else if ref.MatchesAmendment(meta) {
+			amending = append(amending, c)
 		}
 	}
 	if hasMeta {
 		hit.mode = "metadata"
+		// An amending document has no Điều 9 of its own: its text that
+		// rewrites Điều 9 of the amended document is what was asked for.
+		if len(hit.chunks) == 0 && len(amending) > 0 {
+			hit.mode, hit.chunks = "amendment", amending
+		}
 		return hit, nil
 	}
 	re := ref.ContentPattern()
@@ -385,6 +395,7 @@ func (t *SearchDocumentSectionTool) render(
 	docRows := make([]map[string]interface{}, 0, len(hits))
 	var b strings.Builder
 	var withChunks []sectionHit
+	var notes []string
 
 	for _, hit := range hits {
 		matchCount += len(hit.chunks)
@@ -411,6 +422,13 @@ func (t *SearchDocumentSectionTool) render(
 			fmt.Fprintf(&b, " document_number=\"%s\"", xmlEscape(fmt.Sprint(num)))
 		}
 		b.WriteString(">\n")
+		if hit.mode == "amendment" {
+			note := fmt.Sprintf("%s is not a provision of %q. The chunks with role=amendment are its amending "+
+				"text that rewrites %s of the amended document named in their cite; cite them by their own "+
+				"location (cite) and say which document they amend.", label, strings.TrimSpace(k.Title), label)
+			notes = append(notes, note)
+			fmt.Fprintf(&b, "<note>%s</note>\n", xmlEscape(note))
+		}
 		if hit.mode == "content" && (ref.Khoan != "" || ref.Diem != "") {
 			b.WriteString("<note>This document carries no Khoản/Điểm metadata (indexed before structure " +
 				"recording); the whole Điều is returned, locate the Khoản/Điểm in its text.</note>\n")
@@ -426,12 +444,30 @@ func (t *SearchDocumentSectionTool) render(
 			row := chunkDataMap(emitted, c)
 			row["knowledge_id"] = k.ID
 			row["knowledge_title"] = strings.TrimSpace(k.Title)
-			row["role"] = "match"
-			extra := " role=\"match\""
+			role := "match"
+			if hit.mode == "amendment" {
+				role = "amendment"
+			}
+			row["role"] = role
+			extra := fmt.Sprintf(" role=\"%s\"", role)
 			if meta := legalChunkMetadata(c); meta != nil && len(meta.HeadingPath) > 0 {
 				path := strings.Join(meta.HeadingPath, " > ")
 				row["match_snippet"] = path
 				extra += fmt.Sprintf(" heading_path=\"%s\"", xmlEscape(path))
+			}
+			// a lookup of one khoản / điểm points at it, not at the whole chunk
+			if meta := legalChunkMetadata(c); hit.mode == "metadata" && meta != nil && len(meta.ArticleNos) == 1 {
+				if u := meta.SectionURL(ref.Khoan, ref.Diem); u != "" {
+					row["source_url"] = u
+					cite := vietnamese_legal.AmendRef{Article: meta.ArticleNos[0], Khoan: ref.Khoan, Diem: ref.Diem}.String()
+					if meta.Appendix != "" {
+						cite += " – " + meta.Appendix
+					}
+					row["legal_cite"] = cite
+				}
+			}
+			if cite, ok := row["legal_cite"].(string); ok {
+				extra += fmt.Sprintf(" cite=\"%s\"", xmlEscape(cite))
 			}
 			rows = append(rows, row)
 			writeChunkXML(&b, c, extra)
@@ -459,6 +495,9 @@ func (t *SearchDocumentSectionTool) render(
 		"truncated":      truncated,
 		"chunks":         rows,
 		"documents":      docRows,
+	}
+	if len(notes) > 0 {
+		data["model_note"] = strings.Join(notes, "\n")
 	}
 	if len(hits) == 1 {
 		k := hits[0].knowledge
