@@ -255,3 +255,63 @@ func TestGraphRelationsContext(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Relations must join the entity types the prompt defines: a backwards
+// edge is turned round, any other mismatch and a document's references to
+// its own clauses are dropped (seen on re-parsed 29/2018/QH14).
+func TestPostProcessLegalGraphEnforcesRelationEndpoints(t *testing.T) {
+	doc := testDoc()
+	raw := &types.GraphData{
+		Node: []*types.GraphNode{
+			{Name: "Bộ Công an", Type: "Organization"},
+			{Name: "Chính phủ", Type: "Organization"},
+			{Name: "Bảo đảm an ninh mạng", Type: "Task"},
+			{Name: "Điều 5", Type: "Article"},
+			{Name: "Luật An ninh mạng", Type: "Document"},
+		},
+		Relation: []*types.GraphRelation{
+			{Node1: "53/2022/NĐ-CP", Type: "CAN_CU", Node2: "Chính phủ"},          // Document → Organization
+			{Node1: "Bộ Công an", Type: "CHU_TRI", Node2: "Bảo đảm an ninh mạng"}, // backwards
+			{Node1: "53/2022/NĐ-CP", Type: "CHU_TRI", Node2: "Bộ Công an"},        // Document as the task
+			{Node1: "53/2022/NĐ-CP", Type: "VIEN_DAN", Node2: "Điều 5"},           // its own clause
+			{Node1: "Điều 5", Type: "VIEN_DAN", Node2: "Luật An ninh mạng"},
+		},
+	}
+	out := PostProcessLegalGraph(context.Background(), raw, doc, false)
+	task := nodeByName(out, "Bảo Đảm An Ninh Mạng")
+	if task == nil {
+		task = nodeByName(out, "Bảo đảm an ninh mạng")
+	}
+	if task == nil {
+		t.Fatalf("task node missing: %+v", out.Node)
+	}
+	org := ""
+	for _, n := range out.Node {
+		if n.Type == "Organization" && strings.Contains(strings.ToLower(n.Name), "công an") {
+			org = n.Name
+		}
+	}
+	art := "Điều 5 (53/2022/NĐ-CP)"
+	law := ""
+	for _, n := range out.Node {
+		if n.Type == "Document" && strings.Contains(strings.ToLower(n.Name), "an ninh mạng") {
+			law = n.Name
+		}
+	}
+	if !hasRel(out, task.Name, "CHU_TRI", org) {
+		t.Errorf("backwards CHU_TRI should be turned round: %+v", out.Relation)
+	}
+	for _, r := range out.Relation {
+		switch {
+		case r.Type == "CAN_CU" && strings.Contains(r.Node2, "Chính"):
+			t.Errorf("CAN_CU to an organization kept: %+v", r)
+		case r.Type == "CHU_TRI" && r.Node1 == "53/2022/NĐ-CP":
+			t.Errorf("CHU_TRI from a document kept: %+v", r)
+		case r.Type == "VIEN_DAN" && r.Node1 == "53/2022/NĐ-CP":
+			t.Errorf("reference to the document's own clause kept: %+v", r)
+		}
+	}
+	if !hasRel(out, art, "VIEN_DAN", law) {
+		t.Errorf("clause citing another law must stay: %+v", out.Relation)
+	}
+}

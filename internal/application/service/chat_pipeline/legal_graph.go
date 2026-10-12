@@ -448,6 +448,22 @@ func PostProcessLegalGraph(
 		if src.Name == tgt.Name && src.Type == tgt.Type {
 			continue // self-loop
 		}
+		// Enforce the endpoint types the prompt defines; an edge the model
+		// wrote backwards is turned round, any other mismatch is dropped
+		// ("căn cứ → Chính phủ", "Luật chủ trì → Quốc hội").
+		switch legalRelationFits(relType, src.Type, tgt.Type) {
+		case relationFits:
+		case relationReversed:
+			src, tgt = tgt, src
+		default:
+			continue
+		}
+		// A document pointing at its own clauses says nothing the PART_OF
+		// structure does not.
+		if src.Type == vietnamese_legal.EntityTypeDocument && tgt.Type == vietnamese_legal.EntityTypeArticle &&
+			src.Name == doc.RootName && !externalArticle[tgt.Name] {
+			continue
+		}
 		out.Relation = append(out.Relation, &types.GraphRelation{
 			Node1: src.Name,
 			Node2: tgt.Name,
@@ -499,6 +515,69 @@ func PostProcessLegalGraph(
 	}
 
 	return out
+}
+
+// legalRelationEndpoints lists, per relation, the entity types allowed as
+// source and target (the prompt's "Source: … → Target: …", widened where
+// the text legitimately varies: a clause may cite, amend or repeal, a
+// preamble may cite a clause). Relations missing here are not checked.
+var legalRelationEndpoints = map[string][2][]string{
+	vietnamese_legal.RelCanCu:          {{lgDoc, lgArt}, {lgDoc, lgArt}},
+	vietnamese_legal.RelVienDan:        {{lgArt, lgDoc}, {lgDoc, lgArt}},
+	vietnamese_legal.RelSuaDoi:         {{lgDoc, lgArt}, {lgDoc, lgArt}},
+	vietnamese_legal.RelThayThe:        {{lgDoc, lgArt}, {lgDoc, lgArt}},
+	vietnamese_legal.RelBaiBo:          {{lgDoc, lgArt}, {lgDoc, lgArt}},
+	vietnamese_legal.RelReferences:     {{lgArt, lgDoc}, {lgDoc, lgArt}},
+	vietnamese_legal.RelPartOf:         {{lgArt}, {lgDoc, lgArt}},
+	vietnamese_legal.RelChuTri:         {{lgTask, lgArt}, {lgOrg, lgPerson}},
+	vietnamese_legal.RelPhoiHop:        {{lgTask, lgArt}, {lgOrg, lgPerson}},
+	vietnamese_legal.RelChiuTrachNhiem: {{lgTask, lgArt}, {lgOrg, lgPerson}},
+	vietnamese_legal.RelKy:             {{lgDoc}, {lgPerson}},
+	vietnamese_legal.RelBanHanhBoi:     {{lgDoc}, {lgOrg}},
+	vietnamese_legal.RelBanHanhTai:     {{lgDoc}, {lgLoc}},
+	vietnamese_legal.RelTrucThuoc:      {{lgOrg}, {lgOrg}},
+	vietnamese_legal.RelThuocTinh:      {{lgOrg}, {lgLoc}},
+}
+
+const (
+	lgDoc    = vietnamese_legal.EntityTypeDocument
+	lgArt    = vietnamese_legal.EntityTypeArticle
+	lgOrg    = vietnamese_legal.EntityTypeOrganization
+	lgPerson = vietnamese_legal.EntityTypePerson
+	lgTask   = vietnamese_legal.EntityTypeTask
+	lgLoc    = vietnamese_legal.EntityTypeLocation
+)
+
+type relationFit int
+
+const (
+	relationMismatch relationFit = iota
+	relationFits
+	relationReversed
+)
+
+// legalRelationFits checks an edge against legalRelationEndpoints.
+func legalRelationFits(rel, srcType, tgtType string) relationFit {
+	ends, ok := legalRelationEndpoints[rel]
+	if !ok {
+		return relationFits
+	}
+	in := func(t string, set []string) bool {
+		for _, s := range set {
+			if s == t {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case in(srcType, ends[0]) && in(tgtType, ends[1]):
+		return relationFits
+	case in(tgtType, ends[0]) && in(srcType, ends[1]):
+		return relationReversed
+	default:
+		return relationMismatch
+	}
 }
 
 // mergeAttributes unions two attribute lists preserving order.

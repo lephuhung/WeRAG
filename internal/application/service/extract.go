@@ -189,6 +189,8 @@ type ChunkExtractService struct {
 	knowledgeRepo     interfaces.KnowledgeRepository
 	chunkRepo         interfaces.ChunkRepository
 	graphEngine       interfaces.RetrieveGraphRepository
+	// legalCatalog resolves cited document titles to their số hiệu.
+	legalCatalog interfaces.LegalCatalogRepository
 	// spanTracker records this graph-extract task's subspan under the
 	// parent attempt's postprocess stage so the trace viewer shows real
 	// per-chunk graph extraction time rather than the upstream's enqueue.
@@ -203,6 +205,7 @@ func NewChunkExtractService(
 	knowledgeRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
 	graphEngine interfaces.RetrieveGraphRepository,
+	legalCatalog interfaces.LegalCatalogRepository,
 	spanTracker SpanTracker,
 ) interfaces.TaskHandler {
 	return &ChunkExtractService{
@@ -212,6 +215,7 @@ func NewChunkExtractService(
 		knowledgeRepo:     knowledgeRepo,
 		chunkRepo:         chunkRepo,
 		graphEngine:       graphEngine,
+		legalCatalog:      legalCatalog,
 		spanTracker:       spanTracker,
 	}
 }
@@ -375,6 +379,7 @@ func (s *ChunkExtractService) Handle(ctx context.Context, t *asynq.Task) error {
 		// preamble legal bases to the document root are only added once.
 		includeCanCu := chunk.StartAt == 0 || p.ChunkIndex == 0
 		graph = chatpipeline.PostProcessLegalGraph(ctx, graph, legalDoc, includeCanCu)
+		graph = resolveLegalDocumentAliases(ctx, s.legalCatalog, graph)
 		graphOut["legal_extraction"] = true
 	} else {
 		template := &types.PromptTemplateStructured{
