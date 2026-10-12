@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // PluginExtractEntity is a plugin for extracting entities from user queries
@@ -147,7 +148,8 @@ func (p *PluginExtractEntity) OnEvent(ctx context.Context,
 		nodes = append(nodes, node.Name)
 	}
 	logger.Debugf(ctx, "extracted node: %v", nodes)
-	chatManage.Entity = nodes
+	// Legal document nodes are keyed by their canonical số hiệu.
+	chatManage.Entity = vietnamese_legal.GraphSearchTerms(nodes)
 	return next()
 }
 

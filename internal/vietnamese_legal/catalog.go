@@ -27,3 +27,26 @@ func CatalogNumberKey(num string) string {
 	}
 	return b.String()
 }
+
+// GraphSearchTerms returns names for a graph node search: each name, plus
+// the canonical số hiệu of each one that cites a document — the key legal
+// document nodes are stored under ("Nghị định 53/2022/nđ-cp" adds
+// "53/2022/NĐ-CP"). Order kept, duplicates dropped case-insensitively.
+func GraphSearchTerms(names []string) []string {
+	seen := map[string]bool{}
+	var terms []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if key := strings.ToLower(s); s != "" && !seen[key] {
+			seen[key] = true
+			terms = append(terms, s)
+		}
+	}
+	for _, name := range names {
+		add(name)
+		if num := ParseReference(name).DocumentNumber; strings.Contains(num, "/") {
+			add(NormalizeDocumentNumber(num))
+		}
+	}
+	return terms
+}

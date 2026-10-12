@@ -62,7 +62,11 @@ func (r *sourceRegistry) ModelOutput(result *types.ToolResult) string {
 	case "document_info":
 		return r.modelDocumentInfoOutput(result.Data, result.Output)
 	case "graph_query_results":
-		return r.modelKnowledgeOutput("graph", mapsValue(result.Data["results"]), result.Output)
+		output := r.modelKnowledgeOutput("graph", mapsValue(result.Data["results"]), result.Output)
+		if rels := stringValue(result.Data, "graph_relations_text"); rels != "" {
+			output += "\n\nRelations in the knowledge graph:\n" + r.CompactKnownText(rels)
+		}
+		return output
 	case "web_search_results":
 		return r.modelWebSearchOutput(mapsValue(result.Data["results"]), result.Output)
 	case "database_query":

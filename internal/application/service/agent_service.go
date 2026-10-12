@@ -122,6 +122,7 @@ type agentService struct {
 	sandboxPolicy        WorkspaceSandboxPolicy
 	abbreviationService  interfaces.AbbreviationService
 	legalCatalog         interfaces.LegalCatalogService
+	graphRepo            interfaces.RetrieveGraphRepository
 	peopleService        *people.Service
 	temporaryDocuments   interfaces.TemporaryDocumentService
 	// documentWorkspaces is the session's editable .docx (document
@@ -160,6 +161,7 @@ func NewAgentService(
 	temporaryDocuments interfaces.TemporaryDocumentService,
 	documentWorkspaces interfaces.DocumentWorkspaceService,
 	legalCatalog interfaces.LegalCatalogService,
+	graphRepo interfaces.RetrieveGraphRepository,
 ) interfaces.AgentService {
 	return &agentService{
 		browserSkill:         browserSkill,
@@ -191,6 +193,7 @@ func NewAgentService(
 		temporaryDocuments:   temporaryDocuments,
 		documentWorkspaces:   documentWorkspaces,
 		legalCatalog:         legalCatalog,
+		graphRepo:            graphRepo,
 	}
 }
 
@@ -1225,7 +1228,8 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewListDocumentsTool(s.knowledgeService, config.SearchTargets)
 		case tools.ToolQueryKnowledgeGraph:
 			toolToRegister = tools.NewQueryKnowledgeGraphTool(s.knowledgeBaseService, config.SearchTargets).
-				WithKnowledgeScope(s.knowledgeService)
+				WithKnowledgeScope(s.knowledgeService).
+				WithGraph(s.graphRepo, s.chunkService, s.knowledgeService)
 		case tools.ToolSearchConversations:
 			// The owner is captured from the caller's identity here, not read
 			// from the model's arguments, so no prompt can redirect the search

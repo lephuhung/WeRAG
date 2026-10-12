@@ -114,7 +114,7 @@ Trả về JSON có dạng:
     {"name": "...", "type": "Article|Document|Organization|Person|Task|Location", "description": "..."}
   ],
   "relations": [
-    {"source": "...", "relation": "CAN_CU|VIEN_DAN|SUA_DOI|CHU_TRI|PHOI_HOP|CHIU_TRACH_NHIEM|PART_OF|REFERENCES|KY", "target": "...", "description": "..."}
+    {"source": "...", "relation": "CAN_CU|VIEN_DAN|SUA_DOI|THAY_THE|BAI_BO|CHU_TRI|PHOI_HOP|CHIU_TRACH_NHIEM|PART_OF|REFERENCES|KY", "target": "...", "description": "..."}
   ]
 }`
 

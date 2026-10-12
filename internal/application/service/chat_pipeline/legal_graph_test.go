@@ -2,6 +2,7 @@ package chatpipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -215,5 +216,34 @@ func TestPostProcessLegalGraph_PersonCompositeKey(t *testing.T) {
 	}
 	if nodeByName(out, "Nguyễn Văn B (01/01/1980)") == nil {
 		t.Fatal("person with composite key lost")
+	}
+}
+
+// The user prompt's JSON schema lists the relations the model may emit; a
+// relation the system prompt defines but the schema omits is never produced
+// (THAY_THE and BAI_BO were missing, as in AIRAG).
+func TestLegalKGUserPromptListsEveryDocumentRelation(t *testing.T) {
+	for _, rel := range []string{"CAN_CU", "VIEN_DAN", "SUA_DOI", "THAY_THE", "BAI_BO", "PART_OF", "REFERENCES"} {
+		if !strings.Contains(LegalKGSystemPrompt, "- "+rel+":") {
+			t.Fatalf("system prompt no longer defines %s", rel)
+		}
+		if !strings.Contains(LegalKGUserPrompt, rel+"|") && !strings.Contains(LegalKGUserPrompt, "|"+rel) {
+			t.Errorf("user prompt schema omits %s", rel)
+		}
+	}
+}
+
+func TestGraphRelationsContext(t *testing.T) {
+	if graphRelationsContext(nil) != "" {
+		t.Fatal("no graph, no context")
+	}
+	got := graphRelationsContext(&types.GraphData{Relation: []*types.GraphRelation{
+		{Node1: "13/2023/NĐ-CP", Type: "THAY_THE", Node2: "52/2013/NĐ-CP"},
+		{Node1: "13/2023/NĐ-CP", Type: "THAY_THE", Node2: "52/2013/NĐ-CP"},
+		{Node1: "", Type: "CAN_CU", Node2: "x"},
+		nil,
+	}})
+	if got != "13/2023/NĐ-CP —THAY_THE→ 52/2013/NĐ-CP\n" {
+		t.Fatalf("got %q", got)
 	}
 }

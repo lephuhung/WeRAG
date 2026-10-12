@@ -164,6 +164,15 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		}
 	}
 
+	// Relations the entity search found in the knowledge graph. Their
+	// chunks are already among the contexts; the edges themselves (which
+	// document replaces or repeals which) exist only here.
+	if rels := graphRelationsContext(chatManage.GraphResult); rels != "" {
+		contextsBuilder.WriteString("\n<source type=\"knowledge_graph\">\n")
+		contextsBuilder.WriteString(rels)
+		contextsBuilder.WriteString("</source>")
+	}
+
 	chatManage.RenderedContexts = contextsBuilder.String()
 
 	// When an abbreviation resolution is bound, the model-facing question is
@@ -330,4 +339,32 @@ func getEnrichedPassageForChat(ctx context.Context, result *types.SearchResult) 
 // enrichContentWithImageInfo delegates to the shared searchutil implementation.
 func enrichContentWithImageInfo(_ context.Context, content string, imageInfoJSON string) string {
 	return searchutil.EnrichContentWithImageInfoForChat(content, imageInfoJSON)
+}
+
+// graphContextMaxRelations bounds the relation lines added to the context.
+const graphContextMaxRelations = 30
+
+// graphRelationsContext renders the graph relations of an entity search as
+// "A —TYPE→ B" lines, deduplicated.
+func graphRelationsContext(graph *types.GraphData) string {
+	if graph == nil {
+		return ""
+	}
+	var b strings.Builder
+	seen := map[string]bool{}
+	n := 0
+	for _, r := range graph.Relation {
+		if r == nil || r.Node1 == "" || r.Node2 == "" || n == graphContextMaxRelations {
+			continue
+		}
+		line := r.Node1 + " —" + r.Type + "→ " + r.Node2
+		if seen[line] {
+			continue
+		}
+		seen[line] = true
+		n++
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
 }

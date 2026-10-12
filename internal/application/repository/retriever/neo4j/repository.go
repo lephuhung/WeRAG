@@ -271,6 +271,8 @@ func (n *Neo4jRepository) SearchNode(
 	defer session.Close(ctx)
 
 	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		// Names are matched case-insensitively: a question says "nghị định"
+		// where the node is "Nghị định".
 		// KB-scoped canonical nodes live under the ENTITY_<kb> label with
 		// per-document ownership in knowledge_ids. A document-scoped
 		// namespace filters on ownership (new rows) or kg (legacy rows);
@@ -278,14 +280,14 @@ func (n *Neo4jRepository) SearchNode(
 		kbLabel := n.kbLabel(namespace)
 		query := `
 			MATCH (n:` + kbLabel + `)-[r]-(m:` + kbLabel + `)
-			WHERE ANY(nodeText IN $nodes WHERE n.name CONTAINS nodeText)
+			WHERE ANY(nodeText IN $nodes WHERE toLower(n.name) CONTAINS toLower(nodeText))
 			RETURN n, r, m
 		`
 		params := map[string]interface{}{"nodes": nodes}
 		if namespace.Knowledge != "" {
 			query = `
 				MATCH (n:` + kbLabel + `)-[r]-(m:` + kbLabel + `)
-				WHERE ANY(nodeText IN $nodes WHERE n.name CONTAINS nodeText)
+				WHERE ANY(nodeText IN $nodes WHERE toLower(n.name) CONTAINS toLower(nodeText))
 				  AND ($knowledge_id IN coalesce(n.knowledge_ids, []) OR n.kg = $knowledge_id)
 				  AND ($knowledge_id IN coalesce(m.knowledge_ids, []) OR m.kg = $knowledge_id)
 				RETURN n, r, m
