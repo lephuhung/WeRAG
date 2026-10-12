@@ -334,6 +334,11 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 			"been replaced or been amended, naming the newer document and the catalogue's snapshot date. " +
 			"A document the catalogue does not know is unknown, not repealed.\n")
 	}
+	if has("find_related_legal_documents") {
+		b.WriteString("When the user asks how a Vietnamese law is detailed or guided, what amended it or " +
+			"which version came before or after, call find_related_legal_documents; read the related " +
+			"documents it reports as held in a knowledge base before answering from them.\n")
+	}
 	if has("resolve_abbreviation") {
 		b.WriteString("Abbreviations in the user's message were already resolved and validated by " +
 			"the runtime before this turn; use the resolved mapping shown in the request or tool " +

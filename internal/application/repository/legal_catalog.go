@@ -146,6 +146,21 @@ func (r *legalCatalogRepository) ListLinks(
 	return links, nil
 }
 
+func (r *legalCatalogRepository) ListEdges(
+	ctx context.Context, ids []string, rels []types.LegalRelation, incoming bool,
+) ([]types.LegalDocumentRelation, error) {
+	var rows []types.LegalDocumentRelation
+	if len(ids) == 0 || len(rels) == 0 {
+		return rows, nil
+	}
+	col := "from_id"
+	if incoming {
+		col = "to_id"
+	}
+	err := r.db.WithContext(ctx).Where(col+" IN ? AND relation IN ?", ids, rels).Find(&rows).Error
+	return rows, err
+}
+
 func (r *legalCatalogRepository) GetByIDs(ctx context.Context, ids []string) ([]*types.LegalDocument, error) {
 	var docs []*types.LegalDocument
 	if len(ids) == 0 {

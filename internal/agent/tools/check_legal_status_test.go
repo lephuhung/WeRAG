@@ -12,7 +12,16 @@ import (
 
 type fakeLegalCatalog struct {
 	reports []*types.LegalStatusReport
+	related []*types.LegalRelatedReport
 	gotNum  string
+	gotMode types.LegalRelatedMode
+}
+
+func (f *fakeLegalCatalog) Related(
+	_ context.Context, num, _ string, mode types.LegalRelatedMode, _ int, _ bool,
+) ([]*types.LegalRelatedReport, error) {
+	f.gotNum, f.gotMode = num, mode
+	return f.related, nil
 }
 
 func (f *fakeLegalCatalog) Lookup(_ context.Context, num, _ string, _ int) ([]*types.LegalStatusReport, error) {

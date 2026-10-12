@@ -24,6 +24,10 @@ type LegalCatalogRepository interface {
 	// ListLinks returns the relations of a document with the other side
 	// loaded, limited to the given relations per direction.
 	ListLinks(ctx context.Context, id string, outgoing, incoming []types.LegalRelation) ([]types.LegalRelationLink, error)
+	// ListEdges returns the relations of the given kinds that touch ids:
+	// with incoming, edges ending at an id (another document acts on it),
+	// otherwise edges starting from one. One hop of a graph walk.
+	ListEdges(ctx context.Context, ids []string, rels []types.LegalRelation, incoming bool) ([]types.LegalDocumentRelation, error)
 
 	// GetByIDs returns the documents with the given IDs (any order).
 	GetByIDs(ctx context.Context, ids []string) ([]*types.LegalDocument, error)
@@ -69,6 +73,9 @@ type LegalReviewRepository interface {
 	// ApprovedLinksForKnowledge returns approved links of the given
 	// knowledge IDs keyed by knowledge ID.
 	ApprovedLinksForKnowledge(ctx context.Context, knowledgeIDs []string) (map[string]*types.LegalDocumentLink, error)
+	// KnowledgeForDocuments returns the live public-KB copies with an
+	// approved link of the given catalogue documents, keyed by document ID.
+	KnowledgeForDocuments(ctx context.Context, documentIDs []string) (map[string][]types.LegalKnowledgeRef, error)
 }
 
 // LegalLinkRow is a link with the knowledge title and KB name.
@@ -83,6 +90,12 @@ type LegalCatalogService interface {
 	// Lookup finds documents by số ký hiệu (preferred) or title words and
 	// returns each with the relations that bear on its validity.
 	Lookup(ctx context.Context, documentNumber, title string, limit int) ([]*types.LegalStatusReport, error)
+	// Related finds documents the same way as Lookup and walks the relation
+	// graph from each, up to depth hops, marking the related documents a
+	// public KB holds. Fully expired documents are skipped unless
+	// includeExpired (history walks always keep them).
+	Related(ctx context.Context, documentNumber, title string, mode types.LegalRelatedMode,
+		depth int, includeExpired bool) ([]*types.LegalRelatedReport, error)
 }
 
 // LegalReviewService drives the SuperAdmin review of legal identities.

@@ -1,0 +1,111 @@
+package service
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestLegalCatalogRelated(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{},
+		&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{}))
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	svc := NewLegalCatalogService(catalog, repository.NewLegalReviewRepository(db))
+
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	doc := func(id, num, typ, status, issued string) *types.LegalDocument {
+		return &types.LegalDocument{ID: id, Source: types.LegalDocumentSourceVBPL, DocumentNumber: num,
+			NumberKey: num, DocType: typ, Title: typ + " " + num, Status: status, IssuedOn: day(issued)}
+	}
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		doc("law-old", "04/2007/QH12", "Luật", "Hết hiệu lực toàn bộ", "2007-11-21"),
+		doc("law", "109/2025/QH15", "Luật", "Còn hiệu lực", "2025-12-10"),
+		doc("nd", "12/2026/NĐ-CP", "Nghị định", "Còn hiệu lực", "2026-01-15"),
+		doc("nd-old", "65/2013/NĐ-CP", "Nghị định", "Hết hiệu lực toàn bộ", "2013-06-27"),
+		doc("tt", "40/2026/TT-BTC", "Thông tư", "Còn hiệu lực", "2026-03-01"),
+		doc("amend", "05/2026/QH16", "Luật", "Còn hiệu lực", "2026-04-24"),
+	}))
+	require.NoError(t, catalog.ReplaceRelations(ctx, []*types.LegalDocumentRelation{
+		{FromID: "law", ToID: "law-old", Relation: types.LegalRelationReplaces},
+		{FromID: "nd", ToID: "law", Relation: types.LegalRelationGuides},
+		{FromID: "nd-old", ToID: "law", Relation: types.LegalRelationGuides},
+		{FromID: "tt", ToID: "nd", Relation: types.LegalRelationGuides},
+		{FromID: "amend", ToID: "law", Relation: types.LegalRelationAmends},
+		{FromID: "tt", ToID: "law", Relation: types.LegalRelationBasedOn},
+	}))
+	// The decree is held by a public KB with an approved link.
+	require.NoError(t, db.Create(&types.KnowledgeBase{ID: "kb", Name: "Nghị định", Visibility: types.KBVisibilityPublic}).Error)
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k-nd", KnowledgeBaseID: "kb", Title: "nd.html"}).Error)
+	require.NoError(t, db.Create(&types.LegalDocumentLink{KnowledgeID: "k-nd", KnowledgeBaseID: "kb",
+		LegalDocumentID: "nd", ReviewStatus: types.LegalReviewApproved}).Error)
+
+	byID := func(rep *types.LegalRelatedReport) map[string]types.LegalRelatedDocument {
+		out := map[string]types.LegalRelatedDocument{}
+		for _, r := range rep.Related {
+			out[r.Document.ID] = r
+		}
+		return out
+	}
+
+	// Guidance walks law ← decree ← circular and drops the expired decree.
+	reports, err := svc.Related(ctx, "109/2025/QH15", "", types.LegalRelatedGuidance, 0, false)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	got := byID(reports[0])
+	require.Len(t, got, 2)
+	require.Equal(t, 1, got["nd"].Depth)
+	require.True(t, got["nd"].Incoming)
+	require.Equal(t, "law", got["nd"].ParentID)
+	require.Equal(t, []types.LegalKnowledgeRef{{KnowledgeID: "k-nd", KnowledgeBaseID: "kb",
+		KnowledgeBaseName: "Nghị định", Title: "nd.html"}}, got["nd"].Knowledge)
+	require.Equal(t, 2, got["tt"].Depth)
+	require.Equal(t, "nd", got["tt"].ParentID)
+	require.Empty(t, got["tt"].Knowledge)
+
+	// One hop only, expired documents included.
+	reports, err = svc.Related(ctx, "109/2025/QH15", "", types.LegalRelatedGuidance, 1, true)
+	require.NoError(t, err)
+	got = byID(reports[0])
+	require.Len(t, got, 2)
+	require.Contains(t, got, "nd-old")
+	require.Equal(t, "nd", reports[0].Related[0].Document.ID, "documents in force come first")
+
+	// History keeps the expired predecessor without being asked.
+	reports, err = svc.Related(ctx, "109/2025/QH15", "", types.LegalRelatedHistory, 0, false)
+	require.NoError(t, err)
+	got = byID(reports[0])
+	require.Len(t, got, 1)
+	require.False(t, got["law-old"].Incoming, "the law replaces its predecessor")
+	require.Equal(t, types.LegalRelationReplaces, got["law-old"].Relation)
+
+	reports, err = svc.Related(ctx, "109/2025/QH15", "", types.LegalRelatedAmendments, 0, false)
+	require.NoError(t, err)
+	require.Contains(t, byID(reports[0]), "amend")
+
+	// Basis walks up from the circular: to the decree it guides and the
+	// law it is based on (reached first, so the decree's own edge to the
+	// law does not repeat it).
+	reports, err = svc.Related(ctx, "40/2026/TT-BTC", "", types.LegalRelatedBasis, 0, false)
+	require.NoError(t, err)
+	got = byID(reports[0])
+	require.Len(t, got, 2)
+	require.Equal(t, 1, got["law"].Depth)
+	require.Equal(t, 1, got["nd"].Depth)
+
+	_, err = svc.Related(ctx, "109/2025/QH15", "", "nonsense", 0, false)
+	require.Error(t, err)
+
+	reports, err = svc.Related(ctx, "1/2099/QH99", "", types.LegalRelatedGuidance, 0, false)
+	require.NoError(t, err)
+	require.Empty(t, reports)
+}

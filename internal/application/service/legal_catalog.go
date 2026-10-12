@@ -31,31 +31,43 @@ var (
 )
 
 type legalCatalogService struct {
-	repo interfaces.LegalCatalogRepository
+	repo    interfaces.LegalCatalogRepository
+	reviews interfaces.LegalReviewRepository
 }
 
 // NewLegalCatalogService creates the legal catalogue service.
-func NewLegalCatalogService(repo interfaces.LegalCatalogRepository) interfaces.LegalCatalogService {
-	return &legalCatalogService{repo: repo}
+func NewLegalCatalogService(
+	repo interfaces.LegalCatalogRepository, reviews interfaces.LegalReviewRepository,
+) interfaces.LegalCatalogService {
+	return &legalCatalogService{repo: repo, reviews: reviews}
+}
+
+// find resolves a document reference: by số ký hiệu first, else by title
+// words. Newest first.
+func (s *legalCatalogService) find(
+	ctx context.Context, documentNumber, title string, limit int,
+) ([]*types.LegalDocument, error) {
+	if limit <= 0 || limit > legalCatalogMaxLookup {
+		limit = legalCatalogMaxLookup
+	}
+	if key := vietnamese_legal.CatalogNumberKey(documentNumber); key != "" {
+		docs, err := s.repo.FindByNumberKey(ctx, key, limit)
+		if err != nil || len(docs) > 0 {
+			return docs, err
+		}
+	}
+	if strings.TrimSpace(title) == "" {
+		return nil, nil
+	}
+	return s.repo.SearchByTitle(ctx, strings.Fields(title), limit)
 }
 
 func (s *legalCatalogService) Lookup(
 	ctx context.Context, documentNumber, title string, limit int,
 ) ([]*types.LegalStatusReport, error) {
-	if limit <= 0 || limit > legalCatalogMaxLookup {
-		limit = legalCatalogMaxLookup
-	}
-	var docs []*types.LegalDocument
-	var err error
-	if key := vietnamese_legal.CatalogNumberKey(documentNumber); key != "" {
-		if docs, err = s.repo.FindByNumberKey(ctx, key, limit); err != nil {
-			return nil, err
-		}
-	}
-	if len(docs) == 0 && strings.TrimSpace(title) != "" {
-		if docs, err = s.repo.SearchByTitle(ctx, strings.Fields(title), limit); err != nil {
-			return nil, err
-		}
+	docs, err := s.find(ctx, documentNumber, title, limit)
+	if err != nil {
+		return nil, err
 	}
 	reports := make([]*types.LegalStatusReport, 0, len(docs))
 	for _, doc := range docs {

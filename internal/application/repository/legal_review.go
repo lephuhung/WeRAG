@@ -184,3 +184,30 @@ func (r *legalReviewRepository) ApprovedLinksForKnowledge(
 	}
 	return out, err
 }
+
+func (r *legalReviewRepository) KnowledgeForDocuments(
+	ctx context.Context, documentIDs []string,
+) (map[string][]types.LegalKnowledgeRef, error) {
+	out := map[string][]types.LegalKnowledgeRef{}
+	if len(documentIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		LegalDocumentID   string
+		KnowledgeID       string
+		KnowledgeBaseID   string
+		KnowledgeBaseName string
+		Title             string
+	}
+	err := r.liveLinks(ctx, "").
+		Select("l.legal_document_id, l.knowledge_id, l.knowledge_base_id, kb.name AS knowledge_base_name, k.title").
+		Where("l.review_status = ? AND l.legal_document_id IN ?", types.LegalReviewApproved, documentIDs).
+		Order("k.created_at").Scan(&rows).Error
+	for _, row := range rows {
+		out[row.LegalDocumentID] = append(out[row.LegalDocumentID], types.LegalKnowledgeRef{
+			KnowledgeID: row.KnowledgeID, KnowledgeBaseID: row.KnowledgeBaseID,
+			KnowledgeBaseName: row.KnowledgeBaseName, Title: row.Title,
+		})
+	}
+	return out, err
+}

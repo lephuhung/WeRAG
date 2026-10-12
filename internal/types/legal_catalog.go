@@ -42,6 +42,13 @@ const LegalSupersededScoreFactor = 0.75
 // LegalDocumentSourceManual marks catalogue rows a reviewer added by hand.
 const LegalDocumentSourceManual = "manual"
 
+// LegalDocumentSourceVBPL marks catalogue rows imported from vbpl.vn.
+const LegalDocumentSourceVBPL = "vbpl"
+
+// LegalReviewerVBPL is the reviewed_by of links approved without a reviewer:
+// the knowledge was imported from vbpl.vn and names its catalogue row.
+const LegalReviewerVBPL = "vbpl-import"
+
 // TableName returns the table name for LegalDocument.
 func (LegalDocument) TableName() string { return "legal_documents" }
 
@@ -90,6 +97,53 @@ type LegalRelationLink struct {
 type LegalStatusReport struct {
 	Document *LegalDocument      `json:"document"`
 	Links    []LegalRelationLink `json:"links"`
+}
+
+// LegalRelatedMode names a walk over the relation graph from one document.
+type LegalRelatedMode string
+
+const (
+	// LegalRelatedGuidance follows "is guided by" down: Luật → Nghị định →
+	// Thông tư that detail or guide it.
+	LegalRelatedGuidance LegalRelatedMode = "guidance"
+	// LegalRelatedAmendments lists what amends, corrects or consolidates it.
+	LegalRelatedAmendments LegalRelatedMode = "amendments"
+	// LegalRelatedHistory follows replacement and repeal both ways: the
+	// versions before and after it.
+	LegalRelatedHistory LegalRelatedMode = "history"
+	// LegalRelatedBasis follows "based on" and "guides" up to the law it
+	// implements.
+	LegalRelatedBasis LegalRelatedMode = "basis"
+)
+
+// LegalKnowledgeRef is a copy of a catalogue document in a public KB, with
+// an approved legal link.
+type LegalKnowledgeRef struct {
+	KnowledgeID       string `json:"knowledge_id"`
+	KnowledgeBaseID   string `json:"knowledge_base_id"`
+	KnowledgeBaseName string `json:"knowledge_base_name"`
+	Title             string `json:"title"`
+}
+
+// LegalRelatedDocument is a document reached by a relation walk: Relation
+// and Incoming describe the edge from ParentID (Incoming = this document
+// acts on the parent).
+type LegalRelatedDocument struct {
+	Document  *LegalDocument      `json:"document"`
+	Depth     int                 `json:"depth"`
+	ParentID  string              `json:"parent_id"`
+	Relation  LegalRelation       `json:"relation"`
+	Incoming  bool                `json:"incoming"`
+	Knowledge []LegalKnowledgeRef `json:"knowledge,omitempty"`
+}
+
+// LegalRelatedReport is the result of one relation walk.
+type LegalRelatedReport struct {
+	Document *LegalDocument         `json:"document"`
+	Mode     LegalRelatedMode       `json:"mode"`
+	Related  []LegalRelatedDocument `json:"related"`
+	// Truncated reports that a level held more documents than the walk keeps.
+	Truncated bool `json:"truncated"`
 }
 
 // LegalReviewStatus is the review state of a knowledge's legal identity.

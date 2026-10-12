@@ -100,6 +100,51 @@ func TestLegalReviewFlow(t *testing.T) {
 	require.Error(t, err, "approving without a catalogue row or fields fails")
 }
 
+func TestLegalReviewApprovesVBPLImports(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{}, &types.Chunk{},
+		&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{}))
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	svc := NewLegalReviewService(catalog, repository.NewLegalReviewRepository(db), nil, nil)
+
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		{ID: "179941", Source: types.LegalDocumentSourceVBPL, DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15",
+			Title: "Luật Thuế thu nhập doanh nghiệp", Status: "Còn hiệu lực"},
+		{ID: "manual-1", Source: types.LegalDocumentSourceManual, DocumentNumber: "57-NQ/TW", NumberKey: "57-NQ/TW"},
+	}))
+	require.NoError(t, db.Create(&types.KnowledgeBase{ID: "kb-pub", Name: "Luật", Visibility: types.KBVisibilityPublic}).Error)
+	for _, k := range []types.Knowledge{
+		// Imported by the vbpl crawler: no readable header needed.
+		{ID: "k-vbpl", KnowledgeBaseID: "kb-pub", Title: "a.html", ParseStatus: types.ParseStatusCompleted,
+			Metadata: types.JSON(`{"external_id":"179941"}`)},
+		// An external id that is not a vbpl row stays for the reviewer.
+		{ID: "k-manual", KnowledgeBaseID: "kb-pub", Title: "b.pdf", ParseStatus: types.ParseStatusCompleted,
+			Metadata: types.JSON(`{"external_id":"manual-1"}`)},
+		{ID: "k-unknown", KnowledgeBaseID: "kb-pub", Title: "c.pdf", ParseStatus: types.ParseStatusCompleted,
+			Metadata: types.JSON(`{"external_id":"no-such-row"}`)},
+	} {
+		require.NoError(t, db.Create(&k).Error)
+	}
+
+	created, err := svc.Scan(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, created)
+
+	approved, total, err := svc.List(ctx, string(types.LegalReviewApproved), "", 0, 10)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Equal(t, "k-vbpl", approved[0].Link.KnowledgeID)
+	require.Equal(t, "179941", approved[0].Document.ID)
+	require.Equal(t, types.LegalReviewerVBPL, approved[0].Link.ReviewedBy)
+	require.Nil(t, approved[0].Document.ReviewedAt, "the catalogue row stays open to portal updates")
+
+	_, total, err = svc.List(ctx, string(types.LegalReviewPending), "", 0, 10)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+}
+
 func TestSuggestedIssuer(t *testing.T) {
 	require.Equal(t, "", suggestedIssuer("## LUẬT"))
 	require.Equal(t, "", suggestedIssuer("## CÔNG BÁO/Số 1133 + 1134/Ngày 22-12-2018"))

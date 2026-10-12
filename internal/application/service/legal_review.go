@@ -112,6 +112,24 @@ func (s *legalReviewService) suggest(
 		}
 		link.LegalDocumentID = pickCatalogMatch(exact, k.ExternalID, sug.DocType)
 	}
+	// A document ingested from vbpl.vn names the portal row it came from
+	// (metadata.external_id): its identity is known, not parsed, so the link
+	// is approved without a reviewer. The catalogue row is left unreviewed so
+	// that later portal imports keep updating its status.
+	if k.ExternalID != "" {
+		docs, err := s.catalog.GetByIDs(ctx, []string{k.ExternalID})
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range docs {
+			if d.ID == k.ExternalID && d.Source == types.LegalDocumentSourceVBPL {
+				now := time.Now()
+				link.LegalDocumentID = d.ID
+				link.ReviewStatus = types.LegalReviewApproved
+				link.ReviewedBy, link.ReviewedAt = types.LegalReviewerVBPL, &now
+			}
+		}
+	}
 	raw, err := json.Marshal(sug)
 	if err != nil {
 		return nil, err

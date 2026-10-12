@@ -1161,6 +1161,7 @@ func (s *agentService) registerTools(
 	// first so a stale config cannot resurrect them.
 	allowedTools = withoutString(allowedTools, tools.ToolResolveAbbreviation)
 	allowedTools = withoutString(allowedTools, tools.ToolCheckLegalStatus)
+	allowedTools = withoutString(allowedTools, tools.ToolFindRelatedLegalDocuments)
 	allowedTools = withoutString(allowedTools, tools.ToolPeopleLookup)
 	// search_document_section is a companion of read_document (registered
 	// below whenever that reader is), not an allowlist entry of its own.
@@ -1374,10 +1375,12 @@ func (s *agentService) registerTools(
 	if s.abbreviationService != nil {
 		registry.RegisterTool(tools.NewResolveAbbreviationTool(s.abbreviationService))
 	}
-	// check_legal_status rides on every agent too: the legal catalogue is
-	// public law, read-only and the same for every tenant.
+	// check_legal_status and find_related_legal_documents ride on every
+	// agent too: the legal catalogue is public law, read-only and the same
+	// for every tenant.
 	if s.legalCatalog != nil {
 		registry.RegisterTool(tools.NewCheckLegalStatusTool(s.legalCatalog))
+		registry.RegisterTool(tools.NewFindRelatedLegalDocumentsTool(s.legalCatalog))
 	}
 	// people_lookup is PII. It is registered only when the deployment
 	// enabled PEOPLE_SEARCH_* AND the caller is a system admin — mirroring
