@@ -9,6 +9,10 @@ import (
 // id> scrolls it to one Điều / khoản / điểm.
 const VBPLDocumentURL = "https://vbpl.vn/van-ban/chi-tiet/"
 
+// VBPLFileURL serves the files attached to a vbpl.vn document:
+// <VBPLFileURL><document id>/<file name>/download.
+const VBPLFileURL = "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/minio/buckets/vbpl/"
+
 // maxCitedAmends bounds the amended provisions named in one citation.
 const maxCitedAmends = 5
 
@@ -131,4 +135,24 @@ func (m *LegalMetadata) SectionURL(khoan, diem string) string {
 		return ""
 	}
 	return VBPLDocumentURL + url.PathEscape(m.SourceDocID) + "?go=" + url.QueryEscape(id)
+}
+
+// URL downloads the file from vbpl.vn; empty without a document id.
+func (f AppendixFile) URL(docID string) string {
+	if docID == "" || f.FileName == "" {
+		return ""
+	}
+	return VBPLFileURL + url.PathEscape(docID) + "/" + url.PathEscape(f.FileName) + "/download"
+}
+
+// Name is how an answer names the file: its title ("Phụ lục I. Khai thuế
+// mẫu 1-6"), else "Phụ lục II". Several files may share one label.
+func (f AppendixFile) Name() string {
+	if t := strings.TrimSpace(f.Title); t != "" {
+		return t
+	}
+	if f.Label != "" {
+		return "Phụ lục " + f.Label
+	}
+	return f.FileName
 }

@@ -63,3 +63,21 @@ func TestMatchesAmendment(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendixFileURLAndName(t *testing.T) {
+	f := AppendixFile{Label: "II", FileName: "Thông tư 148.Phụ lục II.docx"}
+	want := VBPLFileURL + "2ea7f330/Th%C3%B4ng%20t%C6%B0%20148.Ph%E1%BB%A5%20l%E1%BB%A5c%20II.docx/download"
+	if got := f.URL("2ea7f330"); got != want {
+		t.Errorf("URL = %q, want %q", got, want)
+	}
+	if got := f.URL(""); got != "" {
+		t.Errorf("URL without document id = %q", got)
+	}
+	if got := f.Name(); got != "Phụ lục II" {
+		t.Errorf("Name = %q", got)
+	}
+	f.Title = "Phụ lục II. Nội dung HTCT Xã"
+	if got := f.Name(); got != f.Title {
+		t.Errorf("Name with title = %q", got)
+	}
+}

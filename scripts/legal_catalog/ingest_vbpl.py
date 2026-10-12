@@ -11,6 +11,7 @@ Every upload carries metadata used elsewhere:
                 knowledge to its catalogue row from it)
   source        "vbpl"
   doc_number, doc_type, issue_date, eff_from, eff_status, vbpl_url
+  vbpl_appendix_files  JSON list of the attached phụ lục files
 
 Uploaded ids are remembered per knowledge base in <crawl-dir>/ingest.sqlite,
 with the HTML hash, so a rerun only uploads new or changed pages (a changed
@@ -68,7 +69,17 @@ def metadata(detail):
         "eff_status": name_of(detail.get("effStatus")) or "",
         "vbpl_url": VBPL_DOC_URL.format(detail["id"]),
     }
-    return {k: v for k, v in meta.items() if v}
+    meta = {k: v for k, v in meta.items() if v}
+    # Phụ lục published only as files: chunks citing them link the file
+    # (upload metadata values are strings, so the list is JSON-encoded).
+    files = [
+        {"title": " ".join((r.get("fileTitle") or "").split()), "file_name": r["fileName"]}
+        for r in detail.get("documentRelatedList") or []
+        if r.get("relatedType") == "APPENDIX" and r.get("fileName")
+    ]
+    if files:
+        meta["vbpl_appendix_files"] = json.dumps(files, ensure_ascii=False)
+    return meta
 
 
 def multipart(fields, file_field, filename, content):

@@ -214,14 +214,17 @@ type modelChunk struct {
 	content   string
 	// cite names the legal provision the chunk sits in ("khoản 2 Điều
 	// 14"); empty for other documents.
-	cite       string
-	question   string
-	answers    []string
-	images     []map[string]interface{}
-	docRealID  string
-	kbRealID   string
-	chunkReal  string
-	inputOrder int
+	cite string
+	// appendixFiles are phụ lục the chunk refers to that are only published
+	// as files on vbpl.vn: [{"name", "url"}].
+	appendixFiles []map[string]interface{}
+	question      string
+	answers       []string
+	images        []map[string]interface{}
+	docRealID     string
+	kbRealID      string
+	chunkReal     string
+	inputOrder    int
 }
 
 func (r *sourceRegistry) modelKnowledgeOutput(mode string, rows []map[string]interface{}, fallback string) string {
@@ -261,25 +264,26 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 			ChunkType:       chunkType,
 		})
 		chunks = append(chunks, modelChunk{
-			handle:     chunkHandle,
-			docHandle:  r.RegisterDocument(knowledgeID),
-			kbHandle:   r.RegisterKnowledgeBase(kbID),
-			title:      title,
-			metadata:   stringValue(row, "knowledge_metadata"),
-			chunkType:  chunkType,
-			index:      chunkIndex,
-			view:       viewForRow(row, mode),
-			role:       stringValue(row, "role"),
-			match:      firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
-			content:    stringValue(row, "content"),
-			cite:       stringValue(row, "legal_cite"),
-			question:   firstNonEmpty(stringValue(row, "faq_question"), stringValue(row, "faq_standard_question")),
-			answers:    stringSliceValue(row["faq_answers"]),
-			images:     mapsValue(row["images"]),
-			docRealID:  knowledgeID,
-			kbRealID:   kbID,
-			chunkReal:  chunkID,
-			inputOrder: idx,
+			handle:        chunkHandle,
+			docHandle:     r.RegisterDocument(knowledgeID),
+			kbHandle:      r.RegisterKnowledgeBase(kbID),
+			title:         title,
+			metadata:      stringValue(row, "knowledge_metadata"),
+			chunkType:     chunkType,
+			index:         chunkIndex,
+			view:          viewForRow(row, mode),
+			role:          stringValue(row, "role"),
+			match:         firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
+			content:       stringValue(row, "content"),
+			cite:          stringValue(row, "legal_cite"),
+			appendixFiles: mapsValue(row["appendix_files"]),
+			question:      firstNonEmpty(stringValue(row, "faq_question"), stringValue(row, "faq_standard_question")),
+			answers:       stringSliceValue(row["faq_answers"]),
+			images:        mapsValue(row["images"]),
+			docRealID:     knowledgeID,
+			kbRealID:      kbID,
+			chunkReal:     chunkID,
+			inputOrder:    idx,
 		})
 	}
 	return chunks
@@ -512,6 +516,11 @@ func renderKnowledgeChunks(mode string, chunks []modelChunk, info map[string]int
 			}
 			for _, answer := range chunk.answers {
 				fmt.Fprintf(&b, "      <answer>%s</answer>\n", escapeText(answer))
+			}
+			for _, f := range chunk.appendixFiles {
+				if u := stringValue(f, "url"); u != "" {
+					fmt.Fprintf(&b, "      <appendix_file name=\"%s\" url=\"%s\"/>\n", escapeAttr(stringValue(f, "name")), escapeAttr(u))
+				}
 			}
 			for _, image := range chunk.images {
 				imageURL := stringValue(image, "url")

@@ -368,6 +368,15 @@ func addLegalCitation(row map[string]interface{}, meta *vietnamese_legal.LegalMe
 	if u := meta.SourceURL(); u != "" {
 		row["source_url"] = u
 	}
+	var files []map[string]interface{}
+	for _, f := range meta.AppendixFiles {
+		if u := f.URL(meta.SourceDocID); u != "" {
+			files = append(files, map[string]interface{}{"name": f.Name(), "url": u})
+		}
+	}
+	if len(files) > 0 {
+		row["appendix_files"] = files
+	}
 }
 
 // legalMetadataFromJSON reads the legal metadata of a search result's chunk

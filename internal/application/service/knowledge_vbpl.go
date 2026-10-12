@@ -78,10 +78,12 @@ func (s *knowledgeService) processVBPLFile(
 	})
 	planned := vbpl.Plan(doc, vbplChunkSize(eff.ChunkingConfig))
 	sourceDocID := vbplSourceDocID(knowledge)
+	appendixFiles := vbpl.LinkAttachedAppendices(planned, vbplAppendixFiles(knowledge))
 	chunks := make([]types.ParsedChunk, len(planned))
 	for i, c := range planned {
 		legal := c.Legal()
 		legal.SourceDocID = sourceDocID
+		legal.AppendixFiles = appendixFiles[i]
 		chunks[i] = types.ParsedChunk{
 			Content:       c.Content,
 			ContextHeader: c.ContextHeader(),
@@ -145,4 +147,34 @@ func vbplSourceDocID(knowledge *types.Knowledge) string {
 	}
 	id, _ := m["external_id"].(string)
 	return strings.TrimSpace(id)
+}
+
+// vbplAppendixFilesKey holds, on the knowledge metadata, the phụ lục files
+// vbpl.vn attaches to the document (set by ingest_vbpl.py, JSON-encoded
+// since upload metadata values are strings): [{"title", "file_name"}].
+// Chunks that refer to a phụ lục not in the page text link its file.
+const vbplAppendixFilesKey = "vbpl_appendix_files"
+
+func vbplAppendixFiles(knowledge *types.Knowledge) []vbpl.AttachedFile {
+	if len(knowledge.Metadata) == 0 {
+		return nil
+	}
+	m, err := knowledge.Metadata.Map()
+	if err != nil {
+		return nil
+	}
+	var raw []byte
+	switch v := m[vbplAppendixFilesKey].(type) {
+	case string:
+		raw = []byte(v)
+	case []interface{}:
+		raw, _ = json.Marshal(v)
+	default:
+		return nil
+	}
+	var files []vbpl.AttachedFile
+	if err := json.Unmarshal(raw, &files); err != nil {
+		return nil
+	}
+	return files
 }

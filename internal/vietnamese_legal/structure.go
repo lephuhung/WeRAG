@@ -402,6 +402,19 @@ type LegalMetadata struct {
 	Amends []AmendRef `json:"amends,omitempty"`
 	// SourceDocID is the vbpl.vn document id (the knowledge's external_id).
 	SourceDocID string `json:"source_doc_id,omitempty"`
+	// AppendixFiles lists the phụ lục the chunk refers to that vbpl.vn
+	// publishes only as separate files, not in the page text: the answer
+	// links them instead of quoting them.
+	AppendixFiles []AppendixFile `json:"appendix_files,omitempty"`
+}
+
+// AppendixFile is a phụ lục published as a file attached to the document.
+type AppendixFile struct {
+	// Label is the phụ lục number as the text names it ("II", "3"); empty
+	// when the file title carries none.
+	Label    string `json:"label,omitempty"`
+	Title    string `json:"title,omitempty"`
+	FileName string `json:"file_name"`
 }
 
 // AmendRef is one provision of another document written by quoted text.
