@@ -7,8 +7,14 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    hoặc thay đổi (metadata, toàn văn HTML trừ văn bản hết hiệu lực toàn bộ,
    quan hệ);
 3. `legal-catalog-import`: nạp vào `legal_documents` / `legal_document_relations`;
-4. `mc mirror` thư mục làm việc lên MinIO
-   (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`, mặc định `inventory-backups/werag/vbpl`).
+4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
+
+Dữ liệu nằm ở bucket riêng `werag-vbpl` (prefix `vbpl/`) trên MinIO dùng chung
+10.10.0.123, user `werag-vbpl` toàn quyền trên riêng bucket này (tạo 2026-10-12
+bằng tài khoản admin MinIO của inventory, như `provision_backup_storage.py`).
+Đây là dữ liệu dùng chung, không phải backup: không object lock, được xoá
+(`VBPL_S3_REMOVE=1`). Không có `VBPL_S3_*` thì compose rơi về khoá backup
+(chỉ ghi thêm, phải để `VBPL_S3_REMOVE=0`).
 
 ```bash
 # build + chạy
