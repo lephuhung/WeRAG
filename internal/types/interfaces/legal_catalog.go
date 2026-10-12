@@ -57,12 +57,13 @@ type LegalReviewRepository interface {
 	// GetLink returns one link, or nil when absent.
 	GetLink(ctx context.Context, knowledgeID string) (*types.LegalDocumentLink, error)
 	// ListLinks pages links of live knowledge, filtered by status (empty =
-	// all), newest first, with each knowledge's title and KB name.
-	ListLinks(ctx context.Context, status types.LegalReviewStatus, offset, limit int) ([]LegalLinkRow, int64, error)
+	// all) and KB (empty = every KB), newest first, with each knowledge's
+	// title and KB name.
+	ListLinks(ctx context.Context, status types.LegalReviewStatus, kbID string, offset, limit int) ([]LegalLinkRow, int64, error)
 	// ListSupersededLinks pages approved links whose document was
 	// replaced, repealed or ended by another catalogue document, or whose
-	// status says it expired.
-	ListSupersededLinks(ctx context.Context, offset, limit int) ([]LegalLinkRow, int64, error)
+	// status says it expired. kbID "" = every KB.
+	ListSupersededLinks(ctx context.Context, kbID string, offset, limit int) ([]LegalLinkRow, int64, error)
 	// ApprovedDocumentIDs returns which of ids have an approved link.
 	ApprovedDocumentIDs(ctx context.Context, ids []string) (map[string]bool, error)
 	// ApprovedLinksForKnowledge returns approved links of the given
@@ -90,8 +91,8 @@ type LegalReviewService interface {
 	// link; returns how many were created.
 	Scan(ctx context.Context) (int, error)
 	// List pages the review queue. status "" lists all; "alerts" lists
-	// approved documents superseded by a newer one.
-	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalReviewItem, int64, error)
+	// approved documents superseded by a newer one. kbID "" = every KB.
+	List(ctx context.Context, status, kbID string, offset, limit int) ([]*types.LegalReviewItem, int64, error)
 	// Decide applies a SuperAdmin decision to one knowledge.
 	Decide(ctx context.Context, knowledgeID string, d *types.LegalReviewDecision) (*types.LegalReviewItem, error)
 	// SearchCatalog finds catalogue rows by number or title words, for the

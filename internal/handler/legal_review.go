@@ -30,6 +30,7 @@ func NewLegalReviewHandler(svc interfaces.LegalReviewService) *LegalReviewHandle
 // @Tags         Legal review
 // @Produce      json
 // @Param        status    query  string  false  "Review status or alerts"
+// @Param        knowledge_base_id query string false "Only this KB"
 // @Param        page      query  int     false  "Page"
 // @Param        page_size query  int     false  "Page size"
 // @Success      200       {object} map[string]interface{} "Items + total"
@@ -45,7 +46,7 @@ func (h *LegalReviewHandler) ListLegalReviews(c *gin.Context) {
 	if size <= 0 {
 		size = 50
 	}
-	items, total, err := h.svc.List(ctx, c.Query("status"), (page.GetPage()-1)*size, size)
+	items, total, err := h.svc.List(ctx, c.Query("status"), c.Query("knowledge_base_id"), (page.GetPage()-1)*size, size)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

@@ -37,6 +37,19 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		"tool_results": totalToolCalls,
 	})
 
+	// a turn that must rest on evidence and got none is not synthesized
+	// from the model's memory either (see grounding_gate.go)
+	if isUngrounded(markUngrounded(ctx, state.RoundSteps)) {
+		answerID := generateEventID("answer")
+		for _, d := range []event.AgentFinalAnswerData{{Content: ungroundedAnswer}, {Done: true}} {
+			e.eventBus.Emit(ctx, event.Event{
+				ID: answerID, Type: event.EventAgentFinalAnswer, SessionID: sessionID, Data: d,
+			})
+		}
+		state.FinalAnswer = ungroundedAnswer
+		return nil
+	}
+
 	// Reuse the live transcript, including history, images, compaction and steer
 	// messages. Tool output must retain its role and call ID; never promote it
 	// into user instructions during error recovery or iteration-limit synthesis.

@@ -166,7 +166,7 @@ func suggestedIssuer(line string) string {
 }
 
 func (s *legalReviewService) List(
-	ctx context.Context, status string, offset, limit int,
+	ctx context.Context, status, kbID string, offset, limit int,
 ) ([]*types.LegalReviewItem, int64, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -176,9 +176,9 @@ func (s *legalReviewService) List(
 	var err error
 	switch status {
 	case LegalReviewStatusAlerts:
-		rows, total, err = s.reviews.ListSupersededLinks(ctx, offset, limit)
+		rows, total, err = s.reviews.ListSupersededLinks(ctx, kbID, offset, limit)
 	case "", string(types.LegalReviewPending), string(types.LegalReviewApproved), string(types.LegalReviewRejected):
-		rows, total, err = s.reviews.ListLinks(ctx, types.LegalReviewStatus(status), offset, limit)
+		rows, total, err = s.reviews.ListLinks(ctx, types.LegalReviewStatus(status), kbID, offset, limit)
 	default:
 		return nil, 0, errors.NewBadRequestError("unknown review status " + status)
 	}

@@ -143,7 +143,7 @@ function fieldsFromSuggestion(item: LegalReviewItem): LegalDocumentFields {
 }
 
 /* Which parsed values disagree with the linked catalogue row. */
-function mismatches(item: LegalReviewItem): { number: boolean; type: boolean; issued: boolean } {
+export function mismatches(item: LegalReviewItem): { number: boolean; type: boolean; issued: boolean } {
   const s = item.suggestion;
   const d = item.document;
   if (!s || !d) return { number: false, type: false, issued: false };
@@ -449,7 +449,8 @@ function Supersessions({ item }: { item: LegalReviewItem }) {
   );
 }
 
-function ReviewDialog({
+/* Also opened from a public KB's document cards (kb-legal-review.tsx). */
+export function ReviewDialog({
   item,
   onClose,
   onDone,

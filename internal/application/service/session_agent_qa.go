@@ -235,6 +235,17 @@ func (s *sessionService) AgentQA(
 			logger.Infof(ctx, "Highlighted passage, intent %s: the turn starts with %s", intent, tool)
 		}
 	}
+	// a question the open document does not answer starts with
+	// search_knowledge and may only be answered from what the tools
+	// return: left to itself the model answered from memory (an outdated
+	// law, "iPhone 18 Pro not released"); see tools.ClassifyKnowledgeLookup
+	if types.FirstToolChoiceFromContext(ctx) == "" && req.CustomAgent != nil &&
+		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&
+		tools.ClassifyKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query) {
+		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
+		ctx = types.WithGroundingRequired(ctx)
+		logger.Infof(ctx, "Question beyond the open document: the turn starts with %s and needs evidence", tools.ToolSearchKnowledge)
+	}
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		// the document router (no model, then one short thinking-off call
 		// when unclear): a turn that names no document of a session with

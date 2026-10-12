@@ -63,8 +63,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
+    /* the boot script sets data-theme before hydration */
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${inter.variable} ${displaySerif.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
       <body>

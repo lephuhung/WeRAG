@@ -119,17 +119,21 @@ func (r *legalReviewRepository) linkRows(q *gorm.DB, offset, limit int) ([]inter
 }
 
 // liveLinks selects links whose knowledge is still alive, joined to the
-// knowledge title and KB name.
-func (r *legalReviewRepository) liveLinks(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx).Table("legal_document_links AS l").
+// knowledge title and KB name; kbID "" keeps every KB.
+func (r *legalReviewRepository) liveLinks(ctx context.Context, kbID string) *gorm.DB {
+	q := r.db.WithContext(ctx).Table("legal_document_links AS l").
 		Joins("JOIN knowledges k ON k.id = l.knowledge_id AND k.deleted_at IS NULL").
 		Joins("JOIN knowledge_bases kb ON kb.id = l.knowledge_base_id AND kb.deleted_at IS NULL")
+	if kbID != "" {
+		q = q.Where("l.knowledge_base_id = ?", kbID)
+	}
+	return q
 }
 
 func (r *legalReviewRepository) ListLinks(
-	ctx context.Context, status types.LegalReviewStatus, offset, limit int,
+	ctx context.Context, status types.LegalReviewStatus, kbID string, offset, limit int,
 ) ([]interfaces.LegalLinkRow, int64, error) {
-	q := r.liveLinks(ctx)
+	q := r.liveLinks(ctx, kbID)
 	if status != "" {
 		q = q.Where("l.review_status = ?", status)
 	}
@@ -137,9 +141,9 @@ func (r *legalReviewRepository) ListLinks(
 }
 
 func (r *legalReviewRepository) ListSupersededLinks(
-	ctx context.Context, offset, limit int,
+	ctx context.Context, kbID string, offset, limit int,
 ) ([]interfaces.LegalLinkRow, int64, error) {
-	q := r.liveLinks(ctx).
+	q := r.liveLinks(ctx, kbID).
 		Joins("JOIN legal_documents d ON d.id = l.legal_document_id").
 		Where("l.review_status = ?", types.LegalReviewApproved).
 		Where("(d.status LIKE ? OR EXISTS (SELECT 1 FROM legal_document_relations r WHERE r.to_id = d.id AND r.relation IN ?))",
@@ -155,7 +159,7 @@ func (r *legalReviewRepository) ApprovedDocumentIDs(ctx context.Context, ids []s
 		return out, nil
 	}
 	var found []string
-	err := r.liveLinks(ctx).
+	err := r.liveLinks(ctx, "").
 		Where("l.review_status = ? AND l.legal_document_id IN ?", types.LegalReviewApproved, ids).
 		Distinct().Pluck("l.legal_document_id", &found).Error
 	for _, id := range found {

@@ -24,6 +24,13 @@ import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { UploadModal } from "@/components/knowledge/upload-modal";
 import { DocActionsMenu } from "@/components/knowledge/doc-actions-menu";
+import {
+  KbLegalReviewBar,
+  LegalReviewActions,
+  ReviewDialog,
+  useKbLegalReviews,
+} from "@/components/knowledge/kb-legal-review";
+import type { LegalReviewItem } from "@/lib/api/legal-review";
 import { ParseSettingsDialog } from "@/components/knowledge/parse-settings-dialog";
 import { useUploadTasks } from "@/lib/upload-tasks";
 import { buildUploadFileName } from "@/lib/upload-queue";
@@ -394,6 +401,10 @@ const toast = useToast();
     isSystemAdmin,
   });
   const isPublicKb = kbCaps.kind === "public";
+  /* Legal identity review of public-KB documents, right on their cards
+   * (SuperAdmin only, as in Administration → Legal documents). */
+  const legalReview = useKbLegalReviews(kbId, isPublicKb && isSystemAdmin);
+  const [reviewing, setReviewing] = useState<LegalReviewItem | null>(null);
   const isForeignKb = kbCaps.kind === "invited";
   const canManageKb = kbCaps.canManage;
   /* A Member edits/deletes the documents they uploaded in their own
@@ -720,6 +731,9 @@ const toast = useToast();
                   )}
                   <span className="caption whitespace-nowrap text-muted">{filtered.length} files</span>
                   {!denied && scopePanel}
+                  {!denied && isPublicKb && isSystemAdmin && (
+                    <KbLegalReviewBar items={legalReview.items} onScanned={legalReview.reload} />
+                  )}
                   {docsError && (
                     <span className="caption max-w-[320px] truncate text-error" title={docsError}>
                       {docsError}
@@ -736,8 +750,8 @@ const toast = useToast();
                 </div>
               </div>
 
-              {/* Cards Grid: 5 cards per row on desktop */}
-              <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+              {/* Cards Grid: at most 4 cards per row (5 made them too narrow) */}
+              <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                 {filtered.map((d) => {
                   const st = statusStyle(d.parse_status ?? d.status);
                   return (
@@ -838,6 +852,12 @@ const toast = useToast();
                         )}
                       </div>
 
+                      <LegalReviewActions
+                        item={legalReview.items[d.id]}
+                        onOpen={() => setReviewing(legalReview.items[d.id] ?? null)}
+                        onDecided={legalReview.reload}
+                      />
+
                       {/* Bottom Status & Date */}
                       <div className="mt-2.5 flex items-center justify-between border-t border-hairline pt-2 text-[11px] text-muted">
                         <span className={`flex items-center gap-1.5 font-medium ${st.cls}`}>
@@ -855,6 +875,17 @@ const toast = useToast();
                   );
                 })}
               </div>
+
+              {reviewing && (
+                <ReviewDialog
+                  item={reviewing}
+                  onClose={() => setReviewing(null)}
+                  onDone={() => {
+                    setReviewing(null);
+                    void legalReview.reload();
+                  }}
+                />
+              )}
 
               {docs !== null && docs.length === 0 && (
                 <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-hairline p-8 text-center">

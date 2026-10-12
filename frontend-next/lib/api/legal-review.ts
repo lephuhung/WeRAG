@@ -98,11 +98,14 @@ export interface LegalReviewDecision {
 
 export function listLegalReviews(params: {
   status?: LegalReviewFilter;
+  /* Only this KB's documents. */
+  knowledgeBaseId?: string;
   page?: number;
   pageSize?: number;
 }): Promise<{ success: boolean; data: LegalReviewItem[]; total: number }> {
   const q = new URLSearchParams();
   if (params.status) q.set("status", params.status);
+  if (params.knowledgeBaseId) q.set("knowledge_base_id", params.knowledgeBaseId);
   if (params.page) q.set("page", String(params.page));
   if (params.pageSize) q.set("page_size", String(params.pageSize));
   const qs = q.toString();

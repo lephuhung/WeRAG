@@ -279,6 +279,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 			return resp, nil
 		}
 	}
+	// a turn that must rest on evidence and has none yet is not streamed
+	// (see grounding_gate.go)
+	if isUngrounded(ctx) {
+		return e.ungroundedRound(ctx, messages, opts, iteration, sessionID)
+	}
 
 	pendingToolCalls := make(map[string]bool)
 	thinkingToolIDs := make(map[string]string) // tool_call_id -> event ID for thinking tool streams
@@ -544,6 +549,7 @@ func (e *AgentEngine) callLLMWithRetry(
 
 	// Sanitize messages before sending to LLM (fix consecutive roles, orphaned tool results)
 	messages = agenttools.SanitizeMessages(messages)
+	ctx = markUngrounded(ctx, state.RoundSteps)
 
 	response, err := e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 

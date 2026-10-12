@@ -11,6 +11,7 @@ export type FileKind =
   | "video"
   | "code"
   | "sound"
+  | "text"
   | "file"
   | "edit"
   | "link";
@@ -34,6 +35,9 @@ export function getFileKind(input: string | { type?: string; file_type?: string;
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
   if (["mp4", "mov", "webm", "mkv", "avi"].includes(ext)) return "video";
   if (["mp3", "wav", "m4a", "flac", "ogg", "aac"].includes(ext)) return "sound";
+  /* Markdown / plain text (e.g. vbpl.vn documents converted to .md) — a
+   * colour of its own, the grey "file" one read as a faded icon. */
+  if (["md", "markdown", "txt", "rtf"].includes(ext)) return "text";
   if (
     ["py", "pyc", "js", "mjs", "cjs", "ts", "tsx", "jsx", "go", "rs", "java", "c", "cc", "cpp", "h", "hpp", "sh", "bash", "rb", "php", "sql", "html", "htm"].includes(ext)
   ) {
@@ -51,6 +55,7 @@ const KIND_COLOR: Record<FileKind, string> = {
   video: "#9273bd",
   code: "#5d95ad",
   sound: "#5d95ad",
+  text: "#4f78b0",
   file: "#777169",
   edit: "#5d95ad",
   link: "#5d95ad",

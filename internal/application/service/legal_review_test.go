@@ -55,7 +55,7 @@ func TestLegalReviewFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, created, "a scan never duplicates a suggestion")
 
-	items, total, err := svc.List(ctx, "pending", 0, 10)
+	items, total, err := svc.List(ctx, "pending", "", 0, 10)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
 	require.Equal(t, "29/2018/QH14", items[0].Suggestion.DocumentNumber)
@@ -77,7 +77,7 @@ func TestLegalReviewFlow(t *testing.T) {
 	require.Equal(t, "bmnn-2025", item.SupersededBy[0].Document.ID)
 	require.False(t, item.SupersededBy[0].InKB, "the 2025 law is not in any public KB")
 
-	alerts, total, err := svc.List(ctx, LegalReviewStatusAlerts, 0, 10)
+	alerts, total, err := svc.List(ctx, LegalReviewStatusAlerts, "", 0, 10)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
 	require.Equal(t, "29.2018QH14.pdf", alerts[0].KnowledgeTitle)
