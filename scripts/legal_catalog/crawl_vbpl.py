@@ -33,6 +33,11 @@ After crawling, the full set is exported:
 Kept documents follow scripts/legal_catalog/prepare_vbpl.py: central
 issuers, the NĐ30 registry types, issued on or after --min-year.
 
+--province <vbpl unit id> (repeatable) crawls local documents of those
+provinces instead (types and year filtered the same way). The local list is
+sorted newest first, so listing stops at the first page older than
+--min-year; the portal search cannot filter by province itself.
+
 Usage:
   python3 -I scripts/legal_catalog/crawl_vbpl.py <out-dir> [--limit N]
   go run ./cmd/legal-catalog-import -documents <out-dir>/documents.jsonl \\
@@ -52,6 +57,7 @@ import urllib.request
 
 SITE = "https://vbpl.vn"
 LIST_PAGE = SITE + "/van-ban/trung-uong"
+LOCAL_PAGE = SITE + "/van-ban/dia-phuong"
 DETAIL_URL = "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/{}"
 # The portal's WAF answers 403 to non-browser user agents.
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -148,9 +154,9 @@ class Client:
             time.sleep(pause)
         raise RuntimeError("unreachable")
 
-    def action(self, action_id, args):
+    def action(self, action_id, args, page=LIST_PAGE):
         body = json.dumps(args, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        return self.fetch(LIST_PAGE, data=body, headers={
+        return self.fetch(page, data=body, headers={
             "Next-Action": action_id,
             "Accept": "text/x-component",
             "Content-Type": "text/plain;charset=UTF-8",
@@ -235,7 +241,15 @@ def list_signature(item):
     ], ensure_ascii=False)
 
 
-def is_kept(item, min_year, all_central):
+def in_provinces(item, provinces):
+    return bool(set(item.get("administrativeUnitIds") or []) & set(provinces))
+
+
+def is_kept(item, min_year, all_central, provinces=None):
+    if provinces:
+        return in_provinces(item, provinces) and \
+            (item.get("docType") or {}).get("name") in ND30_TYPES | QPPL_TYPES and \
+            issued_since(item, min_year, unknown=True)
     if all_central:
         return True
     if (item.get("docType") or {}).get("name") not in ND30_TYPES | QPPL_TYPES:
@@ -256,31 +270,35 @@ def issued_since(doc, min_year, unknown):
 
 def crawl_list(client, db, action, args):
     page, size, seen = 1, args.page_size, 0
+    level = "DIA_PHUONG" if args.province else "TRUNG_UONG"
     while True:
         text = client.action(action, [{
             "pageNumber": page, "pageSize": size, "sortBy": "issueDate",
-            "sortDirection": "desc", "agencyLevel": "TRUNG_UONG",
-        }])
+            "sortDirection": "desc", "agencyLevel": level,
+        }], page=LOCAL_PAGE if args.province else LIST_PAGE)
         res = rsc_object(text, "items")
         if res is None:
             raise SystemExit(f"list page {page}: unexpected response (action id changed?): {text[:200]!r}")
         items = res.get("items") or []
         with db:
             for item in items:
-                if not item.get("id"):
+                if not item.get("id") or args.province and not in_provinces(item, args.province):
                     continue
                 db.execute(
                     "INSERT INTO docs (id, list_sig, list_item, kept) VALUES (?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET list_sig=excluded.list_sig, "
                     "list_item=excluded.list_item, kept=excluded.kept",
                     (str(item["id"]), list_signature(item), json.dumps(item, ensure_ascii=False),
-                     int(is_kept(item, args.min_year, args.all_central))))
+                     int(is_kept(item, args.min_year, args.all_central, args.province))))
         seen += len(items)
         total = int(res.get("total") or 0)
         if page == 1 or page % 20 == 0:
             log(f"list page {page}: {seen}/{total}")
         if not items or seen >= total:
-            log(f"listed {seen} of {total} central documents")
+            log(f"listed {seen} of {total} {level} documents")
+            return
+        if args.province and not any(issued_since(i, args.min_year, unknown=False) for i in items):
+            log(f"listed {seen} of {total} {level} documents, the rest issued before {args.min_year}")
             return
         page += 1
 
@@ -358,7 +376,7 @@ def document_row(item, detail):
     }
 
 
-def list_row(item):
+def list_row(item, local=False):
     """A document known from the catalogue list only: no signer, field or
     full text."""
     return {
@@ -371,7 +389,7 @@ def list_row(item):
         "ngay_het_hieu_luc": vn_date(item.get("effTo")),
         "ngay_dang_cong_bao": vn_date(item.get("publicDate")),
         "co_quan_ban_hanh": item.get("agencyName") or "",
-        "pham_vi": "Trung ương",
+        "pham_vi": "Địa phương" if local else "Trung ương",
         "tinh_trang_hieu_luc": (item.get("effStatus") or {}).get("name") or "",
         "url": f"{SITE}/van-ban/chi-tiet/{item['id']}",
         "has_html": False,
@@ -430,7 +448,7 @@ def export(db, args):
                 item = json.loads(item)
                 if doc_id in exported or (item.get("docType") or {}).get("name") in STUB_SKIP_TYPES:
                     continue
-                fd.write(json.dumps(list_row(item), ensure_ascii=False) + "\n")
+                fd.write(json.dumps(list_row(item, bool(args.province)), ensure_ascii=False) + "\n")
                 stubs += 1
     for name in ("documents.jsonl", "relations.jsonl"):
         os.replace(os.path.join(out_dir, name + ".tmp"), os.path.join(out_dir, name))
@@ -451,6 +469,8 @@ def main():
     ap.add_argument("--export-only", action="store_true")
     ap.add_argument("--no-stubs", action="store_true",
                     help="export only the kept documents, not the list metadata of the other central ones")
+    ap.add_argument("--province", action="append", default=[], metavar="UNIT_ID",
+                    help="crawl local documents of this province (vbpl administrative unit id; repeatable)")
     ap.add_argument("--list-action", help="server action id of the catalogue search")
     ap.add_argument("--diagram-action", help="server action id of the relation diagram")
     args = ap.parse_args()
@@ -472,7 +492,8 @@ def main():
             with db:
                 for doc_id, item in db.execute("SELECT id, list_item FROM docs").fetchall():
                     db.execute("UPDATE docs SET kept=? WHERE id=?",
-                               (int(is_kept(json.loads(item), args.min_year, args.all_central)), doc_id))
+                               (int(is_kept(json.loads(item), args.min_year, args.all_central, args.province)),
+                                doc_id))
         crawl_documents(client, db, diagram_action, args)
         log(f"{client.requests} requests")
     export(db, args)
