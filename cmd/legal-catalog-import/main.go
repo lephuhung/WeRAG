@@ -43,6 +43,9 @@ type vbplDocument struct {
 	NgayCoHieuLuc    string `json:"ngay_co_hieu_luc"`
 	NgayHetHieuLuc   string `json:"ngay_het_hieu_luc"`
 	TinhTrangHieuLuc string `json:"tinh_trang_hieu_luc"`
+	// MetadataOnly marks a row built from the portal's list alone (a
+	// document outside the crawl scope, or one whose detail failed).
+	MetadataOnly bool `json:"metadata_only"`
 }
 
 type vbplRelation struct {
@@ -75,6 +78,7 @@ func main() {
 
 	var docs []*types.LegalDocument
 	ids := map[string]bool{}
+	listOnly := map[string]bool{}
 	if err := readJSONL(*docsPath, func(raw []byte) error {
 		var d vbplDocument
 		if err := json.Unmarshal(raw, &d); err != nil {
@@ -84,6 +88,9 @@ func main() {
 			return nil
 		}
 		ids[d.ID] = true
+		if d.MetadataOnly {
+			listOnly[d.ID] = true
+		}
 		docs = append(docs, &types.LegalDocument{
 			ID:              d.ID,
 			Source:          "vbpl",
@@ -104,6 +111,24 @@ func main() {
 		return nil
 	}); err != nil {
 		log.Fatalf("read documents: %v", err)
+	}
+
+	// A list-only row never replaces a row already in the catalogue: that
+	// one came from a full detail (an earlier snapshot or crawl) and the
+	// list lacks signer and field. The document stays known for relations.
+	if len(listOnly) > 0 {
+		keep, err := existingIDs(ctx, db, listOnly)
+		if err != nil {
+			log.Fatalf("load existing documents: %v", err)
+		}
+		kept := docs[:0]
+		for _, d := range docs {
+			if !keep[d.ID] {
+				kept = append(kept, d)
+			}
+		}
+		log.Printf("%d list-only documents, %d of them kept as already catalogued", len(listOnly), len(docs)-len(kept))
+		docs = kept
 	}
 
 	type edgeKey struct{ from, to, rel string }
@@ -221,6 +246,26 @@ func openDB() (*gorm.DB, error) {
 	default:
 		return nil, fmt.Errorf("unsupported DB_DRIVER %q", os.Getenv("DB_DRIVER"))
 	}
+}
+
+// existingIDs returns which of ids already have a catalogue row.
+func existingIDs(ctx context.Context, db *gorm.DB, ids map[string]bool) (map[string]bool, error) {
+	all := make([]string, 0, len(ids))
+	for id := range ids {
+		all = append(all, id)
+	}
+	out := map[string]bool{}
+	for start := 0; start < len(all); start += 1000 {
+		var found []string
+		if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
+			Where("id IN ?", all[start:min(start+1000, len(all))]).Pluck("id", &found).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range found {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 func readJSONL(path string, fn func([]byte) error) error {
