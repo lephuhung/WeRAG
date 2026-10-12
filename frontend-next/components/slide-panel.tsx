@@ -4,7 +4,8 @@ import { useEffect } from "react";
 
 /**
  * Generic right slide-in panel: backdrop + translate-x drawer.
- * Always mounted so open/close both animate.
+ * Always mounted so open/close both animate. No backdrop blur: re-blurring
+ * the whole page under a fading overlay made every open stutter.
  */
 export function SlidePanel({
   open,
@@ -30,14 +31,14 @@ export function SlidePanel({
     <>
       <div
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px] transition-opacity duration-200 ${
+        className={`fixed inset-0 z-40 bg-ink/30 transition-opacity duration-200 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
       <aside
         role="dialog"
         aria-label={label}
-        className={`fixed right-0 top-0 z-50 flex h-full ${width} max-w-[92vw] flex-col border-l border-hairline bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-transform duration-300 ease-out ${
+        className={`fixed right-0 top-0 z-50 flex h-full ${width} max-w-[92vw] flex-col border-l border-hairline bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-transform duration-200 ease-out will-change-transform ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >

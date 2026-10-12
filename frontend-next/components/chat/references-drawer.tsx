@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { IconDoc } from "@/components/icons";
 import { Markdown } from "@/components/markdown";
@@ -25,7 +25,7 @@ function getRefKey(r: KnowledgeReferenceItem, index: number): string {
   return r.chunk_id || r.id || `${r.knowledge_id || "ref"}-${index}`;
 }
 
-export function ReferencesDrawer({
+export const ReferencesDrawer = memo(function ReferencesDrawer({
   open,
   onClose,
   references = [],
@@ -37,27 +37,17 @@ export function ReferencesDrawer({
   activeKey?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [chunkContentMap, setChunkContentMap] = useState<Record<string, string>>({});
   const [loadingChunkId, setLoadingChunkId] = useState<string | null>(null);
 
-  // Sync selectedKey when drawer opens or activeKey changes
-  useEffect(() => {
-    if (!open) return;
-    if (activeKey) {
-      setSelectedKey(activeKey);
-    } else if (references.length > 0) {
-      setSelectedKey(getRefKey(references[0], 0));
-    }
-  }, [open, activeKey, references]);
-
-  // Find the active reference item
+  // The active reference, derived in render: syncing it through an effect
+  // rendered the previous reference first and re-rendered mid-slide.
   const currentRef = useMemo(() => {
     if (!references.length) return null;
-    let idx = references.findIndex((r, i) => getRefKey(r, i) === selectedKey);
+    let idx = activeKey ? references.findIndex((r, i) => getRefKey(r, i) === activeKey) : 0;
     if (idx === -1) idx = 0;
     return references[idx];
-  }, [references, selectedKey]);
+  }, [references, activeKey]);
 
   // Lazy-load ONLY the selected chunk ID if content is not already present
   const currentChunkId = currentRef ? currentRef.chunk_id || currentRef.id : null;
@@ -126,6 +116,10 @@ export function ReferencesDrawer({
   const fetchedText = currentChunkId ? chunkContentMap[currentChunkId] : undefined;
   const isLoading = currentChunkId === loadingChunkId;
   const contentText = (currentRef?.content || fetchedText || "").trim();
+  // Parse the markdown after the open frame paints, so the slide-in starts
+  // right away instead of waiting on marked + highlight.js + KaTeX.
+  const shownText = useDeferredValue(contentText, "");
+  const contentPending = shownText !== contentText;
 
   return (
     <SlidePanel
@@ -227,7 +221,7 @@ export function ReferencesDrawer({
 
             {/* Markdown Content (No outer border box) */}
             <div className="select-text pt-2 text-ink leading-relaxed">
-              {isLoading ? (
+              {isLoading || contentPending ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted text-xs gap-2.5">
                   <svg className="h-5 w-5 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -235,8 +229,8 @@ export function ReferencesDrawer({
                   </svg>
                   <span>Đang tải nội dung văn bản gốc...</span>
                 </div>
-              ) : contentText ? (
-                <Markdown text={contentText} />
+              ) : shownText ? (
+                <Markdown text={shownText} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-soft text-xs italic text-center">
                   (Không tìm thấy nội dung văn bản gốc cho đoạn trích này)
@@ -248,4 +242,4 @@ export function ReferencesDrawer({
       </div>
     </SlidePanel>
   );
-}
+});

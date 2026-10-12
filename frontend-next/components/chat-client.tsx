@@ -1349,6 +1349,7 @@ function ChatBody({ id }: { id: string }) {
     }
     setDrawerOpen(true);
   }, []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   // History and session details:
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
@@ -2761,12 +2762,18 @@ function ChatBody({ id }: { id: string }) {
 
       <ReferencesDrawer
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         references={drawerRefs}
         activeKey={activeRefKey}
       />
     </div>
   );
+
+  // Stable callbacks so the memoized DocWorkspace skips composer keystrokes.
+  const openCreatedSession = useCallback((sid: string) => router.push(`/platform/chat/${sid}`), [router]);
+  const noteDocPaneBusy = useCallback((b: boolean) => {
+    docPaneBusyRef.current = b;
+  }, []);
 
   // Always rendered through SplitPane so the chat column keeps its React
   // identity when the agent (hydrated after getSession) flips the editor on.
@@ -2777,10 +2784,8 @@ function ChatBody({ id }: { id: string }) {
           <DocWorkspace
             key={id}
             sessionId={id === "new" ? undefined : id}
-            onSessionCreated={(sid) => router.push(`/platform/chat/${sid}`)}
-            onBusyChange={(b) => {
-              docPaneBusyRef.current = b;
-            }}
+            onSessionCreated={openCreatedSession}
+            onBusyChange={noteDocPaneBusy}
             blocked={id === "new" && busy}
             opsBatches={docOpsBatches}
             recheckToken={docRecheck}

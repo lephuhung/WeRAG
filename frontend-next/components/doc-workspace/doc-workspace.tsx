@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -84,8 +84,11 @@ function storage(): Storage | null {
  *
  * Pre-session mode (`sessionId` undefined, new-chat page): shows the drop
  * zone right away; picking a file creates the session, uploads it, opens the
- * document and hands the new id to `onSessionCreated` (which navigates). */
-export function DocWorkspace({
+ * document and hands the new id to `onSessionCreated` (which navigates).
+ *
+ * memo(): the chat re-renders on every keystroke of its composer; with
+ * stable props the editor pane skips those renders. */
+export const DocWorkspace = memo(function DocWorkspace({
   sessionId,
   onSessionCreated,
   onBusyChange,
@@ -818,7 +821,7 @@ export function DocWorkspace({
       </div>
     </div>
   );
-}
+});
 
 const NO_BATCHES: (OpsBatch & { rejected?: OpsFailure[] })[] = [];
 
