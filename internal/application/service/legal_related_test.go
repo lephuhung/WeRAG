@@ -131,4 +131,32 @@ func TestLegalCatalogRelated(t *testing.T) {
 	exps, err = svc.ExpandRelated(ctx, []string{"k-unlinked"})
 	require.NoError(t, err)
 	require.Empty(t, exps, "only hits with an approved legal link are expanded")
+
+	// KB graph: the KB holds the law and the decree; their neighbours come
+	// along, and based_on is drawn only between two KB documents.
+	view, err := svc.KBGraph(ctx, "kb", 0)
+	require.NoError(t, err)
+	nodes := map[string]*types.GraphViewNode{}
+	for _, n := range view.Nodes {
+		nodes[n.ID] = n
+	}
+	require.Len(t, nodes, 6, "law, decree + law-old, nd-old, tt, amend")
+	require.Equal(t, "true", nodes["law"].Meta["in_kb"])
+	require.Equal(t, "k-nd", nodes["nd"].Meta["knowledge_id"])
+	require.Empty(t, nodes["tt"].Meta["in_kb"])
+	require.Equal(t, "Luật 109/2025/QH15", nodes["law"].Name)
+	require.Equal(t, "2025-12-10", nodes["law"].Meta["issued_on"])
+	edges := map[string]bool{}
+	for _, e := range view.Edges {
+		edges[e.Source+" "+e.Type+" "+e.Target] = true
+	}
+	require.True(t, edges["tt guides nd"])
+	require.True(t, edges["law replaces law-old"])
+	require.False(t, edges["tt based_on law"], "based_on to a document outside the KB is not drawn")
+	require.False(t, view.Truncated)
+
+	view, err = svc.KBGraph(ctx, "kb", 3)
+	require.NoError(t, err)
+	require.Len(t, view.Nodes, 3)
+	require.True(t, view.Truncated)
 }

@@ -24,6 +24,10 @@ func (f *fakeLegalCatalog) ExpandRelated(_ context.Context, ids []string) ([]typ
 	return f.expansions, nil
 }
 
+func (f *fakeLegalCatalog) KBGraph(context.Context, string, int) (*types.GraphView, error) {
+	return &types.GraphView{}, nil
+}
+
 func (f *fakeLegalCatalog) Related(
 	_ context.Context, num, _ string, mode types.LegalRelatedMode, _ int, _ bool,
 ) ([]*types.LegalRelatedReport, error) {

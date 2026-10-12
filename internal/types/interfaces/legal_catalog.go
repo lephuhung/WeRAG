@@ -101,6 +101,9 @@ type LegalCatalogService interface {
 	// an approved legal link, in the order of knowledgeIDs. Expired
 	// documents are included: the caller decides what to show of them.
 	ExpandRelated(ctx context.Context, knowledgeIDs []string) ([]types.LegalExpansion, error)
+	// KBGraph returns the relation graph of a KB's catalogued documents
+	// (approved legal links) and their direct neighbours, at most limit nodes.
+	KBGraph(ctx context.Context, kbID string, limit int) (*types.GraphView, error)
 }
 
 // LegalReviewService drives the SuperAdmin review of legal identities.

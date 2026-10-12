@@ -99,6 +99,7 @@ type RouterParams struct {
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
 	LegalReviewHandler           *handler.LegalReviewHandler
+	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
 
 // NewRouter Create 新的路由
@@ -269,6 +270,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeBaseActivityRoutes(v1, params.AuditLogHandler, rbacGuards)
+		RegisterKnowledgeGraphViewRoutes(v1, params.KnowledgeGraphViewHandler, rbacGuards)
 		// KB-scoped image proxy: lets tenants render images embedded in
 		// org-shared / agent-visible KB content, which the tenant-scoped
 		// /files route cannot serve because it enforces same-tenant paths.

@@ -915,6 +915,7 @@ const toast = useToast();
             <KnowledgeGraph
               kbId={kbId}
               onSelectSlug={(slug) => setSelectedWikiSlug(slug)}
+              onOpenKnowledge={openDocById}
             />
           </section>
         )}

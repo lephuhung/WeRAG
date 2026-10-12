@@ -390,3 +390,14 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 		wiki.PUT("/issues/:issue_id/status", g.TenantAdmin(), g.KBAccessManage("kb_id"), wikiHandler.UpdateIssueStatus)
 	}
 }
+
+// RegisterKnowledgeGraphViewRoutes exposes the graphs drawn on a KB page.
+// Read-only, for anyone who may read the KB; JWT only, like the activity
+// feed: no API-key capability covers graph browsing.
+func RegisterKnowledgeGraphViewRoutes(r *gin.RouterGroup, h *handler.KnowledgeGraphViewHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	r.GET("/knowledge-bases/:id/entity-graph", g.Member(), g.KBAccessRead("id"), h.GetEntityGraph)
+	r.GET("/knowledge-bases/:id/legal-graph", g.Member(), g.KBAccessRead("id"), h.GetLegalGraph)
+}

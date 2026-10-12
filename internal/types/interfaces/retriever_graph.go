@@ -14,4 +14,8 @@ type RetrieveGraphRepository interface {
 	DelGraph(ctx context.Context, namespace []types.NameSpace) error
 	// SearchNode searches for nodes in the repository
 	SearchNode(ctx context.Context, namespace types.NameSpace, nodes []string) (*types.GraphData, error)
+	// ViewGraph returns a display-sized slice of a KB's graph: the
+	// best-connected nodes matching filter (plus, when filtered, their
+	// neighbours) and the edges among them.
+	ViewGraph(ctx context.Context, namespace types.NameSpace, filter types.GraphViewFilter) (*types.GraphView, error)
 }

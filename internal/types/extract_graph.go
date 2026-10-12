@@ -52,3 +52,38 @@ func (n NameSpace) Labels() []string {
 	}
 	return res
 }
+
+// GraphView is a graph prepared for display: nodes with a stable ID and a
+// type to colour them by, and the edges among them.
+type GraphView struct {
+	Nodes []*GraphViewNode `json:"nodes"`
+	Edges []*GraphViewEdge `json:"edges"`
+	// Truncated reports that more nodes matched than were returned.
+	Truncated bool `json:"truncated"`
+}
+
+// GraphViewNode is one node of a GraphView. Meta carries type-specific
+// details (số hiệu, status, knowledge_id…).
+type GraphViewNode struct {
+	ID     string            `json:"id"`
+	Name   string            `json:"name"`
+	Type   string            `json:"type"`
+	Degree int               `json:"degree"`
+	Meta   map[string]string `json:"meta,omitempty"`
+}
+
+// GraphViewEdge is a directed edge of a GraphView.
+type GraphViewEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Type   string `json:"type"`
+}
+
+// GraphViewFilter narrows an entity graph: name words, entity types, one
+// document, and the node budget.
+type GraphViewFilter struct {
+	Query       string
+	Types       []string
+	KnowledgeID string
+	Limit       int
+}
