@@ -3598,6 +3598,9 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		payload.FilePath = filePath
 		payload.FileName = resolvedFileName
 		payload.FileType = resolvedFileType
+		if s.processVBPLFile(ctx, payload, kb, knowledge, eff) {
+			return nil
+		}
 		convertResult, err = s.convert(ctx, payload, kb, knowledge, eff, isLastRetry)
 		if err != nil {
 			return err
@@ -3650,7 +3653,11 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		s.processChunks(ctx, kb, knowledge, passageChunks, passageOpts)
 		return nil
 	} else {
-		// File import
+		// File import. vbpl.vn HTML pages carry their own Điều/Khoản markup
+		// and are chunked by the structured converter instead of docreader.
+		if s.processVBPLFile(ctx, payload, kb, knowledge, eff) {
+			return nil
+		}
 		convertResult, err = s.convert(ctx, payload, kb, knowledge, eff, isLastRetry)
 		if err != nil {
 			return err

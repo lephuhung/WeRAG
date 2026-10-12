@@ -382,7 +382,21 @@ type LegalMetadata struct {
 	// SubdivisionRefs are compact lookup keys: "khoan:2", "khoan:2/diem:a".
 	SubdivisionRefs []string `json:"subdivision_refs,omitempty"`
 	// SchemaVersion lets future migrations distinguish metadata shapes.
+	// 2 = chunks from the vbpl.vn structured converter (fields below).
 	SchemaVersion int `json:"subdivision_schema_version,omitempty"`
+
+	// Source names the structure provider: "vbpl" when the Điều/Khoản/Điểm
+	// boundaries come from vbpl.vn provision markup instead of text patterns.
+	Source string `json:"source,omitempty"`
+	// ProvisionIDs maps "dieu", "khoan:K" and "khoan:K/diem:D" to the vbpl.vn
+	// provision id; the portal deep-links with ?go=<id>.
+	ProvisionIDs map[string]string `json:"provision_ids,omitempty"`
+	// Appendix is the title of the attached document or phụ lục that holds
+	// this chunk ("QUY CHẾ ..."); empty for the main text.
+	Appendix string `json:"appendix,omitempty"`
+	// Quoted is true when the chunk carries quoted amending text, i.e.
+	// wording of another document's provision.
+	Quoted bool `json:"quoted,omitempty"`
 }
 
 // SubdivisionParseStats records accept/reject counts for diagnostics.

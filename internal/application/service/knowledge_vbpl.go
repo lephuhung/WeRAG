@@ -1,0 +1,130 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
+
+	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vbpl"
+)
+
+// vbplConverterVersionKey records, on the knowledge metadata, which
+// internal/vbpl converter produced its chunks, so documents converted by an
+// older version can be found and reparsed.
+const vbplConverterVersionKey = "vbpl_converter_version"
+
+// vbpl chunks hold one Điều each; the KB chunk size is honoured inside
+// these bounds (the common 512 default would split most Điều by Khoản).
+const (
+	vbplMinChunkSize     = 1500
+	vbplMaxChunkSize     = 4000
+	vbplDefaultChunkSize = 2500
+)
+
+func vbplChunkSize(cc types.ChunkingConfig) int {
+	switch n := cc.ChunkSize; {
+	case n < vbplMinChunkSize:
+		return vbplDefaultChunkSize
+	case n > vbplMaxChunkSize:
+		return vbplMaxChunkSize
+	default:
+		return n
+	}
+}
+
+// processVBPLFile takes over the parse of an HTML page published by vbpl.vn
+// (provision markup prov-article / prov-clause): the Go converter builds the
+// Markdown and one chunk per Điều with Điều/Khoản/Điểm metadata and vbpl
+// provision ids, bypassing docreader. It returns false — and the regular
+// pipeline runs — for any other file, or when the page has no usable
+// structure.
+func (s *knowledgeService) processVBPLFile(
+	ctx context.Context,
+	payload types.DocumentProcessPayload,
+	kb *types.KnowledgeBase,
+	knowledge *types.Knowledge,
+	eff types.EffectiveProcessConfig,
+) bool {
+	if payload.FilePath == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimPrefix(payload.FileType, ".")) {
+	case "html", "htm":
+	default:
+		return false
+	}
+	rc, err := s.resolveFileServiceForPath(ctx, kb, payload.FilePath).GetFile(ctx, payload.FilePath)
+	if err != nil {
+		return false // convert() reports the read failure
+	}
+	raw, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil || !vbpl.LooksLikeVBPL(raw) {
+		return false
+	}
+	doc, err := vbpl.ConvertBytes(raw)
+	if err != nil || !doc.Structured {
+		logger.Warnf(ctx, "[vbpl] knowledge %s: no usable structure (err=%v), using the regular parser", knowledge.ID, err)
+		return false
+	}
+
+	s.beginStage(ctx, knowledge.ID, types.StageDocReader, types.JSONMap{
+		"file_name": payload.FileName,
+		"file_type": payload.FileType,
+		"parser":    "vbpl",
+	})
+	planned := vbpl.Plan(doc, vbplChunkSize(eff.ChunkingConfig))
+	chunks := make([]types.ParsedChunk, len(planned))
+	for i, c := range planned {
+		chunks[i] = types.ParsedChunk{
+			Content:       c.Content,
+			ContextHeader: c.ContextHeader(),
+			Seq:           i,
+			Start:         c.Start,
+			End:           c.End,
+			Legal:         c.Legal(),
+		}
+	}
+	s.endStage(ctx, knowledge.ID, types.StageDocReader, types.JSONMap{
+		"text_length":       len(doc.Markdown),
+		"parser":            "vbpl",
+		"converter_version": vbpl.ConverterVersion,
+		"articles":          doc.Stats.Articles,
+		"appendices":        doc.Stats.Appendices,
+		"warnings":          doc.Warnings,
+	})
+	if eff.ChunkingConfig.EnableParentChild {
+		logger.Infof(ctx, "[vbpl] knowledge %s: parent-child chunking ignored, one chunk per Điều", knowledge.ID)
+	}
+	s.recordVBPLConverterVersion(ctx, knowledge)
+	logger.Infof(ctx, "[vbpl] knowledge %s: %d articles → %d chunks", knowledge.ID, doc.Stats.Articles, len(chunks))
+
+	s.processChunks(ctx, kb, knowledge, chunks, ProcessChunksOptions{
+		EnableQuestionGeneration: payload.EnableQuestionGeneration,
+		QuestionCount:            payload.QuestionCount,
+		EnableMultimodel:         payload.EnableMultimodel,
+		Metadata:                 map[string]string{"parser": "vbpl"},
+	})
+	return true
+}
+
+func (s *knowledgeService) recordVBPLConverterVersion(ctx context.Context, knowledge *types.Knowledge) {
+	meta := map[string]interface{}{}
+	if len(knowledge.Metadata) > 0 {
+		if m, err := knowledge.Metadata.Map(); err == nil && m != nil {
+			meta = m
+		}
+	}
+	meta[vbplConverterVersionKey] = vbpl.ConverterVersion
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return
+	}
+	knowledge.Metadata = types.JSON(b)
+	if err := s.repo.UpdateKnowledgeColumn(ctx, knowledge.ID, "metadata", knowledge.Metadata); err != nil {
+		logger.Warnf(ctx, "[vbpl] knowledge %s: record converter version: %v", knowledge.ID, err)
+	}
+}
