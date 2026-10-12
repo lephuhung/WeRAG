@@ -76,3 +76,36 @@ func TestAgentStreamHandlerInternalErrorKeepsErrorType(t *testing.T) {
 	require.Equal(t, types.ResponseTypeError, evt.Type)
 	require.True(t, evt.Done)
 }
+
+// Several searches in one agent turn often return the same chunk: the answer
+// keeps (and streams) each reference once.
+func TestAgentStreamHandlerReferencesDeduplicated(t *testing.T) {
+	streams := &capturingStreamManager{}
+	msg := &types.Message{}
+	h := NewAgentStreamHandler(
+		context.Background(), "sess-1", "msg-1", "req-1", 1, time.Now(),
+		msg, streams, nil, nil, nil, nil,
+	)
+	send := func(ids ...string) {
+		refs := make([]*types.SearchResult, 0, len(ids))
+		for _, id := range ids {
+			refs = append(refs, &types.SearchResult{ID: id, KnowledgeTitle: "T" + id})
+		}
+		require.NoError(t, h.handleReferences(context.Background(), event.Event{
+			ID: "r", Type: event.EventAgentReferences, Data: event.AgentReferencesData{References: refs},
+		}))
+	}
+	send("c1", "c2")
+	send("c2", "c3")
+
+	require.Len(t, streams.events, 2)
+	last := streams.events[1]
+	require.Equal(t, types.ResponseTypeReferences, last.Type)
+	refs := last.Data["references"].(types.References)
+	ids := make([]string, 0, len(refs))
+	for _, r := range refs {
+		ids = append(ids, r.ID)
+	}
+	require.Equal(t, []string{"c1", "c2", "c3"}, ids)
+	require.Len(t, msg.KnowledgeReferences, 3)
+}

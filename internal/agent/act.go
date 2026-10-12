@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -381,6 +382,20 @@ func (e *AgentEngine) emitToolOutcome(
 		},
 	})
 
+	// What a knowledge or web search found is the answer's sources: stream it
+	// as references so the client shows its citation badges and the handler
+	// saves them on the assistant message (agent turns had none).
+	if result.Success {
+		if refs := toolResultReferences(toolCall.ExecutionName(), result.Data); len(refs) > 0 {
+			e.eventBus.Emit(ctx, event.Event{
+				ID:        toolCall.ID + "-references",
+				Type:      event.EventAgentReferences,
+				SessionID: sessionID,
+				Data:      event.AgentReferencesData{References: refs},
+			})
+		}
+	}
+
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        toolCall.ID + "-tool-exec",
 		Type:      event.EventAgentTool,
@@ -641,4 +656,84 @@ func (e *AgentEngine) runToolCall(
 	}
 
 	return toolCall
+}
+
+// toolResultReferences returns the sources a search tool found, in the shape
+// the chat stores and shows; nil for any other tool.
+func toolResultReferences(toolName string, data map[string]interface{}) []*types.SearchResult {
+	switch toolName {
+	case agenttools.ToolSearchKnowledge, agenttools.ToolQueryKnowledgeGraph:
+		return chunkRowsAsReferences(data)
+	case agenttools.ToolWebSearch:
+		return webRowsAsReferences(data)
+	}
+	return nil
+}
+
+// chunkRowsAsReferences turns knowledge-base result rows (one per chunk; FAQ
+// rows keep their entry id) into references.
+func chunkRowsAsReferences(data map[string]interface{}) []*types.SearchResult {
+	rows, _ := data["results"].([]map[string]interface{})
+	refs := make([]*types.SearchResult, 0, len(rows))
+	for _, row := range rows {
+		str := func(k string) string { v, _ := row[k].(string); return v }
+		id := str("chunk_id")
+		if id == "" {
+			id = str("faq_id")
+		}
+		if id == "" {
+			continue
+		}
+		ref := &types.SearchResult{
+			ID:              id,
+			Content:         str("content"),
+			KnowledgeID:     str("knowledge_id"),
+			KnowledgeBaseID: str("knowledge_base_id"),
+			KnowledgeTitle:  str("knowledge_title"),
+			ChunkType:       str("chunk_type"),
+		}
+		if score, ok := row["score"].(float64); ok {
+			ref.Score = score
+		}
+		if idx, ok := row["chunk_index"].(int); ok {
+			ref.ChunkIndex = idx
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+// webRowsAsReferences turns web_search result rows into references shaped
+// like searchutil.ConvertWebSearchResults (the quick-answer path), so a web
+// source renders the same either way.
+func webRowsAsReferences(data map[string]interface{}) []*types.SearchResult {
+	rows, _ := data["results"].([]map[string]interface{})
+	refs := make([]*types.SearchResult, 0, len(rows))
+	for _, row := range rows {
+		str := func(k string) string { v, _ := row[k].(string); return v }
+		url := str("url")
+		if url == "" {
+			continue
+		}
+		content := str("title")
+		for _, part := range []string{str("snippet"), str("content")} {
+			if part != "" {
+				content = strings.TrimPrefix(content+"\n\n"+part, "\n\n")
+			}
+		}
+		refs = append(refs, &types.SearchResult{
+			ID:              url,
+			Content:         content,
+			KnowledgeID:     url,
+			KnowledgeTitle:  str("title"),
+			Score:           0.6,
+			MatchType:       types.MatchTypeWebSearch,
+			ChunkType:       string(types.ChunkTypeWebSearch),
+			KnowledgeSource: "web_search",
+			Metadata: map[string]string{
+				"url": url, "source": str("source"), "title": str("title"), "snippet": str("snippet"),
+			},
+		})
+	}
+	return refs
 }

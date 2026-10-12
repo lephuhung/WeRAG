@@ -432,6 +432,28 @@ func (h *AgentStreamHandler) handleMCPOAuthResolved(ctx context.Context, evt eve
 	return nil
 }
 
+// addKnowledgeRefs records references once each: an agent turn's searches
+// often return the same chunk again. Callers hold h.mu.
+func (h *AgentStreamHandler) addKnowledgeRefs(refs ...*types.SearchResult) {
+	for _, ref := range refs {
+		if ref == nil {
+			continue
+		}
+		dup := false
+		if ref.ID != "" {
+			for _, have := range h.knowledgeRefs {
+				if have.ID == ref.ID {
+					dup = true
+					break
+				}
+			}
+		}
+		if !dup {
+			h.knowledgeRefs = append(h.knowledgeRefs, ref)
+		}
+	}
+}
+
 // handleReferences handles knowledge references events
 func (h *AgentStreamHandler) handleReferences(ctx context.Context, evt event.Event) error {
 	data, ok := evt.Data.(event.AgentReferencesData)
@@ -445,15 +467,15 @@ func (h *AgentStreamHandler) handleReferences(ctx context.Context, evt event.Eve
 	// Extract knowledge references
 	// Try to cast directly to []*types.SearchResult first
 	if searchResults, ok := data.References.([]*types.SearchResult); ok {
-		h.knowledgeRefs = append(h.knowledgeRefs, searchResults...)
+		h.addKnowledgeRefs(searchResults...)
 	} else if refs, ok := data.References.([]interface{}); ok {
 		// Fallback: convert from []interface{}
 		for _, ref := range refs {
 			if sr, ok := ref.(*types.SearchResult); ok {
-				h.knowledgeRefs = append(h.knowledgeRefs, sr)
+				h.addKnowledgeRefs(sr)
 			} else if refMap, ok := ref.(map[string]interface{}); ok {
 				// Parse from map if needed
-				h.knowledgeRefs = append(h.knowledgeRefs, searchResultFromMap(refMap))
+				h.addKnowledgeRefs(searchResultFromMap(refMap))
 			}
 		}
 	}
