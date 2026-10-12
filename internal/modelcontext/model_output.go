@@ -51,6 +51,11 @@ func (r *sourceRegistry) ModelOutput(result *types.ToolResult) string {
 		}
 		output := abbreviationResolutionPrefix(result.Output) +
 			r.modelKnowledgeOutput(mode, mapsValue(result.Data["results"]), result.Output)
+		// Catalogue-only legal documents related to the hits (expired, not
+		// held, or out of scope): names and status, never content.
+		if note := stringValue(result.Data, "legal_related_note"); note != "" {
+			output += "\n\n" + r.CompactKnownText(note)
+		}
 		return r.annotateModeFallbacks(output, result.Data)
 	case "knowledge_chunks_list":
 		return r.modelKnowledgeChunksOutput(result.Data, result.Output)

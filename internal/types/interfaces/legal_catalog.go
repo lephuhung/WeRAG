@@ -96,6 +96,11 @@ type LegalCatalogService interface {
 	// includeExpired (history walks always keep them).
 	Related(ctx context.Context, documentNumber, title string, mode types.LegalRelatedMode,
 		depth int, includeExpired bool) ([]*types.LegalRelatedReport, error)
+	// ExpandRelated returns the documents guiding (two hops) or amending
+	// (one hop) the catalogue documents of the given knowledge, those with
+	// an approved legal link, in the order of knowledgeIDs. Expired
+	// documents are included: the caller decides what to show of them.
+	ExpandRelated(ctx context.Context, knowledgeIDs []string) ([]types.LegalExpansion, error)
 }
 
 // LegalReviewService drives the SuperAdmin review of legal identities.

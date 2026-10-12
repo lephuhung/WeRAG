@@ -183,3 +183,78 @@ func legalIssuedAfter(a, b *types.LegalDocument) bool {
 	}
 	return b.IssuedOn == nil || a.IssuedOn.After(*b.IssuedOn)
 }
+
+const (
+	// legalExpandMaxAnchors bounds how many search hits are expanded.
+	legalExpandMaxAnchors = 3
+	// legalExpandGuidanceDepth: Luật ← Nghị định ← Thông tư.
+	legalExpandGuidanceDepth = 2
+)
+
+func (s *legalCatalogService) ExpandRelated(
+	ctx context.Context, knowledgeIDs []string,
+) ([]types.LegalExpansion, error) {
+	if s.reviews == nil || len(knowledgeIDs) == 0 {
+		return nil, nil
+	}
+	links, err := s.reviews.ApprovedLinksForKnowledge(ctx, knowledgeIDs)
+	if err != nil {
+		return nil, err
+	}
+	// Anchors in result order, one per catalogue document.
+	var anchorIDs []string
+	anchorKnowledge := map[string]string{}
+	for _, kid := range knowledgeIDs {
+		l := links[kid]
+		if l == nil || l.LegalDocumentID == "" || anchorKnowledge[l.LegalDocumentID] != "" {
+			continue
+		}
+		anchorKnowledge[l.LegalDocumentID] = kid
+		anchorIDs = append(anchorIDs, l.LegalDocumentID)
+		if len(anchorIDs) == legalExpandMaxAnchors {
+			break
+		}
+	}
+	if len(anchorIDs) == 0 {
+		return nil, nil
+	}
+	docs, err := s.repo.GetByIDs(ctx, anchorIDs)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*types.LegalDocument, len(docs))
+	for _, d := range docs {
+		byID[d.ID] = d
+	}
+	var out []types.LegalExpansion
+	seen := map[string]bool{}
+	for _, id := range anchorIDs {
+		seen[id] = true
+	}
+	for _, id := range anchorIDs {
+		anchor := byID[id]
+		if anchor == nil {
+			continue
+		}
+		for _, w := range []struct {
+			mode  types.LegalRelatedMode
+			depth int
+		}{
+			{types.LegalRelatedGuidance, legalExpandGuidanceDepth},
+			{types.LegalRelatedAmendments, 1},
+		} {
+			rep, err := s.walk(ctx, anchor, w.mode, legalRelatedWalks[w.mode].steps, w.depth, true)
+			if err != nil {
+				return nil, err
+			}
+			for _, r := range rep.Related {
+				if seen[r.Document.ID] {
+					continue
+				}
+				seen[r.Document.ID] = true
+				out = append(out, types.LegalExpansion{Anchor: anchor, AnchorKnowledgeID: anchorKnowledge[id], Related: r})
+			}
+		}
+	}
+	return out, nil
+}

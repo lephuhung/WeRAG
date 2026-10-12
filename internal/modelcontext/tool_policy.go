@@ -113,6 +113,12 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	// document IDs of their own, and the memory item IDs never leave the
 	// service, so there is nothing here for the model to hold a handle on.
 	"search_memory": {},
+	// check_legal_status reports catalogue metadata (số hiệu, dates,
+	// status): no source or KB identifiers.
+	"check_legal_status": {},
+	// find_related_legal_documents labels the related documents a public KB
+	// holds with knowledge_id="…", registered as dN handles for read_document.
+	"find_related_legal_documents": {sourceOutput: true},
 	// check_document_format reads the session's own uploads by file name
 	// and returns a format report: no source or KB identifiers.
 	"check_document_format": {},

@@ -137,6 +137,14 @@ type LegalRelatedDocument struct {
 	Knowledge []LegalKnowledgeRef `json:"knowledge,omitempty"`
 }
 
+// LegalExpansion is a document related to a search hit through the relation
+// graph: Anchor is the hit's catalogue document, AnchorKnowledgeID the hit.
+type LegalExpansion struct {
+	Anchor            *LegalDocument       `json:"anchor"`
+	AnchorKnowledgeID string               `json:"anchor_knowledge_id"`
+	Related           LegalRelatedDocument `json:"related"`
+}
+
 // LegalRelatedReport is the result of one relation walk.
 type LegalRelatedReport struct {
 	Document *LegalDocument         `json:"document"`

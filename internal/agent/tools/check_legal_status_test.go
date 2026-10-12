@@ -11,10 +11,17 @@ import (
 )
 
 type fakeLegalCatalog struct {
-	reports []*types.LegalStatusReport
-	related []*types.LegalRelatedReport
-	gotNum  string
-	gotMode types.LegalRelatedMode
+	reports    []*types.LegalStatusReport
+	related    []*types.LegalRelatedReport
+	expansions []types.LegalExpansion
+	gotHits    []string
+	gotNum     string
+	gotMode    types.LegalRelatedMode
+}
+
+func (f *fakeLegalCatalog) ExpandRelated(_ context.Context, ids []string) ([]types.LegalExpansion, error) {
+	f.gotHits = ids
+	return f.expansions, nil
 }
 
 func (f *fakeLegalCatalog) Related(

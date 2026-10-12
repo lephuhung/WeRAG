@@ -108,4 +108,27 @@ func TestLegalCatalogRelated(t *testing.T) {
 	reports, err = svc.Related(ctx, "1/2099/QH99", "", types.LegalRelatedGuidance, 0, false)
 	require.NoError(t, err)
 	require.Empty(t, reports)
+
+	// Expansion from a search hit on the law: guidance two hops and the
+	// amendment, expired documents included for the caller to name.
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k-law", KnowledgeBaseID: "kb", Title: "law.html"}).Error)
+	require.NoError(t, db.Create(&types.LegalDocumentLink{KnowledgeID: "k-law", KnowledgeBaseID: "kb",
+		LegalDocumentID: "law", ReviewStatus: types.LegalReviewApproved}).Error)
+	exps, err := svc.ExpandRelated(ctx, []string{"k-unlinked", "k-law"})
+	require.NoError(t, err)
+	got = map[string]types.LegalRelatedDocument{}
+	for _, e := range exps {
+		require.Equal(t, "law", e.Anchor.ID)
+		require.Equal(t, "k-law", e.AnchorKnowledgeID)
+		got[e.Related.Document.ID] = e.Related
+	}
+	require.Len(t, got, 4)
+	require.Equal(t, "k-nd", got["nd"].Knowledge[0].KnowledgeID)
+	require.Equal(t, 2, got["tt"].Depth)
+	require.Contains(t, got, "nd-old")
+	require.Equal(t, types.LegalRelationAmends, got["amend"].Relation)
+
+	exps, err = svc.ExpandRelated(ctx, []string{"k-unlinked"})
+	require.NoError(t, err)
+	require.Empty(t, exps, "only hits with an approved legal link are expanded")
 }

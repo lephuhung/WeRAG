@@ -123,6 +123,7 @@ type SearchKnowledgeTool struct {
 	// to keep grep semantics on top of index-backed retrieval.
 	patternFilter       *regexp.Regexp
 	abbreviationService interfaces.AbbreviationService
+	legalCatalog        interfaces.LegalCatalogService
 }
 
 func (t *SearchKnowledgeTool) WithAbbreviationService(
@@ -308,6 +309,9 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		final = final[:limit]
 	}
 
+	final, legalNote := t.expandLegalRelations(ctx, query, mode, kbModes, kbList, kbTypeMap,
+		searchTargets, final, topK, vectorThreshold, keywordThreshold)
+
 	// Enrich image info for search results (lazy-loaded from child image chunks)
 	if t.chunkService != nil && len(final) > 0 {
 		byTenant := make(map[uint64][]*types.SearchResult)
@@ -330,6 +334,11 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 	if len(final) == 0 {
 		result.Output = emptySearchStatement(query, result.Data, len(kbIDs))
+	}
+	if legalNote != "" {
+		// The model reads Data, not Output: the renderer appends this note.
+		result.Data["legal_related_note"] = legalNote
+		result.Output += "\n" + legalNote
 	}
 	annotateAbbreviationResolution(result, originalQuery, query)
 	return result, nil
