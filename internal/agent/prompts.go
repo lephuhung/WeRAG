@@ -435,6 +435,9 @@ type BuildSystemPromptOptions struct {
 	Config           *config.Config // Config for reading prompt templates; nil leaves the default base empty
 	MemoryPrompt     string
 	ProtocolPrompt   string
+	// UserContext is the requester's profile (work unit, province),
+	// types.UserContextPrompt.
+	UserContext string
 }
 
 // BuildSystemPrompt builds the progressive RAG system prompt
@@ -538,6 +541,9 @@ func BuildSystemPromptSections(
 			sections = append(sections, SystemPromptSection{
 				"skills", formatSkillsMetadata(options.SkillsMetadata, options.ShellExecEnabled),
 			})
+		}
+		if options.UserContext != "" {
+			sections = append(sections, SystemPromptSection{"user_context", options.UserContext})
 		}
 		sections = append(sections, SystemPromptSection{"memory", options.MemoryPrompt},
 			SystemPromptSection{"protocol", options.ProtocolPrompt})

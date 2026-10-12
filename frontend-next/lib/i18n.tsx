@@ -2156,6 +2156,15 @@ const en = {
   "graph.rel.BAN_HANH_TAI": "issued at",
   "graph.rel.TRUC_THUOC": "belongs to",
   "graph.rel.THUOC_TINH": "located in",
+  "workCtx.title": "Your work context",
+  "workCtx.why": "Tell the assistant where you work. Local documents (NQ-HĐND, QĐ-UBND…) reuse the same numbers in every province; your province is used to pick the right one.",
+  "workCtx.hint": "Used by the assistant as context, e.g. to read a local document number as your province's.",
+  "workCtx.unit": "Work unit",
+  "workCtx.unitPlaceholder": "e.g. Department of Finance of Huế",
+  "workCtx.province": "Province / city",
+  "workCtx.provincePlaceholder": "Choose a province or city",
+  "workCtx.formerly": "incl.",
+  "workCtx.later": "Later",
 };
 const vi: Record<keyof typeof en, string> = {
   "nav.chat": "Chat",
@@ -4304,6 +4313,15 @@ const vi: Record<keyof typeof en, string> = {
   "graph.rel.BAN_HANH_TAI": "ban hành tại",
   "graph.rel.TRUC_THUOC": "trực thuộc",
   "graph.rel.THUOC_TINH": "thuộc tỉnh",
+  "workCtx.title": "Thông tin công tác",
+  "workCtx.why": "Cho trợ lý biết bạn công tác ở đâu. Văn bản địa phương (NQ-HĐND, QĐ-UBND…) ở mỗi tỉnh có thể trùng số hiệu; tỉnh của bạn sẽ được dùng để chọn đúng văn bản.",
+  "workCtx.hint": "Trợ lý dùng làm ngữ cảnh, ví dụ hiểu số hiệu văn bản địa phương theo tỉnh của bạn.",
+  "workCtx.unit": "Đơn vị công tác",
+  "workCtx.unitPlaceholder": "vd. Sở Tài chính thành phố Huế",
+  "workCtx.province": "Tỉnh / thành phố",
+  "workCtx.provincePlaceholder": "Chọn tỉnh / thành phố",
+  "workCtx.formerly": "gồm",
+  "workCtx.later": "Để sau",
 };
 
 const dicts: Record<Locale, Partial<Record<keyof typeof en, string>>> = { en, vi };

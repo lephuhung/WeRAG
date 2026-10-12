@@ -15,7 +15,7 @@ export type UserInfo = {
   tenant_id?: number;
   can_access_all_tenants?: boolean;
   is_system_admin?: boolean;
-  preferences?: { language?: string | null };
+  preferences?: { language?: string | null; work_unit?: string | null; province_id?: string | null };
 };
 
 export type TenantInfo = {

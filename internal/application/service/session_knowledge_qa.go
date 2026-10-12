@@ -178,6 +178,7 @@ func (s *sessionService) KnowledgeQA(
 			UserMessageID: req.UserMessageID,
 		},
 	}
+	chatManage.UserContextPrompt = types.UserContextPrompt(ctx)
 	if hasAbbreviationTurn {
 		resCopy := abbreviationResolution.Clone()
 		chatManage.AbbreviationResolution = &resCopy
@@ -1050,7 +1051,7 @@ func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) [
 			// Long-term memory rides along: "what is my unit?" finds nothing
 			// in the knowledge base, which is exactly when this path answers.
 			Content: promptContent + "\n\n" + types.SourceDataBoundaryPrompt +
-				"\n\n" + types.SourcedAnswerOutputPrompt + chatManage.MemoryPrompt,
+				"\n\n" + types.SourcedAnswerOutputPrompt + chatManage.UserContextPrompt + chatManage.MemoryPrompt,
 		})
 	}
 

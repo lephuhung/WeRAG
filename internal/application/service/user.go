@@ -685,6 +685,26 @@ func (s *userService) UpdateUserPreferences(
 			merged.Language = &value
 		}
 	}
+	if patch.WorkUnit != nil {
+		value := strings.TrimSpace(*patch.WorkUnit)
+		if utf8.RuneCountInString(value) > types.MaxWorkUnitLength {
+			return types.UserPreferences{}, fmt.Errorf("work unit must not exceed %d characters", types.MaxWorkUnitLength)
+		}
+		merged.WorkUnit = nil
+		if value != "" {
+			merged.WorkUnit = &value
+		}
+	}
+	if patch.ProvinceID != nil {
+		value := strings.TrimSpace(*patch.ProvinceID)
+		merged.ProvinceID = nil
+		if value != "" {
+			if _, ok := types.ProvinceByID(value); !ok {
+				return types.UserPreferences{}, fmt.Errorf("unknown province %q", value)
+			}
+			merged.ProvinceID = &value
+		}
+	}
 
 	user.Preferences = merged
 	user.UpdatedAt = time.Now()

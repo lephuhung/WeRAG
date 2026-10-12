@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n";
 import { updateMyProfile, uploadMyAvatar } from "@/lib/api/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { ApiError } from "@/lib/api-client";
+import { WorkContextForm } from "@/components/settings/work-context-form";
 
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -176,6 +177,10 @@ export function ProfileSettings() {
       <p className="caption text-muted-soft">
         {t("userSettings.profileReadonly")}
       </p>
+      <div className="border-t border-hairline pt-4">
+        <h3 className="body-md mb-2 font-semibold text-ink">{t("workCtx.title")}</h3>
+        <WorkContextForm />
+      </div>
     </div>
   );
 }

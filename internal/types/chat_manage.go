@@ -144,6 +144,9 @@ type PipelineState struct {
 	// MemoryPrompt is the long-term memory envelope appended to the system
 	// prompt for this turn, empty when memory is off or nothing matched.
 	MemoryPrompt string `json:"-"`
+	// UserContextPrompt is the requester's profile (work unit, province),
+	// appended to the system prompt next to MemoryPrompt.
+	UserContextPrompt string `json:"-"`
 	// UsedMemories mirrors MemoryPrompt in structured form so the answer can
 	// tell the user which memories it saw.
 	UsedMemories UsedMemories `json:"-"`
@@ -276,6 +279,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			QuotedContext:        c.QuotedContext,
 			SystemPromptOverride: c.SystemPromptOverride,
 			MemoryPrompt:         c.MemoryPrompt,
+			UserContextPrompt:    c.UserContextPrompt,
 			UsedMemories:         append(UsedMemories(nil), c.UsedMemories...),
 			RenderedContexts:     c.RenderedContexts,
 			Entity:               entity,

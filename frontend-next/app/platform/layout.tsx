@@ -10,6 +10,7 @@ import { UploadTasksPanel } from "@/components/upload-tasks/upload-tasks-panel";
 import { GlobalFileDrop } from "@/components/upload-tasks/global-file-drop";
 import { ToastProvider } from "@/components/toast";
 import { ConfirmProvider } from "@/components/confirm-dialog";
+import { WorkContextPrompt } from "@/components/work-context-prompt";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -30,6 +31,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
               <GlobalCommandPalette />
               <UploadTasksPanel />
               <GlobalFileDrop />
+              <WorkContextPrompt />
             </UploadTasksProvider>
           </CommandPaletteProvider>
           </ConfirmProvider>

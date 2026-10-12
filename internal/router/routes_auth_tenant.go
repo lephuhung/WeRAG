@@ -246,6 +246,9 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	// the token, never from the request.
 	r.POST("/auth/me/avatar", handler.UploadMyAvatar)
 	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
+	// The province choices of the profile (types.Provinces): public facts,
+	// readable by any authenticated user.
+	r.GET("/auth/provinces", handler.ListProvinces)
 	r.POST("/auth/change-password", handler.ChangePassword)
 	// Two-factor authentication (TOTP). Identity is derived from the token
 	// in every handler, so any authenticated user manages their own enrolment.

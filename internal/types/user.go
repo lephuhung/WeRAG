@@ -54,6 +54,13 @@ type UserPreferences struct {
 	// Persisted so the choice follows the account across browsers and
 	// devices instead of living in one browser's localStorage.
 	Language *string `json:"language,omitempty"`
+
+	// WorkUnit is the user's agency or unit (đơn vị công tác), free text.
+	// ProvinceID is the vbpl.vn unit ID of their province (types.Provinces).
+	// Both reach the assistant as user context; the province is the default
+	// for local document numbers every province reuses. "" clears.
+	WorkUnit   *string `json:"work_unit,omitempty"`
+	ProvinceID *string `json:"province_id,omitempty"`
 }
 
 // Value implements driver.Valuer so GORM persists UserPreferences as

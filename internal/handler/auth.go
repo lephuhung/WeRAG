@@ -703,7 +703,9 @@ type updateMyPreferencesRequest struct {
 	// Language stores the user's UI locale choice so it follows the account
 	// across devices. Empty string clears it back to the browser/default
 	// locale.
-	Language *string `json:"language" binding:"omitempty,max=35"`
+	Language   *string `json:"language" binding:"omitempty,max=35"`
+	WorkUnit   *string `json:"work_unit,omitempty"`
+	ProvinceID *string `json:"province_id,omitempty"`
 }
 
 // UpdateMyPreferences godoc
@@ -740,6 +742,8 @@ func (h *AuthHandler) UpdateMyPreferences(c *gin.Context) {
 		LastActiveTenantID:        req.LastActiveTenantID,
 		BrowserSearchInstructions: req.BrowserSearchInstructions,
 		Language:                  req.Language,
+		WorkUnit:                  req.WorkUnit,
+		ProvinceID:                req.ProvinceID,
 	}
 	prefs, err := h.userService.UpdateUserPreferences(ctx, user.ID, patch)
 	if err != nil {
@@ -1112,4 +1116,16 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 		"message": "Token is valid",
 		"user":    user.ToUserInfo(),
 	})
+}
+
+// ListProvinces godoc
+// @Summary      Provinces for the user profile
+// @Description  The 34 provincial units in force since the 2025 merger, with
+// @Description  the former provinces each absorbed.
+// @Tags         Auth
+// @Produce      json
+// @Success      200 {object} map[string]interface{} "Provinces"
+// @Router       /auth/provinces [get]
+func (h *AuthHandler) ListProvinces(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": types.Provinces})
 }

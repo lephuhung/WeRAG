@@ -101,6 +101,23 @@ export interface UserPreferences {
   // language is the UI locale this user picked ("en" | "vi"); persisted
   // server-side so the choice follows the account across browsers/devices.
   language?: string | null;
+  // work_unit (đơn vị công tác) and province_id (a Province id) reach the
+  // assistant as user context; "" clears.
+  work_unit?: string | null;
+  province_id?: string | null;
+}
+
+/* A provincial unit in force since the 2025 merger (backend types.Province). */
+export interface Province {
+  id: string;
+  name: string;
+  short: string;
+  former_names?: string[];
+}
+
+export async function getProvinces(): Promise<Province[]> {
+  const res = await apiGet<{ success: boolean; data: Province[] }>("/api/v1/auth/provinces");
+  return res.data ?? [];
 }
 
 export interface UserInfo {
