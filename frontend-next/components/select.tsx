@@ -12,6 +12,20 @@ export interface SelectOption {
   value: string;
   label: React.ReactNode;
   disabled?: boolean;
+  /* Text matched by a searchable select; defaults to the label when it is a
+   * string. */
+  keywords?: string;
+}
+
+/* foldText lower-cases and strips Vietnamese diacritics so "hue" finds
+ * "Huế" and "da nang" finds "Đà Nẵng". */
+function foldText(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
 }
 
 const MENU_MAX_H = 260;
@@ -20,11 +34,13 @@ const MENU_GAP = 4;
 export function Select({
   value,
   onChange,
-  options,
+  options: allOptions,
   placeholder = "",
   disabled,
   className = "",
   menuClassName = "",
+  searchable = false,
+  searchPlaceholder = "",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -33,25 +49,42 @@ export function Select({
   disabled?: boolean;
   className?: string;
   menuClassName?: string;
+  /* Show a filter box atop the list; typing on the closed trigger opens it. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const folded = foldText(query.trim());
+  const options = !searchable || !folded
+    ? allOptions
+    : allOptions.filter((o) =>
+        foldText(o.keywords ?? (typeof o.label === "string" ? o.label : String(o.value))).includes(folded)
+      );
   const [pos, setPos] = useState<{ top: number; left: number; width: number; up: boolean } | null>(null);
   const [highlight, setHighlight] = useState(-1);
 
-  const selected = options.find((o) => o.value === value);
+  const selected = allOptions.find((o) => o.value === value);
 
-  const openMenu = () => {
+  const openMenu = (seed = "") => {
     if (disabled) return;
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const estH = Math.min(MENU_MAX_H, options.length * 34 + 12);
+    setQuery(seed);
+    const estH = Math.min(MENU_MAX_H, allOptions.length * 34 + 12 + (searchable ? 44 : 0));
     const up = rect.bottom + MENU_GAP + estH > window.innerHeight && rect.top > estH + MENU_GAP;
     setPos({ top: up ? rect.top - MENU_GAP : rect.bottom + MENU_GAP, left: rect.left, width: rect.width, up });
-    setHighlight(Math.max(0, options.findIndex((o) => o.value === value)));
+    setHighlight(seed ? 0 : Math.max(0, allOptions.findIndex((o) => o.value === value)));
     setOpen(true);
   };
+
+  /* Focus the filter box as the menu opens. */
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus();
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +99,11 @@ export function Select({
         triggerRef.current?.focus();
       }
     };
-    const close = () => setOpen(false);
+    // Scrolling the list itself must not close it.
+    const close = (e: Event) => {
+      if (e.type === "scroll" && menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", close);
@@ -86,6 +123,11 @@ export function Select({
   };
 
   const onTriggerKey = (e: React.KeyboardEvent) => {
+    if (!open && searchable && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      openMenu(e.key);
+      return;
+    }
     if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ")) {
       e.preventDefault();
       openMenu();
@@ -103,7 +145,7 @@ export function Select({
         }
         return i;
       });
-    } else if (e.key === "Enter" || e.key === " ") {
+    } else if (e.key === "Enter" || (e.key === " " && !searchable)) {
       e.preventDefault();
       const opt = options[highlight];
       if (opt && !opt.disabled) pick(opt.value);
@@ -151,8 +193,30 @@ export function Select({
             ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }),
           }}
         >
+          {searchable && (
+            <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 border-b border-hairline bg-surface-card p-1.5">
+              <input
+                ref={searchRef}
+                className="input h-8 w-full text-[13px]"
+                value={query}
+                placeholder={searchPlaceholder}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setHighlight(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setOpen(false);
+                    triggerRef.current?.focus();
+                    return;
+                  }
+                  onTriggerKey(e);
+                }}
+              />
+            </div>
+          )}
           {options.length === 0 && (
-            <div className="px-3 py-2 text-[13px] text-muted-soft">{placeholder || "—"}</div>
+            <div className="px-3 py-2 text-[13px] text-muted-soft">{searchable && query ? "—" : placeholder || "—"}</div>
           )}
           {options.map((o, i) => {
             const isSel = o.value === value;

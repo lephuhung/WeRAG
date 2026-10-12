@@ -2164,6 +2164,7 @@ const en = {
   "workCtx.province": "Province / city",
   "workCtx.provincePlaceholder": "Choose a province or city",
   "workCtx.formerly": "incl.",
+  "workCtx.provinceSearch": "Type to search, e.g. hue",
   "workCtx.later": "Later",
 };
 const vi: Record<keyof typeof en, string> = {
@@ -4321,6 +4322,7 @@ const vi: Record<keyof typeof en, string> = {
   "workCtx.province": "Tỉnh / thành phố",
   "workCtx.provincePlaceholder": "Chọn tỉnh / thành phố",
   "workCtx.formerly": "gồm",
+  "workCtx.provinceSearch": "Gõ để tìm, vd. hue",
   "workCtx.later": "Để sau",
 };
 

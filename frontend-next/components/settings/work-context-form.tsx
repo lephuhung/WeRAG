@@ -41,6 +41,8 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
         .map((p) => ({
           value: p.id,
           label: p.former_names?.length ? `${p.name} (${t("workCtx.formerly")} ${p.former_names.join(", ")})` : p.name,
+          // Former names match too: "Quảng Nam" finds Thành phố Đà Nẵng.
+          keywords: [p.name, ...(p.former_names ?? [])].join(" "),
         })),
     [provinces, t]
   );
@@ -89,6 +91,8 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
           }}
           options={options}
           placeholder={t("workCtx.provincePlaceholder")}
+          searchable
+          searchPlaceholder={t("workCtx.provinceSearch")}
         />
       </label>
       <div className="flex items-center gap-3">
