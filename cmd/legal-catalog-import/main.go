@@ -25,7 +25,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -228,24 +227,18 @@ func main() {
 	}
 }
 
+// openDB connects to the Postgres database the server uses (DB_* env).
+// Deployments are Postgres only, so the importer builds without cgo.
 func openDB() (*gorm.DB, error) {
 	cfg := &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Warn)}
-	switch os.Getenv("DB_DRIVER") {
-	case "postgres":
-		return gorm.Open(postgres.Open(fmt.Sprintf(
-			"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
-			os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"),
-			os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
-		)), cfg)
-	case "sqlite":
-		path := os.Getenv("DB_PATH")
-		if path == "" {
-			path = "./data/weknora.db"
-		}
-		return gorm.Open(sqlite.Open(path), cfg)
-	default:
-		return nil, fmt.Errorf("unsupported DB_DRIVER %q", os.Getenv("DB_DRIVER"))
+	if d := os.Getenv("DB_DRIVER"); d != "" && d != "postgres" {
+		return nil, fmt.Errorf("unsupported DB_DRIVER %q: Postgres only", d)
 	}
+	return gorm.Open(postgres.Open(fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
+		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"),
+		os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
+	)), cfg)
 }
 
 // existingIDs returns which of ids already have a catalogue row.
