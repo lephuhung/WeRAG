@@ -73,10 +73,10 @@ riêng `archive-wal.sh` được mount thẳng vào Postgres và `neo4j-dump.sh`
 
 ## Giám sát
 
-- Portal inventory → **Quản trị hệ thống → Sao lưu hệ thống** hiển thị các job "WeRAG — …"
-  và cảnh báo Super Admin (portal + Telegram) khi job thất bại hoặc quá hạn (WAL > 2 giờ,
-  pg_dump/files/Neo4j > 26 giờ, base/.env/thử khôi phục > 8 ngày). Job WAL ghi status ít
-  nhất mỗi giờ, và báo lỗi khi `archive_command` đang hỏng (`pg_stat_archiver`).
+- **Chưa có kênh cảnh báo riêng.** Portal inventory KHÔNG giám sát WeRAG (đã gỡ 2026-10-12,
+  inventory cd24a7c — cảnh báo WeRAG không thuộc app inventory). Mỗi job vẫn ghi
+  `status/werag-<job>.json` lên MinIO (ok/lỗi, thời điểm, ghi chú) để một kênh cảnh báo sau
+  này đọc; job WAL ghi ít nhất mỗi giờ và báo lỗi khi `archive_command` hỏng (`pg_stat_archiver`).
 - **Rủi ro đĩa:** nếu WAL không đẩy được, `pg_wal` và spool phình dần trên ổ của máy này
   (đã dùng > 80%). Cảnh báo WAL phải được xử lý trong ngày.
 - Tại chỗ: `sudo docker logs WeKnora-backup`, `journalctl -u werag-neo4j-backup`,
