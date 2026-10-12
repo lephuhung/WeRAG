@@ -6,6 +6,9 @@
 // one document per line (vbpl metadata field names) and one raw portal
 // relation per line. Documents are upserted by vbpl id; the relation table
 // is replaced as a whole with the edges whose both ends were imported.
+// With -merge (a partial import, e.g. the local documents of a few
+// provinces) only the edges touching the imported documents are replaced,
+// and an edge may end at any document already in the catalogue.
 // The database comes from the same DB_* environment as the server.
 package main
 
@@ -26,6 +29,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -58,10 +62,15 @@ func main() {
 	relsPath := flag.String("relations", "", "JSONL file of raw vbpl relations (required)")
 	snapshot := flag.String("snapshot", "", "Snapshot date of the source, YYYY-MM-DD (required)")
 	prune := flag.Bool("prune", false, "Delete vbpl documents absent from this import")
+	merge := flag.Bool("merge", false,
+		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
 	flag.Parse()
 	if *docsPath == "" || *relsPath == "" || *snapshot == "" {
 		flag.Usage()
 		os.Exit(2)
+	}
+	if *merge && *prune {
+		log.Fatal("-merge and -prune exclude each other")
 	}
 	snap, err := time.Parse("2006-01-02", *snapshot)
 	if err != nil {
@@ -130,6 +139,34 @@ func main() {
 		docs = kept
 	}
 
+	// A merge may link the imported documents to any catalogued one.
+	known := ids
+	if *merge {
+		others := map[string]bool{}
+		if err := readJSONL(*relsPath, func(raw []byte) error {
+			var r vbplRelation
+			if err := json.Unmarshal(raw, &r); err != nil {
+				return err
+			}
+			for _, id := range []string{r.DocID, r.OtherDocID} {
+				if id != "" && !ids[id] {
+					others[id] = true
+				}
+			}
+			return nil
+		}); err != nil {
+			log.Fatalf("read relations: %v", err)
+		}
+		found, err := existingIDs(ctx, db, others)
+		if err != nil {
+			log.Fatalf("load existing documents: %v", err)
+		}
+		for id := range ids {
+			found[id] = true
+		}
+		known = found
+	}
+
 	type edgeKey struct{ from, to, rel string }
 	seen := map[edgeKey]bool{}
 	var rels []*types.LegalDocumentRelation
@@ -144,7 +181,7 @@ func main() {
 			skipped["label:"+r.Relationship]++
 			return nil
 		}
-		if !ids[from] || !ids[to] || from == to {
+		if !known[from] || !known[to] || from == to || !ids[from] && !ids[to] {
 			skipped["outside catalogue"]++
 			return nil
 		}
@@ -218,8 +255,20 @@ func main() {
 		}
 		log.Printf("pruned %d documents absent from this import", len(gone))
 	}
-	if err := repo.ReplaceRelations(ctx, rels); err != nil {
-		log.Fatalf("replace relations: %v", err)
+	if *merge {
+		if err := mergeRelations(ctx, db, ids, rels); err != nil {
+			log.Fatalf("merge relations: %v", err)
+		}
+	} else {
+		// A full import without a single edge is a broken or partial file,
+		// not a catalogue without relations: replacing would wipe the table.
+		if len(rels) == 0 {
+			log.Fatal("no relation between imported documents: refusing to clear the relation table " +
+				"(partial import? use -merge)")
+		}
+		if err := repo.ReplaceRelations(ctx, rels); err != nil {
+			log.Fatalf("replace relations: %v", err)
+		}
 	}
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)
 	for reason, n := range skipped {
@@ -239,6 +288,28 @@ func openDB() (*gorm.DB, error) {
 		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"),
 		os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
 	)), cfg)
+}
+
+// mergeRelations replaces the edges touching the imported documents and
+// leaves every other edge of the catalogue alone.
+func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, rels []*types.LegalDocumentRelation) error {
+	all := make([]string, 0, len(ids))
+	for id := range ids {
+		all = append(all, id)
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for start := 0; start < len(all); start += 1000 {
+			batch := all[start:min(start+1000, len(all))]
+			if err := tx.Where("from_id IN ? OR to_id IN ?", batch, batch).
+				Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+				return err
+			}
+		}
+		if len(rels) == 0 {
+			return nil
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(rels, 1000).Error
+	})
 }
 
 // existingIDs returns which of ids already have a catalogue row.
