@@ -53,6 +53,8 @@ on_error() {
   cat "$ERRLOG" >&3 2>/dev/null || true
   log "THẤT BẠI (dòng $line, mã $rc)"
   write_status false "${reason:-lỗi ở dòng $line} (mã $rc)"
+  # Lần chạy thành công kế tiếp phải ghi status ngay để xoá cảnh báo (wal chỉ ghi mỗi giờ).
+  rm -f "$STATE/$JOB.status-epoch" 2>/dev/null || true
   rm -f "$TMP/$JOB".* 2>/dev/null || true
   exit "$rc"
 }
@@ -100,7 +102,8 @@ job_wal() {
   mode=$(psql -qAt -d postgres -c "SHOW archive_mode")
   [ "$mode" = "on" ] || fail "archive_mode=$mode trên Postgres — PITR không hoạt động (xem deploy/backup/README.md)"
 
-  for f in $(cd "$SPOOL" && ls | grep -E '^[0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?$|^[0-9A-F]{8}\.history$' | LC_ALL=C sort); do
+  # Spool trống (DB không ghi gì → không đổi segment) là bình thường: grep không khớp ≠ lỗi.
+  for f in $(cd "$SPOOL" && ls | { grep -E '^[0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?$|^[0-9A-F]{8}\.history$' || true; } | LC_ALL=C sort); do
     case "$f" in *.history) dir=history ;; *) dir=${f:0:16} ;; esac
     enc="$TMP/$JOB.$f.zst.age"
     zstd -q -c "$SPOOL/$f" | encrypt "$enc"
