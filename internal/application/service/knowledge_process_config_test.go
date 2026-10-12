@@ -587,6 +587,23 @@ func TestResolveProcessConfig_LockedDefaultsReplaceOverrides(t *testing.T) {
 	require.Equal(t, "sys-asr", eff.ASRConfig.ModelID)
 }
 
+// The defaults editor serialized graph_enabled=false although it has no
+// graph control; a locked default must not switch graph off on every KB.
+func TestResolveProcessConfig_LockedDefaultsLeaveGraphToTheKB(t *testing.T) {
+	def := enabledParseDefaults()
+	def.GraphEnabled = processConfigBoolPtr(false)
+	def.ExtractConfig = &types.ExtractConfig{Enabled: false}
+	withParseDefaults(t, def)
+
+	kb := &types.KnowledgeBase{
+		IndexingStrategy: types.IndexingStrategy{GraphEnabled: true},
+		ExtractConfig:    &types.ExtractConfig{Enabled: true},
+	}
+	require.True(t, ResolveProcessConfig(kb, nil).GraphEnabled)
+	kb.IndexingStrategy.GraphEnabled = false
+	require.False(t, ResolveProcessConfig(kb, nil).GraphEnabled)
+}
+
 func TestResolveProcessConfig_DisabledDefaultsKeepOverrides(t *testing.T) {
 	withParseDefaults(t, &types.SystemParseDefaults{
 		Enabled: false,

@@ -109,6 +109,10 @@ export function ParseDefaultsEditor() {
     setSaved(false);
     setError("");
     const overrides = buildProcessOverrides(state);
+    // Graph extraction is a per-KB decision this editor has no control for:
+    // never lock it (buildProcessOverrides always fills graph_enabled).
+    delete overrides.graph_enabled;
+    delete overrides.extract_config;
     const value: SystemParseDefaults = {
       enabled,
       ...overrides,

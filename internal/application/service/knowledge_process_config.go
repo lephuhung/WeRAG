@@ -42,7 +42,13 @@ func lockedParseOverrides() *types.KnowledgeProcessOverrides {
 	if def == nil || !def.Enabled {
 		return nil
 	}
-	return &def.KnowledgeProcessOverrides
+	locked := def.KnowledgeProcessOverrides
+	// Graph extraction stays a per-KB decision: the defaults editor has no
+	// graph control, yet its serializer wrote graph_enabled=false, which
+	// silently switched graph off on every KB.
+	locked.GraphEnabled = nil
+	locked.ExtractConfig = nil
+	return &locked
 }
 
 func applyParserRuleOverrides(
