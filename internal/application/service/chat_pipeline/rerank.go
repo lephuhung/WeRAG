@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/models/rerank"
@@ -189,6 +190,7 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		chatManage.SearchResult[i].Metadata = ensureMetadata(chatManage.SearchResult[i].Metadata)
 	}
 	reranked := make([]*types.SearchResult, 0, len(rerankResp))
+	graphBase := graphBaseScore(candidatesToRerank)
 
 	// Process reranked results
 	for _, rr := range rerankResp {
@@ -197,6 +199,9 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		}
 		sr := candidatesToRerank[rr.Index]
 		base := sr.Score
+		if sr.MatchType == types.MatchTypeGraph {
+			base = graphBase
+		}
 		sr.Metadata["base_score"] = fmt.Sprintf("%.4f", base)
 		modelScore := rr.RelevanceScore
 		sr.Metadata["model_score"] = fmt.Sprintf("%.4f", modelScore)
@@ -436,6 +441,31 @@ func safeTopScore(results []rerank.RankResult) float64 {
 }
 
 // compositeScore calculates the composite score for a search result
+// graphBaseScore is the base score of a chunk found through the knowledge
+// graph: the median score of the other candidates, 0 without any. Graph
+// chunks have no similarity score of their own and carried a flat 1.0
+// while hybrid hits carry RRF fusions (≈0.016), so every graph chunk
+// outranked every hybrid hit whatever the reranker said — a named law
+// pulled all its chunks past the article the question was about. On the
+// others' scale the reranker decides.
+func graphBaseScore(candidates []*types.SearchResult) float64 {
+	var scores []float64
+	for _, c := range candidates {
+		if c.MatchType != types.MatchTypeGraph {
+			scores = append(scores, c.Score)
+		}
+	}
+	if len(scores) == 0 {
+		return 0
+	}
+	sort.Float64s(scores)
+	mid := len(scores) / 2
+	if len(scores)%2 == 0 {
+		return (scores[mid-1] + scores[mid]) / 2
+	}
+	return scores[mid]
+}
+
 func compositeScore(sr *types.SearchResult, modelScore, baseScore float64) float64 {
 	sourceWeight := 1.0
 	switch strings.ToLower(sr.KnowledgeSource) {

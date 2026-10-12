@@ -2,6 +2,7 @@ package chatpipeline
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -184,7 +185,13 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 	return next()
 }
 
-// filterSeenChunk filters seen chunks from the graph
+// maxEntityChunks caps the chunks the graph adds to one search. A matched
+// document or a common term ("bí mật nhà nước") links to most chunks of a
+// law; all of them would crowd the reranker out of the hybrid hits.
+const maxEntityChunks = 30
+
+// filterSeenChunk returns the graph's chunks not already found by search,
+// those linked to the most matched nodes first, at most maxEntityChunks.
 func filterSeenChunk(ctx context.Context, graph *types.GraphData, searchResult []*types.SearchResult) []string {
 	seen := map[string]bool{}
 	for _, chunk := range searchResult {
@@ -192,15 +199,23 @@ func filterSeenChunk(ctx context.Context, graph *types.GraphData, searchResult [
 	}
 	logger.Infof(ctx, "filterSeenChunk: seen count: %d", len(seen))
 
+	links := map[string]int{}
 	chunkIDs := []string{}
 	for _, node := range graph.Node {
 		for _, chunkID := range node.Chunks {
 			if seen[chunkID] {
 				continue
 			}
-			seen[chunkID] = true
-			chunkIDs = append(chunkIDs, chunkID)
+			if links[chunkID] == 0 {
+				chunkIDs = append(chunkIDs, chunkID)
+			}
+			links[chunkID]++
 		}
+	}
+	sort.SliceStable(chunkIDs, func(i, j int) bool { return links[chunkIDs[i]] > links[chunkIDs[j]] })
+	if len(chunkIDs) > maxEntityChunks {
+		logger.Infof(ctx, "filterSeenChunk: keeping %d of %d new chunks", maxEntityChunks, len(chunkIDs))
+		chunkIDs = chunkIDs[:maxEntityChunks]
 	}
 	logger.Infof(ctx, "filterSeenChunk: new chunkIDs count: %d", len(chunkIDs))
 	return chunkIDs
