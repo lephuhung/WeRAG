@@ -5,7 +5,10 @@ có tuân thủ các quy tắc prompt và gọi đúng công cụ trong những 
 người dùng thật đi qua: hỏi nội dung, tóm tắt, văn bản dài, chính tả, thể
 thức NĐ30, bôi đen viết lại/gợi ý/giải thích, bôi đen tra cứu pháp lý, chống
 trả lời theo trí nhớ, vẽ sơ đồ/hình minh họa, nhiều văn bản (@, đối chiếu,
-nguồn chỉ đọc), gợi ý hoàn thiện, chèn đoạn, yêu cầu ngoài phạm vi, tìm web.
+nguồn chỉ đọc), gợi ý hoàn thiện, chèn đoạn, yêu cầu ngoài phạm vi, tìm web,
+và nhóm `partial`: nhớ tên văn bản không đầy đủ ("Nghị định 53", "Luật bí mật
+nhà nước 2025", sai năm) và từ viết tắt nhiều nghĩa → danh sách lựa chọn bấm
+được (`legal_candidates`, `abbreviation_choice`), bước 2 mô phỏng bấm chọn.
 
 ```
 scripts/doc_assistant_eval/
@@ -47,6 +50,16 @@ Mặc định tab mở với `editor_kind=word_addin` (không cần ONLYOFFICE k
 nối; các `document_ops` trả về là thứ trình soạn thảo sẽ áp dụng). Dùng
 `--editor onlyoffice` khi muốn đi qua đường ONLYOFFICE (cần documentserver
 và việc snapshot/forcesave có thể chờ 20 s mỗi lượt).
+
+## Điều kiện môi trường
+
+- Tài khoản test là thành viên thường của tenant 10003: khi `usage.enforce`
+  bật, tenant phải có gói sử dụng còn hạn (nếu không mọi lượt trả 429
+  `no_subscription`). Mỗi lần chạy đủ bộ tốn ~45 lượt hỏi của gói.
+- Kịch bản `abbr_choice` cần từ điển viết tắt có 2 nghĩa active cho `ATTT`
+  (dev: "An toàn thông tin" và "An toàn thực phẩm").
+- Backend dev (air) restart mỗi khi có file Go được lưu; runner tự chạy lại
+  kịch bản bị đứt (`--retries`), nhưng nên tránh lưu Go trong lúc chạy.
 
 ## Trạng thái
 

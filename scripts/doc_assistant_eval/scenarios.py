@@ -34,7 +34,8 @@ Ctx = Dict[str, Any]
 
 @dataclass
 class Step:
-    query: str
+    # a string, or a function of ctx returning the text to send ("" skips the step)
+    query: Any
     checks: List[C.Check]
     selection: Optional[Callable[[Ctx], Dict[str, Any]]] = None
     mentions: Optional[Callable[[Ctx], List[Dict[str, Any]]]] = None
@@ -524,6 +525,124 @@ SCENARIOS: List[Scenario] = [
                        status=WARN)),
             web_search=True,
         )],
+    ),
+    # ------------------------------------------------------------------ partial
+    # The user remembers only part of a name: a number without the year, a
+    # law without its number, a wrong year. The assistant must resolve it
+    # through the catalogue / KB, say which document it means (full số
+    # hiệu), and ask or list candidates when several match — never pick one
+    # silently or answer from memory.
+    Scenario(
+        id="partial_decree_number_only", group="partial", title="'Nghị định 53 quy định gì' (25 văn bản cùng số) → thẻ chọn văn bản; bấm chọn → trả lời đúng văn bản",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[
+            Step(
+                "Nghị định 53 quy định gì?",
+                S(C.display_type("legal_candidates"), C.no_edit_ops(),
+                  C.custom("card lists >= 2 candidates with full numbers and a resend text",
+                           lambda t, ctx: any(len([c for c in (tc.data.get("candidates") or []) if "/" in str(c.get("document_number", "")) and c.get("resend")]) >= 2
+                                              for tc in t.tool_calls if tc.data.get("display_type") == "legal_candidates")),
+                  C.answer_contains_any(["văn bản nào"]),
+                  C.custom("no model round ran (card answered the turn in code)", lambda t, ctx: all(tc.name == "legal_candidates" for tc in t.tool_calls), status=WARN)),
+                note="Cổng trong code: số không có năm + ≥2 văn bản cùng loại trong catalogue → thẻ ứng viên, không chạy agent.",
+            ),
+            Step(
+                lambda ctx: next((c["resend"] for tc in ctx["turns"][-1].tool_calls if tc.data.get("display_type") == "legal_candidates"
+                                  for c in tc.data.get("candidates") or [] if str(c.get("document_number", "")).startswith("53/2022")), ""),
+                S(C.grounded_or_refused(), C.answer_contains_any(["53/2022"]), C.no_display_type("legal_candidates"), C.no_edit_ops()),
+                judge="Người dùng vừa bấm chọn Nghị định 53/2022/NĐ-CP (an ninh mạng). Đạt nếu câu trả lời nói về đúng văn bản đó (số hiệu đầy đủ, chủ đề an ninh mạng) sau khi đã gọi công cụ tra cứu, và không hỏi lại. Bản ghi công cụ ở đây chỉ hiện số lượng kết quả (nội dung bị lược), nên KHÔNG kết luận là bịa chỉ vì không thấy nội dung trong bản ghi.",
+                note="Mô phỏng bấm nút trên thẻ: gửi lại câu hỏi với số hiệu đầy đủ (trường resend của ứng viên).",
+            ),
+        ],
+    ),
+    Scenario(
+        id="partial_circular_bare_number", group="partial", title="'Thông tư 01 của Bộ Nội vụ' → thẻ ứng viên lọc theo lĩnh vực hoặc trả lời thẳng",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Thông tư 01 hướng dẫn thể thức văn bản hành chính còn hiệu lực không?",
+            S(C.no_edit_ops(),
+              C.custom("either the candidates card or a grounded answer naming 01/2011/TT-BNV",
+                       lambda t, ctx: ("legal_candidates" in t.display_types()) or ("01/2011" in t.text and (bool(C.has_evidence(t)) or t.text.startswith(C.UNGROUNDED_PREFIX)))),
+            ),
+            note="Từ khóa 'thể thức văn bản' có thể lọc còn 1 ứng viên (01/2011/TT-BNV) → không cần thẻ; nếu không, thẻ phải hiện.",
+        )],
+    ),
+    Scenario(
+        id="partial_decree_with_topic", group="partial", title="'Nghị định 53 về an ninh mạng' → chốt đúng 53/2022/NĐ-CP",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Nghị định 53 về an ninh mạng quy định những gì chính?",
+            S(C.any_tool_called(["check_legal_status", "search_knowledge", "search_document_section", "read_document"]),
+              C.grounded_or_refused(), C.answer_contains_any(["53/2022"]), C.no_edit_ops()),
+            judge="Phải nhận ra văn bản là Nghị định 53/2022/NĐ-CP (quy định chi tiết Luật An ninh mạng), nêu số hiệu đầy đủ và tóm tắt nội dung dựa trên kết quả công cụ; không bịa điều khoản.",
+        )],
+    ),
+    Scenario(
+        id="partial_law_with_year", group="partial", title="'Luật bí mật nhà nước 2025' → tìm ra 117/2025/QH15",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Luật bí mật nhà nước 2025 có những điểm gì mới so với luật cũ?",
+            S(C.any_tool_called(["search_knowledge", "check_legal_status", "find_related_legal_documents", "search_document_section", "read_document"]),
+              C.grounded_or_refused(), C.answer_contains_any(["117/2025"]), C.no_edit_ops()),
+            judge="Phải xác định đúng Luật Bảo vệ bí mật nhà nước số 117/2025/QH15 (thay Luật 29/2018/QH14), nêu số hiệu đầy đủ và chỉ nêu điểm mới có căn cứ từ kết quả công cụ; nếu công cụ không trả về nội dung so sánh thì nói rõ, không bịa.",
+        )],
+    ),
+    Scenario(
+        id="partial_law_no_year", group="partial", title="'Luật bí mật nhà nước' không năm → nói rõ dùng luật nào (ưu tiên luật đang hiệu lực)",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Theo Luật bí mật nhà nước thì bí mật nhà nước có mấy độ mật, là những độ nào?",
+            S(C.any_tool_called(["search_knowledge", "check_legal_status", "search_document_section", "read_document"]),
+              C.grounded_or_refused(), C.answer_contains_any(["117/2025", "29/2018"]),
+              C.answer_contains_any(["Tuyệt mật"]), C.answer_contains_any(["Tối mật"]), C.answer_contains_any(["Mật"]), C.no_edit_ops()),
+            judge="Phải nói rõ đang trích luật nào (số hiệu đầy đủ); vì có hai luật (29/2018 đã bị 117/2025 thay thế từ 01/3/2026) nên ưu tiên 117/2025 hoặc nêu cả hai; nội dung (ba độ mật: Tuyệt mật, Tối mật, Mật) phải lấy từ kết quả công cụ, có dẫn Điều.",
+        )],
+    ),
+    Scenario(
+        id="partial_circular_topic", group="partial", title="'Thông tư của Bộ Nội vụ về thể thức văn bản' → tìm ra 01/2011/TT-BNV và báo hết hiệu lực",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Thông tư của Bộ Nội vụ hướng dẫn thể thức văn bản hành chính còn hiệu lực không? Số hiệu là gì?",
+            S(C.any_tool_called(["search_knowledge", "check_legal_status", "find_related_legal_documents"]),
+              C.grounded_or_refused(), C.answer_contains_any(["01/2011"]), C.answer_contains_any(["hết hiệu lực", "bãi bỏ", "không còn hiệu lực"]), C.no_edit_ops()),
+            judge="Đạt nếu tìm ra Thông tư 01/2011/TT-BNV và nói rõ nó không còn hiệu lực (hết hiệu lực / bị bãi bỏ năm 2020, thể thức nay theo Nghị định 30/2020/NĐ-CP) dựa trên kết quả công cụ. Chỉ trượt khi khẳng định còn hiệu lực hoặc không nêu số hiệu.",
+        )],
+    ),
+    Scenario(
+        id="partial_wrong_year", group="partial", title="Nhớ sai năm ('Nghị định 30 năm 2021 về văn thư') → sửa lại là 30/2020/NĐ-CP",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step(
+            "Nghị định 30 năm 2021 về công tác văn thư quy định gì về thể thức văn bản?",
+            S(C.any_tool_called(["search_knowledge", "check_legal_status", "search_document_section", "read_document"]),
+              C.grounded_or_refused(), C.answer_contains_any(["30/2020"]), C.no_edit_ops()),
+            judge="Nghị định về công tác văn thư là 30/2020/NĐ-CP (ban hành 05/3/2020), không có Nghị định 30/2021 về văn thư. Đạt nếu trợ lý chỉ ra số hiệu đúng (và nếu nhắc tới 30/2021/NĐ-CP thì nói rõ văn bản đó về lĩnh vực khác), rồi trả lời theo 30/2020 từ kết quả công cụ. Trượt nếu bịa nội dung cho 'Nghị định 30/2021 về văn thư'.",
+        )],
+    ),
+    # ------------------------------------------------------------ abbreviation
+    # A short form with several dictionary meanings (dev dictionary: ATTT =
+    # An toàn thông tin / An toàn thực phẩm) is asked about with choices;
+    # picking one sends "ATTT = <meaning>" and the original question runs.
+    Scenario(
+        id="abbr_choice", group="partial", title="Từ viết tắt nhiều nghĩa (ATTT) → hỏi 'nghĩa nào' kèm lựa chọn; bấm chọn → trả lời theo nghĩa đó",
+        documents=[("target", "quy_trinh.docx")],
+        requires="Từ điển viết tắt dev có 2 nghĩa active cho ATTT",
+        steps=[
+            Step(
+                "ATTT có những yêu cầu gì theo quy định?",
+                S(C.display_type("abbreviation_choice"), C.answer_contains_any(["nghĩa nào"]), C.no_edit_ops(),
+                  C.custom("choices carry a resend of the form 'ATTT = …'",
+                           lambda t, ctx: any(all(str(o.get("resend", "")).startswith("ATTT = ") for o in (tc.data.get("options") or [])) and len(tc.data.get("options") or []) >= 2
+                                              for tc in t.tool_calls if tc.data.get("display_type") == "abbreviation_choice"))),
+                note="Không có lịch sử hội thoại để phân biệt nghĩa → hỏi người dùng thay vì để mô hình đoán.",
+            ),
+            Step(
+                lambda ctx: next((o["resend"] for tc in ctx["turns"][-1].tool_calls if tc.data.get("display_type") == "abbreviation_choice"
+                                  for o in tc.data.get("options") or [] if "thực phẩm" in str(o.get("label", ""))), ""),
+                S(C.no_display_type("abbreviation_choice"), C.answer_contains_any(["thực phẩm"]), C.answer_not_contains(["nghĩa nào"]), C.no_edit_ops()),
+                judge="Người dùng đã chọn nghĩa 'An toàn thực phẩm'. Câu trả lời phải trả lời câu hỏi gốc theo nghĩa đó (yêu cầu về an toàn thực phẩm), không hỏi lại nghĩa và không trả lời về an toàn thông tin.",
+                note="Mô phỏng bấm lựa chọn: gửi 'ATTT = An toàn thực phẩm'; cổng viết tắt tiếp tục câu hỏi gốc.",
+            ),
+        ],
     ),
 ]
 

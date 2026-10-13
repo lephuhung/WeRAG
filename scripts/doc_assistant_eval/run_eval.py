@@ -94,8 +94,15 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
                 step.before(ctx)
             selection = step.selection(ctx) if step.selection else None
             mentions = step.mentions(ctx) if step.mentions else None
-            log(f"  [{sc.id}] step {i + 1}: {step.query[:70]}")
-            turn = client.chat(sid, step.query, selection=selection, mentions=mentions, web_search=step.web_search)
+            query = step.query(ctx) if callable(step.query) else step.query
+            if not query:
+                log(f"  [{sc.id}] step {i + 1}: skipped (no query from the previous turn)")
+                out["steps"].append({"query": "", "note": step.note, "selection": None, "mentions": None,
+                                     "status": "SKIP", "checks": [{"status": "SKIP", "label": "query derived from previous turn", "detail": "nothing to send"}],
+                                     "turn": {"query": "", "answer": "", "error": None, "duration_s": 0, "tools": [], "display_types": []}, "events": []})
+                continue
+            log(f"  [{sc.id}] step {i + 1}: {query[:70]}")
+            turn = client.chat(sid, query, selection=selection, mentions=mentions, web_search=step.web_search)
             ctx["turns"].append(turn)
             results: List[C.Result] = []
             for chk in step.checks:
@@ -107,7 +114,7 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
                 results.append(judge.grade(step.judge, turn, extra_context=judge_context(sc, manifest, step.note)))
             worst = aggregate([r.status for r in results])
             out["steps"].append({
-                "query": step.query, "note": step.note, "selection": selection, "mentions": mentions,
+                "query": query, "note": step.note, "selection": selection, "mentions": mentions,
                 "status": worst, "checks": [r.as_dict() for r in results], "turn": turn.summary(),
                 "events": turn.events,
             })

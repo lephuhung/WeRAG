@@ -191,6 +191,8 @@ def build_cong_van_loi(out):
             "no Nơi nhận block",
         ],
         "repeated_sentence": REPEATED_SENTENCE,
+        "title": "V/v triển khai công tác văn thư quý IV năm 2026",
+        "recipients_block": "none (seeded error)",
         "body": CONG_VAN_BODY,
     }
 
@@ -365,7 +367,10 @@ def build_ke_hoach_nguon(out):
         "file": "ke_hoach_nguon.docx",
         "doc_type": "tong_hop",
         "number": "41/TH-VP",
+        "issuer": "Văn phòng Sở Nội vụ",
+        "date": "Huế, ngày 02 tháng 10 năm 2026",
         "signer": "Lê Thị Hồng Nhung",
+        "signer_title": "Chánh Văn phòng",
         "figures": KE_HOACH_FIGURES,
         "conflicts_with_bao_cao": {
             "hồ sơ nộp lưu": {"bao_cao": "415", "nguon": "452"},
@@ -403,7 +408,13 @@ def build_thong_bao(out):
         "file": "thong_bao.docx",
         "doc_type": "thong_bao",
         "number": "97/TB-SNV",
+        "issuer": "Sở Nội vụ, UBND thành phố Huế",
+        "date": "Huế, ngày 09 tháng 10 năm 2026",
+        "title": "THÔNG BÁO Lịch kiểm tra công tác văn thư, lưu trữ năm 2026",
         "signer": "Nguyễn Thị Mai",
+        "signer_title": "KT. GIÁM ĐỐC / PHÓ GIÁM ĐỐC",
+        "recipients": ["- Các đơn vị trực thuộc;", "- Lưu: VT, TTr."],
+        "has_can_cu": False,
         "body": THONG_BAO_BODY,
     }
 
