@@ -78,3 +78,7 @@ func TestCheckLegalStatusTool(t *testing.T) {
 		t.Error("empty input must fail")
 	}
 }
+
+func (f *fakeLegalCatalog) Candidates(context.Context, string, string, int) ([]*types.LegalDocument, int, error) {
+	return nil, 0, nil
+}

@@ -62,6 +62,43 @@ func (s *legalCatalogService) find(
 	return s.repo.SearchByTitle(ctx, strings.Fields(title), limit)
 }
 
+// legalCandidatesScan is how many rows a bare number is matched against.
+const legalCandidatesScan = 200
+
+func (s *legalCatalogService) Candidates(
+	ctx context.Context, documentNumber, docType string, limit int,
+) ([]*types.LegalDocument, int, error) {
+	key := vietnamese_legal.CatalogNumberKey(documentNumber)
+	if key == "" {
+		return nil, 0, nil
+	}
+	// a bare number may be a document's whole number ("53", a local
+	// document) and the prefix of many more ("53/2022/NĐ-CP"): both
+	docs, err := s.repo.FindByNumberPrefix(ctx, key, legalCandidatesScan)
+	if err != nil {
+		return nil, 0, err
+	}
+	if exact, err := s.repo.FindByNumberKey(ctx, key, legalCatalogMaxLookup); err == nil {
+		for _, d := range exact {
+			if vietnamese_legal.CatalogNumberKey(d.DocumentNumber) == key {
+				docs = append(docs, d)
+			}
+		}
+	}
+	want := strings.ToLower(strings.Join(strings.Fields(docType), " "))
+	out := docs[:0:0]
+	for _, d := range docs {
+		if want == "" || strings.ToLower(strings.Join(strings.Fields(d.DocType), " ")) == want {
+			out = append(out, d)
+		}
+	}
+	total := len(out)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, total, nil
+}
+
 func (s *legalCatalogService) Lookup(
 	ctx context.Context, documentNumber, title string, limit int,
 ) ([]*types.LegalStatusReport, error) {

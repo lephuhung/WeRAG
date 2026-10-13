@@ -111,8 +111,24 @@ func (t *CheckLegalStatusTool) Execute(ctx context.Context, args json.RawMessage
 		}, nil
 	}
 	var b strings.Builder
+	data := map[string]interface{}{"matches": len(reports), "reports": reports}
 	if len(reports) > 1 {
 		fmt.Fprintf(&b, "%d documents match; ask the user which one they mean if it is unclear.\n\n", len(reports))
+		// a bare number ("53"): the user picks on a card, the turn ends
+		if !strings.Contains(input.DocumentNumber, "/") {
+			docs := make([]*types.LegalDocument, 0, len(reports))
+			for _, rep := range reports {
+				if rep.Document != nil {
+					docs = append(docs, rep.Document)
+				}
+			}
+			if card := LegalCandidatesFromDocs(types.UserQueryFromContext(ctx), input.DocumentNumber, docs); card != nil {
+				for k, v := range card.Data() {
+					data[k] = v
+				}
+				data["final_message"] = card.Message()
+			}
+		}
 	}
 	for i, rep := range reports {
 		if i > 0 {
@@ -123,7 +139,7 @@ func (t *CheckLegalStatusTool) Execute(ctx context.Context, args json.RawMessage
 	return &types.ToolResult{
 		Success: true,
 		Output:  b.String(),
-		Data:    map[string]interface{}{"matches": len(reports), "reports": reports},
+		Data:    data,
 	}, nil
 }
 

@@ -65,6 +65,18 @@ func (r *legalCatalogRepository) FindByNumberKey(
 	return docs, err
 }
 
+func (r *legalCatalogRepository) FindByNumberPrefix(
+	ctx context.Context, key string, limit int,
+) ([]*types.LegalDocument, error) {
+	var docs []*types.LegalDocument
+	if strings.TrimSpace(key) == "" {
+		return docs, nil
+	}
+	err := r.db.WithContext(ctx).Where("number_key LIKE ? ESCAPE ?", escapeLikeKeyword(key)+"/%", likeEscapeChar).
+		Order("issued_on DESC").Limit(limit).Find(&docs).Error
+	return docs, err
+}
+
 func (r *legalCatalogRepository) SearchByTitle(
 	ctx context.Context, words []string, limit int,
 ) ([]*types.LegalDocument, error) {

@@ -41,6 +41,8 @@ import {
   type ScopeClarification,
 } from "@/lib/document-scope";
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
+import { ChoiceListView } from "@/components/chat/choice-list";
+import { parseChoiceList, takeChoiceList, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
 import { SavedMemoryNotice, parseSavedMemories, type SavedMemory } from "@/components/chat/saved-memory-notice";
 import {
   illustrationFromToolData,
@@ -125,6 +127,8 @@ type UiMessage = {
   savedMemories?: SavedMemory[];
   /** Document assistant: the scope clarification card this turn answered with. */
   scopeCard?: ScopeClarification;
+  /** Document assistant: the options (which document, which meaning) this turn answered with. */
+  choiceList?: ChoiceList;
   /** Document assistant: rewrite proposals of this turn (applied with a button). */
   rewriteProposals?: UiRewriteProposal[];
   /** Document assistant: diagrams / pictures proposed this turn. */
@@ -799,6 +803,7 @@ const AssistantMessage = memo(function AssistantMessage({
   onRegenerate,
   onAsk,
   onScopeAction,
+  onChoicePick,
   scopeCardActive = false,
   activeProposalIds = "",
   proposalsDisabled = false,
@@ -814,6 +819,8 @@ const AssistantMessage = memo(function AssistantMessage({
   index: number;
   /** Runs a confirmed choice of the scope clarification card. */
   onScopeAction?: (action: ScopeCardAction) => Promise<void>;
+  /** Sends the message of a picked option (choice list under the answer). */
+  onChoicePick?: (option: ChoiceOption) => Promise<void>;
   /** The card is live only on the last turn; older ones show their text. */
   scopeCardActive?: boolean;
   /** Comma-joined batch ids of this turn's proposals that are the newest of
@@ -891,6 +898,9 @@ const AssistantMessage = memo(function AssistantMessage({
         {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
         {!m.streaming && m.scopeCard && scopeCardActive && onScopeAction && (
           <DocumentScopeCard card={m.scopeCard} disabled={busy} onAction={onScopeAction} />
+        )}
+        {!m.streaming && m.choiceList && scopeCardActive && onChoicePick && (
+          <ChoiceListView card={m.choiceList} disabled={busy} onPick={onChoicePick} />
         )}
         {!m.streaming &&
           proposalOutcomeFor &&
@@ -1509,10 +1519,13 @@ function ChatBody({ id }: { id: string }) {
               thinking: parsed.thinking,
               ...(m.role === "assistant"
                 ? (() => {
-                    const { card, steps } = takeScopeClarification(stepsFromHistory(m));
+                    const scoped = takeScopeClarification(stepsFromHistory(m));
+                    const { card: choiceList, steps } = takeChoiceList(scoped.steps);
+                    const card = scoped.card;
                     return {
                       steps: steps?.length ? steps : undefined,
                       scopeCard: card ?? undefined,
+                      choiceList: choiceList ?? undefined,
                       rewriteProposals: rewriteProposalsFromHistory(m, appliedProposals),
                       illustrations: illustrationsFromHistory(m, appliedProposals),
                     };
@@ -1607,6 +1620,13 @@ function ChatBody({ id }: { id: string }) {
               if (scopeCard) {
                 setMessages((m) =>
                   m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, scopeCard } : msg)),
+                );
+                return;
+              }
+              const choiceList = parseChoiceList(c.data);
+              if (choiceList) {
+                setMessages((m) =>
+                  m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, choiceList } : msg)),
                 );
                 return;
               }
@@ -2190,6 +2210,18 @@ function ChatBody({ id }: { id: string }) {
           );
           return;
         }
+        // options under the answer (which document, which meaning): clicked, not typed
+        const choiceList = kind === "tool_result" ? parseChoiceList(c.data) : null;
+        if (choiceList) {
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg)
+                ? { ...msg, choiceList, assistantMessageId: incomingAsstId ?? msg.assistantMessageId }
+                : msg,
+            ),
+          );
+          return;
+        }
         if (kind === "tool_result") {
           noteDocOps(c);
           const proposal = proposalOfChunk(c);
@@ -2507,6 +2539,12 @@ function ChatBody({ id }: { id: string }) {
     setScopeBump((v) => v + 1);
     if (action.resend.trim()) void sendRef.current({ query: action.resend, ...blank });
   }, []);
+  // A picked option: its message goes out (the question with the full số
+  // hiệu, or "ABC = full form" for an abbreviation) and the turn continues.
+  const runChoicePick = useCallback(async (option: ChoiceOption) => {
+    const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
+    void sendRef.current({ query: option.resend, ...blank });
+  }, []);
   const clearScope = async () => {
     if (id === "new") return;
     setScopeEditing(false);
@@ -2720,6 +2758,7 @@ function ChatBody({ id }: { id: string }) {
                 onRegenerate={handleRegenerate}
                 onAsk={handleAskFollowUp}
                 onScopeAction={runScopeAction}
+                onChoicePick={runChoicePick}
                 scopeCardActive={index === messages.length - 1}
                 activeProposalIds={(m.rewriteProposals ?? [])
                   .filter((p) => newestProposals.get(p.documentId) === p.batchId)

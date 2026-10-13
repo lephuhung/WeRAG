@@ -220,6 +220,19 @@ func (s *sessionService) AgentQA(
 	// The document tools read the selection from ctx: rewrite_paragraphs
 	// edits only a passage the user highlighted in this turn.
 	ctx = types.WithDocumentSelection(ctx, req.DocumentSelection)
+	// the request as written: apply_format_fixes reads the user's consent
+	// from it, rewrite_paragraphs the number of versions asked for
+	ctx = types.WithUserQuery(ctx, req.Query)
+	// the answer may invite the user to press a card button only when the
+	// turn produced that card (agent.answerGuard)
+	if req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinDocumentAssistantID {
+		ctx = types.WithAnswerButtonGuard(ctx)
+	}
+	// a legal document named by a bare number the catalogue holds several
+	// of is answered with a card of candidates to click; no model runs
+	if asked, err := s.legalCandidatesClarification(ctx, req, eventBus); asked || err != nil {
+		return err
+	}
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	// a request about a highlighted passage starts with the tool it needs:

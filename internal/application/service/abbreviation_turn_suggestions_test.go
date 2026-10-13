@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestAbbreviationTurnWaitsForUnknownBeforeSelector(t *testing.T) {
 	require.Zero(t, selector.calls)
 	require.Zero(t, modelCalls)
 	v := first.Version
-	input := turnInput(owner, "u2", "a2", "XYZ = Xây dựng y tế")
+	input := withHistory(turnInput(owner, "u2", "a2", "XYZ = Xây dựng y tế"))
 	input.ContinuationID, input.ExpectedVersion = first.RequestID, &v
 	input.ResolveModelID = resolveModel
 	ready, err := c.Prepare(context.Background(), input)
@@ -56,7 +57,7 @@ func TestAbbreviationTurnWaitsForUnknownBeforeSelector(t *testing.T) {
 	require.Equal(t, 1, modelCalls)
 }
 
-func TestAbbreviationTurnSelectorFailureBlocks(t *testing.T) {
+func TestAbbreviationTurnSelectorFailureAsksTheUser(t *testing.T) {
 	_, store, dict, owner := newTurnCoordinatorFixture(t)
 	dict.active = []*types.Abbreviation{
 		{ID: "a", ShortForm: "ATTT", FullForm: "An toàn thông tin", IsActive: true},
@@ -64,19 +65,20 @@ func TestAbbreviationTurnSelectorFailureBlocks(t *testing.T) {
 	}
 	selector := &turnSelector{err: errors.New("model unavailable")}
 	c := NewAbbreviationTurnCoordinator(store, dict, selector)
-	first, err := c.Prepare(context.Background(), turnInput(owner, "u1", "a1", "ATTT và XYZ là gì"))
+	first, err := c.Prepare(context.Background(), withHistory(turnInput(owner, "u1", "a1", "ATTT và XYZ là gì")))
 	require.NoError(t, err)
 	require.Equal(t, types.AbbreviationStatusNeedsDefinition, first.Status)
 	v := first.Version
-	input := turnInput(owner, "u2", "a2", "XYZ = Xây dựng y tế")
+	input := withHistory(turnInput(owner, "u2", "a2", "XYZ = Xây dựng y tế"))
 	input.ContinuationID, input.ExpectedVersion = first.RequestID, &v
-	blocked, err := c.Prepare(context.Background(), input)
+	// the selector is down: the user is asked to pick the meaning of ATTT
+	asked, err := c.Prepare(context.Background(), input)
 	require.NoError(t, err)
-	require.Equal(t, types.AbbreviationStatusBlockedError, blocked.Status)
-	require.Equal(t, "selector_unavailable", blocked.ErrorCode)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, asked.Status)
+	require.Equal(t, []string{"ATTT"}, asked.UnknownTerms)
 	stored, err := store.Get(context.Background(), owner, first.RequestID)
 	require.NoError(t, err)
-	require.Equal(t, types.AbbreviationTurnBlockedError, stored.State)
+	require.Equal(t, types.AbbreviationTurnAwaitingDefinition, stored.State)
 	require.Equal(t, 1, selector.calls)
 }
 
@@ -89,7 +91,7 @@ func TestAbbreviationTurnCancelledSelectorPersistsBlockedState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	selector := &turnSelector{cancel: cancel}
 	c := NewAbbreviationTurnCoordinator(store, dict, selector)
-	r, err := c.Prepare(ctx, turnInput(owner, "u1", "a1", "ATTT là gì"))
+	r, err := c.Prepare(ctx, withHistory(turnInput(owner, "u1", "a1", "ATTT là gì")))
 	require.NoError(t, err)
 	require.Equal(t, types.AbbreviationStatusBlockedError, r.Status)
 	require.Equal(t, "selector_unavailable", r.ErrorCode)
@@ -98,7 +100,37 @@ func TestAbbreviationTurnCancelledSelectorPersistsBlockedState(t *testing.T) {
 	require.Equal(t, types.AbbreviationTurnBlockedError, stored.State)
 }
 
-func TestAbbreviationTurnInvalidSelectorIDBlocks(t *testing.T) {
+// withHistory gives the input conversation history, so the meaning
+// selector runs (without any, the user is asked to pick).
+func withHistory(in AbbreviationPrepareInput) AbbreviationPrepareInput {
+	in.RelevantHistory = "user: ATTT là gì"
+	return in
+}
+
+// Without conversation history the meaning is the user's to pick: the
+// selector is not asked to guess.
+func TestAbbreviationTurnNoHistoryAsksTheUser(t *testing.T) {
+	_, store, dict, owner := newTurnCoordinatorFixture(t)
+	dict.active = []*types.Abbreviation{
+		{ID: "a", ShortForm: "ATTT", FullForm: "An toàn thông tin", IsActive: true},
+		{ID: "b", ShortForm: "ATTT", FullForm: "An toàn thực phẩm", IsActive: true},
+	}
+	selector := &turnSelector{ids: map[string]string{"attt": "a"}}
+	c := NewAbbreviationTurnCoordinator(store, dict, selector)
+	r, err := c.Prepare(context.Background(), turnInput(owner, "u1", "a1", "ATTT là gì"))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, r.Status)
+	require.Equal(t, []string{"ATTT"}, r.UnknownTerms)
+	require.Equal(t, 0, selector.calls)
+	stored, err := store.Get(context.Background(), owner, r.RequestID)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationTurnAwaitingDefinition, stored.State)
+}
+
+// A selector that cannot pick (invented IDs) hands the choice to the user:
+// the term waits for a definition with its meanings as the choices, and
+// the picked meaning continues the turn.
+func TestAbbreviationTurnInvalidSelectorIDAsksTheUser(t *testing.T) {
 	_, store, dict, owner := newTurnCoordinatorFixture(t)
 	dict.active = []*types.Abbreviation{
 		{ID: "a", ShortForm: "ATTT", FullForm: "An toàn thông tin", IsActive: true},
@@ -107,9 +139,18 @@ func TestAbbreviationTurnInvalidSelectorIDBlocks(t *testing.T) {
 	c := NewAbbreviationTurnCoordinator(store, dict, &turnSelector{ids: map[string]string{"attt": "invented"}})
 	r, err := c.Prepare(context.Background(), turnInput(owner, "u1", "a1", "ATTT là gì"))
 	require.NoError(t, err)
-	require.Equal(t, types.AbbreviationStatusBlockedError, r.Status)
-	require.Equal(t, "invalid_selection", r.ErrorCode)
-	require.Empty(t, r.EffectiveQuery)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, r.Status)
+	require.Equal(t, []string{"ATTT"}, r.UnknownTerms)
+	require.Len(t, abbreviation.AmbiguousMeanings(r, "ATTT"), 2)
+	stored, err := store.Get(context.Background(), owner, r.RequestID)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationTurnAwaitingDefinition, stored.State)
+	// the user picks "An toàn thực phẩm" (the choice sends "ATTT = …")
+	r2, err := c.Prepare(context.Background(), turnInput(owner, "u2", "a2", "ATTT = An toàn thực phẩm"))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r2.Status)
+	require.Equal(t, "b", r2.Terms[0].SelectedID)
+	require.Contains(t, r2.EffectiveQuery, "An toàn thực phẩm (ATTT)")
 }
 
 func TestAbbreviationTurnDictionaryReadFailureUsesConfirmedMeaning(t *testing.T) {

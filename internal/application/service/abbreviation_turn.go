@@ -76,7 +76,8 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	// meanings come from the dictionary or the user, never the classifier.
 	var detection types.AbbreviationDetection
 	if c.dictionary != nil {
-		detection = c.dictionary.DetectCandidates(ctx, b.RawQuery)
+		// @-mentions (file names such as @bao_cao.docx) are not abbreviations
+		detection = c.dictionary.DetectCandidates(ctx, abbreviation.StripMentions(b.RawQuery))
 	}
 	probe := abbreviation.InspectDetected(b.RawQuery, nil, detection)
 	candidates := make([]string, 0, len(probe.Terms))
@@ -210,6 +211,13 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 func (c *AbbreviationTurnCoordinator) finishReady(ctx context.Context, in AbbreviationPrepareInput, row *types.AbbreviationTurnState) (types.AbbreviationResolution, error) {
 	r := row.Payload.Resolution
 	if r.Status == types.AbbreviationStatusBlockedError && r.ErrorCode == types.AbbreviationErrorSelectionRequired {
+		// nothing in the conversation says which meaning is meant: the
+		// user picks from the choices rather than the model guessing
+		if len(in.RelevantHistory) == 0 {
+			if asked, ok, err := c.askSelection(ctx, in.Binding, row); ok || err != nil {
+				return asked, err
+			}
+		}
 		if c.selector == nil {
 			return c.blockSelector(ctx, in.Binding, row, "selector_unavailable")
 		}
@@ -239,8 +247,29 @@ func (c *AbbreviationTurnCoordinator) finishReady(ctx context.Context, in Abbrev
 	return row.Payload.Resolution, nil
 }
 
+// askSelection hands the choice of meaning to the user: the ambiguous
+// terms wait for a definition with their meanings as the choices in the
+// chat, and the reply "ABC = <meaning>" continues the turn
+// (abbreviation.AskForSelection). ok is false when nothing is ambiguous.
+func (c *AbbreviationTurnCoordinator) askSelection(ctx context.Context, b types.AbbreviationBinding, row *types.AbbreviationTurnState) (types.AbbreviationResolution, bool, error) {
+	asked := abbreviation.AskForSelection(row.Payload.Resolution)
+	if asked.Status != types.AbbreviationStatusNeedsDefinition {
+		return types.AbbreviationResolution{}, false, nil
+	}
+	if err := c.advance(ctx, b.Owner, row, types.AbbreviationTurnAwaitingDefinition, asked); err != nil {
+		return types.AbbreviationResolution{}, true, err
+	}
+	return row.Payload.Resolution, true, nil
+}
+
 func (c *AbbreviationTurnCoordinator) blockSelector(ctx context.Context, b types.AbbreviationBinding, row *types.AbbreviationTurnState, code string) (types.AbbreviationResolution, error) {
 	r := row.Payload.Resolution
+	// the model could not pick a meaning: ask the user instead of failing the turn
+	if ctx.Err() == nil {
+		if asked, ok, err := c.askSelection(ctx, b, row); ok || err != nil {
+			return asked, err
+		}
+	}
 	r.Status = types.AbbreviationStatusBlockedError
 	r.ErrorCode = code
 	r.EffectiveQuery = ""

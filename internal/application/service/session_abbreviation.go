@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -176,11 +177,83 @@ func EmitAbbreviationClarification(ctx context.Context, bus *event.EventBus, req
 	return emitAbbreviationTerminal(ctx, bus, req, r)
 }
 
+// AbbreviationChoiceType is the display_type of the choice list shown
+// when an abbreviation has several dictionary meanings: the user clicks
+// one and the reply "ABC = <meaning>" continues the turn.
+const AbbreviationChoiceType = "abbreviation_choice"
+
+// abbreviationChoice builds the question and the choice payload for the
+// unknown terms; choices only for terms with several active meanings.
+func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer string, data map[string]interface{}) {
+	var plain []string
+	var b strings.Builder
+	for _, u := range r.UnknownTerms {
+		meanings := abbreviation.AmbiguousMeanings(r, u)
+		if len(meanings) == 0 {
+			plain = append(plain, u)
+			continue
+		}
+		if english {
+			fmt.Fprintf(&b, "“%s”: which meaning do you mean?\n", u)
+		} else {
+			fmt.Fprintf(&b, "“%s” bạn đang nói đến nghĩa nào?\n", u)
+		}
+		options := make([]map[string]interface{}, 0, len(meanings))
+		for i, m := range meanings {
+			fmt.Fprintf(&b, "%d. %s", i+1, m.FullForm)
+			if d := strings.TrimSpace(m.Description); d != "" {
+				b.WriteString(" — " + d)
+			}
+			b.WriteString("\n")
+			options = append(options, map[string]interface{}{
+				"label": m.FullForm, "detail": m.Description, "resend": u + " = " + m.FullForm,
+			})
+		}
+		if data == nil {
+			data = map[string]interface{}{"display_type": AbbreviationChoiceType, "subject": u, "options": options}
+		}
+	}
+	if b.Len() > 0 {
+		if english {
+			b.WriteString("Pick one above, or reply \"ABC = full meaning\".")
+		} else {
+			b.WriteString("Chọn một nghĩa ở trên, hoặc trả lời theo dạng: ABC = nghĩa đầy đủ.")
+		}
+	}
+	if len(plain) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		if english {
+			b.WriteString("Please provide the full meaning of " + strings.Join(plain, ", ") + ". Example format: ABC = Corresponding full name.")
+		} else {
+			b.WriteString("Vui lòng cho biết nghĩa đầy đủ của " + strings.Join(plain, ", ") + ". Ví dụ định dạng: ABC = Tên đầy đủ tương ứng.")
+		}
+	}
+	return b.String(), data
+}
+
 func emitAbbreviationTerminal(ctx context.Context, bus *event.EventBus, req *types.QARequest, r types.AbbreviationResolution) error {
 	english := types.LanguageNameFromContext(ctx) == "English"
-	answer := "Vui lòng cho biết nghĩa đầy đủ của " + strings.Join(r.UnknownTerms, ", ") + ". Ví dụ định dạng: ABC = Tên đầy đủ tương ứng."
-	if english {
-		answer = "Please provide the full meaning of " + strings.Join(r.UnknownTerms, ", ") + ". Example format: ABC = Corresponding full name."
+	answer, choice := abbreviationChoice(r, english)
+	if answer == "" {
+		answer = "Vui lòng cho biết nghĩa đầy đủ của " + strings.Join(r.UnknownTerms, ", ") + ". Ví dụ định dạng: ABC = Tên đầy đủ tương ứng."
+		if english {
+			answer = "Please provide the full meaning of " + strings.Join(r.UnknownTerms, ", ") + ". Example format: ABC = Corresponding full name."
+		}
+	}
+	var steps []types.AgentStep
+	if choice != nil && r.Status == types.AbbreviationStatusNeedsDefinition {
+		callID := types.PipelineToolCallIDPrefix + "abbrchoice-" + req.AssistantMessageID
+		if err := bus.Emit(ctx, event.Event{Type: event.EventAgentToolResult, SessionID: req.Session.ID,
+			Data: event.AgentToolResultData{ToolCallID: callID, ToolName: AbbreviationChoiceType,
+				Output: answer, Success: true, Data: choice}}); err != nil {
+			return err
+		}
+		steps = []types.AgentStep{{Timestamp: time.Now(), ToolCalls: []types.ToolCall{{
+			ID: callID, Name: AbbreviationChoiceType, Args: map[string]interface{}{},
+			Result: &types.ToolResult{Success: true, Output: answer, Data: choice},
+		}}}}
 	}
 	if r.Status == types.AbbreviationStatusBlockedError {
 		answer = "Không thể phân giải từ viết tắt lúc này. Vui lòng thử lại hoặc chia nhỏ câu hỏi."
@@ -198,7 +271,8 @@ func emitAbbreviationTerminal(ctx context.Context, bus *event.EventBus, req *typ
 	}
 	return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, SessionID: req.Session.ID,
 		RequestID: r.RequestID, Data: event.AgentCompleteData{SessionID: req.Session.ID,
-			MessageID: req.AssistantMessageID, RequestID: r.RequestID, FinalAnswer: answer}})
+			MessageID: req.AssistantMessageID, RequestID: r.RequestID, FinalAnswer: answer,
+			AgentSteps: steps, TotalSteps: len(steps)}})
 }
 
 func (s *sessionService) claimAbbreviationExecution(ctx context.Context, req *types.QARequest) error {

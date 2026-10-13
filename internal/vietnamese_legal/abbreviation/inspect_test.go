@@ -98,6 +98,19 @@ func TestInspectDuplicateActiveRows(t *testing.T) {
 	if len(r2.Terms[0].Meanings) != 2 {
 		t.Fatalf("distinct IDs must both survive: %+v", r2.Terms[0].Meanings)
 	}
+	// the chat gate asks instead: the term joins the unknowns with its
+	// meanings as choices, and the picked meaning is selected
+	asked := AskForSelection(r2)
+	if asked.Status != "needs_definition" || len(asked.UnknownTerms) != 1 || asked.UnknownTerms[0] != "ATTT" {
+		t.Fatalf("asked = %q/%v", asked.Status, asked.UnknownTerms)
+	}
+	if len(AmbiguousMeanings(asked, "ATTT")) != 2 {
+		t.Fatalf("meanings must be offered as choices")
+	}
+	picked, err := ApplyDefinitions(asked, []types.AbbreviationDefinition{{ShortForm: "ATTT", FullForm: "An toàn thực phẩm", SourceMessageID: "m", Start: 0, End: len("An toàn thực phẩm")}})
+	if err != nil || picked.Status != "ready" || picked.Terms[0].SelectedID != "m-1" || picked.Terms[0].Source != types.AbbreviationSourceDictionaryActive {
+		t.Fatalf("picked = %+v err=%v", picked.Terms[0], err)
+	}
 	if len(r2.UnknownTerms) != 0 {
 		t.Fatalf("ambiguous term must not leak into unknown: %v", r2.UnknownTerms)
 	}

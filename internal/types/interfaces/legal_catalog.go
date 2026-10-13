@@ -18,6 +18,9 @@ type LegalCatalogRepository interface {
 	// when none does — starts with key + "/" (a number typed without its
 	// suffix, e.g. "30/2020"). Newest first.
 	FindByNumberKey(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
+	// FindByNumberPrefix returns documents whose number key starts with
+	// key + "/" (every year and suffix of a bare number). Newest first.
+	FindByNumberPrefix(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
 	// SearchByTitle returns documents whose title contains every word.
 	// Newest first.
 	SearchByTitle(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error)
@@ -96,14 +99,19 @@ type LegalCatalogService interface {
 	// includeExpired (history walks always keep them).
 	Related(ctx context.Context, documentNumber, title string, mode types.LegalRelatedMode,
 		depth int, includeExpired bool) ([]*types.LegalRelatedReport, error)
-	// ExpandRelated returns the documents guiding (two hops) or amending
-	// (one hop) the catalogue documents of the given knowledge, those with
-	// an approved legal link, in the order of knowledgeIDs. Expired
-	// documents are included: the caller decides what to show of them.
+	// ExpandRelated returns the documents replacing (two hops), guiding (two
+	// hops) or amending (one hop) the catalogue documents of the given
+	// knowledge, those with an approved legal link, in the order of
+	// knowledgeIDs. Expired documents are included: the caller decides what
+	// to show of them.
 	ExpandRelated(ctx context.Context, knowledgeIDs []string) ([]types.LegalExpansion, error)
 	// KBGraph returns the relation graph of a KB's catalogued documents
 	// (approved legal links) and their direct neighbours, at most limit nodes.
 	KBGraph(ctx context.Context, kbID string, limit int) (*types.GraphView, error)
+	// Candidates lists the documents a bare number fits ("53": every
+	// 53/…), newest first, of the given doc type when docType is set: the
+	// newest limit of them and how many there are in all.
+	Candidates(ctx context.Context, documentNumber, docType string, limit int) ([]*types.LegalDocument, int, error)
 }
 
 // LegalReviewService drives the SuperAdmin review of legal identities.

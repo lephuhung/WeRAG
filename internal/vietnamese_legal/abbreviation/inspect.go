@@ -2,6 +2,7 @@ package abbreviation
 
 import (
 	"fmt"
+	"golang.org/x/text/unicode/norm"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -127,6 +128,49 @@ func InspectDetected(text string, active []*types.Abbreviation, det types.Abbrev
 	return r
 }
 
+// AskForSelection turns a resolution blocked on selection_required (a
+// term with several active meanings and none chosen) into one that asks
+// the user: the ambiguous terms join UnknownTerms, so the chat gate shows
+// the meanings as choices and the reply "ABC = <meaning>" continues the
+// turn (ApplyDefinitions selects the matching meaning). Other resolutions
+// are returned unchanged.
+func AskForSelection(r types.AbbreviationResolution) types.AbbreviationResolution {
+	if r.Status != types.AbbreviationStatusBlockedError || r.ErrorCode != types.AbbreviationErrorSelectionRequired {
+		return r
+	}
+	out := cloneResolution(r)
+	for i := range out.Terms {
+		t := &out.Terms[i]
+		if t.Source != "" || len(t.Meanings) < 2 {
+			continue
+		}
+		dup := false
+		for _, u := range out.UnknownTerms {
+			if termKey(u) == t.Key {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out.UnknownTerms = append(out.UnknownTerms, t.ShortForm)
+		}
+	}
+	finalizeResolution(&out)
+	return out
+}
+
+// AmbiguousMeanings lists the active meanings of an unknown term, for the
+// chat gate to offer as choices; nil when the term has none.
+func AmbiguousMeanings(r types.AbbreviationResolution, short string) []types.AbbreviationMeaning {
+	key := termKey(short)
+	for i := range r.Terms {
+		if r.Terms[i].Key == key && r.Terms[i].Source == "" && len(r.Terms[i].Meanings) > 1 {
+			return r.Terms[i].Meanings
+		}
+	}
+	return nil
+}
+
 // ApplyDefinitions resolves terms from explicit user-supplied definitions.
 // Validation is all-or-nothing: any failure returns the input unchanged.
 //
@@ -169,11 +213,20 @@ func ApplyDefinitions(r types.AbbreviationResolution, defs []types.AbbreviationD
 		if term.Source == types.AbbreviationSourceUserCurrent {
 			return r, types.ErrAbbreviationConflict
 		}
-		stored := *def
-		term.Definition = &stored
-		term.SelectedID = ""
-		term.FullForm = def.FullForm
-		term.Source = types.AbbreviationSourceUserCurrent
+		// a definition that names one of the dictionary meanings (the
+		// user picked it from the choices) selects that meaning
+		if m := meaningByFullForm(term.Meanings, def.FullForm); m != nil {
+			term.Definition = nil
+			term.SelectedID = m.ID
+			term.FullForm = m.FullForm
+			term.Source = types.AbbreviationSourceDictionaryActive
+		} else {
+			stored := *def
+			term.Definition = &stored
+			term.SelectedID = ""
+			term.FullForm = def.FullForm
+			term.Source = types.AbbreviationSourceUserCurrent
+		}
 		// The sourced key leaves the unknown list; unknowns only ever name
 		// terms that still lack any source.
 		kept := out.UnknownTerms[:0]
@@ -325,6 +378,21 @@ func overBudget(r types.AbbreviationResolution) bool {
 }
 
 // termKey normalizes a short form for grouping and lookup.
+// meaningByFullForm finds the meaning whose full form equals s (case and
+// whitespace folded), nil when none.
+func meaningByFullForm(meanings []types.AbbreviationMeaning, s string) *types.AbbreviationMeaning {
+	want := strings.ToLower(strings.Join(strings.Fields(norm.NFC.String(s)), " "))
+	if want == "" {
+		return nil
+	}
+	for i := range meanings {
+		if strings.ToLower(strings.Join(strings.Fields(norm.NFC.String(meanings[i].FullForm)), " ")) == want {
+			return &meanings[i]
+		}
+	}
+	return nil
+}
+
 func termKey(short string) string {
 	return strings.ToLower(strings.TrimSpace(short))
 }

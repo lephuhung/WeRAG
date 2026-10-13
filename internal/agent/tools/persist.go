@@ -325,6 +325,9 @@ func compactToolSummary(success bool, errMsg string, data map[string]interface{}
 		if chunks > 0 {
 			return fmt.Sprintf("Keyword search found %d matching chunks across %d document(s) (details omitted from history)", chunks, docs)
 		}
+	case LegalCandidatesType:
+		return fmt.Sprintf("Showed the legal-document choice card: %q fits %d documents; the user picks one on the card (nothing to answer yet)",
+			stringField(data, "reference"), intField(data, "total"))
 	case "search_results":
 		count := intField(data, "result_count")
 		if count == 0 {
