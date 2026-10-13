@@ -189,7 +189,16 @@ const (
 	legalExpandMaxAnchors = 3
 	// legalExpandGuidanceDepth: Luật ← Nghị định ← Thông tư.
 	legalExpandGuidanceDepth = 2
+	// legalExpandSuccessorDepth: the replacing document, and its own.
+	legalExpandSuccessorDepth = 2
 )
+
+// legalSuccessorSteps walks to the documents that replace or end a hit —
+// the newer law a reader of the old one needs. Repeals are left out: a
+// repealing document does not carry the replacement rules.
+var legalSuccessorSteps = []legalWalkStep{{[]types.LegalRelation{
+	types.LegalRelationReplaces, types.LegalRelationExpires, types.LegalRelationPartiallyExpires,
+}, true}}
 
 func (s *legalCatalogService) ExpandRelated(
 	ctx context.Context, knowledgeIDs []string,
@@ -236,14 +245,18 @@ func (s *legalCatalogService) ExpandRelated(
 		if anchor == nil {
 			continue
 		}
+		// Successors first: when the hit is an old law, its replacement
+		// matters more than the old law's guidance.
 		for _, w := range []struct {
 			mode  types.LegalRelatedMode
+			steps []legalWalkStep
 			depth int
 		}{
-			{types.LegalRelatedGuidance, legalExpandGuidanceDepth},
-			{types.LegalRelatedAmendments, 1},
+			{types.LegalRelatedHistory, legalSuccessorSteps, legalExpandSuccessorDepth},
+			{types.LegalRelatedGuidance, legalRelatedWalks[types.LegalRelatedGuidance].steps, legalExpandGuidanceDepth},
+			{types.LegalRelatedAmendments, legalRelatedWalks[types.LegalRelatedAmendments].steps, 1},
 		} {
-			rep, err := s.walk(ctx, anchor, w.mode, legalRelatedWalks[w.mode].steps, w.depth, true)
+			rep, err := s.walk(ctx, anchor, w.mode, w.steps, w.depth, true)
 			if err != nil {
 				return nil, err
 			}

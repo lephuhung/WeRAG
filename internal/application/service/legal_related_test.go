@@ -128,6 +128,17 @@ func TestLegalCatalogRelated(t *testing.T) {
 	require.Contains(t, got, "nd-old")
 	require.Equal(t, types.LegalRelationAmends, got["amend"].Relation)
 
+	// A hit on the old law reaches the law replacing it.
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k-law-old", KnowledgeBaseID: "kb", Title: "law-old.html"}).Error)
+	require.NoError(t, db.Create(&types.LegalDocumentLink{KnowledgeID: "k-law-old", KnowledgeBaseID: "kb",
+		LegalDocumentID: "law-old", ReviewStatus: types.LegalReviewApproved}).Error)
+	exps, err = svc.ExpandRelated(ctx, []string{"k-law-old"})
+	require.NoError(t, err)
+	require.NotEmpty(t, exps)
+	require.Equal(t, "law", exps[0].Related.Document.ID, "the successor comes first")
+	require.Equal(t, types.LegalRelationReplaces, exps[0].Related.Relation)
+	require.True(t, exps[0].Related.Incoming)
+
 	exps, err = svc.ExpandRelated(ctx, []string{"k-unlinked"})
 	require.NoError(t, err)
 	require.Empty(t, exps, "only hits with an approved legal link are expanded")

@@ -152,16 +152,6 @@ func TestSearchKnowledgeRejectsMissingQueryAndBadMode(t *testing.T) {
 	}
 }
 
-func TestSearchKnowledgeRejectsOutOfScopeKnowledgeBase(t *testing.T) {
-	tool := NewSearchKnowledgeTool(nil, nil, nil, types.SearchTargets{{
-		Type: types.SearchTargetTypeKnowledgeBase, KnowledgeBaseID: "kb-1", TenantID: 1,
-	}}, nil, nil)
-	res, err := tool.Execute(context.Background(), json.RawMessage(`{"query":"x","knowledge_base_ids":["kb-9"]}`))
-	if err == nil || res.Success {
-		t.Fatalf("out-of-scope KB must be rejected: res=%+v err=%v", res, err)
-	}
-}
-
 func TestRetrievalParamsFallBackAndNeverUndercutLimit(t *testing.T) {
 	tool := &SearchKnowledgeTool{config: &config.Config{Conversation: &config.ConversationConfig{EmbeddingTopK: 5}}}
 	topK, v, k := tool.retrievalParams(12)

@@ -40,8 +40,8 @@ var searchKnowledgeTool = BaseTool{
 		"In hybrid and semantic mode write query as one complete natural-language question or statement that " +
 		"names the subject and what you want to know (\"Why does Echo use open-weight models to cut cost?\"), " +
 		"not a keyword list (\"Echo open-weight cost\"): results are ranked by a relevance model that scores " +
-		"meaning. In keyword mode write the exact terms. Pass knowledge_base_ids to focus on the bases whose " +
-		"profile fits the question. When nothing passes the relevance check, rephrase with terms the documents " +
+		"meaning. In keyword mode write the exact terms. Every bound knowledge base is searched in one call. " +
+		"When nothing passes the relevance check, rephrase with terms the documents " +
 		"would use; repeating the same query in another mode usually does not help. For identifiers, error " +
 		"codes or exact names retry with mode=keyword.\n" +
 		"Every chunk carries a cN handle and belongs to a dN document. Use read_document(id=dN) to read the " +
@@ -59,12 +59,6 @@ var searchKnowledgeTool = BaseTool{
       "type": "string",
       "enum": ["hybrid", "semantic", "keyword"],
       "description": "Retrieval mode (default hybrid)"
-    },
-    "knowledge_base_ids": {
-      "type": "array",
-      "description": "Optional bN knowledge-base handles from the runtime context to restrict the search",
-      "items": { "type": "string" },
-      "maxItems": 10
     },
     "limit": {
       "type": "integer",
@@ -88,10 +82,9 @@ var searchKnowledgeTool = BaseTool{
 
 // SearchKnowledgeInput defines the input parameters for search_knowledge.
 type SearchKnowledgeInput struct {
-	Query            string   `json:"query"`
-	Mode             string   `json:"mode,omitempty"`
-	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
-	Limit            int      `json:"limit,omitempty"`
+	Query string `json:"query"`
+	Mode  string `json:"mode,omitempty"`
+	Limit int    `json:"limit,omitempty"`
 	// AbbreviationMeaningIDs and LiteralAbbreviations steer standalone
 	// resolution only; inside a sealed QA turn the validated mapping always
 	// wins and these fields are ignored.
@@ -210,24 +203,10 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 	query = resolved
 
-	// Optional KB filter: reject hallucinated or out-of-scope handles.
+	// The whole scope, always: the model guessing a base from its profile
+	// missed the newer law held by another one. The bases share one query
+	// per index, so the extra bases cost little.
 	searchTargets := t.searchTargets
-	if len(input.KnowledgeBaseIDs) > 0 {
-		if err := validateKnowledgeBaseIDsInSearchTargets(t.searchTargets, input.KnowledgeBaseIDs); err != nil {
-			return &types.ToolResult{Success: false, Error: err.Error()}, err
-		}
-		wanted := make(map[string]bool, len(input.KnowledgeBaseIDs))
-		for _, kbID := range input.KnowledgeBaseIDs {
-			wanted[kbID] = true
-		}
-		var filtered types.SearchTargets
-		for _, target := range t.searchTargets {
-			if target != nil && wanted[target.KnowledgeBaseID] {
-				filtered = append(filtered, target)
-			}
-		}
-		searchTargets = filtered
-	}
 	if len(searchTargets) == 0 {
 		return &types.ToolResult{
 			Success: false,

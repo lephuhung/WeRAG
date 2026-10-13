@@ -28,9 +28,10 @@ func (t *SearchKnowledgeTool) WithLegalCatalog(svc interfaces.LegalCatalogServic
 }
 
 // expandLegalRelations follows the legal catalogue from the hits on
-// catalogued documents to the documents guiding (two hops) or amending them.
-// A related document in force, held by a KB the search covers whole, is
-// searched with the same query and its best chunk is added after the hits.
+// catalogued documents to the documents replacing, guiding (two hops) or
+// amending them. A related document in force, held by a KB the search covers
+// whole, is searched with the same query and its best chunk is added after
+// the hits.
 // The others — expired, not held, or outside the search scope — are only
 // named in the returned note: their content is not current law here.
 func (t *SearchKnowledgeTool) expandLegalRelations(
