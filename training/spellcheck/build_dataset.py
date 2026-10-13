@@ -26,8 +26,51 @@ from pathlib import Path
 
 import yaml
 
-from noiser import inject, set_vocab
+from noiser import PROTECTED_WORDS, inject, set_op_weights, set_vocab
 from vi_text import split_sentences, syllable_count, vietnamese_ratio
+
+# Full form → short forms used in chat queries. The short form replaces the
+# phrase in some query samples and is never flagged, so the model learns that
+# an abbreviation is not a typo.
+ABBREVIATIONS = {
+    "ủy ban nhân dân": ["UBND", "ubnd"],
+    "hội đồng nhân dân": ["HĐND", "hđnd"],
+    "thủ tục hành chính": ["TTHC", "tthc"],
+    "bảo hiểm xã hội": ["BHXH", "bhxh"],
+    "bảo hiểm y tế": ["BHYT", "bhyt"],
+    "căn cước công dân": ["CCCD", "cccd"],
+    "giấy phép lái xe": ["GPLX", "gplx"],
+    "công nghệ thông tin": ["CNTT", "cntt"],
+    "an toàn thông tin": ["ATTT", "attt"],
+    "văn bản quy phạm pháp luật": ["VBQPPL", "vbqppl"],
+    "bí mật nhà nước": ["BMNN", "bmnn"],
+    "nghiên cứu khoa học": ["NCKH", "nckh"],
+    "kinh tế xã hội": ["KTXH", "ktxh"],
+    "kinh tế - xã hội": ["KTXH", "ktxh"],
+    "cán bộ công chức": ["CBCC", "cbcc"],
+    "cán bộ, công chức": ["CBCC", "cbcc"],
+    "tài nguyên và môi trường": ["TNMT", "tnmt"],
+    "giáo dục và đào tạo": ["GDĐT", "gdđt", "GD&ĐT"],
+    "nghị định": ["NĐ", "nđ"],
+    "thông tư": ["TT", "tt"],
+    "quyết định": ["QĐ", "qđ"],
+    "cơ sở dữ liệu": ["CSDL", "csdl"],
+    "phòng cháy chữa cháy": ["PCCC", "pccc"],
+    "chính phủ": ["CP"],
+    "thành phố": ["TP", "tp"],
+}
+
+
+def abbreviate_query(q: str, rng: random.Random) -> str:
+    """Replace one or two full forms with a short form (both cases)."""
+    low = q.lower()
+    hits = [(full, shorts) for full, shorts in ABBREVIATIONS.items() if full in low]
+    rng.shuffle(hits)
+    for full, shorts in hits[:2]:
+        i = low.find(full)
+        q = q[:i] + rng.choice(shorts) + q[i + len(full) :]
+        low = q.lower()
+    return q
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPT_YAML = ROOT / "config" / "prompt_templates" / "spellcheck_review.yaml"
@@ -64,6 +107,9 @@ class Pools:
         self.kb_pairs: list[dict] = []
         self.pairs: list[dict] = []
         self.clean: list[str] = []
+        self.queries: list[str] = []
+        for p in a.queries or []:
+            self.queries.extend(r["text"] for r in read_jsonl(p) if r.get("text"))
         if a.kb:
             rows = read_jsonl(a.kb)
             if a.kb_holdout:
@@ -83,7 +129,7 @@ class Pools:
             for r in read_jsonl(p):
                 self.clean.append(r["text"])
         print(
-            f"pools: kb_clean={len(self.kb_clean)} kb_pairs={len(self.kb_pairs)} pairs={len(self.pairs)} clean={len(self.clean)}",
+            f"pools: kb_clean={len(self.kb_clean)} kb_pairs={len(self.kb_pairs)} pairs={len(self.pairs)} clean={len(self.clean)} queries={len(self.queries)}",
             file=sys.stderr,
         )
 
@@ -110,7 +156,35 @@ class Pools:
         return noisy, findings
 
 
+def build_query_sample(pools: Pools, a, rng: random.Random, system: str) -> dict:
+    """A batch of 1..6 short chat questions; errors are keyboard-heavy, some
+    questions carry abbreviations (never flagged), some batches are clean."""
+    n = rng.choices([1, 2, 3, 4, 5, 6], weights=[25, 20, 20, 15, 10, 10])[0]
+    start = rng.randint(0, 400)
+    all_clean = rng.random() < a.clean_batch_rate
+    lines, findings = [], []
+    for k in range(n):
+        q = rng.choice(pools.queries)
+        if rng.random() < a.query_abbr_rate:
+            q = abbreviate_query(q, rng)
+        want_clean = all_clean or rng.random() < a.clean_slot_rate
+        fs: list[dict] = []
+        if not want_clean:
+            noisy, fs = inject(q, rng, n_errors=rng.choices([1, 1, 2], weights=[70, 0, 30])[0])
+            if fs:
+                q = noisy
+        idx = start + k
+        lines.append(f"[{idx}] {q}")
+        for f in fs:
+            findings.append({"paragraph": idx, "wrong": f["wrong"], "correct": f["correct"], "reason": f.get("reason", "lỗi chính tả")})
+    user = "Đoạn cần kiểm tra:\n" + "\n".join(lines) + "\n"
+    answer = json.dumps({"findings": findings}, ensure_ascii=False, separators=(",", ":"))
+    return {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}, {"role": "assistant", "content": answer}]}
+
+
 def build_sample(pools: Pools, a, rng: random.Random, system: str) -> dict:
+    if pools.queries and rng.random() < a.query_rate:
+        return build_query_sample(pools, a, rng, system)
     n = rng.choices([rng.randint(2, 6), rng.randint(7, 12), rng.randint(13, 25)], weights=[30, 45, 25])[0]
     start = rng.randint(0, 400)
     all_clean = rng.random() < a.clean_batch_rate
@@ -156,6 +230,12 @@ def main() -> int:
     ap.add_argument("--kb-holdout", type=int, default=200, help="last N unchanged and N/2 changed KB rows are reserved for eval")
     ap.add_argument("--pairs", action="append")
     ap.add_argument("--clean", action="append")
+    ap.add_argument("--queries", action="append", help="JSONL of short chat questions (\"text\")")
+    ap.add_argument("--query-rate", type=float, default=0.0, help="share of samples that are query batches")
+    ap.add_argument("--query-abbr-rate", type=float, default=0.35, help="share of query lines that get an abbreviation substituted")
+    ap.add_argument("--telex-weight", type=float, help="noiser weight for telex_vni (default 3)")
+    ap.add_argument("--typo-weight", type=float, help="noiser weight for typo (default 12)")
+    ap.add_argument("--protect-words", help="file with one lower-case word per line the noiser must not corrupt")
     ap.add_argument("--clean-parquet", action="append", default=[], help="path:column, clean sentences to group into paragraphs")
     ap.add_argument("--clean-parquet-limit", type=int, default=60000)
     ap.add_argument("--n", type=int, default=20000)
@@ -168,6 +248,17 @@ def main() -> int:
     a = ap.parse_args()
     rng = random.Random(a.seed)
     system = load_system_prompt()
+    overrides = {}
+    if a.telex_weight is not None:
+        overrides["telex_vni"] = a.telex_weight
+    if a.typo_weight is not None:
+        overrides["typo"] = a.typo_weight
+    if overrides:
+        set_op_weights(**overrides)
+    for shorts in ABBREVIATIONS.values():
+        PROTECTED_WORDS.update(x.lower() for x in shorts)
+    if a.protect_words:
+        PROTECTED_WORDS.update(w.strip().lower() for w in open(a.protect_words, encoding="utf-8") if w.strip())
     pools = Pools(a, rng)
     for spec in a.clean_parquet:
         path, col = spec.rsplit(":", 1)

@@ -45,6 +45,18 @@ OPS = [
 ]
 _OP_NAMES = [o[0] for o in OPS]
 _OP_WEIGHTS = [o[1] for o in OPS]
+
+# Words the noiser must never corrupt even though they look like syllables
+# (lower-case abbreviations such as ubnd, hđnd in chat queries).
+PROTECTED_WORDS: set[str] = set()
+
+
+def set_op_weights(**overrides: float) -> None:
+    """Override operation weights by name, e.g. set_op_weights(telex_vni=30, typo=25)."""
+    for name, w in overrides.items():
+        if name not in _OP_NAMES:
+            raise KeyError(name)
+        _OP_WEIGHTS[_OP_NAMES.index(name)] = w
 REASON = {o[0]: o[2] for o in OPS}
 
 # Known syllables (lowercase). When set, syllable-level corruptions prefer
@@ -154,16 +166,77 @@ def _typo(core: str, rng: random.Random) -> str | None:
     return "".join(chars)
 
 
+MOD_KEYS_TELEX = {"\u0302": {"a": "a", "e": "e", "o": "o"}, "\u0306": {"a": "w"}, "\u031b": {"o": "w", "u": "w"}}
+MOD_KEYS_VNI = {"\u0302": "6", "\u0306": "8", "\u031b": "7"}
+
+
+def raw_keystrokes(core: str, vni: bool, rng: random.Random) -> str | None:
+    """The syllable as typed with the input method off: mootj / cacs / la6p5 /
+    ddang. Tone key goes at the end (common) or right after the vowel."""
+    d = nfd(core)
+    out, tone, has_mark = [], "", False
+    for ch in d:
+        if ch in TONES:
+            tone = ch
+            has_mark = True
+        elif ch in MODIFIERS:
+            has_mark = True
+            base = out[-1].lower() if out else ""
+            if vni:
+                out.append(MOD_KEYS_VNI[ch])
+            else:
+                out.append(MOD_KEYS_TELEX[ch].get(base, "w"))
+        elif ch in "đĐ":
+            has_mark = True
+            out.append("dd" if ch == "đ" else "DD")
+        else:
+            out.append(ch)
+    if not has_mark:
+        return None
+    s = "".join(out)
+    if tone:
+        key = (VNI if vni else TELEX)[tone]
+        if not vni and rng.random() < 0.3:
+            # tone key typed straight after the vowel: casc, nhaanj
+            m = re.search(r"[aeiouyAEIOUY][aeiouywAEIOUYW]*", s)
+            if m:
+                s = s[: m.end()] + key + s[m.end() :]
+            else:
+                s += key
+        else:
+            s += key
+    return s
+
+
 def _telex_vni(core: str, rng: random.Random) -> str | None:
     d = nfd(core)
     marks = [i for i, ch in enumerate(d) if ch in TONES]
-    if not marks:
+    vni = rng.random() < 0.35
+    kind = rng.choices(["tone_key", "raw", "raw_extra", "mod_only"], weights=[30, 40, 15, 15])[0]
+    if kind == "tone_key":
+        if not marks:
+            return None
+        table = VNI if vni else TELEX
+        i = marks[0]
+        rest = d[:i] + d[i + 1 :]
+        # the mark key is typed at the end of the syllable
+        return nfc(rest) + table[d[i]]
+    raw = raw_keystrokes(core, vni, rng)
+    if not raw:
         return None
-    table = TELEX if rng.random() < 0.6 else VNI
-    i = marks[0]
-    rest = d[:i] + d[i + 1 :]
-    # the mark key is typed at the end of the syllable
-    return nfc(rest) + table[d[i]]
+    if kind == "raw_extra":
+        # a key pressed twice or an extra key after the tone: cascc, cacss
+        j = rng.randrange(max(1, len(raw) - 2), len(raw))
+        return raw[: j + 1] + raw[j] + raw[j + 1 :]
+    if kind == "mod_only":
+        # modifiers typed raw but the tone applied: vieen → viên with tone kept
+        if not marks:
+            return raw
+        tone = d[marks[0]]
+        stripped = nfc("".join(ch for ch in d if ch not in TONES))
+        r = raw_keystrokes(stripped, vni, rng)
+        return r if r and r != core else raw
+    return raw
 
 
 def _swap_affix(core: str, pairs, rng: random.Random, at_end: bool) -> str | None:
@@ -233,7 +306,10 @@ def inject(paragraph: str, rng: random.Random, n_errors: int | None = None, max_
     if n_errors is None:
         n_errors = rng.choices([1, 2, 3], weights=[62, 28, 10])[0]
     n_errors = min(n_errors, max_errors)
-    candidates = [i for i, t in enumerate(tokens) if not protected_token(split_token(t)[1], i in starts)]
+    candidates = [
+        i for i, t in enumerate(tokens)
+        if not protected_token(split_token(t)[1], i in starts) and split_token(t)[1].lower() not in PROTECTED_WORDS
+    ]
     rng.shuffle(candidates)
     # Pick the error positions first, then apply them from the end of the
     # paragraph backwards so inserts/merges never shift a pending index.
