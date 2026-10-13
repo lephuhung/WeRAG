@@ -789,6 +789,8 @@ func TestWikiTSQuery(t *testing.T) {
 		{"xử phạt giao thông", "&", "'xử' & 'phạt' & 'giao' & 'thông'"},
 		{"xử phạt giao thông", "|", "'xử' | 'phạt' | 'giao' | 'thông'"},
 		{"Nghị định 168/2024", "&", "'nghị' & 'định' & '168/2024':*"},
+		{"Nghị định 168", "&", "'nghị' & 'định' & '168':*"},
+		{"điều 5", "&", "'điều' & '5'"},
 		{"84/2025/QH15", "&", "'84/2025/qh15':*"},
 		{"  thuế, phí và lệ phí? ", "&", "'thuế' & 'phí' & 'và' & 'lệ' & 'phí'"},
 		{"a 'b' (c)", "&", "'a' & 'b' & 'c'"},

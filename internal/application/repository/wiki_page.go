@@ -1368,7 +1368,17 @@ func (r *wikiPageRepository) Search(ctx context.Context, kbID string, query stri
 		}
 		var rows []*types.WikiPage
 		err := r.db.WithContext(ctx).
-			Select("*, ts_rank_cd(search_tsv, to_tsquery('simple', immutable_unaccent(?))) AS match_rank", tsq).
+			// Rank = title match divided by title length (flag 2: a short
+			// title the query covers fully, e.g. "Luật Giáo dục" or "Cơ quan
+			// ban hành: Bộ Công an", beats a long title that merely contains
+			// the words) plus body match normalised by length (flag 1). Only
+			// the body part is demoted
+			// for index pages: a huge "Lĩnh vực: Chưa phân loại" page that
+			// merely lists every word must not outrank the document the
+			// words describe, yet "Cơ quan ban hành: Bộ Công an" still wins
+			// a query for "Bộ Công an" through its title.
+			Select("*, 10.0 * ts_rank(to_tsvector('simple', immutable_unaccent(coalesce(title, ''))), to_tsquery('simple', immutable_unaccent(?)), 2)"+
+				" + (CASE WHEN page_type = 'index' THEN 0.2 ELSE 1.0 END) * ts_rank_cd(search_tsv, to_tsquery('simple', immutable_unaccent(?)), 1) AS match_rank", tsq, tsq).
 			Where("knowledge_base_id = ? AND status <> ? AND search_tsv @@ to_tsquery('simple', immutable_unaccent(?))",
 				kbID, types.WikiPageStatusArchived, tsq).
 			Order("match_rank DESC, updated_at DESC").
@@ -1427,10 +1437,22 @@ func (r *wikiPageRepository) searchSubstring(ctx context.Context, kbID string, q
 	return pages, nil
 }
 
+func isDigits(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // wikiTSQuery turns free text into a to_tsquery('simple') expression whose
 // words are joined with op ("&" or "|"). Each word becomes a quoted lexeme;
-// words that look like a document number ("168/2024", "84/2025/QH15") get a
-// prefix match so a partial number still finds "168/2024/NĐ-CP". Diacritics
+// words that look like a document number ("168", "168/2024", "84/2025/QH15")
+// get a prefix match so a partial number still finds "168/2024/NĐ-CP". Diacritics
 // are folded by immutable_unaccent on the database side, matching the
 // stored vector. Returns "" when no usable word remains.
 func wikiTSQuery(query, op string) string {
@@ -1444,7 +1466,9 @@ func wikiTSQuery(query, op string) string {
 			continue
 		}
 		term := "'" + w + "'"
-		if strings.Contains(w, "/") {
+		if strings.Contains(w, "/") || isDigits(w) {
+			// Document numbers are single lexemes ("168/2024/nd-cp"), so a
+			// partial number must match as a prefix.
 			term += ":*"
 		}
 		terms = append(terms, term)
