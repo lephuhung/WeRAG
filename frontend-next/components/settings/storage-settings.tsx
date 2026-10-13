@@ -13,6 +13,7 @@ import { IconDoc, IconPlus, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
+import { Modal } from "@/components/modal";
 
 export function StorageSettings() {
   const { t } = useT();
@@ -203,115 +204,110 @@ export function StorageSettings() {
       )}
 
       {/* Add Storage Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-[500px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-4">{t("stor.addTitle")}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("stor.name")}</label>
-                <input
-                  required
-                  className="input h-9 w-full text-[13px]"
-                  placeholder={t("stor.namePh")}
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("stor.provider")}</label>
-                <Select
-                  className="h-9 w-full text-[13px]"
-                  value={formData.provider}
-                  onChange={(v) => setFormData({ ...formData, provider: v })}
-                  options={[
-                    { value: "local", label: t("stor.pLocal") },
-                    { value: "s3", label: "AWS S3 / S3 Compatible" },
-                    { value: "minio", label: "MinIO" },
-                    { value: "oss", label: "Aliyun OSS" },
-                    { value: "cos", label: "Tencent COS" },
-                    ...types
-                      .filter((t) => !["local", "s3", "minio", "oss", "cos"].includes(t))
-                      .map((t) => ({ value: t, label: t.toUpperCase() })),
-                  ]}
-                />
-              </div>
-
-              {formData.provider !== "local" && (
-                <>
-                  <div>
-                    <label className="caption mb-1 block font-medium text-ink">{t("stor.endpoint")}</label>
-                    <input
-                      className="input h-9 w-full text-[13px]"
-                      placeholder="https://s3.amazonaws.com or http://minio:9000"
-                      value={formData.endpoint}
-                      onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="caption mb-1 block font-medium text-ink">{t("stor.bucketName")}</label>
-                      <input
-                        className="input h-9 w-full text-[13px]"
-                        placeholder="my-bucket"
-                        value={formData.bucket_name}
-                        onChange={(e) => setFormData({ ...formData, bucket_name: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="caption mb-1 block font-medium text-ink">{t("stor.region")}</label>
-                      <input
-                        className="input h-9 w-full text-[13px]"
-                        placeholder="us-east-1"
-                        value={formData.region}
-                        onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="caption mb-1 block font-medium text-ink">{t("stor.accessKey")}</label>
-                      <input
-                        className="input h-9 w-full text-[13px]"
-                        type="password"
-                        value={formData.access_key_id}
-                        onChange={(e) => setFormData({ ...formData, access_key_id: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="caption mb-1 block font-medium text-ink">{t("stor.secretKey")}</label>
-                      <input
-                        className="input h-9 w-full text-[13px]"
-                        type="password"
-                        value={formData.secret_access_key}
-                        onChange={(e) => setFormData({ ...formData, secret_access_key: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="mt-6 flex justify-end gap-2 border-t border-hairline pt-4">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="btn btn-outline btn-sm"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn btn-primary btn-sm"
-                >
-                  {submitting ? t("memp.saving") : t("common.save")}
-                </button>
-              </div>
-            </form>
+      <Modal open={modalOpen} title={t("stor.addTitle")} onClose={() => setModalOpen(false)} width="w-[500px]">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="caption mb-1 block font-medium text-ink">{t("stor.name")}</label>
+            <input
+              required
+              className="input h-9 w-full text-[13px]"
+              placeholder={t("stor.namePh")}
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="caption mb-1 block font-medium text-ink">{t("stor.provider")}</label>
+            <Select
+              className="h-9 w-full text-[13px]"
+              value={formData.provider}
+              onChange={(v) => setFormData({ ...formData, provider: v })}
+              options={[
+                { value: "local", label: t("stor.pLocal") },
+                { value: "s3", label: "AWS S3 / S3 Compatible" },
+                { value: "minio", label: "MinIO" },
+                { value: "oss", label: "Aliyun OSS" },
+                { value: "cos", label: "Tencent COS" },
+                ...types
+                  .filter((t) => !["local", "s3", "minio", "oss", "cos"].includes(t))
+                  .map((t) => ({ value: t, label: t.toUpperCase() })),
+              ]}
+            />
+          </div>
+
+          {formData.provider !== "local" && (
+            <>
+              <div>
+                <label className="caption mb-1 block font-medium text-ink">{t("stor.endpoint")}</label>
+                <input
+                  className="input h-9 w-full text-[13px]"
+                  placeholder="https://s3.amazonaws.com or http://minio:9000"
+                  value={formData.endpoint}
+                  onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="caption mb-1 block font-medium text-ink">{t("stor.bucketName")}</label>
+                  <input
+                    className="input h-9 w-full text-[13px]"
+                    placeholder="my-bucket"
+                    value={formData.bucket_name}
+                    onChange={(e) => setFormData({ ...formData, bucket_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="caption mb-1 block font-medium text-ink">{t("stor.region")}</label>
+                  <input
+                    className="input h-9 w-full text-[13px]"
+                    placeholder="us-east-1"
+                    value={formData.region}
+                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="caption mb-1 block font-medium text-ink">{t("stor.accessKey")}</label>
+                  <input
+                    className="input h-9 w-full text-[13px]"
+                    type="password"
+                    value={formData.access_key_id}
+                    onChange={(e) => setFormData({ ...formData, access_key_id: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="caption mb-1 block font-medium text-ink">{t("stor.secretKey")}</label>
+                  <input
+                    className="input h-9 w-full text-[13px]"
+                    type="password"
+                    value={formData.secret_access_key}
+                    onChange={(e) => setFormData({ ...formData, secret_access_key: e.target.value })}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="mt-6 flex justify-end gap-2 border-t border-hairline pt-4">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="btn btn-outline btn-sm"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn btn-primary btn-sm"
+            >
+              {submitting ? t("memp.saving") : t("common.save")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

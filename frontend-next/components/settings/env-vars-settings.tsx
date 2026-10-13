@@ -13,6 +13,7 @@ import {
 import { IconSettings, IconTrash } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
+import { Modal } from "@/components/modal";
 
 export function EnvVarsSettings() {
   const { t } = useT();
@@ -175,48 +176,52 @@ export function EnvVarsSettings() {
       )}
 
       {/* Edit Var Modal */}
-      {editingVar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-[440px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-2">{t("envv.configureTitle", { name: editingVar.name })}</h3>
-            <p className="caption mb-4 text-muted">
-              {t("envv.configureDesc")}
-            </p>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("envv.value")}</label>
-                <input
-                  required
-                  type="password"
-                  className="input h-9 w-full text-[13px]"
-                  placeholder={t("envv.valuePh")}
-                  value={editingVar.value}
-                  onChange={(e) =>
-                    setEditingVar({ ...editingVar, value: e.target.value })
-                  }
-                />
-              </div>
+      <Modal
+        open={editingVar !== null}
+        title={editingVar ? t("envv.configureTitle", { name: editingVar.name }) : ""}
+        onClose={() => setEditingVar(null)}
+        width="w-[440px]"
+      >
+        {editingVar && (
+          <>
+              <p className="caption mb-4 text-muted">
+                {t("envv.configureDesc")}
+              </p>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <label className="caption mb-1 block font-medium text-ink">{t("envv.value")}</label>
+                  <input
+                    required
+                    type="password"
+                    className="input h-9 w-full text-[13px]"
+                    placeholder={t("envv.valuePh")}
+                    value={editingVar.value}
+                    onChange={(e) =>
+                      setEditingVar({ ...editingVar, value: e.target.value })
+                    }
+                  />
+                </div>
 
-              <div className="flex justify-end gap-2 border-t border-hairline pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingVar(null)}
-                  className="btn btn-outline btn-sm"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="btn btn-primary btn-sm"
-                >
-                  {saving ? t("memp.saving") : t("envv.save")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                <div className="flex justify-end gap-2 border-t border-hairline pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditingVar(null)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="btn btn-primary btn-sm"
+                  >
+                    {saving ? t("memp.saving") : t("envv.save")}
+                  </button>
+                </div>
+              </form>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

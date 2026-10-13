@@ -201,7 +201,6 @@ export default function SystemUsers() {
   };
 
   const currentTenantId = String(auth.selectedTenantId ?? auth.tenant?.id ?? "");
-  const currentTenantName = auth.tenant?.name ?? "";
 
   const patchMembershipRole = (
     user: SystemAdminUser,
@@ -230,11 +229,14 @@ export default function SystemUsers() {
     }
   };
 
-  const membershipFor = (u: SystemAdminUser) =>
-    (u.memberships ?? []).find((m) => String(m.tenant_id) === currentTenantId);
-
-  const otherCount = (u: SystemAdminUser) =>
-    (u.memberships ?? []).filter((m) => String(m.tenant_id) !== currentTenantId).length;
+  /* Units column: the current unit first, then admin roles, then by name. */
+  const sortedMemberships = (u: SystemAdminUser) =>
+    [...(u.memberships ?? [])].sort((a, b) => {
+      const cur = Number(String(b.tenant_id) === currentTenantId) - Number(String(a.tenant_id) === currentTenantId);
+      if (cur !== 0) return cur;
+      const adm = Number(b.role !== "member") - Number(a.role !== "member");
+      return adm !== 0 ? adm : a.tenant_name.localeCompare(b.tenant_name);
+    });
 
   if (allowed === null) {
     return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">{t("usrp.loading")}</div>;
@@ -294,10 +296,18 @@ export default function SystemUsers() {
           <thead>
             <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
               <th className="min-w-[260px] px-5 py-3 font-medium">{t("usrp.colUser")}</th>
-              <th className="w-[160px] px-5 py-3 font-medium">
-                {t("usrp.colRole")}{currentTenantName ? ` · ${currentTenantName}` : ""}
+              <th className="min-w-[280px] px-5 py-3 font-medium">
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  {t("usrp.colUnits")}
+                  {/* Badge colors = role in that unit. */}
+                  <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.admin}`}>
+                    {t("usrp.roleAdmin")}
+                  </span>
+                  <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.member}`}>
+                    {t("usrp.roleMember")}
+                  </span>
+                </span>
               </th>
-              <th className="w-[140px] px-5 py-3 font-medium">{t("usrp.colOtherWs")}</th>
               <th className="w-28 px-5 py-3 font-medium">{t("usrp.colStatus")}</th>
               <th className="w-32 px-5 py-3 font-medium">{t("usrp.colCreated")}</th>
               <th className="w-[280px] px-5 py-3 font-medium text-right">{t("users.actions")}</th>
@@ -305,8 +315,7 @@ export default function SystemUsers() {
           </thead>
           <tbody className="divide-y divide-hairline">
             {users.map((u) => {
-              const current = membershipFor(u);
-              const others = otherCount(u);
+              const memberships = sortedMemberships(u);
               return (
               <tr
                 key={u.id}
@@ -342,20 +351,24 @@ export default function SystemUsers() {
                   </div>
                 </td>
                 <td className="px-5 py-3.5 align-middle">
-                  {current ? (
-                    <span
-                      className={`badge-pill inline-block border capitalize ${ROLE_BADGE_STYLES[current.role] ?? ROLE_BADGE_STYLES.member}`}
-                      title={t("usrp.roleIn", { name: current.tenant_name })}
-                    >
-                      {current.role === "admin" ? t("usrp.roleAdmin") : current.role === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember")}
-                    </span>
-                  ) : (
-                    <span className="caption text-muted-soft">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
-                  {others > 0 ? (
-                    <span className="caption text-muted">{t("usrp.otherWs", { n: others })}</span>
+                  {memberships.length > 0 ? (
+                    <div className="flex max-w-[420px] flex-wrap gap-1">
+                      {memberships.map((m) => {
+                        const roleLabel =
+                          m.role === "admin" ? t("usrp.roleAdmin") : m.role === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember");
+                        return (
+                          <span
+                            key={m.tenant_id}
+                            title={`${m.tenant_name} — ${roleLabel}`}
+                            className={`badge-pill inline-block max-w-[160px] truncate border text-[11px] ${ROLE_BADGE_STYLES[m.role] ?? ROLE_BADGE_STYLES.member} ${
+                              String(m.tenant_id) === currentTenantId ? "font-semibold" : ""
+                            }`}
+                          >
+                            {m.tenant_name}
+                          </span>
+                        );
+                      })}
+                    </div>
                   ) : (
                     <span className="caption text-muted-soft">—</span>
                   )}
@@ -422,7 +435,7 @@ export default function SystemUsers() {
             })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
+                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
                   {t("usrp.empty")}
                 </td>
               </tr>

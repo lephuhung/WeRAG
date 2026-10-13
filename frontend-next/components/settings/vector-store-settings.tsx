@@ -14,6 +14,7 @@ import { IconBook, IconPlus, IconPulse, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
+import { Modal } from "@/components/modal";
 
 export function VectorStoreSettings() {
   const { t } = useT();
@@ -222,117 +223,112 @@ export function VectorStoreSettings() {
       )}
 
       {/* Add Vector Store Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-[500px] rounded-2xl border border-hairline bg-surface-card p-6 shadow-2xl">
-            <h3 className="title-sm mb-4">{t("vstore.addTitle")}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("vstore.name")}</label>
-                <input
-                  required
-                  className="input h-9 w-full text-[13px]"
-                  placeholder={t("vstore.namePh")}
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("vstore.engineType")}</label>
-                <Select
-                  className="h-9 w-full text-[13px]"
-                  value={formData.engine_type}
-                  onChange={(v) => setFormData({ ...formData, engine_type: v })}
-                  options={[
-                    { value: "pgvector", label: "PGVector (PostgreSQL)" },
-                    { value: "milvus", label: "Milvus" },
-                    { value: "qdrant", label: "Qdrant" },
-                    { value: "chroma", label: "Chroma" },
-                    { value: "elasticsearch", label: "Elasticsearch" },
-                    { value: "opensearch", label: "OpenSearch" },
-                    ...types
-                      .filter(
-                        (t) =>
-                          !["pgvector", "milvus", "qdrant", "chroma", "elasticsearch", "opensearch"].includes(t.type),
-                      )
-                      .map((t) => ({ value: t.type, label: t.display_name || t.type })),
-                  ]}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.host")}</label>
-                  <input
-                    className="input h-9 w-full text-[13px]"
-                    placeholder="localhost or 127.0.0.1"
-                    value={formData.host}
-                    onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.port")}</label>
-                  <input
-                    className="input h-9 w-full text-[13px]"
-                    placeholder="5432"
-                    value={formData.port}
-                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="caption mb-1 block font-medium text-ink">{t("vstore.dbName")}</label>
-                <input
-                  className="input h-9 w-full text-[13px]"
-                  placeholder="werag_vectors"
-                  value={formData.database}
-                  onChange={(e) => setFormData({ ...formData, database: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.user")}</label>
-                  <input
-                    className="input h-9 w-full text-[13px]"
-                    placeholder="postgres"
-                    value={formData.user}
-                    onChange={(e) => setFormData({ ...formData, user: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="caption mb-1 block font-medium text-ink">{t("vstore.password")}</label>
-                  <input
-                    className="input h-9 w-full text-[13px]"
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-2 border-t border-hairline pt-4">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="btn btn-outline btn-sm"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn btn-primary btn-sm"
-                >
-                  {submitting ? t("memp.saving") : t("common.save")}
-                </button>
-              </div>
-            </form>
+      <Modal open={modalOpen} title={t("vstore.addTitle")} onClose={() => setModalOpen(false)} width="w-[500px]">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="caption mb-1 block font-medium text-ink">{t("vstore.name")}</label>
+            <input
+              required
+              className="input h-9 w-full text-[13px]"
+              placeholder={t("vstore.namePh")}
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="caption mb-1 block font-medium text-ink">{t("vstore.engineType")}</label>
+            <Select
+              className="h-9 w-full text-[13px]"
+              value={formData.engine_type}
+              onChange={(v) => setFormData({ ...formData, engine_type: v })}
+              options={[
+                { value: "pgvector", label: "PGVector (PostgreSQL)" },
+                { value: "milvus", label: "Milvus" },
+                { value: "qdrant", label: "Qdrant" },
+                { value: "chroma", label: "Chroma" },
+                { value: "elasticsearch", label: "Elasticsearch" },
+                { value: "opensearch", label: "OpenSearch" },
+                ...types
+                  .filter(
+                    (t) =>
+                      !["pgvector", "milvus", "qdrant", "chroma", "elasticsearch", "opensearch"].includes(t.type),
+                  )
+                  .map((t) => ({ value: t.type, label: t.display_name || t.type })),
+              ]}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="caption mb-1 block font-medium text-ink">{t("vstore.host")}</label>
+              <input
+                className="input h-9 w-full text-[13px]"
+                placeholder="localhost or 127.0.0.1"
+                value={formData.host}
+                onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="caption mb-1 block font-medium text-ink">{t("vstore.port")}</label>
+              <input
+                className="input h-9 w-full text-[13px]"
+                placeholder="5432"
+                value={formData.port}
+                onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="caption mb-1 block font-medium text-ink">{t("vstore.dbName")}</label>
+            <input
+              className="input h-9 w-full text-[13px]"
+              placeholder="werag_vectors"
+              value={formData.database}
+              onChange={(e) => setFormData({ ...formData, database: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="caption mb-1 block font-medium text-ink">{t("vstore.user")}</label>
+              <input
+                className="input h-9 w-full text-[13px]"
+                placeholder="postgres"
+                value={formData.user}
+                onChange={(e) => setFormData({ ...formData, user: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="caption mb-1 block font-medium text-ink">{t("vstore.password")}</label>
+              <input
+                className="input h-9 w-full text-[13px]"
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2 border-t border-hairline pt-4">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="btn btn-outline btn-sm"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn btn-primary btn-sm"
+            >
+              {submitting ? t("memp.saving") : t("common.save")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

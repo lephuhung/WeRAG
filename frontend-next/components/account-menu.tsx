@@ -1,8 +1,8 @@
 /* Bottom-of-sidebar account button (replaces the old top-right header menu):
  * avatar + name + role, opening an upward popover with the pending-
  * abbreviations count (approvers only — so suggestions can't go unnoticed
- * inside deep settings), Settings (opens SettingsModal), the EN/VI pill
- * switch and Sign out. */
+ * inside deep settings), Settings (opens SettingsModal), the SystemAdmin
+ * console link (system admins only), the EN/VI pill switch and Sign out. */
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
@@ -13,11 +13,13 @@ import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { SettingsModal } from "@/components/settings-modal";
+import { ADMIN_PATH } from "@/components/admin/admin-routes";
 import {
   IconBook,
   IconChevronRight,
   IconChevronUp,
   IconLogout,
+  IconPulse,
   IconSettings,
 } from "@/components/icons";
 
@@ -217,6 +219,19 @@ export function AccountMenu() {
             <IconSettings className="h-[18px] w-[18px] shrink-0" />
             <span className="flex-1 text-left">{t("user.settings")}</span>
           </button>
+          {isSystemAdmin && (
+            <button
+              type="button"
+              className="nav-item"
+              onClick={() => {
+                setOpen(false);
+                router.push(ADMIN_PATH);
+              }}
+            >
+              <IconPulse className="h-[18px] w-[18px] shrink-0" />
+              <span className="flex-1 text-left">{t("adminPage.title")}</span>
+            </button>
+          )}
 
           <div className="my-1 border-t border-hairline" />
           <div className="flex items-center justify-between px-3 py-2">

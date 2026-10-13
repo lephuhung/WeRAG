@@ -42,6 +42,13 @@ type ProvisionTenantResponse struct {
 	GeneratedPassword string          `json:"generated_password,omitempty"`
 }
 
+// UpdateSystemTenantRequest is the body of
+// PUT /system/admin/tenants/:tenant_id. Omitted fields are left unchanged.
+type UpdateSystemTenantRequest struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
 // AddSystemTenantMemberRequest is the body of
 // POST /system/admin/tenants/:tenant_id/members.
 type AddSystemTenantMemberRequest struct {
@@ -210,6 +217,63 @@ func parseSystemTenantID(c *gin.Context) (uint64, bool) {
 		return 0, false
 	}
 	return tenantID, true
+}
+
+// UpdateSystemTenant godoc
+// @Summary      Rename any workspace
+// @Description  SystemAdmin only. Changes the name and/or description of a
+// @Description  workspace the caller does not need to belong to.
+// @Tags         System Admin
+// @Accept       json
+// @Produce      json
+// @Param        tenant_id path string true "Workspace ID"
+// @Param        request body UpdateSystemTenantRequest true "Fields to change"
+// @Success      200  {object}  map[string]interface{}
+// @Router       /system/admin/tenants/{tenant_id} [put]
+func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+	tenantID, ok := parseSystemTenantID(c)
+	if !ok {
+		return
+	}
+	var req UpdateSystemTenantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request").WithDetails(err.Error()))
+		return
+	}
+	tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID)
+	if err != nil || tenant == nil || tenant.IsConfigProfile() {
+		c.Error(apperrors.NewNotFoundError("workspace not found"))
+		return
+	}
+	oldName := tenant.Name
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			c.Error(apperrors.NewValidationError("name cannot be blank"))
+			return
+		}
+		tenant.Name = name
+	}
+	if req.Description != nil {
+		tenant.Description = strings.TrimSpace(*req.Description)
+	}
+	updated, err := h.tenantSvc.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.Errorf(ctx, "UpdateSystemTenant: tenant %d: %v", tenantID, err)
+		c.Error(apperrors.NewInternalServerError("failed to update workspace").WithDetails(err.Error()))
+		return
+	}
+	h.emitAdminAudit(ctx, types.AuditActionSystemTenantUpdated, nil, map[string]any{
+		"tenant_id": tenantID,
+		"old_name":  oldName,
+		"new_name":  updated.Name,
+	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
 }
 
 // AddSystemTenantMember godoc

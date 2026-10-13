@@ -2,20 +2,37 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { HostedSubPage, useInSubPageHost } from "@/components/settings/sub-page-host";
 
-export function Modal({
-  open,
-  title,
-  onClose,
-  children,
-  width = "w-[460px]",
-}: {
+type ModalProps = {
   open: boolean;
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   width?: string;
-}) {
+};
+
+/* Inside the settings modal a Modal never stacks a second dialog: it opens
+ * as a sub-page of the modal (title + back button), see sub-page-host. */
+export function Modal(props: ModalProps) {
+  const hosted = useInSubPageHost();
+  if (hosted) {
+    return props.open ? (
+      <HostedSubPage title={props.title} onClose={props.onClose}>
+        {props.children}
+      </HostedSubPage>
+    ) : null;
+  }
+  return <OverlayModal {...props} />;
+}
+
+function OverlayModal({
+  open,
+  title,
+  onClose,
+  children,
+  width = "w-[460px]",
+}: ModalProps) {
   /* Portal to <body>: modals nested inside SlidePanel (or any other
    * transformed/animated container) would otherwise be trapped by the
    * ancestor's transform — `position: fixed` resolves against that box,

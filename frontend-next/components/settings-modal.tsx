@@ -6,7 +6,12 @@
  * back button, so the modal never navigates away. A small external-link
  * button still offers the full-page route for deep-linking.
  * Role gating mirrors nav-config: "system" = platform admin, admin/owner gate
- * on the tenant membership role. Server-side guards stay authoritative. */
+ * on the tenant membership role. Server-side guards stay authoritative.
+ * Dialogs opened by a section (Modal, confirm) never stack on top of this
+ * modal: they open as sub-pages with a back button — see sub-page-host.
+ * Platform administration (dashboard, units, users, audit logs, legal
+ * documents) lives on the full-page SystemAdmin console at /platform/admin
+ * — see admin/admin-sections. */
 "use client";
 
 import {
@@ -14,6 +19,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentType,
@@ -26,6 +32,8 @@ import { useT, type LocaleKey } from "@/lib/i18n";
 import { canSeeSection, type SettingsRoleKey } from "@/components/settings/nav-config";
 import { Select } from "@/components/select";
 import { InModalNavContext } from "@/components/system/in-modal-nav";
+import { SubPageHostProvider, useSubPageHost } from "@/components/settings/sub-page-host";
+import { ConfirmProvider } from "@/components/confirm-dialog";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { SecuritySettings } from "@/components/settings/security-settings";
@@ -53,9 +61,7 @@ import {
   IconClock,
   IconClose,
   IconCode,
-  IconDocReader,
   IconExternal,
-  IconFileSearch,
   IconGlobe,
   IconGraph,
   IconInfoCircle,
@@ -82,12 +88,6 @@ const ModelCatalogPage = lazy(() => import("@/components/settings/pages/model-ca
 const ModelOllamaPage = lazy(() => import("@/components/settings/pages/model-ollama"));
 const ModelWeknoraCloudPage = lazy(() => import("@/components/settings/pages/model-weknoracloud"));
 const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
-
-const AdminOverviewPage = lazy(() => import("@/components/settings/pages/admin-overview"));
-const AdminUsersPage = lazy(() => import("@/components/settings/pages/admin-users"));
-const AdminTenantsPage = lazy(() => import("@/components/settings/pages/admin-tenants"));
-const AdminLogsPage = lazy(() => import("@/components/settings/pages/admin-logs"));
-const AdminLegalDocumentsPage = lazy(() => import("@/components/settings/pages/admin-legal-documents"));
 
 type IconCmp = ComponentType<{ className?: string }>;
 
@@ -169,17 +169,6 @@ const GROUPS: SettingsGroup[] = [
       { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, minRole: "system", render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
     ],
   },
-  {
-    key: "admin",
-    labelKey: "systemNav.admin",
-    items: [
-      { key: "overview", labelKey: "systemNav.overview", fallback: "Overview", icon: IconPulse, minRole: "system", render: () => <AdminOverviewPage />, route: `${SYS}/admin` },
-      { key: "tenants", labelKey: "systemNav.tenants", fallback: "Units", icon: IconUser, minRole: "system", render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
-      { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, minRole: "system", render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
-      { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, minRole: "system", render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
-      { key: "legal-documents", labelKey: "systemNav.legalDocuments", fallback: "Legal documents", icon: IconFileSearch, minRole: "system", render: () => <AdminLegalDocumentsPage />, route: `${SYS}/admin/legal-documents` },
-    ],
-  },
 ];
 
 /* route → section key, so links inside embedded pages resolve to modal
@@ -227,9 +216,37 @@ export function SettingsModal({
     }
   }, [open, initialSection]);
 
+  const sub = useSubPageHost();
+  const subTopRef = useRef(sub.top);
+  subTopRef.current = sub.top;
+
+  /* Opening a sub-page starts at its top; going back restores where the
+   * page underneath was scrolled to. */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollStack = useRef<number[]>([]);
+  const prevDepth = useRef(0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const saved = scrollStack.current;
+    if (sub.depth > prevDepth.current) {
+      saved.push(el.scrollTop);
+      el.scrollTop = 0;
+    } else if (sub.depth < prevDepth.current) {
+      while (saved.length > sub.depth + 1) saved.pop();
+      el.scrollTop = saved.pop() ?? 0;
+    }
+    prevDepth.current = sub.depth;
+  }, [sub.depth]);
+
+  /* Escape steps back out of an open sub-page before closing the modal. */
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (subTopRef.current) subTopRef.current.back();
+      else onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -373,17 +390,19 @@ export function SettingsModal({
         {/* content pane */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-5 py-3.5 sm:px-7">
-            {stack.length > 1 && (
+            {(sub.top || stack.length > 1) && (
               <button
-                onClick={() => setStack((s) => s.slice(0, -1))}
+                onClick={() => (sub.top ? sub.top.back() : setStack((s) => s.slice(0, -1)))}
                 aria-label={t("settingsModal.back")}
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink"
               >
                 <IconChevronLeft className="h-4 w-4" />
               </button>
             )}
-            <h2 className="title-md min-w-0 flex-1 truncate">{active ? label(active) : ""}</h2>
-            {active?.route && (
+            <h2 className="title-md min-w-0 flex-1 truncate">
+              {sub.top ? sub.top.title : active ? label(active) : ""}
+            </h2>
+            {active?.route && !sub.top && (
               <button
                 onClick={() => {
                   router.push(active.route!);
@@ -397,18 +416,27 @@ export function SettingsModal({
               </button>
             )}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-            <InModalNavContext.Provider value={inModalNav}>
-              <Suspense
-                fallback={
-                  <div className="flex items-center justify-center py-16">
-                    <span className="caption text-muted">Loading…</span>
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+            <SubPageHostProvider api={sub.api} state={sub.state}>
+              <ConfirmProvider>
+                <InModalNavContext.Provider value={inModalNav}>
+                  {/* The section stays mounted under an open sub-page so
+                   * its state (filters, half-filled forms) survives. */}
+                  <div hidden={!!sub.top}>
+                    <Suspense
+                      fallback={
+                        <div className="flex items-center justify-center py-16">
+                          <span className="caption text-muted">Loading…</span>
+                        </div>
+                      }
+                    >
+                      {active?.render()}
+                    </Suspense>
                   </div>
-                }
-              >
-                {active?.render()}
-              </Suspense>
-            </InModalNavContext.Provider>
+                  <div ref={sub.hostRef} hidden={!sub.top} />
+                </InModalNavContext.Provider>
+              </ConfirmProvider>
+            </SubPageHostProvider>
           </div>
         </div>
       </div>

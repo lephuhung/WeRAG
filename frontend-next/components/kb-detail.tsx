@@ -14,7 +14,7 @@ import {
   type KnowledgeProcessOverrides,
 } from "@/lib/api/knowledge";
 import { ApiError } from "@/lib/api-client";
-import { fetchAllPages } from "@/lib/knowledge-pagination";
+import { normalizePaginatedResponse } from "@/lib/knowledge-pagination";
 import { shouldApplyResponse } from "@/lib/request-identity";
 import { getSystemParseDefaults, type SystemParseDefaults } from "@/lib/api/system";
 import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
@@ -99,6 +99,10 @@ function docExt(d: KnowledgeDoc) {
 
 type MainTab = "docs-wiki" | "graph";
 
+/* Cards per page — a multiple of the 2/3/4-column grid. */
+const DOCS_PAGE_SIZE = 48;
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
 const toast = useToast();
@@ -110,6 +114,11 @@ const toast = useToast();
   const [openDoc, setOpenDoc] = useState<KnowledgeDoc | null>(null);
   const [selectedWikiSlug, setSelectedWikiSlug] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  /* Server-side paging: `docs` holds only the current page; `docsTotal` is
+   * the server count for the active keyword. */
+  const [page, setPage] = useState(1);
+  const [docsTotal, setDocsTotal] = useState<number | null>(null);
+  const [keyword, setKeyword] = useState("");
   const [wikiQ, setWikiQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -150,13 +159,10 @@ const toast = useToast();
       })()
     : undefined;
 
-  /* First-page-only listing hid every file past the first 100. Walk every
-   * page (server total/page_size driven) so the grid, the local
-   * filter/search and the header counter all see the whole KB. The
-   * monotonic request id discards walks that go stale mid-pagination
-   * (kbId switch, newer reload); a mid-walk failure keeps the files that
-   * did load and reports the gap instead of silently showing a partial
-   * KB as complete. */
+  /* KBs reach thousands of documents, so the grid loads one server page at
+   * a time and the search box filters server-side (keyword). The monotonic
+   * request id discards responses that went stale (kbId/page/keyword
+   * change, newer reload). */
   const docsRequestRef = useRef(0);
   /* Identity guard for header/detail callbacks that bypass docsRequestRef:
    * every KB-scoped async callback captures its owner kbId and applies
@@ -167,28 +173,61 @@ const toast = useToast();
   const isCurrentKb = (ownerKbId: string) =>
     shouldApplyResponse({ id: ownerKbId, gen: 0 }, { id: kbIdRef.current, gen: 0 });
   const [docsError, setDocsError] = useState("");
+  const [docsLoading, setDocsLoading] = useState(false);
+
+  /* Debounce typing into the server keyword; a new keyword starts at page 1. */
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setKeyword(q.trim());
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+
+  /* A different KB starts over at page 1 without the old search. */
+  useEffect(() => {
+    setPage(1);
+    setQ("");
+    setKeyword("");
+    setDocs(null);
+    setDocsTotal(null);
+  }, [kbId]);
+
   const reloadDocs = useCallback(() => {
     const req = ++docsRequestRef.current;
-    const id = kbId;
     setDocsError("");
-    fetchAllPages<KnowledgeDoc>(
-      (page, pageSize) => listKnowledgeFiles(id, { page, page_size: pageSize }),
-      {
-        pageSize: 100,
-        isCurrent: () => docsRequestRef.current === req,
-        idOf: (d) => d.id,
-      },
-    ).then(({ items, total, error, aborted, incomplete, incompleteReason }) => {
-      if (aborted || docsRequestRef.current !== req) return;
-      setDocs(items);
-      const gap = error ?? (incomplete ? incompleteReason : null);
-      setDocsError(
-        gap
-          ? `Could not load the full file list${total !== null && total > items.length ? ` (showing ${items.length} of ${total})` : ""}: ${gap}`
-          : "",
-      );
-    });
-  }, [kbId]);
+    setDocsLoading(true);
+    listKnowledgeFiles(kbId, {
+      page,
+      page_size: DOCS_PAGE_SIZE,
+      ...(keyword ? { keyword } : {}),
+    })
+      .then((res) => {
+        if (docsRequestRef.current !== req) return;
+        const { items, total } = normalizePaginatedResponse<KnowledgeDoc>(res);
+        /* The last page emptied (deletes, a shrinking search): step back. */
+        if (items.length === 0 && page > 1) {
+          setPage((p) => Math.max(1, p - 1));
+          return;
+        }
+        setDocs(items);
+        setDocsTotal(total ?? items.length);
+      })
+      .catch((e) => {
+        if (docsRequestRef.current !== req) return;
+        setDocs((prev) => prev ?? []);
+        setDocsError(e instanceof Error ? e.message : "Could not load the file list");
+      })
+      .finally(() => {
+        if (docsRequestRef.current === req) setDocsLoading(false);
+      });
+  }, [kbId, page, keyword]);
+
+  useEffect(() => {
+    reloadDocs();
+  }, [reloadDocs]);
+
+  const pageCount = Math.max(1, Math.ceil((docsTotal ?? 0) / DOCS_PAGE_SIZE));
 
   /* Document actions that change the row set (delete/move/cancel) also
    * affect the header's document counter. */
@@ -228,16 +267,15 @@ const toast = useToast();
         }
         setError(e instanceof Error ? e.message : "Failed to load");
       });
-    reloadDocs();
     getSystemParseDefaults()
       .then((def) => alive && setParseDefaults(def))
       .catch(() => alive && setParseDefaults(null));
     return () => {
       alive = false;
-      /* Invalidate any page walk still resolving for the old KB. */
+      /* Invalidate any page request still resolving for the old KB. */
       docsRequestRef.current += 1;
     };
-  }, [kbId, reloadDocs]);
+  }, [kbId]);
 
 
 
@@ -385,9 +423,7 @@ const toast = useToast();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, kbId]);
 
-  const filtered = (docs ?? []).filter(
-    (d) => !q || docName(d).toLowerCase().includes(q.toLowerCase()),
-  );
+  const filtered = docs ?? [];
 
   /* Owner-aware viewer capabilities: platform-public rows grant every
    * authenticated human view/preview/original-download with management
@@ -415,6 +451,7 @@ const toast = useToast();
    * the effect closure would otherwise keep a stale upload gate after the
    * KB loads. Public viewers and invited readers must not get the upload
    * dialog from a file drop, exactly as with the hidden upload buttons. */
+  const gridRef = useRef<HTMLDivElement>(null);
   const canUploadRef = useRef(false);
   canUploadRef.current = kbCaps.canUpload;
   /* SuperAdmin scope-transfer state (explicit SuperAdmin only; backend
@@ -581,7 +618,7 @@ const toast = useToast();
             <p className="body-sm mt-1.5 max-w-[560px] text-body">{kb?.description ?? ""}</p>
             {error && <p className="caption mt-2 text-error">{error}</p>}
             <div className="caption mt-2.5 flex items-center gap-4 text-muted">
-              <span>{kb?.knowledge_count ?? kb?.document_count ?? docs?.length ?? "—"} documents</span>
+              <span>{kb?.knowledge_count ?? kb?.document_count ?? docsTotal ?? "—"} documents</span>
               {/* Public identity keys off owner + visibility: a converted
                * row's foreign data scope must never mislabel it "Shared".
                * Invited rows keep the Shared marker. */}
@@ -638,9 +675,9 @@ const toast = useToast();
           >
             <IconDoc className="h-4 w-4" />
             <span>Tài liệu & Wiki</span>
-            {docs !== null && (
+            {(kb?.knowledge_count ?? kb?.document_count) != null && (
               <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted">
-                {docs.length}
+                {kb?.knowledge_count ?? kb?.document_count}
               </span>
             )}
           </button>
@@ -729,7 +766,7 @@ const toast = useToast();
                       {t("pd.lockedBanner")}
                     </span>
                   )}
-                  <span className="caption whitespace-nowrap text-muted">{filtered.length} files</span>
+                  <span className="caption whitespace-nowrap text-muted">{docsTotal ?? "—"} files</span>
                   {!denied && scopePanel}
                   {!denied && isPublicKb && isSystemAdmin && (
                     <KbLegalReviewBar items={legalReview.items} onScanned={legalReview.reload} />
@@ -751,7 +788,12 @@ const toast = useToast();
               </div>
 
               {/* Cards Grid: at most 4 cards per row (5 made them too narrow) */}
-              <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              <div
+                ref={gridRef}
+                className={`grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1 transition-opacity sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 ${
+                  docsLoading && docs !== null ? "opacity-60" : ""
+                }`}
+              >
                 {filtered.map((d) => {
                   const st = statusStyle(d.parse_status ?? d.status);
                   return (
@@ -876,6 +918,20 @@ const toast = useToast();
                 })}
               </div>
 
+              {pageCount > 1 && (
+                <DocsPager
+                  page={page}
+                  pageCount={pageCount}
+                  total={docsTotal ?? 0}
+                  pageSize={DOCS_PAGE_SIZE}
+                  disabled={docsLoading}
+                  onPage={(p) => {
+                    setPage(p);
+                    gridRef.current?.scrollTo({ top: 0 });
+                  }}
+                />
+              )}
+
               {reviewing && (
                 <ReviewDialog
                   item={reviewing}
@@ -887,7 +943,7 @@ const toast = useToast();
                 />
               )}
 
-              {docs !== null && docs.length === 0 && (
+              {docs !== null && docs.length === 0 && !keyword && (
                 <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-hairline p-8 text-center">
                   <IconDoc className="mb-2 h-8 w-8 text-muted-soft" />
                   <p className="body-sm font-medium text-ink">Chưa có tài liệu nào</p>
@@ -900,7 +956,7 @@ const toast = useToast();
                 </div>
               )}
 
-              {docs !== null && docs.length > 0 && filtered.length === 0 && (
+              {docs !== null && docs.length === 0 && !!keyword && (
                 <div className="mt-8 flex flex-col items-center justify-center text-center">
                   <p className="body-md text-muted">Không tìm thấy tài liệu phù hợp.</p>
                   <p className="caption mt-1 text-muted-soft">Thử tìm kiếm với từ khóa khác.</p>
@@ -1053,6 +1109,89 @@ function fmtShortDate(v?: string): string {
 }
 
 /* Human file size for the metadata row. */
+/* Page numbers to show: first, last, and a window around the current page,
+ * with null marking a gap ("…"). */
+function pagerItems(page: number, pageCount: number): (number | null)[] {
+  const keep = new Set([1, pageCount, page - 1, page, page + 1]);
+  const out: (number | null)[] = [];
+  for (let p = 1; p <= pageCount; p++) {
+    if (keep.has(p)) out.push(p);
+    else if (out[out.length - 1] !== null) out.push(null);
+  }
+  return out;
+}
+
+function DocsPager({
+  page,
+  pageCount,
+  total,
+  pageSize,
+  disabled,
+  onPage,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  pageSize: number;
+  disabled?: boolean;
+  onPage: (page: number) => void;
+}) {
+  const { t } = useT();
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  const btn =
+    "flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[13px] tabular-nums transition-colors disabled:opacity-40";
+  return (
+    <nav className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2" aria-label="pagination">
+      <span className="caption text-muted tabular-nums">
+        {t("pager.range", { from: from.toLocaleString(), to: to.toLocaleString(), total: total.toLocaleString() })}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className={`${btn} text-muted hover:bg-surface-strong hover:text-ink`}
+          disabled={disabled || page <= 1}
+          onClick={() => onPage(page - 1)}
+          aria-label={t("pager.prev")}
+          title={t("pager.prev")}
+        >
+          ‹
+        </button>
+        {pagerItems(page, pageCount).map((p, i) =>
+          p === null ? (
+            <span key={`gap-${i}`} className="px-1 text-[13px] text-muted-soft">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              disabled={disabled && p !== page}
+              onClick={() => p !== page && onPage(p)}
+              aria-current={p === page ? "page" : undefined}
+              className={`${btn} ${
+                p === page ? "bg-surface-strong font-semibold text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
+              }`}
+            >
+              {p}
+            </button>
+          ),
+        )}
+        <button
+          type="button"
+          className={`${btn} text-muted hover:bg-surface-strong hover:text-ink`}
+          disabled={disabled || page >= pageCount}
+          onClick={() => onPage(page + 1)}
+          aria-label={t("pager.next")}
+          title={t("pager.next")}
+        >
+          ›
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0 B";
   const k = 1024;

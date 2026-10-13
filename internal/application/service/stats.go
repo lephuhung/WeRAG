@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -36,6 +37,15 @@ func (s *statsService) GetSystemStats(ctx context.Context, days int) (*types.Sys
 		return nil, err
 	}
 	if err := s.loadMessageStats(ctx, stats, days); err != nil {
+		return nil, err
+	}
+	if err := s.loadChatWindowStats(ctx, stats, 24); err != nil {
+		return nil, err
+	}
+	if err := s.loadFeedbackStats(ctx, stats); err != nil {
+		return nil, err
+	}
+	if err := s.loadPublicKBStats(ctx, stats); err != nil {
 		return nil, err
 	}
 	return stats, nil
@@ -128,4 +138,138 @@ func (s *statsService) loadMessageStats(ctx context.Context, stats *types.System
 	stats.Messages.Days = days
 	stats.Messages.ByDay = rows
 	return nil
+}
+
+func (s *statsService) loadChatWindowStats(ctx context.Context, stats *types.SystemStats, hours int) error {
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+	var row struct {
+		Questions      int64
+		Answers        int64
+		ActiveSessions int64
+		ActiveUsers    int64
+	}
+	err := s.db.WithContext(ctx).Raw(`
+SELECT
+  COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) AS questions,
+  COALESCE(SUM(CASE WHEN m.role = 'assistant' THEN 1 ELSE 0 END), 0) AS answers,
+  COUNT(DISTINCT m.session_id) AS active_sessions,
+  COUNT(DISTINCT NULLIF(s.user_id, '')) AS active_users
+FROM messages m
+LEFT JOIN sessions s ON s.id = m.session_id
+WHERE m.deleted_at IS NULL AND m.created_at >= ?`, cutoff).Scan(&row).Error
+	if err != nil {
+		return fmt.Errorf("count chat activity: %w", err)
+	}
+	stats.Chat24h = types.ChatWindowStats{
+		Hours:          hours,
+		Questions:      row.Questions,
+		Answers:        row.Answers,
+		ActiveSessions: row.ActiveSessions,
+		ActiveUsers:    row.ActiveUsers,
+	}
+	return nil
+}
+
+func (s *statsService) loadFeedbackStats(ctx context.Context, stats *types.SystemStats) error {
+	var row struct {
+		Likes       int64
+		Dislikes    int64
+		Likes24h    int64
+		Dislikes24h int64
+	}
+	err := s.db.WithContext(ctx).Raw(`
+SELECT
+  COALESCE(SUM(CASE WHEN feedback = @up THEN 1 ELSE 0 END), 0) AS likes,
+  COALESCE(SUM(CASE WHEN feedback = @down THEN 1 ELSE 0 END), 0) AS dislikes,
+  COALESCE(SUM(CASE WHEN feedback = @up AND feedback_at >= @cutoff THEN 1 ELSE 0 END), 0) AS likes24h,
+  COALESCE(SUM(CASE WHEN feedback = @down AND feedback_at >= @cutoff THEN 1 ELSE 0 END), 0) AS dislikes24h
+FROM messages
+WHERE deleted_at IS NULL AND feedback <> 0`,
+		sql.Named("up", types.MessageFeedbackUp),
+		sql.Named("down", types.MessageFeedbackDown),
+		sql.Named("cutoff", time.Now().Add(-24*time.Hour)),
+	).Scan(&row).Error
+	if err != nil {
+		return fmt.Errorf("count feedback: %w", err)
+	}
+	stats.Feedback = types.FeedbackStats{
+		Likes:       row.Likes,
+		Dislikes:    row.Dislikes,
+		Likes24h:    row.Likes24h,
+		Dislikes24h: row.Dislikes24h,
+	}
+	return nil
+}
+
+// loadPublicKBStats breaks documents down per platform-public knowledge
+// base (owner 0, visibility public) — the KBs every user searches.
+func (s *statsService) loadPublicKBStats(ctx context.Context, stats *types.SystemStats) error {
+	rows := make([]types.PublicKBDocumentCount, 0)
+	err := s.db.WithContext(ctx).Raw(`
+SELECT
+  kb.id, kb.name, kb.type,
+  COUNT(k.id) AS total,
+  COALESCE(SUM(CASE WHEN k.parse_status = @completed THEN 1 ELSE 0 END), 0) AS completed,
+  COALESCE(SUM(CASE WHEN k.parse_status IN @active THEN 1 ELSE 0 END), 0) AS processing,
+  COALESCE(SUM(CASE WHEN k.parse_status = @failed THEN 1 ELSE 0 END), 0) AS failed
+FROM knowledge_bases kb
+LEFT JOIN knowledges k ON k.knowledge_base_id = kb.id AND k.deleted_at IS NULL
+WHERE kb.deleted_at IS NULL AND kb.owner_tenant_id = 0 AND kb.visibility = @public
+GROUP BY kb.id, kb.name, kb.type
+ORDER BY total DESC, kb.name`,
+		sql.Named("completed", types.ParseStatusCompleted),
+		sql.Named("active", activeParseStatuses),
+		sql.Named("failed", types.ParseStatusFailed),
+		sql.Named("public", string(types.KBVisibilityPublic)),
+	).Scan(&rows).Error
+	if err != nil {
+		return fmt.Errorf("count public kb documents: %w", err)
+	}
+	stats.PublicKBs = rows
+	return nil
+}
+
+// activeParseStatuses are the parse states of a document still in the
+// ingest pipeline.
+var activeParseStatuses = []string{
+	types.ParseStatusPending,
+	types.ParseStatusProcessing,
+	types.ParseStatusFinalizing,
+}
+
+func (s *statsService) ListProcessingDocuments(ctx context.Context, limit int) (*types.ProcessingDocuments, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	db := s.db.WithContext(ctx)
+	out := &types.ProcessingDocuments{Items: make([]types.ProcessingDocument, 0)}
+	if err := db.Model(&types.Knowledge{}).
+		Where("parse_status IN ?", activeParseStatuses).
+		Count(&out.Total).Error; err != nil {
+		return nil, fmt.Errorf("count processing documents: %w", err)
+	}
+	if err := db.Model(&types.Knowledge{}).
+		Where("parse_status = ? AND updated_at >= ?", types.ParseStatusFailed, time.Now().Add(-24*time.Hour)).
+		Count(&out.FailedLast24h).Error; err != nil {
+		return nil, fmt.Errorf("count failed documents: %w", err)
+	}
+	if out.Total == 0 {
+		return out, nil
+	}
+	err := db.Raw(`
+SELECT
+  k.id, k.title, k.file_name, k.file_type, k.parse_status, k.pending_subtasks_count,
+  k.knowledge_base_id, COALESCE(kb.name, '') AS knowledge_base_name,
+  k.tenant_id, COALESCE(t.name, '') AS tenant_name,
+  k.created_at, k.updated_at
+FROM knowledges k
+LEFT JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id
+LEFT JOIN tenants t ON t.id = k.tenant_id
+WHERE k.deleted_at IS NULL AND k.parse_status IN ?
+ORDER BY k.created_at
+LIMIT ?`, activeParseStatuses, limit).Scan(&out.Items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list processing documents: %w", err)
+	}
+	return out, nil
 }

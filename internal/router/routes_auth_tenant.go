@@ -334,6 +334,7 @@ func RegisterSystemAdminRoutes(
 		// activity heatmap) for the SystemAdmin overview dashboard.
 		// Human-admin only — deliberately not declared as an API-key route.
 		adminRoutes.GET("/stats", statsHandler.GetSystemStats)
+		adminRoutes.GET("/stats/processing", statsHandler.ListProcessingDocuments)
 		adminRoutes.POST("/users/reset-password", handler.ResetUserPassword)
 		adminRoutes.POST("/users/create", handler.CreateSystemUser)
 		// Workspace-role management for any tenant — the SystemAdmin
@@ -344,6 +345,7 @@ func RegisterSystemAdminRoutes(
 		// each one is born with its Tenant Admin (an existing account or
 		// one created here). The SuperAdmin does not join the workspace.
 		adminRoutes.POST("/tenants", handler.ProvisionTenant)
+		adminRoutes.PUT("/tenants/:tenant_id", handler.UpdateSystemTenant)
 		adminRoutes.GET("/tenants/:tenant_id/members", handler.ListSystemTenantMembers)
 		adminRoutes.POST("/tenants/:tenant_id/members", handler.AddSystemTenantMember)
 		adminRoutes.DELETE("/tenants/:tenant_id/members/:user_id", handler.RemoveSystemTenantMember)

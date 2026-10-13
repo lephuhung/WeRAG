@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconPlus, IconSearch } from "@/components/icons";
+import { IconEdit, IconPlus, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
@@ -15,6 +15,7 @@ import {
   listSystemTenantMembers,
   provisionTenant,
   removeSystemTenantMember,
+  updateSystemTenant,
   type SystemTenantMember,
   type TenantMemberTarget,
 } from "@/lib/api/system";
@@ -116,6 +117,9 @@ export default function AdminTenants() {
   const [person, setPerson] = useState<PersonForm>(emptyPerson);
   const [role, setRole] = useState<"admin" | "member">("member");
 
+  /* Inline rename of the selected unit: null = not editing. */
+  const [renameTo, setRenameTo] = useState<string | null>(null);
+
   const [oneTime, setOneTime] = useState<{ user: string; password: string } | null>(null);
 
   const loadUnits = useCallback(async () => {
@@ -152,6 +156,7 @@ export default function AdminTenants() {
   }, [loadUnits]);
 
   useEffect(() => {
+    setRenameTo(null);
     if (selected) void loadMembers(selected);
   }, [selected, loadMembers]);
 
@@ -204,6 +209,23 @@ export default function AdminTenants() {
       setPerson(emptyPerson);
       setRole("member");
       await loadMembers(selected);
+    });
+  };
+
+  const submitRename = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = renameTo?.trim() ?? "";
+    if (!selected || !name) return;
+    if (name === selected.name) {
+      setRenameTo(null);
+      return;
+    }
+    await run(async () => {
+      const res = await updateSystemTenant(selected.id, { name });
+      const renamed = { id: selected.id, name: res.data?.name ?? name };
+      setUnits((list) => list.map((u) => (u.id === renamed.id ? renamed : u)));
+      setSelected(renamed);
+      setRenameTo(null);
     });
   };
 
@@ -280,9 +302,44 @@ export default function AdminTenants() {
           ) : (
             <>
               <div className="mb-4 flex items-center gap-3">
-                <h3 className="title-sm truncate">{selected.name}</h3>
-                <span className="caption text-muted">{t("tnp.members")}</span>
-                <button className="btn btn-outline btn-sm ml-auto" onClick={() => setAddOpen(true)}>
+                {renameTo === null ? (
+                  <>
+                    <h3 className="title-sm truncate">{selected.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => setRenameTo(selected.name)}
+                      title={t("tnp.rename")}
+                      aria-label={t("tnp.rename")}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink"
+                    >
+                      <IconEdit className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="caption text-muted">{t("tnp.members")}</span>
+                  </>
+                ) : (
+                  <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={submitRename}>
+                    <input
+                      autoFocus
+                      className="input h-8 min-w-0 flex-1"
+                      aria-label={t("tnp.name")}
+                      value={renameTo}
+                      onChange={(e) => setRenameTo(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.stopPropagation();
+                          setRenameTo(null);
+                        }
+                      }}
+                    />
+                    <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !renameTo.trim()}>
+                      {t("common.save")}
+                    </button>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setRenameTo(null)}>
+                      {t("common.cancel")}
+                    </button>
+                  </form>
+                )}
+                <button className="btn btn-outline btn-sm ml-auto shrink-0" onClick={() => setAddOpen(true)}>
                   <IconPlus className="h-3.5 w-3.5" /> {t("tnp.addMember")}
                 </button>
               </div>

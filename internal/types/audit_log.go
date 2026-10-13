@@ -133,6 +133,10 @@ const (
 	// workspace together with its first Tenant Admin. Details carry
 	// tenant_id, tenant_name and whether the admin account was created.
 	AuditActionSystemTenantProvisioned AuditAction = "system.tenant_provisioned"
+	// AuditActionSystemTenantUpdated fires when a SystemAdmin renames a
+	// workspace or changes its description. Details carry tenant_id and the
+	// old/new name.
+	AuditActionSystemTenantUpdated AuditAction = "system.tenant_updated"
 	// AuditActionSystemTenantMemberAdded / Removed fire when a SystemAdmin
 	// changes the membership of a workspace it does not belong to.
 	AuditActionSystemTenantMemberAdded   AuditAction = "system.tenant_member_added"

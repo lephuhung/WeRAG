@@ -13,4 +13,7 @@ type StatsService interface {
 	// GetSystemStats returns platform-wide counters. days bounds the
 	// message-activity window (trailing N days).
 	GetSystemStats(ctx context.Context, days int) (*types.SystemStats, error)
+	// ListProcessingDocuments returns documents still in the ingest
+	// pipeline across every tenant, oldest first, capped at limit.
+	ListProcessingDocuments(ctx context.Context, limit int) (*types.ProcessingDocuments, error)
 }

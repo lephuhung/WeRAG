@@ -719,15 +719,75 @@ export interface MessageStats {
   by_day: MessageDayActivity[];
 }
 
+/** Chat activity over the trailing `hours` window (24h). */
+export interface ChatWindowStats {
+  hours: number;
+  /** role='user' messages — one per chat turn. */
+  questions: number;
+  answers: number;
+  active_sessions: number;
+  active_users: number;
+}
+
+export interface FeedbackStats {
+  likes: number;
+  dislikes: number;
+  likes_24h: number;
+  dislikes_24h: number;
+}
+
+/** Document breakdown of one platform-public knowledge base. */
+export interface PublicKBDocumentCount {
+  id: string;
+  name: string;
+  type: string;
+  total: number;
+  completed: number;
+  processing: number;
+  failed: number;
+}
+
 export interface SystemStats {
   accounts: AccountStats;
   documents: DocumentStats;
   messages: MessageStats;
+  chat_24h: ChatWindowStats;
+  feedback: FeedbackStats;
+  /** Largest first. */
+  public_kbs: PublicKBDocumentCount[];
 }
 
 /** GET /api/v1/system/admin/stats?days=N (SystemAdmin only, 1-365). */
 export function getSystemStats(days = 90): Promise<{ data: SystemStats }> {
   return apiGet(`/api/v1/system/admin/stats?days=${days}`);
+}
+
+/* Mirrors types.ProcessingDocuments — documents still in the ingest
+ * pipeline across every tenant, oldest first. */
+export interface ProcessingDocument {
+  id: string;
+  title: string;
+  file_name: string;
+  file_type: string;
+  parse_status: "pending" | "processing" | "finalizing" | string;
+  pending_subtasks_count: number;
+  knowledge_base_id: string;
+  knowledge_base_name: string;
+  tenant_id: number;
+  tenant_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProcessingDocuments {
+  total: number;
+  items: ProcessingDocument[];
+  failed_24h: number;
+}
+
+/** GET /api/v1/system/admin/stats/processing?limit=N (SystemAdmin only, 1-200). */
+export function getProcessingDocuments(limit = 50): Promise<{ data: ProcessingDocuments }> {
+  return apiGet(`/api/v1/system/admin/stats/processing?limit=${limit}`);
 }
 
 // ---- sandbox backend configuration (per workspace) -------------------------------------
@@ -1223,6 +1283,15 @@ export interface ProvisionTenantResult {
   admin: SystemAdminUser;
   admin_created: boolean;
   generated_password?: string;
+}
+
+/* PUT /api/v1/system/admin/tenants/{id} — SuperAdmin renames any workspace
+ * (no membership needed). Omitted fields stay unchanged. */
+export function updateSystemTenant(
+  tenantId: number,
+  req: { name?: string; description?: string },
+): Promise<{ success: boolean; data: { id: number; name: string; description?: string } }> {
+  return apiPut(`/api/v1/system/admin/tenants/${tenantId}`, req);
 }
 
 /* POST /api/v1/system/admin/tenants — only SuperAdmins create workspaces,

@@ -49,3 +49,31 @@ func (h *StatsHandler) GetSystemStats(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": stats})
 }
+
+// ListProcessingDocuments godoc
+// @Summary      Documents in the ingest pipeline
+// @Description  Pending/processing/finalizing documents across every tenant,
+// @Description  oldest first, plus the number of documents failed in 24h.
+// @Tags         System Admin
+// @Produce      json
+// @Param        limit query int false "Max rows (1-200, default 50)"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/stats/processing [get]
+func (h *StatsHandler) ListProcessingDocuments(c *gin.Context) {
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 200 {
+			c.Error(apperrors.NewValidationError("limit must be an integer between 1 and 200"))
+			return
+		}
+		limit = v
+	}
+	docs, err := h.statsSvc.ListProcessingDocuments(c.Request.Context(), limit)
+	if err != nil {
+		c.Error(apperrors.NewInternalServerError("Failed to load processing documents").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": docs})
+}

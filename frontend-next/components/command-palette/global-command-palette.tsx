@@ -25,6 +25,7 @@ import { listAgents, type AgentRow } from "@/lib/api/agents";
 import { useAuth } from "@/lib/auth";
 import { canSeeSection } from "@/components/settings/nav-config";
 import { SYSTEM_TABS } from "@/components/system/system-nav";
+import { adminSectionHref } from "@/components/admin/admin-routes";
 
 interface CommandItem {
   id: string;
@@ -190,7 +191,7 @@ export function GlobalCommandPalette() {
       icon: <IconPulse className="h-4 w-4" />,
       onSelect: () => {
         close();
-        router.push("/platform/system/admin/logs");
+        router.push(adminSectionHref("logs"));
       },
     },
   ];

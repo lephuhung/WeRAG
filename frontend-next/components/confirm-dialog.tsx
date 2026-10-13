@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n";
+import { HostedSubPage, useInSubPageHost } from "@/components/settings/sub-page-host";
 
 export type ConfirmOptions = {
   title: string;
@@ -53,14 +54,69 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ConfirmDialog({
+/* Inside the settings modal the question opens as a sub-page (back =
+ * cancel) instead of a second dialog on top — see sub-page-host. The
+ * settings modal mounts its own ConfirmProvider so this branch is reached. */
+function ConfirmDialog(props: { options: ConfirmOptions; onSettle: (v: boolean) => void }) {
+  const hosted = useInSubPageHost();
+  return hosted ? <HostedConfirm {...props} /> : <OverlayConfirm {...props} />;
+}
+
+function ConfirmButtons({
+  options,
+  onSettle,
+  confirmRef,
+}: {
+  options: ConfirmOptions;
+  onSettle: (v: boolean) => void;
+  confirmRef?: React.Ref<HTMLButtonElement>;
+}) {
+  const { t } = useT();
+  return (
+    <div className="mt-5 flex justify-end gap-2">
+      <button type="button" className="btn btn-outline" onClick={() => onSettle(false)}>
+        {options.cancelLabel ?? t("common.cancel")}
+      </button>
+      <button
+        type="button"
+        ref={confirmRef}
+        className={`btn ${options.danger ? "bg-red-600 text-white hover:bg-red-700" : "btn-primary"}`}
+        onClick={() => onSettle(true)}
+      >
+        {options.confirmLabel ?? t("common.confirm")}
+      </button>
+    </div>
+  );
+}
+
+function HostedConfirm({
   options,
   onSettle,
 }: {
   options: ConfirmOptions;
   onSettle: (v: boolean) => void;
 }) {
-  const { t } = useT();
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirmBtnRef.current?.focus();
+  }, []);
+  return (
+    <HostedSubPage title={options.title} onClose={() => onSettle(false)}>
+      <div role="alertdialog" aria-label={options.title}>
+        <p className="text-[13.5px] leading-relaxed text-muted">{options.message}</p>
+        <ConfirmButtons options={options} onSettle={onSettle} confirmRef={confirmBtnRef} />
+      </div>
+    </HostedSubPage>
+  );
+}
+
+function OverlayConfirm({
+  options,
+  onSettle,
+}: {
+  options: ConfirmOptions;
+  onSettle: (v: boolean) => void;
+}) {
   const [mounted, setMounted] = useState(false);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => setMounted(true), []);
@@ -90,19 +146,7 @@ function ConfirmDialog({
       >
         <h2 className="title-md">{options.title}</h2>
         <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{options.message}</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className="btn btn-outline" onClick={() => onSettle(false)}>
-            {options.cancelLabel ?? t("common.cancel")}
-          </button>
-          <button
-            type="button"
-            ref={confirmBtnRef}
-            className={`btn ${options.danger ? "bg-red-600 text-white hover:bg-red-700" : "btn-primary"}`}
-            onClick={() => onSettle(true)}
-          >
-            {options.confirmLabel ?? t("common.confirm")}
-          </button>
-        </div>
+        <ConfirmButtons options={options} onSettle={onSettle} confirmRef={confirmBtnRef} />
       </div>
     </div>,
     document.body,
