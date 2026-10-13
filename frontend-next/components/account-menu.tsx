@@ -29,7 +29,30 @@ const LOCALES: { id: Locale; label: string }[] = [
   { id: "vi", label: "VI" },
 ];
 
-const PENDING_POLL_MS = 60_000;
+const PENDING_POLL_MS = 20_000;
+/* Pending ids are fetched newest first; a page this size covers any
+ * realistic backlog between two polls. */
+const PENDING_PAGE_SIZE = 100;
+/* Pending suggestion ids already announced in this browser session, so a
+ * reload or a second tab does not repeat the toast for the same backlog. */
+const NOTIFIED_KEY = "werag_abbrev_notified";
+
+function loadNotified(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(NOTIFIED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNotified(ids: Set<string>) {
+  try {
+    sessionStorage.setItem(NOTIFIED_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* storage full / disabled — at worst the toast repeats after reload */
+  }
+}
 
 export function AccountMenu() {
   const router = useRouter();
@@ -44,22 +67,28 @@ export function AccountMenu() {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
-  // Last known pending total (null until the first successful poll) so a
-  // rise can be toasted as "new suggestion awaiting approval".
-  const pendingRef = useRef<number | null>(null);
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const tLatest = useRef(t);
   tLatest.current = t;
 
+  /* Suggestions are mostly created server-side (the agent's abbreviation
+   * tools), so the browser only learns about them by polling. Track pending
+   * ids rather than the total: any id not yet announced this session raises
+   * one toast — including a backlog that was already waiting at sign-in —
+   * and an approval landing in the same interval cannot mask a new one. */
   const refreshPending = useCallback(async () => {
     try {
-      const res = await listAbbreviations({ isActive: false, page: 1, pageSize: 1 });
+      const res = await listAbbreviations({ isActive: false, page: 1, pageSize: PENDING_PAGE_SIZE });
       const total = res.total ?? 0;
-      const prev = pendingRef.current;
-      pendingRef.current = total;
       setPending(total);
-      if (prev !== null && total > prev) {
+      const ids = (res.data ?? []).map((a) => a.id);
+      const notified = loadNotified();
+      const fresh = ids.filter((id) => !notified.has(id));
+      /* Forget approved/deleted ids so the stored set stays small. */
+      const next = new Set(ids);
+      saveNotified(next);
+      if (fresh.length > 0) {
         // Longer dwell (20s): admin may be away from the screen when a new
         // suggestion lands, and 5s was easy to miss.
         toastRef.current.info(
@@ -73,17 +102,20 @@ export function AccountMenu() {
     }
   }, []);
 
-  /* Pending count: on mount, every minute, and whenever the abbreviations
+  /* Pending count: on mount, every 20s, on returning to the tab, and whenever the abbreviations
    * manager mutates (it dispatches weknora:abbreviations-changed). */
   useEffect(() => {
     if (!isSystemAdmin) return;
     void refreshPending();
     const timer = window.setInterval(() => void refreshPending(), PENDING_POLL_MS);
     const onChanged = () => void refreshPending();
+    const onVisible = () => document.visibilityState === "visible" && void refreshPending();
     window.addEventListener("weknora:abbreviations-changed", onChanged);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("weknora:abbreviations-changed", onChanged);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [isSystemAdmin, refreshPending]);
 
