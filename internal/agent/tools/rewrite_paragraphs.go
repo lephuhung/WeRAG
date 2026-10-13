@@ -246,6 +246,14 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 	default:
 		return &types.ToolResult{Success: false, Error: fmt.Sprintf("mode %q: use propose or apply", in.Mode)}, nil
 	}
+	// the user asked for several versions: options are on, and a call with
+	// fewer versions than asked is sent back (see rewrite_options.go)
+	if n := requestedVersionCount(types.UserQueryFromContext(ctx)); n >= 2 && in.Mode != rewriteModeApply && len(in.Edits) == 1 {
+		in.OptionsRequested = true
+		if got := len(in.Variants) + 1; got < n {
+			return &types.ToolResult{Success: false, Error: errFewerVersions(n, got)}, nil
+		}
+	}
 	variantsIgnored := false
 	if len(in.Variants) > 0 && !in.OptionsRequested {
 		in.Variants, variantsIgnored = nil, true
@@ -255,14 +263,15 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		return &types.ToolResult{Success: false, Error: msg}, nil
 	}
 
-	sel := types.DocumentSelectionFromContext(ctx)
-	if sel == nil {
-		return &types.ToolResult{Success: false, Error: errRewriteNeedsSelection}, nil
-	}
-
+	// the document first: a source answers "chỉ tra cứu được" rather than
+	// "chưa bôi đen" (a source has no editor to highlight in)
 	target, err := resolveDocument(ctx, t.workspace, t.sessionID, in.Document, true)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	sel := types.DocumentSelectionFromContext(ctx)
+	if sel == nil {
+		return &types.ToolResult{Success: false, Error: errRewriteNeedsSelection}, nil
 	}
 	if !selectionIn(sel, target) {
 		return &types.ToolResult{Success: false, Error: errSelectionElsewhere(sel, target)}, nil

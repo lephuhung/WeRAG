@@ -579,6 +579,8 @@ loop:
 			e.toolRegistry.RefreshMCPTools(ctx)
 			tools = e.buildToolsForLLM()
 		}
+		// a tool that failed maxToolFailuresPerTurn times is withdrawn
+		tools = dropExhaustedTools(tools, state.RoundSteps)
 
 		// Each iteration runs inside an "agent.round.<N>" Langfuse span.
 		// We execute the body in a closure so `defer span.Finish()` fires at
@@ -662,6 +664,10 @@ func (e *AgentEngine) runReActIteration(
 			"session_id": sessionID,
 		},
 	})
+
+	// the cards this turn produced so far: the answer guard drops sentences
+	// inviting the user to press a button that does not exist (answer_guard.go)
+	ctx = withTurnButtons(ctx, state.RoundSteps)
 
 	var (
 		response      *types.ChatResponse
@@ -902,6 +908,7 @@ func (e *AgentEngine) runReActIteration(
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
+		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil
 	}
@@ -920,11 +927,26 @@ func (e *AgentEngine) runReActIteration(
 	// 3. Act: Execute tool calls
 	e.executeToolCalls(ctx, response, &step, state.CurrentRound, sessionID, assistantMessageID)
 	toolCallCount = len(step.ToolCalls)
+	noteExhaustedTools(&step, state.RoundSteps)
 
 	// 4. Observe: Add tool results to messages and write to context
 	state.RoundSteps = append(state.RoundSteps, step)
 	*messagesPtr = e.appendToolResults(*messagesPtr, step)
 	*messagesPtr = e.appendToolImages(ctx, *messagesPtr, step)
+
+	// a tool result that ends the turn with a fixed answer (see turn_guards.go)
+	if msg := forcedFinalMessage(step); msg != "" {
+		logger.Infof(ctx, "[Agent][Round-%d] Tool %s ends the turn with a fixed answer", round, step.ToolCalls[0].ExecutionName())
+		answerID := generateEventID("answer")
+		_ = e.eventBus.Emit(ctx, event.Event{
+			ID: answerID, Type: event.EventAgentFinalAnswer, SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{Content: msg, Done: false},
+		})
+		e.closeAnswerStream(ctx, sessionID, answerID)
+		state.FinalAnswer = msg
+		state.IsComplete = true
+		return iterOutcomeBreak, nil
+	}
 	common.PipelineInfo(ctx, "Agent", "round_end", map[string]interface{}{
 		"iteration":   state.CurrentRound,
 		"round":       round,

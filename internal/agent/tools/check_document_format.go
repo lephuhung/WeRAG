@@ -343,13 +343,21 @@ func (t *CheckDocumentFormatTool) startFromChat(ctx context.Context, ref, fileNa
 		Output:  fmt.Sprintf(formatCheckStartedNote, fileName),
 		Data: map[string]interface{}{
 			"format_check_started": true,
-			"document_id":          target.ID,
-			"document":             DocumentLabel(target),
-			"file_name":            fileName,
-			"check":                st,
+			// the engine ends the turn with this text (agent.forcedFinalMessage):
+			// the model used to add its own, wrong, findings while waiting
+			"final_message": formatCheckStartedMessage,
+			"document_id":   target.ID,
+			"document":      DocumentLabel(target),
+			"file_name":     fileName,
+			"check":         st,
 		},
 	}
 }
+
+// formatCheckStartedMessage is the answer the user gets when the check was
+// sent to the background: the turn ends with it (see agent.forcedFinalMessage).
+const formatCheckStartedMessage = "Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường mất 2–4 phút. " +
+	"Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo."
 
 // formatCheckStartedNote is the result of a check sent to the background.
 const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s theo Nghị định 30/2020/NĐ-CP vừa bắt đầu ở chế độ nền (thường mất 2–4 phút). " +

@@ -141,8 +141,9 @@ func TestCheckSpellingSelectionScope(t *testing.T) {
 	if !strings.Contains(model.users[0], "[1] Chính") || strings.Contains(model.users[0], "[0]") {
 		t.Fatalf("model saw: %s", model.users[0])
 	}
-	if _, ok := res.Data["document_ops"]; ok || len(ws.snapshots) != 0 {
-		t.Fatal("mark=false: no ops and no snapshot")
+	// mark=false is ignored: mistakes are always underlined
+	if _, ok := res.Data["document_ops"]; !ok || len(ws.snapshots) == 0 {
+		t.Fatal("mark=false must still underline (ops + snapshot)")
 	}
 	// scope=selection without a selection is refused
 	res = runTool(t, NewCheckSpellingTool(ws, model, "s"), `{"scope":"selection"}`)

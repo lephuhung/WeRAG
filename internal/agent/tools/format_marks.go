@@ -28,7 +28,7 @@ const maxFormatMarks = 40
 // suggests; it must not close by offering to make the changes itself, which
 // read as if it would edit the document unasked (seen on Qwen3.6 2026-10-10:
 // "Bạn có muốn tôi sửa tất cả 20 lỗi chính tả? … xác nhận để tôi tiến hành").
-const pointOutClosing = "CÁCH KẾT THÚC CÂU TRẢ LỜI: chỉ ra lỗi và gợi ý cách sửa, người dùng tự sửa trong văn bản. KHÔNG đề nghị tự sửa, tự chèn hay tự thay đổi văn bản, KHÔNG hỏi \"Bạn có muốn tôi sửa…\" hay \"xác nhận để tôi tiến hành\". Nếu hữu ích, chỉ nhắc: muốn có đề xuất viết lại cho một đoạn thì bôi đen đoạn đó và yêu cầu viết lại (đề xuất có nút thay vào văn bản)."
+const pointOutClosing = "CÁCH KẾT THÚC CÂU TRẢ LỜI: chỉ ra lỗi và gợi ý cách sửa, người dùng tự sửa trong văn bản. KHÔNG đề nghị tự sửa, tự chèn hay tự thay đổi văn bản, KHÔNG hỏi \"Bạn có muốn tôi sửa…\" hay \"xác nhận để tôi tiến hành\". Nếu hữu ích, chỉ nhắc: muốn có đề xuất viết lại cho một đoạn thì bôi đen đoạn đó và yêu cầu viết lại (đề xuất có nút thay vào văn bản). Lượt này KHÔNG có nút \"Thay vào văn bản\" hay \"Chèn vào văn bản\": đừng mời người dùng bấm nút nào."
 
 // formatMarksNote ends the Output of a tool that returned format marks.
 const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được gạch chân trong trình soạn thảo để người dùng thấy vị trí; nội dung và định dạng không bị sửa (Ctrl+Z để bỏ gạch chân). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."

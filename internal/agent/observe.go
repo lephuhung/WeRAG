@@ -428,7 +428,7 @@ func (e *AgentEngine) analyzeResponse(
 	if isNaturalStopFinishReason(response.FinishReason) && len(response.ToolCalls) == 0 {
 		// Strip <think>…</think> blocks that some models embed in content
 		// (DeepSeek, Qwen, etc.) before processing or displaying.
-		response.Content = agenttools.StripThinkBlocks(response.Content)
+		response.Content = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(response.Content))
 		logger.Infof(ctx, "[Agent][Round-%d] Agent finished naturally: answer=%d chars, duration=%dms",
 			iteration+1, len(response.Content), time.Since(roundStart).Milliseconds())
 		common.PipelineInfo(ctx, "Agent", "round_final_answer", map[string]interface{}{

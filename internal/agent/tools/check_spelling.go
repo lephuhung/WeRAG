@@ -47,7 +47,7 @@ A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it 
     "scope": {"type": "string", "enum": ["document", "selection"], "description": "selection: only the highlighted passage; document: the paragraph window. Default: selection when present, else document"},
     "from": {"type": "integer", "minimum": 0, "description": "First paragraph index for scope=document (default 0)"},
     "limit": {"type": "integer", "minimum": 1, "maximum": 150, "description": "Paragraphs to review for scope=document (default 60, max 150)"},
-    "mark": {"type": "boolean", "description": "Underline the findings in the editor (default true)"}
+    "mark": {"type": "boolean", "description": "Ignored: the findings are always underlined in the editor"}
   }
 }`),
 }
@@ -206,7 +206,12 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 	if in.Limit > spellMaxLimit {
 		in.Limit = spellMaxLimit
 	}
-	mark := in.Mark == nil || *in.Mark
+	// Mistakes are always underlined: the model passed mark=false for a
+	// highlighted passage and only listed them in the chat (the prompt rule
+	// "spelling mistakes are ALWAYS underlined" was not enough). The field
+	// stays accepted for compatibility and is ignored.
+	mark := true
+	_ = in.Mark
 
 	var (
 		content []byte

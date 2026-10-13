@@ -252,6 +252,13 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 			return &types.ToolResult{Success: false, Error: "invalid arguments: " + err.Error()}, nil
 		}
 	}
+	// apply=true needs the user's agreement in their own words; without it
+	// the call is a review (see format_consent.go)
+	consentNote := ""
+	if in.Apply && !formatFixConsent(types.UserQueryFromContext(ctx)) {
+		in.Apply, in.Force = false, false
+		consentNote = noConsentNote
+	}
 	// A real run snapshots first (the restore point, and a force-save so
 	// the plan sees the editor's latest text); a dry run only reads.
 	var content []byte
@@ -364,6 +371,9 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		output += "\nCHƯA SỬA GÌ và không có sửa định dạng nào áp dụng tự động được. Chỉ nêu các lỗi cần sửa thủ công kèm cách sửa để người dùng tự sửa; KHÔNG đề nghị sửa giúp, KHÔNG hỏi \"Bạn có muốn tôi sửa…\".\n"
 	case marks > 0:
 		output += "Những lỗi cần sửa thủ công được gạch chân tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ gạch chân).\n"
+	}
+	if consentNote != "" {
+		output = consentNote + "\n\n" + output
 	}
 	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName

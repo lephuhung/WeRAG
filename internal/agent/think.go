@@ -304,6 +304,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	splitter := agenttools.NewThinkStreamSplitter()
 	thinkingOpen := false
 	answerStreamed := false
+	// emitAnswerRaw writes to the event bus; emitAnswer goes through the
+	// answer guard first when the turn has one (answer_guard.go)
+	var emitAnswerRaw func(content string)
+	var guard *answerGuard
+	guard = newAnswerGuard(ctx, func(s string) { emitAnswerRaw(s) })
 
 	emitThought := func(content string, done bool) {
 		if content == "" && !done {
@@ -334,6 +339,13 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		if content == "" {
 			return
 		}
+		if guard != nil {
+			guard.Write(content)
+			return
+		}
+		emitAnswerRaw(content)
+	}
+	emitAnswerRaw = func(content string) {
 		// Suppress whitespace-only content emitted before the real answer has
 		// started. OpenAI-compatible models frequently prepend a stray newline
 		// (e.g. "\n\n") to the plain content channel in the same chunk where
@@ -456,6 +468,9 @@ func (e *AgentEngine) streamThinkingToEventBus(
 					emitThought(thinkPart, false)
 				}
 				emitAnswer(answerPart)
+				if guard != nil {
+					guard.Flush()
+				}
 				closeThinking()
 			}
 		},
@@ -469,7 +484,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d completed: content=%d chars, tool_calls=%d, emitted_events=%v",
 		iteration+1, len(llmResult.Content), len(llmResult.ToolCalls), emittedEventTypes)
 
-	fullContent := agenttools.StripThinkBlocks(llmResult.Content)
+	fullContent := cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
 
 	// Use actual finish_reason from LLM stream instead of hardcoding "stop".
 	// Fallback to "stop" when the stream did not report a finish_reason

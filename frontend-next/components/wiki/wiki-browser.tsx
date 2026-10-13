@@ -329,6 +329,9 @@ export function WikiPageView({
       <SlidePanelHeader title={page?.title ?? title} onClose={onClose} />
       <div className="flex min-h-0 flex-1 flex-col gap-4 px-8 py-6">
         {error && <p className="caption text-error">{error}</p>}
+        {page?.page_metadata?.generator === "vbpl-catalogue" && (
+          <p className="caption rounded-md border border-hairline bg-surface-2 px-3 py-2 text-muted">{t("wiki.catalogueCaveat")}</p>
+        )}
         {/* meta row */}
         {page && (
           <div className="caption flex flex-wrap items-center gap-4 text-muted">

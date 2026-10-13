@@ -66,6 +66,16 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	// Generate a single ID for this entire final answer stream
 	answerID := generateEventID("answer")
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
+	ctx = withTurnButtons(ctx, state.RoundSteps)
+	emitChunk := func(content string) {
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data:      event.AgentFinalAnswerData{Content: content},
+		})
+	}
+	guard := newAnswerGuard(ctx, emitChunk)
 
 	budget := e.clampCompletionBudgetToContext(e.tokenEstimator.EstimateMessages(messages))
 	llmResult, err := e.streamLLMToEventBus(
@@ -85,15 +95,20 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			// The terminal event waits for the amendment history below.
 			if chunk.Content != "" {
 				logger.Debugf(ctx, "[Agent][FinalAnswer] Emitting answer chunk: %d chars", len(chunk.Content))
-				e.eventBus.Emit(ctx, event.Event{
-					ID:        answerID,
-					Type:      event.EventAgentFinalAnswer,
-					SessionID: sessionID,
-					Data:      event.AgentFinalAnswerData{Content: chunk.Content},
-				})
+				if guard != nil {
+					guard.Write(chunk.Content)
+				} else {
+					emitChunk(chunk.Content)
+				}
+			}
+			if chunk.Done && guard != nil {
+				guard.Flush()
 			}
 		},
 	)
+	if guard != nil {
+		guard.Flush()
+	}
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][FinalAnswer] Final answer generation failed: %v", err)
 		common.PipelineError(ctx, "Agent", "final_answer_stream_failed", map[string]interface{}{
@@ -104,8 +119,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	}
 
 	// Safety net: strip any residual <think> blocks that may have leaked through
-	state.FinalAnswer = agenttools.StripThinkBlocks(llmResult.Content)
+	state.FinalAnswer = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
 	e.appendLegalHistory(ctx, state, sessionID, answerID)
+	e.appendWikiCaveat(ctx, state, sessionID, answerID)
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        answerID,
 		Type:      event.EventAgentFinalAnswer,

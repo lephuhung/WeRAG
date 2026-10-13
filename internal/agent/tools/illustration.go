@@ -265,6 +265,12 @@ func checkMermaid(src string) (string, string) {
 	// a model that JSON-escaped twice leaves \" in labels (-->|\"Có\"|):
 	// never valid Mermaid, and the browser would refuse the whole diagram
 	src = strings.ReplaceAll(src, `\"`, `"`)
+	// a model that wrote the whole source on one line with a literal
+	// backslash-n between the lines: counted as one line, the diagram was
+	// refused as "fewer than two elements" and the model retried 30 times
+	if !strings.Contains(src, "\n") && strings.Contains(src, `\n`) {
+		src = strings.ReplaceAll(src, `\n`, "\n")
+	}
 	// a fenced block from a model that wrote Markdown
 	if strings.HasPrefix(src, "```") {
 		src = strings.TrimPrefix(src, "```mermaid")
