@@ -1,8 +1,9 @@
 /* A question answered by picking one option under it (document assistant):
  * "Nghị định 53 — which document?" (display_type legal_candidates) and
- * "ABC — which meaning?" (display_type abbreviation_choice). Picking an
- * option sends option.resend as the next user message and the assistant
- * continues; nothing to type.
+ * "ABC — which meaning?" / "what is the word X?" (display_type
+ * abbreviation_choice). Picking an option sends option.resend as the next
+ * user message and the assistant continues; an option with an input asks
+ * for text first and sends its template with "{text}" filled in.
  *
  * The payload arrives as a tool result (live) or an agent step (history).
  * Pure helpers here; the component is choice-list.tsx.
@@ -22,8 +23,17 @@ export interface ChoiceOption {
   badgeOk?: boolean;
   /** Small muted text at the end of the first line (a date). */
   meta?: string;
-  /** The message to send when picked. */
+  /** The message to send when picked (empty for an option with an input). */
   resend: string;
+  /** Placeholder of the text box shown when picked; the message is then
+   * `template` with "{text}" replaced by what was typed. */
+  input?: string;
+  template?: string;
+}
+
+/** The message an option sends: its resend, or its template filled with text. */
+export function optionMessage(o: ChoiceOption, text = ""): string {
+  return o.input ? (o.template ?? "").split("{text}").join(text.trim()) : o.resend;
 }
 
 export interface ChoiceList {
@@ -74,8 +84,12 @@ export function parseChoiceList(data: unknown): ChoiceList | null {
     const options: ChoiceOption[] = [];
     for (const raw of Array.isArray(d.options) ? d.options : []) {
       const o = rec(raw);
-      if (!o || !str(o.label) || !str(o.resend)) continue;
-      options.push({ label: str(o.label), detail: str(o.detail) || undefined, resend: str(o.resend) });
+      if (!o || !str(o.label)) continue;
+      if (str(o.input) && str(o.template).includes("{text}")) {
+        options.push({ label: str(o.label), detail: str(o.detail) || undefined, resend: "", input: str(o.input), template: str(o.template) });
+      } else if (str(o.resend)) {
+        options.push({ label: str(o.label), detail: str(o.detail) || undefined, resend: str(o.resend) });
+      }
     }
     if (options.length === 0) return null;
     return { kind: ABBREVIATION_CHOICE_TYPE, subject: str(d.subject), total: options.length, options };

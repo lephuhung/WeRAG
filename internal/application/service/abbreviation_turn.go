@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -77,7 +79,21 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	var detection types.AbbreviationDetection
 	if c.dictionary != nil {
 		// @-mentions (file names such as @bao_cao.docx) are not abbreviations
-		detection = c.dictionary.DetectCandidates(ctx, abbreviation.StripMentions(b.RawQuery))
+		text := abbreviation.StripMentions(b.RawQuery)
+		// the spell-check model runs alongside the detector; the words it
+		// reads as typos are asked about too, its guess offered as a choice
+		var typos []types.AbbreviationTypo
+		var wg sync.WaitGroup
+		if s, ok := c.dictionary.(abbreviationTypoSuggester); ok {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				typos = s.SuggestTypos(ctx, text)
+			}()
+		}
+		detection = c.dictionary.DetectCandidates(ctx, text)
+		wg.Wait()
+		detection = withTypoCandidates(detection, text, typos)
 	}
 	probe := abbreviation.InspectDetected(b.RawQuery, nil, detection)
 	candidates := make([]string, 0, len(probe.Terms))
@@ -181,8 +197,12 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 	if err != nil {
 		return zero, err
 	}
+	resolution, err = abbreviation.ApplyTypoCorrections(resolution, c.expandTypoAbbreviations(ctx, parsed.Typos))
+	if err != nil {
+		return zero, err
+	}
 	resolution.CurrentUserMessageID = b.UserMessageID
-	if len(parsed.Definitions) != 0 {
+	if len(parsed.Definitions) != 0 || len(parsed.Typos) != 0 {
 		if err := c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.UserMessageID, RequestID: row.ID, Role: types.AbbreviationMessageRoleDefinition}}); err != nil {
 			return zero, err
 		}
@@ -301,4 +321,75 @@ func (c *AbbreviationTurnCoordinator) advance(ctx context.Context, owner types.A
 
 func (c *AbbreviationTurnCoordinator) linkAssistant(ctx context.Context, b types.AbbreviationBinding, row *types.AbbreviationTurnState, role string) error {
 	return c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.AssistantMessageID, RequestID: row.ID, Role: role}})
+}
+
+// abbreviationTypoSuggester is implemented by the abbreviation service when
+// a spell-check model can guess which question words are keyboard typos.
+type abbreviationTypoSuggester interface {
+	SuggestTypos(ctx context.Context, text string) []types.AbbreviationTypo
+}
+
+// withTypoCandidates adds the suspected typo words to the candidate set so
+// the gate asks about them (typo, abbreviation, keep as typed, other)
+// instead of guessing. A heuristic detection becomes an explicit key set:
+// the heuristic's own picks plus the typo words. Typo words beyond the
+// term budget are dropped rather than blocking the turn.
+func withTypoCandidates(det types.AbbreviationDetection, text string, typos []types.AbbreviationTypo) types.AbbreviationDetection {
+	if len(typos) == 0 {
+		return det
+	}
+	out := types.AbbreviationDetection{Detector: det.Detector, Keys: append([]string(nil), det.Keys...)}
+	if det.Detector == types.AbbreviationDetectorHeuristic {
+		out.Detector = types.AbbreviationDetectorHeuristicSpellcheck
+		out.Keys = nil
+		for _, tok := range abbreviation.ProposeTokens(text) {
+			if abbreviation.IsLikelyAbbreviation(tok) {
+				out.Keys = append(out.Keys, strings.ToLower(tok))
+			}
+		}
+	}
+	has := make(map[string]bool, len(out.Keys))
+	for _, k := range out.Keys {
+		has[k] = true
+	}
+	for _, t := range typos {
+		key := strings.ToLower(t.Wrong)
+		if !has[key] {
+			if len(out.Keys) >= types.MaxAbbreviationTerms {
+				continue
+			}
+			has[key] = true
+			out.Keys = append(out.Keys, key)
+		}
+		out.Typos = append(out.Typos, t)
+	}
+	return out
+}
+
+// expandTypoAbbreviations writes a correction that is a dictionary short
+// form with one active meaning as "full form (SHORT)", the way the query
+// renders any abbreviation (ubnf → UBND reads "Ủy ban nhân dân (UBND)").
+func (c *AbbreviationTurnCoordinator) expandTypoAbbreviations(ctx context.Context, typos []types.AbbreviationTypo) []types.AbbreviationTypo {
+	if len(typos) == 0 || c.dictionary == nil {
+		return typos
+	}
+	active, err := c.dictionary.ListActive(ctx)
+	if err != nil {
+		return typos
+	}
+	meanings := map[string][]*types.Abbreviation{}
+	for _, a := range active {
+		if a != nil && a.IsActive {
+			k := strings.ToLower(strings.TrimSpace(a.ShortForm))
+			meanings[k] = append(meanings[k], a)
+		}
+	}
+	out := make([]types.AbbreviationTypo, len(typos))
+	for i, t := range typos {
+		out[i] = t
+		if m := meanings[strings.ToLower(strings.TrimSpace(t.Correct))]; len(m) == 1 {
+			out[i].Correct = m[0].FullForm + " (" + m[0].ShortForm + ")"
+		}
+	}
+	return out
 }

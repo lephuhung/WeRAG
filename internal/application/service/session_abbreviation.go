@@ -178,12 +178,18 @@ func EmitAbbreviationClarification(ctx context.Context, bus *event.EventBus, req
 }
 
 // AbbreviationChoiceType is the display_type of the choice list shown
-// when an abbreviation has several dictionary meanings: the user clicks
-// one and the reply "ABC = <meaning>" continues the turn.
+// when an abbreviation has several dictionary meanings (the user clicks
+// one and the reply "ABC = <meaning>" continues the turn) or when a word
+// is unclear: abbreviation, typo, keep as typed, or another answer. An
+// option with "input" asks for text first and has a "template" instead of
+// a resend: "{text}" in it is replaced by what the user typed. Clients
+// that do not know inputs skip such options (no resend).
 const AbbreviationChoiceType = "abbreviation_choice"
 
 // abbreviationChoice builds the question and the choice payload for the
-// unknown terms; choices only for terms with several active meanings.
+// unknown terms: the meanings of a term with several active ones, else
+// what the first unclear word is. The other unclear words are asked about
+// in the following turns, one at a time.
 func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer string, data map[string]interface{}) {
 	var plain []string
 	var b strings.Builder
@@ -220,6 +226,9 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 			b.WriteString("Chọn một nghĩa ở trên, hoặc trả lời theo dạng: ABC = nghĩa đầy đủ.")
 		}
 	}
+	if len(plain) > 0 && data == nil {
+		return unclearWordChoice(plain[0], abbreviation.TypoSuggestionFor(r, plain[0]), english)
+	}
 	if len(plain) > 0 {
 		if b.Len() > 0 {
 			b.WriteString("\n")
@@ -231,6 +240,61 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 		}
 	}
 	return b.String(), data
+}
+
+// unclearWordChoice asks what an unclear word is. The spell-check guess,
+// when there is one, is offered as "you mistyped X"; the user decides,
+// nothing is corrected silently.
+func unclearWordChoice(word, guess string, english bool) (string, map[string]interface{}) {
+	type option struct{ label, detail, input, resend string }
+	var opts []option
+	if english {
+		opts = append(opts, option{"It is an abbreviation", "Type its full meaning", "Full meaning of " + word, word + " = {text}"})
+		if guess != "" {
+			opts = append(opts, option{"You mistyped it — did you mean “" + guess + "”?", "", "", word + " → " + guess})
+		} else {
+			opts = append(opts, option{"You mistyped it", "Type the intended word", "Intended word", word + " → {text}"})
+		}
+		opts = append(opts,
+			option{"Keep “" + word + "” as typed", "A name or an ordinary word", "", word + " → " + word},
+			option{"Another answer", "Type your answer or ask again differently", "Your answer", "{text}"})
+	} else {
+		opts = append(opts, option{"Là từ viết tắt", "Nhập nghĩa đầy đủ", "Nghĩa đầy đủ của " + word, word + " = {text}"})
+		if guess != "" {
+			opts = append(opts, option{"Bạn gõ sai, ý là “" + guess + "” phải không?", "", "", word + " → " + guess})
+		} else {
+			opts = append(opts, option{"Bạn gõ sai", "Nhập từ đúng", "Từ đúng", word + " → {text}"})
+		}
+		opts = append(opts,
+			option{"Giữ nguyên “" + word + "”", "Tên riêng hoặc từ thông thường", "", word + " → " + word},
+			option{"Câu trả lời khác", "Tự nhập câu trả lời hoặc hỏi lại theo cách khác", "Câu trả lời của bạn", "{text}"})
+	}
+	var b strings.Builder
+	if english {
+		fmt.Fprintf(&b, "I noticed the word “%s” is unclear. Could you tell me more?\n", word)
+	} else {
+		fmt.Fprintf(&b, "Tôi nhận thấy từ “%s” chưa rõ ý nghĩa, bạn giúp tôi cung cấp thêm thông tin nhé:\n", word)
+	}
+	options := make([]map[string]interface{}, 0, len(opts))
+	for i, o := range opts {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, o.label)
+		m := map[string]interface{}{"label": o.label}
+		if o.detail != "" {
+			m["detail"] = o.detail
+		}
+		if o.input != "" {
+			m["input"], m["template"] = o.input, o.resend
+		} else {
+			m["resend"] = o.resend
+		}
+		options = append(options, m)
+	}
+	if english {
+		fmt.Fprintf(&b, "Or reply “%s = full meaning” or “%s → intended word”.", word, word)
+	} else {
+		fmt.Fprintf(&b, "Hoặc trả lời theo dạng “%s = nghĩa đầy đủ” hay “%s → từ đúng”.", word, word)
+	}
+	return b.String(), map[string]interface{}{"display_type": AbbreviationChoiceType, "subject": word, "options": options}
 }
 
 func emitAbbreviationTerminal(ctx context.Context, bus *event.EventBus, req *types.QARequest, r types.AbbreviationResolution) error {

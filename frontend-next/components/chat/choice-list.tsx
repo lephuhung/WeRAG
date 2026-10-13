@@ -1,13 +1,14 @@
 /* Options under a question (document assistant): which legal document,
- * which meaning of an abbreviation. A radio group: ticking one sends the
- * option's message at once and the assistant continues; nothing to type,
- * nothing to confirm.
+ * which meaning of an abbreviation, what an unclear word is. A radio
+ * group: ticking one sends the option's message at once and the assistant
+ * continues; an option with an input opens a text box sent with Enter or
+ * the send button.
  */
 "use client";
 
 import { useId, useState } from "react";
 import { useT } from "@/lib/i18n";
-import type { ChoiceList, ChoiceOption } from "@/lib/choice-list";
+import { optionMessage, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
 
 export function ChoiceListView({
   card,
@@ -26,16 +27,23 @@ export function ChoiceListView({
   const [working, setWorking] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState("");
 
   const pick = async (i: number) => {
     const o = card.options[i];
     if (!o || working) return;
+    setError(null);
+    // an option with an input waits for its text
+    if (o.input && (selected !== i || !text.trim())) {
+      if (selected !== i) setText("");
+      setSelected(i);
+      return;
+    }
     setSelected(i);
     setWorking(true);
-    setError(null);
     try {
-      await onPick(o);
-      setPicked(o.label);
+      await onPick({ ...o, resend: optionMessage(o, text) });
+      setPicked(o.input ? `${o.label}: ${text.trim()}` : o.label);
     } catch (e) {
       setError(`${t("docws.choice.failed")}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -69,6 +77,33 @@ export function ChoiceListView({
                 )}
                 {o.meta && <span className="ml-2 text-[11.5px] text-muted-soft">{o.meta}</span>}
                 {o.detail && <span className="block truncate text-[12.5px] text-body">{o.detail}</span>}
+                {o.input && selected === i && (
+                  <span className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={text}
+                      placeholder={o.input}
+                      disabled={disabled || working}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          void pick(i);
+                        }
+                      }}
+                      className="min-w-0 flex-1 rounded-[6px] border border-hairline-strong bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-[#3b82f6]"
+                    />
+                    <button
+                      type="button"
+                      disabled={disabled || working || !text.trim()}
+                      onClick={() => void pick(i)}
+                      className="rounded-[6px] bg-[#1f6feb] px-2.5 py-1 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                    >
+                      {t("docws.choice.send")}
+                    </button>
+                  </span>
+                )}
               </span>
             </label>
           </li>

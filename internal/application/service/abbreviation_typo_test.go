@@ -7,19 +7,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWithTyposDropsTypoKeys(t *testing.T) {
+func TestWithTypoCandidatesAddsTypoKeys(t *testing.T) {
 	typos := []types.AbbreviationTypo{{Wrong: "cascc", Correct: "các"}}
-	det := withTypos(types.AbbreviationDetection{Detector: "clef", Keys: []string{"cascc", "ubnd"}}, "cascc thủ tục UBND", typos)
+	det := withTypoCandidates(types.AbbreviationDetection{Detector: "clef", Keys: []string{"ubnd"}}, "cascc thủ tục UBND", typos)
 	require.Equal(t, "clef", det.Detector)
-	require.Equal(t, []string{"ubnd"}, det.Keys)
+	require.Equal(t, []string{"ubnd", "cascc"}, det.Keys)
 	require.Equal(t, typos, det.Typos)
 
-	// heuristic detection becomes an explicit key set without the typo
-	h := withTypos(types.AbbreviationDetection{}, "cascc thủ tục UBND", typos)
+	// heuristic detection becomes an explicit key set with the typo added
+	h := withTypoCandidates(types.AbbreviationDetection{}, "cascc thủ tục UBND", typos)
 	require.Equal(t, types.AbbreviationDetectorHeuristicSpellcheck, h.Detector)
-	require.NotContains(t, h.Keys, "cascc")
-	require.Contains(t, h.Keys, "ubnd")
+	require.ElementsMatch(t, []string{"ubnd", "cascc"}, h.Keys)
 
-	// no typos: detection unchanged
-	require.Equal(t, types.AbbreviationDetection{}, withTypos(types.AbbreviationDetection{}, "x", nil))
+	require.Equal(t, types.AbbreviationDetection{}, withTypoCandidates(types.AbbreviationDetection{}, "x", nil))
+}
+
+func TestUnclearWordChoice(t *testing.T) {
+	r := types.AbbreviationResolution{
+		UnknownTerms:    []string{"cascc", "xyz"},
+		TypoSuggestions: []types.AbbreviationTypo{{Wrong: "cascc", Correct: "các"}},
+	}
+	answer, data := abbreviationChoice(r, false)
+	require.Contains(t, answer, "Tôi nhận thấy từ “cascc” chưa rõ ý nghĩa")
+	require.NotContains(t, answer, "xyz") // asked in the next turn
+	require.Equal(t, AbbreviationChoiceType, data["display_type"])
+	opts := data["options"].([]map[string]interface{})
+	require.Len(t, opts, 4)
+	require.Equal(t, "cascc = {text}", opts[0]["template"])
+	require.Nil(t, opts[0]["resend"])
+	require.Equal(t, "cascc → các", opts[1]["resend"])
+	require.Equal(t, "cascc → cascc", opts[2]["resend"])
+	require.Equal(t, "{text}", opts[3]["template"])
+
+	// no guess: the typo option asks for the intended word
+	_, data = abbreviationChoice(types.AbbreviationResolution{UnknownTerms: []string{"xyz"}}, false)
+	require.Equal(t, "xyz → {text}", data["options"].([]map[string]interface{})[1]["template"])
 }

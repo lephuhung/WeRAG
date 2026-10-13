@@ -46,7 +46,7 @@ func InspectDetected(text string, active []*types.Abbreviation, det types.Abbrev
 		OriginalQuery:   text,
 		Detector:        det.Detector,
 		DetectedKeys:    append([]string(nil), det.Keys...),
-		TypoCorrections: append([]types.AbbreviationTypo(nil), det.Typos...),
+		TypoSuggestions: append([]types.AbbreviationTypo(nil), det.Typos...),
 	}
 	if text == "" {
 		r.Status = types.AbbreviationStatusReady
@@ -340,19 +340,23 @@ func RenderResolvedQuery(r types.AbbreviationResolution) (string, error) {
 			})
 		}
 	}
-	// Typo words read as their correction. Their keys are never candidates,
-	// so they cannot overlap a term occurrence; a key that is also a term
-	// key is left alone all the same.
+	// Confirmed typo words read as their correction. ApplyTypoCorrections
+	// takes their keys out of the candidates, so they cannot overlap a term
+	// occurrence; a key that is also a term key is left alone all the same,
+	// and so is any occurrence inside a code (172/GM-UBND).
 	if len(r.TypoCorrections) > 0 {
 		fix := make(map[string]string, len(r.TypoCorrections))
 		for _, t := range r.TypoCorrections {
-			fix[termKey(t.Wrong)] = t.Correct
+			if termKey(t.Wrong) != termKey(t.Correct) {
+				fix[termKey(t.Wrong)] = t.Correct
+			}
 		}
 		for i := range r.Terms {
 			delete(fix, r.Terms[i].Key)
 		}
 		for _, ws := range extractWordTokenSpans(r.OriginalQuery) {
-			if correct, ok := fix[termKey(ws.token)]; ok && correct != "" {
+			correct, ok := fix[termKey(ws.token)]
+			if ok && correct != "" && isExpansionBoundary(r.OriginalQuery, ws.start, ws.end) {
 				spans = append(spans, span{start: ws.start, end: ws.end, repl: correct})
 			}
 		}
@@ -646,6 +650,7 @@ func cloneResolution(r types.AbbreviationResolution) types.AbbreviationResolutio
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
+	out.TypoSuggestions = append([]types.AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]types.AbbreviationTypo(nil), r.TypoCorrections...)
 	return out
 }

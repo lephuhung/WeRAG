@@ -38,8 +38,8 @@ const (
 // heuristic. Any other name is a Decision model provider (jev, clef).
 const AbbreviationDetectorHeuristic = ""
 
-// AbbreviationDetectorHeuristicSpellcheck names a heuristic detection from
-// which the spell-check model removed typo tokens; Keys is authoritative.
+// AbbreviationDetectorHeuristicSpellcheck names a heuristic detection to
+// which the spell-check model added typo words; Keys is authoritative.
 const AbbreviationDetectorHeuristicSpellcheck = "heuristic+spellcheck"
 
 // AbbreviationDetection records which query tokens a classifier flagged as
@@ -49,14 +49,16 @@ const AbbreviationDetectorHeuristicSpellcheck = "heuristic+spellcheck"
 type AbbreviationDetection struct {
 	Detector string
 	Keys     []string
-	// Typos are keyboard typos the spellcheck model found in the query
-	// (cascc → các). Their tokens are never candidates; Keys already
-	// excludes them.
+	// Typos are the spellcheck model's guesses for query words it reads as
+	// keyboard typos (cascc → các). Their keys are in Keys: the user
+	// confirms each guess before the query uses it.
 	Typos []AbbreviationTypo
 }
 
-// AbbreviationTypo is one typo token of the query and its correction. The
-// effective query reads Correct wherever the word Wrong occurs.
+// AbbreviationTypo is one word of the query and the word it stands for.
+// As a suggestion it only labels a choice; as a correction (confirmed by
+// the user) the effective query reads Correct wherever the word Wrong
+// occurs. Correct equal to Wrong keeps the word as typed.
 type AbbreviationTypo struct {
 	Wrong   string `json:"wrong"`
 	Correct string `json:"correct"`
@@ -168,7 +170,10 @@ type AbbreviationResolution struct {
 	// again. Empty Detector (legacy payloads) means the heuristic.
 	Detector     string   `json:"detector,omitempty"`
 	DetectedKeys []string `json:"detected_keys,omitempty"`
-	// TypoCorrections are applied when rendering the effective query.
+	// TypoSuggestions are the spellcheck model's guesses offered as a
+	// choice; TypoCorrections are the ones the user confirmed, applied when
+	// rendering the effective query.
+	TypoSuggestions []AbbreviationTypo `json:"typo_suggestions,omitempty"`
 	TypoCorrections []AbbreviationTypo `json:"typo_corrections,omitempty"`
 }
 
@@ -177,7 +182,7 @@ func (r AbbreviationResolution) Detection() AbbreviationDetection {
 	return AbbreviationDetection{
 		Detector: r.Detector,
 		Keys:     append([]string(nil), r.DetectedKeys...),
-		Typos:    append([]AbbreviationTypo(nil), r.TypoCorrections...),
+		Typos:    append([]AbbreviationTypo(nil), r.TypoSuggestions...),
 	}
 }
 
@@ -201,7 +206,6 @@ type AbbreviationPublicState struct {
 	UnknownTerms      []string                 `json:"unknown_terms"`
 	Terms             []AbbreviationPublicTerm `json:"terms"`
 	ExpiresAt         time.Time                `json:"expires_at"`
-	TypoCorrections   []AbbreviationTypo       `json:"typo_corrections,omitempty"`
 }
 
 // Clone returns a deep copy of the resolution: every nested slice and pointer
@@ -220,6 +224,7 @@ func (r AbbreviationResolution) Clone() AbbreviationResolution {
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
+	out.TypoSuggestions = append([]AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]AbbreviationTypo(nil), r.TypoCorrections...)
 	return out
 }
@@ -247,6 +252,5 @@ func (r AbbreviationResolution) PublicState() AbbreviationPublicState {
 		UnknownTerms:      unknown,
 		Terms:             terms,
 		ExpiresAt:         r.ExpiresAt,
-		TypoCorrections:   append([]AbbreviationTypo(nil), r.TypoCorrections...),
 	}
 }

@@ -11,12 +11,17 @@ import (
 )
 
 type DefinitionParseResult struct {
-	Definitions          []types.AbbreviationDefinition
+	Definitions []types.AbbreviationDefinition
+	// Typos are "X → Y" answers: the word X was a typo of Y (Y equal to X
+	// keeps the word as typed). They never become dictionary suggestions.
+	Typos                []types.AbbreviationTypo
 	IsDefinitionReply    bool
 	NeedsExplicitMapping bool
 }
 
 var definitionClause = regexp.MustCompile(`^([\pL\pN][\pL\pN_-]*)\s*(?:=|là)\s*(.+)$`)
+
+var typoClause = regexp.MustCompile(`^([\pL\pN][\pL\pN_-]*)\s*(?:→|->)\s*(.+)$`)
 
 func ParseUserDefinitions(text, messageID string, candidates []string, soleReply bool) (DefinitionParseResult, error) {
 	var result DefinitionParseResult
@@ -40,6 +45,25 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 		segment := text[start:end]
 		trimmed := strings.TrimSpace(segment)
 		prefix := len(segment) - len(strings.TrimLeftFunc(segment, unicode.IsSpace))
+		if m := typoClause.FindStringSubmatch(trimmed); m != nil {
+			key := termKey(m[1])
+			canonical, ok := allowed[key]
+			correct := strings.TrimSpace(m[2])
+			if !ok || correct == "" || strings.ContainsAny(correct, "=;\r\n") ||
+				utf8.RuneCountInString(correct) > types.MaxAbbreviationFullFormRunes {
+				return DefinitionParseResult{}, types.ErrAbbreviationBadSelection
+			}
+			if seen[key] {
+				return DefinitionParseResult{}, types.ErrAbbreviationConflict
+			}
+			seen[key] = true
+			result.Typos = append(result.Typos, types.AbbreviationTypo{Wrong: canonical, Correct: correct})
+			if end == len(text) {
+				break
+			}
+			start = end + 1
+			continue
+		}
 		match := definitionClause.FindStringSubmatchIndex(trimmed)
 		if len(match) != 0 {
 			short := trimmed[match[2]:match[3]]
@@ -67,7 +91,7 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 		}
 		start = end + 1
 	}
-	if len(result.Definitions) == 0 && soleReply && len(allowed) == 1 {
+	if len(result.Definitions) == 0 && len(result.Typos) == 0 && soleReply && len(allowed) == 1 {
 		phrase := strings.TrimSpace(text)
 		if validBareDefinitionPhrase(phrase) && utf8.RuneCountInString(phrase) > types.MaxAbbreviationFullFormRunes {
 			return DefinitionParseResult{}, types.ErrAbbreviationBadSelection
@@ -88,8 +112,8 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 			return DefinitionParseResult{}, types.ErrAbbreviationBadSelection
 		}
 	}
-	result.IsDefinitionReply = len(result.Definitions) != 0
-	result.NeedsExplicitMapping = len(result.Definitions) == 0
+	result.IsDefinitionReply = len(result.Definitions) != 0 || len(result.Typos) != 0
+	result.NeedsExplicitMapping = !result.IsDefinitionReply
 	return result, nil
 }
 

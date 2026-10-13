@@ -99,15 +99,39 @@ def _abbr_states(t):
 
 
 def _typo_fixed(*words):
-    """every word was read as a typo and never became an unknown abbreviation."""
+    """every word was finally read as a typo (the user confirmed it)."""
     def fn(t, ctx):
         states = _abbr_states(t)
-        typos = {str(x.get("wrong", "")).lower() for st in states for x in st.get("typo_corrections") or []}
         unknown = {str(u).lower() for st in states for u in st.get("unknown_terms") or []}
-        miss = [w for w in words if w not in typos]
+        ready = any(st.get("status") == "ready" for st in states)
         asked = [w for w in words if w in unknown]
-        return not miss and not asked, f"typos {sorted(typos)} unknown {sorted(unknown)}"
-    return C.custom(f"typo gate read {list(words)} as typos", fn)
+        return ready and not asked, f"ready={ready} unknown {sorted(unknown)}"
+    return C.custom(f"{list(words)} resolved as typos", fn)
+
+
+def _unclear_card(word, guess):
+    """the gate asks what the word is, with "you mistyped, did you mean <guess>?" among the options."""
+    def fn(t, ctx):
+        for tc in t.tool_calls:
+            d = tc.data or {}
+            if d.get("display_type") == "abbreviation_choice" and str(d.get("subject", "")).lower() == word:
+                resends = [str(o.get("resend", "")) for o in d.get("options") or []]
+                return f"{word} → {guess}" in resends, f"options {resends}"
+        return False, "no abbreviation_choice card"
+    return C.custom(f"asks about '{word}' offering '{guess}'", fn)
+
+
+def _pick_typo(word):
+    """the resend of the card's "you mistyped" option."""
+    def q(ctx):
+        for tc in ctx["turns"][-1].tool_calls:
+            d = tc.data or {}
+            if d.get("display_type") == "abbreviation_choice":
+                for o in d.get("options") or []:
+                    if str(o.get("resend", "")).startswith(word + " → ") and o.get("resend") != f"{word} → {word}":
+                        return o["resend"]
+        return ""
+    return q
 
 
 def _abbr_looked_up(*shorts):
@@ -670,25 +694,35 @@ SCENARIOS: List[Scenario] = [
             ),
         ],
     ),
-    # Keyboard typos in a chat question (raw Telex: cascc = các, quys = quy,
-    # phaps = pháp) are read by the spellcheck model before the abbreviation
-    # gate: never asked about, never unknown terms; real abbreviations
+    # A suspected keyboard typo in a chat question (raw Telex: cascc = các,
+    # phaps = pháp) is never guessed silently: the gate asks what the word
+    # is (abbreviation / you mistyped "các"? / keep / other), the guess
+    # coming from the spellcheck model; picking the typo option continues
+    # the original question with the corrected word. Real abbreviations
     # (ubnd, bhxh) still go to the dictionary.
     Scenario(
-        id="abbr_typo", group="partial", title="Lỗi gõ phím (cascc/quys/phaps) không bị hỏi nghĩa viết tắt; ubnd/bhxh vẫn tra từ điển",
+        id="abbr_typo", group="partial", title="Từ nghi gõ sai (cascc) → hỏi lại bằng lựa chọn có gợi ý 'các'; chọn → trả lời câu gốc; ubnd/bhxh vẫn tra từ điển",
         documents=[("target", "quy_trinh.docx")],
         requires="vllm-spell (builtin-llm-spellcheck) đang chạy; từ điển dev có UBND, BHXH active",
         steps=[
             Step(
-                "cascc thủ tục hành chính quys định ở đâu",
-                S(_typo_fixed("cascc", "quys"), C.no_display_type("abbreviation_choice"),
-                  C.answer_not_contains(["nghĩa đầy đủ", "viết tắt của", "nghĩa nào"]), C.no_edit_ops()),
-                note="Trước đây cổng viết tắt (Clef) hỏi 'nghĩa đầy đủ của cascc'.",
+                "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
+                S(_unclear_card("cascc", "các"), C.answer_contains_any(["chưa rõ ý nghĩa"]), C.no_edit_ops()),
+                note="Trước đây cổng viết tắt hỏi 'nghĩa đầy đủ của cascc'; giờ hỏi lại kèm lựa chọn 'Bạn gõ sai, ý là “các”'.",
+            ),
+            Step(
+                _pick_typo("cascc"),
+                S(_typo_fixed("cascc"), C.no_display_type("abbreviation_choice"), C.answer_not_contains(["chưa rõ ý nghĩa", "nghĩa đầy đủ"]), C.no_edit_ops()),
+                note="Mô phỏng bấm 'Bạn gõ sai, ý là “các”': gửi 'cascc → các', câu gốc chạy tiếp với 'các'.",
             ),
             Step(
                 "phaps luật về bhxh cho cán bộ ubnd xã quy định gì",
-                S(_typo_fixed("phaps"), _abbr_looked_up("ubnd", "bhxh"), C.no_display_type("abbreviation_choice"),
-                  C.answer_not_contains(["nghĩa đầy đủ", "nghĩa nào"]), C.no_edit_ops()),
+                S(_unclear_card("phaps", "pháp"), C.no_edit_ops()),
+                note="Từ gõ sai thứ hai cũng được hỏi lại, không tự sửa.",
+            ),
+            Step(
+                _pick_typo("phaps"),
+                S(_typo_fixed("phaps"), _abbr_looked_up("ubnd", "bhxh"), C.no_display_type("abbreviation_choice"), C.no_edit_ops()),
                 note="Viết tắt viết thường vẫn được tra từ điển, không bị coi là lỗi gõ.",
             ),
         ],
