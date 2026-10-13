@@ -34,7 +34,7 @@ func TestModelOutputLinksAppendixFiles(t *testing.T) {
 		"knowledge_title": "Thông tư 148/2026/TT-BTC",
 		"chunks": []map[string]interface{}{{
 			"chunk_id": "chunk-3", "chunk_index": 3, "content": "theo Phụ lục II ban hành kèm theo Thông tư này",
-			"legal_cite": "Điều 3",
+			"legal_cite":     "Điều 3",
 			"appendix_files": []map[string]interface{}{{"name": "Phụ lục II. Nội dung HTCT Xã", "url": "https://files.example/pl2.docx/download"}},
 		}},
 	}})
