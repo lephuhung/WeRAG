@@ -39,7 +39,7 @@ func TestBuiltinDocumentAssistantLoadsFromYAML(t *testing.T) {
 	cfg := en.Config
 	wantTools := []string{"check_document_format", "read_document_outline", "apply_format_fixes", "rewrite_paragraphs",
 		"insert_paragraphs", "mark_passages", "check_spelling", "draw_diagram", "generate_illustration",
-		"search_knowledge", "read_document", "query_knowledge_graph", "resolve_abbreviation"}
+		"search_knowledge", "read_document", "query_knowledge_graph", "wiki_search", "wiki_read_page", "resolve_abbreviation"}
 	if !reflect.DeepEqual(cfg.AllowedTools, wantTools) {
 		t.Fatalf("allowed_tools = %v", cfg.AllowedTools)
 	}
