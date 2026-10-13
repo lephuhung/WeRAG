@@ -32,6 +32,9 @@ type messageService struct {
 	knowService    interfaces.KnowledgeService     // Service for knowledge operations (index/delete passages)
 	modelService   interfaces.ModelService         // Service for model operations (rerank model)
 	suggestionRepo interfaces.MessageSuggestionRepository
+	// usageMeter counts questions and tokens for usage packages; nil in
+	// unit tests that build the struct directly.
+	usageMeter interfaces.UsageMeter
 }
 
 // NewMessageService creates a new message service instance with the required repositories
@@ -42,6 +45,7 @@ func NewMessageService(messageRepo interfaces.MessageRepository,
 	knowService interfaces.KnowledgeService,
 	modelService interfaces.ModelService,
 	suggestionRepo interfaces.MessageSuggestionRepository,
+	usageMeter interfaces.UsageMeter,
 ) interfaces.MessageService {
 	return &messageService{
 		messageRepo:    messageRepo,
@@ -51,6 +55,7 @@ func NewMessageService(messageRepo interfaces.MessageRepository,
 		knowService:    knowService,
 		modelService:   modelService,
 		suggestionRepo: suggestionRepo,
+		usageMeter:     usageMeter,
 	}
 }
 
@@ -101,7 +106,27 @@ func (s *messageService) CreateMessage(ctx context.Context, message *types.Messa
 	}
 
 	logger.Infof(ctx, "Message created successfully, ID: %s", createdMessage.ID)
+	s.meterMessage(ctx, tenantID, createdMessage, true)
 	return createdMessage, nil
+}
+
+// meterMessage feeds the usage counters. A user message is one question
+// (counted on create, so a cancelled turn still spent it); an assistant
+// message contributes its token usage once, whenever it is first saved
+// with usage attached. Both are best-effort and never fail the write.
+func (s *messageService) meterMessage(ctx context.Context, tenantID uint64, message *types.Message, created bool) {
+	if s.usageMeter == nil || message == nil {
+		return
+	}
+	switch message.Role {
+	case "user":
+		if created {
+			userID, _ := types.UserIDFromContext(ctx)
+			s.usageMeter.RecordQuestion(ctx, tenantID, userID)
+		}
+	case "assistant":
+		s.usageMeter.RecordMessageUsage(ctx, message)
+	}
 }
 
 // GetMessage retrieves a specific message by its ID within a session
@@ -252,6 +277,7 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	}
 
 	logger.Info(ctx, "Message updated successfully")
+	s.meterMessage(ctx, tenantID, message, false)
 	return nil
 }
 

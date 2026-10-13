@@ -8,6 +8,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listAbbreviations } from "@/lib/api/abbreviations";
+import { formatTokens, getMyUsage, type UsageSummary } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
@@ -40,6 +41,7 @@ export function AccountMenu() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("general");
   const [pending, setPending] = useState(0);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   // Last known pending total (null until the first successful poll) so a
@@ -86,6 +88,23 @@ export function AccountMenu() {
   }, [isSystemAdmin, refreshPending]);
 
   useEffect(() => setOpen(false), [pathname]);
+
+  /* Own usage counters, refreshed each time the menu opens: cheap (two
+   * indexed rows) and always current for the person looking at it. */
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getMyUsage()
+      .then((res) => {
+        if (!cancelled) setUsage(res.data ?? null);
+      })
+      .catch(() => {
+        /* non-fatal — the block just stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   /* Toast notifications (e.g. new pending abbreviation) open the settings
    * modal by dispatching weknora:open-settings with the section as detail. */
@@ -191,6 +210,65 @@ export function AccountMenu() {
             </div>
           </div>
           <div className="my-1 border-t border-hairline" />
+
+          {usage?.user && (
+            <div className="px-3 py-2">
+              <div className="caption mb-1 text-muted">{t("acct.usageTitle")}</div>
+              <div className="flex items-center justify-between text-[12.5px]">
+                <span className="text-muted">{t("acct.usageToday")}</span>
+                <span className="text-ink">
+                  {t("acct.usageLine", {
+                    questions: usage.user.today.questions.toLocaleString(),
+                    tokens: formatTokens(usage.user.today.tokens),
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[12.5px]">
+                <span className="text-muted">{t("acct.usageMonth")}</span>
+                <span className="text-ink">
+                  {t("acct.usageLine", {
+                    questions: usage.user.month.questions.toLocaleString(),
+                    tokens: formatTokens(usage.user.month.tokens),
+                  })}
+                </span>
+              </div>
+              {usage.entitlement ? (
+                <div className="mt-1.5 border-t border-hairline pt-1.5">
+                  <div className="flex items-center justify-between text-[12.5px]">
+                    <span className="text-muted">{t("acct.plan")}</span>
+                    <span className={`truncate text-ink ${usage.entitlement.expired ? "text-error" : ""}`}>
+                      {usage.entitlement.plan_name}
+                      {usage.entitlement.expired ? ` · ${t("acct.planExpired")}` : ""}
+                    </span>
+                  </div>
+                  {usage.entitlement.limits.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between text-[12.5px]">
+                      <span className="text-muted">
+                        {l.metric === "tokens" ? t("acct.planTokens") : t("acct.planQuestions")}/
+                        {l.period === "day" ? t("acct.planDay") : t("acct.planMonth")}
+                      </span>
+                      <span className={l.exhausted ? "text-error" : "text-ink"}>
+                        {l.limit > 0
+                          ? t("acct.planRemaining", {
+                              remaining: l.metric === "tokens" ? formatTokens(l.remaining) : l.remaining.toLocaleString(),
+                              limit: l.metric === "tokens" ? formatTokens(l.limit) : l.limit.toLocaleString(),
+                            })
+                          : t("acct.planUnlimited")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : usage.enforced && !isSystemAdmin ? (
+                <div className="caption mt-1.5 border-t border-hairline pt-1.5 text-error">{t("acct.planNone")}</div>
+              ) : null}
+              {!isSystemAdmin && (
+                <button type="button" className="caption mt-1.5 block w-full text-left text-muted underline hover:text-ink" onClick={() => openSettings("billing")}>
+                  {t("acct.buyPlan")}
+                </button>
+              )}
+            </div>
+          )}
+          {usage?.user && <div className="my-1 border-t border-hairline" />}
 
           {isSystemAdmin && (
             <button

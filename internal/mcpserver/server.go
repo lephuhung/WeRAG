@@ -51,10 +51,12 @@ type Server struct {
 	agentService         interfaces.CustomAgentService
 	kbAccessGrantService interfaces.KBAccessGrantService
 	tenantService        interfaces.TenantService
-	abbreviationService  interfaces.AbbreviationService
-	endpointRepo         interfaces.MCPEndpointRepository
-	db                   *gorm.DB
-	cfg                  *config.Config
+	// usageGuard refuses an ask the workspace's usage package does not cover.
+	usageGuard          interfaces.UsageGuard
+	abbreviationService interfaces.AbbreviationService
+	endpointRepo        interfaces.MCPEndpointRepository
+	db                  *gorm.DB
+	cfg                 *config.Config
 
 	limiter   *ratelimit.Limiter
 	lastTouch sync.Map // endpoint id -> time.Time of the last last_used_at write
@@ -79,6 +81,7 @@ func NewServer(
 	db *gorm.DB,
 	cfg *config.Config,
 	redisClient *redis.Client,
+	usageGuard interfaces.UsageGuard,
 ) *Server {
 	s := &Server{
 		kbService:            kbService,
@@ -90,6 +93,7 @@ func NewServer(
 		agentService:         agentService,
 		kbAccessGrantService: kbAccessGrantService,
 		tenantService:        tenantService,
+		usageGuard:           usageGuard,
 		abbreviationService:  abbreviationService,
 		endpointRepo:         endpointRepo,
 		db:                   db,

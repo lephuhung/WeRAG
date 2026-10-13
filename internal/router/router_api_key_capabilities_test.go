@@ -62,7 +62,7 @@ func TestPlatformControlPlaneRoutesDeclarePlatformCapabilities(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	g := &rbacGuards{}
 	v1 := gin.New().Group("/api/v1")
-	RegisterSystemAdminRoutes(v1, &handler.SystemHandler{}, &handler.StatsHandler{}, nil, g)
+	RegisterSystemAdminRoutes(v1, &handler.SystemHandler{}, &handler.StatsHandler{}, nil, nil, g)
 
 	cases := []struct {
 		method     string

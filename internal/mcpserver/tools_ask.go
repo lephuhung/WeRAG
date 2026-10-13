@@ -200,6 +200,12 @@ func (s *Server) runQA(
 	ctx, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 
+	if s.usageGuard != nil {
+		if err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID); err != nil {
+			return "", nil, err
+		}
+	}
+
 	requestID := uuid.New().String()
 	userMsg, err := s.messageService.CreateMessage(ctx, &types.Message{
 		SessionID:   session.ID,
@@ -247,6 +253,9 @@ func (s *Server) runQA(
 		}
 		mu.Lock()
 		answer.WriteString(data.Content)
+		if data.Usage != nil {
+			assistantMsg.Usage = data.Usage
+		}
 		mu.Unlock()
 		if data.Done {
 			closeDone()
@@ -271,6 +280,9 @@ func (s *Server) runQA(
 		mu.Lock()
 		if data.FinalAnswer != "" {
 			final = data.FinalAnswer
+		}
+		if usage, ok := data.Usage.(*types.TokenUsage); ok && usage != nil {
+			assistantMsg.Usage = usage
 		}
 		if len(data.KnowledgeRefs) > 0 {
 			var completeRefs []*types.SearchResult

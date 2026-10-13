@@ -40,6 +40,8 @@ import { SecuritySettings } from "@/components/settings/security-settings";
 import { MemoryPersonalSettings } from "@/components/settings/memory-personal-settings";
 import { TenantInfo } from "@/components/settings/tenant-info";
 import { TenantMembers } from "@/components/settings/tenant-members";
+import { TenantUsage } from "@/components/settings/tenant-usage";
+import { BillingPage } from "@/components/settings/billing";
 import { ApiKeysSection } from "@/components/settings/api-keys";
 import { ChatHistorySettings } from "@/components/settings/chat-history-settings";
 import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
@@ -74,6 +76,8 @@ import {
   IconSettings,
   IconStorageEngine,
   IconUser,
+  IconIdCard,
+  IconCreditCard
 } from "@/components/icons";
 
 /* Heavy sections are lazy so the sidebar chunk doesn't pull every admin page
@@ -135,6 +139,8 @@ const GROUPS: SettingsGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Workspace info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
+      { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, render: () => <TenantUsage />, route: `${W}/usage` },
+      { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, render: () => <BillingPage />, route: `${W}/billing` },
       { key: "sharing", labelKey: "settingsNav.sharing", fallback: "Sharing", icon: IconGlobe, minRole: "admin", render: () => <SharingPage />, route: `${W}/sharing` },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "system", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
       { key: "chathistory", labelKey: "systemNav.chathistory", fallback: "Chat history", icon: IconClock, minRole: "system", render: () => <ChatHistorySettings />, route: `${W}/chathistory` },

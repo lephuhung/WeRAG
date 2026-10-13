@@ -1194,7 +1194,40 @@ func (s *sessionService) consumeFallbackStream(
 	streamCompleted := false
 	decoder := modelContext.StreamDecoder()
 
+	emit := func(content string, done bool, usage *types.TokenUsage) {
+		if err := eventBus.Emit(ctx, types.Event{
+			ID:        fallbackID,
+			Type:      types.EventType(event.EventAgentFinalAnswer),
+			SessionID: chatManage.SessionID,
+			Data: event.AgentFinalAnswerData{
+				Content:    content,
+				Done:       done,
+				IsFallback: true,
+				Usage:      usage,
+			},
+		}); err != nil {
+			logger.Errorf(ctx, "Failed to emit fallback answer chunk event: %v", err)
+		}
+	}
+	// OpenAI-compatible providers send finish_reason before the usage chunk.
+	// The Done event persists the message, so it waits for that chunk (or
+	// the end of the stream) instead of going out on finish_reason.
+	pendingDone := false
+	complete := func(usage *types.TokenUsage) {
+		emit("", true, usage)
+		chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+		streamCompleted = true
+		logger.Infof(ctx, "Fallback streaming response completed")
+	}
+
 	for response := range responseChan {
+		if pendingDone {
+			if response.Usage != nil {
+				complete(response.Usage)
+				break
+			}
+			continue
+		}
 		// Emit event for each answer chunk
 		if response.ResponseType == types.ResponseTypeAnswer {
 			response.Content = decoder.Feed(response.Content)
@@ -1202,27 +1235,27 @@ func (s *sessionService) consumeFallbackStream(
 				response.Content += decoder.Flush()
 			}
 			finalContent += response.Content
-			if err := eventBus.Emit(ctx, types.Event{
-				ID:        fallbackID,
-				Type:      types.EventType(event.EventAgentFinalAnswer),
-				SessionID: chatManage.SessionID,
-				Data: event.AgentFinalAnswerData{
-					Content:    response.Content,
-					Done:       response.Done,
-					IsFallback: true,
-				},
-			}); err != nil {
-				logger.Errorf(ctx, "Failed to emit fallback answer chunk event: %v", err)
+			if !response.Done {
+				emit(response.Content, false, nil)
+				continue
 			}
-
-			// Update ChatResponse with final content when done
-			if response.Done {
-				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
-				streamCompleted = true
-				logger.Infof(ctx, "Fallback streaming response completed")
-				break
+			if response.Usage == nil {
+				if response.Content != "" {
+					emit(response.Content, false, nil)
+				}
+				pendingDone = true
+				continue
 			}
+			emit(response.Content, true, response.Usage)
+			chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+			streamCompleted = true
+			logger.Infof(ctx, "Fallback streaming response completed")
+			break
 		}
+	}
+	if pendingDone && !streamCompleted {
+		// The provider never reported usage; the answer is still complete.
+		complete(nil)
 	}
 
 	// If channel closed without Done=true, emit final event with fixed response

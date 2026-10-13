@@ -21,6 +21,7 @@ import {
   type SystemInfo,
   type SystemStats,
 } from "@/lib/api/system";
+import { formatTokens } from "@/lib/api/usage";
 import { MessageHeatmap } from "@/components/system/message-heatmap";
 import { IconRefresh } from "@/components/icons";
 
@@ -188,6 +189,16 @@ function AdminDashboardBody() {
       label: t("dash.processingNow"),
       value: pipeline ? pipeline.total.toLocaleString() : "—",
       sub: pipeline ? t("dash.failed24h", { n: pipeline.failed_24h.toLocaleString() }) : undefined,
+    },
+    {
+      label: t("dash.tokensMonth"),
+      value: stats?.usage ? formatTokens(stats.usage.month.tokens) : "—",
+      sub: stats?.usage
+        ? t("dash.tokensMonthSub", {
+            questions: stats.usage.month.questions.toLocaleString(),
+            today: formatTokens(stats.usage.today.tokens),
+          })
+        : undefined,
     },
   ];
 

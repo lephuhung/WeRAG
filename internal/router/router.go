@@ -63,6 +63,10 @@ type RouterParams struct {
 	SandboxConfigHandler         *handler.SandboxConfigHandler
 	SandboxSkillHandler          *handler.SandboxSkillHandler
 	MeEnvVarHandler              *handler.MeEnvVarHandler
+	MeUsageHandler               *handler.MeUsageHandler
+	UsageAdminHandler            *handler.UsageAdminHandler
+	TenantUsageHandler           *handler.TenantUsageHandler
+	UsageBillingHandler          *handler.UsageBillingHandler
 	EvaluationHandler            *handler.EvaluationHandler
 	AuthHandler                  *handler.AuthHandler
 	InitializationHandler        *handler.InitializationHandler
@@ -268,6 +272,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 		RegisterAuthRoutes(v1, params.AuthHandler, rbacGuards)
 		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, rbacGuards)
+		RegisterTenantUsageRoutes(v1, params.TenantUsageHandler, rbacGuards)
+		RegisterBillingRoutes(v1, params.UsageBillingHandler, rbacGuards)
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeBaseActivityRoutes(v1, params.AuditLogHandler, rbacGuards)
@@ -311,6 +317,11 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterDocumentFormatRoutes(v1, params.DocumentFormatHandler, rbacGuards)
 		RegisterSandboxConfigRoutes(v1, params.SandboxConfigHandler, params.SandboxSkillHandler, rbacGuards)
 		RegisterMyEnvVarRoutes(v1, params.MeEnvVarHandler, rbacGuards)
+		// Own usage counters (usage packages phase 1). No role gate: the
+		// handler reads whose counters from the context only.
+		if params.MeUsageHandler != nil {
+			v1.GET("/me/usage", params.MeUsageHandler.Get)
+		}
 		v1.GET("/me/browser", params.SessionHandler.BrowserSkillAccount)
 		v1.GET("/me/browser/extension", params.SessionHandler.BrowserSkillDownload)
 		v1.POST("/me/browser", params.SessionHandler.BrowserSkillAccount)
@@ -318,7 +329,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterInitializationRoutes(v1, params.InitializationHandler, rbacGuards)
 		params.SystemHandler.BindDeploymentCapabilities(deploymentCapabilitiesFromRouter(params))
 		RegisterSystemRoutes(v1, params.SystemHandler, rbacGuards)
-		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.StatsHandler, params.AuditLogHandler, rbacGuards)
+		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.StatsHandler, params.AuditLogHandler, params.UsageAdminHandler, rbacGuards)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, rbacGuards)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler, rbacGuards)
 		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler, params.WebSearchCredentialsHandler, rbacGuards)

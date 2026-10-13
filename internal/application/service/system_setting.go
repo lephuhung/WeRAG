@@ -347,6 +347,46 @@ var registry = map[string]settingSpec{
 		Description: "Platform-wide long-term memory configuration (same fields as the former workspace " +
 			"memory config). Every workspace and user inherits it; edits apply immediately.",
 	},
+	// usage.enforce turns the usage-package pre-flight check on: a turn
+	// is refused (HTTP 429) when the workspace or person has no current
+	// subscription, holds no seat, or has used up a limit. Off by default
+	// so subscriptions can be assigned first. SystemAdmins are exempt.
+	// Read live per QA turn.
+	types.UsageEnforceSettingKey: {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  false,
+		Category: "chat",
+		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
+			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay.",
+	},
+	// Billing: the bank account that receives package payments (VietQR
+	// needs the bank BIN + account number), how long a pending order
+	// stays payable, and a contact line for the payment page.
+	types.BillingBankBINSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Mã BIN ngân hàng nhận tiền (ví dụ Vietcombank 970436, BIDV 970418, VietinBank 970415) để tạo mã VietQR.",
+	},
+	types.BillingBankNameSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Tên ngân hàng hiển thị trên trang thanh toán.",
+	},
+	types.BillingBankAccountNoSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Số tài khoản nhận tiền. Để trống = chưa mở thanh toán (chỉ xem gói).",
+	},
+	types.BillingBankAccountNameSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Tên chủ tài khoản nhận tiền.",
+	},
+	types.BillingOrderTTLHoursSettingKey: {
+		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
+		Description: "Đơn hàng chưa thanh toán tự hết hạn sau số giờ này.",
+	},
+	types.BillingContactSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Thông tin liên hệ hỗ trợ thanh toán hiển thị trên trang thanh toán.",
+	},
 	// chat.web_search_enabled gates web search (network providers and the
 	// local-browser tool) platform-wide. The per-agent / per-request switches
 	// and the tenant provider config stay in place but are neutralised while

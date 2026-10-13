@@ -11,6 +11,10 @@ describe("parseErrorEnvelope", () => {
     const body = '{"error":{"code":1005,"details":null,"message":"another turn is already running in this session"},"success":false}';
     assert.deepEqual(parseErrorEnvelope(body), { code: 1005, message: "another turn is already running in this session" });
   });
+  it("keeps the usage-package reason", () => {
+    const body = '{"error":{"code":1006,"details":{"reason":"limit_exhausted","metric":"questions"},"message":"usage limit reached"},"success":false}';
+    assert.deepEqual(parseErrorEnvelope(body), { code: 1006, message: "usage limit reached", reason: "limit_exhausted" });
+  });
   it("tolerates other shapes and non-JSON", () => {
     assert.deepEqual(parseErrorEnvelope('{"message":"bad"}'), { message: "bad" });
     assert.deepEqual(parseErrorEnvelope("<html>502</html>"), {});
@@ -28,6 +32,12 @@ describe("chatErrorKey", () => {
     assert.equal(chatErrorKey(new ApiError(404, "Session not found")), "chat.err.notFound");
     assert.equal(chatErrorKey(new Error("unauthorized")), "chat.err.unauthorized");
     assert.equal(chatErrorKey(new TypeError("Failed to fetch")), "chat.err.network");
+  });
+  it("names the usage-package refusal", () => {
+    assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "no package", "no_subscription")), "chat.err.usage.noSubscription");
+    assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "limit", "limit_exhausted")), "chat.err.usage.limit");
+    assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "seat", "no_seat")), "chat.err.usage.noSeat");
+    assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "expired", "expired")), "chat.err.usage.expired");
   });
   it("keeps a 4xx the backend explained", () => {
     assert.equal(chatErrorKey(new ChatStreamError(400, 1001, "a message can use at most 5 attachments")), null);

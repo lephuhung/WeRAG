@@ -316,6 +316,7 @@ func RegisterSystemAdminRoutes(
 	handler *handler.SystemHandler,
 	statsHandler *handler.StatsHandler,
 	auditLogHandler *handler.AuditLogHandler,
+	usageAdmin *handler.UsageAdminHandler,
 	g *rbacGuards,
 ) {
 	// Apply SystemAdmin() at the group level — every route below inherits
@@ -399,6 +400,23 @@ func RegisterSystemAdminRoutes(
 		if auditLogHandler != nil {
 			g.apiKeyRoute(adminRoutes, http.MethodGet, "/audit-log",
 				apiKeyPlatform(types.APIKeyCapabilitySystemAuditRead), auditLogHandler.ListSystemAuditLog)
+		}
+
+		// Usage packages: plans, subscriptions and seats. Human SuperAdmin
+		// only (group gate); not declared as API-key routes.
+		if usageAdmin != nil {
+			adminRoutes.GET("/usage/plans", usageAdmin.ListPlans)
+			adminRoutes.POST("/usage/plans", usageAdmin.CreatePlan)
+			adminRoutes.PUT("/usage/plans/:id", usageAdmin.UpdatePlan)
+			adminRoutes.DELETE("/usage/plans/:id", usageAdmin.DeletePlan)
+			adminRoutes.GET("/usage/subscriptions", usageAdmin.ListSubscriptions)
+			adminRoutes.POST("/usage/subscriptions", usageAdmin.CreateSubscription)
+			adminRoutes.PUT("/usage/subscriptions/:id", usageAdmin.UpdateSubscription)
+			adminRoutes.DELETE("/usage/subscriptions/:id", usageAdmin.DeleteSubscription)
+			adminRoutes.GET("/usage/subscriptions/:id/seats", usageAdmin.ListSeats)
+			adminRoutes.POST("/usage/subscriptions/:id/seats", usageAdmin.AssignSeat)
+			adminRoutes.DELETE("/usage/subscriptions/:id/seats/:user_id", usageAdmin.RevokeSeat)
+			adminRoutes.GET("/usage/tenants", usageAdmin.TenantOverview)
 		}
 	}
 }

@@ -407,3 +407,10 @@ export const IconKey = ({ className }: P) => (
 
 
 
+
+export const IconCreditCard = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="2.5" y="5.5" width="19" height="13" rx="2" />
+    <path d="M2.5 10h19M6.5 14.5h4" />
+  </svg>
+);

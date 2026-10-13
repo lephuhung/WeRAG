@@ -747,6 +747,12 @@ export interface PublicKBDocumentCount {
   failed: number;
 }
 
+/* Usage counters live in ./usage (shared with the Word add-in, which has
+ * no copy of this file); re-exported so dashboard code keeps importing
+ * them from here. */
+import type { UsagePeriodTotals, UsageStats } from "./usage";
+export type { UsagePeriodTotals, UsageStats };
+
 export interface SystemStats {
   accounts: AccountStats;
   documents: DocumentStats;
@@ -755,6 +761,7 @@ export interface SystemStats {
   feedback: FeedbackStats;
   /** Largest first. */
   public_kbs: PublicKBDocumentCount[];
+  usage: UsageStats;
 }
 
 /** GET /api/v1/system/admin/stats?days=N (SystemAdmin only, 1-365). */

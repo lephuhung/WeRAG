@@ -106,6 +106,9 @@ type SystemStats struct {
 	// PublicKBs lists every platform-public knowledge base with its
 	// document counts, largest first.
 	PublicKBs []PublicKBDocumentCount `json:"public_kbs"`
+	// Usage sums every workspace's questions and tokens for today and
+	// this month (Vietnam calendar).
+	Usage UsageStats `json:"usage"`
 }
 
 // ProcessingDocument is one document still in the ingest pipeline.

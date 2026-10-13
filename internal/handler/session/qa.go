@@ -1166,6 +1166,20 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	ctx := reqCtx.ctx
 	sessionID := reqCtx.sessionID
 
+	// Usage package pre-flight: refused turns create no messages.
+	if h.usageGuard != nil {
+		tenantID, _ := types.TenantIDFromContext(ctx)
+		userID, _ := types.UserIDFromContext(ctx)
+		if err := h.usageGuard.CheckTurn(ctx, tenantID, userID); err != nil {
+			if reqCtx.c != nil && !reqCtx.skipSSE {
+				_ = reqCtx.c.Error(err)
+			} else {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
+			}
+			return
+		}
+	}
+
 	// Persist the input-bar state used for this request so reopening the
 	// session can rehydrate agent / model / KB / web-search / MCP selections.
 	// This is a pure UI memo (no behavioural effect) and runs in a goroutine
@@ -1281,6 +1295,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			streamCtx.assistantMessage.Content += data.Content
 			if data.IsFallback {
 				streamCtx.assistantMessage.IsFallback = true
+			}
+			if data.Usage != nil {
+				streamCtx.assistantMessage.Usage = data.Usage
 			}
 			if data.Done {
 				if completionHandled {

@@ -127,6 +127,28 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		answerID := fmt.Sprintf("%s-answer", uuid.New().String()[:8])
 		thinkingOpen := false
 		answerCompleted := false
+		// pendingDone holds the terminal answer event back while the provider
+		// has not reported usage yet. OpenAI-compatible streams send
+		// finish_reason first and the usage block on a trailing chunk, and
+		// the Done event is what persists the message, so emitting it on
+		// finish_reason would store the quick answer without its token cost.
+		pendingDone := false
+
+		emitPendingDone := func(usage *types.TokenUsage) {
+			if !pendingDone {
+				return
+			}
+			pendingDone = false
+			eventBus.Emit(ctx, types.Event{
+				ID:        answerID,
+				Type:      types.EventType(event.EventAgentFinalAnswer),
+				SessionID: chatManage.SessionID,
+				Data: event.AgentFinalAnswerData{
+					Done:  true,
+					Usage: usage,
+				},
+			})
+		}
 
 		closeThinking := func() {
 			if !thinkingOpen {
@@ -174,6 +196,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			case <-ctx.Done():
 				flushDecoders()
 				closeThinking()
+				emitPendingDone(nil)
 				pipelineInfo(ctx, "Stream", "context_cancelled", map[string]interface{}{
 					"session_id": chatManage.SessionID,
 				})
@@ -183,6 +206,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 				if !ok {
 					flushDecoders()
 					closeThinking()
+					emitPendingDone(nil)
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
 						"session_id": chatManage.SessionID,
 					})
@@ -204,6 +228,12 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 							SessionID: chatManage.SessionID,
 						},
 					})
+					continue
+				}
+
+				if pendingDone && response.Usage != nil {
+					// The trailing usage chunk (or the EOF sentinel carrying it).
+					emitPendingDone(response.Usage)
 					continue
 				}
 
@@ -244,6 +274,19 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						answerCompleted = true
 					}
 					closeThinking()
+					if response.Done && response.Usage == nil {
+						// Stream the last text now; the Done flag waits for usage.
+						if response.Content != "" {
+							eventBus.Emit(ctx, types.Event{
+								ID:        answerID,
+								Type:      types.EventType(event.EventAgentFinalAnswer),
+								SessionID: chatManage.SessionID,
+								Data:      event.AgentFinalAnswerData{Content: response.Content},
+							})
+						}
+						pendingDone = true
+						continue
+					}
 					eventBus.Emit(ctx, types.Event{
 						ID:        answerID,
 						Type:      types.EventType(event.EventAgentFinalAnswer),
@@ -251,6 +294,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						Data: event.AgentFinalAnswerData{
 							Content: response.Content,
 							Done:    response.Done,
+							Usage:   response.Usage,
 						},
 					})
 				}

@@ -153,3 +153,65 @@ func TestStreamIgnoresDuplicateTerminalAnswer(t *testing.T) {
 	}
 	require.Equal(t, []event.AgentFinalAnswerData{{Content: "hello"}, {Done: true}}, answerEvents)
 }
+
+// OpenAI-compatible providers send finish_reason first and the usage block on
+// a trailing chunk. The Done event persists the quick answer, so it must wait
+// for that chunk and carry its usage.
+func TestStreamHoldsDoneUntilUsageArrives(t *testing.T) {
+	usage := &types.TokenUsage{PromptTokens: 30, CompletionTokens: 5, TotalTokens: 35}
+	bus := &syncEventBus{}
+	model := &openStreamChat{closeStream: true, chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "hello"},
+		{ResponseType: types.ResponseTypeAnswer, Content: " world", Done: true}, // finish_reason, no usage yet
+		{ResponseType: types.ResponseTypeAnswer, Done: true, Usage: usage},      // EOF sentinel with usage
+	}}
+
+	chatManage := &types.ChatManage{}
+	chatManage.SessionID = "sess-usage"
+	chatManage.EventBus = bus
+	plugin := &PluginChatCompletionStream{modelService: &stubModelService{model: model}}
+	require.Nil(t, plugin.OnEvent(context.Background(), types.CHAT_COMPLETION_STREAM, chatManage, func() *PluginError { return nil }))
+
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+		return len(bus.events) == 3
+	}, 2*time.Second, 5*time.Millisecond)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	var answerEvents []event.AgentFinalAnswerData
+	for _, evt := range bus.events {
+		if evt.Type == types.EventType(event.EventAgentFinalAnswer) {
+			answerEvents = append(answerEvents, evt.Data.(event.AgentFinalAnswerData))
+		}
+	}
+	require.Equal(t, []event.AgentFinalAnswerData{
+		{Content: "hello"},
+		{Content: " world"},
+		{Done: true, Usage: usage},
+	}, answerEvents)
+}
+
+// A provider that never reports usage still gets its Done when the stream ends.
+func TestStreamEmitsHeldDoneOnClose(t *testing.T) {
+	bus := &syncEventBus{}
+	model := &openStreamChat{closeStream: true, chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "hi", Done: true},
+	}}
+	chatManage := &types.ChatManage{}
+	chatManage.SessionID = "sess-no-usage"
+	chatManage.EventBus = bus
+	plugin := &PluginChatCompletionStream{modelService: &stubModelService{model: model}}
+	require.Nil(t, plugin.OnEvent(context.Background(), types.CHAT_COMPLETION_STREAM, chatManage, func() *PluginError { return nil }))
+
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+		return len(bus.events) == 2
+	}, 2*time.Second, 5*time.Millisecond)
+	require.Equal(t, []string{"hi", ""}, bus.finalAnswerContents())
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	require.True(t, bus.events[1].Data.(event.AgentFinalAnswerData).Done)
+}

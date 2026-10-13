@@ -38,6 +38,9 @@ type Handler struct {
 	// documentWorkspaces pins a session holding an editable document to
 	// the document assistant (see pinDocumentAssistant).
 	documentWorkspaces interfaces.DocumentWorkspaceService
+	// usageGuard refuses a turn when the caller's usage package does not
+	// cover it (usage packages phase 2). Nil skips the check.
+	usageGuard interfaces.UsageGuard
 	// artifactCollector drains skill-generated files from the session sandbox
 	// after an agent turn completes. May be nil when the sandbox backend does
 	// not support artifact collection; handlers must check before using.
@@ -105,6 +108,7 @@ func NewHandler(
 	forkService *service.SessionForkService,
 	auditLog interfaces.AuditLogService,
 	documentWorkspaces interfaces.DocumentWorkspaceService,
+	usageGuard interfaces.UsageGuard,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -123,6 +127,7 @@ func NewHandler(
 		modelService:          modelService,
 		temporaryDocuments:    temporaryDocuments,
 		documentWorkspaces:    documentWorkspaces,
+		usageGuard:            usageGuard,
 		artifactCollector:     artifactCollector,
 		workspaceCheckpointer: workspaceCheckpointer,
 		sandboxIDLookup:       sandboxIDLookup,

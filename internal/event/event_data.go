@@ -1,6 +1,10 @@
 package event
 
-import "time"
+import (
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/types"
+)
 
 // EventData contains common event data structures for different stages
 
@@ -202,6 +206,10 @@ type AgentFinalAnswerData struct {
 	Content    string `json:"content"`
 	Done       bool   `json:"done"`
 	IsFallback bool   `json:"is_fallback,omitempty"` // True when response is a fallback (no knowledge base match)
+	// Usage is the model call's token usage, set only on the terminal
+	// (Done) event of a single-call answer such as the quick-answer
+	// pipeline. Agent turns report usage on EventAgentComplete instead.
+	Usage *types.TokenUsage `json:"usage,omitempty"`
 }
 
 // ContextCompactedData reports that older conversation was replaced by a

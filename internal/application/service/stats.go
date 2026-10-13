@@ -17,12 +17,13 @@ import (
 // per-tenant repositories: the caller is already gated to SystemAdmin and
 // the numbers are deliberately platform-wide.
 type statsService struct {
-	db *gorm.DB
+	db    *gorm.DB
+	usage interfaces.UsageMeter
 }
 
 // NewStatsService creates the stats service.
-func NewStatsService(db *gorm.DB) interfaces.StatsService {
-	return &statsService{db: db}
+func NewStatsService(db *gorm.DB, usage interfaces.UsageMeter) interfaces.StatsService {
+	return &statsService{db: db, usage: usage}
 }
 
 func (s *statsService) GetSystemStats(ctx context.Context, days int) (*types.SystemStats, error) {
@@ -47,6 +48,13 @@ func (s *statsService) GetSystemStats(ctx context.Context, days int) (*types.Sys
 	}
 	if err := s.loadPublicKBStats(ctx, stats); err != nil {
 		return nil, err
+	}
+	if s.usage != nil {
+		totals, err := s.usage.PlatformTotals(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("usage totals: %w", err)
+		}
+		stats.Usage = *totals
 	}
 	return stats, nil
 }

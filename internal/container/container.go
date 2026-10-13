@@ -166,6 +166,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewKnowledgeTagRepository))
 	must(container.Provide(repository.NewSessionRepository))
 	must(container.Provide(repository.NewMessageRepository))
+	must(container.Provide(repository.NewUsageCounterRepository))
+	must(container.Provide(repository.NewUsagePlanRepository))
+	must(container.Provide(repository.NewUsageBillingRepository))
 	must(container.Provide(repository.NewMessageSuggestionRepository))
 	must(container.Provide(repository.NewModelRepository))
 	must(container.Provide(repository.NewUserRepository))
@@ -249,6 +252,13 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAbbreviationService))
 	must(container.Provide(service.NewLegalCatalogService))
 	must(container.Provide(service.NewLegalReviewService))
+	// Usage metering: questions and tokens per workspace and person.
+	must(container.Provide(service.NewUsageMeter))
+	// Usage packages: plans, subscriptions, and the pre-flight guard.
+	must(container.Provide(service.NewUsageGuard))
+	must(container.Provide(service.NewUsagePlanService))
+	// Self-service purchase: promo codes, orders, bank-transfer settlement.
+	must(container.Provide(service.NewUsageBillingService))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -579,6 +589,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		return handler.NewSandboxSkillHandler(s, streams)
 	}))
 	must(container.Provide(handler.NewMeEnvVarHandler))
+	must(container.Provide(handler.NewMeUsageHandler))
+	must(container.Provide(handler.NewUsageAdminHandler))
+	must(container.Provide(handler.NewTenantUsageHandler))
+	must(container.Provide(handler.NewUsageBillingHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))

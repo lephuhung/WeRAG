@@ -235,8 +235,8 @@ function streamError(res: Response, body = ""): Error {
     err.status = 401;
     return err;
   }
-  const { code, message } = parseErrorEnvelope(body);
-  return new ChatStreamError(res.status, code, message);
+  const { code, message, reason } = parseErrorEnvelope(body);
+  return new ChatStreamError(res.status, code, message, reason);
 }
 
 async function openChatStream(

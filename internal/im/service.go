@@ -316,6 +316,10 @@ type Service struct {
 	documentReader  interfaces.DocumentReader
 	storageResolver interfaces.StorageBackendResolver
 
+	// usageGuard refuses a turn the workspace's usage package does not
+	// cover (usage packages phase 2). Nil skips the check.
+	usageGuard interfaces.UsageGuard
+
 	// cmdRegistry holds all registered slash-commands.
 	cmdRegistry *CommandRegistry
 
@@ -432,6 +436,21 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 	// OAuth wait times out for every unauthorized service.
 	ctx = types.WithMCPOAuthNonInteractive(ctx)
 	return ctx
+}
+
+// checkUsage runs the usage-package pre-flight for the IM identity in ctx.
+// IM runs as the workspace's synthetic user, so only workspace-level
+// subscriptions and pool limits apply.
+func (s *Service) checkUsage(ctx context.Context) error {
+	if s.usageGuard == nil {
+		return nil
+	}
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	userID, _ := types.UserIDFromContext(ctx)
+	if err := s.usageGuard.CheckTurn(ctx, tenantID, userID); err != nil {
+		return fmt.Errorf("usage package: %w", err)
+	}
+	return nil
 }
 
 // imMCPAuthService identifies an OAuth-enabled MCP service that the IM user has
@@ -849,6 +868,7 @@ func NewService(
 	redisClient *redis.Client,
 	appCfg *config.Config,
 	storageResolver interfaces.StorageBackendResolver,
+	usageGuard interfaces.UsageGuard,
 ) *Service {
 	// Resolve IM configuration with defaults.
 	workers, maxQueue, maxPerUser, globalMaxWorkers, rlWindow, rlMax := resolveIMConfig(appCfg)
@@ -874,6 +894,7 @@ func NewService(
 		defaultFileSvc:   defaultFileSvc,
 		documentReader:   documentReader,
 		storageResolver:  storageResolver,
+		usageGuard:       usageGuard,
 		oauthManager:     oauthManager,
 		cmdRegistry:      registry,
 		channels:         make(map[string]*channelState),
@@ -2589,6 +2610,10 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 			answerBuilder.WriteString(data.Content)
 			streamedAny = true
 		}
+		if data.Usage != nil && !useAgent {
+			// Quick-answer turns report usage on their terminal answer event.
+			assistantMsg.Usage = data.Usage
+		}
 		bufMu.Unlock()
 
 		if data.Done {
@@ -2757,6 +2782,10 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 
 	// Determine whether to use agent mode (already set above for event handlers).
 	requestID := uuid.New().String()
+
+	if err := s.checkUsage(qaCtx); err != nil {
+		return err
+	}
 
 	// Create user message
 	userMsg, err := s.messageService.CreateMessage(qaCtx, createIMUserMessagePayload(session.ID, msg.Content, requestID, attachments))
@@ -2957,6 +2986,7 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	var answerMu sync.Mutex
 	var answerBuilder strings.Builder
 	var qaErr error
+	var quickUsage *types.TokenUsage // quick-answer turns report usage on the terminal answer event
 	var mcpAuthServices []imMCPAuthService
 	mcpAuthSeen := make(map[string]bool)
 	done := make(chan struct{})
@@ -2973,6 +3003,9 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 		}
 		answerMu.Lock()
 		answerBuilder.WriteString(data.Content)
+		if data.Usage != nil {
+			quickUsage = data.Usage
+		}
 		answerMu.Unlock()
 		if data.Done {
 			closeDone()
@@ -3015,6 +3048,10 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 
 	// Generate a shared RequestID to pair user and assistant messages for history
 	requestID := uuid.New().String()
+
+	if err := s.checkUsage(ctx); err != nil {
+		return "", err
+	}
 
 	// Create user message so it appears in conversation history
 	userMsg, err := s.messageService.CreateMessage(ctx, createIMUserMessagePayload(session.ID, query, requestID, attachments))
@@ -3118,6 +3155,9 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	answer := answerBuilder.String()
 	qaError := qaErr
 	authServices := append([]imMCPAuthService(nil), mcpAuthServices...)
+	if quickUsage != nil && assistantMsg.Usage == nil {
+		assistantMsg.Usage = quickUsage
+	}
 	answerMu.Unlock()
 
 	if answer == "" && qaError != nil {
