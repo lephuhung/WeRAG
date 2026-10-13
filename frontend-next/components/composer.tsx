@@ -50,6 +50,7 @@ export function Composer({
   documents = NO_DOCUMENT_MENTIONS,
   uploadsBecomeSources = false,
   onOpenAttachmentForEditing,
+  sendRequest = null,
 }: {
   sessionId?: string;
   value: string;
@@ -78,6 +79,8 @@ export function Composer({
   uploadsBecomeSources?: boolean;
   /** Opens a Word source in the editor ("Mở để soạn thảo"). */
   onOpenAttachmentForEditing?: (a: PendingAttachment) => void;
+  /** Sends this text right away (a picked quick action); a new seq sends again. */
+  sendRequest?: { text: string; seq: number } | null;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -228,8 +231,8 @@ export function Composer({
   const [sendBlockMsg, setSendBlockMsg] = useState("");
   useEffect(() => setSendBlockMsg(""), [attachments, value]);
 
-  const submit = () => {
-    if (!value.trim() || isReplying) return;
+  const submit = (text = value) => {
+    if (!text.trim() || isReplying) return;
     if (attachments.some((a) => a.status === "uploading")) {
       setSendBlockMsg("An attachment is still uploading — wait for it to finish or remove it.");
       return;
@@ -241,13 +244,19 @@ export function Composer({
     }
     setSendBlockMsg("");
     onSend({
-      query: value.trim(),
+      query: text.trim(),
       modelId: settings.selectedChatModelId || "",
-      mentionedItems: [...documentMentions, ...mentionItems],
+      mentionedItems: [...(text === value ? documentMentions : documentsNamedIn(text, documents)), ...mentionItems],
       imageFiles: images.map((i) => i.file),
       attachments,
     });
   };
+
+  const sendRequestSeq = sendRequest?.seq;
+  useEffect(() => {
+    if (sendRequest) submit(sendRequest.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendRequestSeq]);
 
   const showStop = isReplying && canStop !== false && !value.trim();
 
@@ -467,7 +476,7 @@ export function Composer({
             </button>
           ) : (
             <button
-              onClick={submit}
+              onClick={() => submit()}
               disabled={!value.trim() || isReplying}
               className="btn btn-primary h-9 w-9 shrink-0 p-0! disabled:opacity-40"
               title="Send (Enter)"

@@ -1144,6 +1144,8 @@ function ChatBody({ id }: { id: string }) {
   // Quick actions for the highlighted passage (shown while the composer is empty).
   const selectionText = pendingSelection?.text ?? "";
   const selectionActions = useMemo(() => selectionSuggestions(selectionText), [selectionText]);
+  // A picked quick action is sent at once through the composer.
+  const [selectionSend, setSelectionSend] = useState<{ text: string; seq: number } | null>(null);
   const insertableDocIds = useMemo(
     () => openDocs.filter((d) => d.role !== "source").map((d) => d.id).join(","),
     [openDocs],
@@ -2780,7 +2782,7 @@ function ChatBody({ id }: { id: string }) {
               actions={selectionActions}
               title={tr("docws.selSuggest.title")}
               labelOf={(k) => tr(`docws.selSuggest.${k}`)}
-              onPick={(k) => setInput(tr(`docws.selSuggest.${k}.q`))}
+              onPick={(k) => setSelectionSend({ text: tr(`docws.selSuggest.${k}.q`), seq: Date.now() })}
             />
           )}
           {isDocumentAssistant && scopeChip && !scopeEditCard && (
@@ -2825,6 +2827,7 @@ function ChatBody({ id }: { id: string }) {
             value={input}
             onChange={setInput}
             onSend={(s) => void send(s)}
+            sendRequest={selectionSend}
             agentLockFileName={docFileName}
             onStop={() => void stop()}
             isReplying={busy}
