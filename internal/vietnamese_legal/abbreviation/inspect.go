@@ -43,9 +43,10 @@ func Inspect(text string, active []*types.Abbreviation) types.AbbreviationResolu
 // resolution so later coverage checks re-derive the same candidates.
 func InspectDetected(text string, active []*types.Abbreviation, det types.AbbreviationDetection) types.AbbreviationResolution {
 	r := types.AbbreviationResolution{
-		OriginalQuery: text,
-		Detector:      det.Detector,
-		DetectedKeys:  append([]string(nil), det.Keys...),
+		OriginalQuery:   text,
+		Detector:        det.Detector,
+		DetectedKeys:    append([]string(nil), det.Keys...),
+		TypoCorrections: append([]types.AbbreviationTypo(nil), det.Typos...),
 	}
 	if text == "" {
 		r.Status = types.AbbreviationStatusReady
@@ -339,6 +340,23 @@ func RenderResolvedQuery(r types.AbbreviationResolution) (string, error) {
 			})
 		}
 	}
+	// Typo words read as their correction. Their keys are never candidates,
+	// so they cannot overlap a term occurrence; a key that is also a term
+	// key is left alone all the same.
+	if len(r.TypoCorrections) > 0 {
+		fix := make(map[string]string, len(r.TypoCorrections))
+		for _, t := range r.TypoCorrections {
+			fix[termKey(t.Wrong)] = t.Correct
+		}
+		for i := range r.Terms {
+			delete(fix, r.Terms[i].Key)
+		}
+		for _, ws := range extractWordTokenSpans(r.OriginalQuery) {
+			if correct, ok := fix[termKey(ws.token)]; ok && correct != "" {
+				spans = append(spans, span{start: ws.start, end: ws.end, repl: correct})
+			}
+		}
+	}
 	sort.Slice(spans, func(i, j int) bool {
 		if spans[i].start != spans[j].start {
 			return spans[i].start > spans[j].start
@@ -628,5 +646,6 @@ func cloneResolution(r types.AbbreviationResolution) types.AbbreviationResolutio
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
+	out.TypoCorrections = append([]types.AbbreviationTypo(nil), r.TypoCorrections...)
 	return out
 }

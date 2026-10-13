@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, typoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
@@ -137,6 +137,8 @@ type UiMessage = {
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
   document_selection?: DocumentSelection;
+  /** User turn: typed words the assistant read as a correction (cascc → các). */
+  typoCorrections?: TypoCorrection[];
   /** User turn: file names of the documents named with @ (document assistant). */
   document_mentions?: string[];
   /** Tool/skill-generated files of this turn — images render inline. */
@@ -412,6 +414,7 @@ const UserMessageBubble = memo(function UserMessageBubble({
   onFork?: (m: UiMessage) => void;
   onEdit?: (content: string) => void;
 }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const mentionNames = message.document_mentions ?? [];
   const segments = splitDocumentMentions(message.content, mentionNames);
@@ -471,6 +474,13 @@ const UserMessageBubble = memo(function UserMessageBubble({
           ),
         )}
       </div>
+      {(message.typoCorrections?.length ?? 0) > 0 && (
+        <div className="mt-1 max-w-[80%] pr-1 text-right text-[12px] text-muted-soft">
+          {message.typoCorrections!
+            .map((tc) => t("chat.typoUnderstoodAs", { wrong: tc.wrong, correct: tc.correct }))
+            .join(" · ")}
+        </div>
+      )}
       {/* Touch has no hover — actions stay visible on phones; on desktop they
           appear only while hovering the user message. */}
       <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
@@ -1546,6 +1556,7 @@ function ChatBody({ id }: { id: string }) {
               document_selection:
                 m.role === "user" ? documentSelectionForDisplay(m.document_selection) : undefined,
               document_mentions: m.role === "user" ? documentMentionsFromHistory(m) : undefined,
+              typoCorrections: m.role === "user" ? typoCorrectionsOf(m.abbreviation) : undefined,
               artifacts:
                 /* History rows omit `index` — assign array position so the
                  * download endpoint and image hydration can address them. */
@@ -2022,6 +2033,20 @@ function ChatBody({ id }: { id: string }) {
       }
       const matchAssistant = (msg: UiMessage) =>
         msg.id === asstId || (Boolean(incomingAsstId) && msg.assistantMessageId === incomingAsstId);
+
+      if (kind === "abbreviation_resolution") {
+        const typos = typoCorrectionsOf(c.data?.abbreviation);
+        if (typos) {
+          setMessages((m) => {
+            const i = m.findIndex((x) => x.id === asstId);
+            if (i < 1 || m[i - 1].role !== "user") return m;
+            const next = m.slice();
+            next[i - 1] = { ...next[i - 1], typoCorrections: typos };
+            return next;
+          });
+        }
+        return;
+      }
 
       if (kind === "session_title") {
         const newTitle = c.content || c.data?.title;

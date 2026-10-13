@@ -38,6 +38,10 @@ const (
 // heuristic. Any other name is a Decision model provider (jev, clef).
 const AbbreviationDetectorHeuristic = ""
 
+// AbbreviationDetectorHeuristicSpellcheck names a heuristic detection from
+// which the spell-check model removed typo tokens; Keys is authoritative.
+const AbbreviationDetectorHeuristicSpellcheck = "heuristic+spellcheck"
+
 // AbbreviationDetection records which query tokens a classifier flagged as
 // abbreviations. It only selects tokens for dictionary lookup — it never
 // carries a meaning. With Detector empty the heuristic decides and Keys is
@@ -45,6 +49,17 @@ const AbbreviationDetectorHeuristic = ""
 type AbbreviationDetection struct {
 	Detector string
 	Keys     []string
+	// Typos are keyboard typos the spellcheck model found in the query
+	// (cascc → các). Their tokens are never candidates; Keys already
+	// excludes them.
+	Typos []AbbreviationTypo
+}
+
+// AbbreviationTypo is one typo token of the query and its correction. The
+// effective query reads Correct wherever the word Wrong occurs.
+type AbbreviationTypo struct {
+	Wrong   string `json:"wrong"`
+	Correct string `json:"correct"`
 }
 
 // Suggestion lifecycle states (written by the coordinator; the inspector
@@ -153,6 +168,8 @@ type AbbreviationResolution struct {
 	// again. Empty Detector (legacy payloads) means the heuristic.
 	Detector     string   `json:"detector,omitempty"`
 	DetectedKeys []string `json:"detected_keys,omitempty"`
+	// TypoCorrections are applied when rendering the effective query.
+	TypoCorrections []AbbreviationTypo `json:"typo_corrections,omitempty"`
 }
 
 // Detection returns the candidate detection the resolution was built from.
@@ -160,6 +177,7 @@ func (r AbbreviationResolution) Detection() AbbreviationDetection {
 	return AbbreviationDetection{
 		Detector: r.Detector,
 		Keys:     append([]string(nil), r.DetectedKeys...),
+		Typos:    append([]AbbreviationTypo(nil), r.TypoCorrections...),
 	}
 }
 
@@ -183,6 +201,7 @@ type AbbreviationPublicState struct {
 	UnknownTerms      []string                 `json:"unknown_terms"`
 	Terms             []AbbreviationPublicTerm `json:"terms"`
 	ExpiresAt         time.Time                `json:"expires_at"`
+	TypoCorrections   []AbbreviationTypo       `json:"typo_corrections,omitempty"`
 }
 
 // Clone returns a deep copy of the resolution: every nested slice and pointer
@@ -201,6 +220,7 @@ func (r AbbreviationResolution) Clone() AbbreviationResolution {
 	}
 	out.UnknownTerms = append([]string(nil), r.UnknownTerms...)
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
+	out.TypoCorrections = append([]AbbreviationTypo(nil), r.TypoCorrections...)
 	return out
 }
 
@@ -227,5 +247,6 @@ func (r AbbreviationResolution) PublicState() AbbreviationPublicState {
 		UnknownTerms:      unknown,
 		Terms:             terms,
 		ExpiresAt:         r.ExpiresAt,
+		TypoCorrections:   append([]AbbreviationTypo(nil), r.TypoCorrections...),
 	}
 }

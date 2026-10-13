@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -28,13 +30,37 @@ func NewAbbreviationService(repo interfaces.AbbreviationRepository, models inter
 	return &abbreviationService{repo: repo, models: models}
 }
 
+// abbreviationSpellcheckModelID is the spell-check model asked, alongside
+// the decision model, which query tokens are keyboard typos; its timeout
+// bounds that call, after which detection goes on without it.
+const (
+	abbreviationSpellcheckModelID = "builtin-llm-spellcheck"
+	abbreviationSpellcheckTimeout = 3 * time.Second
+)
+
 // DetectCandidates asks the tenant's Decision model (Jev / Clef) which
 // tokens are abbreviations. With no Decision model configured, or on any
 // model error, it returns the heuristic detection so chat never blocks.
+// In parallel the spell-check model looks for keyboard typos (cascc → các):
+// a typo token is never a candidate, so it is never looked up or asked
+// about, and the effective query reads its correction.
 func (s *abbreviationService) DetectCandidates(ctx context.Context, text string) types.AbbreviationDetection {
 	if s.models == nil {
 		return types.AbbreviationDetection{}
 	}
+	var typos []types.AbbreviationTypo
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		typos = s.detectTypos(ctx, text)
+	}()
+	det := s.detectAbbreviations(ctx, text)
+	wg.Wait()
+	return withTypos(det, text, typos)
+}
+
+func (s *abbreviationService) detectAbbreviations(ctx context.Context, text string) types.AbbreviationDetection {
 	decider, err := s.models.GetActiveDecisionModel(ctx)
 	if err != nil {
 		logger.Warnf(ctx, "abbreviation detection: decision model unavailable, using heuristic: %v", err)
@@ -50,6 +76,85 @@ func (s *abbreviationService) DetectCandidates(ctx context.Context, text string)
 		logger.Warnf(ctx, "abbreviation detection: %s failed, using heuristic: %v", decider.Provider(), err)
 	}
 	return det
+}
+
+// detectTypos asks the spell-check model about the query as one paragraph
+// and keeps single-word corrections. Words of the active dictionary are
+// never typos. Any failure yields no typos.
+func (s *abbreviationService) detectTypos(ctx context.Context, text string) []types.AbbreviationTypo {
+	if strings.TrimSpace(text) == "" || len(abbreviation.ProposeTokens(text)) == 0 {
+		return nil
+	}
+	model, err := s.models.GetChatModel(ctx, abbreviationSpellcheckModelID)
+	if err != nil || model == nil {
+		return nil
+	}
+	spellCtx, cancel := context.WithTimeout(ctx, abbreviationSpellcheckTimeout)
+	defer cancel()
+	findings, err := tools.ReviewSpelling(spellCtx, model, "", []string{text})
+	if err != nil {
+		logger.Warnf(ctx, "abbreviation detection: spellcheck skipped: %v", err)
+		return nil
+	}
+	var pairs [][2]string
+	for _, f := range findings {
+		pairs = append(pairs, abbreviation.TypoWords(f.Wrong, f.Correct)...)
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	known := map[string]struct{}{}
+	if active, err := s.repo.ListActive(ctx); err == nil {
+		for _, a := range active {
+			if a != nil {
+				known[strings.ToLower(strings.TrimSpace(a.ShortForm))] = struct{}{}
+			}
+		}
+	}
+	var out []types.AbbreviationTypo
+	seen := map[string]struct{}{}
+	for _, p := range pairs {
+		key := strings.ToLower(p[0])
+		if _, ok := known[key]; ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, types.AbbreviationTypo{Wrong: p[0], Correct: p[1]})
+	}
+	return out
+}
+
+// withTypos removes typo tokens from the candidate set. A heuristic
+// detection becomes an explicit key set (the heuristic's own picks minus
+// the typos) so later coverage checks re-derive the same candidates.
+func withTypos(det types.AbbreviationDetection, text string, typos []types.AbbreviationTypo) types.AbbreviationDetection {
+	if len(typos) == 0 {
+		return det
+	}
+	drop := make(map[string]struct{}, len(typos))
+	for _, t := range typos {
+		drop[strings.ToLower(t.Wrong)] = struct{}{}
+	}
+	out := types.AbbreviationDetection{Detector: det.Detector, Typos: typos}
+	keys := det.Keys
+	if det.Detector == types.AbbreviationDetectorHeuristic {
+		out.Detector = types.AbbreviationDetectorHeuristicSpellcheck
+		keys = nil
+		for _, tok := range abbreviation.ProposeTokens(text) {
+			if abbreviation.IsLikelyAbbreviation(tok) {
+				keys = append(keys, strings.ToLower(tok))
+			}
+		}
+	}
+	for _, k := range keys {
+		if _, typo := drop[k]; !typo {
+			out.Keys = append(out.Keys, k)
+		}
+	}
+	return out
 }
 
 // Suggest creates an inactive abbreviation suggestion attributed to the

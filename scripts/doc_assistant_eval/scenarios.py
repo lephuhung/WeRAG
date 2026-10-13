@@ -91,6 +91,32 @@ def S(*extra: C.Check) -> List[C.Check]:
 
 
 # ---- scenarios -----------------------------------------------------------
+
+def _abbr_states(t):
+    """abbreviation_resolution payloads of a turn (public state)."""
+    return [(e.get("data") or {}).get("abbreviation") or {} for e in t.events
+            if (e.get("response_type") or e.get("type")) == "abbreviation_resolution"]
+
+
+def _typo_fixed(*words):
+    """every word was read as a typo and never became an unknown abbreviation."""
+    def fn(t, ctx):
+        states = _abbr_states(t)
+        typos = {str(x.get("wrong", "")).lower() for st in states for x in st.get("typo_corrections") or []}
+        unknown = {str(u).lower() for st in states for u in st.get("unknown_terms") or []}
+        miss = [w for w in words if w not in typos]
+        asked = [w for w in words if w in unknown]
+        return not miss and not asked, f"typos {sorted(typos)} unknown {sorted(unknown)}"
+    return C.custom(f"typo gate read {list(words)} as typos", fn)
+
+
+def _abbr_looked_up(*shorts):
+    """the short forms still reached the dictionary as abbreviation terms."""
+    def fn(t, ctx):
+        got = {str(x.get("short_form", "")).lower() for st in _abbr_states(t) for x in st.get("terms") or []}
+        return all(s in got for s in shorts), f"terms {sorted(got)}"
+    return C.custom(f"abbreviations {list(shorts)} looked up", fn)
+
 SCENARIOS: List[Scenario] = [
     # ------------------------------------------------------------------ content
     Scenario(
@@ -641,6 +667,29 @@ SCENARIOS: List[Scenario] = [
                 S(C.no_display_type("abbreviation_choice"), C.answer_contains_any(["thực phẩm"]), C.answer_not_contains(["nghĩa nào"]), C.no_edit_ops()),
                 judge="Người dùng đã chọn nghĩa 'An toàn thực phẩm'. Câu trả lời phải trả lời câu hỏi gốc theo nghĩa đó (yêu cầu về an toàn thực phẩm), không hỏi lại nghĩa và không trả lời về an toàn thông tin.",
                 note="Mô phỏng bấm lựa chọn: gửi 'ATTT = An toàn thực phẩm'; cổng viết tắt tiếp tục câu hỏi gốc.",
+            ),
+        ],
+    ),
+    # Keyboard typos in a chat question (raw Telex: cascc = các, quys = quy,
+    # phaps = pháp) are read by the spellcheck model before the abbreviation
+    # gate: never asked about, never unknown terms; real abbreviations
+    # (ubnd, bhxh) still go to the dictionary.
+    Scenario(
+        id="abbr_typo", group="partial", title="Lỗi gõ phím (cascc/quys/phaps) không bị hỏi nghĩa viết tắt; ubnd/bhxh vẫn tra từ điển",
+        documents=[("target", "quy_trinh.docx")],
+        requires="vllm-spell (builtin-llm-spellcheck) đang chạy; từ điển dev có UBND, BHXH active",
+        steps=[
+            Step(
+                "cascc thủ tục hành chính quys định ở đâu",
+                S(_typo_fixed("cascc", "quys"), C.no_display_type("abbreviation_choice"),
+                  C.answer_not_contains(["nghĩa đầy đủ", "viết tắt của", "nghĩa nào"]), C.no_edit_ops()),
+                note="Trước đây cổng viết tắt (Clef) hỏi 'nghĩa đầy đủ của cascc'.",
+            ),
+            Step(
+                "phaps luật về bhxh cho cán bộ ubnd xã quy định gì",
+                S(_typo_fixed("phaps"), _abbr_looked_up("ubnd", "bhxh"), C.no_display_type("abbreviation_choice"),
+                  C.answer_not_contains(["nghĩa đầy đủ", "nghĩa nào"]), C.no_edit_ops()),
+                note="Viết tắt viết thường vẫn được tra từ điển, không bị coi là lỗi gõ.",
             ),
         ],
     ),
