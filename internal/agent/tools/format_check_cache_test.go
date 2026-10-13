@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -282,5 +283,37 @@ func TestCheckDocumentFormatFromTheChatRunsInTheBackground(t *testing.T) {
 	}
 	if n := model.evalCount(); n != 1 {
 		t.Fatalf("evaluations = %d, want 1", n)
+	}
+}
+
+func TestFormatFindingMarksOfABackgroundCheck(t *testing.T) {
+	resetFormatChecks(t)
+	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nChưa đạt."}}
+	ws := fakeWorkspaceWithID(docxFixture(t), "ws-marks")
+	ctx := toolCtx()
+	if _, kept, _ := FormatFindingMarks(ctx, ws, "sess-m", "ws-marks", model.GetModelName()); kept {
+		t.Fatal("no check yet: nothing kept")
+	}
+	NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-m").ForDocument("ws-marks").StartBackground(ctx, nil)
+	if st := waitFormatCheck(t, "ws-marks"); st == nil || st.Status != types.DocumentFormatCheckReady {
+		t.Fatalf("state = %+v", st)
+	}
+	ops, kept, err := FormatFindingMarks(ctx, ws, "sess-m", "ws-marks", model.GetModelName())
+	if err != nil || !kept || len(ops) == 0 {
+		t.Fatalf("ops %d kept %v err %v", len(ops), kept, err)
+	}
+	for _, op := range ops {
+		if op.Op != OpMark || op.Style != "underline" || op.Anchor == nil {
+			t.Fatalf("an underline only: %+v", op)
+		}
+	}
+	if len(ws.snapshots) != 0 {
+		t.Fatalf("marking saves nothing: %v", ws.snapshots)
+	}
+	// the document was saved in another version since the check
+	ws.content = testCongVan(t, [4]int{20, 15, 30, 20})
+	ws.ws.Revision++
+	if _, _, err := FormatFindingMarks(ctx, ws, "sess-m", "ws-marks", model.GetModelName()); !errors.Is(err, ErrFormatCheckOutdated) {
+		t.Fatalf("err = %v, want outdated", err)
 	}
 }

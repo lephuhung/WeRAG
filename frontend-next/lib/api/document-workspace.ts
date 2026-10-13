@@ -577,6 +577,18 @@ export async function startDocumentFormatCheck(sessionId: string, documentId: st
   }
 }
 
+/** The underlines of a document's finished format check (one per finding
+ * that names its paragraph) for the editor to show; nothing is changed.
+ * A 409 means the document changed since the check. */
+export async function markDocumentFormatFindings(sessionId: string, documentId: string): Promise<unknown[]> {
+  try {
+    const res = await apiPost<Envelope<{ document_ops?: unknown[] }>>(`${base(sessionId, documentId)}/format-check/marks`, {});
+    return Array.isArray(res?.data?.document_ops) ? res.data.document_ops : [];
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
 export async function listDocumentRevisions(sessionId: string, documentId?: string): Promise<DocumentRevisionEntry[]> {
   try {
     const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId, documentId)}/revisions`);

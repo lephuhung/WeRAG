@@ -211,6 +211,39 @@ func (p *DocumentFormatPrecheck) StartFormatCheck(ctx context.Context, tenantID 
 	return st, nil
 }
 
+// FormatFindingMarks returns the underlines of an open target's finished
+// format check (one per measured finding that names its paragraph), for
+// the editor to show; nothing in the document is changed or saved. An
+// error tells the user why there is nothing to mark (no result kept, or
+// the document changed since the check).
+func (p *DocumentFormatPrecheck) FormatFindingMarks(ctx context.Context, tenantID uint64, sessionID, documentID string) ([]tools.DocumentOp, error) {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
+		return nil, errors.New("documents are disabled")
+	}
+	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if !ws.IsTarget() {
+		return nil, apperrors.NewBadRequestError("only a working document can be marked")
+	}
+	chatModel := p.chatModel(ctx, p.agent(ctx))
+	if chatModel == nil {
+		return nil, apperrors.NewServiceUnavailableError("no model for the format check")
+	}
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+	ops, kept, err := tools.FormatFindingMarks(ctx, p.workspaces, sessionID, documentID, chatModel.GetModelName())
+	switch {
+	case errors.Is(err, tools.ErrFormatCheckOutdated):
+		return nil, apperrors.NewConflictError(err.Error())
+	case err != nil:
+		return nil, err
+	case !kept:
+		return nil, apperrors.NewNotFoundError("chưa có kết quả kiểm tra thể thức cho văn bản này")
+	}
+	return ops, nil
+}
+
 // formatCheckSaveWait bounds the editor save before a requested check.
 const formatCheckSaveWait = 20 * time.Second
 

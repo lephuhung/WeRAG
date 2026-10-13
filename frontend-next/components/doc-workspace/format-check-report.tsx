@@ -18,6 +18,7 @@ export function FormatCheckReportModal({
   onClose,
   onFix,
   onAskInChat,
+  onMark,
 }: {
   open: boolean;
   sessionId: string;
@@ -29,8 +30,11 @@ export function FormatCheckReportModal({
   onFix: () => void;
   /** No kept evaluation (expired or from before a restart): ask instead. */
   onAskInChat: () => void;
+  /** Underlines the findings in the document (nothing is changed). */
+  onMark?: () => Promise<void>;
 }) {
   const { t } = useT();
+  const [marking, setMarking] = useState(false);
   const [state, setState] = useState<
     { status: "loading" } | { status: "error" } | { status: "done"; report: DocumentFormatReport | null }
   >({ status: "loading" });
@@ -106,6 +110,24 @@ export function FormatCheckReportModal({
             <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>
               {t("docws.fcReportClose")}
             </button>
+            {onMark && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm disabled:opacity-50"
+                disabled={marking}
+                title={t("docws.fcMarkHint")}
+                onClick={async () => {
+                  setMarking(true);
+                  try {
+                    await onMark();
+                  } finally {
+                    setMarking(false);
+                  }
+                }}
+              >
+                {t("docws.fcMark")}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-primary btn-sm disabled:opacity-50"

@@ -28,6 +28,7 @@ import {
   type DocumentSelection,
   type DocumentWorkspaceView,
   type SourceQuestionChip,
+  markDocumentFormatFindings,
   startDocumentFormatCheck,
 } from "@/lib/api/document-workspace";
 import {
@@ -1274,6 +1275,29 @@ function ChatBody({ id }: { id: string }) {
   useEffect(() => {
     lastFormatCheckRef.current = null;
   }, [id]);
+  // "Đánh dấu trên văn bản" in the report: the findings are underlined in
+  // the editor (nothing changed, nothing saved).
+  const markFormatFindings = async () => {
+    const doc = formatCheckDoc;
+    if (id === "new" || !doc) return;
+    try {
+      const ops = await markDocumentFormatFindings(id, doc.id);
+      const batch = opsBatchFromToolData("check_document_format", {
+        document_ops: ops,
+        ops_batch_id: `fc-marks-${Date.now().toString(36)}`,
+        document_id: doc.id,
+      });
+      if (!batch || batch.ops.length === 0) {
+        toast.info(tr("docws.fcMarkNone"));
+        return;
+      }
+      setDocOpsBatches((prev) => [...prev, batch]);
+      setFormatReportOpen(false);
+      toast.success(tr("docws.fcMarkDone", { n: batch.ops.length }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
   // Bumped whenever an assistant turn ends (complete, error, abort, resumed
   // stream done): DocWorkspace re-GETs the workspace and refreshes the editor
   // if editor_key moved — tool results can be lost on a dropped stream.
@@ -2664,6 +2688,7 @@ function ChatBody({ id }: { id: string }) {
             onClose={() => setFormatReportOpen(false)}
             onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
             onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
+            onMark={markFormatFindings}
           />
         )}
       </div>

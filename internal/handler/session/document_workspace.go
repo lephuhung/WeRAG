@@ -307,6 +307,28 @@ func (h *DocumentWorkspaceHandler) StartDocumentFormatCheck(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": gin.H{"check": check}})
 }
 
+// MarkDocumentFormatFindings returns the underlines of a document's finished
+// format check for the editor to show (the user asked from the report);
+// nothing is changed or saved. 409: the document changed since the check.
+// POST /sessions/:session_id/documents/:doc_id/format-check/marks
+func (h *DocumentWorkspaceHandler) MarkDocumentFormatFindings(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	ops, err := h.precheck.FormatFindingMarks(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
+	if err != nil {
+		h.fail(c, err, "Failed to mark the format findings")
+		return
+	}
+	if ops == nil {
+		ops = []tools.DocumentOp{}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"document_ops": ops}})
+}
+
 // ForceSaveDocumentWorkspace asks the Document Server to flush unsaved edits.
 // POST /sessions/:session_id/documents/:doc_id/forcesave (and /document/forcesave)
 func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -215,4 +216,34 @@ func (sp *spellingPass) render(marked bool) string {
 	}
 	b.WriteString("Khi trả lời, nêu lỗi chính tả theo đúng danh sách này, kèm từ đúng: đó là gợi ý để người dùng tự sửa. Nếu bạn thấy thêm lỗi chính tả khác, gạch chân bằng mark_passages trước khi nêu.\n")
 	return b.String()
+}
+
+// ErrFormatCheckOutdated: the document changed since its kept format check,
+// so the paragraphs its findings name may no longer be the same.
+var ErrFormatCheckOutdated = errors.New("văn bản đã thay đổi sau lần kiểm tra thể thức; hãy kiểm tra lại trước khi đánh dấu")
+
+// FormatFindingMarks are the editor underlines of a document's finished
+// background check (workspace ID), for the user who asks to see them in the
+// text: one per measured finding that names its paragraph, nothing
+// changed. kept is false when no result is kept; a document stored in
+// another version than the checked one gives ErrFormatCheckOutdated.
+func FormatFindingMarks(ctx context.Context, src DocumentWorkspaceSource, sessionID, documentID, model string) (ops []DocumentOp, kept bool, err error) {
+	r := formatChecks.get(ctx, formatCheckDocumentKey(documentID))
+	if r == nil || !r.Evaluated {
+		return nil, false, nil
+	}
+	content, _, err := readWorkspaceDocument(ctx, src, sessionID, documentID)
+	if err != nil {
+		return nil, true, err
+	}
+	// the result is cached under the checked bytes too: another key means
+	// the stored file is not the checked one
+	if formatChecks.get(ctx, formatCheckKey(content, model, "")) == nil {
+		return nil, true, ErrFormatCheckOutdated
+	}
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		return nil, true, err
+	}
+	return formatMarkOps(newVirtualDoc(doc.Paragraphs()), flagSpots(r.Flags)), true, nil
 }
