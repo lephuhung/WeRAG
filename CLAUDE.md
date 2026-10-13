@@ -11,6 +11,19 @@ The Vue front-end in `frontend/` is **legacy and frozen for the UI migration to 
 - Exceptions (read-only actions on `frontend/` are allowed): reading code for reference, running/building it to compare behavior, and extracting assets (images, icons, i18n strings).
 - Non-UI shared code (backend `internal/`, `cmd/`, etc.) is unaffected by this rule.
 <!-- gitnexus:end -->
+# Search: use ripgrep (`rg`) instead of `grep`
+
+`rg` (ripgrep 14) is installed system-wide. In shell commands, use it in place of `grep -r`/`find | xargs grep`:
+
+- `rg PATTERN [PATH]` — recursive by default, honours `.gitignore`, skips hidden/binary files. Add `-uu` to search ignored + hidden files (e.g. `node_modules`, `.env*`).
+- Filter by type/glob: `rg -t go 'func New'`, `rg -t ts useState` (covers .tsx; see `rg --type-list`), `rg -g '*.yaml' -g '!vendor/**' key`.
+- Useful flags: `-n` line numbers (default in a terminal), `-l` files only, `-c` counts, `-i`/`-S` ignore/smart case, `-w` whole word, `-F` literal string, `-C 3` context, `-o` only match, `--json` machine output.
+- Regex is Rust syntax (no backrefs/lookaround); use `-P` for PCRE2 when you need them.
+- List files instead of `find`: `rg --files -g '*.sql'`.
+- Exit code 1 means "no match", not an error — append `|| true` in pipelines that must not fail.
+- Plain `grep` is still fine for filtering a pipe (`cmd | grep x`); the rule is about searching files.
+- For symbol-level questions in an indexed repo (callers, impact), prefer the GitNexus tools over text search.
+
 <!-- gitnexus:start -->
 # Database: Postgres only — SQLite is no longer maintained
 
