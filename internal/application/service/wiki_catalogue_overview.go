@@ -379,8 +379,9 @@ func (s *WikiCatalogueOverviewService) upsertPage(ctx context.Context, kb *types
 		page.Summary = p.Summary
 		page.Content = p.Content
 		page.Status = types.WikiPageStatusPublished
-		page.SourceRefs = types.StringArray(p.SourceRefs)
-		page.ChunkRefs = nil
+		page.SourceRefs = nonNilStrings(p.SourceRefs)
+		page.ChunkRefs = types.StringArray{}
+		page.Aliases = nonNilStrings(page.Aliases)
 		page.PageMetadata = types.JSON(metaJSON)
 		if _, err := s.wiki.UpdatePage(ctx, &page); err != nil {
 			return err
@@ -406,7 +407,9 @@ func (s *WikiCatalogueOverviewService) upsertPage(ctx context.Context, kb *types
 		Summary:         p.Summary,
 		Content:         p.Content,
 		FolderID:        folderID,
-		SourceRefs:      types.StringArray(p.SourceRefs),
+		SourceRefs:      nonNilStrings(p.SourceRefs),
+		ChunkRefs:       types.StringArray{},
+		Aliases:         types.StringArray{},
 		PageMetadata:    types.JSON(metaJSON),
 	}
 	if _, err := s.wiki.CreatePage(ctx, page); err != nil {
@@ -414,6 +417,15 @@ func (s *WikiCatalogueOverviewService) upsertPage(ctx context.Context, kb *types
 	}
 	s.bump(kb.ID, func(st *WikiCatalogueBuildStatus) { st.Created++ })
 	return nil
+}
+
+// nonNilStrings returns an empty (not nil) array so JSON clients see [] and
+// never null for list fields.
+func nonNilStrings(v []string) types.StringArray {
+	if len(v) == 0 {
+		return types.StringArray{}
+	}
+	return types.StringArray(v)
 }
 
 func existingHash(page *types.WikiPage) string {

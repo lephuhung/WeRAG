@@ -335,7 +335,7 @@ export function WikiPageView({
             <span className="capitalize">{page.page_type}</span>
             <span>{page.status}</span>
             <span>v{page.version}</span>
-            {page.source_refs.length > 0 && <span>{page.source_refs.length} sources</span>}
+            {(page.source_refs?.length ?? 0) > 0 && <span>{page.source_refs?.length} sources</span>}
             <div className="ml-auto flex gap-2">
               {!editing && (
                 <>

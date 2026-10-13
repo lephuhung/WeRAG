@@ -25,9 +25,10 @@ export interface WikiPage {
   wiki_path?: string;
   depth?: number;
   sort_order?: number;
-  source_refs: string[];
-  in_links: string[];
-  out_links: string[];
+  /** Arrays may come back as null for pages written without them (e.g. index pages). */
+  source_refs: string[] | null;
+  in_links: string[] | null;
+  out_links: string[] | null;
   page_metadata: Record<string, unknown>;
   version: number;
   // Author kind of the current version: 'pipeline' | 'agent' | 'user' |
