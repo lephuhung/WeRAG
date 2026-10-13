@@ -3,15 +3,17 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api-client";
-import { getRuntimeQueues, type QueueStat } from "@/lib/api/system";
+import { getRuntimeQueues, type QueueStat, type WikiRunWindowStatus } from "@/lib/api/system";
 import { IconRefresh } from "@/components/icons";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
+import { WikiRunWindowCard } from "@/components/settings/wiki-run-window-card";
 import { useT } from "@/lib/i18n";
 
 export default function RuntimeQueuesPage() {
   const inModal = useInSettingsModal();
   const { t } = useT();
   const [queues, setQueues] = useState<QueueStat[] | null>(null);
+  const [wikiWindow, setWikiWindow] = useState<WikiRunWindowStatus | null>(null);
   const [denied, setDenied] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,7 @@ export default function RuntimeQueuesPage() {
     try {
       const res = await getRuntimeQueues();
       setQueues(res.queues ?? []);
+      setWikiWindow(res.wiki_run_window ?? null);
       setUnavailable(!res.available);
       setDenied(false);
     } catch (e) {
@@ -60,6 +63,9 @@ export default function RuntimeQueuesPage() {
         <p className="caption mb-4 text-muted">
           {t("q.unavailable")}
         </p>
+      )}
+      {wikiWindow && !unavailable && (
+        <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
       )}
       <div
         className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${inModal ? "" : "xl:grid-cols-4"}`}

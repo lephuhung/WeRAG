@@ -593,7 +593,26 @@ export interface RuntimeQueuesResponse {
   queues: QueueStat[];
   model_limiter_available: boolean;
   models: ModelRuntimeStat[];
+  wiki_run_window?: WikiRunWindowStatus;
   timestamp: number;
+}
+
+/* Value of the `wiki.run_window` system setting: the daily window (HH:MM in
+ * an IANA timezone; end before start spans midnight) in which wiki
+ * generation runs. Outside it the wiki queue is paused so chat keeps the LLM. */
+export const WIKI_RUN_WINDOW_KEY = "wiki.run_window";
+
+export interface WikiRunWindow {
+  enabled: boolean;
+  start: string;
+  end: string;
+  timezone: string;
+}
+
+export interface WikiRunWindowStatus extends WikiRunWindow {
+  open: boolean;
+  /** RFC3339; set only while the window is closed. */
+  next_open?: string;
 }
 
 export type RuntimeTaskState =

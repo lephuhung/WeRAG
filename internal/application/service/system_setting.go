@@ -304,6 +304,18 @@ var registry = map[string]settingSpec{
 			"Wiki 生成以合成大模型调用为主，独立并发预算可避免上传高峰期被解析任务饿死，" +
 			"同时不会因 Wiki 洪峰拖慢用户面解析。修改后需重启服务进程方可生效。",
 	},
+	// wiki.run_window confines wiki generation to off-hours: outside the
+	// window the wiki queue is paused so chat gets the LLM. Read every 30s by
+	// the wiki run-window scheduler, so edits apply without a restart.
+	types.WikiRunWindowSettingKey: {
+		Type:     "json",
+		EnvName:  "",
+		Default:  map[string]any{"enabled": true, "start": "19:00", "end": "06:00", "timezone": "Asia/Ho_Chi_Minh"},
+		Category: "worker",
+		Description: "Daily window (HH:MM, IANA timezone; end before start spans midnight) in which wiki " +
+			"generation runs. Outside it the wiki queue is paused so interactive chat keeps the LLM; " +
+			"queued wiki work resumes when the window opens. enabled=false runs wiki at any time.",
+	},
 	// model.max_concurrency is the DEFAULT per-model cap on concurrent
 	// background (ingestion/enrichment) LLM/embedding/VLM calls, keyed by
 	// model ID and shared across replicas. Read at every gated call via the
@@ -1492,6 +1504,14 @@ func validateRegistryEntry(key string, rawValue any) error {
 			return fmt.Errorf("cannot encode value: %w", err)
 		}
 		if _, err := types.ParseMemoryConfig(raw); err != nil {
+			return err
+		}
+	case types.WikiRunWindowSettingKey:
+		raw, err := json.Marshal(rawValue)
+		if err != nil {
+			return fmt.Errorf("cannot encode value: %w", err)
+		}
+		if _, err := types.ParseWikiRunWindow(raw); err != nil {
 			return err
 		}
 	case SystemParseDefaultsKey:

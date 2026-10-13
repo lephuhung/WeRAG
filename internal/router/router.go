@@ -100,10 +100,10 @@ type RouterParams struct {
 	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
+	WikiCatalogueHandler         *handler.WikiCatalogueHandler
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
 	LegalReviewHandler           *handler.LegalReviewHandler
-	WikiCatalogueHandler         *handler.WikiCatalogueHandler
 	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
 

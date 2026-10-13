@@ -1869,7 +1869,16 @@ type RuntimeQueuesResponse struct {
 	Queues                []types.QueueStat          `json:"queues"`
 	ModelLimiterAvailable bool                       `json:"model_limiter_available"`
 	Models                []modellimiter.RuntimeStat `json:"models"`
+	WikiRunWindow         WikiRunWindowStatus        `json:"wiki_run_window"`
 	Timestamp             int64                      `json:"timestamp"`
+}
+
+// WikiRunWindowStatus is the configured wiki run window plus whether wiki
+// tasks may run right now and, if not, when they resume.
+type WikiRunWindowStatus struct {
+	types.WikiRunWindow
+	Open     bool   `json:"open"`
+	NextOpen string `json:"next_open,omitempty"` // RFC3339, set while closed
 }
 
 func aggregateRuntimeWorkerPools(pools []RuntimeWorkerPool, servers []types.WorkerServerStat) {
@@ -1986,6 +1995,13 @@ func (h *SystemHandler) GetRuntimeQueues(c *gin.Context) {
 	}
 	resp.ModelLimiterAvailable = modelSupported
 	resp.Models = modelStats
+
+	window := types.ResolveWikiRunWindow(ctx, h.systemSettingSvc)
+	now := time.Now()
+	resp.WikiRunWindow = WikiRunWindowStatus{WikiRunWindow: window, Open: window.Open(now)}
+	if next := window.NextOpen(now); !next.IsZero() {
+		resp.WikiRunWindow.NextOpen = next.Format(time.RFC3339)
+	}
 
 	c.JSON(http.StatusOK, resp)
 }

@@ -99,6 +99,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
+	"github.com/hibiken/asynq"
 	"github.com/tencent/vectordatabase-sdk-go/tcvectordb"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
@@ -323,6 +324,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewCustomAgentService))
 	must(container.Provide(service.NewUserResourceFavoriteService))
 	must(container.Provide(service.NewWikiPageService))
+	must(container.Provide(service.NewWikiCatalogueOverviewService))
 	must(container.Provide(service.NewWikiIngestService, dig.Name("wikiIngest")))
 	must(container.Provide(service.NewWikiLintService))
 	must(container.Provide(service.NewEmbedChannelService))
@@ -331,7 +333,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	// Web search service (needed by AgentService)
 	logger.Debugf(ctx, "[Container] Registering web search registry and providers...")
-	must(container.Provide(service.NewWikiCatalogueOverviewService))
 	must(container.Provide(infra_web_search.NewRegistry))
 	must(container.Invoke(registerWebSearchProviders))
 	must(container.Provide(repository.NewWebSearchProviderRepository))
@@ -479,6 +480,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		// dequeue of pending/scheduled/retry tasks + active-task cancel).
 		must(container.Provide(router.NewAsynqInspector))
 		must(container.Provide(router.NewAsynqTaskInspector))
+		// Wiki generation runs only inside the SuperAdmin's run window
+		// (wiki.run_window, overnight by default) so chat keeps the LLM.
+		must(container.Invoke(startWikiRunWindow))
 		// Install the distributed per-model chat concurrency governor. Only
 		// available with Redis (the shared semaphore backend); Lite mode is
 		// single-process and low-volume, so it runs ungated.
@@ -623,6 +627,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewDataSourceHandler))
 	// Wiki page handler
 	must(container.Provide(handler.NewWikiPageHandler))
+	must(container.Provide(handler.NewWikiCatalogueHandler))
 	// IM integration
 	logger.Debugf(ctx, "[Container] Registering IM integration...")
 	must(container.Provide(imPkg.NewService))
@@ -637,7 +642,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// local:// images that live under a tenant's configured storage PathPrefix
 	// (which is not encoded in the local:// URL).
 	must(container.Invoke(registerChatLocalImageResolver))
-	must(container.Provide(handler.NewWikiCatalogueHandler))
 
 	// Router configuration
 	logger.Debugf(ctx, "[Container] Registering router and starting task server...")
@@ -2015,6 +2019,18 @@ func startForkSnapshotReaper(reaper *service.ForkSnapshotReaper, cleaner interfa
 	}()
 	cleaner.RegisterWithName("ForkSnapshotReaper", func() error {
 		close(stop)
+		return nil
+	})
+}
+
+// startWikiRunWindow pauses the wiki queue outside the configured run window
+// and resumes it inside; see router.StartWikiRunWindow.
+func startWikiRunWindow(inspector *asynq.Inspector, settings interfaces.SystemSettingService,
+	cleaner interfaces.ResourceCleaner,
+) {
+	stop := router.StartWikiRunWindow(inspector, settings)
+	cleaner.RegisterWithName("WikiRunWindow", func() error {
+		stop()
 		return nil
 	})
 }
