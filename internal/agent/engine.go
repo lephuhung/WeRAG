@@ -48,6 +48,7 @@ type AgentEngine struct {
 	skillsManager        *skills.Manager         // Skills manager for Progressive Disclosure (optional)
 	appConfig            *appconfig.Config       // Application config for prompt template resolution (optional)
 	imageDescriber       ImageDescriberFunc      // VLM function for describing images in tool results (optional)
+	legalHistory         LegalHistoryFunc        // appends the amendment history of cited legal provisions (optional)
 	tokenEstimator       *agenttoken.Estimator   // Token estimator for context window management, calibrated
 	rawEstimator         *agenttoken.Estimator   // Same tokenizer at scale 1, for measuring the calibration
 	compactor            *compaction.Compactor   // Summarizes older history to fit the context window (nil = disabled)
@@ -900,6 +901,7 @@ func (e *AgentEngine) runReActIteration(
 		state.FinalAnswer = verdict.finalAnswer
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
+		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil
 	}
