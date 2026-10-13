@@ -783,3 +783,21 @@ func TestUpdateIssueStatus_ScopedToKnowledgeBase(t *testing.T) {
 	// databases count matched rows, and updated_at changes anyway.
 	require.NoError(t, repo.UpdateIssueStatus(context.Background(), "kb-a", "issue-1", "resolved"))
 }
+
+func TestWikiTSQuery(t *testing.T) {
+	cases := []struct{ in, op, want string }{
+		{"xử phạt giao thông", "&", "'xử' & 'phạt' & 'giao' & 'thông'"},
+		{"xử phạt giao thông", "|", "'xử' | 'phạt' | 'giao' | 'thông'"},
+		{"Nghị định 168/2024", "&", "'nghị' & 'định' & '168/2024':*"},
+		{"84/2025/QH15", "&", "'84/2025/qh15':*"},
+		{"  thuế, phí và lệ phí? ", "&", "'thuế' & 'phí' & 'và' & 'lệ' & 'phí'"},
+		{"a 'b' (c)", "&", "'a' & 'b' & 'c'"},
+		{"", "&", ""},
+		{"or", "&", ""},
+	}
+	for _, c := range cases {
+		if got := wikiTSQuery(c.in, c.op); got != c.want {
+			t.Errorf("wikiTSQuery(%q, %q) = %q, want %q", c.in, c.op, got, c.want)
+		}
+	}
+}

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -1337,30 +1339,120 @@ func (r *wikiPageRepository) Search(ctx context.Context, kbID string, query stri
 	if limit > 50 {
 		limit = 50
 	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() != "postgres" {
+		return r.searchSubstring(ctx, kbID, query, limit)
+	}
 
+	// Full text first: every word must match (title A > summary B >
+	// content C, see migration 000135). When that leaves room, widen to
+	// any word, then to a plain substring match so document numbers like
+	// "168/2024" or odd tokens still find their page.
+	pages := make([]*types.WikiPage, 0, limit)
+	seen := map[string]bool{}
+	add := func(rows []*types.WikiPage) {
+		for _, p := range rows {
+			if p == nil || seen[p.ID] {
+				continue
+			}
+			seen[p.ID] = true
+			pages = append(pages, p)
+		}
+	}
+	for _, tsq := range []string{wikiTSQuery(query, "&"), wikiTSQuery(query, "|")} {
+		if tsq == "" || len(pages) >= limit {
+			break
+		}
+		var rows []*types.WikiPage
+		err := r.db.WithContext(ctx).
+			Select("*, ts_rank_cd(search_tsv, to_tsquery('simple', immutable_unaccent(?))) AS match_rank", tsq).
+			Where("knowledge_base_id = ? AND status <> ? AND search_tsv @@ to_tsquery('simple', immutable_unaccent(?))",
+				kbID, types.WikiPageStatusArchived, tsq).
+			Order("match_rank DESC, updated_at DESC").
+			Limit(limit).
+			Find(&rows).Error
+		if err != nil {
+			return nil, err
+		}
+		add(rows)
+	}
+	if len(pages) < limit {
+		rows, err := r.searchSubstring(ctx, kbID, query, limit)
+		if err != nil {
+			return nil, err
+		}
+		add(rows)
+	}
+	if len(pages) > limit {
+		pages = pages[:limit]
+	}
+	return pages, nil
+}
+
+// searchSubstring is the pre-full-text search: a case-insensitive regex
+// match ranked by which column matched. It is the fallback tier on
+// Postgres and the whole search on other dialects (tests).
+func (r *wikiPageRepository) searchSubstring(ctx context.Context, kbID string, query string, limit int) ([]*types.WikiPage, error) {
+	var pages []*types.WikiPage
+	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() != "postgres" {
+		like := "%" + query + "%"
+		err := r.db.WithContext(ctx).
+			Where("knowledge_base_id = ? AND status <> ? AND (title LIKE ? OR content LIKE ? OR summary LIKE ? OR slug LIKE ?)",
+				kbID, types.WikiPageStatusArchived, like, like, like, like).
+			Order("updated_at DESC").Limit(limit).Find(&pages).Error
+		return pages, err
+	}
+	pattern := regexp.QuoteMeta(query)
 	// CASE expression is evaluated per-row during SELECT; we order by the
-	// alias so the DB only computes the rank once. Parameterized four
-	// times with the same regex to avoid coupling to GORM's positional
-	// arg rewriting quirks.
+	// alias so the DB only computes the rank once.
 	rankExpr := "CASE " +
 		"WHEN title ~* ? THEN 4 " +
 		"WHEN slug ~* ? THEN 3 " +
 		"WHEN summary ~* ? THEN 2 " +
 		"WHEN content ~* ? THEN 1 " +
 		"ELSE 0 END AS match_rank"
-
-	var pages []*types.WikiPage
 	if err := r.db.WithContext(ctx).
-		Select("*, "+rankExpr, query, query, query, query).
+		Select("*, "+rankExpr, pattern, pattern, pattern, pattern).
 		Where("knowledge_base_id = ? AND (title ~* ? OR content ~* ? OR summary ~* ? OR slug ~* ?)",
-			kbID, query, query, query, query).
-		Where("status != ?", "archived").
+			kbID, pattern, pattern, pattern, pattern).
+		Where("status != ?", types.WikiPageStatusArchived).
 		Order("match_rank DESC, updated_at DESC").
 		Limit(limit).
 		Find(&pages).Error; err != nil {
 		return nil, err
 	}
 	return pages, nil
+}
+
+// wikiTSQuery turns free text into a to_tsquery('simple') expression whose
+// words are joined with op ("&" or "|"). Each word becomes a quoted lexeme;
+// words that look like a document number ("168/2024", "84/2025/QH15") get a
+// prefix match so a partial number still finds "168/2024/NĐ-CP". Diacritics
+// are folded by immutable_unaccent on the database side, matching the
+// stored vector. Returns "" when no usable word remains.
+func wikiTSQuery(query, op string) string {
+	words := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ',' || r == ';' || r == '"' || r == '\'' || r == '(' || r == ')' || r == '?' || r == '!' || r == ':' || r == '&' || r == '|'
+	})
+	terms := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.Trim(w, ".-/")
+		if w == "" || w == "or" || w == "and" {
+			continue
+		}
+		term := "'" + w + "'"
+		if strings.Contains(w, "/") {
+			term += ":*"
+		}
+		terms = append(terms, term)
+	}
+	if len(terms) == 0 {
+		return ""
+	}
+	return strings.Join(terms, " "+op+" ")
 }
 
 // CountByType returns page counts grouped by type for a knowledge base
