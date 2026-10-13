@@ -321,6 +321,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	// Web search service (needed by AgentService)
 	logger.Debugf(ctx, "[Container] Registering web search registry and providers...")
+	must(container.Provide(service.NewWikiCatalogueOverviewService))
 	must(container.Provide(infra_web_search.NewRegistry))
 	must(container.Invoke(registerWebSearchProviders))
 	must(container.Provide(repository.NewWebSearchProviderRepository))
@@ -622,6 +623,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// local:// images that live under a tenant's configured storage PathPrefix
 	// (which is not encoded in the local:// URL).
 	must(container.Invoke(registerChatLocalImageResolver))
+	must(container.Provide(handler.NewWikiCatalogueHandler))
 
 	// Router configuration
 	logger.Debugf(ctx, "[Container] Registering router and starting task server...")

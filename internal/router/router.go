@@ -99,6 +99,7 @@ type RouterParams struct {
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
 	LegalReviewHandler           *handler.LegalReviewHandler
+	WikiCatalogueHandler         *handler.WikiCatalogueHandler
 	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
 
@@ -333,7 +334,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler, params.DataSourceCredentialsHandler, rbacGuards)
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
-		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
+		RegisterWikiPageRoutes(v1, params.WikiPageHandler, params.WikiCatalogueHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		RegisterAbbreviationRoutes(v1, params.AbbreviationHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)

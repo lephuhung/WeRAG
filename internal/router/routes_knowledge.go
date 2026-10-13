@@ -349,7 +349,7 @@ func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandl
 // honour per-KB ownership via OwnedWikiKBOrAdmin (PR 5, #1303): the URL
 // :kb_id resolves directly to the owning KB so a Contributor who owns
 // the KB can manage its wiki, while a non-owner Contributor gets 403.
-func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHandler, g *rbacGuards) {
+func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHandler, catalogueHandler *handler.WikiCatalogueHandler, g *rbacGuards) {
 	wiki := g.apiKeyGroup(r.Group("/knowledgebase/:kb_id/wiki"), apiKeyIngest(apiKeyFullAccess()))
 	wikiRead := wiki.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{
@@ -382,6 +382,11 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 		// Search and maintenance
 		wikiRead.GET("/search", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.SearchPages)
 		wiki.POST("/rebuild-links", g.TenantAdmin(), g.KBAccessManage("kb_id"), wikiHandler.RebuildLinks)
+		// Catalogue-mode wiki (code-generated overview pages, no LLM).
+		if catalogueHandler != nil {
+			wiki.POST("/catalogue/rebuild", g.TenantAdmin(), g.KBAccessManage("kb_id"), catalogueHandler.Rebuild)
+			wikiRead.GET("/catalogue/status", g.Member(), g.KBAccessRead("kb_id"), catalogueHandler.Status)
+		}
 		wikiRead.GET("/lint", g.Member(), g.KBAccessRead("kb_id"), wikiHandler.Lint)
 		wiki.POST("/auto-fix", g.TenantAdmin(), g.KBAccessManage("kb_id"), wikiHandler.AutoFix)
 

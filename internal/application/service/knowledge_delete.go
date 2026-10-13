@@ -128,6 +128,28 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 	return s.executeKnowledgeDelete(plan, true)
 }
 
+// deleteCatalogueWikiPages removes the catalogue-generated pages that cite
+// the deleted document. Index pages (lĩnh vực, cơ quan) keep a dangling
+// entry until the next overview rebuild.
+func (s *knowledgeService) deleteCatalogueWikiPages(ctx context.Context, knowledge *types.Knowledge) {
+	if knowledge == nil || knowledge.KnowledgeBaseID == "" || knowledge.ID == "" {
+		return
+	}
+	pages, err := s.wikiRepo.ListBySourceRef(ctx, knowledge.KnowledgeBaseID, knowledge.ID)
+	if err != nil {
+		logger.Warnf(ctx, "wiki cleanup (catalogue): list pages for %s: %v", knowledge.ID, err)
+		return
+	}
+	for _, page := range pages {
+		if page.PageType == types.WikiPageTypeIndex {
+			continue
+		}
+		if err := s.wikiService.DeletePage(ctx, knowledge.KnowledgeBaseID, page.Slug); err != nil {
+			logger.Warnf(ctx, "wiki cleanup (catalogue): delete page %s: %v", page.Slug, err)
+		}
+	}
+}
+
 // cleanupWikiOnKnowledgeDelete handles wiki pages when a source document is deleted.
 //
 // There are three sources of truth we must keep consistent:
@@ -521,7 +543,13 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 	for _, knowledge := range knowledgeList {
 		kb := knowledgeBases[knowledge.KnowledgeBaseID]
 		if kb != nil && kb.IsWikiEnabled() {
-			s.cleanupWikiOnKnowledgeDelete(ctx, knowledge)
+			if kb.WikiConfig.IsCatalogueMode() {
+				// Code-generated pages cite exactly one document; drop them
+				// outright instead of queueing the LLM retract.
+				s.deleteCatalogueWikiPages(ctx, knowledge)
+			} else {
+				s.cleanupWikiOnKnowledgeDelete(ctx, knowledge)
+			}
 		}
 	}
 

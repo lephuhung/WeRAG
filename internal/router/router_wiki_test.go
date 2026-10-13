@@ -29,7 +29,7 @@ func (s *stubWikiKBLookup) GetKnowledgeBaseByID(_ context.Context, id string) (*
 
 func newWikiRouteTestEngine(t *testing.T, callerTenantID uint64, kbLookup *stubWikiKBLookup) *gin.Engine {
 	return newKBRouteTestEngine(t, callerTenantID, kbLookup, nil, func(r *gin.RouterGroup, guards *rbacGuards) {
-		RegisterWikiPageRoutes(r, &handler.WikiPageHandler{}, guards)
+		RegisterWikiPageRoutes(r, &handler.WikiPageHandler{}, nil, guards)
 	})
 }
 
@@ -183,7 +183,7 @@ func TestWikiWriteRoutesDenyOutOfScopeAPIKeyKB(t *testing.T) {
 		Capabilities:     types.StringArray{string(types.APIKeyCapabilityIngest)},
 	}
 	engine := newKBRouteTestEngine(t, 1, kbLookup, scope, func(r *gin.RouterGroup, guards *rbacGuards) {
-		RegisterWikiPageRoutes(r, &handler.WikiPageHandler{}, guards)
+		RegisterWikiPageRoutes(r, &handler.WikiPageHandler{}, nil, guards)
 	})
 
 	cases := []struct {

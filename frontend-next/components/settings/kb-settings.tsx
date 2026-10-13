@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { Select } from "@/components/select";
+import { WikiCatalogueRebuild } from "@/components/settings/wiki-catalogue-rebuild";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import {
@@ -36,6 +37,7 @@ type KBConfigDraft = {
     extraction_granularity: "focused" | "standard" | "exhaustive";
     content_instructions: string;
     extraction_instructions: string;
+    generation_mode: "" | "llm" | "catalogue";
   };
   auto_tag_config: {
     enabled: boolean;
@@ -130,6 +132,7 @@ export function KbSettingsModal({
                 : "standard") as "focused" | "standard" | "exhaustive",
               content_instructions: String(wiki.content_instructions ?? ""),
               extraction_instructions: String(wiki.extraction_instructions ?? ""),
+              generation_mode: wiki.generation_mode === "catalogue" ? "catalogue" : "",
             },
             auto_tag_config: {
               enabled: Boolean((row as { auto_tag_config?: { enabled?: boolean } }).auto_tag_config?.enabled),
@@ -267,6 +270,30 @@ export function KbSettingsModal({
             {section === "wiki" && (
               <div className="flex flex-col gap-4">
                 <label className="block">
+                  <span className="caption mb-1.5 block text-muted">{t("kbSettings.wikiGenerationMode")}</span>
+                  <Select
+                    className="w-full max-w-[280px] sm:w-[280px]"
+                    value={draft.wiki_config.generation_mode === "catalogue" ? "catalogue" : "llm"}
+                    onChange={(v) =>
+                      patch("wiki_config", { ...draft.wiki_config, generation_mode: v === "catalogue" ? "catalogue" : "" })
+                    }
+                    options={[
+                      { value: "llm", label: t("kbSettings.wikiModeLlm") },
+                      { value: "catalogue", label: t("kbSettings.wikiModeCatalogue") },
+                    ]}
+                  />
+                  <span className="caption mt-1.5 block text-muted">
+                    {draft.wiki_config.generation_mode === "catalogue"
+                      ? t("kbSettings.wikiModeCatalogueHint")
+                      : t("kbSettings.wikiModeLlmHint")}
+                  </span>
+                </label>
+                {draft.wiki_config.generation_mode === "catalogue" && (
+                  <WikiCatalogueRebuild kbId={kbId} enabled={draft.indexing_strategy.wiki_enabled && !dirty} />
+                )}
+                {draft.wiki_config.generation_mode !== "catalogue" && (
+                <>
+                <label className="block">
                   <span className="caption mb-1.5 block text-muted">{t("kbSettings.wikiGranularity")}</span>
                   <Select
                     className="w-full max-w-[280px] sm:w-[280px]"
@@ -306,6 +333,8 @@ export function KbSettingsModal({
                     onChange={(e) => patch("wiki_config", { ...draft.wiki_config, extraction_instructions: e.target.value })}
                   />
                 </label>
+                </>
+                )}
               </div>
             )}
 

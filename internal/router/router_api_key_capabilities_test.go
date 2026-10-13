@@ -308,7 +308,7 @@ func TestKnowledgeReadRoutesDeclareRetrieveCapability(t *testing.T) {
 	RegisterKnowledgeTagRoutes(v1, &handler.TagHandler{}, g)
 	RegisterChatRoutes(v1, &sessionhandler.Handler{}, g)
 	RegisterInitializationRoutes(v1, &handler.InitializationHandler{}, g)
-	RegisterWikiPageRoutes(v1, &handler.WikiPageHandler{}, g)
+	RegisterWikiPageRoutes(v1, &handler.WikiPageHandler{}, nil, g)
 
 	cases := []struct {
 		method string

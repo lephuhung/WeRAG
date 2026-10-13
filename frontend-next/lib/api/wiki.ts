@@ -364,3 +364,39 @@ export function updateWikiIssueStatus(kbId: string, issueId: string, status: str
 export function rebuildWikiLinks(kbId: string) {
   return apiPost(`/api/v1/knowledgebase/${kbId}/wiki/rebuild-links`, {});
 }
+
+// ---- catalogue-mode wiki (code-generated overview pages, no LLM) ----------
+
+export interface WikiCatalogueBuildStatus {
+  knowledge_base_id: string;
+  running: boolean;
+  phase: string;
+  total: number;
+  done: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  deleted: number;
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+function unwrapStatus(res: unknown): WikiCatalogueBuildStatus | null {
+  const r = res as { data?: WikiCatalogueBuildStatus | null } | WikiCatalogueBuildStatus | null;
+  if (!r) return null;
+  if (typeof r === "object" && "data" in r) return (r as { data?: WikiCatalogueBuildStatus | null }).data ?? null;
+  return r as WikiCatalogueBuildStatus;
+}
+
+/** Start regenerating every overview page of a catalogue-mode wiki (background). */
+export async function rebuildWikiCatalogue(kbId: string): Promise<WikiCatalogueBuildStatus | null> {
+  const res = await apiPost<unknown>(`/api/v1/knowledgebase/${kbId}/wiki/catalogue/rebuild`, {});
+  return unwrapStatus(res);
+}
+
+/** Latest rebuild progress of a catalogue-mode wiki; null when none ran since startup. */
+export async function getWikiCatalogueStatus(kbId: string): Promise<WikiCatalogueBuildStatus | null> {
+  const res = await apiGet<unknown>(`/api/v1/knowledgebase/${kbId}/wiki/catalogue/status`);
+  return unwrapStatus(res);
+}

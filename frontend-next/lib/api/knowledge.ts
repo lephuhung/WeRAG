@@ -280,6 +280,7 @@ export function createKnowledgeBase(data: {
     extraction_granularity?: "focused" | "standard" | "exhaustive";
     content_instructions?: string;
     extraction_instructions?: string;
+    generation_mode?: "" | "llm" | "catalogue";
   };
   indexing_strategy?: {
     vector_enabled: boolean;
@@ -320,6 +321,7 @@ export function updateKnowledgeBase(
         extraction_granularity?: "focused" | "standard" | "exhaustive";
         content_instructions?: string;
         extraction_instructions?: string;
+        generation_mode?: "" | "llm" | "catalogue";
       };
       auto_tag_config?: {
         enabled: boolean;
