@@ -66,7 +66,9 @@ export function StorageSettings() {
   const handleSetDefault = async (id: string) => {
     try {
       await setDefaultStorageBackend(id);
-      setDefaultId(id);
+      /* Re-read: the list marks the effective default (a workspace on its
+       * legacy env alias follows the configuration profile's default). */
+      await loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("stor.setDefaultFailed"));
     }
@@ -179,7 +181,8 @@ export function StorageSettings() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {!isDefault && (
+                  {/* Legacy env aliases cannot be the profile default. */}
+                  {!isDefault && !b.legacy_alias && (
                     <button
                       onClick={() => handleSetDefault(b.id)}
                       className="btn btn-outline btn-sm"

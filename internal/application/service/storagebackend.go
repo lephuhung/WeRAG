@@ -334,6 +334,16 @@ func (s *StorageBackendService) defaultBackendID(ctx context.Context, tenant *ty
 	return candidate
 }
 
+// EffectiveDefaultID exposes defaultBackendID so the settings list marks the
+// backend new files actually go to — after a SuperAdmin sets the profile
+// default, workspaces on a legacy alias follow it.
+func (s *StorageBackendService) EffectiveDefaultID(ctx context.Context, tenant *types.Tenant) string {
+	if tenant == nil {
+		return ""
+	}
+	return s.defaultBackendID(ctx, s.hydrateTenantStorage(ctx, tenant))
+}
+
 func (s *StorageBackendService) ResolveBackend(ctx context.Context, tenant *types.Tenant, backendID, provider string) (*types.StorageBackend, error) {
 	if tenant == nil {
 		return nil, fmt.Errorf("workspace context missing")

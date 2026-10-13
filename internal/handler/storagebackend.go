@@ -62,10 +62,17 @@ func (h *StorageBackendHandler) List(c *gin.Context) {
 	for _, backend := range backends {
 		result = append(result, types.NewStorageBackendResponse(backend))
 	}
+	// Mark the backend new files really go to. A workspace on its legacy
+	// env alias follows its configuration profile's default, which is what
+	// a SuperAdmin's "set default" writes (PUT /:id/default runs under
+	// g.ConfigProfile) — showing only the workspace's own column made that
+	// choice look unsaved.
 	tenant, _ := types.TenantInfoFromContext(c.Request.Context())
 	var defaultID *string
 	if tenant != nil {
-		defaultID = tenant.DefaultStorageBackendID
+		if id := h.service.EffectiveDefaultID(c.Request.Context(), tenant); id != "" {
+			defaultID = &id
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": result, "default_storage_backend_id": defaultID})
 }

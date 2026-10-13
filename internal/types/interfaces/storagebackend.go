@@ -20,6 +20,9 @@ type StorageBackendService interface {
 	Update(ctx context.Context, backend *types.StorageBackend) error
 	Delete(ctx context.Context, tenantID uint64, id string) error
 	SetDefault(ctx context.Context, tenantID uint64, id string) error
+	// EffectiveDefaultID is the backend new files of tenant go to: its own
+	// default, or its configuration profile's when its own is a legacy alias.
+	EffectiveDefaultID(ctx context.Context, tenant *types.Tenant) string
 	Test(ctx context.Context, backend *types.StorageBackend) error
 }
 
