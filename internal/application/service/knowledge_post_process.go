@@ -234,7 +234,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	//    drains is bounded by the housekeeping finalizing sweep.
 	willSpawnSummary := eff.SummaryEnabled && len(textChunks) > 0
 	willSpawnQuestion := len(textChunks) > 0 && kb.NeedsEmbeddingModel() &&
-		eff.QuestionGenerationConfig.Enabled
+		eff.QuestionGenerationConfig.Enabled && !vbplSkipsQuestionGeneration(knowledge)
 	willSpawnWiki := kb.IndexingStrategy.WikiEnabled && len(textChunks) > 0
 	willSpawnAutoTag := kb.Type == types.KnowledgeBaseTypeDocument &&
 		kb.AutoTagConfig != nil && kb.AutoTagConfig.Enabled && len(textChunks) > 0

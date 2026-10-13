@@ -33,3 +33,17 @@ func TestVBPLAppendixFiles(t *testing.T) {
 		t.Fatalf("no files: %+v", got)
 	}
 }
+
+func TestVBPLSkipsQuestionGeneration(t *testing.T) {
+	if !vbplSkipsQuestionGeneration(&types.Knowledge{Metadata: types.JSON(`{"source":"vbpl","external_id":"1"}`)}) {
+		t.Fatal("vbpl document should skip question generation")
+	}
+	for _, meta := range []string{``, `{"source":"upload"}`, `not json`} {
+		if vbplSkipsQuestionGeneration(&types.Knowledge{Metadata: types.JSON(meta)}) {
+			t.Fatalf("metadata %q should not skip", meta)
+		}
+	}
+	if vbplSkipsQuestionGeneration(nil) {
+		t.Fatal("nil knowledge should not skip")
+	}
+}

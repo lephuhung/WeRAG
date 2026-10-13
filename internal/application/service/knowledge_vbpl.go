@@ -178,3 +178,20 @@ func vbplAppendixFiles(knowledge *types.Knowledge) []vbpl.AttachedFile {
 	}
 	return files
 }
+
+// vbplSkipsQuestionGeneration reports whether the knowledge was ingested from
+// vbpl.vn (metadata source "vbpl", set by ingest_vbpl.py). Its chunks are
+// whole Điều with provision metadata, so generated questions add little
+// while costing one LLM call per chunk across ~200k chunks: they are never
+// generated for it, even when the locked parse defaults turn them on.
+func vbplSkipsQuestionGeneration(knowledge *types.Knowledge) bool {
+	if knowledge == nil || len(knowledge.Metadata) == 0 {
+		return false
+	}
+	m, err := knowledge.Metadata.Map()
+	if err != nil {
+		return false
+	}
+	source, _ := m["source"].(string)
+	return source == "vbpl"
+}

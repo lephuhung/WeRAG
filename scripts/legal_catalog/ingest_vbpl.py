@@ -29,6 +29,7 @@ Authentication: WERAG_API_KEY (X-API-Key) or WERAG_TOKEN (Bearer).
 import argparse
 import datetime as dt
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -118,6 +119,41 @@ def upload(api, kb, headers, name, meta, content):
         return json.loads(resp.read().decode() or "{}")
 
 
+def wait_for_backend(api, limit=900):
+    """Waits until the backend answers again (a dev backend restarts on
+    every Go edit); False after limit seconds."""
+    health = api.rstrip("/").rsplit("/api/", 1)[0] + "/health"
+    deadline = time.time() + limit
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(health, timeout=10):
+                return True
+        except (OSError, http.client.HTTPException):
+            time.sleep(10)
+    return False
+
+
+def upload_with_retry(api, kb, headers, name, meta, content, attempts=5):
+    """Uploads, retrying while the backend restarts. An upload that reached
+    the backend before the connection dropped comes back as 409 duplicate;
+    its existing knowledge is returned."""
+    for attempt in range(attempts):
+        try:
+            return upload(api, kb, headers, name, meta, content)
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            if e.code == 409:
+                return json.loads(body.decode() or "{}")
+            if e.code not in (502, 503, 504) or attempt == attempts - 1:
+                raise urllib.error.HTTPError(e.url, e.code, body[:300].decode(errors="replace"), e.headers, None)
+        except (OSError, http.client.HTTPException):
+            if attempt == attempts - 1:
+                raise
+        print(f"backend unavailable, waiting (attempt {attempt + 1})", file=sys.stderr)
+        time.sleep(5)
+        wait_for_backend(api)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--api", required=True, help="WeRAG API base, e.g. http://localhost:18080/api/v1")
@@ -180,12 +216,12 @@ def main():
             print(f"would upload {doc_id}: {name} {meta}")
         else:
             try:
-                resp = upload(args.api, args.kb, headers, name, meta, content)
+                resp = upload_with_retry(args.api, args.kb, headers, name, meta, content)
             except urllib.error.HTTPError as e:
                 failed += 1
-                print(f"{doc_id}: HTTP {e.code} {e.read()[:300]!r}", file=sys.stderr)
+                print(f"{doc_id}: HTTP {e.code} {e.msg!r}", file=sys.stderr)
                 continue
-            except (urllib.error.URLError, TimeoutError) as e:
+            except (OSError, http.client.HTTPException) as e:
                 failed += 1
                 print(f"{doc_id}: {e}", file=sys.stderr)
                 continue

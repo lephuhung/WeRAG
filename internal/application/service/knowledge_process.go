@@ -2063,6 +2063,14 @@ func (s *knowledgeService) processQuestionGenerationForChunks(ctx context.Contex
 				knowledge.ParseStatus, payload.BatchIndex)
 			return nil
 		}
+		// Batches queued before vbpl documents were exempted drain without
+		// an LLM call.
+		if vbplSkipsQuestionGeneration(knowledge) {
+			exitStatus = "vbpl_skipped"
+			s.tracker().SkipSpan(ctx, qSpan, "vbpl document: no generated questions")
+			qSpan = nil
+			return nil
+		}
 	}
 
 	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
