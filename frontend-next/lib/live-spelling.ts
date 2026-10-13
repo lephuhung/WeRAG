@@ -7,11 +7,13 @@
 import { normalizeAnchorText } from "./api/document-ops.ts";
 
 export type LiveParagraph = { text: string; occurrence?: number; edited?: boolean };
-export type LivePlan = { paragraphs: LiveParagraph[]; keys: string[] };
+/** keys: the distinct hashes of the plan; paraKeys: each paragraph's hash,
+ * aligned with paragraphs. */
+export type LivePlan = { paragraphs: LiveParagraph[]; keys: string[]; paraKeys: string[] };
 
 /** Server bounds of one review request (tools.LiveSpellMax*). */
 export const LIVE_SPELL_MAX_PARAGRAPHS = 60;
-export const LIVE_SPELL_MAX_RUNES = 4000;
+export const LIVE_SPELL_MAX_RUNES = 8000;
 const STORE_MAX = 4000;
 
 /** cyrb53: a fast 53-bit string hash, plus the length against collisions. */
@@ -29,13 +31,13 @@ export function textKey(text: string): string {
 }
 
 /** The paragraphs of `texts` not reviewed yet, in request-sized chunks.
- * `edited` (their old red underlines are cleared first) is set unless this
+ * `edited` (their old underlines are cleared first) is set unless this
  * is the document's first review. Paragraphs without a letter, or longer
  * than the server accepts, are skipped. */
 export function planLiveSpelling(texts: string[], reviewed: ReadonlySet<string>, firstPass: boolean): LivePlan[] {
   const seen = new Map<string, number>();
   const plans: LivePlan[] = [];
-  let cur: LivePlan = { paragraphs: [], keys: [] };
+  let cur: LivePlan = { paragraphs: [], keys: [], paraKeys: [] };
   for (const raw of texts) {
     const norm = normalizeAnchorText(raw);
     if (!norm) continue;
@@ -48,14 +50,27 @@ export function planLiveSpelling(texts: string[], reviewed: ReadonlySet<string>,
     if (occurrence > 1) p.occurrence = occurrence;
     if (!firstPass) p.edited = true;
     cur.paragraphs.push(p);
+    cur.paraKeys.push(key);
     if (!cur.keys.includes(key)) cur.keys.push(key);
     if (cur.paragraphs.length >= LIVE_SPELL_MAX_PARAGRAPHS) {
       plans.push(cur);
-      cur = { paragraphs: [], keys: [] };
+      cur = { paragraphs: [], keys: [], paraKeys: [] };
     }
   }
   if (cur.paragraphs.length > 0) plans.push(cur);
   return plans;
+}
+
+/** The hashes of a plan to record as reviewed once its review answered:
+ * every key but those of the paragraphs the model missed (positions in
+ * plan.paragraphs). A key shared with a missed paragraph waits too. */
+export function reviewedKeys(plan: LivePlan, missed: readonly number[]): string[] {
+  const out = new Set(plan.keys);
+  for (const i of missed) {
+    const k = plan.paraKeys[i];
+    if (k) out.delete(k);
+  }
+  return [...out];
 }
 
 type KV = Pick<Storage, "getItem" | "setItem">;

@@ -6,6 +6,7 @@ import {
   LIVE_SPELL_MAX_PARAGRAPHS,
   planLiveSpelling,
   readReviewed,
+  reviewedKeys,
   textKey,
   writeReviewed,
 } from "./live-spelling.ts";
@@ -25,7 +26,7 @@ describe("planLiveSpelling", () => {
   it("sends only new or changed paragraphs afterwards, as edited", () => {
     const reviewed = new Set([textKey("Đoạn một."), textKey("Đoạn hai.")]);
     const plans = planLiveSpelling(["Đoạn một.", "Đoạn hai đã sửa.", "Đoạn hai."], reviewed, false);
-    assert.deepEqual(plans, [{ paragraphs: [{ text: "Đoạn hai đã sửa.", edited: true }], keys: [textKey("Đoạn hai đã sửa.")] }]);
+    assert.deepEqual(plans, [{ paragraphs: [{ text: "Đoạn hai đã sửa.", edited: true }], keys: [textKey("Đoạn hai đã sửa.")], paraKeys: [textKey("Đoạn hai đã sửa.")] }]);
     assert.deepEqual(planLiveSpelling(["Đoạn một."], reviewed, false), []);
   });
 
@@ -45,5 +46,15 @@ describe("reviewed store", () => {
     assert.deepEqual(readReviewed(store, "d1"), ["a", "b"]);
     writeReviewed(store, "d2", []);
     assert.deepEqual(readReviewed(store, "d2"), []);
+  });
+});
+
+describe("reviewedKeys", () => {
+  it("keeps the paragraphs the model missed unreviewed", () => {
+    const [plan] = planLiveSpelling(["Đoạn một.", "Đoạn hai.", "Đoạn một.", "Đoạn ba."], new Set(), true);
+    assert.equal(plan.paraKeys.length, 4);
+    // the second "Đoạn một." was missed: its key waits for both
+    assert.deepEqual(reviewedKeys(plan, [2]), [textKey("Đoạn hai."), textKey("Đoạn ba.")]);
+    assert.deepEqual(reviewedKeys(plan, []), plan.keys);
   });
 });

@@ -3,13 +3,15 @@ package tools
 import (
 	"context"
 	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // The document assistant reviews spelling while the user types: the editor
 // sends the paragraphs that are new or changed since its last review (and
 // every paragraph once, when a document is first opened), and gets back the
-// red underlines to apply. A paragraph the user edited first loses its old
-// red underlines (unmark), so a corrected word does not stay marked. Each
+// underlines to apply. A paragraph the user edited first loses its old
+// underlines (unmark), so a corrected word does not stay marked. Each
 // paragraph's review is cached by its text, so sending one again is cheap.
 
 // LiveParagraph is one paragraph of the open editor to review.
@@ -19,22 +21,36 @@ type LiveParagraph struct {
 	// same (normalised) text, for the editor's anchor.
 	Occurrence int `json:"occurrence,omitempty"`
 	// Edited: the user changed the paragraph since its last review, so its
-	// old red underlines are cleared before the new ones are applied.
+	// old underlines are cleared before the new ones are applied.
 	Edited bool `json:"edited,omitempty"`
 }
 
-// Bounds of one live review request.
+// Bounds of one live review request. A paragraph longer than the model's
+// spellParagraphRunes is reviewed in parts (see liveParts).
 const (
 	LiveSpellMaxParagraphs = 60
-	LiveSpellMaxRunes      = 4000
+	LiveSpellMaxRunes      = 8000
 )
 
+// liveSpellTimeout bounds one live review: the editor waits for it before
+// it sends the next pause's paragraphs, and a paragraph the model did not
+// answer in time is sent again later.
+var liveSpellTimeout = 90 * time.Second
+
+// livePartRunes is the size of one part of a long paragraph, below
+// spellParagraphRunes so the model sees each part whole.
+const livePartRunes = spellParagraphRunes - 200
+
 // LiveMarks reviews paras and returns the editor ops: per paragraph, an
-// unmark when it was edited, then a red underline per mistake. ok is false
-// when the model answered none of the paragraphs that needed it.
-func (t *CheckSpellingTool) LiveMarks(ctx context.Context, paras []LiveParagraph) (ops []DocumentOp, found int, ok bool) {
+// unmark when it was edited, then an underline per mistake. missed are
+// the positions (in paras) the model did not answer: they get no ops at
+// all, so an edited one keeps its old underlines until it is reviewed.
+func (t *CheckSpellingTool) LiveMarks(ctx context.Context, paras []LiveParagraph) (ops []DocumentOp, found int, missed []int) {
+	ctx, cancel := context.WithTimeout(ctx, liveSpellTimeout)
+	defer cancel()
 	byPara := make([][]SpellingFinding, len(paras))
 	var scoped []spellPara
+	var owner []int // scoped position → paras position
 	for i, p := range paras {
 		if strings.TrimSpace(p.Text) == "" {
 			continue
@@ -43,33 +59,46 @@ func (t *CheckSpellingTool) LiveMarks(ctx context.Context, paras []LiveParagraph
 			byPara[i] = cached
 			continue
 		}
-		scoped = append(scoped, spellPara{Index: i, Text: p.Text})
+		for _, part := range liveParts(p.Text) {
+			// Index is the scoped position: the parts of one paragraph are
+			// told apart, and findings map back through owner
+			scoped = append(scoped, spellPara{Index: len(scoped), Text: p.Text, Part: part})
+			owner = append(owner, i)
+		}
 	}
-	ok = true
+	failedPara := map[int]bool{}
 	if len(scoped) > 0 {
-		findings, batches, failed := t.review(ctx, scoped)
-		if batches > 0 && failed == batches && len(findings) == 0 {
-			ok = false
+		findings, _, _, lost := t.reviewTracked(ctx, scoped)
+		for _, k := range lost {
+			failedPara[owner[k]] = true
 		}
-		fresh := make(map[int][]SpellingFinding, len(scoped))
+		fresh := map[int][]SpellingFinding{}
 		for _, f := range findings {
-			fresh[f.Paragraph] = append(fresh[f.Paragraph], f)
+			fresh[owner[f.Paragraph]] = append(fresh[owner[f.Paragraph]], f)
 		}
-		for _, sp := range scoped {
-			got := fresh[sp.Index]
-			byPara[sp.Index] = got
-			// a complete review only: a failed batch may have hidden mistakes
-			if failed == 0 {
-				cached := make([]SpellingFinding, len(got))
-				copy(cached, got)
-				for k := range cached {
-					cached[k].Paragraph = 0
-				}
-				spellPasses.put(livePassKey(t, sp.Text), cached)
+		for k, sp := range scoped {
+			i := owner[k]
+			if k > 0 && owner[k-1] == i {
+				continue // the paragraph's first part did it
 			}
+			if failedPara[i] {
+				continue
+			}
+			got := fresh[i]
+			byPara[i] = got
+			cached := make([]SpellingFinding, len(got))
+			copy(cached, got)
+			for c := range cached {
+				cached[c].Paragraph = 0
+			}
+			spellPasses.put(livePassKey(t, sp.Text), cached)
 		}
 	}
 	for i, p := range paras {
+		if failedPara[i] {
+			missed = append(missed, i)
+			continue
+		}
 		anchor := &OpAnchor{Text: p.Text}
 		if p.Occurrence > 1 {
 			anchor.Occurrence = p.Occurrence
@@ -78,18 +107,49 @@ func (t *CheckSpellingTool) LiveMarks(ctx context.Context, paras []LiveParagraph
 			ops = append(ops, DocumentOp{Op: OpUnmark, Anchor: anchor})
 		}
 		for _, f := range byPara[i] {
-			if f.raw == "" {
-				continue
+			if m := f.markOps(anchor); len(m) > 0 {
+				found++
+				ops = append(ops, m...)
 			}
-			found++
-			op := DocumentOp{Op: OpMark, Anchor: anchor, Text: f.raw, Style: "underline"}
-			if f.occurrence > 1 {
-				op.TextOccurrence = f.occurrence
-			}
-			ops = append(ops, op)
 		}
 	}
-	return ops, found, ok
+	return ops, found, missed
+}
+
+// liveParts splits a paragraph longer than livePartRunes into parts of at
+// most that size, cut after a sentence end (". ", "; ", "! ", "? ", ": ")
+// when there is one in the part's second half, else at a space. A shorter
+// paragraph is one part, "" (the whole text).
+func liveParts(text string) []string {
+	if utf8.RuneCountInString(text) <= livePartRunes {
+		return []string{""}
+	}
+	var parts []string
+	rest := []rune(text)
+	for len(rest) > livePartRunes {
+		cut := 0
+		for k := livePartRunes - 1; k >= livePartRunes/2 && cut == 0; k-- {
+			if rest[k] == ' ' && strings.ContainsRune(".;!?:", rest[k-1]) {
+				cut = k + 1
+			}
+		}
+		for k := livePartRunes - 1; k > 0 && cut == 0; k-- {
+			if rest[k] == ' ' {
+				cut = k + 1
+			}
+		}
+		if cut == 0 {
+			cut = livePartRunes
+		}
+		if part := strings.TrimSpace(string(rest[:cut])); part != "" {
+			parts = append(parts, part)
+		}
+		rest = rest[cut:]
+	}
+	if part := strings.TrimSpace(string(rest)); part != "" {
+		parts = append(parts, part)
+	}
+	return parts
 }
 
 // livePassKey caches one paragraph's review by its text (as paragraph 0).

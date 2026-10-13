@@ -53,7 +53,7 @@ export type DocumentOp =
       bold?: boolean;
       italic?: boolean;
     }
-  /** Clears the red underlines of an edited paragraph (live spellcheck). */
+  /** Clears the underlines of an edited paragraph (live spellcheck). */
   | { op: "unmark"; anchor: ParagraphAnchor }
   | { op: "pageSetup"; marginsMm?: { top?: number; bottom?: number; left?: number; right?: number }; a4?: true }
   | {

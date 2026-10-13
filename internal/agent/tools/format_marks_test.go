@@ -101,22 +101,24 @@ func TestCheckDocumentFormatMarksFindingsInTheEditor(t *testing.T) {
 		t.Fatalf("marks: %+v data: %+v", marks, res.Data)
 	}
 	for _, m := range marks {
-		// a red underline only: the assistant changes neither text nor color
+		// an underline only: the assistant changes neither text nor color
 		if m.Style != "underline" || m.Anchor == nil || m.Anchor.Text == "" {
 			t.Fatalf("mark: %+v", m)
 		}
 	}
-	if len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: đánh dấu lỗi thể thức" {
-		t.Fatalf("an undo point before marking: %v", ws.snapshots)
+	// one snapshot, before the check: the editor saves what the user typed
+	// (the check grades it) and the marks have their undo point
+	if len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: kiểm tra thể thức" {
+		t.Fatalf("a snapshot before checking: %v", ws.snapshots)
 	}
-	if !strings.Contains(res.Output, "gạch chân đỏ") {
+	if !strings.Contains(res.Output, "gạch chân") {
 		t.Fatalf("output: %s", res.Output)
 	}
 
 	// mark=false: the check only reads
 	ws = newFakeWorkspace(docxFixture(t))
 	res = runFormatTool(t, NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9"), `{"mark":false}`)
-	if !res.Success || res.Data["document_ops"] != nil || len(ws.snapshots) != 0 {
+	if !res.Success || res.Data["document_ops"] != nil || len(ws.snapshots) != 1 {
 		t.Fatalf("mark=false: %+v snapshots %v", res.Data, ws.snapshots)
 	}
 }
@@ -165,7 +167,7 @@ func TestApplyFormatFixesMarksWhatIsLeftForTheUser(t *testing.T) {
 			marked = true
 		}
 	}
-	if !marked || !strings.Contains(res.Output, "gạch chân đỏ") {
+	if !marked || !strings.Contains(res.Output, "gạch chân") {
 		t.Fatalf("marks: %+v output: %s", res.Data["document_ops"], res.Output)
 	}
 
@@ -244,7 +246,7 @@ func TestCheckDocumentFormatUnderlinesSpellingMistakes(t *testing.T) {
 			t.Errorf("%q not underlined: %+v", w, res.Data["document_ops"])
 		}
 	}
-	if !strings.Contains(res.Output, "## Lỗi chính tả (4 lỗi, đã gạch chân đỏ") || !strings.Contains(res.Output, "“đề nghi” → “đề nghị”") {
+	if !strings.Contains(res.Output, "## Lỗi chính tả (4 lỗi, đã gạch chân") || !strings.Contains(res.Output, "“đề nghi” → “đề nghị”") {
 		t.Fatalf("output: %s", res.Output)
 	}
 	if len(ws.snapshots) != 1 {

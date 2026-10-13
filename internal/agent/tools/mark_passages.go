@@ -12,7 +12,7 @@ import (
 
 var markPassagesTool = BaseTool{
 	name: ToolMarkPassages,
-	description: `Mark passages of the Word document open in this conversation's editor that need the user's attention — a spelling or wording error, a wrong or outdated legal reference, an inconsistent number — without changing the text. The mark (red underline by default, or a yellow highlight, or red text) is applied by the editor as an ordinary formatting edit; the user removes it with Ctrl+Z.
+	description: `Mark passages of the Word document open in this conversation's editor that need the user's attention — a spelling or wording error, a wrong or outdated legal reference, an inconsistent number — without changing the text. The mark (an underline by default, or a yellow highlight, or red text) is applied by the editor as an ordinary formatting edit; the user removes it with Ctrl+Z.
 
 This is the default way to act on a review: point out problems with marks and explain them in the answer, instead of changing the document.
 
@@ -95,7 +95,7 @@ func NewMarkPassagesTool(workspace DocumentWorkspaceSource, sessionID string) *M
 
 // markStyles are the mark styles the editor plugin draws: underline (red
 // underline), highlight (yellow) and color (red text).
-var markStyles = map[string]string{"underline": "gạch chân đỏ", "highlight": "tô vàng", "color": "chữ đỏ"}
+var markStyles = map[string]string{"underline": "gạch chân", "highlight": "tô vàng", "color": "chữ đỏ"}
 
 func (t *MarkPassagesTool) Execute(ctx context.Context, args json.RawMessage) (*types.ToolResult, error) {
 	var in markPassagesInput

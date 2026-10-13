@@ -19,7 +19,7 @@ var applyFormatFixesTool = BaseTool{
 	name: ToolApplyFormatFixes,
 	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and plans the corrections that can be made mechanically. It works in two steps, so nothing is changed before the user agrees:
 
-1. review (the default): the document is NOT changed. The result is the plan, and the editor underlines in red every paragraph the plan would change and every finding left for a manual fix, so the user sees where each one is.
+1. review (the default): the document is NOT changed. The result is the plan, and the editor underlines every paragraph the plan would change and every finding left for a manual fix, so the user sees where each one is.
 2. apply=true: the editor applies the planned corrections as ordinary formatting edits (Ctrl+Z undoes them); findings left for a manual fix stay underlined.
 
 Use it only when the user asks to fix the format ("sửa thể thức", "chuẩn hóa"). It corrects:
@@ -33,7 +33,7 @@ It does NOT change line spacing, spacing before/after paragraphs or indents. Pos
 
 ## When to Use
 
-After check_document_format (or when the user directly asks to normalise the layout). Call it first WITHOUT apply: show the plan, say the red underlines show where, and ask whether to apply. Pass apply=true only when the user then agrees in a later message ("áp dụng", "đồng ý sửa", "sửa đi"), or when the current message itself says to apply without review ("sửa luôn", "áp dụng ngay", "tự sửa giúp"). Report what changed (Ctrl+Z or the revision history undo it). dry_run=true returns the plan without underlining anything — only when the user asks to see the plan alone ("chỉ xem kế hoạch").
+After check_document_format (or when the user directly asks to normalise the layout). Call it first WITHOUT apply: show the plan, say the underlines show where, and ask whether to apply. Pass apply=true only when the user then agrees in a later message ("áp dụng", "đồng ý sửa", "sửa đi"), or when the current message itself says to apply without review ("sửa luôn", "áp dụng ngay", "tự sửa giúp"). Report what changed (Ctrl+Z or the revision history undo it). dry_run=true returns the plan without underlining anything — only when the user asks to see the plan alone ("chỉ xem kế hoạch").
 
 ## Input
 
@@ -57,7 +57,7 @@ After check_document_format (or when the user directly asks to normalise the lay
     },
     "apply": {
       "type": "boolean",
-      "description": "true: apply the planned corrections — only after the user agreed to the plan; omitted: review (plan + red underlines, nothing changed)"
+      "description": "true: apply the planned corrections — only after the user agreed to the plan; omitted: review (plan + underlines, nothing changed)"
     },
     "dry_run": {
       "type": "boolean",
@@ -356,14 +356,14 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 		// the one change the user can agree to: these formatting fixes
 		output += "\nCHƯA SỬA GÌ"
 		if marks > 0 {
-			output += ": các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân đỏ trong trình soạn thảo"
+			output += ": các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân trong trình soạn thảo"
 		}
 		output += ". Nói ngắn gọn với người dùng: nếu muốn áp dụng các sửa định dạng trong kế hoạch (chỉ font, cỡ chữ, in đậm/nghiêng, căn lề, khổ giấy, lề trang), bấm nút \"Áp dụng các sửa thể thức này\" hoặc trả lời \"đồng ý\"; chỉ khi họ đồng ý mới gọi lại với apply=true. Không đề nghị sửa gì khác (chính tả, nội dung, chèn dòng): những lỗi đó chỉ được chỉ ra kèm cách sửa để người dùng tự sửa.\n"
 	case review:
 		// nothing mechanical to apply: nothing to offer either
 		output += "\nCHƯA SỬA GÌ và không có sửa định dạng nào áp dụng tự động được. Chỉ nêu các lỗi cần sửa thủ công kèm cách sửa để người dùng tự sửa; KHÔNG đề nghị sửa giúp, KHÔNG hỏi \"Bạn có muốn tôi sửa…\".\n"
 	case marks > 0:
-		output += "Những lỗi cần sửa thủ công được gạch chân đỏ tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ gạch chân).\n"
+		output += "Những lỗi cần sửa thủ công được gạch chân tại đoạn tương ứng trong trình soạn thảo (Ctrl+Z để bỏ gạch chân).\n"
 	}
 	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName

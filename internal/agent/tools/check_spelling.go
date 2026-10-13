@@ -25,7 +25,7 @@ import (
 
 var checkSpellingTool = BaseTool{
 	name: ToolCheckSpelling,
-	description: `Review Vietnamese spelling in the Word document open in this conversation's editor: misspelled words, typos, wrong or missing diacritics (dấu), punctuation and obvious grammar slips. The findings are listed and, by default, underlined in red in the editor; the text itself is NEVER changed.
+	description: `Review Vietnamese spelling in the Word document open in this conversation's editor: misspelled words, typos, wrong or missing diacritics (dấu), punctuation and obvious grammar slips. The findings are listed and, by default, underlined in the editor; the text itself is NEVER changed.
 
 ## When to Use
 
@@ -39,7 +39,7 @@ The user asks to check spelling, typos or diacritics ("kiểm tra chính tả", 
 
 ## Output
 
-A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it to the user; say the passages were underlined in red and that nothing was rewritten.`,
+A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it to the user; say the passages were underlined and that nothing was rewritten.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -143,6 +143,25 @@ type SpellingFinding struct {
 	// instance of raw in the paragraph it is (1-based).
 	raw        string
 	occurrence int
+	// more are the later instances of raw (1-based) that repeat the same
+	// mistake in the paragraph; each gets its own underline.
+	more []int
+}
+
+// markOps is one underline op per instance of the finding, on anchor.
+func (f SpellingFinding) markOps(anchor *OpAnchor) []DocumentOp {
+	if f.raw == "" {
+		return nil
+	}
+	ops := make([]DocumentOp, 0, 1+len(f.more))
+	for _, occ := range append([]int{f.occurrence}, f.more...) {
+		op := DocumentOp{Op: OpMark, Anchor: anchor, Text: f.raw, Style: "underline"}
+		if occ > 1 {
+			op.TextOccurrence = occ
+		}
+		ops = append(ops, op)
+	}
+	return ops
 }
 
 // spellPara is a paragraph under review; Part is set when only the
@@ -280,7 +299,7 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		fmt.Fprintf(&out, "Còn các đoạn sau: gọi lại với from=%d.\n", next)
 	}
 	if mark && len(findings) > 0 {
-		out.WriteString("\nCác chỗ trên sẽ được gạch chân đỏ trong trình soạn thảo; nội dung không bị sửa (Ctrl+Z để bỏ gạch chân).\n")
+		out.WriteString("\nCác chỗ trên sẽ được gạch chân trong trình soạn thảo; nội dung không bị sửa (Ctrl+Z để bỏ gạch chân).\n")
 	} else if len(findings) > 0 {
 		out.WriteString("\nNội dung không bị sửa.\n")
 	}
@@ -308,12 +327,23 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 // in batches (spellConcurrency at a time, findings kept in batch order); a
 // failed batch is logged and skipped. Findings are deduped.
 func (t *CheckSpellingTool) review(ctx context.Context, scoped []spellPara) (findings []SpellingFinding, batches, failed int) {
+	findings, batches, failed, _ = t.reviewTracked(ctx, scoped)
+	return findings, batches, failed
+}
+
+// reviewTracked is review that also returns which paragraphs (scoped
+// positions) the model did not review: a whole failed batch, or the failed
+// half of a batch retried in halves. Their stray-character findings stand.
+func (t *CheckSpellingTool) reviewTracked(ctx context.Context, scoped []spellPara) (findings []SpellingFinding, batches, failed int, missed []int) {
 	findings = strayCharFindings(scoped)
+	var starts []int
 	var chunks [][]spellPara
 	for start := 0; start < len(scoped); start += spellBatchSize {
+		starts = append(starts, start)
 		chunks = append(chunks, scoped[start:min(start+spellBatchSize, len(scoped))])
 	}
 	results := make([][]SpellingFinding, len(chunks))
+	lost := make([][]int, len(chunks))
 	errs := make([]error, len(chunks))
 	sem := make(chan struct{}, spellConcurrency)
 	var wg sync.WaitGroup
@@ -322,7 +352,7 @@ func (t *CheckSpellingTool) review(ctx context.Context, scoped []spellPara) (fin
 		sem <- struct{}{}
 		go func(i int, batch []spellPara) {
 			defer func() { <-sem; wg.Done() }()
-			results[i], errs[i] = t.reviewBatchOrHalves(ctx, batch)
+			results[i], lost[i], errs[i] = t.reviewBatchOrHalves(ctx, batch)
 		}(i, batch)
 	}
 	wg.Wait()
@@ -331,30 +361,51 @@ func (t *CheckSpellingTool) review(ctx context.Context, scoped []spellPara) (fin
 		if errs[i] != nil {
 			failed++
 			logger.Warnf(ctx, "check_spelling: batch %d failed: %v", i+1, errs[i])
+			for k := range chunks[i] {
+				missed = append(missed, starts[i]+k)
+			}
 			continue
+		}
+		for _, k := range lost[i] {
+			missed = append(missed, starts[i]+k)
 		}
 		findings = append(findings, results[i]...)
 	}
-	return dedupeFindings(findings), batches, failed
+	return dedupeFindings(findings), batches, failed, missed
 }
 
 // reviewBatchOrHalves is reviewBatch; a larger batch that still fails is
 // reviewed again as two halves (a long reply is where the model derails).
-func (t *CheckSpellingTool) reviewBatchOrHalves(ctx context.Context, batch []spellPara) ([]SpellingFinding, error) {
-	got, err := t.reviewBatch(ctx, batch)
+// lost are the batch positions of a half that failed while the other
+// half succeeded.
+func (t *CheckSpellingTool) reviewBatchOrHalves(ctx context.Context, batch []spellPara) (got []SpellingFinding, lost []int, err error) {
+	got, err = t.reviewBatch(ctx, batch)
 	if err == nil || len(batch) <= spellSplitMin || ctx.Err() != nil {
-		return got, err
+		return got, nil, err
 	}
 	mid := len(batch) / 2
 	a, errA := t.reviewBatch(ctx, batch[:mid])
 	b, errB := t.reviewBatch(ctx, batch[mid:])
-	if errA != nil && errB != nil {
-		return nil, err
+	switch {
+	case errA != nil && errB != nil:
+		return nil, nil, err
+	case errA != nil:
+		lost = spanPositions(0, mid)
+	case errB != nil:
+		lost = spanPositions(mid, len(batch))
 	}
-	return append(a, b...), nil
+	return append(a, b...), lost, nil
 }
 
-// spellingMarkOps underlines each finding in red where it is; a finding
+func spanPositions(from, to int) []int {
+	out := make([]int, 0, to-from)
+	for k := from; k < to; k++ {
+		out = append(out, k)
+	}
+	return out
+}
+
+// spellingMarkOps underlines each finding where it is; a finding
 // that could not be located exactly is flagged Unmarked instead.
 func spellingMarkOps(vdoc *virtualDoc, findings []SpellingFinding) []DocumentOp {
 	var ops []DocumentOp
@@ -363,11 +414,7 @@ func spellingMarkOps(vdoc *virtualDoc, findings []SpellingFinding) []DocumentOp 
 			findings[i].Unmarked = true
 			continue
 		}
-		op := DocumentOp{Op: OpMark, Anchor: vdoc.anchor(f.Paragraph), Text: f.raw, Style: "underline"}
-		if f.occurrence > 1 {
-			op.TextOccurrence = f.occurrence
-		}
-		ops = append(ops, op)
+		ops = append(ops, f.markOps(vdoc.anchor(f.Paragraph))...)
 	}
 	return ops
 }
@@ -540,7 +587,10 @@ func strayCharFindings(paras []spellPara) []SpellingFinding {
 				return r
 			}, wrong)
 			f := SpellingFinding{Paragraph: p.Index, Wrong: wrong, Correct: correct, Reason: strayCharReason}
-			f.raw, f.occurrence, _ = locateInParagraph(p.Text, wrong, p.Part)
+			var occs []int
+			if f.raw, occs, _ = locateAllInParagraph(p.Text, wrong, p.Part); len(occs) > 0 {
+				f.occurrence, f.more = occs[0], occs[1:]
+			}
 			out = append(out, f)
 		}
 	}
@@ -645,9 +695,13 @@ func validateFindings(raw []rawFinding, batch []spellPara) []SpellingFinding {
 		if !ok || wrong == "" || normalizeDocText(wrong) == normalizeDocText(correct) {
 			continue
 		}
-		raw, occ, found := locateInParagraph(p.Text, wrong, p.Part)
+		raw, occs, found := locateAllInParagraph(p.Text, wrong, p.Part)
 		if !found {
 			continue
+		}
+		occ, more := 0, []int(nil)
+		if len(occs) > 0 {
+			occ, more = occs[0], occs[1:]
 		}
 		if utf8.RuneCountInString(wrong) > 200 {
 			continue // a whole sentence is not a spelling finding
@@ -656,7 +710,7 @@ func validateFindings(raw []rawFinding, batch []spellPara) []SpellingFinding {
 		if reason == "" {
 			reason = "lỗi chính tả"
 		}
-		out = append(out, SpellingFinding{Paragraph: idx, Wrong: wrong, Correct: correct, Reason: reason, raw: raw, occurrence: occ})
+		out = append(out, SpellingFinding{Paragraph: idx, Wrong: wrong, Correct: correct, Reason: reason, raw: raw, occurrence: occ, more: more})
 	}
 	return out
 }
@@ -738,10 +792,24 @@ func (m normMap) indexFrom(needle []rune, from int) int {
 // the paragraph. found is false when wrong is not there; raw is "" when it
 // is there but cannot be mapped back exactly.
 func locateInParagraph(text, wrong, part string) (raw string, occurrence int, found bool) {
+	raw, occs, found := locateAllInParagraph(text, wrong, part)
+	if raw == "" {
+		return "", 0, found
+	}
+	return raw, occs[0], true
+}
+
+// locateAllInParagraph is locateInParagraph for every place of wrong in the
+// paragraph (or part): a mistake the model names once is usually repeated
+// verbatim, and each instance is underlined. Whole-word matches win, so a
+// short "va" is not found inside "vào"; when wrong only occurs inside
+// longer words, the first such match stands (as before) unless wrong is
+// that short: then it is not found. occurrences are 1-based instances of raw, ascending.
+func locateAllInParagraph(text, wrong, part string) (raw string, occurrences []int, found bool) {
 	m := buildNormMap(text)
 	needle := []rune(normalizeDocText(wrong))
 	if len(needle) == 0 {
-		return "", 0, false
+		return "", nil, false
 	}
 	lo, hi := 0, len(m.runes)
 	if part != "" {
@@ -751,18 +819,42 @@ func locateInParagraph(text, wrong, part string) (raw string, occurrence int, fo
 			}
 		}
 	}
-	at := m.indexFrom(needle, lo)
-	if at < 0 || at+len(needle) > hi {
-		return "", 0, false
+	isWord := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.Mn, r) }
+	whole := func(at int) bool {
+		end := at + len(needle)
+		return (at == 0 || !isWord(m.runes[at-1]) || !isWord(needle[0])) &&
+			(end >= len(m.runes) || !isWord(m.runes[end]) || !isWord(needle[len(needle)-1]))
 	}
-	s, e := m.start[at], m.end[at+len(needle)-1]
-	// a composed rune shared with a neighbour outside the match cannot be
-	// split back into raw characters
-	if (at > 0 && m.start[at-1] == s) || (at+len(needle) < len(m.runes) && m.end[at+len(needle)] == e) {
-		return "", 0, true
+	var hits, words []int
+	for at := m.indexFrom(needle, lo); at >= 0 && at+len(needle) <= hi; at = m.indexFrom(needle, at+1) {
+		hits = append(hits, at)
+		if whole(at) {
+			words = append(words, at)
+		}
 	}
-	raw = text[s:e]
-	return raw, 1 + strings.Count(text[:s], raw), true
+	switch {
+	case len(words) > 0:
+		hits = words
+	case len(hits) == 0 || len(needle) <= 3:
+		return "", nil, false
+	default:
+		hits = hits[:1]
+	}
+	for _, at := range hits {
+		s, e := m.start[at], m.end[at+len(needle)-1]
+		// a composed rune shared with a neighbour outside the match cannot
+		// be split back into raw characters
+		if (at > 0 && m.start[at-1] == s) || (at+len(needle) < len(m.runes) && m.end[at+len(needle)] == e) {
+			continue
+		}
+		if raw == "" {
+			raw = text[s:e]
+		} else if text[s:e] != raw {
+			continue
+		}
+		occurrences = append(occurrences, 1+strings.Count(text[:s], raw))
+	}
+	return raw, occurrences, true
 }
 
 // dedupeFindings drops repeats (the same error reported twice, or by both

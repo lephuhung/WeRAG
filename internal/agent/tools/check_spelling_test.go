@@ -113,7 +113,7 @@ func TestCheckSpellingValidatesDedupesAndMarks(t *testing.T) {
 		t.Fatalf("snapshot: %v", ws.snapshots)
 	}
 	for _, want := range []string{"Phát hiện 4 lỗi", "1. Đoạn [0]: “đề nghi” → “đề nghị” (thiếu dấu nặng)",
-		"3. Đoạn [1]: “p`hủ” → “phủ” (ký tự lạ trong từ)", "gạch chân đỏ", "không bị sửa"} {
+		"3. Đoạn [1]: “p`hủ” → “phủ” (ký tự lạ trong từ)", "gạch chân", "không bị sửa"} {
 		if !strings.Contains(res.Output, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.Output)
 		}
@@ -312,5 +312,36 @@ func TestCheckSpellingRetryQuotesOnlyTheHeadAndSplits(t *testing.T) {
 	}
 	if !strings.Contains(model.users[2], "[0] ") || strings.Contains(model.users[2], "[6] ") || !strings.Contains(model.users[3], "[6] ") {
 		t.Fatalf("halves: %q / %q", model.users[2], model.users[3])
+	}
+}
+
+func TestLocateAllInParagraphPrefersWholeWordsAndRepeats(t *testing.T) {
+	// a repeated mistake is underlined at each place, a whole word only
+	raw, occs, ok := locateAllInParagraph("đề nghi các đơn vị; đề nghị và đề nghi lại", "đề nghi", "")
+	if !ok || raw != "đề nghi" || len(occs) != 2 || occs[0] != 1 || occs[1] != 2 {
+		t.Fatalf("raw %q occs %v ok %v", raw, occs, ok)
+	}
+	// "va" only inside "vào": a short fragment is not a finding
+	if raw, _, ok := locateAllInParagraph("Đơn vị gửi vào ngày 5.", "va", ""); ok || raw != "" {
+		t.Fatalf("short in-word match: %q %v", raw, ok)
+	}
+	// the whole word wins over an earlier match inside a longer word
+	raw, occs, ok = locateAllInParagraph("Các vanban và van ban", "van", "")
+	if !ok || raw != "van" || len(occs) != 1 || occs[0] != 2 {
+		t.Fatalf("whole word: %q %v %v", raw, occs, ok)
+	}
+}
+
+func TestReviewTrackedReportsAFailedHalf(t *testing.T) {
+	var scoped []spellPara
+	for i := 0; i < 8; i++ {
+		scoped = append(scoped, spellPara{Index: i, Text: "Đoạn văn số " + strconv.Itoa(i) + " không có lỗi."})
+	}
+	// the whole batch and its first half fail, the second half answers
+	model := &spellChat{replies: []string{"rác", "rác", "rác", "rác", `{"findings":[]}`}}
+	tool := NewCheckSpellingTool(nil, model, "s")
+	_, batches, failed, missed := tool.reviewTracked(context.Background(), scoped)
+	if batches != 1 || failed != 0 || len(missed) != 4 || missed[0] != 0 || missed[3] != 3 {
+		t.Fatalf("batches %d failed %d missed %v (calls %d)", batches, failed, missed, model.calls)
 	}
 }

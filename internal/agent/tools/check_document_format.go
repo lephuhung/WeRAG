@@ -81,7 +81,7 @@ var checkWorkspaceFormatSchema = json.RawMessage(`{
       "type": "string",
       "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
     },
-    "mark": {"type": "boolean", "description": "Underline the measured findings in red in the editor: each paragraph that breaks a rule, or the stray character itself (default true)"}
+    "mark": {"type": "boolean", "description": "Underline the measured findings in the editor: each paragraph that breaks a rule, or the stray character itself (default true)"}
   }
 }`)
 
@@ -117,7 +117,7 @@ type CheckDocumentFormatTool struct {
 
 // WithSpelling returns a copy that also reviews the document's spelling
 // when it marks the editor: the spelling pass runs alongside the format
-// evaluation and its mistakes are underlined in red with the format
+// evaluation and its mistakes are underlined with the format
 // findings, whatever the model then writes — the agent model alone often
 // listed spelling mistakes in the chat without underlining any.
 // ReportOnly returns a copy that reports the findings without marking the
@@ -135,7 +135,7 @@ func (t *CheckDocumentFormatTool) WithSpelling(s *CheckSpellingTool) *CheckDocum
 	c := *t
 	c.speller = s
 	if s != nil {
-		c.description += "\n\nIt also reviews the spelling of the document in the same run: each mistake is underlined in red in the editor and listed in the result under \"Lỗi chính tả\". Present that list as the spelling part of your answer; do not call check_spelling again for the same document in this turn."
+		c.description += "\n\nIt also reviews the spelling of the document in the same run: each mistake is underlined in the editor and listed in the result under \"Lỗi chính tả\". Present that list as the spelling part of your answer; do not call check_spelling again for the same document in this turn."
 	}
 	return &c
 }
@@ -163,7 +163,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.description = strings.Replace(base.description,
 		"- file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).",
 		"- document: the open document to check (vb1, vb2, …); omit when only one is open.", 1)
-	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also underlined in red (unless mark=false): the paragraph, or just the stray character inside a word; the content and formatting are not changed. Tell the user the red underlines show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
+	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also underlined (unless mark=false): the paragraph, or just the stray character inside a word; the content and formatting are not changed. Tell the user the underlines show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
 	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {
@@ -250,11 +250,19 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if !ok || t.sessionID == "" {
 		return &types.ToolResult{Success: false, Error: "no conversation context to read uploads from"}, nil
 	}
-	ref := in.FileName
+	var (
+		content  []byte
+		fileName string
+		revision int
+		seq      int
+		snapped  bool
+		err      error
+	)
 	if t.workspace != nil {
-		ref = in.Document
+		content, fileName, revision, seq, snapped, err = t.readCurrent(ctx, in.Document)
+	} else {
+		content, fileName, revision, err = t.source(ctx, tenantID, in.FileName)
 	}
-	content, fileName, revision, err := t.source(ctx, tenantID, ref)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
@@ -282,7 +290,7 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 				return nil, ctx.Err()
 			}
 		}
-		ops, ws, seq, formatMarks := t.markFindings(ctx, in.Document, content, out.result.Flags, sp)
+		ops, ws, formatMarks := t.markFindings(ctx, in.Document, content, snapped, out.result.Flags, sp)
 		if len(ops) > 0 {
 			for k, v := range opsData(ops, seq, ws) {
 				data[k] = v
@@ -305,22 +313,49 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
 }
 
+// readCurrent reads the document as the editor shows it now: a snapshot
+// first makes the editor save what the user typed (and is the undo point of
+// the marks), so the check neither grades nor anchors its marks on an older
+// saved file. When the snapshot fails the saved version is checked, and
+// snapped is false: nothing is marked then.
+func (t *CheckDocumentFormatTool) readCurrent(ctx context.Context, ref string) (
+	content []byte, fileName string, revision, seq int, snapped bool, err error,
+) {
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, false)
+	if err != nil {
+		return nil, "", -1, 0, false, err
+	}
+	content, ws, seq, err := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "kiểm tra thể thức")
+	if err != nil {
+		logger.Warnf(ctx, "check_document_format: no snapshot, checking the saved version unmarked: %v", err)
+		content, ws, err = readListedDocument(ctx, t.workspace, t.sessionID, target)
+		if err != nil {
+			return nil, "", -1, 0, false, err
+		}
+		return content, ws.FileName, ws.Revision, 0, false, nil
+	}
+	return content, ws.FileName, ws.Revision, seq, true, nil
+}
+
 // markFindings plans the editor marks on the checked version: the
-// measured format findings and the spelling pass's mistakes (one red
-// underline per place). Marking is an edit of the document the user named
-// (or the only one): otherwise, or when the snapshot before it fails,
-// nothing is marked and the check stands alone. formatMarks counts the
-// format findings' marks.
+// measured format findings and the spelling pass's mistakes (one underline
+// per place). Marking is an edit of the document the user named (or the
+// only one), on the version snapshotted before the check (snapped):
+// otherwise nothing is marked and the check stands alone. formatMarks
+// counts the format findings' marks.
 func (t *CheckDocumentFormatTool) markFindings(
-	ctx context.Context, ref string, content []byte, flags []formatFlag, sp *spellingPass,
-) (ops []DocumentOp, target *types.DocumentWorkspace, seq int, formatMarks int) {
+	ctx context.Context, ref string, content []byte, snapped bool, flags []formatFlag, sp *spellingPass,
+) (ops []DocumentOp, target *types.DocumentWorkspace, formatMarks int) {
+	if !snapped {
+		return nil, nil, 0
+	}
 	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, true)
 	if err != nil {
-		return nil, nil, 0, 0
+		return nil, nil, 0
 	}
 	doc, err := docxedit.Open(content)
 	if err != nil {
-		return nil, nil, 0, 0
+		return nil, nil, 0
 	}
 	vdoc := newVirtualDoc(doc.Paragraphs())
 	ops = formatMarkOps(vdoc, flagSpots(flags))
@@ -329,20 +364,9 @@ func (t *CheckDocumentFormatTool) markFindings(
 		ops = mergeMarkOps(ops, spellingMarkOps(vdoc, sp.findings))
 	}
 	if len(ops) == 0 {
-		return nil, nil, 0, 0
+		return nil, nil, 0
 	}
-	tenantID, _ := types.TenantIDFromContext(ctx)
-	// the undo point (and, for a Word document, the upload the next tool waits for)
-	rev, err := t.workspace.Snapshot(ctx, tenantID, t.sessionID, target.ID,
-		"ai: đánh dấu lỗi thể thức", types.DocumentRevisionSourceAI, snapshotWait)
-	if err != nil {
-		logger.Warnf(ctx, "check_document_format: no snapshot before marking, findings not marked: %v", err)
-		return nil, nil, 0, 0
-	}
-	if rev != nil {
-		seq = rev.Seq
-	}
-	return ops, target, seq, formatMarks
+	return ops, target, formatMarks
 }
 
 func (t *CheckDocumentFormatTool) modelName() string {
@@ -377,9 +401,12 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		}
 		rs, _ := docformat.RuleSetForReport(report)
 		r.Flags = formatFlags(report, rs)
-		// only a finished evaluation is kept: the unevaluated fallback
-		// comes from a failed model call worth retrying
-		if evaluated {
+		// only a finished evaluation on the model's labelling is kept: the
+		// unevaluated fallback, or one on the position heuristic the
+		// labelling fell back to, comes from a failed model call worth
+		// retrying
+		degraded := report.Segmentation != nil && report.Segmentation.Error != ""
+		if evaluated && !degraded {
 			keys := []string{key}
 			if report.DocumentType != nil && report.DocumentType.Used != "" {
 				// a later call naming the rule set that was used gets the same rules

@@ -151,12 +151,12 @@ func AvailableToolDefinitions() []AvailableTool {
 		{
 			Name:        ToolCheckSpelling,
 			Label:       "Kiểm tra chính tả",
-			Description: "Soát lỗi chính tả, lỗi gõ, sai dấu trong tài liệu đang soạn thảo và gạch chân đỏ, không sửa nội dung",
+			Description: "Soát lỗi chính tả, lỗi gõ, sai dấu trong tài liệu đang soạn thảo và gạch chân, không sửa nội dung",
 		},
 		{
 			Name:        ToolMarkPassages,
 			Label:       "Đánh dấu đoạn cần xem lại",
-			Description: "Gạch chân đỏ hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
+			Description: "Gạch chân hoặc tô màu chỗ cần xem lại trong tài liệu, không sửa nội dung",
 		},
 		{
 			Name:        ToolDrawDiagram,

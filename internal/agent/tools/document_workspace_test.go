@@ -693,13 +693,14 @@ func TestApplyFormatFixesSkipsTabSplitLines(t *testing.T) {
 func TestCheckDocumentFormatReadsWorkspace(t *testing.T) {
 	ws := newFakeWorkspace(docxFixture(t))
 	tool := NewCheckDocumentFormatToolForWorkspace(ws, nil, "sess-9")
-	// mark=false: a check only reads (marking is covered in format_marks_test.go)
+	// mark=false: nothing is marked (see format_marks_test.go), but the
+	// editor still saves first so the check grades what is on screen
 	res := runTool(t, tool, `{"file_name":"ignored.docx","mark":false}`)
 	if !res.Success || res.Data["file_name"] != "cong-van.docx" || res.Data["document_revision"] != 3 {
 		t.Fatalf("result: %+v", res.Data)
 	}
-	if ws.sessionID != "sess-9" || len(ws.snapshots) != 0 {
-		t.Fatalf("checking must only read (session %q, snapshots %v)", ws.sessionID, ws.snapshots)
+	if ws.sessionID != "sess-9" || len(ws.snapshots) != 1 || ws.snapshots[0] != "ai: kiểm tra thể thức" {
+		t.Fatalf("checking reads a fresh snapshot (session %q, snapshots %v)", ws.sessionID, ws.snapshots)
 	}
 	if !strings.Contains(tool.Description(), "open in this conversation's editor") {
 		t.Fatal("workspace description must name the editor document")

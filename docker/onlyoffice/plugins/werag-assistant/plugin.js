@@ -275,6 +275,34 @@
       if (typeof Api.HexColor === "function") target.SetColor(Api.HexColor("#FF0000"));
       else target.SetColor(255, 0, 0, false); // DS < 9: SetColor(r, g, b, isAuto)
     }
+    // The assistant's underlines are a character style of their own, so the
+    // run keeps its colour and formatting, and unmark knows exactly which
+    // underlines are ours (the Office API has no underline colour or style).
+    var MARK_STYLE = "WeRAG gạch chân";
+    var markStyle = null;
+    function markTextPr() {
+      if (!markStyle) {
+        markStyle = doc.GetStyle(MARK_STYLE);
+        if (!markStyle) {
+          markStyle = doc.CreateStyle(MARK_STYLE, "run");
+          var stp = Api.CreateTextPr();
+          stp.SetUnderline(true);
+          markStyle.SetTextPr(stp);
+          // kept out of the styles gallery
+          try { markStyle.Style.SetQFormat(false); } catch (e) { /* older DS */ }
+        }
+      }
+      var tp = Api.CreateTextPr();
+      tp.SetStyle(markStyle);
+      // a direct "no underline" left on the run would hide the style's
+      tp.SetUnderline(true);
+      return tp;
+    }
+    function isMarkRun(tp) {
+      if (!tp || typeof tp.GetStyle !== "function") return false;
+      var st = tp.GetStyle();
+      return !!(st && st.GetName && st.GetName() === MARK_STYLE);
+    }
     function countBefore(text, sub, end) {
       var c = 0;
       var i = text.indexOf(sub);
@@ -398,15 +426,16 @@
         } else if (op.style === "color") {
           red(target);
         } else {
-          // "underline": the Office API only has SetUnderline(bool) — no wavy
-          // style / underline colour — so it is a plain underline in red text.
-          target.SetUnderline(true);
-          red(target);
+          // "underline": the mark style (see markTextPr); the text colour
+          // and the rest of the formatting are left as they are
+          if (target === p) target = p.GetRange();
+          if (!target || !target.SetTextPr(markTextPr())) throw new Error("underline failed");
         }
       },
-      // Clears the red underlines of a paragraph the user edited (the live
-      // spellcheck re-marks it): every run that is underlined AND pure red
-      // (#FF0000, the colour mark sets) loses both. Needs DS 8.1+ getters.
+      // Clears the assistant's underlines in a paragraph the user edited (the
+      // live spellcheck marks it again): every run in the mark style drops
+      // it and its underline. Older marks (red underlined text, before
+      // 2026-10-12) are cleared too. Needs DS 8.1+ getters.
       unmark: function (op) {
         var p = mustFind(op.anchor);
         var n = p.GetElementsCount();
@@ -416,6 +445,16 @@
           var tp = e.GetTextPr();
           if (!tp || typeof tp.GetUnderline !== "function" || typeof tp.GetColor !== "function") {
             throw new Error("unmark unsupported");
+          }
+          if (isMarkRun(tp)) {
+            if (e.Run && typeof e.Run.Set_RStyle === "function" && typeof e.Run.SetUnderline === "function") {
+              e.Run.Set_RStyle(undefined);
+              e.Run.SetUnderline(undefined); // back to the paragraph's own
+            } else {
+              e.SetStyle(doc.GetDefaultStyle("run"));
+              e.SetUnderline(false);
+            }
+            continue;
           }
           if (!tp.GetUnderline()) continue;
           var c = tp.GetColor();

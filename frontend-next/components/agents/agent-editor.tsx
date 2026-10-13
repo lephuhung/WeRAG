@@ -709,15 +709,6 @@ export function AgentEditorModal({
                   <label className={`flex items-center gap-2 text-ink select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
-                      checked={draft.format_check_on_open}
-                      disabled={readOnly}
-                      onChange={(e) => patch("format_check_on_open", e.target.checked)}
-                    />
-                    <span>{t("agent.docAssist.formatOnOpen")}</span>
-                  </label>
-                  <label className={`flex items-center gap-2 text-ink select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
-                    <input
-                      type="checkbox"
                       checked={draft.ask_scope_for_long_documents}
                       disabled={readOnly}
                       onChange={(e) => patch("ask_scope_for_long_documents", e.target.checked)}

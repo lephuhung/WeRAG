@@ -528,7 +528,7 @@ func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
 			return
 		}
 	}
-	ops, found, ok, err := h.precheck.ReviewSpelling(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+	ops, found, missed, off, err := h.precheck.ReviewSpelling(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
 		documentIDParam(c), req.Paragraphs)
 	if err != nil {
 		h.fail(c, err, "Failed to review spelling")
@@ -537,8 +537,16 @@ func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
 	if ops == nil {
 		ops = []tools.DocumentOp{}
 	}
-	// failed: the model answered nothing; the editor asks again later
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"document_ops": ops, "found": found, "failed": !ok}})
+	if missed == nil {
+		missed = []int{}
+	}
+	// missed: paragraphs the model did not answer, the editor sends them
+	// again later; failed: none was answered; off: the live spellcheck does
+	// not apply to this document
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"document_ops": ops, "found": found, "missed": missed,
+		"failed": len(missed) > 0 && len(missed) == len(req.Paragraphs), "off": off,
+	}})
 }
 
 // ApplyRewriteProposalRequest names the version of a rewrite proposal

@@ -29,7 +29,7 @@ const (
 	OpMark             = "mark"
 	OpFormatParagraph  = "formatParagraph"
 	OpPageSetup        = "pageSetup"
-	// OpUnmark clears the red underlines (red, underlined runs) of a
+	// OpUnmark clears the underlines (red, underlined runs) of a
 	// paragraph: the live spellcheck sends it before re-marking an edited one.
 	OpUnmark = "unmark"
 )

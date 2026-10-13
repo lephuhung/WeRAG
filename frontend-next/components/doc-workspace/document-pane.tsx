@@ -310,11 +310,16 @@ export function DocumentPane({
   }, [dsUrl, documentId]);
 
   /* ---------- AI edit plans → editor plugin ---------- */
+  // set below by the live spellcheck, which is created after onOpsOutcome
+  const liveSpellingOutcomeRef = useRef<(o: EditorOpsOutcome) => void>(() => {});
   const fileName = view?.file_name ?? "";
   const onOpsOutcome = useCallback(
     (o: EditorOpsOutcome) => {
       // the live spellcheck's underlines land silently
-      if (isLiveSpellingBatch(o.batchId)) return;
+      if (isLiveSpellingBatch(o.batchId)) {
+        liveSpellingOutcomeRef.current(o);
+        return;
+      }
       reportOpsOutcome?.(o);
       if (!aliveRef.current) return;
       const where = fileName ? `${fileName}: ` : "";
@@ -331,7 +336,7 @@ export function DocumentPane({
     [toast, t, fileName, reportOpsOutcome],
   );
   // live spellcheck: what the user types is reviewed after each pause and
-  // its mistakes underlined in red, alongside the chat's edit plans
+  // its mistakes underlined, alongside the chat's edit plans
   const liveSpelling = useLiveSpelling({
     sessionId,
     documentId,
@@ -341,6 +346,7 @@ export function DocumentPane({
     enabled: phase.kind === "editor" && view?.status === "open" && view?.role !== "source",
   });
   const scheduleSpelling = liveSpelling.schedule;
+  liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),
     [opsBatches, liveSpelling.batches],

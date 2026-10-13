@@ -49,32 +49,45 @@ func NewDocumentFormatPrecheck(
 // ReviewSpelling reviews paragraphs the user typed in a target document
 // (the live spellcheck, see tools.CheckSpellingTool.LiveMarks) with the
 // document assistant's spellcheck model, and returns the editor ops that
-// underline the mistakes in red. ok is false when the model answered
-// nothing. An agent that may not check spelling gets no ops.
+// underline the mistakes. missed are the paragraphs (positions in paras)
+// the model did not answer; off is true when the live spellcheck does not
+// apply (not an open target, or an agent that may not check spelling), so
+// the editor stops asking rather than treating its paragraphs as reviewed.
 func (p *DocumentFormatPrecheck) ReviewSpelling(
 	ctx context.Context, tenantID uint64, sessionID, documentID string, paras []tools.LiveParagraph,
-) (ops []tools.DocumentOp, found int, ok bool, err error) {
+) (ops []tools.DocumentOp, found int, missed []int, off bool, err error) {
 	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
-		return nil, 0, false, errors.New("documents are disabled")
+		return nil, 0, nil, false, errors.New("documents are disabled")
 	}
 	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, nil, false, err
 	}
-	if !ws.IsTarget() || ws.Status != types.DocumentWorkspaceStatusOpen || len(paras) == 0 {
-		return nil, 0, true, nil
+	if !ws.IsTarget() || ws.Status != types.DocumentWorkspaceStatusOpen {
+		return nil, 0, nil, true, nil
+	}
+	if len(paras) == 0 {
+		return nil, 0, nil, false, nil
 	}
 	agent := p.agent(ctx)
 	if agent == nil || !slices.Contains(agent.Config.AllowedTools, tools.ToolCheckSpelling) {
-		return nil, 0, true, nil
+		return nil, 0, nil, true, nil
 	}
 	spellModel := p.model(ctx, "spellcheck", agent.Config.SpellcheckModelID, agent.Config.ModelID)
 	if spellModel == nil {
-		return nil, 0, false, nil
+		return nil, 0, allPositions(len(paras)), false, nil
 	}
-	ops, found, ok = tools.NewCheckSpellingTool(p.workspaces, spellModel, sessionID).
+	ops, found, missed = tools.NewCheckSpellingTool(p.workspaces, spellModel, sessionID).
 		WithPrompt(p.spellcheckPrompt()).LiveMarks(ctx, paras)
-	return ops, found, ok, nil
+	return ops, found, missed, false, nil
+}
+
+func allPositions(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i
+	}
+	return out
 }
 
 // spellcheckPrompt is the configured spellcheck_review template, "" when

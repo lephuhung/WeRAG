@@ -224,7 +224,7 @@ func (s *sessionService) AgentQA(
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	// a request about a highlighted passage starts with the tool it needs:
 	// a rewrite with rewrite_paragraphs (a proposal with its apply button),
-	// a spelling check with check_spelling (red underlines). Left to itself
+	// a spelling check with check_spelling (underlines). Left to itself
 	// the model often answered both in the chat (one short labeling call).
 	if sel := req.DocumentSelection.Normalized(); sel != nil && req.CustomAgent != nil &&
 		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&

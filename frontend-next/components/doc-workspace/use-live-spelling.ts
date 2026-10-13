@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LIVE_SPELLING_BATCH_PREFIX,
+  normalizeAnchorText,
   opsBatchFromToolData,
   parsePluginParagraphsMessage,
   readParagraphsMessage,
@@ -10,14 +11,21 @@ import {
   type OpsFailure,
 } from "@/lib/api/document-ops";
 import { reviewDocumentSpelling } from "@/lib/api/document-workspace";
-import { planLiveSpelling, readReviewed, writeReviewed } from "@/lib/live-spelling";
+import { planLiveSpelling, readReviewed, reviewedKeys, textKey, writeReviewed } from "@/lib/live-spelling";
 import type { OnlyOfficeEditorHandle } from "./onlyoffice-editor";
+import type { EditorOpsOutcome } from "./use-editor-ops";
 
 // A review starts once the user has stopped typing for this long.
 const LIVE_SPELL_DEBOUNCE_MS = 2_500;
 // Safety net when no editor event arrives (e.g. edits by another user).
 const LIVE_SPELL_POLL_MS = 15_000;
 const READ_TIMEOUT_MS = 5_000;
+// The server gives up on the model after 90 s; this is a little more.
+const REVIEW_TIMEOUT_MS = 100_000;
+// A paragraph whose underline failed to land is reviewed (from the server
+// cache) and marked again at most this many times before it counts as done,
+// so a mark the editor can never place does not repeat every poll.
+const MAX_MARK_ATTEMPTS = 2;
 // Older batches are already queued or applied (useEditorOps dedupes by id).
 const KEEP_BATCHES = 50;
 
@@ -58,6 +66,11 @@ export function useLiveSpelling({
   const againRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingReadRef = useRef<{ id: string; resolve: (texts: string[] | null) => void } | null>(null);
+  // batches sent to the editor, by id: the hashes recorded once it applied them
+  const awaitingRef = useRef(new Map<string, { docId: string; keys: string[]; opKeys: string[] }>());
+  const attemptsRef = useRef(new Map<string, number>());
+  // the server said the live spellcheck does not apply to this document
+  const offRef = useRef(false);
   const live = useRef({ sessionId, documentId, origin, isReady, enabled });
   live.current = { sessionId, documentId, origin, isReady, enabled };
 
@@ -66,6 +79,9 @@ export function useLiveSpelling({
     const stored = readReviewed(storage(), documentId);
     reviewedRef.current = new Set(stored ?? []);
     firstPassRef.current = stored === null;
+    awaitingRef.current.clear();
+    attemptsRef.current.clear();
+    offRef.current = false;
     setBatches([]);
   }, [documentId]);
 
@@ -110,9 +126,43 @@ export function useLiveSpelling({
 
   const scheduleRef = useRef<(delay?: number) => void>(() => {});
 
+  const markReviewed = useCallback((docId: string, keys: string[]) => {
+    if (keys.length === 0 || live.current.documentId !== docId) return;
+    for (const k of keys) {
+      reviewedRef.current.add(k);
+      attemptsRef.current.delete(k);
+    }
+    writeReviewed(storage(), docId, reviewedRef.current);
+  }, []);
+
+  /* The editor's result for a live batch: a paragraph counts as reviewed
+   * once its underlines landed (or failed MAX_MARK_ATTEMPTS times); on a
+   * timeout nothing is recorded and the next pass sends them again. */
+  const onOutcome = useCallback(
+    (o: EditorOpsOutcome) => {
+      const sent = awaitingRef.current.get(o.batchId);
+      if (!sent) return;
+      awaitingRef.current.delete(o.batchId);
+      if (o.kind === "timeout") return;
+      const retry = new Set<string>();
+      for (const f of o.failed) {
+        const k = sent.opKeys[f.index];
+        if (!k) continue;
+        const n = (attemptsRef.current.get(k) ?? 0) + 1;
+        attemptsRef.current.set(k, n);
+        if (n < MAX_MARK_ATTEMPTS) retry.add(k);
+      }
+      markReviewed(
+        sent.docId,
+        sent.keys.filter((k) => !retry.has(k)),
+      );
+    },
+    [markReviewed],
+  );
+
   const run = useCallback(async () => {
     const { enabled: on, isReady: ready } = live.current;
-    if (!on || !ready()) return;
+    if (!on || !ready() || offRef.current) return;
     if (busyRef.current) {
       againRef.current = true;
       return;
@@ -124,18 +174,33 @@ export function useLiveSpelling({
       if (!texts || live.current.documentId !== docId) return;
       const plans = planLiveSpelling(texts, reviewedRef.current, firstPassRef.current);
       for (const plan of plans) {
-        const res = await reviewDocumentSpelling(live.current.sessionId, docId, plan.paragraphs);
+        const res = await reviewDocumentSpelling(live.current.sessionId, docId, plan.paragraphs, {
+          timeoutMs: REVIEW_TIMEOUT_MS,
+        });
         if (live.current.documentId !== docId) return;
+        if (res.off) {
+          offRef.current = true; // not reviewed: nothing is recorded
+          return;
+        }
         if (res.failed) return; // the model is down: these stay unreviewed
-        for (const k of plan.keys) reviewedRef.current.add(k);
-        firstPassRef.current = false;
-        writeReviewed(storage(), docId, reviewedRef.current);
+        const keys = reviewedKeys(plan, res.missed);
+        if (keys.length > 0) firstPassRef.current = false;
         const batch = opsBatchFromToolData("check_spelling", {
           document_ops: res.ops,
           ops_batch_id: LIVE_SPELLING_BATCH_PREFIX + randomId(),
           document_id: docId,
         });
-        if (batch && batch.ops.length > 0) setBatches((prev) => [...prev.slice(-KEEP_BATCHES), batch]);
+        if (!batch || batch.ops.length === 0) {
+          markReviewed(docId, keys);
+          continue;
+        }
+        // recorded once the editor applied the underlines (onOutcome)
+        const opKeys = batch.ops.map((op) => {
+          const text = (op as { anchor?: { text?: unknown } }).anchor?.text;
+          return typeof text === "string" ? textKey(normalizeAnchorText(text)) : "";
+        });
+        awaitingRef.current.set(batch.batchId, { docId, keys, opKeys });
+        setBatches((prev) => [...prev.slice(-KEEP_BATCHES), batch]);
       }
     } catch {
       /* network / server error: the next pause tries again */
@@ -176,5 +241,5 @@ export function useLiveSpelling({
     [],
   );
 
-  return { batches, schedule };
+  return { batches, schedule, onOutcome };
 }

@@ -348,14 +348,20 @@ export async function reviewDocumentSpelling(
   sessionId: string,
   documentId: string,
   paragraphs: LiveSpellingParagraph[],
-): Promise<{ ops: unknown[]; found: number; failed: boolean }> {
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<{ ops: unknown[]; found: number; failed: boolean; missed: number[]; off: boolean }> {
   try {
-    const res = await apiPost<Envelope<{ document_ops?: unknown[]; found?: number; failed?: boolean }>>(
-      `${base(sessionId, documentId)}/spelling`,
-      { paragraphs },
-    );
+    const res = await apiPost<
+      Envelope<{ document_ops?: unknown[]; found?: number; failed?: boolean; missed?: unknown[]; off?: boolean }>
+    >(`${base(sessionId, documentId)}/spelling`, { paragraphs }, opts);
     const d = res?.data;
-    return { ops: Array.isArray(d?.document_ops) ? d.document_ops : [], found: Number(d?.found) || 0, failed: d?.failed === true };
+    return {
+      ops: Array.isArray(d?.document_ops) ? d.document_ops : [],
+      found: Number(d?.found) || 0,
+      failed: d?.failed === true,
+      missed: Array.isArray(d?.missed) ? d.missed.filter((x): x is number => Number.isInteger(x)) : [],
+      off: d?.off === true,
+    };
   } catch (err) {
     throw toWorkspaceError(err);
   }

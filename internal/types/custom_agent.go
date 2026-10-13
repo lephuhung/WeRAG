@@ -318,12 +318,13 @@ type CustomAgentConfig struct {
 
 	// ===== Document Assistant Settings =====
 	// FormatCheckModelID is the KnowledgeQA model that runs the NĐ30 format
-	// evaluation: check_document_format, the background check when a
-	// document is opened, and the component labelling in apply_format_fixes
+	// evaluation: check_document_format and the component labelling in
+	// apply_format_fixes
 	// and read_document_outline. Empty uses ModelID.
 	FormatCheckModelID string `yaml:"format_check_model_id" json:"format_check_model_id,omitempty"`
-	// FormatCheckOnOpen runs the format check in the background as soon as a
-	// document is opened. Nil (unset) and true mean on.
+	// FormatCheckOnOpen is unused since 2026-10-11 (the format check runs
+	// only when the user asks; the spelling is reviewed live instead). Kept
+	// so stored agent configs still load.
 	FormatCheckOnOpen *bool `yaml:"format_check_on_open" json:"format_check_on_open,omitempty"`
 	// AskScopeForLongDocuments lets a generic request about a long document
 	// that names no part of it be answered with a question about the scope

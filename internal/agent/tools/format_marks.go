@@ -13,7 +13,7 @@ import (
 // Format findings shown in the editor. A measured NĐ30 finding that names
 // its paragraphs (the check's evidence) is marked there, so the user sees
 // where it is and not only the list in the chat: the paragraph is
-// underlined in red, or, for a finding that quotes the offending characters
+// underlined, or, for a finding that quotes the offending characters
 // (a stray symbol inside a word), just those characters, as a spelling
 // error. The assistant points out; it changes neither the wording nor the
 // formatting. Findings without a paragraph (a missing component, the
@@ -30,7 +30,7 @@ const maxFormatMarks = 40
 const pointOutClosing = "CÁCH KẾT THÚC CÂU TRẢ LỜI: chỉ ra lỗi và gợi ý cách sửa, người dùng tự sửa trong văn bản. KHÔNG đề nghị tự sửa, tự chèn hay tự thay đổi văn bản, KHÔNG hỏi \"Bạn có muốn tôi sửa…\" hay \"xác nhận để tôi tiến hành\". Nếu hữu ích, chỉ nhắc: muốn có đề xuất viết lại cho một đoạn thì bôi đen đoạn đó và yêu cầu viết lại (đề xuất có nút thay vào văn bản)."
 
 // formatMarksNote ends the Output of a tool that returned format marks.
-const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được gạch chân đỏ trong trình soạn thảo để người dùng thấy vị trí; nội dung và định dạng không bị sửa (Ctrl+Z để bỏ gạch chân). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."
+const formatMarksNote = "Các đoạn có lỗi thể thức đo được đã được gạch chân trong trình soạn thảo để người dùng thấy vị trí; nội dung và định dạng không bị sửa (Ctrl+Z để bỏ gạch chân). Lỗi không gắn với đoạn nào (thiếu thành phần, lề trang) chỉ nêu trong câu trả lời."
 
 // formatSpot is where one finding is: a paragraph index (as docxedit and
 // the layout number them) and, for a character-level finding, the exact
@@ -199,7 +199,7 @@ func (sp *spellingPass) render(marked bool) string {
 		return b.String()
 	}
 	if marked {
-		fmt.Fprintf(&b, "## Lỗi chính tả (%d lỗi, đã gạch chân đỏ trong trình soạn thảo, chưa sửa)\n", len(sp.findings))
+		fmt.Fprintf(&b, "## Lỗi chính tả (%d lỗi, đã gạch chân trong trình soạn thảo, chưa sửa)\n", len(sp.findings))
 	} else {
 		fmt.Fprintf(&b, "## Lỗi chính tả (%d lỗi, CHƯA gạch chân được: hãy nêu tên văn bản cần đánh dấu)\n", len(sp.findings))
 	}

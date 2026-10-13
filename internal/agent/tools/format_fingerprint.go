@@ -66,16 +66,24 @@ func formatCheckIdentity(content []byte) string {
 		sum := sha256.Sum256(content)
 		return "bytes:" + hex.EncodeToString(sum[:])
 	}
-	paras := make([]docformat.Para, 0, len(l.Paragraphs))
+	// the two sides of a tab-split header line and a table cell's position
+	// are measured too, but hidden from Para's JSON
+	type keyedPara struct {
+		docformat.Para
+		Left, Right             docformat.SideFormat
+		CellLeftMM, CellRightMM *float64
+	}
+	paras := make([]keyedPara, 0, len(l.Paragraphs))
 	for _, p := range l.Paragraphs {
-		cp := *p
+		cp := keyedPara{Para: *p, Left: p.LeftProps, Right: p.RightProps, CellLeftMM: p.CellLeftMM, CellRightMM: p.CellRightMM}
 		cp.Runs = nil
 		cp.Underline = nil
+		cp.Left.Underline, cp.Right.Underline = nil, nil
 		paras = append(paras, cp)
 	}
 	raw, _ := json.Marshal(struct {
 		Sections   []*docformat.Section
-		Paragraphs []docformat.Para
+		Paragraphs []keyedPara
 		Headers    bool
 		Footers    bool
 		Errors     []string
