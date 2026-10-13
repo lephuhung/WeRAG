@@ -1,7 +1,7 @@
 /* Options under a question (document assistant): which legal document,
- * which meaning of an abbreviation. A radio group: the user ticks one and
- * presses "Tiếp tục", which sends the option's message and the assistant
- * continues; nothing to type.
+ * which meaning of an abbreviation. A radio group: ticking one sends the
+ * option's message at once and the assistant continues; nothing to type,
+ * nothing to confirm.
  */
 "use client";
 
@@ -27,10 +27,10 @@ export function ChoiceListView({
   const [picked, setPicked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const confirm = async () => {
-    if (selected === null) return;
-    const o = card.options[selected];
-    if (!o) return;
+  const pick = async (i: number) => {
+    const o = card.options[i];
+    if (!o || working) return;
+    setSelected(i);
     setWorking(true);
     setError(null);
     try {
@@ -60,10 +60,7 @@ export function ChoiceListView({
                 className="mt-1"
                 checked={selected === i}
                 disabled={disabled || working}
-                onChange={() => {
-                  setError(null);
-                  setSelected(i);
-                }}
+                onChange={() => void pick(i)}
               />
               <span className="min-w-0 flex-1">
                 <span className="font-semibold text-ink">{o.label}</span>
@@ -79,16 +76,6 @@ export function ChoiceListView({
       </ul>
       {more > 0 && <p className="caption mt-1 text-muted-soft">{t("docws.choice.more", { n: more })}</p>}
       {error && <p className="caption mt-2 text-error">{error}</p>}
-      <div className="mt-2 flex items-center justify-end">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={selected === null || working || disabled}
-          onClick={() => void confirm()}
-        >
-          {t("docws.choice.confirm")}
-        </button>
-      </div>
     </div>
   );
 }
