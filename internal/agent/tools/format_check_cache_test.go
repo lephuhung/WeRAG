@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,14 @@ func resetFormatChecks(t *testing.T) {
 	formatChecks.states = sync.Map{}
 	formatChecks.rdb = nil
 	spellPasses.reset()
+}
+
+// checkInline makes the workspace tool evaluate in the turn, as before
+// the chat's checks moved to the background.
+func checkInline(t *testing.T) {
+	t.Helper()
+	formatCheckInBackground = false
+	t.Cleanup(func() { formatCheckInBackground = true })
 }
 
 // restartProcess drops what a server restart loses: the process caches.
@@ -78,6 +87,7 @@ func (c *countingChat) evalCount() int {
 }
 
 func TestCheckDocumentFormatReusesEvaluation(t *testing.T) {
+	checkInline(t)
 	resetFormatChecks(t)
 	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
 	ws := newFakeWorkspace(docxFixture(t))
@@ -126,6 +136,7 @@ func TestCheckDocumentFormatPrewarmFeedsTheTool(t *testing.T) {
 }
 
 func TestCheckDocumentFormatDoesNotCacheFallback(t *testing.T) {
+	checkInline(t)
 	resetFormatChecks(t)
 	model := &countingChat{fakeChat: fakeChat{reply: "{}"}} // evaluation fails
 	tool := NewCheckDocumentFormatToolForWorkspace(newFakeWorkspace(docxFixture(t)), model, "sess-f")
@@ -208,5 +219,68 @@ func TestStaleRunningStateIsIgnored(t *testing.T) {
 	})
 	if st := SessionFormatCheck(context.Background(), "sess-d"); st != nil {
 		t.Fatalf("a run that died with its process must not count: %+v", st)
+	}
+}
+
+func TestStartBackgroundRunsTheRequestedCheckAgainAfterAnEdit(t *testing.T) {
+	resetFormatChecks(t)
+	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
+	ws := fakeWorkspaceWithID(docxFixture(t), "ws-sess-s")
+	tool := NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-s").ForDocument("ws-sess-s")
+	saved := 0
+	st := tool.StartBackground(toolCtx(), func(context.Context) error { saved++; return nil })
+	if st == nil || st.Status != types.DocumentFormatCheckQueued {
+		t.Fatalf("first state = %+v", st)
+	}
+	if st := waitFormatCheck(t, "ws-sess-s"); st == nil || st.Status != types.DocumentFormatCheckReady || saved != 1 {
+		t.Fatalf("state = %+v, saved %d", st, saved)
+	}
+	if SessionFormatCheckReport(context.Background(), "ws-sess-s") == nil {
+		t.Fatal("no report for the modal")
+	}
+	// asked again (no once-per-document guard): runs, from the cache when
+	// the file did not change
+	for i := 0; i < 500; i++ {
+		if _, starting := formatCheckStarting.Load("ws-sess-s"); !starting {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if st := tool.StartBackground(toolCtx(), nil); st == nil || st.Status != types.DocumentFormatCheckQueued {
+		t.Fatalf("second state = %+v", st)
+	}
+	if st := waitFormatCheck(t, "ws-sess-s"); st == nil || st.Status != types.DocumentFormatCheckReady {
+		t.Fatalf("state = %+v", st)
+	}
+	if n := model.evalCount(); n != 1 {
+		t.Fatalf("evaluations = %d, want 1 (same file)", n)
+	}
+}
+
+func TestCheckDocumentFormatFromTheChatRunsInTheBackground(t *testing.T) {
+	resetFormatChecks(t)
+	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
+	ws := fakeWorkspaceWithID(docxFixture(t), "ws-chat-bg")
+	tool := NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-bg")
+
+	// not checked yet: the turn ends at once, the check goes on
+	res, err := tool.Execute(toolCtx(), json.RawMessage(`{}`))
+	if err != nil || !res.Success || res.Data["format_check_started"] != true || res.Data["document_id"] != "ws-chat-bg" ||
+		!strings.Contains(res.Output, "chế độ nền") {
+		t.Fatalf("result: %+v %v", res, err)
+	}
+	if len(ws.snapshots) != 1 {
+		t.Fatalf("the editor is saved first: %v", ws.snapshots)
+	}
+	if st := waitFormatCheck(t, "ws-chat-bg"); st == nil || st.Status != types.DocumentFormatCheckReady {
+		t.Fatalf("state = %+v", st)
+	}
+	// asked again: answered in the turn from the cache
+	res, err = tool.Execute(toolCtx(), json.RawMessage(`{}`))
+	if err != nil || !res.Success || res.Data["evaluated"] != true || res.Data["format_check_started"] != nil {
+		t.Fatalf("second result: %+v %v", res, err)
+	}
+	if n := model.evalCount(); n != 1 {
+		t.Fatalf("evaluations = %d, want 1", n)
 	}
 }

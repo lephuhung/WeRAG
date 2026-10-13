@@ -6,9 +6,11 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/config"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -166,6 +168,51 @@ func (p *DocumentFormatPrecheck) Status(ctx context.Context, documentID string) 
 	}
 	return tools.SessionFormatCheck(ctx, documentID)
 }
+
+// StartFormatCheck runs the NĐ30 format check of an open target (workspace
+// ID) in the background, as the user asked from the editor; the chat is
+// not held for it. The editor is saved first (the Word add-in uploads the
+// file itself before asking). It returns the check's state at once —
+// queued, or the one already under way — and an error when the document
+// cannot be checked.
+func (p *DocumentFormatPrecheck) StartFormatCheck(ctx context.Context, tenantID uint64, sessionID, documentID string) (*types.DocumentFormatCheck, error) {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
+		return nil, errors.New("documents are disabled")
+	}
+	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if !ws.IsTarget() || ws.Status != types.DocumentWorkspaceStatusOpen {
+		return nil, apperrors.NewBadRequestError("only an open working document can be format-checked")
+	}
+	agent := p.agent(ctx)
+	if agent == nil || !slices.Contains(agent.Config.AllowedTools, tools.ToolCheckDocumentFormat) {
+		return nil, apperrors.NewBadRequestError("the document assistant cannot check the format")
+	}
+	chatModel := p.chatModel(ctx, agent)
+	if chatModel == nil {
+		return nil, apperrors.NewServiceUnavailableError("no model for the format check")
+	}
+	ctx = context.WithValue(logger.CloneContext(ctx), types.TenantIDContextKey, tenantID)
+	var save func(context.Context) error
+	if !ws.IsWordAddin() {
+		save = func(ctx context.Context) error {
+			_, err := p.workspaces.Snapshot(ctx, tenantID, sessionID, documentID,
+				"ai: kiểm tra thể thức", types.DocumentRevisionSourceAI, formatCheckSaveWait)
+			return err
+		}
+	}
+	st := tools.NewCheckDocumentFormatToolForWorkspace(p.workspaces, chatModel, sessionID).ForDocument(documentID).
+		WithProfiler(p.profiler(sessionID, chatModel)).StartBackground(ctx, save)
+	if st == nil {
+		return nil, apperrors.NewServiceUnavailableError("the format check could not start")
+	}
+	return st, nil
+}
+
+// formatCheckSaveWait bounds the editor save before a requested check.
+const formatCheckSaveWait = 20 * time.Second
 
 // Report returns the evaluation of a document's finished background check,
 // or nil when none is kept.

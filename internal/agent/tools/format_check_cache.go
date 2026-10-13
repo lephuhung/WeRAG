@@ -25,9 +25,10 @@ const (
 	formatCheckCacheTTL     = 2 * time.Hour
 	formatCheckCacheEntries = 32
 	// formatCheckRunTimeout bounds one shared run, which outlives the turn
-	// that started it. A "running" state older than this belongs to a run
-	// that died with its process and no longer counts.
-	formatCheckRunTimeout = 6 * time.Minute
+	// that started it (a background evaluation may take
+	// backgroundEvaluateTimeout). A "running" state older than this belongs
+	// to a run that died with its process and no longer counts.
+	formatCheckRunTimeout = 10 * time.Minute
 
 	formatCheckResultKeyPrefix = "werag:docformat:result:"
 	formatCheckStateKeyPrefix  = "werag:docformat:state:"

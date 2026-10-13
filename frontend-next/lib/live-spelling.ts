@@ -96,3 +96,63 @@ export function writeReviewed(store: KV | null | undefined, documentId: string, 
     /* storage full / disabled: reviews again after a reload */
   }
 }
+
+/** Progress of the live spellcheck, for the ring in the chat header.
+ * checking: `checked` of `total` new paragraphs answered; done: every
+ * paragraph reviewed, `found` mistakes underlined in the document; failed:
+ * the model did not answer (tried again on the next pause); off: the live
+ * spellcheck does not apply to this document. */
+export type LiveSpellingStatus = {
+  phase: "idle" | "checking" | "done" | "failed" | "off";
+  total: number;
+  checked: number;
+  found: number;
+};
+
+export const IDLE_SPELLING: LiveSpellingStatus = { phase: "idle", total: 0, checked: 0, found: 0 };
+
+/** The underlines of a review's ops, per paragraph hash (mark ops only). */
+export function marksByParagraph(ops: readonly unknown[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const op of ops) {
+    const o = op as { op?: unknown; anchor?: { text?: unknown } };
+    if (o?.op !== "mark" || typeof o.anchor?.text !== "string") continue;
+    const k = textKey(normalizeAnchorText(o.anchor.text));
+    out.set(k, (out.get(k) ?? 0) + 1);
+  }
+  return out;
+}
+
+/** The mistakes underlined in the document: each paragraph's count. */
+export function foundIn(texts: readonly string[], found: ReadonlyMap<string, number>): number {
+  let n = 0;
+  for (const raw of texts) {
+    const norm = normalizeAnchorText(raw);
+    if (norm) n += found.get(textKey(norm)) ?? 0;
+  }
+  return n;
+}
+
+const foundKey = (documentId: string) => `werag.docspell.found.${documentId}`;
+
+/** The mistake counts per paragraph hash of a document (survive a reload). */
+export function readFound(store: KV | null | undefined, documentId: string): Map<string, number> {
+  try {
+    const raw = store?.getItem(foundKey(documentId));
+    const v = raw ? JSON.parse(raw) : null;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return new Map();
+    return new Map(Object.entries(v).filter((e): e is [string, number] => Number.isInteger(e[1]) && (e[1] as number) > 0));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Keeps the non-zero counts of the newest STORE_MAX paragraphs. */
+export function writeFound(store: KV | null | undefined, documentId: string, found: ReadonlyMap<string, number>): void {
+  try {
+    const kept = [...found].filter(([, n]) => n > 0).slice(-STORE_MAX);
+    store?.setItem(foundKey(documentId), JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    /* storage full / disabled */
+  }
+}

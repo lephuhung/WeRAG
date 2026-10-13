@@ -24,6 +24,7 @@ import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-edit
 import { RevisionHistoryPanel } from "./revision-history";
 import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
 import { useLiveSpelling } from "./use-live-spelling";
+import type { LiveSpellingStatus } from "@/lib/live-spelling";
 
 type Phase = { kind: "loading" } | { kind: "disabled" } | { kind: "error"; message: string } | { kind: "editor" };
 
@@ -63,6 +64,7 @@ export function DocumentPane({
   onViewChange,
   onEditorDisabled,
   onOpsOutcome: reportOpsOutcome,
+  onSpellingStatus,
 }: {
   sessionId: string;
   documentId: string;
@@ -78,6 +80,8 @@ export function DocumentPane({
   onEditorDisabled: () => void;
   /** Every edit batch's outcome, also reported to the chat (proposal cards). */
   onOpsOutcome?: (o: EditorOpsOutcome) => void;
+  /** The live spellcheck's progress, reported while this tab is visible. */
+  onSpellingStatus?: (status: LiveSpellingStatus) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -346,6 +350,10 @@ export function DocumentPane({
     enabled: phase.kind === "editor" && view?.status === "open" && view?.role !== "source",
   });
   const scheduleSpelling = liveSpelling.schedule;
+  const spellingStatus = liveSpelling.status;
+  useEffect(() => {
+    if (active) onSpellingStatus?.(spellingStatus);
+  }, [active, spellingStatus, onSpellingStatus]);
   liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),

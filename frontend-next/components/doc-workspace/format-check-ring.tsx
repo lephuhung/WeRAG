@@ -25,6 +25,7 @@ export function FormatCheckRing({
   onAsk,
   onView,
   onOpen,
+  onRecheck,
 }: {
   /** null while only the profile runs (no format check yet). */
   check: DocumentFormatCheck | null;
@@ -38,6 +39,8 @@ export function FormatCheckRing({
   /** Shows the finished evaluation. */
   onView: () => void;
   onOpen: () => void;
+  /** Runs the check again in the background (instead of asking the chat). */
+  onRecheck?: () => void;
 }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -170,7 +173,10 @@ export function FormatCheckRing({
               disabled={status === "failed" && disabled}
               onClick={() => {
                 if (status === "failed") {
-                  ask(t("docws.fcAskView"));
+                  if (onRecheck) {
+                    setOpen(false);
+                    onRecheck();
+                  } else ask(t("docws.fcAskView"));
                   return;
                 }
                 setOpen(false);
@@ -189,6 +195,19 @@ export function FormatCheckRing({
                 className="btn btn-outline btn-sm w-full disabled:opacity-50"
               >
                 {t("docws.fcFix")}
+              </button>
+            )}
+            {status === "ready" && onRecheck && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onRecheck();
+                }}
+                className="btn btn-tertiary btn-sm w-full"
+              >
+                {t("docws.fcRecheck")}
               </button>
             )}
           </div>

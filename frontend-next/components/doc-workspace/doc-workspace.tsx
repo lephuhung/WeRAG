@@ -1,5 +1,6 @@
 "use client";
 
+import type { LiveSpellingStatus } from "@/lib/live-spelling";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
@@ -102,6 +103,7 @@ export const DocWorkspace = memo(function DocWorkspace({
   onDocumentsChange,
   refreshToken,
   onOpsOutcome,
+  onSpellingStatus,
 }: {
   /** Undefined → pre-session mode (no chat session exists yet). */
   sessionId: string | undefined;
@@ -122,6 +124,8 @@ export const DocWorkspace = memo(function DocWorkspace({
   /** A chat turn is streaming → poll faster. */
   turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
+  /** The visible document's live spellcheck progress. */
+  onSpellingStatus?: (status: LiveSpellingStatus) => void;
   /** Background format check and profile of the visible document (null: none). */
   onFormatCheckChange?: (
     check: DocumentFormatCheck | null,
@@ -816,6 +820,7 @@ export const DocWorkspace = memo(function DocWorkspace({
                 onViewChange={onPaneView}
                 onEditorDisabled={() => setPhase({ kind: "disabled" })}
                 onOpsOutcome={onOpsOutcome}
+                onSpellingStatus={onSpellingStatus}
               />
             ))}
       </div>

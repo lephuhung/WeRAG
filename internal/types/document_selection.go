@@ -27,12 +27,16 @@ func (s *DocumentSelection) Normalized() *DocumentSelection {
 	if text == "" {
 		return nil
 	}
-	return &DocumentSelection{
+	n := &DocumentSelection{
 		Text:          text,
 		ParagraphHint: truncateRunes(strings.TrimSpace(s.ParagraphHint), documentSelectionMaxHintRunes),
 		DocumentID:    truncateRunes(strings.TrimSpace(s.DocumentID), 64),
 		Document:      truncateRunes(strings.TrimSpace(s.Document), 300),
 	}
+	if n.ParagraphHint != "" && s.ParagraphOccurrence > 0 && s.ParagraphOccurrence <= 10000 {
+		n.ParagraphOccurrence = s.ParagraphOccurrence
+	}
+	return n
 }
 
 // BuildPrompt renders the selection as a prompt block appended to the user

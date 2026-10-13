@@ -40,13 +40,63 @@
     return "*"; // documented fallback, see header
   }
 
+  // The selection also says where it is: the text of the paragraph it starts
+  // in (paragraphHint) and which instance of that text it is among the
+  // paragraphs (paragraphOccurrence, the anchor's occurrence), so a sentence
+  // repeated elsewhere in the document is told apart.
+  var PLACE_TIMEOUT_MS = 1500;
   function post(text) {
+    var sent = false;
+    var send = function (place) {
+      if (sent) return;
+      sent = true;
+      var msg = { source: "werag-onlyoffice", type: "selection", text: text };
+      if (place && typeof place.hint === "string" && place.hint) {
+        msg.paragraphHint = place.hint;
+        if (place.occurrence > 0) msg.paragraphOccurrence = place.occurrence;
+      }
+      try {
+        window.top.postMessage(msg, hostOrigin());
+      } catch (e) { /* host gone or origin mismatch */ }
+    };
+    setTimeout(function () { send(null); }, PLACE_TIMEOUT_MS);
     try {
-      window.top.postMessage(
-        { source: "werag-onlyoffice", type: "selection", text: text },
-        hostOrigin()
-      );
-    } catch (e) { /* host gone or origin mismatch */ }
+      window.Asc.plugin.callCommand(selectionPlaceCommand, false, false, function (raw) {
+        var place = null;
+        try { place = typeof raw === "string" && raw ? JSON.parse(raw) : null; } catch (e) { place = null; }
+        send(place);
+      });
+    } catch (e) {
+      send(null);
+    }
+  }
+
+  /* Runs inside the editor via callCommand: no access to this closure. The
+   * text normaliser mirrors norm() in applyOpsCommand. */
+  function selectionPlaceCommand() {
+    function norm(s) {
+      s = String(s == null ? "" : s);
+      if (s.normalize) s = s.normalize("NFC");
+      return s.replace(/[​-‍﻿]/g, "").replace(/[\s ]+/g, " ").trim();
+    }
+    var doc = Api.GetDocument();
+    var range = doc.GetRangeBySelect();
+    var sel = range && range.GetAllParagraphs ? range.GetAllParagraphs() : null;
+    if (!sel || !sel.length) return "";
+    var first = sel[0];
+    var hint = first.GetText();
+    var want = norm(hint);
+    if (!want) return "";
+    var ps = doc.GetAllParagraphs();
+    var n = 0;
+    for (var i = 0; i < ps.length; i++) {
+      if (norm(ps[i].GetText()) !== want) continue;
+      n += 1;
+      if (ps[i].Paragraph && ps[i].Paragraph === first.Paragraph) {
+        return JSON.stringify({ hint: hint, occurrence: n });
+      }
+    }
+    return JSON.stringify({ hint: hint, occurrence: 0 });
   }
 
   function consider(text) {

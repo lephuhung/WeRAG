@@ -44,6 +44,7 @@ func useFormatCheckSlots(t *testing.T, n int) {
 }
 
 func TestBackgroundFormatChecksQueueBeyondTheSlots(t *testing.T) {
+	checkInline(t)
 	resetFormatChecks(t)
 	useFormatCheckSlots(t, 1)
 	model := &blockingChat{gate: make(chan struct{}), entered: make(chan struct{}, 16)}

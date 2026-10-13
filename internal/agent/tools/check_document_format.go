@@ -266,6 +266,15 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
+	// The evaluation takes minutes: unless this version was checked already
+	// (cached, answered at once), it runs in the background and the turn
+	// ends now; the user is notified when the result is ready.
+	if formatCheckInBackground && t.workspace != nil && !t.reportOnly && in.DocumentType == "" &&
+		formatChecks.get(ctx, formatCheckKey(content, t.modelName(), "")) == nil {
+		if res := t.startFromChat(ctx, in.Document, fileName); res != nil {
+			return res, nil
+		}
+	}
 
 	// marking the editor: the spelling pass runs alongside the evaluation
 	mark := t.workspace != nil && !t.reportOnly && (in.Mark == nil || *in.Mark)
@@ -312,6 +321,41 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	}
 	return &types.ToolResult{Success: true, Output: output, Data: data}, nil
 }
+
+// formatCheckInBackground sends a chat's uncached format check to the
+// background (tests of the inline evaluation turn it off).
+var formatCheckInBackground = true
+
+// startFromChat hands the check of the turn's document (already saved by
+// readCurrent) to the background and tells the model to say so; nil when it
+// could not start (the caller then checks inline).
+func (t *CheckDocumentFormatTool) startFromChat(ctx context.Context, ref, fileName string) *types.ToolResult {
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, false)
+	if err != nil {
+		return nil
+	}
+	st := t.ForDocument(target.ID).StartBackground(ctx, nil)
+	if st == nil {
+		return nil
+	}
+	return &types.ToolResult{
+		Success: true,
+		Output:  fmt.Sprintf(formatCheckStartedNote, fileName),
+		Data: map[string]interface{}{
+			"format_check_started": true,
+			"document_id":          target.ID,
+			"document":             DocumentLabel(target),
+			"file_name":            fileName,
+			"check":                st,
+		},
+	}
+}
+
+// formatCheckStartedNote is the result of a check sent to the background.
+const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s theo Nghị định 30/2020/NĐ-CP vừa bắt đầu ở chế độ nền (thường mất 2–4 phút). " +
+	"Trả lời người dùng ngắn gọn, theo ý: «Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường mất 2–4 phút. Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; " +
+	"khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo.» Không nêu nhận xét thể thức nào và không gọi lại công cụ này trong lượt này. " +
+	"Ở lượt sau, khi người dùng hỏi kết quả hoặc muốn sửa lỗi thể thức, GỌI LẠI check_document_format: kết quả có sẵn được trả về ngay."
 
 // readCurrent reads the document as the editor shows it now: a snapshot
 // first makes the editor save what the user typed (and is the undo point of
@@ -448,10 +492,61 @@ func (t *CheckDocumentFormatTool) Prewarm(ctx context.Context) {
 	}()
 }
 
+// formatCheckStarting holds the documents whose requested check is being
+// handed to the background (before its state is queued or running).
+var formatCheckStarting sync.Map
+
+// StartBackground checks the bound document (see ForDocument) in the
+// background because the user asked for it, so the chat is not held for
+// the minutes the evaluation takes; the result is read through
+// SessionFormatCheck / SessionFormatCheckReport. before runs first in the
+// background (the caller saves the editor there, so the check sees what is
+// on screen; its error only means the stored file is checked). A check of
+// the document already queued or running is returned as is; otherwise the
+// new one is recorded as queued at once and returned.
+func (t *CheckDocumentFormatTool) StartBackground(ctx context.Context, before func(context.Context) error) *types.DocumentFormatCheck {
+	if t.chatModel == nil || t.sessionID == "" || t.documentID == "" {
+		return nil
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	if st := SessionFormatCheck(ctx, t.documentID); st != nil && st.InProgress() {
+		return st
+	}
+	if _, busy := formatCheckStarting.LoadOrStore(t.documentID, struct{}{}); busy {
+		return SessionFormatCheck(ctx, t.documentID)
+	}
+	queued := &types.DocumentFormatCheck{Status: types.DocumentFormatCheckQueued, StartedAt: time.Now()}
+	formatChecks.storeState(ctx, t.documentID, queued)
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		defer formatCheckStarting.Delete(t.documentID)
+		if before != nil {
+			if err := before(ctx); err != nil {
+				logger.Warnf(ctx, "check_document_format: document %s not saved before its check: %v", t.documentID, err)
+			}
+		}
+		content, fileName, revision, err := t.source(ctx, tenantID, t.documentID)
+		if err != nil {
+			failed := time.Now()
+			formatChecks.storeState(ctx, t.documentID, &types.DocumentFormatCheck{
+				Status: types.DocumentFormatCheckFailed, StartedAt: queued.StartedAt, FinishedAt: &failed,
+			})
+			logger.Warnf(ctx, "check_document_format: requested check of document %s could not read it: %v", t.documentID, err)
+			return
+		}
+		t.runBackground(ctx, content, fileName, revision)
+	}()
+	return queued
+}
+
 // runBackground checks content and records its progress and result as the
 // bound document's format-check state, after waiting for a format-check
 // slot (see formatCheckSlots).
 func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []byte, fileName string, revision int) {
+	ctx = context.WithValue(ctx, backgroundRunKey{}, true)
 	readAt := time.Now()
 	state := &types.DocumentFormatCheck{
 		Revision: revision, StartedAt: readAt, CheckedSavedAt: &readAt, Fingerprint: formatFingerprint(content),
@@ -645,12 +740,28 @@ func loadUploadedDocx(ctx context.Context, documents interfaces.TemporaryDocumen
 // (checkDocumentFormatToolTimeout) with room left for the fallback.
 const evaluateTimeout = 3*time.Minute + 30*time.Second
 
+// backgroundEvaluateTimeout is the reasoning call's bound in a background
+// check: nobody waits for it, and a busy model must not fail it.
+const backgroundEvaluateTimeout = 8 * time.Minute
+
+type backgroundRunKey struct{}
+
+// isBackgroundRun reports a check run by runBackground.
+func isBackgroundRun(ctx context.Context) bool {
+	v, _ := ctx.Value(backgroundRunKey{}).(bool)
+	return v
+}
+
 // evaluate has the chat model judge the report against the document-type
 // skills with thinking on. Without a model, or when the call fails, the
 // agent gets the data and the skills to judge itself.
 func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docformat.Report) (string, bool) {
 	if t.chatModel != nil {
-		evalCtx, cancel := context.WithTimeout(ctx, evaluateTimeout)
+		timeout := evaluateTimeout
+		if isBackgroundRun(ctx) {
+			timeout = backgroundEvaluateTimeout
+		}
+		evalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(t.chatModel), report)
 		if err == nil {

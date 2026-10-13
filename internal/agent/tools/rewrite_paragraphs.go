@@ -17,7 +17,7 @@ var rewriteParagraphsTool = BaseTool{
 
 ## When to Use
 
-ONLY when the user asks in this turn to rewrite, shorten, correct or reword text, or asks for a suggestion of how to word it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "rút gọn"), AND has highlighted the passage (the <document_selection> block). Such a request on a highlighted passage always goes through this tool — never answer it by writing the new text in the chat, where it cannot be applied: a proposal does not change the document, it shows the text with a "Thay vào văn bản" button. Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
+ONLY when the user asks in this turn to rewrite, shorten, summarise, expand, correct or reword text, or asks for a suggestion of how to word it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "rút gọn", "tóm tắt đoạn này", "mở rộng đoạn này"), AND has highlighted the passage (the <document_selection> block). Such a request on a highlighted passage always goes through this tool — never answer it by writing the new text in the chat, where it cannot be applied: a proposal does not change the document, it shows the text with a "Thay vào văn bản" button. Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
 
 ## Propose or apply
 
@@ -31,6 +31,7 @@ ONLY when the user asks in this turn to rewrite, shorten, correct or reword text
   - match: a distinctive piece of the paragraph's current text (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
   - old: the exact substring to replace inside that paragraph (preferred); omit to replace the whole paragraph text.
   - new: the replacement text (required; it may be empty only together with old, to delete that substring).
+- A selection spanning several paragraphs: one edit PER paragraph (paragraph index, new = that paragraph's new text); an edit never spans paragraph breaks. A summary of several paragraphs goes into the first one's edit, the others get a shortened text.
 - One version is the default: edits[0].new, written in Vietnamese administrative register (văn phong hành chính) or as the user's guidance says ("gọn hơn", "bỏ câu cuối").
 - options_requested: true ONLY when the user explicitly asked for several options in this turn ("vài phương án", "2 cách viết", "cho tôi lựa chọn"). Without it, variants are ignored and only edits[0].new is proposed.
 - variants: with options_requested and exactly one edit: other wordings of that edit's new text. edits[0].new is version 1; at most 3 versions in all.
@@ -319,8 +320,8 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 func planRewrites(doc *docxedit.Document, paras []docxedit.Paragraph, sel *types.DocumentSelection, edits []rewriteEdit) ([]DocumentOp, []rewriteChange, int, int) {
 	vdoc := newVirtualDoc(paras)
 	var ops []DocumentOp
-	changes := make([]rewriteChange, 0, len(edits))
-	planned, failed := 0, 0
+	edits, changes := splitAcrossParagraphs(doc, paras, sel, edits)
+	planned, failed := 0, len(changes)
 	for _, e := range edits {
 		ch, op := planRewrite(doc, paras, vdoc, sel, e)
 		switch ch.Status {
@@ -365,20 +366,103 @@ func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraph
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
 	}
-	doc, err := docxedit.Open(content)
-	if err != nil {
-		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
-	}
-	paras := doc.Paragraphs()
 	if len(versions) == 0 {
 		versions = []string{*in.Edits[0].New}
 	}
-	var (
-		variants []rewriteVariant
-		changes  []rewriteChange
-		planned  int
-		failed   int
-	)
+	variants, changes, planned, failed, err := planProposal(content, in, versions, sel)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: "không đọc được tài liệu: " + err.Error()}, nil
+	}
+	// The stored file lags the editor until it is saved: a passage the user
+	// typed or changed is not found there. Save the editor and plan again.
+	if hasStaleMiss(changes) && !ws.IsWordAddin() {
+		if fresh, fws, _, serr := snapshotDocument(ctx, t.workspace, t.sessionID, target.ID, "đề xuất viết lại"); serr == nil {
+			if v, c, p, f, perr := planProposal(fresh, in, versions, sel); perr == nil {
+				variants, changes, planned, failed, ws = v, c, p, f, fws
+			}
+		}
+	}
+
+	var out strings.Builder
+	switch {
+	case len(variants) == 1:
+		fmt.Fprintf(&out, "Đề xuất viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", ws.FileName)
+	case len(variants) > 1:
+		fmt.Fprintf(&out, "Đề xuất %d phương án viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", len(variants), ws.FileName)
+	default:
+		fmt.Fprintf(&out, "Không có thay đổi nào cho %s; tài liệu giữ nguyên.\n", ws.FileName)
+	}
+	if note := strings.TrimSpace(in.Note); note != "" {
+		fmt.Fprintf(&out, "Lý do: %s\n", note)
+	}
+	if len(variants) > 0 {
+		fmt.Fprintf(&out, "Đoạn gốc: “%s”\n", variants[0].Old)
+		for _, v := range variants {
+			fmt.Fprintf(&out, "- %s: “%s”\n", v.Label, v.New)
+		}
+	}
+	for _, ch := range changes {
+		if ch.Status != "planned" {
+			writeRewriteSkip(&out, ch)
+		}
+	}
+	if variantsIgnored {
+		out.WriteString(noteVariantsIgnored + "\n")
+	}
+	switch {
+	case len(variants) == 1:
+		out.WriteString("\n" + rewriteSingleProposalNote + "\n")
+	case len(variants) > 1:
+		out.WriteString("\n" + rewriteProposalNote + "\n")
+	case failed > 0:
+		out.WriteString("\n" + rewriteNoProposalNote + "\n")
+	}
+	if variants == nil {
+		variants = []rewriteVariant{}
+	}
+	data := map[string]interface{}{
+		"proposal":       true,
+		"ops_batch_id":   uuid.NewString(),
+		"document_id":    ws.ID,
+		"document":       DocumentLabel(ws),
+		"file_name":      ws.FileName,
+		"selection_text": sel.Text,
+		"variants":       variants,
+		"planned":        planned,
+		"failed":         failed,
+		"changes":        changes,
+	}
+	if len(variants) == 0 && failed > 0 {
+		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
+	}
+	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
+}
+
+// rewriteNoProposalNote ends a proposal call that produced no version.
+const rewriteNoProposalNote = "KHÔNG có đề xuất nào và KHÔNG có nút “Thay vào văn bản”: đừng mời người dùng bấm nút và đừng chép nội dung mới vào câu trả lời thay cho đề xuất. " +
+	"Sửa lời gọi theo lỗi ở trên rồi gọi lại rewrite_paragraphs; nếu vẫn không được, nói rõ là chưa tạo được đề xuất và vì sao."
+
+// hasStaleMiss reports an edit whose text was not found in the document,
+// which a newer (unsaved) editor state may have.
+func hasStaleMiss(changes []rewriteChange) bool {
+	for _, ch := range changes {
+		if ch.Status == "failed" && strings.HasPrefix(ch.Error, "không tìm thấy") {
+			return true
+		}
+	}
+	return false
+}
+
+// planProposal plans every version of a proposal on the document content:
+// the variants that changed something, and the first version's changes.
+func planProposal(content []byte, in rewriteParagraphsInput, versions []string, sel *types.DocumentSelection) (
+	variants []rewriteVariant, changes []rewriteChange, planned, failed int, err error,
+) {
+	doc, err := docxedit.Open(content)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	paras := doc.Paragraphs()
 	for k, text := range versions {
 		edits := in.Edits
 		if len(in.Variants) > 0 {
@@ -413,57 +497,7 @@ func (t *RewriteParagraphsTool) propose(ctx context.Context, in rewriteParagraph
 		})
 	}
 
-	var out strings.Builder
-	switch {
-	case len(variants) == 1:
-		fmt.Fprintf(&out, "Đề xuất viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", ws.FileName)
-	case len(variants) > 1:
-		fmt.Fprintf(&out, "Đề xuất %d phương án viết lại đoạn đã bôi đen trong %s (chưa áp dụng):\n", len(variants), ws.FileName)
-	default:
-		fmt.Fprintf(&out, "Không có thay đổi nào cho %s; tài liệu giữ nguyên.\n", ws.FileName)
-	}
-	if note := strings.TrimSpace(in.Note); note != "" {
-		fmt.Fprintf(&out, "Lý do: %s\n", note)
-	}
-	if len(variants) > 0 {
-		fmt.Fprintf(&out, "Đoạn gốc: “%s”\n", variants[0].Old)
-		for _, v := range variants {
-			fmt.Fprintf(&out, "- %s: “%s”\n", v.Label, v.New)
-		}
-	}
-	for _, ch := range changes {
-		if ch.Status != "planned" {
-			writeRewriteSkip(&out, ch)
-		}
-	}
-	if variantsIgnored {
-		out.WriteString(noteVariantsIgnored + "\n")
-	}
-	switch {
-	case len(variants) == 1:
-		out.WriteString("\n" + rewriteSingleProposalNote + "\n")
-	case len(variants) > 1:
-		out.WriteString("\n" + rewriteProposalNote + "\n")
-	}
-	if variants == nil {
-		variants = []rewriteVariant{}
-	}
-	data := map[string]interface{}{
-		"proposal":       true,
-		"ops_batch_id":   uuid.NewString(),
-		"document_id":    ws.ID,
-		"document":       DocumentLabel(ws),
-		"file_name":      ws.FileName,
-		"selection_text": sel.Text,
-		"variants":       variants,
-		"planned":        planned,
-		"failed":         failed,
-		"changes":        changes,
-	}
-	if len(variants) == 0 && failed > 0 {
-		return &types.ToolResult{Success: false, Error: out.String(), Data: data}, nil
-	}
-	return &types.ToolResult{Success: true, Output: out.String(), Data: data}, nil
+	return variants, changes, planned, failed, nil
 }
 
 const errRewriteNeedsSelection = "Không viết lại: lượt này người dùng chưa bôi đen đoạn nào trong trình soạn thảo. " +
@@ -474,7 +508,7 @@ const errRewriteNeedsSelection = "Không viết lại: lượt này người dù
 // returns its op; vdoc follows the text the plugin will see.
 func planRewrite(doc *docxedit.Document, paras []docxedit.Paragraph, vdoc *virtualDoc, sel *types.DocumentSelection, e rewriteEdit) (rewriteChange, DocumentOp) {
 	ch := rewriteChange{Paragraph: -1, New: *e.New}
-	idx, msg := resolveParagraph(doc, paras, e)
+	idx, msg := resolveSelectedParagraph(doc, paras, sel, e)
 	if msg != "" {
 		ch.Status, ch.Error = "failed", msg
 		return ch, DocumentOp{}
@@ -563,6 +597,155 @@ func resolveParagraph(doc *docxedit.Document, paras []docxedit.Paragraph, e rewr
 			clipRunes(needle, 80), strings.Join(cands, "; "))
 	}
 	return idx, ""
+}
+
+// resolveSelectedParagraph is resolveParagraph for an edit of the user's
+// selection: a text several paragraphs share (a repeated sentence) is
+// settled by the paragraph the selection is in — the editor sends its text
+// (paragraph_hint) and which instance of that text it is.
+func resolveSelectedParagraph(doc *docxedit.Document, paras []docxedit.Paragraph, sel *types.DocumentSelection, e rewriteEdit) (int, string) {
+	idx, msg := resolveParagraph(doc, paras, e)
+	if e.Paragraph != nil {
+		// the model may pick another instance of the same text: the
+		// editor's word on which one is selected wins
+		if msg == "" {
+			if i, ok := selectedParagraph(paras, sel, paras[idx].Text); ok && sel.ParagraphOccurrence > 0 &&
+				anchorText(paras[i].Text) == anchorText(paras[idx].Text) {
+				return i, ""
+			}
+		}
+		return idx, msg
+	}
+	if msg == "" {
+		return idx, msg
+	}
+	needle := e.Match
+	if strings.TrimSpace(needle) == "" && e.Old != nil {
+		needle = *e.Old
+	}
+	if i, ok := selectedParagraph(paras, sel, needle); ok {
+		return i, ""
+	}
+	return idx, msg
+}
+
+// selectedParagraph is the paragraph the selection starts in, when it
+// contains needle: the paragraph_occurrence-th one whose text is
+// paragraph_hint (the only one when the editor sent no occurrence).
+func selectedParagraph(paras []docxedit.Paragraph, sel *types.DocumentSelection, needle string) (int, bool) {
+	if sel == nil {
+		return -1, false
+	}
+	hint := anchorText(sel.ParagraphHint)
+	n := anchorText(needle)
+	if hint == "" || n == "" || !strings.Contains(hint, n) {
+		return -1, false
+	}
+	// a hint cut at the selection limit matches as a prefix
+	clipped := len([]rune(sel.ParagraphHint)) >= documentSelectionHintRunes
+	var same []int
+	for i, p := range paras {
+		t := anchorText(p.Text)
+		if t == hint || (clipped && strings.HasPrefix(t, hint)) {
+			same = append(same, i)
+		}
+	}
+	k := sel.ParagraphOccurrence
+	if k <= 0 && len(same) == 1 {
+		k = 1
+	}
+	if k <= 0 || k > len(same) {
+		return -1, false
+	}
+	return same[k-1], true
+}
+
+// documentSelectionHintRunes is the length types.DocumentSelection cuts
+// paragraph_hint to.
+const documentSelectionHintRunes = 2000
+
+// splitAcrossParagraphs turns an edit of a passage spanning several
+// paragraphs (its match or old has line breaks, or the selection does and
+// the match is not found) into one edit per paragraph when the new text
+// has as many lines; otherwise that edit fails, naming the paragraphs so
+// the model calls again with one edit each. An edit only changes text
+// inside one paragraph.
+func splitAcrossParagraphs(doc *docxedit.Document, paras []docxedit.Paragraph, sel *types.DocumentSelection, edits []rewriteEdit) ([]rewriteEdit, []rewriteChange) {
+	var out []rewriteEdit
+	var failed []rewriteChange
+	for _, e := range edits {
+		if e.Paragraph != nil {
+			out = append(out, e)
+			continue
+		}
+		probe := e.Match
+		if strings.TrimSpace(probe) == "" && e.Old != nil {
+			probe = *e.Old
+		}
+		lines := textLines(probe)
+		if len(lines) < 2 {
+			selLines := textLines(sel.Text)
+			if len(selLines) < 2 {
+				out = append(out, e)
+				continue
+			}
+			if _, msg := resolveSelectedParagraph(doc, paras, sel, e); msg == "" {
+				out = append(out, e)
+				continue
+			}
+			lines = selLines // one block for a multi-paragraph selection
+		}
+		idxs := make([]int, 0, len(lines))
+		for _, l := range lines {
+			i, msg := resolveSelectedParagraph(doc, paras, sel, rewriteEdit{Match: l})
+			if msg != "" {
+				idxs = nil
+				break
+			}
+			idxs = append(idxs, i)
+		}
+		news := textLines(*e.New)
+		if idxs != nil && len(news) == len(lines) {
+			for k, l := range lines {
+				p, nw := idxs[k], news[k]
+				ne := rewriteEdit{Paragraph: &p, New: &nw}
+				if anchorText(l) != anchorText(paras[p].Text) {
+					old := l
+					ne.Old = &old
+				}
+				out = append(out, ne)
+			}
+			continue
+		}
+		failed = append(failed, rewriteChange{Paragraph: -1, New: *e.New, Status: "failed", Error: multiParagraphError(idxs)})
+	}
+	return out, failed
+}
+
+// multiParagraphError tells the model to give one edit per paragraph.
+func multiParagraphError(idxs []int) string {
+	where := "nhiều đoạn"
+	if len(idxs) > 0 {
+		var refs []string
+		for _, i := range idxs {
+			refs = append(refs, fmt.Sprintf("[%d]", i))
+		}
+		where = "các đoạn " + strings.Join(refs, ", ")
+	}
+	return fmt.Sprintf("phần bôi đen gồm %s, mà mỗi chỗ sửa chỉ nằm trong MỘT đoạn. "+
+		"Gọi lại rewrite_paragraphs với edits gồm một phần tử cho MỖI đoạn: paragraph = chỉ số đoạn, "+
+		"new = nội dung mới của riêng đoạn đó (viết lại/rút gọn từng đoạn); công cụ không gộp hay xoá đoạn", where)
+}
+
+// textLines are the non-blank lines of s, trimmed.
+func textLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(strings.ReplaceAll(s, "\r", "\n"), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // candidateParagraphs lists (up to 8) paragraphs containing needle for an

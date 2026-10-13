@@ -29,9 +29,9 @@ const selectionIntentTimeout = 20 * time.Second
 const selectionIntentPrompt = `You label a user's request about a passage they highlighted in a Word document (Vietnamese administrative text). Answer with JSON {"intent": "<label>"} and nothing else.
 
 Labels:
-- rewrite: the user wants new wording for the passage — rewrite, reword, shorten, correct, polish, make it more formal, or suggest/propose how to write it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "sửa lại", "rút gọn", "cho mượt hơn", "văn phong hành chính", "viết hay hơn").
+- rewrite: the user wants new wording for the passage itself — rewrite, reword, shorten, summarise or condense it, expand it, correct, polish, make it more formal, or suggest/propose how to write it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "sửa lại", "rút gọn", "tóm tắt đoạn này", "viết gọn lại", "tóm lược", "viết thêm ý", "mở rộng đoạn này", "cho mượt hơn", "văn phong hành chính", "viết hay hơn").
 - spelling: the user wants the spelling, typos or diacritics of the passage checked ("kiểm tra chính tả", "soát lỗi chính tả", "sai dấu", "lỗi đánh máy").
-- other: anything else — what it means, explain, summarize, translate, compare with another document, look up the law, check the format, a question about it.`
+- other: anything else — what it means, explain it, translate, compare with another document, look up the law, check the format, a question about it, a summary of the whole document or of something other than the passage.`
 
 // ClassifySelectionIntent labels a request about a highlighted passage;
 // SelectionIntentOther when unsure, on error or without a model.

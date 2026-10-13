@@ -160,6 +160,8 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.GET("/:id/documents/:doc_id/download", handler.DownloadDocumentWorkspace)
 		sessions.GET("/:id/documents/:doc_id/revisions", handler.ListDocumentRevisions)
 		sessions.GET("/:id/documents/:doc_id/format-check", handler.GetDocumentFormatCheck)
+		// the format check the user asked for, run in the background
+		sessions.POST("/:session_id/documents/:doc_id/format-check", handler.StartDocumentFormatCheck)
 		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
 		// live spellcheck of the paragraphs the user typed (nothing stored)

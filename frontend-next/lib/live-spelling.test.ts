@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 
 import {
   LIVE_SPELL_MAX_PARAGRAPHS,
+  foundIn,
+  marksByParagraph,
+  readFound,
+  writeFound,
   planLiveSpelling,
   readReviewed,
   reviewedKeys,
@@ -56,5 +60,26 @@ describe("reviewedKeys", () => {
     // the second "Đoạn một." was missed: its key waits for both
     assert.deepEqual(reviewedKeys(plan, [2]), [textKey("Đoạn hai."), textKey("Đoạn ba.")]);
     assert.deepEqual(reviewedKeys(plan, []), plan.keys);
+  });
+});
+
+describe("found counts", () => {
+  it("counts the marks per paragraph and sums them over the document", () => {
+    const ops = [
+      { op: "unmark", anchor: { text: "Đoạn  một." } },
+      { op: "mark", anchor: { text: "Đoạn  một." }, text: "x" },
+      { op: "mark", anchor: { text: "Đoạn một.", occurrence: 2 }, text: "y" },
+      { op: "mark", anchor: { text: "Đoạn hai." }, text: "z" },
+    ];
+    const found = marksByParagraph(ops);
+    assert.equal(found.get(textKey("Đoạn một.")), 2);
+    assert.equal(foundIn(["Đoạn một.", "Đoạn hai.", "Đoạn ba."], found), 3);
+  });
+  it("round-trips the counts", () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    writeFound(store, "d1", new Map([["a", 2], ["b", 0]]));
+    assert.deepEqual([...readFound(store, "d1")], [["a", 2]]);
+    assert.equal(readFound(store, "d2").size, 0);
   });
 });

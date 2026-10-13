@@ -137,6 +137,9 @@ export interface DocumentFormatCheck {
 export interface DocumentSelection {
   text: string;
   paragraph_hint?: string;
+  /** Which instance of paragraph_hint the selection starts in, among the
+   * paragraphs with the same text (a repeated sentence is told apart). */
+  paragraph_occurrence?: number;
   /** Workspace (tab) the text was selected in. */
   document_id?: string;
   /** Server-side label of that document ("vb2 · Tờ trình.docx"), on stored messages. */
@@ -342,7 +345,7 @@ export async function forceSaveDocumentWorkspace(sessionId: string, documentId?:
 export type LiveSpellingParagraph = { text: string; occurrence?: number; edited?: boolean };
 
 /** Live spellcheck: reviews paragraphs the user typed and returns the ops
- * that underline the mistakes in red (unmark first for edited ones).
+ * that underline the mistakes (unmark first for edited ones).
  * `failed`: the model answered nothing — ask again later. */
 export async function reviewDocumentSpelling(
   sessionId: string,
@@ -448,12 +451,16 @@ export function isWordAttachment(fileName: string | undefined | null, fileType?:
  * a WeRAG selection message at all. */
 export function parsePluginSelectionMessage(data: unknown): DocumentSelection | null | undefined {
   if (!data || typeof data !== "object") return undefined;
-  const msg = data as { source?: unknown; type?: unknown; text?: unknown; paragraphHint?: unknown };
+  const msg = data as { source?: unknown; type?: unknown; text?: unknown; paragraphHint?: unknown; paragraphOccurrence?: unknown };
   if (msg.source !== "werag-onlyoffice" || msg.type !== "selection") return undefined;
   const text = typeof msg.text === "string" ? msg.text.trim() : "";
   if (!text) return null;
   const hint = typeof msg.paragraphHint === "string" ? msg.paragraphHint.trim() : "";
-  return hint ? { text, paragraph_hint: hint } : { text };
+  if (!hint) return { text };
+  const n = msg.paragraphOccurrence;
+  return typeof n === "number" && Number.isInteger(n) && n > 0
+    ? { text, paragraph_hint: hint, paragraph_occurrence: n }
+    : { text, paragraph_hint: hint };
 }
 
 /** Whether the open editor should swap to the workspace's current version.
@@ -555,6 +562,19 @@ export interface DocumentRevisionEntry {
   label: string;
   source: DocumentRevisionSource | string;
   created_at: string;
+}
+
+/** Starts the NĐ30 format check of an open working document in the
+ * background (the chat is not held): returns its state at once — queued,
+ * or the check already under way. The result arrives in the document's
+ * view (format_check) and through getDocumentFormatCheck. */
+export async function startDocumentFormatCheck(sessionId: string, documentId: string): Promise<DocumentFormatCheck | null> {
+  try {
+    const res = await apiPost<Envelope<{ check?: DocumentFormatCheck | null }>>(`${base(sessionId, documentId)}/format-check`, {});
+    return res?.data?.check ?? null;
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
 }
 
 export async function listDocumentRevisions(sessionId: string, documentId?: string): Promise<DocumentRevisionEntry[]> {

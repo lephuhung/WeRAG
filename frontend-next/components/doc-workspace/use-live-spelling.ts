@@ -11,7 +11,19 @@ import {
   type OpsFailure,
 } from "@/lib/api/document-ops";
 import { reviewDocumentSpelling } from "@/lib/api/document-workspace";
-import { planLiveSpelling, readReviewed, reviewedKeys, textKey, writeReviewed } from "@/lib/live-spelling";
+import {
+  IDLE_SPELLING,
+  foundIn,
+  marksByParagraph,
+  planLiveSpelling,
+  readFound,
+  readReviewed,
+  reviewedKeys,
+  textKey,
+  writeFound,
+  writeReviewed,
+  type LiveSpellingStatus,
+} from "@/lib/live-spelling";
 import type { OnlyOfficeEditorHandle } from "./onlyoffice-editor";
 import type { EditorOpsOutcome } from "./use-editor-ops";
 
@@ -41,9 +53,10 @@ const storage = () => {
 
 /* Live spellcheck of one open document: after each pause in typing, reads
  * every paragraph's text from the editor plugin, sends the ones not
- * reviewed yet to the server, and returns the red-underline batches for
- * useEditorOps (an edited paragraph first loses its old underlines). Call
- * schedule() on editor events (document ready, state change). */
+ * reviewed yet to the server, and returns the underline batches for
+ * useEditorOps (an edited paragraph first loses its old underlines) and
+ * the progress for the chat header's ring. Call schedule() on editor
+ * events (document ready, state change). */
 export function useLiveSpelling({
   sessionId,
   documentId,
@@ -60,6 +73,9 @@ export function useLiveSpelling({
   enabled: boolean;
 }) {
   const [batches, setBatches] = useState<(OpsBatch & { rejected?: OpsFailure[] })[]>([]);
+  const [status, setStatus] = useState<LiveSpellingStatus>(IDLE_SPELLING);
+  // mistakes underlined per paragraph hash (survive a reload)
+  const foundRef = useRef<Map<string, number>>(new Map());
   const reviewedRef = useRef<Set<string>>(new Set());
   const firstPassRef = useRef(true);
   const busyRef = useRef(false);
@@ -78,12 +94,19 @@ export function useLiveSpelling({
   useEffect(() => {
     const stored = readReviewed(storage(), documentId);
     reviewedRef.current = new Set(stored ?? []);
+    foundRef.current = readFound(storage(), documentId);
+    setStatus(IDLE_SPELLING);
     firstPassRef.current = stored === null;
     awaitingRef.current.clear();
     attemptsRef.current.clear();
     offRef.current = false;
     setBatches([]);
   }, [documentId]);
+
+  // not reviewed live (a source, an editor not open): no ring
+  useEffect(() => {
+    setStatus(enabled && !offRef.current ? IDLE_SPELLING : { ...IDLE_SPELLING, phase: "off" });
+  }, [enabled, documentId]);
 
   // the plugin's answers to read_paragraphs
   useEffect(() => {
@@ -173,6 +196,15 @@ export function useLiveSpelling({
       const texts = await readTexts();
       if (!texts || live.current.documentId !== docId) return;
       const plans = planLiveSpelling(texts, reviewedRef.current, firstPassRef.current);
+      const total = plans.reduce((n, p) => n + p.paragraphs.length, 0);
+      let checked = 0;
+      let missedAny = false;
+      setStatus({
+        phase: total > 0 ? "checking" : "done",
+        total,
+        checked: 0,
+        found: foundIn(texts, foundRef.current),
+      });
       for (const plan of plans) {
         const res = await reviewDocumentSpelling(live.current.sessionId, docId, plan.paragraphs, {
           timeoutMs: REVIEW_TIMEOUT_MS,
@@ -180,9 +212,25 @@ export function useLiveSpelling({
         if (live.current.documentId !== docId) return;
         if (res.off) {
           offRef.current = true; // not reviewed: nothing is recorded
+          setStatus({ ...IDLE_SPELLING, phase: "off" });
           return;
         }
-        if (res.failed) return; // the model is down: these stay unreviewed
+        if (res.failed) {
+          // the model is down: these stay unreviewed
+          setStatus((s) => ({ ...s, phase: "failed" }));
+          return;
+        }
+        const marks = marksByParagraph(res.ops);
+        const missed = new Set(res.missed);
+        plan.paraKeys.forEach((k, i) => {
+          if (missed.has(i)) return;
+          foundRef.current.delete(k); // newest last, for the store's cap
+          foundRef.current.set(k, marks.get(k) ?? 0);
+        });
+        writeFound(storage(), docId, foundRef.current);
+        missedAny ||= missed.size > 0;
+        checked += plan.paragraphs.length;
+        setStatus({ phase: "checking", total, checked, found: foundIn(texts, foundRef.current) });
         const keys = reviewedKeys(plan, res.missed);
         if (keys.length > 0) firstPassRef.current = false;
         const batch = opsBatchFromToolData("check_spelling", {
@@ -202,8 +250,12 @@ export function useLiveSpelling({
         awaitingRef.current.set(batch.batchId, { docId, keys, opKeys });
         setBatches((prev) => [...prev.slice(-KEEP_BATCHES), batch]);
       }
+      if (total > 0 && live.current.documentId === docId) {
+        setStatus({ phase: missedAny ? "failed" : "done", total, checked, found: foundIn(texts, foundRef.current) });
+      }
     } catch {
       /* network / server error: the next pause tries again */
+      if (live.current.documentId === docId) setStatus((s) => ({ ...s, phase: "failed" }));
     } finally {
       busyRef.current = false;
       if (againRef.current) {
@@ -241,5 +293,5 @@ export function useLiveSpelling({
     [],
   );
 
-  return { batches, schedule, onOutcome };
+  return { batches, schedule, onOutcome, status };
 }

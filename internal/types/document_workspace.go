@@ -298,6 +298,11 @@ type DocumentSelection struct {
 	// capture (for example the whole paragraph), used to locate the passage
 	// when Text alone is ambiguous.
 	ParagraphHint string `json:"paragraph_hint,omitempty"`
+	// ParagraphOccurrence is the 1-based instance of ParagraphHint (the
+	// paragraph the selection starts in) among the paragraphs with the same
+	// normalised text, so a passage repeated elsewhere in the document is
+	// told apart; 0 when the editor did not say.
+	ParagraphOccurrence int `json:"paragraph_occurrence,omitempty"`
 	// DocumentID is the workspace (editor tab) the text was selected in;
 	// empty from a client that predates multi-document sessions.
 	DocumentID string `json:"document_id,omitempty"`

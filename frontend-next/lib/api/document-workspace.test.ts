@@ -47,6 +47,12 @@ describe("parsePluginSelectionMessage", () => {
       { text: "Điều 1", paragraph_hint: "p3" },
     );
   });
+  it("keeps a positive whole paragraphOccurrence with its hint", () => {
+    const msg = { source: "werag-onlyoffice", type: "selection", text: "x", paragraphHint: "x y" };
+    assert.deepEqual(parsePluginSelectionMessage({ ...msg, paragraphOccurrence: 2 }), { text: "x", paragraph_hint: "x y", paragraph_occurrence: 2 });
+    assert.deepEqual(parsePluginSelectionMessage({ ...msg, paragraphOccurrence: 0 }), { text: "x", paragraph_hint: "x y" });
+    assert.deepEqual(parsePluginSelectionMessage({ ...msg, paragraphHint: "", paragraphOccurrence: 2 }), { text: "x" });
+  });
 });
 
 describe("shouldRefreshEditor", () => {
