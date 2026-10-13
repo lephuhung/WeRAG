@@ -1052,7 +1052,7 @@ func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) [
 			// Long-term memory rides along: "what is my unit?" finds nothing
 			// in the knowledge base, which is exactly when this path answers.
 			Content: promptContent + "\n\n" + types.SourceDataBoundaryPrompt +
-				"\n\n" + types.SourcedAnswerOutputPrompt + "\n\nCurrent date: " + time.Now().Format("2006-01-02") +
+				"\n\n" + types.SourcedAnswerOutputPrompt + "\n\nCurrent date: " + types.PromptNow().Format("2006-01-02") +
 				chatManage.UserContextPrompt + chatManage.LegalCatalogPrompt + chatManage.MemoryPrompt,
 		})
 	}

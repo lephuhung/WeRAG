@@ -542,7 +542,7 @@ func buildRuntimeContextBlock(
 ) string {
 	var sb strings.Builder
 	sb.WriteString("<runtime_context scope=\"this_turn\">\n")
-	fmt.Fprintf(&sb, "  <current_time>%s</current_time>\n", time.Now().Format("2006-01-02"))
+	fmt.Fprintf(&sb, "  <current_time>%s</current_time>\n", types.PromptNow().Format("2006-01-02"))
 	fmt.Fprintf(&sb, "  <session>%s</session>\n", escapeXMLAttr(sessionID))
 
 	if len(kbs) > 0 {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -510,7 +509,7 @@ func BuildSystemPromptSections(
 		template = GetProgressiveRAGSystemPrompt(cfg)
 	}
 
-	currentTime := time.Now().Format("2006-01-02")
+	currentTime := types.PromptNow().Format("2006-01-02")
 	language := ""
 	if options != nil {
 		language = options.Language
