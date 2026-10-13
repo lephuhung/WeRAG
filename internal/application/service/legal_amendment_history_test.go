@@ -115,3 +115,13 @@ func TestAnswerUsesProvisionWordingDespiteAges(t *testing.T) {
 		t.Fatal("wording should count when only ages differ")
 	}
 }
+
+func TestLegalHistoryNamesByCitation(t *testing.T) {
+	h := &legalHistory{answer: `Theo Luật Giáo dục 2019 <kb doc="x" chunk_id="c-1" kb_id="k" />.`}
+	if !h.names("43/2019/QH14", "c-1") {
+		t.Fatal("a cited chunk names its document")
+	}
+	if h.names("43/2019/QH14", "c-2") || h.names("43/2019/QH14", "") {
+		t.Fatal("an uncited chunk does not")
+	}
+}

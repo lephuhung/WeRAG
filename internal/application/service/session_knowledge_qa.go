@@ -178,6 +178,11 @@ func (s *sessionService) KnowledgeQA(
 			UserMessageID: req.UserMessageID,
 		},
 	}
+	if src, ok := s.agentService.(legalHistorySource); ok {
+		if fn := src.legalHistoryFunc(searchTargetKBIDs(searchTargets)); fn != nil {
+			chatManage.EventBus = newLegalHistoryBus(chatManage.EventBus, fn, mergedChunkIDs(chatManage))
+		}
+	}
 	chatManage.UserContextPrompt = types.UserContextPrompt(ctx)
 	chatManage.LegalCatalogPrompt = s.legalCatalogPrompt(ctx, effectiveQuery)
 	if hasAbbreviationTurn {

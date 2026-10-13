@@ -276,17 +276,14 @@ func (s *agentService) CreateAgentEngine(
 		systemPromptTemplate,
 	)
 	engine.SetAppConfig(s.cfg)
-	if s.db != nil && s.db.Dialector.Name() == "postgres" {
-		kbIDs := make([]string, 0, len(kbInfos))
-		for _, kb := range kbInfos {
-			if kb != nil {
-				kbIDs = append(kbIDs, kb.ID)
-			}
+	kbIDs := make([]string, 0, len(kbInfos))
+	for _, kb := range kbInfos {
+		if kb != nil {
+			kbIDs = append(kbIDs, kb.ID)
 		}
-		db := s.db
-		engine.SetLegalHistory(func(ctx context.Context, chunkIDs []string, answer string) string {
-			return LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, types.PromptNow())
-		})
+	}
+	if fn := s.legalHistoryFunc(kbIDs); fn != nil {
+		engine.SetLegalHistory(fn)
 	}
 	pinnedMCP := s.resolvePinnedMCPServiceInfos(ctx, config)
 	s.attachPinnedMCPToolNames(toolRegistry, pinnedMCP)

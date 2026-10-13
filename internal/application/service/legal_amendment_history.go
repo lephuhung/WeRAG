@@ -173,7 +173,7 @@ func parseLegalHistoryRows(rows []legalHistoryRow) []legalHistoryChunk {
 // forward: the chunk is amending text — show the rule it replaced.
 func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef) *legalHistoryLine {
 	old := h.amendedNumber(c.Doc, a.Document)
-	if old == "" || a.Article == "" || !(mentionsDoc(h.answer, old) || mentionsDoc(h.answer, c.Doc.Number)) {
+	if old == "" || a.Article == "" || !(mentionsDoc(h.answer, old) || h.names(c.Doc.Number, c.ID)) {
 		return nil
 	}
 	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}.String()
@@ -196,15 +196,20 @@ func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef)
 // backward: the chunk is a provision of a document that a newer one
 // amended — show the current rule.
 func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
-	if !mentionsDoc(h.answer, c.Doc.Number) || len(c.Legal.ArticleNos) != 1 {
+	if !h.names(c.Doc.Number, c.ID) || len(c.Legal.ArticleNos) != 1 {
 		return nil
 	}
 	article := c.Legal.ArticleNos[0]
 	filter, _ := json.Marshal([]map[string]string{{"article": article}})
 	var rows []legalHistoryRow
+	// Common article numbers are amended in many documents: first those
+	// naming this document's số hiệu, then those naming a document by title.
 	if err := h.db.Raw(legalHistorySelect+` AND c.knowledge_id <> ?
-		AND c.metadata->'legal'->'amends' @> ?::jsonb LIMIT ?`,
-		h.kbIDs, c.KnowledgeID, string(filter), legalHistoryCandidates).Scan(&rows).Error; err != nil {
+		AND c.metadata->'legal'->'amends' @> ?::jsonb
+		ORDER BY strpos(c.metadata->'legal'->>'amends', ?) > 0 DESC,
+			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC
+		LIMIT ?`,
+		h.kbIDs, c.KnowledgeID, string(filter), c.Doc.Number, legalHistoryCandidates).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalHistory] amending chunks: %v", err)
 		return nil
 	}
@@ -295,6 +300,13 @@ func (h *legalHistory) effText(effFrom string) string {
 		return ", sẽ có hiệu lực từ " + t.Format("02/01/2006")
 	}
 	return ", có hiệu lực từ " + t.Format("02/01/2006")
+}
+
+// names reports whether the answer names document number or cites its
+// chunk chunkID (a citation tag may stand in for the số hiệu, as in "Luật
+// Giáo dục 2019 <kb … chunk_id=…/>").
+func (h *legalHistory) names(number, chunkID string) bool {
+	return mentionsDoc(h.answer, number) || (chunkID != "" && strings.Contains(h.answer, `chunk_id="`+chunkID+`"`))
 }
 
 // mentionsDoc reports whether text names document number ("75/2019"

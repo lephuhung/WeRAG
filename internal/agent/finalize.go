@@ -66,7 +66,6 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	// Generate a single ID for this entire final answer stream
 	answerID := generateEventID("answer")
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
-	answerDoneEmitted := false
 
 	budget := e.clampCompletionBudgetToContext(e.tokenEstimator.EstimateMessages(messages))
 	llmResult, err := e.streamLLMToEventBus(
@@ -83,20 +82,15 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			if chunk.ResponseType == types.ResponseTypeThinking {
 				return
 			}
+			// The terminal event waits for the amendment history below.
 			if chunk.Content != "" {
 				logger.Debugf(ctx, "[Agent][FinalAnswer] Emitting answer chunk: %d chars", len(chunk.Content))
 				e.eventBus.Emit(ctx, event.Event{
 					ID:        answerID,
 					Type:      event.EventAgentFinalAnswer,
 					SessionID: sessionID,
-					Data: event.AgentFinalAnswerData{
-						Content: chunk.Content,
-						Done:    chunk.Done,
-					},
+					Data:      event.AgentFinalAnswerData{Content: chunk.Content},
 				})
-				if chunk.Done {
-					answerDoneEmitted = true
-				}
 			}
 		},
 	)
@@ -109,17 +103,18 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		return err
 	}
 
-	if !answerDoneEmitted {
-		e.eventBus.Emit(ctx, event.Event{
-			ID:        answerID,
-			Type:      event.EventAgentFinalAnswer,
-			SessionID: sessionID,
-			Data: event.AgentFinalAnswerData{
-				Content: "",
-				Done:    true,
-			},
-		})
-	}
+	// Safety net: strip any residual <think> blocks that may have leaked through
+	state.FinalAnswer = agenttools.StripThinkBlocks(llmResult.Content)
+	e.appendLegalHistory(ctx, state, sessionID, answerID)
+	e.eventBus.Emit(ctx, event.Event{
+		ID:        answerID,
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: sessionID,
+		Data: event.AgentFinalAnswerData{
+			Content: "",
+			Done:    true,
+		},
+	})
 
 	// The synthesis call is often the largest of the turn — fold its usage
 	// into the turn aggregate like every ReAct round.
@@ -127,14 +122,11 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		state.TurnUsage.Accumulate(*llmResult.Usage)
 	}
 
-	// Safety net: strip any residual <think> blocks that may have leaked through
-	fullAnswer := agenttools.StripThinkBlocks(llmResult.Content)
-	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(fullAnswer))
+	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(state.FinalAnswer))
 	common.PipelineInfo(ctx, "Agent", "final_answer_done", map[string]interface{}{
 		"session_id": sessionID,
-		"answer_len": len(fullAnswer),
+		"answer_len": len(state.FinalAnswer),
 	})
-	state.FinalAnswer = fullAnswer
 	return nil
 }
 
