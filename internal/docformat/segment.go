@@ -49,19 +49,30 @@ var (
 	tieuNguRe  = regexp.MustCompile(`^DOC\s*LAP\s*[-–—]\s*TU\s*DO\s*[-–—]\s*HANH\s*PHUC\.?$`)
 	// "Số: 12/QĐ-UBND", "Số:    /BC-SYT" (draft), "Số 12/UBND-VP",
 	// "12/2025/NĐ-CP" — but never an agency name starting with "SỞ".
-	soKyHieuRe = regexp.MustCompile(`^SO\s*[:.]|^SO\s+\d|^SO\s*/|^SO\s+\S*/\s*[A-Z]|^\d{1,5}[A-Z]?\s*/\s*(\d{4}\s*/\s*)?[A-Z]{1,8}\b`)
+	// A văn bản quy phạm pháp luật names its type before the number:
+	// "Nghị quyết số: 162/2024/QH15", "Luật số: 64/2025/QH15" — the whole
+	// line, so a body sentence citing "Quyết định số 12/…" does not match.
+	soKyHieuRe = regexp.MustCompile(`^SO\s*[:.]|^SO\s+\d|^SO\s*/|^SO\s+\S*/\s*[A-Z]|^\d{1,5}[A-Z]?\s*/\s*(\d{4}\s*/\s*)?[A-Z]{1,8}\b|` +
+		`^` + typedSoPrefix + `\s+SO\s*[:.]?\s*[\d.…_ ]*/\s*[0-9A-Z/.\-]+$`)
 	// "Huế, ngày 05 tháng 10 năm 2026", drafts with blank day/month.
 	// Anchored so a title "Báo cáo ... năm 2025" does not match.
-	diaDanhRe   = regexp.MustCompile(`^([^,\d]{2,60},\s*)?NGAY\s*[\d.…_ ]{0,8}\s*THANG\s*[\d.…_ ]{0,8}\s*NAM\b`)
-	matRe       = regexp.MustCompile(`^(DO\s+)?MAT(\s*[:.]|\s*$)|^DO\s+MAT\b`)
-	khanRe      = regexp.MustCompile(`^(DO\s+KHAN\s*[:.]?\s*)?(KHAN|HOA\s*TOC|THUONG\s*KHAN)\b`)
-	noiNhanRe   = regexp.MustCompile(`^NOI\s*NHAN\s*[:.]?`)
-	kinhGuiRe   = regexp.MustCompile(`^KINH\s+GUI\s*[:.]?`)
-	canCuRe     = regexp.MustCompile(`^(CAN\s+CU|THEO\s+DE\s+NGHI|XET\s+DE\s+NGHI|XET\s+TO\s+TRINH)\b`)
-	phuLucRe    = regexp.MustCompile(`^PHU\s+LUC\b`)
-	trichVVRe   = regexp.MustCompile(`^V\s*/\s*V\b|^VE\s+VIEC\b`)
-	ruleLineRe  = regexp.MustCompile(`^[\s\p{Z}_\-–—=~.*·•]+$`)
-	thamQuyenRe = regexp.MustCompile(`^(CHU\s+TICH|BO\s+TRUONG|GIAM\s+DOC|THU\s+TUONG|TONG\s+GIAM\s+DOC|` +
+	diaDanhRe = regexp.MustCompile(`^([^,\d]{2,60},\s*)?NGAY\s*[\d.…_ ]{0,8}\s*THANG\s*[\d.…_ ]{0,8}\s*NAM\b`)
+	matRe     = regexp.MustCompile(`^(DO\s+)?MAT(\s*[:.]|\s*$)|^DO\s+MAT\b`)
+	khanRe    = regexp.MustCompile(`^(DO\s+KHAN\s*[:.]?\s*)?(KHAN|HOA\s*TOC|THUONG\s*KHAN)\b`)
+	noiNhanRe = regexp.MustCompile(`^NOI\s*NHAN\s*[:.]?`)
+	kinhGuiRe = regexp.MustCompile(`^KINH\s+GUI\s*[:.]?`)
+	canCuRe   = regexp.MustCompile(`^(CAN\s+CU|THEO\s+DE\s+NGHI|XET\s+DE\s+NGHI|XET\s+TO\s+TRINH)\b`)
+	phuLucRe  = regexp.MustCompile(`^PHU\s+LUC\b`)
+	// ô 11 — chỉ dẫn về phạm vi lưu hành, a whole line on its own
+	chiDanRe = regexp.MustCompile(`^(XEM\s+XONG\s+TRA\s+LAI|LUU\s+HANH\s+NOI\s+BO)\.?$`)
+	// ô 12 — ký hiệu người soạn thảo + số bản ("NVA.15", "TTr/2b"), raw text
+	kyHieuSTRe = regexp.MustCompile(`^\pL{1,8}\s?[./]\s?\d{1,3}\pL?$`)
+	// ô 13 — địa chỉ, điện thoại, fax, email, website of the cơ quan
+	diaChiStartRe = regexp.MustCompile(`^(DIA\s+CHI|DT|DIEN\s+THOAI|FAX|E-?MAIL|WEBSITE)\b`)
+	diaChiAnyRe   = regexp.MustCompile(`\b(DIA\s+CHI|DT|DIEN\s+THOAI|FAX|E-?MAIL|WEBSITE)\b`)
+	trichVVRe     = regexp.MustCompile(`^V\s*/\s*V\b|^VE\s+VIEC\b`)
+	ruleLineRe    = regexp.MustCompile(`^[\s\p{Z}_\-–—=~.*·•]+$`)
+	thamQuyenRe   = regexp.MustCompile(`^(CHU\s+TICH|BO\s+TRUONG|GIAM\s+DOC|THU\s+TUONG|TONG\s+GIAM\s+DOC|` +
 		`CHANH\s+AN|VIEN\s+TRUONG|UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|` +
 		`HOI\s+DONG\s+QUAN\s+TRI|THU\s+TRUONG|CUC\s+TRUONG|GIAM\s+DOC|` +
 		`TRUONG\s+BAN|CHINH\s+PHU|BAN\s+THUONG\s+VU|BAN\s+CHAP\s+HANH)\b`)
@@ -82,13 +93,18 @@ var (
 		`CONG\s+DOAN|DOAN\s+TN|HOI\s|TRUNG\s+TAM|SO\s+HUU|NHA\s+NUOC)`)
 	// a collective-body name continued by its locality on the next line:
 	// "ỦY BAN NHÂN DÂN / TỈNH THỪA THIÊN HUẾ"
-	genericOrgRe  = regexp.MustCompile(`^(UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|UY\s+BAN\s+MAT\s+TRAN\s+TO\s+QUOC(\s+VIET\s+NAM)?|BAN\s+CHAP\s+HANH|BAN\s+THUONG\s+VU|DANG\s+UY|DANG\s+BO)$`)
-	wrapEndRe     = regexp.MustCompile(`[,\-–&]$|\s(VA|CUA)$`)
+	genericOrgRe = regexp.MustCompile(`^(UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|UY\s+BAN\s+MAT\s+TRAN\s+TO\s+QUOC(\s+VIET\s+NAM)?|BAN\s+CHAP\s+HANH|BAN\s+THUONG\s+VU|DANG\s+UY|DANG\s+BO)$`)
+	wrapEndRe    = regexp.MustCompile(`[,\-–&]$|\s(VA|CUA)$`)
+	// a line continuing the one above: "SỞ TÀI NGUYÊN" / "VÀ MÔI TRƯỜNG"
+	wrapStartRe   = regexp.MustCompile(`^(VA|CUA)\s`)
 	daKyNameRe    = regexp.MustCompile(`^\(?\s*(DA\s+KY|KY\s+SO|DAU)`)
 	daKyRe        = regexp.MustCompile(`^\(\s*(DA\s+KY|KY|DAU)`)
 	symbolCodeRe  = regexp.MustCompile(`/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)(\d*)`)
 	docTypeLineRe []docTypePattern
 )
+
+// typedSoPrefix: the type names a QPPL writes before "số:".
+const typedSoPrefix = `(LUAT|BO\s+LUAT|PHAP\s+LENH|LENH|NGHI\s+QUYET(\s+LIEN\s+TICH)?|NGHI\s+DINH|QUYET\s+DINH|THONG\s+TU(\s+LIEN\s+TICH)?|CHI\s+THI)`
 
 type docTypePattern struct {
 	slug string
@@ -117,6 +133,55 @@ type element struct {
 	para *Para
 	zone string
 	text string
+	// sub is the line of a paragraph read line by line (para is then its
+	// LineView), -1 for a whole paragraph
+	sub int
+}
+
+// quocHieuLineRe is a line holding the quốc hiệu alone — not a sentence
+// quoting "nước Cộng hòa xã hội chủ nghĩa Việt Nam".
+var quocHieuLineRe = regexp.MustCompile(`^CONG\s*HOA?\s*XA\s*HOI\s*CHU\s*NGHIA\s*VIET\s*NAM\.?$`)
+
+// lineSplit returns the content lines (indexes into p.Lines()) of a
+// paragraph to read line by line, nil to read it whole. A web export puts
+// "CỘNG HÒA …⏎Độc lập …⏎-----", "KT. THỦ TƯỚNG⏎PHÓ THỦ TƯỚNG⏎⏎Tên" or
+// "Nơi nhận:⏎- …;⏎- …" in one paragraph: it is split when a line is the
+// quốc hiệu or tiêu ngữ, when it opens with "Nơi nhận", or when it opens a
+// khối ký and is short, unjustified lines. Soft breaks inside body prose
+// keep the paragraph whole.
+func lineSplit(p *Para) []int {
+	if p.Zone == ZoneSplit || !strings.Contains(p.Text, "\n") {
+		return nil
+	}
+	lines := p.Lines()
+	var content []int
+	short := true
+	for k, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" || ruleLineRe.MatchString(t) {
+			continue
+		}
+		content = append(content, k)
+		if runeLen(t) > 80 {
+			short = false
+		}
+	}
+	if len(content) < 2 {
+		return nil
+	}
+	for _, k := range content {
+		if f := fold(lines[k]); quocHieuLineRe.MatchString(f) || tieuNguRe.MatchString(f) {
+			return content
+		}
+	}
+	first := fold(lines[content[0]])
+	if noiNhanRe.MatchString(first) {
+		return content
+	}
+	if short && p.Alignment != "justify" && p.Alignment != "both" && sigOpenRe.MatchString(first) {
+		return content
+	}
+	return nil
 }
 
 func elements(l *Layout) []element {
@@ -124,10 +189,17 @@ func elements(l *Layout) []element {
 	for _, p := range l.Paragraphs {
 		if p.Zone == ZoneSplit {
 			if p.LeftText != "" && !ruleLineRe.MatchString(p.LeftText) {
-				els = append(els, element{p, ZoneLeft, p.LeftText})
+				els = append(els, element{p, ZoneLeft, p.LeftText, -1})
 			}
 			if p.RightText != "" && !ruleLineRe.MatchString(p.RightText) {
-				els = append(els, element{p, ZoneRight, p.RightText})
+				els = append(els, element{p, ZoneRight, p.RightText, -1})
+			}
+			continue
+		}
+		if subs := lineSplit(p); subs != nil {
+			lines := p.Lines()
+			for _, k := range subs {
+				els = append(els, element{p.LineView(k), p.Zone, strings.TrimSpace(lines[k]), k})
 			}
 			continue
 		}
@@ -135,7 +207,7 @@ func elements(l *Layout) []element {
 		if text == "" || ruleLineRe.MatchString(text) {
 			continue
 		}
-		els = append(els, element{p, p.Zone, text})
+		els = append(els, element{p, p.Zone, text, -1})
 	}
 	return els
 }
@@ -149,6 +221,50 @@ type Component struct {
 	Zones []string `json:"-"` // aligned with Paras
 	Texts []string `json:"-"`
 	Pos   *int     `json:"-"` // first element position, for the order check
+	// FooterParas are indexes into Layout.FooterParas for a component read
+	// from the page footer (ô 13); such a component has no body paragraph.
+	FooterParas []int `json:"footer_paras,omitempty"`
+	// Subs: for a paragraph read line by line (lineSplit), the lines of it
+	// (Para.LineView indexes) this component holds; a paragraph absent
+	// here belongs to it whole.
+	Subs map[int][]int `json:"-"`
+}
+
+func hasInt(xs []int, x int) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+// ParaViews are the component's paragraphs as the rules measure them, in
+// order: a paragraph it holds whole, or each of its lines (Para.LineView)
+// of a paragraph read line by line; zones are the matching Zones entries.
+func (c *Component) ParaViews(l *Layout) ([]*Para, []string) {
+	var out []*Para
+	var zones []string
+	for i, idx := range c.Paras {
+		if idx < 0 || idx >= len(l.Paragraphs) {
+			continue
+		}
+		z := ""
+		if i < len(c.Zones) {
+			z = c.Zones[i]
+		}
+		p := l.Paragraphs[idx]
+		if subs := c.Subs[idx]; len(subs) > 0 {
+			for _, k := range subs {
+				out = append(out, p.LineView(k))
+				zones = append(zones, z)
+			}
+			continue
+		}
+		out = append(out, p)
+		zones = append(zones, z)
+	}
+	return out, zones
 }
 
 // Segmentation is the component assignment of a document.
@@ -158,6 +274,38 @@ type Segmentation struct {
 	ParaLabels   map[int]string
 	DetectedType string
 	ParaTable    map[int]*int
+	// Bounds are where the heuristic found the head and the tail blocks
+	// (Segment only).
+	Bounds Bounds
+	// agencyGuessed: the cơ quan lines share one weight and were split into
+	// chủ quản / ban hành by wording alone.
+	agencyGuessed bool
+	// tailBody: a nội dung line sits inside the tail block (a second
+	// signature column, a signature set as body text).
+	tailBody bool
+	bodyPos  []int
+	// QuocHieuLines counts the lines holding the quốc hiệu alone, anywhere
+	// in the document: two when a second header opens an attached
+	// document, more in a collection of forms (scope.go).
+	QuocHieuLines int
+}
+
+// Bounds locate the NĐ30 blocks in element (= labeling unit) indexes. All
+// components but nội dung sit in the head (ô 1–5, 9a, thẩm quyền, căn cứ,
+// 10a/10b, 11) or the tail (ô 7, 9b, 12); ô 13 sits in the page footer.
+type Bounds struct {
+	// HeadEnd is one past the head block: header, trích yếu, thẩm quyền,
+	// căn cứ, Kính gửi — the first nội dung element.
+	HeadEnd int
+	// TailStart is the first element of the signature / Nơi nhận region:
+	// after the last body paragraph, moved back over the short, unjustified
+	// lines just above it (a signature the heuristic read as body).
+	TailStart int
+	// PhuLucStart is the first phụ lục element (len(elements) when none).
+	PhuLucStart int
+	// HeadOK / TailOK: the head (a header anchor or a trích yếu) and the
+	// tail (a Nơi nhận or a signature) were found.
+	HeadOK, TailOK bool
 }
 
 func newSegmentation(l *Layout) *Segmentation {
@@ -166,6 +314,7 @@ func newSegmentation(l *Layout) *Segmentation {
 	for _, p := range l.Paragraphs {
 		s.ParaTable[p.Index] = p.TableIndex
 	}
+	s.QuocHieuLines = len(quocHieuElements(elements(l)))
 	return s
 }
 
@@ -182,7 +331,9 @@ func (s *Segmentation) Comp(key string) *Component {
 // Keys returns component keys in the order they were first found.
 func (s *Segmentation) Keys() []string { return append([]string(nil), s.order...) }
 
-func (s *Segmentation) add(key string, para int, text, zone string, pos int) {
+// add records a unit of component key: paragraph para, or line sub of it
+// (sub >= 0, a paragraph read line by line — Para.LineView).
+func (s *Segmentation) add(key string, para int, text, zone string, pos, sub int) {
 	c, ok := s.Components[key]
 	if !ok {
 		c = &Component{Paras: []int{}, Zone: zone}
@@ -203,6 +354,14 @@ func (s *Segmentation) add(key string, para int, text, zone string, pos int) {
 	if !seen {
 		c.Paras = append(c.Paras, para)
 		c.Zones = append(c.Zones, zone)
+	}
+	if sub >= 0 {
+		if c.Subs == nil {
+			c.Subs = map[int][]int{}
+		}
+		if !hasInt(c.Subs[para], sub) {
+			c.Subs[para] = append(c.Subs[para], sub)
+		}
 	}
 	if text != "" {
 		c.Texts = append(c.Texts, text)
@@ -242,8 +401,24 @@ func (s *Segmentation) addSignature() {
 	if _, ok := s.Components["signature"]; !ok {
 		s.order = append(s.order, "signature")
 	}
+	var subs map[int][]int
+	for _, c := range []*Component{cd, nk} {
+		for p, ks := range c.Subs {
+			if subs == nil {
+				subs = map[int][]int{}
+			}
+			for _, k := range ks {
+				if !hasInt(subs[p], k) {
+					subs[p] = append(subs[p], k)
+				}
+			}
+		}
+	}
+	for _, ks := range subs {
+		sort.Ints(ks)
+	}
 	s.Components["signature"] = &Component{Found: true, Paras: paras, Zones: zones,
-		Text: strings.Join(texts, "\n"), Zone: ZoneRight, Pos: cd.Pos}
+		Text: strings.Join(texts, "\n"), Zone: ZoneRight, Pos: cd.Pos, Subs: subs}
 }
 
 func looksAgency(text, folded string) bool {
@@ -325,6 +500,10 @@ func DetectType(trichYeu, fallbackScan, soKyHieu string) string {
 		}
 	}
 	if soKyHieu != "" {
+		// "Nghị quyết số: 162/2024/QH15" names its type
+		if t := typeFromLine(soKyHieu); t != "" {
+			return t
+		}
 		if t := typeFromSymbol(soKyHieu); t != "" {
 			return t
 		}
@@ -363,17 +542,20 @@ func banHanhLineCount(lines []leftLine) int {
 	for k < n && isBold(n-k-1) == last {
 		k++
 	}
-	if k < n {
-		return k
-	}
-	k = 1
-	for k < n {
-		fp := fold(strings.TrimSpace(lines[n-k-1].el.text))
-		if genericOrgRe.MatchString(fp) || wrapEndRe.MatchString(fp) {
-			k++
-			continue
+	if k == n {
+		k = 1
+		for k < n {
+			fp := fold(strings.TrimSpace(lines[n-k-1].el.text))
+			if genericOrgRe.MatchString(fp) || wrapEndRe.MatchString(fp) {
+				k++
+				continue
+			}
+			break
 		}
-		break
+	}
+	// a block opening with "VÀ ..." continues the line above it
+	for k < n && wrapStartRe.MatchString(fold(strings.TrimSpace(lines[n-k].el.text))) {
+		k++
 	}
 	return k
 }
@@ -423,6 +605,11 @@ func headerEnd(els []element) int {
 			end, pending = i+1, 0
 			continue
 		}
+		if chiDanRe.MatchString(f) {
+			// ô 11 sits by the header (with độ mật / độ khẩn)
+			end, pending = i+1, 0
+			continue
+		}
 		if isHeading(el, f) && !trichVVRe.MatchString(f) {
 			break
 		}
@@ -443,6 +630,12 @@ func headerEnd(els []element) int {
 		return end
 	}
 	return 0
+}
+
+// isDiaChi: an ô 13 line — it opens with, or holds two of, Địa chỉ / ĐT /
+// Điện thoại / Fax / Email / Website.
+func isDiaChi(folded string) bool {
+	return diaChiStartRe.MatchString(folded) || len(diaChiAnyRe.FindAllStringIndex(folded, -1)) >= 2
 }
 
 func pLeftish(p *Para) bool {
@@ -478,50 +671,58 @@ func Segment(l *Layout) *Segmentation {
 			continue
 		}
 		idx := el.para.Index
+		if chiDanRe.MatchString(f) {
+			seg.add("chi_dan_luu_hanh", idx, el.text, el.zone, hi, el.sub)
+			continue
+		}
 		if matRe.MatchString(f) {
-			seg.add("do_mat", idx, el.text, el.zone, hi)
+			seg.add("do_mat", idx, el.text, el.zone, hi, el.sub)
 			continue
 		}
 		if khanRe.MatchString(f) && el.zone != ZoneFull && runeLen(f) < 30 {
-			seg.add("do_khan", idx, el.text, el.zone, hi)
+			seg.add("do_khan", idx, el.text, el.zone, hi, el.sub)
 			continue
 		}
 		switch {
 		case tieuNguRe.MatchString(f):
-			seg.add("tieu_ngu", idx, el.text, el.zone, hi)
+			seg.add("tieu_ngu", idx, el.text, el.zone, hi, el.sub)
 		case quocHieuRe.MatchString(f):
-			seg.add("quoc_hieu", idx, el.text, el.zone, hi)
+			seg.add("quoc_hieu", idx, el.text, el.zone, hi, el.sub)
 		case diaDanhRe.MatchString(f):
-			seg.add("dia_danh_ngay_thang", idx, el.text, el.zone, hi)
+			seg.add("dia_danh_ngay_thang", idx, el.text, el.zone, hi, el.sub)
 		case soKyHieuRe.MatchString(f) && el.zone != ZoneRight:
-			seg.add("so_ky_hieu", idx, el.text, ZoneLeft, hi)
+			seg.add("so_ky_hieu", idx, el.text, ZoneLeft, hi, el.sub)
 		case trichVVRe.MatchString(f):
 			// "V/v ..." under the số ký hiệu, usually in the left cell
-			seg.add("trich_yeu", idx, el.text, el.zone, hi)
+			seg.add("trich_yeu", idx, el.text, el.zone, hi, el.sub)
 			trichOpened = true
 		case el.zone == ZoneLeft || (el.zone == ZoneFull && pLeftish(el.para)) ||
 			(el.zone == ZoneFull && !seg.Comp("quoc_hieu").Found):
 			switch {
 			case trichOpened:
-				seg.add("trich_yeu", idx, el.text, ZoneLeft, hi)
+				seg.add("trich_yeu", idx, el.text, ZoneLeft, hi, el.sub)
 			case seg.Comp("so_ky_hieu").Found && !looksAgency(el.text, f):
-				seg.add("header_left_other", idx, el.text, ZoneLeft, hi)
+				seg.add("header_left_other", idx, el.text, ZoneLeft, hi, el.sub)
 			default:
 				left = append(left, leftLine{hi, el})
 			}
 		case el.zone == ZoneRight || (el.zone == ZoneFull && pRightish(el.para)):
-			seg.add("header_right_other", idx, el.text, ZoneRight, hi)
+			seg.add("header_right_other", idx, el.text, ZoneRight, hi, el.sub)
 		default:
-			seg.add("header_other", idx, el.text, el.zone, hi)
+			seg.add("header_other", idx, el.text, el.zone, hi, el.sub)
 		}
 	}
 	if len(left) > 0 {
 		nBH := banHanhLineCount(left)
+		// same weight throughout: the split rests on wording; trusted when
+		// the ban hành block opens with an agency keyword ("SỞ ...")
+		seg.agencyGuessed = nBH < len(left) && uniformWeight(left) &&
+			!orgKeywordRe.MatchString(fold(left[len(left)-nBH].el.text))
 		for _, ll := range left[:len(left)-nBH] {
-			seg.add("co_quan_chu_quan", ll.el.para.Index, ll.el.text, ZoneLeft, ll.pos)
+			seg.add("co_quan_chu_quan", ll.el.para.Index, ll.el.text, ZoneLeft, ll.pos, ll.el.sub)
 		}
 		for _, ll := range left[len(left)-nBH:] {
-			seg.add("co_quan_ban_hanh", ll.el.para.Index, ll.el.text, ZoneLeft, ll.pos)
+			seg.add("co_quan_ban_hanh", ll.el.para.Index, ll.el.text, ZoneLeft, ll.pos, ll.el.sub)
 		}
 	}
 
@@ -533,6 +734,9 @@ func Segment(l *Layout) *Segmentation {
 			scanTo = len(els)
 		}
 		for i := hEnd; i < scanTo; i++ {
+			if chiDanRe.MatchString(fold(els[i].text)) {
+				continue
+			}
 			if isHeading(els[i], fold(els[i].text)) {
 				trichStart = i
 				break
@@ -544,30 +748,31 @@ func Segment(l *Layout) *Segmentation {
 	}
 	bodyStart := hEnd
 	if trichStart >= 0 {
-		seg.add("trich_yeu", els[trichStart].para.Index, els[trichStart].text, ZoneFull, trichStart)
+		seg.add("trich_yeu", els[trichStart].para.Index, els[trichStart].text, ZoneFull, trichStart, els[trichStart].sub)
 		j := trichStart + 1
 		for j < len(els) {
 			el := els[j]
 			p := el.para
 			f := fold(el.text)
-			if el.zone != ZoneFull || p.Alignment != "center" || canCuRe.MatchString(f) || kinhGuiRe.MatchString(f) {
+			if el.zone != ZoneFull || p.Alignment != "center" || canCuRe.MatchString(f) || kinhGuiRe.MatchString(f) ||
+				chiDanRe.MatchString(f) {
 				break
 			}
 			upper := p.TextIsUpper || isTrue(p.Caps)
 			if thamQuyenRe.MatchString(f) && strings.TrimSpace(el.text) != "" && upper {
-				seg.add("tham_quyen_ban_hanh", p.Index, el.text, ZoneFull, j)
+				seg.add("tham_quyen_ban_hanh", p.Index, el.text, ZoneFull, j, el.sub)
 				j++
 				continue
 			}
 			if seg.Comp("tham_quyen_ban_hanh").Found {
 				if upper { // "KHÓA VIII, KỲ HỌP THỨ 10"
-					seg.add("tham_quyen_ban_hanh", p.Index, el.text, ZoneFull, j)
+					seg.add("tham_quyen_ban_hanh", p.Index, el.text, ZoneFull, j, el.sub)
 					j++
 					continue
 				}
 				break
 			}
-			seg.add("trich_yeu", p.Index, el.text, ZoneFull, j)
+			seg.add("trich_yeu", p.Index, el.text, ZoneFull, j, el.sub)
 			j++
 		}
 		bodyStart = j
@@ -584,7 +789,11 @@ func Segment(l *Layout) *Segmentation {
 	seg.DetectedType = DetectType(seg.Comp("trich_yeu").Text, strings.Join(scan, "\n"), seg.Comp("so_ky_hieu").Text)
 
 	// ---- tail: nơi nhận + signature, split by zone (often one table)
-	tail := els[bodyStart:]
+	// a second header (quốc hiệu) after the body opens a document attached
+	// to this one (the Quy chế a Quyết định issues): the main document's
+	// tail ends there, the rest is its phụ lục
+	attach := attachedStart(els, hEnd, bodyStart)
+	tail := els[bodyStart:attach]
 	isRight := func(el element) bool {
 		return el.zone == ZoneRight || (el.zone == ZoneFull && pRightish(el.para))
 	}
@@ -633,6 +842,26 @@ func Segment(l *Layout) *Segmentation {
 		sigOpen = cands[0]
 	}
 
+	// ô 12/13 sit under nơi nhận (or under the signature when there is no
+	// nơi nhận): only lines past that point are considered
+	bottomFrom := noiNhan
+	if bottomFrom < 0 {
+		bottomFrom = sigOpen
+	}
+	kyHieuK := -1
+	if noiNhan >= 0 {
+		for k := noiNhanEnd - 1; k > noiNhan; k-- {
+			el := tail[k]
+			if isRight(el) || isDiaChi(fold(el.text)) {
+				continue
+			}
+			if t := strings.TrimSpace(el.text); runeLen(t) <= 12 && kyHieuSTRe.MatchString(t) {
+				kyHieuK = k
+			}
+			break // only the last left line of the nơi nhận block
+		}
+	}
+
 	type posEl struct {
 		pos int
 		el  element
@@ -647,18 +876,29 @@ func Segment(l *Layout) *Segmentation {
 		switch {
 		case inSig && isRight(el):
 			sigEls = append(sigEls, posEl{pos, el})
+		case chiDanRe.MatchString(f) && !seg.Comp("noi_dung").Found:
+			// ô 11 belongs to the head block; in the body it is body text
+			seg.add("chi_dan_luu_hanh", p.Index, el.text, el.zone, pos, el.sub)
+		case bottomFrom >= 0 && bottomFrom < k && k < noiNhanEnd && isDiaChi(f):
+			seg.add("dia_chi_co_quan", p.Index, el.text, el.zone, pos, el.sub)
+		case k == kyHieuK:
+			seg.add("ky_hieu_soan_thao", p.Index, el.text, ZoneLeft, pos, el.sub)
 		case inNoiNhan && !isRight(el):
-			seg.add("noi_nhan", p.Index, el.text, ZoneLeft, pos)
+			seg.add("noi_nhan", p.Index, el.text, ZoneLeft, pos, el.sub)
 		case phuLucRe.MatchString(f) && k >= noiNhanEnd-1:
-			seg.add("phu_luc", p.Index, el.text, el.zone, pos)
+			seg.add("phu_luc", p.Index, el.text, el.zone, pos, el.sub)
 		case kinhGuiRe.MatchString(f):
-			seg.add("kinh_gui", p.Index, el.text, el.zone, pos)
+			seg.add("kinh_gui", p.Index, el.text, el.zone, pos, el.sub)
 		case canCuRe.MatchString(f) && !seg.Comp("noi_dung").Found:
-			seg.add("can_cu", p.Index, el.text, ZoneFull, pos)
+			seg.add("can_cu", p.Index, el.text, ZoneFull, pos, el.sub)
+		case canCuMore(seg, el, f):
+			// "Nhằm …;", "Theo đề nghị của …;" continue the căn cứ block
+			seg.add("can_cu", p.Index, el.text, ZoneFull, pos, el.sub)
 		case k >= noiNhanEnd:
-			seg.add("phu_luc", p.Index, el.text, el.zone, pos)
+			seg.add("phu_luc", p.Index, el.text, el.zone, pos, el.sub)
 		default:
-			seg.add("noi_dung", p.Index, el.text, el.zone, pos)
+			seg.add("noi_dung", p.Index, el.text, el.zone, pos, el.sub)
+			seg.bodyPos = append(seg.bodyPos, pos)
 		}
 	}
 
@@ -676,12 +916,156 @@ func Segment(l *Layout) *Segmentation {
 			if daKyRe.MatchString(fold(pe.el.text)) {
 				continue // "(Đã ký)" / "(Ký, đóng dấu)" placeholders
 			}
-			seg.add("chuc_danh", pe.el.para.Index, pe.el.text, ZoneRight, pe.pos)
+			seg.add("chuc_danh", pe.el.para.Index, pe.el.text, ZoneRight, pe.pos, pe.el.sub)
 		}
 		if nameLike && len(sigEls) > 1 {
-			seg.add("nguoi_ky", last.el.para.Index, last.el.text, ZoneRight, last.pos)
+			seg.add("nguoi_ky", last.el.para.Index, last.el.text, ZoneRight, last.pos, last.el.sub)
 		}
 	}
+	for k, el := range els[attach:] {
+		seg.add("phu_luc", el.para.Index, el.text, el.zone, attach+k, el.sub)
+	}
 	seg.addSignature()
+	seg.addFooterDiaChi(l)
+	seg.Bounds = blockBounds(els, seg, hEnd, bodyStart, lastBody, noiNhan, sigOpen,
+		hEnd > 0 || trichOpened || trichStart >= 0)
 	return seg
+}
+
+// quocHieuElements are the elements holding the quốc hiệu alone.
+func quocHieuElements(els []element) []int {
+	var out []int
+	for i, el := range els {
+		if quocHieuLineRe.MatchString(fold(el.text)) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// formCollectionMin quốc hiệu lines make a collection of forms (biểu mẫu),
+// each with its own header (scope.go).
+const formCollectionMin = 3
+
+// attachedStart is the element where an attached document begins — the
+// header block (same paragraph or same table) of the second quốc hiệu, when
+// the first one heads the document and the second comes after the body —
+// or len(els). Forms attached after it (more quốc hiệu) stay in the
+// attached part.
+func attachedStart(els []element, hEnd, bodyStart int) int {
+	qh := quocHieuElements(els)
+	if len(qh) < 2 || qh[0] >= hEnd || qh[1] <= bodyStart {
+		return len(els)
+	}
+	a := qh[1]
+	sameBlock := func(x, y element) bool {
+		if x.para.Index == y.para.Index {
+			return true
+		}
+		return x.para.TableIndex != nil && y.para.TableIndex != nil && *x.para.TableIndex == *y.para.TableIndex
+	}
+	for a > bodyStart && sameBlock(els[a-1], els[a]) {
+		a--
+	}
+	return a
+}
+
+var (
+	// the resolution line ("QUYẾT ĐỊNH:", "Thủ tướng Chính phủ ban hành
+	// Quyết định …") and the first article / chapter end the căn cứ block
+	resolutionRe = regexp.MustCompile(`^(QUYET\s+DINH|QUYET\s+NGHI|NGHI\s+QUYET|CHI\s+THI)\s*:|` +
+		`\bBAN\s+HANH\s+(QUYET\s+DINH|NGHI\s+DINH|THONG\s+TU|NGHI\s+QUYET|CHI\s+THI|LUAT|PHAP\s+LENH)\b`)
+	articleRe = regexp.MustCompile(`^(DIEU\s+\d|CHUONG\s+[IVXLC\d]|PHAN\s+[IVXLC\d]|MUC\s+\d)`)
+)
+
+// canCuMore: an italic line ending in ";" or "." right after the căn cứ
+// lines ("Nhằm triển khai …;", "Theo đề nghị của …;") still belongs to the
+// căn cứ block — until the resolution line, the first Điều, or a
+// non-italic paragraph.
+func canCuMore(seg *Segmentation, el element, f string) bool {
+	if !seg.Comp("can_cu").Found || seg.Comp("noi_dung").Found || !isTrue(el.para.Italic) {
+		return false
+	}
+	t := strings.TrimSpace(el.text)
+	if !strings.HasSuffix(t, ";") && !strings.HasSuffix(t, ".") {
+		return false
+	}
+	return !resolutionRe.MatchString(f) && !articleRe.MatchString(f)
+}
+
+// addFooterDiaChi reads ô 13 from the page-1 footer when the body has none:
+// the footer lines that read as an address / phone / email line.
+func (s *Segmentation) addFooterDiaChi(l *Layout) {
+	if s.Comp("dia_chi_co_quan").Found {
+		return
+	}
+	var idx []int
+	var texts []string
+	for _, p := range l.FooterParas {
+		t := strings.TrimSpace(p.Text)
+		if t != "" && isDiaChi(fold(t)) {
+			idx = append(idx, p.Index)
+			texts = append(texts, t)
+		}
+	}
+	if len(idx) == 0 {
+		return
+	}
+	s.Components["dia_chi_co_quan"] = &Component{Found: true, Paras: []int{}, Text: strings.Join(texts, "\n"),
+		Zone: ZoneFooter, Texts: texts, FooterParas: idx}
+	s.order = append(s.order, "dia_chi_co_quan")
+}
+
+// sigLike: a line that may belong to a signature block — short and not
+// justified like body prose.
+func sigLike(el element) bool {
+	return el.para.Alignment != "justify" && el.para.Alignment != "both" && runeLen(el.text) <= 80
+}
+
+func blockBounds(els []element, seg *Segmentation, hEnd, bodyStart, lastBody, noiNhan, sigOpen int, headOK bool) Bounds {
+	n := len(els)
+	b := Bounds{HeadEnd: bodyStart, TailStart: n, PhuLucStart: n, HeadOK: headOK,
+		TailOK: noiNhan >= 0 || sigOpen >= 0}
+	first := func(key string) int {
+		if c := seg.Comp(key); c.Found && c.Pos != nil {
+			return *c.Pos
+		}
+		return -1
+	}
+	if p := first("phu_luc"); p >= 0 {
+		b.PhuLucStart = p
+	}
+	b.TailStart = bodyStart + lastBody + 1
+	if b.TailStart > b.PhuLucStart {
+		b.TailStart = b.PhuLucStart
+	}
+	if p := first("noi_dung"); p >= 0 && p < b.TailStart {
+		b.HeadEnd = p
+	} else {
+		b.HeadEnd = b.TailStart
+	}
+	if b.HeadEnd < hEnd {
+		b.HeadEnd = hEnd
+	}
+	// a signature set as body text (centred / tab-indented, not in the right
+	// column) ends the body in the heuristic's eyes: walk back over it
+	for k := 0; k < 8 && b.TailStart-1 > b.HeadEnd && sigLike(els[b.TailStart-1]); k++ {
+		b.TailStart--
+	}
+	for _, p := range seg.bodyPos {
+		if p >= b.TailStart && p < b.PhuLucStart {
+			seg.tailBody = true
+		}
+	}
+	return b
+}
+
+// uniformWeight: every cơ quan line has the same bold flag.
+func uniformWeight(lines []leftLine) bool {
+	for _, ll := range lines[1:] {
+		if isTrue(ll.el.para.Bold) != isTrue(lines[0].el.para.Bold) {
+			return false
+		}
+	}
+	return true
 }

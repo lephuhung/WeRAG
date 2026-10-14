@@ -1,6 +1,6 @@
 ---
 name: the-thuc-chi-thi
-description: Yêu cầu thể thức riêng của chỉ thị (NĐ30/2020/NĐ-CP) — tên loại CHỈ THỊ, trích yếu, nội dung nêu tình hình và giao nhiệm vụ cụ thể cho từng cơ quan, người đứng đầu ký.
+description: Yêu cầu thể thức riêng của chỉ thị (NĐ30/2020/NĐ-CP) — tên loại CHỈ THỊ, trích yếu, không có căn cứ và Kính gửi, nội dung giao nhiệm vụ, người đứng đầu ký.
 ---
 
 # Chỉ thị
@@ -9,16 +9,15 @@ description: Yêu cầu thể thức riêng của chỉ thị (NĐ30/2020/NĐ-CP
 
 ## Thành phần
 
-- Tên loại `CHỈ THỊ` (in hoa, đậm, căn giữa) và trích yếu chữ thường, đậm ("Về việc tăng cường ...").
+- Dòng tên loại `CHỈ THỊ`, dòng dưới là trích yếu ("Về việc tăng cường ...").
 - Ký hiệu số có `CT-`.
 - Chỉ thị **không có phần căn cứ** dạng "Căn cứ ..." như quyết định và không có "Kính gửi".
 
-## Nội dung
+## Nội dung (xét trên các dòng mốc)
 
-1. Đánh giá tình hình, nêu lý do ban hành.
-2. Các yêu cầu, nhiệm vụ **giao cụ thể cho từng cơ quan, đơn vị** (đánh số), có thời hạn khi cần.
-3. Tổ chức thực hiện: trách nhiệm theo dõi, đôn đốc, báo cáo.
-- Câu kết thường là yêu cầu "nghiêm túc thực hiện Chỉ thị này".
+- Mở đầu đánh giá tình hình, nêu lý do ban hành (dòng mốc "mở đầu").
+- Câu kết thường yêu cầu "nghiêm túc thực hiện Chỉ thị này" (dòng mốc "câu kết"/"đoạn cuối"); không có thì **cảnh báo**.
+- Việc giao nhiệm vụ cho từng cơ quan nằm giữa thân văn bản, không có trong hồ sơ — không đánh giá.
 
 ## Ký
 

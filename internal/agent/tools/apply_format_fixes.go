@@ -687,7 +687,9 @@ const (
 )
 
 // planPropFix plans a prop rule over every paragraph of its component that
-// breaks it (ParaSatisfies), whatever the rule's mode. verbose records why
+// breaks it (ParaSatisfies), whatever the rule's mode — limited to the lines
+// the rule measures (docformat.RuleLines: mode first / rest, skip_when).
+// regex_prop rules are not planned here: they go to manual. verbose records why
 // nothing was planned (component not found, no paragraph to fix); it is off
 // for a rule whose check passes, where that is expected. Paragraphs split
 // in two columns by a tab that break the rule are always reported.
@@ -711,14 +713,10 @@ func planPropFix(plan *formatPlan, report *docformat.Report, layout *docformat.L
 	fix := AppliedFormatFix{CheckID: c.ID, Paragraphs: []int{}}
 	var changes []string
 	var split []string
-	for _, idx := range comp.Paras {
-		if idx < 0 || idx >= len(layout.Paragraphs) {
-			continue
-		}
+	// only the lines the rule measures: mode first ("Nơi nhận:" label) or
+	// rest (the list under it) narrow the component
+	for _, idx := range docformat.RuleLines(layout, comp, rule) {
 		p := layout.Paragraphs[idx]
-		if strings.TrimSpace(p.Text) == "" {
-			continue
-		}
 		fix.ComponentParagraphs++
 		if ok, err := docformat.ParaSatisfies(p, rule); err == nil && ok {
 			continue

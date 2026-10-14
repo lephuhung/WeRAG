@@ -109,16 +109,17 @@ func TestCheckDocumentFormatPicksNewestDocx(t *testing.T) {
 	if up.opened != "new" || up.session != "sess-1" {
 		t.Fatalf("opened %q in session %q", up.opened, up.session)
 	}
-	// labeling and evaluation both fail: heuristic labels, and the agent
-	// gets the data with the skills to judge itself
-	for _, want := range []string{"Cong van so 45.docx", "noi_dung.font", "Arial", "model down",
-		"# Dữ liệu thể thức", `<skill name="the-thuc-cong-van">`} {
+	// the heuristic labels this công văn with confidence (no labeling
+	// call); the evaluation fails: the agent gets the data with the skills
+	// to judge itself
+	for _, want := range []string{"Cong van so 45.docx", "noi_dung.font", "Arial",
+		"# Hồ sơ phán đoán", `<skill name="the-thuc-cong-van">`} {
 		if !strings.Contains(res.Output, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.Output)
 		}
 	}
-	if model.opts == nil || model.opts.Thinking == nil || *model.opts.Thinking {
-		t.Fatal("labeling must call the agent model with thinking off")
+	if model.opts != nil && (model.opts.Thinking == nil || *model.opts.Thinking) {
+		t.Fatal("a labeling call must run with thinking off")
 	}
 	if res.Data["evaluated"] != false {
 		t.Fatalf("evaluated = %v", res.Data["evaluated"])

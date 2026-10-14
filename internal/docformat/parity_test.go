@@ -18,7 +18,7 @@ import (
 // fixtures — the Go port must produce the same labeling units, components
 // and check verdicts. Regenerate with:
 //
-//	python3 docformat/evaluation/export_parity.py internal/docformat/testdata/parity
+//	python3 docformat/evaluation/export_parity.py internal/docformat/testdata/parity --from-fixtures
 
 type parityFixture struct {
 	Units     []map[string]any `json:"units"`
@@ -152,11 +152,12 @@ func TestParityWithPythonReference(t *testing.T) {
 			units := BuildUnits(l, Segment(l))
 			diff("units", toGeneric(t, fx.Units), toGeneric(t, units), &diffs)
 
-			heur := Check(ctx, content, Options{Segmenter: SegmenterHeuristic})
+			// the Python reference has no check scopes: compare the full one
+			heur := Check(ctx, content, Options{Segmenter: SegmenterHeuristic, Scope: ScopeFull})
 			diff("heuristic", toGeneric(t, fx.Heuristic), viewOf(t, heur), &diffs)
 
 			if fx.Labels != nil && fx.Labeled != nil {
-				lab := Check(ctx, content, Options{Labels: fx.Labels})
+				lab := Check(ctx, content, Options{Labels: fx.Labels, Scope: ScopeFull})
 				diff("labeled", toGeneric(t, fx.Labeled), viewOf(t, lab), &diffs)
 			}
 			if len(diffs) > 0 {

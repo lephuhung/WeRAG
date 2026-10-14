@@ -9,8 +9,18 @@ Check kinds
 - ``present`` / ``absent``: the component must (not) be found.
 - ``prop``: evaluate a paragraph property over the component's paragraphs.
   ``mode`` = ``all`` (every paragraph satisfies), ``majority`` (>=70% of
-  paragraphs satisfy — for body text where headings legitimately differ) or
-  ``any``.
+  paragraphs satisfy — for body text where headings legitimately differ),
+  ``any``, ``first`` (only the component's first line, which must satisfy —
+  the "Nơi nhận:" label) or ``rest`` (the lines after the first, >=70% —
+  the Nơi nhận list).  ``skip_when`` lists paragraphs that do not count:
+  ``unmeasured`` (the property is not set anywhere), ``in_table``,
+  ``hanging`` (a hanging indent).
+- ``regex_prop``: like ``prop`` (modes all/majority) over the component's
+  paragraphs whose fold()ed text matches ``regex``; a run property (bold,
+  size, ...) is read from the runs covering the match, so "Điều 1." in bold
+  followed by regular text satisfies ``bold eq true``.
+- ``page_number``: the first section numbers its pages in a centred header
+  PAGE field and leaves page 1 unnumbered (w:titlePg).
 - ``page_setup``: evaluate a Section property (page size, margins).
 - ``order``: components must appear in the rule-set ``order`` list.
 - ``stray_chars``: a stray symbol typed inside a word ("Chính p`hủ") in any
@@ -31,8 +41,8 @@ import re
 from importlib import resources
 from typing import Optional
 
-from .layout import DocLayout, Para
-from .segment import Segmented
+from .layout import DocLayout, Para, line_view
+from .segment import Segmented, fold
 
 _RULES_PACKAGE = "docformat.rules_data"
 
@@ -62,11 +72,28 @@ def load_rule_set(doc_type: str) -> dict:
         return base
     specific = _load_one(doc_type)
     merged = dict(base)
-    merged.update({k: v for k, v in specific.items() if k != "checks"})
+    merged.update({k: v for k, v in specific.items()
+                   if k not in ("checks", "anchors", "judgment")})
     # a type-specific check with the same id replaces the base one
     own = {c.get("id"): c for c in specific.get("checks", [])}
     merged["checks"] = [own.pop(c.get("id"), c) for c in base.get("checks", [])] \
         + [c for c in specific.get("checks", []) if c.get("id") in own]
+    # "anchors" (body landmark lines for the Go judgment brief) merge the
+    # same way; the Python checker does not use them
+    own = {a.get("id"): a for a in specific.get("anchors", [])}
+    merged["anchors"] = [own.pop(a.get("id"), a) for a in base.get("anchors", [])] \
+        + [a for a in specific.get("anchors", []) if a.get("id") in own]
+    # "judgment" (the Bảng kiểm rules the Go evaluation decides in code)
+    # merges field by field by id; the Python checker does not use it
+    base_j = [dict(j) for j in base.get("judgment", [])]
+    index = {j.get("id"): i for i, j in enumerate(base_j)}
+    for j in specific.get("judgment", []):
+        if j.get("id") in index:
+            base_j[index[j.get("id")]].update(j)
+        else:
+            index[j.get("id")] = len(base_j)
+            base_j.append(dict(j))
+    merged["judgment"] = base_j
     merged["type"] = specific.get("type", doc_type)
     merged["label"] = specific.get("label", doc_type)
     return merged
@@ -114,12 +141,68 @@ def _compare(op: str, actual, expected) -> bool:
     raise ValueError("unknown op %r" % op)
 
 
-def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> list:
-    out = []
-    for idx in seg.comp(comp_key).get("paras", []):
-        if 0 <= idx < len(layout.paragraphs):
-            out.append(layout.paragraphs[idx])
-    return out
+def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> tuple:
+    """(paragraphs, zones) of a component as measured: body paragraphs — the
+    lines of one read line by line, each on its own (line_view) — or the
+    page-footer ones of a component read from the footer (ô 13); zones
+    follow the component's "zones"."""
+    comp = seg.comp(comp_key)
+    subs = comp.get("subs") or {}
+    czones = comp.get("zones", [])
+    out, zones = [], []
+    for i, idx in enumerate(comp.get("paras", [])):
+        if not 0 <= idx < len(layout.paragraphs):
+            continue
+        z = czones[i] if i < len(czones) else None
+        p = layout.paragraphs[idx]
+        if subs.get(idx):
+            for k in subs[idx]:
+                out.append(line_view(p, k))
+                zones.append(z)
+            continue
+        out.append(p)
+        zones.append(z)
+    if len(zones) < len(czones):
+        zones += czones[len(zones):]
+    for idx in comp.get("footer_paras", []):
+        if 0 <= idx < len(layout.footer_paras):
+            out.append(layout.footer_paras[idx])
+    return out, zones
+
+
+_RUN_PROPS = ("font_name", "size_pt", "bold", "italic", "underline", "caps",
+              "color")
+
+
+def _match_span_prop(p: Para, prop: str, regex: str):
+    """The run property over the runs covering the regex match on the
+    fold()ed paragraph text: their common value, "mixed" when they differ."""
+    m = re.search(regex, fold(p.text))
+    runs = p.runs or []
+    if m is None or not runs or prop not in _RUN_PROPS:
+        return getattr(p, prop, None)
+    end = len(m.group(0)) + m.start()
+    acc, covered = "", []
+    for r in runs:
+        acc += r.get("text", "")
+        covered.append(r)
+        if len(fold(acc)) >= end:
+            break
+    vals = [r.get(prop) for r in covered if r.get("text", "").strip()]
+    if not vals:
+        return getattr(p, prop, None)
+    return vals[0] if all(v == vals[0] for v in vals) else "mixed"
+
+
+def _skipped(p: Para, actual, skip_when) -> bool:
+    for w in skip_when or ():
+        if w == "unmeasured" and actual is None:
+            return True
+        if w == "in_table" and p.in_table:
+            return True
+        if w == "hanging" and (p.indent_hanging_mm or 0) > 0:
+            return True
+    return False
 
 
 def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
@@ -128,22 +211,23 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
     op = check["op"]
     expected = check.get("value")
     mode = check.get("mode", "all")
-    comp = seg.comp(comp_key)
-    paras = _component_paras(layout, seg, comp_key)
+    regex = check.get("regex") if check.get("kind") == "regex_prop" else None
+    paras, zones = _component_paras(layout, seg, comp_key)
     if not paras:
         return {"status": "skip", "actual": None,
                 "note": "component %r not found" % comp_key, "evidence": []}
 
     # zone lives on the segmented element, not the paragraph (split paras
     # contribute to two zones at once).
-    zones = comp.get("zones", [])
 
     def actual_of(i: int, p: Para):
-        z = zones[i] if i < len(zones) else p.zone
+        z = zones[i] if i < len(zones) and zones[i] is not None else p.zone
         if prop == "zone":
             return z
         if prop == "text_upper":
             return p.text_is_upper
+        if regex is not None:
+            return _match_span_prop(p, prop, regex)
         if p.zone == "split" and z in ("left", "right"):
             side = p.left_props if z == "left" else p.right_props
             if prop in side:
@@ -167,16 +251,39 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
         return {"status": "skip", "actual": None,
                 "note": "component %r has no text paragraphs" % comp_key,
                 "evidence": []}
+    if mode == "first":
+        flags = flags[:1]
+    elif mode == "rest":
+        flags = flags[1:]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "component %r has only one line" % comp_key,
+                    "evidence": []}
+    if regex is not None:
+        flags = [f for f in flags if re.search(regex, fold(f[1].text))]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "no paragraph of %r matches the pattern" % comp_key,
+                    "evidence": []}
+    skip_when = check.get("skip_when")
+    if skip_when:
+        flags = [f for f in flags
+                 if not _skipped(f[1], actual_of(f[0], f[1]), skip_when)]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "không đo được trên đoạn nào của %r" % comp_key,
+                    "evidence": []}
     n_ok = sum(1 for _, _, ok in flags if ok)
     if mode == "any":
         passed = n_ok >= 1
-    elif mode == "majority":
+    elif mode in ("majority", "rest"):
         passed = n_ok / len(flags) >= 0.7
     else:
         passed = n_ok == len(flags)
+    # a footer line is not a body paragraph index: callers mark body paras
     bad = [
         {
-            "para": p.index,
+            ("footer_para" if p.source == "footer" else "para"): p.index,
             "text": p.text.strip()[:80],
             "actual": actual_of(i, p),
         }
@@ -189,19 +296,48 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
     }
 
 
+# a page_setup range is widened by this much: Word stores margins in twips,
+# so "25 mm" set in centimetres reads back as 25.01
+_PAGE_TOLERANCE_MM = 0.5
+
+
 def _eval_page_setup(layout: DocLayout, check: dict) -> dict:
+    """Judge the first section — the main document's page. Later sections
+    (an attached document, a landscape table phụ lục, which NĐ30 allows)
+    are reported in actual as other_sections, never failed."""
     prop = check["prop"]
     op = check["op"]
     expected = check.get("value")
-    secs = [s for s in layout.sections] or []
+    secs = list(layout.sections or [])
     if not secs:
         return {"status": "skip", "actual": None, "evidence": [],
                 "note": "no section info"}
-    actuals = [getattr(s, prop, None) for s in secs]
-    ok = all(a is not None and _compare(op, a, expected) for a in actuals)
+    if op == "range" and isinstance(expected, (list, tuple)) and len(expected) == 2:
+        expected = [expected[0] - _PAGE_TOLERANCE_MM, expected[1] + _PAGE_TOLERANCE_MM]
+    first = getattr(secs[0], prop, None)
+    ok = first is not None and _compare(op, first, expected)
+    actual = first
+    if len(secs) > 1:
+        actual = {"value": first,
+                  "other_sections": [getattr(s, prop, None) for s in secs[1:]]}
     return {
         "status": "pass" if ok else ("warn" if check.get("severity") == "warn" else "fail"),
-        "actual": actuals,
+        "actual": actual,
+        "evidence": [],
+    }
+
+
+_PAGE_NUMBER_KEYS = ("header_page_field", "footer_page_field", "centered",
+                     "title_pg")
+
+
+def _eval_page_number(layout: DocLayout, check: dict) -> dict:
+    pn = layout.page_numbering or {}
+    actual = {k: bool(pn.get(k)) for k in _PAGE_NUMBER_KEYS}
+    ok = actual["header_page_field"] and actual["centered"] and actual["title_pg"]
+    return {
+        "status": "pass" if ok else ("warn" if check.get("severity") == "warn" else "fail"),
+        "actual": actual,
         "evidence": [],
     }
 
@@ -308,8 +444,10 @@ def evaluate(layout: DocLayout, seg: Segmented, rule_set: dict) -> list:
                 r = _eval_present(seg, check)
             elif kind == "page_setup":
                 r = _eval_page_setup(layout, check)
-            elif kind == "prop":
+            elif kind in ("prop", "regex_prop"):
                 r = _eval_prop_check(layout, seg, check)
+            elif kind == "page_number":
+                r = _eval_page_number(layout, check)
             elif kind == "stray_chars":
                 r = _eval_stray_chars(layout, check)
             else:

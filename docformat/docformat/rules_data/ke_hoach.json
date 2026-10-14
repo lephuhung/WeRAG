@@ -29,5 +29,39 @@
       "desc": "Tên loại văn bản 'KẾ HOẠCH' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "MUC DICH|YEU CAU",
+          "desc": "Đề mục về mục đích, yêu cầu",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về mục đích, yêu cầu."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "NOI DUNG|NHIEM VU|GIAI PHAP",
+          "desc": "Đề mục về nội dung, nhiệm vụ",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về nội dung, nhiệm vụ."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "TO CHUC THUC HIEN",
+          "desc": "Đề mục về tổ chức thực hiện",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về tổ chức thực hiện."
+        }
+      ]
+    }
   ]
 }

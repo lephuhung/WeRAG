@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -30,6 +31,8 @@ const (
 	ZoneRight = "right"
 	ZoneFull  = "full"
 	ZoneSplit = "split" // one paragraph, text on both sides of a tab stop
+	// ZoneFooter marks a component read from the page footer (ô 13)
+	ZoneFooter = "footer"
 )
 
 // Run is one w:r with its effective formatting.
@@ -41,6 +44,9 @@ type Run struct {
 	Italic    *bool    `json:"italic"`
 	Underline *bool    `json:"underline"`
 	Caps      *bool    `json:"caps"`
+	// Color is w:color w:val through the style chain; "auto" when none
+	// is set (default black).
+	Color *string `json:"color"`
 }
 
 // SideFormat is the formatting of the dominant run on one side of a
@@ -69,6 +75,7 @@ type Para struct {
 	Italic            *bool      `json:"italic"`
 	Underline         *bool      `json:"underline"`
 	Caps              *bool      `json:"caps"`
+	Color             *string    `json:"color"` // dominant run's colour, "auto" = default black
 	TextIsUpper       bool       `json:"text_is_upper"`
 	IndentLeftMM      *float64   `json:"indent_left_mm"`
 	IndentRightMM     *float64   `json:"indent_right_mm,omitempty"`
@@ -93,6 +100,57 @@ type Para struct {
 	Col               *int       `json:"col"`
 	Section           int        `json:"section"`
 	Runs              []Run      `json:"-"`
+	// lineViews caches LineView.
+	lineViews map[int]*Para
+}
+
+// Lines are the paragraph's lines: its text split at the soft line breaks
+// (w:br, "\n" in Text).
+func (p *Para) Lines() []string { return strings.Split(p.Text, "\n") }
+
+// LineView is the paragraph restricted to line k of Lines(): the same
+// index, alignment, indents and zone, with the text, runs and run
+// formatting of that line alone. A web-exported file puts quốc hiệu and
+// tiêu ngữ, or a whole khối ký, in one paragraph broken by w:br; the
+// segmenter reads such a paragraph line by line (segment.go).
+func (p *Para) LineView(k int) *Para {
+	if v, ok := p.lineViews[k]; ok {
+		return v
+	}
+	lines := p.Lines()
+	if k < 0 || k >= len(lines) {
+		return p
+	}
+	v := *p
+	v.lineViews = nil
+	v.Text = lines[k]
+	v.LeftText, v.RightText = "", ""
+	v.Runs = nil
+	line := 0
+	for _, r := range p.Runs {
+		for i, piece := range strings.Split(r.Text, "\n") {
+			if i > 0 {
+				line++
+			}
+			if line == k && piece != "" {
+				lr := r
+				lr.Text = piece
+				v.Runs = append(v.Runs, lr)
+			}
+		}
+	}
+	if primary := primaryRun(v.Runs); primary != nil {
+		v.FontName, v.SizePt = primary.FontName, primary.SizePt
+		v.Bold, v.Italic = primary.Bold, primary.Italic
+		v.Underline, v.Caps = primary.Underline, primary.Caps
+		v.Color = primary.Color
+	}
+	v.TextIsUpper = isUpperText(v.Text)
+	if p.lineViews == nil {
+		p.lineViews = map[int]*Para{}
+	}
+	p.lineViews[k] = &v
+	return &v
 }
 
 // Section is one w:sectPr page setup.
@@ -114,10 +172,26 @@ type Section struct {
 type Layout struct {
 	Sections   []*Section
 	Paragraphs []*Para // flat, document order
-	NTables    int
-	HasHeaders bool
-	HasFooters bool
-	Errors     []string
+	// FooterParas are the paragraphs of the footer printed on page 1 of the
+	// first section (where NĐ30 puts ô 13, địa chỉ cơ quan). They are not
+	// part of Paragraphs: Index is the position in this list, Source is
+	// "footer".
+	FooterParas []*Para
+	NTables     int
+	HasHeaders  bool
+	HasFooters  bool
+	// PageNumbering is how the first section numbers its pages.
+	PageNumbering PageNumbering
+	Errors        []string
+}
+
+// PageNumbering describes the page numbers of the first section (NĐ30
+// Phụ lục I: số trang ở giữa, phía trên, không đánh số trang đầu).
+type PageNumbering struct {
+	HeaderPageField bool `json:"header_page_field"` // a header other than the first-page one has a PAGE field
+	FooterPageField bool `json:"footer_page_field"` // a footer has a PAGE field
+	Centered        bool `json:"centered"`          // a header PAGE paragraph is centred
+	TitlePg         bool `json:"title_pg"`          // w:titlePg: page 1 has its own (empty) header
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +320,11 @@ func rprProps(rpr *node) props {
 	if u := rpr.child("u"); u != nil {
 		v, _ := u.wattr("val")
 		out["underline"] = v != "none"
+	}
+	if c := rpr.child("color"); c != nil {
+		if v, ok := c.wattr("val"); ok && v != "" {
+			out["color"] = v
+		}
 	}
 	return out
 }
@@ -513,10 +592,14 @@ func (b *builder) contentBox() (float64, float64) {
 type cellExtent struct{ left, right float64 }
 
 func (b *builder) runFromProps(text string, rp props) Run {
+	color := rp.str("color")
+	if color == nil {
+		color = ptr("auto")
+	}
 	return Run{
 		Text: text, FontName: effectiveFont(rp, b.theme), SizePt: rp.num("size_pt"),
 		Bold: rp.flag("bold"), Italic: rp.flag("italic"),
-		Underline: rp.flag("underline"), Caps: rp.flag("caps"),
+		Underline: rp.flag("underline"), Caps: rp.flag("caps"), Color: color,
 	}
 }
 
@@ -604,6 +687,7 @@ func (b *builder) addParagraph(p *node, source string, cell *cellExtent, table, 
 		para.FontName, para.SizePt = primary.FontName, primary.SizePt
 		para.Bold, para.Italic = primary.Bold, primary.Italic
 		para.Underline, para.Caps = primary.Underline, primary.Caps
+		para.Color = primary.Color
 	} else {
 		para.FontName = effectiveFont(paraRPr, b.theme)
 		para.SizePt = paraRPr.num("size_pt")
@@ -996,5 +1080,171 @@ func InspectDocx(content []byte) *Layout {
 	layout.Paragraphs = b.paras
 	layout.Sections = b.sections
 	layout.NTables = b.nTables
+	layout.PageNumbering = b.pageNumbering(files, body)
+	layout.FooterParas = b.footerParas(files, body)
 	return layout
+}
+
+const (
+	nsR      = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+	nsPkgRel = "http://schemas.openxmlformats.org/package/2006/relationships"
+)
+
+var pageFieldRe = regexp.MustCompile(`\bPAGE\b`)
+
+// partRels maps relationship ids of an OOXML .rels part to package part
+// names.
+func partRels(files map[string]*zip.File, relsPart string) map[string]string {
+	out := map[string]string{}
+	data, err := readPart(files, relsPart)
+	if err != nil {
+		return out
+	}
+	root, err := parseXML(data)
+	if err != nil {
+		return out
+	}
+	for _, rel := range root.children {
+		if rel.space != nsPkgRel || rel.local != "Relationship" {
+			continue
+		}
+		id, _ := rel.plainAttr("Id")
+		target, _ := rel.plainAttr("Target")
+		if mode, _ := rel.plainAttr("TargetMode"); id == "" || target == "" || mode == "External" {
+			continue
+		}
+		if strings.HasPrefix(target, "/") {
+			out[id] = target[1:]
+		} else {
+			out[id] = path.Clean("word/" + target)
+		}
+	}
+	return out
+}
+
+// hasPageField: a PAGE field — w:fldSimple w:instr="PAGE" or a complex
+// field whose w:instrText reads PAGE (NUMPAGES / PAGEREF do not count).
+func hasPageField(p *node) bool {
+	for _, f := range p.descendants("fldSimple") {
+		if v, _ := f.wattr("instr"); pageFieldRe.MatchString(strings.ToUpper(v)) {
+			return true
+		}
+	}
+	var sb strings.Builder
+	for _, t := range p.descendants("instrText") {
+		sb.WriteString(t.text)
+	}
+	return pageFieldRe.MatchString(strings.ToUpper(sb.String()))
+}
+
+// footerParas parses the footer printed on page 1 of the first section —
+// the first-page footer when w:titlePg is set, else the default one. Its
+// paragraphs are numbered apart from the body (Index = position in the
+// footer) so body paragraph indexes stay unchanged.
+func (b *builder) footerParas(files map[string]*zip.File, body *node) []*Para {
+	secs := body.descendants("sectPr")
+	if len(secs) == 0 {
+		return nil
+	}
+	sect := secs[0]
+	want := "default"
+	if tp := sect.child("titlePg"); tp != nil && boolProp(tp) {
+		want = "first"
+	}
+	rels := partRels(files, "word/_rels/document.xml.rels")
+	part := ""
+	for _, ref := range sect.childrenNamed("footerReference") {
+		t, ok := ref.wattr("type")
+		if !ok || t == "" {
+			t = "default"
+		}
+		if t != want {
+			continue
+		}
+		for _, a := range ref.attrs {
+			if a.Name.Space == nsR && a.Name.Local == "id" {
+				part = rels[a.Value]
+			}
+		}
+	}
+	if part == "" {
+		return nil
+	}
+	data, err := readPart(files, part)
+	if err != nil {
+		return nil
+	}
+	root, err := parseXML(data)
+	if err != nil {
+		return nil
+	}
+	saved, savedSection := b.paras, b.sectionIdx
+	b.paras, b.sectionIdx = nil, 0
+	for _, p := range root.descendants("p") {
+		b.addParagraph(p, "footer", nil, nil, nil, nil)
+	}
+	out := b.paras
+	b.paras, b.sectionIdx = saved, savedSection
+	return out
+}
+
+// pageNumbering reads the page numbering of the first section: a PAGE
+// field in a header other than the first-page one (and whether that
+// paragraph is centred), in any footer, and w:titlePg.
+func (b *builder) pageNumbering(files map[string]*zip.File, body *node) PageNumbering {
+	var pn PageNumbering
+	secs := body.descendants("sectPr")
+	if len(secs) == 0 {
+		return pn
+	}
+	sect := secs[0]
+	if tp := sect.child("titlePg"); tp != nil {
+		pn.TitlePg = boolProp(tp)
+	}
+	rels := partRels(files, "word/_rels/document.xml.rels")
+	for _, kind := range []string{"header", "footer"} {
+		for _, ref := range sect.childrenNamed(kind + "Reference") {
+			if t, ok := ref.wattr("type"); kind == "header" && ok && t == "first" {
+				continue
+			}
+			var rid string
+			for _, a := range ref.attrs {
+				if a.Name.Space == nsR && a.Name.Local == "id" {
+					rid = a.Value
+				}
+			}
+			part, ok := rels[rid]
+			if !ok {
+				continue
+			}
+			data, err := readPart(files, part)
+			if err != nil {
+				continue
+			}
+			root, err := parseXML(data)
+			if err != nil {
+				continue
+			}
+			for _, p := range root.descendants("p") {
+				if !hasPageField(p) {
+					continue
+				}
+				if kind == "footer" {
+					pn.FooterPageField = true
+					continue
+				}
+				pn.HeaderPageField = true
+				pp := pprProps(p.child("pPr"))
+				var styleID string
+				if v := pp.str("style_id"); v != nil {
+					styleID = *v
+				}
+				stPPr, _, _ := resolveStyle(b.styles, styleID)
+				if a := merge(merge(b.docPPr, stPPr), pp).str("alignment"); a != nil && *a == "center" {
+					pn.Centered = true
+				}
+			}
+		}
+	}
+	return pn
 }

@@ -18,11 +18,19 @@ import (
 // type check with the same id replaces the base one.
 //
 // Check kinds: prop (a paragraph property over a component's paragraphs;
-// mode all | majority (≥70%) | any), page_setup (a section property) and
-// stray_chars (a symbol typed inside a word in any paragraph).
+// mode all | majority (≥70%) | any | first (only the first line, which
+// must satisfy) | rest (the lines after the first, ≥70%); skip_when drops
+// paragraphs that do not count: unmeasured (property not set), in_table,
+// hanging), regex_prop (prop over the paragraphs whose fold()ed text
+// matches regex; a run property is read from the runs covering the match),
+// page_setup (a property of the first section, a range widened by ±0.5 mm;
+// later sections are reported, not judged), page_number (a centred header PAGE
+// field and no number on page 1) and stray_chars (a symbol typed inside a
+// word in any paragraph).
 // Rules that need judgment — signing authority, Nơi nhận, wording — are
-// not coded here: the agent evaluates them with the document-type skills
-// (skills/), on the format data this package extracts.
+// the "judgment" section of the same files, decided by judgment.go; what
+// those rules cannot decide goes to a model with the document-type skills
+// (skills/).
 // Operators: eq, ne, in, range [min,max], regex, ge, le.
 
 //go:embed rules/*.json
@@ -39,6 +47,15 @@ type RuleCheck struct {
 	Mode      string `json:"mode"`
 	Desc      string `json:"desc"`
 	Severity  string `json:"severity"`
+	// Regex selects the paragraphs of a regex_prop rule (on fold()ed text).
+	Regex string `json:"regex,omitempty"`
+	// SkipWhen lists paragraphs that do not count: "unmeasured",
+	// "in_table", "hanging".
+	SkipWhen []string `json:"skip_when,omitempty"`
+	// Scope lists the check scopes the rule runs in (scope.go): full,
+	// technical, attached; none means the full scope only. A type's rule
+	// replacing a base one without its own scope keeps the base's.
+	Scope []string `json:"scope,omitempty"`
 }
 
 // RuleSet is a document type's merged rules.
@@ -49,6 +66,10 @@ type RuleSet struct {
 	OptionalComponents []string    `json:"optional_components"`
 	Order              []string    `json:"order"`
 	Checks             []RuleCheck `json:"checks"`
+	// Anchors pick the body lines shown to the judgment model (anchors.go).
+	Anchors []Anchor `json:"anchors,omitempty"`
+	// Judgment are the Bảng kiểm rules decided in code (judgment.go).
+	Judgment []JudgmentRule `json:"judgment,omitempty"`
 }
 
 // CheckByID returns the rule with the given id, nil when the set has none.
@@ -131,7 +152,7 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		return nil, err
 	}
 	for k, v := range specRaw {
-		if k != "checks" {
+		if k != "checks" && k != "anchors" && k != "judgment" {
 			merged[k] = v
 		}
 	}
@@ -150,6 +171,9 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 	rs.Checks = nil
 	for _, c := range base.Checks {
 		if o, ok := own[c.ID]; ok {
+			if o.Scope == nil {
+				o.Scope = c.Scope
+			}
 			rs.Checks = append(rs.Checks, o)
 			delete(own, c.ID)
 		} else {
@@ -160,6 +184,10 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		if _, ok := own[c.ID]; ok {
 			rs.Checks = append(rs.Checks, c)
 		}
+	}
+	rs.Anchors = mergeAnchors(base.Anchors, spec.Anchors)
+	if rs.Judgment, err = mergeJudgment(baseRaw["judgment"], specRaw["judgment"]); err != nil {
+		return nil, fmt.Errorf("rule set %q: %w", docType, err)
 	}
 	rs.Type = docType
 	if spec.Type != "" {
@@ -398,6 +426,8 @@ func paraAttr(p *Para, prop string) any {
 		return optBool(p.Underline)
 	case "caps":
 		return optBool(p.Caps)
+	case "color":
+		return optStr(p.Color)
 	case "text_is_upper", "text_upper":
 		return p.TextIsUpper
 	case "indent_left_mm":
@@ -481,26 +511,31 @@ type evalOut struct {
 }
 
 func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
-	comp := seg.Comp(c.Component)
-	var paras []*Para
-	for _, idx := range comp.Paras {
-		if idx >= 0 && idx < len(l.Paragraphs) {
-			paras = append(paras, l.Paragraphs[idx])
+	var re *regexp.Regexp
+	if c.Kind == "regex_prop" {
+		var err error
+		if re, err = regexp.Compile(c.Regex); err != nil {
+			return evalOut{}, err
 		}
 	}
+	comp := seg.Comp(c.Component)
+	paras, zones := componentParas(l, comp)
 	if len(paras) == 0 {
 		return evalOut{status: StatusSkip, note: fmt.Sprintf("component '%s' not found", c.Component)}, nil
 	}
 	actualOf := func(i int, p *Para) any {
 		z := p.Zone
-		if i < len(comp.Zones) {
-			z = comp.Zones[i]
+		if i < len(zones) {
+			z = zones[i]
 		}
 		if c.Prop == "zone" {
 			return z
 		}
 		if c.Prop == "text_upper" {
 			return p.TextIsUpper
+		}
+		if re != nil {
+			return matchSpanAttr(p, c.Prop, re)
 		}
 		if p.Zone == ZoneSplit && (z == ZoneLeft || z == ZoneRight) {
 			side := p.LeftProps
@@ -537,9 +572,16 @@ func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
 	if len(textParas) == 0 {
 		return evalOut{status: StatusSkip, note: fmt.Sprintf("component '%s' has no text paragraphs", c.Component)}, nil
 	}
+	// counted holds the positions in textParas that the rule evaluates
+	counted, out := ruleLines(textParas, c, re, actualOf)
+	if out != nil {
+		out.note = strings.ReplaceAll(out.note, "%s", c.Component)
+		return *out, nil
+	}
 	nOK := 0
 	evidence := []map[string]any{}
-	for i, p := range textParas {
+	for _, i := range counted {
+		p := textParas[i]
 		ok, err := sat(i, p)
 		if err != nil {
 			return evalOut{}, err
@@ -547,52 +589,266 @@ func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
 		if ok {
 			nOK++
 		} else if len(evidence) < 5 {
-			evidence = append(evidence, map[string]any{
-				"para": p.Index, "text": truncateRunes(strings.TrimSpace(p.Text), 80),
-				"actual": actualOf(i, p),
-			})
+			ev := map[string]any{"text": truncateRunes(strings.TrimSpace(p.Text), 80), "actual": actualOf(i, p)}
+			if p.Source == ZoneFooter {
+				// not a body paragraph index: callers mark body paragraphs
+				ev["footer_para"] = p.Index
+			} else {
+				ev["para"] = p.Index
+			}
+			evidence = append(evidence, ev)
 		}
 	}
 	var passed bool
 	switch c.Mode {
 	case "any":
 		passed = nOK >= 1
-	case "majority":
-		passed = float64(nOK)/float64(len(textParas)) >= 0.7
+	case "majority", "rest":
+		passed = float64(nOK)/float64(len(counted)) >= 0.7
 	default:
-		passed = nOK == len(textParas)
+		passed = nOK == len(counted)
 	}
 	status := StatusPass
 	if !passed {
 		status = failStatus(c.Severity)
 	}
-	return evalOut{status: status, actual: map[string]any{"satisfied": nOK, "of": len(textParas)}, evidence: evidence}, nil
+	return evalOut{status: status, actual: map[string]any{"satisfied": nOK, "of": len(counted)}, evidence: evidence}, nil
 }
 
+// ruleLines picks the positions in textParas (a component's non-empty
+// paragraphs) that rule c evaluates: mode first / rest, the regex_prop
+// pattern, then skip_when. A non-nil evalOut is the skip to report when
+// none is left; its note carries %s for the component.
+func ruleLines(textParas []*Para, c RuleCheck, re *regexp.Regexp, actualOf func(int, *Para) any) ([]int, *evalOut) {
+	idx := make([]int, len(textParas))
+	for i := range idx {
+		idx[i] = i
+	}
+	switch c.Mode {
+	case "first":
+		idx = idx[:1]
+	case "rest":
+		idx = idx[1:]
+		if len(idx) == 0 {
+			return nil, &evalOut{status: StatusSkip, note: "component '%s' has only one line"}
+		}
+	}
+	if re != nil {
+		var kept []int
+		for _, i := range idx {
+			if re.MatchString(fold(textParas[i].Text)) {
+				kept = append(kept, i)
+			}
+		}
+		if len(kept) == 0 {
+			return nil, &evalOut{status: StatusSkip, note: "no paragraph of '%s' matches the pattern"}
+		}
+		idx = kept
+	}
+	if len(c.SkipWhen) > 0 {
+		var kept []int
+		for _, i := range idx {
+			if !skippedPara(textParas[i], actualOf(i, textParas[i]), c.SkipWhen) {
+				kept = append(kept, i)
+			}
+		}
+		if len(kept) == 0 {
+			return nil, &evalOut{status: StatusSkip, note: "không đo được trên đoạn nào của '%s'"}
+		}
+		idx = kept
+	}
+	return idx, nil
+}
+
+// componentParas are the paragraphs of a component as measured: body
+// paragraphs — the lines of one read line by line, each on its own
+// (Component.ParaViews) — or the page-footer ones of a component read from
+// the footer (ô 13); zones follow the component's Zones.
+func componentParas(l *Layout, comp *Component) ([]*Para, []string) {
+	paras, zones := comp.ParaViews(l)
+	if len(zones) < len(comp.Zones) {
+		// Zones entries past the body paragraphs (none today) stay readable
+		zones = append(zones, comp.Zones[len(zones):]...)
+	}
+	for _, idx := range comp.FooterParas {
+		if idx >= 0 && idx < len(l.FooterParas) {
+			paras = append(paras, l.FooterParas[idx])
+		}
+	}
+	return paras, zones
+}
+
+// RuleLines returns the indexes of the paragraphs of the component that
+// rule c (prop or regex_prop) evaluates — its mode first/rest, pattern and
+// skip_when applied — so a fix touches the same lines the check measured.
+func RuleLines(l *Layout, comp *Component, c RuleCheck) []int {
+	if l == nil || comp == nil {
+		return nil
+	}
+	var re *regexp.Regexp
+	if c.Kind == "regex_prop" {
+		var err error
+		if re, err = regexp.Compile(c.Regex); err != nil {
+			return nil
+		}
+	}
+	views, _ := comp.ParaViews(l)
+	var textParas []*Para
+	for _, p := range views {
+		if strings.TrimSpace(p.Text) != "" {
+			textParas = append(textParas, p)
+		}
+	}
+	if len(textParas) == 0 {
+		return nil
+	}
+	pos, _ := ruleLines(textParas, c, re, func(_ int, p *Para) any { return paraAttr(p, c.Prop) })
+	out := make([]int, 0, len(pos))
+	for _, i := range pos {
+		// lines of one paragraph name it once
+		if n := len(out); n == 0 || out[n-1] != textParas[i].Index {
+			out = append(out, textParas[i].Index)
+		}
+	}
+	return out
+}
+
+func skippedPara(p *Para, actual any, skipWhen []string) bool {
+	for _, w := range skipWhen {
+		switch w {
+		case "unmeasured":
+			if actual == nil {
+				return true
+			}
+		case "in_table":
+			if p.InTable {
+				return true
+			}
+		case "hanging":
+			if p.IndentHangingMM != nil && *p.IndentHangingMM > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// runAttr is a run property a regex_prop rule reads from the matched runs.
+func runAttr(r *Run, prop string) (any, bool) {
+	switch prop {
+	case "font_name":
+		return optStr(r.FontName), true
+	case "size_pt":
+		return optNum(r.SizePt), true
+	case "bold":
+		return optBool(r.Bold), true
+	case "italic":
+		return optBool(r.Italic), true
+	case "underline":
+		return optBool(r.Underline), true
+	case "caps":
+		return optBool(r.Caps), true
+	case "color":
+		return optStr(r.Color), true
+	}
+	return nil, false
+}
+
+// matchSpanAttr is the run property over the runs covering the match of re
+// on the fold()ed paragraph text: their common value, "mixed" when they
+// differ ("Điều 1." bold then regular text reads bold).
+func matchSpanAttr(p *Para, prop string, re *regexp.Regexp) any {
+	folded := fold(p.Text)
+	loc := re.FindStringIndex(folded)
+	if _, isRun := runAttr(&Run{}, prop); loc == nil || len(p.Runs) == 0 || !isRun {
+		return paraAttr(p, prop)
+	}
+	end := runeLen(folded[:loc[1]])
+	var acc strings.Builder
+	var vals []any
+	for i := range p.Runs {
+		r := &p.Runs[i]
+		acc.WriteString(r.Text)
+		if strings.TrimSpace(r.Text) != "" {
+			v, _ := runAttr(r, prop)
+			vals = append(vals, v)
+		}
+		if runeLen(fold(acc.String())) >= end {
+			break
+		}
+	}
+	if len(vals) == 0 {
+		return paraAttr(p, prop)
+	}
+	for _, v := range vals[1:] {
+		if !pyEqual(v, vals[0]) {
+			return "mixed"
+		}
+	}
+	return vals[0]
+}
+
+// pageNumberKeys are the facts a page_number check reports.
+var pageNumberKeys = []string{"header_page_field", "footer_page_field", "centered", "title_pg"}
+
+func evalPageNumber(l *Layout, c RuleCheck) evalOut {
+	pn := l.PageNumbering
+	vals := map[string]bool{
+		"header_page_field": pn.HeaderPageField, "footer_page_field": pn.FooterPageField,
+		"centered": pn.Centered, "title_pg": pn.TitlePg,
+	}
+	actual := map[string]any{}
+	for _, k := range pageNumberKeys {
+		actual[k] = vals[k]
+	}
+	status := StatusPass
+	if !(pn.HeaderPageField && pn.Centered && pn.TitlePg) {
+		status = failStatus(c.Severity)
+	}
+	return evalOut{status: status, actual: actual}
+}
+
+// pageToleranceMM widens a page_setup range: Word stores margins in twips,
+// so "25 mm" set in centimetres reads back as 25.01.
+const pageToleranceMM = 0.5
+
+// evalPageSetup judges the first section — the main document's page. Later
+// sections (an attached document, a landscape table phụ lục, which NĐ30
+// allows) are reported in actual as other_sections, never failed.
 func evalPageSetup(l *Layout, c RuleCheck) (evalOut, error) {
 	if len(l.Sections) == 0 {
 		return evalOut{status: StatusSkip, note: "no section info"}, nil
 	}
-	actuals := make([]any, 0, len(l.Sections))
-	ok := true
-	for _, s := range l.Sections {
-		a := sectionAttr(s, c.Prop)
-		actuals = append(actuals, a)
-		if a == nil {
-			ok = false
-			continue
+	value := c.Value
+	if list, ok := c.Value.([]any); ok && c.Op == "range" && len(list) == 2 {
+		lo, ok1 := asNumber(list[0])
+		hi, ok2 := asNumber(list[1])
+		if ok1 && ok2 {
+			value = []any{lo - pageToleranceMM, hi + pageToleranceMM}
 		}
-		good, err := compare(c.Op, a, c.Value)
+	}
+	first := sectionAttr(l.Sections[0], c.Prop)
+	ok := first != nil
+	if ok {
+		good, err := compare(c.Op, first, value)
 		if err != nil {
 			return evalOut{}, err
 		}
-		ok = ok && good
+		ok = good
 	}
 	status := StatusPass
 	if !ok {
 		status = failStatus(c.Severity)
 	}
-	return evalOut{status: status, actual: actuals}, nil
+	var actual any = first
+	if len(l.Sections) > 1 {
+		others := make([]any, 0, len(l.Sections)-1)
+		for _, s := range l.Sections[1:] {
+			others = append(others, sectionAttr(s, c.Prop))
+		}
+		actual = map[string]any{"value": first, "other_sections": others}
+	}
+	return evalOut{status: status, actual: actual}, nil
 }
 
 func evalPresent(seg *Segmentation, component, op, severity string) evalOut {
@@ -750,8 +1006,10 @@ func Evaluate(l *Layout, seg *Segmentation, rs *RuleSet) []CheckResult {
 			r = evalPresent(seg, c.Component, c.Op, sev)
 		case "page_setup":
 			r, err = evalPageSetup(l, c)
-		case "prop", "":
+		case "prop", "", "regex_prop":
 			r, err = evalProp(l, seg, c)
+		case "page_number":
+			r = evalPageNumber(l, c)
 		case "stray_chars":
 			r = evalStrayChars(l, c)
 		default:

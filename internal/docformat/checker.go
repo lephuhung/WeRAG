@@ -41,7 +41,11 @@ type Options struct {
 	// DocumentType forces a rule set ("cong_van", "quyet_dinh", ...);
 	// "" or "auto" uses the detected type.
 	DocumentType string
-	Segmenter    string
+	// Scope forces the check scope (scope.go): full, technical, attached;
+	// "" or "auto" classifies the document (a named DocumentType of a văn
+	// bản hành chính is checked in full).
+	Scope     string
+	Segmenter string
 	// Labels is a labeling answer produced elsewhere (e.g. by an agent).
 	Labels *Reply
 	// LLM labels the components when set.
@@ -49,14 +53,23 @@ type Options struct {
 	// ModelName is reported in the segmentation info.
 	ModelName  string
 	SourceName string
+	// ForceLLM calls the model even when the heuristic passes the
+	// confidence gate (evaluation harness).
+	ForceLLM bool
+	// FullDocument sends the model the whole document (the first and last
+	// 45 units) instead of the head and tail blocks, without widening.
+	FullDocument bool
 }
 
 // Segmentation info as reported.
 type SegmentationInfo struct {
-	Method string `json:"method"` // heuristic | llm | labels
+	Method string `json:"method"` // heuristic | heuristic-confident | llm | labels
 	Model  string `json:"model,omitempty"`
 	Error  string `json:"error,omitempty"`
 	Notes  string `json:"notes,omitempty"`
+	// Stats: gate verdict, model calls, widenings, prompt size (when a
+	// model was available).
+	Stats *LabelStats `json:"stats,omitempty"`
 	*LabelDiagnostics
 }
 
@@ -78,10 +91,12 @@ type Summary struct {
 
 // Report is the full result of a check.
 type Report struct {
-	Source       string                `json:"source"`
-	OK           bool                  `json:"ok"`
-	Error        string                `json:"error,omitempty"`
-	DocumentType *DocumentTypeInfo     `json:"document_type,omitempty"`
+	Source       string            `json:"source"`
+	OK           bool              `json:"ok"`
+	Error        string            `json:"error,omitempty"`
+	DocumentType *DocumentTypeInfo `json:"document_type,omitempty"`
+	// Scope is the check scope applied (full / technical / attached) and why.
+	Scope        *ScopeInfo            `json:"scope,omitempty"`
 	Segmentation *SegmentationInfo     `json:"segmentation,omitempty"`
 	Summary      *Summary              `json:"summary,omitempty"`
 	Sections     []*Section            `json:"sections,omitempty"`
@@ -90,11 +105,21 @@ type Report struct {
 	// Format is the measured formatting of every component, line by line —
 	// the data the evaluation skills judge.
 	Format []ComponentFormat `json:"format,omitempty"`
-	// Evaluation is the skill-based judgment written by a reasoning model
-	// (EvaluateWithSkills), when one was requested.
+	// Evaluation is the skill-based judgment (EvaluateWithSkills), when one
+	// was requested: written in code from the judgment rules, with a
+	// reasoning model judging only the items code could not decide.
 	Evaluation string `json:"evaluation,omitempty"`
+	// Judgment records how Evaluation was made (rules / rules+llm / llm).
+	Judgment *JudgmentInfo `json:"judgment,omitempty"`
 	// Skills are the evaluation skills of the document's type.
 	Skills []string `json:"skills,omitempty"`
+	// Anchors are the body's landmark lines (anchors.go) and BodyParas the
+	// number of its paragraphs: the body as the judgment model sees it.
+	Anchors   []AnchorLine `json:"anchors,omitempty"`
+	BodyParas int          `json:"body_paras"`
+	// Skeleton is the judgment brief ("hồ sơ phán đoán", RenderJudgment):
+	// exactly what EvaluateWithSkills hands the model as data.
+	Skeleton string `json:"skeleton,omitempty"`
 }
 
 // LineFormat is one line of a component with its measured formatting.
@@ -135,14 +160,22 @@ func ExtractFormat(l *Layout, seg *Segmentation) []ComponentFormat {
 			continue
 		}
 		cf := ComponentFormat{Key: def.Key, Name: ComponentName(def.Key)}
-		for i, idx := range comp.Paras {
-			if idx < 0 || idx >= len(l.Paragraphs) {
+		for _, idx := range comp.FooterParas {
+			if idx < 0 || idx >= len(l.FooterParas) {
 				continue
 			}
-			p := l.Paragraphs[idx]
+			p := l.FooterParas[idx]
+			if t := strings.TrimSpace(p.Text); t != "" {
+				cf.Lines = append(cf.Lines, LineFormat{Para: idx, Text: t, Zone: ZoneFooter, Align: p.Alignment,
+					Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)})
+			}
+		}
+		views, zones := comp.ParaViews(l)
+		for i, p := range views {
+			idx := p.Index
 			zone := p.Zone
-			if i < len(comp.Zones) {
-				zone = comp.Zones[i]
+			if zones[i] != "" {
+				zone = zones[i]
 			}
 			lf := LineFormat{Para: idx, Text: strings.TrimSpace(p.Text), Zone: zone, Align: p.Alignment,
 				Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)}
@@ -212,7 +245,8 @@ func segmentDoc(ctx context.Context, l *Layout, opts Options) (*Segmentation, *S
 		return nil, nil, fmt.Errorf("segmenter must be one of auto, heuristic, llm, labels")
 	}
 	if opts.Labels != nil && (mode == SegmenterAuto || mode == SegmenterLabels) {
-		seg, diag := ApplyLabels(l, opts.Labels, PrepareTask(l, heur))
+		// labels made elsewhere cover the whole document
+		seg, diag := ApplyLabels(l, opts.Labels, PrepareFullTask(l, heur, nil))
 		return seg, &SegmentationInfo{Method: SegmenterLabels, LabelDiagnostics: diag}, nil
 	}
 	if mode == SegmenterLabels {
@@ -228,14 +262,25 @@ func segmentDoc(ctx context.Context, l *Layout, opts Options) (*Segmentation, *S
 		}
 		return heur, info, nil
 	}
+	stats := &LabelStats{}
+	if !opts.ForceLLM && mode == SegmenterAuto {
+		ok, why := Confident(heur)
+		if ok {
+			return heur, &SegmentationInfo{Method: MethodHeuristicConfident, Stats: stats}, nil
+		}
+		stats.Gate = why
+	}
 	task := PrepareTask(l, heur)
-	reply, err := LabelWithLLM(ctx, opts.LLM, task)
+	if opts.FullDocument {
+		task = PrepareFullTask(l, heur, task.All)
+	}
+	seg, reply, diag, err := LabelChunked(ctx, opts.LLM, l, task, stats)
 	if err != nil {
 		// an LLM failure degrades to the heuristic instead of failing
-		return heur, &SegmentationInfo{Method: SegmenterHeuristic, Error: "LLM: " + err.Error()}, nil
+		return heur, &SegmentationInfo{Method: SegmenterHeuristic, Error: "LLM: " + err.Error(), Stats: stats}, nil
 	}
-	seg, diag := ApplyLabels(l, reply, task)
-	return seg, &SegmentationInfo{Method: SegmenterLLM, Model: opts.ModelName, Notes: reply.Notes, LabelDiagnostics: diag}, nil
+	return seg, &SegmentationInfo{Method: SegmenterLLM, Model: opts.ModelName, Notes: reply.Notes,
+		Stats: stats, LabelDiagnostics: diag}, nil
 }
 
 // Check runs the whole pipeline on .docx bytes.
@@ -256,12 +301,17 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if requested == "auto" || requested == "detect" {
 		used = seg.DetectedType
 	}
-	rulesName := ruleSetName(used)
-	rs, err := LoadRuleSet(rulesName)
+	scope, err := resolveScope(opts.Scope, requested, seg)
 	if err != nil {
 		return &Report{Source: opts.SourceName, Error: err.Error()}
 	}
-	checks := Evaluate(l, seg, rs)
+	rulesName := ruleSetName(used)
+	fullRS, err := LoadRuleSet(rulesName)
+	if err != nil {
+		return &Report{Source: opts.SourceName, Error: err.Error()}
+	}
+	rs := fullRS.ForScope(scope.Used)
+	checks := Evaluate(l, scopedSegmentation(l, seg, scope.Used), rs)
 	sum := &Summary{}
 	for _, c := range checks {
 		switch c.Status {
@@ -279,14 +329,20 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if label == "" {
 		label = rulesName
 	}
-	return &Report{
+	anchors, bodyParas := ExtractAnchors(l, seg, rs.Anchors)
+	rep := &Report{
 		Source: opts.SourceName, OK: true,
 		DocumentType: &DocumentTypeInfo{Requested: requested, Detected: seg.DetectedType, Used: used, RuleSet: label},
+		Scope:        scope,
 		Segmentation: info, Summary: sum, Sections: l.Sections,
 		Components: seg.Components, Checks: checks,
 		Format: ExtractFormat(l, seg),
 		Skills: skillNamesFor(used),
+
+		Anchors: anchors, BodyParas: bodyParas,
 	}
+	rep.Skeleton = RenderJudgment(rep)
+	return rep
 }
 
 // ruleSetName is the rule set Check applies to a document of type used:
@@ -300,13 +356,27 @@ func ruleSetName(used string) string {
 	return "base"
 }
 
-// RuleSetForReport returns the rule set Check evaluated to produce r, so a
-// caller can read the rule (prop, op, value) behind each CheckResult.
+// RuleSetForReport returns the rule set Check evaluated to produce r, cut
+// to the report's scope, so a caller can read the rule (prop, op, value)
+// behind each CheckResult.
 func RuleSetForReport(r *Report) (*RuleSet, error) {
 	if r == nil || r.DocumentType == nil {
 		return nil, fmt.Errorf("report has no document type")
 	}
-	return LoadRuleSet(ruleSetName(r.DocumentType.Used))
+	rs, err := LoadRuleSet(ruleSetName(r.DocumentType.Used))
+	if err != nil {
+		return nil, err
+	}
+	if r.Scope == nil {
+		return rs.ForScope(ScopeFull), nil
+	}
+	return rs.ForScope(r.Scope.Used), nil
+}
+
+// FullScope reports whether r was checked in the full scope (a report
+// without scope info predates the scopes and was).
+func (r *Report) FullScope() bool {
+	return r == nil || r.Scope == nil || r.Scope.Used == ScopeFull
 }
 
 func skillNamesFor(docType string) []string {

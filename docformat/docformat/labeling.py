@@ -25,7 +25,9 @@ from typing import Optional
 
 from . import doctypes
 from .layout import DocLayout
-from .segment import Segmented, _add, _elements, detect_type, p_rightish
+from .layout import line_view
+from .segment import (Segmented, _add, _elements, add_signature, detect_type,
+                      p_rightish)
 
 # NĐ30/2020 Phụ lục I components, in reading order.  Descriptions are written
 # for the model: what the part is and where it normally sits.
@@ -46,6 +48,9 @@ COMPONENTS = [
     ("chuc_danh", "Quyền hạn, chức vụ người ký trong khối ký (thường ở cột phải cuối văn bản, có khi chỉ căn giữa/thụt lề): 'TM. ỦY BAN NHÂN DÂN', 'KT. GIÁM ĐỐC', 'PHÓ GIÁM ĐỐC', 'CHỦ TỊCH'. Biên bản, văn bản liên tịch có NHIỀU người ký cạnh nhau (VD trái 'THƯ KÝ', phải 'CHỦ TRÌ') — mọi khối ký đều là chuc_danh/nguoi_ky, không phải noi_dung."),
     ("nguoi_ky", "Họ và tên người ký, dòng cuối của mỗi khối ký: 'Nguyễn Văn A'. Không gồm '(Đã ký)', '(Ký, đóng dấu)'."),
     ("noi_nhan", "Nơi nhận: dòng 'Nơi nhận:' và các dòng '- ...;' bên dưới, cột trái cuối văn bản."),
+    ("chi_dan_luu_hanh", "Chỉ dẫn về phạm vi lưu hành (ô 11): dòng riêng 'XEM XONG TRẢ LẠI', 'LƯU HÀNH NỘI BỘ'."),
+    ("ky_hieu_soan_thao", "Ký hiệu người soạn thảo văn bản và số lượng bản phát hành (ô 12): dòng ngắn như 'NVA.15', 'TTr/2b', thường là dòng cuối cột trái dưới Nơi nhận. Dòng '- Lưu: ...' vẫn là noi_nhan."),
+    ("dia_chi_co_quan", "Địa chỉ cơ quan, tổ chức; thư điện tử; trang thông tin điện tử; số điện thoại; số Fax (ô 13): dòng cuối trang dạng 'Địa chỉ: ...; ĐT: ...; Fax: ...; Email: ...'."),
     ("phu_luc", "Phụ lục / văn bản kèm theo sau phần nơi nhận."),
     ("khac", "Không thuộc thành phần nào ở trên: dòng kẻ, ghi chú '(Đã ký)', dấu, chú thích, header/footer lạc vào."),
 ]
@@ -73,6 +78,9 @@ def build_units(layout: DocLayout, heuristic: Optional[Segmented] = None) -> lis
             split_seen[p.index] = True
         else:
             uid = str(p.index)
+            if el.sub >= 0:
+                # one line of a paragraph read line by line: "12.1"
+                uid += ".%d" % el.sub
         fmt = {"size_pt": p.size_pt, "bold": p.bold, "italic": p.italic}
         if p.zone == "split":
             fmt.update(p.left_props if el.zone == "left" else p.right_props)
@@ -93,7 +101,7 @@ def build_units(layout: DocLayout, heuristic: Optional[Segmented] = None) -> lis
             u["tbl"] = "%s:%s/%s:%s" % (p.table_index, p.table_layout or "",
                                          p.row, p.col)
         if heuristic is not None:
-            hint = _heuristic_label(heuristic, p.index, el.zone)
+            hint = _heuristic_label(heuristic, p.index, el.zone, el.sub)
             if hint:
                 u["hint"] = hint
         units.append(u)
@@ -105,16 +113,21 @@ def _is_upper(text: str) -> bool:
     return len(letters) >= 2 and not any(c.islower() for c in letters)
 
 
-def _heuristic_label(seg: Segmented, para_idx: int, zone: str) -> Optional[str]:
-    """Label the heuristic gave this unit (zone-aware for split paras)."""
+def _heuristic_label(seg: Segmented, para_idx: int, zone: str,
+                     sub: int = -1) -> Optional[str]:
+    """Label the heuristic gave this unit (zone-aware for split paras; sub
+    >= 0 names one line of a paragraph read line by line)."""
     found = None
     for key, comp in seg.components.items():
         if key == "signature":
             continue
         paras = comp.get("paras", [])
         zones = comp.get("zones", [])
+        subs = comp.get("subs") or {}
         for i, idx in enumerate(paras):
             if idx != para_idx:
+                continue
+            if sub >= 0 and subs.get(para_idx) and sub not in subs[para_idx]:
                 continue
             z = zones[i] if i < len(zones) else None
             if z == zone or z is None or zone == "full":
@@ -258,11 +271,11 @@ def apply_labels(layout: DocLayout, reply: dict, heuristic: Segmented,
         if lab == "khac":
             continue
         _add(seg, lab, u["para"], _unit_text(layout, u),
-             _effective_zone(layout, u), pos=pos)
+             _effective_zone(layout, u), pos=pos, sub=_unit_sub(u["id"]))
         if lab == "noi_dung":
             seg.body_para_indices.append(u["para"])
 
-    _add_signature(seg)
+    add_signature(seg)
 
     # Loại văn bản is structural once the trích yếu is labelled: the type
     # heading line, "V/v" (công văn) or the ký hiệu in the số.  The model's
@@ -297,26 +310,24 @@ def _effective_zone(layout: DocLayout, u: dict) -> str:
     return "full"
 
 
+def _unit_sub(uid: str) -> int:
+    """The line of a line unit ("12.1" → 1), -1 for any other."""
+    if "." in uid:
+        try:
+            return int(uid.split(".", 1)[1])
+        except ValueError:
+            pass
+    return -1
+
+
 def _unit_text(layout: DocLayout, u: dict) -> str:
     p = layout.paragraphs[u["para"]]
+    k = _unit_sub(u["id"])
+    if k >= 0:
+        return line_view(p, k).text.strip()
     if u["id"].endswith("L"):
         return p.left_text
     if u["id"].endswith("R"):
         return p.right_text
     return p.text.strip()
-
-
-def _add_signature(seg: Segmented):
-    if seg.comp("chuc_danh")["found"] or seg.comp("nguoi_ky")["found"]:
-        paras = seg.comp("chuc_danh")["paras"] + seg.comp("nguoi_ky")["paras"]
-        seg.components["signature"] = {
-            "found": True,
-            "paras": sorted(set(paras)),
-            "zones": ["right"] * len(set(paras)),
-            "texts": [],
-            "text": "\n".join(filter(None, [
-                seg.comp("chuc_danh")["text"], seg.comp("nguoi_ky")["text"]])),
-            "zone": "right",
-            "pos": seg.comp("chuc_danh").get("pos"),
-        }
 

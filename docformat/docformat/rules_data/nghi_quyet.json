@@ -28,6 +28,71 @@
       "mode": "any",
       "desc": "Tên loại văn bản 'NGHỊ QUYẾT' đứng trên trích yếu",
       "severity": "warn"
+    },
+    {
+      "id": "noi_dung.dieu.bold",
+      "kind": "regex_prop",
+      "component": "noi_dung",
+      "regex": "^DIEU\\s+\\d+\\.",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "mode": "all",
+      "desc": "Từ 'Điều', số thứ tự và tiêu đề điều in đậm",
+      "severity": "warn"
+    }
+  ],
+  "anchors": [
+    {
+      "id": "resolution_line",
+      "regex": "^QUYET (DINH|NGHI)\\s*[:.]?$",
+      "max": 1,
+      "desc": "dòng QUYẾT ĐỊNH:/QUYẾT NGHỊ:"
+    },
+    {
+      "id": "dieu",
+      "regex": "^DIEU\\s+\\d+\\.?",
+      "max": 20,
+      "desc": "Điều"
+    }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchor": "resolution_line",
+          "regex": "^QUYET NGHI",
+          "desc": "Dòng \"QUYẾT NGHỊ:\" trước Điều 1",
+          "severity": "error",
+          "when_absent": "error",
+          "fix": "Thêm dòng \"QUYẾT NGHỊ:\" trước Điều 1."
+        },
+        {
+          "check": "component_regex",
+          "component": "chuc_danh",
+          "mode": "any",
+          "regex": "^TM\\s*\\.",
+          "desc": "Nghị quyết ký thay mặt tập thể: \"TM. <tên tập thể>\"",
+          "severity": "error",
+          "when_absent": "pass",
+          "fix": "Thêm dòng \"TM. HỘI ĐỒNG NHÂN DÂN\" (hoặc tên tập thể) trên chức vụ người ký."
+        },
+        {
+          "check": "anchor_regex",
+          "anchor": "dieu",
+          "last": 2,
+          "also": [
+            "tail"
+          ],
+          "regex": "HIEU LUC|THI HANH|THONG QUA|THUC HIEN",
+          "desc": "Điều cuối nêu tổ chức thực hiện và hiệu lực",
+          "severity": "error",
+          "when_absent": "unknown",
+          "fix": "Bổ sung Điều cuối nêu tổ chức thực hiện, hiệu lực (ngày thông qua)."
+        }
+      ]
     }
   ]
 }

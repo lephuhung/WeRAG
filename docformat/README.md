@@ -8,6 +8,9 @@
 > đối chiếu — `parity_test.go` bắt mọi lệch giữa hai bản:
 >
 > ```bash
+> # đổi luật/engine: chỉ xuất lại kết quả cho các .docx fixture sẵn có
+> python3 evaluation/export_parity.py ../internal/docformat/testdata/parity --from-fixtures
+> # dựng lại cả bộ corpus (thay luôn các .docx):
 > python3 evaluation/gen_corpus.py --out /tmp/synth --n 60
 > python3 evaluation/export_parity.py ../internal/docformat/testdata/parity /tmp/synth
 > cp docformat/rules_data/*.json ../internal/docformat/rules/
@@ -39,7 +42,8 @@ Core **stdlib thuần** (zipfile + ElementTree): không cần python-docx, chạ
   `co_quan_ban_hanh`, `so_ky_hieu`, `dia_danh_ngay_thang`, `do_mat`,
   `do_khan`, `trich_yeu`, `tham_quyen_ban_hanh`, `kinh_gui`, `can_cu`,
   `noi_dung`, `chuc_danh`,
-  `nguoi_ky`, `signature`, `noi_nhan`, `phu_luc`.
+  `nguoi_ky`, `signature`, `noi_nhan`, `chi_dan_luu_hanh` (ô 11),
+  `ky_hieu_soan_thao` (ô 12), `dia_chi_co_quan` (ô 13), `phu_luc`.
 - `evaluate()` → `checks[]` với `status` pass/fail/warn/skip, `expected`,
   `actual`, `evidence` (đoạn vi phạm). `severity`: error = vi phạm thể thức
   bắt buộc, warn = nên sửa.
@@ -164,12 +168,12 @@ phía Go, sửa thì sửa cả hai. Loại không có rule set riêng (`luat`, 
 
 | Loại | Ký hiệu | Loại | Ký hiệu | Loại | Ký hiệu |
 |---|---|---|---|---|---|
-| Nghị quyết | NQ | Đề án | ĐA | Bản ghi nhớ | GN |
-| Quyết định | QĐ | Dự án | DA | Bản thỏa thuận | TTh |
+| Nghị quyết | NQ | Đề án | ĐA | Bản ghi nhớ | BGN |
+| Quyết định | QĐ | Dự án | DA | Bản thỏa thuận | BTT |
 | Chỉ thị | CT | Báo cáo | BC | Giấy ủy quyền | GUQ |
 | Quy chế | QC | Biên bản | BB | Giấy mời | GM |
 | Quy định | QyĐ | Tờ trình | TTr | Giấy giới thiệu | GGT |
-| Thông cáo | TC | Hợp đồng | HĐ | Giấy nghỉ phép | NP |
+| Thông cáo | TC | Hợp đồng | HĐ | Giấy nghỉ phép | GNP |
 | Thông báo | TB | Công văn | — | Phiếu gửi | PG |
 | Hướng dẫn | HD | Công điện | CĐ | Phiếu chuyển | PC |
 | Chương trình | CTr | Kế hoạch | KH | Phiếu báo | PB |
@@ -179,7 +183,8 @@ phía Go, sửa thì sửa cả hai. Loại không có rule set riêng (`luat`, 
 
 - Chỉ `.docx`. `.doc`/PDF không mang layout OOXML.
 - "Đúng thể thức" được chấm từ file, không phải bản in: con dấu, chữ ký
-  số/tay, đánh số trang, khổ lẻ không kiểm chứng được từ XML.
+  số/tay, khổ lẻ không kiểm chứng được từ XML. Đánh số trang chỉ kiểm được
+  trường PAGE trong header của section đầu (căn giữa, `w:titlePg`).
 - Heuristic phân vùng dựa trên bảng/tab; tài liệu dùng textbox lệch chuẩn
   hoặc khung mỹ thuật có thể cần rà soát tay.
 

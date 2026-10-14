@@ -40,10 +40,12 @@ type formatCheckResult struct {
 	Output       string                      `json:"output"`
 	FileName     string                      `json:"file_name"`
 	DocumentType *docformat.DocumentTypeInfo `json:"document_type,omitempty"`
-	Summary      *docformat.Summary          `json:"summary,omitempty"`
-	Method       string                      `json:"method"`
-	Skills       []string                    `json:"skills"`
-	Evaluated    bool                        `json:"evaluated"`
+	// Scope is the check scope applied (full / technical / attached).
+	Scope     *docformat.ScopeInfo `json:"scope,omitempty"`
+	Summary   *docformat.Summary   `json:"summary,omitempty"`
+	Method    string               `json:"method"`
+	Skills    []string             `json:"skills"`
+	Evaluated bool                 `json:"evaluated"`
 	// Evaluation is the model's judgment alone (Output wraps it for the
 	// agent); empty on results cached before it was kept.
 	Evaluation string    `json:"evaluation,omitempty"`
@@ -74,6 +76,7 @@ func (r *formatCheckResult) data() map[string]interface{} {
 	return map[string]interface{}{
 		"file_name":     r.FileName,
 		"document_type": r.DocumentType,
+		"scope":         r.Scope,
 		"summary":       r.Summary,
 		"method":        r.Method,
 		"skills":        r.Skills,
@@ -103,9 +106,12 @@ func UseFormatCheckRedis(rdb *redis.Client) {
 }
 
 // formatCheckKey identifies a check: the file bytes, the model that labels
-// and judges it, and the requested rule set ("" = detected).
+// and judges it, the requested rule set ("" = detected) and the skills,
+// rules and evaluator prompt it was judged with (docformat.SkillsDigest),
+// so editing a skill invalidates the cached evaluations.
 func formatCheckKey(content []byte, model, docType string) string {
-	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType))
+	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType)) +
+		"|" + docformat.SkillsDigest()
 }
 
 func (c *formatCheckCache) redisGet(ctx context.Context, key string, into interface{}) bool {

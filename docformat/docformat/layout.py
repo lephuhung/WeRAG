@@ -12,6 +12,7 @@ can run inside a bare Python sandbox.
 from __future__ import annotations
 
 import io
+import posixpath
 import re
 import zipfile
 from dataclasses import dataclass, field, asdict
@@ -20,6 +21,8 @@ from xml.etree import ElementTree as ET
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 
 def qn(local: str) -> str:
@@ -195,6 +198,8 @@ class Run:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     caps: Optional[bool] = None
+    # w:color w:val through the style chain; "auto" when none is set
+    color: Optional[str] = None
 
 
 @dataclass
@@ -211,6 +216,7 @@ class Para:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     caps: Optional[bool] = None
+    color: Optional[str] = None  # dominant run's colour ("auto" = default black)
     text_is_upper: bool = False
     indent_left_mm: Optional[float] = None
     indent_right_mm: Optional[float] = None
@@ -260,9 +266,15 @@ class Section:
 class DocLayout:
     sections: list = field(default_factory=list)
     paragraphs: list = field(default_factory=list)  # flat, document order
+    # paragraphs of the footer printed on page 1 of the first section (where
+    # NĐ30 puts ô 13); not in `paragraphs`: index = position in this list,
+    # source = "footer"
+    footer_paras: list = field(default_factory=list)
     n_tables: int = 0
     has_headers: bool = False
     has_footers: bool = False
+    # page numbering of the first section (see _page_numbering)
+    page_numbering: dict = field(default_factory=dict)
     errors: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -470,6 +482,7 @@ class _Builder:
                 italic=rrpr.get("italic"),
                 underline=rrpr.get("underline"),
                 caps=rrpr.get("caps"),
+                color=rrpr.get("color") or "auto",
             ))
         # runs nested inside hyperlinks / smartTags / sdt (direct children were
         # already gathered above — capture the nested ones' text too)
@@ -485,7 +498,8 @@ class _Builder:
                                 size_pt=rrpr.get("size_pt"),
                                 bold=rrpr.get("bold"), italic=rrpr.get("italic"),
                                 underline=rrpr.get("underline"),
-                                caps=rrpr.get("caps")))
+                                caps=rrpr.get("caps"),
+                                color=rrpr.get("color") or "auto"))
 
         text = "".join(r.text for r in runs)
         primary = self._primary_run(runs)
@@ -503,6 +517,7 @@ class _Builder:
             italic=primary.italic if primary else None,
             underline=primary.underline if primary else None,
             caps=primary.caps if primary else None,
+            color=primary.color if primary else None,
             text_is_upper=_is_upper_text(text),
             indent_left_mm=eff_ppr.get("indent_left_mm"),
             indent_right_mm=eff_ppr.get("indent_right_mm"),
@@ -722,11 +737,150 @@ def _classify_table(tbl: ET.Element, rows: list) -> str:
     return "columns"
 
 
+def line_view(p: Para, k: int) -> Para:
+    """The paragraph restricted to line ``k`` of its soft-broken text (w:br,
+    "\\n"): same index, alignment, indents and zone; the text, runs and run
+    formatting of that line alone (Go: Para.LineView)."""
+    cache = p.__dict__.setdefault("_line_views", {})
+    if k in cache:
+        return cache[k]
+    lines = p.text.split("\n")
+    if k < 0 or k >= len(lines):
+        return p
+    runs = []
+    line = 0
+    for r in p.runs or []:
+        for i, piece in enumerate((r.get("text") or "").split("\n")):
+            if i > 0:
+                line += 1
+            if line == k and piece:
+                runs.append(dict(r, text=piece))
+    best, best_len = None, 0
+    for r in runs:
+        n = len(r["text"].strip())
+        if n > best_len:
+            best, best_len = r, n
+    v = Para(**{f: getattr(p, f) for f in p.__dataclass_fields__})
+    v.text = lines[k]
+    v.left_text, v.right_text = "", ""
+    v.runs = runs
+    if best is not None:
+        v.font_name, v.size_pt = best.get("font_name"), best.get("size_pt")
+        v.bold, v.italic = best.get("bold"), best.get("italic")
+        v.underline, v.caps = best.get("underline"), best.get("caps")
+        v.color = best.get("color")
+    v.text_is_upper = _is_upper_text(v.text)
+    cache[k] = v
+    return v
+
+
 def _is_upper_text(text: str) -> bool:
     letters = [c for c in text if c.isalpha()]
     if len(letters) < 2:
         return False
     return all(not c.islower() for c in letters)
+
+
+_PAGE_FIELD_RE = re.compile(r"\bPAGE\b")
+
+
+def _part_rels(zf: zipfile.ZipFile, rels_part: str) -> dict:
+    """Relationship id -> package part name of an OOXML .rels part."""
+    try:
+        root = ET.fromstring(zf.read(rels_part))
+    except (KeyError, ET.ParseError):
+        return {}
+    out = {}
+    for rel in root:
+        if rel.tag != "{%s}Relationship" % PKG_REL_NS:
+            continue
+        rid, target = rel.get("Id"), rel.get("Target") or ""
+        if not rid or not target or rel.get("TargetMode") == "External":
+            continue
+        if target.startswith("/"):
+            out[rid] = target[1:]
+        else:
+            out[rid] = posixpath.normpath("word/" + target)
+    return out
+
+
+def _para_has_page_field(p: ET.Element) -> bool:
+    """A PAGE field: w:fldSimple w:instr="PAGE" or a complex field whose
+    w:instrText reads PAGE (NUMPAGES / PAGEREF do not count)."""
+    for f in p.iter(qn("fldSimple")):
+        if _PAGE_FIELD_RE.search((f.get(qn("instr")) or "").upper()):
+            return True
+    instr = "".join(t.text or "" for t in p.iter(qn("instrText")))
+    return _PAGE_FIELD_RE.search(instr.upper()) is not None
+
+
+def _page_numbering(zf: zipfile.ZipFile, root: ET.Element, doc_ppr: dict,
+                    styles: dict) -> dict:
+    """How the first section numbers its pages (NĐ30 Phụ lục I: số trang
+    ở giữa, phía trên, không đánh số trang đầu): a PAGE field in a header
+    other than the first-page one, whether that paragraph is centred,
+    a PAGE field in any footer, and w:titlePg."""
+    out = {"header_page_field": False, "footer_page_field": False,
+           "centered": False, "title_pg": False}
+    body = root.find(qn("body"))
+    sect = next(body.iter(qn("sectPr")), None) if body is not None else None
+    if sect is None:
+        return out
+    tp = sect.find(qn("titlePg"))
+    out["title_pg"] = tp is not None and _bool_prop(tp)
+    rels = _part_rels(zf, "word/_rels/document.xml.rels")
+    for kind in ("header", "footer"):
+        for ref in sect.findall(qn(kind + "Reference")):
+            if kind == "header" and (ref.get(qn("type")) or "default") == "first":
+                continue
+            part = rels.get(ref.get("{%s}id" % R_NS))
+            if not part:
+                continue
+            try:
+                proot = ET.fromstring(zf.read(part))
+            except (KeyError, ET.ParseError):
+                continue
+            for p in proot.iter(qn("p")):
+                if not _para_has_page_field(p):
+                    continue
+                out[kind + "_page_field"] = True
+                if kind == "header":
+                    ppr = _ppr_props(p.find(qn("pPr")))
+                    st_ppr, _, _ = _resolve_style(styles, ppr.get("style_id"))
+                    eff = _merge(_merge(doc_ppr, st_ppr), ppr)
+                    if eff.get("alignment") == "center":
+                        out["centered"] = True
+    return out
+
+
+def _footer_paras(zf: zipfile.ZipFile, root: ET.Element, builder) -> list:
+    """Paragraphs of the footer printed on page 1 of the first section — the
+    first-page footer when w:titlePg is set, else the default one — numbered
+    apart from the body."""
+    body = root.find(qn("body"))
+    sect = next(body.iter(qn("sectPr")), None) if body is not None else None
+    if sect is None:
+        return []
+    want = "first" if _bool_prop(sect.find(qn("titlePg"))) else "default"
+    rels = _part_rels(zf, "word/_rels/document.xml.rels")
+    part = ""
+    for ref in sect.findall(qn("footerReference")):
+        if (ref.get(qn("type")) or "default") != want:
+            continue
+        part = rels.get(ref.get("{%s}id" % R_NS), "")
+    if not part:
+        return []
+    try:
+        froot = ET.fromstring(zf.read(part))
+    except (KeyError, ET.ParseError):
+        return []
+    saved, saved_section = builder.paras, builder.section_idx
+    builder.paras, builder.section_idx = [], 0
+    for p in froot.iter(qn("p")):
+        builder.add_paragraph(p, source="footer")
+    out = builder.paras
+    builder.paras, builder.section_idx = saved, saved_section
+    return out
 
 
 def inspect_docx(content: bytes) -> DocLayout:
@@ -783,4 +937,6 @@ def inspect_docx(content: bytes) -> DocLayout:
     names = set(zf.namelist())
     layout.has_headers = any(re.match(r"word/header\d+\.xml$", n) for n in names)
     layout.has_footers = any(re.match(r"word/footer\d+\.xml$", n) for n in names)
+    layout.page_numbering = _page_numbering(zf, root, doc_ppr, styles)
+    layout.footer_paras = _footer_paras(zf, root, builder)
     return layout

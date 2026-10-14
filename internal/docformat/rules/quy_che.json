@@ -27,6 +27,18 @@
       "mode": "any",
       "desc": "Tên loại văn bản 'QUY CHẾ' đứng trên trích yếu",
       "severity": "warn"
+    },
+    {
+      "id": "noi_dung.dieu.bold",
+      "kind": "regex_prop",
+      "component": "noi_dung",
+      "regex": "^DIEU\\s+\\d+\\.",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "mode": "all",
+      "desc": "Từ 'Điều', số thứ tự và tiêu đề điều in đậm",
+      "severity": "warn"
     }
   ]
 }

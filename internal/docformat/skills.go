@@ -1,16 +1,21 @@
 package docformat
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
+	"io/fs"
+	"sort"
 	"strings"
+	"sync"
 )
 
 // The evaluation skills: Markdown guidance (SKILL.md with name/description
 // frontmatter) for the format rules that need judgment rather than
-// measurement — signing authority, Nơi nhận, required parts, wording,
-// spelling. the-thuc-chung applies to every document; the-thuc-<type>
+// measurement — signing authority, Nơi nhận, required parts, wording
+// (spelling is checked by the spellcheck model). the-thuc-chung applies to every document; the-thuc-<type>
 // adds one document type's requirements. They are handed to the agent
-// together with the extracted format data (RenderForAgent), so editing a
+// together with the judgment brief (RenderJudgment), so editing a
 // rule is editing a Markdown file.
 //
 //go:embed skills/*/SKILL.md
@@ -80,3 +85,28 @@ func SkillNames() []string {
 	}
 	return out
 }
+
+var skillsDigest = sync.OnceValue(func() string {
+	h := sha256.New()
+	add := func(fsys fs.FS, pattern string) {
+		names, _ := fs.Glob(fsys, pattern)
+		sort.Strings(names)
+		for _, n := range names {
+			data, _ := fs.ReadFile(fsys, n)
+			h.Write([]byte(n + "\x00"))
+			h.Write(data)
+			h.Write([]byte{0})
+		}
+	}
+	add(skillsFS, "skills/*/SKILL.md")
+	add(rulesFS, "rules/*.json")
+	h.Write([]byte(evaluatorPrompt + "\x00" + judgmentRenderVersion + "\x00" + judgmentCodeVersion))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+})
+
+// SkillsDigest fingerprints what a skill evaluation depends on besides the
+// document and the model: every skill, the rule sets (measured findings,
+// anchors, judgment rules), the evaluator prompt, the judgment brief's
+// layout version and the judgment code's version.
+// Cached evaluations keyed with it are dropped when any of them changes.
+func SkillsDigest() string { return skillsDigest() }

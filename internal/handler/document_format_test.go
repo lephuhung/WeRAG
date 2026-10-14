@@ -49,6 +49,15 @@ func formatFixture(t *testing.T) []byte {
 	return b
 }
 
+// flatFormatFixture is a công văn the positional heuristic is not sure of
+// (its Nơi nhận has no "Lưu" line): the model is asked.
+func flatFormatFixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../docformat/testdata/parity/fx_flat_cong_van.docx")
+	require.NoError(t, err)
+	return b
+}
+
 type formatResponse struct {
 	Data struct {
 		Source       string `json:"source"`
@@ -72,9 +81,10 @@ func TestDocumentFormatCheckUsesWorkspaceDefaultModel(t *testing.T) {
 	_, models := llmChatFixture()
 	models.chat.result = &types.ChatResponse{Content: "not json at all"}
 	h := NewDocumentFormatHandler(models)
-	w := formatCheckRequest(t, h, "cv.docx", formatFixture(t), nil)
+	w := formatCheckRequest(t, h, "cv.docx", flatFormatFixture(t), nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, "qwen", models.selected, "the workspace default chat model labels")
+	require.NotNil(t, models.chat.options, "the heuristic is unsure: the model is asked")
 	require.False(t, *models.chat.options.Thinking)
 
 	var resp formatResponse
@@ -85,6 +95,15 @@ func TestDocumentFormatCheckUsesWorkspaceDefaultModel(t *testing.T) {
 	// an unusable model answer degrades to the heuristic, reported
 	require.Equal(t, "heuristic", resp.Data.Segmentation.Method)
 	require.Contains(t, resp.Data.Segmentation.Error, "LLM")
+
+	// a document the heuristic labels with confidence skips the model
+	_, models = llmChatFixture()
+	w = formatCheckRequest(t, NewDocumentFormatHandler(models), "cv.docx", formatFixture(t), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Nil(t, models.chat.options, "no labeling call")
+	resp = formatResponse{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, "heuristic-confident", resp.Data.Segmentation.Method)
 	found := false
 	for _, c := range resp.Data.Checks {
 		if c.ID == "noi_dung.font" {
@@ -135,18 +154,29 @@ func TestDocumentFormatCheckEvaluate(t *testing.T) {
 			Evaluation string   `json:"evaluation"`
 			Skills     []string `json:"skills"`
 			Format     []any    `json:"format"`
+			Judgment   struct {
+				Method string `json:"method"`
+			} `json:"judgment"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, "## Kết luận\nChưa đạt thể thức.", resp.Data.Evaluation)
+	// the judgment rules decide every Bảng kiểm item of this công văn: the
+	// evaluation is written in code, the model is not asked
+	require.Equal(t, "rules", resp.Data.Judgment.Method)
+	require.Contains(t, resp.Data.Evaluation, "## Bảng kiểm")
+	require.NotContains(t, resp.Data.Evaluation, "Chưa đạt thể thức.\n")
 	require.Equal(t, []string{"the-thuc-chung", "the-thuc-cong-van"}, resp.Data.Skills)
 	require.NotEmpty(t, resp.Data.Format)
-	require.True(t, *models.chat.options.Thinking, "the evaluation runs with thinking on")
+	if models.chat.options != nil && models.chat.options.Thinking != nil {
+		require.False(t, *models.chat.options.Thinking, "no reasoning call when the rules decide")
+	}
 
 	// without evaluate=true no reasoning call is made
 	_, models = llmChatFixture()
 	w = formatCheckRequest(t, NewDocumentFormatHandler(models), "cv.docx", formatFixture(t), nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotContains(t, w.Body.String(), `"evaluation"`)
-	require.False(t, *models.chat.options.Thinking)
+	if models.chat.options != nil && models.chat.options.Thinking != nil {
+		require.False(t, *models.chat.options.Thinking)
+	}
 }

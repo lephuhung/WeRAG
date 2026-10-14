@@ -41,6 +41,10 @@ Do NOT call it just because a .docx is attached, nor to summarize, translate, an
 - file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).
 - document_type: optional rule set (cong_van, quyet_dinh, bao_cao, to_trinh, ke_hoach, thong_bao, …). Omit it: the type is detected from the document. Pass it only when the user names the type or confirms it after a result asked which type the document is — never guess it yourself.
 
+## Scope
+
+A document that is not one of the 29 văn bản hành chính of Điều 7 NĐ30 (a promulgated luật/nghị định/thông tư, a form, a table, loose material, an unknown type) gets only the technical layout checks (page, margins, body font/size/alignment/indent/spacing, page number); a văn bản "ban hành kèm theo" (quy chế, kế hoạch … attached to a quyết định, without its own số or signature) also gets the tên loại/trích yếu checks and its "kèm theo" line. The result says which scope was applied. Naming a document_type of a văn bản hành chính forces the full check — do so only when the user asks for it.
+
 ## Output
 
 Usually a finished evaluation: the file's measured formatting judged by a reasoning model against the NĐ30 skills of the document's type (signing authority, Nơi nhận, required parts, wording, spelling, plus the measured font/size/alignment/margin findings). Present it to the user as is — do not re-judge it. The check takes about a minute.
@@ -55,7 +59,7 @@ If the evaluation was unavailable, the result instead holds the measured finding
     },
     "document_type": {
       "type": "string",
-      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
+      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default). Naming a type forces the full NĐ30 check"
     }
   }
 }`),
@@ -79,7 +83,7 @@ var checkWorkspaceFormatSchema = json.RawMessage(`{
     ` + documentParamSchema + `,
     "document_type": {
       "type": "string",
-      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default)"
+      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default). Naming a type forces the full NĐ30 check"
     },
     "mark": {"type": "boolean", "description": "Underline the measured findings in the editor: each paragraph that breaks a rule, or the stray character itself (default true)"}
   }
@@ -445,7 +449,7 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		}
 		output, evaluated := t.evaluate(runCtx, report)
 		r := &formatCheckResult{
-			Output: output, FileName: fileName, DocumentType: report.DocumentType, Summary: report.Summary,
+			Output: output, FileName: fileName, DocumentType: report.DocumentType, Scope: report.Scope, Summary: report.Summary,
 			Skills: report.Skills, Evaluated: evaluated, Evaluation: report.Evaluation, At: time.Now(),
 		}
 		if report.Segmentation != nil {
@@ -460,8 +464,9 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		degraded := report.Segmentation != nil && report.Segmentation.Error != ""
 		if evaluated && !degraded {
 			keys := []string{key}
-			if report.DocumentType != nil && report.DocumentType.Used != "" {
-				// a later call naming the rule set that was used gets the same rules
+			// a later call naming the rule set gets the full check: only a
+			// full-scope result answers it
+			if report.FullScope() && report.DocumentType != nil && report.DocumentType.Used != "" {
 				keys = append(keys, formatCheckKey(content, model, report.DocumentType.Used))
 			}
 			formatChecks.put(runCtx, r, keys...)
@@ -760,10 +765,37 @@ func isBackgroundRun(ctx context.Context) bool {
 	return v
 }
 
-// evaluate has the chat model judge the report against the document-type
-// skills with thinking on. Without a model, or when the call fails, the
-// agent gets the data and the skills to judge itself.
+// scopedEvaluationOutput frames the evaluation of a technical or attached
+// scope for the agent: which scope was applied, why, and how to force the
+// full check.
+func scopedEvaluationOutput(report *docformat.Report, text string) string {
+	sc := report.Scope
+	return "# Đánh giá thể thức văn bản " + report.Source + "\n" +
+		"(phạm vi kiểm tra: " + docformat.ScopeName(sc.Used) + " — " + sc.Reason + ". " +
+		"Muốn kiểm tra đầy đủ theo NĐ30/2020/NĐ-CP thì gọi lại công cụ với document_type là loại văn bản hành chính " +
+		"(ví dụ quyet_dinh, cong_van, quy_che) khi người dùng xác nhận loại.)\n\n" +
+		text + "\n\n---\nTrình bày đánh giá trên cho người dùng, nói rõ phạm vi kiểm tra và cách chọn loại văn bản để kiểm tra đầy đủ; " +
+		"giữ nguyên các kết luận, không tự chấm lại."
+}
+
+// formatEvalOptions tune the skill evaluation; tests set ForceLLM to
+// observe the model call.
+var formatEvalOptions = docformat.EvalOptions{}
+
+// evaluate judges the report against the document-type skills: the
+// judgment rules decide in code, the chat model (thinking on) only what
+// they leave undetermined. Without a model, or when the evaluation fails,
+// the agent gets the data and the skills to judge itself.
 func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docformat.Report) (string, bool) {
+	if !report.FullScope() {
+		// not a văn bản hành chính: written in code, no model
+		text, err := docformat.EvaluateWithSkills(ctx, nil, report)
+		if err == nil {
+			report.Evaluation = text
+			return scopedEvaluationOutput(report, text), true
+		}
+		logger.Warnf(ctx, "check_document_format: scoped evaluation failed, returning data: %v", err)
+	}
 	if t.chatModel != nil {
 		timeout := evaluateTimeout
 		if isBackgroundRun(ctx) {
@@ -771,7 +803,7 @@ func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docforma
 		}
 		evalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(t.chatModel), report)
+		text, err := docformat.EvaluateWithSkillsOpts(evalCtx, docformat.ChatEvaluator(t.chatModel), report, formatEvalOptions)
 		if err == nil {
 			report.Evaluation = text
 			return "# Đánh giá thể thức văn bản " + report.Source + "\n" +

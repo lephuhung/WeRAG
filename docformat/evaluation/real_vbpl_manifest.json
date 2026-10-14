@@ -1,0 +1,508 @@
+{
+ "source": "https://vbpl.vn (văn bản công khai); tải lại bằng fetch_vbpl_samples.py",
+ "download_url": "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/minio/buckets/vbpl/<doc_id>/<file_name NFD, percent-encoded>/download",
+ "dir": "samples/real_vbpl",
+ "files": [
+  {
+   "file": "05_2024_Q_-TTg__QD_so_05_2024_QD-TTg.docx",
+   "doc_id": "166316",
+   "doc_num": "05/2024/QĐ-TTg",
+   "file_name": "QD so 05 2024 QD-TTg.docx",
+   "sha256": "fea2561efdeee955038a5d83728111943cc193251d2cb938b0b063c4fe7e51dc",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày"
+  },
+  {
+   "file": "124_2026_UBTVQH15__Quy_che_Doi_ngoai_cua_QH_2026_final_trinh_CTQH.docx",
+   "doc_id": "02b0d130-49fa-11f1-9453-2fbe77f51542",
+   "doc_num": "124/2026/UBTVQH15",
+   "file_name": "Quy che Doi ngoai cua QH  2026   final trinh CTQH.docx",
+   "sha256": "6b66d5b47bab11877a815c4e6489b331cc250229b6f79f2df01098d9ad39843e",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "12_2024_TT-BVHTTDL__Thong_tu_12.2024.docx",
+   "doc_id": "171828",
+   "doc_num": "12/2024/TT-BVHTTDL",
+   "file_name": "Thong tu 12.2024.docx",
+   "sha256": "bfeaa57cf6b3b32b084edca64e9c3bec9ddb366299de9f97af736efc22aded78",
+   "expected_scope": "technical",
+   "expected_type": "thong_tu",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày"
+  },
+  {
+   "file": "12_2024_TT-BVHTTDL__phu_luc_so_01_kem_TT_12.2024.docx",
+   "doc_id": "171828",
+   "doc_num": "12/2024/TT-BVHTTDL",
+   "file_name": "phu luc so 01 kem TT 12.2024.docx",
+   "sha256": "ee3197309d547f55fb574a7bcd3ca88efa9dc87de9d2499caa3142139b4d3ac6",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "12_2024_TT-BVHTTDL__phu_luc_so_02_kem_TT_12.2024.docx",
+   "doc_id": "171828",
+   "doc_num": "12/2024/TT-BVHTTDL",
+   "file_name": "phu luc so 02 kem TT 12.2024.docx",
+   "sha256": "49962247ff06e8e902d04138d83361a344f0eb009bc09b86f03abbe990820be0",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "162_2024_QH15__162.2024.QH15_W_.docx",
+   "doc_id": "173366",
+   "doc_num": "162/2024/QH15",
+   "file_name": "162.2024.QH15 (W).docx",
+   "sha256": "de4048e5dc1b0adcfba039220fe1739abebdd9fe6ba5e1785a705569bdae622c",
+   "expected_scope": "technical",
+   "expected_type": "nghi_quyet",
+   "note": "bản xuất web: quốc hiệu + tiêu ngữ, chức danh + người ký trong một đoạn ngắt dòng mềm; Nghị quyết số: …; cỡ/phông chữ sai là lỗi thật",
+   "expected_components": {
+    "quoc_hieu": [
+     "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
+    ],
+    "tieu_ngu": [
+     "Độc lập - Tự do - Hạnh phúc"
+    ],
+    "chuc_danh": [
+     "CHỦ TỊCH QUỐC HỘI"
+    ],
+    "nguoi_ky": [
+     "Trần Thanh Mẫn"
+    ]
+   },
+   "expected_items": {
+    "2": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "16_2023_Q_-TTg__16.2023.Q_-TTg.docx",
+   "doc_id": "169615",
+   "doc_num": "16/2023/QĐ-TTg",
+   "file_name": "16.2023.QĐ-TTg.docx",
+   "sha256": "fa56479e452563da845847f52103150e050830d95d0858a7ba358b67e0ce0a21",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "bản xuất web: quốc hiệu + tiêu ngữ, khối ký, Nơi nhận trong một đoạn ngắt dòng mềm",
+   "expected_components": {
+    "quoc_hieu": [
+     "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
+    ],
+    "tieu_ngu": [
+     "Độc lập - Tự do - Hạnh phúc"
+    ],
+    "chuc_danh": [
+     "KT. THỦ TƯỚNG",
+     "PHÓ THỦ TƯỚNG"
+    ],
+    "nguoi_ky": [
+     "Trần Hồng Hà"
+    ],
+    "noi_nhan": []
+   },
+   "expected_items": {
+    "1": "pass",
+    "2": "pass",
+    "4": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "18_2026_NQ-CP__8._PHU_LU_C_IV_NQ18.docx",
+   "doc_id": "0ce1e8f0-5581-11f1-a486-7789c16abe4d",
+   "doc_num": "18/2026/NQ-CP",
+   "file_name": "8. PHỤ LỤC IV NQ18.docx",
+   "sha256": "41d0b510aa4a141fa5087203a1f969f9a54d238bca164566d94317d3d0e55e16",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "18_2026_NQ-CP__8._PL1_NQ182026.docx",
+   "doc_id": "0ce1e8f0-5581-11f1-a486-7789c16abe4d",
+   "doc_num": "18/2026/NQ-CP",
+   "file_name": "8. PL1 NQ182026.docx",
+   "sha256": "a21d351e4a0bbcc8a693d0f76a0bc97389bc75a9e2b1acbfbf59a7c77fc72f6f",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "18_2026_NQ-CP__8._PLIII_NQ18.docx",
+   "doc_id": "0ce1e8f0-5581-11f1-a486-7789c16abe4d",
+   "doc_num": "18/2026/NQ-CP",
+   "file_name": "8. PLIII NQ18.docx",
+   "sha256": "06e233b70cae599ffe4aa0e1ca6b55ce4fa286fe426ba7aea25a4d0e70e2e147",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "18_2026_NQ-CP__8._PL_II_NQ18.docx",
+   "doc_id": "0ce1e8f0-5581-11f1-a486-7789c16abe4d",
+   "doc_num": "18/2026/NQ-CP",
+   "file_name": "8. PL II NQ18.docx",
+   "sha256": "58c2b156c8f407897927793d7d4bd2b4e1e72bf0b1f53a39538d08ebe84824e2",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "197_2025_QH15__D04_NQ197_NQ_ve_co_che_dac_thu.docx",
+   "doc_id": "177549",
+   "doc_num": "197/2025/QH15",
+   "file_name": "D04_NQ197_NQ ve co che dac thu.docx",
+   "sha256": "00480f40949e2c4f19bdbc591204d795be619a94f2468bf0051c9d9b87715cc4",
+   "expected_scope": "technical",
+   "expected_type": "nghi_quyet",
+   "note": "dự thảo không có khối ký; Nghị quyết số: …",
+   "expected_components": {
+    "so_ky_hieu": [
+     "Nghị quyết số: 197/2025/QH15"
+    ],
+    "tieu_ngu": []
+   }
+  },
+  {
+   "file": "206_2025_QH15__2025-NQ206-NQ_ve_co_che_xu_ly_khi_khan_vuong_mac_do_quy_dinh_cua_PL.docx",
+   "doc_id": "178574",
+   "doc_num": "206/2025/QH15",
+   "file_name": "2025-NQ206-NQ ve co che xu ly khi khan vuong mac do quy dinh cua PL.docx",
+   "sha256": "0ef36af518bc81e7b34ac9bfecb6e5e185b664a9c1c5d507582173408890332c",
+   "expected_scope": "technical",
+   "expected_type": "nghi_quyet",
+   "note": "bản xuất web: quốc hiệu + tiêu ngữ, chức danh + người ký trong một đoạn ngắt dòng mềm; Nghị quyết số: …; cỡ/phông chữ sai là lỗi thật",
+   "expected_components": {
+    "quoc_hieu": [
+     "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
+    ],
+    "tieu_ngu": [
+     "Độc lập - Tự do - Hạnh phúc"
+    ],
+    "chuc_danh": [
+     "CHỦ TỊCH QUỐC HỘI"
+    ],
+    "nguoi_ky": [
+     "Trần Thanh Mẫn"
+    ]
+   },
+   "expected_items": {
+    "2": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "208_2025_QH15__25.6_du_thao_NQ_gui_xin_yk_3_chu_ky.docx",
+   "doc_id": "179895",
+   "doc_num": "208/2025/QH15",
+   "file_name": "25.6 du thao NQ gui xin yk 3 chu ky.docx",
+   "sha256": "df66a742f5798e99fa0501761fbc4f334c74b71e7790b63f02491c8eaff551ff",
+   "expected_scope": "technical",
+   "expected_type": "nghi_quyet",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "22_2026_Q_-UBND__22.2026.docx",
+   "doc_id": "187993",
+   "doc_num": "22/2026/QĐ-UBND",
+   "file_name": "22.2026.docx",
+   "sha256": "c53e6e9e9225114b19bbefe719e577af16556d43e222dea62a6f8d3dba2ffd52",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày"
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLIIIgiaoducdaotao_29.4.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLIIIgiaoducdaotao_29.4.docx",
+   "sha256": "6df91b12225d38708f69bca79db0468fec67dc47cafa32e24ef23975ce450858",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLIIgiaoducdaotao_29.4.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLIIgiaoducdaotao_29.4.docx",
+   "sha256": "de5c7325f14b2bba9e212d68cd6d1f4c6b9935f0bd3c21239caf78faec1e91af",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLIVgiaoducdaotao_-_29.4_final.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLIVgiaoducdaotao - 29.4 final.docx",
+   "sha256": "a5605b1993eda8ce79802c34b55a2cb8eaa6896a606f8fcbb586856d01653127",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLIgiaoducdaotao_29.4.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLIgiaoducdaotao_29.4.docx",
+   "sha256": "093643a621bde5bb755fd8cd0af9920cddfdb45d5a2ee6ccd1c28e5a39c2561b",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLVIIgiaoducdaotao_29.4.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLVIIgiaoducdaotao_29.4.docx",
+   "sha256": "bc98484d28f6bf26c9ad72023e0e3c39662056f08f1dcfb3ed2d148fb6dd1918",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLVIgiaoducdaotao_29.4.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLVIgiaoducdaotao_29.4.docx",
+   "sha256": "8cd78c8ed9af1091f6e84c76100ff544e522cecd146e5c5ff757e0bea052293b",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_NQ-CP__nguyenthikimngan_PLVgiaoducdaotao_29.4_2_.docx",
+   "doc_id": "0eca66b0-84a2-11f1-bd3d-d19773eea279",
+   "doc_num": "23/2026/NQ-CP",
+   "file_name": "nguyenthikimngan_PLVgiaoducdaotao_29.4 (2).docx",
+   "sha256": "ab8ac50cc7e9cd03628c242ec9eb7bb1abbbaf8b60dce6149e322a10e86d4612",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ]
+  },
+  {
+   "file": "23_2026_Q_-UBND__23.2026.docx",
+   "doc_id": "187994",
+   "doc_num": "23/2026/QĐ-UBND",
+   "file_name": "23.2026.docx",
+   "sha256": "6df2433cdc951e105527a67cb2539a8bd1afe4fdda4e695c75823f2713db80b2",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày"
+  },
+  {
+   "file": "26_2024_Q_-TTg__20241205_Final_Q_ky_ke_t_va_n_kie_n_ASEAN_1_.docx",
+   "doc_id": "174587",
+   "doc_num": "26/2024/QĐ-TTg",
+   "file_name": "20241205_Final_QĐ ký kết văn kiện ASEAN (1).docx",
+   "sha256": "24c00aa7441d5a75950b5776bb03c3935a47bb4c832e3e01428313157763cc80",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "QĐ QPPL mang theo Quy chế sau khối ký (khối đầu thứ hai trong bảng 2 cột): phần kèm theo là phu_luc; lề trang chỉ xét section đầu",
+   "must_not_fail": [
+    "page.margin.bottom"
+   ],
+   "expected_components": {
+    "chuc_danh": [
+     "KT. THỦ TƯỚNG",
+     "PHÓ THỦ TƯỚNG"
+    ],
+    "nguoi_ky": [
+     "Bùi Thanh Sơn"
+    ],
+    "noi_nhan": [
+     "Nơi nhận:",
+     "- Thủ tướng, các Phó Thủ tướng Chính phủ;",
+     "- Các bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ;",
+     "- VPCP: BTCN, các PCN, Trợ lý TTgCP, các Vụ: PL, TH, Cổng TTĐTCP;",
+     "- Lưu: VT, QHQT (9b)."
+    ],
+    "phu_luc": []
+   },
+   "expected_items": {
+    "1": "pass",
+    "2": "pass",
+    "4": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "27_2023_Q_-TTg__27_2023_QD-TTg_08112023_20231206031046337330.docx",
+   "doc_id": "163693",
+   "doc_num": "27/2023/QĐ-TTg",
+   "file_name": "27_2023_QD-TTg_08112023_20231206031046337330.docx",
+   "sha256": "401f9cbc59a2ff5911866c355ebb77d519e3fd8aebbf430dddc805c2c67da048",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "lề 25.01 / 35.01 mm: dung sai ±0.5 mm",
+   "must_not_fail": [
+    "page.margin.top",
+    "page.margin.left"
+   ],
+   "expected_components": {
+    "tieu_ngu": [
+     "Độc lập - Tự do - Hạnh phúc"
+    ],
+    "nguoi_ky": [
+     "Trần Hồng Hà"
+    ]
+   },
+   "expected_items": {
+    "1": "pass",
+    "4": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "32_2026_Q_-TTg__Quy_t-_nh-32-2026-Q_-TTg_Phu_luc._Danh_muc_nganh_san_pham_VN.docx",
+   "doc_id": "ecd2aa70-affa-11f1-b619-e1a7258dcb11",
+   "doc_num": "32/2026/QĐ-TTg",
+   "file_name": "Quyết-định-32-2026-QĐ-TTg_Phu luc. Danh muc nganh san pham VN.docx",
+   "sha256": "a4bd291eb441eeaf0da794bde03ad1b015fbe13eec67a0d4659b1e2619f264ee",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "33_2026_NQ-CP__Ngh_-quy_t-33-2026-NQ-CP_Phu_luc.docx",
+   "doc_id": "ebb463e0-80c0-11f1-b290-a5cae38c9987",
+   "doc_num": "33/2026/NQ-CP",
+   "file_name": "Nghị-quyết-33-2026-NQ-CP_Phu luc.docx",
+   "sha256": "51b79822fd7e5d5c7330e3b2333774846c159455ee993f48f7361e9d6d0bb9a3",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "36_2021_Q_-TTg__36.2021.Q_-TTg.docx",
+   "doc_id": "169610",
+   "doc_num": "36/2021/QĐ-TTg",
+   "file_name": "36.2021.QĐ-TTg.docx",
+   "sha256": "09ec6d7ff1888a254415158232df55f2e2a8b1f68bec6985b88a603ead4cf652",
+   "expected_scope": "technical",
+   "expected_type": "quyet_dinh",
+   "note": "bản xuất web: quốc hiệu + tiêu ngữ, khối ký, Nơi nhận trong một đoạn ngắt dòng mềm; QĐ kèm hai mẫu có quốc hiệu: phần sau quốc hiệu thứ hai là phu_luc",
+   "expected_components": {
+    "quoc_hieu": [
+     "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
+    ],
+    "tieu_ngu": [
+     "Độc lập - Tự do - Hạnh phúc"
+    ],
+    "chuc_danh": [
+     "KT. THỦ TƯỚNG",
+     "PHÓ THỦ TƯỚNG"
+    ],
+    "nguoi_ky": [
+     "Phạm Bình Minh"
+    ],
+    "noi_nhan": []
+   },
+   "expected_items": {
+    "1": "pass",
+    "2": "pass",
+    "4": "pass"
+   },
+   "items_scope": "full"
+  },
+  {
+   "file": "44_2026_TT-BGD_T__PH_L_C_TT_44_9.6.2026.docx",
+   "doc_id": "2a6aacb0-654c-11f1-9fa9-a5888f6bb04a",
+   "doc_num": "44/2026/TT-BGDĐT",
+   "file_name": "PHỤ LỤC TT 44_9.6.2026.docx",
+   "sha256": "fe31e2be52044bec50297831fe0e5f1d295de48b7ef0a472c43bd5fc33f650ff",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "66.25_2026_NQ-CP__Ngh_-quy_t-66-25-2026-NQ-CP_Phu_luc._Danh_muc_cac_van_ban_quy_pham_phap_luat_de_xuat_sua_doi_bo_sung_de_bao_dam_tinh_thong_nhat_dong_bo.docx",
+   "doc_id": "c7252c40-acbb-11f1-8277-d7b4e32d4829",
+   "doc_num": "66.25/2026/NQ-CP",
+   "file_name": "Nghị-quyết-66-25-2026-NQ-CP_Phu luc. Danh muc cac van ban quy pham phap luat de xuat sua doi bo sung de bao dam tinh thong nhat dong bo.docx",
+   "sha256": "87b36da50af616d10299a115ec7c1491a1f325d67a4100a199e3c3c436049055",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "79_2024_TT-BCA__Bi_u_m_u_Th_ng_t_79_ng_k_xe._b_n_chu_n.docx",
+   "doc_id": "174894",
+   "doc_num": "79/2024/TT-BCA",
+   "file_name": "Biểu mẫu Thông tư 79 đăng ký xe. bản chuẩn.docx",
+   "sha256": "dcd26274d979b90c38760fc00657ccca53737d7e9478b43beb761b7bbb052027",
+   "expected_scope": "technical",
+   "expected_type": "unknown",
+   "note": "tập biểu mẫu (quốc hiệu nhiều lần, Nơi nhận trong mẫu): technical"
+  },
+  {
+   "file": "79_2024_TT-BCA__Ph_l_c_1_2_3_Th_ng_t_79_ng_k_xe._b_n_chu_n.docx",
+   "doc_id": "174894",
+   "doc_num": "79/2024/TT-BCA",
+   "file_name": "Phụ lục 1, 2, 3 Thông tư 79 đăng ký xe. bản chuẩn.docx",
+   "sha256": "ec38ed88a9d654d29f0acf72a4592b7a81f1464959d1b67f3b594222e928a704",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "79_2024_TT-BCA__Ph_l_c_4_Th_ng_t_79_ng_k_xe_b_n_chu_n.docx",
+   "doc_id": "174894",
+   "doc_num": "79/2024/TT-BCA",
+   "file_name": "Phụ lục 4 Thông tư 79 đăng ký xe bản chuẩn.docx",
+   "sha256": "27ace87b242403f0ffe96d78a115d666aae8bd49c15a0f55506da1e34e677888",
+   "expected_scope": "attached",
+   "expected_type": "",
+   "note": "văn bản / phụ lục ban hành kèm theo (không có số ký hiệu, khối ký riêng); loại phát hiện trên phụ lục không kiểm"
+  },
+  {
+   "file": "79_2024_TT-BCA__Th_ng_t_79_ng_y_15.11.2024_ng_k_xe._b_n_chu_n.docx",
+   "doc_id": "174894",
+   "doc_num": "79/2024/TT-BCA",
+   "file_name": "Thông tư 79 ngày 15.11.2024 đăng ký xe. bản chuẩn.docx",
+   "sha256": "4c0cb8d4c0b1e3c94a3f92e681ef7deedf5fcd569f50784f2dd8e24a8b993b85",
+   "expected_scope": "technical",
+   "expected_type": "thong_tu",
+   "note": "số ký hiệu có năm: văn bản quy phạm pháp luật, chỉ kiểm tra kỹ thuật trình bày"
+  }
+ ]
+}
