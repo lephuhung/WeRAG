@@ -41,7 +41,11 @@ type Options struct {
 	// DocumentType forces a rule set ("cong_van", "quyet_dinh", ...);
 	// "" or "auto" uses the detected type.
 	DocumentType string
-	Segmenter    string
+	// Scope forces the check scope (scope.go): full, technical, attached;
+	// "" or "auto" classifies the document (a named DocumentType of a văn
+	// bản hành chính is checked in full).
+	Scope     string
+	Segmenter string
 	// Labels is a labeling answer produced elsewhere (e.g. by an agent).
 	Labels *Reply
 	// LLM labels the components when set.
@@ -78,10 +82,12 @@ type Summary struct {
 
 // Report is the full result of a check.
 type Report struct {
-	Source       string                `json:"source"`
-	OK           bool                  `json:"ok"`
-	Error        string                `json:"error,omitempty"`
-	DocumentType *DocumentTypeInfo     `json:"document_type,omitempty"`
+	Source       string            `json:"source"`
+	OK           bool              `json:"ok"`
+	Error        string            `json:"error,omitempty"`
+	DocumentType *DocumentTypeInfo `json:"document_type,omitempty"`
+	// Scope is the check scope applied (full / technical / attached) and why.
+	Scope        *ScopeInfo            `json:"scope,omitempty"`
 	Segmentation *SegmentationInfo     `json:"segmentation,omitempty"`
 	Summary      *Summary              `json:"summary,omitempty"`
 	Sections     []*Section            `json:"sections,omitempty"`
@@ -266,12 +272,17 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if requested == "auto" || requested == "detect" {
 		used = seg.DetectedType
 	}
-	rulesName := ruleSetName(used)
-	rs, err := LoadRuleSet(rulesName)
+	scope, err := resolveScope(opts.Scope, requested, seg)
 	if err != nil {
 		return &Report{Source: opts.SourceName, Error: err.Error()}
 	}
-	checks := Evaluate(l, seg, rs)
+	rulesName := ruleSetName(used)
+	fullRS, err := LoadRuleSet(rulesName)
+	if err != nil {
+		return &Report{Source: opts.SourceName, Error: err.Error()}
+	}
+	rs := fullRS.ForScope(scope.Used)
+	checks := Evaluate(l, scopedSegmentation(l, seg, scope.Used), rs)
 	sum := &Summary{}
 	for _, c := range checks {
 		switch c.Status {
@@ -293,6 +304,7 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	rep := &Report{
 		Source: opts.SourceName, OK: true,
 		DocumentType: &DocumentTypeInfo{Requested: requested, Detected: seg.DetectedType, Used: used, RuleSet: label},
+		Scope:        scope,
 		Segmentation: info, Summary: sum, Sections: l.Sections,
 		Components: seg.Components, Checks: checks,
 		Format: ExtractFormat(l, seg),
@@ -315,13 +327,27 @@ func ruleSetName(used string) string {
 	return "base"
 }
 
-// RuleSetForReport returns the rule set Check evaluated to produce r, so a
-// caller can read the rule (prop, op, value) behind each CheckResult.
+// RuleSetForReport returns the rule set Check evaluated to produce r, cut
+// to the report's scope, so a caller can read the rule (prop, op, value)
+// behind each CheckResult.
 func RuleSetForReport(r *Report) (*RuleSet, error) {
 	if r == nil || r.DocumentType == nil {
 		return nil, fmt.Errorf("report has no document type")
 	}
-	return LoadRuleSet(ruleSetName(r.DocumentType.Used))
+	rs, err := LoadRuleSet(ruleSetName(r.DocumentType.Used))
+	if err != nil {
+		return nil, err
+	}
+	if r.Scope == nil {
+		return rs.ForScope(ScopeFull), nil
+	}
+	return rs.ForScope(r.Scope.Used), nil
+}
+
+// FullScope reports whether r was checked in the full scope (a report
+// without scope info predates the scopes and was).
+func (r *Report) FullScope() bool {
+	return r == nil || r.Scope == nil || r.Scope.Used == ScopeFull
 }
 
 func skillNamesFor(docType string) []string {

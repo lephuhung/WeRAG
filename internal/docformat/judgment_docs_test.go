@@ -16,6 +16,8 @@ import (
 // measure, so only judgment differs — plus the ký-thay parity fixtures.
 // Errors are the Bảng kiểm items of the-thuc-chung that must read "Lỗi";
 // a document with none is correct and any "Lỗi" on it is a false alarm.
+// A document of the technical or attached scope has no Bảng kiểm: any
+// "Lỗi" entry in its evaluation is a false alarm.
 
 type liveDoc struct {
 	Name   string
@@ -23,6 +25,9 @@ type liveDoc struct {
 	Errors []int // expected Lỗi items
 	Any    []int // unscored items
 	Note   string
+	// Scope is the check scope the document must get (scope.go): a
+	// technical or attached document has no Bảng kiểm and must have no Lỗi.
+	Scope string
 }
 
 func contains(xs []int, x int) bool {
@@ -49,6 +54,7 @@ func loadLiveDocs(t *testing.T) []liveDoc {
 		Errors []int  `json:"errors"`
 		Any    []int  `json:"any"`
 		Note   string `json:"note"`
+		Scope  string `json:"scope"`
 	}
 	if err := json.Unmarshal(raw, &expected); err != nil {
 		t.Fatal(err)
@@ -66,7 +72,10 @@ func loadLiveDocs(t *testing.T) []liveDoc {
 		if err != nil {
 			t.Fatal(err)
 		}
-		docs = append(docs, liveDoc{Name: name, Report: check(name, content), Errors: e.Errors, Any: e.Any, Note: e.Note})
+		if e.Scope == "" {
+			e.Scope = ScopeFull
+		}
+		docs = append(docs, liveDoc{Name: name, Report: check(name, content), Errors: e.Errors, Any: e.Any, Note: e.Note, Scope: e.Scope})
 	}
 	// ký-thay parity fixtures (docformat/tests/ky_thay_docs.py)
 	for _, fx := range []struct {
@@ -82,7 +91,7 @@ func loadLiveDocs(t *testing.T) []liveDoc {
 		if err != nil {
 			t.Fatal(err)
 		}
-		docs = append(docs, liveDoc{Name: fx.name, Report: check(fx.name, content), Errors: fx.errors, Any: fx.any, Note: fx.note})
+		docs = append(docs, liveDoc{Name: fx.name, Report: check(fx.name, content), Errors: fx.errors, Any: fx.any, Note: fx.note, Scope: ScopeFull})
 	}
 	sort.Slice(docs, func(i, j int) bool { return docs[i].Name < docs[j].Name })
 	return docs

@@ -52,7 +52,9 @@ func (h *DocumentFormatHandler) ListTypes(c *gin.Context) {
 // Check godoc
 // @Summary      Check the thể thức of a .docx (NĐ30/2020)
 // @Description  Multipart upload: file (.docx), optional document_type
-// @Description  (auto by default), segmenter (auto | heuristic) and
+// @Description  (auto by default), scope (auto | full | technical |
+// @Description  attached: documents outside the 29 văn bản hành chính get
+// @Description  the technical layout checks only), segmenter (auto | heuristic) and
 // @Description  evaluate=true (judge the format data against the document-type
 // @Description  skills with the workspace chat model, thinking on; ~1 min).
 // @Description  Returns every rule with pass/fail/warn/skip, the measured
@@ -64,6 +66,7 @@ func (h *DocumentFormatHandler) ListTypes(c *gin.Context) {
 // @Param        file           formData  file    true   ".docx file"
 // @Param        document_type  formData  string  false  "rule set, e.g. cong_van"
 // @Param        segmenter      formData  string  false  "auto | heuristic"
+// @Param        scope          formData  string  false  "auto | full | technical | attached (auto by default; a named document_type of a văn bản hành chính is checked in full)"
 // @Param        evaluate       formData  bool    false  "skill evaluation (thinking)"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  errors.AppError
@@ -109,6 +112,7 @@ func (h *DocumentFormatHandler) Check(c *gin.Context) {
 	var chatModel chat.Chat
 	opts := docformat.Options{
 		DocumentType: c.PostForm("document_type"),
+		Scope:        c.PostForm("scope"),
 		Segmenter:    segmenter,
 		SourceName:   filepath.Base(fh.Filename),
 	}
@@ -132,10 +136,15 @@ func (h *DocumentFormatHandler) Check(c *gin.Context) {
 		_ = c.Error(errors.NewBadRequestError(report.Error))
 		return
 	}
-	if evaluate && chatModel != nil {
-		// skill evaluation with thinking on: about a minute
+	if evaluate && (chatModel != nil || !report.FullScope()) {
+		// skill evaluation with thinking on: about a minute; a technical
+		// or attached scope is written in code without the model
+		var evaluator docformat.Completer
+		if chatModel != nil {
+			evaluator = docformat.ChatEvaluator(chatModel)
+		}
 		evalCtx, cancel := context.WithTimeout(ctx, formatEvaluateTimeout)
-		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(chatModel), report)
+		text, err := docformat.EvaluateWithSkills(evalCtx, evaluator, report)
 		cancel()
 		if err != nil {
 			logger.Warnf(ctx, "document format: skill evaluation failed: %v", err)

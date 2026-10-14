@@ -8,6 +8,8 @@ authority, Nơi nhận, required lines, body structure.  ``expected.json``
 maps each document to the Bảng kiểm items (the-thuc-chung) the judgment
 must mark ``Lỗi``; a document with an empty list is correct and any
 ``Lỗi`` on it is a false alarm.  Items listed under ``any`` are not scored.
+``scope`` is the check scope the document must get (full / technical /
+attached); a scoped document has no Bảng kiểm and must have no ``Lỗi``.
 
     python3 docformat/evaluation/judgment_docs.py <out_dir>
 """
@@ -244,8 +246,47 @@ def nghi_quyet():
                     ["- Ủy ban Thường vụ Quốc hội;", "- Chính phủ;", "- UBND tỉnh;", "- Lưu: VT, VP."])))
 
 
+def luat():
+    """A promulgated luật copied as text: no quốc hiệu, số or khối ký —
+    not one of the 29 văn bản hành chính, so only the technical layout is
+    checked (scope technical)."""
+    return build_docx(doc(
+        p("LUẬT", align="center", size=14, bold=True)
+        + p("TỔ CHỨC CHÍNH QUYỀN ĐỊA PHƯƠNG", align="center", size=14, bold=True)
+        + body("Căn cứ Hiến pháp nước Cộng hòa xã hội chủ nghĩa Việt Nam;",
+               "Quốc hội ban hành Luật Tổ chức chính quyền địa phương.",
+               "Điều 1. Phạm vi điều chỉnh",
+               "Luật này quy định về đơn vị hành chính và tổ chức, hoạt động của chính quyền địa phương "
+               "ở các đơn vị hành chính.",
+               "Điều 2. Đơn vị hành chính",
+               "Đơn vị hành chính của nước Cộng hòa xã hội chủ nghĩa Việt Nam gồm có tỉnh, thành phố "
+               "trực thuộc trung ương và xã, phường, đặc khu trực thuộc tỉnh, thành phố trực thuộc trung ương.",
+               "Điều 3. Hiệu lực thi hành",
+               "Luật này có hiệu lực thi hành từ ngày 01 tháng 7 năm 2025.")))
+
+
+def quy_che_kem_theo():
+    """A quy chế ban hành kèm theo a quyết định: cơ quan and quốc hiệu, no
+    số, no khối ký (scope attached)."""
+    return build_docx(doc(
+        tbl(row(tc(p("UBND TỈNH THỪA THIÊN HUẾ", align="center", size=13),
+                   p("SỞ NỘI VỤ", align="center", size=13, bold=True)),
+                tc(p("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", align="center", size=13, bold=True),
+                   p("Độc lập - Tự do - Hạnh phúc", align="center", size=14, bold=True))))
+        + title("QUY CHẾ", "Làm việc của Sở Nội vụ tỉnh Thừa Thiên Huế")
+        + p("(Ban hành kèm theo Quyết định số 125/QĐ-SNV ngày 05 tháng 10 năm 2026 "
+            "của Giám đốc Sở Nội vụ)", align="center", size=14, italic=True)
+        + body("Chương I",
+               "Điều 1. Phạm vi điều chỉnh",
+               "Quy chế này quy định về nguyên tắc, chế độ trách nhiệm, lề lối làm việc của Sở Nội vụ.",
+               "Điều 2. Đối tượng áp dụng",
+               "Quy chế này áp dụng đối với công chức, viên chức và người lao động thuộc Sở Nội vụ.",
+               "Điều 3. Nguyên tắc làm việc",
+               "Sở làm việc theo chế độ thủ trưởng, bảo đảm sự lãnh đạo của Ban Giám đốc Sở./.")))
+
+
 def documents():
-    """name → (content, expected Lỗi items, unscored items, note)."""
+    """name → (content, expected Lỗi items, unscored items, note[, scope])."""
     head = ["GIÁM ĐỐC"]
     kt = ["KT. GIÁM ĐỐC", "PHÓ GIÁM ĐỐC"]
     return {
@@ -270,6 +311,9 @@ def documents():
                          "công văn có dòng tên loại CÔNG VĂN"),
         "qd_no_effect": (quyet_dinh(QD_NO_EFFECT_DIEU, ["- Như Điều 2;", "- Lưu: VT, VP."]), [6], [],
                          "quyết định thiếu điều hiệu lực/thi hành"),
+        # not a văn bản hành chính: technical layout only, no Lỗi
+        "luat_technical": (luat(), [], [], "luật đã ban hành, không quốc hiệu/số/khối ký", "technical"),
+        "qc_kem_theo": (quy_che_kem_theo(), [], [], "quy chế ban hành kèm theo quyết định", "attached"),
     }
 
 
@@ -278,10 +322,11 @@ def main(argv=None) -> int:
     out = argv[0] if argv else os.path.join(HERE, "samples", "judgment")
     os.makedirs(out, exist_ok=True)
     expected = {}
-    for name, (content, errs, any_items, note) in documents().items():
+    for name, (content, errs, any_items, note, *scope) in documents().items():
         with open(os.path.join(out, name + ".docx"), "wb") as fh:
             fh.write(content)
-        expected[name] = {"errors": errs, "any": any_items, "note": note}
+        expected[name] = {"errors": errs, "any": any_items, "note": note,
+                          "scope": scope[0] if scope else "full"}
     with open(os.path.join(out, "expected.json"), "w", encoding="utf-8") as fh:
         json.dump(expected, fh, ensure_ascii=False, indent=1)
     print("wrote %d documents to %s" % (len(expected), out))

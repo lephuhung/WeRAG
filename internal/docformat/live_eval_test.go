@@ -35,7 +35,9 @@ import (
 // DOCFORMAT_LIVE_CONCURRENCY (default 4) parallel requests,
 // DOCFORMAT_LIVE_CELLS limits the cells ("rules,judgment/on").
 //
-// Documents: loadLiveDocs (judgment_docs_test.go).
+// Documents: loadLiveDocs (judgment_docs_test.go). A technical or attached
+// scope document is evaluated in code without the model in every cell; a
+// "Lỗi" entry on it, or a wrong scope, is a false alarm (item 0).
 
 type liveCell struct {
 	Render   string // data | judgment
@@ -206,6 +208,13 @@ func TestLiveEvaluation(t *testing.T) {
 			}
 			if err != nil {
 				res.Err = err.Error()
+			} else if j.doc.Scope != ScopeFull {
+				// technical / attached: no Bảng kiểm; a "Lỗi" entry or a
+				// wrong scope is a false alarm (item 0)
+				res.ErrorLines = errorSectionLines(answer)
+				if res.ErrorLines > 0 || rep.Scope == nil || rep.Scope.Used != j.doc.Scope {
+					res.FalseItems = []int{0}
+				}
 			} else {
 				res.Items = parseChecklist(answer)
 				res.ErrorLines = errorSectionLines(answer)
@@ -271,7 +280,7 @@ func TestLiveEvaluation(t *testing.T) {
 		a.secs += r.Seconds
 		a.compl += float64(r.ComplTok)
 		a.chars += float64(r.PromptChars)
-		if len(r.Items) < 6 {
+		if len(r.Items) < 6 && d.Scope == ScopeFull {
 			a.unparsed++
 		}
 		if len(d.Errors) == 0 {
@@ -310,7 +319,7 @@ func TestLiveEvaluation(t *testing.T) {
 	}
 	fmt.Fprintf(&b, "\nModel %s, %d documents (%d correct, %d with judgment errors), %d runs per cell\n\n",
 		name, len(docs), nCorrect, len(docs)-nCorrect, runs)
-	b.WriteString("| cell | runs ok/total | false-alarm runs on correct docs | false-alarm items (all docs) | FA by item 1-6 | missed / expected | \"## Lỗi\" lines on correct docs (mean) | checklist unparsed | mean latency s | mean completion tok | mean prompt chars | runs without LLM | items sent to LLM 1-6 |\n")
+	b.WriteString("| cell | runs ok/total | false-alarm runs on correct docs | false-alarm items (all docs) | FA by item 0-6 (0 = scoped doc) | missed / expected | \"## Lỗi\" lines on correct docs (mean) | checklist unparsed | mean latency s | mean completion tok | mean prompt chars | runs without LLM | items sent to LLM 1-6 |\n")
 	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	summary := map[string]any{}
 	for _, c := range cells {
@@ -319,7 +328,7 @@ func TestLiveEvaluation(t *testing.T) {
 			continue
 		}
 		ok := float64(max(a.okRuns, 1))
-		fa := fmt.Sprintf("%d/%d/%d/%d/%d/%d", a.faByItem[1], a.faByItem[2], a.faByItem[3], a.faByItem[4], a.faByItem[5], a.faByItem[6])
+		fa := fmt.Sprintf("%d/%d/%d/%d/%d/%d/%d", a.faByItem[0], a.faByItem[1], a.faByItem[2], a.faByItem[3], a.faByItem[4], a.faByItem[5], a.faByItem[6])
 		llm := fmt.Sprintf("%d/%d/%d/%d/%d/%d", a.llmByItem[1], a.llmByItem[2], a.llmByItem[3], a.llmByItem[4], a.llmByItem[5], a.llmByItem[6])
 		noLLM := "-"
 		if c.Rules {
@@ -331,7 +340,7 @@ func TestLiveEvaluation(t *testing.T) {
 			a.secs/ok, a.compl/ok, a.chars/ok, noLLM, llm)
 		summary[c.String()] = map[string]any{
 			"runs": a.runs, "ok_runs": a.okRuns, "failed": a.failed, "false_alarm_runs": a.faRuns,
-			"correct_runs": a.correctRuns, "false_alarm_items": a.faItems, "false_alarm_by_item": a.faByItem[1:],
+			"correct_runs": a.correctRuns, "false_alarm_items": a.faItems, "false_alarm_by_item": a.faByItem[:],
 			"missed": a.missed, "expected": a.expected, "unparsed": a.unparsed,
 			"mean_seconds": a.secs / ok, "runs_without_llm": a.noLLM, "llm_by_item": a.llmByItem[1:], "mean_completion_tokens": a.compl / ok, "mean_prompt_chars": a.chars / ok,
 		}

@@ -1069,3 +1069,36 @@ func TestApplyFormatFixesFixesEachNonConformingParagraph(t *testing.T) {
 		t.Fatalf("an explicit passing rule keeps its skip reason: %+v", skipped)
 	}
 }
+
+// A document outside the 29 văn bản hành chính is checked for the
+// technical layout only, without the model, and the result says so and
+// how to force the full check.
+func TestCheckDocumentFormatTechnicalScope(t *testing.T) {
+	resetFormatChecks(t)
+	checkInline(t)
+	body := strings.Join([]string{
+		testPara("LUẬT", "center", "Times New Roman", 14, true, false),
+		testPara("TỔ CHỨC CHÍNH QUYỀN ĐỊA PHƯƠNG", "center", "Times New Roman", 14, true, false),
+		testPara("Điều 1. Phạm vi điều chỉnh", "both", "Times New Roman", 14, true, false),
+		testPara("Luật này quy định về đơn vị hành chính và tổ chức chính quyền địa phương.", "both", "Times New Roman", 14, false, false),
+		testPara("Điều 2. Hiệu lực thi hành", "both", "Times New Roman", 14, true, false),
+		testPara("Luật này có hiệu lực thi hành từ ngày 01 tháng 7 năm 2025.", "both", "Times New Roman", 14, false, false),
+	}, "")
+	ws := newFakeWorkspace(buildTestDocx(t, body, nd30Margins))
+	model := &countingChat{fakeChat: fakeChat{reply: "{}", evaluation: "## Kết luận\nĐạt."}}
+	res := runTool(t, NewCheckDocumentFormatToolForWorkspace(ws, model, "sess-scope"), `{"mark":false}`)
+	if !res.Success || res.Data["evaluated"] != true {
+		t.Fatalf("result: %+v", res)
+	}
+	if sc, _ := res.Data["scope"].(*docformat.ScopeInfo); sc == nil || sc.Used != docformat.ScopeTechnical {
+		t.Fatalf("scope: %+v", res.Data["scope"])
+	}
+	if model.evalCount() != 0 {
+		t.Fatalf("the technical scope called the model %d times", model.evalCount())
+	}
+	for _, want := range []string{"phạm vi kiểm tra: kỹ thuật trình bày", "document_type", "Không kiểm tra thành phần thể thức"} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("output lacks %q:\n%s", want, res.Output)
+		}
+	}
+}

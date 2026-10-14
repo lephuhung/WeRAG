@@ -152,11 +152,12 @@ func TestParityWithPythonReference(t *testing.T) {
 			units := BuildUnits(l, Segment(l))
 			diff("units", toGeneric(t, fx.Units), toGeneric(t, units), &diffs)
 
-			heur := Check(ctx, content, Options{Segmenter: SegmenterHeuristic})
+			// the Python reference has no check scopes: compare the full one
+			heur := Check(ctx, content, Options{Segmenter: SegmenterHeuristic, Scope: ScopeFull})
 			diff("heuristic", toGeneric(t, fx.Heuristic), viewOf(t, heur), &diffs)
 
 			if fx.Labels != nil && fx.Labeled != nil {
-				lab := Check(ctx, content, Options{Labels: fx.Labels})
+				lab := Check(ctx, content, Options{Labels: fx.Labels, Scope: ScopeFull})
 				diff("labeled", toGeneric(t, fx.Labeled), viewOf(t, lab), &diffs)
 			}
 			if len(diffs) > 0 {

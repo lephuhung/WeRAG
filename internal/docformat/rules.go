@@ -51,6 +51,10 @@ type RuleCheck struct {
 	// SkipWhen lists paragraphs that do not count: "unmeasured",
 	// "in_table", "hanging".
 	SkipWhen []string `json:"skip_when,omitempty"`
+	// Scope lists the check scopes the rule runs in (scope.go): full,
+	// technical, attached; none means the full scope only. A type's rule
+	// replacing a base one without its own scope keeps the base's.
+	Scope []string `json:"scope,omitempty"`
 }
 
 // RuleSet is a document type's merged rules.
@@ -166,6 +170,9 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 	rs.Checks = nil
 	for _, c := range base.Checks {
 		if o, ok := own[c.ID]; ok {
+			if o.Scope == nil {
+				o.Scope = c.Scope
+			}
 			rs.Checks = append(rs.Checks, o)
 			delete(own, c.ID)
 		} else {

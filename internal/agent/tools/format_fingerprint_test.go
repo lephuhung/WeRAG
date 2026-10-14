@@ -23,6 +23,11 @@ func longDoc(t *testing.T, head, body60, body60Font string, margins [4]int) []by
 		switch i {
 		case 0:
 			text = head
+		case 1:
+			// a văn bản hành chính, checked in the full scope (with the model)
+			text = "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
+		case 2:
+			text = "Số: 12/SNV-VP"
 		case 60:
 			text, font = body60, body60Font
 		}

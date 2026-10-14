@@ -61,6 +61,9 @@ func RenderText(r *Report) string {
 	}
 	dt := r.DocumentType
 	fmt.Fprintf(&b, "Văn bản: %s\nLoại văn bản: %s — bộ luật: %s\n", r.Source, dt.Detected, dt.RuleSet)
+	if !r.FullScope() {
+		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s (%s) — %s\n", ScopeName(r.Scope.Used), r.Scope.Used, r.Scope.Reason)
+	}
 	if s := r.Segmentation; s != nil {
 		fmt.Fprintf(&b, "Gán thành phần: %s", s.Method)
 		if s.Model != "" {
@@ -389,6 +392,9 @@ func RenderJudgment(r *Report) string {
 	b.WriteString("# Hồ sơ phán đoán\n")
 	fmt.Fprintf(&b, "Văn bản: %s\n", r.Source)
 	fmt.Fprintf(&b, "Loại: %s (nhận diện: %s; bộ quy tắc: %s)\n", dt.Used, dt.Detected, dt.RuleSet)
+	if !r.FullScope() {
+		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s — %s\n", ScopeName(r.Scope.Used), r.Scope.Reason)
+	}
 	if s := r.Segmentation; s != nil && s.Error != "" {
 		// the components were assigned by position only: say so
 		fmt.Fprintf(&b, "Gán thành phần: %s — %s\n", s.Method, s.Error)

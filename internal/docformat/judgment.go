@@ -74,6 +74,7 @@ const (
 	KindNoiNhanFormat      = "noi_nhan_format"
 	KindSoKyHieuDate       = "so_ky_hieu_date"
 	KindTypeRequirements   = "type_requirements"
+	KindAttachedHeading    = "attached_heading"
 )
 
 // JudgmentRule is one judgment rule as written in the rule JSON.
@@ -83,6 +84,9 @@ type JudgmentRule struct {
 	Desc     string `json:"desc,omitempty"`
 	Kind     string `json:"kind"`
 	Severity string `json:"severity,omitempty"`
+	// Scope lists the check scopes the rule runs in (scope.go); none
+	// means the full scope only.
+	Scope []string `json:"scope,omitempty"`
 
 	// ky_thay
 	CollectiveRegex string `json:"collective_regex,omitempty"`
@@ -103,6 +107,11 @@ type JudgmentRule struct {
 	ForbiddenCodes []string `json:"forbidden_codes,omitempty"`
 	// type_requirements
 	Requirements []Requirement `json:"requirements,omitempty"`
+	// attached_heading (scope.go)
+	HeadingRegex string `json:"heading_regex,omitempty"`
+	NumberRegex  string `json:"number_regex,omitempty"`
+	DateRegex    string `json:"date_regex,omitempty"`
+	IssuerRegex  string `json:"issuer_regex,omitempty"`
 }
 
 // Requirement is one check of a type_requirements rule. Checks:
@@ -217,7 +226,7 @@ type JudgmentItem struct {
 
 // JudgmentInfo records how the evaluation was made.
 type JudgmentInfo struct {
-	Method       string         `json:"method"` // rules | rules+llm | llm
+	Method       string         `json:"method"` // none (scoped, no Bảng kiểm) | rules | rules+llm | llm
 	Items        []JudgmentItem `json:"items,omitempty"`
 	Undetermined []int          `json:"undetermined,omitempty"` // items sent to the model
 	Seconds      float64        `json:"seconds"`
@@ -277,6 +286,8 @@ func Judge(r *Report) []JudgmentItem {
 			o = jd.soKyHieuDate(jr)
 		case KindTypeRequirements:
 			o = jd.typeRequirements(jr)
+		case KindAttachedHeading:
+			o = jd.attachedHeading(jr)
 		default:
 			o.undetermined = fmt.Sprintf("loại quy tắc %q chưa được hỗ trợ", jr.Kind)
 		}

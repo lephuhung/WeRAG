@@ -49,6 +49,10 @@ func EvaluationMessages(r *Report, opts EvalOptions) []Message {
 
 // EvaluateWithSkills judges a report against the Bảng kiểm of the skills
 // of its document type and returns the written evaluation (Markdown).
+// A report outside the full scope (scope.go) gets a short evaluation
+// written in code — its findings and why the components were not
+// checked — and never calls the model (Judgment.Method "none", or "rules"
+// when the scope has judgment rules of its own).
 // The judgment rules of the rule set (judgment.go) decide the items in
 // code; when they decide all six, no model is called. A reasoning model
 // judges only the items the rules could not decide, and its lines are
@@ -65,6 +69,18 @@ func EvaluateWithSkillsOpts(ctx context.Context, model Completer, r *Report, opt
 		return "", fmt.Errorf("no report to evaluate")
 	}
 	start := time.Now()
+	if !r.FullScope() {
+		// not a văn bản hành chính: the technical findings (and the "kèm
+		// theo" line) written in code, no Bảng kiểm, no model
+		items := judgeScoped(r)
+		info := &JudgmentInfo{Method: "none", Items: items}
+		if len(items) > 0 {
+			info.Method = "rules"
+		}
+		info.Seconds = time.Since(start).Seconds()
+		r.Judgment = info
+		return BuildScopedEvaluation(r, items), nil
+	}
 	if opts.ForceLLM {
 		if model == nil {
 			return "", fmt.Errorf("no model to evaluate with")

@@ -22,12 +22,21 @@ func itemStatuses(items []JudgmentItem) map[int]string {
 // expected items "Lỗi" and leaves nothing to the model.
 func TestJudgmentHarnessDocs(t *testing.T) {
 	docs := loadLiveDocs(t)
-	if len(docs) != 15 {
-		t.Fatalf("harness documents = %d, want 15", len(docs))
+	if len(docs) != 17 {
+		t.Fatalf("harness documents = %d, want 17", len(docs))
 	}
 	var table strings.Builder
 	table.WriteString("| document | expected Lỗi | 1 | 2 | 3 | 4 | 5 | 6 |\n|---|---|---|---|---|---|---|---|\n")
 	for _, d := range docs {
+		if got := d.Report.Scope; got == nil || got.Used != d.Scope {
+			t.Errorf("%s: scope %+v, want %s", d.Name, got, d.Scope)
+		}
+		if d.Scope != ScopeFull {
+			if hasStatus(d.Report.Checks, StatusFail) {
+				t.Errorf("%s: technical check failed: %+v", d.Name, d.Report.Checks)
+			}
+			continue
+		}
 		items := Judge(d.Report)
 		st := itemStatuses(items)
 		fmt.Fprintf(&table, "| %s | %v |", d.Name, d.Errors)
@@ -321,7 +330,7 @@ func TestJudgmentRulesMerge(t *testing.T) {
 	if so.SymbolMode != "no_type_code" || so.Kind != KindSoKyHieuDate || so.Item != 5 {
 		t.Errorf("cong_van so_ky_hieu rule = %+v: the type's fields merge over the base entry", so)
 	}
-	if len(byID["yeu_cau_rieng"].Requirements) == 0 || len(cv.Judgment) != 6 {
+	if len(byID["yeu_cau_rieng"].Requirements) == 0 || len(cv.ForScope(ScopeFull).Judgment) != 6 {
 		t.Errorf("cong_van judgment = %+v", cv.Judgment)
 	}
 	bb, _ := LoadRuleSet("bien_ban")
@@ -378,6 +387,17 @@ func TestEvaluateRulesOnly(t *testing.T) {
 		text, err := EvaluateWithSkills(context.Background(), model, &rep)
 		if err != nil {
 			t.Fatalf("%s: %v", d.Name, err)
+		}
+		if d.Scope != ScopeFull {
+			want := map[string]string{ScopeTechnical: "none", ScopeAttached: "rules"}[d.Scope]
+			if len(model.calls) != 0 || rep.Judgment == nil || rep.Judgment.Method != want {
+				t.Fatalf("%s: model calls %d, judgment %+v", d.Name, len(model.calls), rep.Judgment)
+			}
+			if strings.Contains(text, "Bảng kiểm") || !strings.Contains(text, "## Lỗi (bắt buộc sửa)\nKhông có.") ||
+				!strings.Contains(text, scopeChecksNote) {
+				t.Errorf("%s: scoped evaluation:\n%s", d.Name, text)
+			}
+			continue
 		}
 		if len(model.calls) != 0 || rep.Judgment == nil || rep.Judgment.Method != "rules" {
 			t.Fatalf("%s: model calls %d, judgment %+v", d.Name, len(model.calls), rep.Judgment)

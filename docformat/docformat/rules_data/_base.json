@@ -36,6 +36,7 @@
   "checks": [
     {
       "id": "page.size.width",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "page_width_mm",
       "op": "range",
@@ -48,6 +49,7 @@
     },
     {
       "id": "page.size.height",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "page_height_mm",
       "op": "range",
@@ -60,6 +62,7 @@
     },
     {
       "id": "page.margin.top",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "margin_top_mm",
       "op": "range",
@@ -72,6 +75,7 @@
     },
     {
       "id": "page.margin.bottom",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "margin_bottom_mm",
       "op": "range",
@@ -84,6 +88,7 @@
     },
     {
       "id": "page.margin.left",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "margin_left_mm",
       "op": "range",
@@ -96,6 +101,7 @@
     },
     {
       "id": "page.margin.right",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_setup",
       "prop": "margin_right_mm",
       "op": "range",
@@ -108,6 +114,7 @@
     },
     {
       "id": "page.number",
+      "scope": ["technical", "attached", "full"],
       "kind": "page_number",
       "desc": "Số trang đặt ở giữa phía trên (header), không hiển thị số trang ở trang đầu",
       "severity": "warn"
@@ -314,6 +321,7 @@
     },
     {
       "id": "trich_yeu.align",
+      "scope": ["attached", "full"],
       "kind": "prop",
       "component": "trich_yeu",
       "prop": "alignment",
@@ -324,6 +332,7 @@
     },
     {
       "id": "trich_yeu.bold",
+      "scope": ["attached", "full"],
       "kind": "prop",
       "component": "trich_yeu",
       "prop": "bold",
@@ -335,6 +344,7 @@
     },
     {
       "id": "trich_yeu.size",
+      "scope": ["attached", "full"],
       "kind": "prop",
       "component": "trich_yeu",
       "prop": "size_pt",
@@ -388,6 +398,7 @@
     },
     {
       "id": "noi_dung.font",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "font_name",
@@ -401,6 +412,7 @@
     },
     {
       "id": "noi_dung.size",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "size_pt",
@@ -415,6 +427,7 @@
     },
     {
       "id": "noi_dung.align",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "alignment",
@@ -429,6 +442,7 @@
     },
     {
       "id": "noi_dung.first_line_indent",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "indent_first_line_mm",
@@ -448,6 +462,7 @@
     },
     {
       "id": "noi_dung.line_spacing",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "line_spacing_multiple",
@@ -466,6 +481,7 @@
     },
     {
       "id": "noi_dung.color",
+      "scope": ["technical", "attached", "full"],
       "kind": "prop",
       "component": "noi_dung",
       "prop": "color",
@@ -645,6 +661,7 @@
     },
     {
       "id": "text.stray_chars",
+      "scope": ["technical", "attached", "full"],
       "kind": "stray_chars",
       "desc": "Không có ký tự lạ chen giữa chữ (lỗi gõ như 'Chính p`hủ')",
       "severity": "warn"
@@ -736,6 +753,18 @@
       "kind": "type_requirements",
       "desc": "Yêu cầu riêng của loại văn bản (skill the-thuc-<loại>)",
       "requirements": []
+    },
+    {
+      "item": 6,
+      "id": "kem_theo",
+      "scope": ["attached"],
+      "kind": "attached_heading",
+      "desc": "Văn bản ban hành kèm theo: dưới tên loại, trích yếu có dòng \"(Ban hành kèm theo <Quyết định> số … ngày … của …)\"",
+      "heading_regex": "KEM THEO",
+      "number_regex": "\\bSO\\s*:?\\s*\\d+",
+      "date_regex": "\\bNGAY\\s+\\d{1,2}\\s+THANG\\s+\\d{1,2}\\s+NAM\\s+\\d{4}|\\bNGAY\\s+\\d{1,2}\\s*/\\s*\\d{1,2}\\s*/\\s*\\d{4}",
+      "issuer_regex": "\\bCUA\\s+\\S",
+      "severity": "warn"
     }
   ]
 }
