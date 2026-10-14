@@ -292,6 +292,7 @@ func (t *CheckDocumentFormatTool) Execute(ctx context.Context, args json.RawMess
 	if out.result == nil {
 		return &types.ToolResult{Success: false, Error: out.failure}, nil
 	}
+	t.recordResult(ctx, in.Document, content, revision, out.result)
 	data := out.result.data()
 	output := out.result.Output
 	if mark {
@@ -368,6 +369,34 @@ const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể t
 	"Trả lời người dùng ngắn gọn, theo ý: «Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường xong trong vòng một phút. Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; " +
 	"khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo.» Không nêu nhận xét thể thức nào và không gọi lại công cụ này trong lượt này. " +
 	"Ở lượt sau, khi người dùng hỏi kết quả hoặc muốn sửa lỗi thể thức, GỌI LẠI check_document_format: kết quả có sẵn được trả về ngay."
+
+// recordResult records an inline result (a cached evaluation, or a check
+// forced by document_type) as the document's own format-check state, the
+// way runBackground does, so the editor's status shows a finished check
+// and its report can be opened. A check still under way is left alone.
+func (t *CheckDocumentFormatTool) recordResult(ctx context.Context, ref string, content []byte, revision int, r *formatCheckResult) {
+	if t.workspace == nil || t.sessionID == "" || r == nil || !r.Evaluated {
+		return
+	}
+	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, ref, false)
+	if err != nil || target == nil {
+		return
+	}
+	if st := SessionFormatCheck(ctx, target.ID); st != nil && st.InProgress() {
+		return
+	}
+	now := time.Now()
+	state := &types.DocumentFormatCheck{
+		Status: types.DocumentFormatCheckReady, Revision: revision, StartedAt: r.At,
+		FinishedAt: &now, CheckedSavedAt: &now, Fingerprint: formatFingerprint(content),
+	}
+	if r.DocumentType != nil {
+		state.DocumentType = r.DocumentType.Used
+		state.DocumentTypeLabel = documentTypeLabel(r.DocumentType.RuleSet)
+	}
+	formatChecks.put(ctx, r, formatCheckDocumentKey(target.ID))
+	formatChecks.storeState(ctx, target.ID, state)
+}
 
 // readCurrent reads the document as the editor shows it now: a snapshot
 // first makes the editor save what the user typed (and is the undo point of
