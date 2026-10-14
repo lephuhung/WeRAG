@@ -29,5 +29,37 @@
       "desc": "Tên loại văn bản 'CHỈ THỊ' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_absent",
+          "component": "can_cu",
+          "desc": "Chỉ thị không có phần căn cứ \"Căn cứ …\"",
+          "severity": "warn",
+          "fix": "Bỏ phần căn cứ; mở đầu nêu tình hình, lý do ban hành."
+        },
+        {
+          "check": "component_absent",
+          "component": "kinh_gui",
+          "desc": "Chỉ thị không có \"Kính gửi\"",
+          "severity": "warn",
+          "fix": "Bỏ \"Kính gửi\"."
+        },
+        {
+          "check": "anchor_present",
+          "anchors": [
+            "closing",
+            "tail"
+          ],
+          "regex": "NGHIEM TUC|CHI THI NAY",
+          "desc": "Câu kết yêu cầu nghiêm túc thực hiện Chỉ thị",
+          "severity": "warn",
+          "fix": "Kết thúc bằng câu yêu cầu \"… nghiêm túc thực hiện Chỉ thị này./.\"."
+        }
+      ]
+    }
   ]
 }

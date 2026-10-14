@@ -111,11 +111,14 @@ func (e *evalSpy) Complete(_ context.Context, msgs []Message) (string, error) {
 	return e.reply, e.err
 }
 
+// The full model evaluation (ForceLLM; the judgment rules are tested in
+// judgment_test.go).
 func TestEvaluateWithSkills(t *testing.T) {
 	content, _ := fixture(t, "fx_ky_thay_missing_kt")
 	r := Check(context.Background(), content, Options{Segmenter: SegmenterHeuristic})
 	spy := &evalSpy{reply: "<think>dòng trên không có KT.</think>\n## Kết luận\nChưa đạt."}
-	text, err := EvaluateWithSkills(context.Background(), spy, r)
+	force := EvalOptions{ForceLLM: true}
+	text, err := EvaluateWithSkillsOpts(context.Background(), spy, r, force)
 	if err != nil || text != "## Kết luận\nChưa đạt." {
 		t.Fatalf("text=%q err=%v", text, err)
 	}
@@ -128,10 +131,10 @@ func TestEvaluateWithSkills(t *testing.T) {
 		t.Error("the user turn carries the data only")
 	}
 
-	if _, err := EvaluateWithSkills(context.Background(), &evalSpy{err: errors.New("down")}, r); err == nil {
+	if _, err := EvaluateWithSkillsOpts(context.Background(), &evalSpy{err: errors.New("down")}, r, force); err == nil {
 		t.Error("model errors must surface")
 	}
-	if _, err := EvaluateWithSkills(context.Background(), &evalSpy{reply: "<think>…</think>  "}, r); err == nil {
+	if _, err := EvaluateWithSkillsOpts(context.Background(), &evalSpy{reply: "<think>…</think>  "}, r, force); err == nil {
 		t.Error("an empty evaluation is an error")
 	}
 }

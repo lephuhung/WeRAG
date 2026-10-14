@@ -29,5 +29,48 @@
       "desc": "Tên loại văn bản 'BÁO CÁO' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "TINH HINH|DAC DIEM|CAN CU|KHAI QUAT|CHUNG",
+          "desc": "Đề mục về đặc điểm, tình hình chung",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về đặc điểm, tình hình chung."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "KET QUA",
+          "desc": "Đề mục về kết quả thực hiện",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về kết quả thực hiện."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "TON TAI|HAN CHE|KHO KHAN|VUONG MAC",
+          "desc": "Đề mục về tồn tại, hạn chế",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về tồn tại, hạn chế."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "heading",
+          "regex": "PHUONG HUONG|NHIEM VU|KIEN NGHI|DE XUAT|GIAI PHAP",
+          "desc": "Đề mục về phương hướng, nhiệm vụ, kiến nghị",
+          "severity": "warn",
+          "when_absent": "unknown",
+          "fix": "Nên có đề mục cấp 1 về phương hướng, nhiệm vụ, kiến nghị."
+        }
+      ]
+    }
   ]
 }

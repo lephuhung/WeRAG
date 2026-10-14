@@ -54,6 +54,12 @@ type AnchorLine struct {
 	Text string `json:"text"`
 	// Desc is the anchor's description, shown to the judgment model.
 	Desc string `json:"desc,omitempty"`
+	// IDs are every anchor that picked the line (Kind first): the
+	// judgment rules (judgment.go) look lines up by anchor id.
+	IDs []string `json:"ids,omitempty"`
+	// Full is the untruncated text when Text was cut ("…"), so the
+	// judgment rules read what the brief had to leave out.
+	Full string `json:"-"`
 }
 
 // mergeAnchors returns base with each spec anchor of the same id replacing
@@ -140,6 +146,7 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 	}
 	taken := make([]*Anchor, len(lines))
 	also := make([][]string, len(lines)) // later anchors that matched a taken line
+	ids := make([][]string, len(lines))  // every anchor id that picked a line
 	folded := make([]string, len(lines))
 	for i, bl := range lines {
 		folded[i] = fold(bl.text)
@@ -164,6 +171,7 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 			hits = append(hits[:a.Max-1:a.Max-1], hits[len(hits)-1])
 		}
 		for _, i := range hits {
+			ids[i] = append(ids[i], a.ID)
 			if taken[i] == nil {
 				taken[i] = a
 			} else if a.Desc != "" {
@@ -186,6 +194,7 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 					continue
 				}
 				k++
+				ids[i] = append(ids[i], a.ID)
 				if taken[i] == nil {
 					taken[i] = a
 				}
@@ -196,6 +205,7 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 					continue
 				}
 				k++
+				ids[i] = append(ids[i], a.ID)
 				if taken[i] == nil {
 					taken[i] = a
 				}
@@ -207,12 +217,19 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 		if a == nil {
 			continue
 		}
-		text := lines[i].text
+		text, full := lines[i].text, ""
 		if runeLen(text) > anchorTextRunes {
-			text = truncateRunes(text, anchorTextRunes) + "…"
+			text, full = truncateRunes(text, anchorTextRunes)+"…", text
 		}
 		desc := strings.Join(append([]string{a.Desc}, also[i]...), "; ")
-		out = append(out, AnchorLine{Kind: a.ID, Para: lines[i].para, Text: text, Desc: strings.Trim(desc, "; ")})
+		lineIDs := []string{a.ID}
+		for _, id := range ids[i] {
+			if id != a.ID {
+				lineIDs = append(lineIDs, id)
+			}
+		}
+		out = append(out, AnchorLine{Kind: a.ID, Para: lines[i].para, Text: text, Desc: strings.Trim(desc, "; "),
+			IDs: lineIDs, Full: full})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Para < out[j].Para })
 	return out, len(lines)

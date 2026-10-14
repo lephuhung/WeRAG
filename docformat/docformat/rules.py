@@ -73,7 +73,7 @@ def load_rule_set(doc_type: str) -> dict:
     specific = _load_one(doc_type)
     merged = dict(base)
     merged.update({k: v for k, v in specific.items()
-                   if k not in ("checks", "anchors")})
+                   if k not in ("checks", "anchors", "judgment")})
     # a type-specific check with the same id replaces the base one
     own = {c.get("id"): c for c in specific.get("checks", [])}
     merged["checks"] = [own.pop(c.get("id"), c) for c in base.get("checks", [])] \
@@ -83,6 +83,17 @@ def load_rule_set(doc_type: str) -> dict:
     own = {a.get("id"): a for a in specific.get("anchors", [])}
     merged["anchors"] = [own.pop(a.get("id"), a) for a in base.get("anchors", [])] \
         + [a for a in specific.get("anchors", []) if a.get("id") in own]
+    # "judgment" (the Bảng kiểm rules the Go evaluation decides in code)
+    # merges field by field by id; the Python checker does not use it
+    base_j = [dict(j) for j in base.get("judgment", [])]
+    index = {j.get("id"): i for i, j in enumerate(base_j)}
+    for j in specific.get("judgment", []):
+        if j.get("id") in index:
+            base_j[index[j.get("id")]].update(j)
+        else:
+            index[j.get("id")] = len(base_j)
+            base_j.append(dict(j))
+    merged["judgment"] = base_j
     merged["type"] = specific.get("type", doc_type)
     merged["label"] = specific.get("label", doc_type)
     return merged

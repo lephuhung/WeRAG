@@ -675,5 +675,67 @@
       "max": 2,
       "desc": "đoạn cuối"
     }
+  ],
+  "judgment": [
+    {
+      "item": 1,
+      "id": "thanh_phan_bat_buoc",
+      "kind": "required_components",
+      "desc": "Thành phần bắt buộc của loại văn bản (từ các kiểm tra component.*.present đã đo)"
+    },
+    {
+      "item": 2,
+      "id": "ky_thay",
+      "kind": "ky_thay",
+      "desc": "Thẩm quyền ký: PHÓ … có KT. <cùng chức vụ> ngay trên; tập thể ký TM.; viết tắt KT., TM., TL., TUQ., Q.",
+      "collective_regex": "^(UY BAN NHAN DAN|UBND|HOI DONG NHAN DAN|HDND|HOI DONG|BAN (CHAP HANH|THUONG VU|CHI DAO))\\b",
+      "tm_exempt_regex": "^(TL|TUQ)\\s*\\.",
+      "tm_severity": "error",
+      "bad_abbrev_regex": "^(K/T|T/M|T/L|T\\.L\\b|T\\.M\\b|K\\.T\\b|THAY MAT|KY THAY|THUA LENH|THUA UY QUYEN)",
+      "severity": "error"
+    },
+    {
+      "item": 3,
+      "id": "bao_cao_nguoi_dung_dau",
+      "kind": "head_in_noi_nhan",
+      "desc": "Cấp phó ký thay: nơi nhận có người đứng đầu (để báo cáo)",
+      "head_aliases": {
+        "CHU TICH": [
+          "CT"
+        ],
+        "GIAM DOC": [
+          "GD"
+        ]
+      },
+      "report_regex": "\\(\\s*(DE\\s+)?(BAO CAO|B/C|BC)\\s*\\)|\\bDE\\s+(BAO CAO|B/C)\\b",
+      "severity": "error"
+    },
+    {
+      "item": 4,
+      "id": "noi_nhan",
+      "kind": "noi_nhan_format",
+      "desc": "Nơi nhận: nhãn \"Nơi nhận:\", mỗi dòng \"- …;\", dòng cuối \"- Lưu: VT, ….\"",
+      "label_regex": "^NOI NHAN\\s*:",
+      "item_regex": "^[-–—]\\s+\\S",
+      "end_regex": "[;.]$",
+      "luu_regex": "^[-–—]?\\s*LUU\\b",
+      "luu_vt_regex": "^[-–—]?\\s*LUU\\s*:?\\s*VT\\b",
+      "severity": "error"
+    },
+    {
+      "item": 5,
+      "id": "so_ky_hieu_ngay_thang",
+      "kind": "so_ky_hieu_date",
+      "desc": "Số: NN/<mã loại>-<cơ quan>; <Địa danh>, ngày DD tháng M năm YYYY",
+      "symbol_mode": "type_code",
+      "severity": "error"
+    },
+    {
+      "item": 6,
+      "id": "yeu_cau_rieng",
+      "kind": "type_requirements",
+      "desc": "Yêu cầu riêng của loại văn bản (skill the-thuc-<loại>)",
+      "requirements": []
+    }
   ]
 }

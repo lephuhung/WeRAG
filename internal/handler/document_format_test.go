@@ -135,13 +135,22 @@ func TestDocumentFormatCheckEvaluate(t *testing.T) {
 			Evaluation string   `json:"evaluation"`
 			Skills     []string `json:"skills"`
 			Format     []any    `json:"format"`
+			Judgment   struct {
+				Method string `json:"method"`
+			} `json:"judgment"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, "## Kết luận\nChưa đạt thể thức.", resp.Data.Evaluation)
+	// the judgment rules decide every Bảng kiểm item of this công văn: the
+	// evaluation is written in code, the model is not asked
+	require.Equal(t, "rules", resp.Data.Judgment.Method)
+	require.Contains(t, resp.Data.Evaluation, "## Bảng kiểm")
+	require.NotContains(t, resp.Data.Evaluation, "Chưa đạt thể thức.\n")
 	require.Equal(t, []string{"the-thuc-chung", "the-thuc-cong-van"}, resp.Data.Skills)
 	require.NotEmpty(t, resp.Data.Format)
-	require.True(t, *models.chat.options.Thinking, "the evaluation runs with thinking on")
+	if models.chat.options != nil && models.chat.options.Thinking != nil {
+		require.False(t, *models.chat.options.Thinking, "no reasoning call when the rules decide")
+	}
 
 	// without evaluate=true no reasoning call is made
 	_, models = llmChatFixture()

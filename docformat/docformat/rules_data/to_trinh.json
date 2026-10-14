@@ -39,5 +39,23 @@
       "max": 3,
       "desc": "kiến nghị"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchors": [
+            "request",
+            "closing"
+          ],
+          "regex": "TRINH|DE NGHI",
+          "desc": "Câu kiến nghị cấp có thẩm quyền xem xét, phê duyệt",
+          "severity": "warn",
+          "fix": "Kết thúc bằng câu \"Kính trình … xem xét, phê duyệt./.\"."
+        }
+      ]
+    }
   ]
 }

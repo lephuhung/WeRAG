@@ -28,5 +28,19 @@
       "desc": "Tên loại văn bản 'THÔNG BÁO' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_absent",
+          "component": "kinh_gui",
+          "desc": "Thông báo thường không có \"Kính gửi\"",
+          "severity": "warn",
+          "fix": "Bỏ \"Kính gửi\"; đối tượng nhận ghi ở nơi nhận."
+        }
+      ]
+    }
   ]
 }

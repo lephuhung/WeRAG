@@ -27,8 +27,9 @@ import (
 // field and no number on page 1) and stray_chars (a symbol typed inside a
 // word in any paragraph).
 // Rules that need judgment — signing authority, Nơi nhận, wording — are
-// not coded here: the agent evaluates them with the document-type skills
-// (skills/), on the format data this package extracts.
+// the "judgment" section of the same files, decided by judgment.go; what
+// those rules cannot decide goes to a model with the document-type skills
+// (skills/).
 // Operators: eq, ne, in, range [min,max], regex, ge, le.
 
 //go:embed rules/*.json
@@ -62,6 +63,8 @@ type RuleSet struct {
 	Checks             []RuleCheck `json:"checks"`
 	// Anchors pick the body lines shown to the judgment model (anchors.go).
 	Anchors []Anchor `json:"anchors,omitempty"`
+	// Judgment are the Bảng kiểm rules decided in code (judgment.go).
+	Judgment []JudgmentRule `json:"judgment,omitempty"`
 }
 
 // CheckByID returns the rule with the given id, nil when the set has none.
@@ -144,7 +147,7 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		return nil, err
 	}
 	for k, v := range specRaw {
-		if k != "checks" && k != "anchors" {
+		if k != "checks" && k != "anchors" && k != "judgment" {
 			merged[k] = v
 		}
 	}
@@ -175,6 +178,9 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		}
 	}
 	rs.Anchors = mergeAnchors(base.Anchors, spec.Anchors)
+	if rs.Judgment, err = mergeJudgment(baseRaw["judgment"], specRaw["judgment"]); err != nil {
+		return nil, fmt.Errorf("rule set %q: %w", docType, err)
+	}
 	rs.Type = docType
 	if spec.Type != "" {
 		rs.Type = spec.Type

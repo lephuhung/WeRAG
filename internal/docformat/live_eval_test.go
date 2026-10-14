@@ -7,10 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,9 +18,12 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// Live comparison of the skill evaluation: the full format data
-// (RenderData) against the judgment brief (RenderJudgment), each with
-// thinking on and off, on documents whose judgment outcome is known.
+// Live comparison of the skill evaluation on documents whose judgment
+// outcome is known: cell "rules" is production (the judgment rules decide
+// the Bảng kiểm in code; the model, thinking on, judges only the items
+// they leave undetermined); the "<render>/<thinking>" cells have the model
+// judge everything (EvalOptions.ForceLLM) on the full format data
+// (RenderData) or the judgment brief (RenderJudgment), thinking on or off.
 // Opt-in:
 //
 //	SSRF_WHITELIST=10.10.0.240 DOCFORMAT_LIVE_BASE_URL=http://10.10.0.240:8000/v1 \
@@ -33,45 +33,39 @@ import (
 //
 // DOCFORMAT_LIVE_RUNS (default 4) runs per document and cell,
 // DOCFORMAT_LIVE_CONCURRENCY (default 4) parallel requests,
-// DOCFORMAT_LIVE_CELLS limits the cells ("judgment/off,data/on").
+// DOCFORMAT_LIVE_CELLS limits the cells ("rules,judgment/on").
 //
-// Documents: docformat/evaluation/judgment_docs.py (generated into a temp
-// dir; correct where the rules measure, so only judgment differs) plus
-// the ký-thay parity fixtures. Expected outcome = the Bảng kiểm items of
-// the-thuc-chung that must read "Lỗi"; a document with none is correct
-// and any "Lỗi" on it is a false alarm.
-
-type liveDoc struct {
-	Name   string
-	Report *Report
-	Errors []int // expected Lỗi items
-	Any    []int // unscored items
-	Note   string
-}
+// Documents: loadLiveDocs (judgment_docs_test.go).
 
 type liveCell struct {
 	Render   string // data | judgment
 	Thinking bool
+	Rules    bool // production: judgment rules, the model only for undetermined items
 }
 
 func (c liveCell) String() string {
+	if c.Rules {
+		return "rules"
+	}
 	return c.Render + "/" + map[bool]string{true: "on", false: "off"}[c.Thinking]
 }
 
 type liveRun struct {
-	Cell        string         `json:"cell"`
-	Doc         string         `json:"doc"`
-	Run         int            `json:"run"`
-	Err         string         `json:"error,omitempty"`
-	Seconds     float64        `json:"seconds"`
-	PromptChars int            `json:"prompt_chars"`
-	PromptTok   int            `json:"prompt_tokens"`
-	ComplTok    int            `json:"completion_tokens"`
-	Items       map[int]string `json:"items"` // item → loi | warn | dat | unknown
-	ErrorLines  int            `json:"error_section_lines"`
-	FalseItems  []int          `json:"false_alarm_items,omitempty"`
-	Missed      []int          `json:"missed_items,omitempty"`
-	Answer      string         `json:"answer"`
+	Cell         string         `json:"cell"`
+	Doc          string         `json:"doc"`
+	Run          int            `json:"run"`
+	Err          string         `json:"error,omitempty"`
+	Seconds      float64        `json:"seconds"`
+	PromptChars  int            `json:"prompt_chars"`
+	PromptTok    int            `json:"prompt_tokens"`
+	ComplTok     int            `json:"completion_tokens"`
+	Items        map[int]string `json:"items"` // item → loi | warn | dat | unknown
+	ErrorLines   int            `json:"error_section_lines"`
+	FalseItems   []int          `json:"false_alarm_items,omitempty"`
+	Missed       []int          `json:"missed_items,omitempty"`
+	Answer       string         `json:"answer"`
+	Method       string         `json:"method,omitempty"`
+	Undetermined []int          `json:"undetermined,omitempty"`
 }
 
 // usageChat records the token usage of the call it wraps.
@@ -95,58 +89,14 @@ func (u *usageChat) ChatStream(ctx context.Context, msgs []chat.Message, opts *c
 func (u *usageChat) GetModelName() string { return u.inner.GetModelName() }
 func (u *usageChat) GetModelID() string   { return u.inner.GetModelID() }
 
-var (
-	numberedLineRe  = regexp.MustCompile(`^\d+\.\s`)
-	checklistItemRe = regexp.MustCompile(`^[\s|>*_-]*(?:\*\*)?\s*([1-6])\s*[.)]`)
-	statusRe        = regexp.MustCompile(`Lỗi|Cảnh báo|[Kk]hông xác định|Đạt`)
-	headingRe       = regexp.MustCompile(`^\s*(#+\s|\*\*\s*\d?\.?\s*[A-ZĐÂ]|\d\.\s*\*\*)`)
-)
+var numberedLineRe = regexp.MustCompile(`^\d+\.\s`)
 
-// parseChecklist reads the Bảng kiểm items of an answer: the first line
-// of each item 1-6 after the "Bảng kiểm" heading; the status is the
-// earliest status word on the line after the item number.
+// parseChecklist reads the Bảng kiểm statuses of an answer (ParseChecklist):
+// loi | warn | dat | unknown, "?" for a line without a status word.
 func parseChecklist(answer string) map[int]string {
 	items := map[int]string{}
-	lines := strings.Split(answer, "\n")
-	start := -1
-	for i, l := range lines {
-		if strings.Contains(l, "Bảng kiểm") {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return items
-	}
-	for _, l := range lines[start+1:] {
-		if len(items) > 0 && headingRe.MatchString(l) && !checklistItemRe.MatchString(l) {
-			break
-		}
-		if strings.Contains(l, "|") && strings.Count(l, "|") >= 2 {
-			// a table row: "| 2 | Ký thay | Lỗi: … |"
-			l = strings.TrimLeft(strings.TrimSpace(l), "| ")
-		}
-		m := checklistItemRe.FindStringSubmatchIndex(l)
-		if m == nil {
-			continue
-		}
-		n, _ := strconv.Atoi(l[m[2]:m[3]])
-		if _, seen := items[n]; seen {
-			continue
-		}
-		rest := l[m[1]:]
-		switch s := statusRe.FindString(rest); {
-		case s == "Lỗi":
-			items[n] = "loi"
-		case s == "Cảnh báo":
-			items[n] = "warn"
-		case s == "Đạt":
-			items[n] = "dat"
-		case s != "":
-			items[n] = "unknown"
-		default:
-			items[n] = "?"
-		}
+	for n, e := range ParseChecklist(answer) {
+		items[n] = map[string]string{JudgeFail: "loi", JudgeWarn: "warn", JudgePass: "dat", JudgeUnknown: "unknown", "": "?"}[e.Status]
 	}
 	return items
 }
@@ -155,7 +105,7 @@ func parseChecklist(answer string) map[int]string {
 func errorSectionLines(answer string) int {
 	in, n := false, 0
 	for _, l := range strings.Split(answer, "\n") {
-		if headingRe.MatchString(l) {
+		if mdHeadingRe.MatchString(l) {
 			plain := strings.Trim(l, "#*0123456789. ")
 			in = strings.HasPrefix(plain, "Lỗi") && !strings.Contains(l, "Bảng kiểm")
 			continue
@@ -165,69 +115,6 @@ func errorSectionLines(answer string) int {
 		}
 	}
 	return n
-}
-
-func contains(xs []int, x int) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
-
-func loadLiveDocs(t *testing.T) []liveDoc {
-	t.Helper()
-	dir := t.TempDir()
-	script := filepath.Join("..", "..", "docformat", "evaluation", "judgment_docs.py")
-	if out, err := exec.Command("python3", script, dir).CombinedOutput(); err != nil {
-		t.Fatalf("judgment_docs.py: %v\n%s", err, out)
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "expected.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var expected map[string]struct {
-		Errors []int  `json:"errors"`
-		Any    []int  `json:"any"`
-		Note   string `json:"note"`
-	}
-	if err := json.Unmarshal(raw, &expected); err != nil {
-		t.Fatal(err)
-	}
-	var docs []liveDoc
-	check := func(name string, content []byte) *Report {
-		r := Check(context.Background(), content, Options{Segmenter: SegmenterHeuristic, SourceName: name + ".docx"})
-		if !r.OK {
-			t.Fatalf("%s: %s", name, r.Error)
-		}
-		return r
-	}
-	for name, e := range expected {
-		content, err := os.ReadFile(filepath.Join(dir, name+".docx"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		docs = append(docs, liveDoc{Name: name, Report: check(name, content), Errors: e.Errors, Any: e.Any, Note: e.Note})
-	}
-	// ký-thay parity fixtures (docformat/tests/ky_thay_docs.py)
-	for _, fx := range []struct {
-		name        string
-		errors, any []int
-		note        string
-	}{
-		{"fx_ky_thay_ok", nil, nil, "KT. + Đ/c Trưởng phòng (để b/c)"},
-		{"fx_ky_thay_missing_kt", []int{2, 3, 4}, []int{6}, "PHÓ không KT., không báo cáo, Lưu thiếu VT"},
-		{"fx_ky_thay_mismatch", []int{2, 4}, []int{3, 6}, "KT. GIÁM ĐỐC / PHÓ TRƯỞNG PHÒNG, không có dòng Lưu"},
-	} {
-		content, err := os.ReadFile("testdata/parity/" + fx.name + ".docx")
-		if err != nil {
-			t.Fatal(err)
-		}
-		docs = append(docs, liveDoc{Name: fx.name, Report: check(fx.name, content), Errors: fx.errors, Any: fx.any, Note: fx.note})
-	}
-	sort.Slice(docs, func(i, j int) bool { return docs[i].Name < docs[j].Name })
-	return docs
 }
 
 func envInt(name string, def int) int {
@@ -253,10 +140,13 @@ func TestLiveEvaluation(t *testing.T) {
 	docs := loadLiveDocs(t)
 	runs := envInt("DOCFORMAT_LIVE_RUNS", 4)
 	conc := envInt("DOCFORMAT_LIVE_CONCURRENCY", 4)
-	var cells []liveCell
+	cells := []liveCell{{Render: "judgment", Thinking: true, Rules: true}}
+	if want := os.Getenv("DOCFORMAT_LIVE_CELLS"); want != "" && !strings.Contains(","+want+",", ",rules,") {
+		cells = nil
+	}
 	for _, render := range []string{"data", "judgment"} {
 		for _, thinking := range []bool{true, false} {
-			c := liveCell{render, thinking}
+			c := liveCell{Render: render, Thinking: thinking}
 			if want := os.Getenv("DOCFORMAT_LIVE_CELLS"); want != "" && !strings.Contains(","+want+",", ","+c.String()+",") {
 				continue
 			}
@@ -292,17 +182,28 @@ func TestLiveEvaluation(t *testing.T) {
 			defer func() { <-sem }()
 			uc := &usageChat{inner: model}
 			ev := ChatEvaluatorWithThinking(uc, j.cell.Thinking)
-			opts := EvalOptions{Render: renders[j.cell.Render]}
+			opts := EvalOptions{Render: renders[j.cell.Render], ForceLLM: !j.cell.Rules}
+			// each run judges its own copy: EvaluateWithSkills records
+			// r.Judgment
+			rep := *j.doc.Report
 			chars := 0
-			for _, m := range EvaluationMessages(j.doc.Report, opts) {
-				chars += len([]rune(m.Content))
+			if !j.cell.Rules {
+				for _, m := range EvaluationMessages(&rep, opts) {
+					chars += len([]rune(m.Content))
+				}
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 			start := time.Now()
-			answer, err := EvaluateWithSkillsOpts(ctx, ev, j.doc.Report, opts)
+			answer, err := EvaluateWithSkillsOpts(ctx, ev, &rep, opts)
 			res := liveRun{Cell: j.cell.String(), Doc: j.doc.Name, Run: j.run, Seconds: time.Since(start).Seconds(),
 				PromptChars: chars, PromptTok: uc.usage.PromptTokens, ComplTok: uc.usage.CompletionTokens, Answer: answer}
+			if rep.Judgment != nil {
+				res.Method, res.Undetermined = rep.Judgment.Method, rep.Judgment.Undetermined
+				if rep.Judgment.Error != "" {
+					res.Err = "llm: " + rep.Judgment.Error
+				}
+			}
 			if err != nil {
 				res.Err = err.Error()
 			} else {
@@ -323,8 +224,8 @@ func TestLiveEvaluation(t *testing.T) {
 			results[i] = res
 			mu.Lock()
 			done++
-			t.Logf("[%d/%d] %s %s #%d: %.0fs items=%v fa=%v miss=%v %s", done, len(jobs), res.Cell, res.Doc, res.Run,
-				res.Seconds, res.Items, res.FalseItems, res.Missed, res.Err)
+			t.Logf("[%d/%d] %s %s #%d: %.1fs items=%v fa=%v miss=%v llm=%v %s", done, len(jobs), res.Cell, res.Doc, res.Run,
+				res.Seconds, res.Items, res.FalseItems, res.Missed, res.Undetermined, res.Err)
 			mu.Unlock()
 		}(i, j)
 	}
@@ -338,6 +239,8 @@ func TestLiveEvaluation(t *testing.T) {
 		errLinesCorrect                int
 		secs, compl, chars             float64
 		faByItem                       [7]int
+		noLLM                          int
+		llmByItem                      [7]int
 	}
 	byCell := map[string]*agg{}
 	docCell := map[string]map[string][2]int{} // doc → cell → {false alarm items, missed}
@@ -359,6 +262,12 @@ func TestLiveEvaluation(t *testing.T) {
 			}
 		}
 		a.okRuns++
+		if r.Method == "rules" {
+			a.noLLM++
+		}
+		for _, n := range r.Undetermined {
+			a.llmByItem[n]++
+		}
 		a.secs += r.Seconds
 		a.compl += float64(r.ComplTok)
 		a.chars += float64(r.PromptChars)
@@ -401,8 +310,8 @@ func TestLiveEvaluation(t *testing.T) {
 	}
 	fmt.Fprintf(&b, "\nModel %s, %d documents (%d correct, %d with judgment errors), %d runs per cell\n\n",
 		name, len(docs), nCorrect, len(docs)-nCorrect, runs)
-	b.WriteString("| cell (render/thinking) | runs ok/total | false-alarm runs on correct docs | false-alarm items (all docs) | FA by item 1-6 | missed / expected | \"## Lỗi\" lines on correct docs (mean) | checklist unparsed | mean latency s | mean completion tok | mean prompt chars |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| cell | runs ok/total | false-alarm runs on correct docs | false-alarm items (all docs) | FA by item 1-6 | missed / expected | \"## Lỗi\" lines on correct docs (mean) | checklist unparsed | mean latency s | mean completion tok | mean prompt chars | runs without LLM | items sent to LLM 1-6 |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	summary := map[string]any{}
 	for _, c := range cells {
 		a := byCell[c.String()]
@@ -411,15 +320,20 @@ func TestLiveEvaluation(t *testing.T) {
 		}
 		ok := float64(max(a.okRuns, 1))
 		fa := fmt.Sprintf("%d/%d/%d/%d/%d/%d", a.faByItem[1], a.faByItem[2], a.faByItem[3], a.faByItem[4], a.faByItem[5], a.faByItem[6])
-		fmt.Fprintf(&b, "| %s | %d/%d | %d/%d | %d | %s | %d/%d | %.2f | %d | %.1f | %.0f | %.0f |\n",
+		llm := fmt.Sprintf("%d/%d/%d/%d/%d/%d", a.llmByItem[1], a.llmByItem[2], a.llmByItem[3], a.llmByItem[4], a.llmByItem[5], a.llmByItem[6])
+		noLLM := "-"
+		if c.Rules {
+			noLLM = fmt.Sprintf("%d/%d", a.noLLM, a.okRuns)
+		}
+		fmt.Fprintf(&b, "| %s | %d/%d | %d/%d | %d | %s | %d/%d | %.2f | %d | %.2f | %.0f | %.0f | %s | %s |\n",
 			c, a.okRuns, a.runs, a.faRuns, a.correctRuns, a.faItems, fa, a.missed, a.expected,
 			float64(a.errLinesCorrect)/float64(max(a.correctRuns, 1)), a.unparsed,
-			a.secs/ok, a.compl/ok, a.chars/ok)
+			a.secs/ok, a.compl/ok, a.chars/ok, noLLM, llm)
 		summary[c.String()] = map[string]any{
 			"runs": a.runs, "ok_runs": a.okRuns, "failed": a.failed, "false_alarm_runs": a.faRuns,
 			"correct_runs": a.correctRuns, "false_alarm_items": a.faItems, "false_alarm_by_item": a.faByItem[1:],
 			"missed": a.missed, "expected": a.expected, "unparsed": a.unparsed,
-			"mean_seconds": a.secs / ok, "mean_completion_tokens": a.compl / ok, "mean_prompt_chars": a.chars / ok,
+			"mean_seconds": a.secs / ok, "runs_without_llm": a.noLLM, "llm_by_item": a.llmByItem[1:], "mean_completion_tokens": a.compl / ok, "mean_prompt_chars": a.chars / ok,
 		}
 	}
 	b.WriteString("\nPer document (false-alarm items / missed items, summed over runs):\n\n| document | expected Lỗi | note |")

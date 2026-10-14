@@ -57,5 +57,41 @@
       "max": 20,
       "desc": "Điều"
     }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchor": "resolution_line",
+          "regex": "^QUYET DINH",
+          "desc": "Dòng \"QUYẾT ĐỊNH:\" trước Điều 1",
+          "severity": "error",
+          "when_absent": "error",
+          "fix": "Thêm dòng \"QUYẾT ĐỊNH:\" (in đậm, căn giữa) trước Điều 1."
+        },
+        {
+          "check": "anchor_regex",
+          "anchor": "dieu",
+          "last": 2,
+          "also": [
+            "tail"
+          ],
+          "regex": "HIEU LUC|THI HANH",
+          "desc": "Điều cuối nêu hiệu lực và trách nhiệm thi hành",
+          "severity": "error",
+          "when_absent": "unknown",
+          "fix": "Bổ sung Điều cuối: \"Quyết định này có hiệu lực kể từ ngày ký. … chịu trách nhiệm thi hành Quyết định này.\""
+        },
+        {
+          "check": "component_present",
+          "component": "tham_quyen_ban_hanh",
+          "desc": "Thẩm quyền ban hành (chức vụ người đứng đầu hoặc tên cơ quan) dưới trích yếu",
+          "severity": "error",
+          "fix": "Thêm dòng thẩm quyền ban hành, ví dụ \"GIÁM ĐỐC SỞ …\"."
+        }
+      ]
+    }
   ]
 }

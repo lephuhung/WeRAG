@@ -61,5 +61,37 @@
       "max": 2,
       "desc": "kết thúc biên bản"
     }
+  ],
+  "judgment": [
+    {
+      "id": "ky_thay",
+      "collective_regex": ""
+    },
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "anchor_present",
+          "anchor": "time_place",
+          "desc": "Dòng nêu thời gian, địa điểm",
+          "severity": "warn",
+          "fix": "Ghi thời gian, địa điểm (\"Vào hồi … giờ …, ngày …, tại …\")."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "participants",
+          "desc": "Dòng nêu thành phần, chủ trì, thư ký",
+          "severity": "warn",
+          "fix": "Ghi thành phần tham dự, chủ trì, thư ký."
+        },
+        {
+          "check": "anchor_present",
+          "anchor": "end",
+          "desc": "Dòng kết thúc biên bản",
+          "severity": "warn",
+          "fix": "Ghi \"Biên bản kết thúc vào hồi … giờ …\"."
+        }
+      ]
+    }
   ]
 }

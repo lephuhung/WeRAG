@@ -100,12 +100,13 @@ var skillsDigest = sync.OnceValue(func() string {
 	}
 	add(skillsFS, "skills/*/SKILL.md")
 	add(rulesFS, "rules/*.json")
-	h.Write([]byte(evaluatorPrompt + "\x00" + judgmentRenderVersion))
+	h.Write([]byte(evaluatorPrompt + "\x00" + judgmentRenderVersion + "\x00" + judgmentCodeVersion))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 })
 
 // SkillsDigest fingerprints what a skill evaluation depends on besides the
 // document and the model: every skill, the rule sets (measured findings,
-// anchors), the evaluator prompt and the judgment brief's layout version.
+// anchors, judgment rules), the evaluator prompt, the judgment brief's
+// layout version and the judgment code's version.
 // Cached evaluations keyed with it are dropped when any of them changes.
 func SkillsDigest() string { return skillsDigest() }

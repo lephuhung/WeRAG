@@ -55,5 +55,57 @@
       "desc": "Trích yếu công văn (V/v) chữ đứng, không in đậm",
       "severity": "warn"
     }
+  ],
+  "judgment": [
+    {
+      "id": "so_ky_hieu_ngay_thang",
+      "symbol_mode": "no_type_code",
+      "forbidden_codes": [
+        "CV"
+      ]
+    },
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_regex",
+          "component": "trich_yeu",
+          "mode": "none",
+          "regex": "^CONG VAN$",
+          "desc": "Công văn không có dòng tên loại \"CÔNG VĂN\"",
+          "severity": "error",
+          "fix": "Bỏ dòng \"CÔNG VĂN\"; trích yếu \"V/v …\" đặt dưới số ký hiệu ở cột trái."
+        },
+        {
+          "check": "component_regex",
+          "component": "trich_yeu",
+          "mode": "first",
+          "regex": "^(V\\s*/\\s*V\\b|CONG VAN$)",
+          "desc": "Trích yếu công văn bắt đầu bằng \"V/v\"",
+          "severity": "warn",
+          "fix": "Viết trích yếu dạng \"V/v <nội dung>\"."
+        },
+        {
+          "check": "anchor_present",
+          "anchors": [
+            "closing"
+          ],
+          "desc": "Câu kết đề nghị hoặc dấu \"./.\" cuối nội dung",
+          "severity": "warn",
+          "fix": "Kết thúc nội dung bằng câu đề nghị và dấu \"./.\"."
+        },
+        {
+          "check": "component_regex",
+          "component": "noi_nhan",
+          "skip": 1,
+          "mode": "first",
+          "regex": "NHU TREN",
+          "when": "kinh_gui",
+          "desc": "Có \"Kính gửi\" thì dòng đầu nơi nhận là \"- Như trên;\"",
+          "severity": "warn",
+          "fix": "Ghi \"- Như trên;\" ở dòng đầu nơi nhận."
+        }
+      ]
+    }
   ]
 }

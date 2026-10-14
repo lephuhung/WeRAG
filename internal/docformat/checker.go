@@ -90,9 +90,12 @@ type Report struct {
 	// Format is the measured formatting of every component, line by line —
 	// the data the evaluation skills judge.
 	Format []ComponentFormat `json:"format,omitempty"`
-	// Evaluation is the skill-based judgment written by a reasoning model
-	// (EvaluateWithSkills), when one was requested.
+	// Evaluation is the skill-based judgment (EvaluateWithSkills), when one
+	// was requested: written in code from the judgment rules, with a
+	// reasoning model judging only the items code could not decide.
 	Evaluation string `json:"evaluation,omitempty"`
+	// Judgment records how Evaluation was made (rules / rules+llm / llm).
+	Judgment *JudgmentInfo `json:"judgment,omitempty"`
 	// Skills are the evaluation skills of the document's type.
 	Skills []string `json:"skills,omitempty"`
 	// Anchors are the body's landmark lines (anchors.go) and BodyParas the

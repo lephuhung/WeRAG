@@ -221,13 +221,13 @@ func TestEvaluateWithSkillsRender(t *testing.T) {
 	content, _ := fixture(t, "fx_ky_thay_missing_kt")
 	r := Check(context.Background(), content, Options{Segmenter: SegmenterHeuristic})
 	spy := &evalSpy{reply: "ok"}
-	if _, err := EvaluateWithSkills(context.Background(), spy, r); err != nil {
+	if _, err := EvaluateWithSkillsOpts(context.Background(), spy, r, EvalOptions{ForceLLM: true}); err != nil {
 		t.Fatal(err)
 	}
 	if user := spy.got[1].Content; !strings.HasPrefix(user, "# Hồ sơ phán đoán") || strings.Contains(user, "# Dữ liệu thể thức") {
 		t.Errorf("default render must be the judgment brief:\n%s", user)
 	}
-	if _, err := EvaluateWithSkillsOpts(context.Background(), spy, r, EvalOptions{Render: RenderData}); err != nil {
+	if _, err := EvaluateWithSkillsOpts(context.Background(), spy, r, EvalOptions{Render: RenderData, ForceLLM: true}); err != nil {
 		t.Fatal(err)
 	}
 	if user := spy.got[1].Content; !strings.HasPrefix(user, "# Kết quả đo thể thức") {

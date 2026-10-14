@@ -760,9 +760,14 @@ func isBackgroundRun(ctx context.Context) bool {
 	return v
 }
 
-// evaluate has the chat model judge the report against the document-type
-// skills with thinking on. Without a model, or when the call fails, the
-// agent gets the data and the skills to judge itself.
+// formatEvalOptions tune the skill evaluation; tests set ForceLLM to
+// observe the model call.
+var formatEvalOptions = docformat.EvalOptions{}
+
+// evaluate judges the report against the document-type skills: the
+// judgment rules decide in code, the chat model (thinking on) only what
+// they leave undetermined. Without a model, or when the evaluation fails,
+// the agent gets the data and the skills to judge itself.
 func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docformat.Report) (string, bool) {
 	if t.chatModel != nil {
 		timeout := evaluateTimeout
@@ -771,7 +776,7 @@ func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docforma
 		}
 		evalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		text, err := docformat.EvaluateWithSkills(evalCtx, docformat.ChatEvaluator(t.chatModel), report)
+		text, err := docformat.EvaluateWithSkillsOpts(evalCtx, docformat.ChatEvaluator(t.chatModel), report, formatEvalOptions)
 		if err == nil {
 			report.Evaluation = text
 			return "# Đánh giá thể thức văn bản " + report.Source + "\n" +
