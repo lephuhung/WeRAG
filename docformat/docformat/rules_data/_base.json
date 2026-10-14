@@ -5,15 +5,15 @@
     "quoc_hieu",
     "tieu_ngu",
     "co_quan_ban_hanh",
-    "trich_yeu",
-    "noi_dung",
-    "signature"
-  ],
-  "optional_components": [
-    "co_quan_chu_quan",
     "so_ky_hieu",
     "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
     "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan"
   ],
   "order": [
     "do_mat",
@@ -29,7 +29,9 @@
     "can_cu",
     "noi_dung",
     "signature",
-    "noi_nhan"
+    "noi_nhan",
+    "ky_hieu_soan_thao",
+    "dia_chi_co_quan"
   ],
   "checks": [
     {
@@ -105,6 +107,45 @@
       "severity": "error"
     },
     {
+      "id": "page.number",
+      "kind": "page_number",
+      "desc": "Số trang đặt ở giữa phía trên (header), không hiển thị số trang ở trang đầu",
+      "severity": "warn"
+    },
+    {
+      "id": "co_quan_chu_quan.zone",
+      "kind": "prop",
+      "component": "co_quan_chu_quan",
+      "prop": "zone",
+      "op": "eq",
+      "value": "left",
+      "desc": "Tên cơ quan chủ quản đặt ở cột trái, phía trên tên cơ quan ban hành",
+      "severity": "warn"
+    },
+    {
+      "id": "co_quan_chu_quan.bold",
+      "kind": "prop",
+      "component": "co_quan_chu_quan",
+      "prop": "bold",
+      "op": "ne",
+      "value": true,
+      "desc": "Tên cơ quan chủ quản kiểu chữ đứng, không đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "co_quan_chu_quan.size",
+      "kind": "prop",
+      "component": "co_quan_chu_quan",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        12.0,
+        13.0
+      ],
+      "desc": "Tên cơ quan chủ quản cỡ chữ 12-13",
+      "severity": "warn"
+    },
+    {
       "id": "co_quan_ban_hanh.zone",
       "kind": "prop",
       "component": "co_quan_ban_hanh",
@@ -132,9 +173,9 @@
       "op": "range",
       "value": [
         12.0,
-        14.0
+        13.0
       ],
-      "desc": "Tên cơ quan ban hành cỡ chữ 12-13 (dung sai tới 14)",
+      "desc": "Tên cơ quan ban hành cỡ chữ 12-13",
       "severity": "warn"
     },
     {
@@ -232,10 +273,10 @@
       "prop": "size_pt",
       "op": "range",
       "value": [
-        12.0,
-        14.0
+        13.0,
+        13.0
       ],
-      "desc": "Số, ký hiệu cỡ chữ 13 (dung sai 12-14)",
+      "desc": "Số, ký hiệu cỡ chữ 13",
       "severity": "warn"
     },
     {
@@ -307,6 +348,45 @@
       "severity": "warn"
     },
     {
+      "id": "can_cu.italic",
+      "kind": "prop",
+      "component": "can_cu",
+      "prop": "italic",
+      "op": "eq",
+      "value": true,
+      "mode": "majority",
+      "desc": "Căn cứ ban hành văn bản in nghiêng",
+      "severity": "warn"
+    },
+    {
+      "id": "can_cu.size",
+      "kind": "prop",
+      "component": "can_cu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        13.0,
+        14.0
+      ],
+      "mode": "majority",
+      "desc": "Căn cứ ban hành văn bản cỡ chữ 13-14",
+      "severity": "warn"
+    },
+    {
+      "id": "kinh_gui.size",
+      "kind": "prop",
+      "component": "kinh_gui",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        13.0,
+        14.0
+      ],
+      "mode": "majority",
+      "desc": "Kính gửi cỡ chữ 13-14",
+      "severity": "warn"
+    },
+    {
       "id": "noi_dung.font",
       "kind": "prop",
       "component": "noi_dung",
@@ -348,6 +428,57 @@
       "severity": "warn"
     },
     {
+      "id": "noi_dung.first_line_indent",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "indent_first_line_mm",
+      "op": "range",
+      "value": [
+        9.0,
+        13.0
+      ],
+      "mode": "majority",
+      "skip_when": [
+        "unmeasured",
+        "in_table",
+        "hanging"
+      ],
+      "desc": "Nội dung: đoạn văn thụt đầu dòng 1 cm hoặc 1,27 cm",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_dung.line_spacing",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "line_spacing_multiple",
+      "op": "range",
+      "value": [
+        1.0,
+        1.5
+      ],
+      "mode": "majority",
+      "skip_when": [
+        "unmeasured",
+        "in_table"
+      ],
+      "desc": "Nội dung: khoảng cách giữa các dòng từ 1 dòng (single) đến 1,5 dòng",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_dung.color",
+      "kind": "prop",
+      "component": "noi_dung",
+      "prop": "color",
+      "op": "in",
+      "value": [
+        "auto",
+        "000000"
+      ],
+      "mode": "majority",
+      "desc": "Nội dung: chữ màu đen",
+      "severity": "warn"
+    },
+    {
       "id": "signature.zone",
       "kind": "prop",
       "component": "signature",
@@ -366,6 +497,20 @@
       "value": true,
       "mode": "majority",
       "desc": "Chức danh, cấp bậc người ký in đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "chuc_danh.size",
+      "kind": "prop",
+      "component": "chuc_danh",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        13.0,
+        14.0
+      ],
+      "mode": "majority",
+      "desc": "Chức vụ, quyền hạn người ký cỡ chữ 13-14",
       "severity": "warn"
     },
     {
@@ -402,17 +547,100 @@
       "severity": "warn"
     },
     {
-      "id": "noi_nhan.size",
+      "id": "noi_nhan.label.size",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        12.0,
+        12.0
+      ],
+      "mode": "first",
+      "desc": "Chữ 'Nơi nhận:' cỡ 12",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_nhan.label.italic",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "italic",
+      "op": "eq",
+      "value": true,
+      "mode": "first",
+      "desc": "Chữ 'Nơi nhận:' in nghiêng",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_nhan.label.bold",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "mode": "first",
+      "desc": "Chữ 'Nơi nhận:' in đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_nhan.list.size",
       "kind": "prop",
       "component": "noi_nhan",
       "prop": "size_pt",
       "op": "range",
       "value": [
         11.0,
-        13.0
+        11.0
       ],
-      "mode": "majority",
-      "desc": "Nơi nhận cỡ chữ 11-12 (dung sai tới 13)",
+      "mode": "rest",
+      "desc": "Danh sách nơi nhận cỡ chữ 11",
+      "severity": "warn"
+    },
+    {
+      "id": "noi_nhan.list.italic",
+      "kind": "prop",
+      "component": "noi_nhan",
+      "prop": "italic",
+      "op": "ne",
+      "value": true,
+      "mode": "rest",
+      "desc": "Danh sách nơi nhận kiểu chữ đứng",
+      "severity": "warn"
+    },
+    {
+      "id": "chi_dan_luu_hanh.bold",
+      "kind": "prop",
+      "component": "chi_dan_luu_hanh",
+      "prop": "bold",
+      "op": "eq",
+      "value": true,
+      "desc": "Chỉ dẫn về phạm vi lưu hành ('XEM XONG TRẢ LẠI', 'LƯU HÀNH NỘI BỘ') in đậm",
+      "severity": "warn"
+    },
+    {
+      "id": "ky_hieu_soan_thao.size",
+      "kind": "prop",
+      "component": "ky_hieu_soan_thao",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        11.0,
+        11.0
+      ],
+      "desc": "Ký hiệu người soạn thảo và số lượng bản phát hành cỡ chữ 11",
+      "severity": "warn"
+    },
+    {
+      "id": "dia_chi_co_quan.size",
+      "kind": "prop",
+      "component": "dia_chi_co_quan",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        11.0,
+        12.0
+      ],
+      "desc": "Địa chỉ cơ quan, thư điện tử, trang thông tin điện tử, số điện thoại, số Fax cỡ chữ 11-12",
       "severity": "warn"
     },
     {

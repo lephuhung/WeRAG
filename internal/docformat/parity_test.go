@@ -18,7 +18,7 @@ import (
 // fixtures — the Go port must produce the same labeling units, components
 // and check verdicts. Regenerate with:
 //
-//	python3 docformat/evaluation/export_parity.py internal/docformat/testdata/parity
+//	python3 docformat/evaluation/export_parity.py internal/docformat/testdata/parity --from-fixtures
 
 type parityFixture struct {
 	Units     []map[string]any `json:"units"`

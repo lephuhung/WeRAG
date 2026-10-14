@@ -12,20 +12,74 @@ must mark ``Lỗi``; a document with an empty list is correct and any
     python3 docformat/evaluation/judgment_docs.py <out_dir>
 """
 
+import io
 import json
 import os
+import re
 import sys
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tests"))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
-from test_check import build_docx, doc, p, row, tc  # noqa: E402
+from test_check import STYLES, W, p, row, tc  # noqa: E402
 from test_segment_real import tbl  # noqa: E402
 
 SO_NOI_VU = ("UBND TỈNH THỪA THIÊN HUẾ", "SỞ NỘI VỤ")
 SO_Y_TE = ("UBND TỈNH THỪA THIÊN HUẾ", "SỞ Y TẾ")
 DATE = "Huế, ngày 05 tháng 10 năm 2026"
+
+
+R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+# NĐ30 Phụ lục I: số trang ở giữa, phía trên (header), trang đầu không
+# đánh số (w:titlePg)
+PAGE_HEADER = ('<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:fldSimple w:instr=" PAGE ">'
+               '<w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>2</w:t></w:r></w:fldSimple></w:p>')
+SECT = ('<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:titlePg/>'
+        '<w:pgSz w:w="11906" w:h="16838"/>'
+        '<w:pgMar w:top="1360" w:right="1080" w:bottom="1360" w:left="1920" '
+        'w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>')
+
+
+def doc(body_xml):
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document %s %s><w:body>%s%s</w:body></w:document>' % (W, R, body_xml, SECT))
+
+
+def build_docx(document_xml):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml",
+                    '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        zf.writestr("word/document.xml", document_xml)
+        zf.writestr("word/styles.xml", STYLES)
+        zf.writestr("word/_rels/document.xml.rels",
+                    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    '<Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
+                    'Target="header1.xml"/></Relationships>')
+        zf.writestr("word/header1.xml", "<w:hdr %s>%s</w:hdr>" % (W, PAGE_HEADER))
+    return buf.getvalue()
+
+
+def _esc(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+_DIEU_RE = re.compile(r"^(Điều \d+\.)\s*(.*)$")
+
+
+def body_p(text):
+    """A body paragraph: justified, cỡ 14, thụt đầu dòng 1 cm; "Điều N." in
+    bold followed by the regular text of the điều."""
+    ppr = '<w:pPr><w:ind w:firstLine="567"/><w:jc w:val="both"/></w:pPr>'
+    run = '<w:r><w:rPr>%s<w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">%s</w:t></w:r>'
+    m = _DIEU_RE.match(text)
+    if m:
+        return "<w:p>%s%s%s</w:p>" % (ppr, run % ("<w:b/>", _esc(m.group(1) + " ")),
+                                      run % ("", _esc(m.group(2))))
+    return "<w:p>%s%s</w:p>" % (ppr, run % ("", _esc(text)))
 
 
 def header(agency, so, vv=None, date=DATE):
@@ -54,8 +108,10 @@ def title(kind, subject):
 def body(*paras):
     out = ""
     for t in paras:
-        center = t.endswith(":") and t.isupper()
-        out += p(t, align="center" if center else "both", size=14, bold=center)
+        if t.endswith(":") and t.isupper():
+            out += p(t, align="center", size=14, bold=True)
+        else:
+            out += body_p(t)
     return out
 
 

@@ -12,6 +12,7 @@ can run inside a bare Python sandbox.
 from __future__ import annotations
 
 import io
+import posixpath
 import re
 import zipfile
 from dataclasses import dataclass, field, asdict
@@ -20,6 +21,8 @@ from xml.etree import ElementTree as ET
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 
 def qn(local: str) -> str:
@@ -195,6 +198,8 @@ class Run:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     caps: Optional[bool] = None
+    # w:color w:val through the style chain; "auto" when none is set
+    color: Optional[str] = None
 
 
 @dataclass
@@ -211,6 +216,7 @@ class Para:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     caps: Optional[bool] = None
+    color: Optional[str] = None  # dominant run's colour ("auto" = default black)
     text_is_upper: bool = False
     indent_left_mm: Optional[float] = None
     indent_right_mm: Optional[float] = None
@@ -263,6 +269,8 @@ class DocLayout:
     n_tables: int = 0
     has_headers: bool = False
     has_footers: bool = False
+    # page numbering of the first section (see _page_numbering)
+    page_numbering: dict = field(default_factory=dict)
     errors: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -470,6 +478,7 @@ class _Builder:
                 italic=rrpr.get("italic"),
                 underline=rrpr.get("underline"),
                 caps=rrpr.get("caps"),
+                color=rrpr.get("color") or "auto",
             ))
         # runs nested inside hyperlinks / smartTags / sdt (direct children were
         # already gathered above — capture the nested ones' text too)
@@ -485,7 +494,8 @@ class _Builder:
                                 size_pt=rrpr.get("size_pt"),
                                 bold=rrpr.get("bold"), italic=rrpr.get("italic"),
                                 underline=rrpr.get("underline"),
-                                caps=rrpr.get("caps")))
+                                caps=rrpr.get("caps"),
+                                color=rrpr.get("color") or "auto"))
 
         text = "".join(r.text for r in runs)
         primary = self._primary_run(runs)
@@ -503,6 +513,7 @@ class _Builder:
             italic=primary.italic if primary else None,
             underline=primary.underline if primary else None,
             caps=primary.caps if primary else None,
+            color=primary.color if primary else None,
             text_is_upper=_is_upper_text(text),
             indent_left_mm=eff_ppr.get("indent_left_mm"),
             indent_right_mm=eff_ppr.get("indent_right_mm"),
@@ -729,6 +740,78 @@ def _is_upper_text(text: str) -> bool:
     return all(not c.islower() for c in letters)
 
 
+_PAGE_FIELD_RE = re.compile(r"\bPAGE\b")
+
+
+def _part_rels(zf: zipfile.ZipFile, rels_part: str) -> dict:
+    """Relationship id -> package part name of an OOXML .rels part."""
+    try:
+        root = ET.fromstring(zf.read(rels_part))
+    except (KeyError, ET.ParseError):
+        return {}
+    out = {}
+    for rel in root:
+        if rel.tag != "{%s}Relationship" % PKG_REL_NS:
+            continue
+        rid, target = rel.get("Id"), rel.get("Target") or ""
+        if not rid or not target or rel.get("TargetMode") == "External":
+            continue
+        if target.startswith("/"):
+            out[rid] = target[1:]
+        else:
+            out[rid] = posixpath.normpath("word/" + target)
+    return out
+
+
+def _para_has_page_field(p: ET.Element) -> bool:
+    """A PAGE field: w:fldSimple w:instr="PAGE" or a complex field whose
+    w:instrText reads PAGE (NUMPAGES / PAGEREF do not count)."""
+    for f in p.iter(qn("fldSimple")):
+        if _PAGE_FIELD_RE.search((f.get(qn("instr")) or "").upper()):
+            return True
+    instr = "".join(t.text or "" for t in p.iter(qn("instrText")))
+    return _PAGE_FIELD_RE.search(instr.upper()) is not None
+
+
+def _page_numbering(zf: zipfile.ZipFile, root: ET.Element, doc_ppr: dict,
+                    styles: dict) -> dict:
+    """How the first section numbers its pages (NĐ30 Phụ lục I: số trang
+    ở giữa, phía trên, không đánh số trang đầu): a PAGE field in a header
+    other than the first-page one, whether that paragraph is centred,
+    a PAGE field in any footer, and w:titlePg."""
+    out = {"header_page_field": False, "footer_page_field": False,
+           "centered": False, "title_pg": False}
+    body = root.find(qn("body"))
+    sect = next(body.iter(qn("sectPr")), None) if body is not None else None
+    if sect is None:
+        return out
+    tp = sect.find(qn("titlePg"))
+    out["title_pg"] = tp is not None and _bool_prop(tp)
+    rels = _part_rels(zf, "word/_rels/document.xml.rels")
+    for kind in ("header", "footer"):
+        for ref in sect.findall(qn(kind + "Reference")):
+            if kind == "header" and (ref.get(qn("type")) or "default") == "first":
+                continue
+            part = rels.get(ref.get("{%s}id" % R_NS))
+            if not part:
+                continue
+            try:
+                proot = ET.fromstring(zf.read(part))
+            except (KeyError, ET.ParseError):
+                continue
+            for p in proot.iter(qn("p")):
+                if not _para_has_page_field(p):
+                    continue
+                out[kind + "_page_field"] = True
+                if kind == "header":
+                    ppr = _ppr_props(p.find(qn("pPr")))
+                    st_ppr, _, _ = _resolve_style(styles, ppr.get("style_id"))
+                    eff = _merge(_merge(doc_ppr, st_ppr), ppr)
+                    if eff.get("alignment") == "center":
+                        out["centered"] = True
+    return out
+
+
 def inspect_docx(content: bytes) -> DocLayout:
     """Parse .docx bytes into a DocLayout."""
     layout = DocLayout()
@@ -783,4 +866,5 @@ def inspect_docx(content: bytes) -> DocLayout:
     names = set(zf.namelist())
     layout.has_headers = any(re.match(r"word/header\d+\.xml$", n) for n in names)
     layout.has_footers = any(re.match(r"word/footer\d+\.xml$", n) for n in names)
+    layout.page_numbering = _page_numbering(zf, root, doc_ppr, styles)
     return layout

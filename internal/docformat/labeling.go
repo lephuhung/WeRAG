@@ -46,6 +46,9 @@ var Components = []ComponentDef{
 	{"chuc_danh", "Quyền hạn, chức vụ người ký trong khối ký (thường ở cột phải cuối văn bản, có khi chỉ căn giữa/thụt lề): 'TM. ỦY BAN NHÂN DÂN', 'KT. GIÁM ĐỐC', 'PHÓ GIÁM ĐỐC', 'CHỦ TỊCH'. Biên bản, văn bản liên tịch có NHIỀU người ký cạnh nhau (VD trái 'THƯ KÝ', phải 'CHỦ TRÌ') — mọi khối ký đều là chuc_danh/nguoi_ky, không phải noi_dung."},
 	{"nguoi_ky", "Họ và tên người ký, dòng cuối của mỗi khối ký: 'Nguyễn Văn A'. Không gồm '(Đã ký)', '(Ký, đóng dấu)'."},
 	{"noi_nhan", "Nơi nhận: dòng 'Nơi nhận:' và các dòng '- ...;' bên dưới, cột trái cuối văn bản."},
+	{"chi_dan_luu_hanh", "Chỉ dẫn về phạm vi lưu hành (ô 11): dòng riêng 'XEM XONG TRẢ LẠI', 'LƯU HÀNH NỘI BỘ'."},
+	{"ky_hieu_soan_thao", "Ký hiệu người soạn thảo văn bản và số lượng bản phát hành (ô 12): dòng ngắn như 'NVA.15', 'TTr/2b', thường là dòng cuối cột trái dưới Nơi nhận. Dòng '- Lưu: ...' vẫn là noi_nhan."},
+	{"dia_chi_co_quan", "Địa chỉ cơ quan, tổ chức; thư điện tử; trang thông tin điện tử; số điện thoại; số Fax (ô 13): dòng cuối trang dạng 'Địa chỉ: ...; ĐT: ...; Fax: ...; Email: ...'."},
 	{"phu_luc", "Phụ lục / văn bản kèm theo sau phần nơi nhận."},
 	{"khac", "Không thuộc thành phần nào ở trên: dòng kẻ, ghi chú '(Đã ký)', dấu, chú thích, header/footer lạc vào."},
 }

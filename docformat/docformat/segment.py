@@ -58,6 +58,14 @@ _NOI_NHAN_RE = re.compile(r"^NOI\s*NHAN\s*[:.]?")
 _KINH_GUI_RE = re.compile(r"^KINH\s+GUI\s*[:.]?")
 _CAN_CU_RE = re.compile(r"^(CAN\s+CU|THEO\s+DE\s+NGHI|XET\s+DE\s+NGHI|XET\s+TO\s+TRINH)\b")
 _PHU_LUC_RE = re.compile(r"^PHU\s+LUC\b")
+# ô 11 — chỉ dẫn về phạm vi lưu hành, a whole line on its own
+_CHI_DAN_RE = re.compile(r"^(XEM\s+XONG\s+TRA\s+LAI|LUU\s+HANH\s+NOI\s+BO)\.?$")
+# ô 12 — ký hiệu người soạn thảo + số bản ("NVA.15", "TTr/2b"), raw text
+_KY_HIEU_ST_RE = re.compile(r"^[^\W\d_]{1,8}\s?[./]\s?\d{1,3}[^\W\d_]?$")
+# ô 13 — địa chỉ, điện thoại, fax, email, website of the cơ quan
+_DIA_CHI_KW = r"(DIA\s+CHI|DT|DIEN\s+THOAI|FAX|E-?MAIL|WEBSITE)\b"
+_DIA_CHI_START_RE = re.compile(r"^" + _DIA_CHI_KW)
+_DIA_CHI_ANY_RE = re.compile(r"\b" + _DIA_CHI_KW)
 _SO_PHACH_RE = re.compile(r"^SO\s*PHACH|^SO\s+LUONG\s+BAN")
 _TRICH_VV_RE = re.compile(r"^V\s*/\s*V\b|^VE\s+VIEC\b")
 # decorative rules typed as text under quốc hiệu / cơ quan / trích yếu
@@ -502,6 +510,23 @@ def segment(layout: DocLayout) -> Segmented:
     if sig_open_idx is None and cands:
         sig_open_idx = cands[0]
 
+    def is_dia_chi(f: str) -> bool:
+        return bool(_DIA_CHI_START_RE.match(f)) or len(_DIA_CHI_ANY_RE.findall(f)) >= 2
+
+    # ô 12/13 sit under nơi nhận (or under the signature when there is no
+    # nơi nhận): only lines past that point are considered
+    bottom_from = noi_nhan_idx if noi_nhan_idx is not None else sig_open_idx
+    ky_hieu_k = None
+    if noi_nhan_idx is not None:
+        for k in range(noi_nhan_end - 1, noi_nhan_idx, -1):
+            el = tail[k]
+            if is_right(el) or is_dia_chi(fold(el.text)):
+                continue
+            t = el.text.strip()
+            if len(t) <= 12 and _KY_HIEU_ST_RE.match(t):
+                ky_hieu_k = k
+            break  # only the last left line of the nơi nhận block
+
     sig_els = []
     body_els = []
     for k, el in enumerate(tail):
@@ -512,6 +537,16 @@ def segment(layout: DocLayout) -> Segmented:
         in_sig = sig_open_idx is not None and sig_open_idx <= k < noi_nhan_end
         if in_sig and is_right(el):
             sig_els.append((pos, el))
+            continue
+        if _CHI_DAN_RE.match(f):
+            _add(seg, "chi_dan_luu_hanh", p.index, el.text, el.zone, pos=pos)
+            continue
+        if (bottom_from is not None and bottom_from < k < noi_nhan_end
+                and is_dia_chi(f)):
+            _add(seg, "dia_chi_co_quan", p.index, el.text, el.zone, pos=pos)
+            continue
+        if k == ky_hieu_k:
+            _add(seg, "ky_hieu_soan_thao", p.index, el.text, "left", pos=pos)
             continue
         if in_noi_nhan and not is_right(el):
             _add(seg, "noi_nhan", p.index, el.text, "left", pos=pos)

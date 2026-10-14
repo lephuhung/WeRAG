@@ -9,8 +9,18 @@ Check kinds
 - ``present`` / ``absent``: the component must (not) be found.
 - ``prop``: evaluate a paragraph property over the component's paragraphs.
   ``mode`` = ``all`` (every paragraph satisfies), ``majority`` (>=70% of
-  paragraphs satisfy — for body text where headings legitimately differ) or
-  ``any``.
+  paragraphs satisfy — for body text where headings legitimately differ),
+  ``any``, ``first`` (only the component's first line, which must satisfy —
+  the "Nơi nhận:" label) or ``rest`` (the lines after the first, >=70% —
+  the Nơi nhận list).  ``skip_when`` lists paragraphs that do not count:
+  ``unmeasured`` (the property is not set anywhere), ``in_table``,
+  ``hanging`` (a hanging indent).
+- ``regex_prop``: like ``prop`` (modes all/majority) over the component's
+  paragraphs whose fold()ed text matches ``regex``; a run property (bold,
+  size, ...) is read from the runs covering the match, so "Điều 1." in bold
+  followed by regular text satisfies ``bold eq true``.
+- ``page_number``: the first section numbers its pages in a centred header
+  PAGE field and leaves page 1 unnumbered (w:titlePg).
 - ``page_setup``: evaluate a Section property (page size, margins).
 - ``order``: components must appear in the rule-set ``order`` list.
 - ``stray_chars``: a stray symbol typed inside a word ("Chính p`hủ") in any
@@ -32,7 +42,7 @@ from importlib import resources
 from typing import Optional
 
 from .layout import DocLayout, Para
-from .segment import Segmented
+from .segment import Segmented, fold
 
 _RULES_PACKAGE = "docformat.rules_data"
 
@@ -128,12 +138,48 @@ def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> list:
     return out
 
 
+_RUN_PROPS = ("font_name", "size_pt", "bold", "italic", "underline", "caps",
+              "color")
+
+
+def _match_span_prop(p: Para, prop: str, regex: str):
+    """The run property over the runs covering the regex match on the
+    fold()ed paragraph text: their common value, "mixed" when they differ."""
+    m = re.search(regex, fold(p.text))
+    runs = p.runs or []
+    if m is None or not runs or prop not in _RUN_PROPS:
+        return getattr(p, prop, None)
+    end = len(m.group(0)) + m.start()
+    acc, covered = "", []
+    for r in runs:
+        acc += r.get("text", "")
+        covered.append(r)
+        if len(fold(acc)) >= end:
+            break
+    vals = [r.get(prop) for r in covered if r.get("text", "").strip()]
+    if not vals:
+        return getattr(p, prop, None)
+    return vals[0] if all(v == vals[0] for v in vals) else "mixed"
+
+
+def _skipped(p: Para, actual, skip_when) -> bool:
+    for w in skip_when or ():
+        if w == "unmeasured" and actual is None:
+            return True
+        if w == "in_table" and p.in_table:
+            return True
+        if w == "hanging" and (p.indent_hanging_mm or 0) > 0:
+            return True
+    return False
+
+
 def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
     comp_key = check["component"]
     prop = check["prop"]
     op = check["op"]
     expected = check.get("value")
     mode = check.get("mode", "all")
+    regex = check.get("regex") if check.get("kind") == "regex_prop" else None
     comp = seg.comp(comp_key)
     paras = _component_paras(layout, seg, comp_key)
     if not paras:
@@ -150,6 +196,8 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
             return z
         if prop == "text_upper":
             return p.text_is_upper
+        if regex is not None:
+            return _match_span_prop(p, prop, regex)
         if p.zone == "split" and z in ("left", "right"):
             side = p.left_props if z == "left" else p.right_props
             if prop in side:
@@ -173,10 +221,32 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
         return {"status": "skip", "actual": None,
                 "note": "component %r has no text paragraphs" % comp_key,
                 "evidence": []}
+    if mode == "first":
+        flags = flags[:1]
+    elif mode == "rest":
+        flags = flags[1:]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "component %r has only one line" % comp_key,
+                    "evidence": []}
+    if regex is not None:
+        flags = [f for f in flags if re.search(regex, fold(f[1].text))]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "no paragraph of %r matches the pattern" % comp_key,
+                    "evidence": []}
+    skip_when = check.get("skip_when")
+    if skip_when:
+        flags = [f for f in flags
+                 if not _skipped(f[1], actual_of(f[0], f[1]), skip_when)]
+        if not flags:
+            return {"status": "skip", "actual": None,
+                    "note": "không đo được trên đoạn nào của %r" % comp_key,
+                    "evidence": []}
     n_ok = sum(1 for _, _, ok in flags if ok)
     if mode == "any":
         passed = n_ok >= 1
-    elif mode == "majority":
+    elif mode in ("majority", "rest"):
         passed = n_ok / len(flags) >= 0.7
     else:
         passed = n_ok == len(flags)
@@ -208,6 +278,21 @@ def _eval_page_setup(layout: DocLayout, check: dict) -> dict:
     return {
         "status": "pass" if ok else ("warn" if check.get("severity") == "warn" else "fail"),
         "actual": actuals,
+        "evidence": [],
+    }
+
+
+_PAGE_NUMBER_KEYS = ("header_page_field", "footer_page_field", "centered",
+                     "title_pg")
+
+
+def _eval_page_number(layout: DocLayout, check: dict) -> dict:
+    pn = layout.page_numbering or {}
+    actual = {k: bool(pn.get(k)) for k in _PAGE_NUMBER_KEYS}
+    ok = actual["header_page_field"] and actual["centered"] and actual["title_pg"]
+    return {
+        "status": "pass" if ok else ("warn" if check.get("severity") == "warn" else "fail"),
+        "actual": actual,
         "evidence": [],
     }
 
@@ -314,8 +399,10 @@ def evaluate(layout: DocLayout, seg: Segmented, rule_set: dict) -> list:
                 r = _eval_present(seg, check)
             elif kind == "page_setup":
                 r = _eval_page_setup(layout, check)
-            elif kind == "prop":
+            elif kind in ("prop", "regex_prop"):
                 r = _eval_prop_check(layout, seg, check)
+            elif kind == "page_number":
+                r = _eval_page_number(layout, check)
             elif kind == "stray_chars":
                 r = _eval_stray_chars(layout, check)
             else:

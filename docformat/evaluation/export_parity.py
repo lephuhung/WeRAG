@@ -13,6 +13,12 @@ implementation produces:
   from those labels (exercises apply_labels + rules on clean components).
 
     python3 evaluation/export_parity.py ../internal/docformat/testdata/parity
+
+After a rule / engine change, refresh only the expected results of the
+fixture .docx already in the directory (the .docx stay byte-identical;
+gold labels are kept from the old .json):
+
+    python3 evaluation/export_parity.py ../internal/docformat/testdata/parity --from-fixtures
 """
 
 from __future__ import annotations
@@ -114,8 +120,37 @@ def fixture_docs():
     return docs
 
 
+def refresh_fixtures(out_dir: str) -> int:
+    """Rewrite every <name>.json of out_dir from its <name>.docx."""
+    n = 0
+    for jf in sorted(glob.glob(os.path.join(out_dir, "*.json"))):
+        with open(jf, encoding="utf-8") as fh:
+            gold = json.load(fh).get("labels")
+        with open(jf[:-5] + ".docx", "rb") as fh:
+            content = fh.read()
+        layout = inspect_docx(content)
+        out = {
+            "units": build_units(layout, segment(layout)),
+            "heuristic": report_view(check_document(content, segmenter="heuristic")),
+        }
+        if gold is not None:
+            out["labels"] = gold
+            out["labeled"] = report_view(check_document(content, labels=gold))
+        with open(jf, "w", encoding="utf-8") as fh:
+            json.dump(out, fh, ensure_ascii=False, separators=(",", ":"))
+        n += 1
+    return n
+
+
 def main(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
+    if "--from-fixtures" in argv:
+        rest = [a for a in argv if a != "--from-fixtures"]
+        out_dir = rest[0] if rest else os.path.join(
+            ROOT, "..", "internal", "docformat", "testdata", "parity")
+        n = refresh_fixtures(out_dir)
+        print("refreshed %d parity fixtures in %s" % (n, os.path.abspath(out_dir)))
+        return 0
     out_dir = argv[0] if argv else os.path.join(
         ROOT, "..", "internal", "docformat", "testdata", "parity")
     synth = argv[1] if len(argv) > 1 else os.path.join(HERE, "samples", "synth")

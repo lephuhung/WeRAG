@@ -26,8 +26,15 @@ var componentNames = map[string]string{
 	"nguoi_ky":            "Họ tên người ký",
 	"signature":           "Khối chữ ký",
 	"noi_nhan":            "Nơi nhận",
+	"chi_dan_luu_hanh":    "Chỉ dẫn phạm vi lưu hành",
+	"ky_hieu_soan_thao":   "Ký hiệu người soạn thảo, số bản",
+	"dia_chi_co_quan":     "Địa chỉ cơ quan",
 	"phu_luc":             "Phụ lục",
 }
+
+// minorComponents (ô 11, 12, 13) are rarely present and never required:
+// the judgment brief does not list them as missing.
+var minorComponents = map[string]bool{"chi_dan_luu_hanh": true, "ky_hieu_soan_thao": true, "dia_chi_co_quan": true}
 
 // ComponentName returns the Vietnamese name of a component key.
 func ComponentName(key string) string {
@@ -92,7 +99,7 @@ func RenderText(r *Report) string {
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", ComponentName(c.Key), truncateRunes(strings.ReplaceAll(comp.Text, "\n", " / "), 120))
 	}
-	b.WriteString("\nLưu ý: kiểm tra tự động theo NĐ30/2020 Phụ lục I trên file .docx; con dấu, chữ ký, đánh số trang cần rà soát thủ công.\n")
+	b.WriteString("\nLưu ý: kiểm tra tự động theo NĐ30/2020 Phụ lục I trên file .docx; số trang chỉ đo được trường PAGE trong header; con dấu, chữ ký cần rà soát thủ công.\n")
 	return b.String()
 }
 
@@ -283,6 +290,7 @@ func shortDesc(d string) string {
 var propNames = map[string]string{
 	"zone": "vị trí", "bold": "độ đậm", "italic": "kiểu nghiêng", "size": "cỡ chữ",
 	"align": "căn lề", "font": "phông chữ", "pattern": "dạng ghi", "type_line": "dòng tên loại",
+	"first_line_indent": "thụt đầu dòng", "line_spacing": "giãn dòng", "color": "màu chữ",
 }
 
 // passedSummary lists the passed measurements compactly, grouped by
@@ -306,11 +314,18 @@ func passedSummary(checks []CheckResult) string {
 			continue
 		}
 		key, prop, _ := strings.Cut(c.ID, ".")
+		part := "" // "label" / "list" of noi_nhan.label.size, "dieu" of noi_dung.dieu.bold
+		if i := strings.LastIndex(prop, "."); i >= 0 {
+			part, prop = prop[:i], prop[i+1:]
+		}
 		switch {
 		case key == "page":
-			if strings.HasPrefix(prop, "size") {
+			switch {
+			case strings.HasPrefix(part+prop, "size"):
 				add("Trang", "khổ giấy")
-			} else {
+			case prop == "number":
+				add("Trang", "đánh số trang")
+			default:
 				add("Trang", "lề")
 			}
 		case key == "dia_danh" && propNames[prop] != "":
@@ -321,6 +336,14 @@ func passedSummary(checks []CheckResult) string {
 			name := propNames[prop]
 			if name == "" {
 				name = "khác"
+			}
+			switch part {
+			case "label":
+				name += " dòng nhãn"
+			case "list":
+				name += " danh sách"
+			case "dieu":
+				name += " dòng Điều"
 			}
 			add(ComponentName(key), name)
 		default:
@@ -345,7 +368,7 @@ func passedSummary(checks []CheckResult) string {
 
 // judgmentRenderVersion changes whenever RenderJudgment's layout changes,
 // so cached evaluations made on the old layout are dropped (SkillsDigest).
-const judgmentRenderVersion = "judgment-v2"
+const judgmentRenderVersion = "judgment-v3"
 
 // RenderJudgment renders the judgment brief ("hồ sơ phán đoán") the skill
 // evaluation reads: the measured findings (final, not to be re-judged),
@@ -477,6 +500,15 @@ func RenderJudgment(r *Report) string {
 			b.WriteString("  - " + judgmentLine(lf, true) + "\n")
 		}
 	}
+	if s := joined("chi_dan_luu_hanh", false); s != "" {
+		fmt.Fprintf(&b, "[11] Chỉ dẫn phạm vi lưu hành: %s\n", s)
+	}
+	if s := joined("ky_hieu_soan_thao", false); s != "" {
+		fmt.Fprintf(&b, "[12] Ký hiệu người soạn thảo, số bản: %s\n", s)
+	}
+	if s := joined("dia_chi_co_quan", false); s != "" {
+		fmt.Fprintf(&b, "[13] Địa chỉ cơ quan: %s\n", s)
+	}
 	if comp, ok := r.Components["phu_luc"]; ok && comp.Found {
 		b.WriteString("Phụ lục: có\n")
 	}
@@ -502,7 +534,7 @@ func RenderJudgment(r *Report) string {
 		}
 		if required[c.Key] {
 			missReq = append(missReq, ComponentName(c.Key))
-		} else {
+		} else if !minorComponents[c.Key] {
 			missOpt = append(missOpt, ComponentName(c.Key))
 		}
 	}

@@ -52,16 +52,23 @@ var (
 	soKyHieuRe = regexp.MustCompile(`^SO\s*[:.]|^SO\s+\d|^SO\s*/|^SO\s+\S*/\s*[A-Z]|^\d{1,5}[A-Z]?\s*/\s*(\d{4}\s*/\s*)?[A-Z]{1,8}\b`)
 	// "Huế, ngày 05 tháng 10 năm 2026", drafts with blank day/month.
 	// Anchored so a title "Báo cáo ... năm 2025" does not match.
-	diaDanhRe   = regexp.MustCompile(`^([^,\d]{2,60},\s*)?NGAY\s*[\d.…_ ]{0,8}\s*THANG\s*[\d.…_ ]{0,8}\s*NAM\b`)
-	matRe       = regexp.MustCompile(`^(DO\s+)?MAT(\s*[:.]|\s*$)|^DO\s+MAT\b`)
-	khanRe      = regexp.MustCompile(`^(DO\s+KHAN\s*[:.]?\s*)?(KHAN|HOA\s*TOC|THUONG\s*KHAN)\b`)
-	noiNhanRe   = regexp.MustCompile(`^NOI\s*NHAN\s*[:.]?`)
-	kinhGuiRe   = regexp.MustCompile(`^KINH\s+GUI\s*[:.]?`)
-	canCuRe     = regexp.MustCompile(`^(CAN\s+CU|THEO\s+DE\s+NGHI|XET\s+DE\s+NGHI|XET\s+TO\s+TRINH)\b`)
-	phuLucRe    = regexp.MustCompile(`^PHU\s+LUC\b`)
-	trichVVRe   = regexp.MustCompile(`^V\s*/\s*V\b|^VE\s+VIEC\b`)
-	ruleLineRe  = regexp.MustCompile(`^[\s\p{Z}_\-–—=~.*·•]+$`)
-	thamQuyenRe = regexp.MustCompile(`^(CHU\s+TICH|BO\s+TRUONG|GIAM\s+DOC|THU\s+TUONG|TONG\s+GIAM\s+DOC|` +
+	diaDanhRe = regexp.MustCompile(`^([^,\d]{2,60},\s*)?NGAY\s*[\d.…_ ]{0,8}\s*THANG\s*[\d.…_ ]{0,8}\s*NAM\b`)
+	matRe     = regexp.MustCompile(`^(DO\s+)?MAT(\s*[:.]|\s*$)|^DO\s+MAT\b`)
+	khanRe    = regexp.MustCompile(`^(DO\s+KHAN\s*[:.]?\s*)?(KHAN|HOA\s*TOC|THUONG\s*KHAN)\b`)
+	noiNhanRe = regexp.MustCompile(`^NOI\s*NHAN\s*[:.]?`)
+	kinhGuiRe = regexp.MustCompile(`^KINH\s+GUI\s*[:.]?`)
+	canCuRe   = regexp.MustCompile(`^(CAN\s+CU|THEO\s+DE\s+NGHI|XET\s+DE\s+NGHI|XET\s+TO\s+TRINH)\b`)
+	phuLucRe  = regexp.MustCompile(`^PHU\s+LUC\b`)
+	// ô 11 — chỉ dẫn về phạm vi lưu hành, a whole line on its own
+	chiDanRe = regexp.MustCompile(`^(XEM\s+XONG\s+TRA\s+LAI|LUU\s+HANH\s+NOI\s+BO)\.?$`)
+	// ô 12 — ký hiệu người soạn thảo + số bản ("NVA.15", "TTr/2b"), raw text
+	kyHieuSTRe = regexp.MustCompile(`^\pL{1,8}\s?[./]\s?\d{1,3}\pL?$`)
+	// ô 13 — địa chỉ, điện thoại, fax, email, website of the cơ quan
+	diaChiStartRe = regexp.MustCompile(`^(DIA\s+CHI|DT|DIEN\s+THOAI|FAX|E-?MAIL|WEBSITE)\b`)
+	diaChiAnyRe   = regexp.MustCompile(`\b(DIA\s+CHI|DT|DIEN\s+THOAI|FAX|E-?MAIL|WEBSITE)\b`)
+	trichVVRe     = regexp.MustCompile(`^V\s*/\s*V\b|^VE\s+VIEC\b`)
+	ruleLineRe    = regexp.MustCompile(`^[\s\p{Z}_\-–—=~.*·•]+$`)
+	thamQuyenRe   = regexp.MustCompile(`^(CHU\s+TICH|BO\s+TRUONG|GIAM\s+DOC|THU\s+TUONG|TONG\s+GIAM\s+DOC|` +
 		`CHANH\s+AN|VIEN\s+TRUONG|UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|` +
 		`HOI\s+DONG\s+QUAN\s+TRI|THU\s+TRUONG|CUC\s+TRUONG|GIAM\s+DOC|` +
 		`TRUONG\s+BAN|CHINH\s+PHU|BAN\s+THUONG\s+VU|BAN\s+CHAP\s+HANH)\b`)
@@ -445,6 +452,12 @@ func headerEnd(els []element) int {
 	return 0
 }
 
+// isDiaChi: an ô 13 line — it opens with, or holds two of, Địa chỉ / ĐT /
+// Điện thoại / Fax / Email / Website.
+func isDiaChi(folded string) bool {
+	return diaChiStartRe.MatchString(folded) || len(diaChiAnyRe.FindAllStringIndex(folded, -1)) >= 2
+}
+
 func pLeftish(p *Para) bool {
 	ind := 0.0
 	if p.IndentLeftMM != nil {
@@ -633,6 +646,26 @@ func Segment(l *Layout) *Segmentation {
 		sigOpen = cands[0]
 	}
 
+	// ô 12/13 sit under nơi nhận (or under the signature when there is no
+	// nơi nhận): only lines past that point are considered
+	bottomFrom := noiNhan
+	if bottomFrom < 0 {
+		bottomFrom = sigOpen
+	}
+	kyHieuK := -1
+	if noiNhan >= 0 {
+		for k := noiNhanEnd - 1; k > noiNhan; k-- {
+			el := tail[k]
+			if isRight(el) || isDiaChi(fold(el.text)) {
+				continue
+			}
+			if t := strings.TrimSpace(el.text); runeLen(t) <= 12 && kyHieuSTRe.MatchString(t) {
+				kyHieuK = k
+			}
+			break // only the last left line of the nơi nhận block
+		}
+	}
+
 	type posEl struct {
 		pos int
 		el  element
@@ -647,6 +680,12 @@ func Segment(l *Layout) *Segmentation {
 		switch {
 		case inSig && isRight(el):
 			sigEls = append(sigEls, posEl{pos, el})
+		case chiDanRe.MatchString(f):
+			seg.add("chi_dan_luu_hanh", p.Index, el.text, el.zone, pos)
+		case bottomFrom >= 0 && bottomFrom < k && k < noiNhanEnd && isDiaChi(f):
+			seg.add("dia_chi_co_quan", p.Index, el.text, el.zone, pos)
+		case k == kyHieuK:
+			seg.add("ky_hieu_soan_thao", p.Index, el.text, ZoneLeft, pos)
 		case inNoiNhan && !isRight(el):
 			seg.add("noi_nhan", p.Index, el.text, ZoneLeft, pos)
 		case phuLucRe.MatchString(f) && k >= noiNhanEnd-1:
