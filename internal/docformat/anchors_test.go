@@ -202,7 +202,10 @@ func TestRenderJudgment(t *testing.T) {
 func TestRenderJudgmentMissingRequired(t *testing.T) {
 	content, _ := fixture(t, "fx_bao_cao_two_tables")
 	r := Check(context.Background(), content, Options{Segmenter: SegmenterHeuristic})
-	if !strings.Contains(r.Skeleton, "Không có (bắt buộc với loại này): Kính gửi") {
+	// Kính gửi is optional for a báo cáo (NĐ30 Phụ lục I mục 9b: only a báo
+	// cáo sent to a superior carries it), so it is listed as not required
+	if strings.Contains(r.Skeleton, "Không có (bắt buộc với loại này)") ||
+		!strings.Contains(r.Skeleton, "Kính gửi") {
 		t.Errorf("skeleton:\n%s", r.Skeleton)
 	}
 	if strings.Contains(r.Skeleton, `"12"`) {
