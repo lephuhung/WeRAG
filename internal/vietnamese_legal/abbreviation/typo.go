@@ -47,8 +47,14 @@ func TypoSuggestions(text string, pairs [][2]string) []types.AbbreviationTypo {
 	seen := map[string]struct{}{}
 	for _, p := range pairs {
 		key := termKey(p[0])
-		if _, dup := seen[key]; dup || strings.IndexFunc(p[0], unicode.IsDigit) >= 0 {
+		if _, dup := seen[key]; dup {
 			continue
+		}
+		if strings.IndexFunc(p[0], unicode.IsDigit) >= 0 {
+			// a VNI word (la2) may be read; a code (02a) never
+			if _, vni := DecodeTyping(p[0]); !vni {
+				continue
+			}
 		}
 		for i, s := range spans {
 			if termKey(s.token) != key || !isExpansionBoundary(text, s.start, s.end) {

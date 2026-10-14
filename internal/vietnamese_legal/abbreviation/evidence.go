@@ -21,8 +21,11 @@ type TypoEvidence struct {
 	RewriteAbbreviation bool
 	// Decoded: the syllable the keys spell with the input method off.
 	Decoded string
+	// Unmarked: a reading that is the word with its diacritics added
+	// (luat → luật): the same keys, only the marks missing.
 	// Dictionary: an active short form one key away (ubnf → UBND).
 	Dictionary string
+	Unmarked   string
 	// Memory: what users of the tenant answered before for this word.
 	Memory     string
 	MemoryKeep bool
@@ -71,7 +74,7 @@ func DecideTypo(e TypoEvidence) (TypoVerdict, string, []string) {
 	}
 	var readings []*reading
 	byKey := map[string]*reading{}
-	for _, s := range []string{e.Dictionary, e.Rewrite, e.Spellcheck, e.Decoded, e.Memory} {
+	for _, s := range []string{e.Dictionary, e.Rewrite, e.Spellcheck, e.Decoded, e.Unmarked, e.Memory} {
 		s = strings.TrimSpace(s)
 		if s == "" || termKey(s) == termKey(e.Word) {
 			continue
@@ -103,7 +106,7 @@ func DecideTypo(e TypoEvidence) (TypoVerdict, string, []string) {
 		return TypoAbbreviation, "", nil
 	case len(readings) == 0:
 		return TypoNone, "", nil
-	case e.RewriteRan && e.Rewrite == "" && e.Decoded == "" && e.Dictionary == "":
+	case e.RewriteRan && e.Rewrite == "" && e.Decoded == "" && e.Dictionary == "" && e.Unmarked == "":
 		// only the spell-check model sees a typo; the chat model kept the word
 		return TypoNone, "", nil
 	}
@@ -154,9 +157,13 @@ func RewriteReadings(original, rewrite string, words []string) map[string]Rewrit
 			seg = append(seg, s.token)
 		}
 		for k := si; k < i; k++ {
-			if k == si {
+			switch {
+			case i-si == len(seg):
+				// as many words on both sides: word for word
+				repl[k] = seg[k-si : k-si+1]
+			case k == si:
 				repl[k] = seg
-			} else {
+			default:
 				repl[k] = nil // folded into the first word of the run
 			}
 		}
@@ -238,6 +245,36 @@ func oneEditApart(a, b []rune) bool {
 			}
 		}
 		return true
+	}
+	return false
+}
+
+// UnmarkedReading returns the first of readings that is word with its
+// diacritics added (luat → luật), "" when none is: when word has no marks
+// and a reading differs from it only by marks, the keys were right and
+// the marks missing, a typing fact of its own.
+func UnmarkedReading(word string, readings ...string) string {
+	w := strings.ToLower(word)
+	if StripMarks(w) != w {
+		return ""
+	}
+	for _, r := range readings {
+		if r != "" && termKey(r) != termKey(word) && StripMarks(r) == w && !strings.Contains(r, " ") {
+			return r
+		}
+	}
+	return ""
+}
+
+// NewAbbreviationIn reports whether reading contains an abbreviation-shaped
+// word that is not one of known (lower case): the rewrite turned the word
+// into an abbreviation of its own making (vphc → VPCP, khtn → KH CN), a
+// sign that the word is an abbreviation, not a typo.
+func NewAbbreviationIn(reading string, known map[string]bool) bool {
+	for _, w := range strings.Fields(reading) {
+		if IsLikelyAbbreviation(w) && !known[strings.ToLower(w)] {
+			return true
+		}
 	}
 	return false
 }

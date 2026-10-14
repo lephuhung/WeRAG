@@ -32,16 +32,23 @@ func IsVietnameseSyllable(word string) bool {
 }
 
 // SuspectWords lists the words of text the gate should look at more
-// closely: not Vietnamese syllables, on an expansion boundary, without
-// digits, distinct, in order. They are typos (cascc), abbreviations (ubnd)
-// or foreign words and names (iphone); other sources tell which.
+// closely: not Vietnamese syllables, on an expansion boundary, distinct, in
+// order. They are typos (cascc), abbreviations (ubnd) or foreign words and
+// names (iphone); other sources tell which. A word with digits is suspect
+// only when it spells a syllable in VNI (la2, gi2); codes (pa05, 02a) are
+// not.
 func SuspectWords(text string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, s := range extractWordTokenSpans(text) {
 		key := termKey(s.token)
-		if seen[key] || utf8Len(s.token) < 2 || strings.IndexFunc(s.token, unicode.IsDigit) >= 0 {
+		if seen[key] || utf8Len(s.token) < 2 {
 			continue
+		}
+		if strings.IndexFunc(s.token, unicode.IsDigit) >= 0 {
+			if _, vni := DecodeTyping(s.token); !vni {
+				continue
+			}
 		}
 		seen[key] = true
 		if !isExpansionBoundary(text, s.start, s.end) || IsVietnameseSyllable(s.token) {
@@ -53,6 +60,22 @@ func SuspectWords(text string) []string {
 }
 
 func utf8Len(s string) int { return len([]rune(s)) }
+
+// StripMarks removes every diacritic (tones, â ê ô ơ ư ă, đ → d) and lowers
+// the case: "Luật" → "luat".
+func StripMarks(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+		case r == 'đ':
+			b.WriteRune('d')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 const (
 	toneAcute = '́'

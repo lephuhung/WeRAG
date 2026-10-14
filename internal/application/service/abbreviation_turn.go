@@ -455,10 +455,11 @@ func (c *AbbreviationTurnCoordinator) fuseTypos(ctx context.Context, in Abbrevia
 		}
 		// another abbreviation in its place (vphc → VPCP) is a reading of
 		// an abbreviation, not of a typo
-		if rr.Text != "" && abbreviation.IsLikelyAbbreviation(rr.Text) && !known[strings.ToLower(rr.Text)] {
+		if rr.Text != "" && abbreviation.NewAbbreviationIn(rr.Text, known) {
 			e.Rewrite, e.RewriteAbbreviation = "", true
 		}
 		e.Decoded, _ = abbreviation.DecodeTyping(w)
+		e.Unmarked = abbreviation.UnmarkedReading(w, e.Rewrite, e.Spellcheck)
 		if m, ok := memory[k]; ok {
 			switch m.Choice {
 			case types.AbbreviationFeedbackTypo:

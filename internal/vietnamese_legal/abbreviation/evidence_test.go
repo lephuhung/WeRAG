@@ -53,6 +53,11 @@ func TestRewriteReadings(t *testing.T) {
 	require.Equal(t, RewriteReading{}, r["bmnn"])
 	r = RewriteReadings("quyddinh về thuế", "quy định về thuế", []string{"quyddinh"})
 	require.Equal(t, RewriteReading{Text: "quy định"}, r["quyddinh"])
+	// a run of words rewritten word for word
+	r = RewriteReadings("luat an ninh mang có hieu luc khong", "luật an ninh mạng có hiệu lực không", []string{"luat", "hieu", "luc"})
+	require.Equal(t, RewriteReading{Text: "hiệu"}, r["hieu"])
+	require.Equal(t, RewriteReading{Text: "lực"}, r["luc"])
+	require.Equal(t, RewriteReading{Text: "luật"}, r["luat"])
 }
 
 func TestNearShortForm(t *testing.T) {
@@ -62,4 +67,21 @@ func TestNearShortForm(t *testing.T) {
 	require.Equal(t, "BHXH", NearShortForm("bhx", sf))
 	require.Equal(t, "", NearShortForm("ubnd", sf)) // the word itself
 	require.Equal(t, "", NearShortForm("cascc", sf))
+}
+
+func TestNewAbbreviationIn(t *testing.T) {
+	known := map[string]bool{"ubnd": true}
+	require.True(t, NewAbbreviationIn("KH CN", known))
+	require.True(t, NewAbbreviationIn("VPCP", known))
+	require.False(t, NewAbbreviationIn("UBND", known))
+	require.False(t, NewAbbreviationIn("văn phòng", known))
+}
+
+func TestUnmarkedReading(t *testing.T) {
+	require.Equal(t, "luật", UnmarkedReading("luat", "", "luật"))
+	require.Equal(t, "", UnmarkedReading("luat", "lượt")) // other letters
+	require.Equal(t, "", UnmarkedReading("cascc", "các"))
+	v, c, _ := DecideTypo(TypoEvidence{Word: "luat", Rewrite: "luật", RewriteRan: true, Unmarked: "luật"})
+	require.Equal(t, TypoCorrect, v)
+	require.Equal(t, "luật", c)
 }

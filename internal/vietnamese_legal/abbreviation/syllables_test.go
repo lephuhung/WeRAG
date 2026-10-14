@@ -25,5 +25,5 @@ func TestDecodeTyping(t *testing.T) {
 }
 
 func TestSuspectWords(t *testing.T) {
-	require.Equal(t, []string{"cascc", "UBND"}, SuspectWords("số lượng hồ sơ cascc của UBND, số 172/GM-UBND năm 2025 về pa05"))
+	require.Equal(t, []string{"cascc", "UBND", "la2"}, SuspectWords("số lượng hồ sơ cascc của UBND, số 172/GM-UBND năm 2025 về pa05 la2 gì"))
 }
