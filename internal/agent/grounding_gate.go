@@ -46,6 +46,11 @@ func markUngrounded(ctx context.Context, steps []types.AgentStep) context.Contex
 	if !types.GroundingRequiredFromContext(ctx) || hasEvidence(steps) {
 		return ctx
 	}
+	// a format check of the open document is answered from its tool's
+	// report, not from the knowledge base (see format_intent.go)
+	if isFormatCheckRequest(types.UserQueryFromContext(ctx)) {
+		return ctx
+	}
 	return context.WithValue(ctx, ungroundedKey{}, true)
 }
 

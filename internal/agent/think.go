@@ -684,8 +684,16 @@ func reportModelContextLeaks(
 // firstRoundToolChoice is the tool the first round must call (see
 // types.WithFirstToolChoice), "" in later rounds or when it is not offered.
 func firstRoundToolChoice(ctx context.Context, iteration int, tools []chat.Tool) string {
+	if iteration != 0 {
+		return ""
+	}
+	// a format check of the open document starts with its tool, whatever
+	// the knowledge-lookup classifier asked for (see format_intent.go)
+	if forced := formatCheckFirstTool(ctx, tools); forced != "" {
+		return forced
+	}
 	forced := types.FirstToolChoiceFromContext(ctx)
-	if iteration != 0 || forced == "" || !hasChatTool(tools, forced) {
+	if forced == "" || !hasChatTool(tools, forced) {
 		return ""
 	}
 	return forced

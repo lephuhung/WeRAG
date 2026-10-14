@@ -360,12 +360,12 @@ func (t *CheckDocumentFormatTool) startFromChat(ctx context.Context, ref, fileNa
 
 // formatCheckStartedMessage is the answer the user gets when the check was
 // sent to the background: the turn ends with it (see agent.forcedFinalMessage).
-const formatCheckStartedMessage = "Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường mất 2–4 phút. " +
+const formatCheckStartedMessage = "Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường xong trong vòng một phút. " +
 	"Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo."
 
 // formatCheckStartedNote is the result of a check sent to the background.
-const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s theo Nghị định 30/2020/NĐ-CP vừa bắt đầu ở chế độ nền (thường mất 2–4 phút). " +
-	"Trả lời người dùng ngắn gọn, theo ý: «Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường mất 2–4 phút. Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; " +
+const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s theo Nghị định 30/2020/NĐ-CP vừa bắt đầu ở chế độ nền (thường xong trong vòng một phút). " +
+	"Trả lời người dùng ngắn gọn, theo ý: «Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường xong trong vòng một phút. Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; " +
 	"khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo.» Không nêu nhận xét thể thức nào và không gọi lại công cụ này trong lượt này. " +
 	"Ở lượt sau, khi người dùng hỏi kết quả hoặc muốn sửa lỗi thể thức, GỌI LẠI check_document_format: kết quả có sẵn được trả về ngay."
 
