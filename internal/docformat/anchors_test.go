@@ -175,7 +175,7 @@ func TestRenderJudgment(t *testing.T) {
 		"Lỗi đo được: không có", "Đã đo đạt (không chấm lại): Trang (khổ giấy, lề)",
 		`[3] Số, ký hiệu: "Số: 1234/QĐ-SYT"`, "Thẩm quyền ban hành: \"GIÁM ĐỐC SỞ Y TẾ\"",
 		"[6] Căn cứ:", `[nghiêng]`, "dòng mốc", `"QUYẾT ĐỊNH:"`, `"Điều 2. Quyết định này có hiệu lực`,
-		"[7] Khối ký (cột phải):", `"KT. GIÁM ĐỐC" [đậm]`, "[9b] Nơi nhận (cột trái):", `"- Lưu: VT, TCCB."`,
+		"[7] Khối ký (cột phải):", `"KT. GIÁM ĐỐC" [đậm]`, "[9b] Nơi nhận (cột trái; dòng đầu là nhãn", `"- Lưu: VT, TCCB."`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("skeleton lacks %q", want)

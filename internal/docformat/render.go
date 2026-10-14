@@ -345,7 +345,7 @@ func passedSummary(checks []CheckResult) string {
 
 // judgmentRenderVersion changes whenever RenderJudgment's layout changes,
 // so cached evaluations made on the old layout are dropped (SkillsDigest).
-const judgmentRenderVersion = "judgment-v1"
+const judgmentRenderVersion = "judgment-v2"
 
 // RenderJudgment renders the judgment brief ("hồ sơ phán đoán") the skill
 // evaluation reads: the measured findings (final, not to be re-judged),
@@ -427,7 +427,11 @@ func RenderJudgment(r *Report) string {
 		fmt.Fprintf(&b, "[10b] Độ khẩn: %s\n", s)
 	}
 	if s := joined("trich_yeu", false); s != "" {
-		line := "[5] Tên loại, trích yếu: " + s
+		// công văn has no tên loại line (ô 5b); other types print it (ô 5a)
+		line := "[5a] Tên loại, trích yếu: " + s
+		if dt.Used == "cong_van" {
+			line = "[5b] Trích yếu công văn (công văn không có dòng tên loại): " + s
+		}
 		if tq := joined("tham_quyen_ban_hanh", false); tq != "" {
 			line += "; Thẩm quyền ban hành: " + tq
 		}
@@ -468,7 +472,10 @@ func RenderJudgment(r *Report) string {
 		}
 	}
 	if cf, ok := format["noi_nhan"]; ok && len(cf.Lines) > 0 {
-		list("[9b] Nơi nhận ("+zoneName(cf.Lines[0].Zone)+")", "noi_nhan", true)
+		fmt.Fprintf(&b, "[9b] Nơi nhận (%s; dòng đầu là nhãn, các dòng sau là danh sách):\n", zoneName(cf.Lines[0].Zone))
+		for _, lf := range cf.Lines {
+			b.WriteString("  - " + judgmentLine(lf, true) + "\n")
+		}
 	}
 	if comp, ok := r.Components["phu_luc"]; ok && comp.Found {
 		b.WriteString("Phụ lục: có\n")
