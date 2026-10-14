@@ -140,7 +140,8 @@ func (s *sessionService) PrepareAbbreviationTurn(ctx context.Context, req *types
 		}
 	}
 	input := AbbreviationPrepareInput{Binding: binding, ContinuationID: req.ClarificationRequestID,
-		ExpectedVersion: req.ClarificationVersion, Snapshot: abbreviationSnapshot(req), ModelID: req.SummaryModelID}
+		ExpectedVersion: req.ClarificationVersion, Snapshot: abbreviationSnapshot(req), ModelID: req.SummaryModelID,
+		AskWords: req.AbbreviationAskWords}
 	input.ResolveModelID = func(ctx context.Context) (string, error) {
 		kbIDs, knowledgeIDs, err := s.resolveKnowledgeBases(ctx, req)
 		if err != nil {
@@ -227,7 +228,7 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 		}
 	}
 	if len(plain) > 0 && data == nil {
-		return unclearWordChoice(plain[0], abbreviation.TypoSuggestionFor(r, plain[0]), r.Rewrite, english)
+		return unclearWordChoice(plain[0], abbreviation.TypoSuggestionsFor(r, plain[0]), r.Rewrite, english)
 	}
 	if len(plain) > 0 {
 		if b.Len() > 0 {
@@ -246,14 +247,15 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 // is offered as "you mistyped X" and the chat model's rewritten question
 // as "did you mean …"; the user decides, nothing is corrected silently.
 // Picking the rewrite sends it as the question.
-func unclearWordChoice(word, guess, rewrite string, english bool) (string, map[string]interface{}) {
+func unclearWordChoice(word string, guesses []string, rewrite string, english bool) (string, map[string]interface{}) {
 	type option struct{ label, detail, input, resend string }
 	var opts []option
 	if english {
 		opts = append(opts, option{"It is an abbreviation", "Type its full meaning", "Full meaning of " + word, word + " = {text}"})
-		if guess != "" {
+		for _, guess := range guesses {
 			opts = append(opts, option{"You mistyped it — did you mean “" + guess + "”?", "", "", word + " → " + guess})
-		} else {
+		}
+		if len(guesses) == 0 {
 			opts = append(opts, option{"You mistyped it", "Type the intended word", "Intended word", word + " → {text}"})
 		}
 		if rewrite != "" {
@@ -264,9 +266,10 @@ func unclearWordChoice(word, guess, rewrite string, english bool) (string, map[s
 			option{"Another answer", "Type your answer or ask again differently", "Your answer", "{text}"})
 	} else {
 		opts = append(opts, option{"Là từ viết tắt", "Nhập nghĩa đầy đủ", "Nghĩa đầy đủ của " + word, word + " = {text}"})
-		if guess != "" {
+		for _, guess := range guesses {
 			opts = append(opts, option{"Bạn gõ sai, ý là “" + guess + "” phải không?", "", "", word + " → " + guess})
-		} else {
+		}
+		if len(guesses) == 0 {
 			opts = append(opts, option{"Bạn gõ sai", "Nhập từ đúng", "Từ đúng", word + " → {text}"})
 		}
 		if rewrite != "" {

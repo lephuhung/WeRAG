@@ -47,6 +47,8 @@ func InspectDetected(text string, active []*types.Abbreviation, det types.Abbrev
 		Detector:        det.Detector,
 		DetectedKeys:    append([]string(nil), det.Keys...),
 		TypoSuggestions: append([]types.AbbreviationTypo(nil), det.Typos...),
+		TypoCorrections: append([]types.AbbreviationTypo(nil), det.Corrections...),
+		AutoCorrections: append([]types.AbbreviationTypo(nil), det.Corrections...),
 	}
 	if text == "" {
 		r.Status = types.AbbreviationStatusReady
@@ -652,5 +654,6 @@ func cloneResolution(r types.AbbreviationResolution) types.AbbreviationResolutio
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
 	out.TypoSuggestions = append([]types.AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]types.AbbreviationTypo(nil), r.TypoCorrections...)
+	out.AutoCorrections = append([]types.AbbreviationTypo(nil), r.AutoCorrections...)
 	return out
 }

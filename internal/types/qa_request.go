@@ -60,21 +60,24 @@ type QARequest struct {
 	// against the frozen request snapshot server-side.
 	ClarificationRequestID string
 	ClarificationVersion   *uint64
-	SummaryModelID         string             // Optional model override; empty = use agent/KB default
-	CustomAgent            *CustomAgent       // Optional custom agent for config override
-	KnowledgeBaseIDs       []string           // Knowledge base IDs to search (from request + @mentions)
-	KnowledgeIDs           []string           // Specific knowledge (file) IDs to search
-	TagScopes              []TagScope         // Tag-constrained KB scopes from @mentions
-	MCPServiceIDs          []string           // Per-request MCP service IDs from @mentions
-	SkillNames             []string           // Per-request skill names from @mentions
-	ImageURLs              []string           // Image URLs for multimodal input
-	ImageDescription       string             // VLM-generated image description (fallback for non-vision models)
-	UserMessageID          string             // Created user message ID
-	LocalBrowserEnabled    bool               // Explicit browser source preference for this request
-	WebSearchEnabled       bool               // Whether web search is enabled for this request
-	QuotedContext          string             // Quoted message content from IM quote-reply (appended at LLM prompt stage, not used for retrieval)
-	Attachments            MessageAttachments // File attachments (processed and ready for prompt injection)
-	QuestionOrigin         *QuestionOrigin    // Source of a picked suggested question; a retrieval hint only
+	// AbbreviationAskWords: words the user wants to be asked about rather
+	// than read automatically (they rejected the gate's reading).
+	AbbreviationAskWords []string
+	SummaryModelID       string             // Optional model override; empty = use agent/KB default
+	CustomAgent          *CustomAgent       // Optional custom agent for config override
+	KnowledgeBaseIDs     []string           // Knowledge base IDs to search (from request + @mentions)
+	KnowledgeIDs         []string           // Specific knowledge (file) IDs to search
+	TagScopes            []TagScope         // Tag-constrained KB scopes from @mentions
+	MCPServiceIDs        []string           // Per-request MCP service IDs from @mentions
+	SkillNames           []string           // Per-request skill names from @mentions
+	ImageURLs            []string           // Image URLs for multimodal input
+	ImageDescription     string             // VLM-generated image description (fallback for non-vision models)
+	UserMessageID        string             // Created user message ID
+	LocalBrowserEnabled  bool               // Explicit browser source preference for this request
+	WebSearchEnabled     bool               // Whether web search is enabled for this request
+	QuotedContext        string             // Quoted message content from IM quote-reply (appended at LLM prompt stage, not used for retrieval)
+	Attachments          MessageAttachments // File attachments (processed and ready for prompt injection)
+	QuestionOrigin       *QuestionOrigin    // Source of a picked suggested question; a retrieval hint only
 	// DocumentSelection is the passage the user highlighted in the embedded
 	// document editor; rendered after the attachments in the user prompt.
 	DocumentSelection *DocumentSelection

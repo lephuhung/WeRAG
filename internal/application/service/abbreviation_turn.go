@@ -20,6 +20,8 @@ type AbbreviationPrepareInput struct {
 	Snapshot                 types.AbbreviationRequestSnapshot
 	ModelID, RelevantHistory string
 	ResolveModelID           func(context.Context) (string, error)
+	// AskWords are asked about even when the sources agree on a reading.
+	AskWords []string
 }
 
 type AbbreviationPreparer interface {
@@ -88,23 +90,15 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	// The detector (Clef or heuristic) only picks which tokens to look up;
 	// meanings come from the dictionary or the user, never the classifier.
 	var detection types.AbbreviationDetection
+	// @-mentions (file names such as @bao_cao.docx) are not abbreviations
+	text := abbreviation.StripMentions(b.RawQuery)
+	var sources *typoSources
 	if c.dictionary != nil {
-		// @-mentions (file names such as @bao_cao.docx) are not abbreviations
-		text := abbreviation.StripMentions(b.RawQuery)
-		// the spell-check model runs alongside the detector; the words it
-		// reads as typos are asked about too, its guess offered as a choice
-		var typos []types.AbbreviationTypo
-		var wg sync.WaitGroup
-		if s, ok := c.dictionary.(abbreviationTypoSuggester); ok {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				typos = s.SuggestTypos(ctx, text)
-			}()
-		}
+		// the typo models see only the question and start alongside the
+		// detector; tenant data (dictionary, earlier answers) is read once
+		// the turn's owner is verified below
+		sources = c.startTypoSources(ctx, in, text)
 		detection = c.dictionary.DetectCandidates(ctx, text)
-		wg.Wait()
-		detection = withTypoCandidates(detection, text, typos)
 	}
 	probe := abbreviation.InspectDetected(b.RawQuery, nil, detection)
 	candidates := make([]string, 0, len(probe.Terms))
@@ -133,16 +127,49 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	if err := c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.UserMessageID, RequestID: row.ID, Role: types.AbbreviationMessageRoleRoot}}); err != nil {
 		return types.AbbreviationResolution{}, err
 	}
-	lookupFailed := false
+	var (
+		active       []*types.Abbreviation
+		listErr      error
+		listed       bool
+		rewrite      string
+		lookupFailed bool
+	)
+	listActive := func() {
+		if !listed {
+			listed = true
+			active, listErr = c.dictionary.ListActive(ctx)
+		}
+	}
+	if sources != nil {
+		listActive()
+		detection, rewrite = c.fuseTypos(ctx, in, text, detection, sources, active)
+		resolution = abbreviation.InspectDetected(b.RawQuery, nil, detection)
+		candidates = candidates[:0]
+		for _, term := range resolution.Terms {
+			candidates = append(candidates, term.ShortForm)
+		}
+	}
 	if len(candidates) != 0 {
 		if c.dictionary == nil {
 			lookupFailed = true
-		} else if active, listErr := c.dictionary.ListActive(ctx); listErr == nil {
+		} else if listActive(); listErr == nil {
 			resolution = abbreviation.InspectDetected(b.RawQuery, active, detection)
 		} else {
 			lookupFailed = true
 		}
 	}
+	// a definition given inline for a word that turned out to be a typo
+	// has no term left to define
+	defs := parsed.Definitions[:0:0]
+	for _, d := range parsed.Definitions {
+		for _, term := range resolution.Terms {
+			if strings.EqualFold(term.ShortForm, d.ShortForm) {
+				defs = append(defs, d)
+				break
+			}
+		}
+	}
+	parsed.Definitions = defs
 	resolution, err = abbreviation.ApplyDefinitions(resolution, parsed.Definitions)
 	if err != nil {
 		return types.AbbreviationResolution{}, err
@@ -153,7 +180,7 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	resolution.ExpiresAt = row.ExpiresAt
 	resolution.Version = row.Version
 	if resolution.Status == types.AbbreviationStatusNeedsDefinition && !lookupFailed {
-		resolution.Rewrite = c.rewriteQuestion(ctx, in, resolution)
+		resolution.Rewrite = offeredRewrite(resolution, rewrite, activeShortForms(active))
 	}
 	if lookupFailed && len(resolution.UnknownTerms) != 0 {
 		resolution.Status = types.AbbreviationStatusBlockedError
@@ -339,19 +366,146 @@ func (c *AbbreviationTurnCoordinator) linkAssistant(ctx context.Context, b types
 	return c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.AssistantMessageID, RequestID: row.ID, Role: role}})
 }
 
-// abbreviationTypoSuggester is implemented by the abbreviation service when
-// a spell-check model can guess which question words are keyboard typos.
-type abbreviationTypoSuggester interface {
-	SuggestTypos(ctx context.Context, text string) []types.AbbreviationTypo
+// abbreviationTypoSources is implemented by the abbreviation service: the
+// spell-check model's readings and the chat model's rewritten question.
+type abbreviationTypoSources interface {
+	SpellcheckReadings(ctx context.Context, text string) map[string]string
+	RewriteQuestion(ctx context.Context, modelID, text string, suspects []string) string
 }
 
-// withTypoCandidates adds the suspected typo words to the candidate set so
-// the gate asks about them (typo, abbreviation, keep as typed, other)
-// instead of guessing. A heuristic detection becomes an explicit key set:
-// the heuristic's own picks plus the typo words. Typo words beyond the
-// term budget are dropped rather than blocking the turn.
-func withTypoCandidates(det types.AbbreviationDetection, text string, typos []types.AbbreviationTypo) types.AbbreviationDetection {
-	if len(typos) == 0 {
+// typoSources holds the typo models' answers for a question with suspect
+// words (not Vietnamese syllables): the spell-check model's readings and
+// the chat model's rewrite, running in the background.
+type typoSources struct {
+	wg       sync.WaitGroup
+	suspects []string
+	spell    map[string]string
+	rewrite  string
+}
+
+// startTypoSources starts the typo models when the question has suspect
+// words; nil when it has none (most questions) or no source is available.
+func (c *AbbreviationTurnCoordinator) startTypoSources(ctx context.Context, in AbbreviationPrepareInput, text string) *typoSources {
+	src, ok := c.dictionary.(abbreviationTypoSources)
+	suspects := abbreviation.SuspectWords(text)
+	if !ok || len(suspects) == 0 {
+		return nil
+	}
+	s := &typoSources{suspects: suspects}
+	s.wg.Add(2)
+	go func() {
+		defer s.wg.Done()
+		s.spell = src.SpellcheckReadings(ctx, text)
+	}()
+	go func() {
+		defer s.wg.Done()
+		modelID := in.ModelID
+		if modelID == "" && in.ResolveModelID != nil {
+			modelID, _ = in.ResolveModelID(ctx)
+		}
+		s.rewrite = src.RewriteQuestion(ctx, modelID, text, suspects)
+	}()
+	return s
+}
+
+// fuseTypos waits for the typo models and decides every suspect word that
+// is not a dictionary short form: read it without asking (two sources
+// agree, or the tenant confirmed it before), ask about it, treat it as an
+// abbreviation, or keep it. The sources are the spell-check model, the
+// chat model's rewrite, the input-method decoder, the dictionary's near
+// short forms and the tenant's earlier answers. It returns the detection
+// with the verdicts applied and the raw rewrite.
+func (c *AbbreviationTurnCoordinator) fuseTypos(ctx context.Context, in AbbreviationPrepareInput, text string,
+	det types.AbbreviationDetection, src *typoSources, active []*types.Abbreviation) (types.AbbreviationDetection, string) {
+	known := map[string]bool{}
+	shortForms := activeShortForms(active)
+	for _, sf := range shortForms {
+		known[strings.ToLower(strings.TrimSpace(sf))] = true
+	}
+	var suspects []string
+	for _, w := range src.suspects {
+		if !known[strings.ToLower(w)] {
+			suspects = append(suspects, w)
+		}
+	}
+	var memory map[string]types.AbbreviationTypoFeedback
+	if c.feedback != nil && len(suspects) > 0 {
+		if m, err := c.feedback.Latest(ctx, in.Binding.Owner.TenantID, suspects); err == nil {
+			memory = m
+		}
+	}
+	src.wg.Wait()
+	rewrite := src.rewrite
+	var readings map[string]abbreviation.RewriteReading
+	if rewrite != "" {
+		readings = abbreviation.RewriteReadings(text, rewrite, suspects)
+	}
+	ask := map[string]bool{}
+	for _, w := range in.AskWords {
+		ask[strings.ToLower(w)] = true
+	}
+	add, drop := map[string]bool{}, map[string]bool{}
+	var typos, corrections []types.AbbreviationTypo
+	for _, w := range suspects {
+		k := strings.ToLower(w)
+		rr := readings[k]
+		e := abbreviation.TypoEvidence{
+			Word: w, Spellcheck: src.spell[k], Rewrite: rr.Text, RewriteRan: rewrite != "",
+			RewriteAbbreviation: rr.Abbreviation, Dictionary: abbreviation.NearShortForm(w, shortForms), Ask: ask[k],
+		}
+		// another abbreviation in its place (vphc → VPCP) is a reading of
+		// an abbreviation, not of a typo
+		if rr.Text != "" && abbreviation.IsLikelyAbbreviation(rr.Text) && !known[strings.ToLower(rr.Text)] {
+			e.Rewrite, e.RewriteAbbreviation = "", true
+		}
+		e.Decoded, _ = abbreviation.DecodeTyping(w)
+		if m, ok := memory[k]; ok {
+			switch m.Choice {
+			case types.AbbreviationFeedbackTypo:
+				e.Memory = m.Answer
+			case types.AbbreviationFeedbackKeep:
+				e.MemoryKeep = true
+			case types.AbbreviationFeedbackAbbreviation:
+				e.MemoryAbbr = true
+			}
+		}
+		verdict, correction, options := abbreviation.DecideTypo(e)
+		switch verdict {
+		case abbreviation.TypoCorrect:
+			corrections = append(corrections, types.AbbreviationTypo{Wrong: w, Correct: correction})
+			drop[k] = true
+		case abbreviation.TypoKeep:
+			drop[k] = true
+		case abbreviation.TypoAsk:
+			add[k] = true
+			for _, o := range options {
+				typos = append(typos, types.AbbreviationTypo{Wrong: w, Correct: o})
+			}
+		case abbreviation.TypoAbbreviation:
+			add[k] = true
+		}
+	}
+	logger.Infof(ctx, "abbreviation gate: suspects=%d corrected=%d asked=%d", len(suspects), len(corrections), len(add))
+	return mergeTypoDetection(det, text, add, drop, typos, expandShortForms(corrections, active)), rewrite
+}
+
+func activeShortForms(active []*types.Abbreviation) []string {
+	var out []string
+	for _, a := range active {
+		if a != nil && a.IsActive {
+			out = append(out, a.ShortForm)
+		}
+	}
+	return out
+}
+
+// mergeTypoDetection applies the typo verdicts to the detector's candidate
+// keys: asked words join them, read and kept words leave them. A heuristic
+// detection becomes an explicit key set (the heuristic's own picks) first.
+// Words beyond the term budget are not added rather than blocking the turn.
+func mergeTypoDetection(det types.AbbreviationDetection, text string, add, drop map[string]bool,
+	typos, corrections []types.AbbreviationTypo) types.AbbreviationDetection {
+	if len(add) == 0 && len(drop) == 0 {
 		return det
 	}
 	out := types.AbbreviationDetection{Detector: det.Detector, Keys: append([]string(nil), det.Keys...)}
@@ -364,35 +518,35 @@ func withTypoCandidates(det types.AbbreviationDetection, text string, typos []ty
 			}
 		}
 	}
-	has := make(map[string]bool, len(out.Keys))
+	var keys []string
+	has := map[string]bool{}
 	for _, k := range out.Keys {
-		has[k] = true
-	}
-	for _, t := range typos {
-		key := strings.ToLower(t.Wrong)
-		if !has[key] {
-			if len(out.Keys) >= types.MaxAbbreviationTerms {
-				continue
-			}
-			has[key] = true
-			out.Keys = append(out.Keys, key)
+		if !drop[k] && !has[k] {
+			keys = append(keys, k)
+			has[k] = true
 		}
-		out.Typos = append(out.Typos, t)
 	}
+	for _, w := range abbreviation.SuspectWords(text) {
+		k := strings.ToLower(w)
+		if add[k] && !has[k] && len(keys) < types.MaxAbbreviationTerms {
+			keys = append(keys, k)
+			has[k] = true
+		}
+	}
+	out.Keys = keys
+	for _, t := range typos {
+		if has[strings.ToLower(t.Wrong)] {
+			out.Typos = append(out.Typos, t)
+		}
+	}
+	out.Corrections = corrections
 	return out
 }
 
-// expandTypoAbbreviations writes a correction that is a dictionary short
-// form with one active meaning as "full form (SHORT)", the way the query
-// renders any abbreviation (ubnf → UBND reads "Ủy ban nhân dân (UBND)").
-func (c *AbbreviationTurnCoordinator) expandTypoAbbreviations(ctx context.Context, typos []types.AbbreviationTypo) []types.AbbreviationTypo {
-	if len(typos) == 0 || c.dictionary == nil {
-		return typos
-	}
-	active, err := c.dictionary.ListActive(ctx)
-	if err != nil {
-		return typos
-	}
+// expandShortForms writes a correction that is a dictionary short form
+// with one active meaning as "full form (SHORT)", the way the query
+// renders any abbreviation (ubnf → "Ủy ban nhân dân (UBND)").
+func expandShortForms(typos []types.AbbreviationTypo, active []*types.Abbreviation) []types.AbbreviationTypo {
 	meanings := map[string][]*types.Abbreviation{}
 	for _, a := range active {
 		if a != nil && a.IsActive {
@@ -410,18 +564,11 @@ func (c *AbbreviationTurnCoordinator) expandTypoAbbreviations(ctx context.Contex
 	return out
 }
 
-// abbreviationQuestionRewriter is implemented by the abbreviation service:
-// the chat model rewrites the question with its typing fixed.
-type abbreviationQuestionRewriter interface {
-	RewriteQuestion(ctx context.Context, modelID, text string, unclear, keep []string) string
-}
-
-// rewriteQuestion asks for the question with its unclear words fixed, to
-// offer as "did you mean …". Short forms the dictionary resolves or knows
-// several meanings of must stay as written. Any failure yields "".
-func (c *AbbreviationTurnCoordinator) rewriteQuestion(ctx context.Context, in AbbreviationPrepareInput, r types.AbbreviationResolution) string {
-	rw, ok := c.dictionary.(abbreviationQuestionRewriter)
-	if !ok {
+// offeredRewrite is the chat model's rewrite when it may be offered as
+// "did you mean …" for the words still asked about: a pure typing fix that
+// keeps the resolved and ambiguous short forms (abbreviation.ValidRewrite).
+func offeredRewrite(r types.AbbreviationResolution, rewrite string, shortForms []string) string {
+	if rewrite == "" {
 		return ""
 	}
 	var unclear, keep []string
@@ -435,14 +582,23 @@ func (c *AbbreviationTurnCoordinator) rewriteQuestion(ctx context.Context, in Ab
 			keep = append(keep, t.ShortForm)
 		}
 	}
-	if len(unclear) == 0 {
+	if len(unclear) == 0 || !abbreviation.ValidRewrite(r.OriginalQuery, rewrite, unclear, keep, shortForms) {
 		return ""
 	}
-	modelID := in.ModelID
-	if modelID == "" && in.ResolveModelID != nil {
-		modelID, _ = in.ResolveModelID(ctx)
+	return rewrite
+}
+
+// expandTypoAbbreviations expands the user's confirmed corrections that
+// are dictionary short forms (see expandShortForms).
+func (c *AbbreviationTurnCoordinator) expandTypoAbbreviations(ctx context.Context, typos []types.AbbreviationTypo) []types.AbbreviationTypo {
+	if len(typos) == 0 || c.dictionary == nil {
+		return typos
 	}
-	return rw.RewriteQuestion(ctx, modelID, abbreviation.StripMentions(in.Binding.RawQuery), unclear, keep)
+	active, err := c.dictionary.ListActive(ctx)
+	if err != nil {
+		return typos
+	}
+	return expandShortForms(typos, active)
 }
 
 // firstUnclearWord is the word the gate's question is about: the first

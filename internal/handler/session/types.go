@@ -69,6 +69,10 @@ type CreateKnowledgeQARequest struct {
 	// ClarificationVersion is the turn version the client saw; a stale value
 	// fails closed so two replies can never both resume the same turn.
 	ClarificationVersion *uint64 `json:"clarification_version,omitempty"`
+	// RecheckWords are words the gate read on its own last time and the
+	// user rejected ("Không phải?"): the gate asks about them instead. They
+	// can only add questions, never skip one.
+	RecheckWords []string `json:"recheck_words,omitempty"`
 	// DocumentSelection is the passage the user highlighted in the embedded
 	// document editor. Trimmed and capped server-side, then appended to the
 	// prompt after the attachments.

@@ -74,4 +74,7 @@ type AbbreviationService interface {
 // "unclear word" question as labelled training data.
 type AbbreviationFeedbackRepository interface {
 	Record(ctx context.Context, rows []types.AbbreviationTypoFeedback) error
+	// Latest returns, per lower-case word, the tenant's latest typo, keep
+	// or abbreviation answer.
+	Latest(ctx context.Context, tenantID uint64, words []string) (map[string]types.AbbreviationTypoFeedback, error)
 }

@@ -83,15 +83,24 @@ func sameWords(words []string, spans []wordTokenSpan) bool {
 	return true
 }
 
-// TypoSuggestionFor returns the spellcheck guess for an unknown term.
+// TypoSuggestionFor returns the first reading offered for an unknown term.
 func TypoSuggestionFor(r types.AbbreviationResolution, short string) string {
-	key := termKey(short)
-	for _, t := range r.TypoSuggestions {
-		if termKey(t.Wrong) == key {
-			return t.Correct
-		}
+	if all := TypoSuggestionsFor(r, short); len(all) > 0 {
+		return all[0]
 	}
 	return ""
+}
+
+// TypoSuggestionsFor returns every reading offered for an unknown term.
+func TypoSuggestionsFor(r types.AbbreviationResolution, short string) []string {
+	key := termKey(short)
+	var out []string
+	for _, t := range r.TypoSuggestions {
+		if termKey(t.Wrong) == key {
+			out = append(out, t.Correct)
+		}
+	}
+	return out
 }
 
 // ApplyTypoCorrections records the user's answer that query words are

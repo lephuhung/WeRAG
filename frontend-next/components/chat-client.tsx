@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, autoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
@@ -137,6 +137,8 @@ type UiMessage = {
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */
   document_selection?: DocumentSelection;
+  /** User turn: words the gate read without asking (cascc → các). */
+  autoCorrections?: TypoCorrection[];
   /** User turn: file names of the documents named with @ (document assistant). */
   document_mentions?: string[];
   /** Tool/skill-generated files of this turn — images render inline. */
@@ -404,14 +406,19 @@ const UserMessageBubble = memo(function UserMessageBubble({
   message,
   onFork,
   onEdit,
+  onRejectReading,
   compact = false,
 }: {
   message: UiMessage;
+  /** "Không phải?" under an automatic word reading: ask the question again,
+   * with the gate asking about those words. */
+  onRejectReading?: (m: UiMessage) => void;
   /** Document-assistant split view: mobile-sized, full-width column. */
   compact?: boolean;
   onFork?: (m: UiMessage) => void;
   onEdit?: (content: string) => void;
 }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const mentionNames = message.document_mentions ?? [];
   const segments = splitDocumentMentions(message.content, mentionNames);
@@ -471,6 +478,21 @@ const UserMessageBubble = memo(function UserMessageBubble({
           ),
         )}
       </div>
+      {(message.autoCorrections?.length ?? 0) > 0 && (
+        <div className="mt-1 max-w-[80%] pr-1 text-right text-[12px] text-muted-soft">
+          {message.autoCorrections!
+            .map((tc) => t("chat.typoUnderstoodAs", { wrong: tc.wrong, correct: tc.correct }))
+            .join(" · ")}
+          {onRejectReading && (
+            <>
+              {" · "}
+              <button type="button" className="underline hover:text-ink" onClick={() => onRejectReading(message)}>
+                {t("chat.typoReject")}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {/* Touch has no hover — actions stay visible on phones; on desktop they
           appear only while hovering the user message. */}
       <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
@@ -1546,6 +1568,7 @@ function ChatBody({ id }: { id: string }) {
               document_selection:
                 m.role === "user" ? documentSelectionForDisplay(m.document_selection) : undefined,
               document_mentions: m.role === "user" ? documentMentionsFromHistory(m) : undefined,
+              autoCorrections: m.role === "user" ? autoCorrectionsOf(m.abbreviation) : undefined,
               artifacts:
                 /* History rows omit `index` — assign array position so the
                  * download endpoint and image hydration can address them. */
@@ -2023,6 +2046,21 @@ function ChatBody({ id }: { id: string }) {
       const matchAssistant = (msg: UiMessage) =>
         msg.id === asstId || (Boolean(incomingAsstId) && msg.assistantMessageId === incomingAsstId);
 
+      if (kind === "abbreviation_resolution") {
+        // words the gate read without asking: noted under the question
+        const auto = autoCorrectionsOf(c.data?.abbreviation);
+        if (auto) {
+          setMessages((m) => {
+            const i = m.findIndex((x) => x.id === asstId);
+            if (i < 1 || m[i - 1].role !== "user") return m;
+            const next = m.slice();
+            next[i - 1] = { ...next[i - 1], autoCorrections: auto };
+            return next;
+          });
+        }
+        return;
+      }
+
       if (kind === "session_title") {
         const newTitle = c.content || c.data?.title;
         if (newTitle) {
@@ -2422,6 +2460,7 @@ function ChatBody({ id }: { id: string }) {
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       images: inlineImages,
       abbreviationCandidates: priorCandidates?.slice(0, 10),
+      abbreviationAskWords: s.abbreviationAskWords,
       documentSelection,
       signal: ctrl.signal,
       onChunk: applyChunk,
@@ -2545,6 +2584,15 @@ function ChatBody({ id }: { id: string }) {
     const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
     void sendRef.current({ query: option.resend, ...blank });
   }, []);
+  // "Không phải?": the question goes again and the gate asks about the
+  // words it had read on its own
+  const rejectReading = useCallback((m: UiMessage) => {
+    const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
+    const words = (m.autoCorrections ?? []).map((tc) => tc.wrong);
+    if (words.length > 0) void sendRef.current({ query: m.content, ...blank, abbreviationAskWords: words });
+  }, []);
+  // only the latest question can be asked again this way
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
   const clearScope = async () => {
     if (id === "new") return;
     setScopeEditing(false);
@@ -2742,6 +2790,7 @@ function ChatBody({ id }: { id: string }) {
                 message={m}
                 onEdit={handleEditQuestion}
                 onFork={id !== "new" ? handleFork : undefined}
+                onRejectReading={index === lastUserIndex ? rejectReading : undefined}
                 compact={compact}
               />
             ) : (

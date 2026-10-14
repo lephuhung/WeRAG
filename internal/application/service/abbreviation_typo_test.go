@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,21 +11,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
 )
-
-func TestWithTypoCandidatesAddsTypoKeys(t *testing.T) {
-	typos := []types.AbbreviationTypo{{Wrong: "cascc", Correct: "các"}}
-	det := withTypoCandidates(types.AbbreviationDetection{Detector: "clef", Keys: []string{"ubnd"}}, "cascc thủ tục UBND", typos)
-	require.Equal(t, "clef", det.Detector)
-	require.Equal(t, []string{"ubnd", "cascc"}, det.Keys)
-	require.Equal(t, typos, det.Typos)
-
-	// heuristic detection becomes an explicit key set with the typo added
-	h := withTypoCandidates(types.AbbreviationDetection{}, "cascc thủ tục UBND", typos)
-	require.Equal(t, types.AbbreviationDetectorHeuristicSpellcheck, h.Detector)
-	require.ElementsMatch(t, []string{"ubnd", "cascc"}, h.Keys)
-
-	require.Equal(t, types.AbbreviationDetection{}, withTypoCandidates(types.AbbreviationDetection{}, "x", nil))
-}
 
 func TestUnclearWordChoice(t *testing.T) {
 	r := types.AbbreviationResolution{
@@ -70,6 +56,114 @@ func (m *memFeedback) Record(_ context.Context, rows []types.AbbreviationTypoFee
 	return nil
 }
 
+func (m *memFeedback) Latest(_ context.Context, tenantID uint64, words []string) (map[string]types.AbbreviationTypoFeedback, error) {
+	out := map[string]types.AbbreviationTypoFeedback{}
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		r := m.rows[i]
+		k := strings.ToLower(r.Word)
+		if _, seen := out[k]; seen || r.TenantID != tenantID || r.Choice == types.AbbreviationFeedbackRewrite || r.Choice == types.AbbreviationFeedbackOther {
+			continue
+		}
+		for _, w := range words {
+			if strings.EqualFold(w, r.Word) {
+				out[k] = r
+			}
+		}
+	}
+	return out, nil
+}
+
+// typoDictionary is a turn dictionary with fixed typo sources.
+type typoDictionary struct {
+	*turnDictionary
+	spell    map[string]string
+	rewrites map[string]string
+	calls    int
+}
+
+func (d *typoDictionary) SpellcheckReadings(context.Context, string) map[string]string {
+	d.calls++
+	return d.spell
+}
+
+func (d *typoDictionary) RewriteQuestion(_ context.Context, _ string, text string, _ []string) string {
+	return d.rewrites[text]
+}
+
+func TestGateReadsAgreedTypoWithoutAsking(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	q := "số lượng hồ sơ cascc loại ưu tiên"
+	dict := &typoDictionary{turnDictionary: base, rewrites: map[string]string{q: "số lượng hồ sơ các loại ưu tiên"}}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	in := turnInput(owner, "u1", "a1", q)
+	in.ModelID = "chat"
+	// the rewrite and the Telex decoding agree: no question
+	r, err := c.Prepare(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Equal(t, "số lượng hồ sơ các loại ưu tiên", r.EffectiveQuery)
+	require.Equal(t, []types.AbbreviationTypo{{Wrong: "cascc", Correct: "các"}}, r.PublicState().AutoCorrections)
+}
+
+func TestGateAsksWhenUserRejectsReading(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	q := "số lượng hồ sơ cascc loại ưu tiên"
+	fb := &memFeedback{}
+	dict := &typoDictionary{turnDictionary: base, rewrites: map[string]string{q: "số lượng hồ sơ các loại ưu tiên"}}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	c.SetFeedbackStore(fb)
+	in := turnInput(owner, "u1", "a1", q)
+	in.ModelID, in.AskWords = "chat", []string{"cascc"}
+	r, err := c.Prepare(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, r.Status)
+	require.Equal(t, []string{"cascc"}, r.UnknownTerms)
+	require.Equal(t, "số lượng hồ sơ các loại ưu tiên", r.Rewrite)
+	answer, _ := abbreviationChoice(r, false)
+	require.Contains(t, answer, "Bạn gõ sai, ý là “các”")
+
+	v := r.Version
+	reply := turnInput(owner, "u2", "a2", "cascc → cascc")
+	reply.ContinuationID, reply.ExpectedVersion = r.RequestID, &v
+	r, err = c.Prepare(context.Background(), reply)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Equal(t, q, r.EffectiveQuery)
+	require.Equal(t, types.AbbreviationFeedbackKeep, fb.rows[0].Choice)
+
+	// the tenant said "keep": next time the word is left alone
+	r, err = c.Prepare(context.Background(), turnInput(owner, "u3", "a3", q))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Equal(t, q, r.EffectiveQuery)
+	require.Empty(t, r.AutoCorrections)
+}
+
+func TestGateTreatsSpelledOutWordAsAbbreviation(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	q := "xử phạt vphc trong giao thông"
+	dict := &typoDictionary{turnDictionary: base, rewrites: map[string]string{q: "xử phạt vi phạm hành chính trong giao thông"}}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	in := turnInput(owner, "u1", "a1", q)
+	in.ModelID = "chat"
+	r, err := c.Prepare(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusNeedsDefinition, r.Status)
+	require.Equal(t, []string{"vphc"}, r.UnknownTerms)
+	require.Empty(t, r.TypoSuggestions)
+	require.Empty(t, r.Rewrite) // spelling it out is not offered
+}
+
+func TestGateSkipsModelsWithoutSuspectWords(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	dict := &typoDictionary{turnDictionary: base}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	r, err := c.Prepare(context.Background(), turnInput(owner, "u1", "a1", "thủ tục cấp lại giấy phép lái xe"))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Zero(t, dict.calls)
+}
+
 func TestRecordAnswersAndRewrite(t *testing.T) {
 	fb := &memFeedback{}
 	c := &AbbreviationTurnCoordinator{feedback: fb, now: time.Now}
@@ -90,4 +184,15 @@ func TestRecordAnswersAndRewrite(t *testing.T) {
 	c.recordUnanswered(context.Background(), b, &types.AbbreviationTurnState{ID: "req", Payload: types.AbbreviationTurnPayload{Resolution: asked}})
 	require.Equal(t, types.AbbreviationFeedbackRewrite, fb.rows[2].Choice)
 	require.Equal(t, "cascc", fb.rows[2].Word)
+}
+
+func TestUnclearWordChoiceSeveralGuesses(t *testing.T) {
+	r := types.AbbreviationResolution{
+		UnknownTerms:    []string{"ddaats"},
+		TypoSuggestions: []types.AbbreviationTypo{{Wrong: "ddaats", Correct: "đặt"}, {Wrong: "ddaats", Correct: "đất"}},
+	}
+	_, data := abbreviationChoice(r, false)
+	opts := data["options"].([]map[string]interface{})
+	require.Equal(t, "ddaats → đặt", opts[1]["resend"])
+	require.Equal(t, "ddaats → đất", opts[2]["resend"])
 }

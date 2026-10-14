@@ -63,11 +63,10 @@ func (s *abbreviationService) DetectCandidates(ctx context.Context, text string)
 	return det
 }
 
-// SuggestTypos asks the spell-check model about the question as one
-// paragraph and returns its single-word corrections as suggestions for
-// the chat gate. Words of the active dictionary are never typos. Any
-// failure yields none.
-func (s *abbreviationService) SuggestTypos(ctx context.Context, text string) []types.AbbreviationTypo {
+// SpellcheckReadings asks the spell-check model about the question as one
+// paragraph and returns its single-word corrections by lower-case word.
+// Any failure yields none.
+func (s *abbreviationService) SpellcheckReadings(ctx context.Context, text string) map[string]string {
 	if s.models == nil || strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -86,25 +85,9 @@ func (s *abbreviationService) SuggestTypos(ctx context.Context, text string) []t
 	for _, f := range findings {
 		pairs = append(pairs, abbreviation.TypoWords(f.Wrong, f.Correct)...)
 	}
-	suggestions := abbreviation.TypoSuggestions(text, pairs)
-	if len(suggestions) == 0 {
-		return nil
-	}
-	active, err := s.repo.ListActive(ctx)
-	if err != nil {
-		return nil
-	}
-	known := make(map[string]struct{}, len(active))
-	for _, a := range active {
-		if a != nil {
-			known[strings.ToLower(strings.TrimSpace(a.ShortForm))] = struct{}{}
-		}
-	}
-	out := suggestions[:0]
-	for _, t := range suggestions {
-		if _, ok := known[strings.ToLower(t.Wrong)]; !ok {
-			out = append(out, t)
-		}
+	out := map[string]string{}
+	for _, t := range abbreviation.TypoSuggestions(text, pairs) {
+		out[strings.ToLower(t.Wrong)] = t.Correct
 	}
 	return out
 }
@@ -122,12 +105,12 @@ Trả lời đúng một JSON: {"corrected": "<câu đã sửa>"}`
 
 const abbreviationRewriteTimeout = 4 * time.Second
 
-// RewriteQuestion asks the chat model for the question with its typing
-// errors fixed, offered to the user as "did you mean …". It returns ""
-// when the model fails or its rewrite is not a pure typing fix of the
-// unclear words (keep: short forms that must stay as written).
-func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text string, unclear, keep []string) string {
-	if s.models == nil || modelID == "" || len(unclear) == 0 {
+// RewriteQuestion asks the chat model for the question with its suspect
+// words' typing fixed. The answer is evidence only: the gate compares it
+// word by word with the other sources, and checks it before offering it
+// (abbreviation.ValidRewrite). Any failure yields "".
+func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text string, suspects []string) string {
+	if s.models == nil || modelID == "" || len(suspects) == 0 {
 		return ""
 	}
 	model, err := s.models.GetChatModel(ctx, modelID)
@@ -139,7 +122,7 @@ func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text
 	thinking := false
 	resp, err := model.Chat(rewriteCtx, []chat.Message{
 		{Role: "system", Content: abbreviationRewritePrompt},
-		{Role: "user", Content: "Câu hỏi: " + text + "\nTừ nghi gõ sai: " + strings.Join(unclear, ", ")},
+		{Role: "user", Content: "Câu hỏi: " + text + "\nTừ nghi gõ sai: " + strings.Join(suspects, ", ")},
 	}, &chat.ChatOptions{Temperature: 0.01, MaxTokens: 400, Thinking: &thinking, Format: json.RawMessage(`{"type":"object"}`)})
 	if err != nil || resp == nil {
 		logger.Warnf(ctx, "abbreviation gate: rewrite skipped: %v", err)
@@ -153,18 +136,6 @@ func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text
 		content = content[i : j+1]
 	}
 	if json.Unmarshal([]byte(content), &out) != nil {
-		return ""
-	}
-	var known []string
-	if active, err := s.repo.ListActive(ctx); err == nil {
-		for _, a := range active {
-			if a != nil {
-				known = append(known, a.ShortForm)
-			}
-		}
-	}
-	if !abbreviation.ValidRewrite(text, out.Corrected, unclear, keep, known) {
-		logger.Infof(ctx, "abbreviation gate: rewrite rejected: %q", out.Corrected)
 		return ""
 	}
 	return strings.TrimSpace(out.Corrected)

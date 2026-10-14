@@ -28,6 +28,8 @@ export type ComposerSend = {
   // Retrieval hint from a picked suggested question (creatChat.vue
   // questionOriginFromSuggestion); plain typed text leaves it undefined.
   questionOrigin?: QuestionOrigin;
+  /** Resend of a question whose automatic word readings the user rejected. */
+  abbreviationAskWords?: string[];
 };
 
 export function Composer({

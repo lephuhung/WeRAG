@@ -49,10 +49,11 @@ const AbbreviationDetectorHeuristicSpellcheck = "heuristic+spellcheck"
 type AbbreviationDetection struct {
 	Detector string
 	Keys     []string
-	// Typos are the spellcheck model's guesses for query words it reads as
-	// keyboard typos (cascc → các). Their keys are in Keys: the user
-	// confirms each guess before the query uses it.
-	Typos []AbbreviationTypo
+	// Typos are readings offered for words the gate asks about (their keys
+	// are in Keys); Corrections are words read without asking because
+	// independent sources agree (their keys are not in Keys).
+	Typos       []AbbreviationTypo
+	Corrections []AbbreviationTypo
 }
 
 // AbbreviationTypo is one word of the query and the word it stands for.
@@ -175,6 +176,9 @@ type AbbreviationResolution struct {
 	// rendering the effective query.
 	TypoSuggestions []AbbreviationTypo `json:"typo_suggestions,omitempty"`
 	TypoCorrections []AbbreviationTypo `json:"typo_corrections,omitempty"`
+	// AutoCorrections are the TypoCorrections made without asking, shown
+	// to the user with a way to reject them.
+	AutoCorrections []AbbreviationTypo `json:"auto_corrections,omitempty"`
 	// Rewrite is the question with its typing fixed by the chat model,
 	// offered as "did you mean …" while words are unclear.
 	Rewrite string `json:"rewrite,omitempty"`
@@ -186,6 +190,7 @@ func (r AbbreviationResolution) Detection() AbbreviationDetection {
 		Detector: r.Detector,
 		Keys:     append([]string(nil), r.DetectedKeys...),
 		Typos:    append([]AbbreviationTypo(nil), r.TypoSuggestions...),
+		// Corrections stay out: they are already in TypoCorrections
 	}
 }
 
@@ -209,6 +214,7 @@ type AbbreviationPublicState struct {
 	UnknownTerms      []string                 `json:"unknown_terms"`
 	Terms             []AbbreviationPublicTerm `json:"terms"`
 	ExpiresAt         time.Time                `json:"expires_at"`
+	AutoCorrections   []AbbreviationTypo       `json:"auto_corrections,omitempty"`
 }
 
 // Clone returns a deep copy of the resolution: every nested slice and pointer
@@ -229,6 +235,7 @@ func (r AbbreviationResolution) Clone() AbbreviationResolution {
 	out.DetectedKeys = append([]string(nil), r.DetectedKeys...)
 	out.TypoSuggestions = append([]AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]AbbreviationTypo(nil), r.TypoCorrections...)
+	out.AutoCorrections = append([]AbbreviationTypo(nil), r.AutoCorrections...)
 	return out
 }
 
@@ -255,5 +262,6 @@ func (r AbbreviationResolution) PublicState() AbbreviationPublicState {
 		UnknownTerms:      unknown,
 		Terms:             terms,
 		ExpiresAt:         r.ExpiresAt,
+		AutoCorrections:   append([]AbbreviationTypo(nil), r.AutoCorrections...),
 	}
 }

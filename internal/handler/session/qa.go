@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -101,6 +102,7 @@ type qaRequestContext struct {
 	// abbreviation clarification turn. They are pointers only — the backend
 	// gate re-validates the stored turn, owner scope and frozen snapshot.
 	clarificationRequestID string
+	abbreviationAskWords   []string
 	clarificationVersion   *uint64
 }
 
@@ -131,6 +133,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		MentionedDocumentIDs:   rc.mentionedDocumentIDs,
 		ClarificationRequestID: rc.clarificationRequestID,
 		ClarificationVersion:   rc.clarificationVersion,
+		AbbreviationAskWords:   rc.abbreviationAskWords,
 	}
 	if rc.steerSink != nil {
 		req.SteerSink = rc.steerSink
@@ -470,6 +473,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		resourceRewriter:       resourceRewriter,
 		clarificationRequestID: secutils.SanitizeForLog(request.ClarificationRequestID),
 		clarificationVersion:   request.ClarificationVersion,
+		abbreviationAskWords:   limitAskWords(request.RecheckWords),
 	}
 
 	reqCtx.mentionedDocumentIDs, reqCtx.documentSelection = h.resolveDocumentReferences(
@@ -2198,4 +2202,19 @@ func (h *Handler) recordAnswerSources(ctx context.Context, assistantMessage *typ
 		})
 	}
 	h.memoryService.RecordAnswerSources(ctx, refs)
+}
+
+// limitAskWords keeps at most five short words of a client's
+// recheck_words.
+func limitAskWords(words []string) []string {
+	var out []string
+	for _, w := range words {
+		if w = strings.TrimSpace(w); w != "" && utf8.RuneCountInString(w) <= types.MaxAbbreviationShortFormRunes {
+			out = append(out, w)
+		}
+		if len(out) == 5 {
+			break
+		}
+	}
+	return out
 }

@@ -150,6 +150,18 @@ export type ChatMessageAttachment = {
   file_size?: number;
 };
 
+export type TypoCorrection = { wrong: string; correct: string };
+
+/** The automatic word readings of an abbreviation_resolution payload. */
+export function autoCorrectionsOf(abbreviation: unknown): TypoCorrection[] | undefined {
+  const list = (abbreviation as { auto_corrections?: unknown } | null | undefined)?.auto_corrections;
+  if (!Array.isArray(list)) return undefined;
+  const out = list.filter(
+    (x): x is TypoCorrection => !!x && typeof x.wrong === "string" && typeof x.correct === "string",
+  );
+  return out.length > 0 ? out : undefined;
+}
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "assistant" | string;
@@ -165,6 +177,9 @@ export type ChatMessage = {
   document_selection?: { text: string; paragraph_hint?: string; document_id?: string; document?: string };
   /** @-mentions sent with a user turn (type "document" = an open document). */
   mentioned_items?: { id?: string; name?: string; type?: string }[];
+  /** Abbreviation gate state of the turn: auto_corrections are the words
+   * read without asking (cascc → các). */
+  abbreviation?: { auto_corrections?: TypoCorrection[] };
   images?: { url?: string; caption?: string }[];
   /** Skill/tool-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];

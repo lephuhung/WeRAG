@@ -85,6 +85,9 @@ export type StreamParams = {
   suggestionAttribution?: { suggestion_set_id: string; question_id: string };
   questionOrigin?: { knowledge_base_id: string; knowledge_id?: string };
   abbreviationCandidates?: string[];
+  /** Words the user rejected the automatic reading of ("Không phải?"): the
+   * gate asks about them instead. */
+  abbreviationAskWords?: string[];
   /** Document-assistant: the editor selection the user attached to this turn. */
   documentSelection?: { text: string; paragraph_hint?: string; paragraph_occurrence?: number; document_id?: string };
   signal?: AbortSignal;
@@ -170,6 +173,7 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
     ...(params.documentSelection?.text
       ? { document_selection: params.documentSelection }
       : {}),
+    ...(params.abbreviationAskWords?.length ? { recheck_words: params.abbreviationAskWords } : {}),
     channel: isEmbed ? "embed" : "web",
   };
 }
