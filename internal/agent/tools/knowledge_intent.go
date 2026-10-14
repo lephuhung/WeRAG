@@ -31,10 +31,30 @@ lookup = true when answering needs facts the open document does not contain:
 
 lookup = false when the open document alone answers it (what the report says, counts, names, summaries of it), or the request edits, rewrites, translates, checks spelling or format, draws a diagram or illustration, or is small talk or a greeting.`
 
+// The same holds for a chat agent with a knowledge base and no open
+// document: builtin-smart-reasoning answered 8 of 181 legal questions with
+// no tool call, citing decrees from memory, some repealed long ago
+// (Nghị định 27/2015/NĐ-CP for a 2024 question).
+const chatKnowledgeIntentPrompt = `You label a user's request to an assistant that answers from a knowledge base of Vietnamese laws, regulations and official documents (and sometimes the web). Answer with JSON {"lookup": true} or {"lookup": false} and nothing else.
+
+lookup = true when the answer rests on facts: what laws, decrees, circulars, regulations or official rules say, legal situations ("ông A có vi phạm không", "cơ quan nào có thẩm quyền", "thủ tục gồm những gì", "mức phạt", "thời hạn", "còn hiệu lực không"), or any factual question about organisations, people, products, figures, dates or events.
+
+lookup = false for greetings and small talk, questions about the assistant itself, and requests that work only on text the user supplied in the message (rewrite, translate, summarise, check spelling, draft from the given content), or pure arithmetic.`
+
 // ClassifyKnowledgeLookup reports whether a request needs facts from
 // outside the open document; false when unsure, on error or without a
 // model.
 func ClassifyKnowledgeLookup(ctx context.Context, model docformat.Completer, query string) bool {
+	return classifyLookup(ctx, model, knowledgeIntentPrompt, query)
+}
+
+// ClassifyChatKnowledgeLookup is ClassifyKnowledgeLookup for a chat turn
+// with no open document.
+func ClassifyChatKnowledgeLookup(ctx context.Context, model docformat.Completer, query string) bool {
+	return classifyLookup(ctx, model, chatKnowledgeIntentPrompt, query)
+}
+
+func classifyLookup(ctx context.Context, model docformat.Completer, prompt, query string) bool {
 	query = strings.TrimSpace(query)
 	if model == nil || query == "" {
 		return false
@@ -42,7 +62,7 @@ func ClassifyKnowledgeLookup(ctx context.Context, model docformat.Completer, que
 	ctx, cancel := context.WithTimeout(ctx, knowledgeIntentTimeout)
 	defer cancel()
 	reply, err := model.Complete(ctx, []docformat.Message{
-		{Role: "system", Content: knowledgeIntentPrompt},
+		{Role: "system", Content: prompt},
 		{Role: "user", Content: "Yêu cầu: " + clipRunes(query, 400)},
 	})
 	if err != nil {

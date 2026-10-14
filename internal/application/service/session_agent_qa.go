@@ -258,6 +258,14 @@ func (s *sessionService) AgentQA(
 		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
 		ctx = types.WithGroundingRequired(ctx)
 		logger.Infof(ctx, "Question beyond the open document: the turn starts with %s and needs evidence", tools.ToolSearchKnowledge)
+	} else if types.FirstToolChoiceFromContext(ctx) == "" && req.CustomAgent != nil &&
+		req.CustomAgent.ID != types.BuiltinDocumentAssistantID && agentRequiresRerankModel(req.CustomAgent) &&
+		tools.ClassifyChatKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query) {
+		// the same for a chat agent with a knowledge base: a legal or factual
+		// question is answered from what the tools return, not from memory
+		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
+		ctx = types.WithGroundingRequired(ctx)
+		logger.Infof(ctx, "Factual question: the turn starts with %s and needs evidence", tools.ToolSearchKnowledge)
 	}
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		// the document router (no model, then one short thinking-off call

@@ -32,3 +32,14 @@ func TestClassifyKnowledgeLookup(t *testing.T) {
 		t.Error("no model or empty query must not force a lookup")
 	}
 }
+
+func TestClassifyChatKnowledgeLookup(t *testing.T) {
+	ctx := context.Background()
+	f := &fakeCompleter{reply: `{"lookup":true}`}
+	if !ClassifyChatKnowledgeLookup(ctx, f, "Cơ quan nào có thẩm quyền đình chỉ chương trình viện trợ phi dự án?") {
+		t.Fatal("want lookup")
+	}
+	if len(f.got) != 2 || strings.Contains(f.got[0].Content, "open Word document") {
+		t.Fatalf("chat turns use the no-document prompt: %+v", f.got[0].Content)
+	}
+}
