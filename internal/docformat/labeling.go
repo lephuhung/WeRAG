@@ -132,6 +132,10 @@ func BuildUnits(l *Layout, heuristic *Segmentation) []Unit {
 	for _, el := range elements(l) {
 		p := el.para
 		id := strconv.Itoa(p.Index)
+		if el.sub >= 0 {
+			// one line of a paragraph read line by line: "12.1"
+			id += "." + strconv.Itoa(el.sub)
+		}
 		size, bold, italic := p.SizePt, p.Bold, p.Italic
 		upper := p.TextIsUpper
 		if p.Zone == ZoneSplit {
@@ -159,7 +163,7 @@ func BuildUnits(l *Layout, heuristic *Segmentation) []Unit {
 			u.Tbl = fmt.Sprintf("%d:%s/%s:%s", *p.TableIndex, p.TableLayout, intOrNone(p.Row), intOrNone(p.Col))
 		}
 		if heuristic != nil {
-			u.Hint = heuristicLabel(heuristic, p.Index, el.zone)
+			u.Hint = heuristicLabel(heuristic, p.Index, el.zone, el.sub)
 		}
 		units = append(units, u)
 	}
@@ -168,7 +172,8 @@ func BuildUnits(l *Layout, heuristic *Segmentation) []Unit {
 
 // heuristicLabel is the label a segmentation gave a unit (zone-aware for
 // split paragraphs).
-func heuristicLabel(seg *Segmentation, para int, zone string) string {
+// sub >= 0 names one line of a paragraph read line by line.
+func heuristicLabel(seg *Segmentation, para int, zone string, sub int) string {
 	found := ""
 	for _, key := range seg.order {
 		if key == "signature" {
@@ -177,6 +182,9 @@ func heuristicLabel(seg *Segmentation, para int, zone string) string {
 		c := seg.Components[key]
 		for i, idx := range c.Paras {
 			if idx != para {
+				continue
+			}
+			if sub >= 0 && len(c.Subs[para]) > 0 && !hasInt(c.Subs[para], sub) {
 				continue
 			}
 			z := ""
@@ -197,7 +205,7 @@ func heuristicLabel(seg *Segmentation, para int, zone string) string {
 // LabelOf returns the component a segmentation assigned to a unit ("khac"
 // when none).
 func LabelOf(seg *Segmentation, u Unit) string {
-	if l := heuristicLabel(seg, u.Para, u.Zone); l != "" {
+	if l := heuristicLabel(seg, u.Para, u.Zone, unitSub(u.ID)); l != "" {
 		return l
 	}
 	return "khac"
@@ -471,8 +479,21 @@ func effectiveZone(l *Layout, u Unit) string {
 	return ZoneFull
 }
 
+// unitSub is the line of a line unit ("12.1" → 1), -1 for any other.
+func unitSub(id string) int {
+	if i := strings.IndexByte(id, '.'); i >= 0 {
+		if k, err := strconv.Atoi(id[i+1:]); err == nil {
+			return k
+		}
+	}
+	return -1
+}
+
 func unitText(l *Layout, u Unit) string {
 	p := l.Paragraphs[u.Para]
+	if k := unitSub(u.ID); k >= 0 {
+		return strings.TrimSpace(p.LineView(k).Text)
+	}
 	switch {
 	case strings.HasSuffix(u.ID, "L"):
 		return p.LeftText
@@ -524,7 +545,7 @@ func ApplyLabels(l *Layout, reply *Reply, task *Task) (*Segmentation, *LabelDiag
 		if lab == "khac" {
 			continue
 		}
-		seg.add(lab, u.Para, unitText(l, u), effectiveZone(l, u), pos)
+		seg.add(lab, u.Para, unitText(l, u), effectiveZone(l, u), pos, unitSub(u.ID))
 	}
 	seg.addSignature()
 

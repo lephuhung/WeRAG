@@ -15,7 +15,16 @@ import (
 //   - technical: anything else — an unknown type, a văn bản quy phạm pháp
 //     luật already promulgated (luật, nghị định, thông tư …), a form, a
 //     table, loose material, or a hành chính heading with none of quốc
-//     hiệu, số ký hiệu and khối ký. Only the technical layout is checked
+//     hiệu, số ký hiệu and khối ký. A số ký hiệu carrying a year
+//     ("26/2024/QĐ-TTg", "162/2024/QH15") marks a văn bản quy phạm pháp
+//     luật whatever its tên loại: a QPPL quyết định / nghị quyết follows
+//     the Luật Ban hành VBQPPL layout (no thẩm quyền line, no "QUYẾT
+//     ĐỊNH:", "Thủ tướng Chính phủ ban hành Quyết định …", a Quốc hội
+//     nghị quyết signed without "TM."), not NĐ30 — the type stays
+//     detected, the scope is technical. A quyết định cá biệt "Số:
+//     125/QĐ-SYT" has no year and is checked in full. A document whose
+//     quốc hiệu line occurs three times or more is a collection of forms
+//     (tập biểu mẫu), technical as well. Only the technical layout is checked
 //     (page, body font/size/colour/alignment/indent/spacing, page number,
 //     stray characters); no component requirement, no model.
 //   - attached: a văn bản ban hành kèm theo (quy chế, quy định, kế hoạch,
@@ -45,7 +54,7 @@ type ScopeInfo struct {
 // kemTheoRe matches the "ban hành kèm theo" line of an attached document
 // on fold()ed text: "(Ban hành kèm theo Quyết định số …)", "(Kèm theo
 // Kế hoạch số …)".
-var kemTheoRe = regexp.MustCompile(`\bBAN HANH KEM THEO\b|^\(?\s*KEM THEO\s+(QUYET DINH|NGHI QUYET|NGHI DINH|THONG TU|CHI THI|KE HOACH|CONG VAN|VAN BAN|TO TRINH)\b`)
+var kemTheoRe = regexp.MustCompile(`\bBAN HANH KEM THEO\b|^\(*\s*KEM THEO\s+(QUYET DINH|NGHI QUYET|NGHI DINH|THONG TU|CHI THI|KE HOACH|CONG VAN|VAN BAN|TO TRINH)\b`)
 
 // kemTheoScanLines bounds how far into the body ScopeOf looks for the
 // "kèm theo" line when the segmenter left it out of the trích yếu.
@@ -86,9 +95,11 @@ func IsHanhChinhType(docType string) bool {
 	return d != nil && d.Group == vl.DocTypeGroupHanhChinh
 }
 
-// ScopeOf classifies a segmented document: attached when its heading
+// ScopeOf classifies a segmented document: technical when its số ký hiệu
+// carries a year (a văn bản quy phạm pháp luật); attached when its heading
 // block has the "kèm theo" line and it lacks a số ký hiệu or a khối ký of
-// its own; full when the detected type is a văn bản hành chính and at
+// its own; technical when it is a collection of forms (quốc hiệu three
+// times or more); full when the detected type is a văn bản hành chính and at
 // least one of quốc hiệu, số ký hiệu, khối ký was found; technical
 // otherwise. It returns the scope and the reason, in Vietnamese.
 func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
@@ -96,19 +107,32 @@ func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
 		return ScopeTechnical, "không bóc tách được thành phần"
 	}
 	found := func(k string) bool { return seg.Comp(k).Found }
+	if so := seg.Comp("so_ky_hieu"); so.Found && qpplYearRe.MatchString(fold(so.Text)) {
+		name := "chưa rõ loại"
+		if d := vl.DocTypeBySlug(detectedType); d != nil {
+			name = d.Name
+		}
+		return ScopeTechnical, fmt.Sprintf("số ký hiệu %q có năm ban hành: văn bản quy phạm pháp luật (%s) "+
+			"trình bày theo Luật Ban hành văn bản quy phạm pháp luật, không thuộc 29 loại văn bản hành chính",
+			truncateRunes(strings.TrimSpace(so.Text), 60), name)
+	}
 	if line := KemTheoLine(seg); line != "" && (!found("so_ky_hieu") || !found("signature")) {
 		return ScopeAttached, fmt.Sprintf("văn bản ban hành kèm theo (%q), không có số ký hiệu hoặc khối ký riêng",
 			truncateRunes(line, 100))
+	}
+	if seg.QuocHieuLines >= formCollectionMin {
+		return ScopeTechnical, fmt.Sprintf("tập biểu mẫu: quốc hiệu xuất hiện %d lần", seg.QuocHieuLines)
 	}
 	quocHieu := found("quoc_hieu") || hasLine(seg, quocHieuRe)
 	if !IsHanhChinhType(detectedType) {
 		if d := vl.DocTypeBySlug(detectedType); d != nil {
 			return ScopeTechnical, fmt.Sprintf("loại %q là văn bản quy phạm pháp luật, không thuộc 29 loại văn bản hành chính", d.Name)
 		}
-		if quocHieu && (found("so_ky_hieu") || found("noi_nhan") || hasLine(seg, scopeSoLineRe) || hasLine(seg, noiNhanLineRe)) {
+		if quocHieu && (found("so_ky_hieu") || found("signature") || hasLine(seg, scopeSoLineRe)) {
 			// the type heading was not recognised, but quốc hiệu with số or
-			// nơi nhận is a văn bản hành chính: the shared NĐ30 rules
-			return ScopeFull, "chưa nhận diện được loại nhưng có quốc hiệu và số ký hiệu/nơi nhận: kiểm tra theo thể thức chung"
+			// a khối ký is a văn bản hành chính: the shared NĐ30 rules (a
+			// nơi nhận alone is not — a form carries one)
+			return ScopeFull, "chưa nhận diện được loại nhưng có quốc hiệu và số ký hiệu/khối ký: kiểm tra theo thể thức chung"
 		}
 		return ScopeTechnical, "không nhận diện được loại văn bản hành chính"
 	}
@@ -120,7 +144,8 @@ func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
 
 var (
 	scopeSoLineRe = regexp.MustCompile(`^SO\s*:?\s*\d*\s*/\s*\S`)
-	noiNhanLineRe = regexp.MustCompile(`^NOI NHAN\s*:`)
+	// a year between slashes: "26/2024/QĐ-TTg", "Số: …/2023/QĐ-TTg"
+	qpplYearRe = regexp.MustCompile(`/\s*(19|20)\d{2}\s*/`)
 )
 
 // hasLine: a line of any component matches re on fold()ed text — a quốc

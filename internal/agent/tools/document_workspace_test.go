@@ -894,9 +894,9 @@ func checkStatus(t *testing.T, content []byte) map[string]string {
 }
 
 func TestApplyFormatFixesMarginSurvivesTwipRounding(t *testing.T) {
-	// python-docx Mm(15) → 850 twips = 14.99mm: fails the 15-20mm rule, and
-	// 15mm written naively rounds back to the same 850 twips
-	content := testCongVan(t, [4]int{1134, 850, 1134, 1701})
+	// 794 twips = 14.00mm fails the 15-20mm rule (±0.5mm tolerance); the
+	// fix aims at 15mm, which written naively rounds to 850 twips = 14.99mm
+	content := testCongVan(t, [4]int{1134, 794, 1134, 1701})
 	if s := checkStatus(t, content)["page.margin.right"]; s != docformat.StatusFail {
 		t.Fatalf("fixture: page.margin.right = %s", s)
 	}

@@ -16,6 +16,20 @@ func segOf(detected string, comps map[string]string) *Segmentation {
 	return s
 }
 
+func TestScopeOfFormCollection(t *testing.T) {
+	s := segOf("quyet_dinh", map[string]string{
+		"quoc_hieu": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "so_ky_hieu": "Số: 12/QĐ-CAT",
+		"signature": "GIÁM ĐỐC", "noi_nhan": "Nơi nhận:\n- Như trên;",
+	})
+	if got, _ := ScopeOf(s, "quyet_dinh"); got != ScopeFull {
+		t.Fatalf("one header: %s", got)
+	}
+	s.QuocHieuLines = 3
+	if got, reason := ScopeOf(s, "quyet_dinh"); got != ScopeTechnical || !strings.Contains(reason, "biểu mẫu") {
+		t.Fatalf("three headers: %s (%s)", got, reason)
+	}
+}
+
 func TestScopeOf(t *testing.T) {
 	for _, tc := range []struct {
 		name, detected string
@@ -53,6 +67,17 @@ func TestScopeOf(t *testing.T) {
 		{"unknown type, flat header with quốc hiệu and số", "unknown", map[string]string{
 			"noi_dung": "SỞ NỘI VỤ\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nSố: 12/SNV-VP\nSở Nội vụ đề nghị …",
 		}, ScopeFull},
+		{"QPPL quyết định (year in the số)", "quyet_dinh", map[string]string{
+			"quoc_hieu": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "so_ky_hieu": "Số: 26/2024/QĐ-TTg",
+			"signature": "KT. THỦ TƯỚNG\nPHÓ THỦ TƯỚNG\nBùi Thanh Sơn", "trich_yeu": "QUYẾT ĐỊNH\nBan hành Quy chế …",
+		}, ScopeTechnical},
+		{"Quốc hội nghị quyết", "nghi_quyet", map[string]string{
+			"quoc_hieu": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "so_ky_hieu": "Nghị quyết số: 162/2024/QH15",
+			"signature": "CHỦ TỊCH QUỐC HỘI\nTrần Thanh Mẫn",
+		}, ScopeTechnical},
+		{"unknown type, quốc hiệu and nơi nhận only (a form)", "unknown", map[string]string{
+			"quoc_hieu": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "noi_nhan": "Nơi nhận:\n- Như trên;",
+		}, ScopeTechnical},
 		{"flat header: quốc hiệu inside the trích yếu", "thong_bao", map[string]string{
 			"trich_yeu": "SỞ Y TẾ\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nTHÔNG BÁO", "noi_dung": "Sở Y tế thông báo …",
 		}, ScopeFull},

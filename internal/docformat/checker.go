@@ -170,14 +170,12 @@ func ExtractFormat(l *Layout, seg *Segmentation) []ComponentFormat {
 					Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)})
 			}
 		}
-		for i, idx := range comp.Paras {
-			if idx < 0 || idx >= len(l.Paragraphs) {
-				continue
-			}
-			p := l.Paragraphs[idx]
+		views, zones := comp.ParaViews(l)
+		for i, p := range views {
+			idx := p.Index
 			zone := p.Zone
-			if i < len(comp.Zones) {
-				zone = comp.Zones[i]
+			if zones[i] != "" {
+				zone = zones[i]
 			}
 			lf := LineFormat{Para: idx, Text: strings.TrimSpace(p.Text), Zone: zone, Align: p.Alignment,
 				Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)}

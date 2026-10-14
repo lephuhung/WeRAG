@@ -100,6 +100,57 @@ type Para struct {
 	Col               *int       `json:"col"`
 	Section           int        `json:"section"`
 	Runs              []Run      `json:"-"`
+	// lineViews caches LineView.
+	lineViews map[int]*Para
+}
+
+// Lines are the paragraph's lines: its text split at the soft line breaks
+// (w:br, "\n" in Text).
+func (p *Para) Lines() []string { return strings.Split(p.Text, "\n") }
+
+// LineView is the paragraph restricted to line k of Lines(): the same
+// index, alignment, indents and zone, with the text, runs and run
+// formatting of that line alone. A web-exported file puts quốc hiệu and
+// tiêu ngữ, or a whole khối ký, in one paragraph broken by w:br; the
+// segmenter reads such a paragraph line by line (segment.go).
+func (p *Para) LineView(k int) *Para {
+	if v, ok := p.lineViews[k]; ok {
+		return v
+	}
+	lines := p.Lines()
+	if k < 0 || k >= len(lines) {
+		return p
+	}
+	v := *p
+	v.lineViews = nil
+	v.Text = lines[k]
+	v.LeftText, v.RightText = "", ""
+	v.Runs = nil
+	line := 0
+	for _, r := range p.Runs {
+		for i, piece := range strings.Split(r.Text, "\n") {
+			if i > 0 {
+				line++
+			}
+			if line == k && piece != "" {
+				lr := r
+				lr.Text = piece
+				v.Runs = append(v.Runs, lr)
+			}
+		}
+	}
+	if primary := primaryRun(v.Runs); primary != nil {
+		v.FontName, v.SizePt = primary.FontName, primary.SizePt
+		v.Bold, v.Italic = primary.Bold, primary.Italic
+		v.Underline, v.Caps = primary.Underline, primary.Caps
+		v.Color = primary.Color
+	}
+	v.TextIsUpper = isUpperText(v.Text)
+	if p.lineViews == nil {
+		p.lineViews = map[int]*Para{}
+	}
+	p.lineViews[k] = &v
+	return &v
 }
 
 // Section is one w:sectPr page setup.

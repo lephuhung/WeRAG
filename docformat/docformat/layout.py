@@ -737,6 +737,43 @@ def _classify_table(tbl: ET.Element, rows: list) -> str:
     return "columns"
 
 
+def line_view(p: Para, k: int) -> Para:
+    """The paragraph restricted to line ``k`` of its soft-broken text (w:br,
+    "\\n"): same index, alignment, indents and zone; the text, runs and run
+    formatting of that line alone (Go: Para.LineView)."""
+    cache = p.__dict__.setdefault("_line_views", {})
+    if k in cache:
+        return cache[k]
+    lines = p.text.split("\n")
+    if k < 0 or k >= len(lines):
+        return p
+    runs = []
+    line = 0
+    for r in p.runs or []:
+        for i, piece in enumerate((r.get("text") or "").split("\n")):
+            if i > 0:
+                line += 1
+            if line == k and piece:
+                runs.append(dict(r, text=piece))
+    best, best_len = None, 0
+    for r in runs:
+        n = len(r["text"].strip())
+        if n > best_len:
+            best, best_len = r, n
+    v = Para(**{f: getattr(p, f) for f in p.__dataclass_fields__})
+    v.text = lines[k]
+    v.left_text, v.right_text = "", ""
+    v.runs = runs
+    if best is not None:
+        v.font_name, v.size_pt = best.get("font_name"), best.get("size_pt")
+        v.bold, v.italic = best.get("bold"), best.get("italic")
+        v.underline, v.caps = best.get("underline"), best.get("caps")
+        v.color = best.get("color")
+    v.text_is_upper = _is_upper_text(v.text)
+    cache[k] = v
+    return v
+
+
 def _is_upper_text(text: str) -> bool:
     letters = [c for c in text if c.isalpha()]
     if len(letters) < 2:

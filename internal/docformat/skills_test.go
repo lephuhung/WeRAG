@@ -80,7 +80,7 @@ func TestBodyKeepsOpeningAndClosing(t *testing.T) {
 	seg := Segment(l)
 	// pad the body so it exceeds the cap
 	for i := 0; i < 20; i++ {
-		seg.add("noi_dung", l.Paragraphs[len(l.Paragraphs)-1].Index, "", ZoneFull, 1000+i)
+		seg.add("noi_dung", l.Paragraphs[len(l.Paragraphs)-1].Index, "", ZoneFull, 1000+i, -1)
 	}
 	body := seg.Components["noi_dung"]
 	last := body.Paras[len(body.Paras)-1]

@@ -41,7 +41,7 @@ import re
 from importlib import resources
 from typing import Optional
 
-from .layout import DocLayout, Para
+from .layout import DocLayout, Para, line_view
 from .segment import Segmented, fold
 
 _RULES_PACKAGE = "docformat.rules_data"
@@ -141,18 +141,33 @@ def _compare(op: str, actual, expected) -> bool:
     raise ValueError("unknown op %r" % op)
 
 
-def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> list:
-    """Body paragraphs of a component, or the page-footer ones of a
-    component read from the footer (ô 13)."""
+def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> tuple:
+    """(paragraphs, zones) of a component as measured: body paragraphs — the
+    lines of one read line by line, each on its own (line_view) — or the
+    page-footer ones of a component read from the footer (ô 13); zones
+    follow the component's "zones"."""
     comp = seg.comp(comp_key)
-    out = []
-    for idx in comp.get("paras", []):
-        if 0 <= idx < len(layout.paragraphs):
-            out.append(layout.paragraphs[idx])
+    subs = comp.get("subs") or {}
+    czones = comp.get("zones", [])
+    out, zones = [], []
+    for i, idx in enumerate(comp.get("paras", [])):
+        if not 0 <= idx < len(layout.paragraphs):
+            continue
+        z = czones[i] if i < len(czones) else None
+        p = layout.paragraphs[idx]
+        if subs.get(idx):
+            for k in subs[idx]:
+                out.append(line_view(p, k))
+                zones.append(z)
+            continue
+        out.append(p)
+        zones.append(z)
+    if len(zones) < len(czones):
+        zones += czones[len(zones):]
     for idx in comp.get("footer_paras", []):
         if 0 <= idx < len(layout.footer_paras):
             out.append(layout.footer_paras[idx])
-    return out
+    return out, zones
 
 
 _RUN_PROPS = ("font_name", "size_pt", "bold", "italic", "underline", "caps",
@@ -197,18 +212,16 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
     expected = check.get("value")
     mode = check.get("mode", "all")
     regex = check.get("regex") if check.get("kind") == "regex_prop" else None
-    comp = seg.comp(comp_key)
-    paras = _component_paras(layout, seg, comp_key)
+    paras, zones = _component_paras(layout, seg, comp_key)
     if not paras:
         return {"status": "skip", "actual": None,
                 "note": "component %r not found" % comp_key, "evidence": []}
 
     # zone lives on the segmented element, not the paragraph (split paras
     # contribute to two zones at once).
-    zones = comp.get("zones", [])
 
     def actual_of(i: int, p: Para):
-        z = zones[i] if i < len(zones) else p.zone
+        z = zones[i] if i < len(zones) and zones[i] is not None else p.zone
         if prop == "zone":
             return z
         if prop == "text_upper":
@@ -283,19 +296,33 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
     }
 
 
+# a page_setup range is widened by this much: Word stores margins in twips,
+# so "25 mm" set in centimetres reads back as 25.01
+_PAGE_TOLERANCE_MM = 0.5
+
+
 def _eval_page_setup(layout: DocLayout, check: dict) -> dict:
+    """Judge the first section — the main document's page. Later sections
+    (an attached document, a landscape table phụ lục, which NĐ30 allows)
+    are reported in actual as other_sections, never failed."""
     prop = check["prop"]
     op = check["op"]
     expected = check.get("value")
-    secs = [s for s in layout.sections] or []
+    secs = list(layout.sections or [])
     if not secs:
         return {"status": "skip", "actual": None, "evidence": [],
                 "note": "no section info"}
-    actuals = [getattr(s, prop, None) for s in secs]
-    ok = all(a is not None and _compare(op, a, expected) for a in actuals)
+    if op == "range" and isinstance(expected, (list, tuple)) and len(expected) == 2:
+        expected = [expected[0] - _PAGE_TOLERANCE_MM, expected[1] + _PAGE_TOLERANCE_MM]
+    first = getattr(secs[0], prop, None)
+    ok = first is not None and _compare(op, first, expected)
+    actual = first
+    if len(secs) > 1:
+        actual = {"value": first,
+                  "other_sections": [getattr(s, prop, None) for s in secs[1:]]}
     return {
         "status": "pass" if ok else ("warn" if check.get("severity") == "warn" else "fail"),
-        "actual": actuals,
+        "actual": actual,
         "evidence": [],
     }
 

@@ -23,7 +23,8 @@ import (
 // paragraphs that do not count: unmeasured (property not set), in_table,
 // hanging), regex_prop (prop over the paragraphs whose fold()ed text
 // matches regex; a run property is read from the runs covering the match),
-// page_setup (a section property), page_number (a centred header PAGE
+// page_setup (a property of the first section, a range widened by ±0.5 mm;
+// later sections are reported, not judged), page_number (a centred header PAGE
 // field and no number on page 1) and stray_chars (a symbol typed inside a
 // word in any paragraph).
 // Rules that need judgment — signing authority, Nơi nhận, wording — are
@@ -518,14 +519,14 @@ func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
 		}
 	}
 	comp := seg.Comp(c.Component)
-	paras := componentParas(l, comp)
+	paras, zones := componentParas(l, comp)
 	if len(paras) == 0 {
 		return evalOut{status: StatusSkip, note: fmt.Sprintf("component '%s' not found", c.Component)}, nil
 	}
 	actualOf := func(i int, p *Para) any {
 		z := p.Zone
-		if i < len(comp.Zones) {
-			z = comp.Zones[i]
+		if i < len(zones) {
+			z = zones[i]
 		}
 		if c.Prop == "zone" {
 			return z
@@ -659,21 +660,22 @@ func ruleLines(textParas []*Para, c RuleCheck, re *regexp.Regexp, actualOf func(
 	return idx, nil
 }
 
-// componentParas are the paragraphs of a component: body paragraphs, or
-// the page-footer ones of a component read from the footer (ô 13).
-func componentParas(l *Layout, comp *Component) []*Para {
-	var paras []*Para
-	for _, idx := range comp.Paras {
-		if idx >= 0 && idx < len(l.Paragraphs) {
-			paras = append(paras, l.Paragraphs[idx])
-		}
+// componentParas are the paragraphs of a component as measured: body
+// paragraphs — the lines of one read line by line, each on its own
+// (Component.ParaViews) — or the page-footer ones of a component read from
+// the footer (ô 13); zones follow the component's Zones.
+func componentParas(l *Layout, comp *Component) ([]*Para, []string) {
+	paras, zones := comp.ParaViews(l)
+	if len(zones) < len(comp.Zones) {
+		// Zones entries past the body paragraphs (none today) stay readable
+		zones = append(zones, comp.Zones[len(zones):]...)
 	}
 	for _, idx := range comp.FooterParas {
 		if idx >= 0 && idx < len(l.FooterParas) {
 			paras = append(paras, l.FooterParas[idx])
 		}
 	}
-	return paras
+	return paras, zones
 }
 
 // RuleLines returns the indexes of the paragraphs of the component that
@@ -690,10 +692,11 @@ func RuleLines(l *Layout, comp *Component, c RuleCheck) []int {
 			return nil
 		}
 	}
+	views, _ := comp.ParaViews(l)
 	var textParas []*Para
-	for _, idx := range comp.Paras {
-		if idx >= 0 && idx < len(l.Paragraphs) && strings.TrimSpace(l.Paragraphs[idx].Text) != "" {
-			textParas = append(textParas, l.Paragraphs[idx])
+	for _, p := range views {
+		if strings.TrimSpace(p.Text) != "" {
+			textParas = append(textParas, p)
 		}
 	}
 	if len(textParas) == 0 {
@@ -702,7 +705,10 @@ func RuleLines(l *Layout, comp *Component, c RuleCheck) []int {
 	pos, _ := ruleLines(textParas, c, re, func(_ int, p *Para) any { return paraAttr(p, c.Prop) })
 	out := make([]int, 0, len(pos))
 	for _, i := range pos {
-		out = append(out, textParas[i].Index)
+		// lines of one paragraph name it once
+		if n := len(out); n == 0 || out[n-1] != textParas[i].Index {
+			out = append(out, textParas[i].Index)
+		}
 	}
 	return out
 }
@@ -802,30 +808,47 @@ func evalPageNumber(l *Layout, c RuleCheck) evalOut {
 	return evalOut{status: status, actual: actual}
 }
 
+// pageToleranceMM widens a page_setup range: Word stores margins in twips,
+// so "25 mm" set in centimetres reads back as 25.01.
+const pageToleranceMM = 0.5
+
+// evalPageSetup judges the first section — the main document's page. Later
+// sections (an attached document, a landscape table phụ lục, which NĐ30
+// allows) are reported in actual as other_sections, never failed.
 func evalPageSetup(l *Layout, c RuleCheck) (evalOut, error) {
 	if len(l.Sections) == 0 {
 		return evalOut{status: StatusSkip, note: "no section info"}, nil
 	}
-	actuals := make([]any, 0, len(l.Sections))
-	ok := true
-	for _, s := range l.Sections {
-		a := sectionAttr(s, c.Prop)
-		actuals = append(actuals, a)
-		if a == nil {
-			ok = false
-			continue
+	value := c.Value
+	if list, ok := c.Value.([]any); ok && c.Op == "range" && len(list) == 2 {
+		lo, ok1 := asNumber(list[0])
+		hi, ok2 := asNumber(list[1])
+		if ok1 && ok2 {
+			value = []any{lo - pageToleranceMM, hi + pageToleranceMM}
 		}
-		good, err := compare(c.Op, a, c.Value)
+	}
+	first := sectionAttr(l.Sections[0], c.Prop)
+	ok := first != nil
+	if ok {
+		good, err := compare(c.Op, first, value)
 		if err != nil {
 			return evalOut{}, err
 		}
-		ok = ok && good
+		ok = good
 	}
 	status := StatusPass
 	if !ok {
 		status = failStatus(c.Severity)
 	}
-	return evalOut{status: status, actual: actuals}, nil
+	var actual any = first
+	if len(l.Sections) > 1 {
+		others := make([]any, 0, len(l.Sections)-1)
+		for _, s := range l.Sections[1:] {
+			others = append(others, sectionAttr(s, c.Prop))
+		}
+		actual = map[string]any{"value": first, "other_sections": others}
+	}
+	return evalOut{status: status, actual: actual}, nil
 }
 
 func evalPresent(seg *Segmentation, component, op, severity string) evalOut {
