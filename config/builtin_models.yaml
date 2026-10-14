@@ -13,14 +13,14 @@ builtin_models:
       provider: ${LLM_PROVIDER:-openai}
       context_window: 128000
 
-  # Vietnamese spell-check model (Gemma-4-E4B-it + LoRA v2, training/spellcheck).
+  # Vietnamese spell-check model (Gemma-4-E4B-it + LoRA v3.2, training/spellcheck).
   # Served by an OpenAI-compatible endpoint; point check_spelling at it via
   # spellcheck_model_id in builtin_agents.yaml.
   - id: builtin-llm-spellcheck
     type: KnowledgeQA
     source: remote
     is_default: false
-    name: ${SPELLCHECK_MODEL_NAME:-spellcheck-gemma4-e4b-v2}
+    name: ${SPELLCHECK_MODEL_NAME:-spellcheck-gemma4-e4b-v32}
     description: Gemma-4-E4B fine-tuned for Vietnamese spelling review
     parameters:
       base_url: ${SPELLCHECK_BASE_URL:-http://10.10.0.241:8003/v1}
