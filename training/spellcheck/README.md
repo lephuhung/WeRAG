@@ -112,6 +112,17 @@ sudo systemd-run --unit spellcheck-train-v3 --collect \
 python eval_model.py $R/eval_v3.jsonl --api http://10.10.0.241:8003/v1 --model-name spellcheck-gemma4-e4b-v3
 ```
 
+Real chat questions used as seeds must be read for typos first: a real
+question with "cascc" kept as a clean seed taught v3 that "cascc" is
+correct (12 samples). Short corrective runs (v3.1, v3.2) warm-start from the
+previous adapter on 4–5k fresh samples at `--lr 5e-5`; `--raw-extra-weight`
+and `--tone-mid-rate` raise the share of raw keys with a doubled key and of
+the tone key typed mid-syllable (cascc, cassc), which the default mix
+almost never labels. v3.2 (served): detect F1 .875 overall, query .978,
+vsec .852, cleanFP 0, yet "cascc" in a single question only 8/30 — typo
+shapes are endless, so the chat gate asks the user rather than relying on
+the model alone.
+
 Pass criteria: part `query` detect F1 ≥ .90 with cleanFP ≤ 2% (abbreviations
 not flagged), vsec/kb parts within .01 of v2. If only `query` improves and
 vsec drops by more than .02, rebuild with `--query-rate 0.25 --telex-weight 12

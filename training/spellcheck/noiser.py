@@ -166,6 +166,25 @@ def _typo(core: str, rng: random.Random) -> str | None:
     return "".join(chars)
 
 
+# How a telex_vni error is typed: tone key at the end, the whole syllable as
+# raw keys, raw keys with one key pressed twice (cascc), modifiers raw only.
+TELEX_KINDS = ["tone_key", "raw", "raw_extra", "mod_only"]
+TELEX_KIND_WEIGHTS = [30, 40, 15, 15]
+# Share of raw Telex syllables with the tone key typed straight after the
+# vowel (casc) rather than at the end (cacs).
+TONE_MID_RATE = 0.3
+
+
+def set_telex_kind_weights(tone_mid_rate: float | None = None, **overrides: float) -> None:
+    """Override telex_vni kind weights by name, e.g. set_telex_kind_weights(raw_extra=40),
+    and optionally the share of tone keys typed mid-syllable."""
+    global TONE_MID_RATE
+    for name, w in overrides.items():
+        TELEX_KIND_WEIGHTS[TELEX_KINDS.index(name)] = w
+    if tone_mid_rate is not None:
+        TONE_MID_RATE = tone_mid_rate
+
+
 MOD_KEYS_TELEX = {"\u0302": {"a": "a", "e": "e", "o": "o"}, "\u0306": {"a": "w"}, "\u031b": {"o": "w", "u": "w"}}
 MOD_KEYS_VNI = {"\u0302": "6", "\u0306": "8", "\u031b": "7"}
 
@@ -196,7 +215,7 @@ def raw_keystrokes(core: str, vni: bool, rng: random.Random) -> str | None:
     s = "".join(out)
     if tone:
         key = (VNI if vni else TELEX)[tone]
-        if not vni and rng.random() < 0.3:
+        if not vni and rng.random() < TONE_MID_RATE:
             # tone key typed straight after the vowel: casc, nhaanj
             m = re.search(r"[aeiouyAEIOUY][aeiouywAEIOUYW]*", s)
             if m:
@@ -212,7 +231,7 @@ def _telex_vni(core: str, rng: random.Random) -> str | None:
     d = nfd(core)
     marks = [i for i, ch in enumerate(d) if ch in TONES]
     vni = rng.random() < 0.35
-    kind = rng.choices(["tone_key", "raw", "raw_extra", "mod_only"], weights=[30, 40, 15, 15])[0]
+    kind = rng.choices(TELEX_KINDS, weights=TELEX_KIND_WEIGHTS)[0]
     if kind == "tone_key":
         if not marks:
             return None

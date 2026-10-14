@@ -26,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-from noiser import PROTECTED_WORDS, inject, set_op_weights, set_vocab
+from noiser import PROTECTED_WORDS, inject, set_op_weights, set_telex_kind_weights, set_vocab
 from vi_text import split_sentences, syllable_count, vietnamese_ratio
 
 # Full form → short forms used in chat queries. The short form replaces the
@@ -235,6 +235,8 @@ def main() -> int:
     ap.add_argument("--query-abbr-rate", type=float, default=0.35, help="share of query lines that get an abbreviation substituted")
     ap.add_argument("--telex-weight", type=float, help="noiser weight for telex_vni (default 3)")
     ap.add_argument("--typo-weight", type=float, help="noiser weight for typo (default 12)")
+    ap.add_argument("--raw-extra-weight", type=float, help="telex_vni weight of raw keys with a doubled key, cascc (default 15)")
+    ap.add_argument("--tone-mid-rate", type=float, help="share of raw Telex syllables with the tone key right after the vowel, casc (default 0.3)")
     ap.add_argument("--protect-words", help="file with one lower-case word per line the noiser must not corrupt")
     ap.add_argument("--clean-parquet", action="append", default=[], help="path:column, clean sentences to group into paragraphs")
     ap.add_argument("--clean-parquet-limit", type=int, default=60000)
@@ -255,6 +257,10 @@ def main() -> int:
         overrides["typo"] = a.typo_weight
     if overrides:
         set_op_weights(**overrides)
+    if a.raw_extra_weight is not None:
+        set_telex_kind_weights(raw_extra=a.raw_extra_weight)
+    if a.tone_mid_rate is not None:
+        set_telex_kind_weights(tone_mid_rate=a.tone_mid_rate)
     for shorts in ABBREVIATIONS.values():
         PROTECTED_WORDS.update(x.lower() for x in shorts)
     if a.protect_words:
