@@ -46,6 +46,7 @@ type suggestionConversationTurn struct {
 }
 
 type messageSuggestionService struct {
+	aux                auxiliaryModels
 	repo               interfaces.MessageSuggestionRepository
 	messageService     interfaces.MessageService
 	modelService       interfaces.ModelService
@@ -121,10 +122,7 @@ func (s *messageSuggestionService) EnsureFollowUps(
 	}
 
 	startedAt := time.Now()
-	set.ModelID = config.FollowUps.ModelID
-	if set.ModelID == "" {
-		set.ModelID = message.ModelID
-	}
+	set.ModelID = s.suggestionModels(ctx, message, config.FollowUps)[0]
 	questions, usage, generateErr := s.generate(
 		ctx,
 		message,
@@ -328,6 +326,24 @@ func (s *messageSuggestionService) generate(
 	return generated, usage, nil
 }
 
+// suggestionModels lists the models to try for follow-ups, in order: the
+// agent's own follow-up model; else the auxiliary model, then the answering
+// model. Never empty ("" when nothing is configured).
+func (s *messageSuggestionService) suggestionModels(ctx context.Context, message *types.Message, config types.FollowUpSuggestionConfig) []string {
+	if config.ModelID != "" {
+		return []string{config.ModelID}
+	}
+	if aux := s.aux.modelID(ctx); aux != "" && aux != message.ModelID {
+		if message.ModelID == "" {
+			return []string{aux}
+		}
+		return []string{aux, message.ModelID}
+	}
+	return []string{message.ModelID}
+}
+
+// generateWithModel writes the follow-ups with the first of
+// suggestionModels that answers in the expected form.
 func (s *messageSuggestionService) generateWithModel(
 	ctx context.Context,
 	message *types.Message,
@@ -336,10 +352,30 @@ func (s *messageSuggestionService) generateWithModel(
 	config types.FollowUpSuggestionConfig,
 	count int,
 ) (types.SuggestionItems, types.TokenUsage, error) {
-	modelID := config.ModelID
-	if modelID == "" {
-		modelID = message.ModelID
+	models := s.suggestionModels(ctx, message, config)
+	var lastErr error
+	for i, modelID := range models {
+		items, usage, err := s.generateWithModelID(ctx, message, answer, generationContext, config, count, modelID)
+		if err == nil {
+			return items, usage, nil
+		}
+		lastErr = err
+		if i+1 < len(models) {
+			logger.Warnf(ctx, "follow-up suggestions with %s failed, trying %s: %v", modelID, models[i+1], err)
+		}
 	}
+	return nil, types.TokenUsage{}, lastErr
+}
+
+func (s *messageSuggestionService) generateWithModelID(
+	ctx context.Context,
+	message *types.Message,
+	answer string,
+	generationContext suggestionGenerationContext,
+	config types.FollowUpSuggestionConfig,
+	count int,
+	modelID string,
+) (types.SuggestionItems, types.TokenUsage, error) {
 	if modelID == "" {
 		return nil, types.TokenUsage{}, errors.New("suggestion model is not configured")
 	}

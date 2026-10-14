@@ -111,6 +111,7 @@ func generateEventID(suffix string) string {
 // (see service.LoadAgentHistory and chat_pipeline history loading) — there is no
 // separate cross-turn cache layer.
 type sessionService struct {
+	aux                   auxiliaryModels                        // small model for titles
 	cfg                   *config.Config                         // Application configuration
 	sessionRepo           interfaces.SessionRepository           // Repository for session data
 	messageRepo           interfaces.MessageRepository           // Repository for message data
@@ -875,39 +876,27 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		logger.Infof(ctx, "Using specified model for title generation: %s", modelID)
 	}
 
-	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"model_id": modelID,
-		})
-		return "", err
+	// the auxiliary model (a small one) writes titles when configured;
+	// on any failure the title comes from modelID as before
+	content := ""
+	if aux := s.aux.modelID(ctx); aux != "" && aux != modelID {
+		var auxErr error
+		if content, auxErr = s.titleText(ctx, aux, message.Content); auxErr != nil {
+			logger.Warnf(ctx, "Title with auxiliary model %s failed, using %s: %v", aux, modelID, auxErr)
+			content = ""
+		} else {
+			modelID = aux
+		}
 	}
-
-	// Prepare messages for title generation
-	titlePrompt := types.RenderPromptPlaceholders(s.cfg.Conversation.GenerateSessionTitlePrompt, types.PlaceholderValues{
-		"language": types.LanguageNameFromContext(ctx),
-	})
-	var chatMessages []chat.Message
-	chatMessages = append(chatMessages,
-		chat.Message{Role: "system", Content: titlePrompt},
-	)
-	chatMessages = append(chatMessages,
-		chat.Message{Role: "user", Content: message.Content},
-	)
-
-	// Call model to generate title
-	thinking := false
-	response, err := chatModel.Chat(ctx, chatMessages, &chat.ChatOptions{
-		Temperature: 0.3,
-		Thinking:    &thinking,
-	})
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, nil)
-		return "", err
+	if content == "" {
+		var err error
+		if content, err = s.titleText(ctx, modelID, message.Content); err != nil {
+			return "", err
+		}
 	}
 
 	// Process and store the generated title
-	title, truncated := sanitizeGeneratedTitle(response.Content)
+	title, truncated := sanitizeGeneratedTitle(content)
 	if truncated {
 		logger.Warnf(ctx,
 			"Generated session title exceeded %d runes and was truncated, session=%s, model=%s",
@@ -924,6 +913,37 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	}
 
 	return session.Title, nil
+}
+
+// titleText asks modelID for a title of the user's question and returns
+// the raw reply (an empty reply is an error).
+func (s *sessionService) titleText(ctx context.Context, modelID, question string) (string, error) {
+	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"model_id": modelID,
+		})
+		return "", err
+	}
+	titlePrompt := types.RenderPromptPlaceholders(s.cfg.Conversation.GenerateSessionTitlePrompt, types.PlaceholderValues{
+		"language": types.LanguageNameFromContext(ctx),
+	})
+	thinking := false
+	response, err := chatModel.Chat(ctx, []chat.Message{
+		{Role: "system", Content: titlePrompt},
+		{Role: "user", Content: question},
+	}, &chat.ChatOptions{
+		Temperature: 0.3,
+		Thinking:    &thinking,
+	})
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		return "", err
+	}
+	if response == nil || strings.TrimSpace(response.Content) == "" {
+		return "", stderrors.New("empty title reply")
+	}
+	return response.Content, nil
 }
 
 // GenerateTitleAsync generates a title for the session asynchronously

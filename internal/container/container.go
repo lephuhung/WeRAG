@@ -658,6 +658,19 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// them only after the matching handlers are ready.
 	must(container.Invoke(recoverPendingWikiTasks))
 
+	// session titles and follow-up suggestions use the platform's small
+	// auxiliary model (system setting llm.auxiliary_model_id)
+	must(container.Invoke(func(settings interfaces.SystemSettingService, sessions interfaces.SessionService,
+		suggestions interfaces.MessageSuggestionService) {
+		type auxiliaryUser interface {
+			SetAuxiliaryModels(interfaces.SystemSettingService)
+		}
+		for _, svc := range []any{sessions, suggestions} {
+			if u, ok := svc.(auxiliaryUser); ok {
+				u.SetAuxiliaryModels(settings)
+			}
+		}
+	}))
 	// answers to the chat gate's "unclear word" question are kept as
 	// training data for the spell-check model
 	must(container.Invoke(func(c *service.AbbreviationTurnCoordinator, f interfaces.AbbreviationFeedbackRepository) {

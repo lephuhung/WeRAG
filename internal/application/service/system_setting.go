@@ -372,6 +372,18 @@ var registry = map[string]settingSpec{
 		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
 			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay.",
 	},
+	// llm.auxiliary_model_id: the small model for session titles and
+	// follow-up suggestions (measured 2026-10-14: as good as Qwen on
+	// follow-ups, slightly weaker on titles; NOT used for query rewrite,
+	// where it answered in Chinese and broke JSON). Read per call.
+	types.AuxiliaryModelSettingKey: {
+		Type:     "string",
+		EnvName:  "WEKNORA_AUXILIARY_MODEL_ID",
+		Default:  types.DefaultAuxiliaryModelID,
+		Category: "chat",
+		Description: "Model nhỏ cho việc phụ ít rủi ro: đặt tiêu đề phiên và gợi ý câu hỏi tiếp theo, để model chính " +
+			"chỉ lo trả lời. Để trống thì dùng model trả lời. Model lỗi thì tự quay về model trả lời. Có hiệu lực ngay.",
+	},
 	// Billing: the bank account that receives package payments (VietQR
 	// needs the bank BIN + account number), how long a pending order
 	// stays payable, and a contact line for the payment page.
