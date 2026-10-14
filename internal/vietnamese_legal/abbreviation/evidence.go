@@ -53,10 +53,12 @@ const (
 
 // DecideTypo fuses the evidence. The gate corrects on its own only when
 // two independent sources give the same reading (or users of the tenant
-// confirmed it before); it asks when the sources disagree or only one
-// sees a typo; and it treats the word as an abbreviation when the chat
-// model spells it out. The chat model's silence vetoes a lone spell-check
-// guess (it flags abbreviations such as ttcp → "tập").
+// confirmed it before); it treats the word as an abbreviation when the
+// chat model spells it out; it asks when the sources disagree, or when
+// only one sees a typo in an abbreviation-shaped word (vphc). A single
+// reading of an ordinary-looking word (hornor → honor) is not worth a
+// question: the word is kept as typed and the answer model reads it. The
+// chat model's silence vetoes a lone spell-check guess (ttcp → "tập").
 func DecideTypo(e TypoEvidence) (TypoVerdict, string, []string) {
 	if !e.Ask {
 		switch {
@@ -109,6 +111,10 @@ func DecideTypo(e TypoEvidence) (TypoVerdict, string, []string) {
 	case e.RewriteRan && e.Rewrite == "" && e.Decoded == "" && e.Dictionary == "" && e.Unmarked == "":
 		// only the spell-check model sees a typo; the chat model kept the word
 		return TypoNone, "", nil
+	case len(readings) == 1 && !IsLikelyAbbreviation(e.Word):
+		// one reading of a word that looks like a word (a name, a foreign
+		// word): go on as typed rather than ask
+		return TypoKeep, "", nil
 	}
 	return TypoAsk, "", options
 }

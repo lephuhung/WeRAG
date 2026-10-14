@@ -196,3 +196,18 @@ func TestUnclearWordChoiceSeveralGuesses(t *testing.T) {
 	require.Equal(t, "ddaats → đặt", opts[1]["resend"])
 	require.Equal(t, "ddaats → đất", opts[2]["resend"])
 }
+
+func TestGateGoesOnWithOrdinaryLookingWord(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	q := "giá hornor magic 9 pro"
+	dict := &typoDictionary{turnDictionary: base, rewrites: map[string]string{q: "giá honor magic 9 pro"}}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	in := turnInput(owner, "u1", "a1", q)
+	in.ModelID = "chat"
+	// one source reads hornor as honor: not worth a question, kept as typed
+	r, err := c.Prepare(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Equal(t, q, r.EffectiveQuery)
+	require.Empty(t, r.AutoCorrections)
+}

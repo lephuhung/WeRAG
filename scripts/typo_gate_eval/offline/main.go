@@ -167,6 +167,8 @@ func main() {
 					v[k] = "ABBR"
 				case abbreviation.TypoNone:
 					v[k] = "NONE"
+				case abbreviation.TypoKeep:
+					v[k] = "KEEP"
 				}
 			}
 			out[i] = res{r, v}

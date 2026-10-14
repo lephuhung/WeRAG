@@ -21,10 +21,13 @@ func TestDecideTypo(t *testing.T) {
 	v, _, opts := DecideTypo(TypoEvidence{Word: "ddaats", Spellcheck: "đất", Rewrite: "đặt", RewriteRan: true})
 	require.Equal(t, TypoAsk, v)
 	require.Equal(t, []string{"đặt", "đất"}, opts)
-	// one source only: ask
-	v, _, opts = DecideTypo(TypoEvidence{Word: "hornor", Rewrite: "honor", RewriteRan: true})
+	// one reading of an ordinary-looking word: kept as typed, no question
+	v, _, _ = DecideTypo(TypoEvidence{Word: "hornor", Rewrite: "honor", RewriteRan: true})
+	require.Equal(t, TypoKeep, v)
+	// one reading of an abbreviation-shaped word: ask
+	v, _, opts = DecideTypo(TypoEvidence{Word: "vphc", Rewrite: "văn phòng", RewriteRan: true})
 	require.Equal(t, TypoAsk, v)
-	require.Equal(t, []string{"honor"}, opts)
+	require.Equal(t, []string{"văn phòng"}, opts)
 	// the chat model spelled it out: abbreviation
 	v, _, _ = DecideTypo(TypoEvidence{Word: "vphc", RewriteRan: true, RewriteAbbreviation: true})
 	require.Equal(t, TypoAbbreviation, v)
