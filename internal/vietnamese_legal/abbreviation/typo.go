@@ -143,3 +143,72 @@ func ApplyTypoCorrections(r types.AbbreviationResolution, typos []types.Abbrevia
 	finalizeResolution(&out)
 	return out, nil
 }
+
+// ValidRewrite reports whether rewrite may be offered as "did you mean"
+// for original, where unclear are the words being asked about, keep the
+// candidate short forms that must stay as written and known the active
+// dictionary short forms. The model is only allowed to fix typing: every
+// kept short form, ALL-CAPS word and word with a digit is still there, at
+// least one unclear word was changed, the word count grows by at most one
+// per unclear word (quyddinh → quy định) — an abbreviation spelled out
+// (BMNN → bí mật nhà nước) fails — and a new abbreviation-shaped word must
+// be a dictionary short form (ubnf → UBND, not vphc → VPCP).
+func ValidRewrite(original, rewrite string, unclear, keep, known []string) bool {
+	rewrite = strings.TrimSpace(rewrite)
+	if rewrite == "" || strings.Join(strings.Fields(rewrite), " ") == strings.Join(strings.Fields(original), " ") {
+		return false
+	}
+	orig, rw := extractWordTokenSpans(original), extractWordTokenSpans(rewrite)
+	if len(rw) > len(orig)+len(unclear) || len(rw)+2 < len(orig) {
+		return false
+	}
+	has := make(map[string]int, len(rw))
+	exact := make(map[string]bool, len(rw))
+	for _, s := range rw {
+		has[termKey(s.token)]++
+		exact[s.token] = true
+	}
+	changed := false
+	for _, u := range unclear {
+		if has[termKey(u)] == 0 {
+			changed = true
+		}
+	}
+	if !changed {
+		return false
+	}
+	for _, k := range keep {
+		if has[termKey(k)] == 0 {
+			return false
+		}
+	}
+	unclearKey := make(map[string]bool, len(unclear))
+	for _, u := range unclear {
+		unclearKey[termKey(u)] = true
+	}
+	inOriginal := make(map[string]bool, len(orig))
+	for _, s := range orig {
+		inOriginal[termKey(s.token)] = true
+	}
+	knownKey := make(map[string]bool, len(known))
+	for _, k := range known {
+		knownKey[termKey(k)] = true
+	}
+	for _, s := range rw {
+		key := termKey(s.token)
+		if !inOriginal[key] && !knownKey[key] && IsLikelyAbbreviation(s.token) {
+			return false
+		}
+	}
+	for _, s := range orig {
+		if unclearKey[termKey(s.token)] {
+			continue
+		}
+		if strings.IndexFunc(s.token, unicode.IsDigit) >= 0 || (isAllUpperLetters(s.token) && len([]rune(s.token)) > 1) {
+			if !exact[s.token] {
+				return false
+			}
+		}
+	}
+	return true
+}

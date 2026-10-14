@@ -707,7 +707,11 @@ SCENARIOS: List[Scenario] = [
         steps=[
             Step(
                 "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
-                S(_unclear_card("cascc", "các"), C.answer_contains_any(["chưa rõ ý nghĩa"]), C.no_edit_ops()),
+                S(_unclear_card("cascc", "các"), C.answer_contains_any(["chưa rõ ý nghĩa"]), C.no_edit_ops(),
+                  C.custom("offers the rewritten question with 'các'",
+                           lambda t, ctx: any(str(o.get("resend", "")).startswith("số lượng hồ sơ các loại")
+                                              for tc in t.tool_calls if (tc.data or {}).get("display_type") == "abbreviation_choice"
+                                              for o in (tc.data or {}).get("options") or []), status=WARN)),
                 note="Trước đây cổng viết tắt hỏi 'nghĩa đầy đủ của cascc'; giờ hỏi lại kèm lựa chọn 'Bạn gõ sai, ý là “các”'.",
             ),
             Step(

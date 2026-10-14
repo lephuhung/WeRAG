@@ -69,3 +69,9 @@ type AbbreviationService interface {
 	// heuristic detection (zero value).
 	DetectCandidates(ctx context.Context, text string) types.AbbreviationDetection
 }
+
+// AbbreviationFeedbackRepository stores answers to the chat gate's
+// "unclear word" question as labelled training data.
+type AbbreviationFeedbackRepository interface {
+	Record(ctx context.Context, rows []types.AbbreviationTypoFeedback) error
+}

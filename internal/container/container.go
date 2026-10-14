@@ -287,6 +287,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewModelService))
 	must(container.Provide(service.NewAbbreviationMeaningSelector))
 	must(container.Provide(service.NewAbbreviationTurnCoordinator))
+	must(container.Provide(repository.NewAbbreviationFeedbackRepository))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -657,6 +658,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// them only after the matching handlers are ready.
 	must(container.Invoke(recoverPendingWikiTasks))
 
+	// answers to the chat gate's "unclear word" question are kept as
+	// training data for the spell-check model
+	must(container.Invoke(func(c *service.AbbreviationTurnCoordinator, f interfaces.AbbreviationFeedbackRepository) {
+		c.SetFeedbackStore(f)
+	}))
 	logger.Infof(ctx, "[Container] Container initialization completed successfully")
 	return container
 }

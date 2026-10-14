@@ -175,6 +175,9 @@ type AbbreviationResolution struct {
 	// rendering the effective query.
 	TypoSuggestions []AbbreviationTypo `json:"typo_suggestions,omitempty"`
 	TypoCorrections []AbbreviationTypo `json:"typo_corrections,omitempty"`
+	// Rewrite is the question with its typing fixed by the chat model,
+	// offered as "did you mean …" while words are unclear.
+	Rewrite string `json:"rewrite,omitempty"`
 }
 
 // Detection returns the candidate detection the resolution was built from.

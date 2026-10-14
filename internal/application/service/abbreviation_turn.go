@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
@@ -29,7 +30,14 @@ type AbbreviationTurnCoordinator struct {
 	store      interfaces.AbbreviationTurnRepository
 	dictionary interfaces.AbbreviationService
 	selector   AbbreviationMeaningSelector
+	feedback   interfaces.AbbreviationFeedbackRepository
 	now        func() time.Time
+}
+
+// SetFeedbackStore records the answers to "unclear word" questions as
+// training data; without it they are not kept.
+func (c *AbbreviationTurnCoordinator) SetFeedbackStore(f interfaces.AbbreviationFeedbackRepository) {
+	c.feedback = f
 }
 
 func NewAbbreviationTurnCoordinator(store interfaces.AbbreviationTurnRepository, dictionary interfaces.AbbreviationService, selector AbbreviationMeaningSelector) *AbbreviationTurnCoordinator {
@@ -68,6 +76,9 @@ func (c *AbbreviationTurnCoordinator) Prepare(ctx context.Context, in Abbreviati
 		if parsed.IsDefinitionReply {
 			return c.continueTurn(ctx, in, awaiting)
 		}
+		// the question was left for the rewritten one or for another
+		// answer: both are labels for the word that was asked about
+		c.recordUnanswered(ctx, b, awaiting)
 	}
 	return c.beginTurn(ctx, in)
 }
@@ -141,6 +152,9 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 	resolution.CurrentUserMessageID = b.UserMessageID
 	resolution.ExpiresAt = row.ExpiresAt
 	resolution.Version = row.Version
+	if resolution.Status == types.AbbreviationStatusNeedsDefinition && !lookupFailed {
+		resolution.Rewrite = c.rewriteQuestion(ctx, in, resolution)
+	}
 	if lookupFailed && len(resolution.UnknownTerms) != 0 {
 		resolution.Status = types.AbbreviationStatusBlockedError
 		resolution.ErrorCode = "dictionary_unavailable"
@@ -197,10 +211,12 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 	if err != nil {
 		return zero, err
 	}
+	asked := row.Payload.Resolution
 	resolution, err = abbreviation.ApplyTypoCorrections(resolution, c.expandTypoAbbreviations(ctx, parsed.Typos))
 	if err != nil {
 		return zero, err
 	}
+	c.recordAnswers(ctx, b, row.ID, asked, parsed)
 	resolution.CurrentUserMessageID = b.UserMessageID
 	if len(parsed.Definitions) != 0 || len(parsed.Typos) != 0 {
 		if err := c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.UserMessageID, RequestID: row.ID, Role: types.AbbreviationMessageRoleDefinition}}); err != nil {
@@ -392,4 +408,105 @@ func (c *AbbreviationTurnCoordinator) expandTypoAbbreviations(ctx context.Contex
 		}
 	}
 	return out
+}
+
+// abbreviationQuestionRewriter is implemented by the abbreviation service:
+// the chat model rewrites the question with its typing fixed.
+type abbreviationQuestionRewriter interface {
+	RewriteQuestion(ctx context.Context, modelID, text string, unclear, keep []string) string
+}
+
+// rewriteQuestion asks for the question with its unclear words fixed, to
+// offer as "did you mean …". Short forms the dictionary resolves or knows
+// several meanings of must stay as written. Any failure yields "".
+func (c *AbbreviationTurnCoordinator) rewriteQuestion(ctx context.Context, in AbbreviationPrepareInput, r types.AbbreviationResolution) string {
+	rw, ok := c.dictionary.(abbreviationQuestionRewriter)
+	if !ok {
+		return ""
+	}
+	var unclear, keep []string
+	for _, u := range r.UnknownTerms {
+		if len(abbreviation.AmbiguousMeanings(r, u)) == 0 {
+			unclear = append(unclear, u)
+		}
+	}
+	for _, t := range r.Terms {
+		if t.Source != "" || len(t.Meanings) > 1 {
+			keep = append(keep, t.ShortForm)
+		}
+	}
+	if len(unclear) == 0 {
+		return ""
+	}
+	modelID := in.ModelID
+	if modelID == "" && in.ResolveModelID != nil {
+		modelID, _ = in.ResolveModelID(ctx)
+	}
+	return rw.RewriteQuestion(ctx, modelID, abbreviation.StripMentions(in.Binding.RawQuery), unclear, keep)
+}
+
+// firstUnclearWord is the word the gate's question is about: the first
+// unknown term without dictionary meanings to choose from.
+func firstUnclearWord(r types.AbbreviationResolution) string {
+	for _, u := range r.UnknownTerms {
+		if len(abbreviation.AmbiguousMeanings(r, u)) == 0 {
+			return u
+		}
+	}
+	return ""
+}
+
+// recordAnswers keeps each answer to the question as a training row: the
+// word, what was offered and what the user chose. Never fails the turn.
+func (c *AbbreviationTurnCoordinator) recordAnswers(ctx context.Context, b types.AbbreviationBinding, requestID string, asked types.AbbreviationResolution, parsed abbreviation.DefinitionParseResult) {
+	if c.feedback == nil {
+		return
+	}
+	var rows []types.AbbreviationTypoFeedback
+	row := func(word, choice, answer string) types.AbbreviationTypoFeedback {
+		return types.AbbreviationTypoFeedback{
+			TenantID: b.Owner.TenantID, SessionID: b.Owner.SessionID, RequestID: requestID,
+			UserMessageID: b.UserMessageID, OriginalQuery: asked.OriginalQuery, Word: word,
+			SpellcheckGuess: abbreviation.TypoSuggestionFor(asked, word), Rewrite: asked.Rewrite,
+			Choice: choice, Answer: answer, CreatedAt: c.now(),
+		}
+	}
+	for _, t := range parsed.Typos {
+		choice := types.AbbreviationFeedbackTypo
+		if strings.EqualFold(strings.TrimSpace(t.Correct), t.Wrong) {
+			choice = types.AbbreviationFeedbackKeep
+		}
+		rows = append(rows, row(t.Wrong, choice, t.Correct))
+	}
+	for _, d := range parsed.Definitions {
+		if len(abbreviation.AmbiguousMeanings(asked, d.ShortForm)) == 0 {
+			rows = append(rows, row(d.ShortForm, types.AbbreviationFeedbackAbbreviation, d.FullForm))
+		}
+	}
+	if err := c.feedback.Record(ctx, rows); err != nil {
+		logger.Warnf(ctx, "abbreviation gate: feedback not recorded: %v", err)
+	}
+}
+
+// recordUnanswered labels a question left without a definition: the user
+// picked the rewritten question, or sent something else.
+func (c *AbbreviationTurnCoordinator) recordUnanswered(ctx context.Context, b types.AbbreviationBinding, awaiting *types.AbbreviationTurnState) {
+	asked := awaiting.Payload.Resolution
+	word := firstUnclearWord(asked)
+	if c.feedback == nil || word == "" {
+		return
+	}
+	choice := types.AbbreviationFeedbackOther
+	if asked.Rewrite != "" && strings.Join(strings.Fields(b.RawQuery), " ") == strings.Join(strings.Fields(asked.Rewrite), " ") {
+		choice = types.AbbreviationFeedbackRewrite
+	}
+	err := c.feedback.Record(ctx, []types.AbbreviationTypoFeedback{{
+		TenantID: b.Owner.TenantID, SessionID: b.Owner.SessionID, RequestID: awaiting.ID,
+		UserMessageID: b.UserMessageID, OriginalQuery: asked.OriginalQuery, Word: word,
+		SpellcheckGuess: abbreviation.TypoSuggestionFor(asked, word), Rewrite: asked.Rewrite,
+		Choice: choice, Answer: b.RawQuery, CreatedAt: c.now(),
+	}})
+	if err != nil {
+		logger.Warnf(ctx, "abbreviation gate: feedback not recorded: %v", err)
+	}
 }

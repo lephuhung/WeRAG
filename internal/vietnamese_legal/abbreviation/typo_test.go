@@ -81,3 +81,21 @@ func TestTypoAnswerForUnknownWordFails(t *testing.T) {
 	_, err := ParseUserDefinitions("abc → các", "m2", []string{"cascc"}, true)
 	require.ErrorIs(t, err, types.ErrAbbreviationBadSelection)
 }
+
+func TestValidRewrite(t *testing.T) {
+	q := "số lượng hồ sơ cascc loại ưu tiên của UBND theo NĐ 30"
+	require.True(t, ValidRewrite(q, "số lượng hồ sơ các loại ưu tiên của UBND theo NĐ 30", []string{"cascc"}, []string{"UBND"}, nil))
+	// unchanged, or the unclear word kept: nothing to offer
+	require.False(t, ValidRewrite(q, q, []string{"cascc"}, nil, nil))
+	require.False(t, ValidRewrite(q, "số lượng hồ sơ cascc loại ưu tiên của UBND theo Nghị định 30", []string{"cascc"}, nil, nil))
+	// a kept short form spelled out, or a number changed
+	require.False(t, ValidRewrite(q, "số lượng hồ sơ các loại ưu tiên của Ủy ban nhân dân theo NĐ 30", []string{"cascc"}, []string{"UBND"}, nil))
+	require.False(t, ValidRewrite(q, "số lượng hồ sơ các loại ưu tiên của UBND theo NĐ 31", []string{"cascc"}, nil, nil))
+	// an unknown abbreviation expanded into a phrase
+	require.False(t, ValidRewrite("tài liệu bmnn lưu bao lâu", "tài liệu bí mật nhà nước lưu bao lâu", []string{"bmnn"}, nil, nil))
+	// one word may become two (quyddinh → quy định)
+	require.True(t, ValidRewrite("quyddinh về thuế", "quy định về thuế", []string{"quyddinh"}, nil, nil))
+	// a new abbreviation only when the dictionary has it
+	require.True(t, ValidRewrite("báo cáo của ubnf tỉnh", "báo cáo của UBND tỉnh", []string{"ubnf"}, nil, []string{"UBND"}))
+	require.False(t, ValidRewrite("vi phạm vphc năm nay", "vi phạm VPCP năm nay", []string{"vphc"}, nil, []string{"UBND"}))
+}

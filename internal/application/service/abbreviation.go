@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -9,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
@@ -105,6 +107,67 @@ func (s *abbreviationService) SuggestTypos(ctx context.Context, text string) []t
 		}
 	}
 	return out
+}
+
+// abbreviationRewritePrompt asks the chat model to fix typing only. Code
+// still checks the result (abbreviation.ValidRewrite): the model has been
+// seen spelling out unknown abbreviations with high confidence.
+const abbreviationRewritePrompt = `Bạn sửa lỗi gõ phím trong một câu hỏi tiếng Việt người dùng gõ vào ô chat.
+Các từ ở dòng "Từ nghi gõ sai" có thể là lỗi gõ: Telex/VNI sót phím (cacs, cascc = các; mootj = một; ddang = đăng; thur = thủ; tucj = tục),
+phím gõ lặp, gõ nhầm phím cạnh, thiếu dấu. Trong Telex: s = sắc, f = huyền, r = hỏi, x = ngã, j = nặng, aa = â, ee = ê, oo = ô, w = ư/ơ/ă, dd = đ.
+Đọc cả câu để chọn từ đúng theo ngữ cảnh.
+Nếu một từ nghi là từ viết tắt hoặc tên riêng chứ không phải lỗi gõ thì giữ nguyên; KHÔNG giải nghĩa hay mở rộng từ viết tắt (UBND, bhxh, BMNN… giữ nguyên).
+Không đổi số, số hiệu văn bản, không thêm hay bớt ý, không trả lời câu hỏi.
+Trả lời đúng một JSON: {"corrected": "<câu đã sửa>"}`
+
+const abbreviationRewriteTimeout = 4 * time.Second
+
+// RewriteQuestion asks the chat model for the question with its typing
+// errors fixed, offered to the user as "did you mean …". It returns ""
+// when the model fails or its rewrite is not a pure typing fix of the
+// unclear words (keep: short forms that must stay as written).
+func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text string, unclear, keep []string) string {
+	if s.models == nil || modelID == "" || len(unclear) == 0 {
+		return ""
+	}
+	model, err := s.models.GetChatModel(ctx, modelID)
+	if err != nil || model == nil {
+		return ""
+	}
+	rewriteCtx, cancel := context.WithTimeout(ctx, abbreviationRewriteTimeout)
+	defer cancel()
+	thinking := false
+	resp, err := model.Chat(rewriteCtx, []chat.Message{
+		{Role: "system", Content: abbreviationRewritePrompt},
+		{Role: "user", Content: "Câu hỏi: " + text + "\nTừ nghi gõ sai: " + strings.Join(unclear, ", ")},
+	}, &chat.ChatOptions{Temperature: 0.01, MaxTokens: 400, Thinking: &thinking, Format: json.RawMessage(`{"type":"object"}`)})
+	if err != nil || resp == nil {
+		logger.Warnf(ctx, "abbreviation gate: rewrite skipped: %v", err)
+		return ""
+	}
+	var out struct {
+		Corrected string `json:"corrected"`
+	}
+	content := strings.TrimSpace(resp.Content)
+	if i, j := strings.Index(content, "{"), strings.LastIndex(content, "}"); i >= 0 && j > i {
+		content = content[i : j+1]
+	}
+	if json.Unmarshal([]byte(content), &out) != nil {
+		return ""
+	}
+	var known []string
+	if active, err := s.repo.ListActive(ctx); err == nil {
+		for _, a := range active {
+			if a != nil {
+				known = append(known, a.ShortForm)
+			}
+		}
+	}
+	if !abbreviation.ValidRewrite(text, out.Corrected, unclear, keep, known) {
+		logger.Infof(ctx, "abbreviation gate: rewrite rejected: %q", out.Corrected)
+		return ""
+	}
+	return strings.TrimSpace(out.Corrected)
 }
 
 // Suggest creates an inactive abbreviation suggestion attributed to the

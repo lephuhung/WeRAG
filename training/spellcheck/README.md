@@ -130,6 +130,21 @@ vsec drops by more than .02, rebuild with `--query-rate 0.25 --telex-weight 12
 checkpointing (embed-rerank holds 7.4 GB), no eval with transformers while
 training, and no `--merge` when disk is short (serve the LoRA instead).
 
+## Data from the chat gate
+
+When the chat gate cannot read a word (cascc) it asks the user: abbreviation,
+"you mistyped “các”" (this model's guess), "did you mean <the question
+rewritten by the chat model>", keep as typed, or another answer. Every
+answer is stored in `abbreviation_typo_feedback` (migration 000139) with
+what was offered. `export_gate_feedback.py` turns those rows into
+`--pairs` input for `build_dataset.py`: confirmed typos and picked rewrites
+become findings, "keep" and "abbreviation" answers become clean examples.
+
+```bash
+psql "$DSN" -Atc "select row_to_json(f) from abbreviation_typo_feedback f order by id" > $R/feedback.jsonl
+python export_gate_feedback.py $R/feedback.jsonl --out $R/gate_pairs.jsonl
+```
+
 ## Serving
 
 Serve `runs/<run>/merged` (or the base model plus `--lora-modules

@@ -227,7 +227,7 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 		}
 	}
 	if len(plain) > 0 && data == nil {
-		return unclearWordChoice(plain[0], abbreviation.TypoSuggestionFor(r, plain[0]), english)
+		return unclearWordChoice(plain[0], abbreviation.TypoSuggestionFor(r, plain[0]), r.Rewrite, english)
 	}
 	if len(plain) > 0 {
 		if b.Len() > 0 {
@@ -242,10 +242,11 @@ func abbreviationChoice(r types.AbbreviationResolution, english bool) (answer st
 	return b.String(), data
 }
 
-// unclearWordChoice asks what an unclear word is. The spell-check guess,
-// when there is one, is offered as "you mistyped X"; the user decides,
-// nothing is corrected silently.
-func unclearWordChoice(word, guess string, english bool) (string, map[string]interface{}) {
+// unclearWordChoice asks what an unclear word is. The spell-check guess
+// is offered as "you mistyped X" and the chat model's rewritten question
+// as "did you mean …"; the user decides, nothing is corrected silently.
+// Picking the rewrite sends it as the question.
+func unclearWordChoice(word, guess, rewrite string, english bool) (string, map[string]interface{}) {
 	type option struct{ label, detail, input, resend string }
 	var opts []option
 	if english {
@@ -254,6 +255,9 @@ func unclearWordChoice(word, guess string, english bool) (string, map[string]int
 			opts = append(opts, option{"You mistyped it — did you mean “" + guess + "”?", "", "", word + " → " + guess})
 		} else {
 			opts = append(opts, option{"You mistyped it", "Type the intended word", "Intended word", word + " → {text}"})
+		}
+		if rewrite != "" {
+			opts = append(opts, option{"Did you mean: “" + rewrite + "”?", "", "", rewrite})
 		}
 		opts = append(opts,
 			option{"Keep “" + word + "” as typed", "A name or an ordinary word", "", word + " → " + word},
@@ -264,6 +268,9 @@ func unclearWordChoice(word, guess string, english bool) (string, map[string]int
 			opts = append(opts, option{"Bạn gõ sai, ý là “" + guess + "” phải không?", "", "", word + " → " + guess})
 		} else {
 			opts = append(opts, option{"Bạn gõ sai", "Nhập từ đúng", "Từ đúng", word + " → {text}"})
+		}
+		if rewrite != "" {
+			opts = append(opts, option{"Ý bạn là: “" + rewrite + "”?", "", "", rewrite})
 		}
 		opts = append(opts,
 			option{"Giữ nguyên “" + word + "”", "Tên riêng hoặc từ thông thường", "", word + " → " + word},
