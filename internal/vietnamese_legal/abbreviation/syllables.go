@@ -42,7 +42,7 @@ func SuspectWords(text string) []string {
 	seen := map[string]bool{}
 	for _, s := range extractWordTokenSpans(text) {
 		key := termKey(s.token)
-		if seen[key] || utf8Len(s.token) < 2 {
+		if seen[key] || utf8Len(s.token) < 2 || !hasLetter(s.token) || isRomanNumeral(s.token) {
 			continue
 		}
 		if strings.IndexFunc(s.token, unicode.IsDigit) >= 0 {

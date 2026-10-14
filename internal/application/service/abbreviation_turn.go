@@ -140,6 +140,14 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 			active, listErr = c.dictionary.ListActive(ctx)
 		}
 	}
+	// numbers, roman numerals, written words, short forms spelled out in the
+	// question and widely known ones are never asked about
+	if c.dictionary != nil && len(abbreviation.FindDetectedCandidates(text, detection)) != 0 {
+		listActive()
+		if listErr == nil {
+			detection = abbreviation.DropSettled(text, detection, shortFormSet(active))
+		}
+	}
 	if sources != nil {
 		listActive()
 		detection, rewrite = c.fuseTypos(ctx, in, text, detection, sources, active)
@@ -424,7 +432,7 @@ func (c *AbbreviationTurnCoordinator) fuseTypos(ctx context.Context, in Abbrevia
 	}
 	var suspects []string
 	for _, w := range src.suspects {
-		if !known[strings.ToLower(w)] {
+		if !known[strings.ToLower(w)] && !abbreviation.SettledWithoutAsking(text, w, known, false) {
 			suspects = append(suspects, w)
 		}
 	}
@@ -488,6 +496,15 @@ func (c *AbbreviationTurnCoordinator) fuseTypos(ctx context.Context, in Abbrevia
 	}
 	logger.Infof(ctx, "abbreviation gate: suspects=%d corrected=%d asked=%d", len(suspects), len(corrections), len(add))
 	return mergeTypoDetection(det, text, add, drop, typos, expandShortForms(corrections, active)), rewrite
+}
+
+// shortFormSet is the active dictionary's short forms, lower-cased.
+func shortFormSet(active []*types.Abbreviation) map[string]bool {
+	out := map[string]bool{}
+	for _, sf := range activeShortForms(active) {
+		out[strings.ToLower(strings.TrimSpace(sf))] = true
+	}
+	return out
 }
 
 func activeShortForms(active []*types.Abbreviation) []string {
