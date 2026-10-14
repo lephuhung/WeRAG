@@ -475,7 +475,7 @@ func TestTopicResolutionUsesTheSameModelFallbackAsExtraction(t *testing.T) {
 	require.NoError(t, err)
 
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0}]}`,
 	}
 	models.response = `{"memories":[],"topics":["订单接口限流"]}`
 	messages.set("session-1", []*types.Message{

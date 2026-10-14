@@ -151,7 +151,7 @@ func TestASynonymIsResolvedByTheModelAndThenRemembered(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
@@ -188,7 +188,7 @@ func TestTheModelCanDeclineToMergeTopics(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":null}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":null}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"PostgreSQL 连接池"})
@@ -210,7 +210,7 @@ func TestAdjudicationCannotOverrideACheaperTier(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0},{"index":1,"same_as":0}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0},{"index":1,"same_as":0}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"PostgreSQL 连接池"})
@@ -237,7 +237,7 @@ func TestAMergeCanAdoptTheBetterName(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0,"label":"持续集成流水线"}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0,"label":"持续集成流水线"}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"CI 流水线"})
@@ -269,7 +269,7 @@ func TestAMergeCannotMakeTheSubjectVaguer(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0,"label":"排班"}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0,"label":"排班"}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
@@ -309,7 +309,7 @@ func TestRenamingASubjectDoesNotOverwriteAnEditedInterest(t *testing.T) {
 		ExtractModelID: "model-1", InterestThreshold: 1,
 	})
 	models.responseFor = map[string]string{
-		"你在维护一个人的关注主题列表": `{"resolutions":[{"index":0,"same_as":0,"label":"持续集成流水线"}]}`,
+		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0,"label":"持续集成流水线"}]}`,
 	}
 
 	svc.ObserveQuestionTopics(ctx, []string{"CI 流水线"})

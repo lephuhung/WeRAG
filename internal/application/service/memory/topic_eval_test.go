@@ -109,11 +109,11 @@ func TestTopicTierCoverageIsVisible(t *testing.T) {
 // This is a weak check, but it is the one that catches a rule being edited away
 // — which is exactly how the "specific lookup" case started merging.
 func TestTopicPromptsCarryTheRulesTheEvalSetDependsOn(t *testing.T) {
-	require.Contains(t, topicAdjudicationPrompt, "具体查询",
+	require.Contains(t, topicAdjudicationPrompt, "specific lookup",
 		"the adjudication prompt must still separate a specific lookup from a standing interest")
-	require.Contains(t, topicAdjudicationPrompt, "拿不准就判不同",
+	require.Contains(t, topicAdjudicationPrompt, "When unsure, judge them different",
 		"a merge is unrecoverable in a way a miss is not, so ties have to break apart")
-	require.NotContains(t, topicAdjudicationPrompt, "算同一件事，归到已有主题",
+	require.Contains(t, topicAdjudicationPrompt, "narrower concept",
 		"folding subtopics into their parent is what collapsed a domain into one bucket")
 
 	segment := transcriptSegment{lines: []transcriptLine{{content: "问题"}}}
@@ -150,7 +150,7 @@ func TestTopicMergeEval(t *testing.T) {
 
 	correct := 0
 	for _, c := range set.Cases {
-		user := fmt.Sprintf("已有主题：\n[0] %s\n\n新出现的说法：\n[0] %s\n", c.Tracked, c.Incoming)
+		user := fmt.Sprintf("Tracked subjects:\n[0] %s\n\nNew labels:\n[0] %s\n", c.Tracked, c.Incoming)
 		decided, err := askTopicMerge(chatModel, user)
 		if err != nil {
 			t.Errorf("%s: %v", c.Name, err)
@@ -280,7 +280,7 @@ func TestExtractionPromptTeachesSubjectLevelNaming(t *testing.T) {
 	require.Contains(t, extractionSystemPrompt, "RECURS",
 		"the reason a subject must be nameable at a recurring level has to be stated")
 	require.Contains(t, extractionSystemPrompt, "belong to the question, not to the subject name")
-	require.Contains(t, extractionSystemPrompt, "are categories, not",
+	require.Contains(t, extractionSystemPrompt, "categories, not subjects",
 		"the opposite failure — naming a category — has to stay ruled out too")
 
 	prompt := buildExtractionPrompt(

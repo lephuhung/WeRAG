@@ -161,32 +161,35 @@ func matchTopicLoosely(surface string, existing []*types.MemoryTopicStat) *types
 	return best
 }
 
-const topicAdjudicationPrompt = `你在维护一个人的关注主题列表。下面给出「已有主题」和「新出现的说法」。
+const topicAdjudicationPrompt = `You maintain the list of subjects one person keeps asking about. Below are the "Tracked subjects" and the "New labels".
 
-对每个新说法，判断它和某个已有主题**说的是不是同一件事**——注意是同一件事，不是有关系。
+For each new label, decide whether it and one tracked subject are **the same thing** — the same thing, not merely related.
 
-判为同一件事时，如果其中一个名字明显更完整、更准确，可以在 label 里给出应该保留的那个名字：
-- 「CI 流水线」和「持续集成流水线」→ label 用全称「持续集成流水线」。
-- 「PostgreSQL 连接池」和「PostgreSQL 连接池调优」→ label 用更具体的那个。
-- 两个名字差不多好，就不要填 label。
-- **绝对不要**给一个更宽泛的名字（「门店」「系统」「数据库相关」），也不要把两个名字拼起来
-  （「A与B」）。名字只能变得更准确，不能变得更笼统——否则每合并一次主题就宽一点，最后变成
-  一个什么都装的桶。
+When they are the same and one name is clearly more complete or precise, give the name to keep in "label":
+- "TTHC" and "thủ tục hành chính" → label the full form "thủ tục hành chính".
+- "cấp phép xây dựng" and "cấp phép xây dựng nhà ở" → label the more specific one.
+- When both names are about as good, leave "label" empty.
+- **Never** give a broader name ("pháp luật", "văn bản", "quản lý chung"), and never join two names
+  ("A và B"). A name may only get more precise, never more general — otherwise every merge widens
+  the subject a little, until it is a bucket that holds everything.
+- Write the label in the language of the labels themselves (Vietnamese stays Vietnamese); never translate it.
 
-算同一件事：
-- 同义、换个说法、详略不同的同一件事：「店员班次安排」和「门店排班管理」。
-- 加了个无关紧要的限定词：「PostgreSQL 连接池」和「PostgreSQL 连接池问题」。
+Same thing:
+- Synonyms, rewording, or the same thing in more or less detail: "xử phạt vi phạm giao thông" and "phạt lỗi giao thông".
+- An unimportant qualifier added: "cấp phép xây dựng" and "vấn đề cấp phép xây dựng".
 
-不算同一件事：
-- 同一领域里的不同问题：「PostgreSQL 连接池」和「PostgreSQL 备份恢复」。
-- 一个是另一个范围内的**具体查询**：已有「门店排班管理」，新说法是「三号店下周三的排班表」——
-  后者确实属于前者的领域，但它是一次具体查询，不是同一个长期关注点。这类要判为不同。
-- 一个是另一个的下位概念：「数据库」和「PostgreSQL 连接池」。
+Not the same thing:
+- Different problems in one area: "xử phạt vi phạm giao thông" and "đăng ký xe".
+- One is a **specific lookup** inside the other's area: tracked "cấp phép xây dựng", new label
+  "hồ sơ cấp phép nhà số 5 Lê Lợi" — it does belong to that area, but it is one specific query,
+  not the same standing interest. Judge these as different.
+- One is a narrower concept than the other: "pháp luật đất đai" and "thu hồi đất".
 
-拿不准就判不同。合并错了会把两件事的计数混在一起、事后完全看不出来；没合并只是暂时多一条。
+When unsure, judge them different. A wrong merge mixes the counts of two subjects and can never be
+seen afterwards; a missed merge only leaves one extra row for now.
 
-只输出 JSON：
-{"resolutions":[{"index":<新说法的序号>,"same_as":<已有主题的序号，没有则 null>,"label":<更好的名字，没有则 null>}]}`
+Output JSON only:
+{"resolutions":[{"index":<new label number>,"same_as":<tracked subject number, or null>,"label":<better name, or null>}]}`
 
 var topicAdjudicationSchema = json.RawMessage(`{
   "type": "object",
@@ -238,11 +241,11 @@ func (s *Service) adjudicateTopics(
 	}
 
 	var b strings.Builder
-	b.WriteString("已有主题：\n")
+	b.WriteString("Tracked subjects:\n")
 	for i, stat := range existing {
 		fmt.Fprintf(&b, "[%d] %s\n", i, stat.Topic)
 	}
-	b.WriteString("\n新出现的说法：\n")
+	b.WriteString("\nNew labels:\n")
 	for _, idx := range unresolved {
 		fmt.Fprintf(&b, "[%d] %s\n", idx, resolutions[idx].Surface)
 	}
@@ -310,6 +313,14 @@ func (s *Service) adjudicateTopics(
 
 		proposed := types.SanitizeMemoryTopic(decision.Label)
 		if proposed == "" {
+			continue
+		}
+		// A label translated into Chinese is not a more precise name for a
+		// subject neither side wrote in Chinese.
+		if types.ContainsHan(proposed) && !types.ContainsHan(existing[target].Topic) &&
+			!types.ContainsHan(resolutions[decision.Index].Surface) {
+			logger.Infof(ctx, "memory: rejected foreign-script label %q for %q",
+				proposed, existing[target].Topic)
 			continue
 		}
 		if !types.TopicLabelIsAnImprovement(

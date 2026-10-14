@@ -1538,3 +1538,15 @@ func CosineSimilarity(a, b []float32) float64 {
 	}
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
+
+// ContainsHan reports whether text has any Chinese ideograph. The memory
+// prompts are run by a model that drifts into Chinese on short structured
+// calls, so callers use it to refuse output in a script the user never wrote.
+func ContainsHan(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}

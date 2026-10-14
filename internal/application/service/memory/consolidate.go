@@ -450,15 +450,15 @@ func jaccardSets(a, b map[string]struct{}) float64 {
 	return float64(shared) / float64(union)
 }
 
-const consolidationSystemPrompt = `你在整理一个人的长期记忆。下面几条记录说的是同一件事，请合并成一条。
+const consolidationSystemPrompt = `You are tidying one person's long-term notes. The records below say the same thing; merge them into one.
 
-规则：
-- 只用这些记录里已有的信息，不要补充、不要推测。
-- 如果它们互相矛盾，以日期最新的一条为准。
-- 保留最具体的细节（具体的名称、数字、版本），丢掉重复的说法。
-- 用记录本身的语言，一句话，不超过 60 字。
-- 只输出 JSON：{"statement":"合并后的一句话"}
-- 如果这些记录其实不是同一件事，输出 {"statement":""}。`
+Rules:
+- Use only information already in these records. Do not add or guess.
+- When they contradict each other, the record with the latest date wins.
+- Keep the most specific details (names, numbers, document numbers) and drop repeated wording.
+- Write in the language of the records themselves — Vietnamese records give a Vietnamese sentence, never Chinese or English. One sentence, at most 30 words.
+- Output JSON only: {"statement":"the merged sentence"}
+- If the records are not really about the same thing, output {"statement":""}.`
 
 var consolidationSchema = json.RawMessage(`{
   "type": "object",
@@ -515,5 +515,22 @@ func (s *Service) callConsolidationModel(
 	if err := json.Unmarshal([]byte(content[start:end+1]), &parsed); err != nil {
 		return "", false
 	}
-	return strings.TrimSpace(parsed.Statement), false
+	statement = strings.TrimSpace(parsed.Statement)
+	// The model drifts into Chinese on short merge prompts. A merged note in a
+	// script none of its records used is a rewrite, not a merge, so the cluster
+	// stays as it is.
+	if types.ContainsHan(statement) && !clusterHasHan(cluster) {
+		logger.Warnf(ctx, "memory: consolidation answered in a foreign script, skipping merge")
+		return "", false
+	}
+	return statement, false
+}
+
+func clusterHasHan(cluster []*types.MemoryItem) bool {
+	for _, item := range cluster {
+		if types.ContainsHan(item.Content) {
+			return true
+		}
+	}
+	return false
 }
