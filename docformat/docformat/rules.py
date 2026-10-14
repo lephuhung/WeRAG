@@ -142,10 +142,16 @@ def _compare(op: str, actual, expected) -> bool:
 
 
 def _component_paras(layout: DocLayout, seg: Segmented, comp_key: str) -> list:
+    """Body paragraphs of a component, or the page-footer ones of a
+    component read from the footer (ô 13)."""
+    comp = seg.comp(comp_key)
     out = []
-    for idx in seg.comp(comp_key).get("paras", []):
+    for idx in comp.get("paras", []):
         if 0 <= idx < len(layout.paragraphs):
             out.append(layout.paragraphs[idx])
+    for idx in comp.get("footer_paras", []):
+        if 0 <= idx < len(layout.footer_paras):
+            out.append(layout.footer_paras[idx])
     return out
 
 
@@ -261,9 +267,10 @@ def _eval_prop_check(layout: DocLayout, seg: Segmented, check: dict) -> dict:
         passed = n_ok / len(flags) >= 0.7
     else:
         passed = n_ok == len(flags)
+    # a footer line is not a body paragraph index: callers mark body paras
     bad = [
         {
-            "para": p.index,
+            ("footer_para" if p.source == "footer" else "para"): p.index,
             "text": p.text.strip()[:80],
             "actual": actual_of(i, p),
         }

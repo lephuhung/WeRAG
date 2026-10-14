@@ -31,6 +31,8 @@ const (
 	ZoneRight = "right"
 	ZoneFull  = "full"
 	ZoneSplit = "split" // one paragraph, text on both sides of a tab stop
+	// ZoneFooter marks a component read from the page footer (ô 13)
+	ZoneFooter = "footer"
 )
 
 // Run is one w:r with its effective formatting.
@@ -119,9 +121,14 @@ type Section struct {
 type Layout struct {
 	Sections   []*Section
 	Paragraphs []*Para // flat, document order
-	NTables    int
-	HasHeaders bool
-	HasFooters bool
+	// FooterParas are the paragraphs of the footer printed on page 1 of the
+	// first section (where NĐ30 puts ô 13, địa chỉ cơ quan). They are not
+	// part of Paragraphs: Index is the position in this list, Source is
+	// "footer".
+	FooterParas []*Para
+	NTables     int
+	HasHeaders  bool
+	HasFooters  bool
 	// PageNumbering is how the first section numbers its pages.
 	PageNumbering PageNumbering
 	Errors        []string
@@ -1023,6 +1030,7 @@ func InspectDocx(content []byte) *Layout {
 	layout.Sections = b.sections
 	layout.NTables = b.nTables
 	layout.PageNumbering = b.pageNumbering(files, body)
+	layout.FooterParas = b.footerParas(files, body)
 	return layout
 }
 
@@ -1076,6 +1084,57 @@ func hasPageField(p *node) bool {
 		sb.WriteString(t.text)
 	}
 	return pageFieldRe.MatchString(strings.ToUpper(sb.String()))
+}
+
+// footerParas parses the footer printed on page 1 of the first section —
+// the first-page footer when w:titlePg is set, else the default one. Its
+// paragraphs are numbered apart from the body (Index = position in the
+// footer) so body paragraph indexes stay unchanged.
+func (b *builder) footerParas(files map[string]*zip.File, body *node) []*Para {
+	secs := body.descendants("sectPr")
+	if len(secs) == 0 {
+		return nil
+	}
+	sect := secs[0]
+	want := "default"
+	if tp := sect.child("titlePg"); tp != nil && boolProp(tp) {
+		want = "first"
+	}
+	rels := partRels(files, "word/_rels/document.xml.rels")
+	part := ""
+	for _, ref := range sect.childrenNamed("footerReference") {
+		t, ok := ref.wattr("type")
+		if !ok || t == "" {
+			t = "default"
+		}
+		if t != want {
+			continue
+		}
+		for _, a := range ref.attrs {
+			if a.Name.Space == nsR && a.Name.Local == "id" {
+				part = rels[a.Value]
+			}
+		}
+	}
+	if part == "" {
+		return nil
+	}
+	data, err := readPart(files, part)
+	if err != nil {
+		return nil
+	}
+	root, err := parseXML(data)
+	if err != nil {
+		return nil
+	}
+	saved, savedSection := b.paras, b.sectionIdx
+	b.paras, b.sectionIdx = nil, 0
+	for _, p := range root.descendants("p") {
+		b.addParagraph(p, "footer", nil, nil, nil, nil)
+	}
+	out := b.paras
+	b.paras, b.sectionIdx = saved, savedSection
+	return out
 }
 
 // pageNumbering reads the page numbering of the first section: a PAGE

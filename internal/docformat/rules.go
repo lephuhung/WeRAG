@@ -518,12 +518,7 @@ func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
 		}
 	}
 	comp := seg.Comp(c.Component)
-	var paras []*Para
-	for _, idx := range comp.Paras {
-		if idx >= 0 && idx < len(l.Paragraphs) {
-			paras = append(paras, l.Paragraphs[idx])
-		}
-	}
+	paras := componentParas(l, comp)
 	if len(paras) == 0 {
 		return evalOut{status: StatusSkip, note: fmt.Sprintf("component '%s' not found", c.Component)}, nil
 	}
@@ -593,10 +588,14 @@ func evalProp(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
 		if ok {
 			nOK++
 		} else if len(evidence) < 5 {
-			evidence = append(evidence, map[string]any{
-				"para": p.Index, "text": truncateRunes(strings.TrimSpace(p.Text), 80),
-				"actual": actualOf(i, p),
-			})
+			ev := map[string]any{"text": truncateRunes(strings.TrimSpace(p.Text), 80), "actual": actualOf(i, p)}
+			if p.Source == ZoneFooter {
+				// not a body paragraph index: callers mark body paragraphs
+				ev["footer_para"] = p.Index
+			} else {
+				ev["para"] = p.Index
+			}
+			evidence = append(evidence, ev)
 		}
 	}
 	var passed bool
@@ -658,6 +657,23 @@ func ruleLines(textParas []*Para, c RuleCheck, re *regexp.Regexp, actualOf func(
 		idx = kept
 	}
 	return idx, nil
+}
+
+// componentParas are the paragraphs of a component: body paragraphs, or
+// the page-footer ones of a component read from the footer (ô 13).
+func componentParas(l *Layout, comp *Component) []*Para {
+	var paras []*Para
+	for _, idx := range comp.Paras {
+		if idx >= 0 && idx < len(l.Paragraphs) {
+			paras = append(paras, l.Paragraphs[idx])
+		}
+	}
+	for _, idx := range comp.FooterParas {
+		if idx >= 0 && idx < len(l.FooterParas) {
+			paras = append(paras, l.FooterParas[idx])
+		}
+	}
+	return paras
 }
 
 // RuleLines returns the indexes of the paragraphs of the component that

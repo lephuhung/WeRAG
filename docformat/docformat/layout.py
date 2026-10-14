@@ -266,6 +266,10 @@ class Section:
 class DocLayout:
     sections: list = field(default_factory=list)
     paragraphs: list = field(default_factory=list)  # flat, document order
+    # paragraphs of the footer printed on page 1 of the first section (where
+    # NĐ30 puts ô 13); not in `paragraphs`: index = position in this list,
+    # source = "footer"
+    footer_paras: list = field(default_factory=list)
     n_tables: int = 0
     has_headers: bool = False
     has_footers: bool = False
@@ -812,6 +816,36 @@ def _page_numbering(zf: zipfile.ZipFile, root: ET.Element, doc_ppr: dict,
     return out
 
 
+def _footer_paras(zf: zipfile.ZipFile, root: ET.Element, builder) -> list:
+    """Paragraphs of the footer printed on page 1 of the first section — the
+    first-page footer when w:titlePg is set, else the default one — numbered
+    apart from the body."""
+    body = root.find(qn("body"))
+    sect = next(body.iter(qn("sectPr")), None) if body is not None else None
+    if sect is None:
+        return []
+    want = "first" if _bool_prop(sect.find(qn("titlePg"))) else "default"
+    rels = _part_rels(zf, "word/_rels/document.xml.rels")
+    part = ""
+    for ref in sect.findall(qn("footerReference")):
+        if (ref.get(qn("type")) or "default") != want:
+            continue
+        part = rels.get(ref.get("{%s}id" % R_NS), "")
+    if not part:
+        return []
+    try:
+        froot = ET.fromstring(zf.read(part))
+    except (KeyError, ET.ParseError):
+        return []
+    saved, saved_section = builder.paras, builder.section_idx
+    builder.paras, builder.section_idx = [], 0
+    for p in froot.iter(qn("p")):
+        builder.add_paragraph(p, source="footer")
+    out = builder.paras
+    builder.paras, builder.section_idx = saved, saved_section
+    return out
+
+
 def inspect_docx(content: bytes) -> DocLayout:
     """Parse .docx bytes into a DocLayout."""
     layout = DocLayout()
@@ -867,4 +901,5 @@ def inspect_docx(content: bytes) -> DocLayout:
     layout.has_headers = any(re.match(r"word/header\d+\.xml$", n) for n in names)
     layout.has_footers = any(re.match(r"word/footer\d+\.xml$", n) for n in names)
     layout.page_numbering = _page_numbering(zf, root, doc_ppr, styles)
+    layout.footer_paras = _footer_paras(zf, root, builder)
     return layout

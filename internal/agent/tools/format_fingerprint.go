@@ -11,8 +11,11 @@ import (
 
 // fingerprintKeepParas is how many non-empty paragraphs at each end of the
 // document count with their text: the NĐ30 components (quốc hiệu, cơ quan,
-// số ký hiệu, trích yếu, chữ ký, nơi nhận) live there, as the labelling
-// step assumes too (keepHead/keepTail in docformat).
+// số ký hiệu, trích yếu, chữ ký, nơi nhận) live there. The labelling step
+// sends the model only the head and tail blocks the heuristic bounds
+// (docformat.PrepareTask; 45/45 is its fallback), which sit well inside
+// these 45 paragraphs on real documents; the page-1 footer (ô 13) counts
+// in full.
 const fingerprintKeepParas = 45
 
 // formatFingerprint identifies what the format check depends on: page setup,
@@ -42,12 +45,13 @@ func formatFingerprint(content []byte) string {
 		paras = append(paras, cp)
 	}
 	raw, _ := json.Marshal(struct {
-		Sections   []*docformat.Section
-		Paragraphs []docformat.Para
-		Headers    bool
-		Footers    bool
-		Errors     []string
-	}{l.Sections, paras, l.HasHeaders, l.HasFooters, l.Errors})
+		Sections    []*docformat.Section
+		Paragraphs  []docformat.Para
+		FooterParas []*docformat.Para `json:",omitempty"`
+		Headers     bool
+		Footers     bool
+		Errors      []string
+	}{l.Sections, paras, l.FooterParas, l.HasHeaders, l.HasFooters, l.Errors})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -82,12 +86,13 @@ func formatCheckIdentity(content []byte) string {
 		paras = append(paras, cp)
 	}
 	raw, _ := json.Marshal(struct {
-		Sections   []*docformat.Section
-		Paragraphs []keyedPara
-		Headers    bool
-		Footers    bool
-		Errors     []string
-	}{l.Sections, paras, l.HasHeaders, l.HasFooters, l.Errors})
+		Sections    []*docformat.Section
+		Paragraphs  []keyedPara
+		FooterParas []*docformat.Para `json:",omitempty"` // ô 13 is read there
+		Headers     bool
+		Footers     bool
+		Errors      []string
+	}{l.Sections, paras, l.FooterParas, l.HasHeaders, l.HasFooters, l.Errors})
 	sum := sha256.Sum256(raw)
 	return "fmt:" + hex.EncodeToString(sum[:])
 }

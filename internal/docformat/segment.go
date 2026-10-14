@@ -89,8 +89,10 @@ var (
 		`CONG\s+DOAN|DOAN\s+TN|HOI\s|TRUNG\s+TAM|SO\s+HUU|NHA\s+NUOC)`)
 	// a collective-body name continued by its locality on the next line:
 	// "ỦY BAN NHÂN DÂN / TỈNH THỪA THIÊN HUẾ"
-	genericOrgRe  = regexp.MustCompile(`^(UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|UY\s+BAN\s+MAT\s+TRAN\s+TO\s+QUOC(\s+VIET\s+NAM)?|BAN\s+CHAP\s+HANH|BAN\s+THUONG\s+VU|DANG\s+UY|DANG\s+BO)$`)
-	wrapEndRe     = regexp.MustCompile(`[,\-–&]$|\s(VA|CUA)$`)
+	genericOrgRe = regexp.MustCompile(`^(UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|UY\s+BAN\s+MAT\s+TRAN\s+TO\s+QUOC(\s+VIET\s+NAM)?|BAN\s+CHAP\s+HANH|BAN\s+THUONG\s+VU|DANG\s+UY|DANG\s+BO)$`)
+	wrapEndRe    = regexp.MustCompile(`[,\-–&]$|\s(VA|CUA)$`)
+	// a line continuing the one above: "SỞ TÀI NGUYÊN" / "VÀ MÔI TRƯỜNG"
+	wrapStartRe   = regexp.MustCompile(`^(VA|CUA)\s`)
 	daKyNameRe    = regexp.MustCompile(`^\(?\s*(DA\s+KY|KY\s+SO|DAU)`)
 	daKyRe        = regexp.MustCompile(`^\(\s*(DA\s+KY|KY|DAU)`)
 	symbolCodeRe  = regexp.MustCompile(`/\s*(?:\d{4}\s*/\s*)?([A-ZĐ]+)(\d*)`)
@@ -156,6 +158,9 @@ type Component struct {
 	Zones []string `json:"-"` // aligned with Paras
 	Texts []string `json:"-"`
 	Pos   *int     `json:"-"` // first element position, for the order check
+	// FooterParas are indexes into Layout.FooterParas for a component read
+	// from the page footer (ô 13); such a component has no body paragraph.
+	FooterParas []int `json:"footer_paras,omitempty"`
 }
 
 // Segmentation is the component assignment of a document.
@@ -165,6 +170,34 @@ type Segmentation struct {
 	ParaLabels   map[int]string
 	DetectedType string
 	ParaTable    map[int]*int
+	// Bounds are where the heuristic found the head and the tail blocks
+	// (Segment only).
+	Bounds Bounds
+	// agencyGuessed: the cơ quan lines share one weight and were split into
+	// chủ quản / ban hành by wording alone.
+	agencyGuessed bool
+	// tailBody: a nội dung line sits inside the tail block (a second
+	// signature column, a signature set as body text).
+	tailBody bool
+	bodyPos  []int
+}
+
+// Bounds locate the NĐ30 blocks in element (= labeling unit) indexes. All
+// components but nội dung sit in the head (ô 1–5, 9a, thẩm quyền, căn cứ,
+// 10a/10b, 11) or the tail (ô 7, 9b, 12); ô 13 sits in the page footer.
+type Bounds struct {
+	// HeadEnd is one past the head block: header, trích yếu, thẩm quyền,
+	// căn cứ, Kính gửi — the first nội dung element.
+	HeadEnd int
+	// TailStart is the first element of the signature / Nơi nhận region:
+	// after the last body paragraph, moved back over the short, unjustified
+	// lines just above it (a signature the heuristic read as body).
+	TailStart int
+	// PhuLucStart is the first phụ lục element (len(elements) when none).
+	PhuLucStart int
+	// HeadOK / TailOK: the head (a header anchor or a trích yếu) and the
+	// tail (a Nơi nhận or a signature) were found.
+	HeadOK, TailOK bool
 }
 
 func newSegmentation(l *Layout) *Segmentation {
@@ -370,17 +403,20 @@ func banHanhLineCount(lines []leftLine) int {
 	for k < n && isBold(n-k-1) == last {
 		k++
 	}
-	if k < n {
-		return k
-	}
-	k = 1
-	for k < n {
-		fp := fold(strings.TrimSpace(lines[n-k-1].el.text))
-		if genericOrgRe.MatchString(fp) || wrapEndRe.MatchString(fp) {
-			k++
-			continue
+	if k == n {
+		k = 1
+		for k < n {
+			fp := fold(strings.TrimSpace(lines[n-k-1].el.text))
+			if genericOrgRe.MatchString(fp) || wrapEndRe.MatchString(fp) {
+				k++
+				continue
+			}
+			break
 		}
-		break
+	}
+	// a block opening with "VÀ ..." continues the line above it
+	for k < n && wrapStartRe.MatchString(fold(strings.TrimSpace(lines[n-k].el.text))) {
+		k++
 	}
 	return k
 }
@@ -427,6 +463,11 @@ func headerEnd(els []element) int {
 		side := el.zone == ZoneLeft || el.zone == ZoneRight || el.para.Zone == ZoneSplit
 		if isHeaderLine(f) || matRe.MatchString(f) || side {
 			seenAnchor = seenAnchor || !side || isHeaderLine(f)
+			end, pending = i+1, 0
+			continue
+		}
+		if chiDanRe.MatchString(f) {
+			// ô 11 sits by the header (with độ mật / độ khẩn)
 			end, pending = i+1, 0
 			continue
 		}
@@ -491,6 +532,10 @@ func Segment(l *Layout) *Segmentation {
 			continue
 		}
 		idx := el.para.Index
+		if chiDanRe.MatchString(f) {
+			seg.add("chi_dan_luu_hanh", idx, el.text, el.zone, hi)
+			continue
+		}
 		if matRe.MatchString(f) {
 			seg.add("do_mat", idx, el.text, el.zone, hi)
 			continue
@@ -530,6 +575,10 @@ func Segment(l *Layout) *Segmentation {
 	}
 	if len(left) > 0 {
 		nBH := banHanhLineCount(left)
+		// same weight throughout: the split rests on wording; trusted when
+		// the ban hành block opens with an agency keyword ("SỞ ...")
+		seg.agencyGuessed = nBH < len(left) && uniformWeight(left) &&
+			!orgKeywordRe.MatchString(fold(left[len(left)-nBH].el.text))
 		for _, ll := range left[:len(left)-nBH] {
 			seg.add("co_quan_chu_quan", ll.el.para.Index, ll.el.text, ZoneLeft, ll.pos)
 		}
@@ -546,6 +595,9 @@ func Segment(l *Layout) *Segmentation {
 			scanTo = len(els)
 		}
 		for i := hEnd; i < scanTo; i++ {
+			if chiDanRe.MatchString(fold(els[i].text)) {
+				continue
+			}
 			if isHeading(els[i], fold(els[i].text)) {
 				trichStart = i
 				break
@@ -563,7 +615,8 @@ func Segment(l *Layout) *Segmentation {
 			el := els[j]
 			p := el.para
 			f := fold(el.text)
-			if el.zone != ZoneFull || p.Alignment != "center" || canCuRe.MatchString(f) || kinhGuiRe.MatchString(f) {
+			if el.zone != ZoneFull || p.Alignment != "center" || canCuRe.MatchString(f) || kinhGuiRe.MatchString(f) ||
+				chiDanRe.MatchString(f) {
 				break
 			}
 			upper := p.TextIsUpper || isTrue(p.Caps)
@@ -680,7 +733,8 @@ func Segment(l *Layout) *Segmentation {
 		switch {
 		case inSig && isRight(el):
 			sigEls = append(sigEls, posEl{pos, el})
-		case chiDanRe.MatchString(f):
+		case chiDanRe.MatchString(f) && !seg.Comp("noi_dung").Found:
+			// ô 11 belongs to the head block; in the body it is body text
 			seg.add("chi_dan_luu_hanh", p.Index, el.text, el.zone, pos)
 		case bottomFrom >= 0 && bottomFrom < k && k < noiNhanEnd && isDiaChi(f):
 			seg.add("dia_chi_co_quan", p.Index, el.text, el.zone, pos)
@@ -698,6 +752,7 @@ func Segment(l *Layout) *Segmentation {
 			seg.add("phu_luc", p.Index, el.text, el.zone, pos)
 		default:
 			seg.add("noi_dung", p.Index, el.text, el.zone, pos)
+			seg.bodyPos = append(seg.bodyPos, pos)
 		}
 	}
 
@@ -722,5 +777,85 @@ func Segment(l *Layout) *Segmentation {
 		}
 	}
 	seg.addSignature()
+	seg.addFooterDiaChi(l)
+	seg.Bounds = blockBounds(els, seg, hEnd, bodyStart, lastBody, noiNhan, sigOpen,
+		hEnd > 0 || trichOpened || trichStart >= 0)
 	return seg
+}
+
+// addFooterDiaChi reads ô 13 from the page-1 footer when the body has none:
+// the footer lines that read as an address / phone / email line.
+func (s *Segmentation) addFooterDiaChi(l *Layout) {
+	if s.Comp("dia_chi_co_quan").Found {
+		return
+	}
+	var idx []int
+	var texts []string
+	for _, p := range l.FooterParas {
+		t := strings.TrimSpace(p.Text)
+		if t != "" && isDiaChi(fold(t)) {
+			idx = append(idx, p.Index)
+			texts = append(texts, t)
+		}
+	}
+	if len(idx) == 0 {
+		return
+	}
+	s.Components["dia_chi_co_quan"] = &Component{Found: true, Paras: []int{}, Text: strings.Join(texts, "\n"),
+		Zone: ZoneFooter, Texts: texts, FooterParas: idx}
+	s.order = append(s.order, "dia_chi_co_quan")
+}
+
+// sigLike: a line that may belong to a signature block — short and not
+// justified like body prose.
+func sigLike(el element) bool {
+	return el.para.Alignment != "justify" && el.para.Alignment != "both" && runeLen(el.text) <= 80
+}
+
+func blockBounds(els []element, seg *Segmentation, hEnd, bodyStart, lastBody, noiNhan, sigOpen int, headOK bool) Bounds {
+	n := len(els)
+	b := Bounds{HeadEnd: bodyStart, TailStart: n, PhuLucStart: n, HeadOK: headOK,
+		TailOK: noiNhan >= 0 || sigOpen >= 0}
+	first := func(key string) int {
+		if c := seg.Comp(key); c.Found && c.Pos != nil {
+			return *c.Pos
+		}
+		return -1
+	}
+	if p := first("phu_luc"); p >= 0 {
+		b.PhuLucStart = p
+	}
+	b.TailStart = bodyStart + lastBody + 1
+	if b.TailStart > b.PhuLucStart {
+		b.TailStart = b.PhuLucStart
+	}
+	if p := first("noi_dung"); p >= 0 && p < b.TailStart {
+		b.HeadEnd = p
+	} else {
+		b.HeadEnd = b.TailStart
+	}
+	if b.HeadEnd < hEnd {
+		b.HeadEnd = hEnd
+	}
+	// a signature set as body text (centred / tab-indented, not in the right
+	// column) ends the body in the heuristic's eyes: walk back over it
+	for k := 0; k < 8 && b.TailStart-1 > b.HeadEnd && sigLike(els[b.TailStart-1]); k++ {
+		b.TailStart--
+	}
+	for _, p := range seg.bodyPos {
+		if p >= b.TailStart && p < b.PhuLucStart {
+			seg.tailBody = true
+		}
+	}
+	return b
+}
+
+// uniformWeight: every cơ quan line has the same bold flag.
+func uniformWeight(lines []leftLine) bool {
+	for _, ll := range lines[1:] {
+		if isTrue(ll.el.para.Bold) != isTrue(lines[0].el.para.Bold) {
+			return false
+		}
+	}
+	return true
 }
