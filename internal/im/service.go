@@ -373,12 +373,12 @@ func makeUserKey(channelID, userID, chatID, threadID string) string {
 	return fmt.Sprintf("%s:%s:%s", channelID, userID, chatID)
 }
 
-// nonTextTypeLabel maps a message type to a Chinese label for LLM instructions.
+// nonTextTypeLabel maps a message type to a Vietnamese label for LLM instructions.
 var nonTextTypeLabel = map[string]string{
-	"image": "图片",
-	"file":  "文件",
-	"video": "视频",
-	"voice": "语音",
+	"image": "hình ảnh",
+	"file":  "tệp",
+	"video": "video",
+	"voice": "tin nhắn thoại",
 }
 
 // formatQuotedContext formats a QuotedMessage into a labeled string for LLM context.
@@ -393,9 +393,9 @@ func formatQuotedContext(quote *QuotedMessage) string {
 	if quote.NonTextType != "" {
 		label := nonTextTypeLabel[quote.NonTextType]
 		if label == "" {
-			label = "该类型的"
+			label = "loại này"
 		}
-		return "用户引用了一条" + label + "消息，但你无法查看该内容。请直接告知用户你目前无法处理" + label + "消息，建议用户用文字描述问题。不要猜测该消息的内容。"
+		return "Người dùng trích dẫn một tin nhắn " + label + " mà bạn không xem được. Hãy nói thẳng với người dùng rằng hiện bạn chưa xử lý được tin nhắn " + label + " và đề nghị họ mô tả vấn đề bằng chữ. Đừng đoán nội dung tin nhắn đó."
 	}
 	if quote.Content == "" {
 		return ""
@@ -407,9 +407,9 @@ func formatQuotedContext(quote *QuotedMessage) string {
 	}
 	// Prevent quoted content from escaping the XML tag boundary.
 	content = strings.ReplaceAll(content, "</quoted_message>", "")
-	label := "以下是用户引用的一条历史消息，仅作为上下文参考："
+	label := "Người dùng trích dẫn một tin nhắn trước đó, chỉ dùng làm ngữ cảnh tham khảo:"
 	if quote.IsBotMessage {
-		label = "以下是用户引用的你（机器人）之前的回复，仅作为上下文参考："
+		label = "Người dùng trích dẫn câu trả lời trước đó của bạn (bot), chỉ dùng làm ngữ cảnh tham khảo:"
 	}
 	return label + "\n<quoted_message>\n" + content + "\n</quoted_message>"
 }
@@ -3447,9 +3447,9 @@ func fileMessageQAContent(msg *IncomingMessage) string {
 	}
 	fileName := strings.TrimSpace(msg.FileName)
 	if fileName == "" {
-		fileName = "未命名文件"
+		fileName = "tệp không tên"
 	}
-	return fmt.Sprintf("我上传了文件「%s」。请确认已收到，并告知我接下来可以如何协助。", fileName)
+	return fmt.Sprintf("Tôi vừa tải lên tệp \"%s\". Hãy xác nhận đã nhận được và cho tôi biết bạn có thể hỗ trợ gì tiếp theo.", fileName)
 }
 
 // processDownloadedFileToKnowledgeBase stores bytes already downloaded for QA.

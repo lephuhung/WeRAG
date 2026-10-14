@@ -340,3 +340,7 @@ func (c *References) Scan(value interface{}) error {
 	}
 	return json.Unmarshal(b, c)
 }
+
+// UserImageContentLabel heads the image caption appended to a user message, so
+// the answering model knows the text below it describes an uploaded image.
+const UserImageContentLabel = "[Nội dung ảnh người dùng tải lên]"

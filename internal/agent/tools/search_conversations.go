@@ -26,8 +26,8 @@ var searchConversationsTool = BaseTool{
 
 Use this tool when the user refers to something that was discussed before but is
 not in the current conversation:
-- "上次你给我的那个配置" / "we talked about this last month"
-- "我之前问过的那个报错" — the error and its answer are in an older session
+- "cái mẫu tờ trình lần trước bạn đưa tôi" / "we talked about this last month"
+- "câu tôi hỏi hôm trước về mức phạt" — the question and its answer are in an older session
 - The user assumes shared context that this session does not contain
 
 Do not use when:

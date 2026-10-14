@@ -36,7 +36,7 @@ preference, fact, task, interest) and the date it was recorded.`,
   "properties": {
     "query": {
       "type": "string",
-      "description": "The subject to look up, in the user's own words (e.g. \"数据库\", \"deployment preferences\")"
+      "description": "The subject to look up, in the user's own words (e.g. \"bảo hiểm xã hội\", \"deployment preferences\")"
     },
     "limit": {
       "type": "integer",

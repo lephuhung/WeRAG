@@ -218,7 +218,7 @@ func (s *sessionService) KnowledgeQA(
 		// Pure chat — no retrieval needed.
 		userContent := effectiveQuery
 		if req.ImageDescription != "" && !chatModelSupportsVision {
-			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
+			userContent += "\n\n" + types.UserImageContentLabel + "\n" + req.ImageDescription
 		}
 		if req.QuotedContext != "" {
 			userContent += "\n\n" + req.QuotedContext
@@ -1095,7 +1095,7 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 	})
 
 	if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
-		result += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
+		result += "\n\n" + types.UserImageContentLabel + "\n" + chatManage.ImageDescription
 	}
 	if chatManage.QuotedContext != "" {
 		result += "\n\n" + chatManage.QuotedContext

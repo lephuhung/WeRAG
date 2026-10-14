@@ -192,7 +192,7 @@ func (s *sessionService) AgentQA(
 		agentImageURLs = req.ImageURLs
 		logger.Infof(ctx, "Agent model supports vision, passing %d image(s) directly", len(agentImageURLs))
 	} else if req.ImageDescription != "" {
-		agentQuery = effectiveQuery + "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		agentQuery = effectiveQuery + "\n\n" + types.UserImageContentLabel + "\n" + req.ImageDescription
 		logger.Infof(ctx, "Agent model does not support vision, appending image description (%d chars)", len(req.ImageDescription))
 	}
 	if req.QuotedContext != "" {

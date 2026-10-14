@@ -386,15 +386,15 @@ func (p *PluginQueryUnderstand) memoryBackground(ctx context.Context, chatManage
 	}
 
 	var b strings.Builder
-	b.WriteString("\n\n<asker_background note=\"背景仅用于消解指代和补全检索词，不要当作问题的一部分\">")
+	b.WriteString("\n\n<asker_background note=\"Background for resolving references and filling in search terms only; it is not part of the question\">")
 	if memCtx.Background != "" {
 		b.WriteString("\n" + memCtx.Background)
 	}
 	if len(memCtx.Interests) > 0 {
-		b.WriteString("\n长期关注：" + strings.Join(memCtx.Interests, "、"))
+		b.WriteString("\nRecurring interests: " + strings.Join(memCtx.Interests, "; "))
 	}
 	if len(memCtx.Documents) > 0 {
-		b.WriteString("\n常查资料：" + strings.Join(memCtx.Documents, "、"))
+		b.WriteString("\nFrequently consulted documents: " + strings.Join(memCtx.Documents, "; "))
 	}
 	b.WriteString("\n</asker_background>")
 

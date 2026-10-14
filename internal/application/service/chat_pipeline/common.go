@@ -151,7 +151,7 @@ func loadAndProcessHistory(
 			h.Query = message.Content
 			h.CreateAt = message.CreatedAt
 			if desc := extractImageCaptions(message.Images); desc != "" {
-				h.Query += "\n\n[用户上传图片内容]\n" + desc
+				h.Query += "\n\n" + types.UserImageContentLabel + "\n" + desc
 			}
 			if len(message.Attachments) > 0 {
 				h.Query += message.Attachments.BuildPrompt()

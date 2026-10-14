@@ -35,12 +35,12 @@ func TestFileMessageQAContent(t *testing.T) {
 		{
 			name: "builds query for file-only event",
 			msg:  &IncomingMessage{FileName: "report.pdf"},
-			want: "我上传了文件「report.pdf」。请确认已收到，并告知我接下来可以如何协助。",
+			want: "Tôi vừa tải lên tệp \"report.pdf\". Hãy xác nhận đã nhận được và cho tôi biết bạn có thể hỗ trợ gì tiếp theo.",
 		},
 		{
 			name: "uses safe name when platform omits filename",
 			msg:  &IncomingMessage{},
-			want: "我上传了文件「未命名文件」。请确认已收到，并告知我接下来可以如何协助。",
+			want: "Tôi vừa tải lên tệp \"tệp không tên\". Hãy xác nhận đã nhận được và cho tôi biết bạn có thể hỗ trợ gì tiếp theo.",
 		},
 	}
 
