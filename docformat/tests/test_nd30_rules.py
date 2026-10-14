@@ -147,7 +147,7 @@ class TestColorAndPageNumber(unittest.TestCase):
                                            "centered": cen, "title_pg": tpg}, kw)
 
 
-def bottom_doc(nn_tail=(), after=""):
+def bottom_doc(nn_tail=(), after="", chi_dan_in_body=False, footer=""):
     head = tbl(
         row(tc(p("SỞ NỘI VỤ", align="center", bold=True, size=13)),
             tc(p("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", align="center", bold=True, size=13),
@@ -155,16 +155,20 @@ def bottom_doc(nn_tail=(), after=""):
         row(tc(p("Số: 45/SNV-VP", align="center", size=13),
                p("V/v rà soát vị trí việc làm", align="center", size=12)),
             tc(p("Huế, ngày 05 tháng 10 năm 2026", align="center", italic=True, size=14))))
-    body = (p("Kính gửi: Các phòng, ban thuộc Sở.", align="center", size=14)
-            + p("Sở Nội vụ đề nghị các phòng, ban rà soát, điện thoại về Văn phòng khi cần; "
-                "email báo cáo trước ngày 20.", align="both", size=14)
-            + p("LƯU HÀNH NỘI BỘ", align="center", size=13)
-            + p("Đề nghị các phòng, ban thực hiện./.", align="both", size=14))
+    chi_dan = p("LƯU HÀNH NỘI BỘ", align="center", size=13)
+    kinh_gui = p("Kính gửi: Các phòng, ban thuộc Sở.", align="center", size=14)
+    lines = (p("Sở Nội vụ đề nghị các phòng, ban rà soát, điện thoại về Văn phòng khi cần; "
+               "email báo cáo trước ngày 20.", align="both", size=14),
+             p("Đề nghị các phòng, ban thực hiện./.", align="both", size=14))
+    if chi_dan_in_body:  # ô 11 belongs to the head block
+        body = kinh_gui + lines[0] + chi_dan + lines[1]
+    else:
+        body = chi_dan + kinh_gui + lines[0] + lines[1]
     left = [p("Nơi nhận:", bold=True, italic=True, size=12), p("- Như trên;", size=11),
             p("- Lưu: VT, VP, NVA.15.", size=11)] + list(nn_tail)
     right = [p("GIÁM ĐỐC", align="center", bold=True, size=14), p("", align="center"),
              p("Lê Thị Dung", align="center", bold=True, size=14)]
-    return docx(head + body + tbl(row(tc(*left), tc(*right))) + after)
+    return docx(head + body + tbl(row(tc(*left), tc(*right))) + after, footer=footer)
 
 
 class TestBottomComponents(unittest.TestCase):
@@ -186,6 +190,28 @@ class TestBottomComponents(unittest.TestCase):
         self.assertFalse(seg.comp("ky_hieu_soan_thao")["found"])
         seg = segment(inspect_docx(bottom_doc([p("TTr/2b", size=11)])))
         self.assertEqual(seg.comp("ky_hieu_soan_thao")["text"], "TTr/2b")
+        seg = segment(inspect_docx(bottom_doc(chi_dan_in_body=True)))
+        self.assertFalse(seg.comp("chi_dan_luu_hanh")["found"])
+
+    def test_footer_dia_chi(self):
+        footer = (p("Địa chỉ: 01 Lê Lai, Huế; ĐT: 0234 3822 111; Email: snv@hue.gov.vn",
+                    align="center", size=11) + p("Trang 1", align="center", size=11))
+        content = bottom_doc([p("NVA.15", size=11)], footer=footer)
+        layout = inspect_docx(content)
+        self.assertEqual([x.source for x in layout.footer_paras], ["footer", "footer"])
+        comp = segment(layout).comp("dia_chi_co_quan")
+        self.assertEqual((comp["paras"], comp["footer_paras"], comp["zone"]), ([], [0], "footer"))
+        self.assertTrue(comp["text"].startswith("Địa chỉ: 01 Lê Lai"))
+        rep = check_document(content, segmenter="heuristic")
+        c = next(x for x in rep["checks"] if x["id"] == "dia_chi_co_quan.size")
+        self.assertEqual(c["status"], "pass")
+        rep = check_document(bottom_doc(footer=p("Địa chỉ: 01 Lê Lai; ĐT: 0234 3822 111",
+                                                  align="center", size=14)),
+                             segmenter="heuristic")
+        c = next(x for x in rep["checks"] if x["id"] == "dia_chi_co_quan.size")
+        self.assertEqual(c["status"], "warn")
+        self.assertEqual(c["evidence"][0]["footer_para"], 0)
+        self.assertNotIn("para", c["evidence"][0])
 
 
 if __name__ == "__main__":

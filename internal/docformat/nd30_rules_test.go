@@ -295,19 +295,31 @@ func TestPageNumber(t *testing.T) {
 	}
 }
 
-// bottomDoc is a công văn whose nơi nhận column ends with extra lines.
+// bottomDoc is a công văn whose nơi nhận column ends with extra lines; ô
+// 11 sits under the header.
 func bottomDoc(t *testing.T, noiNhanTail, after string) []byte {
+	return bottomDocWith(t, noiNhanTail, after, false, "")
+}
+
+// bottomDocWith also places "LƯU HÀNH NỘI BỘ" inside the body (chiDanInBody)
+// and sets a page footer.
+func bottomDocWith(t *testing.T, noiNhanTail, after string, chiDanInBody bool, footer string) []byte {
 	head := ttbl(
 		[2]string{tp("*SỞ NỘI VỤ", "center", 13), tp("*CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "center", 13) + tp("*Độc lập - Tự do - Hạnh phúc", "center", 14)},
 		[2]string{tp("Số: 45/SNV-VP", "center", 13) + tp("V/v rà soát vị trí việc làm", "center", 12), tp("_Huế, ngày 05 tháng 10 năm 2026", "center", 14)},
 	)
-	body := tp("Kính gửi: Các phòng, ban thuộc Sở.", "center", 14) +
+	chiDan := tp("LƯU HÀNH NỘI BỘ", "center", 13)
+	body := chiDan + tp("Kính gửi: Các phòng, ban thuộc Sở.", "center", 14) +
 		tp("Sở Nội vụ đề nghị các phòng, ban rà soát vị trí việc làm, điện thoại về Văn phòng khi cần; email báo cáo trước ngày 20.", "both", 14) +
-		tp("LƯU HÀNH NỘI BỘ", "center", 13) +
 		tp("Đề nghị các phòng, ban thực hiện./.", "both", 14)
+	if chiDanInBody {
+		body = tp("Kính gửi: Các phòng, ban thuộc Sở.", "center", 14) +
+			tp("Sở Nội vụ đề nghị các phòng, ban rà soát vị trí việc làm, điện thoại về Văn phòng khi cần; email báo cáo trước ngày 20.", "both", 14) +
+			chiDan + tp("Đề nghị các phòng, ban thực hiện./.", "both", 14)
+	}
 	left := tp("*_Nơi nhận:", "", 12) + tp("- Như trên;", "", 11) + tp("- Lưu: VT, VP, NVA.15.", "", 11) + noiNhanTail
 	right := tp("*GIÁM ĐỐC", "center", 14) + tp("", "center", 14) + tp("*Lê Thị Dung", "center", 14)
-	return testDocx(t, head+body+ttbl([2]string{left, right})+after, "", "", false)
+	return testDocx(t, head+body+ttbl([2]string{left, right})+after, "", footer, false)
 }
 
 func TestSegmentBottomComponents(t *testing.T) {
@@ -346,6 +358,12 @@ func TestSegmentBottomComponents(t *testing.T) {
 		t.Errorf("TTr/2b: %+v", c)
 	}
 
+	// ô 11 belongs to the head block: inside the body it is body text
+	s = seg(bottomDocWith(t, "", "", true, ""))
+	if s.Comp("chi_dan_luu_hanh").Found {
+		t.Errorf("ô 11 in the body: %+v", s.Comp("chi_dan_luu_hanh"))
+	}
+
 	// the brief shows them under their ô numbers
 	r := Check(context.Background(), bottomDoc(t, tp("NVA.15", "", 11),
 		tp("Địa chỉ: 01 Lê Lai; ĐT: 0234 3822 111", "center", 11)), Options{Segmenter: SegmenterHeuristic})
@@ -358,5 +376,40 @@ func TestSegmentBottomComponents(t *testing.T) {
 		if got := checkByID(t, r.Checks, id).Status; got != want {
 			t.Errorf("%s = %s, want %s", id, got, want)
 		}
+	}
+}
+
+// ô 13 printed in the page-1 footer: a component without a body paragraph,
+// measured on the footer line.
+func TestSegmentFooterDiaChi(t *testing.T) {
+	footer := tp("Địa chỉ: 01 Lê Lai, Huế; ĐT: 0234 3822 111; Email: snv@hue.gov.vn", "center", 11) + tp("Trang 1", "center", 11)
+	content := bottomDocWith(t, tp("NVA.15", "", 11), "", false, footer)
+	l := InspectDocx(content)
+	if len(l.FooterParas) != 2 || l.FooterParas[0].Source != "footer" || l.FooterParas[1].Index != 1 {
+		t.Fatalf("footer paras: %+v", l.FooterParas)
+	}
+	c := Segment(l).Comp("dia_chi_co_quan")
+	if !c.Found || len(c.Paras) != 0 || len(c.FooterParas) != 1 || c.Zone != ZoneFooter || !strings.HasPrefix(c.Text, "Địa chỉ: 01 Lê Lai") {
+		t.Fatalf("dia_chi_co_quan = %+v", c)
+	}
+	r := Check(context.Background(), content, Options{Segmenter: SegmenterHeuristic})
+	if got := checkByID(t, r.Checks, "dia_chi_co_quan.size"); got.Status != StatusPass {
+		t.Errorf("dia_chi_co_quan.size = %s %v", got.Status, got.Actual)
+	}
+	if got := checkByID(t, r.Checks, "component.order"); got.Status != StatusPass {
+		t.Errorf("order with a footer component = %s %v", got.Status, got.Evidence)
+	}
+	if !strings.Contains(r.Skeleton, `[13] Địa chỉ cơ quan: "Địa chỉ: 01 Lê Lai`) {
+		t.Errorf("brief lacks the footer address:\n%s", r.Skeleton)
+	}
+	// 12 pt footer line: still measured
+	footer = tp("Địa chỉ: 01 Lê Lai; ĐT: 0234 3822 111", "center", 14)
+	r = Check(context.Background(), bottomDocWith(t, "", "", false, footer), Options{Segmenter: SegmenterHeuristic})
+	got := checkByID(t, r.Checks, "dia_chi_co_quan.size")
+	if got.Status != StatusWarn || len(got.Evidence) != 1 {
+		t.Fatalf("14 pt footer address: %s %v", got.Status, got.Actual)
+	}
+	if _, ok := got.Evidence[0]["para"]; ok || got.Evidence[0]["footer_para"] != 0 {
+		t.Errorf("footer evidence must not name a body paragraph: %v", got.Evidence[0])
 	}
 }

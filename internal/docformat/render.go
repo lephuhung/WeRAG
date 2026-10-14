@@ -242,7 +242,7 @@ func fmtMM(v *float64) string {
 }
 
 // zoneNames are the column names of the judgment brief.
-var zoneNames = map[string]string{ZoneLeft: "cột trái", ZoneRight: "cột phải", ZoneFull: "toàn trang", ZoneSplit: "chia hai cột"}
+var zoneNames = map[string]string{ZoneLeft: "cột trái", ZoneRight: "cột phải", ZoneFull: "toàn trang", ZoneSplit: "chia hai cột", ZoneFooter: "chân trang"}
 
 func zoneName(z string) string {
 	if n, ok := zoneNames[z]; ok {

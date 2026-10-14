@@ -49,14 +49,23 @@ type Options struct {
 	// ModelName is reported in the segmentation info.
 	ModelName  string
 	SourceName string
+	// ForceLLM calls the model even when the heuristic passes the
+	// confidence gate (evaluation harness).
+	ForceLLM bool
+	// FullDocument sends the model the whole document (the first and last
+	// 45 units) instead of the head and tail blocks, without widening.
+	FullDocument bool
 }
 
 // Segmentation info as reported.
 type SegmentationInfo struct {
-	Method string `json:"method"` // heuristic | llm | labels
+	Method string `json:"method"` // heuristic | heuristic-confident | llm | labels
 	Model  string `json:"model,omitempty"`
 	Error  string `json:"error,omitempty"`
 	Notes  string `json:"notes,omitempty"`
+	// Stats: gate verdict, model calls, widenings, prompt size (when a
+	// model was available).
+	Stats *LabelStats `json:"stats,omitempty"`
 	*LabelDiagnostics
 }
 
@@ -145,6 +154,16 @@ func ExtractFormat(l *Layout, seg *Segmentation) []ComponentFormat {
 			continue
 		}
 		cf := ComponentFormat{Key: def.Key, Name: ComponentName(def.Key)}
+		for _, idx := range comp.FooterParas {
+			if idx < 0 || idx >= len(l.FooterParas) {
+				continue
+			}
+			p := l.FooterParas[idx]
+			if t := strings.TrimSpace(p.Text); t != "" {
+				cf.Lines = append(cf.Lines, LineFormat{Para: idx, Text: t, Zone: ZoneFooter, Align: p.Alignment,
+					Font: p.FontName, SizePt: p.SizePt, Bold: isTrue(p.Bold), Italic: isTrue(p.Italic)})
+			}
+		}
 		for i, idx := range comp.Paras {
 			if idx < 0 || idx >= len(l.Paragraphs) {
 				continue
@@ -222,7 +241,8 @@ func segmentDoc(ctx context.Context, l *Layout, opts Options) (*Segmentation, *S
 		return nil, nil, fmt.Errorf("segmenter must be one of auto, heuristic, llm, labels")
 	}
 	if opts.Labels != nil && (mode == SegmenterAuto || mode == SegmenterLabels) {
-		seg, diag := ApplyLabels(l, opts.Labels, PrepareTask(l, heur))
+		// labels made elsewhere cover the whole document
+		seg, diag := ApplyLabels(l, opts.Labels, PrepareFullTask(l, heur, nil))
 		return seg, &SegmentationInfo{Method: SegmenterLabels, LabelDiagnostics: diag}, nil
 	}
 	if mode == SegmenterLabels {
@@ -238,14 +258,25 @@ func segmentDoc(ctx context.Context, l *Layout, opts Options) (*Segmentation, *S
 		}
 		return heur, info, nil
 	}
+	stats := &LabelStats{}
+	if !opts.ForceLLM && mode == SegmenterAuto {
+		ok, why := Confident(heur)
+		if ok {
+			return heur, &SegmentationInfo{Method: MethodHeuristicConfident, Stats: stats}, nil
+		}
+		stats.Gate = why
+	}
 	task := PrepareTask(l, heur)
-	reply, err := LabelWithLLM(ctx, opts.LLM, task)
+	if opts.FullDocument {
+		task = PrepareFullTask(l, heur, task.All)
+	}
+	seg, reply, diag, err := LabelChunked(ctx, opts.LLM, l, task, stats)
 	if err != nil {
 		// an LLM failure degrades to the heuristic instead of failing
-		return heur, &SegmentationInfo{Method: SegmenterHeuristic, Error: "LLM: " + err.Error()}, nil
+		return heur, &SegmentationInfo{Method: SegmenterHeuristic, Error: "LLM: " + err.Error(), Stats: stats}, nil
 	}
-	seg, diag := ApplyLabels(l, reply, task)
-	return seg, &SegmentationInfo{Method: SegmenterLLM, Model: opts.ModelName, Notes: reply.Notes, LabelDiagnostics: diag}, nil
+	return seg, &SegmentationInfo{Method: SegmenterLLM, Model: opts.ModelName, Notes: reply.Notes,
+		Stats: stats, LabelDiagnostics: diag}, nil
 }
 
 // Check runs the whole pipeline on .docx bytes.

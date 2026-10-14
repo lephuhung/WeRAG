@@ -280,19 +280,23 @@ def _ban_hanh_line_count(left_lines: list) -> int:
     k = 1
     while k < n and bool(left_lines[-k - 1][1].para.bold) == last_bold:
         k += 1
-    if k < n:
-        return k
-    # uniform weight: ban hành = last line, plus the lines it continues — a
-    # generic collective name ("ỦY BAN NHÂN DÂN") or a line broken after a
-    # comma / connector ("BAN QUẢN LÝ KHU KINH TẾ," + "CÔNG NGHIỆP TỈNH")
-    k = 1
-    while k < n:
-        prev = left_lines[-k - 1][1].text.strip()
-        fp = fold(prev)
-        if _GENERIC_ORG_RE.match(fp) or re.search(r"[,\-–&]$|\s(VA|CUA)$", fp):
-            k += 1
-            continue
-        break
+    if k == n:
+        # uniform weight: ban hành = last line, plus the lines it continues
+        # — a generic collective name ("ỦY BAN NHÂN DÂN") or a line broken
+        # after a comma / connector ("BAN QUẢN LÝ KHU KINH TẾ," + "CÔNG
+        # NGHIỆP TỈNH")
+        k = 1
+        while k < n:
+            prev = left_lines[-k - 1][1].text.strip()
+            fp = fold(prev)
+            if _GENERIC_ORG_RE.match(fp) or re.search(r"[,\-–&]$|\s(VA|CUA)$", fp):
+                k += 1
+                continue
+            break
+    # a block opening with "VÀ ..." continues the line above it
+    # ("SỞ TÀI NGUYÊN" / "VÀ MÔI TRƯỜNG")
+    while k < n and re.match(r"(VA|CUA)\s", fold(left_lines[-k][1].text.strip())):
+        k += 1
     return k
 
 
@@ -339,6 +343,11 @@ def _header_end(els: list) -> int:
             end = i + 1
             pending = 0
             continue
+        if _CHI_DAN_RE.match(f):
+            # ô 11 sits by the header (with độ mật / độ khẩn)
+            end = i + 1
+            pending = 0
+            continue
         if _is_heading(el, f) and not _TRICH_VV_RE.match(f):
             break
         if _TRICH_VV_RE.match(f) or _KHAN_RE.match(f):
@@ -371,6 +380,10 @@ def segment(layout: DocLayout) -> Segmented:
     for hi, el in enumerate(header_els):
         f = fold(el.text)
         if not f:
+            continue
+        if _CHI_DAN_RE.match(f):
+            _add(seg, "chi_dan_luu_hanh", el.para.index, el.text, el.zone,
+                 pos=hi)
             continue
         if _MAT_RE.match(f):
             _add(seg, "do_mat", el.para.index, el.text, el.zone, pos=hi)
@@ -426,6 +439,8 @@ def segment(layout: DocLayout) -> Segmented:
     if not trich_opened:
         scan_to = min(len(els), header_el_end + 8)
         for i in range(header_el_end, scan_to):
+            if _CHI_DAN_RE.match(fold(els[i].text)):
+                continue
             if _is_heading(els[i], fold(els[i].text)):
                 trich_start = i
                 break
@@ -441,7 +456,8 @@ def segment(layout: DocLayout) -> Segmented:
             p = el.para
             f = fold(el.text)
             if el.zone != "full" or p.alignment != "center" \
-                    or _CAN_CU_RE.match(f) or _KINH_GUI_RE.match(f):
+                    or _CAN_CU_RE.match(f) or _KINH_GUI_RE.match(f) \
+                    or _CHI_DAN_RE.match(f):
                 break
             if _THAM_QUYEN_RE.match(f) and el.text.strip() and (
                     p.text_is_upper or p.caps):
@@ -538,7 +554,8 @@ def segment(layout: DocLayout) -> Segmented:
         if in_sig and is_right(el):
             sig_els.append((pos, el))
             continue
-        if _CHI_DAN_RE.match(f):
+        if _CHI_DAN_RE.match(f) and not seg.comp("noi_dung")["found"]:
+            # ô 11 belongs to the head block; in the body it is body text
             _add(seg, "chi_dan_luu_hanh", p.index, el.text, el.zone, pos=pos)
             continue
         if (bottom_from is not None and bottom_from < k < noi_nhan_end
@@ -597,6 +614,19 @@ def segment(layout: DocLayout) -> Segmented:
             "zone": "right",
             "pos": seg.comp("chuc_danh").get("pos"),
         }
+
+    # ô 13 printed in the page-1 footer: a component without body paragraphs
+    if not seg.comp("dia_chi_co_quan")["found"]:
+        lines = [(p.index, p.text.strip()) for p in layout.footer_paras
+                 if p.text.strip() and is_dia_chi(fold(p.text.strip()))]
+        if lines:
+            seg.components["dia_chi_co_quan"] = {
+                "found": True, "paras": [], "zones": [],
+                "footer_paras": [i for i, _ in lines],
+                "texts": [t for _, t in lines],
+                "text": "\n".join(t for _, t in lines),
+                "zone": "footer", "pos": None,
+            }
 
     return seg
 

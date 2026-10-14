@@ -72,11 +72,22 @@ func DocTypeSlugs() []string {
 }
 
 const (
-	// units kept verbatim at each end; the middle of a long body is elided
-	// (labelled noi_dung) unless the heuristic flags something there
+	// fallback when the heuristic finds no head or tail block: units kept
+	// verbatim at each end; the middle of a long body is elided (labelled
+	// noi_dung) unless the heuristic flags something there
 	keepHead = 45
 	keepTail = 45
 	textMax  = 160
+
+	// chunked task (the usual one): the head block and the tail block as
+	// the heuristic bounds them, each with headPad / tailPad body units of
+	// context
+	headPad = 3
+	tailPad = 3
+	// widening: a required component the model did not find widens its
+	// block into the body by widenStep units, at most maxWidenings times
+	widenStep    = 10
+	maxWidenings = 3
 )
 
 // Unit is one labelable text fragment as shown to the model.
@@ -192,6 +203,29 @@ func LabelOf(seg *Segmentation, u Unit) string {
 	return "khac"
 }
 
+// chunk keeps the head block [0, HeadEnd+headPad+headExtra) and the tail
+// block [TailStart-tailPad-tailExtra, PhuLucStart] (the phụ lục's first line
+// as context), plus any unit outside them the heuristic gave a non-body
+// component. The body between them is elided (nội dung), the phụ lục after
+// its first line too (phụ lục).
+func chunk(units []Unit, b Bounds, headExtra, tailExtra int) ([]Unit, map[string]bool) {
+	n := len(units)
+	headTo := min(b.HeadEnd+headPad+headExtra, n)
+	tailFrom := max(b.TailStart-tailPad-tailExtra, 0)
+	end := min(b.PhuLucStart+1, n)
+	elided := map[string]bool{}
+	var sent []Unit
+	for i, u := range units {
+		hinted := i < b.PhuLucStart && u.Hint != "" && u.Hint != "noi_dung"
+		if i < headTo || (i >= tailFrom && i < end) || hinted {
+			sent = append(sent, u)
+		} else {
+			elided[u.ID] = true
+		}
+	}
+	return sent, elided
+}
+
 func elide(units []Unit) ([]Unit, map[string]bool) {
 	n := len(units)
 	elided := map[string]bool{}
@@ -221,7 +255,7 @@ document_type là TÊN LOẠI văn bản in ở dòng tên loại (QUYẾT ĐỊ
 Trả về DUY NHẤT một JSON object:
 {"document_type": "<một loại>", "labels": {"<id>": "<thành phần>", ...}, "notes": "<ngắn, tuỳ chọn>"}
 - labels phải có mọi id được gửi; chỉ dùng tên thành phần trong danh sách.
-- Các unit ở giữa thân văn bản đã được lược bớt sẽ tự gán noi_dung.`
+- Chỉ gửi phần đầu và phần cuối văn bản: các unit giữa thân văn bản đã được lược bớt sẽ tự gán noi_dung, phần phụ lục lược bớt giữ nhãn phu_luc.`
 
 // Task is everything a model needs to label one document.
 type Task struct {
@@ -229,14 +263,110 @@ type Task struct {
 	All         []Unit
 	Elided      map[string]bool
 	ElidedCount int
+	// Chunked: built from the heuristic's head/tail bounds (not the 45/45
+	// fallback); headExtra / tailExtra are the widenings applied so far.
+	Chunked              bool
+	bounds               Bounds
+	headExtra, tailExtra int
 }
 
 // PrepareTask builds the labeling task from the layout and its heuristic
-// segmentation.
+// segmentation: the head and tail blocks the heuristic bounded (every NĐ30
+// component but nội dung sits in one of them), or, when it found no head
+// or no tail, the first and last 45 units.
 func PrepareTask(l *Layout, heuristic *Segmentation) *Task {
 	all := BuildUnits(l, heuristic)
-	sent, elided := elide(all)
-	return &Task{Units: sent, All: all, Elided: elided, ElidedCount: len(elided)}
+	if heuristic != nil {
+		if b := heuristic.Bounds; b.HeadOK && b.TailOK && b.PhuLucStart <= len(all) {
+			sent, elided := chunk(all, b, 0, 0)
+			return &Task{Units: sent, All: all, Elided: elided, ElidedCount: len(elided), Chunked: true, bounds: b}
+		}
+	}
+	return PrepareFullTask(l, heuristic, all)
+}
+
+// PrepareFullTask is the whole-document task (the first and last 45 units
+// of a long document): labels made elsewhere, and the evaluation of the
+// unchunked labeling. units may be passed when already built.
+func PrepareFullTask(l *Layout, heuristic *Segmentation, units []Unit) *Task {
+	if units == nil {
+		units = BuildUnits(l, heuristic)
+	}
+	sent, elided := elide(units)
+	return &Task{Units: sent, All: units, Elided: elided, ElidedCount: len(elided)}
+}
+
+// Widen returns the task with the head block moved forward (when a head
+// component is missing) and/or the tail block moved back (a tail one) by
+// widenStep units — each only when the units it would add hold a
+// candidate for a missing component — or nil when nothing is widened (a
+// fallback task, blocks already joined, no candidate in reach).
+func (t *Task) Widen(missing []string) *Task {
+	if !t.Chunked || len(missing) == 0 {
+		return nil
+	}
+	he, te := t.headExtra, t.tailExtra
+	for _, side := range []struct {
+		comps map[string]bool
+		extra *int
+	}{{headComponents, &he}, {tailComponents, &te}} {
+		var want []string
+		for _, k := range missing {
+			if side.comps[k] {
+				want = append(want, k)
+			}
+		}
+		if len(want) == 0 {
+			continue
+		}
+		try := *side.extra + widenStep
+		h, tl := he, te
+		if side.extra == &he {
+			h = try
+		} else {
+			tl = try
+		}
+		_, elided := chunk(t.All, t.bounds, h, tl)
+		for _, u := range t.All {
+			if t.Elided[u.ID] && !elided[u.ID] && candidateFor(want, u) {
+				*side.extra = try
+				break
+			}
+		}
+	}
+	if he == t.headExtra && te == t.tailExtra {
+		return nil
+	}
+	sent, elided := chunk(t.All, t.bounds, he, te)
+	return &Task{Units: sent, All: t.All, Elided: elided, ElidedCount: len(elided), Chunked: true,
+		bounds: t.bounds, headExtra: he, tailExtra: te}
+}
+
+// candidateFor: u could be one of the components keys — it opens like a
+// căn cứ / Kính gửi / thẩm quyền / Nơi nhận, or, for a signature or a
+// header part, it is not plain body prose (a long justified paragraph).
+func candidateFor(keys []string, u Unit) bool {
+	f := fold(u.Text)
+	prose := (u.Align == "justify" || u.Align == "both") && runeLen(u.Text) > 80
+	for _, k := range keys {
+		var ok bool
+		switch k {
+		case "can_cu":
+			ok = canCuRe.MatchString(f)
+		case "kinh_gui":
+			ok = kinhGuiRe.MatchString(f)
+		case "tham_quyen_ban_hanh":
+			ok = thamQuyenRe.MatchString(f) || (u.Upper && u.Align == "center")
+		case "noi_nhan":
+			ok = noiNhanRe.MatchString(f)
+		default:
+			ok = !prose
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 // UserMessage renders the task for the model.
@@ -249,7 +379,7 @@ func (t *Task) UserMessage() string {
 		}
 		fmt.Fprintf(&b, "- %s: %s", c.Key, c.Desc)
 	}
-	fmt.Fprintf(&b, "\n\nLoại văn bản: %s\n\nUnits (%d, đã lược %d unit giữa thân văn bản):\n",
+	fmt.Fprintf(&b, "\n\nLoại văn bản: %s\n\nUnits (%d, đã lược %d unit giữa thân văn bản / phụ lục):\n",
 		strings.Join(DocTypeSlugs(), ", "), len(t.Units), t.ElidedCount)
 	for i, u := range t.Units {
 		if i > 0 {
@@ -374,6 +504,9 @@ func ApplyLabels(l *Layout, reply *Reply, task *Task) (*Segmentation, *LabelDiag
 		switch {
 		case !ok && task.Elided[u.ID]:
 			lab = "noi_dung"
+			if u.Hint == "phu_luc" { // the phụ lục past its first line
+				lab = "phu_luc"
+			}
 		case !ok:
 			diag.Missing = append(diag.Missing, u.ID)
 			lab = u.Hint
