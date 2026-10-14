@@ -60,6 +60,11 @@ type AnchorLine struct {
 	// Full is the untruncated text when Text was cut ("…"), so the
 	// judgment rules read what the brief had to leave out.
 	Full string `json:"-"`
+	// SizePt, Bold and Italic are the line's measured cỡ chữ and kiểu
+	// chữ, shown in the judgment brief.
+	SizePt *float64 `json:"size_pt,omitempty"`
+	Bold   bool     `json:"bold,omitempty"`
+	Italic bool     `json:"italic,omitempty"`
 }
 
 // mergeAnchors returns base with each spec anchor of the same id replacing
@@ -106,6 +111,9 @@ type bodyLine struct {
 	para int
 	text string
 	data bool // a cell of a data table: never an opening or last line
+	// the measured cỡ chữ and kiểu chữ (of its side, for a tab-split line)
+	size         *float64
+	bold, italic bool
 }
 
 func bodyLines(l *Layout, seg *Segmentation) []bodyLine {
@@ -120,19 +128,25 @@ func bodyLines(l *Layout, seg *Segmentation) []bodyLine {
 		}
 		p := l.Paragraphs[idx]
 		text := p.Text
+		size, bold, italic := p.SizePt, isTrue(p.Bold), isTrue(p.Italic)
 		if p.Zone == ZoneSplit && i < len(comp.Zones) {
+			side := SideFormat{}
 			switch comp.Zones[i] {
 			case ZoneLeft:
-				text = p.LeftText
+				text, side = p.LeftText, p.LeftProps
 			case ZoneRight:
-				text = p.RightText
+				text, side = p.RightText, p.RightProps
+			}
+			if side.Present {
+				size, bold, italic = side.SizePt, isTrue(side.Bold), isTrue(side.Italic)
 			}
 		}
 		text = strings.Join(strings.Fields(text), " ")
 		if text == "" {
 			continue
 		}
-		out = append(out, bodyLine{para: idx, text: text, data: p.TableLayout == "data"})
+		out = append(out, bodyLine{para: idx, text: text, data: p.TableLayout == "data",
+			size: size, bold: bold, italic: italic})
 	}
 	return out
 }
@@ -229,7 +243,7 @@ func ExtractAnchors(l *Layout, seg *Segmentation, anchors []Anchor) ([]AnchorLin
 			}
 		}
 		out = append(out, AnchorLine{Kind: a.ID, Para: lines[i].para, Text: text, Desc: strings.Trim(desc, "; "),
-			IDs: lineIDs, Full: full})
+			IDs: lineIDs, Full: full, SizePt: lines[i].size, Bold: lines[i].bold, Italic: lines[i].italic})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Para < out[j].Para })
 	return out, len(lines)

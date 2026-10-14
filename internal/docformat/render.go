@@ -255,24 +255,30 @@ func zoneName(z string) string {
 }
 
 // judgmentLine is one line of the judgment brief: the text, quoted, with a
-// line break inside the paragraph kept visible as ⏎, and — when emphasis
-// is asked for — [đậm]/[nghiêng]. No font, size or alignment: those are
-// measured by the rules.
-func judgmentLine(lf LineFormat, emphasis bool) string {
-	s := fmt.Sprintf("%q", strings.ReplaceAll(lf.Text, "\n", " ⏎ "))
-	if emphasis {
-		var tags []string
-		if lf.Bold {
-			tags = append(tags, "đậm")
-		}
-		if lf.Italic {
-			tags = append(tags, "nghiêng")
-		}
-		if len(tags) > 0 {
-			s += " [" + strings.Join(tags, ", ") + "]"
-		}
+// line break inside the paragraph kept visible as ⏎, then its cỡ chữ and
+// kiểu chữ ("[13pt, đậm]", "[14pt, thường]"). No font or alignment: those
+// are measured by the rules.
+func judgmentLine(lf LineFormat) string {
+	return fmt.Sprintf("%q %s", strings.ReplaceAll(lf.Text, "\n", " ⏎ "), styleTag(lf.SizePt, lf.Bold, lf.Italic))
+}
+
+// styleTag is a line's cỡ chữ and kiểu chữ: "[13pt, đậm nghiêng]",
+// "[cỡ ?, thường]" when the size is not measured.
+func styleTag(size *float64, bold, italic bool) string {
+	sz := "cỡ ?"
+	if size != nil {
+		sz = strconv.FormatFloat(*size, 'f', -1, 64) + "pt"
 	}
-	return s
+	style := "thường"
+	switch {
+	case bold && italic:
+		style = "đậm nghiêng"
+	case bold:
+		style = "đậm"
+	case italic:
+		style = "nghiêng"
+	}
+	return "[" + sz + ", " + style + "]"
 }
 
 // shortDesc cuts a rule description to its head ("Lề trên 20-25mm (NĐ30
@@ -371,15 +377,14 @@ func passedSummary(checks []CheckResult) string {
 
 // judgmentRenderVersion changes whenever RenderJudgment's layout changes,
 // so cached evaluations made on the old layout are dropped (SkillsDigest).
-const judgmentRenderVersion = "judgment-v3"
+const judgmentRenderVersion = "judgment-v4"
 
 // RenderJudgment renders the judgment brief ("hồ sơ phán đoán") the skill
 // evaluation reads: the measured findings (final, not to be re-judged),
-// then each component as text and position only — no font, size or
-// alignment, which the rules measure — keeping [đậm]/[nghiêng] on the
-// lines whose emphasis the skills still judge (cơ quan chủ quản, căn cứ,
-// khối ký, nơi nhận). Quốc hiệu, tiêu ngữ and the body text are left out;
-// the body is shown as its anchor lines.
+// then each component as text and position, every line with its cỡ chữ
+// and kiểu chữ ("[13pt, đậm]") — no font or alignment, which the rules
+// measure. Quốc hiệu, tiêu ngữ and the body text are left out; the body
+// is shown as its anchor lines, which carry their size and style too.
 func RenderJudgment(r *Report) string {
 	if r == nil || !r.OK {
 		if r == nil {
@@ -418,58 +423,58 @@ func RenderJudgment(r *Report) string {
 	for _, cf := range r.Format {
 		format[cf.Key] = cf
 	}
-	joined := func(key string, emphasis bool) string {
+	joined := func(key string) string {
 		var parts []string
 		for _, lf := range format[key].Lines {
-			parts = append(parts, judgmentLine(lf, emphasis))
+			parts = append(parts, judgmentLine(lf))
 		}
 		return strings.Join(parts, " / ")
 	}
-	list := func(title, key string, emphasis bool) {
+	list := func(title, key string) {
 		cf, ok := format[key]
 		if !ok {
 			return
 		}
 		fmt.Fprintf(&b, "%s:\n", title)
 		for _, lf := range cf.Lines {
-			b.WriteString("  - " + judgmentLine(lf, emphasis) + "\n")
+			b.WriteString("  - " + judgmentLine(lf) + "\n")
 		}
 	}
 
 	b.WriteString("\n## Thành phần ([số] là ô theo NĐ30 Phụ lục I)\n")
-	if s := joined("co_quan_chu_quan", true); s != "" {
+	if s := joined("co_quan_chu_quan"); s != "" {
 		fmt.Fprintf(&b, "[2] Cơ quan chủ quản: %s\n", s)
 	}
-	if s := joined("co_quan_ban_hanh", false); s != "" {
+	if s := joined("co_quan_ban_hanh"); s != "" {
 		fmt.Fprintf(&b, "[2] Cơ quan ban hành: %s\n", s)
 	}
-	if s := joined("so_ky_hieu", false); s != "" {
+	if s := joined("so_ky_hieu"); s != "" {
 		fmt.Fprintf(&b, "[3] Số, ký hiệu: %s\n", s)
 	}
-	if s := joined("dia_danh_ngay_thang", false); s != "" {
+	if s := joined("dia_danh_ngay_thang"); s != "" {
 		fmt.Fprintf(&b, "[4] Địa danh, ngày tháng: %s\n", s)
 	}
-	if s := joined("do_mat", false); s != "" {
+	if s := joined("do_mat"); s != "" {
 		fmt.Fprintf(&b, "[10a] Độ mật: %s\n", s)
 	}
-	if s := joined("do_khan", false); s != "" {
+	if s := joined("do_khan"); s != "" {
 		fmt.Fprintf(&b, "[10b] Độ khẩn: %s\n", s)
 	}
-	if s := joined("trich_yeu", false); s != "" {
+	if s := joined("trich_yeu"); s != "" {
 		// công văn has no tên loại line (ô 5b); other types print it (ô 5a)
 		line := "[5a] Tên loại, trích yếu: " + s
 		if dt.Used == "cong_van" {
 			line = "[5b] Trích yếu công văn (công văn không có dòng tên loại): " + s
 		}
-		if tq := joined("tham_quyen_ban_hanh", false); tq != "" {
+		if tq := joined("tham_quyen_ban_hanh"); tq != "" {
 			line += "; Thẩm quyền ban hành: " + tq
 		}
 		b.WriteString(line + "\n")
-	} else if tq := joined("tham_quyen_ban_hanh", false); tq != "" {
+	} else if tq := joined("tham_quyen_ban_hanh"); tq != "" {
 		fmt.Fprintf(&b, "[5] Thẩm quyền ban hành: %s\n", tq)
 	}
-	list("[6] Căn cứ", "can_cu", true)
-	list("[9a] Kính gửi", "kinh_gui", false)
+	list("[6] Căn cứ", "can_cu")
+	list("[9a] Kính gửi", "kinh_gui")
 
 	if r.BodyParas == 0 {
 		b.WriteString("[6] Thân văn bản: không có\n")
@@ -479,7 +484,7 @@ func RenderJudgment(r *Report) string {
 			b.WriteString("  (không có dòng mốc nào khớp)\n")
 		}
 		for _, a := range r.Anchors {
-			fmt.Fprintf(&b, "  - đ%d %q (%s)\n", a.Para, a.Text, a.Desc)
+			fmt.Fprintf(&b, "  - đ%d %q %s (%s)\n", a.Para, a.Text, styleTag(a.SizePt, a.Bold, a.Italic), a.Desc)
 		}
 	}
 
@@ -497,22 +502,22 @@ func RenderJudgment(r *Report) string {
 	for _, z := range zones {
 		fmt.Fprintf(&b, "[7] Khối ký (%s):\n", zoneName(z))
 		for _, lf := range byZone[z] {
-			b.WriteString("  - " + judgmentLine(lf, true) + "\n")
+			b.WriteString("  - " + judgmentLine(lf) + "\n")
 		}
 	}
 	if cf, ok := format["noi_nhan"]; ok && len(cf.Lines) > 0 {
 		fmt.Fprintf(&b, "[9b] Nơi nhận (%s; dòng đầu là nhãn, các dòng sau là danh sách):\n", zoneName(cf.Lines[0].Zone))
 		for _, lf := range cf.Lines {
-			b.WriteString("  - " + judgmentLine(lf, true) + "\n")
+			b.WriteString("  - " + judgmentLine(lf) + "\n")
 		}
 	}
-	if s := joined("chi_dan_luu_hanh", false); s != "" {
+	if s := joined("chi_dan_luu_hanh"); s != "" {
 		fmt.Fprintf(&b, "[11] Chỉ dẫn phạm vi lưu hành: %s\n", s)
 	}
-	if s := joined("ky_hieu_soan_thao", false); s != "" {
+	if s := joined("ky_hieu_soan_thao"); s != "" {
 		fmt.Fprintf(&b, "[12] Ký hiệu người soạn thảo, số bản: %s\n", s)
 	}
-	if s := joined("dia_chi_co_quan", false); s != "" {
+	if s := joined("dia_chi_co_quan"); s != "" {
 		fmt.Fprintf(&b, "[13] Địa chỉ cơ quan: %s\n", s)
 	}
 	if comp, ok := r.Components["phu_luc"]; ok && comp.Found {

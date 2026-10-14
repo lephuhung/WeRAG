@@ -8,7 +8,7 @@ description: Quy tắc thể thức chung cho mọi văn bản hành chính theo
 Bạn nhận **hồ sơ phán đoán** của văn bản do hệ thống lập từ file .docx:
 
 - **Lỗi đo được / Cảnh báo đo được / Đã đo đạt**: kết quả đo font, cỡ chữ, đậm/nghiêng, căn lề, vị trí cột, lề trang, khổ giấy, thành phần bắt buộc. Đây là kết quả **cuối cùng**: giữ nguyên các lỗi đo được, không chấm lại, không bác bỏ; mục "Đã đo đạt" là **đạt** — không nêu lỗi định dạng cho chúng.
-- **Thành phần**: chữ của từng thành phần, theo vị trí (ô số theo NĐ30 Phụ lục I, cột trái/phải). Hồ sơ **không** ghi font, cỡ chữ, căn lề; chỉ ghi `[đậm]`/`[nghiêng]` cho cơ quan chủ quản, căn cứ, khối ký, nơi nhận — dòng không có thẻ là chữ đứng, không đậm. Quốc hiệu, tiêu ngữ và chữ của thân văn bản không được trích — không đánh giá chúng.
+- **Thành phần**: chữ của từng thành phần, theo vị trí (ô số theo NĐ30 Phụ lục I, cột trái/phải). Mỗi dòng (cả dòng mốc của thân văn bản) ghi kèm cỡ chữ và kiểu chữ: `[13pt, đậm]`, `[14pt, nghiêng]`, `[13pt, đậm nghiêng]`, `[14pt, thường]` (thường = chữ đứng, không đậm); hồ sơ **không** ghi font, căn lề. Quốc hiệu, tiêu ngữ và chữ của thân văn bản không được trích — không đánh giá chúng.
 - **Thân văn bản**: chỉ có số đoạn và các **dòng mốc** (mở đầu, đề mục cấp 1, câu kết, đoạn cuối, và dòng riêng của loại văn bản như `Điều`, `QUYẾT ĐỊNH:`). Các đoạn khác không được trích.
 - **Không có**: thành phần không tìm thấy, chia theo bắt buộc / không bắt buộc với loại văn bản.
 

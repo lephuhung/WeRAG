@@ -173,15 +173,18 @@ func TestRenderJudgment(t *testing.T) {
 	for _, want := range []string{
 		"# Hồ sơ phán đoán", "Văn bản: qd.docx", "Loại: quyet_dinh",
 		"Lỗi đo được: không có", "Đã đo đạt (không chấm lại): Trang (khổ giấy, lề)",
-		`[3] Số, ký hiệu: "Số: 1234/QĐ-SYT"`, "Thẩm quyền ban hành: \"GIÁM ĐỐC SỞ Y TẾ\"",
-		"[6] Căn cứ:", `[nghiêng]`, "dòng mốc", `"QUYẾT ĐỊNH:"`, `"Điều 2. Quyết định này có hiệu lực`,
-		"[7] Khối ký (cột phải):", `"KT. GIÁM ĐỐC" [đậm]`, "[9b] Nơi nhận (cột trái; dòng đầu là nhãn", `"- Lưu: VT, TCCB."`,
+		"Thẩm quyền ban hành: \"GIÁM ĐỐC SỞ Y TẾ\"",
+		"[6] Căn cứ:", `"Căn cứ Luật Tổ chức chính quyền địa phương;" [14pt, nghiêng]`, "dòng mốc",
+		`đ14 "QUYẾT ĐỊNH:" [14pt, đậm] (`, `"Điều 2. Quyết định này có hiệu lực kể từ ngày ký." [14pt, thường]`,
+		`[2] Cơ quan chủ quản: "UBND TỈNH THỪA THIÊN HUẾ" [13pt, thường]`, `[3] Số, ký hiệu: "Số: 1234/QĐ-SYT" [14pt, thường]`,
+		"[7] Khối ký (cột phải):", `"KT. GIÁM ĐỐC" [14pt, đậm]`, "[9b] Nơi nhận (cột trái; dòng đầu là nhãn",
+		`"Nơi nhận:" [12pt, đậm nghiêng]`, `"- Lưu: VT, TCCB." [11pt, thường]`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("skeleton lacks %q", want)
 		}
 	}
-	for _, omit := range []string{"Times New Roman", "pt,", "căn center", "căn both",
+	for _, omit := range []string{"Times New Roman", "căn center", "căn both", "cột phải]",
 		"CỘNG HÒA XÃ HỘI", "Độc lập - Tự do", "Trang: ", "<skill"} {
 		if strings.Contains(s, omit) {
 			t.Errorf("skeleton must not carry %q", omit)
@@ -236,5 +239,22 @@ func TestEvaluateWithSkillsRender(t *testing.T) {
 	sys := spy.got[0].Content
 	if strings.Contains(sys, "7. Chính tả") || !strings.Contains(sys, "không nêu lỗi chính tả") {
 		t.Error("the general skill must leave spelling to the spellcheck tool")
+	}
+}
+
+func TestStyleTag(t *testing.T) {
+	sz := 13.0
+	for _, tc := range []struct {
+		size         *float64
+		bold, italic bool
+		want         string
+	}{
+		{&sz, true, false, "[13pt, đậm]"}, {&sz, false, true, "[13pt, nghiêng]"},
+		{&sz, true, true, "[13pt, đậm nghiêng]"}, {&sz, false, false, "[13pt, thường]"},
+		{nil, false, false, "[cỡ ?, thường]"},
+	} {
+		if got := styleTag(tc.size, tc.bold, tc.italic); got != tc.want {
+			t.Errorf("styleTag = %q, want %q", got, tc.want)
+		}
 	}
 }
