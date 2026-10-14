@@ -31,5 +31,13 @@
       "desc": "Tên loại văn bản 'TỜ TRÌNH' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "anchors": [
+    {
+      "id": "request",
+      "regex": "KINH TRINH|KINH DE NGHI|TRINH .* XEM XET",
+      "max": 3,
+      "desc": "kiến nghị"
+    }
   ]
 }

@@ -50,25 +50,40 @@ const evalTemperature = 0.6
 // văn) plus the written evaluation.
 const evalMaxTokens = 16384
 
-// chatEvaluator runs the skill evaluation on a WeKnora chat model with
-// thinking on: the judgments (who signs for whom, whether Nơi nhận lists
-// the head) are unreliable without it — measured on Qwen3.6-35B-A3B:
-// 4-7 false alarms in 10 on a correct document without thinking, none
-// with it.
-type chatEvaluator struct{ model chat.Chat }
+// Evaluator runs the skill evaluation on a WeKnora chat model. Thinking
+// is on by default: on the full format data (RenderData) the judgments
+// (who signs for whom, whether Nơi nhận lists the head) were unreliable
+// without it — measured on Qwen3.6-35B-A3B: 4-7 false alarms in 10 on a
+// correct document without thinking, none with it. Whether the smaller
+// judgment brief (RenderJudgment) changes that is measured by the live
+// harness (live_eval_test.go). Temperature stays 0.6 with thinking off
+// too: it is what the model is tuned for, and the harness can set it.
+type Evaluator struct {
+	Model       chat.Chat
+	Thinking    bool
+	Temperature float64
+	MaxTokens   int
+}
 
-// ChatEvaluator adapts a workspace chat model for skill evaluation.
-func ChatEvaluator(model chat.Chat) Completer { return chatEvaluator{model} }
+// ChatEvaluator adapts a workspace chat model for skill evaluation, with
+// thinking on.
+func ChatEvaluator(model chat.Chat) Completer { return ChatEvaluatorWithThinking(model, true) }
 
-func (c chatEvaluator) Complete(ctx context.Context, messages []Message) (string, error) {
+// ChatEvaluatorWithThinking is ChatEvaluator with the thinking switch.
+func ChatEvaluatorWithThinking(model chat.Chat, thinking bool) *Evaluator {
+	return &Evaluator{Model: model, Thinking: thinking, Temperature: evalTemperature, MaxTokens: evalMaxTokens}
+}
+
+// Complete runs one evaluation turn.
+func (c *Evaluator) Complete(ctx context.Context, messages []Message) (string, error) {
 	msgs := make([]chat.Message, 0, len(messages))
 	for _, m := range messages {
 		msgs = append(msgs, chat.Message{Role: m.Role, Content: m.Content})
 	}
-	thinking := true
-	resp, err := c.model.Chat(ctx, msgs, &chat.ChatOptions{
-		Temperature: evalTemperature,
-		MaxTokens:   evalMaxTokens,
+	thinking := c.Thinking
+	resp, err := c.Model.Chat(ctx, msgs, &chat.ChatOptions{
+		Temperature: c.Temperature,
+		MaxTokens:   c.MaxTokens,
 		Thinking:    &thinking,
 	})
 	if err != nil {

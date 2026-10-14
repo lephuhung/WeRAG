@@ -421,5 +421,31 @@
       "desc": "Không có ký tự lạ chen giữa chữ (lỗi gõ như 'Chính p`hủ')",
       "severity": "warn"
     }
+  ],
+  "anchors": [
+    {
+      "id": "opening",
+      "kind": "head",
+      "max": 2,
+      "desc": "mở đầu"
+    },
+    {
+      "id": "heading",
+      "regex": "^(PHAN|CHUONG|MUC)\\s+[IVX0-9]+|^[IVX]+\\.\\s|^\\d{1,2}\\.\\s+[A-ZĐ][^.;]{0,80}$",
+      "max": 12,
+      "desc": "đề mục cấp 1"
+    },
+    {
+      "id": "closing",
+      "regex": "^TREN DAY|KINH DE NGHI|DE NGHI .* XEM XET|\\./\\.$",
+      "max": 3,
+      "desc": "câu kết"
+    },
+    {
+      "id": "tail",
+      "kind": "tail",
+      "max": 2,
+      "desc": "đoạn cuối"
+    }
   ]
 }

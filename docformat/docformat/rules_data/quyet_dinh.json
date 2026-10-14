@@ -31,5 +31,19 @@
       "desc": "Tên loại văn bản 'QUYẾT ĐỊNH' đứng trên trích yếu",
       "severity": "warn"
     }
+  ],
+  "anchors": [
+    {
+      "id": "resolution_line",
+      "regex": "^QUYET (DINH|NGHI)\\s*[:.]?$",
+      "max": 1,
+      "desc": "dòng QUYẾT ĐỊNH:/QUYẾT NGHỊ:"
+    },
+    {
+      "id": "dieu",
+      "regex": "^DIEU\\s+\\d+\\.?",
+      "max": 20,
+      "desc": "Điều"
+    }
   ]
 }

@@ -95,6 +95,13 @@ type Report struct {
 	Evaluation string `json:"evaluation,omitempty"`
 	// Skills are the evaluation skills of the document's type.
 	Skills []string `json:"skills,omitempty"`
+	// Anchors are the body's landmark lines (anchors.go) and BodyParas the
+	// number of its paragraphs: the body as the judgment model sees it.
+	Anchors   []AnchorLine `json:"anchors,omitempty"`
+	BodyParas int          `json:"body_paras"`
+	// Skeleton is the judgment brief ("hồ sơ phán đoán", RenderJudgment):
+	// exactly what EvaluateWithSkills hands the model as data.
+	Skeleton string `json:"skeleton,omitempty"`
 }
 
 // LineFormat is one line of a component with its measured formatting.
@@ -279,14 +286,19 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if label == "" {
 		label = rulesName
 	}
-	return &Report{
+	anchors, bodyParas := ExtractAnchors(l, seg, rs.Anchors)
+	rep := &Report{
 		Source: opts.SourceName, OK: true,
 		DocumentType: &DocumentTypeInfo{Requested: requested, Detected: seg.DetectedType, Used: used, RuleSet: label},
 		Segmentation: info, Summary: sum, Sections: l.Sections,
 		Components: seg.Components, Checks: checks,
 		Format: ExtractFormat(l, seg),
 		Skills: skillNamesFor(used),
+
+		Anchors: anchors, BodyParas: bodyParas,
 	}
+	rep.Skeleton = RenderJudgment(rep)
+	return rep
 }
 
 // ruleSetName is the rule set Check applies to a document of type used:

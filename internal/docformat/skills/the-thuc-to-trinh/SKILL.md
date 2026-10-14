@@ -9,17 +9,14 @@ description: Yêu cầu thể thức riêng của tờ trình (NĐ30/2020/NĐ-CP
 
 ## Thành phần
 
-- Tên loại `TỜ TRÌNH` (in hoa, đậm, căn giữa) và trích yếu chữ thường, đậm: "Về việc ..." / "Đề nghị phê duyệt ...".
+- Dòng tên loại `TỜ TRÌNH`, dòng dưới là trích yếu: "Về việc ..." / "Đề nghị phê duyệt ...".
 - **Kính gửi**: cơ quan/người có thẩm quyền quyết định vấn đề được trình (thường là cấp trên). Thiếu → lỗi.
 - Ký hiệu số có `TTr-`.
 
-## Nội dung
+## Nội dung (xét trên các dòng mốc)
 
-Kiểm tra tờ trình có đủ các phần (thiếu phần nào thì nêu là cảnh báo):
-1. Sự cần thiết / căn cứ đề xuất (căn cứ pháp lý, thực tiễn).
-2. Nội dung đề xuất cụ thể (phương án, kinh phí, thời gian nếu có).
-3. **Kiến nghị**: câu đề nghị rõ cấp có thẩm quyền xem xét, phê duyệt/quyết định điều gì.
-- Hồ sơ kèm theo (dự thảo, báo cáo …) nêu ở cuối nội dung nếu có.
+- Mở đầu nêu sự cần thiết / căn cứ đề xuất (dòng mốc "mở đầu"); các đề mục cấp 1 (nếu có) cho thấy phần đề xuất.
+- **Kiến nghị**: phải có câu đề nghị rõ cấp có thẩm quyền xem xét, phê duyệt/quyết định (dòng mốc "kiến nghị", "câu kết": "Kính trình ... xem xét, phê duyệt", "Kính đề nghị ..."). Không có dòng mốc nào như vậy → **cảnh báo** (câu có thể viết cách khác).
 
 ## Ký và nơi nhận
 

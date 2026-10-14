@@ -1,6 +1,6 @@
 ---
 name: the-thuc-ke-hoach
-description: Yêu cầu thể thức riêng của kế hoạch (NĐ30/2020/NĐ-CP) — tên loại KẾ HOẠCH, trích yếu, bố cục mục đích yêu cầu - nội dung nhiệm vụ - tổ chức thực hiện, phân công và thời hạn.
+description: Yêu cầu thể thức riêng của kế hoạch (NĐ30/2020/NĐ-CP) — tên loại KẾ HOẠCH, trích yếu, bố cục mục đích yêu cầu - nội dung nhiệm vụ - tổ chức thực hiện.
 ---
 
 # Kế hoạch
@@ -9,17 +9,18 @@ description: Yêu cầu thể thức riêng của kế hoạch (NĐ30/2020/NĐ-C
 
 ## Thành phần
 
-- Tên loại `KẾ HOẠCH` (in hoa, đậm, căn giữa) và trích yếu chữ thường, đậm ("Triển khai thực hiện ...", "Tổ chức ...").
+- Dòng tên loại `KẾ HOẠCH`, dòng dưới là trích yếu ("Triển khai thực hiện ...", "Tổ chức ...").
 - Ký hiệu số có `KH-`.
-- Mở đầu nêu căn cứ xây dựng kế hoạch (văn bản cấp trên, có số, ngày).
+- Mở đầu thường nêu căn cứ xây dựng kế hoạch (văn bản cấp trên) — xem dòng mốc "mở đầu".
 
-## Nội dung
+## Bố cục (xét trên các dòng mốc)
 
-Kiểm tra bố cục (thiếu phần thì cảnh báo):
+Đề mục cấp 1 của kế hoạch thường gồm (đối chiếu với các dòng mốc "đề mục cấp 1"; thiếu phần thì **cảnh báo**, không phải lỗi):
 1. **Mục đích, yêu cầu.**
-2. **Nội dung, nhiệm vụ** cụ thể (có chỉ tiêu nếu có).
-3. **Tổ chức thực hiện**: phân công cơ quan/đơn vị chủ trì, phối hợp; **thời hạn** hoàn thành; kinh phí (nếu có); chế độ báo cáo.
-- Nhiệm vụ không có đơn vị chủ trì hoặc thời hạn → cảnh báo.
+2. **Nội dung, nhiệm vụ** (giải pháp).
+3. **Tổ chức thực hiện** (phân công, kinh phí, chế độ báo cáo).
+
+- Không có dòng mốc đề mục nào thì không xét bố cục: ghi "không xác định được từ dữ liệu".
 
 ## Ban hành
 

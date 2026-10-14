@@ -62,11 +62,17 @@ def load_rule_set(doc_type: str) -> dict:
         return base
     specific = _load_one(doc_type)
     merged = dict(base)
-    merged.update({k: v for k, v in specific.items() if k != "checks"})
+    merged.update({k: v for k, v in specific.items()
+                   if k not in ("checks", "anchors")})
     # a type-specific check with the same id replaces the base one
     own = {c.get("id"): c for c in specific.get("checks", [])}
     merged["checks"] = [own.pop(c.get("id"), c) for c in base.get("checks", [])] \
         + [c for c in specific.get("checks", []) if c.get("id") in own]
+    # "anchors" (body landmark lines for the Go judgment brief) merge the
+    # same way; the Python checker does not use them
+    own = {a.get("id"): a for a in specific.get("anchors", [])}
+    merged["anchors"] = [own.pop(a.get("id"), a) for a in base.get("anchors", [])] \
+        + [a for a in specific.get("anchors", []) if a.get("id") in own]
     merged["type"] = specific.get("type", doc_type)
     merged["label"] = specific.get("label", doc_type)
     return merged

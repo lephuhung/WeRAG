@@ -1,6 +1,6 @@
 ---
 name: the-thuc-bien-ban
-description: Yêu cầu thể thức riêng của biên bản (NĐ30/2020/NĐ-CP) — tên loại BIÊN BẢN, thời gian địa điểm thành phần, chủ trì và thư ký, chữ ký hai bên.
+description: Yêu cầu thể thức riêng của biên bản (NĐ30/2020/NĐ-CP) — tên loại BIÊN BẢN, thời gian địa điểm thành phần, chủ trì và thư ký, thời gian kết thúc, chữ ký hai bên.
 ---
 
 # Biên bản
@@ -9,18 +9,19 @@ description: Yêu cầu thể thức riêng của biên bản (NĐ30/2020/NĐ-CP
 
 ## Thành phần
 
-- Tên loại `BIÊN BẢN` (in hoa, đậm, căn giữa) và trích yếu chữ thường, đậm ("Họp ...", "Bàn giao ...", "Kiểm tra ...").
+- Dòng tên loại `BIÊN BẢN`, dòng dưới là trích yếu ("Họp ...", "Bàn giao ...", "Kiểm tra ...").
 - Ký hiệu số có `BB-`.
 - Không có `Kính gửi`; nơi nhận không bắt buộc.
 
-## Nội dung
+## Nội dung (xét trên các dòng mốc)
 
-Kiểm tra có đủ (thiếu thì lỗi):
-1. **Thời gian** bắt đầu, **địa điểm**.
-2. **Thành phần** tham dự; **chủ trì** (chủ tọa); **thư ký** (người ghi biên bản).
-3. Diễn biến / nội dung làm việc; kết luận.
-4. **Thời gian kết thúc** ("Biên bản kết thúc vào hồi ... giờ ... cùng ngày") và việc thông qua biên bản.
+Hồ sơ đưa các dòng mốc riêng của biên bản: "thời gian, địa điểm", "thành phần, chủ trì, thư ký", "kết thúc biên bản". Kiểm tra:
+1. Có dòng nêu **thời gian** bắt đầu hoặc **địa điểm** ("Hôm nay, …", "Vào hồi …", "Thời gian:", "Địa điểm:").
+2. Có dòng nêu **thành phần** tham dự, **chủ trì** (chủ tọa) và **thư ký**.
+3. Có dòng **kết thúc** ("Biên bản kết thúc vào hồi ... giờ ..." hoặc "Biên bản được lập thành ... bản").
+
+Không có dòng mốc tương ứng thì **cảnh báo** "không thấy …" (dòng có thể được viết theo cách khác), không kết luận là lỗi.
 
 ## Ký
 
-- Hai khối ký đặt ngang nhau: `THƯ KÝ` (bên trái) và `CHỦ TỌA`/`CHỦ TRÌ` (bên phải), kèm họ tên; biên bản nhiều bên thì đại diện các bên cùng ký. Hai khối ký ở hai cột là **đúng**, không phải lỗi vị trí.
+- Hai khối ký đặt ngang nhau: `THƯ KÝ` (một cột) và `CHỦ TỌA`/`CHỦ TRÌ` (cột kia), kèm họ tên; biên bản nhiều bên thì đại diện các bên cùng ký. Hai khối ký ở hai cột là **đúng**, không phải lỗi vị trí.

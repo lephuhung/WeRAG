@@ -1,16 +1,23 @@
 ---
 name: the-thuc-chung
-description: Quy tắc thể thức chung cho mọi văn bản hành chính theo Nghị định 30/2020/NĐ-CP — thẩm quyền ký (KT., TM., TL., TUQ., Q.), nơi nhận, số ký hiệu, địa danh ngày tháng, viết hoa, chính tả. Dùng cùng skill của loại văn bản.
+description: Quy tắc thể thức chung cho mọi văn bản hành chính theo Nghị định 30/2020/NĐ-CP — thẩm quyền ký (KT., TM., TL., TUQ., Q.), nơi nhận, số ký hiệu, địa danh ngày tháng, tên cơ quan. Dùng cùng skill của loại văn bản.
 ---
 
 # Thể thức chung (NĐ30/2020/NĐ-CP)
 
-Bạn nhận **dữ liệu thể thức** của văn bản (từng thành phần, từng dòng, kèm cỡ chữ, font, đậm/nghiêng, căn lề, cột trái/phải) và danh sách **lỗi đo đạc** do hệ thống đo từ file.
+Bạn nhận **hồ sơ phán đoán** của văn bản do hệ thống lập từ file .docx:
 
-- Lỗi đo đạc (cỡ chữ, font, căn lề, lề trang, khổ giấy, vị trí cột) là số đo chính xác: **giữ nguyên, không chấm lại, không bác bỏ**. Các mục ở "Mục đo đạc đã đạt" là **đạt** — không báo lỗi cỡ chữ, font, căn lề cho chúng.
-- **Không tự đặt ra quy định định dạng** (ví dụ "toàn bộ văn bản cỡ 12-13"): chỉ nêu lỗi định dạng khi skill ghi rõ quy định cho đúng thành phần đó (ví dụ cơ quan chủ quản không in đậm) và dữ liệu cho thấy vi phạm.
-- Dòng kết thúc bằng "…" là đã bị lược bớt khi trích: phần bị cắt không phải lỗi chính tả.
-- Phần của bạn: các yêu cầu cần **hiểu nội dung** dưới đây và trong skill của loại văn bản. Chỉ kết luận từ chữ có trong dữ liệu; thiếu dữ liệu thì nói "không xác định được", không đoán.
+- **Lỗi đo được / Cảnh báo đo được / Đã đo đạt**: kết quả đo font, cỡ chữ, đậm/nghiêng, căn lề, vị trí cột, lề trang, khổ giấy, thành phần bắt buộc. Đây là kết quả **cuối cùng**: giữ nguyên các lỗi đo được, không chấm lại, không bác bỏ; mục "Đã đo đạt" là **đạt** — không nêu lỗi định dạng cho chúng.
+- **Thành phần**: chữ của từng thành phần, theo vị trí (ô số theo NĐ30 Phụ lục I, cột trái/phải). Hồ sơ **không** ghi font, cỡ chữ, căn lề; chỉ ghi `[đậm]`/`[nghiêng]` cho cơ quan chủ quản, căn cứ, khối ký, nơi nhận — dòng không có thẻ là chữ đứng, không đậm. Quốc hiệu, tiêu ngữ và chữ của thân văn bản không được trích — không đánh giá chúng.
+- **Thân văn bản**: chỉ có số đoạn và các **dòng mốc** (mở đầu, đề mục cấp 1, câu kết, đoạn cuối, và dòng riêng của loại văn bản như `Điều`, `QUYẾT ĐỊNH:`). Các đoạn khác không được trích.
+- **Không có**: thành phần không tìm thấy, chia theo bắt buộc / không bắt buộc với loại văn bản.
+
+Quy tắc khi đánh giá:
+
+- **Không tự đặt ra quy định định dạng** (ví dụ "toàn bộ văn bản cỡ 12-13"); định dạng đã do hệ thống đo.
+- **Chính tả do công cụ khác kiểm tra — không nêu lỗi chính tả**, kể cả dấu, viết hoa, lặp từ.
+- Dòng kết thúc bằng "…" là đã bị lược bớt khi trích: phần bị cắt không phải lỗi.
+- Phần của bạn: các yêu cầu cần **hiểu nội dung** dưới đây và trong skill của loại văn bản. Chỉ kết luận từ chữ có trong hồ sơ. Điều gì hồ sơ không cho thấy (ví dụ không có dòng mốc nào là Điều cuối) thì ghi **"không xác định được từ dữ liệu"**, không đoán và không coi là lỗi.
 - Mỗi lỗi nêu: quy định, dòng vi phạm (trích nguyên văn), cách sửa.
 
 ## 1. Thẩm quyền ký (Điều 13)
@@ -32,7 +39,7 @@ Lỗi cần bắt:
 - Chức vụ sau `KT.` không khớp chức vụ cấp phó (`KT. GIÁM ĐỐC` / `PHÓ TRƯỞNG PHÒNG`).
 - Văn bản của cơ quan làm việc theo chế độ tập thể ký mà thiếu `TM.`.
 - Viết tắt sai: `K/T`, `Thay mặt`, `T/M`, `T.L` — phải là `KT.`, `TM.`, `TL.`, `TUQ.`, `Q.` (in hoa, có dấu chấm).
-- Họ tên người ký: chữ thường, đậm; không ghi học hàm, học vị trước họ tên (lực lượng vũ trang được ghi cấp bậc, ví dụ "Trung tá Bùi Anh Việt").
+- Họ tên người ký: không ghi học hàm, học vị trước họ tên (lực lượng vũ trang được ghi cấp bậc, ví dụ "Trung tá Bùi Anh Việt").
 
 ## 2. Nơi nhận
 
@@ -55,22 +62,16 @@ Lỗi cần bắt:
 - Ngày dưới 10 và tháng 1, 2 ghi thêm số 0 phía trước (`ngày 05 tháng 01 năm 2026`); tháng 3 đến 12 không thêm 0 (`tháng 7`, không phải `tháng 07`).
 - Ngày tháng không hợp lệ (ngày 31 tháng 4…) → lỗi.
 
-## 5. Quốc hiệu, tiêu ngữ, tên cơ quan
+## 5. Tên cơ quan
 
-- Quốc hiệu đúng nguyên văn `CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM`; tiêu ngữ đúng `Độc lập - Tự do - Hạnh phúc` (viết hoa chữ đầu mỗi cụm, giữa các cụm có gạch nối và cách chữ).
-- Tên cơ quan chủ quản in hoa, không đậm; tên cơ quan ban hành in hoa, đậm. Tên cơ quan viết tắt chỉ dùng cho cơ quan chủ quản khi quá dài (ví dụ `UBND TỈNH ...`).
-
-## 6. Viết hoa và chính tả
-
-- Rà toàn bộ các dòng có trong dữ liệu: lỗi chính tả, sai dấu ("quy đinh" → "quy định"), ký tự lạ lọt vào chữ ("Chính p\`hủ" → "Chính phủ"), lặp từ, thiếu dấu câu cuối đoạn.
-- Viết hoa (Phụ lục II): chữ cái đầu câu, đầu đoạn; tên riêng, tên cơ quan tổ chức (viết hoa chữ cái đầu của các từ chỉ loại hình và tên riêng: "Ủy ban nhân dân tỉnh Hà Tĩnh", "Phòng Tham mưu"); tên văn bản khi viết đầy đủ ("Luật An ninh mạng", "Nghị định số 13/2023/NĐ-CP"). Không viết hoa tùy tiện danh từ chung giữa câu.
-- Trích dẫn văn bản: ghi đủ loại, số ký hiệu, ngày ban hành, cơ quan ban hành, trích yếu khi nhắc lần đầu.
+- Tên cơ quan chủ quản in hoa, **không đậm** (dòng có thẻ `[đậm]` là lỗi); tên cơ quan ban hành in hoa (đậm đã được đo). Tên cơ quan viết tắt chỉ dùng cho cơ quan chủ quản khi quá dài (ví dụ `UBND TỈNH ...`).
+- Cơ quan chủ quản phải là cơ quan cấp trên **khác** cơ quan ban hành; văn bản của UBND, HĐND thường không có cơ quan chủ quản.
 
 ## Bảng kiểm bắt buộc
 
-Đi lần lượt **từng mục** dưới đây trên dữ liệu, không bỏ mục nào. Câu trả lời phải có phần **Bảng kiểm**: mỗi mục một dòng `Đạt` hoặc `Lỗi: <tóm tắt>`.
+Đi lần lượt **từng mục** dưới đây trên hồ sơ, không bỏ mục nào. Phần **Bảng kiểm** của câu trả lời được hệ thống đọc tự động: mỗi mục **một dòng**, bắt đầu bằng số thứ tự, rồi `Đạt` (có thể kèm ghi chú, ví dụ `Đạt (không áp dụng)`), `Cảnh báo: <tóm tắt>`, `Lỗi: <tóm tắt>` hoặc `Không xác định được từ dữ liệu`. Ví dụ: `2. Ký thay — Lỗi: "PHÓ TRƯỞNG PHÒNG" không có dòng "KT. TRƯỞNG PHÒNG" phía trên`. Dòng của mục đạt không chứa chữ `Lỗi:`.
 
-1. Thành phần nào trong "Không tìm thấy" là bắt buộc với loại văn bản này? Mỗi thành phần bắt buộc bị thiếu là một lỗi.
+1. Thành phần bắt buộc: hồ sơ ghi "Không có (bắt buộc với loại này)" thì mỗi thành phần đó là một lỗi (đã đo — nêu lại, không thêm). Không có dòng đó → `Đạt`.
 2. **Ký thay.** Tìm dòng chức vụ bắt đầu bằng `PHÓ` (⏎ là xuống dòng trong cùng một đoạn).
    - **Đạt** nếu không có dòng `PHÓ`, hoặc dòng **ngay trên** nó bắt đầu bằng `KT.` và chức vụ sau `KT.` trùng phần sau chữ `PHÓ`.
      Ví dụ đạt: `KT. TRƯỞNG PHÒNG` rồi `PHÓ TRƯỞNG PHÒNG`; `TM. ỦY BAN NHÂN DÂN` / `KT. CHỦ TỊCH` / `PHÓ CHỦ TỊCH`.
@@ -81,16 +82,14 @@ Lỗi cần bắt:
    - **Lỗi** khi không có dòng nào như vậy (ví dụ chỉ có `- Như trên;` và `- Lưu: ...`, hoặc chỉ có `- Phó Trưởng phòng;`). Có người đứng đầu nhưng thiếu "để báo cáo" → **cảnh báo**, không phải lỗi.
 4. Nơi nhận: dòng lưu có chữ **VT** (Văn thư) ngay sau `Lưu:` không? `- Lưu: VT, TCHC.` là đúng; `- Lưu: TCHC.` hay `- Lưu: P.KH (B2).` là **lỗi** (thiếu VT) dù đã có dòng lưu. Mỗi dòng có bắt đầu bằng `- ` (gạch đầu dòng **và** dấu cách) và kết thúc bằng `;` / `.` không?
 5. Số ký hiệu, địa danh - ngày tháng đúng mục 3, 4.
-6. Yêu cầu riêng trong skill của loại văn bản (tên loại, trích yếu, căn cứ, bố cục…).
-7. Chính tả: đọc **từng dòng** dữ liệu, tìm từ sai dấu, sai vần, gõ nhầm, lặp từ. Ký tự lạ chen giữa chữ (\`, ~, ^) đã được hệ thống đo ở cảnh báo `text.stray_chars` — đưa vào phần chính tả với dòng trích nguyên văn.
+6. Yêu cầu riêng trong skill của loại văn bản (tên loại, trích yếu, căn cứ, bố cục theo dòng mốc…).
 
 ## Cách trả lời
 
 1. **Kết luận**: đạt / chưa đạt thể thức, số lỗi.
-2. **Bảng kiểm**: 7 mục ở trên, mỗi mục một dòng.
-3. **Lỗi** (bắt buộc sửa): gộp lỗi đo đạc và lỗi bạn phát hiện, nhóm theo thành phần; mỗi lỗi: quy định → dòng vi phạm → cách sửa.
+2. **Bảng kiểm**: 6 mục ở trên, mỗi mục một dòng theo định dạng đã nêu.
+3. **Lỗi** (bắt buộc sửa): gộp lỗi đo được và lỗi bạn phát hiện, nhóm theo thành phần; mỗi lỗi: quy định → dòng vi phạm → cách sửa.
 4. **Cảnh báo** (nên sửa).
-5. **Chính tả**: liệt kê từng lỗi `sai → đúng`.
-6. Nhắc: con dấu, chữ ký, số trang cần rà soát thủ công trên bản in.
+5. Nhắc: chính tả do công cụ kiểm tra chính tả rà riêng; con dấu, chữ ký, số trang cần rà soát thủ công trên bản in.
 
-Không chép lại dữ liệu thể thức hay nội dung skill vào câu trả lời; khi trích dòng vi phạm, giữ **nguyên văn** (kể cả ký tự sai), không tự sửa trong phần trích.
+Không chép lại hồ sơ hay nội dung skill vào câu trả lời; khi trích dòng vi phạm, giữ **nguyên văn** (kể cả ký tự sai), không tự sửa trong phần trích.

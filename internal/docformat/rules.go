@@ -49,6 +49,8 @@ type RuleSet struct {
 	OptionalComponents []string    `json:"optional_components"`
 	Order              []string    `json:"order"`
 	Checks             []RuleCheck `json:"checks"`
+	// Anchors pick the body lines shown to the judgment model (anchors.go).
+	Anchors []Anchor `json:"anchors,omitempty"`
 }
 
 // CheckByID returns the rule with the given id, nil when the set has none.
@@ -131,7 +133,7 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		return nil, err
 	}
 	for k, v := range specRaw {
-		if k != "checks" {
+		if k != "checks" && k != "anchors" {
 			merged[k] = v
 		}
 	}
@@ -161,6 +163,7 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 			rs.Checks = append(rs.Checks, c)
 		}
 	}
+	rs.Anchors = mergeAnchors(base.Anchors, spec.Anchors)
 	rs.Type = docType
 	if spec.Type != "" {
 		rs.Type = spec.Type

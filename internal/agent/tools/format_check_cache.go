@@ -103,9 +103,12 @@ func UseFormatCheckRedis(rdb *redis.Client) {
 }
 
 // formatCheckKey identifies a check: the file bytes, the model that labels
-// and judges it, and the requested rule set ("" = detected).
+// and judges it, the requested rule set ("" = detected) and the skills,
+// rules and evaluator prompt it was judged with (docformat.SkillsDigest),
+// so editing a skill invalidates the cached evaluations.
 func formatCheckKey(content []byte, model, docType string) string {
-	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType))
+	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType)) +
+		"|" + docformat.SkillsDigest()
 }
 
 func (c *formatCheckCache) redisGet(ctx context.Context, key string, into interface{}) bool {

@@ -41,5 +41,25 @@
       "desc": "Biên bản có thể có nhiều người ký (thư ký bên trái, chủ trì bên phải)",
       "severity": "error"
     }
+  ],
+  "anchors": [
+    {
+      "id": "time_place",
+      "regex": "^(HOM NAY|VAO (HOI|LUC)|THOI GIAN|DIA DIEM)",
+      "max": 3,
+      "desc": "thời gian, địa điểm"
+    },
+    {
+      "id": "participants",
+      "regex": "^THANH PHAN|^CHU TRI|^CHU TOA|^THU KY",
+      "max": 6,
+      "desc": "thành phần, chủ trì, thư ký"
+    },
+    {
+      "id": "end",
+      "regex": "KET THUC (VAO )?(HOI|LUC)|BIEN BAN (DUOC )?LAP THANH",
+      "max": 2,
+      "desc": "kết thúc biên bản"
+    }
   ]
 }
