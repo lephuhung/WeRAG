@@ -9,10 +9,10 @@ import (
 )
 
 // LegalHistoryFunc returns the amendment history of the legal provisions in
-// the given retrieved chunks that the answer relies on — a Markdown block
-// appended to the answer — or "" when there is none. It reads the
-// amendment metadata stored at ingest, so the history does not depend on
-// the model following a prompt rule.
+// the given retrieved chunks that the answer relies on, and a note on the
+// cited documents the catalogue marks fully expired — Markdown appended to
+// the answer — or "" when there is none. It reads stored metadata, so it
+// does not depend on the model following a prompt rule.
 type LegalHistoryFunc func(ctx context.Context, chunkIDs []string, answer string) string
 
 // SetLegalHistory installs the amendment-history appender.
@@ -29,11 +29,8 @@ func (e *AgentEngine) appendLegalHistory(ctx context.Context, state *types.Agent
 	if e.legalHistory == nil || e.eventBus == nil || answerID == "" || state.FinalAnswer == "" {
 		return
 	}
-	ids := toolResultChunkIDs(state.RoundSteps)
-	if len(ids) == 0 {
-		return
-	}
-	block := e.legalHistory(ctx, ids, state.FinalAnswer)
+	// an answer without retrieved chunks still gets the validity note
+	block := e.legalHistory(ctx, toolResultChunkIDs(state.RoundSteps), state.FinalAnswer)
 	if block == "" {
 		return
 	}

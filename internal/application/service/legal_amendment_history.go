@@ -101,6 +101,23 @@ func LegalAmendmentHistory(
 			add(l)
 		}
 	}
+	// the amendments of a document no longer in force are not its current
+	// rule; LegalValidityNote reports the document instead
+	if len(lines) > 0 {
+		var bases []string
+		for _, l := range lines {
+			bases = append(bases, strings.SplitN(l.key, "|", 2)[0])
+		}
+		if expired := fullyExpiredDocs(ctx, h.db, bases); len(expired) > 0 {
+			kept := lines[:0]
+			for _, l := range lines {
+				if _, gone := expired[vietnamese_legal.CatalogNumberKey(strings.SplitN(l.key, "|", 2)[0])]; !gone {
+					kept = append(kept, l)
+				}
+			}
+			lines = kept
+		}
+	}
 	if len(lines) == 0 {
 		return ""
 	}

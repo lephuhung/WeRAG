@@ -25,7 +25,8 @@ func (s *agentService) legalHistoryFunc(
 	}
 	db := s.db
 	return func(ctx context.Context, chunkIDs []string, answer string) string {
-		return LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, types.PromptNow())
+		history := LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, types.PromptNow())
+		return history + LegalValidityNote(ctx, db, answer)
 	}
 }
 
@@ -76,11 +77,8 @@ func (b *legalHistoryBus) Emit(ctx context.Context, evt types.Event) error {
 	if !data.Done || strings.TrimSpace(answer) == "" || ctx.Err() != nil {
 		return b.EventBusInterface.Emit(ctx, evt)
 	}
-	ids := b.chunkIDs()
-	if len(ids) == 0 {
-		return b.EventBusInterface.Emit(ctx, evt)
-	}
-	block := b.history(ctx, ids, answer)
+	// no chunks still gets the validity note
+	block := b.history(ctx, b.chunkIDs(), answer)
 	if block == "" {
 		return b.EventBusInterface.Emit(ctx, evt)
 	}
