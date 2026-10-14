@@ -17,7 +17,8 @@ class DocType(NamedTuple):
     slug: str
     name: str            # display name, e.g. "Kế hoạch"
     group: str           # "hanh_chinh" (NĐ30 Điều 7) | "qppl"
-    symbols: tuple       # ký hiệu codes in số ký hiệu
+    symbols: tuple       # ký hiệu codes in số ký hiệu; the first is the
+                         # Phụ lục III code, later ones are aliases
 
 
 HANH_CHINH = "hanh_chinh"
@@ -43,12 +44,12 @@ DOC_TYPES = (
     DocType("hop_dong", "Hợp đồng", HANH_CHINH, ("HĐ",)),
     DocType("cong_van", "Công văn", HANH_CHINH, ()),
     DocType("cong_dien", "Công điện", HANH_CHINH, ("CĐ",)),
-    DocType("ban_ghi_nho", "Bản ghi nhớ", HANH_CHINH, ("GN",)),
-    DocType("ban_thoa_thuan", "Bản thỏa thuận", HANH_CHINH, ("TTh",)),
+    DocType("ban_ghi_nho", "Bản ghi nhớ", HANH_CHINH, ("BGN", "GN")),
+    DocType("ban_thoa_thuan", "Bản thỏa thuận", HANH_CHINH, ("BTT", "TTh")),
     DocType("giay_uy_quyen", "Giấy ủy quyền", HANH_CHINH, ("GUQ",)),
     DocType("giay_moi", "Giấy mời", HANH_CHINH, ("GM",)),
     DocType("giay_gioi_thieu", "Giấy giới thiệu", HANH_CHINH, ("GGT",)),
-    DocType("giay_nghi_phep", "Giấy nghỉ phép", HANH_CHINH, ("NP",)),
+    DocType("giay_nghi_phep", "Giấy nghỉ phép", HANH_CHINH, ("GNP", "NP")),
     DocType("phieu_gui", "Phiếu gửi", HANH_CHINH, ("PG",)),
     DocType("phieu_chuyen", "Phiếu chuyển", HANH_CHINH, ("PC",)),
     DocType("phieu_bao", "Phiếu báo", HANH_CHINH, ("PB",)),

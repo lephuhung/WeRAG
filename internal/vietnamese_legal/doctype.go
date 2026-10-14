@@ -37,7 +37,9 @@ type DocTypeDef struct {
 	Name  string // display name, e.g. "Kế hoạch"
 	Group DocTypeGroup
 	// Symbols are the ký hiệu codes used in số ký hiệu ("KH" in
-	// "45/KH-UBND"). Case and Đ are significant: HĐ ≠ HD, ĐA ≠ DA.
+	// "45/KH-UBND"). Case and Đ are significant: HĐ ≠ HD, ĐA ≠ DA. The
+	// first is the Phụ lục III code; later ones are aliases still seen in
+	// practice (GN for BGN, TTh for BTT, NP for GNP).
 	Symbols []string
 	// Legacy marks the types recognised before the NĐ30 registry existed.
 	// They keep the old loose matching (keyword anywhere in a reference,
@@ -69,12 +71,12 @@ var DocTypes = []DocTypeDef{
 	{"hop_dong", "Hợp đồng", DocTypeGroupHanhChinh, []string{"HĐ"}, false},
 	{"cong_van", "Công văn", DocTypeGroupHanhChinh, nil, false},
 	{"cong_dien", "Công điện", DocTypeGroupHanhChinh, []string{"CĐ"}, false},
-	{"ban_ghi_nho", "Bản ghi nhớ", DocTypeGroupHanhChinh, []string{"GN"}, false},
-	{"ban_thoa_thuan", "Bản thỏa thuận", DocTypeGroupHanhChinh, []string{"TTh"}, false},
+	{"ban_ghi_nho", "Bản ghi nhớ", DocTypeGroupHanhChinh, []string{"BGN", "GN"}, false},
+	{"ban_thoa_thuan", "Bản thỏa thuận", DocTypeGroupHanhChinh, []string{"BTT", "TTh"}, false},
 	{"giay_uy_quyen", "Giấy ủy quyền", DocTypeGroupHanhChinh, []string{"GUQ"}, false},
 	{"giay_moi", "Giấy mời", DocTypeGroupHanhChinh, []string{"GM"}, false},
 	{"giay_gioi_thieu", "Giấy giới thiệu", DocTypeGroupHanhChinh, []string{"GGT"}, false},
-	{"giay_nghi_phep", "Giấy nghỉ phép", DocTypeGroupHanhChinh, []string{"NP"}, false},
+	{"giay_nghi_phep", "Giấy nghỉ phép", DocTypeGroupHanhChinh, []string{"GNP", "NP"}, false},
 	{"phieu_gui", "Phiếu gửi", DocTypeGroupHanhChinh, []string{"PG"}, false},
 	{"phieu_chuyen", "Phiếu chuyển", DocTypeGroupHanhChinh, []string{"PC"}, false},
 	{"phieu_bao", "Phiếu báo", DocTypeGroupHanhChinh, []string{"PB"}, false},

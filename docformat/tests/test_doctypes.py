@@ -34,6 +34,9 @@ class DocTypesTest(unittest.TestCase):
             "Số: 3/HD-SYT": "huong_dan", "Số: 9/ĐA-UBND": "de_an",
             "Số: 9/DA-BQL": "du_an", "Số: 1/QyĐ-UBND": "quy_dinh",
             "Số: 8/TTr-UBND": "to_trinh", "Số: 2/TTh-UBND": "ban_thoa_thuan",
+            "Số: 2/BTT-UBND": "ban_thoa_thuan", "Số: 4/BGN-UBND": "ban_ghi_nho",
+            "Số: 4/GN-UBND": "ban_ghi_nho", "Số: 6/GNP-SNV": "giay_nghi_phep",
+            "Số: 6/NP-SNV": "giay_nghi_phep",
             "Số: 12/QD-UBND": "quyet_dinh",  # Đ lost to the font
             "Số: 53/2022/NĐ-CP": "nghi_dinh", "Số: 7/CĐ-TTg": "cong_dien",
             "Số: 1234/UBND-VP": "cong_van",

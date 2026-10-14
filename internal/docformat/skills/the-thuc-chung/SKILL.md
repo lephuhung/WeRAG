@@ -59,7 +59,8 @@ Lỗi cần bắt:
 ## 4. Địa danh, ngày tháng
 
 - Dạng `<Địa danh>, ngày ... tháng ... năm ...`; địa danh là tên chính thức của đơn vị hành chính nơi cơ quan đóng trụ sở.
-- Ngày dưới 10 và tháng 1, 2 ghi thêm số 0 phía trước (`ngày 05 tháng 01 năm 2026`); tháng 3 đến 12 không thêm 0 (`tháng 7`, không phải `tháng 07`).
+- Ngày dưới 10 và tháng 1, 2 **phải** ghi thêm số 0 phía trước (`ngày 05 tháng 01 năm 2026`): thiếu số 0 ở ngày dưới 10 hoặc tháng 1, 2 (`ngày 5`, `tháng 1`) → lỗi.
+- Tháng 3 đến 12 thường viết không có số 0 (`tháng 7`). Nghị định không cấm thêm số 0, nên `tháng 07` chỉ là **cảnh báo** (nên ghi `tháng 7`), **không phải lỗi**.
 - Ngày tháng không hợp lệ (ngày 31 tháng 4…) → lỗi.
 
 ## 5. Tên cơ quan

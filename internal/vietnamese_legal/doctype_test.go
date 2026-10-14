@@ -37,10 +37,25 @@ func TestDocTypesRegistry(t *testing.T) {
 		"QĐ": "quyet_dinh", "QyĐ": "quy_dinh", "TTr": "to_trinh",
 		"TTh": "ban_thoa_thuan", "TT": "thong_tu", "CTr": "chuong_trinh",
 		"CT": "chi_thi", "NĐ": "nghi_dinh",
+		// Phụ lục III codes and the older aliases
+		"BGN": "ban_ghi_nho", "GN": "ban_ghi_nho", "BTT": "ban_thoa_thuan",
+		"GNP": "giay_nghi_phep", "NP": "giay_nghi_phep",
 	} {
 		if d := DocTypeBySymbol(code); d == nil || d.Slug != want {
 			t.Errorf("DocTypeBySymbol(%q) = %v, want %s", code, d, want)
 		}
+	}
+}
+
+func TestDocTypePhuLucIIICodeFirst(t *testing.T) {
+	for slug, want := range map[string]string{"ban_ghi_nho": "BGN", "ban_thoa_thuan": "BTT", "giay_nghi_phep": "GNP"} {
+		d := DocTypeBySlug(slug)
+		if d == nil || len(d.Symbols) < 2 || d.Symbols[0] != want {
+			t.Errorf("%s: Symbols = %v, want %s first", slug, d, want)
+		}
+	}
+	if got := RestoreDocumentNumberSymbol("12/BGN-UBND", "ban_ghi_nho"); got != "12/BGN-UBND" {
+		t.Errorf("RestoreDocumentNumberSymbol = %q", got)
 	}
 }
 
