@@ -68,6 +68,31 @@ function errorText(e: unknown) {
 
 /* ---------- Wiki link graph ---------- */
 
+const WIKI_COLORS: Record<string, [string, string]> = {
+  document: ["#64748b", "#475569"],
+  entity: ["#a855f7", "#7e22ce"],
+  concept: ["#38bdf8", "#0284c7"],
+  synthesis: ["#f59e0b", "#b45309"],
+  comparison: ["#f43f5e", "#be123c"],
+  index: ["#0f766e", "#134e4a"],
+  field: ["#10b981", "#047857"],
+  agency: ["#6366f1", "#4338ca"],
+  page: ["#94a3b8", "#64748b"],
+};
+
+/* wikiNodeType maps a page to its colour group. Catalogue-mode wikis only
+ * have summary and index pages, so index pages split by slug: lĩnh vực,
+ * cơ quan ban hành, or the main index. */
+function wikiNodeType(pageType: string, slug: string) {
+  if (pageType === "summary") return "document";
+  if (pageType === "index") {
+    if (slug.startsWith("linh-vuc")) return "field";
+    if (slug.startsWith("co-quan")) return "agency";
+    return "index";
+  }
+  return WIKI_COLORS[pageType] ? pageType : "page";
+}
+
 function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug: string) => void }) {
   const { t } = useT();
   const [graph, setGraph] = useState<WikiGraphData | null>(null);
@@ -89,11 +114,13 @@ function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug:
   }, [kbId]);
 
   const types: Record<string, TypeStyle> = useMemo(
-    () => ({
-      document: { fill: "#334155", stroke: "#1e293b", label: t("graph.wiki.document") },
-      entity: { fill: "#a855f7", stroke: "#7e22ce", label: t("graph.wiki.entity") },
-      concept: { fill: "#38bdf8", stroke: "#0284c7", label: t("graph.wiki.concept") },
-    }),
+    () =>
+      Object.fromEntries(
+        Object.entries(WIKI_COLORS).map(([k, [fill, stroke]]) => [
+          k,
+          { fill, stroke, label: t(`graph.wiki.${k}` as LocaleKey) },
+        ])
+      ),
     [t]
   );
   const nodes: CanvasNode[] = useMemo(
@@ -101,10 +128,10 @@ function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug:
       (graph?.nodes ?? []).slice(0, 70).map((n) => ({
         id: n.slug,
         title: n.title,
-        type: types[n.page_type] ? n.page_type : "page",
+        type: wikiNodeType(n.page_type, n.slug),
         weight: n.link_count,
       })),
-    [graph, types]
+    [graph]
   );
   const edges: CanvasEdge[] = useMemo(() => graph?.edges ?? [], [graph]);
 
@@ -112,7 +139,7 @@ function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug:
     <GraphCanvas
       nodes={nodes}
       edges={edges}
-      types={{ ...types, page: { fill: "#10b981", stroke: "#059669", label: t("graph.wiki.page") } }}
+      types={types}
       loading={graph === null && !error}
       error={error}
       emptyText={t("graph.wikiEmpty")}
