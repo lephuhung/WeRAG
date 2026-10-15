@@ -82,15 +82,26 @@ const WIKI_COLORS: Record<string, [string, string]> = {
 
 /* wikiNodeType maps a page to its colour group. Catalogue-mode wikis only
  * have summary and index pages, so index pages split by slug: lĩnh vực,
- * cơ quan ban hành, or the main index. */
+ * cơ quan ban hành, or the main index. page_type may list several
+ * comma-separated types (types.SplitWikiPageTypes); the first known wins. */
+const CATALOGUE_HUBS: [string, string][] = [
+  ["linh-vuc", "field"],
+  ["co-quan", "agency"],
+];
+
 function wikiNodeType(pageType: string, slug: string) {
-  if (pageType === "summary") return "document";
-  if (pageType === "index") {
-    if (slug.startsWith("linh-vuc")) return "field";
-    if (slug.startsWith("co-quan")) return "agency";
-    return "index";
+  for (const raw of (pageType ?? "").split(",")) {
+    const type = raw.trim();
+    if (type === "summary") return "document";
+    if (type === "index") {
+      for (const [hub, group] of CATALOGUE_HUBS) {
+        if (slug === hub || slug.startsWith(`${hub}/`)) return group;
+      }
+      return "index";
+    }
+    if (WIKI_COLORS[type] && type !== "page") return type;
   }
-  return WIKI_COLORS[pageType] ? pageType : "page";
+  return "page";
 }
 
 function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug: string) => void }) {
