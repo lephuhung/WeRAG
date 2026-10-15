@@ -41,6 +41,9 @@ type Handler struct {
 	// usageGuard refuses a turn when the caller's usage package does not
 	// cover it (usage packages phase 2). Nil skips the check.
 	usageGuard interfaces.UsageGuard
+	// contextUsage answers the chat UI's context indicator
+	// (GET /sessions/:id/context-usage). Nil answers 404.
+	contextUsage *service.SessionContextUsageService
 	// artifactCollector drains skill-generated files from the session sandbox
 	// after an agent turn completes. May be nil when the sandbox backend does
 	// not support artifact collection; handlers must check before using.
@@ -109,6 +112,7 @@ func NewHandler(
 	auditLog interfaces.AuditLogService,
 	documentWorkspaces interfaces.DocumentWorkspaceService,
 	usageGuard interfaces.UsageGuard,
+	contextUsage *service.SessionContextUsageService,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -128,6 +132,7 @@ func NewHandler(
 		temporaryDocuments:    temporaryDocuments,
 		documentWorkspaces:    documentWorkspaces,
 		usageGuard:            usageGuard,
+		contextUsage:          contextUsage,
 		artifactCollector:     artifactCollector,
 		workspaceCheckpointer: workspaceCheckpointer,
 		sandboxIDLookup:       sandboxIDLookup,

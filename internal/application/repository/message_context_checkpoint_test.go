@@ -44,6 +44,27 @@ func TestGetLatestContextCheckpointReturnsTheNewestInTheSession(t *testing.T) {
 	require.Equal(t, "a1", got.ID)
 }
 
+// A checkpoint covers the completed turns at or before it in its session.
+func TestCountCompletedTurnsThroughCountsTheSessionsTurnsUpToTheBoundary(t *testing.T) {
+	repo, db := newMessageRepositoryForForkTest(t)
+	ctx := context.Background()
+	base := time.Date(2026, 9, 18, 9, 0, 0, 0, time.UTC)
+
+	seedMessage(t, db, "u1", "s1", "user", base)
+	seedMessage(t, db, "a1", "s1", "assistant", base.Add(time.Second))
+	seedMessage(t, db, "a2", "s1", "assistant", base.Add(time.Minute))
+	seedMessage(t, db, "a3", "s1", "assistant", base.Add(2*time.Minute))
+	seedMessage(t, db, "stopped", "s1", "assistant", base.Add(30*time.Second))
+	seedMessage(t, db, "other", "s2", "assistant", base)
+	require.NoError(t, db.Model(&types.Message{}).
+		Where("id IN ?", []string{"u1", "a1", "a2", "a3", "other"}).
+		Update("is_completed", true).Error)
+
+	n, err := repo.CountCompletedTurnsThrough(ctx, "s1", base.Add(time.Minute), "a2")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n, "a1 and a2; not the user row, the unfinished turn or another session")
+}
+
 // The session guard keeps a stray turn ID from writing into another session,
 // and the role guard keeps it off user rows. Either way nothing was saved, and
 // the caller hears so instead of logging a checkpoint that does not exist.

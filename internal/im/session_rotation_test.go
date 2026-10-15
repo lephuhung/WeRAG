@@ -123,6 +123,11 @@ func (g *countingGuard) Entitlement(context.Context, uint64, string) (*types.Usa
 	return nil, nil
 }
 func (g *countingGuard) Enforced(context.Context) bool { return true }
+func (g *countingGuard) PreviewSession(
+	context.Context, uint64, string, string, types.SessionCapMode,
+) (*types.UsageSessionPreview, error) {
+	return &types.UsageSessionPreview{}, nil
+}
 
 // The QA worker reuses the check HandleMessage made: one guard call per
 // message, not two.

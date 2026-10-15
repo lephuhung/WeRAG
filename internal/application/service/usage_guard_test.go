@@ -336,3 +336,54 @@ func TestUsageGuardSessionWarningAtEightyPercent(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, grant.Session.Warning)
 }
+
+// The preview reports a used-up session instead of refusing it, and reads
+// the session counters even with enforcement off.
+func TestUsageGuardPreviewSessionNeverRefuses(t *testing.T) {
+	g := sessionCappedGuard(15, 10)
+	p, err := g.PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, p.Enforced)
+	require.Equal(t, "Basic", p.PlanName)
+	require.Equal(t, int64(15), p.Features.SessionMaxTurns)
+	require.True(t, p.Session.Reached)
+	require.False(t, p.Session.Soft)
+
+	p, err = g.PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapSoft)
+	require.NoError(t, err)
+	require.True(t, p.Session.Soft)
+
+	g.settings = enforcingSettings{on: false}
+	p, err = g.PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, p.Enforced)
+	require.True(t, p.Features.IsZero())
+	require.Equal(t, int64(15), p.Session.Turns)
+	require.Zero(t, p.Session.MaxTurns)
+	require.False(t, p.Session.Reached)
+}
+
+// A caller CheckTurn would refuse is reported as denied, with the reason.
+func TestUsageGuardPreviewSessionReportsDenial(t *testing.T) {
+	g := newGuard(&fakeUsagePlanRepo{}, &countingRepo{}, true)
+	p, err := g.PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, p.Denied)
+	require.Equal(t, types.UsageDenialNoSubscription, p.DenialReason)
+
+	p, err = sessionCappedGuard(1, 1).PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, p.Denied)
+}
+
+// A SuperAdmin previews without caps and without the package lookup that
+// could create their subscription.
+func TestUsageGuardPreviewSessionSystemAdminUncapped(t *testing.T) {
+	g := sessionCappedGuard(3, 10)
+	ctx := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
+	p, err := g.PreviewSession(ctx, 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, p.Enforced)
+	require.True(t, p.Features.IsZero())
+	require.Equal(t, int64(3), p.Session.Turns)
+}

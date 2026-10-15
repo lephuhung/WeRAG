@@ -93,6 +93,13 @@ type UsageGuard interface {
 	Entitlement(ctx context.Context, tenantID uint64, userID string) (*types.UsageEntitlement, error)
 	// Enforced reports the usage.enforce setting.
 	Enforced(ctx context.Context) bool
+	// PreviewSession resolves the plan CheckTurn would apply to a turn of
+	// sessionID, and the session's lifetime counters, without counting,
+	// refusing or creating anything (read-only; for display). capMode only
+	// sets the preview's Session.Soft.
+	PreviewSession(
+		ctx context.Context, tenantID uint64, userID, sessionID string, capMode types.SessionCapMode,
+	) (*types.UsageSessionPreview, error)
 }
 
 // UsagePlanService is the SuperAdmin management surface for packages.

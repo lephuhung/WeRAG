@@ -141,6 +141,24 @@ type contextSummarySource interface {
 // keep the newest exchanges verbatim, so fewer are needed than without one.
 const summarizedHistoryRounds = 3
 
+// SummarizedHistoryRounds is summarizedHistoryRounds for callers outside
+// the pipeline (the context indicator reports it).
+const SummarizedHistoryRounds = summarizedHistoryRounds
+
+// LoadHistoryAndSummary is the history the LOAD_HISTORY stage gives the
+// next quick-answer turn of a session with maxRounds rounds: the context
+// summary, if any, and the raw rounds after it. It serves callers outside
+// the pipeline that report what that turn would carry (the chat UI's
+// context indicator). maxRounds <= 0 is no history.
+func LoadHistoryAndSummary(
+	ctx context.Context, messageService interfaces.MessageService, sessionID string, maxRounds int,
+) ([]*types.History, string, error) {
+	if maxRounds <= 0 {
+		return nil, "", nil
+	}
+	return loadHistoryAndSummary(ctx, messageService, sessionID, maxRounds, maxRounds*2+10)
+}
+
 // loadHistoryAndSummary is loadAndProcessHistory for a session that may
 // have a context summary (an agent compaction checkpoint, or the seed of a
 // continued session). With one, history is the summary plus at most
