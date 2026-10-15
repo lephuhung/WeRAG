@@ -128,18 +128,53 @@ class Pools:
         for p in a.clean or []:
             for r in read_jsonl(p):
                 self.clean.append(r["text"])
+        self.kb_max_uses = a.kb_max_uses
+        self.uses: dict = {}
         print(
             f"pools: kb_clean={len(self.kb_clean)} kb_pairs={len(self.kb_pairs)} pairs={len(self.pairs)} clean={len(self.clean)} queries={len(self.queries)}",
             file=sys.stderr,
         )
 
+    def _take(self, key, cap: int) -> bool:
+        """Count one use of key; past --kb-max-uses the item leaves its pool.
+        Without a cap, 312 real pairs repeated ~30x each and one OCR error
+        ("Chuyển viên" in 50 job-title rows) appeared 1,717 times in sft_v3."""
+        if not cap:
+            return True
+        n = self.uses.get(key, 0)
+        if n >= cap:
+            return False
+        self.uses[key] = n + 1
+        return True
+
+    def _draw_kb_pair(self):
+        while self.kb_pairs:
+            k = self.rng.randrange(len(self.kb_pairs))
+            r = self.kb_pairs[k]
+            errs = [("err", f["wrong"].lower(), f["correct"].lower()) for f in r["findings"]]
+            if self._take(("pair", r["noisy"]), self.kb_max_uses) and all(self._take(e, self.kb_max_uses * 10) for e in errs):
+                return r
+            self.kb_pairs.pop(k)
+        return None
+
+    def _draw_kb_clean(self):
+        while self.kb_clean:
+            k = self.rng.randrange(len(self.kb_clean))
+            if self._take(("clean", self.kb_clean[k]), self.kb_max_uses):
+                return self.kb_clean[k]
+            self.kb_clean.pop(k)
+        return None
+
     def draw(self, source: str, want_clean: bool) -> tuple[str, list[dict]]:
         rng = self.rng
         if source == "kb":
             if not want_clean and self.kb_pairs and rng.random() < 0.35:
-                r = rng.choice(self.kb_pairs)
-                return r["noisy"], r["findings"]
-            text = rng.choice(self.kb_clean)
+                r = self._draw_kb_pair()
+                if r:
+                    return r["noisy"], r["findings"]
+            text = self._draw_kb_clean()
+            if text is None:  # KB pool used up: fall back to the clean pool
+                text = rng.choice(self.clean)
         elif source == "pairs":
             if want_clean:
                 text = rng.choice(self.clean) if self.clean else rng.choice(self.pairs)["text"]
@@ -189,7 +224,7 @@ def build_sample(pools: Pools, a, rng: random.Random, system: str) -> dict:
     start = rng.randint(0, 400)
     all_clean = rng.random() < a.clean_batch_rate
     sources = ["kb", "pairs", "clean"]
-    weights = [a.mix[0] if pools.kb_clean else 0, a.mix[1] if (pools.pairs or pools.clean) else 0, a.mix[2] if pools.clean else 0]
+    weights = [a.mix[0] if (pools.kb_clean or pools.kb_pairs) else 0, a.mix[1] if (pools.pairs or pools.clean) else 0, a.mix[2] if pools.clean else 0]
     lines, findings = [], []
     for k in range(n):
         src = rng.choices(sources, weights=weights)[0]
@@ -228,6 +263,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kb")
     ap.add_argument("--kb-holdout", type=int, default=200, help="last N unchanged and N/2 changed KB rows are reserved for eval")
+    ap.add_argument("--kb-max-uses", type=int, default=0, help="cap on draws of one KB paragraph or pair (0 = no cap); one real error (wrong, correct) is capped at 10x this")
     ap.add_argument("--pairs", action="append")
     ap.add_argument("--clean", action="append")
     ap.add_argument("--queries", action="append", help="JSONL of short chat questions (\"text\")")

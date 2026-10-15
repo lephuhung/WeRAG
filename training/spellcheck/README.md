@@ -130,6 +130,56 @@ vsec drops by more than .02, rebuild with `--query-rate 0.25 --telex-weight 12
 checkpointing (embed-rerank holds 7.4 GB), no eval with transformers while
 training, and no `--merge` when disk is short (serve the LoRA instead).
 
+## Round 4: audited clean data and vbpl text
+
+A data audit of sft_v3 found that what v3.2 misses most are real-word
+errors (bổ→bố, tự→sự, đạt→đặt), and that the KB data worked against them:
+one OCR error ("Chuyển viên" in 50 job-title rows) appeared 1,717 times,
+and "clean" KB paragraphs still held errors (giảm sát, tới thiểu, đề/để)
+that taught the model to leave such words alone. Round 4 first fixes the
+data:
+
+- `--kb-max-uses N` in `build_dataset.py` caps the draws of one KB
+  paragraph or pair (one real error at 10×N); a used-up KB pool falls back
+  to the clean pool.
+- `audit_clean.py` has every clean paragraph read by two proofreaders (the
+  served spell model and Qwen3.6-35B). Both silent → clean; both flag the
+  same span with the same fix → fixed and also written as a mined real
+  error; anything else → dropped.
+- vbpl.vn text (official, not OCR) from the VBPL knowledge bases becomes
+  the in-domain clean pool: `kb_clean.py --strip-md` (vbpl chunks are
+  Markdown), `sample_paragraphs.py` leaves out any paragraph found in an
+  eval file or in the KB rows.
+
+```bash
+D=/home/orca/models/spellcheck-data; V=$D/v4
+# KB rows minus the eval hold-out (last 200 unchanged, last 100 changed), so the
+# audited file can be built with --kb-holdout 0 without leaking eval rows
+python3 -c "
+import json; rows=[json.loads(l) for l in open('$D/kb_corrected.jsonl')]
+u=[r for r in rows if not r['findings']]; c=[r for r in rows if r['findings']]
+hold={id(r) for r in u[-200:]}|{id(r) for r in c[-100:]}
+open('$V/kb_train.jsonl','w').writelines(json.dumps(r,ensure_ascii=False)+'\n' for r in rows if id(r) not in hold)"
+psql ... -Atc "select json_build_object('content', c.content) from chunks c join knowledge_bases k on k.id=c.knowledge_base_id
+  where k.name like 'VBPL%' and k.name not like '%thử nghiệm%' and c.deleted_at is null and c.chunk_type='text'
+  order by md5(c.id::text) limit 25000" > $V/vbpl_chunks.jsonl
+python kb_clean.py $V/vbpl_chunks.jsonl $V/vbpl_paragraphs_all.jsonl --strip-md --src vbpl
+python sample_paragraphs.py $V/vbpl_paragraphs_all.jsonl --exclude-eval $D/eval.jsonl --exclude-eval $D/round3/eval_v3.jsonl \
+  --exclude-eval $D/hf_compare.jsonl --exclude-kb $D/kb_corrected.jsonl --n 30000 --out $V/vbpl_paragraphs.jsonl
+for f in kb_train vbpl_paragraphs; do
+  python audit_clean.py run $V/$f.jsonl --out $V/${f%_paragraphs}_run_gemma.jsonl --api http://10.10.0.241:8003 --model-name spellcheck-gemma4-e4b-v32 --workers 8
+  python audit_clean.py run $V/$f.jsonl --out $V/${f%_paragraphs}_run_qwen.jsonl --api http://10.10.0.240:8000 --model-name Qwen/Qwen3.6-35B-A3B-FP8 --workers 4
+done   # resumable: rerun the same command to retry bad-JSON paragraphs
+python audit_clean.py merge $V/kb_train.jsonl --run-a $V/kb_run_gemma.jsonl --run-b $V/kb_run_qwen.jsonl --out $V/kb_audited.jsonl --mined $V/kb_mined.jsonl
+python audit_clean.py merge $V/vbpl_paragraphs.jsonl --run-a $V/vbpl_run_gemma.jsonl --run-b $V/vbpl_run_qwen.jsonl --out $V/vbpl_audited.jsonl --mined $V/vbpl_mined.jsonl
+# then build with --kb $V/kb_audited.jsonl --kb-holdout 0 --kb-max-uses 3 --clean $V/vbpl_audited.jsonl
+```
+
+Throughput: the spell model audits 30k paragraphs in 5 min; the 35B at 4
+workers takes about 3 h, so run it at night or keep the worker count low
+while people chat. KB audit result: 1,861 clean, 11 fixed (all "Chuyển
+viên" rows the first correction pass had left as clean), 87 dropped.
+
 ## Data from the chat gate
 
 When the chat gate cannot read a word (cascc) it asks the user: abbreviation,
