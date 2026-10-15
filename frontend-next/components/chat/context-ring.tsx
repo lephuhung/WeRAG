@@ -53,13 +53,13 @@ export function useContextUsage(sessionId: string | null, busy: boolean, refresh
     getContextUsage(sessionId)
       .then((u) => mine === seq.current && setUsage(u))
       .catch(() => mine === seq.current && setUsage(null));
+    // No cleanup cancels the request, on purpose: under React Strict Mode
+    // effects run, clean up and run again on mount, and the rerun sees the
+    // same state (shouldFetchContext says no), so cancelling here — or
+    // bumping seq in an unmount cleanup — would drop the only request and
+    // the ring would never show in dev. seq alone orders the responses; a
+    // late setUsage after unmount is a no-op.
   }, [sessionId, busy, refreshKey]);
-  useEffect(
-    () => () => {
-      seq.current += 1; // unmounted: drop whatever is in flight
-    },
-    [],
-  );
   return usage;
 }
 
