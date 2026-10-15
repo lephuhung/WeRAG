@@ -7,6 +7,7 @@ import (
 	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -390,6 +391,9 @@ func (r *sessionRepository) Delete(ctx context.Context, tenantID uint64, userID 
 		r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id),
 		userID,
 	).Delete(&types.Session{})
+	if res.Error == nil && res.RowsAffected > 0 {
+		r.dropSessionCounters(ctx, tenantID, []string{id})
+	}
 	return res.RowsAffected, res.Error
 }
 
@@ -402,6 +406,9 @@ func (r *sessionRepository) BatchDelete(ctx context.Context, tenantID uint64, us
 		r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids),
 		userID,
 	).Delete(&types.Session{})
+	if res.Error == nil && res.RowsAffected > 0 {
+		r.dropSessionCounters(ctx, tenantID, ids)
+	}
 	return res.RowsAffected, res.Error
 }
 
@@ -411,7 +418,29 @@ func (r *sessionRepository) DeleteAllByTenantID(ctx context.Context, tenantID ui
 		r.db.WithContext(ctx).Where("tenant_id = ?", tenantID),
 		userID,
 	).Delete(&types.Session{})
+	if res.Error == nil && res.RowsAffected > 0 {
+		r.dropSessionCounters(ctx, tenantID, nil)
+	}
 	return res.RowsAffected, res.Error
+}
+
+// dropSessionCounters removes the lifetime usage counters (scope
+// "session") of the tenant's deleted sessions among ids, or of all its
+// deleted sessions when ids is nil. They only serve the per-session caps of
+// a live session; the workspace and person counters keep what was spent.
+// Best-effort: a leftover row is harmless, so a failure is only logged.
+func (r *sessionRepository) dropSessionCounters(ctx context.Context, tenantID uint64, ids []string) {
+	deleted := r.db.Unscoped().Model(&types.Session{}).Select("id").
+		Where("tenant_id = ? AND deleted_at IS NOT NULL", tenantID)
+	if ids != nil {
+		deleted = deleted.Where("id IN ?", ids)
+	}
+	err := r.db.WithContext(ctx).
+		Where("scope_type = ? AND scope_id IN (?)", types.UsageScopeSession, deleted).
+		Delete(&types.UsageCounter{}).Error
+	if err != nil {
+		logger.Warnf(ctx, "Failed to delete the usage counters of deleted sessions (tenant %d): %v", tenantID, err)
+	}
 }
 
 // CreateForked persists a forked session and its copied history atomically.
@@ -449,6 +478,13 @@ func (r *sessionRepository) UpdateForkBootstrap(
 	return r.db.WithContext(ctx).Unscoped().Model(&types.Session{}).
 		Where("id = ?", sessionID).
 		Update("fork_bootstrap", b).Error
+}
+
+// ClearContextSeed empties sessions.context_seed.
+func (r *sessionRepository) ClearContextSeed(ctx context.Context, tenantID uint64, sessionID string) error {
+	return r.db.WithContext(ctx).Model(&types.Session{}).
+		Where("tenant_id = ? AND id = ?", tenantID, sessionID).
+		Update("context_seed", "").Error
 }
 
 // ListUnconsumedForks returns fork bootstraps the snapshot reaper should

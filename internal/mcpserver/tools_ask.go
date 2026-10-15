@@ -2,11 +2,13 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -203,6 +205,10 @@ func (s *Server) runQA(
 	if s.usageGuard != nil {
 		grant, err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID, session.ID, types.SessionCapHard)
 		if err != nil {
+			if isSessionLimitDenial(err) {
+				// an MCP client cannot press "open a new session": say what to do
+				return "", nil, fmt.Errorf("%w; %s", err, askSessionLimitHint)
+			}
 			return "", nil, err
 		}
 		ctx = types.WithUsageTurnGrant(ctx, grant)
@@ -440,4 +446,19 @@ func summarizeReferences(refs []*types.SearchResult) []askReference {
 		})
 	}
 	return out
+}
+
+// askSessionLimitHint tells an MCP client how to carry on once a session has
+// used up its plan's per-session cap.
+const askSessionLimitHint = "this conversation has reached its length limit: start a new session by " +
+	"calling ask again without session_id"
+
+// isSessionLimitDenial reports the guard's 429 for a used-up session.
+func isSessionLimitDenial(err error) bool {
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+	d, ok := appErr.Details.(types.UsageDenial)
+	return ok && d.Reason == types.UsageDenialSessionLimit
 }

@@ -138,6 +138,9 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// Same for the documents the user named with @: the editing tools in
 	// the detached run refuse a document that was not named.
 	mentionedDocumentsContextKey: true,
+	// Marks one CreateMessage call as a steered (injected) user row; read
+	// by the usage meter on the same context, meaningless for anything else.
+	steeredMessageContextKey: false,
 	// The document scope the router applied to this turn: read once by the
 	// prompt builder before the run starts, on the same context.
 	documentScopeContextKey: false,

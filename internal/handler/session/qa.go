@@ -72,6 +72,9 @@ type qaRequestContext struct {
 	// mentionedDocumentIDs are the editable documents (workspace IDs) the
 	// user named with @ in this turn, checked against the session.
 	mentionedDocumentIDs []string
+	// documents is what the entry's one listing of the session documents
+	// found (pinDocumentAssistantForTurn); unknown on paths that skip it.
+	documents sessionDocuments
 	// resourceRewriter turns internal storage references in the outbound stream
 	// into directly loadable URLs when the caller asks for `resource_urls=public`.
 	// Disabled (a pass-through) in the default handle mode.
@@ -209,7 +212,8 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// A session that holds an editable document belongs to the document
 	// assistant: another agent has no tools for the document, so a request
 	// from a stale tab or the API naming one is run by the assistant.
-	request.AgentID = h.pinDocumentAssistant(ctx, session, request.AgentID)
+	pinnedAgentID, documents := h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
+	request.AgentID = pinnedAgentID
 
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
@@ -439,6 +443,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		query:       request.Query,
 		session:     session,
 		customAgent: customAgent,
+		documents:   documents,
 		assistantMessage: &types.Message{
 			SessionID:        sessionID,
 			Role:             "assistant",
@@ -678,23 +683,47 @@ func (h *Handler) resolveAgent(
 // reopens on the next editor load and its text is still injected), else
 // agentID unchanged.
 func (h *Handler) pinDocumentAssistant(ctx context.Context, session *types.Session, agentID string) string {
-	if agentID == types.BuiltinDocumentAssistantID || session == nil ||
-		h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
-		return agentID
+	pinned, _ := h.pinDocumentAssistantForTurn(ctx, session, agentID)
+	return pinned
+}
+
+// sessionDocuments is what the QA entry learns about the session's documents
+// with its one listing: whether one was opened from the Word add-in (the
+// per-session cap only warns there, see sessionCapMode). known is false when
+// the listing did not happen or failed.
+type sessionDocuments struct {
+	known bool
+	word  bool
+}
+
+// pinDocumentAssistantForTurn is pinDocumentAssistant that also reports the
+// session's documents, so the turn lists them once.
+func (h *Handler) pinDocumentAssistantForTurn(
+	ctx context.Context, session *types.Session, agentID string,
+) (string, sessionDocuments) {
+	if session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
+		return agentID, sessionDocuments{known: true}
 	}
 	docs, err := h.documentWorkspaces.List(ctx, session.TenantID, session.ID)
-	if err != nil || len(docs) == 0 {
-		return agentID
+	if err != nil {
+		return agentID, sessionDocuments{}
+	}
+	info := sessionDocuments{known: true}
+	for _, d := range docs {
+		info.word = info.word || d.IsWordAddin()
+	}
+	if agentID == types.BuiltinDocumentAssistantID || len(docs) == 0 {
+		return agentID, info
 	}
 	ws := docs[0]
 	// the Word add-in also offers quick answer and reasoning: they run as
 	// themselves (no tools / reading only), see tools.WordAgentCapabilities
 	if types.IsWordGeneralAgent(agentID) && ws.IsWordAddin() {
-		return agentID
+		return agentID, info
 	}
 	logger.Infof(ctx, "Session %s holds document %q; agent %q replaced by the document assistant",
 		session.ID, ws.FileName, secutils.SanitizeForLog(agentID))
-	return types.BuiltinDocumentAssistantID
+	return types.BuiltinDocumentAssistantID, info
 }
 
 // mergeKnowledgeTargets merges request KB/knowledge IDs with @mentioned items into deduplicated slices.
@@ -1172,6 +1201,13 @@ func (h *Handler) rejectIfOtherAgentRunLive(ctx context.Context, reqCtx *qaReque
 func (h *Handler) sessionCapMode(ctx context.Context, reqCtx *qaRequestContext) types.SessionCapMode {
 	if reqCtx.customAgent != nil && reqCtx.customAgent.ID == types.BuiltinDocumentAssistantID {
 		return types.SessionCapSoft
+	}
+	// the entry already listed the session's documents (pinDocumentAssistant)
+	if reqCtx.documents.known {
+		if reqCtx.documents.word {
+			return types.SessionCapSoft
+		}
+		return types.SessionCapHard
 	}
 	if reqCtx.session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
 		return types.SessionCapHard

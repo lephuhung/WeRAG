@@ -438,46 +438,73 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 	return ctx
 }
 
-// checkUsage runs the usage-package pre-flight for the IM identity in ctx
-// and returns ctx carrying the turn's grant (the plan's per-turn caps).
-// IM runs as the workspace's synthetic user, so only workspace-level
-// subscriptions and pool limits apply.
-func (s *Service) checkUsage(ctx context.Context, sessionID string) (context.Context, error) {
+// imUsagePreflight is the one usage check of an IM message, made in
+// HandleMessage before the request is queued and handed to the QA worker on
+// its context, so the worker does not ask the guard a second time.
+type imUsagePreflight struct {
+	grant *types.UsageTurnGrant
+	err   error
+}
+
+type imUsagePreflightKey struct{}
+
+// preflightUsage runs the usage-package check for the IM identity in ctx and
+// the session. IM runs as the workspace's synthetic user, so only
+// workspace-level subscriptions and pool limits apply; the per-session cap is
+// soft (a reached cap is handled by rotateCappedSession, never refused).
+func (s *Service) preflightUsage(ctx context.Context, sessionID string) imUsagePreflight {
 	if s.usageGuard == nil {
-		return ctx, nil
+		return imUsagePreflight{}
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
 	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID, sessionID, types.SessionCapSoft)
-	if err != nil {
-		return ctx, fmt.Errorf("usage package: %w", err)
+	return imUsagePreflight{grant: grant, err: err}
+}
+
+// withUsagePreflight hands the preflight result to the QA worker.
+func withUsagePreflight(ctx context.Context, p imUsagePreflight) context.Context {
+	return context.WithValue(ctx, imUsagePreflightKey{}, p)
+}
+
+// checkUsage applies the usage check of this turn and returns ctx carrying
+// the turn's grant (the plan's per-turn caps). It reuses the preflight
+// HandleMessage made; a path without one (a caller that did not go through
+// HandleMessage) asks the guard itself.
+func (s *Service) checkUsage(ctx context.Context, sessionID string) (context.Context, error) {
+	p, ok := ctx.Value(imUsagePreflightKey{}).(imUsagePreflight)
+	if !ok {
+		p = s.preflightUsage(ctx, sessionID)
 	}
-	return types.WithUsageTurnGrant(ctx, grant), nil
+	if p.err != nil {
+		return ctx, fmt.Errorf("usage package: %w", p.err)
+	}
+	return types.WithUsageTurnGrant(ctx, p.grant), nil
 }
 
 // rotateCappedSession replaces a session that reached its plan's
-// per-session cap with a continuation of it (SessionService.ContinueSession,
-// seeded with its summary) and points the channel mapping at the new one
-// the way /clear retires a mapping: the old row is soft-deleted and a new
-// row with the same keys is created. Anything going wrong keeps the current
-// session, which IM then runs with the soft cap's warning only.
+// per-session cap (per the preflight) with a continuation of it
+// (SessionService.ContinueSession, seeded with its summary) and points the
+// channel mapping at the new one the way /clear retires a mapping: the old
+// row is soft-deleted and a new row with the same keys is created. It returns
+// the mapping, session and preflight the turn runs with.
+//
+// Two messages of one chat can arrive together and both see the cap. The old
+// mapping is retired only if it is still live (RowsAffected == 1); the loser
+// rolls back, deletes the continuation it made and runs in the winner's.
+// Anything else going wrong keeps the current session, which then runs with
+// the soft cap's warning only.
 func (s *Service) rotateCappedSession(
-	ctx context.Context, channelSession *ChannelSession, session *types.Session,
-) (*ChannelSession, *types.Session) {
-	if s.usageGuard == nil || channelSession == nil || session == nil {
-		return channelSession, session
-	}
-	tenantID, _ := types.TenantIDFromContext(ctx)
-	userID, _ := types.UserIDFromContext(ctx)
-	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID, session.ID, types.SessionCapSoft)
-	if err != nil || grant == nil || grant.Session == nil || !grant.Session.Reached {
-		// a refusal for another reason is reported by checkUsage
-		return channelSession, session
+	ctx context.Context, channelSession *ChannelSession, session *types.Session, pre imUsagePreflight,
+) (*ChannelSession, *types.Session, imUsagePreflight) {
+	if pre.err != nil || pre.grant == nil || pre.grant.Session == nil || !pre.grant.Session.Reached ||
+		channelSession == nil || session == nil {
+		return channelSession, session, pre
 	}
 	next, err := s.sessionService.ContinueSession(ctx, session)
 	if err != nil {
 		logger.Warnf(ctx, "[IM] Session %s reached its cap but could not be continued: %v", session.ID, err)
-		return channelSession, session
+		return channelSession, session, pre
 	}
 	mapping := *channelSession
 	mapping.ID = ""
@@ -485,23 +512,64 @@ func (s *Service) rotateCappedSession(
 	mapping.CreatedAt, mapping.UpdatedAt = time.Time{}, time.Time{}
 	mapping.DeletedAt = gorm.DeletedAt{}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&ChannelSession{}).Where("id = ?", channelSession.ID).
-			Update("deleted_at", time.Now()).Error; err != nil {
-			return err
+		res := tx.Model(&ChannelSession{}).Where("id = ? AND deleted_at IS NULL", channelSession.ID).
+			Update("deleted_at", time.Now())
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errIMRotationLost
 		}
 		return tx.Create(&mapping).Error
 	})
 	if err != nil {
-		logger.Warnf(ctx, "[IM] Session %s reached its cap; remapping the channel to %s failed: %v",
-			session.ID, next.ID, err)
-		if delErr := s.db.Where("id = ?", next.ID).Delete(next).Error; delErr != nil {
+		if delErr := s.db.Where("id = ?", next.ID).Delete(&types.Session{}).Error; delErr != nil {
 			logger.Warnf(ctx, "[IM] Failed to clean up unused session %s: %v", next.ID, delErr)
 		}
-		return channelSession, session
+		if errors.Is(err, errIMRotationLost) {
+			if cs, cur, ok := s.currentMapping(ctx, channelSession); ok {
+				logger.Infof(ctx, "[IM] Session %s was already continued by a concurrent message; using %s",
+					session.ID, cur.ID)
+				return cs, cur, freshSessionPreflight(pre, cur.ID)
+			}
+		}
+		logger.Warnf(ctx, "[IM] Session %s reached its cap; remapping the channel to %s failed: %v",
+			session.ID, next.ID, err)
+		return channelSession, session, pre
 	}
 	logger.Infof(ctx, "[IM] Session %s reached its cap (%d turns, %d tokens); channel continues in session %s",
-		session.ID, grant.Session.Turns, grant.Session.Tokens, next.ID)
-	return &mapping, next
+		session.ID, pre.grant.Session.Turns, pre.grant.Session.Tokens, next.ID)
+	return &mapping, next, freshSessionPreflight(pre, next.ID)
+}
+
+// errIMRotationLost: another message retired the mapping first.
+var errIMRotationLost = errors.New("channel session already rotated")
+
+// currentMapping re-reads the live mapping with the same keys as stale and
+// its session, after a concurrent rotation replaced stale.
+func (s *Service) currentMapping(ctx context.Context, stale *ChannelSession) (*ChannelSession, *types.Session, bool) {
+	var cs ChannelSession
+	if err := s.db.Where("platform = ? AND user_id = ? AND chat_id = ? AND thread_id = ? AND tenant_id = ? "+
+		"AND agent_id = ? AND deleted_at IS NULL",
+		stale.Platform, stale.UserID, stale.ChatID, stale.ThreadID, stale.TenantID, stale.AgentID).
+		First(&cs).Error; err != nil {
+		logger.Warnf(ctx, "[IM] Re-reading the channel mapping after a concurrent rotation failed: %v", err)
+		return nil, nil, false
+	}
+	cur, err := s.sessionService.GetSession(ctx, cs.SessionID)
+	if err != nil || cur == nil {
+		logger.Warnf(ctx, "[IM] Session %s of the rotated mapping unavailable: %v", cs.SessionID, err)
+		return nil, nil, false
+	}
+	return &cs, cur, true
+}
+
+// freshSessionPreflight is pre for a just-created continuation: same plan
+// features, and a session that has used nothing yet.
+func freshSessionPreflight(pre imUsagePreflight, sessionID string) imUsagePreflight {
+	grant := *pre.grant
+	grant.Session = types.NewUsageSessionStatus(grant.Features, sessionID, 0, 0)
+	return imUsagePreflight{grant: &grant}
 }
 
 // imMCPAuthService identifies an OAuth-enabled MCP service that the IM user has
@@ -1898,7 +1966,10 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 	// A session that used up its plan's per-session cap is not refused in
 	// IM: the channel moves on to a fresh session that carries the old one's
 	// summary, like /clear but without forgetting.
-	channelSession, session = s.rotateCappedSession(sessionCtx, channelSession, session)
+	// The usage check of this message is made once, here, and handed to
+	// the QA worker on its context (checkUsage).
+	preflight := s.preflightUsage(sessionCtx, session.ID)
+	channelSession, session, preflight = s.rotateCappedSession(sessionCtx, channelSession, session, preflight)
 
 	// Title an untitled IM session from its first text message, like web chats.
 	// GenerateTitleAsync self-guards on a non-empty title and persists to the DB;
@@ -1918,7 +1989,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 
 	// 5. Enqueue the QA request into the bounded worker pool.
 	// The worker pool controls LLM concurrency and provides backpressure.
-	qaCtx, qaCancel := context.WithCancel(sessionCtx)
+	qaCtx, qaCancel := context.WithCancel(withUsagePreflight(sessionCtx, preflight))
 	userKey := makeUserKey(channelID, msg.UserID, msg.ChatID, threadID)
 
 	req := &qaRequest{

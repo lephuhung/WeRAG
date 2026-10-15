@@ -463,6 +463,10 @@ func (s *sessionService) AgentQA(
 // applyCompactionModel hands the engine the summarizer named by the system
 // setting llm.compaction_model_id, with its own context window. Empty, equal
 // to the answering model, or not loadable keeps the answering model.
+//
+// The model is resolved in the turn's tenant scope (modelService reads the
+// tenant from ctx), so a model the workspace cannot see falls back to the
+// answering model; platform-wide resolution is not done here yet.
 func (s *sessionService) applyCompactionModel(
 	ctx context.Context, engine interface {
 		SetCompactionModel(chat.Chat, string, int)

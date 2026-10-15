@@ -118,6 +118,9 @@ type SessionRepository interface {
 	CreateForked(ctx context.Context, session *types.Session, messages []*types.Message) error
 	// UpdateForkBootstrap overwrites a session's fork bootstrap. Passing nil clears it.
 	UpdateForkBootstrap(ctx context.Context, sessionID string, b *types.ForkBootstrap) error
+	// ClearContextSeed empties a session's context seed (a cleared session
+	// must not replay the summary it was continued from).
+	ClearContextSeed(ctx context.Context, tenantID uint64, sessionID string) error
 	// ListUnconsumedForks returns fork bootstraps the snapshot reaper should
 	// try to retire: unopened forks older than olderThan, plus consumed forks
 	// that still name a snapshot.

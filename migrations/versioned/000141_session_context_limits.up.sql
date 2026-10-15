@@ -3,6 +3,15 @@
 -- usage_plans.features (see types.UsagePlanFeatures). A key that is absent or
 -- 0 leaves the old behaviour; the keys are merged into whatever features a
 -- plan already has, so SuperAdmin edits to other keys survive.
+--
+-- Depends on 000140 (system-admin plan seed), which is committed before this
+-- migration; the dev database is already at version 140.
+--
+-- The plan codes 'co-ban' and 'Go-1' are runtime data of the dev deployment,
+-- not seeded by any migration: on other deployments these UPDATEs match no
+-- row and do nothing. The values are starting points, meant to be tuned in
+-- the SuperAdmin plan editor (Usage packages -> plan -> per-question and
+-- per-session caps).
 
 UPDATE usage_plans
 SET features = COALESCE(features, '{}'::jsonb) || '{
@@ -29,16 +38,12 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS context_seed TEXT;
 -- Per-session lifetime counters (scope_type 'session', period_key 'all'),
 -- read only by the session.max_turns / session.max_tokens caps. Every
 -- aggregate over usage_counters filters by scope_type, so these rows never
--- add into workspace or person totals. Backfilled from the stored history so
--- a session that is already long counts as long.
-INSERT INTO usage_counters (scope_type, scope_id, metric, period_key, value)
-SELECT 'session', m.session_id, 'questions', 'all', COUNT(*)
-FROM messages m
-WHERE m.role = 'user' AND m.deleted_at IS NULL
-GROUP BY m.session_id
-ON CONFLICT (scope_type, scope_id, metric, period_key)
-DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP;
-
+-- add into workspace or person totals.
+--
+-- Questions are deliberately NOT backfilled: every existing session starts at
+-- 0 turns, so no long session hits session.max_turns on deploy day and IM
+-- channels do not all rotate at once. Tokens are backfilled (no plan sets a
+-- session token cap yet, so this only makes the counter honest).
 WITH t AS (
     SELECT m.session_id,
            COALESCE((m.usage->>'total_tokens')::bigint, 0)      AS tokens,
