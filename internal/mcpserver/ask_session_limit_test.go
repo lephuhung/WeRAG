@@ -18,6 +18,11 @@ func (g cappedGuard) Entitlement(context.Context, uint64, string) (*types.UsageE
 	return nil, nil
 }
 func (g cappedGuard) Enforced(context.Context) bool { return true }
+func (g cappedGuard) PreviewSession(
+	context.Context, uint64, string, string, types.SessionCapMode,
+) (*types.UsageSessionPreview, error) {
+	return &types.UsageSessionPreview{}, nil
+}
 
 // A used-up session tells the MCP client to start a new one: there is no
 // button to press, so the error says to call ask without session_id.

@@ -58,6 +58,7 @@ func RegisterSessionRoutes(
 		sessions.PUT("/:id", handler.UpdateSession)
 		sessions.DELETE("/:id", handler.DeleteSession)
 		sessions.DELETE("/:id/messages", handler.ClearSessionMessages)
+		sessions.GET("/:id/context-usage", handler.GetContextUsage)
 		sessions.POST("/:session_id/generate_title", handler.GenerateTitle)
 		sessions.POST("/:session_id/attachments", handler.UploadTemporaryDocument)
 		sessions.GET("/:id/attachments", handler.ListTemporaryDocuments)

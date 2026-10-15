@@ -524,6 +524,20 @@ func (r *messageRepository) GetLatestContextCheckpoint(
 	return messages[0], nil
 }
 
+// CountCompletedTurnsThrough counts the completed assistant messages of a
+// session sorting at or before (at, id): the turns a checkpoint on that
+// message covers. One count over idx_messages_session_created_id.
+func (r *messageRepository) CountCompletedTurnsThrough(
+	ctx context.Context, sessionID string, at time.Time, id string,
+) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&types.Message{}).
+		Where("session_id = ? AND role = 'assistant' AND is_completed = ?", sessionID, true).
+		Where("created_at < ? OR (created_at = ? AND id <= ?)", at, at, id).
+		Count(&n).Error
+	return n, err
+}
+
 // DeleteMessagesBySessionID deletes all messages belonging to a session (soft delete)
 func (r *messageRepository) DeleteMessagesBySessionID(ctx context.Context, sessionID string) error {
 	return r.db.WithContext(ctx).Where("session_id = ?", sessionID).Delete(&types.Message{}).Error

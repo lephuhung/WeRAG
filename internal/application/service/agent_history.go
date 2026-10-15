@@ -87,9 +87,106 @@ func LoadAgentHistory(
 	if tokenBudget <= 0 {
 		return []chat.Message{}, 0, nil
 	}
+	load, err := loadAgentHistory(ctx, messageRepo, sessionID, tokenBudget, retainRetrievalHistory, opts...)
+	if err != nil {
+		return nil, 0, err
+	}
+	checkpointID := ""
+	if load.checkpoint != nil {
+		checkpointID = load.checkpoint.ID
+	}
+	logger.Infof(ctx, "Agent history: %d turn(s), ~%d of %d tokens (scale %.2f), %d row(s) read, "+
+		"checkpoint=%q, older turns dropped for the budget=%v",
+		len(load.turns), load.used, tokenBudget, load.estimatorScale, load.rowsRead, checkpointID, load.dropped)
+	trims := load.replay.trimTotals(load.turns)
+	logger.Infof(ctx, "Agent history trim: %d older attachment turn(s) replayed without their content "+
+		"(~%d runes left out), document tool outputs summarized (~%d runes left out)",
+		trims.attachmentTurns, trims.attachmentRunes, trims.toolRunes)
+	if load.checkpoint != nil && load.dropped {
+		// Turns between the summary and the kept ones are missing. Normal
+		// compaction keeps this from happening; it takes several turns in a
+		// row whose compactions could not be persisted.
+		logger.Warnf(ctx, "Agent history after checkpoint %s exceeds the budget; "+
+			"older turns after it were dropped", checkpointID)
+	}
+	return load.messages, load.scale, nil
+}
+
+// AgentHistoryEstimate is what the next agent turn of a session would load
+// as history, priced as LoadAgentHistory prices it, without the messages.
+type AgentHistoryEstimate struct {
+	// Tokens is the whole history: the summary plus the replayed turns.
+	Tokens int
+	// SummaryTokens is the leading summary (checkpoint or seed), 0 for none.
+	SummaryTokens int
+	// Turns is how many stored turns are replayed after the summary.
+	Turns int
+	// Checkpoint is the newest checkpointed assistant row, nil for none.
+	Checkpoint *types.Message
+	// Seeded: the summary is the session's context seed (no checkpoint yet).
+	Seeded bool
+}
+
+// EstimateAgentHistory is a dry run of LoadAgentHistory: the same read,
+// replay and pricing, reporting only the totals and logging nothing. The
+// chat UI's context indicator shows it, so it must agree with what a turn
+// loads.
+func EstimateAgentHistory(
+	ctx context.Context,
+	messageRepo interfaces.MessageRepository,
+	sessionID string,
+	tokenBudget int,
+	retainRetrievalHistory bool,
+	opts ...AgentHistoryOption,
+) (AgentHistoryEstimate, error) {
+	if tokenBudget <= 0 {
+		return AgentHistoryEstimate{}, nil
+	}
+	load, err := loadAgentHistory(ctx, messageRepo, sessionID, tokenBudget, retainRetrievalHistory, opts...)
+	if err != nil {
+		return AgentHistoryEstimate{}, err
+	}
+	if len(load.messages) == 0 {
+		// nothing to load: no per-request overhead to report either
+		return AgentHistoryEstimate{}, nil
+	}
+	return AgentHistoryEstimate{
+		Tokens:        load.used,
+		SummaryTokens: load.summaryTokens,
+		Turns:         len(load.turns),
+		Checkpoint:    load.checkpoint,
+		Seeded:        load.checkpoint == nil && load.summaryTokens > 0,
+	}, nil
+}
+
+// agentHistoryLoad is one history read: the messages, and what the log and
+// the context indicator report about them.
+type agentHistoryLoad struct {
+	messages       []chat.Message
+	scale          float64
+	estimatorScale float64
+	used           int
+	summaryTokens  int
+	checkpoint     *types.Message
+	turns          []*agentHistoryTurn
+	dropped        bool
+	rowsRead       int
+	replay         *historyReplay
+}
+
+// loadAgentHistory is the read behind LoadAgentHistory and
+// EstimateAgentHistory. tokenBudget must be positive.
+func loadAgentHistory(
+	ctx context.Context,
+	messageRepo interfaces.MessageRepository,
+	sessionID string,
+	tokenBudget int,
+	retainRetrievalHistory bool,
+	opts ...AgentHistoryOption,
+) (*agentHistoryLoad, error) {
 	estimator, err := agenttoken.NewEstimator()
 	if err != nil {
-		return nil, 0, fmt.Errorf("load agent history: %w", err)
+		return nil, fmt.Errorf("load agent history: %w", err)
 	}
 
 	checkpoint := loadContextCheckpoint(ctx, messageRepo, sessionID)
@@ -111,21 +208,22 @@ func LoadAgentHistory(
 		// rows keeps only what grouping and ordering need; the full rows wait
 		// in replay until their turn is replayed, then are released. A page of
 		// stored rows can hold whole wiki pages that go out as one line each.
-		rows         []*types.Message
-		turns        []*agentHistoryTurn
-		dropped      bool
-		before       time.Time
-		beforeID     string
-		reachedStart bool
-		scale        float64
-		used         int
+		rows          []*types.Message
+		turns         []*agentHistoryTurn
+		dropped       bool
+		before        time.Time
+		beforeID      string
+		reachedStart  bool
+		scale         float64
+		used          int
+		summaryTokens int
 	)
 	for len(rows) < agentHistoryMaxRows {
 		page, err := messageRepo.ListMessagesBySessionBeforeCursor(
 			ctx, sessionID, before, beforeID, agentHistoryPageSize,
 		)
 		if err != nil {
-			return nil, 0, fmt.Errorf("load agent history: %w", err)
+			return nil, fmt.Errorf("load agent history: %w", err)
 		}
 		if len(rows) == 0 {
 			// Price everything in the provider's tokens, with the scale the
@@ -134,6 +232,9 @@ func LoadAgentHistory(
 			scale = latestContextTokenScale(page)
 			estimator.SetScale(scale)
 			used = estimator.EstimateMessages(out)
+			if len(out) > 0 {
+				summaryTokens = used
+			}
 			replay.budget = tokenBudget - used
 		}
 		for _, msg := range page {
@@ -155,25 +256,18 @@ func LoadAgentHistory(
 		out = append(out, replay.messages(t)...)
 		used += replay.tokens[t.assistant.ID]
 	}
-	checkpointID := ""
-	if checkpoint != nil {
-		checkpointID = checkpoint.ID
-	}
-	logger.Infof(ctx, "Agent history: %d turn(s), ~%d of %d tokens (scale %.2f), %d row(s) read, "+
-		"checkpoint=%q, older turns dropped for the budget=%v",
-		len(turns), used, tokenBudget, estimator.Scale(), len(rows), checkpointID, dropped)
-	trims := replay.trimTotals(turns)
-	logger.Infof(ctx, "Agent history trim: %d older attachment turn(s) replayed without their content "+
-		"(~%d runes left out), document tool outputs summarized (~%d runes left out)",
-		trims.attachmentTurns, trims.attachmentRunes, trims.toolRunes)
-	if checkpoint != nil && dropped {
-		// Turns between the summary and the kept ones are missing. Normal
-		// compaction keeps this from happening; it takes several turns in a
-		// row whose compactions could not be persisted.
-		logger.Warnf(ctx, "Agent history after checkpoint %s exceeds the budget; "+
-			"older turns after it were dropped", checkpointID)
-	}
-	return out, scale, nil
+	return &agentHistoryLoad{
+		messages:       out,
+		scale:          scale,
+		estimatorScale: estimator.Scale(),
+		used:           used,
+		summaryTokens:  summaryTokens,
+		checkpoint:     checkpoint,
+		turns:          turns,
+		dropped:        dropped,
+		rowsRead:       len(rows),
+		replay:         replay,
+	}, nil
 }
 
 // latestContextTokenScale is the scale the newest calibrated turn among rows

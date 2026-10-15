@@ -83,6 +83,59 @@ func (g *usageGuard) CheckTurn(
 	return grant, nil
 }
 
+// PreviewSession mirrors CheckTurn's plan resolution without its effects:
+// a SuperAdmin or enforcement off applies no cap (no package lookup, which
+// for a SuperAdmin could create a subscription), an exhausted or missing
+// package is reported rather than refused, and the session counters are
+// read even when the plan sets no per-session cap.
+func (g *usageGuard) PreviewSession(
+	ctx context.Context, tenantID uint64, userID, sessionID string, capMode types.SessionCapMode,
+) (*types.UsageSessionPreview, error) {
+	preview := &types.UsageSessionPreview{Session: types.UsageSessionStatus{SessionID: sessionID}}
+	if g.Enforced(ctx) && !types.IsSystemAdminFromContext(ctx) {
+		ent, err := g.Entitlement(ctx, tenantID, userID)
+		if err != nil {
+			return nil, err
+		}
+		preview.Enforced = true
+		if ent != nil {
+			preview.PlanName = ent.PlanName
+			preview.Features = ent.Features
+		}
+	}
+	if sessionID == "" {
+		return preview, nil
+	}
+	turns, tokens, err := g.sessionCounters(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if st := types.NewUsageSessionStatus(preview.Features, sessionID, turns, tokens); st != nil {
+		st.Soft = st.Reached && capMode == types.SessionCapSoft
+		preview.Session = *st
+	} else {
+		preview.Session.Turns, preview.Session.Tokens = turns, tokens
+	}
+	return preview, nil
+}
+
+// sessionCounters reads a session's lifetime question and token counters.
+func (g *usageGuard) sessionCounters(ctx context.Context, sessionID string) (turns, tokens int64, err error) {
+	rows, err := g.counters.Get(ctx, types.UsageScopeSession, sessionID, []string{types.UsagePeriodAll})
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, row := range rows {
+		switch row.Metric {
+		case types.UsageMetricQuestions:
+			turns = row.Value
+		case types.UsageMetricTokens:
+			tokens = row.Value
+		}
+	}
+	return turns, tokens, nil
+}
+
 // sessionStatus reads a session's lifetime counters against the plan's
 // per-session caps; nil when the plan sets none.
 func (g *usageGuard) sessionStatus(
@@ -91,18 +144,9 @@ func (g *usageGuard) sessionStatus(
 	if features.SessionMaxTurns <= 0 && features.SessionMaxTokens <= 0 {
 		return nil, nil
 	}
-	rows, err := g.counters.Get(ctx, types.UsageScopeSession, sessionID, []string{types.UsagePeriodAll})
+	turns, tokens, err := g.sessionCounters(ctx, sessionID)
 	if err != nil {
 		return nil, err
-	}
-	var turns, tokens int64
-	for _, row := range rows {
-		switch row.Metric {
-		case types.UsageMetricQuestions:
-			turns = row.Value
-		case types.UsageMetricTokens:
-			tokens = row.Value
-		}
 	}
 	return types.NewUsageSessionStatus(features, sessionID, turns, tokens), nil
 }
