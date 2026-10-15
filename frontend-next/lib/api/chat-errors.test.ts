@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_TURN_RUNNING, chatErrorKey, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_TURN_RUNNING, chatErrorKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -38,6 +38,13 @@ describe("chatErrorKey", () => {
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "limit", "limit_exhausted")), "chat.err.usage.limit");
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "seat", "no_seat")), "chat.err.usage.noSeat");
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "expired", "expired")), "chat.err.usage.expired");
+  });
+  it("recognizes the per-session cap", () => {
+    const e = new ChatStreamError(429, 1006, "session limit reached", "session_limit");
+    assert.equal(chatErrorKey(e), "chat.err.usage.sessionLimit");
+    assert.equal(isSessionLimitError(e), true);
+    assert.equal(isSessionLimitError(new ChatStreamError(429, 1006, "limit", "limit_exhausted")), false);
+    assert.equal(isSessionLimitError(new Error("x")), false);
   });
   it("keeps a 4xx the backend explained", () => {
     assert.equal(chatErrorKey(new ChatStreamError(400, 1001, "a message can use at most 5 attachments")), null);

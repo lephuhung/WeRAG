@@ -51,7 +51,7 @@ func (p *PluginLoadHistory) OnEvent(ctx context.Context,
 		"max_rounds": maxRounds,
 	})
 
-	historyList, err := loadAndProcessHistory(ctx, p.messageService, chatManage.SessionID, maxRounds, maxRounds*2+10)
+	historyList, summary, err := loadHistoryAndSummary(ctx, p.messageService, chatManage.SessionID, maxRounds, maxRounds*2+10)
 	if err != nil {
 		pipelineWarn(ctx, "LoadHistory", "history_fetch", map[string]interface{}{
 			"session_id": chatManage.SessionID,
@@ -61,11 +61,13 @@ func (p *PluginLoadHistory) OnEvent(ctx context.Context,
 	}
 
 	chatManage.History = historyList
+	chatManage.HistorySummary = summary
 
 	pipelineInfo(ctx, "LoadHistory", "output", map[string]interface{}{
 		"session_id":     chatManage.SessionID,
 		"history_rounds": len(historyList),
 		"max_rounds":     maxRounds,
+		"summary_chars":  len(summary),
 	})
 
 	return next()

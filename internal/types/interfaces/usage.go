@@ -16,6 +16,10 @@ type UsageCounterRepository interface {
 	Get(ctx context.Context, scopeType, scopeID string, periodKeys []string) ([]*types.UsageCounter, error)
 	// SumByPeriod sums every scope of scopeType for one period, per metric.
 	SumByPeriod(ctx context.Context, scopeType, periodKey string) ([]*types.UsageCounter, error)
+	// DeleteScope removes every counter row of one scope. Only lifetime
+	// scopes are reset this way (a session whose messages were cleared);
+	// workspace and person rows are history and never deleted.
+	DeleteScope(ctx context.Context, scopeType, scopeID string) error
 	// ClaimMessageUsage marks messageID's token usage as counted and reports
 	// whether this call was the one that claimed it. A message saved several
 	// times is thereby counted once.
@@ -26,12 +30,15 @@ type UsageCounterRepository interface {
 // Recording is best-effort: a metering failure is logged and never fails
 // the chat turn that triggered it.
 type UsageMeter interface {
-	// RecordQuestion counts one question for the workspace and, when userID
-	// is a real person, for that person.
-	RecordQuestion(ctx context.Context, tenantID uint64, userID string)
+	// RecordQuestion counts one question for the workspace, for the person
+	// when userID is a real one, and for the session when sessionID is set.
+	RecordQuestion(ctx context.Context, tenantID uint64, userID, sessionID string)
 	// RecordMessageUsage folds an assistant message's token usage into the
 	// counters, once per message. Nil usage or non-assistant rows are ignored.
 	RecordMessageUsage(ctx context.Context, msg *types.Message)
+	// ResetSession zeroes a session's lifetime counters, after its messages
+	// were cleared: the per-session caps then count from the new start.
+	ResetSession(ctx context.Context, sessionID string)
 	// Summary returns today's and this month's counters for the person and
 	// the workspace.
 	Summary(ctx context.Context, tenantID uint64, userID string) (*types.UsageSummary, error)
@@ -67,12 +74,20 @@ type UsagePlanRepository interface {
 
 // UsageGuard decides whether a chat turn may start.
 type UsageGuard interface {
-	// CheckTurn returns nil when the caller may start a turn, or a 429
-	// *errors.AppError whose details are a types.UsageDenial. It is a no-op
-	// while usage.enforce is off and always lets SystemAdmins through. A
-	// storage failure is logged and lets the turn through: a broken meter
-	// must not take chat down.
-	CheckTurn(ctx context.Context, tenantID uint64, userID string) error
+	// CheckTurn returns the grant a turn runs under (the plan's per-turn
+	// caps), or a 429 *errors.AppError whose details are a
+	// types.UsageDenial. While usage.enforce is off, and for SystemAdmins,
+	// it grants without caps. A storage failure is logged and lets the turn
+	// through uncapped: a broken meter must not take chat down.
+	//
+	// sessionID ("" = none) is checked against the plan's per-session caps:
+	// with SessionCapHard a used-up session is refused with reason
+	// session_limit; with SessionCapSoft the turn goes through and the
+	// grant's Session says the cap is reached. Either way the grant's
+	// Session carries the 80% warning.
+	CheckTurn(
+		ctx context.Context, tenantID uint64, userID, sessionID string, capMode types.SessionCapMode,
+	) (*types.UsageTurnGrant, error)
 	// Entitlement resolves the subscription governing the caller with its
 	// current consumption; nil when there is none.
 	Entitlement(ctx context.Context, tenantID uint64, userID string) (*types.UsageEntitlement, error)

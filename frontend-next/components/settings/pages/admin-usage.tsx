@@ -10,7 +10,8 @@ import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { LimitStatusList } from "@/components/settings/usage-limits";
 import { IconEdit, IconPlus, IconSearch } from "@/components/icons";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
+import { planFeatureValue, withPlanFeature, type PlanFeatureKey } from "@/lib/session-limits";
 import { getCurrentUser } from "@/lib/api/auth";
 import { getSystemSetting, listSystemUsers, updateSystemSetting, type SystemAdminUser } from "@/lib/api/system";
 import {
@@ -118,6 +119,44 @@ function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: 
         <IconPlus className="h-3.5 w-3.5" /> {t("usg.addLimit")}
       </button>
       <p className="caption text-muted-soft">{t("usg.limitZeroHint")}</p>
+    </div>
+  );
+}
+
+/** The per-turn and per-session caps of a plan (usage_plans.features). 0 or
+ * empty = no cap; keys this editor does not know are kept untouched. */
+const FEATURE_FIELDS: { key: PlanFeatureKey; label: LocaleKey; hint: LocaleKey }[] = [
+  { key: "agent.turn_token_cap", label: "usg.feat.turnTokenCap", hint: "usg.feat.turnTokenCapHint" },
+  { key: "agent.max_iterations", label: "usg.feat.maxIterations", hint: "usg.feat.maxIterationsHint" },
+  { key: "context.history_tokens", label: "usg.feat.historyTokens", hint: "usg.feat.historyTokensHint" },
+  { key: "session.max_turns", label: "usg.feat.sessionMaxTurns", hint: "usg.feat.sessionMaxTurnsHint" },
+  { key: "session.max_tokens", label: "usg.feat.sessionMaxTokens", hint: "usg.feat.sessionMaxTokensHint" },
+];
+
+function FeaturesEditor({
+  value,
+  onChange,
+}: {
+  value: Record<string, unknown>;
+  onChange: (v: Record<string, unknown>) => void;
+}) {
+  const { t } = useT();
+  return (
+    <div className="space-y-2">
+      {FEATURE_FIELDS.map((f) => (
+        <label key={f.key} className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-3 gap-y-0.5">
+          <span className="caption text-body">{t(f.label)}</span>
+          <input
+            type="number"
+            min={0}
+            className="input h-9 py-0"
+            value={planFeatureValue(value, f.key) || ""}
+            placeholder="∞"
+            onChange={(e) => onChange(withPlanFeature(value, f.key, Number(e.target.value) || 0))}
+          />
+          <span className="caption col-span-2 text-muted-soft">{t(f.hint)}</span>
+        </label>
+      ))}
     </div>
   );
 }
@@ -586,6 +625,13 @@ export default function AdminUsage() {
           <div>
             <span className="caption mb-2 block text-muted">{t("usg.planLimits")}</span>
             <LimitsEditor value={planForm.limits} onChange={(limits) => setPlanForm({ ...planForm, limits })} />
+          </div>
+          <div>
+            <span className="caption mb-2 block text-muted">{t("usg.planFeatures")}</span>
+            <FeaturesEditor
+              value={planForm.features ?? {}}
+              onChange={(features) => setPlanForm({ ...planForm, features })}
+            />
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2">

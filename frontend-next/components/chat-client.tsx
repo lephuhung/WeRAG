@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, autoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
@@ -10,7 +10,9 @@ import { DOC_MENTION_COLOR, DocMention, DocMentionIcon } from "@/components/doc-
 import { splitDocumentMentions } from "@/lib/document-mentions";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
-import { chatErrorKey } from "@/lib/api/chat-errors";
+import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
+import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
 import {
   clearDocumentScope,
   documentSelectionForDisplay,
@@ -152,6 +154,9 @@ type UiMessage = {
   /** The turn finished streaming in this client → suggestions POST ensure
    * instead of read-only GET (Vue: onTurnComplete → ensure=true). */
   suggestionEnsure?: boolean;
+  /** Earlier conversation was summarized up to this turn (stored context
+   * checkpoint) — a marker that survives a reload. */
+  contextCompacted?: { summary: string; degraded?: boolean };
 };
 
 type UiRewriteProposal = RewriteProposal & { appliedVariantId?: string };
@@ -1344,6 +1349,11 @@ function ChatBody({ id }: { id: string }) {
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // Per-session caps of the usage plan: the session a session_limit refusal
+  // named, and the 80% warning of the last completed turn. Both are kept
+  // with the session they belong to, so they vanish on navigation.
+  const [sessionLimitFor, setSessionLimitFor] = useState<string | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<(SessionUsage & { forSession: string }) | null>(null);
   const [busy, setBusyState] = useState(false);
   // Sync mirror of `busy`: async closures (history load, stream finalizers)
   // check the live flag without depending on stale renders.
@@ -1577,6 +1587,10 @@ function ChatBody({ id }: { id: string }) {
                   : undefined,
               feedback: m.role === "assistant" ? m.feedback || undefined : undefined,
               feedbackComment: m.role === "assistant" ? m.feedback_comment || undefined : undefined,
+              contextCompacted:
+                m.role === "assistant" && m.context_compacted?.summary
+                  ? { summary: m.context_compacted.summary, degraded: m.context_compacted.degraded }
+                  : undefined,
             };
           });
           if (streamingMsgs.length > 0) {
@@ -1708,6 +1722,7 @@ function ChatBody({ id }: { id: string }) {
               kind === "tool_call" ||
               kind === "tool_result" ||
               kind === "context_compacted" ||
+              kind === "turn_limit" ||
               kind === "command_output" ||
               toolScopedError
             ) {
@@ -1726,6 +1741,8 @@ function ChatBody({ id }: { id: string }) {
               const dur = Number(c.data?.total_duration_ms) || 0;
               const streamed = c.data?.artifacts;
               const resumeArtifacts = Array.isArray(streamed) ? (streamed as ArtifactMeta[]) : undefined;
+              const usage = sessionUsageFromComplete(c.data);
+              setSessionUsage(usage ? { ...usage, forSession: id } : null);
               setMessages((m) =>
                 m.map((msg) =>
                   msg.assistantMessageId === inflightId
@@ -1859,6 +1876,7 @@ function ChatBody({ id }: { id: string }) {
     const t = s.query.trim();
     if (!t || busy || docPaneBusyRef.current) return;
     setError(null);
+    setSessionLimitFor(null);
     // A new send invalidates any previous stream's pending callbacks (e.g.
     // a resend right after stop()): they capture `gen` and skip their late
     // writes once stale, so only the live turn touches state.
@@ -2233,6 +2251,7 @@ function ChatBody({ id }: { id: string }) {
         kind === "tool_result" ||
         toolScopedError ||
         kind === "context_compacted" ||
+        kind === "turn_limit" ||
         kind === "command_output"
       ) {
         const toolName = c.tool_name || (c.data?.tool_name as string) || "";
@@ -2339,6 +2358,8 @@ function ChatBody({ id }: { id: string }) {
         // final_content carries the rewritten answer body (artifact handles);
         // prefer it when the streamed accumulation missed the rewrite.
         const finalContent = typeof c.data?.final_content === "string" ? c.data.final_content : undefined;
+        const usage = sessionUsageFromComplete(c.data);
+        setSessionUsage(usage ? { ...usage, forSession: activeSessionId } : null);
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
@@ -2472,7 +2493,10 @@ function ChatBody({ id }: { id: string }) {
         const errorKey = chatErrorKey(e);
         const errorText = errorKey ? tr(errorKey) : e instanceof Error ? e.message : tr("chat.err.generic");
         console.error("[streamChat] Error:", e);
-        setError(errorText);
+        // a used-up session gets the "open a new session" card instead of
+        // a bare error line
+        if (isSessionLimitError(e)) setSessionLimitFor(activeSessionId);
+        else setError(errorText);
         setMessages((m) =>
           m.map((msg) =>
             msg.id === asstId
@@ -2794,42 +2818,50 @@ function ChatBody({ id }: { id: string }) {
                 compact={compact}
               />
             ) : (
-              <AssistantMessage
-                key={m.id}
-                m={m}
-                index={index}
-                sessionId={id}
-                chatId={id}
-                busy={busy}
-                abbreviationRefreshKey={abbreviationRefreshKey}
-                onOpenDrawer={handleOpenDrawer}
-                onFork={handleFork}
-                onRegenerate={handleRegenerate}
-                onAsk={handleAskFollowUp}
-                onScopeAction={runScopeAction}
-                onChoicePick={runChoicePick}
-                scopeCardActive={index === messages.length - 1}
-                activeProposalIds={(m.rewriteProposals ?? [])
-                  .filter((p) => newestProposals.get(p.documentId) === p.batchId)
-                  .map((p) => p.batchId)
-                  .join(",")}
-                proposalsDisabled={busy}
-                proposalOutcomeFor={proposalOutcomeFor}
-                onProposalApply={applyProposal}
-                onProposalApplied={markProposalApplied}
-                insertableDocIds={insertableDocIds}
-                onIllustrationInsert={insertIllustration}
-                onIllustrationInserted={markIllustrationInserted}
-                compact={compact}
-              />
+              <Fragment key={m.id}>
+                <AssistantMessage
+                  m={m}
+                  index={index}
+                  sessionId={id}
+                  chatId={id}
+                  busy={busy}
+                  abbreviationRefreshKey={abbreviationRefreshKey}
+                  onOpenDrawer={handleOpenDrawer}
+                  onFork={handleFork}
+                  onRegenerate={handleRegenerate}
+                  onAsk={handleAskFollowUp}
+                  onScopeAction={runScopeAction}
+                  onChoicePick={runChoicePick}
+                  scopeCardActive={index === messages.length - 1}
+                  activeProposalIds={(m.rewriteProposals ?? [])
+                    .filter((p) => newestProposals.get(p.documentId) === p.batchId)
+                    .map((p) => p.batchId)
+                    .join(",")}
+                  proposalsDisabled={busy}
+                  proposalOutcomeFor={proposalOutcomeFor}
+                  onProposalApply={applyProposal}
+                  onProposalApplied={markProposalApplied}
+                  insertableDocIds={insertableDocIds}
+                  onIllustrationInsert={insertIllustration}
+                  onIllustrationInserted={markIllustrationInserted}
+                  compact={compact}
+                />
+                {m.contextCompacted && (
+                  <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />
+                )}
+              </Fragment>
             ),
           )}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
+          {sessionLimitFor && sessionLimitFor === id && <SessionLimitCard sessionId={id} compact={compact} />}
         </div>
       </div>
 
       <div className={compact ? "shrink-0 px-[17px] pb-3 pt-2" : "shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pb-6"}>
         <div className={compact ? "w-full" : "mx-auto w-full max-w-[768px]"}>
+          {sessionUsage && sessionUsage.forSession === id && sessionLimitFor !== id && (
+            <SessionUsageBanner usage={sessionUsage} sessionId={id} compact={compact} />
+          )}
           <input
             ref={attachments.inputRef}
             type="file"

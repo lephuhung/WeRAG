@@ -122,7 +122,15 @@ func (s *messageService) meterMessage(ctx context.Context, tenantID uint64, mess
 	case "user":
 		if created {
 			userID, _ := types.UserIDFromContext(ctx)
-			s.usageMeter.RecordQuestion(ctx, tenantID, userID)
+			// A steered row (a message injected into a running turn) does
+			// not open a turn, so it does not count toward the session's
+			// turn cap. The day/month question counters still count every
+			// user row, as they always have: only the session scope skips it.
+			sessionID := message.SessionID
+			if types.IsSteeredMessage(ctx) {
+				sessionID = ""
+			}
+			s.usageMeter.RecordQuestion(ctx, tenantID, userID, sessionID)
 		}
 	case "assistant":
 		s.usageMeter.RecordMessageUsage(ctx, message)
@@ -423,6 +431,15 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 		if err := s.suggestionRepo.DeleteBySessionID(ctx, tenantID, sessionID); err != nil {
 			logger.Warnf(ctx, "Failed to delete suggestions for session %s: %v", sessionID, err)
 		}
+	}
+	// a cleared session starts over: its per-session caps count from zero
+	// (the workspace and person counters keep what was spent), and a
+	// continued session no longer replays the summary it was seeded with
+	if s.usageMeter != nil {
+		s.usageMeter.ResetSession(ctx, sessionID)
+	}
+	if err := s.sessionRepo.ClearContextSeed(ctx, tenantID, sessionID); err != nil {
+		logger.Warnf(ctx, "Failed to clear the context seed of session %s: %v", sessionID, err)
 	}
 
 	logger.Infof(ctx, "All messages cleared for session: %s", sessionID)

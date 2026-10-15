@@ -212,6 +212,23 @@ type AgentFinalAnswerData struct {
 	Usage *types.TokenUsage `json:"usage,omitempty"`
 }
 
+// Turn limit reasons (AgentTurnLimitData.Reason).
+const (
+	TurnLimitMaxIterations = "max_iterations"
+	TurnLimitTurnBudget    = "turn_budget"
+)
+
+// AgentTurnLimitData reports which cap ended the agent loop. Rounds is how
+// many rounds ran; Tokens and TokenCap are the turn's summed tokens and the
+// plan's per-turn cap (0 = none).
+type AgentTurnLimitData struct {
+	Reason        string `json:"reason"`
+	Rounds        int    `json:"rounds"`
+	MaxIterations int    `json:"max_iterations,omitempty"`
+	Tokens        int    `json:"tokens,omitempty"`
+	TokenCap      int    `json:"token_cap,omitempty"`
+}
+
 // ContextCompactedData reports that older conversation was replaced by a
 // summary. Compaction changes what the agent remembers, so it is shown rather
 // than hidden: an answer that forgets an earlier instruction is otherwise

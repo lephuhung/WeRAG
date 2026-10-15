@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -85,6 +86,7 @@ func (s *sessionService) AgentQA(
 	if err != nil {
 		return err
 	}
+	applyUsageTurnCaps(ctx, agentConfig)
 	// reasoning on a Word document reads it but never changes it
 	wordReadOnly := req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinSmartReasoningID &&
 		s.sessionHasWordDocument(ctx, req.Session)
@@ -165,19 +167,29 @@ func (s *sessionService) AgentQA(
 	// tried last turn — except final_answer, which is replayed as the trailing
 	// canonical assistant message. History is sized by the window, not by a
 	// turn count: compaction and its persisted checkpoints keep it in bounds.
+	//
+	// The caller's plan may allow less history per turn than the window
+	// (historyBudget). The read still goes up to the window so that what lies
+	// beyond the plan's budget is summarized before the engine runs (see
+	// AgentEngine.CompactHistoryToBudget) instead of being dropped unread.
 	var llmContext []chat.Message
+	historyBudget := 0
 	if agentConfig.MultiTurnEnabled {
 		budget := agent.HistoryTokenBudget(agentConfig)
+		if planBudget := types.UsageFeaturesFromContext(ctx).EffectiveHistoryTokens(budget); planBudget < budget {
+			historyBudget = planBudget
+		}
+		historyOpts := append(s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID),
+			WithHistorySeed(req.Session.ContextSeed))
 		llmContext, agentConfig.ContextTokenScale, err = LoadAgentHistory(
-			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory,
-			s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID)...,
+			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory, historyOpts...,
 		)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to load agent history from DB: %v, continuing without history", err)
 			llmContext = []chat.Message{}
 		}
-		logger.Infof(ctx, "Loaded %d history messages from DB (budget=%d tokens, token scale=%.2f)",
-			len(llmContext), budget, agentConfig.ContextTokenScale)
+		logger.Infof(ctx, "Loaded %d history messages from DB (budget=%d tokens, plan history budget=%d, token scale=%.2f)",
+			len(llmContext), budget, historyBudget, agentConfig.ContextTokenScale)
 	} else {
 		logger.Infof(ctx, "Multi-turn disabled for this agent, running without history")
 		llmContext = []chat.Message{}
@@ -408,6 +420,17 @@ func (s *sessionService) AgentQA(
 		engine.SetContextCheckpointSink(messageCheckpointSink{repo: s.messageRepo, sessionID: sessionID})
 	}
 
+	// Compaction summaries may come from another model than the answer
+	// (llm.compaction_model_id); the answering model stays the fallback.
+	s.applyCompactionModel(ctx, engine, effectiveModelID)
+
+	// History over the plan's budget is summarized now, synchronously, so
+	// every round of this turn resends the smaller history. Needs the
+	// checkpoint sink and the abbreviation binding set above.
+	if historyBudget > 0 {
+		llmContext = engine.CompactHistoryToBudget(ctx, llmContext, historyBudget)
+	}
+
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
 		agentQuery += manifest
 		logger.Infof(ctx, "Appended %d staged sandbox attachment path(s) to agent query", len(stagedAttachments))
@@ -435,6 +458,57 @@ func (s *sessionService) AgentQA(
 	}
 	// Return empty - events will be handled by Handler via EventBus subscription
 	return nil
+}
+
+// applyCompactionModel hands the engine the summarizer named by the system
+// setting llm.compaction_model_id, with its own context window. Empty, equal
+// to the answering model, or not loadable keeps the answering model.
+//
+// The model is resolved in the turn's tenant scope (modelService reads the
+// tenant from ctx), so a model the workspace cannot see falls back to the
+// answering model; platform-wide resolution is not done here yet.
+func (s *sessionService) applyCompactionModel(
+	ctx context.Context, engine interface {
+		SetCompactionModel(chat.Chat, string, int)
+	}, answeringModelID string,
+) {
+	if s.systemSettings == nil || engine == nil {
+		return
+	}
+	modelID := strings.TrimSpace(s.systemSettings.GetString(ctx, types.CompactionModelSettingKey,
+		"WEKNORA_COMPACTION_MODEL_ID", ""))
+	if modelID == "" || modelID == answeringModelID {
+		return
+	}
+	model, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil || model == nil {
+		logger.Warnf(ctx, "Compaction model %s unavailable, summarizing with the answering model: %v", modelID, err)
+		return
+	}
+	window := 0
+	if info, err := s.modelService.GetModelByID(ctx, modelID); err == nil && info != nil {
+		window = info.Parameters.ContextWindow
+	}
+	engine.SetCompactionModel(model, modelID, window)
+	logger.Infof(ctx, "Compaction summaries by model %s (window %d)", modelID, window)
+}
+
+// applyUsageTurnCaps narrows the run to the caller's usage plan: the plan's
+// round cap where it is below the agent's own, and the per-turn token budget.
+// A turn without a grant (enforcement off, SuperAdmin) runs as configured.
+func applyUsageTurnCaps(ctx context.Context, cfg *types.AgentConfig) {
+	features := types.UsageFeaturesFromContext(ctx)
+	if features.IsZero() || cfg == nil {
+		return
+	}
+	if limited := features.EffectiveMaxIterations(cfg.MaxIterations); limited != cfg.MaxIterations {
+		logger.Infof(ctx, "Usage plan caps agent rounds: %d -> %d", cfg.MaxIterations, limited)
+		cfg.MaxIterations = limited
+	}
+	if features.TurnTokenCap > 0 {
+		cfg.TurnTokenCap = int(min(features.TurnTokenCap, int64(math.MaxInt32)))
+		logger.Infof(ctx, "Usage plan caps the turn at %d tokens", cfg.TurnTokenCap)
+	}
 }
 
 // buildAgentConfig creates a runtime AgentConfig from the QARequest's custom agent configuration,

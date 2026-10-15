@@ -50,6 +50,17 @@ type AgentEngine interface {
 	// execution and answer emission verifies the sealed context still
 	// matches. Engines that never call it keep their existing lifecycle.
 	RequireAbbreviationTurn(b types.AbbreviationBinding)
+
+	// CompactHistoryToBudget summarizes stored history over budget tokens
+	// before Execute (the plan's history budget, below the window) and
+	// returns the history the turn should start from. Call it after the
+	// checkpoint sink and the abbreviation binding are set.
+	CompactHistoryToBudget(ctx context.Context, history []chat.Message, budget int) []chat.Message
+
+	// SetCompactionModel has model (window tokens of context; modelID for
+	// logs) write compaction summaries instead of the answering model,
+	// which remains the fallback. Must be called before Execute.
+	SetCompactionModel(model chat.Chat, modelID string, window int)
 }
 
 // AgentService defines the interface for agent-related operations

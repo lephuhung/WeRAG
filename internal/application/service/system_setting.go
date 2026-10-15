@@ -384,6 +384,18 @@ var registry = map[string]settingSpec{
 		Description: "Model nhỏ cho việc phụ ít rủi ro: đặt tiêu đề phiên và gợi ý câu hỏi tiếp theo, để model chính " +
 			"chỉ lo trả lời. Để trống thì dùng model trả lời. Model lỗi thì tự quay về model trả lời. Có hiệu lực ngay.",
 	},
+	// llm.compaction_model_id: the model that writes context-compaction
+	// summaries. Empty = the answering model. Its own context window sizes
+	// each summarization request; on failure the answering model retries
+	// once before the summary degrades. Read per turn.
+	types.CompactionModelSettingKey: {
+		Type:     "string",
+		EnvName:  "WEKNORA_COMPACTION_MODEL_ID",
+		Default:  "",
+		Category: "chat",
+		Description: "Model viết bản tóm tắt khi nén ngữ cảnh hội thoại (lịch sử dài, phiên nhiều lượt). Để trống thì " +
+			"dùng model trả lời. Model lỗi thì model trả lời thử lại một lần. Có hiệu lực từ lượt hỏi tiếp theo.",
+	},
 	// Billing: the bank account that receives package payments (VietQR
 	// needs the bank BIN + account number), how long a pending order
 	// stays payable, and a contact line for the payment page.

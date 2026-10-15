@@ -98,6 +98,10 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// of emitting its one-shot notice, so the failure is a stalled reply.
 	// A detached context has no live client either, which is what this says.
 	MCPOAuthNonInteractiveContextKey: true,
+	// The usage grant of one turn: the plan's per-turn and per-session caps
+	// (a restriction). The QA services run on a context detached through
+	// CloneContext, so dropping it would run the turn uncapped.
+	usageTurnGrantContextKey: true,
 
 	// ---- Deliberately does not survive a detach ----
 	//
@@ -134,6 +138,9 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// Same for the documents the user named with @: the editing tools in
 	// the detached run refuse a document that was not named.
 	mentionedDocumentsContextKey: true,
+	// Marks one CreateMessage call as a steered (injected) user row; read
+	// by the usage meter on the same context, meaningless for anything else.
+	steeredMessageContextKey: false,
 	// The document scope the router applied to this turn: read once by the
 	// prompt builder before the run starts, on the same context.
 	documentScopeContextKey: false,

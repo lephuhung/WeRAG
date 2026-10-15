@@ -226,7 +226,9 @@ func (s *steerSink) PersistSteerMessage(
 	if strings.TrimSpace(channel) == "" {
 		channel = "web"
 	}
-	msg, err := s.messageService.CreateMessage(ctx, &types.Message{
+	// marked steered: the row joins the running turn, it does not open one
+	// (the usage meter counts only turn-opening rows toward the session cap)
+	msg, err := s.messageService.CreateMessage(types.WithSteeredMessage(ctx), &types.Message{
 		SessionID:      sessionID,
 		Role:           "user",
 		Content:        content,

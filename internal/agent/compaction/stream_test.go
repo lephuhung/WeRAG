@@ -118,7 +118,7 @@ func TestSummarizationIsNotRetriedOnceTheTurnIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, _, err := c.streamSummary(ctx, nil, &chat.ChatOptions{})
+	_, _, err := c.streamSummary(ctx, chatModel, nil, &chat.ChatOptions{})
 	require.True(t, errors.Is(err, context.Canceled))
 
 	_, err = c.summarize(ctx, reactTurn(2), 0, "", initialSummarizationInstructions, 1024)

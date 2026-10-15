@@ -40,17 +40,71 @@ func (g *usageGuard) Enforced(ctx context.Context) bool {
 	return g.settings.GetBool(ctx, types.UsageEnforceSettingKey, "", false)
 }
 
-func (g *usageGuard) CheckTurn(ctx context.Context, tenantID uint64, userID string) error {
+func (g *usageGuard) CheckTurn(
+	ctx context.Context, tenantID uint64, userID, sessionID string, capMode types.SessionCapMode,
+) (*types.UsageTurnGrant, error) {
+	// No enforcement, no caps: the plan features ride on the same switch as
+	// the limits, so turning usage.enforce off restores the old behaviour.
 	if !g.Enforced(ctx) || types.IsSystemAdminFromContext(ctx) {
-		return nil
+		return &types.UsageTurnGrant{}, nil
 	}
 	ent, err := g.Entitlement(ctx, tenantID, userID)
 	if err != nil {
 		logger.Warnf(ctx, "usage guard: entitlement lookup failed for tenant %d user %s, letting the turn through: %v",
 			tenantID, userID, err)
-		return nil
+		return &types.UsageTurnGrant{}, nil
 	}
-	return usageDenial(ent, userID)
+	if err := usageDenial(ent, userID); err != nil {
+		return nil, err
+	}
+	grant := &types.UsageTurnGrant{Features: ent.Features}
+	if sessionID == "" {
+		return grant, nil
+	}
+	session, err := g.sessionStatus(ctx, ent.Features, sessionID)
+	if err != nil {
+		logger.Warnf(ctx, "usage guard: session %s counters unavailable, letting the turn through: %v", sessionID, err)
+		return grant, nil
+	}
+	if session != nil && session.Reached {
+		if capMode == types.SessionCapSoft {
+			session.Soft = true
+		} else {
+			metric, limit, used := session.ExhaustedMetric()
+			return nil, apperrors.NewTooManyRequestsError(
+				fmt.Sprintf("session limit reached: %d %s per session", limit, metric)).
+				WithDetails(types.UsageDenial{
+					Reason: types.UsageDenialSessionLimit, Metric: metric, Period: types.UsagePeriodSession,
+					Limit: limit, Used: used, SessionID: sessionID,
+				})
+		}
+	}
+	grant.Session = session
+	return grant, nil
+}
+
+// sessionStatus reads a session's lifetime counters against the plan's
+// per-session caps; nil when the plan sets none.
+func (g *usageGuard) sessionStatus(
+	ctx context.Context, features types.UsagePlanFeatures, sessionID string,
+) (*types.UsageSessionStatus, error) {
+	if features.SessionMaxTurns <= 0 && features.SessionMaxTokens <= 0 {
+		return nil, nil
+	}
+	rows, err := g.counters.Get(ctx, types.UsageScopeSession, sessionID, []string{types.UsagePeriodAll})
+	if err != nil {
+		return nil, err
+	}
+	var turns, tokens int64
+	for _, row := range rows {
+		switch row.Metric {
+		case types.UsageMetricQuestions:
+			turns = row.Value
+		case types.UsageMetricTokens:
+			tokens = row.Value
+		}
+	}
+	return types.NewUsageSessionStatus(features, sessionID, turns, tokens), nil
 }
 
 // usageDenial turns an entitlement into the 429 the caller gets, or nil.
@@ -216,6 +270,9 @@ func entitlementFrom(sub *types.UsageSubscription, source string, now time.Time)
 	if sub.Plan != nil {
 		ent.PlanCode = sub.Plan.Code
 		ent.PlanName = sub.Plan.Name
+		// normalizePlan validates features on write; a row edited by hand
+		// that no longer parses applies no cap rather than refusing chat.
+		ent.Features, _ = types.ParseUsagePlanFeatures(sub.Plan.Features)
 	}
 	return ent
 }

@@ -27,6 +27,8 @@ func (f *fakeUsageCounterRepo) SumByPeriod(context.Context, string, string) ([]*
 	return nil, nil
 }
 
+func (f *fakeUsageCounterRepo) DeleteScope(context.Context, string, string) error { return nil }
+
 func (f *fakeUsageCounterRepo) ClaimMessageUsage(_ context.Context, id string) (bool, error) {
 	if f.claimed == nil {
 		f.claimed = map[string]bool{}
@@ -50,7 +52,7 @@ func TestUsageMeterRecordQuestionCountsTenantAndRealUserOnly(t *testing.T) {
 	repo := &fakeUsageCounterRepo{}
 	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
 
-	m.RecordQuestion(context.Background(), 10003, "user-1")
+	m.RecordQuestion(context.Background(), 10003, "user-1", "")
 	require.Len(t, repo.added, 4) // {tenant,user} x {day,month}
 	for _, inc := range repo.added {
 		require.Equal(t, types.UsageMetricQuestions, inc.Metric)
@@ -58,11 +60,46 @@ func TestUsageMeterRecordQuestionCountsTenantAndRealUserOnly(t *testing.T) {
 	}
 
 	repo.added = nil
-	m.RecordQuestion(context.Background(), 10003, "system-10003") // IM/API synthetic user
+	m.RecordQuestion(context.Background(), 10003, "system-10003", "") // IM/API synthetic user
 	require.Len(t, repo.added, 2)
 	for _, inc := range repo.added {
 		require.Equal(t, types.UsageScopeTenant, inc.ScopeType)
 		require.Equal(t, "10003", inc.ScopeID)
+	}
+}
+
+// A session's turns and tokens also land in its lifetime counters, the one
+// row per metric the per-session caps read; workspace and person rows are
+// unchanged by it.
+func TestUsageMeterCountsTheSessionOnce(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
+
+	m.RecordQuestion(context.Background(), 10003, "user-1", "sess-1")
+	require.Len(t, repo.added, 5)
+	var session []types.UsageIncrement
+	for _, inc := range repo.added {
+		if inc.ScopeType == types.UsageScopeSession {
+			session = append(session, inc)
+		}
+	}
+	require.Equal(t, []types.UsageIncrement{{
+		ScopeType: types.UsageScopeSession, ScopeID: "sess-1", Metric: types.UsageMetricQuestions,
+		PeriodKey: types.UsagePeriodAll, Delta: 1,
+	}}, session)
+
+	repo.added = nil
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(10003))
+	m.RecordMessageUsage(ctx, &types.Message{ID: "a1", SessionID: "sess-1", Role: "assistant",
+		Usage: &types.TokenUsage{PromptTokens: 90, CompletionTokens: 10, TotalTokens: 100}})
+	// 3 token metrics x ({tenant} x {day,month} + session)
+	require.Len(t, repo.added, 9)
+	for _, inc := range repo.added {
+		if inc.ScopeType == types.UsageScopeSession {
+			require.Equal(t, types.UsagePeriodAll, inc.PeriodKey)
+		} else {
+			require.Equal(t, types.UsageScopeTenant, inc.ScopeType)
+		}
 	}
 }
 

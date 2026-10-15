@@ -74,8 +74,12 @@ func normalizePlan(plan *types.UsagePlan) error {
 	if err := plan.Limits.Validate(); err != nil {
 		return apperrors.NewBadRequestError(err.Error())
 	}
-	if len(plan.Features) == 0 {
+	if len(plan.Features) == 0 || string(plan.Features) == "null" {
 		plan.Features = types.JSON("{}")
+	}
+	// Only the known keys are checked; anything else is stored untouched.
+	if _, err := types.ParseUsagePlanFeatures(plan.Features); err != nil {
+		return apperrors.NewBadRequestError(err.Error())
 	}
 	return nil
 }

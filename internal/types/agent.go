@@ -206,6 +206,12 @@ type AgentConfig struct {
 	// grew to, it comes out of a compaction at roughly this size.
 	CompactionKeepRecentTokens int `json:"compaction_keep_recent_tokens,omitempty"`
 
+	// TurnTokenCap ends the ReAct loop once the turn's summed prompt and
+	// completion tokens reach it; the answer is then synthesized like after
+	// the last iteration. Zero is no cap. Runtime only: it comes from the
+	// caller's usage plan (types.UsageFeatureTurnTokenCap).
+	TurnTokenCap int `json:"-"`
+
 	// Whether to execute independent tool calls in parallel (default: false).
 	// When enabled and the LLM returns multiple tool calls, they run concurrently via errgroup.
 	ParallelToolCalls bool `json:"parallel_tool_calls,omitempty"`

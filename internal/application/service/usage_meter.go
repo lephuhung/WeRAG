@@ -38,20 +38,31 @@ func usageScopes(tenantID uint64, userID string) [][2]string {
 }
 
 // buildUsageIncrements expands metric deltas over every scope and period.
-func buildUsageIncrements(tenantID uint64, userID string, at time.Time, deltas map[string]int64) []types.UsageIncrement {
+// A turn of a known session also counts toward that session's lifetime
+// counters (scope "session", period "all"), which only the per-session caps
+// read.
+func buildUsageIncrements(
+	tenantID uint64, userID, sessionID string, at time.Time, deltas map[string]int64,
+) []types.UsageIncrement {
 	keys := types.UsagePeriodKeysAt(at)
 	scopes := usageScopes(tenantID, userID)
-	out := make([]types.UsageIncrement, 0, len(scopes)*len(deltas)*2)
-	for _, scope := range scopes {
-		for metric, delta := range deltas {
-			if delta <= 0 {
-				continue
-			}
+	out := make([]types.UsageIncrement, 0, (len(scopes)*2+1)*len(deltas))
+	for metric, delta := range deltas {
+		if delta <= 0 {
+			continue
+		}
+		for _, scope := range scopes {
 			for _, period := range []string{keys.Day, keys.Month} {
 				out = append(out, types.UsageIncrement{
 					ScopeType: scope[0], ScopeID: scope[1], Metric: metric, PeriodKey: period, Delta: delta,
 				})
 			}
+		}
+		if sessionID != "" {
+			out = append(out, types.UsageIncrement{
+				ScopeType: types.UsageScopeSession, ScopeID: sessionID, Metric: metric,
+				PeriodKey: types.UsagePeriodAll, Delta: delta,
+			})
 		}
 	}
 	return out
@@ -67,8 +78,8 @@ func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement)
 	}
 }
 
-func (m *usageMeter) RecordQuestion(ctx context.Context, tenantID uint64, userID string) {
-	m.add(ctx, buildUsageIncrements(tenantID, userID, m.now(), map[string]int64{
+func (m *usageMeter) RecordQuestion(ctx context.Context, tenantID uint64, userID, sessionID string) {
+	m.add(ctx, buildUsageIncrements(tenantID, userID, sessionID, m.now(), map[string]int64{
 		types.UsageMetricQuestions: 1,
 	}))
 }
@@ -95,11 +106,20 @@ func (m *usageMeter) RecordMessageUsage(ctx context.Context, msg *types.Message)
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	m.add(ctx, buildUsageIncrements(tenantID, userID, m.now(), map[string]int64{
+	m.add(ctx, buildUsageIncrements(tenantID, userID, msg.SessionID, m.now(), map[string]int64{
 		types.UsageMetricTokens:           int64(total),
 		types.UsageMetricPromptTokens:     int64(u.PromptTokens),
 		types.UsageMetricCompletionTokens: int64(u.CompletionTokens),
 	}))
+}
+
+func (m *usageMeter) ResetSession(ctx context.Context, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	if err := m.repo.DeleteScope(context.WithoutCancel(ctx), types.UsageScopeSession, sessionID); err != nil {
+		logger.Warnf(ctx, "usage meter: failed to reset session %s counters: %v", sessionID, err)
+	}
 }
 
 func (m *usageMeter) scopeSummary(ctx context.Context, scopeType, scopeID string, keys types.UsagePeriodKeys) (*types.UsageScopeSummary, error) {

@@ -193,7 +193,7 @@ func (sink *installSteerSink) PersistSteerMessage(
 	// A deterministic ID makes retries after a failed consumed write safe.
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(sessionID+":"+messageID+":"+steerID)).String()
 	_, err := sink.service.messages.CreateMessage(
-		ctx,
+		types.WithSteeredMessage(ctx), // joins the running turn (usage meter)
 		&types.Message{
 			ID:          id,
 			SessionID:   sessionID,

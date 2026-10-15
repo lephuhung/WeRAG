@@ -93,9 +93,18 @@ func LoadAgentHistory(
 	}
 
 	checkpoint := loadContextCheckpoint(ctx, messageRepo, sessionID)
+	replay := newHistoryReplay(estimator, 0, retainRetrievalHistory)
+	for _, opt := range opts {
+		opt(replay)
+	}
 	out := []chat.Message{}
 	if checkpoint != nil {
 		out = append(out, compaction.SummaryMessage(checkpoint.ContextCheckpoint.Summary))
+	} else if strings.TrimSpace(replay.seed) != "" {
+		// A session continued from another starts from that one's summary
+		// until its own first checkpoint folds the seed in (compaction
+		// treats it as the previous summary).
+		out = append(out, compaction.SummaryMessage(replay.seed))
 	}
 
 	var (
@@ -110,11 +119,7 @@ func LoadAgentHistory(
 		reachedStart bool
 		scale        float64
 		used         int
-		replay       = newHistoryReplay(estimator, 0, retainRetrievalHistory)
 	)
-	for _, opt := range opts {
-		opt(replay)
-	}
 	for len(rows) < agentHistoryMaxRows {
 		page, err := messageRepo.ListMessagesBySessionBeforeCursor(
 			ctx, sessionID, before, beforeID, agentHistoryPageSize,
@@ -286,9 +291,20 @@ func WithHistoryDocuments(docs []*types.DocumentWorkspace) AgentHistoryOption {
 	}
 }
 
+// WithHistorySeed gives the replay the session's context seed (the summary a
+// continued session starts from, types.Session.ContextSeed). It leads the
+// history as a compaction summary while the session has no checkpoint.
+func WithHistorySeed(seed string) AgentHistoryOption {
+	return func(r *historyReplay) {
+		r.seed = seed
+	}
+}
+
 // historyReplay builds and prices each turn's replayed messages once, however
 // many pages the read takes.
 type historyReplay struct {
+	// seed is the session's context seed (WithHistorySeed), "" for none.
+	seed                   string
 	estimator              *agenttoken.Estimator
 	budget                 int
 	retainRetrievalHistory bool

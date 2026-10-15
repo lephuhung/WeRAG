@@ -197,6 +197,19 @@ func HistoryTokenBudget(cfg *types.AgentConfig) int {
 	return types.DefaultMaxContextTokens
 }
 
+// minHistoryKeepRecentTokens is the floor of what a turn-start compaction
+// keeps verbatim: below it the newest exchange no longer survives whole.
+const minHistoryKeepRecentTokens = 8192
+
+// HistoryKeepRecentTokens is how much recent history a turn-start compaction
+// against budget keeps verbatim: a quarter of the budget, at least
+// minHistoryKeepRecentTokens. The summary is capped at the same size (see
+// compaction.Settings.summaryBudget), so the compacted history comes out at
+// about half the budget and the next turns have room before it fills again.
+func HistoryKeepRecentTokens(budget int) int {
+	return max(budget/4, minHistoryKeepRecentTokens)
+}
+
 // clampCompletionBudgetToContext shrinks the round's completion budget to what
 // is actually left in the window. Asking for more output than the window can
 // hold is a request the provider rejects outright, which reads to the agent as

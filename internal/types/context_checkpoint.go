@@ -24,6 +24,22 @@ type ContextCheckpoint struct {
 	Degraded bool `json:"degraded,omitempty"`
 }
 
+// ContextCompactedMarker is what the chat UI shows of a checkpoint after a
+// reload: earlier conversation up to this turn was summarized, and how.
+type ContextCompactedMarker struct {
+	Summary   string    `json:"summary"`
+	CreatedAt time.Time `json:"created_at"`
+	Degraded  bool      `json:"degraded,omitempty"`
+}
+
+// Marker is the UI view of c, nil for no checkpoint.
+func (c *ContextCheckpoint) Marker() *ContextCompactedMarker {
+	if c == nil || c.Summary == "" {
+		return nil
+	}
+	return &ContextCompactedMarker{Summary: c.Summary, CreatedAt: c.CreatedAt, Degraded: c.Degraded}
+}
+
 // Value implements the driver.Valuer interface for database serialization.
 func (c ContextCheckpoint) Value() (driver.Value, error) {
 	return json.Marshal(c)
