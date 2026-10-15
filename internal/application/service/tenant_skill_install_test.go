@@ -3212,6 +3212,11 @@ func (e *installAgentEngine) SetMemoryPrompt(string)                            
 func (e *installAgentEngine) SetSteerSink(sink types.SteerSink)                    { e.sink = sink }
 func (e *installAgentEngine) SetContextCheckpointSink(types.ContextCheckpointSink) {}
 func (e *installAgentEngine) RequireAbbreviationTurn(types.AbbreviationBinding)    {}
+func (e *installAgentEngine) CompactHistoryToBudget(
+	_ context.Context, history []chat.Message, _ int,
+) []chat.Message {
+	return history
+}
 
 type installSessionService struct {
 	fx *installFixture

@@ -32,6 +32,10 @@ const (
 	// ReasonOverflow is repair after the provider rejected or truncated a
 	// request because the window was full.
 	ReasonOverflow Reason = "overflow"
+	// ReasonHistoryBudget is the turn-start case: the stored history is
+	// larger than the history budget of the caller's plan, which is set
+	// apart from (and below) the model window.
+	ReasonHistoryBudget Reason = "history_budget"
 )
 
 // ErrNothingToCompact means the context cannot be made smaller: everything
@@ -105,6 +109,19 @@ func (c *Compactor) Settings() Settings {
 		return Settings{}
 	}
 	return c.settings
+}
+
+// WithKeepRecentTokens returns a copy of the compactor that keeps n recent
+// tokens verbatim, for a compaction sized by a budget other than the window.
+// The copy is normalized like any settings, so the quarter rule still holds.
+func (c *Compactor) WithKeepRecentTokens(n int) *Compactor {
+	if c == nil || n <= 0 {
+		return c
+	}
+	cp := *c
+	cp.settings.KeepRecentTokens = n
+	cp.settings = cp.settings.Normalize()
+	return &cp
 }
 
 // Compact replaces history older than the keep-recent budget with a summary.

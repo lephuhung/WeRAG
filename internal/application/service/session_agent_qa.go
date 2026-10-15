@@ -167,9 +167,18 @@ func (s *sessionService) AgentQA(
 	// tried last turn — except final_answer, which is replayed as the trailing
 	// canonical assistant message. History is sized by the window, not by a
 	// turn count: compaction and its persisted checkpoints keep it in bounds.
+	//
+	// The caller's plan may allow less history per turn than the window
+	// (historyBudget). The read still goes up to the window so that what lies
+	// beyond the plan's budget is summarized before the engine runs (see
+	// AgentEngine.CompactHistoryToBudget) instead of being dropped unread.
 	var llmContext []chat.Message
+	historyBudget := 0
 	if agentConfig.MultiTurnEnabled {
 		budget := agent.HistoryTokenBudget(agentConfig)
+		if planBudget := types.UsageFeaturesFromContext(ctx).EffectiveHistoryTokens(budget); planBudget < budget {
+			historyBudget = planBudget
+		}
 		llmContext, agentConfig.ContextTokenScale, err = LoadAgentHistory(
 			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory,
 			s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID)...,
@@ -178,8 +187,8 @@ func (s *sessionService) AgentQA(
 			logger.Warnf(ctx, "Failed to load agent history from DB: %v, continuing without history", err)
 			llmContext = []chat.Message{}
 		}
-		logger.Infof(ctx, "Loaded %d history messages from DB (budget=%d tokens, token scale=%.2f)",
-			len(llmContext), budget, agentConfig.ContextTokenScale)
+		logger.Infof(ctx, "Loaded %d history messages from DB (budget=%d tokens, plan history budget=%d, token scale=%.2f)",
+			len(llmContext), budget, historyBudget, agentConfig.ContextTokenScale)
 	} else {
 		logger.Infof(ctx, "Multi-turn disabled for this agent, running without history")
 		llmContext = []chat.Message{}
@@ -408,6 +417,13 @@ func (s *sessionService) AgentQA(
 	// again. Without multi-turn there is no stored history to end on.
 	if agentConfig.MultiTurnEnabled {
 		engine.SetContextCheckpointSink(messageCheckpointSink{repo: s.messageRepo, sessionID: sessionID})
+	}
+
+	// History over the plan's budget is summarized now, synchronously, so
+	// every round of this turn resends the smaller history. Needs the
+	// checkpoint sink and the abbreviation binding set above.
+	if historyBudget > 0 {
+		llmContext = engine.CompactHistoryToBudget(ctx, llmContext, historyBudget)
 	}
 
 	if manifest := buildSandboxAttachmentsPrompt(stagedAttachments); manifest != "" {
