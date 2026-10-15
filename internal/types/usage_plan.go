@@ -28,6 +28,11 @@ const (
 	UsagePlanScopeTenant = "tenant"
 	UsagePlanScopeUser   = "user"
 
+	// UsageSystemAdminPlanCode is the personal, unlimited package every
+	// SuperAdmin holds (seeded by migration 000140, editable like any plan).
+	// A subscription to it counts only while its holder is a SuperAdmin.
+	UsageSystemAdminPlanCode = "system-admin"
+
 	UsageSubscriptionActive    = "active"
 	UsageSubscriptionCancelled = "cancelled"
 

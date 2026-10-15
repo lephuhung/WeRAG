@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -82,9 +84,20 @@ func usageDenial(ent *types.UsageEntitlement, userID string) error {
 // Entitlement looks for the workspace's subscription first, then the
 // person's own. Pool subscriptions are checked against the workspace
 // counters; seat subscriptions and personal ones against the person's.
+//
+// A SuperAdmin is governed by their own package (the system-admin plan)
+// whatever workspace they are in; one promoted after migration 000140 gets
+// that subscription on the first lookup.
 func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID string) (*types.UsageEntitlement, error) {
 	now := g.now()
 	realUser := userID != "" && !types.IsSyntheticUserID(userID)
+	systemAdmin := realUser && types.IsSystemAdminFromContext(ctx)
+	if systemAdmin {
+		ent, err := g.systemAdminEntitlement(ctx, userID, now)
+		if err != nil || ent != nil {
+			return ent, err
+		}
+	}
 	if tenantID != 0 {
 		sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
 		if err != nil {
@@ -122,7 +135,8 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 		if err != nil {
 			return nil, err
 		}
-		if sub != nil {
+		// a SuperAdmin package outlives a revoked SuperAdmin role: ignore it
+		if sub != nil && !(sub.Plan != nil && sub.Plan.Code == types.UsageSystemAdminPlanCode && !systemAdmin) {
 			ent := entitlementFrom(sub, types.UsageScopeUser, now)
 			ent.HasSeat = true
 			ent.CountedScope = types.UsageScopeUser
@@ -130,6 +144,59 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 				return nil, err
 			}
 			return ent, nil
+		}
+	}
+	return nil, nil
+}
+
+// systemAdminEntitlement is a SuperAdmin's personal package, creating the
+// subscription to the system-admin plan when they have none. Nil when the
+// plan was deleted: the caller then falls back to the ordinary lookup.
+func (g *usageGuard) systemAdminEntitlement(ctx context.Context, userID string, now time.Time) (*types.UsageEntitlement, error) {
+	sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	if sub == nil {
+		plan, err := g.systemAdminPlan(ctx)
+		if err != nil || plan == nil {
+			return nil, err
+		}
+		created := &types.UsageSubscription{
+			ID:        uuid.New().String(),
+			ScopeType: types.UsageScopeUser,
+			ScopeID:   userID,
+			PlanID:    plan.ID,
+			Mode:      types.UsageModePool,
+			StartsAt:  now,
+			Status:    types.UsageSubscriptionActive,
+			Note:      "SuperAdmin",
+		}
+		if err := g.plans.CreateSubscription(ctx, created); err != nil {
+			// a concurrent lookup may have created it first
+			logger.Warnf(ctx, "usage guard: system-admin subscription for %s: %v", userID, err)
+		}
+		if sub, err = g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID); err != nil || sub == nil {
+			return nil, err
+		}
+	}
+	ent := entitlementFrom(sub, types.UsageScopeUser, now)
+	ent.HasSeat = true
+	ent.CountedScope = types.UsageScopeUser
+	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), types.UsageScopeUser, userID, now); err != nil {
+		return nil, err
+	}
+	return ent, nil
+}
+
+func (g *usageGuard) systemAdminPlan(ctx context.Context) (*types.UsagePlan, error) {
+	plans, err := g.plans.ListPlans(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range plans {
+		if p.Code == types.UsageSystemAdminPlanCode {
+			return p, nil
 		}
 	}
 	return nil, nil

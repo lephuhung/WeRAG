@@ -176,3 +176,53 @@ func TestUsageLimitsValidate(t *testing.T) {
 	require.Error(t, types.UsageLimits{{Metric: "tokens", Period: "week", Limit: 1}}.Validate())
 	require.Error(t, types.UsageLimits{{Metric: "tokens", Period: "month", Limit: -1}}.Validate())
 }
+
+// adminPlanRepo also lists plans and records created subscriptions.
+type adminPlanRepo struct {
+	fakeUsagePlanRepo
+	plans []*types.UsagePlan
+}
+
+func (f *adminPlanRepo) ListPlans(context.Context, bool) ([]*types.UsagePlan, error) {
+	return f.plans, nil
+}
+
+func (f *adminPlanRepo) CreateSubscription(_ context.Context, sub *types.UsageSubscription) error {
+	for _, p := range f.plans {
+		if p.ID == sub.PlanID {
+			sub.Plan = p
+		}
+	}
+	f.active[sub.ScopeType+"/"+sub.ScopeID] = sub
+	return nil
+}
+
+func TestUsageGuardSystemAdminGetsTheirOwnPackage(t *testing.T) {
+	adminPlan := &types.UsagePlan{ID: "plan-sa", Code: types.UsageSystemAdminPlanCode, Name: "Quản trị hệ thống", ScopeKind: "user", Mode: "pool"}
+	plans := &adminPlanRepo{
+		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+			// the workspace is seat mode and the admin holds no seat
+			"tenant/10003": {ID: "sub-t", Mode: "seat", Status: "active", Plan: poolPlan()},
+		}},
+		plans: []*types.UsagePlan{poolPlan(), adminPlan},
+	}
+	g := &usageGuard{plans: plans, counters: &countingRepo{}, settings: enforcingSettings{on: true}, now: func() time.Time { return guardNow }}
+	ctx := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
+
+	ent, err := g.Entitlement(ctx, 10003, "admin-1")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageSystemAdminPlanCode, ent.PlanCode)
+	require.Equal(t, "user", ent.Source)
+	require.True(t, ent.HasSeat)
+	require.Empty(t, ent.Limits)
+	require.NotNil(t, plans.active["user/admin-1"], "the subscription is created, not faked")
+
+	// revoked: the leftover package no longer counts, the workspace's does
+	ent, err = g.Entitlement(context.Background(), 10003, "admin-1")
+	require.NoError(t, err)
+	require.Equal(t, "tenant", ent.Source)
+	require.False(t, ent.HasSeat)
+	ent, err = g.Entitlement(context.Background(), 0, "admin-1")
+	require.NoError(t, err)
+	require.Nil(t, ent)
+}
