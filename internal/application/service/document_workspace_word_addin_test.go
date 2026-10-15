@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/text/unicode/norm"
 )
 
 func (fx *dwFixture) createWordAddin(t *testing.T) *types.DocumentWorkspace {
@@ -173,4 +175,31 @@ func TestSourceDocumentNeedsNoDocumentServer(t *testing.T) {
 	// opening a source in the embedded editor still needs ONLYOFFICE
 	_, err = fx.svc.SetRole(context.Background(), 7, "sess-1", ws.ID, types.DocumentWorkspaceRoleTarget)
 	requireAppCode(t, err, apperrors.ErrServiceUnavailable)
+}
+
+// A Word file binds only to its own document: the same ID, or a document
+// from before IDs whose name it has; another file is a conflict.
+func TestWordAddinBindWordFile(t *testing.T) {
+	fx := newDWFixture(t)
+	ws := fx.createWordAddin(t)
+	ctx := context.Background()
+	require.Empty(t, ws.WordFileID)
+
+	_, err := fx.svc.BindWordFile(ctx, 7, "sess-1", ws.ID, "file-b", "Another file.docx")
+	requireAppCode(t, err, apperrors.ErrConflict)
+
+	// the same name (Word may drop the extension, NFD from macOS)
+	name := strings.TrimSuffix(ws.FileName, ".docx")
+	got, err := fx.svc.BindWordFile(ctx, 7, "sess-1", ws.ID, "file-a", norm.NFD.String(strings.ToUpper(name)))
+	require.NoError(t, err)
+	require.Equal(t, "file-a", got.WordFileID)
+
+	// bound: the same file again, renamed too, is fine; another one is not
+	_, err = fx.svc.BindWordFile(ctx, 7, "sess-1", ws.ID, "file-a", "renamed.docx")
+	require.NoError(t, err)
+	_, err = fx.svc.BindWordFile(ctx, 7, "sess-1", ws.ID, "file-b", ws.FileName)
+	requireAppCode(t, err, apperrors.ErrConflict)
+
+	_, err = fx.svc.BindWordFile(ctx, 7, "sess-1", ws.ID, " ", ws.FileName)
+	requireAppCode(t, err, apperrors.ErrBadRequest)
 }

@@ -75,6 +75,13 @@ type DocumentWorkspaceService interface {
 	// then answers a conflict.
 	StoreClientSave(ctx context.Context, tenantID uint64, sessionID, documentID string, baseRevision int, data []byte) (*types.DocumentWorkspace, error)
 
+	// BindWordFile ties a Word add-in target to the Word file fileID (an ID
+	// the add-in keeps inside the .docx), so another file never uploads
+	// itself over it. The same ID is accepted; a document not bound yet is
+	// bound only when fileName is its file name (rows from before the ID);
+	// anything else is a conflict.
+	BindWordFile(ctx context.Context, tenantID uint64, sessionID, documentID, fileID, fileName string) (*types.DocumentWorkspace, error)
+
 	// CreateSourceFromAttachment records a chat upload of the session as a
 	// source document: a copy of the file now, its parsed text once the
 	// upload is parsed (TextStatus processing until then). An upload that

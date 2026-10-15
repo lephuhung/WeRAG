@@ -36,6 +36,9 @@ func (f *callbackOnlyWorkspaces) CreateFromAttachment(context.Context, uint64, s
 func (f *callbackOnlyWorkspaces) CreateFromAttachmentFor(context.Context, uint64, string, string, string, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
+func (f *callbackOnlyWorkspaces) BindWordFile(context.Context, uint64, string, string, string, string) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
 func (f *callbackOnlyWorkspaces) StoreClientSave(context.Context, uint64, string, string, int, []byte) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }

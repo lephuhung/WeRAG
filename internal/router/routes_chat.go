@@ -165,6 +165,7 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.POST("/:session_id/documents/:doc_id/format-check", handler.StartDocumentFormatCheck)
 		// its findings underlined in the editor, when the user asks
 		sessions.POST("/:session_id/documents/:doc_id/format-check/marks", handler.MarkDocumentFormatFindings)
+		sessions.POST("/:session_id/documents/:doc_id/word-file", handler.BindWordFile)
 		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
 		// live spellcheck of the paragraphs the user typed (nothing stored)

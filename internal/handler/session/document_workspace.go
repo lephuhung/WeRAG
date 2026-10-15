@@ -67,6 +67,9 @@ type CreateDocumentWorkspaceRequest struct {
 	// EditorKind is "onlyoffice" (default) or "word_addin" (the document is
 	// edited in Microsoft Word, whose taskpane uploads its saves).
 	EditorKind string `json:"editor_kind"`
+	// WordFileID is the Word file a Word add-in target belongs to (an ID the
+	// add-in keeps inside the .docx); see BindWordFile.
+	WordFileID string `json:"word_file_id"`
 }
 
 // documentIDParam is the :doc_id of the per-document routes; "" on the
@@ -107,6 +110,13 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	if err != nil {
 		h.fail(c, err, "Failed to open document")
 		return
+	}
+	if editorKind == types.DocumentEditorKindWordAddin && strings.TrimSpace(req.WordFileID) != "" {
+		ws, err = h.workspaces.BindWordFile(ctx, ws.TenantID, sessionID, ws.ID, req.WordFileID, ws.FileName)
+		if err != nil {
+			h.fail(c, err, "Failed to bind the Word file")
+			return
+		}
 	}
 	h.precheck.StartProfile(ctx, ws)
 	view, err := h.view(c, ws)
@@ -327,6 +337,41 @@ func (h *DocumentWorkspaceHandler) MarkDocumentFormatFindings(c *gin.Context) {
 		ops = []tools.DocumentOp{}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"document_ops": ops}})
+}
+
+// BindWordFileRequest names the Word file opening a Word add-in target.
+type BindWordFileRequest struct {
+	WordFileID string `json:"word_file_id" binding:"required"`
+	FileName   string `json:"file_name"`
+}
+
+// BindWordFile checks that a Word file may work on a Word add-in target,
+// binding a target from before file IDs to the first file of its name. A
+// document of another file answers 409: the add-in drops it from the file.
+// POST /sessions/:session_id/documents/:doc_id/word-file
+func (h *DocumentWorkspaceHandler) BindWordFile(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req BindWordFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("word_file_id is required"))
+		return
+	}
+	ws, err := h.workspaces.BindWordFile(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c), req.WordFileID, req.FileName)
+	if err != nil {
+		h.fail(c, err, "Failed to bind the Word file")
+		return
+	}
+	view, err := h.view(c, ws)
+	if err != nil {
+		h.fail(c, err, "Failed to build the document view")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
 }
 
 // ForceSaveDocumentWorkspace asks the Document Server to flush unsaved edits.

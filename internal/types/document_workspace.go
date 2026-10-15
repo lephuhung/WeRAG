@@ -104,6 +104,10 @@ type DocumentWorkspace struct {
 	// EditorKind is DocumentEditorKindOnlyOffice ("" on rows written
 	// before it existed) or DocumentEditorKindWordAddin.
 	EditorKind string `json:"editor_kind" gorm:"type:varchar(16);not null;default:'onlyoffice'"`
+	// WordFileID is the Word file a Word add-in target belongs to: an ID
+	// the add-in keeps inside the .docx. "" until a file binds to it (rows
+	// written before it, other editors). See DocumentWorkspaceService.BindWordFile.
+	WordFileID string `json:"word_file_id,omitempty" gorm:"type:varchar(64);not null;default:''"`
 	// TextStatus is the state of a source's parsed text (see
 	// DocumentSourceText*); "" for a target.
 	TextStatus  string         `json:"text_status,omitempty" gorm:"type:varchar(16);not null;default:''"`
