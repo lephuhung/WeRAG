@@ -1028,6 +1028,12 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	if turnUsage != nil {
 		completeData["usage"] = turnUsage
 	}
+	// A session nearing (or, where the cap only warns, past) the plan's
+	// per-session cap says so with the turn, so the UI can offer a new
+	// session before the next question is refused.
+	if grant := types.UsageTurnGrantFromContext(h.ctx); grant != nil && grant.Session != nil && grant.Session.Warning {
+		completeData["session_usage"] = grant.Session
+	}
 	h.completeEmitted = true
 	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
 		ID:        evt.ID,

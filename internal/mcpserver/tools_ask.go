@@ -201,7 +201,7 @@ func (s *Server) runQA(
 	defer cancel()
 
 	if s.usageGuard != nil {
-		grant, err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID)
+		grant, err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID, session.ID, types.SessionCapHard)
 		if err != nil {
 			return "", nil, err
 		}

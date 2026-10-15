@@ -230,6 +230,13 @@ const (
 	UsageDenialExpired        = "expired"
 	UsageDenialNoSeat         = "no_seat"
 	UsageDenialLimit          = "limit_exhausted"
+	// UsageDenialSessionLimit: the session used up a per-session cap; a new
+	// session seeded with this one's summary carries on (POST
+	// /sessions/:id/continue).
+	UsageDenialSessionLimit = "session_limit"
+
+	// UsagePeriodSession is the Period of a session_limit denial.
+	UsagePeriodSession = "session"
 )
 
 // UsageDenial is the details payload of the 429 returned by the guard.
@@ -239,6 +246,8 @@ type UsageDenial struct {
 	Period string `json:"period,omitempty"`
 	Limit  int64  `json:"limit,omitempty"`
 	Used   int64  `json:"used,omitempty"`
+	// SessionID is the capped session (session_limit only).
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // UsageSubscriptionFilter narrows a subscription listing.

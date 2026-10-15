@@ -122,7 +122,7 @@ func (s *messageService) meterMessage(ctx context.Context, tenantID uint64, mess
 	case "user":
 		if created {
 			userID, _ := types.UserIDFromContext(ctx)
-			s.usageMeter.RecordQuestion(ctx, tenantID, userID)
+			s.usageMeter.RecordQuestion(ctx, tenantID, userID, message.SessionID)
 		}
 	case "assistant":
 		s.usageMeter.RecordMessageUsage(ctx, message)
@@ -423,6 +423,11 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 		if err := s.suggestionRepo.DeleteBySessionID(ctx, tenantID, sessionID); err != nil {
 			logger.Warnf(ctx, "Failed to delete suggestions for session %s: %v", sessionID, err)
 		}
+	}
+	// a cleared session starts its per-session caps over; the workspace and
+	// person counters keep what was spent
+	if s.usageMeter != nil {
+		s.usageMeter.ResetSession(ctx, sessionID)
 	}
 
 	logger.Infof(ctx, "All messages cleared for session: %s", sessionID)

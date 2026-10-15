@@ -122,6 +122,78 @@ func (f UsagePlanFeatures) EffectiveHistoryTokens(window int) int {
 // no cap (enforcement off, SuperAdmin, or a plan without features).
 type UsageTurnGrant struct {
 	Features UsagePlanFeatures `json:"features"`
+	// Session is where the session stands against the plan's per-session
+	// caps before this turn; nil when the plan sets none.
+	Session *UsageSessionStatus `json:"session,omitempty"`
+}
+
+// SessionCapMode says what reaching a per-session cap does to a turn.
+type SessionCapMode int
+
+const (
+	// SessionCapHard refuses the turn (429, reason session_limit): the
+	// user opens a new session that carries the old one's summary.
+	SessionCapHard SessionCapMode = iota
+	// SessionCapSoft lets the turn through with a warning. Sessions bound
+	// to a document (the document assistant, the Word add-in) cannot be
+	// replaced by a fresh one, and IM rotates sessions itself.
+	SessionCapSoft
+)
+
+// sessionWarnPercent is how full a session is, counting the coming turn,
+// when the user is told it is nearing its cap.
+const sessionWarnPercent = 80
+
+// UsageSessionStatus is one session's lifetime usage next to the plan's
+// per-session caps (0 = no cap).
+type UsageSessionStatus struct {
+	SessionID string `json:"session_id"`
+	Turns     int64  `json:"turns"`
+	MaxTurns  int64  `json:"max_turns,omitempty"`
+	Tokens    int64  `json:"tokens"`
+	MaxTokens int64  `json:"max_tokens,omitempty"`
+	// Reached: a cap is used up, so this turn is past it.
+	Reached bool `json:"reached"`
+	// Warning: counting this turn the session is at sessionWarnPercent of
+	// a cap or more (always set when Reached).
+	Warning bool `json:"warning"`
+	// Soft: a reached cap lets the turn through (SessionCapSoft).
+	Soft bool `json:"soft,omitempty"`
+}
+
+// NewUsageSessionStatus compares a session's counters with the caps of f;
+// nil when f sets no per-session cap.
+func NewUsageSessionStatus(f UsagePlanFeatures, sessionID string, turns, tokens int64) *UsageSessionStatus {
+	if f.SessionMaxTurns <= 0 && f.SessionMaxTokens <= 0 {
+		return nil
+	}
+	st := &UsageSessionStatus{
+		SessionID: sessionID, Turns: turns, MaxTurns: f.SessionMaxTurns, Tokens: tokens, MaxTokens: f.SessionMaxTokens,
+	}
+	if st.MaxTurns > 0 {
+		st.Reached = st.Reached || turns >= st.MaxTurns
+		st.Warning = st.Warning || (turns+1)*100 >= st.MaxTurns*sessionWarnPercent
+	}
+	if st.MaxTokens > 0 {
+		st.Reached = st.Reached || tokens >= st.MaxTokens
+		st.Warning = st.Warning || tokens*100 >= st.MaxTokens*sessionWarnPercent
+	}
+	st.Warning = st.Warning || st.Reached
+	return st
+}
+
+// ExhaustedMetric names the cap a reached session used up: questions or
+// tokens. "" when none is.
+func (s *UsageSessionStatus) ExhaustedMetric() (metric string, limit, used int64) {
+	switch {
+	case s == nil:
+		return "", 0, 0
+	case s.MaxTurns > 0 && s.Turns >= s.MaxTurns:
+		return UsageMetricQuestions, s.MaxTurns, s.Turns
+	case s.MaxTokens > 0 && s.Tokens >= s.MaxTokens:
+		return UsageMetricTokens, s.MaxTokens, s.Tokens
+	}
+	return "", 0, 0
 }
 
 // usageTurnGrantContextKey carries the turn's usage grant to the chat paths.

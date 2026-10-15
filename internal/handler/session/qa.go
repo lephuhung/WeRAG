@@ -1164,6 +1164,30 @@ func (h *Handler) rejectIfOtherAgentRunLive(ctx context.Context, reqCtx *qaReque
 	return errors.NewConflictError("another turn is already running in this session")
 }
 
+// sessionCapMode is how the plan's per-session caps treat this turn. A
+// session bound to a document — the document assistant's, or one opened from
+// the Word add-in — cannot be swapped for a fresh one without losing its
+// document, so a used-up cap only warns there; everywhere else the turn is
+// refused and the user opens a new session that carries the summary.
+func (h *Handler) sessionCapMode(ctx context.Context, reqCtx *qaRequestContext) types.SessionCapMode {
+	if reqCtx.customAgent != nil && reqCtx.customAgent.ID == types.BuiltinDocumentAssistantID {
+		return types.SessionCapSoft
+	}
+	if reqCtx.session == nil || h.documentWorkspaces == nil || !h.documentWorkspaces.DocumentsEnabled() {
+		return types.SessionCapHard
+	}
+	docs, err := h.documentWorkspaces.List(ctx, reqCtx.session.TenantID, reqCtx.session.ID)
+	if err != nil {
+		return types.SessionCapHard
+	}
+	for _, d := range docs {
+		if d.IsWordAddin() {
+			return types.SessionCapSoft
+		}
+	}
+	return types.SessionCapHard
+}
+
 // executeQA is the unified execution flow for both KnowledgeQA and AgentQA modes.
 // It handles message creation, SSE setup, VLM analysis, service invocation, and error handling.
 func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle bool) {
@@ -1174,7 +1198,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	if h.usageGuard != nil {
 		tenantID, _ := types.TenantIDFromContext(ctx)
 		userID, _ := types.UserIDFromContext(ctx)
-		grant, err := h.usageGuard.CheckTurn(ctx, tenantID, userID)
+		grant, err := h.usageGuard.CheckTurn(ctx, tenantID, userID, sessionID, h.sessionCapMode(ctx, reqCtx))
 		if err != nil {
 			if reqCtx.c != nil && !reqCtx.skipSSE {
 				_ = reqCtx.c.Error(err)

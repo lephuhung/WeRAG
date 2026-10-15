@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -91,6 +92,15 @@ func (r *usageCounterRepository) SumByPeriod(
 		Group("metric").
 		Scan(&rows).Error
 	return rows, err
+}
+
+func (r *usageCounterRepository) DeleteScope(ctx context.Context, scopeType, scopeID string) error {
+	if scopeType != types.UsageScopeSession || scopeID == "" {
+		return fmt.Errorf("usage counters: only session scopes can be reset, not %q", scopeType)
+	}
+	return r.db.WithContext(ctx).
+		Where("scope_type = ? AND scope_id = ?", scopeType, scopeID).
+		Delete(&types.UsageCounter{}).Error
 }
 
 // ClaimMessageUsage flips messages.usage_metered_at from NULL exactly once.

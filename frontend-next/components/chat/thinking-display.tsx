@@ -201,7 +201,8 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
     Boolean(streaming) &&
     hasSteps &&
     !stepPending(steps[steps.length - 1]) &&
-    steps[steps.length - 1].type !== "compacted";
+    steps[steps.length - 1].type !== "compacted" &&
+    steps[steps.length - 1].type !== "limit";
 
   return (
     <div className={`${compact ? "mb-2" : "mb-4"} text-left`}>
@@ -335,6 +336,23 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
                       <span>{t("think.compacted")}</span>
                       {detail && <div className="text-[12px] text-muted-soft">{detail}</div>}
                     </div>
+                  </li>
+                );
+              }
+              if (step.type === "limit") {
+                const text =
+                  step.reason === "turn_budget"
+                    ? t("think.turnLimitBudget", {
+                        tokens: (step.tokens ?? 0).toLocaleString(),
+                        cap: (step.token_cap ?? 0).toLocaleString(),
+                      })
+                    : t("think.turnLimitRounds", { rounds: step.rounds ?? 0 });
+                return (
+                  <li key={step.id} className="relative flex items-start gap-2.5 py-0.5">
+                    <span className="relative z-10 mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full bg-canvas text-muted-soft">
+                      <IconMinusCircle className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">{text}</div>
                   </li>
                 );
               }

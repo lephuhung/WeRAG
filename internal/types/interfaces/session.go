@@ -24,6 +24,11 @@ type SessionService interface {
 	GetSessionByID(ctx context.Context, tenantID uint64, id string) (*types.Session, error)
 	// SetSessionOwnerID assigns sessions.user_id for the given session row.
 	SetSessionOwnerID(ctx context.Context, tenantID uint64, sessionID, ownerID string) error
+	// ContinueSession opens a new session carrying on from old (same owner
+	// and input-bar state), seeded with old's latest context summary and
+	// excerpts of its newest turns (types.Session.ContextSeed). Callers check
+	// that the caller may read old.
+	ContinueSession(ctx context.Context, old *types.Session) (*types.Session, error)
 	// GetSessionsByTenant gets all sessions of a tenant
 	GetSessionsByTenant(ctx context.Context) ([]*types.Session, error)
 	// GetPagedSessionsByTenant gets paged sessions of a tenant

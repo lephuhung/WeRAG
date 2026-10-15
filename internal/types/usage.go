@@ -17,6 +17,14 @@ import (
 const (
 	UsageScopeTenant = "tenant"
 	UsageScopeUser   = "user"
+	// UsageScopeSession counts one chat session (scope_id = session id)
+	// over its whole life, in the single period UsagePeriodAll. Only the
+	// per-session caps read it (types.UsageFeatureSessionMaxTurns/Tokens);
+	// every aggregate over usage_counters filters by scope_type, so these
+	// rows never add into workspace or person totals.
+	UsageScopeSession = "session"
+	// UsagePeriodAll is the period key of lifetime counters (session scope).
+	UsagePeriodAll = "all"
 
 	// UsageMetricQuestions counts role='user' messages (one per turn).
 	UsageMetricQuestions = "questions"

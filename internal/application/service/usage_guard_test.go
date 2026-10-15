@@ -179,7 +179,7 @@ func TestUsageLimitsValidate(t *testing.T) {
 
 // checkTurn is CheckTurn without the grant, for tests about the denial.
 func checkTurn(g *usageGuard, ctx context.Context, tenantID uint64, userID string) error {
-	_, err := g.CheckTurn(ctx, tenantID, userID)
+	_, err := g.CheckTurn(ctx, tenantID, userID, "", types.SessionCapHard)
 	return err
 }
 
@@ -191,18 +191,18 @@ func TestUsageGuardGrantCarriesPlanFeatures(t *testing.T) {
 		"tenant/10003": {ID: "sub-1", Mode: "pool", Status: "active", Plan: plan},
 	}}
 	g := newGuard(plans, &countingRepo{}, true)
-	grant, err := g.CheckTurn(context.Background(), 10003, "user-1")
+	grant, err := g.CheckTurn(context.Background(), 10003, "user-1", "", types.SessionCapHard)
 	require.NoError(t, err)
 	require.Equal(t, types.UsagePlanFeatures{TurnTokenCap: 300000, HistoryTokens: 32768, SessionMaxTurns: 15},
 		grant.Features)
 
 	// enforcement off and SuperAdmins: a grant without caps
 	off := newGuard(plans, &countingRepo{}, false)
-	grant, err = off.CheckTurn(context.Background(), 10003, "user-1")
+	grant, err = off.CheckTurn(context.Background(), 10003, "user-1", "", types.SessionCapHard)
 	require.NoError(t, err)
 	require.True(t, grant.Features.IsZero())
 	admin := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
-	grant, err = g.CheckTurn(admin, 10003, "user-1")
+	grant, err = g.CheckTurn(admin, 10003, "user-1", "", types.SessionCapHard)
 	require.NoError(t, err)
 	require.True(t, grant.Features.IsZero())
 }
@@ -225,4 +225,64 @@ func TestNormalizePlanValidatesFeatures(t *testing.T) {
 	empty := &types.UsagePlan{Code: "c", Name: "n"}
 	require.NoError(t, normalizePlan(empty))
 	require.Equal(t, "{}", string(empty.Features))
+}
+
+func sessionCappedGuard(turns, tokens int64) *usageGuard {
+	plan := poolPlan()
+	plan.Features = types.JSON(`{"session.max_turns": 15, "session.max_tokens": 1000000}`)
+	plans := &fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+		"tenant/10003": {ID: "sub-1", Mode: "pool", Status: "active", Plan: plan},
+	}}
+	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
+		"session/sess-1": {
+			{Metric: "questions", PeriodKey: "all", Value: turns},
+			{Metric: "tokens", PeriodKey: "all", Value: tokens},
+		},
+	}}
+	return newGuard(plans, counters, true)
+}
+
+// A session that used up its turns is refused with session_limit, carrying
+// the session so the client can continue it; another session is unaffected.
+func TestUsageGuardSessionCapRefusesWithSessionLimit(t *testing.T) {
+	g := sessionCappedGuard(15, 10)
+	_, err := g.CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.Equal(t, types.UsageDenialSessionLimit, denialReason(t, err))
+	d := err.(*apperrors.AppError).Details.(types.UsageDenial)
+	require.Equal(t, "questions", d.Metric)
+	require.Equal(t, int64(15), d.Limit)
+	require.Equal(t, "sess-1", d.SessionID)
+
+	grant, err := g.CheckTurn(context.Background(), 10003, "user-1", "sess-2", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, grant.Session.Warning)
+
+	// tokens cap the same way
+	g = sessionCappedGuard(1, 1000000)
+	_, err = g.CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.Equal(t, types.UsageDenialSessionLimit, denialReason(t, err))
+}
+
+// Document-bound sessions only warn: the turn goes through, marked reached.
+func TestUsageGuardSoftSessionCapWarnsOnly(t *testing.T) {
+	g := sessionCappedGuard(20, 10)
+	grant, err := g.CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapSoft)
+	require.NoError(t, err)
+	require.True(t, grant.Session.Reached)
+	require.True(t, grant.Session.Soft)
+	require.True(t, grant.Session.Warning)
+}
+
+// From 80% of a cap, counting the coming turn, the grant warns.
+func TestUsageGuardSessionWarningAtEightyPercent(t *testing.T) {
+	grant, err := sessionCappedGuard(10, 0).CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, grant.Session.Warning, "the 11th of 15 turns is under 80%%")
+	grant, err = sessionCappedGuard(11, 0).CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, grant.Session.Warning, "the 12th of 15 turns is 80%%")
+	require.False(t, grant.Session.Reached)
+	grant, err = sessionCappedGuard(1, 800000).CheckTurn(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, grant.Session.Warning)
 }

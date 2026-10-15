@@ -82,6 +82,12 @@ export function forkSession(id: string, data: { message_id: string; title?: stri
   return apiPost(`/api/v1/sessions/${id}/fork`, data, { timeoutMs: 180_000 });
 }
 
+/** Opens a new session that carries on from `id` with its summary — the
+ * way out of a session that reached its plan's per-session cap. */
+export function continueSession(id: string) {
+  return apiPost<{ success: boolean; data?: SessionRow }>(`/api/v1/sessions/${id}/continue`, {});
+}
+
 export function stopSession(id: string, messageId: string) {
   return apiPost(`/api/v1/sessions/${id}/stop`, { message_id: messageId });
 }
@@ -186,6 +192,9 @@ export type ChatMessage = {
   /** Owner's rating of an assistant answer: 1 helpful, -1 not helpful. */
   feedback?: MessageFeedback;
   feedback_comment?: string;
+  /** Earlier conversation was summarized up to this turn (assistant rows
+   * carrying a context checkpoint). */
+  context_compacted?: { summary?: string; created_at?: string; degraded?: boolean };
 };
 
 export function listMessages(sessionId: string, limit = 30, beforeTime = "") {

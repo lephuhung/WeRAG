@@ -124,6 +124,14 @@ type Session struct {
 	// already provisioned. See types.ForkBootstrap.
 	ForkBootstrap *ForkBootstrap `json:"-" gorm:"type:jsonb;column:fork_bootstrap"`
 
+	// ContextSeed is the summary a session continued from another one starts
+	// with (the old session's latest context checkpoint, see
+	// SessionService.ContinueSession). The agent history loader replays it as
+	// a compaction summary until this session has a checkpoint of its own;
+	// the quick-answer pipeline uses it the same way. Empty for ordinary
+	// sessions.
+	ContextSeed string `json:"-" gorm:"column:context_seed;type:text"`
+
 	// // Strategy configuration
 	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // 关联的Knowledge BaseID
 	// MaxRounds         int                 `json:"max_rounds"`                           // 多轮保持轮数

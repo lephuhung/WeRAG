@@ -12,6 +12,7 @@ export type ChatErrorKey =
   | "chat.err.usage.expired"
   | "chat.err.usage.noSeat"
   | "chat.err.usage.limit"
+  | "chat.err.usage.sessionLimit"
   | "chat.err.unauthorized"
   | "chat.err.forbidden"
   | "chat.err.notFound"
@@ -69,6 +70,7 @@ const USAGE_REASON_KEYS: Record<string, ChatErrorKey> = {
   expired: "chat.err.usage.expired",
   no_seat: "chat.err.usage.noSeat",
   limit_exhausted: "chat.err.usage.limit",
+  session_limit: "chat.err.usage.sessionLimit",
 };
 
 function byStatus(status: number, code?: number, reason?: string): ChatErrorKey {
@@ -82,6 +84,17 @@ function byStatus(status: number, code?: number, reason?: string): ChatErrorKey 
   if (status === 502 || status === 503 || status === 504) return "chat.err.unavailable";
   if (status >= 500) return "chat.err.server";
   return "chat.err.generic";
+}
+
+/** Whether a failed chat request was refused because the session used up
+ * its plan's per-session cap: the UI then offers a new session that
+ * carries this one's summary instead of a dead end. */
+export function isSessionLimitError(e: unknown): boolean {
+  if (e instanceof ChatStreamError) return e.status === 429 && e.reason === "session_limit";
+  if (e instanceof ApiError) {
+    return e.status === 429 && parseErrorEnvelope(JSON.stringify(e.payload ?? {})).reason === "session_limit";
+  }
+  return false;
 }
 
 /** The message key for a failed chat request, or null when the error

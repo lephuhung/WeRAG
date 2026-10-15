@@ -179,9 +179,10 @@ func (s *sessionService) AgentQA(
 		if planBudget := types.UsageFeaturesFromContext(ctx).EffectiveHistoryTokens(budget); planBudget < budget {
 			historyBudget = planBudget
 		}
+		historyOpts := append(s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID),
+			WithHistorySeed(req.Session.ContextSeed))
 		llmContext, agentConfig.ContextTokenScale, err = LoadAgentHistory(
-			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory,
-			s.historyDocumentsOption(ctx, req.Session.TenantID, sessionID)...,
+			ctx, s.messageRepo, sessionID, budget, agentConfig.RetainRetrievalHistory, historyOpts...,
 		)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to load agent history from DB: %v, continuing without history", err)

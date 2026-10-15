@@ -442,17 +442,66 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 // and returns ctx carrying the turn's grant (the plan's per-turn caps).
 // IM runs as the workspace's synthetic user, so only workspace-level
 // subscriptions and pool limits apply.
-func (s *Service) checkUsage(ctx context.Context) (context.Context, error) {
+func (s *Service) checkUsage(ctx context.Context, sessionID string) (context.Context, error) {
 	if s.usageGuard == nil {
 		return ctx, nil
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID)
+	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID, sessionID, types.SessionCapSoft)
 	if err != nil {
 		return ctx, fmt.Errorf("usage package: %w", err)
 	}
 	return types.WithUsageTurnGrant(ctx, grant), nil
+}
+
+// rotateCappedSession replaces a session that reached its plan's
+// per-session cap with a continuation of it (SessionService.ContinueSession,
+// seeded with its summary) and points the channel mapping at the new one
+// the way /clear retires a mapping: the old row is soft-deleted and a new
+// row with the same keys is created. Anything going wrong keeps the current
+// session, which IM then runs with the soft cap's warning only.
+func (s *Service) rotateCappedSession(
+	ctx context.Context, channelSession *ChannelSession, session *types.Session,
+) (*ChannelSession, *types.Session) {
+	if s.usageGuard == nil || channelSession == nil || session == nil {
+		return channelSession, session
+	}
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	userID, _ := types.UserIDFromContext(ctx)
+	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID, session.ID, types.SessionCapSoft)
+	if err != nil || grant == nil || grant.Session == nil || !grant.Session.Reached {
+		// a refusal for another reason is reported by checkUsage
+		return channelSession, session
+	}
+	next, err := s.sessionService.ContinueSession(ctx, session)
+	if err != nil {
+		logger.Warnf(ctx, "[IM] Session %s reached its cap but could not be continued: %v", session.ID, err)
+		return channelSession, session
+	}
+	mapping := *channelSession
+	mapping.ID = ""
+	mapping.SessionID = next.ID
+	mapping.CreatedAt, mapping.UpdatedAt = time.Time{}, time.Time{}
+	mapping.DeletedAt = gorm.DeletedAt{}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&ChannelSession{}).Where("id = ?", channelSession.ID).
+			Update("deleted_at", time.Now()).Error; err != nil {
+			return err
+		}
+		return tx.Create(&mapping).Error
+	})
+	if err != nil {
+		logger.Warnf(ctx, "[IM] Session %s reached its cap; remapping the channel to %s failed: %v",
+			session.ID, next.ID, err)
+		if delErr := s.db.Where("id = ?", next.ID).Delete(next).Error; delErr != nil {
+			logger.Warnf(ctx, "[IM] Failed to clean up unused session %s: %v", next.ID, delErr)
+		}
+		return channelSession, session
+	}
+	logger.Infof(ctx, "[IM] Session %s reached its cap (%d turns, %d tokens); channel continues in session %s",
+		session.ID, grant.Session.Turns, grant.Session.Tokens, next.ID)
+	return &mapping, next
 }
 
 // imMCPAuthService identifies an OAuth-enabled MCP service that the IM user has
@@ -1846,6 +1895,11 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 		}
 	}
 
+	// A session that used up its plan's per-session cap is not refused in
+	// IM: the channel moves on to a fresh session that carries the old one's
+	// summary, like /clear but without forgetting.
+	channelSession, session = s.rotateCappedSession(sessionCtx, channelSession, session)
+
 	// Title an untitled IM session from its first text message, like web chats.
 	// GenerateTitleAsync self-guards on a non-empty title and persists to the DB;
 	// nil eventBus is fine (IM has no live stream — the sidebar reloads it).
@@ -2785,7 +2839,7 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 	// Determine whether to use agent mode (already set above for event handlers).
 	requestID := uuid.New().String()
 
-	qaCtx, err = s.checkUsage(qaCtx)
+	qaCtx, err = s.checkUsage(qaCtx, session.ID)
 	if err != nil {
 		return err
 	}
@@ -3052,7 +3106,7 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	// Generate a shared RequestID to pair user and assistant messages for history
 	requestID := uuid.New().String()
 
-	ctx, err := s.checkUsage(ctx)
+	ctx, err := s.checkUsage(ctx, session.ID)
 	if err != nil {
 		return "", err
 	}

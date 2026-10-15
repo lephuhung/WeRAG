@@ -69,7 +69,18 @@ export type CompactedStep = {
   summary?: string;
 };
 
-export type AgentStepItem = ThinkingStep | ToolStep | CompactedStep;
+/** The agent loop stopped on a cap (round count, or the plan's per-turn
+ * token budget) and the answer was synthesized from what it had found. */
+export type LimitStep = {
+  type: "limit";
+  id: string;
+  reason: "turn_budget" | "max_iterations" | string;
+  rounds?: number;
+  tokens?: number;
+  token_cap?: number;
+};
+
+export type AgentStepItem = ThinkingStep | ToolStep | CompactedStep | LimitStep;
 
 // ---- stream → steps reducer --------------------------------------------------
 
@@ -112,6 +123,18 @@ export function applyChunkToSteps(steps: AgentStepItem[], c: StreamChunk): void 
       tokens_after: Number(d?.tokens_after) || 0,
       degraded: Boolean(d?.degraded),
       summary: typeof d?.summary === "string" ? d.summary : undefined,
+    });
+    return;
+  }
+
+  if (kind === "turn_limit") {
+    steps.push({
+      type: "limit",
+      id: c.id || `limit-${steps.length}`,
+      reason: typeof d?.reason === "string" ? d.reason : "max_iterations",
+      rounds: Number(d?.rounds) || 0,
+      tokens: Number(d?.tokens) || 0,
+      token_cap: Number(d?.token_cap) || 0,
     });
     return;
   }

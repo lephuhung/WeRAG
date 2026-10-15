@@ -472,6 +472,10 @@ type Message struct {
 	// only; nil unless a later turn's compaction ended exactly here. Internal
 	// to history loading, so it stays out of API responses.
 	ContextCheckpoint *ContextCheckpoint `json:"-" gorm:"type:jsonb;column:context_checkpoint"`
+	// ContextCompacted is the chat UI's view of ContextCheckpoint, filled on
+	// read (AfterFind): it marks the turn up to which earlier conversation
+	// was summarized, so the compaction marker survives a reload.
+	ContextCompacted *ContextCompactedMarker `json:"context_compacted,omitempty" gorm:"-"`
 	// Abbreviation carries the public clarification state linked to this
 	// message by the abbreviation-resolution gate (root question, definition
 	// reply, clarification or answer). Hydrated by the message repository at
@@ -569,6 +573,12 @@ func (a *AgentSteps) Scan(value interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(b, a)
+}
+
+// AfterFind exposes the row's context checkpoint to the chat UI.
+func (m *Message) AfterFind(*gorm.DB) error {
+	m.ContextCompacted = m.ContextCheckpoint.Marker()
+	return nil
 }
 
 // BeforeCreate is a GORM hook that runs before creating a new message record
