@@ -200,8 +200,11 @@ export function Sidebar() {
           aria-hidden
         />
       )}
+      {/* Desktop: the translate makes the rail its own stacking layer, so it
+       * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
+       * account menu, wider than the rail, opens under the editor. */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:static lg:z-auto lg:translate-x-0 lg:transition-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:relative lg:z-30 lg:translate-x-0 lg:transition-none ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
