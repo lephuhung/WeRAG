@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconDoc, IconGlobe, IconImage, IconPaperclip, IconSend } from "@/components/icons";
 import { useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import type { QuestionOrigin } from "@/lib/question-origin";
@@ -53,6 +53,7 @@ export function Composer({
   uploadsBecomeSources = false,
   onOpenAttachmentForEditing,
   sendRequest = null,
+  toolbarEnd = null,
 }: {
   sessionId?: string;
   value: string;
@@ -83,6 +84,8 @@ export function Composer({
   onOpenAttachmentForEditing?: (a: PendingAttachment) => void;
   /** Sends this text right away (a picked quick action); a new seq sends again. */
   sendRequest?: { text: string; seq: number } | null;
+  /** Shown just before the send button (e.g. the context usage ring). */
+  toolbarEnd?: ReactNode;
 }) {
   const ctx = useChatContext();
   const { t } = useT();
@@ -472,6 +475,7 @@ export function Composer({
         </div>
 
         <div className="relative ml-auto flex shrink-0 items-center gap-2">
+          {toolbarEnd}
           {showStop ? (
             <button onClick={onStop} className="btn btn-outline h-9 shrink-0" title="Stop generation">
               ■ Stop

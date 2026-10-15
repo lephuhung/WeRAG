@@ -2797,12 +2797,6 @@ function ChatBody({ id }: { id: string }) {
             )}
           </div>
         )}
-        <ContextRing
-          sessionId={id === "new" ? null : id}
-          busy={busy}
-          refreshKey={compactionCount}
-          className={isDocumentAssistant && (spellingStatus || formatCheck) ? "ml-1" : "ml-auto"}
-        />
         {isDocumentAssistant && id !== "new" && (
           <FormatCheckReportModal
             open={formatReportOpen}
@@ -2978,6 +2972,9 @@ function ChatBody({ id }: { id: string }) {
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
+            toolbarEnd={
+              <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" />
+            }
           />
           </div>
           {!compact && (
