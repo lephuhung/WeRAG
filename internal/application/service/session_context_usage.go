@@ -1,9 +1,11 @@
 package service
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/compaction"
@@ -17,8 +19,99 @@ import (
 )
 
 // contextUsageLatestRows is how many of the newest rows are read to find the
-// latest completed turn: a turn is two rows plus one per steered message.
-const contextUsageLatestRows = 6
+// latest completed turn: a turn is two rows plus one per steered message,
+// and a running turn or a few steered messages can sit above it.
+const contextUsageLatestRows = 20
+
+// The history estimate cache: entries live contextUsageCacheTTL, and at
+// most contextUsageCacheSize sessions are kept (least recently used out).
+const (
+	contextUsageCacheTTL  = 60 * time.Second
+	contextUsageCacheSize = 512
+)
+
+// contextUsageCache is a small bounded LRU of history estimates by key
+// (historyCacheKey), each kept for a TTL. In memory per backend process:
+// a miss only costs one estimate.
+type contextUsageCache struct {
+	mu      sync.Mutex
+	ttl     time.Duration
+	size    int
+	now     func() time.Time
+	order   *list.List // front = most recently used; values are *contextUsageEntry
+	entries map[string]*list.Element
+	// sessions maps a session to its one live key, so a superseded state
+	// is dropped instead of waiting out its TTL.
+	sessions map[string]string
+}
+
+type contextUsageEntry struct {
+	key     string
+	session string
+	value   contextHistory
+	expires time.Time
+}
+
+func newContextUsageCache(ttl time.Duration, size int) *contextUsageCache {
+	return &contextUsageCache{
+		ttl: ttl, size: size, now: time.Now, order: list.New(),
+		entries: make(map[string]*list.Element), sessions: make(map[string]string),
+	}
+}
+
+func (c *contextUsageCache) get(key string) (contextHistory, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.entries[key]
+	if !ok {
+		return contextHistory{}, false
+	}
+	entry := el.Value.(*contextUsageEntry)
+	if !c.now().Before(entry.expires) {
+		c.remove(el)
+		return contextHistory{}, false
+	}
+	c.order.MoveToFront(el)
+	return entry.value, true
+}
+
+// put stores value under key for session (the key's first field) and drops
+// that session's previous key.
+func (c *contextUsageCache) put(key string, value contextHistory) {
+	session, _, _ := strings.Cut(key, "|")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if old, ok := c.sessions[session]; ok && old != key {
+		if el, ok := c.entries[old]; ok {
+			c.remove(el)
+		}
+	}
+	if el, ok := c.entries[key]; ok {
+		c.remove(el)
+	}
+	c.entries[key] = c.order.PushFront(&contextUsageEntry{
+		key: key, session: session, value: value, expires: c.now().Add(c.ttl),
+	})
+	c.sessions[session] = key
+	for c.order.Len() > c.size {
+		c.remove(c.order.Back())
+	}
+}
+
+func (c *contextUsageCache) remove(el *list.Element) {
+	entry := el.Value.(*contextUsageEntry)
+	c.order.Remove(el)
+	delete(c.entries, entry.key)
+	if c.sessions[entry.session] == entry.key {
+		delete(c.sessions, entry.session)
+	}
+}
+
+func (c *contextUsageCache) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.order.Len()
+}
 
 // completedTurnCounter is the optional repository method that counts the
 // turns a checkpoint covers. Asserted rather than added to
@@ -39,6 +132,7 @@ type SessionContextUsageService struct {
 	customAgentService interfaces.CustomAgentService
 	usageGuard         interfaces.UsageGuard
 	documentWorkspaces interfaces.DocumentWorkspaceService
+	cache              *contextUsageCache
 }
 
 // NewSessionContextUsageService creates the service. usageGuard and
@@ -60,6 +154,7 @@ func NewSessionContextUsageService(
 		customAgentService: customAgentService,
 		usageGuard:         usageGuard,
 		documentWorkspaces: documentWorkspaces,
+		cache:              newContextUsageCache(contextUsageCacheTTL, contextUsageCacheSize),
 	}
 }
 
@@ -102,6 +197,7 @@ func (s *SessionContextUsageService) Usage(
 		}
 	}
 	out.Enforced, out.PlanName = preview.Enforced, preview.PlanName
+	out.Denied, out.DenialReason = preview.Denied, preview.DenialReason
 	out.TurnTokenCap = preview.Features.TurnTokenCap
 	out.HistoryBudget = preview.Features.EffectiveHistoryTokens(out.ModelWindow)
 	out.Session = types.SessionContextSessionStatus{
@@ -110,22 +206,86 @@ func (s *SessionContextUsageService) Usage(
 		Warning: preview.Session.Warning, Reached: preview.Session.Reached, Soft: preview.Session.Soft,
 	}
 
+	// The history estimate is the costly part (it reads and prices up to
+	// the window); it only changes with a new or updated row, a new
+	// checkpoint, or the inputs that shape the replay.
+	key := s.historyCacheKey(ctx, session, newest, latest, customAgent, docs, out.ModelWindow)
+	if cached, ok := s.cache.get(key); ok {
+		cached.applyTo(out)
+		return out, nil
+	}
+	snapshot := &types.SessionContextUsage{ModelWindow: out.ModelWindow}
 	var checkpoint *types.Message
 	if customAgent == nil || customAgent.IsAgentMode() {
-		out.Mode = types.ContextUsageModeAgent
-		checkpoint, err = s.estimateAgentHistory(ctx, session, customAgent, docs, out)
+		snapshot.Mode = types.ContextUsageModeAgent
+		checkpoint, err = s.estimateAgentHistory(ctx, session, customAgent, docs, snapshot)
 	} else {
-		out.Mode = types.ContextUsageModeQuickAnswer
-		checkpoint, err = s.estimateQuickAnswerHistory(ctx, session, customAgent, newest, out)
+		snapshot.Mode = types.ContextUsageModeQuickAnswer
+		checkpoint, err = s.estimateQuickAnswerHistory(ctx, session, customAgent, newest, snapshot)
 	}
 	if err != nil {
 		return nil, err
 	}
 	if checkpoint != nil {
-		out.Compacted = true
-		out.CompactedTurns = s.countCompactedTurns(ctx, session.ID, checkpoint)
+		snapshot.Compacted = true
+		snapshot.CompactedTurns = s.countCompactedTurns(ctx, session.ID, checkpoint)
 	}
+	hist := contextHistory{
+		mode: snapshot.Mode, historyTokens: snapshot.HistoryTokens, summaryTokens: snapshot.SummaryTokens,
+		compacted: snapshot.Compacted, compactedTurns: snapshot.CompactedTurns, seeded: snapshot.Seeded,
+		historyRounds: snapshot.HistoryRounds,
+	}
+	s.cache.put(key, hist)
+	hist.applyTo(out)
 	return out, nil
+}
+
+// contextHistory is the cached part of a SessionContextUsage: what the
+// history estimate found.
+type contextHistory struct {
+	mode           string
+	historyTokens  int
+	summaryTokens  int
+	compacted      bool
+	compactedTurns int
+	seeded         bool
+	historyRounds  int
+}
+
+func (h contextHistory) applyTo(out *types.SessionContextUsage) {
+	out.Mode, out.HistoryTokens, out.SummaryTokens = h.mode, h.historyTokens, h.summaryTokens
+	out.Compacted, out.CompactedTurns, out.Seeded = h.compacted, h.compactedTurns, h.seeded
+	out.HistoryRounds = h.historyRounds
+}
+
+// historyCacheKey names one state of a session's history: its newest row
+// and newest completed turn (a new turn, a stop or an edit moves them),
+// its newest checkpoint (a compaction writes one, possibly on an older
+// turn), and what shapes the replay (agent, window, documents, seed).
+func (s *SessionContextUsageService) historyCacheKey(
+	ctx context.Context, session *types.Session, newest []*types.Message, latest *types.Message,
+	customAgent *types.CustomAgent, docs []*types.DocumentWorkspace, window int,
+) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|w%d|seed%d", session.ID, window, len(session.ContextSeed))
+	if len(newest) > 0 {
+		fmt.Fprintf(&b, "|n:%s@%d", newest[0].ID, newest[0].UpdatedAt.UnixNano())
+	}
+	if latest != nil {
+		fmt.Fprintf(&b, "|a:%s@%d", latest.ID, latest.UpdatedAt.UnixNano())
+	}
+	if cp := loadContextCheckpoint(ctx, s.messageRepo, session.ID); cp != nil {
+		fmt.Fprintf(&b, "|c:%s@%d", cp.ID, cp.ContextCheckpoint.CreatedAt.UnixNano())
+	}
+	if customAgent != nil {
+		c := customAgent.Config
+		fmt.Fprintf(&b, "|g:%s:%s:%t:%t:%d", customAgent.ID, c.AgentMode, c.MultiTurnEnabled,
+			c.RetainRetrievalHistory, c.HistoryTurns)
+	}
+	for _, d := range docs {
+		fmt.Fprintf(&b, "|d:%s:%s:%t", d.ID, d.AttachmentID, d.IsTarget())
+	}
+	return b.String()
 }
 
 // estimateAgentHistory fills out with what LoadAgentHistory would load for
@@ -191,9 +351,12 @@ func (s *SessionContextUsageService) estimateQuickAnswerHistory(
 			chat.Message{Role: "assistant", Content: h.Answer})
 	}
 	out.HistoryTokens = out.SummaryTokens + estimator.EstimateMessages(msgs)
+	out.HistoryRounds = maxRounds
 	if out.SummaryTokens == 0 {
 		return nil, nil
 	}
+	// after a summary the pipeline keeps fewer raw rounds
+	out.HistoryRounds = min(maxRounds, chatpipeline.SummarizedHistoryRounds)
 	checkpoint := loadContextCheckpoint(ctx, s.messageRepo, session.ID)
 	out.Seeded = checkpoint == nil
 	out.Compacted = out.Seeded

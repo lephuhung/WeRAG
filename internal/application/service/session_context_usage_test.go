@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,6 +131,77 @@ func TestContextUsageEmptySession(t *testing.T) {
 	assert.Zero(t, got.HistoryTokens)
 	assert.Nil(t, got.LastTurn)
 	assert.Equal(t, types.DefaultMaxContextTokens, got.ModelWindow, "no turn names a model yet")
+}
+
+// A poll on an unchanged session reuses the estimate; a new turn, an
+// updated row or a new checkpoint is a new key, and entries expire.
+func TestContextUsageCachesTheHistoryEstimate(t *testing.T) {
+	rows := storedTurns(3)
+	repo := &countingHistoryRepo{historyRepo{rows: rows}}
+	svc := newContextUsageService(repo, nil)
+	now := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	svc.cache.now = func() time.Time { return now }
+	session := &types.Session{ID: "s1"}
+	ctx := context.Background()
+
+	first, err := svc.Usage(ctx, session)
+	require.NoError(t, err)
+	pages := repo.pages
+	second, err := svc.Usage(ctx, session)
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+	assert.Equal(t, pages+1, repo.pages, "a hit reads only the newest rows")
+
+	// a new turn
+	at := historyBase.Add(time.Hour)
+	repo.rows = append(repo.rows,
+		&types.Message{ID: "u9", RequestID: "req-9", Role: "user", Content: "question 9", CreatedAt: at},
+		&types.Message{ID: "a9", RequestID: "req-9", Role: "assistant", Content: "answer 9 " + strings.Repeat("word ", 50),
+			IsCompleted: true, CreatedAt: at.Add(time.Second)},
+	)
+	third, err := svc.Usage(ctx, session)
+	require.NoError(t, err)
+	assert.Greater(t, third.HistoryTokens, second.HistoryTokens, "the new turn is counted at once")
+
+	// a compaction writes a checkpoint on an older turn
+	repo.checkpoint = checkpointOn(rows[3], "## Goal\nturns one and two")
+	repo.checkpoint.ContextCheckpoint.CreatedAt = at
+	fourth, err := svc.Usage(ctx, session)
+	require.NoError(t, err)
+	assert.True(t, fourth.Compacted)
+	assert.Equal(t, 1, svc.cache.len(), "the superseded state of the session is dropped")
+
+	// expiry
+	pages = repo.pages
+	now = now.Add(contextUsageCacheTTL)
+	_, err = svc.Usage(ctx, session)
+	require.NoError(t, err)
+	assert.Greater(t, repo.pages, pages+1, "an expired entry is estimated again")
+}
+
+func TestContextUsageCacheIsBounded(t *testing.T) {
+	c := newContextUsageCache(time.Minute, 2)
+	c.put("s1|a", contextHistory{historyTokens: 1})
+	c.put("s2|a", contextHistory{historyTokens: 2})
+	_, _ = c.get("s1|a") // s1 is now the most recently used
+	c.put("s3|a", contextHistory{historyTokens: 3})
+	assert.Equal(t, 2, c.len())
+	_, ok := c.get("s2|a")
+	assert.False(t, ok, "the least recently used entry goes")
+	got, ok := c.get("s1|a")
+	assert.True(t, ok)
+	assert.Equal(t, 1, got.historyTokens)
+}
+
+func TestContextUsageReportsADeniedPackage(t *testing.T) {
+	repo := &countingHistoryRepo{historyRepo{rows: storedTurns(1)}}
+	guard := &previewGuard{preview: &types.UsageSessionPreview{
+		Enforced: true, Denied: true, DenialReason: types.UsageDenialNoSubscription,
+	}}
+	got, err := newContextUsageService(repo, guard).Usage(context.Background(), &types.Session{ID: "s1"})
+	require.NoError(t, err)
+	assert.True(t, got.Denied)
+	assert.Equal(t, types.UsageDenialNoSubscription, got.DenialReason)
 }
 
 func TestContextUsageAppliesThePlan(t *testing.T) {

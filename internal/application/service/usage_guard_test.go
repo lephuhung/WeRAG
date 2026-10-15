@@ -363,6 +363,19 @@ func TestUsageGuardPreviewSessionNeverRefuses(t *testing.T) {
 	require.False(t, p.Session.Reached)
 }
 
+// A caller CheckTurn would refuse is reported as denied, with the reason.
+func TestUsageGuardPreviewSessionReportsDenial(t *testing.T) {
+	g := newGuard(&fakeUsagePlanRepo{}, &countingRepo{}, true)
+	p, err := g.PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, p.Denied)
+	require.Equal(t, types.UsageDenialNoSubscription, p.DenialReason)
+
+	p, err = sessionCappedGuard(1, 1).PreviewSession(context.Background(), 10003, "user-1", "sess-1", types.SessionCapHard)
+	require.NoError(t, err)
+	require.False(t, p.Denied)
+}
+
 // A SuperAdmin previews without caps and without the package lookup that
 // could create their subscription.
 func TestUsageGuardPreviewSessionSystemAdminUncapped(t *testing.T) {

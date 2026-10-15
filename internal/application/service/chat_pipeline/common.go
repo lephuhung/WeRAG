@@ -141,6 +141,10 @@ type contextSummarySource interface {
 // keep the newest exchanges verbatim, so fewer are needed than without one.
 const summarizedHistoryRounds = 3
 
+// SummarizedHistoryRounds is summarizedHistoryRounds for callers outside
+// the pipeline (the context indicator reports it).
+const SummarizedHistoryRounds = summarizedHistoryRounds
+
 // LoadHistoryAndSummary is the history the LOAD_HISTORY stage gives the
 // next quick-answer turn of a session with maxRounds rounds: the context
 // summary, if any, and the raw rounds after it. It serves callers outside

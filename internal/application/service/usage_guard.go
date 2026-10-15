@@ -102,6 +102,15 @@ func (g *usageGuard) PreviewSession(
 			preview.PlanName = ent.PlanName
 			preview.Features = ent.Features
 		}
+		// what CheckTurn would refuse, reported instead of raised
+		if err := usageDenial(ent, userID); err != nil {
+			preview.Denied = true
+			if appErr, ok := err.(*apperrors.AppError); ok {
+				if d, ok := appErr.Details.(types.UsageDenial); ok {
+					preview.DenialReason = d.Reason
+				}
+			}
+		}
 	}
 	if sessionID == "" {
 		return preview, nil

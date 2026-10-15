@@ -30,6 +30,10 @@ type SessionContextUsage struct {
 	Seeded bool `json:"seeded"`
 	// Mode is the history shape estimated (ContextUsageMode*).
 	Mode string `json:"mode"`
+	// HistoryRounds is how many recent rounds a quick-answer turn carries
+	// (fewer after a summary); 0 in agent mode, which sizes history in
+	// tokens.
+	HistoryRounds int `json:"history_rounds"`
 	// LastTurn is the newest completed turn's usage, nil before any.
 	LastTurn *SessionContextLastTurn `json:"last_turn"`
 	// Session is the session's lifetime usage against the plan's caps.
@@ -41,6 +45,11 @@ type SessionContextUsage struct {
 	// Enforced: the plan's caps apply to this caller (usage.enforce is on
 	// and the caller is not a SuperAdmin).
 	Enforced bool `json:"enforced"`
+	// Denied: enforcement is on and the caller's package would refuse the
+	// next turn; DenialReason says why (UsageDenial* reasons:
+	// no_subscription, expired, no_seat, limit_exhausted).
+	Denied       bool   `json:"denied"`
+	DenialReason string `json:"reason,omitempty"`
 }
 
 // SessionContextLastTurn is the token usage of one turn, summed over its
@@ -71,6 +80,11 @@ type UsageSessionPreview struct {
 	Enforced bool
 	// PlanName is the governing package's name, "" for none.
 	PlanName string
+	// Denied: Enforced, and CheckTurn would refuse the caller's package
+	// (none, expired, no seat, or a used-up limit); DenialReason is the
+	// UsageDenial reason. A session cap is reported in Session instead.
+	Denied       bool
+	DenialReason string
 	// Features are the caps that apply; zero when not Enforced.
 	Features UsagePlanFeatures
 	// Session is the session's lifetime counters against those caps; its
