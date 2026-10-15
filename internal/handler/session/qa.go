@@ -1174,7 +1174,8 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	if h.usageGuard != nil {
 		tenantID, _ := types.TenantIDFromContext(ctx)
 		userID, _ := types.UserIDFromContext(ctx)
-		if err := h.usageGuard.CheckTurn(ctx, tenantID, userID); err != nil {
+		grant, err := h.usageGuard.CheckTurn(ctx, tenantID, userID)
+		if err != nil {
 			if reqCtx.c != nil && !reqCtx.skipSSE {
 				_ = reqCtx.c.Error(err)
 			} else {
@@ -1182,6 +1183,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			}
 			return
 		}
+		// the plan's per-turn caps travel with the turn to the chat service
+		ctx = types.WithUsageTurnGrant(ctx, grant)
+		reqCtx.ctx = ctx
 	}
 
 	// Persist the input-bar state used for this request so reopening the

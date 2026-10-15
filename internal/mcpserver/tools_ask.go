@@ -201,9 +201,11 @@ func (s *Server) runQA(
 	defer cancel()
 
 	if s.usageGuard != nil {
-		if err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID); err != nil {
+		grant, err := s.usageGuard.CheckTurn(ctx, session.TenantID, session.UserID)
+		if err != nil {
 			return "", nil, err
 		}
+		ctx = types.WithUsageTurnGrant(ctx, grant)
 	}
 
 	requestID := uuid.New().String()

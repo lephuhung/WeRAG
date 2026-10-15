@@ -67,18 +67,18 @@ func denialReason(t *testing.T, err error) string {
 
 func TestUsageGuardOffLetsEveryoneThrough(t *testing.T) {
 	g := newGuard(&fakeUsagePlanRepo{}, &countingRepo{}, false)
-	require.NoError(t, g.CheckTurn(context.Background(), 10003, "user-1"))
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "user-1"))
 }
 
 func TestUsageGuardSystemAdminExempt(t *testing.T) {
 	g := newGuard(&fakeUsagePlanRepo{}, &countingRepo{}, true)
 	ctx := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
-	require.NoError(t, g.CheckTurn(ctx, 10003, "user-1"))
+	require.NoError(t, checkTurn(g, ctx, 10003, "user-1"))
 }
 
 func TestUsageGuardNoSubscriptionBlocks(t *testing.T) {
 	g := newGuard(&fakeUsagePlanRepo{}, &countingRepo{}, true)
-	err := g.CheckTurn(context.Background(), 10003, "user-1")
+	err := checkTurn(g, context.Background(), 10003, "user-1")
 	require.Equal(t, types.UsageDenialNoSubscription, denialReason(t, err))
 }
 
@@ -92,10 +92,10 @@ func TestUsageGuardPoolLimitAgainstTenantCounters(t *testing.T) {
 		"user/user-1":  {{Metric: "questions", PeriodKey: "2026-10-13", Value: 50}}, // ignored in pool mode
 	}}
 	g := newGuard(plans, counters, true)
-	require.NoError(t, g.CheckTurn(context.Background(), 10003, "user-1"))
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "user-1"))
 
 	counters.rows["tenant/10003"][0].Value = 10
-	err := g.CheckTurn(context.Background(), 10003, "user-1")
+	err := checkTurn(g, context.Background(), 10003, "user-1")
 	require.Equal(t, types.UsageDenialLimit, denialReason(t, err))
 
 	ent, err := g.Entitlement(context.Background(), 10003, "user-1")
@@ -120,7 +120,7 @@ func TestUsageGuardOverrideBeatsPlanLimits(t *testing.T) {
 		},
 	}}
 	g := newGuard(plans, counters, true)
-	require.NoError(t, g.CheckTurn(context.Background(), 10003, "user-1"))
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "user-1"))
 }
 
 func TestUsageGuardExpiredSubscriptionBlocks(t *testing.T) {
@@ -129,7 +129,7 @@ func TestUsageGuardExpiredSubscriptionBlocks(t *testing.T) {
 		"tenant/10003": {ID: "sub-1", Mode: "pool", Status: "active", EndsAt: &ended, Plan: poolPlan()},
 	}}
 	g := newGuard(plans, &countingRepo{}, true)
-	err := g.CheckTurn(context.Background(), 10003, "user-1")
+	err := checkTurn(g, context.Background(), 10003, "user-1")
 	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
 }
 
@@ -146,11 +146,11 @@ func TestUsageGuardSeatModeNeedsSeatAndCountsUser(t *testing.T) {
 		"user/user-1":  {{Metric: "questions", PeriodKey: "2026-10", Value: 10}},
 	}}
 	g := newGuard(plans, counters, true)
-	require.NoError(t, g.CheckTurn(context.Background(), 10003, "user-1"))
-	err := g.CheckTurn(context.Background(), 10003, "user-2")
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "user-1"))
+	err := checkTurn(g, context.Background(), 10003, "user-2")
 	require.Equal(t, types.UsageDenialNoSeat, denialReason(t, err))
 	// Machine principals have no seat and are not capped per seat.
-	require.NoError(t, g.CheckTurn(context.Background(), 10003, "system-10003"))
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "system-10003"))
 }
 
 func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
@@ -162,7 +162,7 @@ func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
 		"user/user-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 5}},
 	}}
 	g := newGuard(plans, counters, true)
-	err := g.CheckTurn(context.Background(), 10003, "user-1")
+	err := checkTurn(g, context.Background(), 10003, "user-1")
 	require.Equal(t, types.UsageDenialLimit, denialReason(t, err))
 	ent, err := g.Entitlement(context.Background(), 10003, "user-1")
 	require.NoError(t, err)
@@ -175,4 +175,54 @@ func TestUsageLimitsValidate(t *testing.T) {
 	require.Error(t, types.UsageLimits{{Metric: "words", Period: "day", Limit: 1}}.Validate())
 	require.Error(t, types.UsageLimits{{Metric: "tokens", Period: "week", Limit: 1}}.Validate())
 	require.Error(t, types.UsageLimits{{Metric: "tokens", Period: "month", Limit: -1}}.Validate())
+}
+
+// checkTurn is CheckTurn without the grant, for tests about the denial.
+func checkTurn(g *usageGuard, ctx context.Context, tenantID uint64, userID string) error {
+	_, err := g.CheckTurn(ctx, tenantID, userID)
+	return err
+}
+
+func TestUsageGuardGrantCarriesPlanFeatures(t *testing.T) {
+	plan := poolPlan()
+	plan.Features = types.JSON(`{"agent.turn_token_cap": 300000, "context.history_tokens": 32768,
+		"session.max_turns": 15, "ui.theme": "dark"}`)
+	plans := &fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+		"tenant/10003": {ID: "sub-1", Mode: "pool", Status: "active", Plan: plan},
+	}}
+	g := newGuard(plans, &countingRepo{}, true)
+	grant, err := g.CheckTurn(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, types.UsagePlanFeatures{TurnTokenCap: 300000, HistoryTokens: 32768, SessionMaxTurns: 15},
+		grant.Features)
+
+	// enforcement off and SuperAdmins: a grant without caps
+	off := newGuard(plans, &countingRepo{}, false)
+	grant, err = off.CheckTurn(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.True(t, grant.Features.IsZero())
+	admin := context.WithValue(context.Background(), types.SystemAdminContextKey, true)
+	grant, err = g.CheckTurn(admin, 10003, "user-1")
+	require.NoError(t, err)
+	require.True(t, grant.Features.IsZero())
+}
+
+func TestNormalizePlanValidatesFeatures(t *testing.T) {
+	ok := &types.UsagePlan{Code: "c", Name: "n",
+		Features: types.JSON(`{"agent.max_iterations": 8, "other": [1, 2]}`)}
+	require.NoError(t, normalizePlan(ok))
+	require.JSONEq(t, `{"agent.max_iterations": 8, "other": [1, 2]}`, string(ok.Features))
+
+	for _, bad := range []string{
+		`{"agent.turn_token_cap": -1}`,
+		`{"session.max_tokens": 1.5}`,
+		`{"context.history_tokens": "lots"}`,
+		`[1]`,
+	} {
+		plan := &types.UsagePlan{Code: "c", Name: "n", Features: types.JSON(bad)}
+		require.Error(t, normalizePlan(plan), bad)
+	}
+	empty := &types.UsagePlan{Code: "c", Name: "n"}
+	require.NoError(t, normalizePlan(empty))
+	require.Equal(t, "{}", string(empty.Features))
 }

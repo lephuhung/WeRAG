@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -85,6 +86,7 @@ func (s *sessionService) AgentQA(
 	if err != nil {
 		return err
 	}
+	applyUsageTurnCaps(ctx, agentConfig)
 	// reasoning on a Word document reads it but never changes it
 	wordReadOnly := req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinSmartReasoningID &&
 		s.sessionHasWordDocument(ctx, req.Session)
@@ -435,6 +437,24 @@ func (s *sessionService) AgentQA(
 	}
 	// Return empty - events will be handled by Handler via EventBus subscription
 	return nil
+}
+
+// applyUsageTurnCaps narrows the run to the caller's usage plan: the plan's
+// round cap where it is below the agent's own, and the per-turn token budget.
+// A turn without a grant (enforcement off, SuperAdmin) runs as configured.
+func applyUsageTurnCaps(ctx context.Context, cfg *types.AgentConfig) {
+	features := types.UsageFeaturesFromContext(ctx)
+	if features.IsZero() || cfg == nil {
+		return
+	}
+	if limited := features.EffectiveMaxIterations(cfg.MaxIterations); limited != cfg.MaxIterations {
+		logger.Infof(ctx, "Usage plan caps agent rounds: %d -> %d", cfg.MaxIterations, limited)
+		cfg.MaxIterations = limited
+	}
+	if features.TurnTokenCap > 0 {
+		cfg.TurnTokenCap = int(min(features.TurnTokenCap, int64(math.MaxInt32)))
+		logger.Infof(ctx, "Usage plan caps the turn at %d tokens", cfg.TurnTokenCap)
+	}
 }
 
 // buildAgentConfig creates a runtime AgentConfig from the QARequest's custom agent configuration,

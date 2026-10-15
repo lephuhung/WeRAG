@@ -286,6 +286,10 @@ const (
 	// remembers — an answer that forgets an earlier instruction is otherwise
 	// indistinguishable from the model ignoring it.
 	ResponseTypeContextCompacted ResponseType = "context_compacted"
+	// ResponseTypeTurnLimit says the agent loop stopped on a cap (rounds or
+	// the plan's per-turn token budget) and the answer is synthesized from
+	// what the turn gathered.
+	ResponseTypeTurnLimit ResponseType = "turn_limit"
 	// ResponseTypeInstallPrompt is the instruction a skill install handed to
 	// the installer agent. Only the skill install transcript emits this, and
 	// it emits it first, so replaying the log alone shows what was asked for

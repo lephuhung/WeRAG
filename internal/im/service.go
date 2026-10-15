@@ -438,19 +438,21 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 	return ctx
 }
 
-// checkUsage runs the usage-package pre-flight for the IM identity in ctx.
+// checkUsage runs the usage-package pre-flight for the IM identity in ctx
+// and returns ctx carrying the turn's grant (the plan's per-turn caps).
 // IM runs as the workspace's synthetic user, so only workspace-level
 // subscriptions and pool limits apply.
-func (s *Service) checkUsage(ctx context.Context) error {
+func (s *Service) checkUsage(ctx context.Context) (context.Context, error) {
 	if s.usageGuard == nil {
-		return nil
+		return ctx, nil
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	if err := s.usageGuard.CheckTurn(ctx, tenantID, userID); err != nil {
-		return fmt.Errorf("usage package: %w", err)
+	grant, err := s.usageGuard.CheckTurn(ctx, tenantID, userID)
+	if err != nil {
+		return ctx, fmt.Errorf("usage package: %w", err)
 	}
-	return nil
+	return types.WithUsageTurnGrant(ctx, grant), nil
 }
 
 // imMCPAuthService identifies an OAuth-enabled MCP service that the IM user has
@@ -2783,7 +2785,8 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 	// Determine whether to use agent mode (already set above for event handlers).
 	requestID := uuid.New().String()
 
-	if err := s.checkUsage(qaCtx); err != nil {
+	qaCtx, err = s.checkUsage(qaCtx)
+	if err != nil {
 		return err
 	}
 
@@ -3049,7 +3052,8 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	// Generate a shared RequestID to pair user and assistant messages for history
 	requestID := uuid.New().String()
 
-	if err := s.checkUsage(ctx); err != nil {
+	ctx, err := s.checkUsage(ctx)
+	if err != nil {
 		return "", err
 	}
 

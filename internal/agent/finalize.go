@@ -151,10 +151,30 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 func (e *AgentEngine) handleMaxIterations(
 	ctx context.Context, query string, state *types.AgentState, sessionID string, messages []chat.Message,
 ) {
-	logger.Info(ctx, "Reached max iterations, generating final answer")
-	common.PipelineWarn(ctx, "Agent", "max_iterations_reached", map[string]interface{}{
+	reason := e.stopReason
+	if reason == "" {
+		reason = event.TurnLimitMaxIterations
+	}
+	logger.Infof(ctx, "Agent loop stopped (%s), generating final answer", reason)
+	common.PipelineWarn(ctx, "Agent", reason+"_reached", map[string]interface{}{
 		"iterations": state.CurrentRound,
 		"max":        e.config.MaxIterations,
+		"tokens":     turnTokens(state.TurnUsage),
+		"token_cap":  e.config.TurnTokenCap,
+	})
+	// The timeline says why the turn ended early: the answer below is
+	// synthesized from what was gathered, not a natural finish.
+	_ = e.eventBus.Emit(ctx, event.Event{
+		ID:        generateEventID("turn-limit"),
+		Type:      event.EventAgentTurnLimit,
+		SessionID: sessionID,
+		Data: event.AgentTurnLimitData{
+			Reason:        reason,
+			Rounds:        state.CurrentRound,
+			MaxIterations: max(e.config.MaxIterations, 0),
+			Tokens:        turnTokens(state.TurnUsage),
+			TokenCap:      e.config.TurnTokenCap,
+		},
 	})
 
 	// Stream final answer generation through EventBus

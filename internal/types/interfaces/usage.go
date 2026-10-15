@@ -67,12 +67,12 @@ type UsagePlanRepository interface {
 
 // UsageGuard decides whether a chat turn may start.
 type UsageGuard interface {
-	// CheckTurn returns nil when the caller may start a turn, or a 429
-	// *errors.AppError whose details are a types.UsageDenial. It is a no-op
-	// while usage.enforce is off and always lets SystemAdmins through. A
-	// storage failure is logged and lets the turn through: a broken meter
-	// must not take chat down.
-	CheckTurn(ctx context.Context, tenantID uint64, userID string) error
+	// CheckTurn returns the grant a turn runs under (the plan's per-turn
+	// caps), or a 429 *errors.AppError whose details are a
+	// types.UsageDenial. While usage.enforce is off, and for SystemAdmins,
+	// it grants without caps. A storage failure is logged and lets the turn
+	// through uncapped: a broken meter must not take chat down.
+	CheckTurn(ctx context.Context, tenantID uint64, userID string) (*types.UsageTurnGrant, error)
 	// Entitlement resolves the subscription governing the caller with its
 	// current consumption; nil when there is none.
 	Entitlement(ctx context.Context, tenantID uint64, userID string) (*types.UsageEntitlement, error)

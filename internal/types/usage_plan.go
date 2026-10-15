@@ -219,6 +219,9 @@ type UsageEntitlement struct {
 	EndsAt       *time.Time         `json:"ends_at,omitempty"`
 	Expired      bool               `json:"expired"`
 	Limits       []UsageLimitStatus `json:"limits"`
+	// Features are the plan's per-turn and per-session caps (zero =
+	// unlimited); see UsagePlanFeatures.
+	Features UsagePlanFeatures `json:"features"`
 }
 
 // UsageDenialReason labels why a turn was refused (error details).

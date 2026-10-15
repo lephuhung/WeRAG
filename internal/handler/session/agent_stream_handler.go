@@ -162,6 +162,7 @@ func (h *AgentStreamHandler) Subscribe() {
 	h.eventBus.On(event.EventMemoryRecalled, h.handleMemoryRecalled)
 	h.eventBus.On(event.EventMemorySaved, h.handleMemorySaved)
 	h.eventBus.On(event.EventContextCompacted, h.handleContextCompacted)
+	h.eventBus.On(event.EventAgentTurnLimit, h.handleTurnLimit)
 	h.eventBus.On(event.EventUserMessageInjected, h.handleUserMessageInjected)
 	h.eventBus.On(event.EventAgentFinalAnswer, h.handleFinalAnswer)
 	h.eventBus.On(event.EventAgentReflection, h.handleReflection)
@@ -570,6 +571,31 @@ func (h *AgentStreamHandler) handleAbbreviationResolution(_ context.Context, evt
 		Data:      map[string]interface{}{"abbreviation": data},
 	}); err != nil {
 		logger.GetLogger(h.ctx).Error("Append abbreviation resolution event to stream failed", "error", err)
+	}
+	return nil
+}
+
+// handleTurnLimit forwards the cap that ended the agent loop early, so the
+// timeline can say the answer was synthesized from a cut-short turn.
+func (h *AgentStreamHandler) handleTurnLimit(_ context.Context, evt event.Event) error {
+	data, ok := evt.Data.(event.AgentTurnLimitData)
+	if !ok {
+		return nil
+	}
+	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
+		ID:        evt.ID,
+		Type:      types.ResponseTypeTurnLimit,
+		Done:      true,
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"reason":         data.Reason,
+			"rounds":         data.Rounds,
+			"max_iterations": data.MaxIterations,
+			"tokens":         data.Tokens,
+			"token_cap":      data.TokenCap,
+		},
+	}); err != nil {
+		logger.GetLogger(h.ctx).Error("Append turn limit event to stream failed", "error", err)
 	}
 	return nil
 }

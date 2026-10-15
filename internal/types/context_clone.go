@@ -98,6 +98,10 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// of emitting its one-shot notice, so the failure is a stalled reply.
 	// A detached context has no live client either, which is what this says.
 	MCPOAuthNonInteractiveContextKey: true,
+	// The usage grant of one turn: the plan's per-turn and per-session caps
+	// (a restriction). The QA services run on a context detached through
+	// CloneContext, so dropping it would run the turn uncapped.
+	usageTurnGrantContextKey: true,
 
 	// ---- Deliberately does not survive a detach ----
 	//

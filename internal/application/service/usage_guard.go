@@ -38,17 +38,22 @@ func (g *usageGuard) Enforced(ctx context.Context) bool {
 	return g.settings.GetBool(ctx, types.UsageEnforceSettingKey, "", false)
 }
 
-func (g *usageGuard) CheckTurn(ctx context.Context, tenantID uint64, userID string) error {
+func (g *usageGuard) CheckTurn(ctx context.Context, tenantID uint64, userID string) (*types.UsageTurnGrant, error) {
+	// No enforcement, no caps: the plan features ride on the same switch as
+	// the limits, so turning usage.enforce off restores the old behaviour.
 	if !g.Enforced(ctx) || types.IsSystemAdminFromContext(ctx) {
-		return nil
+		return &types.UsageTurnGrant{}, nil
 	}
 	ent, err := g.Entitlement(ctx, tenantID, userID)
 	if err != nil {
 		logger.Warnf(ctx, "usage guard: entitlement lookup failed for tenant %d user %s, letting the turn through: %v",
 			tenantID, userID, err)
-		return nil
+		return &types.UsageTurnGrant{}, nil
 	}
-	return usageDenial(ent, userID)
+	if err := usageDenial(ent, userID); err != nil {
+		return nil, err
+	}
+	return &types.UsageTurnGrant{Features: ent.Features}, nil
 }
 
 // usageDenial turns an entitlement into the 429 the caller gets, or nil.
@@ -149,6 +154,9 @@ func entitlementFrom(sub *types.UsageSubscription, source string, now time.Time)
 	if sub.Plan != nil {
 		ent.PlanCode = sub.Plan.Code
 		ent.PlanName = sub.Plan.Name
+		// normalizePlan validates features on write; a row edited by hand
+		// that no longer parses applies no cap rather than refusing chat.
+		ent.Features, _ = types.ParseUsagePlanFeatures(sub.Plan.Features)
 	}
 	return ent
 }

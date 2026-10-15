@@ -84,6 +84,12 @@ const (
 	// away to fit the context window.
 	EventContextCompacted EventType = "context_compacted"
 
+	// EventAgentTurnLimit is emitted when the agent loop stopped on a cap
+	// (round count or the plan's per-turn token budget) rather than on a
+	// natural finish; the answer that follows is synthesized from what the
+	// turn gathered so far.
+	EventAgentTurnLimit EventType = "turn_limit"
+
 	// EventUserMessageInjected is emitted when a message the user appended
 	// while the run was in flight was accepted into the running turn (see
 	// agent drainSteerMessages).

@@ -83,6 +83,9 @@ type AgentEngine struct {
 	// that authorized it (see abbreviation_guard.go). QA entry points always
 	// set it; autonomous engines leave it nil and skip every check.
 	abbreviationBinding *types.AbbreviationBinding
+	// stopReason is the cap that ended the loop before a natural finish
+	// (event.TurnLimitTurnBudget), "" for the iteration limit.
+	stopReason string
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -488,6 +491,21 @@ func (e *AgentEngine) withinIterationBudget(round int) bool {
 	return round < e.config.MaxIterations
 }
 
+// turnBudgetExhausted reports whether the turn's summed tokens reached the
+// plan's per-turn cap (AgentConfig.TurnTokenCap; 0 is no cap).
+func (e *AgentEngine) turnBudgetExhausted(state *types.AgentState) bool {
+	if e.config == nil || e.config.TurnTokenCap <= 0 || state == nil {
+		return false
+	}
+	return turnTokens(state.TurnUsage) >= e.config.TurnTokenCap
+}
+
+// turnTokens is what a turn has spent: the providers' totals, or prompt plus
+// completion when a provider reported no total.
+func turnTokens(u types.TokenUsage) int {
+	return max(u.TotalTokens, u.PromptTokens+u.CompletionTokens)
+}
+
 // closeAnswerStream emits the Done:true marker for a natural-stop answer
 // that is actually finishing. Loop-end inject skips this so the client
 // does not drop isReplying while the engine continues.
@@ -590,6 +608,18 @@ loop:
 			sessionID, messageID, query, &emptyRetries, &consecutiveSameContent, &lastResponseContent)
 		if iterErr != nil {
 			return state, iterErr
+		}
+		// The plan's per-turn token cap is checked between rounds: a round
+		// in flight is never cut, and the answer is synthesized below from
+		// what the turn gathered, like after the last iteration.
+		if outcome != iterOutcomeBreak && e.turnBudgetExhausted(state) {
+			if outcome == iterOutcomeNext {
+				state.CurrentRound++
+			}
+			e.stopReason = event.TurnLimitTurnBudget
+			logger.Warnf(ctx, "[Agent] Turn token budget reached after %d rounds: %d of %d tokens; "+
+				"synthesizing the answer", state.CurrentRound, turnTokens(state.TurnUsage), e.config.TurnTokenCap)
+			break loop
 		}
 		switch outcome {
 		case iterOutcomeContinue:
