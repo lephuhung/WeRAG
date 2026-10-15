@@ -112,10 +112,11 @@ func (h *UsageBillingHandler) Quote(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("invalid quote body").WithDetails(err.Error()))
 		return
 	}
-	if _, ok := billingScope(c, req.ScopeType); !ok {
+	scopeID, ok := billingScope(c, req.ScopeType)
+	if !ok {
 		return
 	}
-	q, err := h.billing.Quote(c.Request.Context(), req)
+	q, err := h.billing.Quote(c.Request.Context(), req, scopeID)
 	if err != nil {
 		usageAdminFail(c, err)
 		return

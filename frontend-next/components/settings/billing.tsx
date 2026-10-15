@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { ApiError } from "@/lib/api-client";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { IconCheck, IconCopy, IconRefresh } from "@/components/icons";
 import {
@@ -57,6 +58,14 @@ function CopyButton({ value, label, copied }: { value: string; label: string; co
       {done ? <IconCheck className="h-3.5 w-3.5" /> : <IconCopy className="h-3.5 w-3.5" />} {done ? copied : label}
     </button>
   );
+}
+
+/** The current seat count when the server refused a renewal with fewer
+ * seats (reason seats_below_current), else null. */
+function seatsBelowCurrent(e: unknown): number | null {
+  if (!(e instanceof ApiError)) return null;
+  const details = (e.payload as { error?: { details?: { reason?: string; current_seats?: number } } } | undefined)?.error?.details;
+  return details?.reason === "seats_below_current" && typeof details.current_seats === "number" ? details.current_seats : null;
 }
 
 export function BillingPage() {
@@ -118,7 +127,8 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setQuote(null);
-        setQuoteError(e instanceof Error ? e.message : t("bill.loadFailed"));
+        const current = seatsBelowCurrent(e);
+        setQuoteError(current !== null ? t("bill.seatsBelowCurrent", { n: current }) : e instanceof Error ? e.message : t("bill.loadFailed"));
       });
     return () => {
       alive = false;
@@ -342,6 +352,12 @@ export function BillingPage() {
           {quoteError && <p className="caption mt-2 text-error">{quoteError}</p>}
           {quote && (
             <div className="mt-4 space-y-1 border-t border-hairline pt-3 text-[14px]">
+              {!!quote.proration_vnd && (
+                <div className="flex justify-between">
+                  <span className="text-muted">{t("bill.proration", { seats: quote.seats - (quote.current_seats ?? 0), days: quote.prorated_days ?? 0 })}</span>
+                  <span className="tabular-nums">{formatPriceVND(quote.proration_vnd)}</span>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(quote.subtotal_vnd)}</span></div>
               {quote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(quote.discount_vnd)}</span></div>}
               <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(quote.total_vnd)}</span></div>

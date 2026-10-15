@@ -252,13 +252,6 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 			return &types.ToolResult{Success: false, Error: "invalid arguments: " + err.Error()}, nil
 		}
 	}
-	// apply=true needs the user's agreement in their own words; without it
-	// the call is a review (see format_consent.go)
-	consentNote := ""
-	if in.Apply && !formatFixConsent(types.UserQueryFromContext(ctx)) {
-		in.Apply, in.Force = false, false
-		consentNote = noConsentNote
-	}
 	// A real run snapshots first (the restore point, and a force-save so
 	// the plan sees the editor's latest text); a dry run only reads.
 	var content []byte
@@ -267,6 +260,15 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	target, err := resolveTargetDocument(ctx, t.workspace, t.sessionID, in.Document, !in.DryRun)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	// apply=true needs the user's agreement to a plan an earlier turn
+	// showed, in their own words; without it the call is a review (see
+	// format_consent.go)
+	consentNote := ""
+	planShown := formatPlanShownEarlier(ctx, t.sessionID, target.ID)
+	if in.Apply && !formatFixConsent(types.UserQueryFromContext(ctx), planShown) {
+		in.Apply, in.Force = false, false
+		consentNote = noConsentNote
 	}
 	// review (the default) changes nothing but underlines: it snapshots too
 	review := !in.DryRun && !in.Apply
@@ -360,7 +362,9 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	}
 	switch {
 	case review && len(plan.applied) > 0:
-		// the one change the user can agree to: these formatting fixes
+		// the one change the user can agree to: these formatting fixes,
+		// which a later turn's "đồng ý" applies
+		rememberFormatPlan(ctx, t.sessionID, target.ID)
 		output += "\nCHƯA SỬA GÌ"
 		if marks > 0 {
 			output += ": các đoạn sẽ được sửa và các lỗi cần sửa thủ công đã được gạch chân trong trình soạn thảo"
@@ -374,6 +378,9 @@ func (t *ApplyFormatFixesTool) Execute(ctx context.Context, args json.RawMessage
 	}
 	if consentNote != "" {
 		output = consentNote + "\n\n" + output
+	}
+	if !dryRun && plan.hasEdits() {
+		forgetFormatPlan(t.sessionID, target.ID)
 	}
 	data := opsData(ops, seq, ws)
 	data["file_name"] = ws.FileName

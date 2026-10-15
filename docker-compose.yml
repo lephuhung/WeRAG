@@ -719,9 +719,13 @@ services:
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio
+    # Bind to loopback by default: the app reaches minio:9000 over the docker
+    # network. The minioadmin/minioadmin default creds are only safe while bound
+    # to 127.0.0.1 — set MINIO_ACCESS_KEY_ID/MINIO_SECRET_ACCESS_KEY before
+    # overriding MINIO_BIND=0.0.0.0.
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_BIND:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${MINIO_BIND:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
@@ -811,13 +815,22 @@ services:
       - CLUSTER_HOSTNAME=node1
       - DEFAULT_VECTORIZER_MODULE=none
       - ENABLE_MODULES=none
-      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      # Anonymous access is only safe while the ports below stay on 127.0.0.1.
+      # Before overriding WEAVIATE_BIND, set WEAVIATE_AUTH_ENABLED=true and
+      # WEAVIATE_API_KEY (the app sends the same key) and
+      # WEAVIATE_ANONYMOUS_ACCESS_ENABLED=false.
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=${WEAVIATE_ANONYMOUS_ACCESS_ENABLED:-true}
+      - AUTHENTICATION_APIKEY_ENABLED=${WEAVIATE_AUTH_ENABLED:-false}
+      - AUTHENTICATION_APIKEY_ALLOWED_KEYS=${WEAVIATE_API_KEY:-}
+      - AUTHENTICATION_APIKEY_USERS=${WEAVIATE_API_KEY_USER:-weknora}
       - CLUSTER_GOSSIP_BIND_PORT=7000
       - CLUSTER_DATA_BIND_PORT=7001
       - RAFT_BOOTSTRAP_EXPECT=1
+    # Bind to loopback by default; the app reaches weaviate:8080/50051 over the
+    # docker network.
     ports:
-      - "9035:8080"
-      - "50052:50051"
+      - "${WEAVIATE_BIND:-127.0.0.1}:9035:8080"
+      - "${WEAVIATE_BIND:-127.0.0.1}:50052:50051"
     volumes:
       - weaviate_data:/var/lib/weaviate
     networks:

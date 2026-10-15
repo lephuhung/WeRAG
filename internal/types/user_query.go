@@ -26,3 +26,25 @@ func UserQueryFromContext(ctx context.Context) string {
 	q, _ := ctx.Value(userQueryKey{}).(string)
 	return q
 }
+
+type turnIDKey struct{}
+
+// WithTurnID carries the id of the turn (its assistant message), so a tool
+// can tell a plan it showed in an earlier turn from one shown in this one:
+// apply_format_fixes applies only a plan the user saw before answering.
+// Empty id leaves ctx unchanged.
+func WithTurnID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, turnIDKey{}, id)
+}
+
+// TurnIDFromContext is the id WithTurnID stored, "" when none.
+func TurnIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(turnIDKey{}).(string)
+	return id
+}

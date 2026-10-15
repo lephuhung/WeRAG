@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func strayCharsFixture(t *testing.T) []byte {
@@ -215,6 +217,44 @@ func TestApplyFormatFixesReviewsBeforeChanging(t *testing.T) {
 	}
 	if !applied || res.Data["review"] != false {
 		t.Fatalf("apply: %+v", res.Data)
+	}
+}
+
+func TestApplyFormatFixesNeedsAnAnswerToAShownPlan(t *testing.T) {
+	formatsApplied := func(res *types.ToolResult) bool {
+		all, _ := res.Data["document_ops"].([]DocumentOp)
+		for _, op := range all {
+			if op.Op == OpFormatParagraph {
+				return true
+			}
+		}
+		return false
+	}
+	turn := func(id, query string) context.Context {
+		return types.WithTurnID(types.WithUserQuery(toolCtx(), query), id)
+	}
+	ws := newFakeWorkspace(docxFixture(t))
+	tool := NewApplyFormatFixesTool(ws, nil, "sess-consent")
+
+	// a request that happens to contain "được" applies nothing
+	res := runToolCtx(t, turn("m1", "Kiểm tra thể thức văn bản được ban hành hôm qua"), tool, `{"apply":true}`)
+	if formatsApplied(res) || res.Data["review"] != true || !strings.Contains(res.Output, "CHƯA đồng ý") {
+		t.Fatalf("request read as consent: %+v", res.Data)
+	}
+	// that review showed the plan: in the same turn it is still not agreed
+	res = runToolCtx(t, turn("m1", "Kiểm tra thể thức văn bản được ban hành hôm qua"), tool, `{"apply":true}`)
+	if formatsApplied(res) {
+		t.Fatal("the plan was shown in this turn; the user has not answered it")
+	}
+	// the user's answer in the next turn applies it
+	res = runToolCtx(t, turn("m2", "Đồng ý"), tool, `{"apply":true}`)
+	if !formatsApplied(res) {
+		t.Fatalf("agreed plan not applied: %+v", res.Data)
+	}
+	// applied: another "đồng ý" needs a new review
+	res = runToolCtx(t, turn("m3", "Đồng ý"), tool, `{"apply":true}`)
+	if formatsApplied(res) {
+		t.Fatal("an applied plan was applied again without a review")
 	}
 }
 

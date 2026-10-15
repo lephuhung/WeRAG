@@ -353,6 +353,11 @@ export interface UsageQuote {
   months: number;
   seats: number;
   unit_price_vnd: number;
+  /** Seats of the subscription this order renews; added seats also pay
+   * proration_vnd for the prorated_days left on its period. */
+  current_seats?: number;
+  prorated_days?: number;
+  proration_vnd?: number;
   subtotal_vnd: number;
   promo_code: string;
   promo_name: string;

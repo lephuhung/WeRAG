@@ -28,6 +28,10 @@ type usageCounterKey struct {
 // Duplicate keys are merged first: Postgres refuses to touch the same row
 // twice in one upsert.
 func (r *usageCounterRepository) Add(ctx context.Context, increments []types.UsageIncrement) error {
+	return addUsageCounters(r.db.WithContext(ctx), increments)
+}
+
+func addUsageCounters(db *gorm.DB, increments []types.UsageIncrement) error {
 	merged := make(map[usageCounterKey]int64, len(increments))
 	order := make([]usageCounterKey, 0, len(increments))
 	for _, inc := range increments {
@@ -55,7 +59,7 @@ func (r *usageCounterRepository) Add(ctx context.Context, increments []types.Usa
 			UpdatedAt: now,
 		})
 	}
-	return r.db.WithContext(ctx).
+	return db.
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
 				{Name: "scope_type"}, {Name: "scope_id"}, {Name: "metric"}, {Name: "period_key"},
@@ -103,16 +107,29 @@ func (r *usageCounterRepository) DeleteScope(ctx context.Context, scopeType, sco
 		Delete(&types.UsageCounter{}).Error
 }
 
-// ClaimMessageUsage flips messages.usage_metered_at from NULL exactly once.
-// The column is deliberately not on types.Message: UpdateMessage writes the
-// struct with Updates(), and a mapped field would race with this claim.
-func (r *usageCounterRepository) ClaimMessageUsage(ctx context.Context, messageID string) (bool, error) {
-	res := r.db.WithContext(ctx).Exec(
-		"UPDATE messages SET usage_metered_at = ? WHERE id = ? AND usage_metered_at IS NULL",
-		time.Now(), messageID,
-	)
-	if res.Error != nil {
-		return false, res.Error
-	}
-	return res.RowsAffected == 1, nil
+// AddMessageUsage flips messages.usage_metered_at from NULL and adds the
+// message's increments in one transaction: a failed add leaves the message
+// unmarked, so a later save counts it, and a message saved several times
+// is counted once. The column is deliberately not on types.Message:
+// UpdateMessage writes the struct with Updates(), and a mapped field would
+// race with this claim.
+func (r *usageCounterRepository) AddMessageUsage(
+	ctx context.Context, messageID string, increments []types.UsageIncrement,
+) (bool, error) {
+	claimed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(
+			"UPDATE messages SET usage_metered_at = ? WHERE id = ? AND usage_metered_at IS NULL",
+			time.Now(), messageID,
+		)
+		if res.Error != nil || res.RowsAffected != 1 {
+			return res.Error
+		}
+		if err := addUsageCounters(tx, increments); err != nil {
+			return err
+		}
+		claimed = true
+		return nil
+	})
+	return claimed, err
 }
