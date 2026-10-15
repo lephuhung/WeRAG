@@ -290,3 +290,21 @@ func TestFormatToolsCloseWithoutOfferingToEdit(t *testing.T) {
 		t.Fatalf("nothing to apply: %s", res.Output)
 	}
 }
+
+// The underlines show the lines the report quotes: at most three per check.
+func TestFlagSpotsKeepsQuotedLines(t *testing.T) {
+	flags := []formatFlag{
+		{CheckID: "co_quan_ban_hanh.size", Spots: []formatSpot{{Para: 0}, {Para: 1}}},
+		{CheckID: "noi_dung.font", Spots: []formatSpot{{Para: 12}, {Para: 13}, {Para: 14}, {Para: 15}, {Para: 16}}},
+	}
+	got := flagSpots(flags)
+	want := []formatSpot{{Para: 0}, {Para: 1}, {Para: 12}, {Para: 13}, {Para: 14}}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}

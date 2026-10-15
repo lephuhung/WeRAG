@@ -138,11 +138,18 @@ func formatMarkOps(vdoc *virtualDoc, spots []formatSpot) []DocumentOp {
 	return ops
 }
 
-// flagSpots flattens the spots of flags in order.
+// spotsPerFlag is how many places of one check are underlined: the report
+// quotes the first three offending lines of a check (docformat
+// measuredFindings), and the underlines show those same lines, so a rule
+// broken all over the body does not mark lines the report never named.
+const spotsPerFlag = 3
+
+// flagSpots flattens the spots of flags in order, the first spotsPerFlag
+// of each.
 func flagSpots(flags []formatFlag) []formatSpot {
 	var out []formatSpot
 	for _, f := range flags {
-		out = append(out, f.Spots...)
+		out = append(out, f.Spots[:min(len(f.Spots), spotsPerFlag)]...)
 	}
 	return out
 }
