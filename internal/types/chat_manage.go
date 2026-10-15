@@ -127,6 +127,10 @@ type PipelineState struct {
 	RewriteQuery string      `json:"rewrite_query,omitempty"`
 	Intent       QueryIntent `json:"intent,omitempty"`
 	History      []*History  `json:"history,omitempty"`
+	// HistorySummary is the session's context summary (the newest agent
+	// compaction checkpoint, or a continued session's seed) that stands in
+	// for the turns before History; "" when the session has none.
+	HistorySummary string `json:"-"`
 
 	SearchResult         []*SearchResult   `json:"-"`
 	RerankResult         []*SearchResult   `json:"-"`

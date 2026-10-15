@@ -245,7 +245,7 @@ func (p *PluginQueryUnderstand) loadHistory(ctx context.Context, chatManage *typ
 	}
 	maxRounds := chatManage.MaxRounds
 
-	historyList, err := loadAndProcessHistory(ctx, p.messageService, chatManage.SessionID, maxRounds, 20)
+	historyList, summary, err := loadHistoryAndSummary(ctx, p.messageService, chatManage.SessionID, maxRounds, 20)
 	if err != nil {
 		pipelineWarn(ctx, "QueryUnderstand", "history_fetch", map[string]interface{}{
 			"session_id": chatManage.SessionID,
@@ -255,6 +255,7 @@ func (p *PluginQueryUnderstand) loadHistory(ctx context.Context, chatManage *typ
 	}
 
 	chatManage.History = historyList
+	chatManage.HistorySummary = summary
 
 	if len(historyList) > 0 {
 		pipelineInfo(ctx, "QueryUnderstand", "history_ready", map[string]interface{}{
@@ -340,7 +341,7 @@ func (p *PluginQueryUnderstand) buildPrompts(
 		systemPrompt = chatManage.RewritePromptSystem
 	}
 
-	conversationText := formatConversationHistory(historyList)
+	conversationText := formatConversationHistory(chatManage.HistorySummary, historyList)
 
 	queryContent := queryText
 	if len(chatManage.Images) > 0 {
@@ -539,13 +540,28 @@ func applyIntentPromptOverride(chatManage *types.ChatManage, globalPrompts map[s
 	return chatManage.SystemPromptOverride != ""
 }
 
+// rewriteSummaryRunes caps the context summary shown to the rewrite model:
+// it needs the conversation's subject and open references, not every detail,
+// and the rewrite call is meant to stay small.
+const rewriteSummaryRunes = 6000
+
 // formatConversationHistory formats conversation history for prompt template.
-func formatConversationHistory(historyList []*types.History) string {
-	if len(historyList) == 0 {
+// A context summary (the turns before historyList, summarized) comes first,
+// so a question that refers back past the raw rounds can still be resolved.
+func formatConversationHistory(summary string, historyList []*types.History) string {
+	if len(historyList) == 0 && summary == "" {
 		return ""
 	}
 
 	var builder strings.Builder
+	if summary != "" {
+		if r := []rune(summary); len(r) > rewriteSummaryRunes {
+			summary = string(r[:rewriteSummaryRunes]) + " […]"
+		}
+		builder.WriteString("------SUMMARY OF EARLIER CONVERSATION------\n")
+		builder.WriteString(summary)
+		builder.WriteString("\n------END------\n")
+	}
 	for _, h := range historyList {
 		builder.WriteString("------BEGIN------\n")
 		builder.WriteString("User question: ")

@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/Tencent/WeKnora/internal/agent/compaction"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -86,6 +88,11 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 		{Role: "system", Content: systemPrompt},
 	}
 
+	// The session's context summary stands in for the turns before History,
+	// in the envelope the agent's history uses.
+	if chatManage.HistorySummary != "" {
+		chatMessages = append(chatMessages, compaction.SummaryMessage(chatManage.HistorySummary))
+	}
 	chatMessages = AppendHistoryMessages(chatMessages, chatManage.History)
 
 	// Add current user message. Only include images when the chat model supports
@@ -119,6 +126,60 @@ func AppendHistoryMessages(messages []chat.Message, history []*types.History) []
 		messages = append(messages, chat.Message{Role: "assistant", Content: history.Answer})
 	}
 	return messages
+}
+
+// contextSummarySource is the part of the message service that knows a
+// session's context summary (service.messageService.LatestContextSummary).
+// Asserted rather than added to interfaces.MessageService so the many
+// message-service fakes need not grow a method.
+type contextSummarySource interface {
+	LatestContextSummary(ctx context.Context, sessionID string) (string, time.Time, error)
+}
+
+// summarizedHistoryRounds is how many raw rounds follow a context summary.
+// The summary already carries the conversation's state; the raw rounds only
+// keep the newest exchanges verbatim, so fewer are needed than without one.
+const summarizedHistoryRounds = 3
+
+// loadHistoryAndSummary is loadAndProcessHistory for a session that may
+// have a context summary (an agent compaction checkpoint, or the seed of a
+// continued session). With one, history is the summary plus at most
+// summarizedHistoryRounds raw rounds, none of them a round the summary
+// already covers; without one, it is maxRounds raw rounds as before.
+func loadHistoryAndSummary(
+	ctx context.Context,
+	messageService interfaces.MessageService,
+	sessionID string,
+	maxRounds int,
+	fetchCount int,
+) ([]*types.History, string, error) {
+	summary, coveredThrough := "", time.Time{}
+	if src, ok := messageService.(contextSummarySource); ok {
+		s, at, err := src.LatestContextSummary(ctx, sessionID)
+		if err != nil {
+			pipelineWarn(ctx, "LoadHistory", "context_summary", map[string]interface{}{
+				"session_id": sessionID,
+				"error":      err.Error(),
+			})
+		} else {
+			summary, coveredThrough = strings.TrimSpace(s), at
+		}
+	}
+	if summary != "" {
+		maxRounds = min(maxRounds, summarizedHistoryRounds)
+	}
+	history, err := loadAndProcessHistory(ctx, messageService, sessionID, maxRounds, fetchCount)
+	if err != nil {
+		return nil, "", err
+	}
+	if summary != "" && !coveredThrough.IsZero() {
+		// rounds are newest first before the cut, so dropping the covered
+		// ones never lets an older uncovered round in
+		history = slices.DeleteFunc(history, func(h *types.History) bool {
+			return !h.CreateAt.After(coveredThrough)
+		})
+	}
+	return history, summary, nil
 }
 
 // loadAndProcessHistory fetches recent messages, groups them into Q&A pairs,
