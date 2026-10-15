@@ -235,6 +235,8 @@ func (s *sessionService) AgentQA(
 	// the request as written: apply_format_fixes reads the user's consent
 	// from it, rewrite_paragraphs the number of versions asked for
 	ctx = types.WithUserQuery(ctx, req.Query)
+	// apply_format_fixes applies only a plan shown in an earlier turn
+	ctx = types.WithTurnID(ctx, req.AssistantMessageID)
 	// the answer may invite the user to press a card button only when the
 	// turn produced that card (agent.answerGuard)
 	if req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinDocumentAssistantID {

@@ -168,12 +168,18 @@ type UsageQuote struct {
 	Months       int        `json:"months"`
 	Seats        int        `json:"seats"`
 	UnitPriceVND int64      `json:"unit_price_vnd"`
-	SubtotalVND  int64      `json:"subtotal_vnd"`
-	PromoCode    string     `json:"promo_code"`
-	PromoName    string     `json:"promo_name"`
-	PromoError   string     `json:"promo_error"`
-	DiscountVND  int64      `json:"discount_vnd"`
-	TotalVND     int64      `json:"total_vnd"`
+	// CurrentSeats is the seat count of the subscription this order renews
+	// (0 when it starts a new one). Added seats also pay ProrationVND: the
+	// added seats for the ProratedDays left on the current period.
+	CurrentSeats int    `json:"current_seats,omitempty"`
+	ProratedDays int    `json:"prorated_days,omitempty"`
+	ProrationVND int64  `json:"proration_vnd,omitempty"`
+	SubtotalVND  int64  `json:"subtotal_vnd"`
+	PromoCode    string `json:"promo_code"`
+	PromoName    string `json:"promo_name"`
+	PromoError   string `json:"promo_error"`
+	DiscountVND  int64  `json:"discount_vnd"`
+	TotalVND     int64  `json:"total_vnd"`
 }
 
 // UsageBillingInfo is what the payment page needs besides the order.

@@ -15,18 +15,21 @@ import (
 )
 
 // newDocumentWorkspaceTestDB applies the real SQLite migration so the test
-// also covers the schema (partial unique index on live sessions).
+// also covers the schema (partial unique index on live sessions). Columns
+// added after SQLite stopped being maintained (no sqlite mirror) are added
+// from the model.
 func newDocumentWorkspaceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	_, file, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	for _, name := range []string{"000032_document_workspaces.up.sql", "000036_document_workspaces_multi.up.sql", "000037_document_workspace_roles.up.sql"} {
+	for _, name := range []string{"000032_document_workspaces.up.sql", "000036_document_workspaces_multi.up.sql", "000037_document_workspace_roles.up.sql", "000040_document_workspace_editor_kind.up.sql"} {
 		up, err := os.ReadFile(filepath.Join(root, "migrations", "sqlite", name))
 		require.NoError(t, err)
 		require.NoError(t, db.Exec(string(up)).Error, name)
 	}
+	require.NoError(t, db.Migrator().AddColumn(&types.DocumentWorkspace{}, "WordFileID"))
 	return db
 }
 

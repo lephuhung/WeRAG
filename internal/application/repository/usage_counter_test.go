@@ -56,20 +56,47 @@ func TestUsageCounterAddAccumulatesAndMergesDuplicates(t *testing.T) {
 	require.Equal(t, int64(175), sums[0].Value)
 }
 
-func TestUsageCounterClaimMessageUsageOnce(t *testing.T) {
+func TestUsageCounterAddMessageUsageOnce(t *testing.T) {
 	repo, db := newUsageCounterTestRepo(t)
 	ctx := context.Background()
 	require.NoError(t, db.Exec(`INSERT INTO messages (id) VALUES ('m1')`).Error)
+	incs := []types.UsageIncrement{{ScopeType: "tenant", ScopeID: "1", Metric: "tokens", PeriodKey: "2026-10", Delta: 50}}
 
-	claimed, err := repo.ClaimMessageUsage(ctx, "m1")
+	claimed, err := repo.AddMessageUsage(ctx, "m1", incs)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	claimed, err = repo.ClaimMessageUsage(ctx, "m1")
+	claimed, err = repo.AddMessageUsage(ctx, "m1", incs)
 	require.NoError(t, err)
 	require.False(t, claimed, "second save of the same message must not count again")
 
-	claimed, err = repo.ClaimMessageUsage(ctx, "missing")
+	claimed, err = repo.AddMessageUsage(ctx, "missing", incs)
 	require.NoError(t, err)
 	require.False(t, claimed)
+
+	rows, err := repo.Get(ctx, "tenant", "1", []string{"2026-10"})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(50), rows[0].Value)
+}
+
+func TestUsageCounterFailedAddLeavesMessageUncounted(t *testing.T) {
+	repo, db := newUsageCounterTestRepo(t)
+	ctx := context.Background()
+	require.NoError(t, db.Exec(`INSERT INTO messages (id) VALUES ('m1')`).Error)
+	incs := []types.UsageIncrement{{ScopeType: "tenant", ScopeID: "1", Metric: "tokens", PeriodKey: "2026-10", Delta: 50}}
+
+	// the counters cannot be written: the claim rolls back with them
+	require.NoError(t, db.Migrator().RenameTable("usage_counters", "usage_counters_away"))
+	_, err := repo.AddMessageUsage(ctx, "m1", incs)
+	require.Error(t, err)
+	require.NoError(t, db.Migrator().RenameTable("usage_counters_away", "usage_counters"))
+
+	claimed, err := repo.AddMessageUsage(ctx, "m1", incs)
+	require.NoError(t, err)
+	require.True(t, claimed, "the retry counts the message the failed save could not")
+	rows, err := repo.Get(ctx, "tenant", "1", []string{"2026-10"})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(50), rows[0].Value)
 }

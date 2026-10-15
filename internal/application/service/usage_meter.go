@@ -96,21 +96,19 @@ func (m *usageMeter) RecordMessageUsage(ctx context.Context, msg *types.Message)
 	if total <= 0 {
 		return
 	}
-	claimed, err := m.repo.ClaimMessageUsage(context.WithoutCancel(ctx), msg.ID)
-	if err != nil {
-		logger.Warnf(ctx, "usage meter: claim message %s failed: %v", msg.ID, err)
-		return
-	}
-	if !claimed {
-		return
-	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	m.add(ctx, buildUsageIncrements(tenantID, userID, msg.SessionID, m.now(), map[string]int64{
+	increments := buildUsageIncrements(tenantID, userID, msg.SessionID, m.now(), map[string]int64{
 		types.UsageMetricTokens:           int64(total),
 		types.UsageMetricPromptTokens:     int64(u.PromptTokens),
 		types.UsageMetricCompletionTokens: int64(u.CompletionTokens),
-	}))
+	})
+	// The mark and the counters commit together: a failure leaves the
+	// message uncounted for the next save to count. A client disconnect
+	// must not lose the count.
+	if _, err := m.repo.AddMessageUsage(context.WithoutCancel(ctx), msg.ID, increments); err != nil {
+		logger.Warnf(ctx, "usage meter: counting message %s failed: %v", msg.ID, err)
+	}
 }
 
 func (m *usageMeter) ResetSession(ctx context.Context, sessionID string) {

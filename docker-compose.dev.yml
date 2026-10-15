@@ -85,8 +85,10 @@ services:
     image: minio/minio:latest
     container_name: WeKnora-minio-dev
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      # Loopback only: minioadmin default creds. Set MINIO_ACCESS_KEY_ID/
+      # MINIO_SECRET_ACCESS_KEY before overriding MINIO_BIND=0.0.0.0.
+      - "${MINIO_BIND:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${MINIO_BIND:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}

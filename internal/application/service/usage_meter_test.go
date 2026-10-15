@@ -29,7 +29,7 @@ func (f *fakeUsageCounterRepo) SumByPeriod(context.Context, string, string) ([]*
 
 func (f *fakeUsageCounterRepo) DeleteScope(context.Context, string, string) error { return nil }
 
-func (f *fakeUsageCounterRepo) ClaimMessageUsage(_ context.Context, id string) (bool, error) {
+func (f *fakeUsageCounterRepo) AddMessageUsage(_ context.Context, id string, incs []types.UsageIncrement) (bool, error) {
 	if f.claimed == nil {
 		f.claimed = map[string]bool{}
 	}
@@ -37,6 +37,7 @@ func (f *fakeUsageCounterRepo) ClaimMessageUsage(_ context.Context, id string) (
 		return false, nil
 	}
 	f.claimed[id] = true
+	f.added = append(f.added, incs...)
 	return true, nil
 }
 

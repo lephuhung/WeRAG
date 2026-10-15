@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -82,9 +83,11 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 	return out, nil
 }
 
-// quote prices req; when strict, an unusable promo code is an error
-// rather than a note on the quote.
-func (s *usageBillingService) quote(ctx context.Context, req types.UsageQuoteRequest, strict bool) (*types.UsageQuote, *types.UsagePromoCode, error) {
+// quote prices req for scopeID; when strict, an unusable promo code is an
+// error rather than a note on the quote.
+func (s *usageBillingService) quote(
+	ctx context.Context, req types.UsageQuoteRequest, scopeID string, strict bool,
+) (*types.UsageQuote, *types.UsagePromoCode, error) {
 	if req.ScopeType != types.UsageScopeTenant && req.ScopeType != types.UsageScopeUser {
 		return nil, nil, apperrors.NewBadRequestError("scope_type must be tenant or user")
 	}
@@ -114,6 +117,9 @@ func (s *usageBillingService) quote(ctx context.Context, req types.UsageQuoteReq
 		}
 		q.Seats = req.Seats
 		q.SubtotalVND = plan.PriceVND * int64(req.Months) * int64(req.Seats)
+		if err := s.priceSeatRenewal(ctx, q, scopeID); err != nil {
+			return nil, nil, err
+		}
 	} else {
 		q.Mode = types.UsageModePool
 		q.SubtotalVND = plan.PriceVND * int64(req.Months)
@@ -143,8 +149,52 @@ func (s *usageBillingService) quote(ctx context.Context, req types.UsageQuoteReq
 	return q, promo, nil
 }
 
-func (s *usageBillingService) Quote(ctx context.Context, req types.UsageQuoteRequest) (*types.UsageQuote, error) {
-	q, _, err := s.quote(ctx, req, false)
+// usageProrationDaysPerMonth turns a monthly seat price into a daily one
+// for the time left on a period.
+const usageProrationDaysPerMonth = 30
+
+// priceSeatRenewal applies the seat rules of an order that will extend the
+// scope's current subscription (see apply): fewer seats than it has are
+// refused, since the extension would cover every seat; added seats also
+// pay for the days left on the current period, since they start now.
+func (s *usageBillingService) priceSeatRenewal(ctx context.Context, q *types.UsageQuote, scopeID string) error {
+	if scopeID == "" {
+		return nil
+	}
+	cur, err := s.planRepo.GetActiveSubscription(ctx, q.Plan.ScopeKind, scopeID)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	if !renewsSubscription(cur, q.Plan.ID, types.UsageModeSeat, now) {
+		return nil
+	}
+	q.CurrentSeats = cur.Seats
+	if q.Seats < cur.Seats {
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"the current subscription has %d seats; a renewal must cover at least that many", cur.Seats,
+		)).WithDetails(map[string]interface{}{"reason": "seats_below_current", "current_seats": cur.Seats})
+	}
+	if q.Seats == cur.Seats || cur.EndsAt == nil || !cur.EndsAt.After(now) {
+		return nil
+	}
+	days := int(math.Ceil(cur.EndsAt.Sub(now).Hours() / 24))
+	added := int64(q.Seats - cur.Seats)
+	q.ProratedDays = days
+	// rounded up: a partial đồng is not given away
+	q.ProrationVND = (q.UnitPriceVND*added*int64(days) + usageProrationDaysPerMonth - 1) / usageProrationDaysPerMonth
+	q.SubtotalVND += q.ProrationVND
+	return nil
+}
+
+// renewsSubscription reports whether an order of planID/mode extends cur
+// rather than starting a new subscription.
+func renewsSubscription(cur *types.UsageSubscription, planID, mode string, now time.Time) bool {
+	return cur != nil && cur.PlanID == planID && cur.Mode == mode && cur.IsCurrentAt(now)
+}
+
+func (s *usageBillingService) Quote(ctx context.Context, req types.UsageQuoteRequest, scopeID string) (*types.UsageQuote, error) {
+	q, _, err := s.quote(ctx, req, strings.TrimSpace(scopeID), false)
 	return q, err
 }
 
@@ -168,7 +218,7 @@ func (s *usageBillingService) CreateOrder(
 	if scopeID == "" {
 		return nil, apperrors.NewBadRequestError("scope_id is required")
 	}
-	q, promo, err := s.quote(ctx, req, true)
+	q, promo, err := s.quote(ctx, req, scopeID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -202,25 +252,42 @@ func (s *usageBillingService) CreateOrder(
 		exp := now.Add(time.Duration(ttl) * time.Hour)
 		order.ExpiresAt = &exp
 	}
-	// A code collision is astronomically unlikely but cheap to retry.
-	for attempt := 0; attempt < 5; attempt++ {
-		code, err := newUsageOrderCode()
-		if err != nil {
-			return nil, err
+	// The promo use is reserved in the order's transaction: the code's last
+	// use goes to one order only, and a failed insert gives it back.
+	err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
+		if promo != nil {
+			ok, err := s.repo.ReservePromoUse(ctx, promo.ID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return apperrors.NewBadRequestError("promo code cannot be used").
+					WithDetails(map[string]string{"reason": "promo_exhausted"})
+			}
 		}
-		order.OrderCode = code
-		err = s.repo.CreateOrder(ctx, order)
-		if err == nil {
-			break
+		// A code collision is astronomically unlikely but cheap to retry;
+		// each attempt is a savepoint so a failed insert leaves the
+		// transaction usable.
+		for attempt := 0; attempt < 5; attempt++ {
+			code, err := newUsageOrderCode()
+			if err != nil {
+				return err
+			}
+			order.OrderCode = code
+			err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
+				return s.repo.CreateOrder(ctx, order)
+			})
+			if err == nil {
+				return nil
+			}
+			if !isUniqueViolation(err) || attempt == 4 {
+				return err
+			}
 		}
-		if !isUniqueViolation(err) || attempt == 4 {
-			return nil, err
-		}
-	}
-	if promo != nil {
-		if err := s.repo.AddPromoUse(ctx, promo.ID, 1); err != nil {
-			return nil, err
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	if order.TotalVND <= 0 {
 		// Nothing to pay: a free trial or a 100% code.
@@ -230,18 +297,20 @@ func (s *usageBillingService) CreateOrder(
 }
 
 func (s *usageBillingService) expireDue(ctx context.Context) error {
-	expired, err := s.repo.ExpirePendingOrders(ctx, s.now())
-	if err != nil {
-		return err
-	}
-	for _, o := range expired {
-		if o.PromoCodeID != nil {
-			if err := s.repo.AddPromoUse(ctx, *o.PromoCodeID, -1); err != nil {
-				return err
+	return s.repo.InTransaction(ctx, func(ctx context.Context) error {
+		expired, err := s.repo.ExpirePendingOrders(ctx, s.now())
+		if err != nil {
+			return err
+		}
+		for _, o := range expired {
+			if o.PromoCodeID != nil {
+				if err := s.repo.AddPromoUse(ctx, *o.PromoCodeID, -1); err != nil {
+					return err
+				}
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (s *usageBillingService) GetOrder(ctx context.Context, id string) (*types.UsageOrderView, error) {
@@ -287,8 +356,10 @@ func (s *usageBillingService) ListOrders(ctx context.Context, filter types.Usage
 	return out, nil
 }
 
-func (s *usageBillingService) CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error) {
-	o, err := s.repo.GetOrder(ctx, id)
+// getPendingOrderForUpdate locks order id in the transaction of ctx and
+// checks it is still pending; verb names the refused action.
+func (s *usageBillingService) getPendingOrderForUpdate(ctx context.Context, id, verb string) (*types.UsageOrder, error) {
+	o, err := s.repo.GetOrderForUpdate(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, apperrors.NewNotFoundError("order not found")
 	}
@@ -296,41 +367,60 @@ func (s *usageBillingService) CancelOrder(ctx context.Context, id string) (*type
 		return nil, err
 	}
 	if o.Status != types.UsageOrderPending {
-		return nil, apperrors.NewConflictError("only pending orders can be cancelled")
+		return nil, apperrors.NewConflictError("only pending orders can be " + verb)
 	}
-	o.Status = types.UsageOrderCancelled
-	if err := s.repo.UpdateOrder(ctx, o); err != nil {
-		return nil, err
-	}
-	if o.PromoCodeID != nil {
-		if err := s.repo.AddPromoUse(ctx, *o.PromoCodeID, -1); err != nil {
-			return nil, err
+	return o, nil
+}
+
+func (s *usageBillingService) CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error) {
+	var o *types.UsageOrder
+	err := s.repo.InTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		if o, err = s.getPendingOrderForUpdate(ctx, id, "cancelled"); err != nil {
+			return err
 		}
+		o.Status = types.UsageOrderCancelled
+		if err := s.repo.UpdateOrder(ctx, o); err != nil {
+			return err
+		}
+		if o.PromoCodeID != nil {
+			return s.repo.AddPromoUse(ctx, *o.PromoCodeID, -1)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return s.view(ctx, o), nil
 }
 
+// ConfirmOrder settles an order in one transaction: the order row is
+// locked and must still be pending, the subscription change and the paid
+// status commit together. A failure rolls everything back, so the next
+// confirmation applies the order once, and a second confirmation finds it
+// paid.
 func (s *usageBillingService) ConfirmOrder(ctx context.Context, id, confirmedBy string) (*types.UsageOrderView, error) {
-	o, err := s.repo.GetOrder(ctx, id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, apperrors.NewNotFoundError("order not found")
-	}
+	var o *types.UsageOrder
+	err := s.repo.InTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		if o, err = s.getPendingOrderForUpdate(ctx, id, "confirmed"); err != nil {
+			return err
+		}
+		if err := s.repo.LockScope(ctx, o.ScopeType, o.ScopeID); err != nil {
+			return err
+		}
+		now := s.now()
+		subID, err := s.apply(ctx, o, now)
+		if err != nil {
+			return err
+		}
+		o.Status = types.UsageOrderPaid
+		o.PaidAt = &now
+		o.ConfirmedBy = confirmedBy
+		o.SubscriptionID = &subID
+		return s.repo.UpdateOrder(ctx, o)
+	})
 	if err != nil {
-		return nil, err
-	}
-	if o.Status != types.UsageOrderPending {
-		return nil, apperrors.NewConflictError("only pending orders can be confirmed")
-	}
-	now := s.now()
-	subID, err := s.apply(ctx, o, now)
-	if err != nil {
-		return nil, err
-	}
-	o.Status = types.UsageOrderPaid
-	o.PaidAt = &now
-	o.ConfirmedBy = confirmedBy
-	o.SubscriptionID = &subID
-	if err := s.repo.UpdateOrder(ctx, o); err != nil {
 		return nil, err
 	}
 	return s.view(ctx, o), nil
@@ -344,7 +434,15 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	if err != nil {
 		return "", err
 	}
-	if cur != nil && cur.PlanID == o.PlanID && cur.Mode == o.Mode && cur.IsCurrentAt(now) {
+	if renewsSubscription(cur, o.PlanID, o.Mode, now) {
+		// the order paid for o.Seats only (its quote refused fewer seats
+		// than the subscription had); seats added since then would be
+		// extended for free
+		if o.Mode == types.UsageModeSeat && o.Seats < cur.Seats {
+			return "", apperrors.NewConflictError(fmt.Sprintf(
+				"the subscription now has %d seats but order %s pays for %d; cancel it and order again",
+				cur.Seats, o.OrderCode, o.Seats))
+		}
 		from := now
 		if cur.EndsAt != nil && cur.EndsAt.After(now) {
 			from = *cur.EndsAt

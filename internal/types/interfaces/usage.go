@@ -20,10 +20,11 @@ type UsageCounterRepository interface {
 	// scopes are reset this way (a session whose messages were cleared);
 	// workspace and person rows are history and never deleted.
 	DeleteScope(ctx context.Context, scopeType, scopeID string) error
-	// ClaimMessageUsage marks messageID's token usage as counted and reports
-	// whether this call was the one that claimed it. A message saved several
-	// times is thereby counted once.
-	ClaimMessageUsage(ctx context.Context, messageID string) (bool, error)
+	// AddMessageUsage marks messageID's token usage as counted and applies
+	// increments in one transaction, reporting whether this call counted
+	// it. A message saved several times is thereby counted once, and a
+	// failed add leaves it to be counted by the next save.
+	AddMessageUsage(ctx context.Context, messageID string, increments []types.UsageIncrement) (bool, error)
 }
 
 // UsageMeter records usage as it happens and answers usage queries.
@@ -145,17 +146,29 @@ type UsageBillingRepository interface {
 	CreatePromo(ctx context.Context, promo *types.UsagePromoCode) error
 	UpdatePromo(ctx context.Context, promo *types.UsagePromoCode) error
 	DeletePromo(ctx context.Context, id string) error
-	// AddPromoUse changes used_count by delta (+1 on order, -1 on cancel).
+	// AddPromoUse changes used_count by delta (-1 when an order is
+	// cancelled or expires).
 	AddPromoUse(ctx context.Context, id string, delta int) error
+	// ReservePromoUse takes one use atomically and reports false when the
+	// code has none left (max_uses reached).
+	ReservePromoUse(ctx context.Context, id string) (bool, error)
 
 	CreateOrder(ctx context.Context, order *types.UsageOrder) error
 	GetOrder(ctx context.Context, id string) (*types.UsageOrder, error)
+	// GetOrderForUpdate reads an order and locks it for the transaction.
+	GetOrderForUpdate(ctx context.Context, id string) (*types.UsageOrder, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrder, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error)
 	UpdateOrder(ctx context.Context, order *types.UsageOrder) error
 	// ExpirePendingOrders flips pending orders past their expires_at and
-	// returns them so promo uses can be released.
+	// returns the ones this call flipped so promo uses can be released.
 	ExpirePendingOrders(ctx context.Context, now time.Time) ([]*types.UsageOrder, error)
+	// InTransaction runs fn in one transaction; the usage plan repository
+	// called with fn's ctx writes in it too.
+	InTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+	// LockScope serialises order settlement for one scope until the
+	// transaction of ctx ends.
+	LockScope(ctx context.Context, scopeType, scopeID string) error
 }
 
 // UsageBillingService quotes, takes and settles orders for usage packages.
@@ -163,7 +176,10 @@ type UsageBillingService interface {
 	BillingInfo(ctx context.Context) *types.UsageBillingInfo
 	// PurchasablePlans lists active plans of a scope kind that carry a price.
 	PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlan, error)
-	Quote(ctx context.Context, req types.UsageQuoteRequest) (*types.UsageQuote, error)
+	// Quote prices req for scopeID. Renewing a seat subscription with fewer
+	// seats is refused; more seats also pay the added seats for the time
+	// left on the current period.
+	Quote(ctx context.Context, req types.UsageQuoteRequest, scopeID string) (*types.UsageQuote, error)
 	// CreateOrder freezes a quote for scopeID. A promo that cannot be used
 	// is an error here (the quote already told the buyer). Total 0 orders
 	// are confirmed on the spot.
@@ -175,8 +191,10 @@ type UsageBillingService interface {
 	CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	// ConfirmOrder marks a pending order paid and applies it: the scope's
 	// current subscription of the same plan is extended by the order's
-	// months (seats raised to the order's), otherwise a new subscription
-	// replaces whatever the scope had.
+	// months (seats raised to the order's; an order for fewer seats than
+	// the subscription now has is refused), otherwise a new subscription
+	// replaces whatever the scope had. Settlement is one transaction, so a
+	// failed confirmation leaves nothing applied and a retry applies once.
 	ConfirmOrder(ctx context.Context, id, confirmedBy string) (*types.UsageOrderView, error)
 
 	ListPromos(ctx context.Context, includeInactive bool) ([]*types.UsagePromoCode, error)
