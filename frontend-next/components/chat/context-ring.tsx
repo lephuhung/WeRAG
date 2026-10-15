@@ -7,8 +7,11 @@ import {
   contextFill,
   contextPercent,
   contextTone,
+  denialKey,
   formatCount,
   formatTokens,
+  shouldFetchContext,
+  type ContextFetchState,
   type ContextTone,
   type ContextUsage,
 } from "@/lib/context-usage";
@@ -24,35 +27,48 @@ const TONE_COLOR: Record<ContextTone, string> = {
   red: "var(--color-error)",
 };
 
-/** The session's context usage, fetched when the session opens, when a
- * turn ends (busy turns false) and when refreshKey changes — even mid-turn,
- * since a compaction is persisted as it happens. null until loaded, and
- * when it cannot be read. */
+const DENIAL_TEXT = {
+  noPackage: "ctx.denied.noPackage",
+  expired: "ctx.denied.expired",
+  noSeat: "ctx.denied.noSeat",
+  limit: "ctx.denied.limit",
+} as const;
+
+/** The session's context usage: fetched when the session opens idle, when
+ * a turn ends, and when refreshKey moves mid-turn (a compaction is persisted
+ * as it happens) — see shouldFetchContext. null until loaded, and when it
+ * cannot be read. */
 export function useContextUsage(sessionId: string | null, busy: boolean, refreshKey: string | number) {
   const [usage, setUsage] = useState<ContextUsage | null>(null);
-  const fetchedKey = useRef<string | number | null>(null);
+  const last = useRef<ContextFetchState | null>(null);
+  const seq = useRef(0);
   useEffect(() => {
-    setUsage(null);
-    fetchedKey.current = null;
-  }, [sessionId]);
-  useEffect(() => {
-    if (!sessionId || (busy && fetchedKey.current === refreshKey)) return;
-    fetchedKey.current = refreshKey;
-    let alive = true;
+    const prev = last.current;
+    const next: ContextFetchState = { sessionId, busy, key: refreshKey };
+    last.current = next;
+    if (prev?.sessionId !== sessionId) setUsage(null);
+    if (!sessionId || !shouldFetchContext(prev, next)) return;
+    // a newer request, or another session, wins over a slower older one
+    const mine = ++seq.current;
     getContextUsage(sessionId)
-      .then((u) => alive && setUsage(u))
-      .catch(() => alive && setUsage(null));
-    return () => {
-      alive = false;
-    };
+      .then((u) => mine === seq.current && setUsage(u))
+      .catch(() => mine === seq.current && setUsage(null));
   }, [sessionId, busy, refreshKey]);
+  useEffect(
+    () => () => {
+      seq.current += 1; // unmounted: drop whatever is in flight
+    },
+    [],
+  );
   return usage;
 }
 
 /* How full the history of the next turn is, as a small ring in the chat
- * header next to the document rings; hovering or focusing it lists the
- * details: history against the budget, compaction, the session's turns and
- * tokens against the plan's caps, the latest turn and the model window. */
+ * header next to the document rings. Hovering (desktop), or a click/tap,
+ * shows the details: history against the budget, compaction, the session's
+ * turns and tokens against the plan's caps, the latest turn and the model
+ * window. A tap toggles it; Escape, leaving focus or a click outside closes
+ * it. */
 export function ContextRing({
   sessionId,
   busy,
@@ -69,7 +85,26 @@ export function ContextRing({
 }) {
   const { t, locale } = useT();
   const tipId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
   const usage = useContextUsage(sessionId, busy, refreshKey);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onDown = (e: Event) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [open]);
+
   if (!sessionId || !usage) return null;
 
   const fill = contextFill(usage);
@@ -77,9 +112,12 @@ export function ContextRing({
   const tone = contextTone(fill);
   const tok = (n: number) => formatTokens(n, locale);
   const cnt = (n: number) => formatCount(n, locale);
-  const unlimited = t("ctx.unlimited");
+  // with a refusing package "no cap" would be wrong: say why instead
+  const denial = usage.denied ? t(DENIAL_TEXT[denialKey(usage.reason)]) : "";
+  const noCap = denial || t("ctx.unlimited");
   const budget = usage.history_budget || usage.model_window;
   const s = usage.session;
+  const quick = usage.mode === "quick-answer";
 
   const lines: string[] = [
     t("ctx.history", { used: tok(usage.history_tokens), budget: tok(budget), pct }),
@@ -90,17 +128,27 @@ export function ContextRing({
   lines.push(t("ctx.sessionTokens", { value: s.max_tokens > 0 ? `${tok(s.tokens)} / ${tok(s.max_tokens)}` : tok(s.tokens) }));
   if (usage.last_turn)
     lines.push(t("ctx.lastTurn", { tokens: tok(usage.last_turn.prompt_tokens), rounds: cnt(usage.last_turn.rounds) }));
-  lines.push(t("ctx.turnCap", { value: usage.turn_token_cap > 0 ? tok(usage.turn_token_cap) : unlimited }));
+  lines.push(t("ctx.turnCap", { value: usage.turn_token_cap > 0 ? tok(usage.turn_token_cap) : noCap }));
   lines.push(t("ctx.window", { value: tok(usage.model_window) }));
-  if (usage.plan_name) lines.push(t("ctx.plan", { name: usage.plan_name }));
+  if (denial) lines.push(t("ctx.plan", { name: denial }));
+  else if (usage.plan_name) lines.push(t("ctx.plan", { name: usage.plan_name }));
+  const hint = quick ? t("ctx.hintQuick", { n: cnt(usage.history_rounds) }) : t("ctx.hint");
 
   return (
-    <div className={`group relative shrink-0 ${className}`}>
+    <div
+      ref={rootRef}
+      className={`group relative shrink-0 ${className}`}
+      onBlur={(e) => {
+        if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <button
         type="button"
         aria-label={t("ctx.ringLabel", { pct })}
         aria-describedby={tipId}
-        className="relative flex h-8 w-8 cursor-default items-center justify-center rounded-full"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full hover:bg-surface-strong"
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" className="-rotate-90">
           <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" strokeWidth={STROKE} style={{ stroke: "var(--color-hairline-strong)" }} />
@@ -121,14 +169,16 @@ export function ContextRing({
       <div
         id={tipId}
         role="tooltip"
-        className="pointer-events-none absolute right-0 top-full z-50 mt-1 w-max max-w-[280px] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className={`pointer-events-none absolute right-0 top-full z-50 mt-1 w-max max-w-[min(280px,calc(100vw-2rem))] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 ${
+          open ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
       >
         {lines.map((line, i) => (
           <p key={i} className={i === 0 ? "font-medium" : undefined}>
             {line}
           </p>
         ))}
-        <p className="mt-1 opacity-75">{t("ctx.hint")}</p>
+        <p className="mt-1 opacity-75">{hint}</p>
       </div>
     </div>
   );

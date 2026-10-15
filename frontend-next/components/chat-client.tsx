@@ -1058,6 +1058,11 @@ function ChatBody({ id }: { id: string }) {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // compactions streamed so far: the context ring reloads on each
+  const compactionCount = useMemo(
+    () => messages.reduce((n, m) => n + (m.steps?.filter((s) => s.type === "compacted").length ?? 0), 0),
+    [messages],
+  );
   const [abbreviationRefreshKey, setAbbreviationRefreshKey] = useState(0);
   // Document assistant: latest editor selection attached to the next turn,
   // and the edit plans (document_ops) of editing tools, applied in the
@@ -2795,7 +2800,7 @@ function ChatBody({ id }: { id: string }) {
         <ContextRing
           sessionId={id === "new" ? null : id}
           busy={busy}
-          refreshKey={messages.reduce((n, m) => n + (m.steps?.filter((s) => s.type === "compacted").length ?? 0), 0)}
+          refreshKey={compactionCount}
           className={isDocumentAssistant && (spellingStatus || formatCheck) ? "ml-1" : "ml-auto"}
         />
         {isDocumentAssistant && id !== "new" && (

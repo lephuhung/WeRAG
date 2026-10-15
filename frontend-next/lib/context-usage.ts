@@ -11,7 +11,10 @@ export type ContextUsage = {
   compacted: boolean;
   compacted_turns: number;
   seeded: boolean;
+  /** "agent" or "quick-answer". */
   mode: string;
+  /** Quick-answer only: how many recent rounds a turn carries. */
+  history_rounds: number;
   last_turn: { prompt_tokens: number; completion_tokens: number; rounds: number } | null;
   session: {
     turns: number;
@@ -25,6 +28,10 @@ export type ContextUsage = {
   turn_token_cap: number;
   plan_name: string;
   enforced: boolean;
+  /** Enforcement is on and the caller's package would refuse a turn. */
+  denied: boolean;
+  /** Why: no_subscription, expired, no_seat or limit_exhausted. */
+  reason: string;
 };
 
 export type ContextTone = "neutral" | "amber" | "red";
@@ -47,6 +54,7 @@ export function parseContextUsage(raw: unknown): ContextUsage | null {
     compacted_turns: num(r.compacted_turns),
     seeded: r.seeded === true,
     mode: typeof r.mode === "string" ? r.mode : "",
+    history_rounds: num(r.history_rounds),
     last_turn: lt
       ? { prompt_tokens: num(lt.prompt_tokens), completion_tokens: num(lt.completion_tokens), rounds: num(lt.rounds) }
       : null,
@@ -62,7 +70,38 @@ export function parseContextUsage(raw: unknown): ContextUsage | null {
     turn_token_cap: num(r.turn_token_cap),
     plan_name: typeof r.plan_name === "string" ? r.plan_name : "",
     enforced: r.enforced === true,
+    denied: r.denied === true,
+    reason: typeof r.reason === "string" ? r.reason : "",
   };
+}
+
+/** What the next fetch should do when the session, the turn state or the
+ * refresh key changed: fetch when a session opens idle, when a turn ends,
+ * and when the key moves mid-turn (a streamed compaction). A session that
+ * opens mid-turn ("new" becoming a real id) waits for the turn to end; a
+ * key that moves while idle (history loading) and a repeated run of the
+ * same state (React strict mode) fetch nothing. */
+export type ContextFetchState = { sessionId: string | null; busy: boolean; key: string | number };
+
+export function shouldFetchContext(prev: ContextFetchState | null, next: ContextFetchState): boolean {
+  if (!next.sessionId) return false;
+  if (!prev || prev.sessionId !== next.sessionId) return !next.busy;
+  if (prev.busy && !next.busy) return true;
+  return next.busy && prev.key !== next.key;
+}
+
+/** The i18n key suffix naming why a package refuses turns. */
+export function denialKey(reason: string): "noPackage" | "expired" | "noSeat" | "limit" {
+  switch (reason) {
+    case "expired":
+      return "expired";
+    case "no_seat":
+      return "noSeat";
+    case "limit_exhausted":
+      return "limit";
+    default:
+      return "noPackage";
+  }
 }
 
 /** How full the history is, 0..1 (history over its budget; the window

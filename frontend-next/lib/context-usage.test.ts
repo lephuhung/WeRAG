@@ -7,9 +7,11 @@ import {
   contextFill,
   contextPercent,
   contextTone,
+  denialKey,
   formatCount,
   formatTokens,
   parseContextUsage,
+  shouldFetchContext,
 } from "./context-usage.ts";
 
 describe("parseContextUsage", () => {
@@ -35,6 +37,14 @@ describe("parseContextUsage", () => {
     assert.deepEqual(u.last_turn, { prompt_tokens: 40000, completion_tokens: 800, rounds: 3 });
     assert.equal(u.session.max_turns, 15);
     assert.equal(u.plan_name, "Cơ bản");
+    assert.equal(u.denied, false);
+  });
+  it("reads a denial and the quick-answer rounds", () => {
+    const u = parseContextUsage({ denied: true, reason: "no_seat", mode: "quick-answer", history_rounds: 3 });
+    assert.ok(u);
+    assert.equal(u.denied, true);
+    assert.equal(u.reason, "no_seat");
+    assert.equal(u.history_rounds, 3);
   });
   it("tolerates missing fields", () => {
     const u = parseContextUsage({ history_tokens: "x", last_turn: null });
@@ -60,6 +70,35 @@ describe("fill and tone", () => {
     assert.equal(contextTone(0.6), "amber");
     assert.equal(contextTone(0.85), "amber");
     assert.equal(contextTone(0.86), "red");
+  });
+});
+
+describe("shouldFetchContext", () => {
+  const st = (sessionId: string | null, busy: boolean, key: number) => ({ sessionId, busy, key });
+  it("fetches once when a session opens idle", () => {
+    assert.equal(shouldFetchContext(null, st("s1", false, 0)), true);
+    assert.equal(shouldFetchContext(st("s1", false, 0), st("s1", false, 0)), false, "strict-mode rerun");
+    assert.equal(shouldFetchContext(st("s1", false, 0), st("s1", false, 2)), false, "history loading");
+  });
+  it("waits for the turn when a new session gets its id mid-turn", () => {
+    assert.equal(shouldFetchContext(st(null, true, 0), st("s1", true, 0)), false);
+    assert.equal(shouldFetchContext(st("s1", true, 0), st("s1", false, 0)), true);
+  });
+  it("fetches on a streamed compaction and when the turn ends", () => {
+    assert.equal(shouldFetchContext(st("s1", false, 0), st("s1", true, 0)), false, "turn starts");
+    assert.equal(shouldFetchContext(st("s1", true, 0), st("s1", true, 1)), true);
+    assert.equal(shouldFetchContext(st("s1", true, 1), st("s1", false, 1)), true);
+    assert.equal(shouldFetchContext(st("s1", false, 1), st(null, false, 1)), false);
+  });
+});
+
+describe("denialKey", () => {
+  it("names each refusal", () => {
+    assert.equal(denialKey("no_subscription"), "noPackage");
+    assert.equal(denialKey("expired"), "expired");
+    assert.equal(denialKey("no_seat"), "noSeat");
+    assert.equal(denialKey("limit_exhausted"), "limit");
+    assert.equal(denialKey(""), "noPackage");
   });
 });
 
