@@ -1,0 +1,135 @@
+"use client";
+
+import { useEffect, useId, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
+import { getContextUsage } from "@/lib/api/context-usage";
+import {
+  contextFill,
+  contextPercent,
+  contextTone,
+  formatCount,
+  formatTokens,
+  type ContextTone,
+  type ContextUsage,
+} from "@/lib/context-usage";
+
+const SIZE = 20;
+const STROKE = 2;
+const RADIUS = (SIZE - STROKE) / 2;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+const TONE_COLOR: Record<ContextTone, string> = {
+  neutral: "var(--color-muted)",
+  amber: "var(--color-warning, #d97706)",
+  red: "var(--color-error)",
+};
+
+/** The session's context usage, fetched when the session opens, when a
+ * turn ends (busy turns false) and when refreshKey changes — even mid-turn,
+ * since a compaction is persisted as it happens. null until loaded, and
+ * when it cannot be read. */
+export function useContextUsage(sessionId: string | null, busy: boolean, refreshKey: string | number) {
+  const [usage, setUsage] = useState<ContextUsage | null>(null);
+  const fetchedKey = useRef<string | number | null>(null);
+  useEffect(() => {
+    setUsage(null);
+    fetchedKey.current = null;
+  }, [sessionId]);
+  useEffect(() => {
+    if (!sessionId || (busy && fetchedKey.current === refreshKey)) return;
+    fetchedKey.current = refreshKey;
+    let alive = true;
+    getContextUsage(sessionId)
+      .then((u) => alive && setUsage(u))
+      .catch(() => alive && setUsage(null));
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, busy, refreshKey]);
+  return usage;
+}
+
+/* How full the history of the next turn is, as a small ring in the chat
+ * header next to the document rings; hovering or focusing it lists the
+ * details: history against the budget, compaction, the session's turns and
+ * tokens against the plan's caps, the latest turn and the model window. */
+export function ContextRing({
+  sessionId,
+  busy,
+  refreshKey,
+  className = "",
+}: {
+  /** null before the session exists ("new"): nothing is shown. */
+  sessionId: string | null;
+  /** A turn is running: the ring keeps its value until it ends. */
+  busy: boolean;
+  /** Changes when the ring should reload (e.g. a compaction was streamed). */
+  refreshKey: string | number;
+  className?: string;
+}) {
+  const { t, locale } = useT();
+  const tipId = useId();
+  const usage = useContextUsage(sessionId, busy, refreshKey);
+  if (!sessionId || !usage) return null;
+
+  const fill = contextFill(usage);
+  const pct = contextPercent(usage);
+  const tone = contextTone(fill);
+  const tok = (n: number) => formatTokens(n, locale);
+  const cnt = (n: number) => formatCount(n, locale);
+  const unlimited = t("ctx.unlimited");
+  const budget = usage.history_budget || usage.model_window;
+  const s = usage.session;
+
+  const lines: string[] = [
+    t("ctx.history", { used: tok(usage.history_tokens), budget: tok(budget), pct }),
+  ];
+  if (usage.compacted && usage.compacted_turns > 0) lines.push(t("ctx.compacted", { n: cnt(usage.compacted_turns) }));
+  else if (usage.seeded) lines.push(t("ctx.seeded"));
+  lines.push(t("ctx.turns", { value: s.max_turns > 0 ? `${cnt(s.turns)}/${cnt(s.max_turns)}` : cnt(s.turns) }));
+  lines.push(t("ctx.sessionTokens", { value: s.max_tokens > 0 ? `${tok(s.tokens)} / ${tok(s.max_tokens)}` : tok(s.tokens) }));
+  if (usage.last_turn)
+    lines.push(t("ctx.lastTurn", { tokens: tok(usage.last_turn.prompt_tokens), rounds: cnt(usage.last_turn.rounds) }));
+  lines.push(t("ctx.turnCap", { value: usage.turn_token_cap > 0 ? tok(usage.turn_token_cap) : unlimited }));
+  lines.push(t("ctx.window", { value: tok(usage.model_window) }));
+  if (usage.plan_name) lines.push(t("ctx.plan", { name: usage.plan_name }));
+
+  return (
+    <div className={`group relative shrink-0 ${className}`}>
+      <button
+        type="button"
+        aria-label={t("ctx.ringLabel", { pct })}
+        aria-describedby={tipId}
+        className="relative flex h-8 w-8 cursor-default items-center justify-center rounded-full"
+      >
+        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" className="-rotate-90">
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" strokeWidth={STROKE} style={{ stroke: "var(--color-hairline-strong)" }} />
+          <circle
+            cx={SIZE / 2}
+            cy={SIZE / 2}
+            r={RADIUS}
+            fill="none"
+            strokeWidth={STROKE}
+            strokeLinecap="round"
+            strokeDasharray={CIRCUMFERENCE}
+            strokeDashoffset={CIRCUMFERENCE * (1 - Math.max(fill, 0.02))}
+            className="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
+            style={{ stroke: TONE_COLOR[tone] }}
+          />
+        </svg>
+      </button>
+      <div
+        id={tipId}
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full z-50 mt-1 w-max max-w-[280px] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {lines.map((line, i) => (
+          <p key={i} className={i === 0 ? "font-medium" : undefined}>
+            {line}
+          </p>
+        ))}
+        <p className="mt-1 opacity-75">{t("ctx.hint")}</p>
+      </div>
+    </div>
+  );
+}

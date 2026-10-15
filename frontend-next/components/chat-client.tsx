@@ -13,6 +13,7 @@ import { useT } from "@/lib/i18n";
 import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
+import { ContextRing } from "@/components/chat/context-ring";
 import {
   clearDocumentScope,
   documentSelectionForDisplay,
@@ -2791,6 +2792,12 @@ function ChatBody({ id }: { id: string }) {
             )}
           </div>
         )}
+        <ContextRing
+          sessionId={id === "new" ? null : id}
+          busy={busy}
+          refreshKey={messages.reduce((n, m) => n + (m.steps?.filter((s) => s.type === "compacted").length ?? 0), 0)}
+          className={isDocumentAssistant && (spellingStatus || formatCheck) ? "ml-1" : "ml-auto"}
+        />
         {isDocumentAssistant && id !== "new" && (
           <FormatCheckReportModal
             open={formatReportOpen}
