@@ -43,6 +43,22 @@ type Settings struct {
 	// StallTimeout is how long a summarization stream may produce no output
 	// before it is cancelled. Zero means DefaultSummarizationStallTimeout.
 	StallTimeout time.Duration
+	// SummarizerModelID names the model that writes summaries when it is
+	// not the answering model (system setting llm.compaction_model_id),
+	// for logs only. Empty means the answering model.
+	SummarizerModelID string
+	// SummarizerWindow is the summarizer's own context window, which sizes
+	// one summarization request. Zero means the summarizer is the answering
+	// model and MaxContextTokens applies.
+	SummarizerWindow int
+}
+
+// summarizerWindow is the window one summarization request must fit.
+func (s Settings) summarizerWindow() int {
+	if s.SummarizerWindow > 0 {
+		return s.SummarizerWindow
+	}
+	return s.MaxContextTokens
 }
 
 // DefaultSummarizationStallTimeout matches the engine's default stall budget
@@ -126,17 +142,19 @@ func (s Settings) summaryBudget() int {
 }
 
 // summarizerInputBudget is how much transcript one summarization request can
-// carry: the window less the reply, the previous summary and the prompt's own
+// carry: the summarizer's window (not the answering model's, when another model
+// summarizes) less the reply, the previous summary and the prompt's own
 // text, with a tenth held back because the provider counts tokens its own way.
 // Zero means unbounded (no window configured).
 func (s Settings) summarizerInputBudget(
 	estimator *agenttoken.Estimator, previousSummary string, maxTokens int,
 ) int {
-	if s.MaxContextTokens <= 0 {
+	window := s.summarizerWindow()
+	if window <= 0 {
 		return 0
 	}
 	fixed := maxTokens + summarizerPromptTokens(estimator) + estimator.EstimateString(previousSummary)
-	return max((s.MaxContextTokens-fixed)*9/10, 1)
+	return max((window-fixed)*9/10, 1)
 }
 
 // summarizerPromptTokens is the prompt text that surrounds the transcript:

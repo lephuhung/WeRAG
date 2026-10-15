@@ -419,6 +419,10 @@ func (s *sessionService) AgentQA(
 		engine.SetContextCheckpointSink(messageCheckpointSink{repo: s.messageRepo, sessionID: sessionID})
 	}
 
+	// Compaction summaries may come from another model than the answer
+	// (llm.compaction_model_id); the answering model stays the fallback.
+	s.applyCompactionModel(ctx, engine, effectiveModelID)
+
 	// History over the plan's budget is summarized now, synchronously, so
 	// every round of this turn resends the smaller history. Needs the
 	// checkpoint sink and the abbreviation binding set above.
@@ -453,6 +457,35 @@ func (s *sessionService) AgentQA(
 	}
 	// Return empty - events will be handled by Handler via EventBus subscription
 	return nil
+}
+
+// applyCompactionModel hands the engine the summarizer named by the system
+// setting llm.compaction_model_id, with its own context window. Empty, equal
+// to the answering model, or not loadable keeps the answering model.
+func (s *sessionService) applyCompactionModel(
+	ctx context.Context, engine interface {
+		SetCompactionModel(chat.Chat, string, int)
+	}, answeringModelID string,
+) {
+	if s.systemSettings == nil || engine == nil {
+		return
+	}
+	modelID := strings.TrimSpace(s.systemSettings.GetString(ctx, types.CompactionModelSettingKey,
+		"WEKNORA_COMPACTION_MODEL_ID", ""))
+	if modelID == "" || modelID == answeringModelID {
+		return
+	}
+	model, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil || model == nil {
+		logger.Warnf(ctx, "Compaction model %s unavailable, summarizing with the answering model: %v", modelID, err)
+		return
+	}
+	window := 0
+	if info, err := s.modelService.GetModelByID(ctx, modelID); err == nil && info != nil {
+		window = info.Parameters.ContextWindow
+	}
+	engine.SetCompactionModel(model, modelID, window)
+	logger.Infof(ctx, "Compaction summaries by model %s (window %d)", modelID, window)
 }
 
 // applyUsageTurnCaps narrows the run to the caller's usage plan: the plan's

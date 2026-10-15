@@ -6,6 +6,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/agent/compaction"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -13,6 +14,17 @@ import (
 // default) keeps every compaction local to the turn that ran it.
 func (e *AgentEngine) SetContextCheckpointSink(sink types.ContextCheckpointSink) {
 	e.checkpointSink = sink
+}
+
+// SetCompactionModel has model write this run's compaction summaries (the
+// system setting llm.compaction_model_id), sized by its own window, with the
+// answering model kept as the fallback. The compaction threshold still
+// follows the answering model's window. Nil keeps the answering model.
+func (e *AgentEngine) SetCompactionModel(model chat.Chat, modelID string, window int) {
+	if e == nil || e.compactor == nil || model == nil {
+		return
+	}
+	e.compactor = e.compactor.WithSummarizer(model, modelID, window)
 }
 
 // saveContextCheckpoint writes a compaction that ends on a stored turn onto

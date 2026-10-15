@@ -3217,6 +3217,7 @@ func (e *installAgentEngine) CompactHistoryToBudget(
 ) []chat.Message {
 	return history
 }
+func (e *installAgentEngine) SetCompactionModel(chat.Chat, string, int) {}
 
 type installSessionService struct {
 	fx *installFixture

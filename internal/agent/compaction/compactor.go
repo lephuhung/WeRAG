@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	agenttoken "github.com/Tencent/WeKnora/internal/agent/token"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -90,8 +92,41 @@ func (r *Result) Freed() int {
 // Compactor summarizes conversation history into a checkpoint.
 type Compactor struct {
 	chatModel chat.Chat
+	// fallback is the answering model when a separate summarizer was set
+	// (WithSummarizer): one more attempt runs on it before a summary
+	// degrades to the raw archive. Nil when chatModel is the answering model.
+	fallback  chat.Chat
 	estimator *agenttoken.Estimator
 	settings  Settings
+}
+
+// Process-wide compaction counts, logged with every degraded summary so a
+// summarizer that keeps failing shows up as a rising number, not as a
+// scattering of identical warnings.
+var (
+	compactionsRun      atomic.Int64
+	degradedCompactions atomic.Int64
+)
+
+// Stats returns how many compactions this process ran and how many of them
+// produced a degraded (raw archive) summary.
+func Stats() (compactions, degraded int64) {
+	return compactionsRun.Load(), degradedCompactions.Load()
+}
+
+// WithSummarizer returns a copy of the compactor whose summaries are written
+// by model (window tokens of context, modelID for logs), keeping the current
+// model as a fallback. A nil model returns the compactor unchanged.
+func (c *Compactor) WithSummarizer(model chat.Chat, modelID string, window int) *Compactor {
+	if c == nil || model == nil {
+		return c
+	}
+	cp := *c
+	cp.fallback = c.chatModel
+	cp.chatModel = model
+	cp.settings.SummarizerModelID = modelID
+	cp.settings.SummarizerWindow = window
+	return &cp
 }
 
 // New builds a compactor. It returns nil when compaction cannot run, so the
@@ -141,6 +176,14 @@ func (c *Compactor) Compact(
 	summary, prefixDegraded := c.appendTurnPrefix(ctx, prep, history)
 	summary += prep.fileOps.format()
 	compacted := Apply(messages, prep, summary)
+
+	compactionsRun.Add(1)
+	if historyDegraded || prefixDegraded {
+		n := degradedCompactions.Add(1)
+		logger.Warnf(ctx, "[Compaction] Degraded summary (%s, summarizer=%q, history=%v, turn_prefix=%v): "+
+			"%d of %d compactions in this process degraded", reason, c.summarizerLabel(),
+			historyDegraded, prefixDegraded, n, compactionsRun.Load())
+	}
 
 	return &Result{
 		Messages:       compacted,
@@ -219,39 +262,83 @@ func (c *Compactor) summarize(
 		{Role: "system", Content: summarizationSystemPrompt},
 		{Role: "user", Content: buildSummarizationPrompt(messages, omitted, previousSummary, instructions)},
 	}
+	// Thinking is off explicitly: a summary is a transcription, and a
+	// reasoning model left to its default spent the completion budget on
+	// thoughts and stopped on the length cap before writing the summary.
+	thinking := false
 	opts := &chat.ChatOptions{
 		Temperature:    0.3, // low temperature for factual summarization
 		MaxTokens:      maxTokens,
 		CacheRetention: chat.CacheRetentionNone,
+		Thinking:       &thinking,
 	}
 	var lastErr error
 
-	for attempt := 1; attempt <= maxSummarizationAttempts; attempt++ {
-		content, finishReason, err := c.streamSummary(ctx, request, opts)
-		if err == nil {
-			err = validateSummary(content, finishReason)
+	// The summarizer gets its attempts; a separate summarizer that fails
+	// them all leaves one more to the answering model before degrading.
+	models := []chat.Chat{c.chatModel}
+	if c.fallback != nil {
+		models = append(models, c.fallback)
+	}
+	attempts := 0
+	for i, model := range models {
+		tries := maxSummarizationAttempts
+		if i > 0 {
+			tries = 1
+			logger.Warnf(ctx, "[Compaction] Summarizer %q failed (%v); retrying on the answering model",
+				c.summarizerLabel(), lastErr)
 		}
-		if err == nil {
-			return strings.TrimSpace(content), nil
-		}
-		lastErr = err
-		if ctx.Err() != nil {
-			break // the turn itself was stopped; another attempt cannot help
+		for try := 0; try < tries; try++ {
+			attempts++
+			content, finishReason, err := c.streamSummary(ctx, model, request, opts)
+			if err == nil {
+				err = validateSummary(content, finishReason)
+			}
+			if err == nil {
+				return strings.TrimSpace(content), nil
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				// the turn itself was stopped; another attempt cannot help
+				return "", fmt.Errorf("summarization failed after %d attempts: %w", attempts, lastErr)
+			}
 		}
 	}
 
-	return "", fmt.Errorf("summarization failed after %d attempts: %w",
-		maxSummarizationAttempts, lastErr)
+	return "", fmt.Errorf("summarization failed after %d attempts: %w", attempts, lastErr)
+}
+
+// summarizerLabel names the summarizer in logs.
+func (c *Compactor) summarizerLabel() string {
+	if c.settings.SummarizerModelID != "" {
+		return c.settings.SummarizerModelID
+	}
+	if c.chatModel != nil {
+		return c.chatModel.GetModelName()
+	}
+	return ""
 }
 
 // streamSummary collects one summarization stream. Output of any kind, the
 // model's reasoning included, counts as progress and resets the stall timer.
+//
+// Summarization tokens are not metered against the caller's usage plan (they
+// stay out of the turn's usage); they are logged under llmCallLabel so their
+// cost is still visible.
 func (c *Compactor) streamSummary(
-	ctx context.Context, messages []chat.Message, opts *chat.ChatOptions,
+	ctx context.Context, model chat.Chat, messages []chat.Message, opts *chat.ChatOptions,
 ) (content, finishReason string, err error) {
 	callCtx, cancel := context.WithCancel(types.WithLLMCallMetadata(ctx, llmCallLabel, ""))
 	defer cancel()
-	stream, err := c.chatModel.ChatStream(callCtx, messages, opts)
+	var usage *types.TokenUsage
+	defer func() {
+		if usage != nil {
+			logger.Infof(ctx, "[Compaction] LLM usage purpose=%s model=%s: prompt=%d completion=%d total=%d "+
+				"(not metered)", llmCallLabel, model.GetModelName(),
+				usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+		}
+	}()
+	stream, err := model.ChatStream(callCtx, messages, opts)
 	if err != nil {
 		return "", "", err
 	}
@@ -291,6 +378,9 @@ func (c *Compactor) streamSummary(
 			stall.Reset(timeout)
 			if chunk.FinishReason != "" {
 				finishReason = chunk.FinishReason
+			}
+			if chunk.Usage != nil {
+				usage = chunk.Usage
 			}
 			switch chunk.ResponseType {
 			case types.ResponseTypeError:
