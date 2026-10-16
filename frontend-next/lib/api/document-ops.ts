@@ -45,6 +45,13 @@ export type DocumentOp =
       style: MarkStyle;
     }
   | {
+      /** Selects a listed mistake so the editor scrolls to it (page-built). */
+      op: "select";
+      anchor: ParagraphAnchor;
+      text?: string;
+      textOccurrence?: number;
+    }
+  | {
       op: "formatParagraph";
       anchor: ParagraphAnchor;
       alignment?: Alignment;
@@ -146,6 +153,14 @@ export function opValidationError(raw: unknown): string | null {
       return isStr(raw.style) && MARK_STYLES.has(raw.style) ? null : "bad style";
     case "unmark":
       return validAnchor(raw.anchor) ? null : "bad anchor";
+    case "select":
+      // moves the selection to a listed mistake (built by the page)
+      if (!validAnchor(raw.anchor)) return "bad anchor";
+      if (raw.text !== undefined && !isStr(raw.text)) return "bad text";
+      return raw.textOccurrence === undefined ||
+        (typeof raw.textOccurrence === "number" && Number.isInteger(raw.textOccurrence) && raw.textOccurrence >= 1)
+        ? null
+        : "bad textOccurrence";
     case "formatParagraph":
       if (!validAnchor(raw.anchor)) return "bad anchor";
       if (!optAlign(raw.alignment)) return "bad alignment";

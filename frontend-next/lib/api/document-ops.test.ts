@@ -59,6 +59,8 @@ describe("opValidationError", () => {
       { op: "mark", anchor: a, text: "1", style: "underline" },
       { op: "mark", anchor: a, style: "highlight" },
       { op: "mark", anchor: a, text: "1", textOccurrence: 2, style: "color" },
+      { op: "select", anchor: a, text: "1", textOccurrence: 2 },
+      { op: "select", anchor: { ...a, occurrence: 2 } },
       { op: "formatParagraph", anchor: a, alignment: "both", font: "Times New Roman", sizePt: 14 },
       { op: "pageSetup", marginsMm: { top: 20, left: 30 }, a4: true },
       { op: "pageSetup", a4: true },
@@ -74,6 +76,7 @@ describe("opValidationError", () => {
     assert.equal(opValidationError({ op: "replaceParagraph", anchor: { atStart: true }, new: "x" }), "bad anchor");
     assert.equal(opValidationError({ op: "insertAfter", anchor: a, text: "a\nb" }), "text must be one line");
     assert.equal(opValidationError({ op: "mark", anchor: a, style: "bold" }), "bad style");
+    assert.equal(opValidationError({ op: "select", anchor: a, text: "x", textOccurrence: 0 }), "bad textOccurrence");
     for (const bad of [0, -1, 1.5, "2"]) {
       assert.equal(opValidationError({ op: "mark", anchor: a, text: "x", textOccurrence: bad, style: "color" }), "bad textOccurrence");
     }

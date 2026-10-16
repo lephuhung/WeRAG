@@ -288,6 +288,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAbbreviationMeaningSelector))
 	must(container.Provide(service.NewAbbreviationTurnCoordinator))
 	must(container.Provide(repository.NewAbbreviationFeedbackRepository))
+	must(container.Provide(repository.NewDocumentSpellingFeedbackRepository))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -669,6 +670,19 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		for _, svc := range []any{sessions, suggestions} {
 			if u, ok := svc.(auxiliaryUser); ok {
 				u.SetAuxiliaryModels(settings)
+			}
+		}
+	}))
+	// the document assistant's spellcheck asks the auxiliary model again
+	// about findings on real words and skips what users said is no mistake
+	must(container.Invoke(func(settings interfaces.SystemSettingService, agents interfaces.AgentService,
+		precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentSpellingFeedbackRepository) {
+		type spellingUser interface {
+			SetSpellingSupport(interfaces.SystemSettingService, interfaces.DocumentSpellingFeedbackRepository)
+		}
+		for _, svc := range []any{agents, precheck} {
+			if u, ok := svc.(spellingUser); ok {
+				u.SetSpellingSupport(settings, feedback)
 			}
 		}
 	}))

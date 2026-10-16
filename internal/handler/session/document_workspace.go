@@ -636,6 +636,50 @@ func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
 	}})
 }
 
+// SpellingVerdictRequest is the user's "not a mistake" on one underline of
+// the live spellcheck: the paragraph's text, the underlined text, the
+// model's correction and which instance of the text it was.
+type SpellingVerdictRequest struct {
+	Paragraph      string `json:"paragraph"`
+	Wrong          string `json:"wrong"`
+	Suggestion     string `json:"suggestion"`
+	TextOccurrence int    `json:"text_occurrence"`
+}
+
+// RecordSpellingVerdict stores that an underlined text is no mistake
+// (training data for the spell-check model); it is not underlined again in
+// a paragraph with the same text.
+// POST /sessions/:session_id/documents/:doc_id/spelling/feedback
+func (h *DocumentWorkspaceHandler) RecordSpellingVerdict(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req SpellingVerdictRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid spelling feedback"))
+		return
+	}
+	req.Wrong, req.Suggestion = strings.TrimSpace(req.Wrong), strings.TrimSpace(req.Suggestion)
+	if strings.TrimSpace(req.Paragraph) == "" || req.Wrong == "" || !strings.Contains(req.Paragraph, req.Wrong) ||
+		utf8.RuneCountInString(req.Paragraph) > tools.LiveSpellMaxRunes ||
+		utf8.RuneCountInString(req.Wrong) > 255 || utf8.RuneCountInString(req.Suggestion) > 255 {
+		c.Error(apperrors.NewBadRequestError("invalid spelling feedback"))
+		return
+	}
+	err := h.precheck.RecordSpellingVerdict(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), service.SpellingVerdict{
+			Paragraph: req.Paragraph, Wrong: req.Wrong, Suggestion: req.Suggestion, TextOccurrence: req.TextOccurrence,
+		})
+	if err != nil {
+		h.fail(c, err, "Failed to record spelling feedback")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 // ApplyRewriteProposalRequest names the version of a rewrite proposal
 // (rewrite_paragraphs in propose mode) the user is about to apply. Kind
 // "illustration" is a picture proposed by draw_diagram /

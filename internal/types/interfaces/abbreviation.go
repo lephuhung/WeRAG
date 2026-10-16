@@ -78,3 +78,13 @@ type AbbreviationFeedbackRepository interface {
 	// or abbreviation answer.
 	Latest(ctx context.Context, tenantID uint64, words []string) (map[string]types.AbbreviationTypoFeedback, error)
 }
+
+// DocumentSpellingFeedbackRepository stores verdicts on the document
+// assistant's spelling underlines as labelled training data; the user's
+// "not a mistake" rows also keep a text from being underlined again.
+type DocumentSpellingFeedbackRepository interface {
+	Record(ctx context.Context, rows []types.DocumentSpellingFeedback) error
+	// Dismissed returns the tenant's "not a mistake" verdicts on the
+	// paragraphs with these hashes (paragraph_hash and wrong only).
+	Dismissed(ctx context.Context, tenantID uint64, paragraphHashes []string) ([]types.DocumentSpellingFeedback, error)
+}

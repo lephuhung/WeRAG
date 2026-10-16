@@ -28,6 +28,9 @@ func TestLiveMarksUnmarksEditedParagraphsAndCaches(t *testing.T) {
 	if ops[1].Op != OpMark || ops[1].Text != "đề nghi" || ops[2].Text != "triễn khai" {
 		t.Fatalf("marks of paragraph 0: %+v", ops[1:3])
 	}
+	if ops[1].Suggestion != "đề nghị" || ops[2].Suggestion != "triển khai" {
+		t.Fatalf("marks carry the correction for the client's list: %+v", ops[1:3])
+	}
 	if ops[3].Text != "p`hủ" || ops[3].Anchor.Occurrence != 2 || ops[3].Style != "underline" {
 		t.Fatalf("mark of paragraph 1: %+v", ops[3])
 	}

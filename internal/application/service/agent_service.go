@@ -128,6 +128,8 @@ type agentService struct {
 	// documentWorkspaces is the session's editable .docx (document
 	// assistant). Nil-safe: see sessionDocumentWorkspace.
 	documentWorkspaces interfaces.DocumentWorkspaceService
+	// spelling: the verifier model and the users' verdicts of check_spelling
+	spelling spellingSupport
 }
 
 // NewAgentService creates a new agent service
@@ -1338,8 +1340,8 @@ func (s *agentService) registerTools(
 			if docWorkspace == nil || spellModel == nil {
 				continue
 			}
-			toolToRegister = tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
-				WithPrompt(s.spellcheckPrompt())
+			toolToRegister = s.spelling.apply(ctx, tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
+				WithPrompt(s.spellcheckPrompt()))
 		case tools.ToolApplyFormatFixes:
 			if docWorkspace == nil {
 				continue
@@ -1434,8 +1436,8 @@ func (s *agentService) registerTools(
 		// alongside it), when the agent may check spelling at all
 		checked := checkTool
 		if spellModel != nil && slices.Contains(allowedTools, tools.ToolCheckSpelling) {
-			checked = checkTool.WithSpelling(tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
-				WithPrompt(s.spellcheckPrompt()))
+			checked = checkTool.WithSpelling(s.spelling.apply(ctx, tools.NewCheckSpellingTool(s.documentWorkspaces, spellModel, sessionID).
+				WithPrompt(s.spellcheckPrompt())))
 		}
 		registry.RegisterTool(checked)
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):

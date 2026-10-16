@@ -171,6 +171,7 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
 		// live spellcheck of the paragraphs the user typed (nothing stored)
 		sessions.POST("/:session_id/documents/:doc_id/spelling", handler.ReviewDocumentSpelling)
+		sessions.POST("/:session_id/documents/:doc_id/spelling/feedback", handler.RecordSpellingVerdict)
 		// the Word add-in uploads the file Word holds (no Document Server)
 		sessions.POST("/:session_id/documents/:doc_id/content", handler.UploadDocumentContent)
 		// snapshot before the user applies a proposed rewrite from the chat

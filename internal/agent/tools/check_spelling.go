@@ -21,6 +21,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 var checkSpellingTool = BaseTool{
@@ -104,6 +105,12 @@ type CheckSpellingTool struct {
 	model     chat.Chat
 	prompt    string
 	sessionID string
+	// verifier is asked again about findings on real words, feedback holds
+	// the user's "not a mistake" verdicts (see spelling_verify.go);
+	// documentID names the document in the feedback rows.
+	verifier   chat.Chat
+	feedback   interfaces.DocumentSpellingFeedbackRepository
+	documentID string
 }
 
 // NewCheckSpellingTool builds the tool for one session; model is the
@@ -155,7 +162,7 @@ func (f SpellingFinding) markOps(anchor *OpAnchor) []DocumentOp {
 	}
 	ops := make([]DocumentOp, 0, 1+len(f.more))
 	for _, occ := range append([]int{f.occurrence}, f.more...) {
-		op := DocumentOp{Op: OpMark, Anchor: anchor, Text: f.raw, Style: "underline"}
+		op := DocumentOp{Op: OpMark, Anchor: anchor, Text: f.raw, Style: "underline", Suggestion: f.Correct}
 		if occ > 1 {
 			op.TextOccurrence = occ
 		}
@@ -263,7 +270,9 @@ func (t *CheckSpellingTool) Execute(ctx context.Context, args json.RawMessage) (
 		}
 	}
 
-	findings, batches, failedBatches := t.review(ctx, scoped)
+	rt := t.ForDocument(target.ID)
+	findings, batches, failedBatches := rt.review(ctx, scoped)
+	findings = rt.dropDismissed(ctx, findings, scopedText(scoped))
 	if batches > 0 && failedBatches == batches && len(findings) == 0 {
 		return &types.ToolResult{Success: false, Error: "Mô hình kiểm tra chính tả không trả lời được (hoặc trả lời sai định dạng). Hãy thử lại sau."}, nil
 	}
@@ -376,7 +385,18 @@ func (t *CheckSpellingTool) reviewTracked(ctx context.Context, scoped []spellPar
 		}
 		findings = append(findings, results[i]...)
 	}
-	return dedupeFindings(findings), batches, failed, missed
+	findings = t.verifyFindings(ctx, dedupeFindings(findings), scopedText(scoped))
+	return findings, batches, failed, missed
+}
+
+// scopedText is the paragraph text of a finding on scoped (its Paragraph
+// is a scoped Index).
+func scopedText(scoped []spellPara) func(SpellingFinding) string {
+	byIndex := make(map[int]string, len(scoped))
+	for _, p := range scoped {
+		byIndex[p.Index] = p.Text
+	}
+	return func(f SpellingFinding) string { return byIndex[f.Paragraph] }
 }
 
 // reviewBatchOrHalves is reviewBatch; a larger batch that still fails is
@@ -440,7 +460,7 @@ func (t *CheckSpellingTool) documentSpelling(ctx context.Context, paras []docxed
 	}
 	key := spellPassKey(t, scoped)
 	if cached, hit := spellPasses.get(key); hit {
-		return cached, len(scoped), true
+		return t.dropDismissed(ctx, cached, scopedText(scoped)), len(scoped), true
 	}
 	findings, batches, failed := t.review(ctx, scoped)
 	if len(findings) > spellMaxFindings {
@@ -450,7 +470,8 @@ func (t *CheckSpellingTool) documentSpelling(ctx context.Context, paras []docxed
 		// a complete pass only: a failed batch may have hidden mistakes
 		spellPasses.put(key, findings)
 	}
-	return findings, len(scoped), batches == 0 || failed < batches || len(findings) > 0
+	ok = batches == 0 || failed < batches || len(findings) > 0
+	return t.dropDismissed(ctx, findings, scopedText(scoped)), len(scoped), ok
 }
 
 // spellPassTTL keeps a document's spelling pass as long as a format result.
@@ -480,7 +501,11 @@ func spellPassKey(t *CheckSpellingTool, scoped []spellPara) string {
 	if t.model != nil {
 		model = t.model.GetModelName()
 	}
-	fmt.Fprintf(h, "%s\x00%s\x00", model, t.prompt)
+	verifier := ""
+	if t.verifier != nil {
+		verifier = t.verifier.GetModelName()
+	}
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00", model, verifier, t.prompt)
 	for _, p := range scoped {
 		fmt.Fprintf(h, "%d\x00%s\x00", p.Index, p.Text)
 	}

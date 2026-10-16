@@ -482,6 +482,21 @@
           if (!target || !target.SetTextPr(markTextPr())) throw new Error("underline failed");
         }
       },
+      // Moves the selection to a mistake from the host's list (text in the
+      // anchor paragraph, its textOccurrence-th instance, as mark finds it):
+      // the editor scrolls to it. Nothing in the document changes.
+      select: function (op) {
+        var p = mustFind(op.anchor);
+        var target = p.GetRange();
+        if (op.text) {
+          var nth = Math.max(1, Math.floor(op.textOccurrence || 1));
+          var hits = p.Search(op.text, true) || [];
+          if (hits.length < nth) throw new Error(hits.length ? "text occurrence not found" : "text not found");
+          target = hits[nth - 1];
+        }
+        if (!target || typeof target.Select !== "function") throw new Error("select unsupported");
+        target.Select();
+      },
       // Clears the assistant's underlines in a paragraph the user edited (the
       // live spellcheck marks it again): every run in the mark style drops
       // it and its underline. Older marks (red underlined text, before

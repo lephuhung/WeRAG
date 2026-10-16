@@ -21,6 +21,7 @@ import {
   getDocumentWorkspace,
   listDocumentWorkspaces,
   setDocumentScope,
+  formatCheckInProgress,
   formatCheckResultKey,
   profileReadingPhase,
   selectionNeedsCollapse,
@@ -71,7 +72,7 @@ import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { FormatCheckButton, SpellingRing } from "@/components/doc-workspace/spelling-ring";
-import type { LiveSpellingStatus } from "@/lib/live-spelling";
+import type { GoToResult, LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
 import { FormatCheckReportModal } from "@/components/doc-workspace/format-check-report";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/toast";
@@ -1224,7 +1225,7 @@ function ChatBody({ id }: { id: string }) {
   }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId]);
 
   // Background format check of the open document → progress ring in the
-  // chat header; a finished result shows a dot until it is opened once.
+  // composer toolbar; a finished result shows a dot until it is opened once.
   const [formatCheck, setFormatCheckState] = useState<DocumentFormatCheck | null>(null);
   // the document (tab) the format check belongs to
   const [formatCheckDoc, setFormatCheckDoc] = useState<SessionDocument | null>(null);
@@ -1242,6 +1243,12 @@ function ChatBody({ id }: { id: string }) {
   // the visible document's live spellcheck → its own ring in the header
   const [spellingStatus, setSpellingStatus] = useState<LiveSpellingStatus | null>(null);
   useEffect(() => setSpellingStatus(null), [id]);
+  // selects / dismisses a listed mistake in the visible document's editor
+  const spellingActionsRef = useRef<SpellingActions | null>(null);
+  const onSpellingStatus = useCallback((status: LiveSpellingStatus, actions: SpellingActions) => {
+    setSpellingStatus(status);
+    spellingActionsRef.current = actions;
+  }, []);
   const [seenFormatCheck, setSeenFormatCheck] = useState<string | null>(null);
   const formatCheckKey =
     formatCheck && id !== "new" ? formatCheckResultKey(`${id}:${formatCheckDoc?.id ?? ""}`, formatCheck) : null;
@@ -2770,33 +2777,6 @@ function ChatBody({ id }: { id: string }) {
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
       <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
         <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
-        {isDocumentAssistant && (spellingStatus || formatCheck) && (
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {spellingStatus && (
-              <SpellingRing
-                status={spellingStatus}
-                disabled={busy}
-                onAsk={askAboutFormatCheck}
-                onFormatCheck={() => void startFormatCheck()}
-              />
-            )}
-            {!formatCheck && id !== "new" && (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed") && (
-              <FormatCheckButton busy={false} onClick={() => void startFormatCheck()} />
-            )}
-            {formatCheck && (
-              <FormatCheckRing
-                check={formatCheck}
-                reading={readingProfile ? { startedAt: readingProfile.started_at } : null}
-                unseen={formatCheckKey !== seenFormatCheck}
-                disabled={busy}
-                onOpen={markFormatCheckSeen}
-                onAsk={askAboutFormatCheck}
-                onView={() => setFormatReportOpen(true)}
-                onRecheck={() => void startFormatCheck()}
-              />
-            )}
-          </div>
-        )}
         {isDocumentAssistant && id !== "new" && (
           <FormatCheckReportModal
             open={formatReportOpen}
@@ -2973,7 +2953,37 @@ function ChatBody({ id }: { id: string }) {
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
             toolbarEnd={
-              <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" />
+              <div className="flex shrink-0 items-center gap-1">
+                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" />
+                {isDocumentAssistant && spellingStatus && (
+                  <SpellingRing
+                    placement="above"
+                    status={spellingStatus}
+                    formatCheckLabel={formatCheck && !formatCheckInProgress(formatCheck) ? tr("docws.fcRecheck") : undefined}
+                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve<GoToResult>("noAnswer")}
+                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
+                    onFormatCheck={() => void startFormatCheck()}
+                  />
+                )}
+                {isDocumentAssistant && !formatCheck && id !== "new" &&
+                  (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed") && (
+                    <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
+                  )}
+                {isDocumentAssistant && formatCheck && (
+                  <FormatCheckRing
+                    placement="above"
+                    check={formatCheck}
+                    reading={readingProfile ? { startedAt: readingProfile.started_at } : null}
+                    unseen={formatCheckKey !== seenFormatCheck}
+                    disabled={busy}
+                    onOpen={markFormatCheckSeen}
+                    onAsk={askAboutFormatCheck}
+                    onView={() => setFormatReportOpen(true)}
+                    onRecheck={() => void startFormatCheck()}
+                    onFix
+                  />
+                )}
+              </div>
             }
           />
           </div>
@@ -3016,7 +3026,7 @@ function ChatBody({ id }: { id: string }) {
             recheckToken={docRecheck}
             turnInFlight={busy}
             onSelectionChange={setPendingSelection}
-            onSpellingStatus={setSpellingStatus}
+            onSpellingStatus={onSpellingStatus}
             onFormatCheckChange={setFormatCheck}
             onDocumentChange={noteSessionDocument}
             onDocumentsChange={noteSessionDocuments}

@@ -94,10 +94,27 @@ func (t *CheckSpellingTool) LiveMarks(ctx context.Context, paras []LiveParagraph
 			spellPasses.put(livePassKey(t, sp.Text), cached)
 		}
 	}
+	// the user's "not a mistake" verdicts, one lookup for the request
+	var flagged []string
+	for i, p := range paras {
+		if len(byPara[i]) > 0 {
+			flagged = append(flagged, p.Text)
+		}
+	}
+	dismissed := t.dismissedIn(ctx, flagged)
 	for i, p := range paras {
 		if failedPara[i] {
 			missed = append(missed, i)
 			continue
+		}
+		if len(dismissed) > 0 && len(byPara[i]) > 0 {
+			hash, kept := SpellingParagraphHash(p.Text), byPara[i][:0:0]
+			for _, f := range byPara[i] {
+				if !dismissed[spellingDismissKey(hash, f.Wrong)] {
+					kept = append(kept, f)
+				}
+			}
+			byPara[i] = kept
 		}
 		anchor := &OpAnchor{Text: p.Text}
 		if p.Occurrence > 1 {

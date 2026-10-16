@@ -702,3 +702,34 @@ html.dark {
     animation: none;
   }
 }
+
+/* Icon buttons name themselves on hover/focus (components/doc-workspace/icon-action.tsx;
+   same as the Word add-in's styles.css). */
+.word-tip { position: relative; }
+.word-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: max-content;
+  max-width: 220px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-ink);
+  color: var(--color-canvas);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease 250ms;
+}
+.word-tip:hover::after,
+.word-tip:focus-visible::after { opacity: 1; }
+.word-tip[data-tip-side="top"]::after { top: auto; bottom: calc(100% + 6px); }
+.word-tip[data-tip-align="start"]::after { left: 0; transform: none; }
+.word-tip[data-tip-align="end"]::after { left: auto; right: 0; transform: none; }

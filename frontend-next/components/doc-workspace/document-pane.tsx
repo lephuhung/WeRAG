@@ -24,7 +24,7 @@ import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-edit
 import { RevisionHistoryPanel } from "./revision-history";
 import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
 import { useLiveSpelling } from "./use-live-spelling";
-import type { LiveSpellingStatus } from "@/lib/live-spelling";
+import type { LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
 
 type Phase = { kind: "loading" } | { kind: "disabled" } | { kind: "error"; message: string } | { kind: "editor" };
 
@@ -81,7 +81,9 @@ export function DocumentPane({
   /** Every edit batch's outcome, also reported to the chat (proposal cards). */
   onOpsOutcome?: (o: EditorOpsOutcome) => void;
   /** The live spellcheck's progress, reported while this tab is visible. */
-  onSpellingStatus?: (status: LiveSpellingStatus) => void;
+  /** The visible document's live spellcheck, and how to select one of its
+   * listed mistakes in this editor. */
+  onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -351,9 +353,14 @@ export function DocumentPane({
   });
   const scheduleSpelling = liveSpelling.schedule;
   const spellingStatus = liveSpelling.status;
+  const { goTo: spellingGoTo, dismiss: spellingDismiss } = liveSpelling;
+  const spellingActions = useMemo<SpellingActions>(
+    () => ({ goTo: spellingGoTo, dismiss: spellingDismiss }),
+    [spellingGoTo, spellingDismiss],
+  );
   useEffect(() => {
-    if (active) onSpellingStatus?.(spellingStatus);
-  }, [active, spellingStatus, onSpellingStatus]);
+    if (active) onSpellingStatus?.(spellingStatus, spellingActions);
+  }, [active, spellingStatus, spellingActions, onSpellingStatus]);
   liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),

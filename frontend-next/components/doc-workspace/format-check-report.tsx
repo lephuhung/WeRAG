@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n";
 import { getDocumentFormatCheck, type DocumentFormatReport } from "@/lib/api/document-workspace";
 
 /* The background format check's evaluation, shown as information in a
- * modal opened from the chat header's ring — not as a chat question and
+ * modal opened from the composer's format ring — not as a chat question and
  * answer. Fixing the errors stays a chat request (it edits the document). */
 export function FormatCheckReportModal({
   open,

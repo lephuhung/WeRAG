@@ -73,6 +73,9 @@ type DocumentOp struct {
 	// mark: which occurrence of text inside the paragraph to mark (1-based);
 	// omitted means the first
 	TextOccurrence int `json:"textOccurrence,omitempty"`
+	// mark: the correction of a spelling mistake, for the client's list of
+	// mistakes (the editor ignores it)
+	Suggestion string `json:"suggestion,omitempty"`
 	// pageSetup
 	MarginsMm map[string]float64 `json:"marginsMm,omitempty"`
 	A4        bool               `json:"a4,omitempty"`

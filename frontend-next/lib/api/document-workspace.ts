@@ -370,6 +370,26 @@ export async function reviewDocumentSpelling(
   }
 }
 
+/** The user's "not a mistake" on one underline of the live spellcheck:
+ * kept as training data, and the text is not underlined again in a
+ * paragraph with the same text. */
+export async function recordSpellingVerdict(
+  sessionId: string,
+  documentId: string,
+  verdict: { paragraph: string; wrong: string; suggestion?: string; textOccurrence?: number },
+): Promise<void> {
+  try {
+    await apiPost<Envelope<unknown>>(`${base(sessionId, documentId)}/spelling/feedback`, {
+      paragraph: verdict.paragraph,
+      wrong: verdict.wrong,
+      suggestion: verdict.suggestion ?? "",
+      text_occurrence: verdict.textOccurrence ?? 1,
+    });
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
 /** Word add-in: stores the file Word holds as the document's latest
  * version. `revision` is the one the taskpane last saw; a 409 means a
  * restore happened since (reload the document into Word first). */

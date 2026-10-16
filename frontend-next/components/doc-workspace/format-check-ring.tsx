@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useContainedPopup } from "@/components/hooks/use-contained-popup";
 import { useT } from "@/lib/i18n";
+import { IconEye, IconRefresh } from "@/components/icons";
+import { IconAction, IconUnderlineMark, IconWand } from "./icon-action";
 import type { DocumentFormatCheck } from "@/lib/api/document-workspace";
 import { PROFILE_EXPECTED_MS, formatCheckInProgress, formatCheckProgress } from "@/lib/api/document-workspace";
 
@@ -11,14 +14,18 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /* Background work on the open document, as a small progress ring in the
- * chat header. Reading (its profile is being made, before the format
+ * composer toolbar. Reading (its profile is being made, before the format
  * check starts): the ring fills over the profile's expected time. Then the
  * NĐ30 format check: queued (other documents are being checked first) is
  * an empty ring, running fills over the expected run time. A hover
- * explains each. Finished: a click opens the actions — read the evaluation
- * (onView: a modal, not a chat turn) or have the assistant apply it. */
+ * explains each. Finished: a click opens one row of icon actions (named on
+ * hover) — read the evaluation (onView: a modal, not a chat turn), have the
+ * assistant fix it (onAsk), underline the findings (onMark, nothing
+ * changed), or check again. Same look as the Word add-in's ring
+ * (werag-word-addin src/components/word/format-check-ring.tsx). */
 export function FormatCheckRing({
   check,
+  placement = "below",
   reading = null,
   unseen,
   disabled,
@@ -26,7 +33,10 @@ export function FormatCheckRing({
   onView,
   onOpen,
   onRecheck,
+  onMark,
+  onFix,
 }: {
+  placement?: "above" | "below";
   /** null while only the profile runs (no format check yet). */
   check: DocumentFormatCheck | null;
   /** The document's profile is being made: start time of that run. */
@@ -41,11 +51,16 @@ export function FormatCheckRing({
   onOpen: () => void;
   /** Runs the check again in the background (instead of asking the chat). */
   onRecheck?: () => void;
+  /** Underlines the findings in the document in red (nothing changed). */
+  onMark?: () => void;
+  /** Offer "fix the format errors" (asks the assistant in the chat). */
+  onFix?: boolean;
 }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const rootRef = useRef<HTMLDivElement>(null);
+  const popupRef = useContainedPopup(rootRef, placement);
   const isReading = Boolean(reading);
   const running = isReading || check?.status === "running";
   // reading, queued or running: nothing to open yet
@@ -97,7 +112,7 @@ export function FormatCheckRing({
   };
 
   return (
-    <div ref={rootRef} className="group relative ml-auto shrink-0">
+    <div ref={rootRef} className="group relative shrink-0">
       <button
         type="button"
         aria-label={label}
@@ -108,7 +123,7 @@ export function FormatCheckRing({
           setOpen((v) => !v);
           onOpen();
         }}
-        className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+        className={`relative flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
           busy ? "cursor-default" : "cursor-pointer hover:bg-surface-strong"
         }`}
       >
@@ -135,14 +150,11 @@ export function FormatCheckRing({
           />
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-ink" aria-hidden="true">
-          {status === "ready" ? (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12.5l4.5 4.5L19 7.5" />
-            </svg>
-          ) : status === "failed" ? (
-            <span className="text-error">!</span>
-          ) : null}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10l-7-7ZM13 3v7h7M8 15l2 2 5-5" />
+          </svg>
         </span>
+        {status === "failed" && <span className="absolute -right-0.5 -top-0.5 rounded-full bg-error px-1 text-[8px] leading-3 text-white" aria-hidden="true">!</span>}
         {unseen && status === "ready" && (
           <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-error" aria-hidden="true" />
         )}
@@ -150,8 +162,9 @@ export function FormatCheckRing({
 
       {!open && (
         <div
+          ref={popupRef}
           role="tooltip"
-          className="pointer-events-none absolute right-0 top-full z-50 mt-1 w-max max-w-[260px] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+          className={`pointer-events-none absolute right-0 ${placement === "above" ? "bottom-full mb-1" : "top-full mt-1"} z-50 w-max max-w-[260px] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100`}
         >
           {label}
         </div>
@@ -159,56 +172,50 @@ export function FormatCheckRing({
 
       {open && (
         <div
+          ref={popupRef}
           role="menu"
-          className="card absolute right-0 top-full z-50 mt-1 w-[260px] max-w-[calc(100vw-2.5rem)] p-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
+          aria-label={label}
+          className={`card absolute right-0 ${placement === "above" ? "bottom-full mb-1" : "top-full mt-1"} z-50 flex w-max max-w-[calc(100vw-1.5rem)] items-center gap-2 py-1.5 pl-3 pr-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]`}
         >
-          <p className="text-[13px] font-medium leading-snug text-ink">{label}</p>
-          {status === "ready" && (
-            <p className="mt-1 text-[12px] leading-snug text-muted">{t("docws.fcReadyHint")}</p>
-          )}
-          <div className="mt-2.5 flex flex-col gap-1.5">
-            <button
-              type="button"
-              role="menuitem"
-              disabled={status === "failed" && disabled}
-              onClick={() => {
-                if (status === "failed") {
-                  if (onRecheck) {
-                    setOpen(false);
-                    onRecheck();
-                  } else ask(t("docws.fcAskView"));
-                  return;
-                }
-                setOpen(false);
-                onView();
-              }}
-              className="btn btn-primary btn-sm w-full disabled:opacity-50"
-            >
-              {status === "failed" ? t("docws.fcRetry") : t("docws.fcView")}
-            </button>
+          <p className={`min-w-0 truncate text-[13px] font-medium ${status === "failed" ? "text-error" : "text-ink"}`}>
+            {status === "failed"
+              ? t("docws.fcFailed")
+              : check?.document_type_label
+                ? t("docws.fcReadyType", { type: check.document_type_label })
+                : t("docws.fcReady")}
+          </p>
+          <div className="flex shrink-0 items-center">
             {status === "ready" && (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={disabled}
-                onClick={() => ask(t("docws.fcAskFix"))}
-                className="btn btn-outline btn-sm w-full disabled:opacity-50"
-              >
-                {t("docws.fcFix")}
-              </button>
+              <>
+                <IconAction role="menuitem" label={t("docws.fcView")} onClick={() => { setOpen(false); onView(); }}>
+                  <IconEye className="h-4 w-4" />
+                </IconAction>
+                {onFix && (
+                  <IconAction role="menuitem" label={t("docws.fcFix")} disabled={disabled} onClick={() => ask(t("docws.fcAskFix"))}>
+                    <IconWand />
+                  </IconAction>
+                )}
+                {onMark && (
+                  <IconAction role="menuitem" label={t("docws.fcMark")} disabled={disabled} tipAlign="end" onClick={() => { setOpen(false); onMark(); }}>
+                    <IconUnderlineMark />
+                  </IconAction>
+                )}
+              </>
             )}
-            {status === "ready" && onRecheck && (
-              <button
-                type="button"
+            {(status === "failed" || onRecheck) && (
+              <IconAction
                 role="menuitem"
+                label={onRecheck ? t("docws.fcRecheck") : t("docws.fcRetry")}
+                disabled={status === "failed" && !onRecheck && disabled}
+                tipAlign="end"
                 onClick={() => {
                   setOpen(false);
-                  onRecheck();
+                  if (onRecheck) onRecheck();
+                  else ask(t("docws.fcAskView"));
                 }}
-                className="btn btn-tertiary btn-sm w-full"
               >
-                {t("docws.fcRecheck")}
-              </button>
+                <IconRefresh className="h-4 w-4" />
+              </IconAction>
             )}
           </div>
         </div>

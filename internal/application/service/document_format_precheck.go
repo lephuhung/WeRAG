@@ -29,6 +29,8 @@ type DocumentFormatPrecheck struct {
 	// profiling holds the documents whose profile job is being handed over
 	// (model resolution), for the same reason.
 	profiling sync.Map
+	// spelling: the live spellcheck's verifier and the users' verdicts
+	spelling spellingSupport
 }
 
 // NewDocumentFormatPrecheck wires the background format check.
@@ -79,9 +81,56 @@ func (p *DocumentFormatPrecheck) ReviewSpelling(
 	if spellModel == nil {
 		return nil, 0, allPositions(len(paras)), false, nil
 	}
-	ops, found, missed = tools.NewCheckSpellingTool(p.workspaces, spellModel, sessionID).
-		WithPrompt(p.spellcheckPrompt()).LiveMarks(ctx, paras)
+	ops, found, missed = p.spelling.apply(ctx, tools.NewCheckSpellingTool(p.workspaces, spellModel, sessionID).
+		WithPrompt(p.spellcheckPrompt())).ForDocument(documentID).LiveMarks(ctx, paras)
 	return ops, found, missed, false, nil
+}
+
+// SpellingVerdict is the user's verdict on one underlined mistake of the
+// live spellcheck (the spelling list's "not a mistake").
+type SpellingVerdict struct {
+	Paragraph      string
+	Wrong          string
+	Suggestion     string
+	TextOccurrence int
+}
+
+// RecordSpellingVerdict stores that an underlined text of a document the
+// user owns is no mistake: it is kept as training data and not underlined
+// again in a paragraph with the same text.
+func (p *DocumentFormatPrecheck) RecordSpellingVerdict(
+	ctx context.Context, tenantID uint64, sessionID, documentID string, v SpellingVerdict,
+) error {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
+		return errors.New("documents are disabled")
+	}
+	if p.spelling.feedback == nil {
+		return errors.New("spelling feedback is not available")
+	}
+	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return err
+	}
+	userID, _ := types.UserIDFromContext(ctx)
+	row := types.DocumentSpellingFeedback{
+		TenantID:       tenantID,
+		UserID:         userID,
+		SessionID:      sessionID,
+		DocumentID:     ws.ID,
+		Paragraph:      v.Paragraph,
+		ParagraphHash:  tools.SpellingParagraphHash(v.Paragraph),
+		Wrong:          v.Wrong,
+		Suggestion:     v.Suggestion,
+		TextOccurrence: max(1, v.TextOccurrence),
+		Verdict:        types.SpellingVerdictNotError,
+		Source:         types.SpellingFeedbackSourceUser,
+	}
+	if agent := p.agent(ctx); agent != nil {
+		if m := p.model(ctx, "spellcheck", agent.Config.SpellcheckModelID, agent.Config.ModelID); m != nil {
+			row.Model = m.GetModelName()
+		}
+	}
+	return p.spelling.feedback.Record(ctx, []types.DocumentSpellingFeedback{row})
 }
 
 func allPositions(n int) []int {
