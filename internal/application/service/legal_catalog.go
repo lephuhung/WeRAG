@@ -116,3 +116,8 @@ func (s *legalCatalogService) Lookup(
 	}
 	return reports, nil
 }
+
+// SearchTitles lists the newest limit documents whose title holds every word.
+func (s *legalCatalogService) SearchTitles(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error) {
+	return s.repo.SearchByTitle(ctx, words, limit)
+}

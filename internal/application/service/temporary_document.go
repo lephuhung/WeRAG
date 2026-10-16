@@ -388,6 +388,28 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	if document.Status == types.TemporaryDocumentStatusReady {
 		return nil
 	}
+	// The per-user parse queue: when the uploader already has the allowed
+	// number of uploads being parsed, this one waits its turn in the queue
+	// (status stays uploaded; the chip keeps showing "parsing").
+	if limit := s.gate.ParseConcurrencyLimit(ctx); limit > 0 && s.taskEnqueuer != nil {
+		busy, countErr := s.repo.CountProcessingForSessionOwner(ctx, payload.TenantID, document.SessionID, time.Now().Add(-parseSlotStaleAfter))
+		if countErr != nil {
+			logger.Warnf(ctx, "temporary document parse slot count failed: %v", countErr)
+		} else if !parseSlotFree(limit, busy, payload.Waits) {
+			payload.Waits++
+			delay := parseSlotDelay(payload.Waits)
+			logger.Infof(ctx, "temporary document %s waits for a parse slot: %d of %d in use, retry in %s (wait %d)",
+				payload.DocumentID, busy, limit, delay, payload.Waits)
+			raw, _ := json.Marshal(payload)
+			queue, _ := types.QueueForTaskType(types.TypeTemporaryDocumentProcess)
+			if _, err := s.taskEnqueuer.Enqueue(asynq.NewTask(types.TypeTemporaryDocumentProcess, raw),
+				asynq.Queue(queue), asynq.MaxRetry(2), asynq.Timeout(10*time.Minute), asynq.ProcessIn(delay)); err != nil {
+				logger.Warnf(ctx, "temporary document %s could not be re-queued, parsing now: %v", payload.DocumentID, err)
+			} else {
+				return nil
+			}
+		}
+	}
 	startedAt := time.Now()
 	if err := s.repo.MarkProcessing(ctx, payload.TenantID, payload.DocumentID, startedAt); err != nil {
 		return err

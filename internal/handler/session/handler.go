@@ -41,6 +41,9 @@ type Handler struct {
 	// usageGuard refuses a turn when the caller's usage package does not
 	// cover it (usage packages phase 2). Nil skips the check.
 	usageGuard interfaces.UsageGuard
+	// inputGate refuses a question longer than the chat cap before the
+	// stream starts (limits.chat.question_max_runes)
+	inputGate service.InputGate
 	// contextUsage answers the chat UI's context indicator
 	// (GET /sessions/:id/context-usage). Nil answers 404.
 	contextUsage *service.SessionContextUsageService
@@ -113,8 +116,10 @@ func NewHandler(
 	documentWorkspaces interfaces.DocumentWorkspaceService,
 	usageGuard interfaces.UsageGuard,
 	contextUsage *service.SessionContextUsageService,
+	inputGate service.InputGate,
 ) *Handler {
 	h := &Handler{
+		inputGate:             inputGate,
 		browserSkill:          browserSkill,
 		sessionService:        sessionService,
 		messageService:        messageService,

@@ -30,6 +30,9 @@ func (r *forkAccessDocRepo) MarkProcessing(context.Context, uint64, string, time
 func (r *forkAccessDocRepo) MarkReady(context.Context, uint64, string, string, types.JSON, types.JSON, types.JSON, int, int, time.Time) error {
 	panic("unexpected MarkReady")
 }
+func (r *forkAccessDocRepo) CountProcessingForSessionOwner(context.Context, uint64, string, time.Time) (int64, error) {
+	return 0, nil
+}
 func (r *forkAccessDocRepo) MarkFailed(context.Context, uint64, string, string) error {
 	panic("unexpected MarkFailed")
 }

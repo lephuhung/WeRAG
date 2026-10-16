@@ -171,6 +171,11 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Error(ctx, "Query content is empty")
 		return nil, nil, errors.NewBadRequestError("Query content cannot be empty")
 	}
+	if h.inputGate != nil {
+		if err := h.inputGate.QuestionTooLong(ctx, request.Query); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	// Resolve the storage-reference representation up front: once the SSE stream
 	// has started an invalid value can no longer be reported as a 400.
@@ -928,6 +933,12 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 		logger.Error(ctx, "Query content is empty")
 		c.Error(errors.NewBadRequestError("Query content cannot be empty"))
 		return
+	}
+	if h.inputGate != nil {
+		if err := h.inputGate.QuestionTooLong(ctx, request.Query); err != nil {
+			c.Error(err)
+			return
+		}
 	}
 
 	// Resolve the storage-reference representation before retrieving, so a typo

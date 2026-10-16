@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/docmeasure"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -126,4 +128,71 @@ func noTextMessage(ext string, ocrSkipped string) string {
 		return "Không nhận dạng được lời nói trong tệp âm thanh."
 	}
 	return "Tệp không có nội dung chữ đọc được."
+}
+
+// QuestionTooLong returns the 400 a question longer than the chat cap
+// gets; nil otherwise. The cap is limits.chat.question_max_runes.
+func (g *inputGate) QuestionTooLong(ctx context.Context, query string) error {
+	limit := g.limit(ctx, types.SettingLimitsChatQuestionMaxRunes, types.DefaultLimitsChatQuestionMaxRunes)
+	n := utf8.RuneCountInString(query)
+	if limit <= 0 || n <= limit {
+		return nil
+	}
+	return apperrors.NewBadRequestError(fmt.Sprintf(
+		"Câu hỏi dài %d ký tự, vượt giới hạn %d ký tự. Hãy rút gọn câu hỏi hoặc gửi nội dung dài dưới dạng tệp đính kèm.", n, limit)).
+		WithDetails(types.QuestionLengthDetails{Reason: types.InputGateReasonQuestionTooLong, Runes: n, Limit: limit})
+}
+
+// BroadQuestionGateEnabled tells whether short generic questions are
+// answered with the narrowing card (limits.chat.broad_question_gate).
+func (g *inputGate) BroadQuestionGateEnabled(ctx context.Context) bool {
+	if g == nil || g.settings == nil {
+		return true
+	}
+	return g.settings.GetBool(ctx, types.SettingLimitsChatBroadQuestionGate, "", true)
+}
+
+// ParseConcurrencyLimit is how many uploads of one user may be parsed at
+// once (limits.parse.max_concurrent_per_user); 0 means no limit.
+func (g *inputGate) ParseConcurrencyLimit(ctx context.Context) int {
+	return g.limit(ctx, types.SettingLimitsParseMaxConcurrentPerUser, types.DefaultLimitsParseMaxConcurrentPerUser)
+}
+
+// NewInputGate exposes the gate to packages outside the service (the
+// session handler checks question length before the stream starts).
+func NewInputGate(settings interfaces.SystemSettingService) InputGate {
+	return newInputGate(settings)
+}
+
+// InputGate is the part of the gate other packages use.
+type InputGate interface {
+	QuestionTooLong(ctx context.Context, query string) error
+}
+
+// The per-user parse queue: an upload whose owner already has the allowed
+// number of documents being parsed is put back for parseSlotDelay(waits)
+// and tried again, at most parseSlotMaxWaits times (then it goes ahead so
+// a stuck counter never holds a document forever). A document counted as
+// "processing" for longer than parseSlotStaleAfter is ignored: its worker
+// died and the row was never finalized.
+const (
+	parseSlotMaxWaits   = 60
+	parseSlotStaleAfter = 30 * time.Minute
+)
+
+func parseSlotDelay(waits int) time.Duration {
+	if waits > 6 {
+		waits = 6
+	}
+	if waits < 1 {
+		waits = 1
+	}
+	return time.Duration(waits) * 10 * time.Second
+}
+
+// parseSlotFree tells whether an upload may start parsing now, given how
+// many of its owner's documents are being parsed (count) and how often it
+// already waited.
+func parseSlotFree(limit int, count int64, waits int) bool {
+	return limit <= 0 || count < int64(limit) || waits >= parseSlotMaxWaits
 }

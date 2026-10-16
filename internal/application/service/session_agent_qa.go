@@ -247,6 +247,11 @@ func (s *sessionService) AgentQA(
 	if asked, err := s.legalCandidatesClarification(ctx, req, eventBus); asked || err != nil {
 		return err
 	}
+	// a short generic question spanning dozens of catalogue documents is
+	// answered with a card to narrow it (type, issuer, newest); no model runs
+	if asked, err := s.broadQueryClarification(ctx, req, eventBus, true); asked || err != nil {
+		return err
+	}
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	// a request about a highlighted passage starts with the tool it needs:

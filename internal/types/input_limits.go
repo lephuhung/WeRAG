@@ -16,6 +16,19 @@ const (
 	SettingLimitsChatPDFScanPages = "limits.chat.pdf_scan_pages"
 	SettingLimitsChatDocxPages    = "limits.chat.docx_pages"
 
+	// Questions: the longest question a chat turn accepts, and whether a
+	// short generic question over a large corpus ("luật đất đai") is
+	// answered with a card asking the user to narrow it.
+	SettingLimitsChatQuestionMaxRunes  = "limits.chat.question_max_runes"
+	SettingLimitsChatBroadQuestionGate = "limits.chat.broad_question_gate"
+	// Parsing: how many uploads of one user may be parsed at the same time;
+	// the rest wait in the queue (see temporaryDocumentService.Process and
+	// knowledgeService.ProcessDocument).
+	SettingLimitsParseMaxConcurrentPerUser = "limits.parse.max_concurrent_per_user"
+
+	DefaultLimitsChatQuestionMaxRunes      = 4000
+	DefaultLimitsParseMaxConcurrentPerUser = 3
+
 	DefaultLimitsKBPDFTextPages   = 500
 	DefaultLimitsKBPDFScanPages   = 200
 	DefaultLimitsKBDocxPages      = 300
@@ -41,9 +54,17 @@ const (
 // Reasons carried in the error envelope's details.reason so a client can
 // tell the refusals apart without parsing the message.
 const (
-	InputGateReasonTooManyPages = "too_many_pages"
-	InputGateReasonNoText       = "no_text"
+	InputGateReasonTooManyPages    = "too_many_pages"
+	InputGateReasonNoText          = "no_text"
+	InputGateReasonQuestionTooLong = "question_too_long"
 )
+
+// QuestionLengthDetails is the details object of a too-long question.
+type QuestionLengthDetails struct {
+	Reason string `json:"reason"`
+	Runes  int    `json:"runes"`
+	Limit  int    `json:"limit"`
+}
 
 // InputGateDetails is the details object of a page-cap refusal.
 type InputGateDetails struct {

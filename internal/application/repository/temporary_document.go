@@ -44,6 +44,17 @@ func (r *temporaryDocumentRepository) ListScoped(ctx context.Context, tenantID u
 	return documents, err
 }
 
+// CountProcessingForSessionOwner counts the uploads of the owner of
+// sessionID that are being parsed, across their sessions.
+func (r *temporaryDocumentRepository) CountProcessingForSessionOwner(ctx context.Context, tenantID uint64, sessionID string, since time.Time) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&types.TemporaryDocument{}).
+		Where("tenant_id = ? AND status = ? AND started_at > ?", tenantID, types.TemporaryDocumentStatusProcessing, since).
+		Where("session_id IN (SELECT id FROM sessions WHERE tenant_id = ? AND user_id = (SELECT user_id FROM sessions WHERE id = ?))", tenantID, sessionID).
+		Count(&n).Error
+	return n, err
+}
+
 func (r *temporaryDocumentRepository) MarkProcessing(ctx context.Context, tenantID uint64, documentID string, startedAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&types.TemporaryDocument{}).
 		Where("tenant_id = ? AND id = ?", tenantID, documentID).

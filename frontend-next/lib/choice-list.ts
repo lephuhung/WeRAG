@@ -11,6 +11,8 @@
 
 export const LEGAL_CANDIDATES_TYPE = "legal_candidates";
 export const ABBREVIATION_CHOICE_TYPE = "abbreviation_choice";
+/** "luật đất đai — which group?" (a broad question over dozens of documents). */
+export const BROAD_QUERY_TYPE = "broad_query_clarification";
 
 export interface ChoiceOption {
   /** Main text of the option (a số hiệu, a full form). */
@@ -37,7 +39,7 @@ export function optionMessage(o: ChoiceOption, text = ""): string {
 }
 
 export interface ChoiceList {
-  kind: typeof LEGAL_CANDIDATES_TYPE | typeof ABBREVIATION_CHOICE_TYPE;
+  kind: typeof LEGAL_CANDIDATES_TYPE | typeof ABBREVIATION_CHOICE_TYPE | typeof BROAD_QUERY_TYPE;
   /** What is being asked about ("Nghị định 53", "ABC"). */
   subject: string;
   /** How many options there are in all (the list may be shorter). */
@@ -79,6 +81,16 @@ export function parseChoiceList(data: unknown): ChoiceList | null {
     }
     if (options.length === 0) return null;
     return { kind: LEGAL_CANDIDATES_TYPE, subject: str(d.reference), total: Number(d.total) || options.length, options };
+  }
+  if (d.display_type === BROAD_QUERY_TYPE) {
+    const options: ChoiceOption[] = [];
+    for (const raw of Array.isArray(d.options) ? d.options : []) {
+      const o = rec(raw);
+      if (!o || !str(o.label) || !str(o.resend)) continue;
+      options.push({ label: str(o.label), detail: str(o.detail) || undefined, resend: str(o.resend) });
+    }
+    if (options.length === 0) return null;
+    return { kind: BROAD_QUERY_TYPE, subject: str(d.topic), total: options.length, options };
   }
   if (d.display_type === ABBREVIATION_CHOICE_TYPE) {
     const options: ChoiceOption[] = [];

@@ -786,6 +786,17 @@ func (r *knowledgeRepository) CountKnowledgeByStatus(
 	return count, nil
 }
 
+// CountProcessingByUser counts the documents a user uploaded that are being
+// parsed now (status processing, touched after since).
+func (r *knowledgeRepository) CountProcessingByUser(ctx context.Context, tenantID uint64, userID string, since time.Time) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND created_by = ? AND parse_status = ? AND updated_at > ?",
+			tenantID, userID, types.ParseStatusProcessing, since).
+		Count(&n).Error
+	return n, err
+}
+
 // SearchKnowledge searches knowledge items by keyword across the tenant
 // If keyword is empty, returns recent files
 // Only returns documents from document-type knowledge bases (excludes FAQ)

@@ -93,6 +93,9 @@ type TemporaryDocumentImage struct {
 type TemporaryDocumentTaskPayload struct {
 	TenantID   uint64 `json:"tenant_id"`
 	DocumentID string `json:"document_id"`
+	// Waits counts how often the task was put back because the uploader
+	// already had the allowed number of uploads being parsed.
+	Waits int `json:"waits,omitempty"`
 }
 
 type TemporaryDocumentCreateOptions struct {

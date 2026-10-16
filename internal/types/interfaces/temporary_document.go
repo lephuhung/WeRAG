@@ -19,6 +19,10 @@ type TemporaryDocumentRepository interface {
 	MarkFailed(ctx context.Context, tenantID uint64, documentID, message string) error
 	DeleteScoped(ctx context.Context, tenantID uint64, sessionID, documentID string) error
 	ListExpired(ctx context.Context, before time.Time, limit int) ([]*types.TemporaryDocument, error)
+	// CountProcessingForSessionOwner counts the uploads being parsed (status
+	// processing, started after since) across the sessions of the user who
+	// owns sessionID: the per-user parse concurrency gate reads it.
+	CountProcessingForSessionOwner(ctx context.Context, tenantID uint64, sessionID string, since time.Time) (int64, error)
 }
 
 type TemporaryDocumentService interface {

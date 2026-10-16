@@ -257,6 +257,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewUsageMeter))
 	// Usage packages: plans, subscriptions, and the pre-flight guard.
 	must(container.Provide(service.NewUsageGuard))
+	must(container.Provide(service.NewInputGate))
 	must(container.Provide(service.NewUsagePlanService))
 	// Self-service purchase: promo codes, orders, bank-transfer settlement.
 	must(container.Provide(service.NewUsageBillingService))

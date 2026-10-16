@@ -38,6 +38,11 @@ func (s *sessionService) KnowledgeQA(
 	if handled, err := s.tryQuickAnswerPeopleLookup(ctx, req, eventBus); handled || err != nil {
 		return err
 	}
+	// a short generic question spanning dozens of catalogue documents is
+	// answered with a card to narrow it (type, issuer, newest); no model runs
+	if asked, err := s.broadQueryClarification(ctx, req, eventBus, false); asked || err != nil {
+		return err
+	}
 	// Platform-wide SuperAdmin switch: while off, no knowledge-QA turn
 	// performs web search regardless of the request or agent switches.
 	webSearchEnabled := resolveWebSearchEnabled(req) &&

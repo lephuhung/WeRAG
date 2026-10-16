@@ -612,7 +612,11 @@ export const INPUT_LIMIT_KEYS = [
   { key: "limits.kb.pdf_text_pages", labelKey: "q.limitsKbPdfText", def: 500 },
   { key: "limits.kb.pdf_scan_pages", labelKey: "q.limitsKbPdfScan", def: 200 },
   { key: "limits.kb.docx_pages", labelKey: "q.limitsKbDocx", def: 300 },
+  { key: "limits.chat.question_max_runes", labelKey: "q.limitsQuestionRunes", def: 4000 },
+  { key: "limits.parse.max_concurrent_per_user", labelKey: "q.limitsParsePerUser", def: 3 },
 ] as const;
+/** Whether a short generic question is answered with the narrowing card. */
+export const BROAD_QUESTION_GATE_KEY = "limits.chat.broad_question_gate";
 export type InputLimitKey = (typeof INPUT_LIMIT_KEYS)[number]["key"];
 
 export interface WikiRunWindow {

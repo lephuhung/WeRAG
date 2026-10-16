@@ -79,6 +79,10 @@ func TestCheckLegalStatusTool(t *testing.T) {
 	}
 }
 
+func (f *fakeLegalCatalog) SearchTitles(context.Context, []string, int) ([]*types.LegalDocument, error) {
+	return nil, nil
+}
+
 func (f *fakeLegalCatalog) Candidates(context.Context, string, string, int) ([]*types.LegalDocument, int, error) {
 	return nil, 0, nil
 }

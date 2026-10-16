@@ -112,6 +112,9 @@ type LegalCatalogService interface {
 	// 53/…), newest first, of the given doc type when docType is set: the
 	// newest limit of them and how many there are in all.
 	Candidates(ctx context.Context, documentNumber, docType string, limit int) ([]*types.LegalDocument, int, error)
+	// SearchTitles lists the newest limit documents whose title holds
+	// every word (the broad-question gate measures a topic with it).
+	SearchTitles(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error)
 }
 
 // LegalReviewService drives the SuperAdmin review of legal identities.

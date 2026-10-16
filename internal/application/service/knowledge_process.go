@@ -3488,6 +3488,12 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		logger.Infof(ctx, "Document source replaced, skipping stale process task: %s", payload.KnowledgeID)
 		return nil
 	}
+	// The per-user parse queue: when the uploader already has the allowed
+	// number of documents being parsed, this one waits its turn (status
+	// stays pending) instead of taking another worker and the OCR model.
+	if waited := s.waitForParseSlot(ctx, t, &payload, knowledge); waited {
+		return nil
+	}
 	markKnowledgeProcessing(knowledge, time.Now())
 	if err := s.updateKnowledgeUnlessSourceReplaced(ctx, knowledge); err != nil {
 		logger.Errorf(ctx, "failed to update knowledge status to processing: %v", err)
@@ -4248,4 +4254,36 @@ func runKnowledgeListReparseSubmissions(
 		"%w: batch reparse submitted %d item(s) and failed %d: %w",
 		asynq.SkipRetry, outcome.Submitted, outcome.Failed, errors.Join(failures...),
 	)
+}
+
+// waitForParseSlot puts the process task back for a while when the
+// uploader already has limits.parse.max_concurrent_per_user documents
+// being parsed; true means the task was re-queued and this run must stop.
+func (s *knowledgeService) waitForParseSlot(ctx context.Context, t *asynq.Task, payload *types.DocumentProcessPayload, knowledge *types.Knowledge) bool {
+	limit := s.gate.ParseConcurrencyLimit(ctx)
+	if limit <= 0 || knowledge.CreatedBy == "" || s.task == nil {
+		return false
+	}
+	busy, err := s.repo.CountProcessingByUser(ctx, knowledge.TenantID, knowledge.CreatedBy, time.Now().Add(-parseSlotStaleAfter))
+	if err != nil {
+		logger.Warnf(ctx, "parse slot count failed for %s: %v", knowledge.ID, err)
+		return false
+	}
+	if parseSlotFree(limit, busy, payload.Waits) {
+		return false
+	}
+	payload.Waits++
+	delay := parseSlotDelay(payload.Waits)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	task := asynq.NewTask(t.Type(), raw, documentProcessTaskOptions(s.config, asynq.MaxRetry(3), asynq.ProcessIn(delay))...)
+	if _, err := s.task.Enqueue(task); err != nil {
+		logger.Warnf(ctx, "knowledge %s could not be re-queued for a parse slot, parsing now: %v", knowledge.ID, err)
+		return false
+	}
+	logger.Infof(ctx, "knowledge %s waits for a parse slot: %d of %d in use by user %s, retry in %s (wait %d)",
+		knowledge.ID, busy, limit, knowledge.CreatedBy, delay, payload.Waits)
+	return true
 }

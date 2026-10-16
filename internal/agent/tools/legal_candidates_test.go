@@ -50,6 +50,10 @@ func (f *fakeCatalog) ExpandRelated(context.Context, []string) ([]types.LegalExp
 func (f *fakeCatalog) KBGraph(context.Context, string, int) (*types.GraphView, error) {
 	return nil, nil
 }
+func (f *fakeCatalog) SearchTitles(context.Context, []string, int) ([]*types.LegalDocument, error) {
+	return nil, nil
+}
+
 func (f *fakeCatalog) Candidates(_ context.Context, number, docType string, limit int) ([]*types.LegalDocument, int, error) {
 	var out []*types.LegalDocument
 	for _, d := range f.docs {

@@ -20,6 +20,8 @@ var quickAnswerTimelineTools = map[string]struct{}{
 	"image_analysis":       {},
 	"resolve_abbreviation": {},
 	"people_lookup":        {},
+	// the broad-question card (a pipeline answer; renders as a choice list)
+	"broad_query_clarification": {},
 }
 
 // quickAnswerTimelineRecorder persists the fast-answer pipeline's timeline into

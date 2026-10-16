@@ -194,6 +194,18 @@ var registry = map[string]settingSpec{
 	// limits.* are the input gates: page caps an upload must pass before it
 	// is parsed (see types/input_limits.go and input_gate.go). Read on every
 	// upload, so a change applies at once. 0 disables the cap.
+	types.SettingLimitsChatQuestionMaxRunes: {
+		Type: "int", Default: int64(types.DefaultLimitsChatQuestionMaxRunes), Category: "limits",
+		Description: "Số ký tự tối đa của một câu hỏi trong chat. 0 = không giới hạn.",
+	},
+	types.SettingLimitsChatBroadQuestionGate: {
+		Type: "bool", Default: true, Category: "limits",
+		Description: "Hỏi lại khi câu hỏi quá rộng (vài từ chung như \"luật đất đai\" khớp hàng chục văn bản trong danh mục): đưa thẻ chọn loại văn bản, cơ quan ban hành hoặc vẫn tìm chung.",
+	},
+	types.SettingLimitsParseMaxConcurrentPerUser: {
+		Type: "int", Default: int64(types.DefaultLimitsParseMaxConcurrentPerUser), Category: "limits",
+		Description: "Số tài liệu của một người dùng được xử lý (parse, OCR) cùng lúc; tài liệu còn lại chờ trong hàng đợi. 0 = không giới hạn.",
+	},
 	types.SettingLimitsKBPDFTextPages: {
 		Type: "int", Default: int64(types.DefaultLimitsKBPDFTextPages), Category: "limits",
 		Description: "Số trang tối đa của một PDF có lớp chữ tải lên kho tri thức. 0 = không giới hạn.",
