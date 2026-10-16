@@ -114,6 +114,9 @@ type TemporaryDocumentCreateOptions struct {
 	// OCRMaxPages overrides the global VLM OCR page cap for this document.
 	// 0 uses the global default (WEKNORA_CHAT_ATTACHMENT_OCR_MAX_PAGES).
 	OCRMaxPages int `json:"ocr_max_pages,omitempty"`
+	// InputGate selects the page caps checked before the file is stored.
+	// Empty means InputGateChat.
+	InputGate InputGateContext `json:"-"`
 }
 
 // SettingChatAttachmentSectionPicker turns on the outline-based selection

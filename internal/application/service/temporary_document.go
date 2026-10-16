@@ -216,7 +216,11 @@ func (s *temporaryDocumentService) Create(
 	}
 	// The page gate runs before the file is stored: a document that would
 	// keep the parser busy for minutes is refused with the reason.
-	if err := s.gate.CheckPages(ctx, types.InputGateChat, baseName, ext, data); err != nil {
+	gate := options.InputGate
+	if gate == "" {
+		gate = types.InputGateChat
+	}
+	if err := s.gate.CheckPages(ctx, gate, baseName, ext, data); err != nil {
 		return nil, err
 	}
 

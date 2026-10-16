@@ -120,6 +120,20 @@ func TestInputGateChatCapsAreTighterThanKnowledgeBase(t *testing.T) {
 	}
 }
 
+// The file the document assistant opens to edit is not a chat attachment:
+// a 23-page Word document must open, and a refusal names the assistant.
+func TestInputGateDocumentTargetTakesKnowledgeBaseCaps(t *testing.T) {
+	g := newInputGate(nil)
+	ctx := context.Background()
+	if err := g.CheckPages(ctx, types.InputGateDocument, "a.docx", ".docx", testDOCX(t, 23)); err != nil {
+		t.Fatalf("23-page target refused: %v", err)
+	}
+	err := g.CheckPages(ctx, types.InputGateDocument, "a.docx", ".docx", testDOCX(t, types.DefaultLimitsKBDocxPages+1))
+	if err == nil || !strings.Contains(err.Error(), "trợ lý văn bản") {
+		t.Fatalf("over-cap target: %v", err)
+	}
+}
+
 func TestInputGateAtTheCapPasses(t *testing.T) {
 	g := newInputGate(nil)
 	if err := g.CheckPages(context.Background(), types.InputGateChat, "a.pdf", ".pdf", testPDF(20, textResources)); err != nil {

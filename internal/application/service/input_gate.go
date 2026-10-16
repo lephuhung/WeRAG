@@ -92,8 +92,11 @@ func pageLimitMessage(gate types.InputGateContext, fileName, kind string, m docm
 		count = fmt.Sprintf("khoảng %d trang", m.Pages)
 	}
 	where := "kho tri thức"
-	if gate == types.InputGateChat {
+	switch gate {
+	case types.InputGateChat:
 		where = "cuộc hội thoại"
+	case types.InputGateDocument:
+		where = "trợ lý văn bản"
 	}
 	return fmt.Sprintf("%s %s có %s, vượt giới hạn %d trang của %s. Hãy tách tệp hoặc chỉ gửi phần cần dùng.",
 		what, fileName, count, limit, where)
