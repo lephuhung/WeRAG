@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,23 @@ type formatCheckResult struct {
 	// in the editor when the user asks for the check (format_marks.go);
 	// empty on results cached before they were kept.
 	Flags []formatFlag `json:"flags,omitempty"`
+	// ReportID names this evaluation and Findings are its measured
+	// findings one by one (format_findings.go); both empty on results
+	// cached before they were kept.
+	ReportID string          `json:"report_id,omitempty"`
+	Findings []formatFinding `json:"findings,omitempty"`
+	// Revision is the workspace revision checked, set only on a document's
+	// own copy (formatCheckDocumentKey): one content may be several
+	// documents' or revisions'.
+	Revision *int `json:"revision,omitempty"`
+}
+
+// forRevision is the copy of r kept as a document's result, naming the
+// checked revision.
+func (r *formatCheckResult) forRevision(revision int) *formatCheckResult {
+	c := *r
+	c.Revision = &revision
+	return &c
 }
 
 // evaluation is the judgment to show the user, without the agent framing.
@@ -111,8 +129,12 @@ func UseFormatCheckRedis(rdb *redis.Client) {
 // so editing a skill invalidates the cached evaluations.
 func formatCheckKey(content []byte, model, docType string) string {
 	return formatCheckIdentity(content) + "|" + model + "|" + strings.ToLower(strings.TrimSpace(docType)) +
-		"|" + docformat.SkillsDigest()
+		"|" + docformat.SkillsDigest() + "|" + formatCheckResultVersion
 }
+
+// formatCheckResultVersion changes when a kept result gains data a reader
+// needs (v2: report ID and findings), so older results are checked again.
+const formatCheckResultVersion = "v2"
 
 func (c *formatCheckCache) redisGet(ctx context.Context, key string, into interface{}) bool {
 	if c.rdb == nil {
@@ -239,6 +261,14 @@ func SessionFormatCheckReport(ctx context.Context, documentID string) *types.Doc
 	}
 	if s := r.Summary; s != nil {
 		report.Summary = &types.DocumentFormatSummary{Pass: s.Pass, Fail: s.Fail, Warn: s.Warn, Skip: s.Skip}
+	}
+	// the findings only with the revision their anchors hold for: the
+	// add-in applies nothing to another one
+	if r.Revision != nil && r.ReportID != "" && r.Findings != nil {
+		rev := *r.Revision
+		report.ReportID = r.ReportID + "-r" + strconv.Itoa(rev)
+		report.DocumentRevision = &rev
+		report.Findings = reportFindings(r.Findings)
 	}
 	return report
 }

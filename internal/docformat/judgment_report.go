@@ -133,7 +133,7 @@ func measuredFindings(r *Report, status string) []reportFinding {
 		if c.Status != status {
 			continue
 		}
-		rule := "Theo NĐ30: " + c.Desc
+		rule := "Theo NĐ30: " + UserDesc(c)
 		var lines []string
 		for _, ev := range c.Evidence {
 			txt, ok := ev["text"]
@@ -150,11 +150,13 @@ func measuredFindings(r *Report, status string) []reportFinding {
 			}
 		}
 		line := strings.Join(lines, "; ")
-		if line == "" && c.Actual != nil {
+		present := strings.HasPrefix(c.ID, "component.") && strings.HasSuffix(c.ID, ".present")
+		// a missing component has no line to quote: its rule says it all
+		if line == "" && c.Actual != nil && !present {
 			line = "thực tế: " + compactJSON(c.Actual)
 		}
 		var fix string
-		if strings.HasPrefix(c.ID, "component.") && strings.HasSuffix(c.ID, ".present") {
+		if present {
 			fix = "Bổ sung thành phần này đúng vị trí theo NĐ30."
 		} else {
 			fix = measuredFix(rs.CheckByID(c.ID))
@@ -162,6 +164,16 @@ func measuredFindings(r *Report, status string) []reportFinding {
 		out = append(out, reportFinding{componentGroup(c), findingText(rule, line, fix)})
 	}
 	return out
+}
+
+// UserDesc is a check's rule for the user: a component named by its name,
+// not its key ("thành phần 'quoc_hieu'" → "thành phần Quốc hiệu"). Desc
+// itself keeps the key (parity with the Python reference).
+func UserDesc(c CheckResult) string {
+	if c.Component == nil {
+		return c.Desc
+	}
+	return strings.ReplaceAll(c.Desc, "'"+*c.Component+"'", ComponentName(*c.Component))
 }
 
 func findingText(rule, line, fix string) string {

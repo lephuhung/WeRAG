@@ -279,6 +279,36 @@ type DocumentFormatReport struct {
 	// Evaluation is the Markdown judgment against NĐ30/2020/NĐ-CP.
 	Evaluation string    `json:"evaluation"`
 	CheckedAt  time.Time `json:"checked_at"`
+	// ReportID names this evaluation; it changes with every new check.
+	ReportID string `json:"report_id,omitempty"`
+	// DocumentRevision is the workspace revision that was checked, which
+	// the findings' anchors hold for (absent on results kept before it).
+	DocumentRevision *int `json:"document_revision,omitempty"`
+	// Findings are the measured findings one by one, for the Word add-in's
+	// review (absent on results kept before they were).
+	Findings []DocumentFormatFinding `json:"findings,omitempty"`
+}
+
+// DocumentFormatFinding is one place of one failing or warning check. Ops,
+// when present, is exactly one formatParagraph on Anchor that fixes it,
+// applied only when the user asks.
+type DocumentFormatFinding struct {
+	ID             string                `json:"id"`
+	CheckID        string                `json:"check_id"`
+	Title          string                `json:"title"`
+	Reason         string                `json:"reason,omitempty"`
+	Current        string                `json:"current,omitempty"`
+	Expected       string                `json:"expected,omitempty"`
+	Anchor         *DocumentFormatAnchor `json:"anchor,omitempty"`
+	Text           string                `json:"text,omitempty"`
+	TextOccurrence int                   `json:"text_occurrence,omitempty"`
+	Ops            []any                 `json:"ops,omitempty"`
+}
+
+// DocumentFormatAnchor finds a paragraph by its text (the nth with it).
+type DocumentFormatAnchor struct {
+	Text       string `json:"text"`
+	Occurrence int    `json:"occurrence"`
 }
 
 // DocumentFormatSummary counts the measured checks by status.

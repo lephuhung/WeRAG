@@ -406,6 +406,10 @@ func optBool(p *bool) any {
 }
 
 // paraAttr is the paragraph property a prop check reads.
+// ParaAttr is the measured value of one paragraph property, as a rule
+// reads it (nil when unmeasured).
+func ParaAttr(p *Para, prop string) any { return paraAttr(p, prop) }
+
 func paraAttr(p *Para, prop string) any {
 	switch prop {
 	case "text":

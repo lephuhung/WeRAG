@@ -394,7 +394,7 @@ func (t *CheckDocumentFormatTool) recordResult(ctx context.Context, ref string, 
 		state.DocumentType = r.DocumentType.Used
 		state.DocumentTypeLabel = documentTypeLabel(r.DocumentType.RuleSet)
 	}
-	formatChecks.put(ctx, r, formatCheckDocumentKey(target.ID))
+	formatChecks.put(ctx, r.forRevision(revision), formatCheckDocumentKey(target.ID))
 	formatChecks.storeState(ctx, target.ID, state)
 }
 
@@ -486,6 +486,8 @@ func (t *CheckDocumentFormatTool) check(ctx context.Context, content []byte, fil
 		}
 		rs, _ := docformat.RuleSetForReport(report)
 		r.Flags = formatFlags(report, rs)
+		r.ReportID = formatReportID(key, r.At)
+		r.Findings = formatFindingsOf(report, rs, content)
 		// only a finished evaluation on the model's labelling is kept: the
 		// unevaluated fallback, or one on the position heuristic the
 		// labelling fell back to, comes from a failed model call worth
@@ -642,7 +644,7 @@ func (t *CheckDocumentFormatTool) runBackground(ctx context.Context, content []b
 	}
 	done.Status = types.DocumentFormatCheckReady
 	// the result shown by the chat's format-check view
-	formatChecks.put(ctx, out.result, formatCheckDocumentKey(t.documentID))
+	formatChecks.put(ctx, out.result.forRevision(state.Revision), formatCheckDocumentKey(t.documentID))
 	if info := out.result.DocumentType; info != nil {
 		done.DocumentType = info.Used
 		done.DocumentTypeLabel = documentTypeLabel(info.RuleSet)
@@ -717,6 +719,12 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 			// keep the shown result as long as the state that points to it
 			docKey := formatCheckDocumentKey(t.documentID)
 			if r := formatChecks.get(ctx, docKey); r != nil {
+				// the findings' anchors still hold only when the bytes are
+				// the checked ones; otherwise the report keeps naming the
+				// checked revision and the add-in applies nothing
+				if formatChecks.get(ctx, formatCheckKey(content, t.modelName(), "")) != nil {
+					r = r.forRevision(revision)
+				}
 				formatChecks.put(ctx, r, docKey)
 			}
 			logger.Infof(ctx, "check_document_format: save of document %s kept the format; evaluation still current", t.documentID)
