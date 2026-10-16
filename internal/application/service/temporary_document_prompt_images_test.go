@@ -41,7 +41,7 @@ func promptImageDoc(id, fileType, content string, urls ...string) *types.Tempora
 func resolvePrompt(t *testing.T, docs []*types.TemporaryDocument, ids []string, query string) *types.TemporaryDocumentPromptResult {
 	t.Helper()
 	svc := &temporaryDocumentService{repo: &forkAccessDocRepo{docs: docs}}
-	got, err := svc.ResolveForPrompt(context.Background(), 7, "s1", ids, query)
+	got, err := svc.ResolveForPrompt(context.Background(), 7, "s1", ids, query, types.TemporaryDocumentPromptOptions{})
 	require.NoError(t, err)
 	return got
 }

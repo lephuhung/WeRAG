@@ -164,7 +164,7 @@ func TestResolveForPromptUsesParentAttachmentReferencedByFork(t *testing.T) {
 		}},
 	}
 
-	got, err := svc.ResolveForPrompt(context.Background(), 7, "fork", []string{"doc-1"}, "summarize")
+	got, err := svc.ResolveForPrompt(context.Background(), 7, "fork", []string{"doc-1"}, "summarize", types.TemporaryDocumentPromptOptions{})
 
 	require.NoError(t, err)
 	require.Len(t, got.Attachments, 1)
@@ -182,7 +182,7 @@ func TestResolveForPromptHidesParentAttachmentNotOnForkedHistory(t *testing.T) {
 		}},
 	}
 
-	_, err := svc.ResolveForPrompt(context.Background(), 7, "fork", []string{"doc-1"}, "summarize")
+	_, err := svc.ResolveForPrompt(context.Background(), 7, "fork", []string{"doc-1"}, "summarize", types.TemporaryDocumentPromptOptions{})
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found")

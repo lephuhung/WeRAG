@@ -31,7 +31,7 @@ type TemporaryDocumentService interface {
 	OpenFile(ctx context.Context, tenantID uint64, sessionID, documentID string) (io.ReadCloser, string, error)
 	List(ctx context.Context, tenantID uint64, sessionID string) ([]*types.TemporaryDocument, error)
 	Delete(ctx context.Context, tenantID uint64, sessionID, documentID string) error
-	ResolveForPrompt(ctx context.Context, tenantID uint64, sessionID string, documentIDs []string, query string) (*types.TemporaryDocumentPromptResult, error)
+	ResolveForPrompt(ctx context.Context, tenantID uint64, sessionID string, documentIDs []string, query string, opts types.TemporaryDocumentPromptOptions) (*types.TemporaryDocumentPromptResult, error)
 	Process(ctx context.Context, task *asynq.Task) error
 	CleanupExpired(ctx context.Context) error
 }

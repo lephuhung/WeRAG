@@ -114,7 +114,8 @@ type temporaryDocumentService struct {
 	sessionAttachments sessionAttachmentLookup
 	auditLog           interfaces.AuditLogService
 	// gate refuses an upload with more pages than a chat attachment may have
-	gate *inputGate
+	gate     *inputGate
+	settings interfaces.SystemSettingService
 
 	// parsedMu guards onParsed, the listeners told when an upload's parsing
 	// ended (the document workspace copies a source's text from it).
@@ -159,7 +160,7 @@ func NewTemporaryDocumentService(
 		repo: repo, fileService: fileService, resourceCatalog: resourceCatalog,
 		documentReader: documentReader, imageResolver: imageResolver,
 		modelService: modelService, tenantService: tenantService, taskEnqueuer: taskEnqueuer,
-		sessionAttachments: messages, auditLog: auditLog, gate: newInputGate(settings),
+		sessionAttachments: messages, auditLog: auditLog, gate: newInputGate(settings), settings: settings,
 	}
 }
 
@@ -831,7 +832,7 @@ func approxTextContentRunes(md string) int {
 	return len([]rune(strings.TrimSpace(stripped)))
 }
 
-func (s *temporaryDocumentService) ResolveForPrompt(ctx context.Context, tenantID uint64, sessionID string, documentIDs []string, query string) (*types.TemporaryDocumentPromptResult, error) {
+func (s *temporaryDocumentService) ResolveForPrompt(ctx context.Context, tenantID uint64, sessionID string, documentIDs []string, query string, opts types.TemporaryDocumentPromptOptions) (*types.TemporaryDocumentPromptResult, error) {
 	result := &types.TemporaryDocumentPromptResult{}
 	if len(documentIDs) > types.MaxTemporaryAttachmentsPerMessage {
 		return nil, fmt.Errorf("a message can use at most %d attachments", types.MaxTemporaryAttachmentsPerMessage)
@@ -859,12 +860,12 @@ func (s *temporaryDocumentService) ResolveForPrompt(ctx context.Context, tenantI
 			}
 			return nil, fmt.Errorf("attachment %s is still being processed", document.FileName)
 		}
-		content, selected, total := selectTemporaryDocumentContentWithBudget(document, query, perDocumentBudget)
+		sel := s.selectForPrompt(ctx, document, query, perDocumentBudget, opts)
 		result.Attachments = append(result.Attachments, types.MessageAttachment{
 			ID: document.ID, URL: document.ResourceRef, FileName: document.FileName,
-			FileType: document.FileType, FileSize: document.FileSize, Content: content,
-			ContentMode: map[bool]string{true: "full", false: "selected_chunks"}[selected == total],
-			TokenCount:  document.TokenCount, SelectedChunks: selected, TotalChunks: total,
+			FileType: document.FileType, FileSize: document.FileSize, Content: sel.content,
+			ContentMode: sel.mode, Outline: sel.outline,
+			TokenCount: document.TokenCount, SelectedChunks: sel.selected, TotalChunks: sel.total,
 		})
 		// Image-type attachments always expose their image so vision models can
 		// see it directly; text documents only attach extracted images when the
@@ -884,6 +885,84 @@ func (s *temporaryDocumentService) ResolveForPrompt(ctx context.Context, tenantI
 		result.AttachmentImageURLs = append(result.AttachmentImageURLs, owned)
 	}
 	return result, nil
+}
+
+// promptSelection is what of one attachment reaches the prompt.
+type promptSelection struct {
+	content, mode, outline string
+	selected, total        int
+}
+
+// selectForPrompt picks the attachment's text for the prompt: the whole
+// document when it fits, else the sections the answering model picks from
+// its outline (setting chat.attachment_section_picker), else the chunks
+// with the most question words.
+func (s *temporaryDocumentService) selectForPrompt(
+	ctx context.Context, document *types.TemporaryDocument, query string, budget int, opts types.TemporaryDocumentPromptOptions,
+) promptSelection {
+	if sel, ok := s.selectSections(ctx, document, query, budget, opts); ok {
+		return sel
+	}
+	content, selected, total := selectTemporaryDocumentContentWithBudget(document, query, budget)
+	return promptSelection{
+		content: content, selected: selected, total: total,
+		mode: map[bool]string{true: "full", false: "selected_chunks"}[selected == total],
+	}
+}
+
+// selectSections is the outline path of selectForPrompt; false leaves the
+// choice to the keyword selection (document fits, picker off, too few
+// sections, pick failed).
+func (s *temporaryDocumentService) selectSections(
+	ctx context.Context, document *types.TemporaryDocument, query string, budget int, opts types.TemporaryDocumentPromptOptions,
+) (promptSelection, bool) {
+	if opts.ModelID == "" || s.modelService == nil || strings.TrimSpace(query) == "" {
+		return promptSelection{}, false
+	}
+	if s.settings != nil && !s.settings.GetBool(ctx, types.SettingChatAttachmentSectionPicker, "", true) {
+		return promptSelection{}, false
+	}
+	if budget <= 0 {
+		budget = temporaryDocumentPromptBudget
+	}
+	if document.TokenCount <= temporaryDocumentInlineTokens && document.TokenCount <= budget {
+		return promptSelection{}, false
+	}
+	var chunks []types.TemporaryDocumentChunk
+	_ = json.Unmarshal(document.Chunks, &chunks)
+	sections := buildAttachmentSections(document.Content, chunks)
+	if sections == nil {
+		logger.Infof(ctx, "attachment has no usable outline, using keyword selection: document_id=%s", document.ID)
+		return promptSelection{}, false
+	}
+	pickerOutline, cut := renderAttachmentOutline(sections, attachmentOutlinePickerRunes)
+	if cut {
+		logger.Infof(ctx, "attachment outline too long for the picker: document_id=%s sections=%d", document.ID, len(sections))
+		return promptSelection{}, false
+	}
+	start := time.Now()
+	pick, err := s.pickAttachmentSections(ctx, opts.ModelID, document.FileName, query, pickerOutline, len(sections))
+	if err != nil {
+		logger.Warnf(ctx, "attachment section pick failed, using keyword selection: document_id=%s err=%v", document.ID, err)
+		return promptSelection{}, false
+	}
+	logger.Infof(ctx, "attachment section pick: document_id=%s sections=%d picked=%v whole=%v took=%s",
+		document.ID, len(sections), pick.Sections, pick.Whole, time.Since(start).Round(time.Millisecond))
+
+	outline, cut := renderAttachmentOutline(sections, attachmentOutlinePromptRunes)
+	if cut {
+		outline += "\n…(mục lục còn tiếp)"
+	}
+	lang := chunker.DetectLanguage(outline)
+	contentBudget := budget - chunker.ApproxTokenCount(outline, lang)
+	if contentBudget < budget/2 {
+		contentBudget = budget / 2
+	}
+	indexes := packPickedSections(chunks, sections, pick, query, contentBudget)
+	return promptSelection{
+		content: joinTemporaryChunks(chunks, indexes), mode: "selected_sections", outline: outline,
+		selected: len(indexes), total: len(chunks),
+	}, true
 }
 
 func selectTemporaryDocumentContent(document *types.TemporaryDocument, query string) (string, int, int) {
@@ -906,12 +985,7 @@ func selectTemporaryDocumentContentWithBudget(document *types.TemporaryDocument,
 	}
 	ranked := make([]rankedChunk, 0, len(chunks))
 	for _, part := range chunks {
-		text := strings.ToLower(part.ContextHeader + "\n" + part.Content)
-		score := 0
-		for _, term := range terms {
-			score += strings.Count(text, term) * (1 + len([]rune(term))/2)
-		}
-		ranked = append(ranked, rankedChunk{chunk: part, score: score})
+		ranked = append(ranked, rankedChunk{chunk: part, score: chunkTermScore(part, terms)})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].score == ranked[j].score {
@@ -932,18 +1006,11 @@ func selectTemporaryDocumentContentWithBudget(document *types.TemporaryDocument,
 		tokens += candidate.chunk.TokenCount
 	}
 	sort.Slice(selected, func(i, j int) bool { return selected[i].Seq < selected[j].Seq })
-	var builder strings.Builder
-	for _, part := range selected {
-		if builder.Len() > 0 {
-			builder.WriteString("\n\n---\n\n")
-		}
-		if part.ContextHeader != "" {
-			builder.WriteString(part.ContextHeader)
-			builder.WriteString("\n\n")
-		}
-		builder.WriteString(strings.TrimSpace(part.Content))
+	indexes := make([]int, len(selected))
+	for i := range selected {
+		indexes[i] = i
 	}
-	return builder.String(), len(selected), len(chunks)
+	return joinTemporaryChunks(selected, indexes), len(selected), len(chunks)
 }
 
 // temporarySaveFileService makes images extracted from an expiring chat

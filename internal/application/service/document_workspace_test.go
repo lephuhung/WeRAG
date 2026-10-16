@@ -322,7 +322,7 @@ func (a *dwFakeAttachments) List(context.Context, uint64, string) ([]*types.Temp
 	return nil, nil
 }
 func (a *dwFakeAttachments) Delete(context.Context, uint64, string, string) error { return nil }
-func (a *dwFakeAttachments) ResolveForPrompt(context.Context, uint64, string, []string, string) (*types.TemporaryDocumentPromptResult, error) {
+func (a *dwFakeAttachments) ResolveForPrompt(context.Context, uint64, string, []string, string, types.TemporaryDocumentPromptOptions) (*types.TemporaryDocumentPromptResult, error) {
 	return nil, nil
 }
 func (a *dwFakeAttachments) Process(context.Context, *asynq.Task) error { return nil }

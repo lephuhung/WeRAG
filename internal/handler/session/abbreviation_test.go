@@ -157,7 +157,7 @@ type abbrevFailDocuments struct {
 }
 
 func (d *abbrevFailDocuments) ResolveForPrompt(
-	ctx context.Context, tenantID uint64, sessionID string, ids []string, _ string,
+	ctx context.Context, tenantID uint64, sessionID string, ids []string, _ string, _ types.TemporaryDocumentPromptOptions,
 ) (*types.TemporaryDocumentPromptResult, error) {
 	d.called = true
 	return nil, assert.AnError

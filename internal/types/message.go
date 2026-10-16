@@ -140,10 +140,14 @@ type MessageAttachment struct {
 	Content        string `json:"content,omitempty"`         // Extracted text content (for small text files)
 	IsTruncated    bool   `json:"is_truncated,omitempty"`    // Whether content was truncated
 	LineCount      int    `json:"line_count,omitempty"`      // Total line count (for text files)
-	ContentMode    string `json:"content_mode,omitempty"`    // full or selected_chunks
+	ContentMode    string `json:"content_mode,omitempty"`    // full, selected_chunks or selected_sections
 	TokenCount     int    `json:"token_count,omitempty"`     // Approximate tokens in the parsed document
 	SelectedChunks int    `json:"selected_chunks,omitempty"` // Chunks included in this message prompt
 	TotalChunks    int    `json:"total_chunks,omitempty"`    // Total parsed chunks
+	// Outline lists the sections of a document too large for the prompt
+	// (content_mode selected_sections), so the model knows what the parts
+	// it was given belong to and what else the document holds.
+	Outline string `json:"outline,omitempty"`
 	// ParseError is set when the attachment's content could not be made
 	// available to the model (parse failure, timeout, missing/expired
 	// document, or content with no readable text). BuildPrompt renders it as
@@ -221,11 +225,14 @@ func (attachments MessageAttachments) BuildPrompt() string {
 			sb.WriteString(fmt.Sprintf("<status>%s</status>\n", AttachmentContentOmittedInHistory))
 			sb.WriteString(fmt.Sprintf("<note>%s</note>\n", html.EscapeString(att.HistoryOmission.Note())))
 		} else if att.Content != "" {
+			if att.Outline != "" {
+				sb.WriteString("<outline>\n")
+				sb.WriteString(escapeAttachmentText(att.Outline))
+				sb.WriteString("\n</outline>\n")
+				sb.WriteString("<note>Only the sections of the outline that the question needs are in <content>. If the answer needs a section that is not there, say which section to ask about; do not guess its text.</note>\n")
+			}
 			sb.WriteString("<content>\n")
-			content := strings.ReplaceAll(att.Content, "</content>", "&lt;/content&gt;")
-			content = strings.ReplaceAll(content, "</attachment>", "&lt;/attachment&gt;")
-			content = strings.ReplaceAll(content, "</attachments>", "&lt;/attachments&gt;")
-			sb.WriteString(content)
+			sb.WriteString(escapeAttachmentText(att.Content))
 			sb.WriteString("\n</content>\n")
 
 			if att.IsTruncated {
@@ -240,6 +247,14 @@ func (attachments MessageAttachments) BuildPrompt() string {
 	sb.WriteString("</attachments>\n\n")
 
 	return sb.String()
+}
+
+// escapeAttachmentText keeps attachment text from closing the tags it sits in.
+func escapeAttachmentText(text string) string {
+	for _, tag := range []string{"</content>", "</outline>", "</attachment>", "</attachments>"} {
+		text = strings.ReplaceAll(text, tag, html.EscapeString(tag))
+	}
+	return text
 }
 
 // Value implements the driver.Valuer interface for database serialization

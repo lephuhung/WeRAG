@@ -411,6 +411,12 @@ var registry = map[string]settingSpec{
 		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
 			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay.",
 	},
+	types.SettingChatAttachmentSectionPicker: {
+		Type: "bool", Default: true, Category: "chat",
+		Description: "Tệp đính kèm quá dài cho một lượt hỏi: model trả lời đọc mục lục của tệp (Chương, Mục, Điều, đề mục) " +
+			"và chọn các phần cần cho câu hỏi (một lượt gọi ngắn), thay vì lấy các đoạn chứa nhiều từ của câu hỏi nhất. " +
+			"Chọn lỗi thì tự quay về cách lấy theo từ. Có hiệu lực ngay.",
+	},
 	// llm.auxiliary_model_id: the small model for session titles and
 	// follow-up suggestions (measured 2026-10-14: as good as Qwen on
 	// follow-ups, slightly weaker on titles; NOT used for query rewrite,

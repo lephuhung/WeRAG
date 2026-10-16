@@ -1707,10 +1707,16 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 		emitToolCall()
 	}
 
+	// the answering model picks the sections of an attachment too large
+	// for the prompt
+	promptOpts := types.TemporaryDocumentPromptOptions{ModelID: reqCtx.summaryModelID}
+	if promptOpts.ModelID == "" && reqCtx.customAgent != nil {
+		promptOpts.ModelID = reqCtx.customAgent.Config.ModelID
+	}
 	var temporaryResult *types.TemporaryDocumentPromptResult
 	var resolveErr error
 	if len(readyIDs) > 0 {
-		temporaryResult, resolveErr = h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, readyIDs, reqCtx.query)
+		temporaryResult, resolveErr = h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, readyIDs, reqCtx.query, promptOpts)
 		if resolveErr != nil {
 			logger.Warnf(ctx, "temporary attachment resolution failed for session %s: %v", sessionID, resolveErr)
 			// A raced delete/status change can fail the whole batch on one bad
@@ -1719,7 +1725,7 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 			temporaryResult = &types.TemporaryDocumentPromptResult{}
 			salvageFailed := 0
 			for _, id := range readyIDs {
-				res, err := h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, []string{id}, reqCtx.query)
+				res, err := h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, []string{id}, reqCtx.query, promptOpts)
 				if err != nil || res == nil {
 					reason := "attachment content could not be resolved"
 					if err != nil {

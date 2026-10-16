@@ -116,6 +116,19 @@ type TemporaryDocumentCreateOptions struct {
 	OCRMaxPages int `json:"ocr_max_pages,omitempty"`
 }
 
+// SettingChatAttachmentSectionPicker turns on the outline-based selection
+// of a chat attachment too large for the prompt: the answering model picks
+// the sections the question needs from the document's outline (one short
+// call). Off, the chunks with the most question words are taken.
+const SettingChatAttachmentSectionPicker = "chat.attachment_section_picker"
+
+// TemporaryDocumentPromptOptions tunes how attachments reach the prompt.
+type TemporaryDocumentPromptOptions struct {
+	// ModelID is the turn's answering model. It picks the sections of a
+	// large attachment; empty keeps the keyword selection.
+	ModelID string
+}
+
 type TemporaryDocumentPromptResult struct {
 	Attachments MessageAttachments
 	ImageURLs   []string

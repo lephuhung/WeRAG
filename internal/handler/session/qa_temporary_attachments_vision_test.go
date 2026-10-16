@@ -25,7 +25,7 @@ func (d *visionStubDocuments) Get(_ context.Context, _ uint64, _ string, id stri
 }
 
 func (d *visionStubDocuments) ResolveForPrompt(
-	_ context.Context, _ uint64, _ string, ids []string, _ string,
+	_ context.Context, _ uint64, _ string, ids []string, _ string, _ types.TemporaryDocumentPromptOptions,
 ) (*types.TemporaryDocumentPromptResult, error) {
 	if d.failBatch && len(ids) > 1 {
 		return nil, fmt.Errorf("attachment %s is still being processed", ids[0])
