@@ -602,6 +602,19 @@ export interface RuntimeQueuesResponse {
  * generation runs. Outside it the wiki queue is paused so chat keeps the LLM. */
 export const WIKI_RUN_WINDOW_KEY = "wiki.run_window";
 
+/* Input gates (limits.*): page caps an upload must pass before it is
+ * parsed. One row per cap; 0 disables it. Defaults mirror
+ * internal/types/input_limits.go. */
+export const INPUT_LIMIT_KEYS = [
+  { key: "limits.chat.pdf_text_pages", labelKey: "q.limitsChatPdfText", def: 20 },
+  { key: "limits.chat.pdf_scan_pages", labelKey: "q.limitsChatPdfScan", def: 6 },
+  { key: "limits.chat.docx_pages", labelKey: "q.limitsChatDocx", def: 15 },
+  { key: "limits.kb.pdf_text_pages", labelKey: "q.limitsKbPdfText", def: 500 },
+  { key: "limits.kb.pdf_scan_pages", labelKey: "q.limitsKbPdfScan", def: 200 },
+  { key: "limits.kb.docx_pages", labelKey: "q.limitsKbDocx", def: 300 },
+] as const;
+export type InputLimitKey = (typeof INPUT_LIMIT_KEYS)[number]["key"];
+
 export interface WikiRunWindow {
   enabled: boolean;
   start: string;

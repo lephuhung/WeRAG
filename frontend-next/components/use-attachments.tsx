@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
 import {
   deleteTemporaryAttachment,
   getTemporaryAttachment,
@@ -35,6 +36,7 @@ const MAX_SIZE_MB = 50;
 
 export function useAttachments(sessionId?: string) {
   const { settings } = useChatContext();
+  const { t } = useT();
   const [items, setItems] = useState<PendingAttachment[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -106,8 +108,15 @@ export function useAttachments(sessionId?: string) {
       const next = [...prev];
       for (const file of files) {
         if (next.length >= MAX_FILES) break;
-        if (file.size > MAX_SIZE_MB * 1024 * 1024) continue;
         const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+          // shown on the chip instead of dropping the file without a word
+          next.push({
+            localId, file, name: file.name, size: file.size, status: "failed",
+            error: t("chat.attach.tooLarge", { name: file.name, mb: MAX_SIZE_MB }),
+          });
+          continue;
+        }
         next.push({ localId, file, name: file.name, size: file.size, status: sessionId ? "uploading" : "local" });
         if (sessionId) void upload(localId, file);
       }

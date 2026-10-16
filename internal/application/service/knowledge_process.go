@@ -3990,6 +3990,22 @@ func (s *knowledgeService) convert(
 			werrors.ErrCodeDocReaderParseFailed, result.Error, nil)
 		return nil, nil
 	}
+	// No readable text and no page images left for the OCR stage: an
+	// unreadable scan, a photo without text, an empty file. It fails here
+	// with a reason instead of completing as a document nothing can find.
+	if !result.IsAudio && len(result.ImageRefs) == 0 && ParsedTextTooThin(result.MarkdownContent) {
+		message := noTextMessage(fileType, "")
+		logger.Warnf(ctx, "[convert] no readable text kb=%s knowledge=%s file=%q type=%s runes=%d",
+			kb.ID, knowledge.ID, req.FileName, fileType, approxTextContentRunes(result.MarkdownContent))
+		knowledge.ParseStatus = "failed"
+		knowledge.ErrorMessage = message
+		knowledge.UpdatedAt = time.Now()
+		if err := s.updateKnowledgeUnlessSourceReplaced(ctx, knowledge); err != nil {
+			logger.Errorf(ctx, "failed to persist no-text failure for %s: %v", knowledge.ID, err)
+		}
+		s.failStage(ctx, knowledge.ID, types.StageDocReader, werrors.ErrCodeParseNoText, message, nil)
+		return nil, nil
+	}
 	docOutput := types.JSONMap{
 		"text_length":  len(result.MarkdownContent),
 		"images_found": len(result.ImageRefs),

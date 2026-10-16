@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,6 +84,12 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	hash, err := calculateFileHash(file)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to calculate file hash: %v", err)
+		return nil, err
+	}
+
+	// Page gate: a file that would keep the parser or the OCR model busy for
+	// a long time is refused before it is stored.
+	if err := s.checkUploadPages(ctx, file, fileName); err != nil {
 		return nil, err
 	}
 
@@ -1343,4 +1351,23 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 
 	newCtx := logger.CloneContext(ctx)
 	go s.processChunks(newCtx, kb, knowledge, parsed, opts)
+}
+
+// checkUploadPages runs the knowledge-base page gate on a multipart upload
+// of a format that has pages (PDF, DOCX); other formats pass untouched.
+func (s *knowledgeService) checkUploadPages(ctx context.Context, file *multipart.FileHeader, fileName string) error {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext != ".pdf" && ext != ".docx" {
+		return nil
+	}
+	f, err := file.Open()
+	if err != nil {
+		return fmt.Errorf("open upload: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, secutils.GetMaxFileSize()+1))
+	if err != nil {
+		return fmt.Errorf("read upload: %w", err)
+	}
+	return s.gate.CheckPages(ctx, types.InputGateKnowledgeBase, fileName, ext, data)
 }

@@ -191,6 +191,33 @@ var registry = map[string]settingSpec{
 	// applyAuthAndTenantDefaults parses at boot, so a deployment that
 	// hasn't created a DB row keeps reading from env exactly as before.
 	// 0 = use the in-code default (10); negative = disable the cap entirely.
+	// limits.* are the input gates: page caps an upload must pass before it
+	// is parsed (see types/input_limits.go and input_gate.go). Read on every
+	// upload, so a change applies at once. 0 disables the cap.
+	types.SettingLimitsKBPDFTextPages: {
+		Type: "int", Default: int64(types.DefaultLimitsKBPDFTextPages), Category: "limits",
+		Description: "Số trang tối đa của một PDF có lớp chữ tải lên kho tri thức. 0 = không giới hạn.",
+	},
+	types.SettingLimitsKBPDFScanPages: {
+		Type: "int", Default: int64(types.DefaultLimitsKBPDFScanPages), Category: "limits",
+		Description: "Số trang tối đa của một PDF scan (không có lớp chữ, phải OCR từng trang) tải lên kho tri thức. 0 = không giới hạn.",
+	},
+	types.SettingLimitsKBDocxPages: {
+		Type: "int", Default: int64(types.DefaultLimitsKBDocxPages), Category: "limits",
+		Description: "Số trang tối đa của một tệp Word tải lên kho tri thức. 0 = không giới hạn.",
+	},
+	types.SettingLimitsChatPDFTextPages: {
+		Type: "int", Default: int64(types.DefaultLimitsChatPDFTextPages), Category: "limits",
+		Description: "Số trang tối đa của một PDF có lớp chữ gửi kèm trong chat hoặc trợ lý văn bản. 0 = không giới hạn.",
+	},
+	types.SettingLimitsChatPDFScanPages: {
+		Type: "int", Default: int64(types.DefaultLimitsChatPDFScanPages), Category: "limits",
+		Description: "Số trang tối đa của một PDF scan gửi kèm trong chat hoặc trợ lý văn bản. 0 = không giới hạn.",
+	},
+	types.SettingLimitsChatDocxPages: {
+		Type: "int", Default: int64(types.DefaultLimitsChatDocxPages), Category: "limits",
+		Description: "Số trang tối đa của một tệp Word gửi kèm trong chat hoặc trợ lý văn bản. 0 = không giới hạn.",
+	},
 	"tenant.max_owned_per_user": {
 		Type:     "int",
 		EnvName:  "WEKNORA_TENANT_MAX_OWNED_PER_USER",

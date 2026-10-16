@@ -1,6 +1,7 @@
 package session
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -97,7 +98,12 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 		fileHeader.Filename, fileHeader.Header.Get("Content-Type"), fileHeader.Size, file, options,
 	)
 	if err != nil {
-		c.Error(apperrors.NewBadRequestError(err.Error()))
+		var appErr *apperrors.AppError
+		if stderrors.As(err, &appErr) {
+			c.Error(appErr) // an input gate refusal keeps its details
+		} else {
+			c.Error(apperrors.NewBadRequestError(err.Error()))
+		}
 		return
 	}
 	resp := gin.H{"success": true, "data": document}

@@ -23,6 +23,11 @@ const (
 	// error (encoding, corrupted file, OCR engine crash, ...).
 	ErrCodeDocReaderParseFailed = "DOCREADER_PARSE_FAILED"
 
+	// ErrCodeParseNoText — the parser ran but found no readable text
+	// (unreadable scan, a photo, an empty file) and there are no images
+	// left to OCR. The document fails instead of completing empty.
+	ErrCodeParseNoText = "PARSE_NO_TEXT"
+
 	// ErrCodeChunkingFailed — text chunking step itself failed (rare;
 	// usually only on extreme-size inputs).
 	ErrCodeChunkingFailed = "CHUNKING_FAILED"

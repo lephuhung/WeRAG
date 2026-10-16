@@ -82,6 +82,8 @@ type knowledgeService struct {
 	// which has a no-op fallback. See knowledge_span_tracker.go.
 	spanTracker SpanTracker
 	audit       interfaces.AuditLogService
+	// gate refuses an upload with more pages than a knowledge-base file may have
+	gate *inputGate
 }
 
 const (
@@ -119,8 +121,10 @@ func NewKnowledgeService(
 	taskPendingRepo interfaces.TaskPendingOpsRepository,
 	spanTracker SpanTracker,
 	audit interfaces.AuditLogService,
+	settings interfaces.SystemSettingService,
 ) (interfaces.KnowledgeService, error) {
 	return &knowledgeService{
+		gate:                 newInputGate(settings),
 		config:               config,
 		repo:                 repo,
 		kbService:            kbService,

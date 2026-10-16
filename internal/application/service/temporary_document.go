@@ -113,6 +113,8 @@ type temporaryDocumentService struct {
 	taskEnqueuer       interfaces.TaskEnqueuer
 	sessionAttachments sessionAttachmentLookup
 	auditLog           interfaces.AuditLogService
+	// gate refuses an upload with more pages than a chat attachment may have
+	gate *inputGate
 
 	// parsedMu guards onParsed, the listeners told when an upload's parsing
 	// ended (the document workspace copies a source's text from it).
@@ -151,12 +153,13 @@ func NewTemporaryDocumentService(
 	taskEnqueuer interfaces.TaskEnqueuer,
 	messages interfaces.MessageRepository,
 	auditLog interfaces.AuditLogService,
+	settings interfaces.SystemSettingService,
 ) interfaces.TemporaryDocumentService {
 	return &temporaryDocumentService{
 		repo: repo, fileService: fileService, resourceCatalog: resourceCatalog,
 		documentReader: documentReader, imageResolver: imageResolver,
 		modelService: modelService, tenantService: tenantService, taskEnqueuer: taskEnqueuer,
-		sessionAttachments: messages, auditLog: auditLog,
+		sessionAttachments: messages, auditLog: auditLog, gate: newInputGate(settings),
 	}
 }
 
@@ -209,6 +212,11 @@ func (s *temporaryDocumentService) Create(
 	}
 	if int64(len(data)) != fileSize {
 		fileSize = int64(len(data))
+	}
+	// The page gate runs before the file is stored: a document that would
+	// keep the parser busy for minutes is refused with the reason.
+	if err := s.gate.CheckPages(ctx, types.InputGateChat, baseName, ext, data); err != nil {
+		return nil, err
 	}
 
 	storageName := fmt.Sprintf("chat_attachment_%s%s", uuid.NewString()[:12], ext)
@@ -422,6 +430,19 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	content = common.CleanInvalidUTF8(content)
 	content = chunker.NormalizeLineEndings(content)
 	content = docparser.NormalizeHTMLTables(content)
+	// An upload that yielded no readable text (unreadable scan, a photo, an
+	// empty file) fails here, not after the user has asked about it: a
+	// "ready" attachment with nothing in it only produces empty answers.
+	// Nothing to retry: the parser ran and found no text.
+	if ParsedTextTooThin(content) {
+		message := noTextMessage(document.FileType, metadata[metadataOCRSkipped])
+		_ = s.repo.MarkFailed(ctx, payload.TenantID, payload.DocumentID, message)
+		s.auditParseFailure(ctx, document, "no_text", message)
+		logger.Warnf(ctx, "temporary document has no readable text: document_id=%s file=%s runes=%d",
+			payload.DocumentID, document.FileName, approxTextContentRunes(content))
+		s.notifyParsed(ctx, document)
+		return nil
+	}
 	// Repair scattered per-glyph spacing so the legal chunker tier can see
 	// Điều/Chương structure in pasted/attached Vietnamese legal text.
 	content = vietnamese_legal.FixScatteredVietnamese(content)
@@ -582,11 +603,60 @@ func (s *temporaryDocumentService) parse(ctx context.Context, document *types.Te
 		}
 	}
 	content := result.MarkdownContent
-	if enriched := s.applyImageUnderstanding(ctx, ext, options, data, pageImages, content); enriched != "" {
+	enriched, ocrFailed := s.imageUnderstanding(ctx, ext, options, data, pageImages, content)
+	if enriched != "" {
 		content = enriched
 		metadata["image_understanding"] = "vlm"
+	} else if approxTextContentRunes(content) < temporaryDocumentLowTextRunes {
+		// Record why a text-poor upload got no OCR text, so the failure the
+		// user sees names the real cause (an agent setting, the OCR service)
+		// rather than the scan's quality.
+		switch {
+		case ocrFailed:
+			metadata[metadataOCRSkipped] = "ocr_error"
+		case docparser.IsImageFormat(ext) && options.VLMModelID == "":
+			metadata[metadataOCRSkipped] = "no_vlm"
+		case len(pageImages) > 0 && (options.VLMModelID == "" || !options.ImageUnderstanding):
+			metadata[metadataOCRSkipped] = "scan_disabled"
+		}
 	}
 	return content, images, metadata, nil
+}
+
+// metadataOCRSkipped is the attachment metadata key telling why a text-poor
+// upload has no OCR text: no_vlm (the agent has no vision model),
+// scan_disabled (the agent does not OCR scanned documents) or ocr_error
+// (every OCR call to the vision model failed).
+const metadataOCRSkipped = "ocr_skipped"
+
+// imageUnderstanding is applyImageUnderstanding plus whether the OCR ran
+// and every call failed (the vision service was unreachable or erroring),
+// which the no-text failure reports as a service problem, not a bad scan.
+func (s *temporaryDocumentService) imageUnderstanding(
+	ctx context.Context, ext string, options types.TemporaryDocumentCreateOptions,
+	fileData []byte, pageImages [][]byte, content string,
+) (string, bool) {
+	var failed ocrFailure
+	ctx = context.WithValue(ctx, ocrFailureKey{}, &failed)
+	enriched := s.applyImageUnderstanding(ctx, ext, options, fileData, pageImages, content)
+	return enriched, failed.attempted > 0 && failed.errors == failed.attempted
+}
+
+// ocrFailure counts the OCR calls of one upload; applyImageUnderstanding
+// fills it through the context so its own signature (and tests) stay.
+type ocrFailure struct{ attempted, errors int }
+
+type ocrFailureKey struct{}
+
+func recordOCRCall(ctx context.Context, err error) {
+	f, _ := ctx.Value(ocrFailureKey{}).(*ocrFailure)
+	if f == nil {
+		return
+	}
+	f.attempted++
+	if err != nil {
+		f.errors++
+	}
 }
 
 // applyImageUnderstanding uses the configured VLM to turn image content into
@@ -660,6 +730,7 @@ func (s *temporaryDocumentService) understandImagesWithVLM(
 	// full sequential latency of one VLM round-trip per page. Results are
 	// collected per index and re-assembled in page order afterwards.
 	ocrResults := make([]string, len(images))
+	var ocrMu sync.Mutex // guards the per-upload OCR call counter
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, temporaryDocumentOCRConcurrency())
 	acquire := func() { sem <- struct{}{} }
@@ -675,6 +746,9 @@ func (s *temporaryDocumentService) understandImagesWithVLM(
 			defer wg.Done()
 			defer release()
 			ocrText, ocrErr := model.Predict(ctx, [][]byte{img}, ocrPrompt)
+			ocrMu.Lock()
+			recordOCRCall(ctx, ocrErr)
+			ocrMu.Unlock()
 			if ocrErr != nil {
 				logger.Warnf(ctx, "temporary document VLM OCR failed on image %d: %v", idx, ocrErr)
 				return

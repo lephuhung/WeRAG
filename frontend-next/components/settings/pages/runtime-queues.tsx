@@ -7,6 +7,7 @@ import { getRuntimeQueues, type QueueStat, type WikiRunWindowStatus } from "@/li
 import { IconRefresh } from "@/components/icons";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { WikiRunWindowCard } from "@/components/settings/wiki-run-window-card";
+import { InputLimitsCard } from "@/components/settings/input-limits-card";
 import { useT } from "@/lib/i18n";
 
 export default function RuntimeQueuesPage() {
@@ -67,6 +68,7 @@ export default function RuntimeQueuesPage() {
       {wikiWindow && !unavailable && (
         <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
       )}
+      {!denied && <InputLimitsCard />}
       <div
         className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${inModal ? "" : "xl:grid-cols-4"}`}
       >
