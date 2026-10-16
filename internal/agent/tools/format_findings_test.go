@@ -223,3 +223,50 @@ func TestFormatReportRevisionAfterAKeptSave(t *testing.T) {
 		t.Fatalf("wording edit: revision = %d (want 3), evaluations %d", rev, model.evalCount())
 	}
 }
+
+func TestJudgedFormatFindings(t *testing.T) {
+	vdoc := &virtualDoc{texts: []string{"Nơi nhận", "- Như trên", "- Lưu: VT.", "Số 5/UBND"}}
+	items := []docformat.JudgmentItem{
+		{Item: 1, Status: docformat.JudgeFail, By: "rules", Findings: []docformat.JudgmentFinding{{Severity: "error", Rule: "measured elsewhere"}}},
+		{Item: 4, Status: docformat.JudgeFail, By: "rules", Findings: []docformat.JudgmentFinding{
+			{Severity: "error", Component: "noi_nhan", Rule: "Dòng đầu nơi nhận ghi \"Nơi nhận:\" (có dấu hai chấm)", Line: "Nơi nhận", Fix: "Thêm dấu hai chấm."},
+			{Severity: "warn", Component: "noi_nhan", Rule: "Mỗi dòng nơi nhận kết thúc bằng \";\"", Line: "Như trên", Fix: "Thêm \";\"."},
+			{Severity: "error", Component: "noi_nhan", Rule: "Dòng cuối là Lưu", Line: "không có trong văn bản"},
+		}},
+		{Item: 5, Status: docformat.JudgeFail, By: "llm", Title: "Số ký hiệu, địa danh - ngày tháng", Line: "5. Số ký hiệu, địa danh - ngày tháng — Lỗi: thiếu dấu hai chấm sau Số"},
+		{Item: 6, Status: docformat.JudgePass, By: "llm", Title: "Yêu cầu riêng theo loại", Line: "6. Yêu cầu riêng theo loại — Đạt"},
+	}
+	got := judgedFormatFindings(items, vdoc)
+	if len(got) != 4 {
+		t.Fatalf("findings: %+v", got)
+	}
+	whole, part, lost, llm := got[0], got[1], got[2], got[3]
+	if whole.ID != "judgment.4#1" || whole.Anchor == nil || whole.Anchor.Text != "Nơi nhận" || whole.Text != "" ||
+		!strings.Contains(whole.Title, "Nơi nhận") || whole.Reason != "Cách sửa: Thêm dấu hai chấm." || len(whole.Ops) != 0 {
+		t.Fatalf("whole-line finding: %+v", whole)
+	}
+	// a line inside a paragraph: the paragraph, with the text to select
+	if part.Anchor == nil || part.Anchor.Text != "- Như trên" || part.Text != "Như trên" || part.TextOccurrence != 1 ||
+		!strings.HasPrefix(part.Reason, "Nên xem lại.") {
+		t.Fatalf("partial-line finding: %+v", part)
+	}
+	if lost.Anchor != nil || lost.Current == "" {
+		t.Fatalf("a line not in the document is shown unanchored: %+v", lost)
+	}
+	if llm.ID != "judgment.5#1" || llm.Title != "Số ký hiệu, địa danh - ngày tháng" || llm.Reason != "Lỗi: thiếu dấu hai chấm sau Số" || llm.Anchor != nil {
+		t.Fatalf("model-judged item: %+v", llm)
+	}
+}
+
+func TestMissingComponentFindingSaysHowToFix(t *testing.T) {
+	findings := findingsOf(t, testCongVan(t, nd30Margins))
+	for _, f := range findings {
+		if strings.HasSuffix(f.CheckID, ".present") {
+			if f.Reason != "Bổ sung thành phần này đúng vị trí theo NĐ30." || f.Current != "không có" {
+				t.Fatalf("missing component: %+v", f)
+			}
+			return
+		}
+	}
+	t.Fatalf("no missing component in %+v", findings)
+}

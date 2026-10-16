@@ -99,7 +99,87 @@ func buildFormatFindings(report *docformat.Report, rs *docformat.RuleSet, layout
 		}
 		out = append(out, found...)
 	}
+	if report.Judgment != nil {
+		for _, f := range judgedFormatFindings(report.Judgment.Items, vdoc) {
+			if len(out) >= maxFormatFindings {
+				break
+			}
+			out = append(out, f)
+		}
+	}
 	return out
+}
+
+// judgedFormatFindings are the evaluation's findings beyond the measured
+// checks (Bảng kiểm items 2–6: ký thay, nơi nhận, số ký hiệu, the type's own
+// lines…), so the review lists what the report's Lỗi / Cảnh báo list. A
+// finding judged in code quotes its line, which anchors it when found in
+// the document; an item the model judged has only its Bảng kiểm line. None
+// carries ops: wording is the user's to change.
+func judgedFormatFindings(items []docformat.JudgmentItem, vdoc *virtualDoc) []formatFinding {
+	var out []formatFinding
+	for _, it := range items {
+		if it.Item == 1 {
+			continue // the measured component.*.present checks
+		}
+		checkID := "judgment." + strconv.Itoa(it.Item)
+		n := 0
+		next := func() formatFinding {
+			n++
+			return formatFinding{ID: checkID + "#" + strconv.Itoa(n), CheckID: checkID}
+		}
+		if it.By == "llm" {
+			if it.Status != docformat.JudgeFail && it.Status != docformat.JudgeWarn {
+				continue
+			}
+			f := next()
+			f.Title = it.Title
+			f.Reason = strings.TrimSpace(strings.TrimPrefix(it.Line, strconv.Itoa(it.Item)+". "+it.Title+" — "))
+			out = append(out, f)
+			continue
+		}
+		for _, jf := range it.Findings {
+			f := next()
+			f.Title = jf.Rule
+			if name := docformat.ComponentName(jf.Component); jf.Component != "" && !strings.Contains(strings.ToLower(f.Title), strings.ToLower(name)) {
+				f.Title = name + ": " + f.Title
+			}
+			if jf.Fix != "" {
+				f.Reason = "Cách sửa: " + jf.Fix
+			}
+			if jf.Severity == "warn" {
+				f.Reason = strings.TrimSpace("Nên xem lại. " + f.Reason)
+			}
+			if jf.Line != "" {
+				f.Current = jf.Line
+				f.Anchor, f.Text, f.TextOccurrence = lineAnchor(vdoc, jf.Line)
+			}
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// lineAnchor finds a quoted line: the paragraph that is the line, else the
+// first one containing it (the line is then the text to select in it).
+func lineAnchor(vdoc *virtualDoc, line string) (*OpAnchor, string, int) {
+	want := anchorText(line)
+	if want == "" {
+		return nil, "", 0
+	}
+	for i, t := range vdoc.texts {
+		if anchorText(t) == want {
+			return spotAnchor(vdoc, i), "", 0
+		}
+	}
+	for i, t := range vdoc.texts {
+		if strings.Contains(t, line) {
+			if a := spotAnchor(vdoc, i); a != nil {
+				return a, line, 1
+			}
+		}
+	}
+	return nil, "", 0
 }
 
 // checkFindings are the findings of one failing check: the paragraphs that
@@ -261,6 +341,9 @@ func componentOf(c docformat.CheckResult, rule *docformat.RuleCheck) string {
 }
 
 func manualReason(c docformat.CheckResult, rule *docformat.RuleCheck) string {
+	if strings.HasPrefix(c.ID, "component.") && strings.HasSuffix(c.ID, ".present") {
+		return "Bổ sung thành phần này đúng vị trí theo NĐ30."
+	}
 	if rule != nil && rule.Kind == "page_setup" {
 		return "Chưa đúng quy định; sửa trong Bố cục > Lề/Khổ giấy của Word."
 	}

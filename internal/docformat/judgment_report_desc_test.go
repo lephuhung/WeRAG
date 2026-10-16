@@ -20,3 +20,16 @@ func TestMissingComponentFindingNamesTheComponent(t *testing.T) {
 		t.Fatalf("text: %s", text)
 	}
 }
+
+func TestLuuLineWithoutColonSuggestsOneLabel(t *testing.T) {
+	for in, want := range map[string]string{
+		"- Lưu Phòng.":    " Phòng.",
+		"- Lưu: VP.":      " VP.",
+		"- lưu Phòng TH.": " Phòng TH.",
+		"- Văn thư.":      "- Văn thư.",
+	} {
+		if got := lastAfterColon(in); got != want {
+			t.Errorf("lastAfterColon(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

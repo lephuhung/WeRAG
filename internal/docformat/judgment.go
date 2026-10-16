@@ -738,6 +738,11 @@ func lastAfterColon(s string) string {
 	if i := strings.Index(s, ":"); i >= 0 {
 		return s[i+1:]
 	}
+	// "- Lưu Phòng." (no colon): what follows the "Lưu" label
+	t := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(s), "-–• "))
+	if rest, ok := cutPrefixFold(t, "lưu"); ok {
+		return rest
+	}
 	return s
 }
 
@@ -1107,4 +1112,12 @@ func lowerFirst(s string) string {
 	}
 	r[0] = unicode.ToLower(r[0])
 	return string(r)
+}
+
+// cutPrefixFold cuts prefix from s ignoring case.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+		return s[len(prefix):], true
+	}
+	return s, false
 }
