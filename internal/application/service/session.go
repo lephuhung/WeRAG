@@ -131,6 +131,9 @@ type sessionService struct {
 	sandboxPinner         *SessionSandboxPinner
 	sandboxPolicy         WorkspaceSandboxPolicy
 	memoryService         interfaces.MemoryService // Service for cross-session long-term memory
+	// agencyProfiles gives the document templates the workspace's issuing
+	// agency (SetAgencyProfiles); nil leaves the agency to the chat.
+	agencyProfiles interfaces.TenantAgencyProfileRepository
 	// systemSettings answers the platform-wide chat switches
 	// (chat.web_search_enabled, chat.mcp_enabled) owned by SuperAdmin.
 	systemSettings interfaces.SystemSettingService

@@ -1460,3 +1460,24 @@ func (s *Service) ConfirmItem(ctx context.Context, id string) (*types.MemoryItem
 func (s *Service) RejectItem(ctx context.Context, id string) error {
 	return s.DeleteItem(ctx, id)
 }
+
+// TopicItem returns the active statement kept under a topic (the key a
+// statement with that topic is stored under), nil when memory is off or
+// nothing is kept. Callers that remember a fact under a fixed topic (the
+// document templates' drafting unit) read it back with this.
+func (s *Service) TopicItem(ctx context.Context, topic string) *types.MemoryItem {
+	scope, _, ok := s.enabledScope(ctx)
+	if !ok {
+		return nil
+	}
+	key := types.NormalizeTopicKey(types.SanitizeMemoryTopic(topic))
+	if key == "" {
+		return nil
+	}
+	item, err := s.repo.FindActiveByKey(ctx, scope, key)
+	if err != nil {
+		logger.Warnf(ctx, "memory: topic %q: %v", topic, err)
+		return nil
+	}
+	return item
+}

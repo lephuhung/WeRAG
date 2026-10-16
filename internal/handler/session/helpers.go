@@ -197,6 +197,12 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 		Usage:        evt.Usage,
 	}
 
+	if evt.Type == types.ResponseTypeToolResult {
+		if name, ok := evt.Data["tool_name"].(string); ok {
+			response.ToolName = name
+		}
+	}
+
 	// Extract session_id and assistant_message_id for agent_query events
 	if evt.Type == types.ResponseTypeAgentQuery {
 		if sid, ok := evt.Data["session_id"].(string); ok {

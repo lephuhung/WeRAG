@@ -30,6 +30,11 @@ func (s *sessionService) AgentQA(
 	req *types.QARequest,
 	eventBus *event.EventBus,
 ) error {
+	// a new document drafted from chat (Word add-in): answered by the
+	// template flow before any gate reads the request
+	if handled, err := s.documentTemplateTurn(ctx, req, eventBus, true); handled || err != nil {
+		return err
+	}
 	ctx, handled, err := s.PrepareAbbreviationTurn(ctx, req, eventBus)
 	if handled || err != nil {
 		return err

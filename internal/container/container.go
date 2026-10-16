@@ -290,6 +290,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAbbreviationTurnCoordinator))
 	must(container.Provide(repository.NewAbbreviationFeedbackRepository))
 	must(container.Provide(repository.NewDocumentSpellingFeedbackRepository))
+	must(container.Provide(repository.NewTenantAgencyProfileRepository))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -515,6 +516,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDocumentFormatPrecheck))
 	// background format-check results and states outlive a restart in Redis
 	must(container.Invoke(func(rdb *redis.Client) { tools.UseFormatCheckRedis(rdb) }))
+	must(container.Invoke(func(rdb *redis.Client) { tools.UseDocumentTemplateRedis(rdb) }))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 
 	// Chat pipeline components for processing chat requests
@@ -623,6 +625,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
+	must(container.Provide(handler.NewAgencyProfileHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
@@ -672,6 +675,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			if u, ok := svc.(auxiliaryUser); ok {
 				u.SetAuxiliaryModels(settings)
 			}
+		}
+	}))
+	// documents drafted from chat take the header from the agency profile
+	must(container.Invoke(func(sessions interfaces.SessionService, profiles interfaces.TenantAgencyProfileRepository) {
+		type agencyProfileUser interface {
+			SetAgencyProfiles(interfaces.TenantAgencyProfileRepository)
+		}
+		if u, ok := sessions.(agencyProfileUser); ok {
+			u.SetAgencyProfiles(profiles)
 		}
 	}))
 	// the document assistant's spellcheck asks the auxiliary model again

@@ -323,6 +323,9 @@ type StreamResponse struct {
 	Data                map[string]interface{} `json:"data,omitempty"`
 	Usage               *TokenUsage            `json:"usage,omitempty"`
 	FinishReason        string                 `json:"finish_reason,omitempty"`
+	// ToolName names the tool of a tool_result frame (also in Data), where
+	// clients such as the Word add-in read it.
+	ToolName string `json:"tool_name,omitempty"`
 }
 
 // References references

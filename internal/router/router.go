@@ -103,6 +103,7 @@ type RouterParams struct {
 	WikiCatalogueHandler         *handler.WikiCatalogueHandler
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
+	AgencyProfileHandler         *handler.AgencyProfileHandler
 	LegalReviewHandler           *handler.LegalReviewHandler
 	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
@@ -348,6 +349,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, params.WikiCatalogueHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		RegisterAbbreviationRoutes(v1, params.AbbreviationHandler, rbacGuards)
+		RegisterAgencyProfileRoutes(v1, params.AgencyProfileHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 

@@ -48,3 +48,15 @@ func TestStreamEventUsageSurvivesJSONRoundTrip(t *testing.T) {
 	require.NotNil(t, restored.Usage)
 	assert.Equal(t, *usage, *restored.Usage)
 }
+
+func TestStreamResponseNamesTheToolOfAToolResult(t *testing.T) {
+	r := buildStreamResponse(interfaces.StreamEvent{Type: types.ResponseTypeToolResult,
+		Data: map[string]interface{}{"tool_name": "prepare_document_template", "status": "ready"}}, "req")
+	if r.ToolName != "prepare_document_template" || r.Data["status"] != "ready" {
+		t.Fatalf("response: %+v", r)
+	}
+	if r := buildStreamResponse(interfaces.StreamEvent{Type: types.ResponseTypeAnswer,
+		Data: map[string]interface{}{"tool_name": "x"}}, "req"); r.ToolName != "" {
+		t.Fatalf("an answer frame names no tool: %+v", r)
+	}
+}

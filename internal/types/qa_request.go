@@ -81,6 +81,9 @@ type QARequest struct {
 	// DocumentSelection is the passage the user highlighted in the embedded
 	// document editor; rendered after the attachments in the user prompt.
 	DocumentSelection *DocumentSelection
+	// DocumentTemplate is a request for a new NĐ30 document drafted into
+	// an empty Word document; the turn is answered by the template flow.
+	DocumentTemplate *DocumentTemplateRequest
 	// MentionedDocumentIDs are the editable documents (workspace IDs) the
 	// user named with @ in this turn; an edit tool may only change one of
 	// these (or the selection's document) when the session holds several.

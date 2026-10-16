@@ -69,6 +69,9 @@ type qaRequestContext struct {
 	// documentSelection is the editor passage the user highlighted (already
 	// normalized: trimmed, capped); nil when none.
 	documentSelection *types.DocumentSelection
+	// documentTemplate is the turn's template request (normalized), nil
+	// when none.
+	documentTemplate *types.DocumentTemplateRequest
 	// mentionedDocumentIDs are the editable documents (workspace IDs) the
 	// user named with @ in this turn, checked against the session.
 	mentionedDocumentIDs []string
@@ -133,6 +136,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		Attachments:            rc.attachments,
 		QuestionOrigin:         rc.questionOrigin,
 		DocumentSelection:      rc.documentSelection,
+		DocumentTemplate:       rc.documentTemplate,
 		MentionedDocumentIDs:   rc.mentionedDocumentIDs,
 		ClarificationRequestID: rc.clarificationRequestID,
 		ClarificationVersion:   rc.clarificationVersion,
@@ -488,6 +492,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	reqCtx.mentionedDocumentIDs, reqCtx.documentSelection = h.resolveDocumentReferences(
 		ctx, session, request.MentionedItems, request.DocumentSelection.Normalized())
+	reqCtx.documentTemplate = request.DocumentTemplateRequest.Normalized()
 
 	return reqCtx, &request, nil
 }

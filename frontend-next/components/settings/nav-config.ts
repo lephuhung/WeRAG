@@ -49,6 +49,7 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
+      { key: "agency", labelKey: "settingsNav.agencyProfile", fallbackLabel: "Agency profile", minRole: "member" },
       /* Retained for compatibility: the route now renders a retired-notice
        * pointing at per-KB recipient-bound invites. */
       { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "admin" },

@@ -77,6 +77,10 @@ type CreateKnowledgeQARequest struct {
 	// document editor. Trimmed and capped server-side, then appended to the
 	// prompt after the attachments.
 	DocumentSelection *types.DocumentSelection `json:"document_selection,omitempty"`
+	// DocumentTemplateRequest asks for a new NĐ30 document drafted into an
+	// empty Word document (the add-in's template flow): the turn is answered
+	// with the prepare_document_template result, not by the agent.
+	DocumentTemplateRequest *types.DocumentTemplateRequest `json:"document_template_request,omitempty"`
 }
 
 // AttachmentUpload represents a file attachment upload from the client

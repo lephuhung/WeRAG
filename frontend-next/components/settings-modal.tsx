@@ -39,6 +39,7 @@ import { ProfileSettings } from "@/components/settings/profile-settings";
 import { SecuritySettings } from "@/components/settings/security-settings";
 import { MemoryPersonalSettings } from "@/components/settings/memory-personal-settings";
 import { TenantInfo } from "@/components/settings/tenant-info";
+import { AgencyProfileSettings } from "@/components/settings/agency-profile";
 import { TenantMembers } from "@/components/settings/tenant-members";
 import { TenantUsage } from "@/components/settings/tenant-usage";
 import { BillingPage } from "@/components/settings/billing";
@@ -139,6 +140,7 @@ const GROUPS: SettingsGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Workspace info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
+      { key: "agency", labelKey: "settingsNav.agencyProfile", fallback: "Agency profile", icon: IconInfoCircle, render: () => <AgencyProfileSettings />, route: `${W}/agency` },
       { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, render: () => <TenantUsage />, route: `${W}/usage` },
       { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, render: () => <BillingPage />, route: `${W}/billing` },
       { key: "sharing", labelKey: "settingsNav.sharing", fallback: "Sharing", icon: IconGlobe, minRole: "admin", render: () => <SharingPage />, route: `${W}/sharing` },
