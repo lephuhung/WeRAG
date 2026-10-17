@@ -1,11 +1,7 @@
 # Dependabot configuration for the WeKnora repository.
 #
 # Policy:
-#   * `/cli` is the only ecosystem that receives routine version updates
-#     (monthly, grouped into one minor/patch PR and one major PR). It's
-#     a standalone Go binary with a small, well-scoped dependency surface
-#     where staying current is cheap.
-#   * Every other ecosystem (server gomod, /client, frontend npm,
+#   * Every ecosystem (server gomod, frontend npm,
 #     docreader pip, github-actions) is configured as
 #     "security-only" — no scheduled version PRs, but CVE security
 #     updates still open PRs automatically.
@@ -32,18 +28,6 @@
 # Prerequisite: "Dependabot security updates" must be enabled in
 #   Settings → Code security and analysis. Without it, no CVE PRs are
 #   opened regardless of this file.
-#
-# Conventions applied to `/cli`:
-#   * Monthly schedule (one batch / month).
-#   * Two groups so per-dep PRs never flood:
-#       - `cli-deps`        bundles minor + patch → ONE PR / month.
-#       - `cli-deps-major`  bundles semver-major bumps the same way so
-#                           breaking changes surface as a single
-#                           review-required PR rather than silently
-#                           accumulating.
-#   * `open-pull-requests-limit: 3` as a safety net against stalled queues.
-#   * `commit-message.prefix: "chore(deps)"` to match the repo's
-#     Conventional Commits convention.
 version: 2
 updates:
   # ─── Go modules ───
@@ -57,34 +41,6 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
     groups:
       server-security:
-        applies-to: security-updates
-        patterns: ["*"]
-
-  - package-ecosystem: gomod
-    directory: "/cli"
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      cli-deps:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-      cli-deps-major:
-        patterns: ["*"]
-        update-types: ["major"]
-
-  - package-ecosystem: gomod
-    directory: "/client"
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
-    groups:
-      client-security:
         applies-to: security-updates
         patterns: ["*"]
 

@@ -262,23 +262,12 @@ Wiki 模式允许 Agent 根据原始文档自动生成并维护一套结构化�
 
 ## 18. 上传时如何自定义解析配置（process_config）？
 
-0.6.2 起，文件 / URL / 文件夹上传可携带 `process_config`（`KnowledgeProcessOverrides`），在**本次批次**内覆盖知识库默认的解析引擎、分块、多模态（VLM / ASR）、问题生成、图谱抽取等设置，而不会改动 KB 全局配置。Web UI 在上传前会弹出确认对话框供调整；API 与 `weknora doc upload` 传同名 JSON 即可。
+0.6.2 起，文件 / URL / 文件夹上传可携带 `process_config`（`KnowledgeProcessOverrides`），在**本次批次**内覆盖知识库默认的解析引擎、分块、多模态（VLM / ASR）、问题生成、图谱抽取等设置，而不会改动 KB 全局配置。Web UI 在上传前会弹出确认对话框供调整；API 传同名 JSON 即可。
 
 - **与 KB 默认配置的关系**：未传的字段沿用 KB 默认值；`graph_enabled` 仅在 `extract_config.enabled` 为 true 时生效。
 - **重新解析**：`POST /knowledge/:id/reparse` 可在 body 中传 `process_config` 以新配置重跑解析，覆盖项会写入 `knowledge.metadata.process_overrides`。
 - **图片 / 音频校验**：批次含图片时需 KB 已配置 VLM；含音频时需已配置 ASR，否则上传会被拒绝。
 - 详见 [`docs/api/knowledge.md`](./api/knowledge.md)。
-
-## 19. 升级到 0.6.2 后 `weknora` CLI 登录或 MCP 工具报错？
-
-0.6.2 随附 **CLI v0.9**（破坏性变更），常见迁移：
-
-- **`auth login` 不再创建 profile**：先 `weknora profile add <name> --host <url> --use`，再 `weknora auth login`；切换 profile 用全局 `--profile <name>`。
-- **`auth logout` / `auth refresh` 去掉 `--name`**：作用于当前 active profile。
-- **MCP 工具 `agent_invoke` 已更名为 `session_ask`**：外部 MCP 客户端需刷新工具 schema。
-- **`agent create --kb` 改为 `--attach-kb`**；`doc delete --all` 与 `search chunks` / `search docs` 的 `--kb` 必填且支持名称或 ID。
-- 新增 `weknora session stop <session-id>` 可中止进行中的 Agent 运行；仓库内附带 `weknora-rag-search` / `weknora-shared` 内置 Skills。
-- 详见 [`cli/CHANGELOG.md`](../cli/CHANGELOG.md)。
 
 ## 20. pgvector 检索变慢或刚升级后需要做什么？
 
@@ -358,10 +347,6 @@ SystemAdmin 可在 **系统管理 → 平台 API Key** 创建 `scope_type=platfo
 
 0.7.0 支持 Redis 的 **TLS 连接**（#1930）。按环境变量启用 TLS 后，启动日志会打印 TLS 配置状态便于确认。若连接失败，请核对证书/CA 配置与 Redis 服务端是否要求 TLS。
 
-## 34. 升级到 0.7.0 后 `weknora` CLI 命令找不到或行为变化？
-
-0.7.0 随附 **CLI v0.10**（Agent 优先，破坏性变更）：新增 `model` / `message` / `config` / `skills` 命令组，`doc reparse` / `doc update`，`kb config` / `kb config set`；`session continue` 更名为 `session resume`，新增 `session tool-approval`；提供 agent-first 的 chat 与 `session ask` 输出模式，并强化了 SSE 可靠性与类型化错误。详见 [`cli/CHANGELOG.md`](../cli/CHANGELOG.md)。
-
 ## 35. 如何接入云之家（Yunzhijia）？
 
 0.7.1 新增 **云之家 IM 集成**。在 **设置 → IM 集成** 添加云之家渠道并填写应用凭据即可；集成基于 WebSocket 长连接接收消息，支持图片消息入库（带 SSRF 安全下载），默认以 **Markdown** 格式回复。若图片无法下载，请检查出站网络与凭据是否具备下载权限。
@@ -437,13 +422,9 @@ docker run -d -p 8081:80 weknora-site
 
 0.7.2 支持 **AWS SDK 默认凭据链**（#2008）：把 `S3_ACCESS_KEY` 与 `S3_SECRET_KEY` **同时留空**即可，SDK 会依次尝试 EC2/ECS/EKS 实例角色、IRSA / Web Identity、环境变量与共享配置文件。注意两者必须同时填写或同时留空，只填一个会报配置错误。`S3_ENDPOINT` 也可留空，此时使用 `S3_REGION` 对应的 AWS 标准端点。
 
-## 44. MCP Server 用 `uvx` 启动失败，或者应该装哪个包？
+## 44. 如何通过 MCP 接入 WeRAG？
 
-请安装**官方包 `tencent-weknora-mcp`**（由 Tencent/WeKnora 仓库 CI 通过 Trusted Publishing 发布）。此前社区包 `weknora-mcp` 非官方维护，请迁移安装命令。
-
-0.7.2 随附 MCP Server 1.1.x，已迁移到 mcp 2.x 的高级 `MCPServer` API，修复了 `uvx` 拉到 SDK 2.x 时的启动崩溃（`AttributeError: 'Server' object has no attribute 'list_tools'`），并恢复了 HTTP（`stateless_http`）与 SSE（`/sse/messages/`）传输的路由兼容性。工具总数为 29 个，新增 `create_knowledge_from_text`（用 Markdown 文本直接建知识条目）与 `list_shared_knowledge_bases`（共享知识库也纳入按名称解析）。
-
-行为变化提醒：工具执行失败时，MCPServer 2.x 返回 `CallToolResult(isError=True)`，不再像旧版低层 API 那样以成功响应返回 `"Error executing …"` 文本前缀。只解析 `content[0].text` 的客户端通常无感，依赖 `isError` 标志的集成方行为会更符合 MCP 规范。
+后端内置 MCP Server，旧的 Python 包（`tencent-weknora-mcp`，`mcp-server/`）已从本仓库移除。在「设置 → MCP Server」创建端点，客户端以 Streamable HTTP 连接 `http://<host>/mcp/<endpoint_id>`，并携带该端点的 Bearer 令牌。
 
 ## 45. 升级到 0.8.0 后技能沙箱起不来 / 找不到 Local 后端？
 

@@ -163,14 +163,14 @@ Fully modular pipeline from document parsing, vectorization, and retrieval to LL
 | Website Embed | Publish agents via embed widget with domain allowlists, rate limits, and secure-mode token exchange |
 | Web Search | DuckDuckGo / Bing / Google / Tavily / Baidu / Ollama / SearXNG / Keenable / Zhipu AI / Exa / Metaso |
 | API Integration | Scoped API keys (capability-level grants + per-KB restriction + throttled last-used tracking) with an API integration playground; MCP OAuth and embed sessions isolated per principal; `resource_urls=public` returns directly loadable file/image URLs, removing the second authenticated proxy call |
-| MCP Server | Official PyPI package `tencent-weknora-mcp` with 29 tools over stdio / SSE / HTTP transports |
+| MCP Server | Built into the backend: per-endpoint Streamable HTTP at `/mcp/<endpoint_id>` with its own bearer token, KB scope and tool groups |
 
 **Platform**
 
 | Capability | Details |
 |------------|---------|
 | Deployment | Local / Docker / Kubernetes (Helm) with private and offline support |
-| UI | Web UI / RESTful API / CLI (`weknora`) / Chrome Extension / Website Embed Widget / WeChat Mini Program |
+| UI | Web UI / RESTful API / Chrome Extension / Website Embed Widget / WeChat Mini Program |
 | Access Control | Workspace RBAC with 4-tier role matrix (Owner / Admin / Contributor / Viewer), per-KB resource ownership, per-workspace audit log, invite-only workspaces, tenantless provisioning & gated self-service workspace creation, admin password reset (session revocation), cross-workspace superuser, scoped API keys |
 | Security | AES-256-GCM at-rest encryption for API keys and MCP / data-source credentials with graceful key rotation; gRPC TLS + Token between app and docreader; Redis TLS; SSRF-safe HTTP client (data sources, URL import, redirect chains); secret redaction in responses; skill sandbox isolation (Docker opt-in / E2B / Cube) with per-config network policy; OIDC ID-token JWKS verification; optional complex-password policy |
 | Observability | Integrated Langfuse (sole tracing backend) for ReAct loops, token tracking, tool calls, and pipeline tracing; built-in Langfuse-style document parsing trace timeline with stage-by-stage progress; system-admin runtime task-queue dashboard (queue depth, per-model concurrency, failed-task inspection & manual retry) |
@@ -198,29 +198,6 @@ Fully modular pipeline from document parsing, vectorization, and retrieval to LL
 - **`weknora_read_document`** — one document's passages reassembled in order, with paging
 - **`weknora_ask`** — WeKnora's own composed answer with citations, over the RAG or the ReAct pipeline
 - **`weknora_list_knowledge_bases`** — knowledge base names and ids, so the agent can scope its own search
-
-## ⌨️ Command-Line Interface
-
-`weknora` is the official CLI for driving the API from a terminal or an AI
-agent. It is **agent-first**: every command emits a stable JSON envelope by
-default (with typed error codes mapped to exit codes), and `--format text`
-renders for humans. It also serves a curated MCP tool surface
-(`weknora mcp serve`) and ships bundled Agent Skills.
-
-```bash
-weknora profile add prod --host https://kb.example.com --use
-weknora auth login
-weknora kb list
-weknora link --kb my-knowledge-base    # bind the current directory
-weknora doc upload notes.md
-weknora chat "summarise the design doc"
-```
-
-For headless / CI use, set `WEKNORA_API_KEY` + `WEKNORA_HOST` and skip
-`auth login` entirely — no credentials written to disk.
-
-See [`cli/README.md`](./cli/README.md) for install + 5-minute quickstart and
-[`cli/AGENTS.md`](./cli/AGENTS.md) for the operational contract AI agents rely on.
 
 ## 🚀 Getting Started
 
@@ -281,7 +258,7 @@ Stop services: `docker compose down`
 
 ## MCP Server
 
-Please refer to the [MCP Configuration Guide](./mcp-server/MCP_CONFIG.md) for the necessary setup.
+The backend serves MCP itself. Create an endpoint in **Settings → MCP Server**, then point an MCP client (Claude Desktop, Cursor, …) at `http://<host>/mcp/<endpoint_id>` with the endpoint's bearer token. `examples/mcp-demo` is a small standalone MCP server kept as a reference.
 
 ## 🔌 Using WeChat Dialog Open Platform
 

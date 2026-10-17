@@ -187,20 +187,6 @@ run_go_test_packages() {
   log_ok "go test"
 }
 
-run_cli_checks() {
-  log_step "cli: go vet && go test"
-  (
-    cd "$ROOT/cli"
-    go vet ./...
-    if [[ "${HOOK_SKIP_TEST:-}" == "1" ]]; then
-      log_step "HOOK_SKIP_TEST=1; skip cli go test"
-    else
-      go test -count=1 ./...
-    fi
-  )
-  log_ok "cli checks"
-}
-
 run_frontend_checks() {
   log_step "frontend: verify (test, type-check, build)"
   "$ROOT/scripts/verify_frontend_pr.sh"

@@ -28,11 +28,7 @@ env:
   GOPROXY: https://proxy.golang.org,direct
 
 jobs:
-  # Path filters above start this workflow for any Go change; the matrix still
-  # used to lint all three modules. Detect which modules the PR actually
-  # touches so a root-only change (migrations test, handler, …) does not queue
-  # cli/ and client/ runners. Changing .golangci.yml or this workflow still
-  # lints every module, since they share the root config.
+  # Lint the root module only when the PR touches Go code or the lint config.
   changes:
     name: detect lint modules
     runs-on: ubuntu-latest
@@ -49,19 +45,8 @@ jobs:
           diff_range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
           modules=()
           if git diff --name-only --diff-filter=ACMR "$diff_range" -- \
-               .golangci.yml .github/workflows/go-lint.yml | grep -q .; then
-            modules=("." "cli" "client")
-          else
-            if git diff --name-only --diff-filter=ACMR "$diff_range" -- \
-                 '*.go' ':!cli/**' ':!client/**' go.mod go.sum | grep -q .; then
-              modules+=(".")
-            fi
-            if git diff --name-only --diff-filter=ACMR "$diff_range" -- 'cli/**' | grep -q .; then
-              modules+=("cli")
-            fi
-            if git diff --name-only --diff-filter=ACMR "$diff_range" -- 'client/**' | grep -q .; then
-              modules+=("client")
-            fi
+               .golangci.yml .github/workflows/go-lint.yml '*.go' go.mod go.sum | grep -q .; then
+            modules=(".")
           fi
           json="["
           first=1
