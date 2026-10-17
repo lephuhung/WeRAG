@@ -1,5 +1,6 @@
-/* Unit (workspace) picker fed by GET /tenants/directory. The owning unit
- * is excluded: sharing a knowledge base with its own unit is meaningless. */
+/* Unit (workspace) picker fed by GET /tenants/directory. excludeId hides
+ * one unit (the owner, for unit grants and owner transfer); personal
+ * invites keep it, since members of the owner unit can be invited. */
 "use client";
 
 import { useEffect, useState } from "react";

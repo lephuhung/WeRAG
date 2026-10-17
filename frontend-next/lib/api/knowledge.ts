@@ -409,24 +409,8 @@ export function createPublicKnowledgeBase(data: { name: string; description?: st
   return apiPost<{ success: boolean; data?: KnowledgeBaseRow }>(`/api/v1/knowledge-bases/public`, data);
 }
 
-/* Owner/scope transition. tenant→public publishes (no target); public→
- * tenant requires the existing nonzero destination tenant id selected by
- * the SuperAdmin. Explicit human SuperAdmin only — the backend enforces
- * it for both directions. */
-export function changeKnowledgeBaseVisibility(
-  id: string,
-  data: { visibility: "public" } | { visibility: "tenant"; target_tenant_id: number },
-) {
-  return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, data);
-}
-
-/* Owning workspace's Tenant Admin: publish the KB to every signed-in user
- * ("published") or withdraw it ("tenant"). The owner keeps all writes. */
-export function setKnowledgeBasePublished(id: string, published: boolean) {
-  return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, {
-    visibility: published ? "published" : "tenant",
-  });
-}
+/* Scope, member_default and owner transfer live in ./kb-access
+ * (setKBScope, transferKBOwner). */
 
 /* Subscribe to a published KB so chat searches it by default. scope
  * "tenant" covers the caller's whole workspace (Tenant Admin only). */

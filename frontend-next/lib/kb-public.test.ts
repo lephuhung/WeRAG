@@ -11,7 +11,6 @@ import {
 } from "./kb-capabilities.ts";
 import {
   buildPublicCreatePayload,
-  buildScopeChangePayload,
   groupCatalogRows,
   normalizePublicCatalog,
   selectPublicSection,
@@ -232,14 +231,6 @@ describe("public API payload builders", () => {
       storage_provider_config: { provider: "minio" },
     });
     assert.deepEqual(payload, { name: "Laws", description: "d", type: "document" });
-  });
-
-  it("buildScopeChangePayload requires an existing nonzero target for public-to-tenant", async () => {
-    assert.deepEqual(buildScopeChangePayload("public", "kb-1", 7), {
-      visibility: "tenant", target_tenant_id: 7,
-    });
-    assert.throws(() => buildScopeChangePayload("public", "kb-1", 0), /target tenant/);
-    assert.deepEqual(buildScopeChangePayload("tenant", "kb-1"), { visibility: "public" });
   });
 });
 

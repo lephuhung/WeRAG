@@ -241,7 +241,7 @@ export function KbSettingsModal({
                 </label>
                 <div className="caption text-muted">
                   {t("kbSettings.visibilityNote")}:{" "}
-                  <span className="text-ink">{t("kbSettings.visTenant")}</span>
+                  <span className="text-ink">{t("kbSettings.visInAccessTab")}</span>
                 </div>
                 {!isSystemAdmin && <p className="caption text-muted-soft">{t("kbSettings.configBySuperAdmin")}</p>}
               </div>
