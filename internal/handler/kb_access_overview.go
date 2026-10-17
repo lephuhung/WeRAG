@@ -45,9 +45,13 @@ type KBEffectivePermissions struct {
 }
 
 // KBGrantee is one ACL entry: a per-user invite or a per-tenant grant.
+// ID is the grantee (user ID or tenant ID); ShareID is the invitation or
+// grant row ID that DELETE /knowledge-bases/:id/invites|grants/:share_id
+// revokes.
 type KBGrantee struct {
 	Kind          string     `json:"kind"` // "user" | "tenant"
 	ID            string     `json:"id"`
+	ShareID       string     `json:"share_id"`
 	Name          string     `json:"name"`
 	Email         string     `json:"email,omitempty"`
 	TenantID      uint64     `json:"tenant_id,omitempty"`
@@ -161,7 +165,7 @@ func (h *KBAccessOverviewHandler) grantees(ctx context.Context, caller types.Cal
 		for _, inv := range rows {
 			name, email := names.user(ctx, inv.RecipientUserID)
 			out = append(out, KBGrantee{
-				Kind: "user", ID: inv.RecipientUserID, Name: name, Email: email,
+				Kind: "user", ID: inv.RecipientUserID, ShareID: inv.ID, Name: name, Email: email,
 				TenantID: inv.RecipientTenantID, TenantName: names.tenant(ctx, inv.RecipientTenantID),
 				Permission: string(types.KBPermissionViewer), Status: string(inv.Status),
 				ExpiresAt: inv.ExpiresAt, RevokedReason: inv.RevokedReason,
@@ -179,7 +183,7 @@ func (h *KBAccessOverviewHandler) grantees(ctx context.Context, caller types.Cal
 				name = names.tenant(ctx, g.GranteeTenantID)
 			}
 			out = append(out, KBGrantee{
-				Kind: "tenant", ID: strconv.FormatUint(g.GranteeTenantID, 10), Name: name,
+				Kind: "tenant", ID: strconv.FormatUint(g.GranteeTenantID, 10), ShareID: g.ID, Name: name,
 				TenantID: g.GranteeTenantID, TenantName: name,
 				Permission: string(g.Permission), Status: string(g.Status), ExpiresAt: g.ExpiresAt,
 			})

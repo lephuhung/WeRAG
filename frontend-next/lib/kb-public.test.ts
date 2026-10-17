@@ -242,3 +242,16 @@ describe("public API payload builders", () => {
     assert.deepEqual(buildScopeChangePayload("tenant", "kb-1"), { visibility: "public" });
   });
 });
+
+describe("groupCatalogRows access_source (Phase 5)", () => {
+  it("puts ACL rows of the caller's own unit under shared-with-me", () => {
+    const rows: KBViewerRow[] = [
+      { id: "mine", owner_tenant_id: 1, visibility: "restricted", access_source: "tenant_admin" },
+      { id: "acl", owner_tenant_id: 1, visibility: "restricted", access_source: "acl_user" },
+      { id: "grant", owner_tenant_id: 9, visibility: "tenant", access_source: "acl_tenant" },
+    ];
+    const g = groupCatalogRows(rows, 1);
+    assert.deepEqual(g.workspace.map((r) => r.id), ["mine"]);
+    assert.deepEqual(g.invited.map((r) => r.id), ["acl", "grant"]);
+  });
+});

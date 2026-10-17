@@ -115,13 +115,14 @@ export function listKnowledgeBaseActivity(
 
 /* Mirrors types.KBVisibility (internal/types/knowledgebase.go) for READS.
  * 'tenant': only the owning workspace (plus invites and tenant grants).
+ * 'restricted': the owning unit's admins plus invites and tenant grants.
  * 'published': owned by a workspace, readable by every signed-in user;
  * searched by default only once subscribed. 'public': platform-owned
  * (SuperAdmin). Writes always stay with the owner. */
-export type KBVisibility = "tenant" | "published" | "public";
+export type KBVisibility = "tenant" | "restricted" | "published" | "public";
 
-/* The only scope the UI may write when creating a KB. */
-export type KBVisibilityWrite = "tenant";
+/* Scopes the tenant create form may send (publishing comes later). */
+export type KBVisibilityWrite = "tenant" | "restricted";
 
 /* The DecideKB rule that lets the caller view a listed KB. */
 export type KBAccessSource =
@@ -151,6 +152,8 @@ export type KnowledgeBaseRow = {
   creator_name?: string;
   type?: string;
   visibility?: KBVisibility;
+  /* What owner-unit members may do on a 'tenant' KB. */
+  member_default?: "view" | "contribute";
   /* Published rows: whether the caller, or the caller's whole workspace,
    * subscribed (puts the KB into the default chat scope), and the
    * publishing workspace's name. */
@@ -256,10 +259,12 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: "document" | "faq";
-  /* Read scope: 'tenant' (default, and the only writable value on this
-   * tenant route). Platform-public KBs are created exclusively through
-   * createPublicKnowledgeBase (POST /knowledge-bases/public). */
+  /* Read scope: 'tenant' (default) or 'restricted'. Platform-public KBs
+   * are created exclusively through createPublicKnowledgeBase
+   * (POST /knowledge-bases/public). */
   visibility?: KBVisibilityWrite;
+  /* Owner-unit members on a 'tenant' KB: view | contribute (default). */
+  member_default?: "view" | "contribute";
   chunking_config?: unknown;
   embedding_model_id?: string;
   summary_model_id?: string;

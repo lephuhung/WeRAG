@@ -86,6 +86,8 @@ func TestKBAccessOverviewManagerSeesGrantees(t *testing.T) {
 	require.Equal(t, types.KBInviteRevokedReasonOwnerChanged, got.Grantees[0].RevokedReason)
 	require.Equal(t, "tenant", got.Grantees[1].Kind)
 	require.Equal(t, "Province office", got.Grantees[1].Name)
+	require.Equal(t, "inv-1", got.Grantees[0].ShareID, "the invite row id revokes it")
+	require.Equal(t, "g-1", got.Grantees[1].ShareID, "the grant row id revokes it")
 }
 
 func TestKBAccessOverviewReaderSeesOnlyOwnRights(t *testing.T) {

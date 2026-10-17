@@ -24,6 +24,12 @@ export interface KBViewerRow {
   owner_tenant_id?: number | string | null;
   tenant_id?: number | string | null;
   visibility?: string | null;
+  /* What owner-unit members may do on a 'tenant' KB: view | contribute. */
+  member_default?: string | null;
+  /* The DecideKB rule that lets the caller view the row (list responses).
+   * When present it decides the projection; ownership guesses from
+   * tenant ids are only the fallback for rows without it. */
+  access_source?: string | null;
 }
 
 export type KBViewerKind = "own" | "public" | "published" | "invited" | "foreign";
@@ -99,6 +105,8 @@ function memberKBViewerCapabilities(
     canInvite: false,
   };
   if (!row || !row.id) return denied;
+  const bySource = capabilitiesFromSource(row, ctx);
+  if (bySource) return bySource;
   if (isPublicKBRow(row)) {
     const privileged = ctx.isSystemAdmin === true;
     return {
@@ -121,15 +129,11 @@ function memberKBViewerCapabilities(
     (owner === "" && active !== "" && dataScope === active && row.visibility !== "public");
   if (owned) {
     const admin = ctx.isTenantAdmin === true;
-    return {
-      kind: "own",
-      canView: true,
-      canDownloadOriginal: true,
-      canManage: admin,
-      canUpload: true,
-      canShare: admin,
-      canInvite: admin,
-    };
+    if (admin) return ownCapabilities(true, true);
+    // A member reads a restricted KB only through an ACL entry, which a
+    // row without access_source cannot show: fail closed.
+    if (row.visibility === "restricted") return { ...denied, kind: "own" };
+    return ownCapabilities(false, row.member_default !== "view");
   }
   // Another tenant's published KB: every human reads it and downloads
   // originals; writes stay with the owning tenant.
@@ -159,6 +163,105 @@ function memberKBViewerCapabilities(
     canShare: false,
     canInvite: false,
   };
+}
+
+function ownCapabilities(admin: boolean, contribute: boolean): KBViewerCapabilities {
+  return {
+    kind: "own",
+    canView: true,
+    canDownloadOriginal: true,
+    canManage: admin,
+    canUpload: admin || contribute,
+    canShare: admin,
+    canInvite: admin,
+  };
+}
+
+const READ_ONLY = {
+  canView: true,
+  canManage: false,
+  canUpload: false,
+  canShare: false,
+  canInvite: false,
+} as const;
+
+/* Projection from the server's access_source (GET /knowledge-bases):
+ * tenant_admin manages; tenant_scope follows member_default; ACL entries
+ * read only without original download; public/published read and download.
+ * "superadmin" and unknown/missing values return null so the caller falls
+ * back to the row's owner/visibility (a SuperAdmin is handled by
+ * getKBViewerCapabilities). */
+function capabilitiesFromSource(row: KBViewerRow, ctx: KBViewerContext): KBViewerCapabilities | null {
+  switch (row.access_source) {
+    case "tenant_admin":
+      return ownCapabilities(true, true);
+    case "tenant_scope":
+      return ownCapabilities(false, row.member_default !== "view");
+    case "acl_user":
+    case "acl_tenant":
+      return { kind: "invited", canDownloadOriginal: false, ...READ_ONLY };
+    case "public":
+      return {
+        kind: "public",
+        canDownloadOriginal: true,
+        ...READ_ONLY,
+        canManage: ctx.isSystemAdmin === true,
+        canUpload: ctx.isSystemAdmin === true,
+      };
+    case "published":
+      return { kind: "published", canDownloadOriginal: true, ...READ_ONLY };
+    default:
+      return null;
+  }
+}
+
+/* The caller's capabilities from GET /knowledge-bases/:id/access — the
+ * effective permissions the server computed, never a tenant_id guess. kind
+ * labels the row by its deciding source. */
+export function getKBCapabilitiesFromAccess(access: {
+  owner_tenant_id: number;
+  visibility: string;
+  effective_permissions: { view: boolean; contribute: boolean; manage: boolean; download_original: boolean };
+  sources: readonly string[];
+}): KBViewerCapabilities {
+  const p = access.effective_permissions;
+  const primary = access.sources[0] ?? "";
+  let kind: KBViewerKind = "own";
+  if (primary === "acl_user" || primary === "acl_tenant") kind = "invited";
+  else if (primary === "published") kind = "published";
+  else if (primary === "public" || (access.owner_tenant_id === 0 && access.visibility === "public")) kind = "public";
+  else if (primary === "") kind = "foreign";
+  return {
+    kind,
+    canView: p.view,
+    canDownloadOriginal: p.download_original,
+    canManage: p.manage,
+    canUpload: p.contribute,
+    canShare: p.manage,
+    canInvite: p.manage,
+  };
+}
+
+export type KBAccessBadge = "shared" | "public" | "published" | "restricted";
+
+/* List/detail badge: shared (reached through an ACL entry), public,
+ * published, or restricted (own unit, ACL only). From access_source when
+ * the list sent it; otherwise from visibility. */
+export function kbAccessBadge(row: KBViewerRow | null | undefined): KBAccessBadge | null {
+  if (!row) return null;
+  switch (row.access_source) {
+    case "acl_user":
+    case "acl_tenant":
+      return "shared";
+    case "public":
+      return "public";
+    case "published":
+      return "published";
+  }
+  if (isPublicKBRow(row)) return "public";
+  if (row.visibility === "published") return "published";
+  if (row.visibility === "restricted") return "restricted";
+  return null;
 }
 
 function normalizeTenantId(value: number | string | null | undefined): string {

@@ -52,6 +52,12 @@ export function groupCatalogRows<T extends KBViewerRow>(
       groups.public.push(row);
       continue;
     }
+    // Reached through a personal invite or a unit grant — including a
+    // restricted KB of the caller's own unit — is "shared with me".
+    if (row.access_source === "acl_user" || row.access_source === "acl_tenant") {
+      groups.invited.push(row);
+      continue;
+    }
     const owner = ownerOf(row);
     if ((owner !== "" && active !== "" && owner === active) || owner === "") {
       groups.workspace.push(row);

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   batchQueryKnowledge,
-  changeKnowledgeBaseVisibility,
   getKnowledgeBase,
   getKnowledgeDetails,
   listKnowledgeFiles,
@@ -19,7 +18,7 @@ import { shouldApplyResponse } from "@/lib/request-identity";
 import { getSystemParseDefaults, type SystemParseDefaults } from "@/lib/api/system";
 import { WikiBrowser, WikiPageView } from "@/components/wiki/wiki-browser";
 import { KbSettingsModal } from "@/components/settings/kb-settings";
-import { KbShareModal } from "@/components/knowledge/kb-share-modal";
+import { KbAccessTab } from "@/components/knowledge/kb-access-tab";
 import { DocPanel } from "@/components/doc-panel";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { UploadModal } from "@/components/knowledge/upload-modal";
@@ -47,9 +46,13 @@ import { renderFileIconSvg } from "@/components/files/file-icon";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { useAuth, useTenantRole } from "@/lib/auth";
-import { getKBViewerCapabilities } from "@/lib/kb-capabilities";
-import { buildScopeChangePayload } from "@/lib/kb-public";
-import { searchTenants, type TenantInfo } from "@/lib/api/tenants";
+import {
+  getKBCapabilitiesFromAccess,
+  getKBViewerCapabilities,
+  kbAccessBadge,
+  type KBViewerCapabilities,
+} from "@/lib/kb-capabilities";
+import { getKBAccess } from "@/lib/api/kb-access";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
@@ -97,7 +100,7 @@ function docExt(d: KnowledgeDoc) {
   return dot >= 0 ? name.slice(dot + 1).toUpperCase() : "FILE";
 }
 
-type MainTab = "docs-wiki" | "graph";
+type MainTab = "docs-wiki" | "graph" | "access";
 
 /* Cards per page — a multiple of the 2/3/4-column grid. */
 const DOCS_PAGE_SIZE = 48;
@@ -109,6 +112,11 @@ const toast = useToast();
   const { isTenantAdmin, isSystemAdmin } = useTenantRole();
   const { selectedTenantId, tenant, user } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
+  /* ?tab=access opens the access tab (the list's access shortcut). */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("tab") === "access") setActiveTab("access");
+  }, [kbId]);
   const [kb, setKb] = useState<KnowledgeBaseRow | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null);
   const [openDoc, setOpenDoc] = useState<KnowledgeDoc | null>(null);
@@ -121,7 +129,6 @@ const toast = useToast();
   const [keyword, setKeyword] = useState("");
   const [wikiQ, setWikiQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   /* Files handed off from the picker, awaiting parse-settings confirmation
@@ -425,17 +432,31 @@ const toast = useToast();
 
   const filtered = docs ?? [];
 
-  /* Owner-aware viewer capabilities: platform-public rows grant every
-   * authenticated human view/preview/original-download with management
-   * reserved to explicit SuperAdmins; tenant rows keep role rules; foreign
-   * tenant-owned rows stay read-only even for SuperAdmins. A missing KB
-   * fails closed until it loads. */
+  /* Capabilities come from the server: GET /knowledge-bases/:id/access
+   * (effective permissions decided by access.DecideKB). Until it answers,
+   * the row's owner/visibility/member_default give a fail-closed estimate
+   * for display. The backend remains authoritative. */
   const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
-  const kbCaps = getKBViewerCapabilities(kb, {
-    activeTenantId,
-    isTenantAdmin,
-    isSystemAdmin,
-  });
+  const [accessCaps, setAccessCaps] = useState<KBViewerCapabilities | null>(null);
+  useEffect(() => {
+    setAccessCaps(null);
+    if (!kb?.id) return;
+    let alive = true;
+    getKBAccess(kb.id)
+      .then((o) => alive && setAccessCaps(getKBCapabilitiesFromAccess(o)))
+      .catch(() => alive && setAccessCaps(null));
+    return () => {
+      alive = false;
+    };
+  }, [kb?.id, kb?.visibility, kb?.owner_tenant_id, kb?.member_default]);
+  const kbCaps =
+    accessCaps ??
+    getKBViewerCapabilities(kb, {
+      activeTenantId,
+      isTenantAdmin,
+      isSystemAdmin,
+    });
+  const accessBadge = kbAccessBadge(kb);
   const isPublicKb = kbCaps.kind === "public";
   /* Legal identity review of public-KB documents, right on their cards
    * (SuperAdmin only, as in Administration → Legal documents). */
@@ -454,16 +475,6 @@ const toast = useToast();
   const gridRef = useRef<HTMLDivElement>(null);
   const canUploadRef = useRef(false);
   canUploadRef.current = kbCaps.canUpload;
-  /* SuperAdmin scope-transfer state (explicit SuperAdmin only; backend
-   * enforces both directions). */
-  const [scopeBusy, setScopeBusy] = useState(false);
-  const [scopeError, setScopeError] = useState("");
-  const [confirmPublish, setConfirmPublish] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [tenantQ, setTenantQ] = useState("");
-  const [tenantResults, setTenantResults] = useState<TenantInfo[]>([]);
-  const [targetTenantId, setTargetTenantId] = useState("");
-
   const reloadKb = () => {
     const ownerKbId = kbId;
     getKnowledgeBase(ownerKbId)
@@ -473,132 +484,6 @@ const toast = useToast();
       })
       .catch(() => toast.error(t("common.error")));
   };
-
-  const runScopeChange = async (payload: { visibility: "public" } | { visibility: "tenant"; target_tenant_id: number }) => {
-    setScopeBusy(true);
-    setScopeError("");
-    try {
-      await changeKnowledgeBaseVisibility(kbId, payload);
-      setConfirmPublish(false);
-      setMoveOpen(false);
-      reloadKb();
-    } catch (e) {
-      setScopeError(e instanceof Error ? e.message : "Scope change failed");
-    } finally {
-      setScopeBusy(false);
-    }
-  };
-
-  const searchDestinationTenants = async () => {
-    setScopeBusy(true);
-    setScopeError("");
-    try {
-      const res = await searchTenants({ keyword: tenantQ, page_size: 10 });
-      setTenantResults(res.data?.items ?? []);
-    } catch (e) {
-      setScopeError(e instanceof Error ? e.message : "Workspace search failed");
-    } finally {
-      setScopeBusy(false);
-    }
-  };
-
-  /* Explicit-SuperAdmin-only scope controls (affordances; backend
-   * enforces). Tenant-owned rows offer publish-to-public with confirm;
-   * public rows offer a destination-workspace move (existing tenant
-   * chosen by search — never the move-targets list). Hidden from
-   * Tenant Admins, members, and invited readers. */
-  const scopePanel = !isSystemAdmin || denied || !kb ? null : isPublicKb ? (
-    <div className="caption flex flex-wrap items-center gap-2 text-muted">
-      <button
-        type="button"
-        className="btn btn-outline btn-sm"
-        disabled={scopeBusy}
-        onClick={() => {
-          setMoveOpen((v) => !v);
-          setScopeError("");
-        }}
-      >
-        {t("kbPublic.moveToTenant")}
-      </button>
-      {moveOpen && (
-        <span className="flex flex-wrap items-center gap-2">
-          <input
-            className="input h-8 w-44 text-[12px]"
-            placeholder={t("kbPublic.searchPlaceholder")}
-            value={tenantQ}
-            onChange={(e) => setTenantQ(e.target.value)}
-          />
-          <button type="button" className="btn btn-outline btn-sm" disabled={scopeBusy} onClick={searchDestinationTenants}>
-            Search
-          </button>
-          {tenantResults.map((tn) => (
-            <button
-              key={String(tn.id)}
-              type="button"
-              className={`btn btn-sm ${String(targetTenantId) === String(tn.id) ? "btn-primary" : "btn-outline"}`}
-              disabled={scopeBusy}
-              onClick={() => setTargetTenantId(String(tn.id))}
-            >
-              {tn.name ?? tn.id}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={scopeBusy || targetTenantId.trim() === ""}
-            onClick={() => {
-              try {
-                const payload = buildScopeChangePayload("public", kbId, targetTenantId);
-                void runScopeChange(payload);
-              } catch (e) {
-                setScopeError(e instanceof Error ? e.message : "Scope change failed");
-              }
-            }}
-          >
-            {t("kbPublic.confirm")}
-          </button>
-        </span>
-      )}
-      {scopeError && <span className="text-error">{scopeError}</span>}
-    </div>
-  ) : !isForeignKb ? (
-    <div className="caption flex flex-wrap items-center gap-2 text-muted">
-      {!confirmPublish ? (
-        <button
-          type="button"
-          className="btn btn-outline btn-sm"
-          disabled={scopeBusy}
-          onClick={() => {
-            setConfirmPublish(true);
-            setScopeError("");
-          }}
-        >
-          {t("kbPublic.makePublic")}
-        </button>
-      ) : (
-        <span className="flex flex-wrap items-center gap-2">
-          <span>{t("kbPublic.makePublicConfirm")}</span>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={scopeBusy}
-            onClick={() => void runScopeChange(buildScopeChangePayload("tenant", kbId))}
-          >
-            {t("kbPublic.confirm")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            disabled={scopeBusy}
-            onClick={() => setConfirmPublish(false)}
-          >
-            {t("kbPublic.cancel")}
-          </button>
-        </span>
-      )}
-      {scopeError && <span className="text-error">{scopeError}</span>}
-    </div>
-  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -622,17 +507,19 @@ const toast = useToast();
               {/* Public identity keys off owner + visibility: a converted
                * row's foreign data scope must never mislabel it "Shared".
                * Invited rows keep the Shared marker. */}
-              {isPublicKb && <span className="badge-pill bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>}
-              {isForeignKb && <span className="badge-pill bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>}
+              {accessBadge === "public" && <span className="badge-pill bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>}
+              {(accessBadge === "shared" || isForeignKb) && <span className="badge-pill bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>}
+              {accessBadge === "published" && <span className="badge-pill bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t("kbPublished.badge")}</span>}
+              {accessBadge === "restricted" && <span className="badge-pill bg-amber-500/15 text-amber-700 dark:text-amber-400">{t("kbAccess.badgeRestricted")}</span>}
               {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
             </div>
           </div>
           <div className="flex gap-3">
             {/* Share grants don't expand public visibility: no share
              * affordance on public rows. Backend remains authoritative. */}
-            {!denied && !isPublicKb && (
-              <button className="btn btn-outline" onClick={() => setShareOpen(true)}>
-                <IconExternal className="h-4 w-4" /> Share
+            {!denied && (
+              <button className="btn btn-outline" onClick={() => setActiveTab("access")}>
+                <IconExternal className="h-4 w-4" /> {t("kbAccess.tab")}
               </button>
             )}
             {!denied && (
@@ -693,6 +580,20 @@ const toast = useToast();
             <IconGraph className="h-4 w-4" />
             <span>Knowledge graph</span>
           </button>
+
+          {!denied && (
+            <button
+              onClick={() => setActiveTab("access")}
+              className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
+                activeTab === "access"
+                  ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              <IconExternal className="h-4 w-4" />
+              <span>{t("kbAccess.tab")}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -713,7 +614,11 @@ const toast = useToast();
         </div>
       ) : (
       <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6">
-        {activeTab === "docs-wiki" ? (
+        {activeTab === "access" ? (
+          <div className="flex min-h-0 flex-1 overflow-y-auto">
+            <KbAccessTab kbId={kbId} onChanged={reloadKb} />
+          </div>
+        ) : activeTab === "docs-wiki" ? (
           /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
           <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
             {/* Left: Wiki Section (increased width). On mobile the stacked
@@ -767,7 +672,6 @@ const toast = useToast();
                     </span>
                   )}
                   <span className="caption whitespace-nowrap text-muted">{docsTotal ?? "—"} files</span>
-                  {!denied && scopePanel}
                   {!denied && isPublicKb && isSystemAdmin && (
                     <KbLegalReviewBar items={legalReview.items} onScanned={legalReview.reload} />
                   )}
@@ -996,13 +900,6 @@ const toast = useToast();
         />
       )}
 
-      <KbShareModal
-        kb={kb}
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        canManage={canManageKb}
-        onChanged={reloadKb}
-      />
       <KbSettingsModal
         kbId={kbId}
         open={settingsOpen}
