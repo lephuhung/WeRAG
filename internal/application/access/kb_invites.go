@@ -13,22 +13,19 @@ type KBInviteLookup interface {
 	// unexpired) invite on kbID issued by the KB's current owner tenant;
 	// invites from a previous owner never count.
 	HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error)
+	// HasLiveInvite is HasAcceptedInvite plus the recipient's membership:
+	// the invite's recipient_tenant_id membership must still be active
+	// (a suspended or removed member loses the invite's access). This is
+	// the check DecideKB uses.
+	HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error)
 }
 
-// ResolveKBWithInvite extends ResolveKB with recipient-bound invitation
-// access: when the caller's tenant has no grant, a live invite accepted
-// by THIS user (not just any member of their tenant) confers read-only
-// access. ResolveKB itself is untouched so existing callers keep their
-// behavior; new cross-tenant read paths should prefer this function.
-//
-// Rules:
-//   - Same-tenant access is identical to ResolveKB; public visibility has
-//     no cross-tenant effect.
-//   - Legacy tenant-level grants are ignored and never authorize access.
-//   - Invite access requires: required == Viewer (read-only), a live
-//     accepted invite bound to request.Caller.UserID on this KB, and no
-//     lookup error. Any invite error fails closed.
-//   - Invite access never satisfies Editor/Admin (no write upgrade).
+// ResolveKBWithInvite is ResolveKB plus recipient-bound invitations as
+// an ACL source (DecideKB with Grants and Invites). An invite confers
+// Viewer only, never download or writes, and only when it was issued by
+// the KB's current owner, is unexpired, and the recipient's membership in
+// recipient_tenant_id is still active. API-key principals never reach the
+// invite lookup.
 func ResolveKBWithInvite(
 	ctx context.Context,
 	request KBRequest,
@@ -37,43 +34,6 @@ func ResolveKBWithInvite(
 	grants KBGrantLookup,
 	invites KBInviteLookup,
 ) (*KBAccess, error) {
-	access, err := ResolveKB(ctx, request, kb, required, grants)
-	if err == nil {
-		return access, nil
-	}
-	// Only a forbidden cross-tenant read may fall through to invites;
-	// never upgrade not-found/unauthorized into invite probing, and
-	// never satisfy a write with a read-only invite.
-	if err != ErrForbidden || required != types.KBPermissionViewer {
-		return nil, err
-	}
-	if kb == nil || kb.ID == "" {
-		return nil, ErrNotFound
-	}
-	if invites == nil {
-		return nil, ErrForbidden
-	}
-	caller := request.Caller.Normalize()
-	if caller.UserID == "" || types.IsSyntheticUserID(caller.UserID) {
-		return nil, ErrForbidden
-	}
-	// API-key principals never hold recipient-bound invites: a platform
-	// key's api_platform:<id> identity (or any scoped key) must not reach
-	// the invite lookup even though it is non-synthetic.
-	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
-		return nil, ErrForbidden
-	}
-	// The invite must belong to the KB-owning tenant's KB and the
-	// recipient's own user ID — HasAcceptedInvite is keyed by
-	// (kbID, userID), never by tenant, so a colleague in the same
-	// tenant cannot ride on another member's invite.
-	ok, lookupErr := invites.HasAcceptedInvite(ctx, kb.ID, caller.UserID)
-	if lookupErr != nil || !ok {
-		return nil, ErrForbidden
-	}
-	return &KBAccess{
-		KnowledgeBase: kb, Caller: caller,
-		EffectiveTenantID: kb.TenantID, Permission: types.KBPermissionViewer,
-		operationPermission: required,
-	}, nil
+	return resolveKBAction(ctx, request, kb, ActionForPermission(required), required,
+		KBLookups{Grants: grants, Invites: invites})
 }

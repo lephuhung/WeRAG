@@ -42,14 +42,14 @@ func TestSuperAdminHoldsEveryRightOnForeignTenantKB(t *testing.T) {
 	}
 }
 
-// Platform-owned rows keep their rule: ResolveKB reads, the manage path
-// writes.
-func TestSuperAdminPlatformKBStillWritesViaManagePath(t *testing.T) {
+// Platform-owned rows: a SuperAdmin writes through either resolver
+// (settled 2026-10-17: every right on every KB).
+func TestSuperAdminPlatformKBWritesViaEitherPath(t *testing.T) {
 	pub := platformPublicKB("pub", 9)
 	ctx := sysAdminCallerCtx(4, "super-1")
 	caller := types.CallerFromContext(ctx)
 	_, err := ResolveKB(ctx, KBRequest{Caller: caller}, pub, types.KBPermissionEditor, nil)
-	require.ErrorIs(t, err, ErrForbidden)
+	require.NoError(t, err)
 	_, err = ResolveKBForManage(ctx, KBRequest{Caller: caller}, pub)
 	require.NoError(t, err)
 }

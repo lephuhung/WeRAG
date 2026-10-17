@@ -361,6 +361,23 @@ func (s *kbInvitationService) HasAcceptedInvite(ctx context.Context, kbID, userI
 	return s.invites.HasAcceptedInviteForOwner(ctx, kbID, userID, kb.OwnerTenantID)
 }
 
+// HasLiveInvite implements access.KBInviteLookup for DecideKB: a live
+// invite from the KB's current owner whose recipient is still an active
+// member of the invite's recipient tenant.
+func (s *kbInvitationService) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	if kbID == "" || userID == "" {
+		return false, nil
+	}
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return false, err
+	}
+	if kb == nil {
+		return false, nil
+	}
+	return s.invites.HasLiveInviteForOwner(ctx, kbID, userID, kb.OwnerTenantID)
+}
+
 // InvitedKBIDs returns the KB IDs on which userID holds a live (accepted,
 // unexpired, issued by the KB's current owner) invite — used for
 // recipient-side discovery (listing). One repository query.

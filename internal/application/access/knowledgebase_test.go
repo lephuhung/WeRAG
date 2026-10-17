@@ -157,15 +157,16 @@ func TestResolveKBVisibilityMatrix(t *testing.T) {
 		want       types.KBPermission
 		wantErr    error
 	}{
-		// --- tenant-owned rows: owning-tenant members keep normal access ---
+		// --- tenant-owned rows: owning-tenant members hold member_default
+		// (contribute -> Editor); only Tenant Admins hold Admin ---
 		{name: "tenant KB member reads in owning tenant",
 			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
-			required: types.KBPermissionViewer, want: types.KBPermissionAdmin},
+			required: types.KBPermissionViewer, want: types.KBPermissionEditor},
 		{name: "tenant KB member writes in owning tenant",
 			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
-			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
+			required: types.KBPermissionEditor, want: types.KBPermissionEditor},
 		{name: "tenant KB admin writes in owning tenant",
 			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
@@ -183,16 +184,16 @@ func TestResolveKBVisibilityMatrix(t *testing.T) {
 			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleOwner},
 			required: types.KBPermissionEditor, wantErr: ErrForbidden},
-		{name: "platform public KB system admin read resolves viewer, write stays closed",
+		{name: "platform public KB system admin holds admin",
 			visibility: types.KBVisibilityPublic, kbTenant: 9, kbOwner: 0,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
 			sysAdmin: true,
-			required: types.KBPermissionViewer, want: types.KBPermissionViewer},
+			required: types.KBPermissionViewer, want: types.KBPermissionAdmin},
 		// --- tenant-scoped ---
-		{name: "tenant KB member gets admin in own tenant",
+		{name: "tenant KB member gets member_default in own tenant",
 			visibility: types.KBVisibilityTenant, kbTenant: 1, kbOwner: 1,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},
-			required: types.KBPermissionEditor, want: types.KBPermissionAdmin},
+			required: types.KBPermissionEditor, want: types.KBPermissionEditor},
 		{name: "tenant KB foreign denied without grant",
 			visibility: types.KBVisibilityTenant, kbTenant: 2, kbOwner: 2,
 			caller:   types.Caller{TenantID: 1, UserID: "u1", Role: types.TenantRoleMember},

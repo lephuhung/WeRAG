@@ -4,6 +4,21 @@
 application service implementations. HTTP adapters keep parameter parsing, status
 codes, RBAC rollout behavior, and response projection at their existing boundaries.
 
+## One KB decision
+
+`DecideKB(ctx, caller, kb, action, lookups)` (`decide.go`) is the single KB
+permission decision; `ResolveKB`, `ResolveKBWithInvite`, `ResolveKBForDownload`
+and `ResolveKBForManage` are thin wrappers that project its `Decision` onto
+`KBAccess` (which carries `Source`). Order: API-key/machine principals keep the
+owner-tenant-only rule; SuperAdmin → every right; owner-tenant Admin → every
+right; owner-tenant member on `tenant`/`published` → `member_default`
+(view | contribute) + download; `public`/`published` → every signed-in human
+reads and downloads; `restricted` (and `tenant` read from outside) → ACL only
+(live invite from the current owner with an active recipient membership, or an
+approved tenant grant): view, never download, never write. Guests get no ACL.
+`ResolveKBForManage` maps to the *contribute* action; admin-only routes keep
+their TenantAdmin floor on top.
+
 | Entry point | Shared rule | Additional boundary |
 | --- | --- | --- |
 | Resource mutations with URL/body KB selectors | `CheckOwnershipOrRole`: creator or sufficient tenant role | API-key capabilities, KB scope and tenant visibility remain separate checks |

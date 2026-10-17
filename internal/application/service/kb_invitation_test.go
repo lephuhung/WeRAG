@@ -16,6 +16,9 @@ type fakeKBInviteRepo struct {
 	mu   sync.Mutex
 	rows map[string]*types.KBInvitation
 	byID func(id string) *types.KBInvitation
+	// inactive marks recipients whose recipient-tenant membership is no
+	// longer active (HasLiveInviteForOwner).
+	inactive map[string]bool
 }
 
 func newFakeKBInviteRepo() *fakeKBInviteRepo {
@@ -186,6 +189,16 @@ func (f *fakeKBInviteRepo) HasAcceptedInviteForOwner(_ context.Context, kbID, us
 		}
 	}
 	return false, nil
+}
+
+func (f *fakeKBInviteRepo) HasLiveInviteForOwner(ctx context.Context, kbID, userID string, ownerTenantID uint64) (bool, error) {
+	ok, err := f.HasAcceptedInviteForOwner(ctx, kbID, userID, ownerTenantID)
+	if err != nil || !ok {
+		return ok, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.inactive[userID], nil
 }
 
 func (f *fakeKBInviteRepo) DeleteByKBID(_ context.Context, kbID string) error {
@@ -566,5 +579,32 @@ func TestKBInviteGuestGetsNoACL(t *testing.T) {
 	guestSvc := NewKBInvitationService(repo, kbRepo, guestMemberReader{status: types.TenantMemberStatusSuspended}, nil, nil)
 	if _, err := guestSvc.Accept(ctx, types.Caller{UserID: "user-b"}, created.Token); err == nil {
 		t.Fatal("a Guest must not accept a KB invite")
+	}
+}
+
+// Phase 3: HasLiveInvite (the DecideKB lookup) checks the KB's current owner
+// and the recipient's membership in recipient_tenant_id.
+func TestKBInviteHasLiveInviteRequiresCurrentOwnerAndActiveMembership(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeKBInviteRepo()
+	repo.rows["inv-1"] = &types.KBInvitation{
+		ID: "inv-1", KBID: "kb-1", OwnerTenantID: 100, RecipientUserID: "user-b",
+		RecipientTenantID: 200, Status: types.KBInvitationStatusAccepted,
+	}
+	kb := &types.KnowledgeBase{ID: "kb-1", TenantID: 100, OwnerTenantID: 100, Visibility: types.KBVisibilityRestricted}
+	svc := NewKBInvitationService(repo, &fakeKBRepoForInvite{kb: kb}, nil, nil, nil)
+
+	ok, err := svc.HasLiveInvite(ctx, "kb-1", "user-b")
+	if err != nil || !ok {
+		t.Fatalf("live invite with an active membership must count: ok=%v err=%v", ok, err)
+	}
+	repo.inactive = map[string]bool{"user-b": true}
+	if ok, _ := svc.HasLiveInvite(ctx, "kb-1", "user-b"); ok {
+		t.Fatal("a recipient whose membership is no longer active loses the invite's access")
+	}
+	repo.inactive = nil
+	kb.OwnerTenantID = 300
+	if ok, _ := svc.HasLiveInvite(ctx, "kb-1", "user-b"); ok {
+		t.Fatal("an invite from a previous owner never counts")
 	}
 }

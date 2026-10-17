@@ -37,6 +37,11 @@ func (s *stubInvites) HasAcceptedInvite(_ context.Context, kbID, userID string) 
 	return s.accepted[kbID+"\x00"+userID], nil
 }
 
+// HasLiveInvite: the stub has no membership state, so live == accepted.
+func (s *stubInvites) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	return s.HasAcceptedInvite(ctx, kbID, userID)
+}
+
 func testKB(id string, tenant uint64) *types.KnowledgeBase {
 	return &types.KnowledgeBase{
 		ID: id, TenantID: tenant,

@@ -40,6 +40,10 @@ func (handlerInviteLookupStub) HasAcceptedInvite(_ context.Context, kbID, userID
 	return kbID == "kb" && userID == "recipient", nil
 }
 
+func (s handlerInviteLookupStub) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	return s.HasAcceptedInvite(ctx, kbID, userID)
+}
+
 type handlerKnowledgeAccessStub struct {
 	interfaces.KnowledgeService
 	knowledge *types.Knowledge
@@ -57,7 +61,9 @@ func TestKBGuardAndHandlersShareResolution(t *testing.T) {
 			name = "both context surfaces"
 		}
 		t.Run(name, func(t *testing.T) {
-			kb := &types.KnowledgeBase{ID: "kb", TenantID: 2}
+			// A well-formed tenant-owned row: DecideKB grants ACL reads only
+			// on rows with a real owner.
+			kb := &types.KnowledgeBase{ID: "kb", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant}
 			lookups := 0
 			svc := &stubKBOnlyService{getByID: func(context.Context, string) (*types.KnowledgeBase, error) {
 				lookups++

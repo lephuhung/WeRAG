@@ -17,7 +17,9 @@ func callerContext() context.Context {
 
 func TestKBInviteSurvivesExecutionSwitchAndDetachWithoutWidening(t *testing.T) {
 	ctx := callerContext()
-	kb := &types.KnowledgeBase{ID: "shared", TenantID: 2}
+	// A well-formed tenant-owned row: DecideKB grants ACL reads only on
+	// rows with a real owner.
+	kb := &types.KnowledgeBase{ID: "shared", TenantID: 2, OwnerTenantID: 2, Visibility: types.KBVisibilityTenant}
 	grants := &grantLookup{grants: map[string]types.KBPermission{"shared/1": types.KBPermissionViewer}}
 	invites := &stubInvites{accepted: map[string]bool{"shared\x00user": true}}
 	grant, err := ResolveKBWithInvite(
