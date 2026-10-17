@@ -177,7 +177,8 @@ Nhánh `feat/tenant-kb-permissions` (worktree `/home/orca/werag-perms`, gốc `f
 | 4 Chuyển chủ sở hữu | `a0986934` `dbdd7aae` | Xong, đã review |
 | 5 Tab Quyền truy cập (frontend-next) | `53286e8a` `adee9ac8` | Xong code, **chưa test trình duyệt** |
 | Sửa sau review độc lập (citation web, chuyển chủ giữ restricted, 400 khi tạo KB sai, tùy chọn public) | `72ecb654` `8b4a25d7` `e22871c7` `6c4c2ae0` | Xong, hai lượt review độc lập kết luận sẵn sàng merge |
-| 6 Kiểm thử trên dev, release note | — | Chờ deploy nhánh lên dev |
+| Sửa sau test live (Guest tenant cũ bị 403 ở /auth/me; Guest bị guard Member chặn đọc KB public) | `c251efd4` `89f8c4b1` | Xong, test live lại đạt |
+| 6 Kiểm thử API trên dev | — | **Đã merge vào `feat/document-assistant` (merge commits `9ddccbbc`, `43b5519e`, `e83b56ed`) và test live 2026-10-17**; UI chưa test trình duyệt |
 
 Kiểm chứng tự động trên nhánh: `go build ./...` sạch; `go test ./internal/... ./client/...` pass toàn bộ, trừ `TestQueryKnowledgeGraphReadsTheGraphStore` trong `internal/agent/tools` hỏng khi chạy `-count>1` **cả trên nhánh gốc** (lỗi có sẵn, không thuộc dự án này); `go vet` chỉ còn cảnh báo cũ `mcpserver/scope_test.go:213`; frontend-next 261 test pass, `tsc --noEmit` sạch.
 
@@ -223,7 +224,24 @@ Bốn tài khoản: SuperAdmin không membership; Admin tenant A; Member tenant 
 - [ ] API key tenant A: vẫn chỉ KB allowlist của mình; không đọc KB published/public của tenant khác.
 - [ ] Đưa vào tìm kiếm mặc định không mở quyền; bỏ ACL thì KB biến mất khỏi kết quả dù subscription còn.
 
+### 7.3b. Kết quả test API live trên dev (2026-10-17)
+
+Migration 146 → 148 chạy tự động khi backend khởi động; không tài khoản nào mất cờ legacy (chỉ một SuperAdmin, không ai có cờ mà không phải SuperAdmin). Tài khoản test tạo trong DB dev (giữ lại để test UI): `claude_super` (SuperAdmin, không membership), `claude_admin` (Admin 10003), `claude_member_a` (Member 10003), `claude_member_b` (Member 10004), `claude_guest` (không membership, `tenant_id` 10004). Token mint bằng `scripts/doc_assistant_eval/mint_token.py`.
+
+Đạt:
+- SuperAdmin không membership: `/auth/me` = `superadmin`; settings, stats, 2FA 200; list KB toàn nền tảng (`access_source=superadmin`); đọc, chuyển chủ, xoá KB của tenant khác 200.
+- KB `tenant` của 10003: Member A 200, Member B 403, Guest 401/403, SuperAdmin 200.
+- Admin A đặt `restricted`: Member A 403 ở chi tiết và hybrid-search, KB biến mất khỏi list; Admin A và SuperAdmin vẫn đọc.
+- Mời Member A (cùng tenant) và Member B (tenant khác): xem được, `download_original=false`, `access_source=acl_user`; đình chỉ membership B → 403 ngay, khôi phục → 200; thu hồi lời mời A → 403 ngay.
+- `member_default=view`: Member A `contribute=false`, upload URL 403.
+- Admin A nâng `public` → 403 (chỉ SuperAdmin); Admin A chuyển chủ → 403; SuperAdmin chuyển chủ sang 10004 → 200, `revoked_invitations=1`, `tenant_id` dữ liệu giữ 10003, Admin A và Member A mất quyền.
+- Guest: `/auth/me` = `guest`, `tenant_required=true`; catalog public 4 KB; chi tiết và danh sách tài liệu KB public 200; KB tenant 401; list KB, tạo KB, upload → 403 `TENANT_MEMBERSHIP_REQUIRED`.
+- `next build` production của frontend-next đã merge: 22 route biên dịch sạch.
+
 ### 7.4. Việc còn mở (không chặn merge)
+
+- Guest trên KB `tenant`/`restricted` nhận 401 (bước 7 của `DecideKB`: không tenant = unauthorized) thay vì 403; cần kiểm frontend không coi 401 này là hết phiên.
+- Guest chưa tải được ảnh nhúng của KB public: `GET /knowledge-bases/:id/files` (image proxy), `entity-graph`, `legal-graph` không nằm trong `isTenantlessPublicReadPath` → TENANT_REQUIRED; ảnh trong nội dung KB public sẽ vỡ với Guest.
 
 - Endpoint nhận `kb_id` qua query/body (`/knowledge/batch?kb_id=`) chưa tra lời mời, người được mời bị từ chối.
 - File chưa đăng ký trong catalog vẫn phục vụ theo tenant của đường dẫn trên `/files`.
