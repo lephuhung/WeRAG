@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -121,7 +122,35 @@ func TestCreateKnowledgeBaseScopeChoice(t *testing.T) {
 	assert.Equal(t, types.KBMemberDefaultView, kb.MemberDefault)
 
 	kb, err = svc.CreateKnowledgeBase(ctxWithTenant(1),
-		&types.KnowledgeBase{Name: "p", Visibility: types.KBVisibilityPublished})
+		&types.KnowledgeBase{Name: "t2", Visibility: types.KBVisibilityTenant})
 	require.NoError(t, err)
-	assert.Equal(t, types.KBVisibilityTenant, kb.Visibility, "publishing happens after creation")
+	assert.Equal(t, types.KBVisibilityTenant, kb.Visibility)
+	assert.Equal(t, types.KBMemberDefaultContribute, kb.MemberDefault, "empty member_default defaults to contribute")
+}
+
+// Bad scope input on create is a 400, not a silent coercion: published
+// (create as tenant, then publish), an unknown visibility and an unknown
+// member_default. Public stays 403 on this flow (platform public create
+// only). Nothing is persisted.
+func TestCreateKnowledgeBaseRejectsBadScopeInput(t *testing.T) {
+	for name, tc := range map[string]struct {
+		kb     types.KnowledgeBase
+		status int
+		msg    string
+	}{
+		"published":      {types.KnowledgeBase{Name: "p", Visibility: types.KBVisibilityPublished}, 400, "then publish"},
+		"unknown scope":  {types.KnowledgeBase{Name: "u", Visibility: "everyone"}, 400, "invalid visibility"},
+		"member_default": {types.KnowledgeBase{Name: "m", MemberDefault: "admin"}, 400, "invalid member_default"},
+		"public":         {types.KnowledgeBase{Name: "pub", Visibility: types.KBVisibilityPublic}, 403, "public flow"},
+	} {
+		repo := newFakeKBRepo()
+		svc := newLifecycleService(repo, newLifecycleTenantRepo(1), &lifecycleAudit{})
+		kb := tc.kb
+		_, err := svc.CreateKnowledgeBase(ctxWithTenant(1), &kb)
+		appErr, ok := apperrors.IsAppError(err)
+		require.True(t, ok, "%s: got %v", name, err)
+		assert.Equal(t, tc.status, appErr.HTTPCode, name)
+		assert.Contains(t, appErr.Message, tc.msg, name)
+		assert.Empty(t, repo.rows, name)
+	}
 }

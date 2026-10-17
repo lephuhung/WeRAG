@@ -152,6 +152,10 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	if uid, ok := types.UserIDFromContext(ctx); ok && !types.IsSyntheticUserID(uid) {
 		kb.CreatorID = uid
 	}
+	// Reject bad scope input before EnsureDefaults would silently coerce it.
+	if err := validateCreateScopeInput(kb); err != nil {
+		return nil, err
+	}
 	kb.EnsureDefaults()
 	s.applyProfileDefaultModels(ctx, kb)
 	if err := s.validateKBVisibility(ctx, kb); err != nil {
@@ -321,13 +325,39 @@ func (s *knowledgeBaseService) validateVectorStoreBinding(
 	}
 }
 
+// validateCreateScopeInput rejects scope values the tenant create flow
+// does not accept, instead of letting EnsureDefaults coerce them: an
+// unknown member_default, 'published' (create as 'tenant', then publish
+// through the visibility endpoint) and unknown visibility values are 400.
+// Empty values take the defaults ('tenant', 'contribute'); 'public' is
+// left to validateKBVisibility.
+func validateCreateScopeInput(kb *types.KnowledgeBase) error {
+	if kb.MemberDefault != "" && !kb.MemberDefault.IsValid() {
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"invalid member_default %q: use %q or %q", kb.MemberDefault,
+			types.KBMemberDefaultView, types.KBMemberDefaultContribute))
+	}
+	switch kb.Visibility {
+	case "", types.KBVisibilityTenant, types.KBVisibilityRestricted, types.KBVisibilityPublic:
+		return nil
+	case types.KBVisibilityPublished:
+		return apperrors.NewBadRequestError(
+			"a knowledge base cannot be created as published: create it with visibility 'tenant', then publish it")
+	default:
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"invalid visibility %q: use %q or %q", kb.Visibility,
+			types.KBVisibilityTenant, types.KBVisibilityRestricted))
+	}
+}
+
 // validateKBVisibility enforces the scope model on the tenant create
 // path. Tenant Admins create tenant-owned KBs only: a public visibility
 // payload is rejected for every caller on this flow, including system
 // admins — platform-owned public KBs are minted exclusively through
 // CreatePublicKnowledgeBase. 'tenant' (the default) and 'restricted'
-// (ACL only) are accepted; any other value falls back to 'tenant' —
-// publishing is a later decision through the visibility endpoint.
+// (ACL only) are accepted; 'published' and unknown values were already
+// rejected by validateCreateScopeInput — publishing is a later decision
+// through the visibility endpoint.
 func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *types.KnowledgeBase) error {
 	_ = ctx
 	switch kb.Visibility {
