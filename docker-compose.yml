@@ -1,14 +1,11 @@
 services:
   frontend:
-    image: wechatopenai/weknora-ui:${WEKNORA_VERSION:-latest}
-    # Multi-stage Dockerfile builds dist inside the image (no host npm required).
-    # Optional: NPM_REGISTRY=https://registry.npmmirror.com docker compose build frontend
-    # VITE_FRONTEND_COMMIT: start_all.sh / make docker-build-frontend inject git;
-    # otherwise pass it explicitly or the system-info page shows "unknown".
+    image: werag/frontend-next:${WEKNORA_VERSION:-latest}
+    # Next.js standalone server behind nginx; nginx proxies /api, /files and
+    # /r straight to the app. Optional: NPM_REGISTRY=https://registry.npmmirror.com
     build:
-      context: ./frontend
+      context: ./frontend-next
       args:
-        VITE_FRONTEND_COMMIT: ${VITE_FRONTEND_COMMIT:-unknown}
         NPM_REGISTRY: ${NPM_REGISTRY:-}
         NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-4096}
     container_name: WeKnora-frontend
@@ -17,7 +14,6 @@ services:
     environment:
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       - MAX_SKILL_BUNDLE_SIZE_MB=${MAX_SKILL_BUNDLE_SIZE_MB:-256}
-      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-}
       - APP_HOST=${APP_HOST:-app}
       # APP_BACKEND_PORT: the port NGINX proxies to (default 8080).
       # For local deployment this is the App container's listening port, independent of host-mapped APP_PORT.
@@ -28,6 +24,12 @@ services:
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
     depends_on:
       app:
+        condition: service_healthy
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+
+  app:
         condition: service_healthy
     networks:
       - WeKnora-network

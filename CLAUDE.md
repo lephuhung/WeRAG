@@ -1,15 +1,9 @@
-# Frontend Rule: `frontend/` is frozen — port to `frontend-next/`
+# Frontend: `frontend-next/` is the only UI
 
-The Vue front-end in `frontend/` is **legacy and frozen for the UI migration to `frontend-next/` (Next.js)**.
+The legacy Vue front-end (`frontend/`) was removed on 2026-10-17; its last version is in git history (`git show a8d21f3f:frontend/...`) if you need to check old behavior.
 
-## Rules for all agents
-
-- **NEVER modify, fix, refactor, or add UI code in `frontend/`** (the Vue front-end). Treat it as read-only reference.
-- **ALL UI changes, bug fixes, and new features MUST be implemented in `frontend-next/`**.
-- When porting a feature, review the corresponding Vue implementation in `frontend/` to understand the behavior/design, then reimplement it in `frontend-next/` using its stack and conventions (Next.js/React, TypeScript, Tailwind).
-- **i18n convention for `frontend-next/`**: only **2 locales — `en` and `vi`** (`lib/i18n.tsx`). Do NOT port the other Vue locales (`zh-CN`, `ja-JP`, `ko-KR`, `ru-RU`) or the vue-i18n machinery; when porting a feature, translate its UI strings into the `en` and `vi` dictionaries only.
-- Exceptions (read-only actions on `frontend/` are allowed): reading code for reference, running/building it to compare behavior, and extracting assets (images, icons, i18n strings).
-- Non-UI shared code (backend `internal/`, `cmd/`, etc.) is unaffected by this rule.
+- **ALL UI code lives in `frontend-next/`** (Next.js/React, TypeScript, Tailwind). The Docker image is `frontend-next/Dockerfile` (Next standalone behind nginx, `frontend-next/docker/`).
+- **i18n convention**: only **2 locales — `en` and `vi`** (`lib/i18n.tsx`). Add UI strings to both dictionaries; do not add other locales.
 <!-- gitnexus:end -->
 # Search: use ripgrep (`rg`) instead of `grep`
 

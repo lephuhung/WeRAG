@@ -322,7 +322,7 @@ golangci-lint run --new-from-rev=origin/main ./...
 go test ./path/to/changed/package -count=1
 ```
 
-Run `gofmt` on changed Go files before committing. For frontend changes, run the relevant tests from `frontend/` and use `npm run type-check` when the change affects TypeScript or Vue components.
+Run `gofmt` on changed Go files before committing. For frontend changes, run `npm run typecheck` in `frontend-next/`.
 
 The full maintainer gate remains:
 

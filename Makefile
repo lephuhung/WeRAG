@@ -13,7 +13,7 @@ help:
 	@echo "Docker 命令:"
 	@echo "  docker-build-app       构建应用 Docker 镜像 (wechatopenai/weknora-app)"
 	@echo "  docker-build-docreader 构建文档读取器镜像 (wechatopenai/weknora-docreader)"
-	@echo "  docker-build-frontend  构建前端镜像 (wechatopenai/weknora-ui)"
+	@echo "  docker-build-frontend  构建前端镜像 (werag/frontend-next)"
 	@echo "  docker-build-all       构建所有 Docker 镜像"
 	@echo "  docker-run            运行 Docker 容器"
 	@echo "  docker-stop           停止 Docker 容器"
@@ -110,12 +110,10 @@ docker-build-app:
 docker-build-docreader:
 	docker build --platform $(PLATFORM) -f docker/Dockerfile.docreader -t wechatopenai/weknora-docreader:latest .
 
-# Build frontend Docker image (multi-stage: npm runs inside the builder stage)
+# Build frontend Docker image (frontend-next; npm runs inside the builder stage)
 docker-build-frontend:
-	@eval $$(./scripts/get_version.sh env); \
 	docker build --platform $(PLATFORM) \
-		--build-arg VITE_FRONTEND_COMMIT="$$COMMIT_ID" \
-		-f frontend/Dockerfile -t wechatopenai/weknora-ui:latest frontend/
+		-f frontend-next/Dockerfile -t werag/frontend-next:latest frontend-next/
 
 # Build all Docker images
 docker-build-all: docker-build-app docker-build-docreader docker-build-frontend

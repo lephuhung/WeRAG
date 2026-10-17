@@ -39,17 +39,15 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/weknora-ui
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/werag-frontend-next
 
       - name: Build ui Image
         uses: docker/build-push-action@v7
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          file: frontend/Dockerfile
-          context: ./frontend
-          build-args: |
-            VITE_FRONTEND_COMMIT=${{ steps.version.outputs.commit_id }}
+          file: frontend-next/Dockerfile
+          context: ./frontend-next
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=build-ui

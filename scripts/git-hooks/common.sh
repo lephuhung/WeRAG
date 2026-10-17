@@ -28,8 +28,8 @@ WHITESPACE_PATHSPECS=(
   '*.yaml' '*.yml' '*.json'
   '*.sh' '*.sql'
   'Makefile'
-  'frontend/package.json'
-  'frontend/package-lock.json'
+  'frontend-next/package.json'
+  'frontend-next/package-lock.json'
 )
 
 # Best-effort fetch so merge-base matches CI (origin/main).

@@ -184,21 +184,17 @@ build_docreader_image() {
 
 # 构建前端镜像（多阶段：npm 在 builder 内执行，无需宿主机预构建 dist）
 build_frontend_image() {
-    log_info "构建前端镜像 (weknora-ui)..."
-    
+    log_info "构建前端镜像 (werag/frontend-next)..."
+
     cd "$PROJECT_ROOT"
-    
-    # 获取版本信息（用于注入前端 commit hash）
-    get_version_info
 
     docker build \
         --platform $PLATFORM \
-        --build-arg VITE_FRONTEND_COMMIT="$COMMIT_ID" \
         ${NPM_REGISTRY:+--build-arg NPM_REGISTRY="$NPM_REGISTRY"} \
         ${NODE_MAX_OLD_SPACE_SIZE:+--build-arg NODE_MAX_OLD_SPACE_SIZE="$NODE_MAX_OLD_SPACE_SIZE"} \
-        -f frontend/Dockerfile \
-        -t wechatopenai/weknora-ui:latest \
-        frontend/
+        -f frontend-next/Dockerfile \
+        -t werag/frontend-next:latest \
+        frontend-next/
     
     if [ $? -eq 0 ]; then
         log_success "前端镜像构建成功"
@@ -359,19 +355,19 @@ clean_images() {
     log_info "停止相关容器..."
     docker stop $(docker ps -q --filter "ancestor=wechatopenai/weknora-app:latest" 2>/dev/null) 2>/dev/null || true
     docker stop $(docker ps -q --filter "ancestor=wechatopenai/weknora-docreader:latest" 2>/dev/null) 2>/dev/null || true
-    docker stop $(docker ps -q --filter "ancestor=wechatopenai/weknora-ui:latest" 2>/dev/null) 2>/dev/null || true
+    docker stop $(docker ps -q --filter "ancestor=werag/frontend-next:latest" 2>/dev/null) 2>/dev/null || true
     
     # Delete 相关容器
     log_info "删除相关容器..."
     docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-app:latest" 2>/dev/null) 2>/dev/null || true
     docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-docreader:latest" 2>/dev/null) 2>/dev/null || true
-    docker rm $(docker ps -aq --filter "ancestor=wechatopenai/weknora-ui:latest" 2>/dev/null) 2>/dev/null || true
+    docker rm $(docker ps -aq --filter "ancestor=werag/frontend-next:latest" 2>/dev/null) 2>/dev/null || true
     
     # Delete 镜像
     log_info "删除本地镜像..."
     docker rmi wechatopenai/weknora-app:latest 2>/dev/null || true
     docker rmi wechatopenai/weknora-docreader:latest 2>/dev/null || true
-    docker rmi wechatopenai/weknora-ui:latest 2>/dev/null || true
+    docker rmi werag/frontend-next:latest 2>/dev/null || true
     docker rmi wechatopenai/weknora-sandbox:latest 2>/dev/null || true
     docker rmi wechatopenai/weknora-sandbox:latest-cube 2>/dev/null || true
     docker rmi wechatopenai/weknora-sandbox:latest-desktop 2>/dev/null || true

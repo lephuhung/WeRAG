@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-push checks aligned with CI (.github/workflows/app.yml, frontend.yml).
+# Pre-push checks aligned with CI (.github/workflows/app.yml, frontend-next.yml).
 
 set -euo pipefail
 
@@ -73,7 +73,7 @@ while read -r _local_ref local_sha remote_ref remote_sha; do
     log_ok "go build ./cmd/server"
   fi
 
-  if paths_match_prefix "frontend/" "${pr_changed[@]}"; then
+  if paths_match_prefix "frontend-next/" "${pr_changed[@]}"; then
     run_frontend_checks
   fi
 

@@ -480,7 +480,7 @@ start_frontend() {
         load_env_files >/dev/null 2>&1 || true
     fi
     
-    cd "$PROJECT_ROOT/frontend"
+    cd "$PROJECT_ROOT/frontend-next"
     
     # 检查 npm 是否安装
     if ! command -v npm &> /dev/null; then
@@ -494,9 +494,9 @@ start_frontend() {
         npm install
     fi
     
-    log_info "启动 Vite 开发服务器..."
-    log_info "前端将运行在 http://localhost:5173"
-    log_info "前端 API 代理目标: ${VITE_DEV_PROXY_TARGET:-${FRONTEND_BACKEND_URL:-http://localhost:8080}}"
+    log_info "启动 Next.js 开发服务器 (frontend-next)..."
+    log_info "前端将运行在 http://localhost:3000"
+    log_info "前端 API 代理目标: ${WERAG_BACKEND_URL:-http://127.0.0.1:8080}"
     
     # 运行开发服务器
     npm run dev

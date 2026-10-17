@@ -21,6 +21,9 @@ const devOrigins = (process.env.WERAG_DEV_ORIGINS ?? "")
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // The Docker image runs the self-contained server (frontend-next/Dockerfile);
+  // `next start` keeps working without it.
+  ...(process.env.NEXT_OUTPUT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   // Next's built-in compression wraps every response — including rewritten
   // /api SSE streams — in gzip and buffers it whole, so chat "streams" only
   // render once the turn ends. Disable it; production compresses at nginx.

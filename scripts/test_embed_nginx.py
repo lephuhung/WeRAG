@@ -23,19 +23,15 @@ def docker(*args):
 def check():
     with tempfile.TemporaryDirectory(prefix="weknora-embed-nginx-") as folder:
         work = Path(folder)
-        (work / "web").mkdir()
-        (work / "web/embed.html").write_text("embed entry")
-        (work / "web/index.html").write_text("main SPA")
-        (work / "web/50x.html").write_text("backend unavailable")
-        config = (ROOT / "frontend/nginx.conf").read_text()
+        docker_dir = ROOT / "frontend-next/docker"
+        config = (docker_dir / "nginx.conf").read_text()
         for key, value in {
             "APP_SCHEME": "http", "APP_HOST": "127.0.0.1", "APP_PORT": "18081",
-            "MAX_FILE_SIZE": "50m", "MAX_SKILL_BUNDLE_SIZE": "100m",
+            "MAX_FILE_SIZE": "50m", "MAX_SKILL_BUNDLE_SIZE": "100m", "NEXT_PORT": "18082",
         }.items():
             config = config.replace("${" + key + "}", value)
-        config = config.replace("/usr/share/nginx/html", "/check/web")
         config = config.replace("/etc/nginx/api-proxy.conf", "/check/api-proxy.conf")
-        (work / "api-proxy.conf").write_text((ROOT / "frontend/nginx-api-proxy.conf").read_text())
+        (work / "api-proxy.conf").write_text((docker_dir / "nginx-api-proxy.conf").read_text())
         # The real policy handler and token middleware are covered by Go tests.
         # Here vary its responses to verify subrequests, fallback and fail-closed serving.
         fixture = """
@@ -53,9 +49,16 @@ def check():
             }
             location /api/ { return 200 "$http_host"; }
         }
+        # Stand-in for the Next.js server.
+        server {
+            listen 18082;
+            location ^~ /embed/ { return 200 "embed entry"; }
+            location = / { return 200 "main SPA"; }
+            location / { return 404; }
+        }
         """
         (work / "nginx.conf").write_text(
-            "events {}\nhttp {\n" + (ROOT / "frontend/nginx-http.conf").read_text() + config + fixture + "\n}"
+            "events {}\nhttp {\n" + (docker_dir / "nginx-http.conf").read_text() + config + fixture + "\n}"
         )
         # The Nginx worker runs as an unprivileged user in the container.
         work.chmod(0o755)
