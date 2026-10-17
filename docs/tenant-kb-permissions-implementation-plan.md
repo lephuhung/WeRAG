@@ -194,6 +194,7 @@ Kiểm chứng tự động trên nhánh: `go build ./...` sạch; `go test ./in
    Ai có cờ nhưng không phải SuperAdmin sẽ mất quyền chéo tenant; gán `is_system_admin` nếu đó là quản trị nền tảng thật.
 3. Giai đoạn 1 và 2 phải lên cùng nhau (chỉ Giai đoạn 1 thì SuperAdmin không membership bị 403 trên route tenant).
 4. Tenant chưa có thành viên không còn tự nâng người đăng nhập đầu tiên thành Admin; SuperAdmin gán Admin qua `/system/admin/tenants/:id/members`.
+5. Tenant nền tảng 10000 "SuperAdmin" được seed bởi migration 000150 (`types.PlatformTenantID`): nơi tạo và nuôi KB public (Luật, Nghị định, ...) và chứa catalog model dùng chung (`DefaultBuiltinModelTenantID`). Cài mới: đăng ký tài khoản, đặt `WEKNORA_BOOTSTRAP_SYSTEM_ADMIN_EMAIL`, khởi động lại; bootstrap nâng SuperAdmin và gắn membership Admin vào tenant 10000. DB cũ đã có dòng 10000 thì giữ nguyên. Quyền trên KB public vẫn chỉ đến từ `is_system_admin`, membership tenant 10000 không cấp thêm gì.
 
 ### 7.2. Thay đổi hành vi (release note)
 
