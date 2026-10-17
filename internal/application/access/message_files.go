@@ -44,6 +44,12 @@ type MessageKBGrantAuthorizer struct {
 	Bindings   interfaces.KBResourceLookup
 }
 
+// fileGate is the DecideKB gate for KB-bound resources. The catalog
+// supplies the binding lookup; an absent KB loader disables it.
+func (a MessageKBGrantAuthorizer) fileGate(catalog FileCatalog) KBFileGate {
+	return NewKBFileGate(catalog, a.KBs, a.GrantGuard)
+}
+
 // resourceAccessibleViaGrantedKB reports whether the message's persisted
 // retrieval evidence proves the resource came from a KB granted to the
 // caller's tenant. This is the fallback for replies whose retrieval pulled

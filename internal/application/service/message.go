@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
@@ -35,6 +36,10 @@ type messageService struct {
 	// usageMeter counts questions and tokens for usage packages; nil in
 	// unit tests that build the struct directly.
 	usageMeter interfaces.UsageMeter
+	// kbAccessGrantService resolves KB scopes, tenant grants and invites
+	// for hiding citations the caller can no longer read; nil hides
+	// nothing.
+	kbAccessGrantService interfaces.KBAccessGrantService
 }
 
 // NewMessageService creates a new message service instance with the required repositories
@@ -46,16 +51,18 @@ func NewMessageService(messageRepo interfaces.MessageRepository,
 	modelService interfaces.ModelService,
 	suggestionRepo interfaces.MessageSuggestionRepository,
 	usageMeter interfaces.UsageMeter,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 ) interfaces.MessageService {
 	return &messageService{
-		messageRepo:    messageRepo,
-		sessionRepo:    sessionRepo,
-		tenantService:  tenantService,
-		kbService:      kbService,
-		knowService:    knowService,
-		modelService:   modelService,
-		suggestionRepo: suggestionRepo,
-		usageMeter:     usageMeter,
+		kbAccessGrantService: kbAccessGrantService,
+		messageRepo:          messageRepo,
+		sessionRepo:          sessionRepo,
+		tenantService:        tenantService,
+		kbService:            kbService,
+		knowService:          knowService,
+		modelService:         modelService,
+		suggestionRepo:       suggestionRepo,
+		usageMeter:           usageMeter,
 	}
 }
 
@@ -224,6 +231,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d recent messages successfully", len(messages))
+	s.hideUnreadableReferences(ctx, messages)
 	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
 }
 
@@ -258,6 +266,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d messages before time successfully", len(messages))
+	s.hideUnreadableReferences(ctx, messages)
 	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
 }
 
@@ -1256,4 +1265,52 @@ func groupByRequestID(items []*types.MessageSearchResultItem) []*types.MessageSe
 
 func searchPairKey(sessionID, requestID string) string {
 	return sessionID + "\x00" + requestID
+}
+
+// hideUnreadableReferences drops persisted citations (knowledge references
+// with their chunk snippets) whose KB the caller can no longer read under
+// access.DecideKB: a KB switched to restricted, or a revoked invite/grant,
+// stops showing its snippets in past answers on the next load. A reference
+// without a KB ID is resolved through its document; one that cannot be
+// resolved is hidden (fail closed). The answer text itself is unchanged.
+func (s *messageService) hideUnreadableReferences(ctx context.Context, messages []*types.Message) {
+	if s.kbAccessGrantService == nil {
+		return
+	}
+	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
+	knowledgeKB := map[string]string{}
+	kbOf := func(ref *types.SearchResult) string {
+		if ref.KnowledgeBaseID != "" {
+			return ref.KnowledgeBaseID
+		}
+		if ref.KnowledgeID == "" || s.knowService == nil {
+			return ""
+		}
+		if id, ok := knowledgeKB[ref.KnowledgeID]; ok {
+			return id
+		}
+		id := ""
+		if k, err := s.knowService.GetKnowledgeByIDOnly(ctx, ref.KnowledgeID); err == nil && k != nil {
+			id = k.KnowledgeBaseID
+		}
+		knowledgeKB[ref.KnowledgeID] = id
+		return id
+	}
+	for _, message := range messages {
+		if message == nil || len(message.KnowledgeReferences) == 0 {
+			continue
+		}
+		kept := message.KnowledgeReferences[:0:0]
+		for _, ref := range message.KnowledgeReferences {
+			if ref == nil {
+				continue
+			}
+			if kbID := kbOf(ref); kbID != "" {
+				if ok, err := permissions.Check(kbID, 0, types.KBPermissionViewer); err == nil && ok {
+					kept = append(kept, ref)
+				}
+			}
+		}
+		message.KnowledgeReferences = kept
+	}
 }

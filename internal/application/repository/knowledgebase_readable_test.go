@@ -222,3 +222,19 @@ func TestListReadableKnowledgeBases_LoadsFullRows(t *testing.T) {
 		require.True(t, kb.Visibility.IsValid())
 	}
 }
+
+func TestListForeignKnowledgeBasesSkipsRestricted(t *testing.T) {
+	f := newReadableFixture(t)
+	kbs, err := f.repo.ListForeignKnowledgeBasesByTenantID(context.Background(), f.t1)
+	require.NoError(t, err)
+	for _, kb := range kbs {
+		require.NotEqual(t, types.KBVisibilityRestricted, kb.Visibility, kb.ID)
+	}
+	ids := map[string]bool{}
+	for _, kb := range kbs {
+		ids[kb.ID] = true
+	}
+	require.True(t, ids["t1-tenant"])
+	require.True(t, ids["t1-published"])
+	require.False(t, ids["t1-restricted"])
+}

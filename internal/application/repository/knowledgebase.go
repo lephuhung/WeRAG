@@ -259,13 +259,16 @@ func (r *knowledgeBaseRepository) ListPublicKnowledgeBasesExcept(
 }
 
 // ListForeignKnowledgeBasesByTenantID lists tenantID's KBs that callers
-// outside the tenant may see: tenant- and public-scoped rows.
+// outside the tenant may see in a shared-agent context. Restricted KBs are
+// never listed here: they reach a caller only through an ACL, which the
+// readable listing (ListReadableKnowledgeBases) resolves per caller.
 func (r *knowledgeBaseRepository) ListForeignKnowledgeBasesByTenantID(
 	ctx context.Context, tenantID uint64,
 ) ([]*types.KnowledgeBase, error) {
 	var kbs []*types.KnowledgeBase
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND is_temporary = ?", tenantID, false).
+		Where("visibility <> ?", string(types.KBVisibilityRestricted)).
 		Order("created_at DESC").Find(&kbs).Error; err != nil {
 		return nil, err
 	}

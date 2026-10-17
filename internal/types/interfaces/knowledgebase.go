@@ -285,8 +285,8 @@ type KnowledgeBaseRepository interface {
 	ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// ListForeignKnowledgeBasesByTenantID lists the non-temporary KBs of
-	// tenantID that are visible to callers outside that tenant —
-	// 'tenant' and 'public' visibility.
+	// tenantID that may be listed to callers outside that tenant: every
+	// visibility except 'restricted' (ACL-only).
 	ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record

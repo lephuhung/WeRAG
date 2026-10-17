@@ -175,6 +175,19 @@ func AuthorizeMessageFile(ctx context.Context, message *types.Message, reference
 	if message.Role == "user" && owner != caller.TenantID {
 		return FileAccess{}, ErrForbidden
 	}
+	// KB content (a resource bound to a KB document) is decided by
+	// DecideKB on its KB, never by shared storage tenancy: a restricted
+	// KB's images stay closed to members without an ACL even inside their
+	// own past answers, and originals need the download right.
+	if resource != nil {
+		if bound, err := kbGrants.fileGate(catalog).Authorize(ctx, owner, reference); bound {
+			if err != nil {
+				return FileAccess{}, err
+			}
+			file.OwnerTenantID = owner
+			return file, nil
+		}
+	}
 	if kbGrants.Bindings == nil {
 		kbGrants.Bindings, _ = catalog.(interfaces.KBResourceLookup)
 	}
@@ -219,6 +232,17 @@ func ResolveMessageArtifact(ctx context.Context, message *types.Message, index i
 	file, resource, err := resolveFile(ctx, catalog, artifact.URL)
 	if err != nil {
 		return FileAccess{}, err
+	}
+	if resource != nil {
+		// An artifact that is also KB content follows its KB's decision.
+		if bound, err := kbGrants.fileGate(catalog).Authorize(ctx, resource.TenantID, artifact.URL); bound {
+			if err != nil {
+				return FileAccess{}, err
+			}
+			file.OwnerTenantID = resource.TenantID
+			file.Filename = artifact.FileName
+			return file, nil
+		}
 	}
 	if (resource != nil && resource.TenantID == caller.TenantID) ||
 		(resource == nil && secutils.ValidateStoragePathTenant(file.Path, caller.TenantID) == nil) {
