@@ -264,3 +264,53 @@ func TestResolveTenantRole_DemotedUserCannotReclaimViaOrphan(t *testing.T) {
 		t.Fatalf("current policy allows orphan-tenant self-heal on home tenant, got (%v, %v)", got, ok)
 	}
 }
+
+// ---------- Phase 0 regression: identity must not come from legacy flags ----------
+
+func TestResolveTenantRole_LegacyCrossTenantFlagGrantsNothing(t *testing.T) {
+	// F1: CanAccessAllTenants on a non-SuperAdmin must not turn a JWT or
+	// X-Tenant-ID that names a foreign tenant into Admin of that tenant.
+	svc := newFakeMemberService()
+	svc.seedActive("someone-else", 99, types.TenantRoleAdmin)
+	user := &types.User{ID: "legacy", TenantID: 1, CanAccessAllTenants: true}
+
+	got, ok := resolveTenantRole(context.Background(), svc, user, 99, true, cfgWithRBAC(true))
+	if ok {
+		t.Fatalf("legacy cross-tenant flag must not grant a role, got (%v, %v)", got, ok)
+	}
+	if len(svc.addCalls) != 0 {
+		t.Fatalf("must not write memberships, got %+v", svc.addCalls)
+	}
+}
+
+func TestResolveTenantRole_SuspendedMembershipRejectedWhenRBACDisabled(t *testing.T) {
+	// F2: turning RBAC enforcement off must not turn a suspended
+	// membership into Admin.
+	svc := newFakeMemberService()
+	svc.seedActive("other", 8, types.TenantRoleAdmin)
+	svc.members[memberKey("u1", 8)] = &types.TenantMember{
+		UserID: "u1", TenantID: 8, Role: types.TenantRoleMember,
+		Status: types.TenantMemberStatusSuspended,
+	}
+	user := &types.User{ID: "u1", TenantID: 7}
+
+	got, ok := resolveTenantRole(context.Background(), svc, user, 8, false, cfgWithRBAC(false))
+	if ok {
+		t.Fatalf("suspended membership must be rejected even with RBAC off, got (%v, %v)", got, ok)
+	}
+}
+
+func TestResolveTenantRole_EmptyHomeTenantIsNotSelfClaimed(t *testing.T) {
+	// R3: a home tenant with no active members must not auto-promote the
+	// caller; SuperAdmins assign the first Admin explicitly.
+	svc := newFakeMemberService()
+	user := &types.User{ID: "u1", TenantID: 7}
+
+	got, ok := resolveTenantRole(context.Background(), svc, user, 7, false, cfgWithRBAC(true))
+	if ok {
+		t.Fatalf("orphan home tenant must not grant a role, got (%v, %v)", got, ok)
+	}
+	if len(svc.addCalls) != 0 {
+		t.Fatalf("must not AddMember, got %+v", svc.addCalls)
+	}
+}

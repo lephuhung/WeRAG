@@ -170,6 +170,21 @@ func (f *fakeKBInviteRepo) HasAcceptedInvite(_ context.Context, kbID, userID str
 	return false, nil
 }
 
+func (f *fakeKBInviteRepo) HasAcceptedInviteForOwner(_ context.Context, kbID, userID string, ownerTenantID uint64) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.rows {
+		if r.KBID == kbID && r.RecipientUserID == userID && r.OwnerTenantID == ownerTenantID &&
+			r.Status == types.KBInvitationStatusAccepted {
+			if r.ExpiresAt != nil && !r.ExpiresAt.After(time.Now()) {
+				continue
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeKBInviteRepo) DeleteByKBID(_ context.Context, kbID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -467,4 +482,40 @@ func TestKBInviteOwnerAdminExplicitHumanSuperAdmin(t *testing.T) {
 			t.Fatal("platform-admin status must NOT override another tenant's ownership")
 		}
 	})
+}
+
+// F5: an invite issued by a previous owner must stop authorizing reads
+// once the KB has a new owner, and the new owner's admin must be able to
+// revoke it.
+func TestKBInviteStaleAfterOwnerChange(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeKBInviteRepo()
+	_ = repo.Create(ctx, &types.KBInvitation{
+		ID: "inv-old", KBID: "kb-1", OwnerTenantID: 100,
+		RecipientUserID: "user-b", RecipientTenantID: 200,
+		InviterUserID: "admin-old", TokenHash: types.HashKBInviteToken("t"),
+		Status: types.KBInvitationStatusAccepted,
+	})
+	// The KB has since moved to tenant 300 (data scope stays 100).
+	kbRepo := &fakeKBRepoForInvite{kb: &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 100, OwnerTenantID: 300, Visibility: types.KBVisibilityTenant, Name: "KB",
+	}}
+	svc := NewKBInvitationService(repo, kbRepo, &fakeMemberSvcForInvite{active: map[string]bool{"user-b": true}}, nil, nil)
+
+	if ok, err := svc.HasAcceptedInvite(ctx, "kb-1", "user-b"); err != nil || ok {
+		t.Fatalf("stale invite from a previous owner must not authorize reads, got (%v, %v)", ok, err)
+	}
+
+	oldAdmin := types.Caller{TenantID: 100, UserID: "admin-old", Role: types.TenantRoleAdmin}
+	if err := svc.Revoke(ctx, oldAdmin, "inv-old"); err == nil {
+		t.Fatal("the previous owner's admin must not manage the KB's invites")
+	}
+
+	newAdmin := types.Caller{TenantID: 300, UserID: "admin-new", Role: types.TenantRoleAdmin}
+	if err := svc.Revoke(ctx, newAdmin, "inv-old"); err != nil {
+		t.Fatalf("current owner's admin must revoke a stale invite, got %v", err)
+	}
+	if got, _ := repo.GetByID(ctx, "inv-old"); got == nil || got.Status != types.KBInvitationStatusRevoked {
+		t.Fatalf("stale invite must be revoked, got %+v", got)
+	}
 }

@@ -352,3 +352,20 @@ func assertEnvelope(t *testing.T, w *httptest.ResponseRecorder, wantStatus int, 
 		t.Fatalf("envelope error.message must be non-empty, got body=%s", w.Body.String())
 	}
 }
+
+// F1: choosing a foreign tenant is a SuperAdmin scope selection; the
+// legacy CanAccessAllTenants attribute no longer qualifies, even with the
+// cluster-wide cross-tenant flag on.
+func TestIsTenantAccessible_LegacyFlagWithoutMembershipRejects(t *testing.T) {
+	user := &types.User{ID: "legacy", TenantID: 1, CanAccessAllTenants: true}
+	if IsTenantAccessible(context.Background(), user, 99, newFakeMemberService(), cfgCrossTenant(true)) {
+		t.Fatalf("legacy flag without membership must not reach a foreign tenant")
+	}
+}
+
+func TestIsTenantAccessible_SystemAdminWithoutMembershipAllows(t *testing.T) {
+	user := &types.User{ID: "root", IsSystemAdmin: true}
+	if !IsTenantAccessible(context.Background(), user, 99, newFakeMemberService(), cfgCrossTenant(false)) {
+		t.Fatalf("SuperAdmin may select any tenant as scope")
+	}
+}

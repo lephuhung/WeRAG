@@ -340,3 +340,31 @@ func TestRequireOwnershipOrRole_FailOpenOnLookupErrorWhenRBACDisabled(t *testing
 		t.Fatalf("EnableRBAC=false + lookup error must fail open, got %d", w.Code)
 	}
 }
+
+// R1: the legacy CanAccessAllTenants attribute must not satisfy a role
+// gate, even with the cluster-wide cross-tenant flag on.
+func TestRequireRole_LegacyCrossTenantFlagDoesNotBypass(t *testing.T) {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		ctx := c.Request.Context()
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
+		ctx = context.WithValue(ctx, types.UserIDContextKey, "legacy")
+		ctx = context.WithValue(ctx, types.UserContextKey, &types.User{
+			ID: "legacy", CanAccessAllTenants: true,
+		})
+		c.Request = c.Request.WithContext(types.WithCaller(ctx, types.Caller{
+			TenantID: 1, UserID: "legacy", Role: types.TenantRoleMember,
+		}))
+		c.Next()
+	})
+	router.GET("/protected",
+		RequireRole(types.TenantRoleAdmin, cfgRBACWithCrossTenant(true)),
+		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) },
+	)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("Member with legacy flag must be rejected by Admin gate, got %d", w.Code)
+	}
+}
