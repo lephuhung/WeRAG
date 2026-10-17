@@ -781,9 +781,11 @@ func errOwnerChangeUseTransfer() error {
 // TransferKnowledgeBaseOwner moves a KB to targetTenantID. Explicit human
 // SuperAdmin only (API keys and Tenant Admins are denied). The target must
 // exist, be active and be a real workspace (not a configuration profile)
-// and differ from the current owner. A tenant-owned source (tenant,
-// restricted, published) or a platform public source ends in 'tenant'
-// scope of the target: a published KB is withdrawn. The data-scope
+// and differ from the current owner. The scope never widens: 'tenant'
+// stays 'tenant' and 'restricted' stays 'restricted' (every ACL is revoked,
+// so only the new owner's Admins and SuperAdmins read it until the new
+// owner shares it); 'published' is withdrawn to 'tenant'; platform 'public'
+// becomes 'tenant' of the target. The data-scope
 // tenant_id and member_default are unchanged. persistKBScope revokes every
 // invitation (revoked_reason=owner_changed) and tenant grant in the same
 // transaction and audits kb.owner_transferred.
@@ -853,7 +855,7 @@ func (s *knowledgeBaseService) TransferKnowledgeBaseOwner(
 		WithdrawnFromPublished: kb.Visibility == types.KBVisibilityPublished,
 	}
 	kb.OwnerTenantID = targetTenantID
-	kb.Visibility = types.KBVisibilityTenant
+	kb.Visibility = transferredVisibility(kb.Visibility)
 	updated, revoked, err := s.persistKBScope(ctx, types.AuditActionKBOwnerTransferred, kb, oldScope, targetTenantID)
 	if err != nil {
 		return nil, err
@@ -862,6 +864,16 @@ func (s *knowledgeBaseService) TransferKnowledgeBaseOwner(
 	result.RevokedInvitations = revoked.Invitations
 	result.RevokedGrants = revoked.Grants
 	return result, nil
+}
+
+// transferredVisibility is the scope a KB keeps after an owner transfer:
+// restricted stays restricted, everything else (tenant, published, platform
+// public) lands in the new owner's tenant scope.
+func transferredVisibility(from types.KBVisibility) types.KBVisibility {
+	if from == types.KBVisibilityRestricted {
+		return types.KBVisibilityRestricted
+	}
+	return types.KBVisibilityTenant
 }
 
 // isActiveTenantStatus treats an empty status (the column default before

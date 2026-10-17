@@ -121,8 +121,11 @@ type KnowledgeBaseService interface {
 
 	// TransferKnowledgeBaseOwner moves a KB to another owner tenant
 	// (explicit human SuperAdmin only). The source must be tenant-owned
-	// (tenant/restricted/published) or platform public; the KB ends in
-	// 'tenant' scope of the target, data-scope tenant_id and member_default
+	// (tenant/restricted/published) or platform public. The scope never
+	// widens: restricted stays restricted (readable only by the target's
+	// Admins and SuperAdmins until the target shares it), tenant stays
+	// tenant, published is withdrawn to tenant and public becomes tenant of
+	// the target. Data-scope tenant_id and member_default are
 	// unchanged, and every invitation and tenant grant is revoked in the
 	// same transaction (revoked_reason=owner_changed).
 	TransferKnowledgeBaseOwner(ctx context.Context, id string, targetTenantID uint64,

@@ -56,17 +56,35 @@ func TestTransferOwner_SuperAdminMovesTenantKB(t *testing.T) {
 	assert.Equal(t, float64(2), details["revoked_grants"])
 }
 
-func TestTransferOwner_PublishedAndRestrictedEndInTenantScope(t *testing.T) {
-	for _, from := range []types.KBVisibility{types.KBVisibilityPublished, types.KBVisibilityRestricted} {
-		_, _, _, svc := newTransferFixture(&types.KnowledgeBase{
-			ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: from,
-		}, 1, 2)
-		res, err := svc.TransferKnowledgeBaseOwner(superAdminLifecycleCtx(1), "kb-1", 2)
-		require.NoError(t, err, from)
-		assert.Equal(t, types.KBVisibilityTenant, res.KnowledgeBase.Visibility, from)
-		assert.Equal(t, from, res.PreviousVisibility)
-		assert.Equal(t, from == types.KBVisibilityPublished, res.WithdrawnFromPublished, from)
-	}
+func TestTransferOwner_PublishedIsWithdrawnToTenant(t *testing.T) {
+	_, _, _, svc := newTransferFixture(&types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityPublished,
+	}, 1, 2)
+	res, err := svc.TransferKnowledgeBaseOwner(superAdminLifecycleCtx(1), "kb-1", 2)
+	require.NoError(t, err)
+	assert.Equal(t, types.KBVisibilityTenant, res.KnowledgeBase.Visibility)
+	assert.Equal(t, types.KBVisibilityPublished, res.PreviousVisibility)
+	assert.True(t, res.WithdrawnFromPublished)
+}
+
+// A restricted KB must not widen to the new owner's whole tenant: it stays
+// restricted, every ACL is revoked, so only the new owner's Admins (and
+// SuperAdmins) read it until they share it.
+func TestTransferOwner_RestrictedStaysRestricted(t *testing.T) {
+	repo, _, _, svc := newTransferFixture(&types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityRestricted,
+		MemberDefault: types.KBMemberDefaultContribute,
+	}, 1, 2)
+	repo.scopeRevoked = types.KBShareRevocation{Invitations: 2}
+	res, err := svc.TransferKnowledgeBaseOwner(superAdminLifecycleCtx(1), "kb-1", 2)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), res.KnowledgeBase.OwnerTenantID)
+	assert.Equal(t, types.KBVisibilityRestricted, res.KnowledgeBase.Visibility)
+	assert.Equal(t, types.KBVisibilityRestricted, res.PreviousVisibility)
+	assert.False(t, res.WithdrawnFromPublished)
+	assert.Equal(t, int64(2), res.RevokedInvitations)
+	assert.Equal(t, []string{types.KBInviteRevokedReasonOwnerChanged}, repo.scopeRevokeReasons)
+	assert.Equal(t, types.KBVisibilityRestricted, repo.rows["kb-1"].Visibility, "persisted scope")
 }
 
 func TestTransferOwner_PlatformPublicToTenant(t *testing.T) {

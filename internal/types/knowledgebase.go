@@ -125,8 +125,9 @@ type KBShareRevocation struct {
 }
 
 // KBOwnerTransferResult is what TransferKnowledgeBaseOwner reports: the
-// updated KB, the previous owner, the revoked share counts, and whether the
-// KB was published (or platform public) and is no longer.
+// updated KB (restricted stays restricted; tenant, published and platform
+// public end in 'tenant'), the previous owner and scope, the revoked share
+// counts, and whether a published KB was withdrawn.
 type KBOwnerTransferResult struct {
 	KnowledgeBase          *KnowledgeBase
 	PreviousOwnerTenantID  uint64

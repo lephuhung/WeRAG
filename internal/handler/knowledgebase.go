@@ -1027,7 +1027,7 @@ type TransferKnowledgeBaseOwnerResponse struct {
 
 // TransferKnowledgeBaseOwner godoc
 // @Summary      Transfer knowledge base owner
-// @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id in 'tenant' scope; data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed); a published KB is withdrawn.
+// @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).
 // @Tags         Knowledge Base
 // @Accept       json
 // @Produce      json

@@ -381,8 +381,9 @@ type TransferKnowledgeBaseOwnerResponse struct {
 }
 
 // TransferKnowledgeBaseOwner moves a knowledge base to another owner tenant
-// (explicit human SuperAdmin only; API keys are denied). The KB ends in
-// tenant scope of the target and every share of it is revoked.
+// (explicit human SuperAdmin only; API keys are denied). Restricted stays
+// restricted; tenant, published (withdrawn) and platform public end in the
+// target's tenant scope. Every share of it is revoked.
 func (c *Client) TransferKnowledgeBaseOwner(ctx context.Context, knowledgeBaseID string, targetTenantID uint64,
 ) (*TransferKnowledgeBaseOwnerResponse, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/transfer-owner", url.PathEscape(knowledgeBaseID))
