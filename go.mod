@@ -45,10 +45,7 @@ require (
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
 	github.com/tencentcloud/CubeSandbox/sdk/go v0.0.0-20260807115140-5cefcca27a7f
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.103
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lkeap v1.3.103
 	github.com/tiktoken-go/tokenizer v0.7.0
-	github.com/volcengine/vikingdb-go-sdk v0.0.11
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yanyiwu/gojieba v1.4.7
 	go.opentelemetry.io/otel v1.43.0
@@ -95,7 +92,6 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
@@ -196,7 +192,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
-	github.com/volcengine/volc-sdk-golang v1.0.252 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect

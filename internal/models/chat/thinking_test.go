@@ -128,8 +128,9 @@ func TestParseThinkingOverride(t *testing.T) {
 
 func TestEffectiveThinkingControl(t *testing.T) {
 	assert.Equal(t, "enable_thinking", EffectiveThinkingControl(&ChatConfig{
-		Provider:  "aliyun",
-		ModelName: "qwen3-32b",
+		Provider:    "generic",
+		ModelName:   "qwen3-32b",
+		ExtraConfig: map[string]string{ExtraConfigThinkingControl: "enable_thinking"},
 	}))
 	assert.Equal(t, "chat_template_kwargs", EffectiveThinkingControl(&ChatConfig{
 		Provider:    "generic",

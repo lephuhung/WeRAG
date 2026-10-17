@@ -270,66 +270,6 @@ func TestConvertMessages_ReasoningContentRoundTrip(t *testing.T) {
 	})
 }
 
-func TestApplyCompletionToolCallMetadata(t *testing.T) {
-	c := newTestRemoteChat(t)
-	c.adapter = geminiProvider{}
-
-	resp := &types.ChatResponse{
-		ToolCalls: []types.LLMToolCall{{
-			ID:   "call_1",
-			Type: "function",
-			Function: types.FunctionCall{
-				Name:      "wiki_search",
-				Arguments: `{"query":"MACS"}`,
-			},
-		}},
-	}
-	body := []byte(`{
-		"choices":[{
-			"message":{
-				"tool_calls":[{
-					"id":"call_1",
-					"type":"function",
-					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
-					"extra_content":{"google":{"thought_signature":"sig-from-gemini"}}
-				}]
-			}
-		}]
-	}`)
-
-	c.applyCompletionToolCallMetadata(body, resp)
-	require.Len(t, resp.ToolCalls, 1)
-	assert.JSONEq(t, `{"thought_signature":"sig-from-gemini"}`,
-		string(resp.ToolCalls[0].ProviderMetadata["google"]))
-}
-
-func TestApplyStreamToolCallMetadata(t *testing.T) {
-	c := newTestRemoteChat(t)
-	c.adapter = geminiProvider{}
-	state := newStreamState()
-
-	body := []byte(`{
-		"choices":[{
-			"delta":{
-				"tool_calls":[{
-					"index":0,
-					"id":"call_1",
-					"type":"function",
-					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
-					"extra_content":{"google":{"thought_signature":"stream-sig-from-gemini"}}
-				}]
-			}
-		}]
-	}`)
-
-	c.applyStreamToolCallMetadata(body, state)
-	toolCalls := state.buildOrderedToolCalls()
-	require.Len(t, toolCalls, 1)
-	assert.JSONEq(t, `{"thought_signature":"stream-sig-from-gemini"}`,
-		string(toolCalls[0].ProviderMetadata["google"]))
-}
-
-// TestRemoteAPIChat kiểm tra tổng hợp mọi chức năng của Remote API Chat
 func TestRemoteAPIChat(t *testing.T) {
 	// Lấy biến môi trường
 	deepseekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -519,15 +459,6 @@ func TestParseCompletionResponse_CachedTokens(t *testing.T) {
 		assert.False(t, got.Usage.CacheReported)
 		assert.Equal(t, types.PromptCacheStatusUnsupported, got.Usage.CacheStatus)
 	})
-}
-
-func TestApplyRawPromptCacheUsage_DeepSeekNativeFields(t *testing.T) {
-	usage := types.TokenUsage{PromptTokens: 4096, CompletionTokens: 10, TotalTokens: 4106}
-	applyRawPromptCacheUsage([]byte(`{"usage":{"prompt_tokens":4096,"prompt_cache_hit_tokens":3072,"prompt_cache_miss_tokens":1024}}`), &usage)
-	assert.Equal(t, 3072, usage.CacheReadTokens)
-	assert.Equal(t, 1024, usage.CacheMissTokens)
-	assert.True(t, usage.CacheReported)
-	assert.Equal(t, types.PromptCacheStatusHit, usage.CacheStatus)
 }
 
 // TestTokenUsage_CachedTokensJSONOmitempty ensures the new CachedTokens field

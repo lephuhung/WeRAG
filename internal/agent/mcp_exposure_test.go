@@ -29,9 +29,7 @@ func TestMCPExposureWithoutMentionReachesProviderAndExecutes(t *testing.T) {
 	utils.SetSSRFWhitelistFromRaw("127.0.0.1")
 	t.Cleanup(utils.ResetSSRFWhitelistForTest)
 	for _, variant := range []string{
-		"openai", "anthropic", "openai-deferred", "anthropic-deferred",
-		"openai-proxy-deferred", "anthropic-proxy-deferred",
-		"openai-string-proxy-deferred", "anthropic-string-proxy-deferred",
+		"openai", "openai-deferred", "openai-proxy-deferred", "openai-string-proxy-deferred",
 	} {
 		t.Run(variant, func(t *testing.T) {
 			provider := strings.Split(variant, "-")[0]
@@ -152,11 +150,7 @@ func TestMCPExposureWithoutMentionReachesProviderAndExecutes(t *testing.T) {
 					if strings.HasPrefix(name, "mcp_") {
 						toolName = name
 						assert.Contains(t, desc, description)
-						schemaKey := "parameters"
-						if provider == "anthropic" {
-							schemaKey = "input_schema"
-						}
-						assert.Contains(t, string(definition[schemaKey]), `"required":["id"]`)
+						assert.Contains(t, string(definition["parameters"]), `"required":["id"]`)
 					}
 				}
 				call := requests.Add(1)
@@ -265,24 +259,14 @@ func TestMCPExposureWithoutMentionReachesProviderAndExecutes(t *testing.T) {
 	}
 }
 
-func streamMCPTestCall(w http.ResponseWriter, provider, name, id, arguments string) {
-	if provider == "openai" {
-		_, _ = fmt.Fprintf(
-			w,
-			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":%q,"+
-				"\"type\":\"function\",\"function\":{\"name\":%q,\"arguments\":%q}}]},"+
-				"\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
-			id,
-			name,
-			arguments,
-		)
-	} else {
-		_, _ = fmt.Fprintf(w, "data: {\"type\":\"content_block_start\",\"index\":0,"+
-			"\"content_block\":{\"type\":\"tool_use\",\"id\":%q,\"name\":%q,\"input\":{}}}\n\n"+
-			"data: {\"type\":\"content_block_delta\",\"index\":0,"+
-			"\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":%q}}\n\ndata: "+
-			"{\"type\":\"content_block_stop\",\"index\":0}\n\ndata: "+
-			"{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\ndata: "+
-			"{\"type\":\"message_stop\"}\n\n", id, name, arguments)
-	}
+func streamMCPTestCall(w http.ResponseWriter, _, name, id, arguments string) {
+	_, _ = fmt.Fprintf(
+		w,
+		"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":%q,"+
+			"\"type\":\"function\",\"function\":{\"name\":%q,\"arguments\":%q}}]},"+
+			"\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+		id,
+		name,
+		arguments,
+	)
 }

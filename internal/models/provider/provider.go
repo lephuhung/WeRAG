@@ -15,56 +15,8 @@ type ProviderName string
 const (
 	// OpenAI
 	ProviderOpenAI ProviderName = "openai"
-	// Anthropic Claude
-	ProviderAnthropic ProviderName = "anthropic"
-	// Alibaba Cloud DashScope
-	ProviderAliyun ProviderName = "aliyun"
-	// Zhipu AI (dòng GLM)
-	ProviderZhipu ProviderName = "zhipu"
-	// OpenRouter
-	ProviderOpenRouter ProviderName = "openrouter"
-	// ProviderLiteLLM is the LiteLLM self-hosted proxy (OpenAI-compatible gateway to 100+ providers).
-	ProviderLiteLLM ProviderName = "litellm"
-	// Requesty
-	ProviderRequesty ProviderName = "requesty"
-	// SiliconFlow
-	ProviderSiliconFlow ProviderName = "siliconflow"
-	// Jina AI (Embedding and Rerank)
-	ProviderJina ProviderName = "jina"
 	// Generic tương thích OpenAI (tự triển khai)
 	ProviderGeneric ProviderName = "generic"
-	// DeepSeek
-	ProviderDeepSeek ProviderName = "deepseek"
-	// Google Gemini
-	ProviderGemini ProviderName = "gemini"
-	// Volcengine Ark
-	ProviderVolcengine ProviderName = "volcengine"
-	// Tencent Hunyuan
-	ProviderHunyuan ProviderName = "hunyuan"
-	// MiniMax
-	ProviderMiniMax ProviderName = "minimax"
-	// Xiaomi Mimo
-	ProviderMimo ProviderName = "mimo"
-	// GPUStack (triển khai riêng)
-	ProviderGPUStack ProviderName = "gpustack"
-	// Moonshot (Kimi)
-	ProviderMoonshot ProviderName = "moonshot"
-	// ModelScope
-	ProviderModelScope ProviderName = "modelscope"
-	// Baidu Qianfan
-	ProviderQianfan ProviderName = "qianfan"
-	// Qiniu Cloud
-	ProviderQiniu ProviderName = "qiniu"
-	// Meituan LongCat AI
-	ProviderLongCat ProviderName = "longcat"
-	// Tencent Cloud LKEAP
-	ProviderLKEAP ProviderName = "lkeap"
-	// NVIDIA
-	ProviderNvidia ProviderName = "nvidia"
-	// Novita AI
-	ProviderNovita ProviderName = "novita"
-	// Azure OpenAI
-	ProviderAzureOpenAI ProviderName = "azure_openai"
 	// TypeSafe Jev (decision model)
 	ProviderJev ProviderName = "jev"
 	// Cloudflare Clef (Jev-compatible decision model on Workers AI)
@@ -76,31 +28,7 @@ func AllProviders() []ProviderName {
 	return []ProviderName{
 		ProviderGeneric,
 		ProviderWeKnoraCloud,
-		ProviderAliyun,
-		ProviderZhipu,
-		ProviderVolcengine,
-		ProviderHunyuan,
-		ProviderSiliconFlow,
-		ProviderDeepSeek,
-		ProviderMiniMax,
-		ProviderMoonshot,
-		ProviderModelScope,
-		ProviderQianfan,
-		ProviderQiniu,
 		ProviderOpenAI,
-		ProviderAnthropic,
-		ProviderGemini,
-		ProviderOpenRouter,
-		ProviderLiteLLM,
-		ProviderRequesty,
-		ProviderJina,
-		ProviderMimo,
-		ProviderLongCat,
-		ProviderLKEAP,
-		ProviderGPUStack,
-		ProviderNvidia,
-		ProviderNovita,
-		ProviderAzureOpenAI,
 		ProviderJev,
 		ProviderClef,
 	}
@@ -230,59 +158,8 @@ func ListByModelType(modelType types.ModelType) []ProviderInfo {
 // DetectProvider nhận diện nhà cung cấp qua BaseURL
 func DetectProvider(baseURL string) ProviderName {
 	switch {
-	case containsAny(baseURL, "dashscope.aliyuncs.com"):
-		return ProviderAliyun
-	case containsAny(baseURL, "open.bigmodel.cn", "zhipu"):
-		return ProviderZhipu
-	case containsAny(baseURL, "openrouter.ai"):
-		return ProviderOpenRouter
-	// Hostname/path containing "litellm" (including the catalog placeholder
-	// your_litellm_proxy). Loopback URLs such as localhost:4000 stay generic
-	// because they are SSRF-blocked unless explicitly whitelisted.
-	case containsAny(baseURL, "litellm"):
-		return ProviderLiteLLM
-	case containsAny(baseURL, "router.requesty.ai", "requesty.ai"):
-		return ProviderRequesty
-	case containsAny(baseURL, "siliconflow.cn"):
-		return ProviderSiliconFlow
-	case containsAny(baseURL, "api.jina.ai"):
-		return ProviderJina
-	case containsAny(baseURL, "openai.azure.com"):
-		return ProviderAzureOpenAI
 	case containsAny(baseURL, "api.openai.com"):
 		return ProviderOpenAI
-	case containsAny(baseURL, "api.anthropic.com"):
-		return ProviderAnthropic
-	case containsAny(baseURL, "api.deepseek.com"):
-		return ProviderDeepSeek
-	case containsAny(baseURL, "generativelanguage.googleapis.com"):
-		return ProviderGemini
-	case containsAny(baseURL, "volces.com", "volcengine"):
-		return ProviderVolcengine
-	case containsAny(baseURL, "hunyuan.cloud.tencent.com"):
-		return ProviderHunyuan
-	case containsAny(baseURL, "minimax.io", "minimaxi.com"):
-		return ProviderMiniMax
-	case containsAny(baseURL, "xiaomimimo.com"):
-		return ProviderMimo
-	case containsAny(baseURL, "gpustack"):
-		return ProviderGPUStack
-	case containsAny(baseURL, "modelscope.cn"):
-		return ProviderModelScope
-	case containsAny(baseURL, "qiniuapi.com", "qiniu"):
-		return ProviderQiniu
-	case containsAny(baseURL, "moonshot.ai"):
-		return ProviderMoonshot
-	case containsAny(baseURL, "qianfan.baidubce.com", "baidubce.com"):
-		return ProviderQianfan
-	case containsAny(baseURL, "longcat.chat"):
-		return ProviderLongCat
-	case containsAny(baseURL, "lkeap.cloud.tencent.com", "api.lkeap", "lkeap.tencentcloudapi.com"):
-		return ProviderLKEAP
-	case containsAny(baseURL, "nvidia.com"):
-		return ProviderNvidia
-	case containsAny(baseURL, "api.novita.ai", "novita.ai"):
-		return ProviderNovita
 	case containsAny(baseURL, "weknora.weixin.qq.com"):
 		return ProviderWeKnoraCloud
 	default:

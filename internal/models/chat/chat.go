@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -189,16 +188,9 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	return wrapChatConcurrency(c, config.MaxConcurrency, err)
 }
 
-// NewRemoteChat tạo instance trò chuyện từ xa theo provider.
-// Anthropic dùng cài đặt giao thức Messages riêng; các nhà cung cấp tương thích OpenAI còn lại đều do
-// RemoteAPIChat xử lý, hành vi riêng của provider được xác định lúc khởi tạo qua providerAdapter.
+// NewRemoteChat creates a remote chat instance. Every supported provider is
+// OpenAI-compatible and handled by RemoteAPIChat; provider quirks are resolved
+// through providerAdapter at construction time.
 func NewRemoteChat(config *ChatConfig) (Chat, error) {
-	providerName := provider.ProviderName(config.Provider)
-	if providerName == "" {
-		providerName = provider.DetectProvider(config.BaseURL)
-	}
-	if providerName == provider.ProviderAnthropic {
-		return NewAnthropicChat(config)
-	}
 	return NewRemoteAPIChat(config)
 }

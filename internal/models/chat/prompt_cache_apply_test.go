@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,44 +56,6 @@ func TestApplyPromptCacheToJSONBody_NoneLeavesBodyUntouched(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, forceRaw)
 	assert.Equal(t, req, body)
-}
-
-func TestApplyPromptCacheToJSONBody_AliyunCacheControlBreakpoints(t *testing.T) {
-	req := openai.ChatCompletionRequest{
-		Model: "qwen-plus",
-		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: "stable system"},
-			{Role: "user", Content: "turn question"},
-		},
-		Tools: []openai.Tool{{
-			Type:     openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{Name: "search", Description: "d", Parameters: json.RawMessage(`{}`)},
-		}},
-	}
-	policy := promptCachePolicyFor(provider.ProviderAliyun, "")
-	body, forceRaw, err := applyPromptCacheToJSONBody(req, policy, "", CacheRetentionShort)
-	require.NoError(t, err)
-	require.True(t, forceRaw)
-	wire, err := json.Marshal(body)
-	require.NoError(t, err)
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal(wire, &payload))
-
-	messages := payload["messages"].([]any)
-	sys := messages[0].(map[string]any)
-	sysParts := sys["content"].([]any)
-	sysCache := sysParts[0].(map[string]any)["cache_control"].(map[string]any)
-	assert.Equal(t, "ephemeral", sysCache["type"])
-
-	user := messages[1].(map[string]any)
-	userParts := user["content"].([]any)
-	userCache := userParts[0].(map[string]any)["cache_control"].(map[string]any)
-	assert.Equal(t, "ephemeral", userCache["type"])
-
-	tools := payload["tools"].([]any)
-	lastTool := tools[len(tools)-1].(map[string]any)
-	toolCache := lastTool["cache_control"].(map[string]any)
-	assert.Equal(t, "ephemeral", toolCache["type"])
 }
 
 func TestBuildOutbound_OpenAIPromptCacheKeyFromSession(t *testing.T) {

@@ -23,29 +23,12 @@ WeKnora 支持多种主流 AI 模型服务商，在创建模型时可通过 `par
 | -------------- | ---------------------------- | ------------------------------- |
 | `generic`      | 自定义 (OpenAI 兼容接口)     | Chat, Embedding, Rerank, VLLM   |
 | `openai`       | OpenAI                       | Chat, Embedding, Rerank, VLLM   |
-| `aliyun`       | 阿里云 DashScope             | Chat, Embedding, Rerank, VLLM   |
-| `zhipu`        | 智谱 BigModel                | Chat, Embedding, Rerank, VLLM   |
-| `volcengine`   | 火山引擎 Volcengine          | Chat, Embedding, Rerank, VLLM   |
-| `hunyuan`      | 腾讯混元 Hunyuan             | Chat, Embedding                 |
-| `deepseek`     | DeepSeek                     | Chat                            |
-| `minimax`      | MiniMax                      | Chat                            |
-| `mimo`         | 小米 MiMo                    | Chat                            |
-| `siliconflow`  | 硅基流动 SiliconFlow         | Chat, Embedding, Rerank, VLLM   |
-| `jina`         | Jina                         | Embedding, Rerank               |
-| `openrouter`   | OpenRouter                   | Chat, VLLM                      |
-| `litellm`      | LiteLLM (self-hosted proxy)  | Chat, Embedding, VLLM           |
-| `requesty`     | Requesty                     | Chat, Embedding, VLLM           |
-| `gemini`       | Google Gemini                | Chat                            |
-| `modelscope`   | 魔搭 ModelScope              | Chat, Embedding, VLLM           |
-| `moonshot`     | 月之暗面 Moonshot            | Chat, VLLM                      |
-| `qianfan`      | 百度千帆 Baidu Cloud         | Chat, Embedding, Rerank, VLLM   |
-| `qiniu`        | 七牛云 Qiniu                 | Chat                            |
-| `longcat`      | LongCat AI                   | Chat                            |
-| `gpustack`     | GPUStack                     | Chat, Embedding, Rerank, VLLM   |
+| `weknoracloud` | WeKnora Cloud                | Chat, Embedding, Rerank, VLLM   |
+| `jev`          | TypeSafe Jev                 | Decision                        |
+| `clef`         | Cloudflare Clef              | Decision                        |
 
 > 实际可用的服务商以 `GET /models/providers` 返回为准。
->
-> `litellm` 的目录默认地址是占位符 `http://your_litellm_proxy/v1`，保存前请换成实际可解析的主机名。`localhost` / `127.0.0.1` / `host.docker.internal` 默认会被 SSRF 拦截；自托管时把该主机加入 `SSRF_WHITELIST`。创建模型时 `source` 仍为 `remote`，厂商写在 `parameters.provider`。
+> 自托管的 OpenAI 兼容服务（vLLM 等）用 `generic`。`localhost` / `127.0.0.1` / `host.docker.internal` 默认会被 SSRF 拦截；自托管时把该主机加入 `SSRF_WHITELIST`。
 
 ## GET `/models/providers` - 获取模型服务商列表
 
@@ -151,7 +134,7 @@ curl --location 'http://localhost:8080/api/v1/models' \
     "parameters": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": "sk-your-dashscope-api-key",
-        "provider": "aliyun"
+        "provider": "generic"
     }
 }'
 ```
@@ -194,7 +177,7 @@ curl --location 'http://localhost:8080/api/v1/models' \
     "parameters": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": "sk-your-dashscope-api-key",
-        "provider": "aliyun",
+        "provider": "generic",
         "embedding_parameters": {
             "dimension": 1024,
             "truncate_prompt_tokens": 0
@@ -242,7 +225,7 @@ curl --location 'http://localhost:8080/api/v1/models' \
     "parameters": {
         "base_url": "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
         "api_key": "sk-your-dashscope-api-key",
-        "provider": "aliyun"
+        "provider": "generic"
     }
 }'
 ```
@@ -303,7 +286,7 @@ curl --location 'http://localhost:8080/api/v1/models' \
     "parameters": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": "sk-your-dashscope-api-key",
-        "provider": "aliyun"
+        "provider": "generic"
     }
 }'
 ```
@@ -323,7 +306,7 @@ curl --location 'http://localhost:8080/api/v1/models' \
         "parameters": {
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "api_key": "sk-***",
-            "provider": "aliyun",
+            "provider": "generic",
             "embedding_parameters": {
                 "dimension": 1024,
                 "truncate_prompt_tokens": 0
@@ -404,7 +387,7 @@ curl --location --request PUT 'http://localhost:8080/api/v1/models/8fdc464d-8eaa
     "parameters": {
         "base_url": "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
         "api_key": "sk-your-new-api-key",
-        "provider": "aliyun"
+        "provider": "generic"
     }
 }'
 ```

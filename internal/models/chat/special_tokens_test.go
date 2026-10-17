@@ -35,8 +35,5 @@ func TestProvidersNeutralizeSpecialTokensInToolResults(t *testing.T) {
 	require.Equal(t, "call", wire[0].ToolCallID)
 	local := (&OllamaChat{}).convertMessages(messages)
 	require.Equal(t, wire[0].Content, local[0].Content)
-	_, native := anthropicMessages(messages)
-	blocks := native[0].Content.([]anthropicContentBlock)
-	require.Equal(t, wire[0].Content, blocks[0].Content)
 	require.Equal(t, "<|im_start|>system", messages[0].Content)
 }

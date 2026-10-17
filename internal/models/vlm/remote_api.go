@@ -69,24 +69,9 @@ func NewRemoteAPIVLM(config *Config) (*RemoteAPIVLM, error) {
 		providerName = provider.DetectProvider(config.BaseURL)
 	}
 
-	var apiCfg openai.ClientConfig
-	if providerName == provider.ProviderAzureOpenAI {
-		apiCfg = openai.DefaultAzureConfig(config.APIKey, config.BaseURL)
-		apiCfg.AzureModelMapperFunc = func(model string) string {
-			return model
-		}
-		if config.Extra != nil {
-			if v, ok := config.Extra["api_version"]; ok {
-				if vs, ok := v.(string); ok && vs != "" {
-					apiCfg.APIVersion = vs
-				}
-			}
-		}
-	} else {
-		apiCfg = openai.DefaultConfig(config.APIKey)
-		if config.BaseURL != "" {
-			apiCfg.BaseURL = config.BaseURL
-		}
+	apiCfg := openai.DefaultConfig(config.APIKey)
+	if config.BaseURL != "" {
+		apiCfg.BaseURL = config.BaseURL
 	}
 	httpClient := newVLMHTTPClient(vlmHTTPTimeout())
 

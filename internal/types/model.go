@@ -109,25 +109,9 @@ func (d ModelUsageDetails) InUse() bool {
 type ModelSource string
 
 const (
-	ModelSourceLocal       ModelSource = "local"        // Local model
-	ModelSourceRemote      ModelSource = "remote"       // Remote model
-	ModelSourceAliyun      ModelSource = "aliyun"       // Aliyun DashScope model
-	ModelSourceZhipu       ModelSource = "zhipu"        // Zhipu model
-	ModelSourceVolcengine  ModelSource = "volcengine"   // Volcengine model
-	ModelSourceDeepseek    ModelSource = "deepseek"     // Deepseek model
-	ModelSourceHunyuan     ModelSource = "hunyuan"      // Hunyuan model
-	ModelSourceMinimax     ModelSource = "minimax"      // Minimax mode
-	ModelSourceOpenAI      ModelSource = "openai"       // OpenAI model
-	ModelSourceGemini      ModelSource = "gemini"       // Gemini model
-	ModelSourceMimo        ModelSource = "mimo"         // Mimo model
-	ModelSourceSiliconFlow ModelSource = "siliconflow"  // SiliconFlow model
-	ModelSourceJina        ModelSource = "jina"         // Jina AI model
-	ModelSourceOpenRouter  ModelSource = "openrouter"   // OpenRouter model
-	ModelSourceLiteLLM     ModelSource = "litellm"      // LiteLLM proxy model
-	ModelSourceRequesty    ModelSource = "requesty"     // Requesty model
-	ModelSourceNvidia      ModelSource = "nvidia"       // NVIDIA model
-	ModelSourceNovita      ModelSource = "novita"       // Novita AI model
-	ModelSourceAzureOpenAI ModelSource = "azure_openai" // Azure OpenAI model
+	ModelSourceLocal  ModelSource = "local"  // Local model
+	ModelSourceRemote ModelSource = "remote" // Remote model
+	ModelSourceOpenAI ModelSource = "openai" // OpenAI model
 )
 
 // EmbeddingParameters represents the embedding parameters for a model

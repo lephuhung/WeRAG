@@ -142,20 +142,8 @@ func newReranker(config *RerankerConfig) (Reranker, error) {
 		err      error
 	)
 	switch providerName {
-	case provider.ProviderAliyun:
-		reranker, err = NewAliyunReranker(config)
-	case provider.ProviderZhipu:
-		reranker, err = NewZhipuReranker(config)
-	case provider.ProviderJina:
-		reranker, err = NewJinaReranker(config)
-	case provider.ProviderNvidia:
-		reranker, err = NewNvidiaReranker(config)
 	case provider.ProviderWeKnoraCloud:
 		reranker, err = NewWeKnoraCloudReranker(config)
-	case provider.ProviderLKEAP:
-		reranker, err = NewLKEAPReranker(config)
-	case provider.ProviderVolcengine:
-		reranker, err = NewVolcengineReranker(config)
 	default:
 		reranker, err = NewOpenAIReranker(config)
 	}

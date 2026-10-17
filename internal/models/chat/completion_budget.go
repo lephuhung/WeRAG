@@ -34,25 +34,15 @@ func (o *ChatOptions) CompletionBudget() int {
 // provider+model, following the earendil-works/pi compat.maxTokensField
 // pattern: one internal budget, exactly one outbound field.
 //
-// Default is max_completion_tokens (OpenAI Chat Completions, Azure, Ark),
-// matching Pi. Only providers whose docs (or Pi's catalog) use the legacy
-// name stay on max_tokens. WeKnora-only hosts that document max_tokens
-// (LKEAP) are listed here too. Unknown OpenAI-compat hosts — including
-// Aliyun DashScope — keep the default. GPT-5 / o-series always use
-// max_completion_tokens.
+// Default is max_completion_tokens (OpenAI Chat Completions), matching Pi.
+// Self-hosted vLLM (generic) stays on the legacy max_tokens. GPT-5 /
+// o-series always use max_completion_tokens.
 func wireCompletionTokenField(name provider.ProviderName, model string) completionTokenField {
 	if provider.IsOpenAIReasoningOrGPT5Model(model) {
 		return completionTokenFieldMaxCompletionTokens
 	}
 	switch name {
-	case provider.ProviderDeepSeek, // api-docs.deepseek.com: max_tokens only
-		provider.ProviderZhipu,       // open.bigmodel.cn: max_tokens only (Pi isZai)
-		provider.ProviderSiliconFlow, // docs.siliconflow.com schema: max_tokens
-		provider.ProviderMoonshot,    // Pi useMaxTokens (moonshot.ai)
-		provider.ProviderNvidia,      // Pi useMaxTokens (NIM / vLLM)
-		provider.ProviderGeneric,     // self-hosted vLLM typically ignores the new field
-		provider.ProviderGPUStack,    // private vLLM-class runtime
-		provider.ProviderLKEAP:       // cloud.tencent.com/document/product/1772/115969: max_tokens only
+	case provider.ProviderGeneric: // self-hosted vLLM typically ignores the new field
 		return completionTokenFieldMaxTokens
 	default:
 		return completionTokenFieldMaxCompletionTokens

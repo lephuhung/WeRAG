@@ -57,11 +57,7 @@ func BuildPromptCacheKey(tenantID uint64, modelID, purpose, prefixFingerprint st
 
 func providerCacheAccountingStatus(name provider.ProviderName) types.PromptCacheStatus {
 	switch name {
-	case provider.ProviderOpenAI,
-		provider.ProviderAzureOpenAI,
-		provider.ProviderDeepSeek,
-		provider.ProviderAliyun,
-		provider.ProviderAnthropic:
+	case provider.ProviderOpenAI:
 		return types.PromptCacheStatusUnreported
 	default:
 		return types.PromptCacheStatusUnsupported
@@ -195,12 +191,8 @@ type promptCachePolicy struct {
 
 func promptCachePolicyFor(name provider.ProviderName, baseURL string) promptCachePolicy {
 	switch name {
-	case provider.ProviderOpenAI, provider.ProviderAzureOpenAI, provider.ProviderOpenRouter:
+	case provider.ProviderOpenAI:
 		return promptCachePolicy{sendKey: true, sendAffinity: true}
-	case provider.ProviderAliyun:
-		return promptCachePolicy{sendCacheControl: true}
-	case provider.ProviderAnthropic:
-		return promptCachePolicy{sendCacheControl: true}
 	}
 	if strings.Contains(baseURL, "api.openai.com") {
 		return promptCachePolicy{sendKey: true, sendAffinity: true}

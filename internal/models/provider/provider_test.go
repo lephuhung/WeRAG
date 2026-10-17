@@ -10,17 +10,6 @@ import (
 
 func TestProviderRegistry(t *testing.T) {
 	// Test that all default providers are registered
-	t.Run("default providers registered", func(t *testing.T) {
-		providers := List()
-		assert.NotEmpty(t, providers, "should have registered providers")
-
-		// Check specific providers exist
-		for _, name := range []ProviderName{ProviderOpenAI, ProviderAliyun, ProviderZhipu, ProviderGeneric} {
-			p, ok := Get(name)
-			assert.True(t, ok, "provider %s should be registered", name)
-			assert.NotNil(t, p, "provider %s should not be nil", name)
-		}
-	})
 
 	t.Run("GetOrDefault fallback", func(t *testing.T) {
 		// Non-existent provider should fall back to generic
@@ -36,25 +25,9 @@ func TestDetectProvider(t *testing.T) {
 		expected ProviderName
 	}{
 		{"https://api.openai.com/v1", ProviderOpenAI},
-		{"https://api.anthropic.com/v1", ProviderAnthropic},
-		{"https://openrouter.ai/api/v1", ProviderOpenRouter},
-		{"https://litellm.example.com/v1", ProviderLiteLLM},
-		{LiteLLMBaseURL, ProviderLiteLLM},
 		{"http://localhost:4000/v1", ProviderGeneric},
-		{"https://router.requesty.ai/v1", ProviderRequesty},
-		{"https://dashscope.aliyuncs.com/compatible-mode/v1", ProviderAliyun},
-		{"https://open.bigmodel.cn/api/paas/v4", ProviderZhipu},
-		{"https://api.deepseek.com/v1", ProviderDeepSeek},
-		{"https://generativelanguage.googleapis.com/v1beta/openai", ProviderGemini},
-		{"https://ark.cn-beijing.volces.com/api/v3", ProviderVolcengine},
-		{"https://api.hunyuan.cloud.tencent.com/v1", ProviderHunyuan},
-		{"https://api.minimaxi.com/v1", ProviderMiniMax},
-		{"https://api.minimax.io/v1", ProviderMiniMax},
-		{"https://api.xiaomimimo.com/v1", ProviderMimo},
 		{"https://custom-endpoint.example.com/v1", ProviderGeneric},
 		{"http://localhost:11434/v1", ProviderGeneric},
-		{"https://integrate.api.nvidia.com/v1", ProviderNvidia},
-		{"https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking", ProviderNvidia},
 	}
 
 	for _, tt := range tests {
@@ -63,36 +36,6 @@ func TestDetectProvider(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestAnthropicProviderValidation(t *testing.T) {
-	p := &AnthropicProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "sk-ant-test",
-			ModelName: "claude-sonnet-4-5",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("missing API key", func(t *testing.T) {
-		config := &Config{
-			ModelName: "claude-sonnet-4-5",
-		}
-		err := p.ValidateConfig(config)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "API key")
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderAnthropic, info.Name)
-		assert.Equal(t, AnthropicBaseURL, info.GetDefaultURL(types.ModelTypeKnowledgeQA))
-		assert.Contains(t, info.ModelTypes, types.ModelTypeKnowledgeQA)
-		assert.True(t, info.RequiresAuth)
-	})
 }
 
 func TestOpenAIProviderValidation(t *testing.T) {
@@ -126,256 +69,12 @@ func TestOpenAIProviderValidation(t *testing.T) {
 	})
 }
 
-func TestAliyunProviderValidation(t *testing.T) {
-	p := &AliyunProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "sk-test",
-			ModelName: "qwen-max",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderAliyun, info.Name)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeKnowledgeQA)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeEmbedding)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeRerank)
-	})
-}
-
-func TestAliyunModelDetection(t *testing.T) {
-	t.Run("Qwen3 model detection", func(t *testing.T) {
-		assert.True(t, IsQwen3Model("qwen3-32b"))
-		assert.True(t, IsQwen3Model("qwen3-72b"))
-		assert.False(t, IsQwen3Model("qwen-max"))
-		assert.False(t, IsQwen3Model("qwen2.5-72b"))
-	})
-
-	t.Run("DeepSeek model detection", func(t *testing.T) {
-		assert.True(t, IsDeepSeekModel("deepseek-chat"))
-		assert.True(t, IsDeepSeekModel("deepseek-v3.1"))
-		assert.True(t, IsDeepSeekModel("DeepSeek-Chat"))
-		assert.False(t, IsDeepSeekModel("qwen-max"))
-	})
-}
-
-func TestMiniMaxProviderValidation(t *testing.T) {
-	p := &MiniMaxProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "test-key",
-			ModelName: "MiniMax-M2.7",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("missing API key", func(t *testing.T) {
-		config := &Config{
-			ModelName: "MiniMax-M2.7",
-		}
-		err := p.ValidateConfig(config)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "API key")
-	})
-
-	t.Run("missing model name", func(t *testing.T) {
-		config := &Config{
-			APIKey: "test-key",
-		}
-		err := p.ValidateConfig(config)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "model name")
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderMiniMax, info.Name)
-		assert.Equal(t, "MiniMax", info.DisplayName)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeKnowledgeQA)
-		assert.True(t, info.RequiresAuth)
-		assert.Contains(t, info.Description, "M2.7")
-	})
-}
-
-func TestZhipuProviderValidation(t *testing.T) {
-	p := &ZhipuProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "test-key",
-			ModelName: "glm-4",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderZhipu, info.Name)
-		assert.Equal(t, ZhipuChatBaseURL, info.GetDefaultURL(types.ModelTypeKnowledgeQA))
-		assert.Equal(t, ZhipuEmbeddingBaseURL, info.GetDefaultURL(types.ModelTypeEmbedding))
-	})
-}
-
-func TestRequestyProviderValidation(t *testing.T) {
-	p := &RequestyProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "test-key",
-			ModelName: "openai/gpt-4o-mini",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("missing API key", func(t *testing.T) {
-		config := &Config{
-			ModelName: "openai/gpt-4o-mini",
-		}
-		err := p.ValidateConfig(config)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "API key")
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderRequesty, info.Name)
-		assert.Equal(t, "Requesty", info.DisplayName)
-		assert.Equal(t, RequestyBaseURL, info.GetDefaultURL(types.ModelTypeKnowledgeQA))
-		assert.Equal(t, RequestyBaseURL, info.GetDefaultURL(types.ModelTypeEmbedding))
-		assert.Contains(t, info.ModelTypes, types.ModelTypeKnowledgeQA)
-		assert.True(t, info.RequiresAuth)
-	})
-}
-
 func TestListByModelType(t *testing.T) {
 	t.Run("chat models", func(t *testing.T) {
 		providers := ListByModelType(types.ModelTypeKnowledgeQA)
 		assert.NotEmpty(t, providers)
-		// Multiple providers support chat
-		assert.GreaterOrEqual(t, len(providers), 9)
+		// generic, openai and WeKnora Cloud serve chat
+		assert.GreaterOrEqual(t, len(providers), 3)
 	})
 
-	t.Run("rerank models", func(t *testing.T) {
-		providers := ListByModelType(types.ModelTypeRerank)
-		assert.NotEmpty(t, providers)
-		// Check that Aliyun supports rerank
-		foundAliyun := false
-		foundLKEAP := false
-		foundVolcengine := false
-		for _, p := range providers {
-			if p.Name == ProviderAliyun {
-				foundAliyun = true
-			}
-			if p.Name == ProviderLKEAP {
-				foundLKEAP = true
-				assert.Equal(t, LKEAPRerankBaseURL, p.GetDefaultURL(types.ModelTypeRerank))
-			}
-			if p.Name == ProviderVolcengine {
-				foundVolcengine = true
-				assert.Equal(t, VolcengineRerankBaseURL, p.GetDefaultURL(types.ModelTypeRerank))
-			}
-		}
-		assert.True(t, foundAliyun, "Aliyun should support rerank")
-		assert.True(t, foundLKEAP, "LKEAP should support rerank")
-		assert.True(t, foundVolcengine, "Volcengine should support rerank")
-	})
-
-	t.Run("embedding models include openrouter", func(t *testing.T) {
-		providers := ListByModelType(types.ModelTypeEmbedding)
-		assert.NotEmpty(t, providers)
-
-		found := false
-		for _, p := range providers {
-			if p.Name == ProviderOpenRouter {
-				found = true
-				assert.Equal(t, OpenRouterBaseURL, p.GetDefaultURL(types.ModelTypeEmbedding))
-				break
-			}
-		}
-
-		assert.True(t, found, "OpenRouter should support embedding")
-	})
-
-	t.Run("embedding models include gemini", func(t *testing.T) {
-		providers := ListByModelType(types.ModelTypeEmbedding)
-		assert.NotEmpty(t, providers)
-
-		found := false
-		for _, p := range providers {
-			if p.Name == ProviderGemini {
-				found = true
-				assert.Equal(t, GeminiBaseURL, p.GetDefaultURL(types.ModelTypeEmbedding))
-				break
-			}
-		}
-
-		assert.True(t, found, "Gemini should support embedding via the native Gemini API")
-	})
-}
-
-func TestLiteLLMProviderValidation(t *testing.T) {
-	p := &LiteLLMProvider{}
-
-	t.Run("valid config", func(t *testing.T) {
-		config := &Config{
-			APIKey:    "test-key",
-			ModelName: "gpt-4.1-mini",
-		}
-		err := p.ValidateConfig(config)
-		assert.NoError(t, err)
-	})
-
-	t.Run("missing API key", func(t *testing.T) {
-		config := &Config{
-			ModelName: "gpt-4.1-mini",
-		}
-		err := p.ValidateConfig(config)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "API key")
-	})
-
-	t.Run("info", func(t *testing.T) {
-		info := p.Info()
-		assert.Equal(t, ProviderLiteLLM, info.Name)
-		assert.Equal(t, "LiteLLM", info.DisplayName)
-		assert.True(t, info.RequiresAuth)
-		assert.Equal(t, LiteLLMBaseURL, info.DefaultURLs[types.ModelTypeKnowledgeQA])
-		assert.Equal(t, LiteLLMBaseURL, info.DefaultURLs[types.ModelTypeEmbedding])
-		assert.Equal(t, LiteLLMBaseURL, info.DefaultURLs[types.ModelTypeVLLM])
-		assert.Contains(t, info.ModelTypes, types.ModelTypeKnowledgeQA)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeEmbedding)
-		assert.Contains(t, info.ModelTypes, types.ModelTypeVLLM)
-	})
-
-	t.Run("registered and listed", func(t *testing.T) {
-		got, ok := Get(ProviderLiteLLM)
-		require.True(t, ok)
-		require.NotNil(t, got)
-
-		foundChat := false
-		for _, info := range ListByModelType(types.ModelTypeKnowledgeQA) {
-			if info.Name == ProviderLiteLLM {
-				foundChat = true
-				break
-			}
-		}
-		assert.True(t, foundChat, "LiteLLM should appear for chat models")
-
-		foundEmbed := false
-		for _, info := range ListByModelType(types.ModelTypeEmbedding) {
-			if info.Name == ProviderLiteLLM {
-				foundEmbed = true
-				break
-			}
-		}
-		assert.True(t, foundEmbed, "LiteLLM should appear for embedding models")
-	})
 }

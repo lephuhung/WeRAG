@@ -25,7 +25,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
-	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -1905,23 +1904,6 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 		}
 	}
 
-	// Alibaba Cloud multimodal embedding models are not supported yet
-	if strings.ToLower(req.Provider) == "aliyun" {
-		modelNameLower := strings.ToLower(req.ModelName)
-		if strings.Contains(modelNameLower, "vision") || strings.Contains(modelNameLower, "multimodal") {
-			logger.Infof(ctx, "Aliyun multimodal embedding model not supported: %s", req.ModelName)
-			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"data": gin.H{
-					"available": false,
-					"message":   "chưa hỗ trợ mô hình embedding đa phương thức của Alibaba Cloud, hãy dùng mô hình embedding thuần văn bản (ví dụ text-embedding-v4)",
-					"dimension": 0,
-				},
-			})
-			return
-		}
-	}
-
 	appID, appSecret, ok := h.resolveTenantWeKnoraCloudCreds(ctx)
 	if !ok {
 		logger.Error(ctx, "Tenant info not found")
@@ -2082,10 +2064,6 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 	}
 
 	model := h.buildTestModel(&req, types.ModelTypeRerank, types.ModelSourceRemote)
-	if providerName := provider.ProviderName(model.Parameters.Provider); providerName == provider.ProviderLKEAP || providerName == provider.ProviderVolcengine {
-		appID = ""
-		appSecret = decryptModelAppSecret(model.Parameters.AppSecret)
-	}
 	available, message := h.checkRerankModelConnection(ctx, model, appID, appSecret)
 
 	logger.Infof(ctx, "Rerank model check completed, available: %v, message: %s", available, message)

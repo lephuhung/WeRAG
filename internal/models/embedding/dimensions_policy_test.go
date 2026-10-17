@@ -6,48 +6,7 @@ func TestEmbeddingDimensionsParamRequiresExplicitOverride(t *testing.T) {
 	tests := []struct {
 		name     string
 		supports func(bool) bool
-	}{
-		{
-			name: "aliyun",
-			supports: func(enabled bool) bool {
-				e := &AliyunEmbedder{dimensions: 1024}
-				e.SetSupportsDimensionOverride(enabled)
-				return e.supportsDimensionsParam()
-			},
-		},
-		{
-			name: "nvidia",
-			supports: func(enabled bool) bool {
-				e := &NvidiaEmbedder{dimensions: 1024}
-				e.SetSupportsDimensionOverride(enabled)
-				return e.supportsDimensionsParam()
-			},
-		},
-		{
-			name: "volcengine",
-			supports: func(enabled bool) bool {
-				e := &VolcengineEmbedder{dimensions: 1024}
-				e.SetSupportsDimensionOverride(enabled)
-				return e.supportsDimensionsParam()
-			},
-		},
-		{
-			name: "zhipu",
-			supports: func(enabled bool) bool {
-				e := &ZhipuEmbedder{dimensions: 1024}
-				e.SetSupportsDimensionOverride(enabled)
-				return e.supportsDimensionsParam()
-			},
-		},
-		{
-			name: "azure_openai",
-			supports: func(enabled bool) bool {
-				e := &AzureOpenAIEmbedder{dimensions: 1024}
-				e.SetSupportsDimensionOverride(enabled)
-				return e.supportsDimensionsParam()
-			},
-		},
-	}
+	}{}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
