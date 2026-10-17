@@ -96,16 +96,13 @@ func TestCreateTenantRejectsRegularUserWhenSelfServiceDisabled(t *testing.T) {
 	}
 }
 
-func TestCreateTenantAllowsCrossTenantSuperuserWhenSelfServiceDisabled(t *testing.T) {
+func createTenantAs(t *testing.T, user *types.User) (*httptest.ResponseRecorder, *tenantPolicyTenantService) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	tenants := &tenantPolicyTenantService{}
 	h := &TenantHandler{
-		service: tenants,
-		userService: &tenantPolicyUserService{user: &types.User{
-			ID:                  "super-user",
-			TenantID:            1,
-			CanAccessAllTenants: true,
-		}},
+		service:          tenants,
+		userService:      &tenantPolicyUserService{user: user},
 		config:           &config.Config{Tenant: &config.TenantConfig{}},
 		systemSettingSvc: &tenantPolicySettingService{enabled: false},
 	}
@@ -116,12 +113,18 @@ func TestCreateTenantAllowsCrossTenantSuperuserWhenSelfServiceDisabled(t *testin
 	req := httptest.NewRequest(http.MethodPost, "/tenants", bytes.NewBufferString(`{"name":"admin-created"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
+	return w, tenants
+}
 
-	if w.Code != http.StatusCreated {
+// The legacy CanAccessAllTenants attribute alone no longer makes a
+// catalog manager.
+func TestCreateTenantDeniesLegacyCrossTenantFlagWhenSelfServiceDisabled(t *testing.T) {
+	w, tenants := createTenantAs(t, &types.User{ID: "legacy", TenantID: 1, CanAccessAllTenants: true})
+	if w.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if tenants.createCalls != 1 {
-		t.Fatalf("CreateTenant called %d times, want 1", tenants.createCalls)
+	if tenants.createCalls != 0 {
+		t.Fatalf("CreateTenant called %d times, want 0", tenants.createCalls)
 	}
 }
 

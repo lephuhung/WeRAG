@@ -87,7 +87,11 @@ func (r *StoredResource) BeforeCreate(_ *gorm.DB) error {
 // MessageArtifact requires an explicit artifact binding to that exact message.
 type MessageFileBindings struct {
 	KnowledgeBaseIDs []string
-	MessageArtifact  bool
+	// SourceFileKBIDs is the subset of KnowledgeBaseIDs where the resource
+	// is a document's original upload (relation source_file): reading it
+	// is an original download, not a preview.
+	SourceFileKBIDs []string
+	MessageArtifact bool
 }
 
 // ResourceBinding connects a resource to a domain object that owns or uses it.

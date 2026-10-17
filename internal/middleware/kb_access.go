@@ -316,6 +316,10 @@ func KBAccessRequest(c *gin.Context) access.KBRequest {
 		if userID, ok := c.Get(types.UserIDContextKey.String()); ok {
 			caller.UserID, _ = userID.(string)
 		}
+		// applyAuthSession writes the role on both surfaces too.
+		if role, ok := c.Get(types.TenantRoleContextKey.String()); ok {
+			caller.Role, _ = role.(types.TenantRole)
+		}
 	}
 	return access.KBRequest{Caller: caller}
 }

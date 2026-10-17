@@ -74,16 +74,67 @@ const (
 	// not searched by default: a reader's retrieval scope includes it only
 	// once the reader or their Tenant Admin subscribes to it.
 	KBVisibilityPublished KBVisibility = "published"
+	// KBVisibilityRestricted is a tenant-owned KB that only ACL holders
+	// read (accepted kb_invitations, approved kb_access_grants), plus the
+	// owner tenant's Admins and SuperAdmins. Ordinary members of the owner
+	// tenant need an invitation like everybody else.
+	KBVisibilityRestricted KBVisibility = "restricted"
 )
 
 // IsValid checks if the visibility value is a known constant.
 func (v KBVisibility) IsValid() bool {
 	switch v {
-	case KBVisibilityTenant, KBVisibilityPublic, KBVisibilityPublished:
+	case KBVisibilityTenant, KBVisibilityPublic, KBVisibilityPublished, KBVisibilityRestricted:
 		return true
 	default:
 		return false
 	}
+}
+
+// KBMemberDefault is what an active member of the owner tenant may do on a
+// 'tenant'-visibility KB. It has no effect on other visibilities.
+type KBMemberDefault string
+
+const (
+	// KBMemberDefaultView lets members read and search only.
+	KBMemberDefaultView KBMemberDefault = "view"
+	// KBMemberDefaultContribute lets members read, upload documents and
+	// edit/delete the documents they created (the default).
+	KBMemberDefaultContribute KBMemberDefault = "contribute"
+)
+
+// IsValid checks if the member default is a known constant.
+func (d KBMemberDefault) IsValid() bool {
+	return d == KBMemberDefaultView || d == KBMemberDefaultContribute
+}
+
+// Permission maps the member default to a KB permission: view -> Viewer,
+// contribute (and any unknown value, matching the column default) -> Editor.
+func (d KBMemberDefault) Permission() KBPermission {
+	if d == KBMemberDefaultView {
+		return KBPermissionViewer
+	}
+	return KBPermissionEditor
+}
+
+// KBShareRevocation counts the shares an owner change revoked in the same
+// transaction as the scope write.
+type KBShareRevocation struct {
+	Invitations int64
+	Grants      int64
+}
+
+// KBOwnerTransferResult is what TransferKnowledgeBaseOwner reports: the
+// updated KB (restricted stays restricted; tenant, published and platform
+// public end in 'tenant'), the previous owner and scope, the revoked share
+// counts, and whether a published KB was withdrawn.
+type KBOwnerTransferResult struct {
+	KnowledgeBase          *KnowledgeBase
+	PreviousOwnerTenantID  uint64
+	PreviousVisibility     KBVisibility
+	RevokedInvitations     int64
+	RevokedGrants          int64
+	WithdrawnFromPublished bool
 }
 
 // Public catalog pagination bounds (Task 4). The main KB list embeds the
@@ -106,6 +157,25 @@ type KBScope struct {
 	TenantID      uint64
 	OwnerTenantID uint64
 	Visibility    KBVisibility
+	MemberDefault KBMemberDefault
+}
+
+// KBReader classifies the caller of a readable-KB listing. It is built by
+// access.KBReaderFor so the role/human classification stays in the access
+// package; the repository only turns it into SQL predicates.
+type KBReader struct {
+	// TenantID is the caller's active tenant (0 = tenantless).
+	TenantID uint64
+	// UserID is the human user (empty or synthetic for machines).
+	UserID string
+	// SuperAdmin is an explicit human platform administrator.
+	SuperAdmin bool
+	// Human is an authenticated human UI principal (never an API key).
+	Human bool
+	// TenantMember is an active member of TenantID (any tenant role).
+	TenantMember bool
+	// TenantAdmin is an active Tenant Admin of TenantID.
+	TenantAdmin bool
 }
 
 // KnowledgeBase represents a knowledge base entity
@@ -142,6 +212,9 @@ type KnowledgeBase struct {
 	// See KBVisibility constants. Rows predating migration 000107 read
 	// back as 'tenant' via the column default.
 	Visibility KBVisibility `yaml:"visibility"           json:"visibility"              gorm:"type:varchar(16);not null;default:'tenant'"`
+	// MemberDefault decides what active members of the owner tenant may do
+	// on a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).
+	MemberDefault KBMemberDefault `yaml:"member_default"       json:"member_default"          gorm:"type:varchar(16);not null;default:'contribute'"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"         gorm:"type:json"`
 	// Image processing configuration
@@ -228,6 +301,11 @@ type KnowledgeBase struct {
 	// 仅在List 场景由 handler 批量回填，不落库；为空表示Create 者无法解析（用户已Delete 、
 	// CreatorID 为空的老数据等）。前端用它在卡片来源徽章上做 mine vs workspace 的二分。
 	CreatorName string `yaml:"-"                       json:"creator_name,omitempty"  gorm:"-"`
+	// AccessSource names the access.DecideKB rule that lets the caller
+	// view this KB (superadmin, tenant_admin, tenant_scope, public,
+	// published, acl_user, acl_tenant). Filled by readable-KB listings
+	// only; never stored.
+	AccessSource string `yaml:"-" json:"access_source,omitempty" gorm:"-"`
 }
 
 // KnowledgeBaseConfig represents the knowledge base configuration
@@ -810,7 +888,8 @@ func (f *FAQConfig) Scan(value interface{}) error {
 
 // ValidateOwnership checks the platform owner/visibility invariant:
 // visibility 'public' requires platform ownership (OwnerTenantID == 0)
-// and visibility 'tenant' requires a nonzero owning tenant. The
+// and visibility 'tenant', 'published' or 'restricted' requires a nonzero
+// owning tenant. The
 // data-scope TenantID is deliberately not consulted: a public KB may
 // retain a tenant data scope and a tenant KB may keep a stable scope
 // across transitions. Safe to call on a nil receiver (returns an error
@@ -826,7 +905,7 @@ func (kb *KnowledgeBase) ValidateOwnership() error {
 				"knowledge base ownership: public visibility requires platform owner (owner_tenant_id = 0), got %d",
 				kb.OwnerTenantID)
 		}
-	case KBVisibilityTenant, KBVisibilityPublished:
+	case KBVisibilityTenant, KBVisibilityPublished, KBVisibilityRestricted:
 		if kb.OwnerTenantID == 0 {
 			return fmt.Errorf(
 				"knowledge base ownership: %s visibility requires a nonzero owner_tenant_id", kb.Visibility)
@@ -847,6 +926,9 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	}
 	if !kb.Visibility.IsValid() {
 		kb.Visibility = KBVisibilityTenant
+	}
+	if !kb.MemberDefault.IsValid() {
+		kb.MemberDefault = KBMemberDefaultContribute
 	}
 	// Clear type-specific configs that don't belong
 	if kb.Type != KnowledgeBaseTypeFAQ {

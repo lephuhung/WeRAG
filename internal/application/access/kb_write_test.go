@@ -17,7 +17,8 @@ func TestKBWriteConsumesOperationGrant(t *testing.T) {
 	}
 	read, err := ResolveKB(ctx, KBRequest{Caller: types.CallerFromContext(ctx)}, kb, types.KBPermissionViewer, nil)
 	require.NoError(t, err)
-	require.Equal(t, types.KBPermissionAdmin, read.Permission, "owner permission projection remains unchanged")
+	require.Equal(t, types.KBPermissionEditor, read.Permission,
+		"an owner-tenant member holds member_default (contribute -> Editor), not Admin")
 	require.ErrorIs(t, RequireKBWrite(read.Context(ctx), kb), ErrForbidden, "an owner read does not grant mutation")
 	require.ErrorIs(t, RequireKBWrite(types.WithExecutionTenant(ctx, kb.TenantID), kb), ErrForbidden)
 	write, err := ResolveKB(ctx, KBRequest{Caller: types.CallerFromContext(ctx)}, kb, types.KBPermissionEditor, nil)

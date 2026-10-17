@@ -115,13 +115,24 @@ export function listKnowledgeBaseActivity(
 
 /* Mirrors types.KBVisibility (internal/types/knowledgebase.go) for READS.
  * 'tenant': only the owning workspace (plus invites and tenant grants).
+ * 'restricted': the owning unit's admins plus invites and tenant grants.
  * 'published': owned by a workspace, readable by every signed-in user;
  * searched by default only once subscribed. 'public': platform-owned
  * (SuperAdmin). Writes always stay with the owner. */
-export type KBVisibility = "tenant" | "published" | "public";
+export type KBVisibility = "tenant" | "restricted" | "published" | "public";
 
-/* The only scope the UI may write when creating a KB. */
-export type KBVisibilityWrite = "tenant";
+/* Scopes the tenant create form may send (publishing comes later). */
+export type KBVisibilityWrite = "tenant" | "restricted";
+
+/* The DecideKB rule that lets the caller view a listed KB. */
+export type KBAccessSource =
+  | "superadmin"
+  | "tenant_admin"
+  | "tenant_scope"
+  | "public"
+  | "published"
+  | "acl_user"
+  | "acl_tenant";
 
 export type KnowledgeBaseRow = {
   id: string;
@@ -141,12 +152,16 @@ export type KnowledgeBaseRow = {
   creator_name?: string;
   type?: string;
   visibility?: KBVisibility;
+  /* What owner-unit members may do on a 'tenant' KB. */
+  member_default?: "view" | "contribute";
   /* Published rows: whether the caller, or the caller's whole workspace,
    * subscribed (puts the KB into the default chat scope), and the
    * publishing workspace's name. */
   subscribed_by_me?: boolean;
   subscribed_by_tenant?: boolean;
   owner_tenant_name?: string;
+  /* Rule that lets the caller view this KB (GET /knowledge-bases only). */
+  access_source?: KBAccessSource;
   /* Owning workspace id — differs from the caller's tenant on KBs
    * shared from other tenants (legacy public rows or invite-shared KBs
    * that leak into the list). */
@@ -244,10 +259,12 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: "document" | "faq";
-  /* Read scope: 'tenant' (default, and the only writable value on this
-   * tenant route). Platform-public KBs are created exclusively through
-   * createPublicKnowledgeBase (POST /knowledge-bases/public). */
+  /* Read scope: 'tenant' (default) or 'restricted'. Platform-public KBs
+   * are created exclusively through createPublicKnowledgeBase
+   * (POST /knowledge-bases/public). */
   visibility?: KBVisibilityWrite;
+  /* Owner-unit members on a 'tenant' KB: view | contribute (default). */
+  member_default?: "view" | "contribute";
   chunking_config?: unknown;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -392,24 +409,8 @@ export function createPublicKnowledgeBase(data: { name: string; description?: st
   return apiPost<{ success: boolean; data?: KnowledgeBaseRow }>(`/api/v1/knowledge-bases/public`, data);
 }
 
-/* Owner/scope transition. tenant→public publishes (no target); public→
- * tenant requires the existing nonzero destination tenant id selected by
- * the SuperAdmin. Explicit human SuperAdmin only — the backend enforces
- * it for both directions. */
-export function changeKnowledgeBaseVisibility(
-  id: string,
-  data: { visibility: "public" } | { visibility: "tenant"; target_tenant_id: number },
-) {
-  return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, data);
-}
-
-/* Owning workspace's Tenant Admin: publish the KB to every signed-in user
- * ("published") or withdraw it ("tenant"). The owner keeps all writes. */
-export function setKnowledgeBasePublished(id: string, published: boolean) {
-  return apiPut(`/api/v1/knowledge-bases/${id}/visibility`, {
-    visibility: published ? "published" : "tenant",
-  });
-}
+/* Scope, member_default and owner transfer live in ./kb-access
+ * (setKBScope, transferKBOwner). */
 
 /* Subscribe to a published KB so chat searches it by default. scope
  * "tenant" covers the caller's whole workspace (Tenant Admin only). */

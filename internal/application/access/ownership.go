@@ -15,15 +15,17 @@ var (
 	ErrOwnershipForbidden = errors.New("rbac: ownership or role insufficient")
 )
 
-// OwnershipRequest carries server-resolved identity and rollout policy. The
-// cross-tenant bypass must already account for the cluster configuration.
-// This gate does not replace API-key capabilities or resource-scope checks.
+// OwnershipRequest carries server-resolved identity and rollout policy.
+// SuperAdmin must be an explicit human platform administrator
+// (IsExplicitHumanSuperAdmin); the legacy CanAccessAllTenants attribute
+// never qualifies. This gate does not replace API-key capabilities or
+// resource-scope checks.
 type OwnershipRequest struct {
-	UserID               string
-	Role                 types.TenantRole
-	APIKey               bool
-	CrossTenantSuperuser bool
-	Enforce              bool
+	UserID     string
+	Role       types.TenantRole
+	APIKey     bool
+	SuperAdmin bool
+	Enforce    bool
 }
 
 // OwnershipDecision contains the details adapters need for logs and audits.
@@ -43,7 +45,7 @@ func CheckOwnershipOrRole(
 	lookup func() (string, error),
 ) (OwnershipDecision, error) {
 	var decision OwnershipDecision
-	if request.APIKey || request.Role.HasPermission(required) || request.CrossTenantSuperuser {
+	if request.APIKey || request.Role.HasPermission(required) || request.SuperAdmin {
 		return decision, nil
 	}
 	if !request.Enforce {

@@ -13,6 +13,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/dig"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
@@ -89,6 +90,7 @@ type RouterParams struct {
 	SkillHandler                 *handler.SkillHandler
 	KBAccessGrantHandler         *handler.KBAccessGrantHandler
 	KBInvitationHandler          *handler.KBInvitationHandler
+	KBAccessOverviewHandler      *handler.KBAccessOverviewHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -222,7 +224,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.TenantAPIKeyService, params.Config))
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
-	serveFilesWithResources(r, params.FileService, params.StorageBackendResolver, params.ResourceCatalog)
+	serveFilesWithKBGate(r, params.FileService, params.StorageBackendResolver, params.ResourceCatalog,
+		access.NewKBFileGate(params.ResourceCatalog, params.KBService, params.KBAccessGrantService))
 
 	// Presigned file access: no auth required, signature-verified.
 	servePresignedFiles(r, params.TenantService, params.StorageBackendResolver)
@@ -341,6 +344,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
 		RegisterKBAccessGrantRoutes(v1, params.KBAccessGrantHandler, rbacGuards)
 		RegisterKBInvitationRoutes(v1, params.KBInvitationHandler, rbacGuards)
+		RegisterKBAccessOverviewRoutes(v1, params.KBAccessOverviewHandler, rbacGuards)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)

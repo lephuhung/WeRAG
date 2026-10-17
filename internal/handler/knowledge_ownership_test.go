@@ -18,14 +18,15 @@ import (
 
 func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 	for _, tt := range []struct {
-		name                        string
-		role                        types.TenantRole
-		apiKey, superuser, disabled bool
+		name                         string
+		role                         types.TenantRole
+		apiKey, superAdmin, disabled bool
 	}{
 		{name: "owner", role: types.TenantRoleOwner},
 		{name: "API key", role: types.TenantRoleMember, apiKey: true},
-		{name: "cross tenant superuser", role: types.TenantRoleMember, superuser: true},
 		{name: "RBAC disabled", role: types.TenantRoleMember, disabled: true},
+		// An explicit human SuperAdmin passes without a tenant role.
+		{name: "SuperAdmin", superAdmin: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newKBLookupCtx(t, 1, "kb")
@@ -33,8 +34,12 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 			ctx = context.WithValue(
 				ctx,
 				types.UserContextKey,
-				&types.User{ID: "user", CanAccessAllTenants: tt.superuser},
+				&types.User{ID: "user", IsSystemAdmin: tt.superAdmin},
 			)
+			if tt.superAdmin {
+				ctx = context.WithValue(ctx, types.UserIDContextKey, "user")
+				ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
+			}
 			if tt.apiKey {
 				ctx = types.WithTenantAPIKeyScope(
 					ctx,
@@ -45,7 +50,7 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 			enabled := !tt.disabled
 			h := &KnowledgeHandler{
 				cfg: &config.Config{
-					Tenant: &config.TenantConfig{EnableRBAC: &enabled, EnableCrossTenantAccess: tt.superuser},
+					Tenant: &config.TenantConfig{EnableRBAC: &enabled},
 				},
 				kbService: &stubKBService{get: func(context.Context, string) (*types.KnowledgeBase, error) {
 					t.Fatal("body-carried KB ownership must be looked up lazily")

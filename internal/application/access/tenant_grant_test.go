@@ -49,7 +49,7 @@ func TestPublishedKBReadOnlyForHumans(t *testing.T) {
 	owner := types.Caller{TenantID: 2, UserID: "u2", Role: types.TenantRoleMember}
 	got, err = ResolveKBForManage(bg, KBRequest{Caller: owner}, kb)
 	require.NoError(t, err, "the owning tenant keeps writes")
-	require.Equal(t, types.KBPermissionAdmin, got.Permission)
+	require.Equal(t, types.KBPermissionEditor, got.Permission, "a member contributes (member_default), not Admin")
 
 	tenantless := types.Caller{UserID: "u3"}
 	_, err = ResolveKB(bg, KBRequest{Caller: tenantless}, kb, types.KBPermissionViewer, nil)

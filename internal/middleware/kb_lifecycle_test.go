@@ -82,6 +82,9 @@ func TestIsTenantlessKBLifecyclePath(t *testing.T) {
 		{"/api/v1/knowledge-bases/kb-1", http.MethodPut, true},
 		{"/api/v1/knowledge-bases/kb-1", http.MethodDelete, true},
 		{"/api/v1/knowledge-bases/kb-1/visibility", http.MethodPut, true},
+		// Phase 4: owner transfer (SuperAdmin-only route guard).
+		{"/api/v1/knowledge-bases/kb-1/transfer-owner", http.MethodPost, true},
+		{"/api/v1/knowledge-bases/kb-1/transfer-owner", http.MethodGet, false},
 		{"/api/v1/knowledge-bases/kb-1/profile/generate", http.MethodPost, true},
 		// Task 6: per-KB-guarded public reads no longer require a
 		// workspace (auth admits; KBAccessRead/Download decides on the

@@ -46,6 +46,10 @@ func (s *stubKBRepoForModelDelete) ListKnowledgeBasesByTenantID(context.Context,
 func (s *stubKBRepoForModelDelete) UpdateKnowledgeBase(context.Context, *types.KnowledgeBase) error {
 	return nil
 }
+func (s *stubKBRepoForModelDelete) UpdateKnowledgeBaseScope(context.Context, *types.KnowledgeBase, string,
+) (types.KBShareRevocation, error) {
+	return types.KBShareRevocation{}, nil
+}
 func (s *stubKBRepoForModelDelete) DeleteKnowledgeBase(context.Context, string) error { return nil }
 func (s *stubKBRepoForModelDelete) CountByVectorStoreID(context.Context, *gorm.DB, uint64, string) (int64, error) {
 	return 0, nil
@@ -465,7 +469,7 @@ func (r *stubKBRepoForModelDelete) GetKBScopeByID(ctx context.Context, id string
 	return nil, nil
 }
 
-func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+func (r *stubKBRepoForModelDelete) ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

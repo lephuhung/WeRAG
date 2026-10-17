@@ -111,40 +111,6 @@ func (s *knowledgeBaseService) readerSubscriptions(ctx context.Context) (mine, t
 	return mine, tenant
 }
 
-// subscribedPublishedKBs loads the published KBs the caller's scope
-// subscribes to, with their subscription flags set. Rows that are no longer
-// published are skipped.
-func (s *knowledgeBaseService) subscribedPublishedKBs(ctx context.Context) []*types.KnowledgeBase {
-	mine, tenant := s.readerSubscriptions(ctx)
-	if len(mine)+len(tenant) == 0 {
-		return nil
-	}
-	ids := make([]string, 0, len(mine)+len(tenant))
-	for id := range mine {
-		ids = append(ids, id)
-	}
-	for id := range tenant {
-		if !mine[id] {
-			ids = append(ids, id)
-		}
-	}
-	rows, err := s.repo.GetKnowledgeBaseByIDs(ctx, ids)
-	if err != nil {
-		logger.Warnf(ctx, "Failed to load subscribed knowledge bases: %v", err)
-		return nil
-	}
-	out := make([]*types.KnowledgeBase, 0, len(rows))
-	for _, kb := range rows {
-		if !kb.IsTenantPublished() {
-			continue
-		}
-		kb.SubscribedByMe = mine[kb.ID]
-		kb.SubscribedByTenant = tenant[kb.ID]
-		out = append(out, kb)
-	}
-	return out
-}
-
 // ListPublishedCatalog returns one page of tenant-published KBs for human
 // readers, marking which ones the caller or the caller's tenant subscribes.
 func (s *knowledgeBaseService) ListPublishedCatalog(

@@ -43,57 +43,76 @@ func HasKBGrant(ctx context.Context, kbID string, tenantID uint64, required type
 	return false
 }
 
-// KBPermissions combines caller ownership with exact authorization grants
-// already resolved into the request context. Owner-based checks consult the
-// KB scope lookup (owner + visibility) when available; recipient-bound
-// invitations arrive as exact context grants resolved upstream.
+// KBPermissions answers repeated KB read checks for one caller (search
+// scopes, chat Q&A target selection, custom agents, FAQ/tag reads). Reads
+// go through DecideKB (ActionView) against the KB's live scope, so a
+// restricted KB is readable only by its owner tenant's Admins, SuperAdmins
+// and live ACL holders, and a revoked ACL stops reads on the next request.
+// Writes are never decided here: Editor/Admin checks only accept exact
+// grants established upstream by a write guard.
 type KBPermissions struct {
-	ctx    context.Context
-	caller types.Caller
-	lookup KBGrantLookup
-	scopes map[string]*types.KBScope
+	ctx       context.Context
+	caller    types.Caller
+	lookup    KBGrantLookup
+	invites   KBInviteLookup
+	scopes    map[string]*types.KBScope
+	decisions map[string]bool
 }
 
 // NewKBPermissions resolves reads for one caller and operation. The lookup
-// supplies KB owner/visibility scopes; a nil lookup keeps the
-// ownerTenantID argument as the owner with tenant visibility (fail-closed).
+// supplies KB owner/visibility scopes and tenant grants; when it also
+// implements KBInviteLookup, live recipient-bound invites count as an ACL
+// source. A nil lookup keeps the ownerTenantID argument as the owner with
+// tenant visibility; a lookup that cannot load the scope fails closed
+// (the KB is treated as restricted).
 func NewKBPermissions(ctx context.Context, lookup KBGrantLookup) *KBPermissions {
-	return &KBPermissions{ctx: ctx, caller: types.CallerFromContext(ctx), lookup: lookup}
+	p := &KBPermissions{ctx: ctx, caller: types.CallerFromContext(ctx), lookup: lookup}
+	if invites, ok := lookup.(KBInviteLookup); ok {
+		p.invites = invites
+	}
+	return p
+}
+
+// WithInvites adds a recipient-bound invite lookup as an ACL source.
+func (p *KBPermissions) WithInvites(invites KBInviteLookup) *KBPermissions {
+	if invites != nil {
+		p.invites = invites
+		p.decisions = nil
+	}
+	return p
 }
 
 // WithoutGrantExpansion remains as a compatibility no-op. Tenant-wide grant
 // expansion stays disabled for every caller regardless of this setting.
 func (p *KBPermissions) WithoutGrantExpansion() *KBPermissions { return p }
 
-// scopeOf resolves and caches the ownership scope of one KB. A nil result
-// means "unknown" — callers fall back to the owner argument with tenant
-// visibility so missing lookups fail closed.
-func (p *KBPermissions) scopeOf(kbID string) *types.KBScope {
+// scopeOf resolves and caches the ownership scope of one KB. ok=false means
+// the lookup exists but could not produce a scope (missing row or error).
+func (p *KBPermissions) scopeOf(kbID string) (scope *types.KBScope, ok bool) {
 	if p.lookup == nil {
-		return nil
+		return nil, true
 	}
-	if s, ok := p.scopes[kbID]; ok {
-		return s
+	if s, cached := p.scopes[kbID]; cached {
+		return s, s != nil
 	}
 	if p.scopes == nil {
 		p.scopes = make(map[string]*types.KBScope)
 	}
 	s, err := p.lookup.GetKBScope(p.ctx, kbID)
 	if err != nil {
-		p.scopes[kbID] = nil
-		return nil
+		s = nil
 	}
 	p.scopes[kbID] = s
-	return s
+	return s, s != nil
 }
 
-// Check permits owning-tenant reads, platform-public reads, live tenant-wide
-// grants (Viewer only), and exact grants
-// established by an upstream authorization (including recipient-bound KB
-// invitations). Owner and visibility come from the scope lookup when
-// available; otherwise ownerTenantID is treated as a tenant-visibility
-// owner. Public reads grant Viewer only and never consult legacy
-// tenant-wide grants.
+// Check reports whether the caller may perform required on kbID. Viewer
+// reads are decided by DecideKB(ActionView) on the KB's live scope
+// (owner, visibility, member_default) with tenant grants and, when
+// available, invites as ACL sources. Every requirement also accepts an
+// exact grant established upstream in the context (HasKBGrant). Without a
+// lookup, ownerTenantID stands in as a tenant-visibility owner; with a
+// lookup that cannot load the row, the KB is treated as restricted.
 func (p *KBPermissions) Check(kbID string, ownerTenantID uint64, required types.KBPermission) (bool, error) {
 	if kbID == "" || !required.IsValid() {
 		return false, nil
@@ -101,43 +120,40 @@ func (p *KBPermissions) Check(kbID string, ownerTenantID uint64, required types.
 	if err := types.AuthorizeTenantAPIKeyKnowledgeBases(p.ctx, kbID); err != nil {
 		return false, err
 	}
-	owner := ownerTenantID
-	visibility := types.KBVisibilityTenant
-	dataTenant := ownerTenantID
-	if scope := p.scopeOf(kbID); scope != nil {
-		owner = scope.OwnerTenantID
-		visibility = scope.Visibility
-		if !visibility.IsValid() {
-			visibility = types.KBVisibilityTenant
+	kb := &types.KnowledgeBase{
+		ID: kbID, TenantID: ownerTenantID, OwnerTenantID: ownerTenantID,
+		Visibility: types.KBVisibilityTenant, MemberDefault: types.KBMemberDefaultContribute,
+	}
+	scope, ok := p.scopeOf(kbID)
+	switch {
+	case scope != nil:
+		kb.TenantID, kb.OwnerTenantID = scope.TenantID, scope.OwnerTenantID
+		kb.Visibility, kb.MemberDefault = scope.Visibility, scope.MemberDefault
+		if !kb.Visibility.IsValid() {
+			kb.Visibility = types.KBVisibilityTenant
 		}
-		dataTenant = scope.TenantID
-	}
-	if visibility == types.KBVisibilityPublic && owner == 0 {
-		if required == types.KBPermissionViewer {
-			if IsExplicitHumanSuperAdmin(p.ctx, p.caller) {
-				return true, nil
-			}
-			// Human-only: API-key principals (any scope/type) never
-			// pass, even allowlisted to this row.
-			if p.caller.TenantID != 0 && IsAuthenticatedHuman(p.ctx, p.caller) {
-				return true, nil
-			}
+		if !kb.MemberDefault.IsValid() {
+			kb.MemberDefault = types.KBMemberDefaultContribute
 		}
-		return HasKBGrant(p.ctx, kbID, dataTenant, required), nil
+	case !ok:
+		// Unknown scope: only the owner tenant's managers keep reads.
+		kb.Visibility = types.KBVisibilityRestricted
 	}
-	if owner == 0 {
-		return HasKBGrant(p.ctx, kbID, dataTenant, required), nil
-	}
-	sameTenant := p.caller.TenantID != 0 && p.caller.TenantID == owner
-	if sameTenant && required == types.KBPermissionViewer {
+	if required == types.KBPermissionViewer && p.decideView(kb) {
 		return true, nil
 	}
-	if required == types.KBPermissionViewer && visibility == types.KBVisibilityPublished && owner != 0 &&
-		(IsExplicitHumanSuperAdmin(p.ctx, p.caller) || IsAuthenticatedHuman(p.ctx, p.caller)) {
-		return true, nil
+	return HasKBGrant(p.ctx, kbID, kb.TenantID, required), nil
+}
+
+// decideView runs DecideKB(ActionView) once per KB for this caller.
+func (p *KBPermissions) decideView(kb *types.KnowledgeBase) bool {
+	if allowed, cached := p.decisions[kb.ID]; cached {
+		return allowed
 	}
-	if required == types.KBPermissionViewer && HasTenantGrant(p.ctx, p.caller, kbID, owner, p.lookup) {
-		return true, nil
+	_, err := DecideKB(p.ctx, p.caller, kb, ActionView, KBLookups{Grants: p.lookup, Invites: p.invites})
+	if p.decisions == nil {
+		p.decisions = make(map[string]bool)
 	}
-	return HasKBGrant(p.ctx, kbID, dataTenant, required), nil
+	p.decisions[kb.ID] = err == nil
+	return err == nil
 }

@@ -33,10 +33,10 @@ import (
 // declaration itself documents the rule.
 //
 // Cross-tenant superuser endpoints (/tenants/all, /tenants/search) use
-// g.CrossTenant(): RequireCrossTenantAccess in access.go combines the
-// CanAccessAllTenants user attribute with the cluster-wide
-// EnableCrossTenantAccess flag, replacing the 12-line if-block that
-// previously opened ListAllTenants and SearchTenants.
+// g.CrossTenant(): RequireCrossTenantAccess in access.go admits a
+// platform SuperAdmin (IsSystemAdmin) or a platform API key, replacing
+// the 12-line if-block that previously opened ListAllTenants and
+// SearchTenants.
 //
 // JWT behavior for POST /tenants and GET /tenants remains unchanged. Platform
 // API keys may create tenants through system_tenants_manage; workspace keys

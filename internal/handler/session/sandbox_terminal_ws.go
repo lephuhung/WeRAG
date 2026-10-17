@@ -408,11 +408,6 @@ func (h *Handler) checkTerminalAuth(
 		h.memberService,
 		h.sessionService,
 		claims,
-		h.terminalRBACEnforced(),
 		rejectExpired,
 	)
-}
-
-func (h *Handler) terminalRBACEnforced() bool {
-	return h != nil && h.config != nil && h.config.Tenant.IsRBACEnforced()
 }

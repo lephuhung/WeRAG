@@ -233,7 +233,7 @@ func (r *kbDeleteKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.
 	return nil, nil
 }
 
-func (r *kbDeleteKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+func (r *kbDeleteKBRepo) ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

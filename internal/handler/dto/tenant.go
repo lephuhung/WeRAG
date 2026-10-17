@@ -34,7 +34,12 @@ type TenantResponse struct {
 
 // NewTenantResponse converts a stored tenant into its HTTP response shape.
 func NewTenantResponse(ctx context.Context, tenant *types.Tenant) *TenantResponse {
-	return NewTenantResponseWithRole(tenant, RoleFromContext(ctx))
+	role := RoleFromContext(ctx)
+	if !role.IsTenantAdmin() && isExplicitSuperAdmin(ctx) {
+		// A SuperAdmin sees the tenant as its admin would.
+		role = types.TenantRoleAdmin
+	}
+	return NewTenantResponseWithRole(tenant, role)
 }
 
 // NewTenantResponseWithRole converts a stored tenant using an explicit role

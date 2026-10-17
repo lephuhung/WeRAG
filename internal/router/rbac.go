@@ -585,17 +585,17 @@ func (g *rbacGuards) OwnedWikiKBOrAdmin() gin.HandlerFunc {
 // considered. Both delegate to middleware/access.go which centralises
 // the cross-tenant rules so the router stays declarative.
 
-// CrossTenant gates a route on the caller being an org-level
-// superuser (CanAccessAllTenants AND EnableCrossTenantAccess). Used by
-// /tenants/all, /tenants/search, POST /tenants, GET /tenants — the
-// endpoints that operate across tenants. Replaces the if-blocks that
+// CrossTenant gates a route on the caller being a platform SuperAdmin
+// (User.IsSystemAdmin on a human session) or a platform API key. Used by
+// /tenants/all and /tenants/search — the endpoints that operate across
+// tenants. Replaces the if-blocks that
 // used to live inside ListAllTenants/SearchTenants/CreateTenant.
 func (g *rbacGuards) CrossTenant() gin.HandlerFunc {
 	return middleware.RequireCrossTenantAccess(g.cfg)
 }
 
 // PathTenantMatch enforces that the URL :id matches the caller's
-// active tenant context (cross-tenant superusers bypass). Routes apply
+// active tenant context (platform SuperAdmins bypass). Routes apply
 // it at the /tenants/:id group level so every per-tenant endpoint —
 // GetTenant / UpdateTenant / DeleteTenant / member
 // management / leave — shares the same check. Replaces the

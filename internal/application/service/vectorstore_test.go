@@ -832,6 +832,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     creator_id VARCHAR(36),
     type VARCHAR(32) NOT NULL DEFAULT 'document',
     visibility VARCHAR(16) NOT NULL DEFAULT 'tenant',
+    member_default VARCHAR(16) NOT NULL DEFAULT 'contribute',
     org_id INTEGER NULL,
     chunking_config TEXT NOT NULL DEFAULT '{}',
     image_processing_config TEXT NOT NULL DEFAULT '{}',
@@ -968,6 +969,10 @@ func (r *realKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, _ uint64) (
 }
 func (r *realKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return nil
+}
+func (r *realKBRepo) UpdateKnowledgeBaseScope(_ context.Context, _ *types.KnowledgeBase, _ string,
+) (types.KBShareRevocation, error) {
+	return types.KBShareRevocation{}, nil
 }
 func (r *realKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error {
 	return nil
@@ -1205,7 +1210,7 @@ func (r *realKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 	return nil, nil
 }
 
-func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+func (r *realKBRepo) ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

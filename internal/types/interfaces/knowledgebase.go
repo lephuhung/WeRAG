@@ -101,18 +101,35 @@ type KnowledgeBaseService interface {
 		id string, name string, description string, config *types.KnowledgeBaseConfig,
 	) (*types.KnowledgeBase, error)
 
-	// SetKnowledgeBaseVisibility changes the KB scope (tenant/public).
-	// Only an explicit human SuperAdmin may invoke it — for promotion
-	// (tenant→public) and for scope transfer (public→tenant) alike.
-	// A public→tenant transition requires the nonzero destination tenant
-	// in targetTenantID (0 means omitted); the destination must exist.
-	// A tenant→tenant call with a different target is rejected; with an
-	// omitted or same-owner target it is a no-op. Transitions modify
-	// owner/visibility metadata only: KB ID and data-scope tenant_id are
+	// SetKnowledgeBaseMemberDefault sets what active members of the owner
+	// tenant may do on a 'tenant' KB (view | contribute). Owner Tenant
+	// Admin or SuperAdmin only.
+	SetKnowledgeBaseMemberDefault(ctx context.Context, id string, memberDefault types.KBMemberDefault,
+	) (*types.KnowledgeBase, error)
+
+	// SetKnowledgeBaseVisibility changes the KB scope without changing its
+	// owner. Moves among the tenant-owned scopes (tenant, restricted,
+	// published) are decided by the owner's Tenant Admin or a SuperAdmin;
+	// promotion to platform public (tenant→public) needs an explicit human
+	// SuperAdmin. public→tenant and any target tenant other than the owner
+	// are rejected with 400: owner changes go through
+	// TransferKnowledgeBaseOwner. KB ID and data-scope tenant_id are
 	// preserved and no child rows, indexes, or background jobs are touched.
 	SetKnowledgeBaseVisibility(ctx context.Context,
 		id string, visibility types.KBVisibility, targetTenantID uint64,
 	) (*types.KnowledgeBase, error)
+
+	// TransferKnowledgeBaseOwner moves a KB to another owner tenant
+	// (explicit human SuperAdmin only). The source must be tenant-owned
+	// (tenant/restricted/published) or platform public. The scope never
+	// widens: restricted stays restricted (readable only by the target's
+	// Admins and SuperAdmins until the target shares it), tenant stays
+	// tenant, published is withdrawn to tenant and public becomes tenant of
+	// the target. Data-scope tenant_id and member_default are
+	// unchanged, and every invitation and tenant grant is revoked in the
+	// same transaction (revoked_reason=owner_changed).
+	TransferKnowledgeBaseOwner(ctx context.Context, id string, targetTenantID uint64,
+	) (*types.KBOwnerTransferResult, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
@@ -241,10 +258,15 @@ type KnowledgeBaseRepository interface {
 	// base. Returns nil without error when the KB does not exist.
 	GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error)
 
-	// ListVisibleKnowledgeBases lists the non-temporary KBs of tenantID:
-	// 'tenant'- and 'public'-visibility rows. Cross-tenant visibility
-	// comes from kb_access_grants, resolved by the service layer.
-	ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+	// ListReadableKnowledgeBases lists, in one statement, every
+	// non-temporary KB reader may VIEW under access.DecideKB, each with
+	// AccessSource set: SuperAdmin -> all; owner-tenant Admin -> every KB
+	// of the tenant; owner-tenant Member -> tenant/published KBs of the
+	// tenant; humans -> platform public + published; live invites and
+	// approved tenant grants -> restricted/tenant KBs (acl_user /
+	// acl_tenant). Machine principals (not Human) get only their own
+	// tenant's KBs. Ordered created_at DESC, id ASC.
+	ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error)
 
 	// ListOwnedKnowledgeBases lists the non-temporary KBs authorized under
 	// ownerTenantID: rows with owner_tenant_id = ownerTenantID plus legacy
@@ -272,8 +294,8 @@ type KnowledgeBaseRepository interface {
 	ListPublicKnowledgeBasesExcept(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// ListForeignKnowledgeBasesByTenantID lists the non-temporary KBs of
-	// tenantID that are visible to callers outside that tenant —
-	// 'tenant' and 'public' visibility.
+	// tenantID that may be listed to callers outside that tenant: every
+	// visibility except 'restricted' (ACL-only).
 	ListForeignKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
@@ -283,6 +305,13 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
 	UpdateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) error
+	// UpdateKnowledgeBaseScope saves an owner/visibility change. When
+	// revokeSharesReason is non-empty it also, in the same transaction,
+	// revokes every pending/accepted kb_invitations row of the KB (stamping
+	// revoked_reason) and every pending/approved kb_access_grants row, and
+	// returns how many of each it revoked.
+	UpdateKnowledgeBaseScope(ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string,
+	) (types.KBShareRevocation, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base record
 	// Parameters:

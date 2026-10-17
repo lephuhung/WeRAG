@@ -58,6 +58,8 @@ func newFolderRouter(kg interfaces.KnowledgeService) *gin.Engine {
 	r.Use(func(c *gin.Context) {
 		c.Set(types.TenantIDContextKey.String(), uint64(1))
 		c.Set(types.UserIDContextKey.String(), "u-test")
+		// Real requests carry the active-membership role (DecideKB needs it).
+		c.Set(types.TenantRoleContextKey.String(), types.TenantRoleMember)
 		c.Next()
 	})
 	h := &KnowledgeHandler{kbService: &stubFolderKBService{}, kgService: kg}

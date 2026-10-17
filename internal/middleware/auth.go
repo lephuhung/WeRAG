@@ -81,37 +81,77 @@ func isNoAuthAPI(path string, method string) bool {
 	return false
 }
 
-// isTenantOptionalAPI lists authenticated identity-level operations that are
-// meaningful before a user belongs to any tenant. Every other authenticated
-// route remains tenant-scoped and returns TENANT_REQUIRED when the JWT and
-// request headers do not resolve a tenant.
+// routeScope classifies authenticated routes that never need a workspace.
+type routeScope string
+
+const (
+	// routeScopeIdentity: the signed-in account itself (profile, password,
+	// 2FA, own invitations, choosing or creating a workspace).
+	routeScopeIdentity routeScope = "identity"
+	// routeScopePlatform: the SuperAdmin control plane. Its SystemAdmin
+	// group guard denies everyone else, so admitting it tenantless only
+	// lets a SuperAdmin without a workspace reach it.
+	routeScopePlatform routeScope = "platform"
+)
+
+// tenantOptionalRoute is one identity/platform route family. prefix=true
+// matches path and everything under it; methods==nil matches any method.
+type tenantOptionalRoute struct {
+	scope   routeScope
+	path    string
+	prefix  bool
+	methods []string
+}
+
+// tenantOptionalRoutes is the identity + platform part of
+// isTenantOptionalAPI. KB-scoped public reads and platform-KB lifecycle
+// stay in the switch below because they depend on path shape.
+var tenantOptionalRoutes = []tenantOptionalRoute{
+	{scope: routeScopeIdentity, path: "/api/v1/auth/me", methods: []string{http.MethodGet, http.MethodPut}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/me/preferences", methods: []string{http.MethodPut}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/logout", methods: []string{http.MethodPost}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/change-password", methods: []string{http.MethodPost}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/validate", methods: []string{http.MethodGet}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/switch-tenant", methods: []string{http.MethodPost}},
+	{scope: routeScopeIdentity, path: "/api/v1/auth/2fa/", prefix: true},
+	{scope: routeScopeIdentity, path: "/api/v1/me/invitations", prefix: true},
+	{scope: routeScopeIdentity, path: "/api/v1/tenants", methods: []string{http.MethodPost}},
+	// Unit directory: a tenantless SuperAdmin picks units to manage.
+	{scope: routeScopeIdentity, path: "/api/v1/tenants/directory", methods: []string{http.MethodGet}},
+	{scope: routeScopePlatform, path: "/api/v1/system/admin/", prefix: true},
+}
+
+func (r tenantOptionalRoute) matches(path, method string) bool {
+	if r.prefix {
+		if !strings.HasPrefix(path, r.path) {
+			return false
+		}
+	} else if path != r.path {
+		return false
+	}
+	if len(r.methods) == 0 {
+		return true
+	}
+	for _, m := range r.methods {
+		if m == method {
+			return true
+		}
+	}
+	return false
+}
+
+// isTenantOptionalAPI lists authenticated operations that are meaningful
+// without a workspace: identity and platform routes (tenantOptionalRoutes)
+// plus per-KB-guarded public reads and platform-KB lifecycle. Every other
+// authenticated route remains tenant-scoped and returns TENANT_REQUIRED
+// when the JWT and request headers do not resolve a tenant.
 func isTenantOptionalAPI(path, method string) bool {
+	for _, r := range tenantOptionalRoutes {
+		if r.matches(path, method) {
+			return true
+		}
+	}
 	switch {
-	case path == "/api/v1/auth/me" && (method == http.MethodGet || method == http.MethodPut):
-		return true
-	case path == "/api/v1/auth/me/preferences" && method == http.MethodPut:
-		return true
-	case path == "/api/v1/auth/logout" && method == http.MethodPost:
-		return true
-	case path == "/api/v1/auth/change-password" && method == http.MethodPost:
-		return true
-	case path == "/api/v1/auth/validate" && method == http.MethodGet:
-		return true
-	case path == "/api/v1/auth/switch-tenant" && method == http.MethodPost:
-		return true
-	case path == "/api/v1/tenants" && method == http.MethodPost:
-		return true
-	case path == "/api/v1/tenants/directory" && method == http.MethodGet:
-		// Unit directory: a tenantless SuperAdmin picks units to manage.
-		return true
-	case strings.HasPrefix(path, "/api/v1/system/admin/tenants") ||
-		strings.HasPrefix(path, "/api/v1/system/admin/users"):
-		// Unit and account provisioning: a SuperAdmin needs no unit of
-		// their own to create the first one. The SystemAdmin group guard
-		// denies everyone else.
-		return true
-	case strings.HasPrefix(path, "/api/v1/me/invitations"):
-		return true
 	case path == "/api/v1/knowledge-bases/public" && method == http.MethodPost:
 		// Platform public-KB creation: an explicit human SuperAdmin with
 		// no active workspace must reach the route; its dedicated guard
@@ -261,7 +301,7 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 			return false
 		}
 		switch segs[1] {
-		case "knowledge", "tags":
+		case "knowledge", "tags", "access":
 			return true
 		default:
 			// pin (PUT-only), visibility, activity, files,
@@ -300,7 +340,8 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 }
 
 // under /api/v1/knowledge-bases/: single-segment update/delete, the
-// two-segment visibility switch, and the three-segment profile regeneration.
+// two-segment visibility switch and owner transfer, and the three-segment
+// profile regeneration.
 // Reads (GET detail/list/search) and every nested content route keep
 // requiring a workspace.
 func isTenantlessKBLifecyclePath(path, method string) bool {
@@ -320,6 +361,10 @@ func isTenantlessKBLifecyclePath(path, method string) bool {
 			// A tenantless SuperAdmin shares any KB; TenantAdmin route
 			// guards deny every other tenantless caller.
 			return true
+		}
+		if segs[1] == "transfer-owner" {
+			// Owner transfer is SuperAdmin-only (route guard).
+			return method == http.MethodPost
 		}
 		return segs[1] == "visibility" && method == http.MethodPut
 	case 3:
@@ -478,8 +523,36 @@ func authenticateJWTUser(
 	// 解析当前Tenant workspace内的角色 (issue #1303)
 	role, ok := resolveTenantRole(ctx, memberService, user, targetTenantID, crossTenantSwitch, cfg)
 	if !ok {
-		// 强制 RBAC 时，缺少 active membership 即拒绝；fail-open 路径已在
-		// resolveTenantRole 内部处理。
+		// No active membership. A SuperAdmin is still a SuperAdmin without
+		// one (platform authority does not depend on tenant membership):
+		//   - identity and platform routes are served tenantless, exactly
+		//     as for a SuperAdmin with no workspace at all;
+		//   - every other route runs in the selected tenant as execution
+		//     context with NO tenant role (""). Role gates admit the
+		//     SuperAdmin through access.IsExplicitHumanSuperAdmin, never
+		//     through a synthesized membership role.
+		// Everyone else without an active membership is refused.
+		if user.IsSystemAdmin && !types.IsSyntheticUserID(user.ID) {
+			if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
+				logger.Infof(ctx,
+					"[auth] SuperAdmin %s has no membership in tenant %d; serving %s tenantless",
+					user.ID, targetTenantID, c.Request.URL.Path)
+				attachTenantlessUserContext(c, user)
+				return true
+			}
+			logger.Infof(ctx,
+				"[auth] SuperAdmin %s has no membership in tenant %d; serving %s with no tenant role",
+				user.ID, targetTenantID, c.Request.URL.Path)
+			applyAuthSession(c, authSession{
+				User:        user,
+				Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+				TenantID:    targetTenantID,
+				Tenant:      tenant,
+				Role:        "",
+				SystemAdmin: true,
+			})
+			return true
+		}
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "Forbidden: not a member of the target workspace",
@@ -506,7 +579,7 @@ func authenticateJWTUser(
 //
 // Priority:
 //  1. X-Tenant-ID header — must parse to a positive integer, the user must
-//     be allowed to access it (home tenant / cross-tenant superuser / active
+//     be allowed to select it (home tenant / SuperAdmin / active
 //     membership, see IsTenantAccessible) and the tenant must exist. The
 //     fetched tenant is returned so the caller doesn't refetch it.
 //  2. JWT tenant claim (falling back to user.TenantID when the claim is 0).
@@ -545,7 +618,7 @@ func resolveTargetTenant(
 			c.Abort()
 			return 0, nil, false, false
 		}
-		// 检查用户是否有权限访问目标Tenant workspace：自家Tenant workspace、跨Tenant workspace超管、或
+		// 检查用户是否可以选择目标Tenant workspace：自家Tenant workspace、SuperAdmin、或
 		// 有 active membership 行——三选一，由 IsTenantAccessible 统一判定。
 		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
@@ -960,31 +1033,22 @@ func principalTenantIDFromClaims(claims jwt.MapClaims) uint64 {
 
 // resolveTenantRole determines the caller's TenantRole inside targetTenantID.
 //
-// Order of resolution:
-//  1. Active TenantMember row → return that role.
-//  2. Cross-tenant superuser switch (X-Tenant-ID with CanAccessAllTenants=true)
-//     → grant Admin in the target tenant. Org admins are intentionally not
-//     promoted beyond Admin; tenant deletion / API-key rotation should always
-//     stay with a real Admin inside the target tenant. Cross-tenant access
-//     is also never allowed to trigger the orphan-tenant auto-promotion
-//     below — a superuser only visits, never claims ownership.
-//  3. No membership but the tenant currently has zero active members AND
-//     the caller is authenticating into their own home tenant (i.e.
-//     targetTenantID == user.TenantID and this is not a cross-tenant
-//     switch). This is the API-key-only orphan-tenant self-heal path:
-//     the registrant becomes Admin of the tenant their own user record
-//     points to. Any other path (cross-tenant switch, JWT minted for a
-//     foreign tenant, etc.) is intentionally excluded to avoid silent
-//     ownership grabs.
-//  4. Otherwise → return ok=false. Caller decides:
-//     - When EnableRBAC=true (or cfg unavailable): treat as 403.
-//     - When EnableRBAC=false: fail open with Admin so existing deployments
-//     don't break in the rollout window where memberships might lag user
-//     records.
+// The only source of a tenant role is an active tenant_members row. There
+// is no other path:
+//   - The legacy CanAccessAllTenants attribute grants nothing (platform
+//     authority comes from IsSystemAdmin only, and a SuperAdmin's role in
+//     a tenant is still its membership).
+//   - An empty home tenant is never self-claimed; a SuperAdmin assigns the
+//     first Admin through /system/admin/tenants/:id/members.
+//   - enable_rbac=false does not fail open here: it only downgrades role
+//     gate rejections to logs in RequireRole and never shapes identity.
 //
-// The boolean second return value reports whether enforcement should reject
-// the request. It is true whenever a usable role was found OR fail-open
-// applies; false only when we want callers to abort with 403.
+// Returns ("", false) when there is no active membership (including
+// suspended rows and lookup errors); the caller answers 403, or serves a
+// SuperAdmin without a tenant role (tenantless on tenant-optional routes).
+//
+// crossTenantSwitch and cfg are kept for the call-site contract and
+// logging; neither widens the result.
 func resolveTenantRole(
 	ctx context.Context,
 	memberService interfaces.TenantMemberService,
@@ -993,73 +1057,24 @@ func resolveTenantRole(
 	crossTenantSwitch bool,
 	cfg *config.Config,
 ) (types.TenantRole, bool) {
-	// 1. 正常成员关系
 	member, err := memberService.GetMembership(ctx, user.ID, targetTenantID)
 	if err == nil && member != nil && member.Status == types.TenantMemberStatusActive {
 		logger.Infof(ctx,
-			"[auth] resolveTenantRole step1 hit: user=%s tenant=%d row_role=%s row_status=%s",
+			"[auth] resolveTenantRole hit: user=%s tenant=%d row_role=%s row_status=%s",
 			user.ID, targetTenantID, member.Role, member.Status)
 		return member.Role, true
 	}
 	if err != nil {
 		logger.Warnf(ctx, "tenant_members lookup failed user=%s tenant=%d: %v",
 			user.ID, targetTenantID, err)
-		// Fall through; treat lookup errors the same as "no membership
-		// found" so a transient DB hiccup doesn't lock everyone out.
-	} else {
-		var statusInfo string
-		if member == nil {
-			statusInfo = "no_row"
-		} else {
-			statusInfo = "row_exists status=" + string(member.Status) + " role=" + string(member.Role)
-		}
-		logger.Warnf(ctx,
-			"[auth] resolveTenantRole step1 miss: user=%s tenant=%d (%s)",
-			user.ID, targetTenantID, statusInfo)
-	}
-
-	// 2. 跨Tenant workspace超管直通：CanAccessAllTenants 用户切到别的Tenant workspace时不强制要求 membership。
-	//    注意：这里只授予临时 Admin 角色，不写入 tenant_members，避免"看一眼别人Tenant workspace"
-	//    意外升级为持久化所有权。
-	if crossTenantSwitch && user.CanAccessAllTenants {
-		logger.Infof(ctx,
-			"[auth] resolveTenantRole step2 (cross-tenant superuser) -> Admin: user=%s tenant=%d",
-			user.ID, targetTenantID)
-		return types.TenantRoleAdmin, true
-	}
-
-	// 3. 孤儿Tenant workspace自愈：仅当用户登录的是自己的 home tenant、且该Tenant workspace尚无任何活跃成员时
-	//    允许自动晋升为 Admin。跨Tenant workspace switch / JWT 指向他人Tenant workspace的场景一律不进入此分支，
-	//    防止越权获得他人Tenant workspace的 Admin 权限。
-	isHomeTenant := !crossTenantSwitch && targetTenantID == user.TenantID
-	if isHomeTenant {
-		hasAny, anyErr := memberService.HasAnyMembers(ctx, targetTenantID)
-		if anyErr == nil && !hasAny {
-			if _, e := memberService.AddMember(
-				ctx, user.ID, targetTenantID, types.TenantRoleAdmin, nil,
-			); e == nil {
-				logger.Infof(ctx,
-					"[audit] Auto-promoted user %s to Admin of orphan tenant %d (home_tenant=true)",
-					user.ID, targetTenantID,
-				)
-				return types.TenantRoleAdmin, true
-			} else {
-				logger.Warnf(ctx, "Failed to auto-promote user %s in tenant %d: %v",
-					user.ID, targetTenantID, e)
-			}
-		}
-	}
-
-	// 4. 兜底：根据 EnableRBAC 决定 fail-closed 还是 fail-open
-	if cfg != nil && cfg.Tenant.IsRBACEnforced() {
-		logger.Warnf(ctx,
-			"[auth] resolveTenantRole step4 fail-closed (EnableRBAC=true): user=%s tenant=%d",
-			user.ID, targetTenantID)
 		return "", false
 	}
+	statusInfo := "no_row"
+	if member != nil {
+		statusInfo = "row_exists status=" + string(member.Status) + " role=" + string(member.Role)
+	}
 	logger.Warnf(ctx,
-		"[auth] resolveTenantRole step4 fail-open (EnableRBAC=false) -> Admin: user=%s tenant=%d",
-		user.ID, targetTenantID)
-	// fail-open 期间保持现有行为（每个登录用户在自己Tenant workspace里都是"管理员"）。
-	return types.TenantRoleAdmin, true
+		"[auth] resolveTenantRole miss: user=%s tenant=%d cross_switch=%v (%s)",
+		user.ID, targetTenantID, crossTenantSwitch, statusInfo)
+	return "", false
 }

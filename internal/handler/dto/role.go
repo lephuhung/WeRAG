@@ -3,6 +3,7 @@ package dto
 import (
 	"context"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -11,10 +12,11 @@ func RoleFromContext(ctx context.Context) types.TenantRole {
 	return types.TenantRoleFromContext(ctx)
 }
 
-// CanViewIntegrationSecrets is true for Admin tenant members and for API keys
-// with full tenant access or the manage_tenant_settings capability.
+// CanViewIntegrationSecrets is true for Admin tenant members, explicit
+// human SuperAdmins (with or without a membership in the tenant), and API
+// keys with full tenant access or the manage_tenant_settings capability.
 func CanViewIntegrationSecrets(ctx context.Context) bool {
-	if RoleFromContext(ctx).IsTenantAdmin() {
+	if RoleFromContext(ctx).IsTenantAdmin() || isExplicitSuperAdmin(ctx) {
 		return true
 	}
 	return apiKeyCanManageIntegrationSecrets(ctx)
@@ -36,7 +38,14 @@ func RoleCanViewTenantAPIKey(role types.TenantRole) bool {
 	return role.IsTenantAdmin()
 }
 
-// CanViewTenantAPIKey is true for Admin only.
+// CanViewTenantAPIKey is true for a Tenant Admin and for an explicit human
+// SuperAdmin (who holds every tenant right, with or without a membership).
 func CanViewTenantAPIKey(ctx context.Context) bool {
-	return RoleCanViewTenantAPIKey(RoleFromContext(ctx))
+	return RoleCanViewTenantAPIKey(RoleFromContext(ctx)) || isExplicitSuperAdmin(ctx)
+}
+
+// isExplicitSuperAdmin reports an explicit human SuperAdmin on ctx; API
+// keys and synthetic users never qualify.
+func isExplicitSuperAdmin(ctx context.Context) bool {
+	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
 }

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/config"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -16,28 +17,21 @@ import (
 // access.go centralises the tenant-access checks that previously lived
 // scattered across handlers and the various RBAC middlewares:
 //
-//   - "is the caller an org-level superuser" — used by the role guards
-//     in rbac.go, the X-Tenant-ID branch in auth.go, the tenant
-//     handler's authorizeTenantAccess, and the tenant member handler's
-//     resolveTenantIDFromPath.
+//   - "is the caller a platform SuperAdmin" (IsPlatformSuperAdmin) —
+//     used by the cross-tenant route guard and the path-tenant match.
+//     Platform authority comes only from User.IsSystemAdmin on an
+//     explicit human session; the legacy CanAccessAllTenants attribute
+//     and the cluster-wide EnableCrossTenantAccess flag grant nothing.
 //
-//   - "can the caller access target tenant X" — used by the
+//   - "can the caller select target tenant X" — used by the
 //     X-Tenant-ID branch in auth.go to decide whether to honour the
-//     header. Originally allowed only superusers; now also allows
-//     ordinary multi-tenant members who have an active row in the
-//     target tenant's tenant_members table.
+//     header (home tenant, SuperAdmin, or an active membership).
 //
 //   - "must the URL :id match the active tenant" — used by every
 //     tenant-scoped route. Was duplicated in tenant.go (4 callers) and
 //     tenant_member.go (1 caller) before; now lives here as a route
 //     middleware so the route declaration is the single source of
 //     truth.
-//
-// All of these honour cfg.Tenant.EnableCrossTenantAccess: the
-// CanAccessAllTenants attribute on a User row is meaningful only when
-// the cluster-wide flag is on. Reading the attribute alone (without the
-// flag) would let a dormant config grant escalation, which is exactly
-// what bit us during the PR 3 review.
 //
 // Rejections are reported via c.Error(*apperrors.AppError) + c.Abort(),
 // not c.JSON: this keeps the response shape consistent with the
@@ -48,26 +42,22 @@ import (
 // preserving it avoids breaking SDK / frontend consumers that key off
 // `error.code`.
 
-// IsCrossTenantSuperuser reports whether ctx carries a user that is
-// authorised for cross-tenant access at this moment. Both the user
-// attribute and the cluster-wide flag must be true; either alone is
-// not enough.
-func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
-	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
-		return false
-	}
-	u, ok := ctx.Value(types.UserContextKey).(*types.User)
-	if !ok || u == nil {
-		return false
-	}
-	return u.CanAccessAllTenants
+// IsPlatformSuperAdmin reports whether ctx carries an explicit human
+// SuperAdmin (access.IsExplicitHumanSuperAdmin): the system-admin flag
+// on a real, non-synthetic user and no API-key scope. It replaces the
+// former IsCrossTenantSuperuser, which honoured CanAccessAllTenants.
+func IsPlatformSuperAdmin(ctx context.Context) bool {
+	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
 }
 
-// IsTenantAccessible reports whether `user` is allowed to operate inside
-// `targetTenantID`. The decision order is:
+// IsTenantAccessible reports whether `user` may select `targetTenantID`
+// (X-Tenant-ID). Selecting a tenant is scope selection, not a grant: the
+// role inside it still comes only from an active membership
+// (resolveTenantRole). The decision order is:
 //
 //  1. Home tenant (user.TenantID == targetTenantID): always.
-//  2. Cross-tenant superuser: governed by IsCrossTenantSuperuser.
+//  2. SuperAdmin (user.IsSystemAdmin): any tenant. The legacy
+//     CanAccessAllTenants attribute no longer qualifies.
 //  3. Multi-tenant member: an active tenant_members row in the target
 //     tenant grants access (this is what makes cross-tenant browsing
 //     work for non-superusers added via PR 3's member management).
@@ -87,7 +77,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && user.CanAccessAllTenants {
+	if user.IsSystemAdmin {
 		return true
 	}
 	if memberService == nil {
@@ -100,14 +90,16 @@ func IsTenantAccessible(
 	return m.Status == types.TenantMemberStatusActive
 }
 
-// RequireCrossTenantAccess gates a route on the caller being an
-// org-level superuser. Used by /tenants/all, /tenants/search,
-// POST /tenants, GET /tenants — endpoints that operate across tenants
-// rather than inside one.
+// RequireCrossTenantAccess gates a route on the caller being a platform
+// SuperAdmin (or a platform API key). Used by /tenants/all and
+// /tenants/search — endpoints that operate across tenants rather than
+// inside one.
 //
 // Unlike RequireRole this is NOT modulated by cfg.Tenant.EnableRBAC:
 // cross-workspace operations are always sensitive regardless of whether
-// per-tenant RBAC is being enforced, so we never log-and-pass.
+// per-tenant RBAC is being enforced, so we never log-and-pass. The legacy
+// CanAccessAllTenants attribute and the EnableCrossTenantAccess cluster
+// flag no longer play any part: platform authority is IsSystemAdmin only.
 func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -115,23 +107,10 @@ func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		// First the cluster-wide flag — if it's off, nobody gets through,
-		// not even users with CanAccessAllTenants=true. This mirrors the
-		// "must require BOTH" rule that previously lived in tenant.go.
-		if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
+		if !IsPlatformSuperAdmin(ctx) {
 			uid, _ := types.UserIDFromContext(ctx)
 			logger.Warnf(ctx,
-				"[rbac] cross-tenant route blocked (EnableCrossTenantAccess=false): user=%s path=%s",
-				uid, c.Request.URL.Path)
-			_ = c.Error(apperrors.NewForbiddenError("Cross-workspace access is disabled"))
-			c.Abort()
-			return
-		}
-		u, ok := ctx.Value(types.UserContextKey).(*types.User)
-		if !ok || u == nil || !u.CanAccessAllTenants {
-			uid, _ := types.UserIDFromContext(ctx)
-			logger.Warnf(ctx,
-				"[rbac] cross-tenant route blocked (not a superuser): user=%s path=%s",
+				"[rbac] cross-tenant route blocked (not a SuperAdmin): user=%s path=%s",
 				uid, c.Request.URL.Path)
 			_ = c.Error(apperrors.NewForbiddenError(
 				"Insufficient permissions for cross-workspace operation"))
@@ -143,9 +122,8 @@ func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 }
 
 // RequirePathTenantMatch gates a route on the URL :id matching the
-// caller's active tenant context. Cross-tenant superusers bypass the
-// match because their X-Tenant-ID switch was already vetted by the
-// auth middleware.
+// caller's active tenant context. A platform SuperAdmin bypasses the
+// match: SuperAdmin authority does not depend on the active tenant.
 //
 // The router places this on the /tenants/:id group so every per-tenant
 // endpoint (GetTenant / UpdateTenant / DeleteTenant /
@@ -184,7 +162,7 @@ func RequirePathTenantMatch(cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if IsCrossTenantSuperuser(ctx, cfg) {
+		if IsPlatformSuperAdmin(ctx) {
 			c.Next()
 			return
 		}

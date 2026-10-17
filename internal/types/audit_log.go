@@ -189,10 +189,14 @@ const (
 	// AuditActionKBScopeChanged records a platform owner/scope transition
 	// (tenant↔public): details carry actor, old/new owner_tenant_id and
 	// visibility, the target tenant when present, the KB ID, and outcome.
-	AuditActionKBScopeChanged   AuditAction = "kb.scope_changed"
-	AuditActionKBCloneStarted   AuditAction = "kb.clone_started"
-	AuditActionKBCloneCompleted AuditAction = "kb.clone_completed"
-	AuditActionKBCloneFailed    AuditAction = "kb.clone_failed"
+	AuditActionKBScopeChanged AuditAction = "kb.scope_changed"
+	// AuditActionKBOwnerTransferred records a SuperAdmin owner transfer
+	// (POST /knowledge-bases/:id/transfer-owner): details carry the old and
+	// new owner tenant, old/new visibility and the revoked share counts.
+	AuditActionKBOwnerTransferred AuditAction = "kb.owner_transferred"
+	AuditActionKBCloneStarted     AuditAction = "kb.clone_started"
+	AuditActionKBCloneCompleted   AuditAction = "kb.clone_completed"
+	AuditActionKBCloneFailed      AuditAction = "kb.clone_failed"
 
 	AuditActionKnowledgeCreated        AuditAction = "knowledge.created"
 	AuditActionKnowledgeUpdated        AuditAction = "knowledge.updated"

@@ -96,7 +96,7 @@ func grantFixture() (*kbAccessGrantService, *fakeGrantRepo, *fakeKBRepo) {
 	kbs.rows["kb-tinh"] = &types.KnowledgeBase{ID: "kb-tinh", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant}
 	kbs.rows["kb-luat"] = &types.KnowledgeBase{ID: "kb-luat", TenantID: 9, OwnerTenantID: 0, Visibility: types.KBVisibilityPublic}
 	grants := newFakeGrantRepo()
-	svc := NewKBAccessGrantService(grants, scopedKBRepo{kbs}, fakeGrantTenants{}, nil).(*kbAccessGrantService)
+	svc := NewKBAccessGrantService(grants, scopedKBRepo{kbs}, fakeGrantTenants{}, nil, nil).(*kbAccessGrantService)
 	return svc, grants, kbs
 }
 

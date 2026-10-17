@@ -2,8 +2,8 @@
  * RETIRED: the tenant-wide grant clients were removed from
  * lib/api/knowledge, so this component keeps its export as a compatibility
  * alias only and performs no grant fetches. Cross-workspace reads now use
- * recipient-bound invitations (see KBInvitePanel): a Tenant Admin opens a
- * KB in /platform/knowledge-bases and invites one member at a time.
+ * the KB's Access tab (components/knowledge/kb-access-tab.tsx): invites
+ * for one person and unit grants, managed per knowledge base.
  */
 "use client";
 

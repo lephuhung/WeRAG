@@ -52,6 +52,12 @@ export function groupCatalogRows<T extends KBViewerRow>(
       groups.public.push(row);
       continue;
     }
+    // Reached through a personal invite or a unit grant — including a
+    // restricted KB of the caller's own unit — is "shared with me".
+    if (row.access_source === "acl_user" || row.access_source === "acl_tenant") {
+      groups.invited.push(row);
+      continue;
+    }
     const owner = ownerOf(row);
     if ((owner !== "" && active !== "" && owner === active) || owner === "") {
       groups.workspace.push(row);
@@ -150,37 +156,4 @@ export function buildPublicCreatePayload(input: PublicCreateInput): {
   if (description !== "") payload.description = description;
   if (input.type === "document" || input.type === "faq") payload.type = input.type;
   return payload;
-}
-
-export interface ScopeChangeInput {
-  visibility: "public" | "tenant";
-  target_tenant_id?: number;
-}
-
-/* Build the visibility-transition payload. Public→tenant requires an
- * existing nonzero destination tenant selected by the SuperAdmin — a
- * missing target is a caller error, never a silent default. */
-export function buildScopeChangePayload(
-  from: "public",
-  _kbId: string,
-  targetTenantId?: number | string | null,
-): { visibility: "tenant"; target_tenant_id: number };
-export function buildScopeChangePayload(
-  from: "tenant",
-  _kbId: string,
-  targetTenantId?: number | string | null,
-): { visibility: "public" };
-export function buildScopeChangePayload(
-  from: "public" | "tenant",
-  _kbId: string,
-  targetTenantId?: number | string | null,
-): ScopeChangeInput {
-  if (from === "public") {
-    const target = typeof targetTenantId === "string" ? Number(targetTenantId.trim()) : targetTenantId;
-    if (typeof target !== "number" || !Number.isFinite(target) || target <= 0) {
-      throw new Error("Choose an existing destination workspace (target tenant id) before moving a public knowledge base.");
-    }
-    return { visibility: "tenant", target_tenant_id: Math.floor(target) };
-  }
-  return { visibility: "public" };
 }

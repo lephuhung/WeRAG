@@ -52,8 +52,7 @@ type TenantHandler struct {
 //
 // # Returns a pointer to the newly created TenantHandler
 //
-// Note on RBAC: cross-tenant gating (CanAccessAllTenants /
-// EnableCrossTenantAccess) and per-tenant path matching (URL :id ==
+// Note on RBAC: cross-tenant gating (platform SuperAdmin) and per-tenant path matching (URL :id ==
 // active tenant) used to live in `authorizeTenantAccess` and the if
 // blocks at the top of ListAllTenants / SearchTenants. Both moved to
 // `middleware/access.go` (RequireCrossTenantAccess /
@@ -87,9 +86,9 @@ func NewTenantHandler(
 // generated server-side by TenantService.CreateTenant so a normal user
 // can't bypass quotas or self-suspend a workspace at create time.
 //
-// Cross-tenant superusers historically posted the full Tenant struct to
+// Catalog managers historically posted the full Tenant struct to
 // this endpoint. We keep that path working by binding into the same
-// types.Tenant when CanAccessAllTenants is true (see CreateTenant
+// types.Tenant for SuperAdmins / platform keys (see CreateTenant
 // below), but the recommended shape going forward is name+description.
 type createTenantRequest struct {
 	Name        string `json:"name" binding:"required,min=1,max=128"`
@@ -245,9 +244,9 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	apiKeyScope, hasAPIKeyScope := types.TenantAPIKeyScopeFromContext(ctx)
 	platformCaller := hasAPIKeyScope && apiKeyScope.IsPlatform()
-	// SuperAdmins provision workspaces; CanAccessAllTenants keeps the
-	// legacy cross-tenant operator path working.
-	catalogManager := caller.IsSystemAdmin || caller.CanAccessAllTenants || platformCaller
+	// SuperAdmins and platform API keys provision workspaces. The legacy
+	// CanAccessAllTenants attribute grants nothing on its own.
+	catalogManager := caller.IsSystemAdmin || platformCaller
 
 	// Deployment-level policy: ordinary users may be restricted to joining
 	// existing workspaces by invitation. This check is authoritative; the
@@ -1219,8 +1218,8 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Cross-tenant gating (CanAccessAllTenants + EnableCrossTenantAccess)
-	// is enforced at the route layer via middleware.RequireCrossTenantAccess
+	// Cross-tenant gating (platform SuperAdmin or platform API key) is
+	// enforced at the route layer via middleware.RequireCrossTenantAccess
 	// (router.go). The handler stays focused on listing.
 	tenants, err := h.service.ListAllTenants(ctx)
 	if err != nil {

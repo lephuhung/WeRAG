@@ -42,6 +42,19 @@ func (r *resourceRepository) GetMessageFileBindings(
 	if err != nil {
 		return nil, err
 	}
+	if len(result.KnowledgeBaseIDs) > 0 {
+		err = r.db.WithContext(ctx).Table("resource_bindings AS b").
+			Joins("JOIN knowledges AS k ON k.id = b.owner_id AND k.tenant_id = b.tenant_id").
+			Joins("JOIN knowledge_bases AS kb ON kb.id = k.knowledge_base_id "+
+				"AND kb.tenant_id = k.tenant_id AND kb.deleted_at IS NULL").
+			Where("b.resource_id = ? AND b.owner_type = ? AND b.tenant_id = ? AND b.relation = ? "+
+				"AND k.deleted_at IS NULL",
+				resourceID, types.ResourceOwnerKnowledge, tenantID, types.ResourceRelationSourceFile).
+			Distinct("k.knowledge_base_id").Pluck("k.knowledge_base_id", &result.SourceFileKBIDs).Error
+		if err != nil {
+			return nil, err
+		}
+	}
 	if messageID != "" {
 		var count int64
 		err = r.db.WithContext(ctx).Model(&types.ResourceBinding{}).

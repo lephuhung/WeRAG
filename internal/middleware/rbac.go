@@ -49,22 +49,24 @@ type CreatorLookup func(c *gin.Context) (creatorID string, err error)
 // HTTP 403 unless the caller's TenantRole (set by the auth middleware
 // in TenantRoleContextKey) is at least min.
 //
-// Cross-tenant superusers (User.CanAccessAllTenants) automatically
-// satisfy any role gate. Otherwise rolling out tenant-RBAC would silently
-// break organisation-level operators who own no tenant_members row in
-// the tenant they're administering. The escape hatch is bounded by the
-// existing canAccessTenant gate in auth.go; this middleware does not
-// grant extra reach, only honours what was already approved.
+// An explicit human SuperAdmin (access.IsExplicitHumanSuperAdmin) passes
+// every role gate whatever its tenant role, including none: SuperAdmin
+// authority is platform-wide and independent of tenant membership. The
+// legacy User.CanAccessAllTenants attribute does not satisfy any role
+// gate: a tenant role comes only from an active membership
+// (resolveTenantRole).
 //
 // When cfg.Tenant.EnableRBAC is false, the middleware logs the would-be
-// rejection but lets the request through — preserving today's behaviour
-// during the rollout window. Once operators flip the flag to true,
-// the same code paths start rejecting unauthorised callers.
+// rejection but lets the request through. That is the only remaining
+// meaning of the flag: it relaxes role gates during rollout and never
+// affects identity resolution (a caller without an active membership
+// never reaches a tenant route at all).
 //
-// The auth middleware always sets a TenantRole; if for some reason it
-// is missing, TenantRoleFromContext defaults to TenantRoleMember, which
-// is the safest fail-closed value: anything that requires more than
-// Member will reject.
+// A caller without a tenant role (no active membership: a SuperAdmin
+// visiting a tenant, or a missing context value) has the empty role;
+// TenantRoleFromContext returns "" in that case, which satisfies no role
+// gate (fail closed). SuperAdmins pass through the explicit branch above,
+// never through a defaulted role.
 func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
 	return func(c *gin.Context) {
@@ -76,12 +78,13 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		role := types.CallerFromContext(ctx).Role
-		if role.HasPermission(min) {
+		caller := types.CallerFromContext(ctx)
+		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
 			c.Next()
 			return
 		}
-		if IsCrossTenantSuperuser(ctx, cfg) {
+		role := caller.Role
+		if role.HasPermission(min) {
 			c.Next()
 			return
 		}
@@ -338,7 +341,8 @@ func RequireSystemAdmin(cfg *config.Config) gin.HandlerFunc {
 // API-key principals skip this human ownership gate; route capabilities and
 // allowed KB scope remain mandatory. For human callers, decision order is:
 //  1. role >= min -> allow without running lookup.
-//  2. cross-tenant superuser -> allow without running lookup.
+//  2. explicit human SuperAdmin -> allow without running lookup. The
+//     legacy CanAccessAllTenants attribute never qualifies.
 //  3. enforcement off -> log, allow without running lookup. This is the
 //     critical rollout-safety guarantee: when EnableRBAC is false, the
 //     lookup is NEVER invoked, so dormant mode incurs zero extra DB
@@ -422,11 +426,13 @@ func ownershipRequestFromContext(ctx context.Context, cfg *config.Config) access
 	caller := types.CallerFromContext(ctx)
 	_, apiKey := types.TenantAPIKeyScopeFromContext(ctx)
 	return access.OwnershipRequest{
-		UserID:               caller.UserID,
-		Role:                 caller.Role,
-		APIKey:               apiKey,
-		CrossTenantSuperuser: IsCrossTenantSuperuser(ctx, cfg),
-		Enforce:              rbacEnforcementEnabled(cfg),
+		UserID: caller.UserID,
+		Role:   caller.Role,
+		APIKey: apiKey,
+		// Same rule as RequireRole: an explicit human SuperAdmin passes;
+		// the legacy CanAccessAllTenants attribute does not.
+		SuperAdmin: access.IsExplicitHumanSuperAdmin(ctx, caller),
+		Enforce:    rbacEnforcementEnabled(cfg),
 	}
 }
 
@@ -449,11 +455,6 @@ func logOwnershipDecision(
 			request.UserID, request.Role, required, decision.CreatorID, path)
 	}
 }
-
-// isCrossTenantSuperuser was moved to access.go (renamed to
-// IsCrossTenantSuperuser, exported, and made flag-aware) so the same
-// helper backs the X-Tenant-ID gate in auth.go and the RequireRole /
-// RequireOwnershipOrRole guards above.
 
 // warnOnNilConfig emits a one-shot startup warning when a guard is
 // constructed with a nil-or-incomplete config. nil cfg makes

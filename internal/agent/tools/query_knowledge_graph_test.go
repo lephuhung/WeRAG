@@ -212,3 +212,15 @@ func (s *stubKnowledgeBaseService) SetKnowledgeBaseVisibility(
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
+
+func (s *stubKnowledgeBaseService) SetKnowledgeBaseMemberDefault(
+	ctx context.Context, id string, memberDefault types.KBMemberDefault,
+) (*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (s *stubKnowledgeBaseService) TransferKnowledgeBaseOwner(
+	ctx context.Context, id string, targetTenantID uint64,
+) (*types.KBOwnerTransferResult, error) {
+	return nil, nil
+}

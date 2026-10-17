@@ -79,6 +79,11 @@ type fakeKBRepo struct {
 	rows      map[string]*types.KnowledgeBase
 	createErr error
 	updateErr error
+	// scopeRevokeReasons records revokeSharesReason of every
+	// UpdateKnowledgeBaseScope call.
+	scopeRevokeReasons []string
+	// scopeRevoked is what an owner-changing UpdateKnowledgeBaseScope reports.
+	scopeRevoked types.KBShareRevocation
 	// Task 4 catalog fixtures.
 	owned          []*types.KnowledgeBase
 	catalogItems   []*types.KnowledgeBase
@@ -89,6 +94,10 @@ type fakeKBRepo struct {
 	catalogKeyword string
 	catalogPage    int
 	byIDs          map[string]*types.KnowledgeBase
+	// readable is what ListReadableKnowledgeBases returns (the SQL itself
+	// is covered by the repository tests); readers records each call.
+	readable []*types.KnowledgeBase
+	readers  []types.KBReader
 }
 
 func (r *fakeKBRepo) UpdateKnowledgeBaseGeneratedProfile(
@@ -151,6 +160,16 @@ func (r *fakeKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, tenantID ui
 
 func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return r.updateErr
+}
+
+func (r *fakeKBRepo) UpdateKnowledgeBaseScope(
+	_ context.Context, _ *types.KnowledgeBase, reason string,
+) (types.KBShareRevocation, error) {
+	r.scopeRevokeReasons = append(r.scopeRevokeReasons, reason)
+	if r.updateErr != nil || reason == "" {
+		return types.KBShareRevocation{}, r.updateErr
+	}
+	return r.scopeRevoked, nil
 }
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }
 func (r *fakeKBRepo) TogglePinKnowledgeBase(_ context.Context, _ string, _ uint64) (*types.KnowledgeBase, error) {
@@ -629,8 +648,9 @@ func (r *fakeKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 	return nil, nil
 }
 
-func (r *fakeKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
-	return nil, nil
+func (r *fakeKBRepo) ListReadableKnowledgeBases(_ context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
+	r.readers = append(r.readers, reader)
+	return append([]*types.KnowledgeBase(nil), r.readable...), nil
 }
 
 func (r *fakeKBRepo) ListOwnedKnowledgeBases(_ context.Context, _ uint64) ([]*types.KnowledgeBase, error) {

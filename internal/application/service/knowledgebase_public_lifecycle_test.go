@@ -264,13 +264,15 @@ func TestPublicLifecycle_PublicToTenantRequiresValidTarget(t *testing.T) {
 	}
 	ctx := superAdminNoTenantLifecycleCtx()
 
+	// Phase 4: public→tenant is an owner transfer (TransferKnowledgeBaseOwner);
+	// the visibility call rejects it (TestSetVisibility_PublicToTenantPointsToTransfer).
 	repo, _, svc := setup()
-	_, err := svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 0)
+	_, err := svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 0)
 	require.Error(t, err, "missing target must be rejected")
 	assert.Equal(t, uint64(0), repo.rows["pub-1"].OwnerTenantID, "rejected transition must not mutate")
 
 	repo, _, svc = setup()
-	_, err = svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 99)
+	_, err = svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 99)
 	require.Error(t, err, "unknown target tenant must be rejected")
 	// The production mapping for a missing destination is 404, not merely
 	// any error: the fake returns repository.ErrTenantNotFound exactly so
@@ -282,8 +284,9 @@ func TestPublicLifecycle_PublicToTenantRequiresValidTarget(t *testing.T) {
 	assert.Equal(t, types.KBVisibilityPublic, repo.rows["pub-1"].Visibility)
 
 	repo, _, svc = setup()
-	kb, err := svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 2)
+	res, err := svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 2)
 	require.NoError(t, err)
+	kb := res.KnowledgeBase
 	assert.Equal(t, "pub-1", kb.ID)
 	assert.Equal(t, uint64(0), kb.TenantID, "transition preserves the platform data scope")
 	assert.Equal(t, uint64(2), kb.OwnerTenantID)
@@ -352,11 +355,12 @@ func TestPublicLifecycle_ScopeChangeAuditedPublicToTenant(t *testing.T) {
 	}
 	audit := &lifecycleAudit{}
 	svc := newLifecycleService(repo, newLifecycleTenantRepo(2), audit)
-	_, err := svc.SetKnowledgeBaseVisibility(superAdminNoTenantLifecycleCtx(), "pub-1", types.KBVisibilityTenant, 2)
+	_, err := svc.TransferKnowledgeBaseOwner(superAdminNoTenantLifecycleCtx(), "pub-1", 2)
 	require.NoError(t, err)
 	require.Len(t, audit.entries, 1)
 	entry := audit.entries[0]
-	assert.Equal(t, types.AuditActionKBScopeChanged, entry.Action)
+	// Phase 4: owner changes go through transfer-owner and audit as such.
+	assert.Equal(t, types.AuditActionKBOwnerTransferred, entry.Action)
 	assert.Equal(t, "pub-1", entry.ScopeID)
 	assert.Equal(t, "pub-1", entry.TargetID)
 	assert.Equal(t, "super-1", entry.ActorUserID)
@@ -420,20 +424,33 @@ func TestPublicLifecycle_ScopeChangeFailedOutcomeAudited(t *testing.T) {
 	assert.Equal(t, "failed", details["outcome"])
 }
 
-func TestPublicLifecycle_SuperAdminOutsideTenantCannotMutateTenantKB(t *testing.T) {
+// Settled 2026-10-17: an explicit SuperAdmin holds every right on every KB,
+// tenant-owned included, from another tenant or none (DecideKB).
+func TestPublicLifecycle_SuperAdminOutsideTenantMutatesTenantKB(t *testing.T) {
 	repo := newFakeKBRepo()
 	repo.rows["kb-1"] = &types.KnowledgeBase{
 		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "kb",
 	}
 	audit := &lifecycleAudit{}
 	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), audit)
-	// Explicit SuperAdmin acting in another tenant (or none) is denied on
-	// tenant-owned rows; only the owning tenant's policy grants mutation.
 	_, err := svc.UpdateKnowledgeBase(superAdminLifecycleCtx(9), "kb-1", "new", "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "new", repo.rows["kb-1"].Name)
+	require.NoError(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "kb-1"))
+}
+
+// A member of the owner tenant cannot update or delete a regular KB at the
+// service layer (Manage needs a Tenant Admin).
+func TestLifecycle_MemberCannotManageTenantKB(t *testing.T) {
+	repo := newFakeKBRepo()
+	repo.rows["kb-1"] = &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "kb",
+	}
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), &lifecycleAudit{})
+	ctx := types.WithCaller(context.Background(), types.Caller{TenantID: 1, UserID: "member-1", Role: types.TenantRoleMember})
+	_, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "new", "", nil)
 	require.Error(t, err)
 	assert.Equal(t, "kb", repo.rows["kb-1"].Name)
-	require.Error(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "kb-1"))
-	assert.Contains(t, repo.rows, "kb-1")
 }
 
 func TestPublicLifecycle_SuperAdminManagesPublicKB(t *testing.T) {
@@ -447,4 +464,32 @@ func TestPublicLifecycle_SuperAdminManagesPublicKB(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pub2", kb.Name)
 	require.NoError(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "pub-1"))
+}
+
+// F5: an owner change revokes the previous owner's invites and grants in
+// the same write; a publish that keeps the owner revokes nothing.
+func TestScopeChange_OwnerChangeRevokesShares(t *testing.T) {
+	repo := newFakeKBRepo()
+	repo.rows["kb-1"] = &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant,
+	}
+	repo.rows["pub-1"] = &types.KnowledgeBase{
+		ID: "pub-1", TenantID: 0, OwnerTenantID: 0, Visibility: types.KBVisibilityPublic,
+	}
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1, 2), &lifecycleAudit{})
+
+	_, err := svc.SetKnowledgeBaseVisibility(superAdminLifecycleCtx(1), "kb-1", types.KBVisibilityPublic, 0)
+	require.NoError(t, err)
+	_, err = svc.TransferKnowledgeBaseOwner(superAdminNoTenantLifecycleCtx(), "pub-1", 2)
+	require.NoError(t, err)
+	assert.Equal(t, []string{types.KBInviteRevokedReasonOwnerChanged, types.KBInviteRevokedReasonOwnerChanged},
+		repo.scopeRevokeReasons, "tenant→public and the public→tenant transfer both change the owner")
+
+	repo.scopeRevokeReasons = nil
+	repo.rows["kb-2"] = &types.KnowledgeBase{
+		ID: "kb-2", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant,
+	}
+	_, err = svc.SetKnowledgeBaseVisibility(superAdminLifecycleCtx(1), "kb-2", types.KBVisibilityPublished, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{""}, repo.scopeRevokeReasons, "publishing keeps the owner and its shares")
 }

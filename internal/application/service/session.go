@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -55,6 +56,15 @@ func runtimeMayBypassAdminConsoleRead(
 	}
 }
 
+// callerIsTenantAdminOrSuperAdmin reports Tenant Admin authority in the
+// current tenant: an admin membership role, or an explicit human SuperAdmin
+// (who may act in a tenant without a membership there; API keys never
+// qualify).
+func callerIsTenantAdminOrSuperAdmin(ctx context.Context) bool {
+	return types.TenantRoleFromContext(ctx).IsTenantAdmin() ||
+		access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
+}
+
 // loadSessionForRead loads a session honoring the caller's per-user scope, with
 // an Admin+ fallback that additionally permits reading tenant channel sessions
 // (API-key, IM, and embed) from the Web console. Non-admin callers must not
@@ -66,7 +76,7 @@ func loadSessionForRead(
 	tenantID uint64,
 	ownerID, sessionID string,
 ) (*types.Session, error) {
-	isAdmin := types.TenantRoleFromContext(ctx).IsTenantAdmin()
+	isAdmin := callerIsTenantAdminOrSuperAdmin(ctx)
 
 	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
 	if err == nil {
@@ -376,7 +386,7 @@ func (s *sessionService) ListSessions(
 	// Admin can observe sessions that are otherwise isolated per key,
 	// visitor, or IM identity; everyone else stays scoped to their own principal.
 	if types.SessionListSourceRequiresAdmin(query.Source) {
-		if !types.TenantRoleFromContext(ctx).IsTenantAdmin() {
+		if !callerIsTenantAdminOrSuperAdmin(ctx) {
 			return nil, apperrors.NewForbiddenError(
 				"listing channel sessions requires tenant admin role",
 			)

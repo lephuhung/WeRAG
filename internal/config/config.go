@@ -284,8 +284,7 @@ type TenantConfig struct {
 	// MaxOwnedPerUser caps how many tenants a single non-superuser can
 	// create (and administer) via self-service POST /tenants. Counts
 	// only Admin memberships so being invited as Member in another
-	// tenant doesn't burn quota. Cross-tenant superusers
-	// (CanAccessAllTenants) are exempt.
+	// tenant doesn't burn quota. SuperAdmins (IsSystemAdmin) are exempt.
 	//   > 0 — enforce the cap (handler returns 429 when reached).
 	//   = 0 — fall back to defaultMaxOwnedTenantsPerUser in the handler.
 	//   < 0 — disable the cap entirely (not recommended in shared deployments).

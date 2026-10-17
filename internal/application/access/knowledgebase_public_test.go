@@ -55,7 +55,8 @@ func TestResolveKBPublicReadDeniesUnauthenticated(t *testing.T) {
 	_, err := ResolveKB(context.Background(),
 		KBRequest{}, kb, types.KBPermissionViewer, nil)
 	require.ErrorIs(t, err, ErrUnauthorized)
-	_, err = ResolveKB(humanCallerCtx(0, ""), KBRequest{Caller: types.Caller{TenantID: 0}}, kb,
+	_, err = ResolveKB(humanCallerCtx(0, ""),
+		KBRequest{Caller: types.Caller{TenantID: 0, Role: types.TenantRoleMember}}, kb,
 		types.KBPermissionViewer, nil)
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
@@ -90,13 +91,16 @@ func TestResolveKBCrossTenantWritesDeniedOnPublic(t *testing.T) {
 	}
 }
 
-func TestResolveKBExplicitSuperAdminWriteOnlyViaManagePath(t *testing.T) {
+// Settled 2026-10-17: a SuperAdmin holds every right on every KB, so the
+// read resolver no longer refuses a SuperAdmin write on platform rows.
+func TestResolveKBExplicitSuperAdminWritesPlatformKB(t *testing.T) {
 	kb := platformPublicKB("pub", 9)
 	ctx := sysAdminCallerCtx(3, "super-1")
-	_, err := ResolveKB(ctx,
+	got, err := ResolveKB(ctx,
 		KBRequest{Caller: types.CallerFromContext(ctx)}, kb, types.KBPermissionEditor, nil)
-	require.ErrorIs(t, err, ErrForbidden,
-		"ResolveKB must not imply write from public Viewer; SuperAdmin writes go through ResolveKBForManage")
+	require.NoError(t, err)
+	require.Equal(t, types.KBPermissionAdmin, got.Permission)
+	require.Equal(t, SourceSuperAdmin, got.Source)
 }
 
 func TestResolveKBTenantIDZeroSuperAdminReadsPublic(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/access"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -425,7 +426,11 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		}
 		kbIDs := make([]string, 0, len(allKBs))
 		ownSkipped := 0
+		caller := types.CallerFromContext(ctx)
 		for _, kb := range allKBs {
+			if !access.InDefaultRetrievalScope(caller, kb) {
+				continue
+			}
 			if !accept(kb) {
 				ownSkipped++
 				continue

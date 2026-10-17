@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     owner_tenant_id INTEGER NOT NULL DEFAULT 0,
     type VARCHAR(32) NOT NULL DEFAULT 'document',
     visibility VARCHAR(16) NOT NULL DEFAULT 'tenant',
+    member_default VARCHAR(16) NOT NULL DEFAULT 'contribute',
     org_id INTEGER NULL,
     chunking_config TEXT NOT NULL DEFAULT '{}',
     image_processing_config TEXT NOT NULL DEFAULT '{}',

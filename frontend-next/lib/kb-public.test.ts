@@ -11,7 +11,6 @@ import {
 } from "./kb-capabilities.ts";
 import {
   buildPublicCreatePayload,
-  buildScopeChangePayload,
   groupCatalogRows,
   normalizePublicCatalog,
   selectPublicSection,
@@ -86,7 +85,7 @@ describe("getKBViewerCapabilities matrix", () => {
     assert.equal(caps.canInvite, false);
   });
 
-  it("public explicit SuperAdmin alone manages/uploads", async () => {
+  it("public explicit SuperAdmin manages/uploads/shares", async () => {
     const caps = getKBViewerCapabilities(convertedPublicRow, {
       activeTenantId: 1, isTenantAdmin: false, isSystemAdmin: true,
     });
@@ -94,18 +93,26 @@ describe("getKBViewerCapabilities matrix", () => {
     assert.equal(caps.canManage, true);
     assert.equal(caps.canUpload, true);
     assert.equal(caps.canDownloadOriginal, true);
-    assert.equal(caps.canShare, false);
-    assert.equal(caps.canInvite, false);
+    // Phase 2: SuperAdmin holds every right on every KB (backend
+    // CanManageKBSharing admits SuperAdmin on platform rows too).
+    assert.equal(caps.canShare, true);
+    assert.equal(caps.canInvite, true);
   });
 
-  it("SuperAdmin/CanAccessAllTenants never manages foreign tenant-owned KBs", async () => {
+  it("SuperAdmin manages foreign tenant-owned KBs; the tenant admin flag alone does not", async () => {
     const caps = getKBViewerCapabilities(foreignRow, {
       activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: true,
     });
     assert.equal(caps.kind, "invited");
-    assert.equal(caps.canManage, false);
-    assert.equal(caps.canUpload, false);
-    assert.equal(caps.canDownloadOriginal, false);
+    assert.equal(caps.canManage, true);
+    assert.equal(caps.canUpload, true);
+    assert.equal(caps.canDownloadOriginal, true);
+    const admin = getKBViewerCapabilities(foreignRow, {
+      activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: false,
+    });
+    assert.equal(admin.canManage, false);
+    assert.equal(admin.canUpload, false);
+    assert.equal(admin.canDownloadOriginal, false);
   });
 
   it("converted tenant-owned row manages when owner matches active tenant", async () => {
@@ -225,12 +232,17 @@ describe("public API payload builders", () => {
     });
     assert.deepEqual(payload, { name: "Laws", description: "d", type: "document" });
   });
+});
 
-  it("buildScopeChangePayload requires an existing nonzero target for public-to-tenant", async () => {
-    assert.deepEqual(buildScopeChangePayload("public", "kb-1", 7), {
-      visibility: "tenant", target_tenant_id: 7,
-    });
-    assert.throws(() => buildScopeChangePayload("public", "kb-1", 0), /target tenant/);
-    assert.deepEqual(buildScopeChangePayload("tenant", "kb-1"), { visibility: "public" });
+describe("groupCatalogRows access_source (Phase 5)", () => {
+  it("puts ACL rows of the caller's own unit under shared-with-me", () => {
+    const rows: KBViewerRow[] = [
+      { id: "mine", owner_tenant_id: 1, visibility: "restricted", access_source: "tenant_admin" },
+      { id: "acl", owner_tenant_id: 1, visibility: "restricted", access_source: "acl_user" },
+      { id: "grant", owner_tenant_id: 9, visibility: "tenant", access_source: "acl_tenant" },
+    ];
+    const g = groupCatalogRows(rows, 1);
+    assert.deepEqual(g.workspace.map((r) => r.id), ["mine"]);
+    assert.deepEqual(g.invited.map((r) => r.id), ["acl", "grant"]);
   });
 });

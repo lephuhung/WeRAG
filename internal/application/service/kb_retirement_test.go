@@ -68,7 +68,7 @@ func TestSetKnowledgeBaseVisibilityPublicDenied(t *testing.T) {
 // The request/approve flow is retired: a tenant cannot ask for access and
 // nobody reviews requests; the owning tenant grants directly instead.
 func TestKBGrantRequestFlowDisabled(t *testing.T) {
-	svc := NewKBAccessGrantService(nil, nil, nil, nil)
+	svc := NewKBAccessGrantService(nil, nil, nil, nil, nil)
 	caller := types.Caller{TenantID: 2, UserID: "u1", Role: types.TenantRoleAdmin}
 	if _, err := svc.RequestAccess(context.Background(), caller, "kb-1", nil); !errors.Is(err, ErrGrantDisabled) {
 		t.Fatalf("RequestAccess must return ErrGrantDisabled, got %v", err)

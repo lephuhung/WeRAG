@@ -163,6 +163,36 @@ type Membership struct {
 	Role       TenantRole `json:"role"`
 }
 
+// MembershipState is the account-level user kind reported by GET /auth/me.
+type MembershipState string
+
+const (
+	// MembershipStateSuperAdmin: platform administrator (users.is_system_admin);
+	// takes precedence over any membership.
+	MembershipStateSuperAdmin MembershipState = "superadmin"
+	// MembershipStateMember: at least one active tenant membership.
+	MembershipStateMember MembershipState = "member"
+	// MembershipStateGuest: signed in, no active membership anywhere. Reads
+	// only public/published KBs, cannot create or own KBs, gets no ACL.
+	MembershipStateGuest MembershipState = "guest"
+)
+
+// ResolveMembershipState derives the account kind from the SuperAdmin flag
+// and the caller's active memberships (as built for the login response,
+// which lists only active rows). The legacy CanAccessAllTenants attribute
+// plays no part.
+func ResolveMembershipState(isSystemAdmin bool, activeMemberships []Membership) MembershipState {
+	if isSystemAdmin {
+		return MembershipStateSuperAdmin
+	}
+	for _, m := range activeMemberships {
+		if m.TenantID != 0 {
+			return MembershipStateMember
+		}
+	}
+	return MembershipStateGuest
+}
+
 // TenantMemberResponse is the API projection of a TenantMember row joined
 // with the human-facing user fields the management UI needs (email,
 // username, avatar). It is intentionally NOT the GORM model: returning

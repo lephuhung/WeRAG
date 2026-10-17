@@ -162,12 +162,12 @@ func TestSwitchTenantPreferenceWriteFailureAbortsSwitch(t *testing.T) {
 }
 
 // TestSwitchTenantSuperuserRecordsPreferenceWithoutMembership covers
-// CanAccessAllTenants switching into a tenant with no membership row:
+// a SuperAdmin switching into a tenant with no membership row:
 // the preference still has to persist so refresh/login follow the switch.
 func TestSwitchTenantSuperuserRecordsPreferenceWithoutMembership(t *testing.T) {
 	ctx := context.Background()
 	repo := &switchTenantUserRepo{users: map[string]types.User{
-		"alice": {ID: "alice", TenantID: 7, CanAccessAllTenants: true},
+		"alice": {ID: "alice", TenantID: 7, IsSystemAdmin: true, CanAccessAllTenants: true},
 	}}
 	svc := newSwitchTenantTestService(repo, &membershipLookupService{byTenant: map[uint64]*types.TenantMember{}})
 	user, _ := repo.GetUserByID(ctx, "alice")
@@ -236,5 +236,53 @@ func TestSwitchTenantNonMemberWritesNoPreference(t *testing.T) {
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("UpdateUser calls = %d, want 0 (no preference write before validation)", repo.updateCalls)
+	}
+}
+
+// F1: the legacy CanAccessAllTenants flag alone no longer skips the
+// membership check; only a SuperAdmin may switch into a tenant as scope.
+func TestSwitchTenantLegacyFlagWithoutMembershipRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := &switchTenantUserRepo{users: map[string]types.User{
+		"legacy": {ID: "legacy", TenantID: 7, CanAccessAllTenants: true},
+	}}
+	svc := newSwitchTenantTestService(repo, &membershipLookupService{byTenant: map[uint64]*types.TenantMember{}})
+	user, _ := repo.GetUserByID(ctx, "legacy")
+
+	if _, err := svc.SwitchTenant(ctx, user, 42, ""); !errors.Is(err, ErrMembershipNotFound) {
+		t.Fatalf("legacy flag without membership: err = %v, want ErrMembershipNotFound", err)
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("rejected switch must not write preferences, got %d writes", repo.updateCalls)
+	}
+}
+
+func TestSwitchTenantSystemAdminWithoutMembershipAllowed(t *testing.T) {
+	ctx := context.Background()
+	repo := &switchTenantUserRepo{users: map[string]types.User{
+		"root": {ID: "root", TenantID: 7, IsSystemAdmin: true},
+	}}
+	svc := newSwitchTenantTestService(repo, &membershipLookupService{byTenant: map[uint64]*types.TenantMember{}})
+	user, _ := repo.GetUserByID(ctx, "root")
+
+	if _, err := svc.SwitchTenant(ctx, user, 42, ""); err != nil {
+		t.Fatalf("SuperAdmin switch without membership: %v", err)
+	}
+}
+
+// Settled 2026-10-17: only SuperAdmins may carry can_access_all_tenants.
+func TestUpdateUserRejectsCrossTenantFlagOnNonSystemAdmin(t *testing.T) {
+	ctx := context.Background()
+	repo := &switchTenantUserRepo{users: map[string]types.User{}}
+	svc := newSwitchTenantTestService(repo, nil)
+
+	if err := svc.UpdateUser(ctx, &types.User{ID: "plain", CanAccessAllTenants: true}); !errors.Is(err, ErrCrossTenantFlagRequiresSystemAdmin) {
+		t.Fatalf("setting can_access_all_tenants on a non-SuperAdmin: err = %v, want ErrCrossTenantFlagRequiresSystemAdmin", err)
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("rejected write must not reach the repository, got %d writes", repo.updateCalls)
+	}
+	if err := svc.UpdateUser(ctx, &types.User{ID: "root", IsSystemAdmin: true, CanAccessAllTenants: true}); err != nil {
+		t.Fatalf("SuperAdmin may keep the flag: %v", err)
 	}
 }

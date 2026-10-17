@@ -11,12 +11,21 @@ type Caller struct {
 	Role     TenantRole
 }
 
-// Normalize defaults an invalid tenant role to Member.
+// Normalize maps an empty or invalid tenant role to "" (no tenant role).
+// It never invents a role: a caller without an active membership (a Guest,
+// or a SuperAdmin visiting a tenant) stays role-less, and "" satisfies no
+// role check (TenantRole("").HasPermission(TenantRoleMember) is false).
 func (caller Caller) Normalize() Caller {
 	if !caller.Role.IsValid() {
-		caller.Role = TenantRoleMember
+		caller.Role = ""
 	}
 	return caller
+}
+
+// HasTenantRole reports whether the caller holds a tenant role (an active
+// membership) in its current tenant.
+func (caller Caller) HasTenantRole() bool {
+	return caller.Role.IsValid()
 }
 
 // WithCaller captures the authenticated identity independently of execution scope.

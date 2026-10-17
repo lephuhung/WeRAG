@@ -23,6 +23,8 @@ type fakeKBGrantService struct {
 	// checks always run against the original caller — never the execution
 	// tenant of a shared execution context.
 	callers []uint64
+	// scopes are the KB rows' live scopes; a missing entry is a missing KB.
+	scopes map[string]*types.KBScope
 }
 
 func (f *fakeKBGrantService) ApprovedKBPermission(
@@ -36,8 +38,16 @@ func (f *fakeKBGrantService) ApprovedKBPermission(
 	return permission, true, nil
 }
 
-func (f *fakeKBGrantService) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
-	return nil, nil
+func (f *fakeKBGrantService) GetKBScope(_ context.Context, kbID string) (*types.KBScope, error) {
+	return f.scopes[kbID], nil
+}
+
+// tenantScope is a live 'tenant'-visibility scope owned by its data tenant.
+func tenantScope(tenantID uint64) *types.KBScope {
+	return &types.KBScope{
+		TenantID: tenantID, OwnerTenantID: tenantID,
+		Visibility: types.KBVisibilityTenant, MemberDefault: types.KBMemberDefaultContribute,
+	}
 }
 
 func (f *fakeKBGrantService) GrantedKBIDs(_ context.Context, _ uint64) ([]string, error) {
@@ -71,7 +81,9 @@ func newKnowledgeSharedAccessService(t *testing.T, grants interfaces.KBAccessGra
 func newSharedAccessContext() context.Context {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
 	ctx = context.WithValue(ctx, types.UserIDContextKey, "user-1")
-	return ctx
+	// An active Member: DecideKB grants tenant scope and tenant-grant ACL
+	// reads only to callers holding a tenant role.
+	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
 }
 
 func seedKnowledge(t *testing.T, db *gorm.DB, knowledge *types.Knowledge) {
@@ -82,6 +94,7 @@ func seedKnowledge(t *testing.T, db *gorm.DB, knowledge *types.Knowledge) {
 func TestGetKnowledgeBatchWithSharedAccessHonoursTenantGrant(t *testing.T) {
 	grants := &fakeKBGrantService{
 		allowedKBs: map[string]types.KBPermission{"kb-shared": types.KBPermissionViewer},
+		scopes:     map[string]*types.KBScope{"kb-shared": tenantScope(2), "kb-private": tenantScope(2)},
 	}
 	service, db := newKnowledgeSharedAccessService(t, grants)
 	seedKnowledge(t, db, &types.Knowledge{ID: "k1", TenantID: 2, KnowledgeBaseID: "kb-shared", Type: "file"})

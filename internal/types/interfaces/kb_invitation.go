@@ -58,12 +58,20 @@ type KBInvitationRepository interface {
 	// revoked. Revoking an accepted row stops future reads immediately.
 	// Returns gorm.ErrRecordNotFound when the row is in another state.
 	MarkRevoked(ctx context.Context, id string) error
-	// HasAcceptedInvite reports whether recipientUserID holds a live
-	// (accepted, unexpired) invite on kbID.
-	HasAcceptedInvite(ctx context.Context, kbID, recipientUserID string) (bool, error)
-	// ListAcceptedKBIDsByUser returns the KB IDs on which userID holds a
-	// live (accepted, unexpired) invite — recipient-side discovery.
-	ListAcceptedKBIDsByUser(ctx context.Context, userID string) ([]string, error)
+	// HasAcceptedInviteForOwner reports whether recipientUserID holds a
+	// live (accepted, unexpired) invite on kbID that was issued by
+	// ownerTenantID, the KB's CURRENT owner. Invites issued by a previous
+	// owner never count.
+	HasAcceptedInviteForOwner(ctx context.Context, kbID, recipientUserID string, ownerTenantID uint64) (bool, error)
+	// HasLiveInviteForOwner is HasAcceptedInviteForOwner plus an active,
+	// non-deleted tenant_members row for the recipient in the invite's
+	// recipient_tenant_id: losing that membership drops the access.
+	HasLiveInviteForOwner(ctx context.Context, kbID, recipientUserID string, ownerTenantID uint64) (bool, error)
+	// ListLiveInvitedKBIDsByUser returns, in one query, the KB IDs on which
+	// userID holds a live invite: accepted, unexpired, and issued by the
+	// KB's CURRENT owner (joined on knowledge_bases.owner_tenant_id).
+	// Recipient-side discovery; deleted KBs are excluded.
+	ListLiveInvitedKBIDsByUser(ctx context.Context, userID string) ([]string, error)
 	// DeleteByKBID soft-deletes all invite rows for a KB.
 	DeleteByKBID(ctx context.Context, kbID string) error
 }
@@ -86,9 +94,14 @@ type KBInvitationService interface {
 	// ListMine lists invites addressed to the caller.
 	ListMine(ctx context.Context, caller types.Caller) ([]*types.KBInviteResponse, error)
 	// HasAcceptedInvite reports whether userID holds a live invite on kbID
-	// (implements access.KBInviteLookup).
+	// issued by the KB's current owner (implements access.KBInviteLookup).
 	HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error)
+	// HasLiveInvite additionally requires the recipient's membership in
+	// the invite's recipient tenant to be active (access.KBInviteLookup;
+	// the check DecideKB uses).
+	HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error)
 	// InvitedKBIDs returns the KB IDs on which userID holds a live
-	// (accepted, unexpired) invite — recipient-side discovery.
+	// (accepted, unexpired, issued by the KB's current owner) invite —
+	// recipient-side discovery.
 	InvitedKBIDs(ctx context.Context, userID string) ([]string, error)
 }

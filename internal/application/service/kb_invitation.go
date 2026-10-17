@@ -24,7 +24,6 @@ var (
 	ErrKBInviteExpired       = errors.New("kb invitation has expired")
 	ErrKBInviteForbidden     = errors.New("only the invited recipient can accept this invitation")
 	ErrKBInviteTokenInvalid  = errors.New("kb invitation token is invalid or has been revoked")
-	ErrKBInviteSelfTarget    = errors.New("cannot invite a member of the owning tenant via cross-tenant invite")
 	ErrKBInviteNotOwnerAdmin = errors.New("only a tenant admin of the owning tenant can manage kb invitations")
 	// ErrKBInviteRecipientNotMember is returned at issuance when the
 	// named recipient holds no active membership in recipient_tenant_id.
@@ -85,14 +84,15 @@ func inviteToResponse(inv *types.KBInvitation, kbName, token string) *types.KBIn
 		RecipientUserID: inv.RecipientUserID, RecipientTenantID: inv.RecipientTenantID,
 		Status: inv.Status, Message: inv.Message,
 		ExpiresAt: inv.ExpiresAt, AcceptedAt: inv.AcceptedAt,
-		CreatedAt: inv.CreatedAt, Token: token,
+		CreatedAt: inv.CreatedAt, Token: token, RevokedReason: inv.RevokedReason,
 	}
 }
 
 // Issue creates a pending invite on a KB owned by the caller's tenant.
 // The recipient must be an ACTIVE MEMBER of recipient_tenant_id (not
-// merely an existing user); inviting a member of the owning tenant is
-// rejected (they already have access). Emits a kb.invite_issued audit row.
+// merely an existing user), which may be the owner tenant itself: a
+// same-tenant invite is the per-user ACL of a restricted KB. Emits a
+// kb.invite_issued audit row.
 func (s *kbInvitationService) Issue(ctx context.Context, caller types.Caller, kbID string, req *types.CreateKBInviteRequest) (*types.KBInviteResponse, error) {
 	caller = caller.Normalize()
 	if kbID == "" || req == nil || req.RecipientTenantID == 0 {
@@ -121,9 +121,6 @@ func (s *kbInvitationService) Issue(ctx context.Context, caller types.Caller, kb
 	}
 	if err := s.requireOwnerAdmin(ctx, caller, kb.OwnerTenantID); err != nil {
 		return nil, err
-	}
-	if req.RecipientTenantID == kb.OwnerTenantID {
-		return nil, ErrKBInviteSelfTarget
 	}
 	// Recipient must be a real user when the user repo is available.
 	if s.users != nil {
@@ -186,8 +183,8 @@ func (s *kbInvitationService) ListByKB(ctx context.Context, caller types.Caller,
 	return out, nil
 }
 
-// Revoke withdraws a pending OR accepted invite on a KB owned by the
-// caller's tenant. The transition is atomic (single UPDATE with a
+// Revoke withdraws a pending OR accepted invite on a KB currently owned by
+// the caller's tenant, including a stale row issued by a previous owner. The transition is atomic (single UPDATE with a
 // status-in predicate): revoking an accepted invite stops all future
 // reads immediately because HasAcceptedInvite only counts accepted rows.
 // Emits a kb.invite_revoked audit row.
@@ -201,9 +198,9 @@ func (s *kbInvitationService) Revoke(ctx context.Context, caller types.Caller, i
 	if err != nil || kb == nil {
 		return ErrKBInviteNotFound
 	}
-	if kb.OwnerTenantID != inv.OwnerTenantID {
-		return ErrKBInviteNotFound
-	}
+	// Authorize against the KB's CURRENT owner. A row issued by a previous
+	// owner (stale after an owner change) is still revocable by the
+	// current owner's admin, never by the previous owner's.
 	if err := s.requireOwnerAdmin(ctx, caller, kb.OwnerTenantID); err != nil {
 		return err
 	}
@@ -344,15 +341,45 @@ func (s *kbInvitationService) ListMine(ctx context.Context, caller types.Caller)
 	return out, nil
 }
 
-// HasAcceptedInvite implements access.KBInviteLookup.
+// HasAcceptedInvite implements access.KBInviteLookup. Only an invite issued
+// by the KB's current owner counts: after an owner change, the previous
+// owner's invites authorize nothing.
 func (s *kbInvitationService) HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error) {
-	return s.invites.HasAcceptedInvite(ctx, kbID, userID)
+	if kbID == "" || userID == "" {
+		return false, nil
+	}
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return false, err
+	}
+	if kb == nil {
+		return false, nil
+	}
+	return s.invites.HasAcceptedInviteForOwner(ctx, kbID, userID, kb.OwnerTenantID)
+}
+
+// HasLiveInvite implements access.KBInviteLookup for DecideKB: a live
+// invite from the KB's current owner whose recipient is still an active
+// member of the invite's recipient tenant.
+func (s *kbInvitationService) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	if kbID == "" || userID == "" {
+		return false, nil
+	}
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return false, err
+	}
+	if kb == nil {
+		return false, nil
+	}
+	return s.invites.HasLiveInviteForOwner(ctx, kbID, userID, kb.OwnerTenantID)
 }
 
 // InvitedKBIDs returns the KB IDs on which userID holds a live (accepted,
-// unexpired) invite — used for recipient-side discovery (listing).
+// unexpired, issued by the KB's current owner) invite — used for
+// recipient-side discovery (listing). One repository query.
 func (s *kbInvitationService) InvitedKBIDs(ctx context.Context, userID string) ([]string, error) {
-	return s.invites.ListAcceptedKBIDsByUser(ctx, userID)
+	return s.invites.ListLiveInvitedKBIDsByUser(ctx, userID)
 }
 
 // emitInviteAudit writes a best-effort audit row for the invite

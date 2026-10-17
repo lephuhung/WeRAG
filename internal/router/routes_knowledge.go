@@ -253,14 +253,20 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// gate while platform-owned rows admit only an explicit human
 		// SuperAdmin. TenantAdmin itself never rejects a SuperAdmin for
 		// missing tenant context (it passes on the system-admin flag),
-		// and the service re-checks ownership so a SuperAdmin acting
-		// outside the owning tenant cannot mutate tenant-owned KBs.
+		// and the service re-checks through access.DecideKB (Manage):
+		// the owner tenant's Admin or an explicit human SuperAdmin.
 		// API-key manage_kbs keeps working for tenant-owned KBs through
 		// its declared policy, but never qualifies on public rows.
 		kbManagement.PUT("/:id", g.TenantAdmin(), g.KBAccessManage("id"), handler.UpdateKnowledgeBase)
-		// 可见范围切换 — explicit human SuperAdmin only (service-enforced
-		// for promotion and transfer alike); tenant Admins cannot promote.
+		// 可见范围切换 — tenant/restricted/published and member_default:
+		// owner Tenant Admin or SuperAdmin; public promotion and transfer:
+		// explicit human SuperAdmin only (service-enforced).
 		kbManagement.PUT("/:id/visibility", g.TenantAdmin(), g.KBAccessManage("id"), handler.UpdateKnowledgeBaseVisibility)
+		// Owner transfer — explicit human SuperAdmin only, no tenant context
+		// required. Registered on the raw group so no API-key policy is
+		// declared: API keys stay default-denied. Revokes every share of
+		// the KB in the same transaction (service).
+		kbgrp.POST("/:id/transfer-owner", g.PlatformSuperAdmin(), handler.TransferKnowledgeBaseOwner)
 		// 立即重新生成Knowledge Base AI 描述 — 与Update Knowledge Base同档鉴权；同步执行一次小模型调用。
 		kbManagement.POST("/:id/profile/generate", g.TenantAdmin(), g.KBAccessManage("id"),
 			handler.GenerateKnowledgeBaseProfile)

@@ -370,10 +370,11 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	// it. Anything beyond its identity falls back to the platform defaults.
 	if !canManagePlatformConfig(ctx) {
 		req = types.KnowledgeBase{
-			Name:        req.Name,
-			Description: req.Description,
-			Type:        req.Type,
-			Visibility:  req.Visibility,
+			Name:          req.Name,
+			Description:   req.Description,
+			Type:          req.Type,
+			Visibility:    req.Visibility,
+			MemberDefault: req.MemberDefault,
 		}
 	}
 	if err := validateExtractConfig(req.ExtractConfig); err != nil {
@@ -942,13 +943,19 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 // visibility = tenant | public. target_tenant_id carries the destination
 // tenant for public→tenant transfers and must be omitted otherwise.
 type UpdateKnowledgeBaseVisibilityRequest struct {
-	Visibility     types.KBVisibility `json:"visibility" binding:"required"`
+	// Visibility: tenant | restricted | published (owner Tenant Admin or
+	// SuperAdmin) or public (SuperAdmin). Optional when only
+	// member_default changes.
+	Visibility     types.KBVisibility `json:"visibility"`
 	TargetTenantID uint64             `json:"target_tenant_id"`
+	// MemberDefault (optional): view | contribute — what owner-tenant
+	// members may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.
+	MemberDefault *types.KBMemberDefault `json:"member_default"`
 }
 
 // UpdateKnowledgeBaseVisibility godoc
 // @Summary      修改Knowledge Base可见范围
-// @Description  切换Knowledge Base tenant/public 可见范围
+// @Description  切换Knowledge Base tenant/restricted/published/public 可见范围, member_default (view|contribute)
 // @Tags         Knowledge Base
 // @Accept       json
 // @Produce      json
@@ -972,19 +979,100 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-	kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.TargetTenantID)
-	if err != nil {
+	if req.Visibility == "" && req.MemberDefault == nil {
+		c.Error(apperrors.NewBadRequestError("visibility or member_default is required"))
+		return
+	}
+	fail := func(err error) {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.Error(appErr)
 			return
 		}
 		c.Error(apperrors.NewInternalServerError(err.Error()))
-		return
+	}
+	if req.Visibility != "" {
+		if kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.TargetTenantID); err != nil {
+			fail(err)
+			return
+		}
+	}
+	if req.MemberDefault != nil {
+		if kb, err = h.service.SetKnowledgeBaseMemberDefault(ctx, id, *req.MemberDefault); err != nil {
+			fail(err)
+			return
+		}
 	}
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, callerTenantID), nil),
+	})
+}
+
+// TransferKnowledgeBaseOwnerRequest moves a KB to another owner tenant.
+type TransferKnowledgeBaseOwnerRequest struct {
+	TargetTenantID uint64 `json:"target_tenant_id" binding:"required"`
+}
+
+// TransferKnowledgeBaseOwnerResponse is the transfer-owner payload: the
+// updated KB plus what the transfer revoked.
+type TransferKnowledgeBaseOwnerResponse struct {
+	KnowledgeBase          interface{}        `json:"knowledge_base"`
+	PreviousOwnerTenantID  uint64             `json:"previous_owner_tenant_id"`
+	PreviousVisibility     types.KBVisibility `json:"previous_visibility"`
+	RevokedInvitations     int64              `json:"revoked_invitations"`
+	RevokedGrants          int64              `json:"revoked_grants"`
+	WithdrawnFromPublished bool               `json:"withdrawn_from_published"`
+}
+
+// TransferKnowledgeBaseOwner godoc
+// @Summary      Transfer knowledge base owner
+// @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).
+// @Tags         Knowledge Base
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                             true  "Knowledge Base ID"
+// @Param        request  body      TransferKnowledgeBaseOwnerRequest  true  "Target tenant"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      403      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /knowledge-bases/{id}/transfer-owner [post]
+func (h *KnowledgeBaseHandler) TransferKnowledgeBaseOwner(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		_ = c.Error(apperrors.NewBadRequestError("knowledge base ID cannot be empty"))
+		return
+	}
+	var req TransferKnowledgeBaseOwnerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(apperrors.NewBadRequestError("target_tenant_id is required").WithDetails(err.Error()))
+		return
+	}
+	res, err := h.service.TransferKnowledgeBaseOwner(ctx, c.Param("id"), req.TargetTenantID)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			_ = c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"knowledge_base_id": id})
+		_ = c.Error(apperrors.NewInternalServerError(err.Error()))
+		return
+	}
+	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": TransferKnowledgeBaseOwnerResponse{
+			KnowledgeBase: buildKBResponse(res.KnowledgeBase,
+				h.resolveKBStoreView(ctx, res.KnowledgeBase, callerTenantID), nil),
+			PreviousOwnerTenantID:  res.PreviousOwnerTenantID,
+			PreviousVisibility:     res.PreviousVisibility,
+			RevokedInvitations:     res.RevokedInvitations,
+			RevokedGrants:          res.RevokedGrants,
+			WithdrawnFromPublished: res.WithdrawnFromPublished,
+		},
 	})
 }
 
@@ -1065,26 +1153,12 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	// Only owner (admin with matching tenant) can delete knowledge base.
-	// Platform-owned public rows admit only an explicit human SuperAdmin.
-	// Tenant-owned rows compare against the authorization owner (not the
-	// data scope) so converted rows stay manageable by their owning tenant.
-	if access.IsPlatformPublicKB(kb) {
-		if !access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
-			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
-			return
-		}
-	} else {
-		ownerTenantID := kb.OwnerTenantID
-		if ownerTenantID == 0 {
-			ownerTenantID = kb.TenantID
-		}
-		tenantID, _ := c.Get(types.TenantIDContextKey.String())
-		callerTenantID, _ := tenantID.(uint64)
-		if ownerTenantID != callerTenantID || permission != types.KBPermissionAdmin {
-			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
-			return
-		}
+	// Deleting a KB is a Manage decision (access.DecideKB, carried by the
+	// guard's grant): an explicit human SuperAdmin on every KB, or the
+	// owner tenant's Tenant Admin. Members contribute but never delete.
+	if permission != types.KBPermissionAdmin {
+		c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+		return
 	}
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",
@@ -1532,6 +1606,16 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 			continue
 		}
 		if kb.EmbeddingModelID != sourceKB.EmbeddingModelID {
+			continue
+		}
+		// A move target must be writable by the caller: the readable
+		// list also carries ACL (view-only) and published rows, which
+		// are never move destinations.
+		if kb.TenantID != sourceKB.TenantID {
+			continue
+		}
+		if _, derr := access.DecideKB(ctx, types.CallerFromContext(ctx), kb, access.ActionContribute,
+			access.KBLookups{}); derr != nil {
 			continue
 		}
 		targets = append(targets, kb)

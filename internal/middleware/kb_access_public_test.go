@@ -32,6 +32,10 @@ func (s *stubInviteLookup) HasAcceptedInvite(_ context.Context, kbID, userID str
 	return s.accepted[kbID+"\x00"+userID], nil
 }
 
+func (s *stubInviteLookup) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	return s.HasAcceptedInvite(ctx, kbID, userID)
+}
+
 func TestRequireKBAccess_PublicReadAcrossTenants(t *testing.T) {
 	kb := publicTestKB("kb-pub", 9)
 	kbsvc := &stubKBLookup{kbs: map[string]*types.KnowledgeBase{"kb-pub": kb}}

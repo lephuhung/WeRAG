@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
@@ -35,6 +36,10 @@ type messageService struct {
 	// usageMeter counts questions and tokens for usage packages; nil in
 	// unit tests that build the struct directly.
 	usageMeter interfaces.UsageMeter
+	// kbAccessGrantService resolves KB scopes, tenant grants and invites
+	// for hiding citations the caller can no longer read; nil hides
+	// nothing.
+	kbAccessGrantService interfaces.KBAccessGrantService
 }
 
 // NewMessageService creates a new message service instance with the required repositories
@@ -46,16 +51,18 @@ func NewMessageService(messageRepo interfaces.MessageRepository,
 	modelService interfaces.ModelService,
 	suggestionRepo interfaces.MessageSuggestionRepository,
 	usageMeter interfaces.UsageMeter,
+	kbAccessGrantService interfaces.KBAccessGrantService,
 ) interfaces.MessageService {
 	return &messageService{
-		messageRepo:    messageRepo,
-		sessionRepo:    sessionRepo,
-		tenantService:  tenantService,
-		kbService:      kbService,
-		knowService:    knowService,
-		modelService:   modelService,
-		suggestionRepo: suggestionRepo,
-		usageMeter:     usageMeter,
+		kbAccessGrantService: kbAccessGrantService,
+		messageRepo:          messageRepo,
+		sessionRepo:          sessionRepo,
+		tenantService:        tenantService,
+		kbService:            kbService,
+		knowService:          knowService,
+		modelService:         modelService,
+		suggestionRepo:       suggestionRepo,
+		usageMeter:           usageMeter,
 	}
 }
 
@@ -224,6 +231,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d recent messages successfully", len(messages))
+	s.hideUnreadableReferences(ctx, messages)
 	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
 }
 
@@ -258,6 +266,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d messages before time successfully", len(messages))
+	s.hideUnreadableReferences(ctx, messages)
 	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
 }
 
@@ -1256,4 +1265,79 @@ func groupByRequestID(items []*types.MessageSearchResultItem) []*types.MessageSe
 
 func searchPairKey(sessionID, requestID string) string {
 	return sessionID + "\x00" + requestID
+}
+
+// hideUnreadableReferences drops persisted citations (knowledge references
+// with their chunk snippets) whose KB the caller can no longer read under
+// access.DecideKB: a KB switched to restricted, or a revoked invite/grant,
+// stops showing its snippets in past answers on the next load. Only
+// KB-bound references are checked: one with a KB ID, or with a knowledge ID
+// resolved through its document. A reference with neither (chat
+// attachments), or a web search result (whose KnowledgeID is its URL), is
+// not KB-bound and is always kept. A
+// knowledge ID whose document is gone (deleted document or KB) or cannot be
+// resolved is hidden (fail closed). The answer text itself is unchanged.
+// isWebSearchReference reports a web search result. Web results carry their
+// URL as KnowledgeID (searchutil, agent webRowsAsReferences), so they must not be resolved as documents.
+func isWebSearchReference(ref *types.SearchResult) bool {
+	return ref.MatchType == types.MatchTypeWebSearch ||
+		ref.ChunkType == string(types.ChunkTypeWebSearch) ||
+		ref.KnowledgeSource == "web_search"
+}
+
+func (s *messageService) hideUnreadableReferences(ctx context.Context, messages []*types.Message) {
+	if s.kbAccessGrantService == nil {
+		return
+	}
+	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
+	knowledgeKB := map[string]string{}
+	// kbOf returns the KB a reference is bound to and whether it is
+	// KB-bound at all. kbID == "" with bound == true means the reference
+	// points at a document that no longer resolves to a KB.
+	kbOf := func(ref *types.SearchResult) (kbID string, bound bool) {
+		if isWebSearchReference(ref) {
+			return "", false
+		}
+		if ref.KnowledgeBaseID != "" {
+			return ref.KnowledgeBaseID, true
+		}
+		if ref.KnowledgeID == "" {
+			return "", false
+		}
+		if s.knowService == nil {
+			return "", true
+		}
+		if id, ok := knowledgeKB[ref.KnowledgeID]; ok {
+			return id, true
+		}
+		id := ""
+		if k, err := s.knowService.GetKnowledgeByIDOnly(ctx, ref.KnowledgeID); err == nil && k != nil {
+			id = k.KnowledgeBaseID
+		}
+		knowledgeKB[ref.KnowledgeID] = id
+		return id, true
+	}
+	for _, message := range messages {
+		if message == nil || len(message.KnowledgeReferences) == 0 {
+			continue
+		}
+		kept := message.KnowledgeReferences[:0:0]
+		for _, ref := range message.KnowledgeReferences {
+			if ref == nil {
+				continue
+			}
+			kbID, bound := kbOf(ref)
+			if !bound {
+				kept = append(kept, ref)
+				continue
+			}
+			if kbID == "" {
+				continue
+			}
+			if ok, err := permissions.Check(kbID, 0, types.KBPermissionViewer); err == nil && ok {
+				kept = append(kept, ref)
+			}
+		}
+		message.KnowledgeReferences = kept
+	}
 }

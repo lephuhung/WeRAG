@@ -162,7 +162,21 @@ func newFileServeHandler(
 	storageResolver interfaces.StorageBackendResolver,
 	resourceCatalogs ...interfaces.ResourceCatalog,
 ) gin.HandlerFunc {
-	resourceCatalog := firstResourceCatalog(resourceCatalogs)
+	return newGatedFileServeHandler(globalFileService, storageResolver,
+		firstResourceCatalog(resourceCatalogs), access.KBFileGate{})
+}
+
+// newGatedFileServeHandler is newFileServeHandler plus the KB content gate:
+// a registered resource bound to a KB document is served only when
+// access.DecideKB admits the caller on that KB (view for derived files,
+// original download for uploads). Same-tenant storage alone no longer
+// opens restricted KB content.
+func newGatedFileServeHandler(
+	globalFileService interfaces.FileService,
+	storageResolver interfaces.StorageBackendResolver,
+	resourceCatalog interfaces.ResourceCatalog,
+	kbGate access.KBFileGate,
+) gin.HandlerFunc {
 	absDir := localStorageAbsDir()
 	if info, err := os.Stat(absDir); err != nil || !info.IsDir() {
 		if err := os.MkdirAll(absDir, 0o755); err != nil {
@@ -181,9 +195,16 @@ func newFileServeHandler(
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
 			return
 		}
+		reference := filePath
 		filePath, resourceResolved, ok := resolveCatalogResource(c, resourceCatalog, filePath, tenant.ID)
 		if !ok {
 			return
+		}
+		if resourceResolved {
+			if bound, err := kbGate.Authorize(c.Request.Context(), tenant.ID, reference); bound && err != nil {
+				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
+				return
+			}
 		}
 
 		// A registered resource's tenant is authoritative. Physical provider
@@ -240,6 +261,17 @@ func serveFilesWithResources(
 	storageResolver interfaces.StorageBackendResolver,
 	resourceCatalog interfaces.ResourceCatalog,
 ) {
+	serveFilesWithKBGate(r, globalFileService, storageResolver, resourceCatalog, access.KBFileGate{})
+}
+
+// serveFilesWithKBGate registers /files with the KB content gate.
+func serveFilesWithKBGate(
+	r getRouteRegistrar,
+	globalFileService interfaces.FileService,
+	storageResolver interfaces.StorageBackendResolver,
+	resourceCatalog interfaces.ResourceCatalog,
+	kbGate access.KBFileGate,
+) {
 	logger.Infof(context.Background(), "[Router] Serving files from /files")
 	// /files sits outside the /api/v1 APIKeyGate, so it carries its own
 	// API-key guard. A KB-restricted key is denied (a raw storage path cannot
@@ -250,7 +282,7 @@ func serveFilesWithResources(
 	r.GET(
 		"/files",
 		middleware.AllowFileServeAPIKey(),
-		newFileServeHandler(globalFileService, storageResolver, resourceCatalog),
+		newGatedFileServeHandler(globalFileService, storageResolver, resourceCatalog, kbGate),
 	)
 }
 

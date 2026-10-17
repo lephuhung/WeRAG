@@ -370,6 +370,38 @@ func (c *Client) DeleteKnowledgeBase(ctx context.Context, knowledgeBaseID string
 	return parseResponse(resp, &response)
 }
 
+// TransferKnowledgeBaseOwnerResponse is the result of an owner transfer.
+type TransferKnowledgeBaseOwnerResponse struct {
+	KnowledgeBase          KnowledgeBase `json:"knowledge_base"`
+	PreviousOwnerTenantID  uint64        `json:"previous_owner_tenant_id"`
+	PreviousVisibility     string        `json:"previous_visibility"`
+	RevokedInvitations     int64         `json:"revoked_invitations"`
+	RevokedGrants          int64         `json:"revoked_grants"`
+	WithdrawnFromPublished bool          `json:"withdrawn_from_published"`
+}
+
+// TransferKnowledgeBaseOwner moves a knowledge base to another owner tenant
+// (explicit human SuperAdmin only; API keys are denied). Restricted stays
+// restricted; tenant, published (withdrawn) and platform public end in the
+// target's tenant scope. Every share of it is revoked.
+func (c *Client) TransferKnowledgeBaseOwner(ctx context.Context, knowledgeBaseID string, targetTenantID uint64,
+) (*TransferKnowledgeBaseOwnerResponse, error) {
+	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/transfer-owner", url.PathEscape(knowledgeBaseID))
+	body := map[string]uint64{"target_tenant_id": targetTenantID}
+	resp, err := c.doRequest(ctx, http.MethodPost, path, body, nil)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Success bool                               `json:"success"`
+		Data    TransferKnowledgeBaseOwnerResponse `json:"data"`
+	}
+	if err := parseResponse(resp, &response); err != nil {
+		return nil, err
+	}
+	return &response.Data, nil
+}
+
 // ClearKnowledgeBaseContentsResponse represents the response from clear knowledge base contents API
 type ClearKnowledgeBaseContentsResponse struct {
 	DeletedCount int `json:"deleted_count"`

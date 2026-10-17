@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   listKnowledgeBases,
@@ -9,14 +10,13 @@ import {
   unsubscribeKnowledgeBase,
   type KnowledgeBaseRow,
 } from "@/lib/api/knowledge";
-import { getKBViewerCapabilities, type KBViewerCapabilities } from "@/lib/kb-capabilities";
+import { getKBViewerCapabilities, kbAccessBadge, type KBViewerCapabilities } from "@/lib/kb-capabilities";
 import { groupCatalogRows, selectPublicSection } from "@/lib/kb-public";
 import { useAuth, useTenantRole } from "@/lib/auth";
+import { canCreateKnowledgeBase } from "@/lib/tenant-roles";
 import { useT } from "@/lib/i18n";
 import { Orb } from "@/components/orb";
 import { Modal } from "@/components/modal";
-import { KbShareModal } from "@/components/knowledge/kb-share-modal";
-import { KBAccessPanel } from "@/components/knowledge/kb-access-panel";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
 import { ParseDefaultsEditor } from "@/components/knowledge/parse-defaults-editor";
 import {
@@ -43,19 +43,19 @@ interface CardModel {
 }
 
 export default function KnowledgeBaseList() {
-  const { isTenantAdmin, isSystemAdmin: isExplicitSuperAdmin } = useTenantRole();
+  const { isTenantAdmin, isSystemAdmin: isExplicitSuperAdmin, membershipState, isGuest } = useTenantRole();
   const { user, selectedTenantId, tenant } = useAuth();
   const { t } = useT();
+  const router = useRouter();
   const [kbs, setKbs] = useState<KnowledgeBaseRow[] | null>(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [pdOpen, setPdOpen] = useState(false);
-  const [shareKb, setShareKb] = useState<KnowledgeBaseRow | null>(null);
-  const [inviteKb, setInviteKb] = useState<KnowledgeBaseRow | null>(null);
   const [invitesOpen, setInvitesOpen] = useState(false);
   const isSystemAdmin = user?.is_system_admin === true;
   const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
-  const hasTenant = activeTenantId !== "";
+  /* A Guest has no unit even if a stale selection is stored. */
+  const hasTenant = activeTenantId !== "" && !isGuest;
 
   /* Dedicated public catalog: server-side search + paging through the
    * endpoint (never assume the mixed list's first-50 window is complete).
@@ -238,38 +238,23 @@ export default function KnowledgeBaseList() {
           className="card card-hover group relative min-w-0 overflow-hidden p-6"
         >
           <Orb color={kb.orb} size={220} className="-right-16 -top-16 opacity-50" />
-          {/* Share shortcut — hidden on public rows (grants don't expand
-           * public visibility); stopPropagation so it doesn't follow the
-           * card's Link into the detail page. */}
+          {/* Access shortcut: opens the KB's Access tab (scope, who has
+           * access, sharing for managers). Hidden on public/published
+           * catalog rows; stopPropagation so it doesn't follow the card's
+           * Link. */}
           {!opts?.hideShare && (
             <button
               type="button"
-              title={t("kbShare.title")}
+              title={t("kbAccess.tab")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setShareKb(kb.row);
+                router.push(`/platform/knowledge-bases/${kb.id}?tab=access`);
               }}
-              className="absolute right-4 top-4 z-10 flex h-7 w-7 items-center justify-center rounded-full text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
+              className="absolute right-4 top-4 z-10 flex h-7 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
             >
               <IconExternal className="h-4 w-4" />
-            </button>
-          )}
-          {/* Invite shortcut — own-tenant Tenant Admins invite one
-           * external member to read (recipient-bound). Never on public or
-           * invited rows. */}
-          {kb.caps.canInvite && (
-            <button
-              type="button"
-              title={t("kbList.inviteTitle")}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setInviteKb(kb.row);
-              }}
-              className="absolute right-12 top-4 z-10 flex h-7 items-center justify-center rounded-full px-2 text-[11px] font-medium text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
-            >
-              {t("kbList.invite")}
+              {kb.caps.canInvite ? t("kbList.invite") : null}
             </button>
           )}
           <div className="relative min-w-0">
@@ -278,17 +263,20 @@ export default function KnowledgeBaseList() {
             </div>
             <div className="flex items-center gap-2">
               <h2 className="title-md truncate">{kb.name}</h2>
-              {/* Public identity keys off owner + visibility — never the
-               * data tenant_id, so a converted row's foreign data scope
-               * doesn't mislabel it "Shared". */}
-              {kb.caps.kind === "public" && (
+              {/* Badge from the server's access_source (shared = reached
+               * through an invite or unit grant), else owner + visibility —
+               * never the data tenant_id. */}
+              {kbAccessBadge(kb.row) === "public" && (
                 <span className="badge-pill shrink-0 bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>
               )}
-              {kb.caps.kind === "invited" && (
+              {(kbAccessBadge(kb.row) === "shared" || (kb.caps.kind === "invited" && !kb.row.access_source)) && (
                 <span className="badge-pill shrink-0 bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>
               )}
-              {kb.row.visibility === "published" && (
+              {kbAccessBadge(kb.row) === "published" && (
                 <span className="badge-pill shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t("kbPublished.badge")}</span>
+              )}
+              {kbAccessBadge(kb.row) === "restricted" && (
+                <span className="badge-pill shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400">{t("kbAccess.badgeRestricted")}</span>
               )}
             </div>
             {kb.caps.kind === "published" && kb.row.owner_tenant_name && (
@@ -357,7 +345,8 @@ export default function KnowledgeBaseList() {
                 {t("kbPublic.newPublic")}
               </Link>
             )}
-            {isTenantAdmin && hasTenant && (
+            {/* A Guest (no active membership) never creates KBs. */}
+            {!isGuest && canCreateKnowledgeBase(membershipState, isTenantAdmin, hasTenant) && (
               <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
                 <IconPlus className="h-4 w-4" />
                 {t("kbList.newKb")}
@@ -366,9 +355,14 @@ export default function KnowledgeBaseList() {
           </div>
         </div>
 
+        {/* No unit is a normal state for a SuperAdmin (platform authority
+            does not depend on membership); for a Guest it means the account
+            belongs to no unit yet. */}
         {!hasTenant && (
           <p className="body-sm mb-6 rounded-xl border border-hairline bg-surface px-4 py-3 text-body">
-            {t("kbPublic.tenantlessNotice")}
+            {isExplicitSuperAdmin
+              ? t("kbPublic.superAdminNoUnitNotice")
+              : t("kbPublic.tenantlessNotice")}
           </p>
         )}
 
@@ -417,6 +411,7 @@ export default function KnowledgeBaseList() {
             <div className="mb-4 mt-10">
               <h2 className="title-sm">{t("kbPublished.section")}</h2>
               <p className="caption mt-1 text-muted">{t("kbPublished.sectionDesc")}</p>
+              <p className="caption mt-1 text-muted-soft">{t("kbPublished.subscribeHint")}</p>
             </div>
             {pubdError && <p className="caption mb-4 text-error">{pubdError}</p>}
             {renderCards(publishedCards, {
@@ -539,31 +534,6 @@ export default function KnowledgeBaseList() {
       >
         <ParseDefaultsEditor />
       </Modal>
-
-      <Modal
-        open={inviteKb !== null}
-        title={t("kbList.inviteModalTitle")}
-        onClose={() => setInviteKb(null)}
-      >
-        {inviteKb && (
-          <KBAccessPanel kbId={inviteKb.id} kbName={inviteKb.name} ownerTenantId={inviteKb.owner_tenant_id} />
-        )}
-      </Modal>
-
-      <KbShareModal
-        kb={shareKb}
-        open={shareKb !== null}
-        onClose={() => setShareKb(null)}
-        onChanged={reload}
-        canManage={
-          !!shareKb &&
-          getKBViewerCapabilities(shareKb, {
-            activeTenantId: hasTenant ? activeTenantId : "",
-            isTenantAdmin,
-            isSystemAdmin,
-          }).canManage
-        }
-      />
     </div>
   );
 }

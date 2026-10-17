@@ -136,29 +136,65 @@ func (r *kbInvitationRepository) MarkRevoked(ctx context.Context, id string) err
 	return nil
 }
 
-func (r *kbInvitationRepository) ListAcceptedKBIDsByUser(ctx context.Context, userID string) ([]string, error) {
+func (r *kbInvitationRepository) ListLiveInvitedKBIDsByUser(ctx context.Context, userID string) ([]string, error) {
 	if userID == "" {
 		return nil, nil
 	}
 	var ids []string
+	// One query: an invite counts only while the KB still belongs to the
+	// tenant that issued it (same rule as HasAcceptedInviteForOwner).
 	err := r.db.WithContext(ctx).Model(&types.KBInvitation{}).
-		Where("recipient_user_id = ? AND status = ?", userID, types.KBInvitationStatusAccepted).
-		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
-		Pluck("kb_id", &ids).Error
+		Joins("JOIN knowledge_bases ON knowledge_bases.id = kb_invitations.kb_id"+
+			" AND knowledge_bases.owner_tenant_id = kb_invitations.owner_tenant_id"+
+			" AND knowledge_bases.deleted_at IS NULL").
+		Where("kb_invitations.recipient_user_id = ? AND kb_invitations.status = ?",
+			userID, types.KBInvitationStatusAccepted).
+		Where("(kb_invitations.expires_at IS NULL OR kb_invitations.expires_at > ?)", time.Now()).
+		Distinct().
+		Pluck("kb_invitations.kb_id", &ids).Error
 	if err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
-func (r *kbInvitationRepository) HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error) {
-	if kbID == "" || userID == "" {
+func (r *kbInvitationRepository) HasAcceptedInviteForOwner(
+	ctx context.Context, kbID, userID string, ownerTenantID uint64,
+) (bool, error) {
+	if kbID == "" || userID == "" || ownerTenantID == 0 {
 		return false, nil
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.KBInvitation{}).
-		Where("kb_id = ? AND recipient_user_id = ? AND status = ?", kbID, userID, types.KBInvitationStatusAccepted).
+		Where("kb_id = ? AND recipient_user_id = ? AND owner_tenant_id = ? AND status = ?",
+			kbID, userID, ownerTenantID, types.KBInvitationStatusAccepted).
 		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// HasLiveInviteForOwner reports whether recipientUserID holds a live
+// invite on kbID issued by ownerTenantID whose recipient still holds an
+// active membership in the invite's recipient_tenant_id.
+func (r *kbInvitationRepository) HasLiveInviteForOwner(
+	ctx context.Context, kbID, userID string, ownerTenantID uint64,
+) (bool, error) {
+	if kbID == "" || userID == "" || ownerTenantID == 0 {
+		return false, nil
+	}
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.KBInvitation{}).
+		Joins("JOIN tenant_members ON tenant_members.user_id = kb_invitations.recipient_user_id"+
+			" AND tenant_members.tenant_id = kb_invitations.recipient_tenant_id"+
+			" AND tenant_members.status = ? AND tenant_members.deleted_at IS NULL",
+			types.TenantMemberStatusActive).
+		Where("kb_invitations.kb_id = ? AND kb_invitations.recipient_user_id = ?"+
+			" AND kb_invitations.owner_tenant_id = ? AND kb_invitations.status = ?",
+			kbID, userID, ownerTenantID, types.KBInvitationStatusAccepted).
+		Where("(kb_invitations.expires_at IS NULL OR kb_invitations.expires_at > ?)", time.Now()).
 		Count(&count).Error
 	if err != nil {
 		return false, err

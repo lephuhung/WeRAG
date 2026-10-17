@@ -160,19 +160,3 @@ func TestKBInviteInvitedKBIDs(t *testing.T) {
 		t.Fatalf("revoked invite must vanish from discovery, got %v %v", ids, err)
 	}
 }
-
-func TestAppendInvitedKBsDedupes(t *testing.T) {
-	own := []*types.KnowledgeBase{{ID: "kb-1"}, {ID: "kb-2"}}
-	invited := []*types.KnowledgeBase{{ID: "kb-2"}, nil, {ID: ""}, {ID: "kb-3"}}
-	got := appendInvitedKBs(own, invited)
-	if len(got) != 3 {
-		t.Fatalf("got %d rows, want 3 (kb-1, kb-2, kb-3)", len(got))
-	}
-	ids := map[string]bool{}
-	for _, kb := range got {
-		ids[kb.ID] = true
-	}
-	if !ids["kb-1"] || !ids["kb-2"] || !ids["kb-3"] {
-		t.Fatalf("unexpected merge result: %v", ids)
-	}
-}
