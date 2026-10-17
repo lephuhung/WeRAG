@@ -102,3 +102,26 @@ func TestCallerIsTenantAdminOrSuperAdmin(t *testing.T) {
 	assert.False(t, callerIsTenantAdminOrSuperAdmin(apiKeyManageLifecycleCtx()),
 		"an API key never counts as SuperAdmin")
 }
+
+// Phase 5: the create form picks the scope — restricted is accepted on the
+// tenant create flow and member_default is kept; public stays forbidden.
+func TestCreateKnowledgeBaseScopeChoice(t *testing.T) {
+	repo := newFakeKBRepo()
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), &lifecycleAudit{})
+	kb, err := svc.CreateKnowledgeBase(ctxWithTenant(1),
+		&types.KnowledgeBase{Name: "r", Visibility: types.KBVisibilityRestricted})
+	require.NoError(t, err)
+	assert.Equal(t, types.KBVisibilityRestricted, kb.Visibility)
+	assert.Equal(t, uint64(1), kb.OwnerTenantID)
+
+	kb, err = svc.CreateKnowledgeBase(ctxWithTenant(1),
+		&types.KnowledgeBase{Name: "t", MemberDefault: types.KBMemberDefaultView})
+	require.NoError(t, err)
+	assert.Equal(t, types.KBVisibilityTenant, kb.Visibility, "empty scope defaults to tenant")
+	assert.Equal(t, types.KBMemberDefaultView, kb.MemberDefault)
+
+	kb, err = svc.CreateKnowledgeBase(ctxWithTenant(1),
+		&types.KnowledgeBase{Name: "p", Visibility: types.KBVisibilityPublished})
+	require.NoError(t, err)
+	assert.Equal(t, types.KBVisibilityTenant, kb.Visibility, "publishing happens after creation")
+}

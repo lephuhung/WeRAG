@@ -370,10 +370,11 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	// it. Anything beyond its identity falls back to the platform defaults.
 	if !canManagePlatformConfig(ctx) {
 		req = types.KnowledgeBase{
-			Name:        req.Name,
-			Description: req.Description,
-			Type:        req.Type,
-			Visibility:  req.Visibility,
+			Name:          req.Name,
+			Description:   req.Description,
+			Type:          req.Type,
+			Visibility:    req.Visibility,
+			MemberDefault: req.MemberDefault,
 		}
 	}
 	if err := validateExtractConfig(req.ExtractConfig); err != nil {

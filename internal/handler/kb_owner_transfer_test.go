@@ -103,3 +103,29 @@ func TestTransferKnowledgeBaseOwnerHandlerErrors(t *testing.T) {
 		assert.Equal(t, code, w.Code, w.Body.String())
 	}
 }
+
+type captureKBCreateService struct {
+	interfaces.KnowledgeBaseService
+	got *types.KnowledgeBase
+}
+
+func (s *captureKBCreateService) CreateKnowledgeBase(_ context.Context, kb *types.KnowledgeBase) (*types.KnowledgeBase, error) {
+	s.got = kb
+	kb.ID = "kb-new"
+	return kb, nil
+}
+
+// Phase 5: a Tenant Admin's create keeps the chosen scope and
+// member_default through the identity-only request projection.
+func TestCreateKnowledgeBaseKeepsScopeChoice(t *testing.T) {
+	svc := &captureKBCreateService{}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-bases",
+		strings.NewReader(`{"name":"kb","visibility":"restricted","member_default":"view"}`))
+	req.Header.Set("Content-Type", "application/json")
+	newCreateKBRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.NotNil(t, svc.got)
+	assert.Equal(t, types.KBVisibilityRestricted, svc.got.Visibility)
+	assert.Equal(t, types.KBMemberDefaultView, svc.got.MemberDefault)
+}

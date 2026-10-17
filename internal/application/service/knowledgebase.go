@@ -322,17 +322,18 @@ func (s *knowledgeBaseService) validateVectorStoreBinding(
 }
 
 // validateKBVisibility enforces the scope model on the tenant create
-// path. Tenant Admins create tenant KBs only: a public visibility payload
-// is rejected for every caller on this flow, including system admins —
-// platform-owned public KBs are minted exclusively through
-// CreatePublicKnowledgeBase. Tenant is the only accepted scope here.
+// path. Tenant Admins create tenant-owned KBs only: a public visibility
+// payload is rejected for every caller on this flow, including system
+// admins — platform-owned public KBs are minted exclusively through
+// CreatePublicKnowledgeBase. 'tenant' (the default) and 'restricted'
+// (ACL only) are accepted; any other value falls back to 'tenant' —
+// publishing is a later decision through the visibility endpoint.
 func (s *knowledgeBaseService) validateKBVisibility(ctx context.Context, kb *types.KnowledgeBase) error {
 	_ = ctx
 	switch kb.Visibility {
 	case types.KBVisibilityPublic:
 		return apperrors.NewForbiddenError("public knowledge bases can only be created by a platform SuperAdmin through the public flow")
-	case "", types.KBVisibilityTenant:
-		kb.Visibility = types.KBVisibilityTenant
+	case types.KBVisibilityRestricted:
 	default:
 		kb.Visibility = types.KBVisibilityTenant
 	}
