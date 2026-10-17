@@ -165,7 +165,7 @@ func TestParentChildImageHit_WindowSliceAndFilter(t *testing.T) {
 // alone, while the whole recognized page text lives in the image_ocr child.
 // The parent expansion must not discard that recognized text (#3052).
 func TestResolveImageOCRHit_KeepsRecognizedTextWhenParentIsPlaceholderOnly(t *testing.T) {
-	ocrText := "客户编码 A01，客户名称 示例公司，联系人 张三，电话 13800000000。"
+	ocrText := "Mã khách hàng A01, tên khách hàng Công ty Mẫu, người liên hệ Nguyễn Văn A, điện thoại 0912000000."
 	imageInfo, err := json.Marshal([]types.ImageInfo{{URL: "images/scan_page_1.jpg", OCRText: ocrText}})
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestResolveImageOCRHit_KeepsRecognizedTextWhenParentIsPlaceholderOnly(t *te
 	if len(got) != 1 {
 		t.Fatalf("result count = %d, want 1", len(got))
 	}
-	if !strings.Contains(got[0].Content, "示例公司") || !strings.Contains(got[0].Content, "13800000000") {
+	if !strings.Contains(got[0].Content, "Công ty Mẫu") || !strings.Contains(got[0].Content, "0912000000") {
 		t.Fatalf("recognized OCR text was dropped by parent expansion: %q", got[0].Content)
 	}
 }
@@ -240,8 +240,8 @@ func TestResolveImageOCRHit_DoesNotDuplicateRecognizedText(t *testing.T) {
 }
 
 func TestResolveImageOCRHit_ChatEnrichmentDoesNotDuplicateOCR(t *testing.T) {
-	ocrText := "客户编码 A01，客户名称 示例公司，联系人 张三，电话 13800000000。"
-	caption := "扫描件第一页客户信息表"
+	ocrText := "Mã khách hàng A01, tên khách hàng Công ty Mẫu, người liên hệ Nguyễn Văn A, điện thoại 0912000000."
+	caption := "Bảng thông tin khách hàng trang đầu bản quét"
 	imageInfo, err := json.Marshal([]types.ImageInfo{{
 		URL: "images/scan_page_1.jpg", OCRText: ocrText, Caption: caption,
 	}})
@@ -287,7 +287,7 @@ func TestResolveImageOCRHit_ChatEnrichmentDoesNotDuplicateOCR(t *testing.T) {
 }
 
 func TestResolveImageCaptionHit_KeepsCaptionWhenParentIsPlaceholderOnly(t *testing.T) {
-	caption := "扫描合同首页，含甲乙双方签章位置"
+	caption := "Trang đầu hợp đồng quét, có vị trí ký đóng dấu của bên A và bên B"
 	imageInfo, err := json.Marshal([]types.ImageInfo{{URL: "images/scan_page_1.jpg", Caption: caption}})
 	if err != nil {
 		t.Fatal(err)
@@ -315,7 +315,7 @@ func TestResolveImageCaptionHit_KeepsCaptionWhenParentIsPlaceholderOnly(t *testi
 	if len(got) != 1 {
 		t.Fatalf("result count = %d, want 1", len(got))
 	}
-	if !strings.Contains(got[0].Content, "甲乙双方") {
+	if !strings.Contains(got[0].Content, "bên A và bên B") {
 		t.Fatalf("caption was dropped by parent expansion: %q", got[0].Content)
 	}
 	passage := getEnrichedPassageForChat(ctx, got[0])
@@ -325,7 +325,7 @@ func TestResolveImageCaptionHit_KeepsCaptionWhenParentIsPlaceholderOnly(t *testi
 }
 
 func TestResolveImageOCRHit_KeepsTextWhenPlaceholderIsPruned(t *testing.T) {
-	ocrText := "仅存在于 OCR 子块中的扫描页正文，用于核对账号 6222。"
+	ocrText := "Nội dung trang quét chỉ có trong đoạn con OCR, dùng để đối chiếu số tài khoản 6222."
 	imageInfo, err := json.Marshal([]types.ImageInfo{{URL: "resource://unmatched-scan", OCRText: ocrText}})
 	if err != nil {
 		t.Fatal(err)

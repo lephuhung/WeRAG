@@ -60,7 +60,7 @@ func TestSavedWebPagesPersistAcrossRunsAndEnforceMessageScope(t *testing.T) {
 		db: db, catalog: catalog, tenantID: 7, ownerID: "alice", sessionID: "session-a", messageID: "message-a",
 		files: func(context.Context, string) (interfaces.FileService, error) { return fs, nil },
 	}
-	path, err := pages.Save(t.Context(), "first line\n完整正文\nthird line")
+	path, err := pages.Save(t.Context(), "first line\ntoàn văn\nthird line")
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(path, "web://"))
 	// Reads resolve the original backend even if the tenant's default later changes.
@@ -78,7 +78,7 @@ func TestSavedWebPagesPersistAcrossRunsAndEnforceMessageScope(t *testing.T) {
 	result, err := reader.Execute(t.Context(), []byte(fmt.Sprintf(`{"path":%q,"offset":2,"limit":1}`, path)))
 	require.NoError(t, err)
 	require.True(t, result.Success, result.Error)
-	require.Contains(t, result.Output, "完整正文")
+	require.Contains(t, result.Output, "toàn văn")
 	require.Equal(t, 3, result.Data["next_offset"])
 	reads := memory.reads
 	for _, scope := range []struct {

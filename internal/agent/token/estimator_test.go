@@ -147,7 +147,7 @@ func TestEstimateTools(t *testing.T) {
 func TestEstimatorScalesTextOnly(t *testing.T) {
 	e, err := NewEstimator()
 	assert.NoError(t, err)
-	text := strings.Repeat("知识库文档检索结果，", 100)
+	text := strings.Repeat("kết quả truy hồi tài liệu kho tri thức, ", 100)
 	raw := e.EstimateString(text)
 
 	e.SetScale(0.6)

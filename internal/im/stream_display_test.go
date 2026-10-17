@@ -57,7 +57,7 @@ func TestStreamDisplayPipeline_agentScenario_redGreen(t *testing.T) {
 	// Simulates the agent IM stream lifecycle aligned with Web:
 	// 1) intermediate updates show styled thinking + tools
 	// 2) final replace shows answer only (no collapsed think header)
-	rawIntermediate := "<think>\n分析 Civilization VI 问题\n正在调用 搜索关键词...\n搜索关键词\n</think>\n\n"
+	rawIntermediate := "<think>\nPhân tích câu hỏi về Nghị định 30\nĐang gọi Tìm từ khoá...\nTìm từ khoá\n</think>\n\n"
 
 	rec := &recordingStreamSender{}
 	ctx := context.Background()
@@ -75,12 +75,12 @@ func TestStreamDisplayPipeline_agentScenario_redGreen(t *testing.T) {
 
 	final := FormatIMFinalFromParts(IMStreamParts{
 		Mode:       IMStreamModeAgent,
-		AgentInner: "分析 Civilization VI 问题\n",
+		AgentInner: "Phân tích câu hỏi về Nghị định 30\n",
 		AgentToolSteps: []IMToolStep{
 			{ToolName: "grep_chunks", Success: true},
 			{ToolName: "knowledge_search", Success: true},
 		},
-		Answer: "《文明6》是回合制策略游戏。",
+		Answer: "Nghị định 30/2020 quy định về công tác văn thư.",
 	})
 	if err := rec.FinalizeStream(ctx, incoming, streamID, final); err != nil {
 		t.Fatalf("FinalizeStream: %v", err)
@@ -99,10 +99,10 @@ func TestStreamDisplayPipeline_agentScenario_redGreen(t *testing.T) {
 	if chunks[0] == final {
 		t.Fatal("intermediate update should differ from final answer-only content")
 	}
-	if finalized != "《文明6》是回合制策略游戏。" {
+	if finalized != "Nghị định 30/2020 quy định về công tác văn thư." {
 		t.Fatalf("FinalizeStream content = %q", finalized)
 	}
-	if !strings.Contains(finalized, "《文明6》是回合制策略游戏。") {
+	if !strings.Contains(finalized, "Nghị định 30/2020 quy định về công tác văn thư.") {
 		t.Fatalf("FinalizeStream must include answer, got: %q", finalized)
 	}
 }
@@ -121,22 +121,22 @@ func TestStreamDisplayPipeline_quickQA_redGreen(t *testing.T) {
 			{ToolName: "query_understand", Success: true},
 			{ToolName: "knowledge_search", Success: true, Arguments: map[string]any{"query": "test"}},
 		},
-		Answer: "答案是 B。",
+		Answer: "Đáp án là B.",
 	}
 
 	intermediate := FormatIMIntermediateFromParts(during, false)
 	if intermediate == "" {
 		t.Fatal("quick QA should show pipeline progress while streaming")
 	}
-	if !strings.Contains(intermediate, "问题理解") {
+	if !strings.Contains(intermediate, "hiểu câu hỏi") {
 		t.Fatalf("quick QA pipeline should show query_understand step, got: %q", intermediate)
 	}
-	if strings.Contains(intermediate, "思考过程") {
+	if strings.Contains(intermediate, "Quá trình suy nghĩ") {
 		t.Fatalf("quick QA pipeline should not use agent think header, got: %q", intermediate)
 	}
 
 	final := FormatIMFinalFromParts(done)
-	if final != "答案是 B。" {
+	if final != "Đáp án là B." {
 		t.Fatalf("quick QA final = %q, want answer only", final)
 	}
 }

@@ -556,7 +556,7 @@ func TestDuplicateKnowledgeBase_CreatesSettingsOnlyDuplicate(t *testing.T) {
 	require.NotEmpty(t, target.ID)
 	assert.Equal(t, uint64(1), target.TenantID)
 	assert.Equal(t, "copy-user", target.CreatorID)
-	assert.Equal(t, "Source KB 副本", target.Name)
+	assert.Equal(t, "Source KB (bản sao)", target.Name)
 	assert.Equal(t, source.Description, target.Description)
 	assert.Equal(t, source.ChunkingConfig, target.ChunkingConfig)
 	assert.Equal(t, source.ImageProcessingConfig, target.ImageProcessingConfig)
@@ -596,7 +596,7 @@ func TestDuplicateKnowledgeBase_UsesDistinctNameWhenDuplicateExists(t *testing.T
 	}
 	repo.rows["existing-copy"] = &types.KnowledgeBase{
 		ID:       "existing-copy",
-		Name:     "Source KB 副本",
+		Name:     "Source KB (bản sao)",
 		Type:     types.KnowledgeBaseTypeDocument,
 		TenantID: 1,
 	}
@@ -605,7 +605,7 @@ func TestDuplicateKnowledgeBase_UsesDistinctNameWhenDuplicateExists(t *testing.T
 	target, err := svc.DuplicateKnowledgeBase(ctxWithTenant(1), "src")
 	require.NoError(t, err)
 
-	assert.Equal(t, "Source KB 副本 2", target.Name)
+	assert.Equal(t, "Source KB (bản sao) 2", target.Name)
 }
 
 func TestDuplicateKnowledgeBase_UsesLocalizedEnglishSuffix(t *testing.T) {

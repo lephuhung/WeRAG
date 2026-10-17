@@ -17,6 +17,7 @@ import concurrent.futures as cf
 import datetime as dt
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -56,17 +57,77 @@ def ensure_fixtures(fixtures_dir: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def judge_context(sc: SC.Scenario, manifest: Dict[str, Any], note: str) -> str:
+PARAGRAPHS_CHARS_PER_DOC = 3000
+_FILLER_RE = re.compile(r"Kết quả này được ghi nhận tại cuộc họp giao ban tháng \d+ năm \d{4}\.$")
+JUDGE_FACTS_CHARS = 8000
+
+
+def docx_paragraphs(path: str, cap: int = PARAGRAPHS_CHARS_PER_DOC) -> List[str]:
+    """Non-empty paragraphs of a fixture in body order, table cells included
+    (quốc hiệu, cơ quan ban hành, chữ ký live in layout tables)."""
+    try:
+        from docx import Document  # python-docx, already used by build_fixtures.py
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+    except ImportError:
+        return []
+    try:
+        doc = Document(path)
+    except Exception:  # noqa: BLE001
+        return []
+    texts: List[str] = []
+
+    def walk(parent, el):
+        tag = el.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            texts.append(Paragraph(el, parent).text)
+        elif tag == "tbl":
+            for row in Table(el, parent).rows:
+                for cell in row.cells:
+                    for child in cell._tc.iterchildren():
+                        walk(cell, child)
+
+    for el in doc.element.body.iterchildren():
+        walk(doc, el)
+    out: List[str] = []
+    used = 0
+    seen_prev = None
+    fillers = 0
+    for t in texts:
+        t = t.strip()
+        if not t or t == seen_prev:  # merged cells repeat their text
+            continue
+        seen_prev = t
+        if _FILLER_RE.search(t):  # bao_cao_dai padding (build_fixtures.py FILLER), no facts
+            fillers += 1
+            continue
+        line = f"[{len(out)}] {t}"
+        if used + len(line) > cap:
+            out.append("… (danh sách đã cắt bớt cho giám khảo: các đoạn phía sau không hiển thị)")
+            break
+        out.append(line)
+        used += len(line)
+    else:
+        if fillers:
+            out.append(f"(bỏ qua {fillers} đoạn đệm dạng 'Kết quả này được ghi nhận tại cuộc họp giao ban…', không chứa số liệu)")
+    return out
+
+
+def judge_context(sc: SC.Scenario, manifest: Dict[str, Any], note: str, fixtures_dir: str = "") -> str:
     """Known facts of the fixtures in play, so the judge can tell real figures from invented ones."""
     facts = {}
     for _, fname in sc.documents:
         m = dict(manifest.get(fname) or {})
         m.pop("filler_paragraphs", None)
+        if fixtures_dir:
+            paras = docx_paragraphs(os.path.join(fixtures_dir, fname))
+            if paras:
+                m["paragraphs"] = paras
         facts[fname] = m
     blob = json.dumps(facts, ensure_ascii=False)
-    if len(blob) > 3500:
-        blob = blob[:3500] + "…"
-    return (note + "\n" if note else "") + "DỮ KIỆN CÓ THẬT TRONG CÁC TÀI LIỆU CỦA PHIÊN (từ bộ sinh fixture; số liệu xuất hiện ở đây là của văn bản, không phải bịa): " + blob
+    if len(blob) > JUDGE_FACTS_CHARS:
+        blob = blob[:JUDGE_FACTS_CHARS] + "…"
+    return (note + "\n" if note else "") + "DỮ KIỆN CÓ THẬT TRONG CÁC TÀI LIỆU CỦA PHIÊN (từ bộ sinh fixture; số liệu xuất hiện ở đây là của văn bản, không phải bịa; \"paragraphs\" là danh sách đoạn của tài liệu): " + blob
 
 
 def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any], fixtures_dir: str,
@@ -102,7 +163,8 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
                                      "turn": {"query": "", "answer": "", "error": None, "duration_s": 0, "tools": [], "display_types": []}, "events": []})
                 continue
             log(f"  [{sc.id}] step {i + 1}: {query[:70]}")
-            turn = client.chat(sid, query, selection=selection, mentions=mentions, web_search=step.web_search)
+            turn = client.chat(sid, query, selection=selection, mentions=mentions, web_search=step.web_search,
+                               extra=step.extra)
             ctx["turns"].append(turn)
             results: List[C.Result] = []
             for chk in step.checks:
@@ -111,7 +173,7 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
                 except Exception as e:  # noqa: BLE001
                     results.append(C.Result(C.FAIL, f"check crashed: {getattr(chk, '__name__', chk)}", f"{e!r}"))
             if step.judge:
-                results.append(judge.grade(step.judge, turn, extra_context=judge_context(sc, manifest, step.note)))
+                results.append(judge.grade(step.judge, turn, extra_context=judge_context(sc, manifest, step.note, fixtures_dir)))
             worst = aggregate([r.status for r in results])
             out["steps"].append({
                 "query": query, "note": step.note, "selection": selection, "mentions": mentions,

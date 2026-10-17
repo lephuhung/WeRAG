@@ -81,8 +81,8 @@ type TenantInvitationRepository interface {
 	SweepExpired(ctx context.Context, now time.Time) (int64, error)
 
 	// IncrementAcceptedCount atomically bumps accepted_count by 1.
-	// Used by AcceptByToken so the management UI can show "N 人已通过
-	// 此链接加入" for share-link rows. Per-user invitations also call
+	// Used by AcceptByToken so the management UI can show "N người đã tham gia
+	// qua liên kết này" for share-link rows. Per-user invitations also call
 	// this on accept; the count just caps at 1 there.
 	IncrementAcceptedCount(ctx context.Context, id uint64) error
 }

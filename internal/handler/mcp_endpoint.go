@@ -43,11 +43,11 @@ func stringValue(p *string) string {
 
 // ListToolCatalog returns the tools an endpoint can expose, grouped.
 //
-// @Summary      获取 MCP 端点工具目录
-// @Description  返回工作Tenant workspace MCP 端点可勾选的工具清单、分组和默认勾选项
-// @Tags         MCP端点
+// @Summary      Lấy danh mục công cụ của điểm cuối MCP
+// @Description  Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của không gian làm việc
+// @Tags         Điểm cuối MCP
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "工具目录"
+// @Success      200  {object}  map[string]interface{}  "Danh mục công cụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints/tools [get]
@@ -65,14 +65,14 @@ func (h *MCPEndpointHandler) ListToolCatalog(c *gin.Context) {
 
 // CreateMCPEndpoint creates an endpoint and returns it with the one-time token.
 //
-// @Summary      Create  MCP 端点
-// @Description  为当前工作Tenant workspace发布一个 MCP 端点，响应中的 token 只返回一次
-// @Tags         MCP端点
+// @Summary      Tạo điểm cuối MCP
+// @Description  Phát hành một điểm cuối MCP cho không gian làm việc hiện tại; token trong phản hồi chỉ trả về một lần
+// @Tags         Điểm cuối MCP
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "端点Configuration ：name、description、enabled、knowledge_base_ids、tools 等"
-// @Success      201      {object}  map[string]interface{}  "Create 的端点，含一次性 token"
-// @Failure      400      {object}  map[string]interface{}  "请求Parameters 错误"
+// @Param        request  body      object  true  "Cấu hình điểm cuối: name, description, enabled, knowledge_base_ids, tools..."
+// @Success      201      {object}  map[string]interface{}  "Điểm cuối đã tạo, kèm token dùng một lần"
+// @Failure      400      {object}  map[string]interface{}  "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints [post]
@@ -117,10 +117,10 @@ func (h *MCPEndpointHandler) CreateMCPEndpoint(c *gin.Context) {
 
 // ListMCPEndpoints lists the workspace endpoints without tokens.
 //
-// @Summary      获取 MCP 端点List
-// @Tags         MCP端点
+// @Summary      Lấy danh sách điểm cuối MCP
+// @Tags         Điểm cuối MCP
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "端点List "
+// @Success      200  {object}  map[string]interface{}  "Danh sách điểm cuối"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints [get]
@@ -140,12 +140,12 @@ func (h *MCPEndpointHandler) ListMCPEndpoints(c *gin.Context) {
 
 // GetMCPEndpoint returns one endpoint.
 //
-// @Summary      获取 MCP 端点Details
-// @Tags         MCP端点
+// @Summary      Lấy chi tiết điểm cuối MCP
+// @Tags         Điểm cuối MCP
 // @Produce      json
-// @Param        endpoint_id  path      string  true  "端点 ID"
-// @Success      200          {object}  map[string]interface{}  "端点Details "
-// @Failure      404          {object}  map[string]interface{}  "端点不存在"
+// @Param        endpoint_id  path      string  true  "ID điểm cuối"
+// @Success      200          {object}  map[string]interface{}  "Chi tiết điểm cuối"
+// @Failure      404          {object}  map[string]interface{}  "Không tìm thấy điểm cuối"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints/{endpoint_id} [get]
@@ -162,15 +162,15 @@ func (h *MCPEndpointHandler) GetMCPEndpoint(c *gin.Context) {
 
 // UpdateMCPEndpoint applies a partial update; omitted fields are kept.
 //
-// @Summary      Update  MCP 端点
-// @Tags         MCP端点
+// @Summary      Cập nhật điểm cuối MCP
+// @Tags         Điểm cuối MCP
 // @Accept       json
 // @Produce      json
-// @Param        endpoint_id  path      string  true  "端点 ID"
-// @Param        request      body      object  true  "要Update 的字段，未提供的字段保持不变"
-// @Success      200          {object}  map[string]interface{}  "Update 后的端点"
-// @Failure      400          {object}  map[string]interface{}  "请求Parameters 错误"
-// @Failure      404          {object}  map[string]interface{}  "端点不存在"
+// @Param        endpoint_id  path      string  true  "ID điểm cuối"
+// @Param        request      body      object  true  "Các trường cần cập nhật, trường không gửi giữ nguyên"
+// @Success      200          {object}  map[string]interface{}  "Điểm cuối sau khi cập nhật"
+// @Failure      400          {object}  map[string]interface{}  "Tham số yêu cầu không hợp lệ"
+// @Failure      404          {object}  map[string]interface{}  "Không tìm thấy điểm cuối"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints/{endpoint_id} [put]
@@ -200,12 +200,12 @@ func (h *MCPEndpointHandler) UpdateMCPEndpoint(c *gin.Context) {
 
 // DeleteMCPEndpoint soft-deletes an endpoint; connected clients lose access.
 //
-// @Summary      Delete  MCP 端点
-// @Tags         MCP端点
+// @Summary      Xóa điểm cuối MCP
+// @Tags         Điểm cuối MCP
 // @Produce      json
-// @Param        endpoint_id  path      string  true  "端点 ID"
-// @Success      200          {object}  map[string]interface{}  "Delete 成功"
-// @Failure      404          {object}  map[string]interface{}  "端点不存在"
+// @Param        endpoint_id  path      string  true  "ID điểm cuối"
+// @Success      200          {object}  map[string]interface{}  "Xóa thành công"
+// @Failure      404          {object}  map[string]interface{}  "Không tìm thấy điểm cuối"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints/{endpoint_id} [delete]
@@ -221,13 +221,13 @@ func (h *MCPEndpointHandler) DeleteMCPEndpoint(c *gin.Context) {
 
 // RotateMCPEndpointToken issues a fresh token and returns it once.
 //
-// @Summary      轮换 MCP 端点令牌
-// @Description  生成新令牌并立即作废旧令牌，响应中的 token 只返回一次
-// @Tags         MCP端点
+// @Summary      Xoay vòng token của điểm cuối MCP
+// @Description  Tạo token mới và vô hiệu token cũ ngay lập tức; token trong phản hồi chỉ trả về một lần
+// @Tags         Điểm cuối MCP
 // @Produce      json
-// @Param        endpoint_id  path      string  true  "端点 ID"
-// @Success      200          {object}  map[string]interface{}  "含新 token 的端点"
-// @Failure      404          {object}  map[string]interface{}  "端点不存在"
+// @Param        endpoint_id  path      string  true  "ID điểm cuối"
+// @Success      200          {object}  map[string]interface{}  "Điểm cuối kèm token mới"
+// @Failure      404          {object}  map[string]interface{}  "Không tìm thấy điểm cuối"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-endpoints/{endpoint_id}/rotate-token [post]

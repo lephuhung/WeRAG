@@ -9,7 +9,7 @@ import (
 )
 
 // NewFactory returns an im.AdapterFactory for channels on the given region's
-// cloud — RegionFeishu for 飞书, RegionLark for Lark. Both use the same
+// cloud — RegionFeishu for Feishu (CN), RegionLark for Lark. Both use the same
 // credentials and modes; only the API host and tenant differ.
 //
 // The HTTP adapter is always created (needed for SendReply in both modes);

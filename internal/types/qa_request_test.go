@@ -6,7 +6,7 @@ import (
 )
 
 func TestSteerMessageContentKeepsContinuationHintSmall(t *testing.T) {
-	content := strings.Repeat("补充说明\n", 1000)
+	content := strings.Repeat("Bổ sung\n", 1000)
 	wrapped := SteerMessageContent(content)
 	if strings.Count(wrapped, content) != 1 {
 		t.Fatal("user update must appear exactly once")

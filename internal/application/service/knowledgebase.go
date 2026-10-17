@@ -2149,12 +2149,8 @@ func (s *knowledgeBaseService) DuplicateKnowledgeBase(
 func duplicateKBCopySuffix(locale string) string {
 	locale = strings.ToLower(locale)
 	switch {
-	case strings.HasPrefix(locale, "zh"):
-		return " 副本"
-	case strings.HasPrefix(locale, "ko"):
-		return " 사본"
-	case strings.HasPrefix(locale, "ru"):
-		return " копия"
+	case strings.HasPrefix(locale, "vi"):
+		return " (bản sao)"
 	default:
 		return " Copy"
 	}
@@ -2163,12 +2159,8 @@ func duplicateKBCopySuffix(locale string) string {
 func duplicateKBDefaultName(locale string) string {
 	locale = strings.ToLower(locale)
 	switch {
-	case strings.HasPrefix(locale, "zh"):
-		return "知识库"
-	case strings.HasPrefix(locale, "ko"):
-		return "지식베이스"
-	case strings.HasPrefix(locale, "ru"):
-		return "База знаний"
+	case strings.HasPrefix(locale, "vi"):
+		return "Kho tri thức"
 	default:
 		return "Knowledge Base"
 	}

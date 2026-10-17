@@ -10,15 +10,15 @@ import (
 )
 
 // GenerateTitle godoc
-// @Summary      生成会话标题
-// @Description  根据消息内容自动生成会话标题
-// @Tags         会话
+// @Summary      Sinh tiêu đề cuộc trò chuyện
+// @Description  Tự động sinh tiêu đề cuộc trò chuyện từ nội dung tin nhắn
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        session_id  path      string                true  "会话ID"
-// @Param        request     body      GenerateTitleRequest  true  "生成请求"
-// @Success      200         {object}  map[string]interface{}  "生成的标题"
-// @Failure      400         {object}  errors.AppError         "请求Parameters 错误"
+// @Param        session_id  path      string                true  "ID cuộc trò chuyện"
+// @Param        request     body      GenerateTitleRequest  true  "Yêu cầu sinh tiêu đề"
+// @Success      200         {object}  map[string]interface{}  "Tiêu đề đã sinh"
+// @Failure      400         {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/title [post]

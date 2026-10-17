@@ -37,6 +37,11 @@ type UsageMeter interface {
 	// RecordMessageUsage folds an assistant message's token usage into the
 	// counters, once per message. Nil usage or non-assistant rows are ignored.
 	RecordMessageUsage(ctx context.Context, msg *types.Message)
+	// RecordOCRUsage counts the vision/OCR model calls that read a chat
+	// attachment: pages images or scanned pages, usage their summed token
+	// usage. The tokens join the token quota (metric "tokens") and are
+	// also kept apart as "ocr_tokens"/"ocr_pages".
+	RecordOCRUsage(ctx context.Context, tenantID uint64, userID, sessionID string, pages int, usage types.VLMUsage)
 	// ResetSession zeroes a session's lifetime counters, after its messages
 	// were cleared: the per-session caps then count from the new start.
 	ResetSession(ctx context.Context, sessionID string)

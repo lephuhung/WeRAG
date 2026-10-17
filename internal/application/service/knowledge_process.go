@@ -328,43 +328,43 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		logger.Infof(ctx, "Vector/keyword indexing disabled for KB %s, skipping embedding model", kb.ID)
 	}
 
-	// 幂等性处理：清理旧的chunks和索引数据，避免重复数据
+	// Bảo đảm idempotent: dọn chunks và dữ liệu chỉ mục cũ để tránh trùng lặp
 	logger.Infof(ctx, "Cleaning up existing chunks and index data for knowledge: %s", knowledge.ID)
 
-	// Delete 旧的chunks
+	// Xóa chunks cũ
 	if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, knowledge.TenantID, knowledge.ID); err != nil {
 		logger.Warnf(ctx, "Failed to delete existing chunks (may not exist): %v", err)
-		// 不返回错误，继续处理（可能没有旧数据）
+		// Không trả lỗi, tiếp tục xử lý (có thể không có dữ liệu cũ)
 	}
 
-	// Delete 旧的索引数据 — only when vector/keyword indexing is enabled
+	// Xóa dữ liệu chỉ mục cũ — only when vector/keyword indexing is enabled
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
 		ctx, s.retrieveEngine, s.ownership, tenantInfo.ID, kb.VectorStoreID)
 	if err == nil && embeddingModel != nil {
 		if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions(), knowledge.Type); err != nil {
 			logger.Warnf(ctx, "Failed to delete existing index data (may not exist): %v", err)
-			// 不返回错误，继续处理（可能没有旧数据）
+			// Không trả lỗi, tiếp tục xử lý (có thể không có dữ liệu cũ)
 		} else {
 			logger.Infof(ctx, "Successfully deleted existing index data for knowledge: %s", knowledge.ID)
 		}
 	}
 
-	// Delete 知识Graph数据（如果存在）
+	// Xóa dữ liệu đồ thị tri thức (nếu có)
 	namespace := types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID}
 	if err := s.graphEngine.DelGraph(ctx, []types.NameSpace{namespace}); err != nil {
 		logger.Warnf(ctx, "Failed to delete existing graph data (may not exist): %v", err)
-		// 不返回错误，继续处理
+		// Không trả lỗi, tiếp tục xử lý
 	}
 
 	logger.Infof(ctx, "Cleanup completed, starting to process new chunks")
 
-	// ========== DocReader 解析结果日志 ==========
-	logger.Infof(ctx, "[DocReader] ========== 解析结果概览 ==========")
-	logger.Infof(ctx, "[DocReader] 知识ID: %s, 知识库ID: %s", knowledge.ID, knowledge.KnowledgeBaseID)
-	logger.Infof(ctx, "[DocReader] 总Chunk数量: %d", len(chunks))
+	// ========== DocReader parse result log ==========
+	logger.Infof(ctx, "[DocReader] ========== parse result overview ==========")
+	logger.Infof(ctx, "[DocReader] knowledge ID: %s, knowledge base ID: %s", knowledge.ID, knowledge.KnowledgeBaseID)
+	logger.Infof(ctx, "[DocReader] total chunks: %d", len(chunks))
 
-	// 统计图片信息
+	// Thống kê thông tin hình ảnh
 	totalImages := 0
 	chunksWithImages := 0
 	for _, chunkData := range chunks {
@@ -373,49 +373,49 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			totalImages += len(chunkData.Images)
 		}
 	}
-	logger.Infof(ctx, "[DocReader] 包含图片的Chunk数: %d, 总图片数: %d", chunksWithImages, totalImages)
+	logger.Infof(ctx, "[DocReader] chunks with images: %d, total images: %d", chunksWithImages, totalImages)
 
-	// 打印每个Chunk的详细信息
+	// In chi tiết từng chunk
 	for idx, chunkData := range chunks {
 		contentPreview := chunkData.Content
 		if len(contentPreview) > 200 {
 			contentPreview = contentPreview[:200] + "..."
 		}
-		logger.Infof(ctx, "[DocReader] Chunk #%d (seq=%d): 内容长度=%d, 图片数=%d, 范围=[%d-%d]",
+		logger.Infof(ctx, "[DocReader] Chunk #%d (seq=%d): content length=%d, images=%d, range=[%d-%d]",
 			idx, chunkData.Seq, len(chunkData.Content), len(chunkData.Images), chunkData.Start, chunkData.End)
-		logger.Debugf(ctx, "[DocReader] Chunk #%d 内容预览: %s", idx, contentPreview)
+		logger.Debugf(ctx, "[DocReader] Chunk #%d content preview: %s", idx, contentPreview)
 
-		// 打印图片详细信息
+		// In chi tiết hình ảnh
 		for imgIdx, img := range chunkData.Images {
-			logger.Infof(ctx, "[DocReader]   图片 #%d: URL=%s", imgIdx, img.URL)
-			logger.Infof(ctx, "[DocReader]   图片 #%d: OriginalURL=%s", imgIdx, img.OriginalURL)
+			logger.Infof(ctx, "[DocReader]   image #%d: URL=%s", imgIdx, img.URL)
+			logger.Infof(ctx, "[DocReader]   image #%d: OriginalURL=%s", imgIdx, img.OriginalURL)
 			if img.Caption != "" {
 				captionPreview := img.Caption
 				if len(captionPreview) > 100 {
 					captionPreview = captionPreview[:100] + "..."
 				}
-				logger.Infof(ctx, "[DocReader]   图片 #%d: Caption=%s", imgIdx, captionPreview)
+				logger.Infof(ctx, "[DocReader]   image #%d: Caption=%s", imgIdx, captionPreview)
 			}
 			if img.OCRText != "" {
 				ocrPreview := img.OCRText
 				if len(ocrPreview) > 100 {
 					ocrPreview = ocrPreview[:100] + "..."
 				}
-				logger.Infof(ctx, "[DocReader]   图片 #%d: OCRText=%s", imgIdx, ocrPreview)
+				logger.Infof(ctx, "[DocReader]   image #%d: OCRText=%s", imgIdx, ocrPreview)
 			}
-			logger.Infof(ctx, "[DocReader]   图片 #%d: 位置=[%d-%d]", imgIdx, img.Start, img.End)
+			logger.Infof(ctx, "[DocReader]   image #%d: position=[%d-%d]", imgIdx, img.Start, img.End)
 		}
 	}
-	logger.Infof(ctx, "[DocReader] ========== 解析结果概览结束 ==========")
+	logger.Infof(ctx, "[DocReader] ========== end of parse result overview ==========")
 
 	// Create chunk objects from proto chunks
 	maxSeq := 0
 
-	// 统计图片相关的子Chunk数量，用于扩展insertChunks的容量
+	// Đếm số chunk con liên quan hình ảnh để mở rộng dung lượng insertChunks
 	imageChunkCount := 0
 	for _, chunkData := range chunks {
 		if len(chunkData.Images) > 0 {
-			// 为每个图片的OCR和Caption分别Create 一个Chunk
+			// Mỗi hình ảnh tạo một chunk cho OCR và một chunk cho Caption
 			imageChunkCount += len(chunkData.Images) * 2
 		}
 		if int(chunkData.Seq) > maxSeq {
@@ -454,7 +454,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		logger.Infof(ctx, "Created %d parent chunks for parent-child strategy", len(parentDBChunks))
 	}
 
-	// 重新分配容量，考虑图片相关的Chunk + parent chunks
+	// Cấp lại dung lượng, tính cả chunk hình ảnh + parent chunks
 	parentCount := len(options.ParentChunks)
 	insertChunks := make([]*types.Chunk, 0, len(chunks)+imageChunkCount+parentCount)
 	// Add parent chunks first (they go into DB but NOT into the vector index)
@@ -467,7 +467,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			continue
 		}
 
-		// Create 主文本Chunk
+		// Tạo chunk văn bản chính
 		textChunk := &types.Chunk{
 			ID:              uuid.New().String(),
 			TenantID:        knowledge.TenantID,
@@ -516,7 +516,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
-	// Settings 文本Chunk之间的前后关系 (skip if parent-child, children don't need prev/next links)
+	// Thiết lập quan hệ trước/sau giữa các chunk văn bản (skip if parent-child, children don't need prev/next links)
 	if !hasParentChild {
 		for i, chunk := range textChunks {
 			if i > 0 {
@@ -612,7 +612,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			// Check if there's enough storage quota available
 			if tenantInfo.StorageUsed+totalStorageSize > tenantInfo.StorageQuota {
 				knowledge.ParseStatus = types.ParseStatusFailed
-				knowledge.ErrorMessage = "存储空间不足"
+				knowledge.ErrorMessage = "không đủ dung lượng lưu trữ"
 				knowledge.UpdatedAt = time.Now()
 				s.repo.UpdateKnowledge(ctx, knowledge)
 				return
@@ -2647,7 +2647,7 @@ func (s *knowledgeService) ReparseKnowledge(
 		meta, metaErr := existing.ManualMetadata()
 		if metaErr != nil || meta == nil {
 			logger.Errorf(ctx, "Failed to get manual metadata for reparse: %v", metaErr)
-			return nil, werrors.NewBadRequestError("无法获取手工知识内容")
+			return nil, werrors.NewBadRequestError("không lấy được nội dung tài liệu nhập tay")
 		}
 
 		resetKnowledgeForReparse(existing, kb)
@@ -2914,9 +2914,9 @@ func (s *knowledgeService) CancelKnowledgeParse(
 		s.dequeueKnowledgeTasks(ctx, knowledgeID)
 		return existing, nil
 	case types.ParseStatusCompleted, types.ParseStatusFailed:
-		return nil, werrors.NewBadRequestError("解析已结束，无法取消")
+		return nil, werrors.NewBadRequestError("phân tích tài liệu đã kết thúc, không thể hủy")
 	case types.ParseStatusDeleting:
-		return nil, werrors.NewBadRequestError("知识正在删除中，无法取消解析")
+		return nil, werrors.NewBadRequestError("tài liệu đang được xóa, không thể hủy phân tích")
 	case types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing:
 		// Cancellable. `finalizing` is the post-process fan-out window
 		// where graph-extract / summary / question subtasks are still
@@ -2935,7 +2935,7 @@ func (s *knowledgeService) CancelKnowledgeParse(
 	now := time.Now()
 	if err := s.repo.UpdateKnowledgeColumns(ctx, existing.ID, map[string]interface{}{
 		"parse_status":           types.ParseStatusCancelled,
-		"error_message":          "用户已取消解析",
+		"error_message":          "người dùng đã hủy phân tích",
 		"pending_subtasks_count": 0,
 		"updated_at":             now,
 	}); err != nil {
@@ -2943,12 +2943,12 @@ func (s *knowledgeService) CancelKnowledgeParse(
 		return nil, err
 	}
 	existing.ParseStatus = types.ParseStatusCancelled
-	existing.ErrorMessage = "用户已取消解析"
+	existing.ErrorMessage = "người dùng đã hủy phân tích"
 	existing.PendingSubtasksCount = 0
 	existing.UpdatedAt = now
 	logger.Infof(ctx, "Knowledge %s marked as cancelled by user", knowledgeID)
 
-	// Close the active attempt span tree so the UI stops showing "进行中"
+	// Close the active attempt span tree so the UI stops showing "đang xử lý"
 	// for the cancelled run. AbortAttempt cascade-cancels every still-
 	// running descendant (multimodal per-image, postprocess subtasks,
 	// graph chunks) BEFORE closing the root, otherwise the trace
@@ -2958,7 +2958,7 @@ func (s *knowledgeService) CancelKnowledgeParse(
 	// attempt no-ops.
 	if attempt := s.tracker().LatestAttempt(ctx, knowledgeID); attempt > 0 {
 		s.tracker().AbortAttempt(ctx, knowledgeID, attempt,
-			"USER_CANCELLED", "用户已取消解析", "用户已取消解析")
+			"USER_CANCELLED", "người dùng đã hủy phân tích", "người dùng đã hủy phân tích")
 	}
 
 	// Best-effort dequeue. Failures here don't block the cancel — the
@@ -3383,7 +3383,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		ctx = context.WithValue(ctx, types.LanguageContextKey, payload.Language)
 	}
 
-	// 获取任务重试信息，用于判断是否是最后一次重试
+	// Lấy thông tin retry của task để biết có phải lần thử cuối không
 	retryCount, _ := asynq.GetRetryCount(ctx)
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 	isLastRetry := retryCount >= maxRetry
@@ -3398,7 +3398,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	logger.Infof(ctx, "Processing document task: knowledge_id=%s, file_path=%s, retry=%d/%d",
 		payload.KnowledgeID, payload.FilePath, retryCount, maxRetry)
 
-	// 幂等性检查：获取knowledge记录
+	// Kiểm tra idempotent: lấy bản ghi knowledge
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get knowledge: %v", err)
@@ -3416,7 +3416,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return err
 	}
 
-	// 检查是否正在Delete  / 已被用户取消 - 如果是则直接退出
+	// Kiểm tra đang bị xóa / đã bị người dùng hủy - nếu vậy thoát ngay
 	if knowledge.ParseStatus == types.ParseStatusDeleting {
 		logger.Infof(ctx, "Knowledge is being deleted, aborting processing: %s", payload.KnowledgeID)
 		return nil
@@ -3426,32 +3426,32 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
-	// 检查任务状态 - 幂等性处理
+	// Kiểm tra trạng thái task - xử lý idempotent
 	if knowledge.ParseStatus == types.ParseStatusCompleted {
 		logger.Infof(ctx, "Document already completed, skipping: %s", payload.KnowledgeID)
-		return nil // 幂等：已完成的任务直接返回
+		return nil // idempotent: task đã hoàn thành thì trả về ngay
 	}
 
 	if knowledge.ParseStatus == types.ParseStatusFailed {
-		// 检查是否可恢复（例如：超时、临时错误等）
-		// 对于不可恢复的错误，直接返回
+		// Kiểm tra có khôi phục được không (ví dụ: timeout, lỗi tạm thời...)
+		// Lỗi không khôi phục được thì trả về ngay
 		logger.Warnf(
 			ctx,
 			"Document processing previously failed: %s, error: %s",
 			payload.KnowledgeID,
 			knowledge.ErrorMessage,
 		)
-		// 这里可以根据错误类型判断是否可恢复，暂时允许重试
+		// Có thể phân loại lỗi để quyết định, tạm thời cho phép thử lại
 	}
 
-	// 检查是否有部分处理（有chunks但状态不是completed）
+	// Kiểm tra xử lý dở (có chunks nhưng trạng thái chưa completed)
 	if knowledge.ParseStatus != "completed" && knowledge.ParseStatus != "pending" &&
 		knowledge.ParseStatus != "processing" {
-		// 状态异常，记录日志但继续处理
+		// Trạng thái bất thường, ghi log nhưng vẫn tiếp tục
 		logger.Warnf(ctx, "Unexpected parse status: %s for knowledge: %s", knowledge.ParseStatus, payload.KnowledgeID)
 	}
 
-	// 获取Knowledge Base信息
+	// Lấy thông tin kho tri thức
 	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KnowledgeBaseID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get knowledge base: %v", err)
@@ -3518,7 +3518,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	}
 	ctx = withAttempt(ctx, attempt)
 
-	// 检查多模态Configuration （仅对文件导入）
+	// Kiểm tra cấu hình đa phương thức (chỉ với nhập từ tệp)
 	if payload.FilePath != "" && !payload.EnableMultimodel && IsImageType(payload.FileType) {
 		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 			WithField("error", ErrImageNotParse).Errorf("processDocument image without enable multimodel")
@@ -3529,23 +3529,23 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
-	// 检查音频ASRConfiguration （仅对文件导入）
+	// Kiểm tra cấu hình ASR âm thanh (chỉ với nhập từ tệp)
 	if payload.FilePath != "" && IsAudioType(payload.FileType) && !eff.ASRConfig.IsASREnabled() {
 		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 			Errorf("processDocument audio without ASR model configured")
 		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = "上传音频文件需要设置ASR语音识别模型"
+		knowledge.ErrorMessage = "tải lên tệp âm thanh cần cấu hình mô hình nhận dạng giọng nói ASR"
 		knowledge.UpdatedAt = time.Now()
 		s.repo.UpdateKnowledge(ctx, knowledge)
 		return nil
 	}
 
-	// 视频文件不再支持入库解析
+	// Tệp video không còn được hỗ trợ phân tích nhập kho
 	if payload.FilePath != "" && IsVideoType(payload.FileType) {
 		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 			Errorf("processDocument video not supported")
 		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = "暂不支持视频文件"
+		knowledge.ErrorMessage = "chưa hỗ trợ tệp video"
 		knowledge.UpdatedAt = time.Now()
 		s.repo.UpdateKnowledge(ctx, knowledge)
 		return nil
@@ -3556,7 +3556,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	var chunks []types.ParsedChunk
 
 	if payload.FileURL != "" {
-		// file_url import: SSRF re-check (防 DNS 重绑定), download, persist, then delegate to convert()
+		// file_url import: SSRF re-check (chống DNS rebinding), download, persist, then delegate to convert()
 		if err := secutils.ValidateURLForSSRF(payload.FileURL); err != nil {
 			logger.Errorf(ctx, "File URL rejected for SSRF protection in ProcessDocument: %s, err: %v", payload.FileURL, err)
 			knowledge.ParseStatus = "failed"

@@ -31,16 +31,16 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 	kbID string, payload *types.FAQBatchUpsertPayload,
 ) (string, error) {
 	if payload == nil || len(payload.Entries) == 0 {
-		return "", werrors.NewBadRequestError("FAQ 条目不能为空")
+		return "", werrors.NewBadRequestError("danh sách mục FAQ không được để trống")
 	}
 	if payload.Mode == "" {
 		payload.Mode = types.FAQBatchModeAppend
 	}
 	if payload.Mode != types.FAQBatchModeAppend && payload.Mode != types.FAQBatchModeReplace {
-		return "", werrors.NewBadRequestError("模式仅支持 append 或 replace")
+		return "", werrors.NewBadRequestError("chế độ chỉ hỗ trợ append hoặc replace")
 	}
 
-	// 验证Knowledge Base是否存在且有效
+	// Kiểm tra kho tri thức tồn tại và hợp lệ
 	kb, ctx, err := s.writableFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
 		return "", err
@@ -51,48 +51,48 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// 使用传入的TaskID，如果没传则生成增强的TaskID。
-	// 客户端传入的 task_id 会进文件名和 Redis key，必须是无路径分隔符的标识符。
+	// Dùng TaskID truyền vào, không có thì sinh TaskID mới.
+	// task_id do client gửi sẽ vào tên tệp và Redis key nên phải là định danh không chứa dấu phân cách đường dẫn.
 	taskID := strings.TrimSpace(payload.TaskID)
 	if taskID == "" {
 		taskID = secutils.GenerateTaskID("faq_import", tenantID, kbID)
 	} else if err := secutils.ValidateTaskID(taskID); err != nil {
-		return "", werrors.NewBadRequestError("task_id 格式不合法")
+		return "", werrors.NewBadRequestError("định dạng task_id không hợp lệ")
 	}
 
 	var knowledgeID string
 
-	// 检查是否有正在进行的导入任务（通过Redis）
+	// Kiểm tra có tác vụ nhập đang chạy không (qua Redis)
 	runningTaskID, err := s.getRunningFAQImportTaskID(ctx, kbID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to check running import task: %v", err)
-		// 检查失败不影响导入，继续执行
+		// Kiểm tra thất bại không ảnh hưởng nhập, tiếp tục
 	} else if runningTaskID != "" {
 		logger.Warnf(ctx, "Import task already running for KB %s: %s", kbID, runningTaskID)
-		return "", werrors.NewBadRequestError(fmt.Sprintf("该知识库已有导入任务正在进行中（任务ID: %s），请等待完成后再试", runningTaskID))
+		return "", werrors.NewBadRequestError(fmt.Sprintf("kho tri thức này đang có tác vụ nhập chạy (ID tác vụ: %s), vui lòng chờ hoàn thành rồi thử lại", runningTaskID))
 	}
 
-	// 确保 FAQ knowledge 存在
+	// Bảo đảm knowledge FAQ tồn tại
 	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
 	if err != nil {
 		return "", fmt.Errorf("failed to ensure FAQ knowledge: %w", err)
 	}
 	knowledgeID = faqKnowledge.ID
 
-	// 记录任务入队时间
+	// Ghi thời điểm tác vụ vào hàng đợi
 	enqueuedAt := time.Now().Unix()
 	instanceID := uuid.NewString()
 	runningInfoSet := false
 	enqueueSucceeded := false
 
-	// Settings  KB 的运行中任务信息
+	// Ghi thông tin tác vụ đang chạy của KB
 	if err := s.setRunningFAQImportInfo(ctx, kbID, &runningFAQImportInfo{
 		TaskID:     taskID,
 		EnqueuedAt: enqueuedAt,
 		InstanceID: instanceID,
 	}); err != nil {
 		logger.Errorf(ctx, "Failed to set running FAQ import task info: %v", err)
-		// 不影响任务执行，继续
+		// Không ảnh hưởng thực thi tác vụ, tiếp tục
 	} else {
 		runningInfoSet = true
 	}
@@ -105,7 +105,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		}
 	}()
 
-	// Initialization 导入任务状态到Redis
+	// Khởi tạo trạng thái tác vụ nhập trong Redis
 	progress := &types.FAQImportProgress{
 		TaskID:        taskID,
 		KBID:          kbID,
@@ -117,7 +117,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		SuccessCount:  0,
 		FailedCount:   0,
 		FailedEntries: make([]types.FAQFailedEntry, 0),
-		Message:       "任务已创建，等待处理",
+		Message:       "Đã tạo tác vụ, đang chờ xử lý",
 		CreatedAt:     time.Now().Unix(),
 		UpdatedAt:     time.Now().Unix(),
 		DryRun:        payload.DryRun,
@@ -133,7 +133,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 	// Enqueue FAQ import task to Asynq
 	logger.Info(ctx, "Enqueuing FAQ import task to Asynq")
 
-	// 构建任务 payload
+	// Dựng payload tác vụ
 	taskPayload := types.FAQImportPayload{
 		TenantID:    tenantID,
 		TaskID:      taskID,
@@ -146,7 +146,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		Initiator:   types.TaskInitiatorFromContext(ctx),
 	}
 
-	// 阈值：超过 200 条或序列化后超过 50KB 时使用对象存储
+	// Ngưỡng: quá 200 mục hoặc quá 50KB sau serialize thì dùng object storage
 	const (
 		entryCountThreshold  = 200
 		payloadSizeThreshold = 50 * 1024 // 50KB
@@ -154,7 +154,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 	entryCount := len(payload.Entries)
 	if entryCount > entryCountThreshold {
-		// 数据量较大，上传到对象存储
+		// Dữ liệu lớn, tải lên object storage
 		entriesData, err := json.Marshal(payload.Entries)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to marshal FAQ entries: %v", err)
@@ -163,7 +163,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 		logger.Infof(ctx, "FAQ entries size: %d bytes, uploading to object storage", len(entriesData))
 
-		// 上传到私有桶（主桶），任务处理完成后清理
+		// Tải lên bucket riêng (bucket chính), dọn sau khi tác vụ xong
 		fileName, err := faqImportEntriesFileName(taskID, enqueuedAt)
 		if err != nil {
 			return "", fmt.Errorf("invalid task id for object name: %w", err)
@@ -178,7 +178,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		taskPayload.EntriesURL = entriesURL
 		taskPayload.EntryCount = entryCount
 	} else {
-		// 数据量较小，直接存储在 payload 中
+		// Dữ liệu nhỏ, lưu thẳng trong payload
 		taskPayload.Entries = payload.Entries
 	}
 
@@ -189,9 +189,9 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		return "", fmt.Errorf("failed to marshal task payload: %w", err)
 	}
 
-	// 再次检查 payload 大小
+	// Kiểm tra lại kích thước payload
 	if len(payloadBytes) > payloadSizeThreshold && taskPayload.EntriesURL == "" {
-		// payload 太大但还没上传，现在上传
+		// payload quá lớn nhưng chưa tải lên, tải lên ngay
 		entriesData, _ := json.Marshal(payload.Entries)
 		fileName, nameErr := faqImportEntriesFileName(taskID, enqueuedAt)
 		if nameErr != nil {
@@ -215,10 +215,10 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 	maxRetry := 5
 	if payload.DryRun {
-		maxRetry = 3 // dry run 重试次数少一些
+		maxRetry = 3 // dry run thử lại ít hơn
 	}
 
-	// 使用 taskID:instanceID 作为 asynq 的唯一任务标识
+	// Dùng taskID:instanceID làm định danh tác vụ duy nhất của asynq
 	asynqTaskID := fmt.Sprintf("%s:%s", taskID, instanceID)
 
 	task := asynq.NewTask(
@@ -253,22 +253,22 @@ func faqImportEntriesFileName(taskID string, enqueuedAt int64) (string, error) {
 	return secutils.SafeFileName(fmt.Sprintf("faq_import_entries_%s_%d.json", taskID, enqueuedAt))
 }
 
-// generateFailedEntriesCSV 生成失败条目的 CSV 文件并上传
+// generateFailedEntriesCSV sinh tệp CSV các mục thất bại và tải lên
 func (s *knowledgeService) generateFailedEntriesCSV(ctx context.Context,
 	tenantID uint64, taskID string, failedEntries []types.FAQFailedEntry,
 ) (string, error) {
-	// 生成 CSV 内容
+	// Sinh nội dung CSV
 	var buf strings.Builder
 
-	// 写入 BOM 以支持 Excel 正确识别 UTF-8
+	// Ghi BOM để Excel nhận đúng UTF-8
 	buf.WriteString("\xEF\xBB\xBF")
 
-	// 写入表头
-	buf.WriteString("错误原因,分类(必填),问题(必填),相似问题(选填-多个用##分隔),反例问题(选填-多个用##分隔),机器人回答(必填-多个用##分隔),是否全部回复(选填-默认FALSE),是否停用(选填-默认FALSE)\n")
+	// Ghi dòng tiêu đề
+	buf.WriteString("Lý do lỗi,Phân loại(bắt buộc),Câu hỏi(bắt buộc),Câu hỏi tương tự(tùy chọn-nhiều giá trị cách nhau bằng ##),Câu hỏi phản ví dụ(tùy chọn-nhiều giá trị cách nhau bằng ##),Câu trả lời(bắt buộc-nhiều giá trị cách nhau bằng ##),Trả lời tất cả(tùy chọn-mặc định FALSE),Ngừng dùng(tùy chọn-mặc định FALSE)\n")
 
-	// 写入数据行
+	// Ghi các dòng dữ liệu
 	for _, entry := range failedEntries {
-		// CSV 转义：如果内容包含逗号、引号或换行，需要用引号包裹并转义内部引号
+		// Escape CSV: nội dung có dấu phẩy, nháy kép hoặc xuống dòng thì bọc trong nháy kép và nhân đôi nháy bên trong
 		reason := csvEscape(entry.Reason)
 		tagName := csvEscape(entry.TagName)
 		standardQ := csvEscape(entry.StandardQuestion)
@@ -297,7 +297,7 @@ func (s *knowledgeService) generateFailedEntriesCSV(ctx context.Context,
 			reason, tagName, standardQ, similarQs, negativeQs, answers, answerAll, isDisabled))
 	}
 
-	// 上传 CSV 文件到临时存储（会自动过期）
+	// Tải tệp CSV lên kho tạm (tự hết hạn)
 	fileName, err := secutils.SafeFileName(fmt.Sprintf("faq_dryrun_failed_%s.csv", taskID))
 	if err != nil {
 		return "", fmt.Errorf("invalid task id for object name: %w", err)
@@ -307,7 +307,7 @@ func (s *knowledgeService) generateFailedEntriesCSV(ctx context.Context,
 		return "", fmt.Errorf("failed to save CSV file: %w", err)
 	}
 
-	// 获取下载 URL
+	// Lấy URL tải về
 	fileURL, err := s.fileSvc.GetFileURL(ctx, filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get file URL: %w", err)
@@ -317,33 +317,33 @@ func (s *knowledgeService) generateFailedEntriesCSV(ctx context.Context,
 	return fileURL, nil
 }
 
-// csvEscape 转义 CSV 字段
+// csvEscape escape một trường CSV
 func csvEscape(s string) string {
 	if strings.ContainsAny(s, ",\"\n\r") {
-		// 将内部引号替换为两个引号，并用引号包裹整个字段
+		// Nhân đôi nháy kép bên trong và bọc cả trường trong nháy kép
 		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
 	}
 	return s
 }
 
-// saveFAQImportResultToDatabase 保存FAQ导入结果统计到数据库
+// saveFAQImportResultToDatabase lưu thống kê kết quả nhập FAQ vào cơ sở dữ liệu
 func (s *knowledgeService) saveFAQImportResultToDatabase(ctx context.Context,
 	payload *types.FAQImportPayload, progress *types.FAQImportProgress, originalTotalEntries int,
 ) error {
-	// 获取FAQKnowledge Base实例
+	// Lấy kho tri thức FAQ
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, payload.KnowledgeID)
 	if err != nil {
 		return fmt.Errorf("failed to get FAQ knowledge: %w", err)
 	}
 
-	// 计算跳过的条目数（总数 - 完全成功 - 部分失败 - 完全失败）
+	// Tính số mục bỏ qua (tổng - thành công hoàn toàn - thất bại một phần - thất bại hoàn toàn)
 	skippedCount := originalTotalEntries - progress.SuccessCount - progress.PartialFailedCount - progress.FailedCount
 	if skippedCount < 0 {
 		skippedCount = 0
 	}
 
-	// Create 导入结果统计
+	// Tạo thống kê kết quả nhập
 	importResult := &types.FAQImportResult{
 		TotalEntries:       originalTotalEntries,
 		SuccessCount:       progress.SuccessCount,
@@ -355,21 +355,21 @@ func (s *knowledgeService) saveFAQImportResultToDatabase(ctx context.Context,
 		ImportMode:         payload.Mode,
 		ImportedAt:         time.Now(),
 		TaskID:             payload.TaskID,
-		ProcessingTime:     time.Now().Unix() - progress.CreatedAt, // 处理耗时（秒）
-		DisplayStatus:      "open",                                 // 新导入的结果默认显示
+		ProcessingTime:     time.Now().Unix() - progress.CreatedAt, // thời gian xử lý (giây)
+		DisplayStatus:      "open",                                 // kết quả mới nhập mặc định hiển thị
 	}
 
-	// 如果有失败/部分失败条目 CSV 下载 URL，则写入结果（FailedEntries 包含完全失败与部分失败）
+	// Có URL tải CSV mục thất bại/thất bại một phần thì ghi vào kết quả (FailedEntries gồm cả hai loại)
 	if progress.FailedEntriesURL != "" {
 		importResult.FailedEntriesURL = progress.FailedEntriesURL
 	}
 
-	// Settings 导入结果到Knowledge的metadata中
+	// Ghi kết quả nhập vào metadata của knowledge
 	if err := knowledge.SetLastFAQImportResult(importResult); err != nil {
 		return fmt.Errorf("failed to set FAQ import result: %w", err)
 	}
 
-	// Update 数据库
+	// Cập nhật cơ sở dữ liệu
 	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
 		return fmt.Errorf("failed to update knowledge with import result: %w", err)
 	}
@@ -380,7 +380,7 @@ func (s *knowledgeService) saveFAQImportResultToDatabase(ctx context.Context,
 	return nil
 }
 
-// buildFAQFailedEntry 构建 FAQFailedEntry
+// buildFAQFailedEntry dựng FAQFailedEntry
 func buildFAQFailedEntry(idx int, reason string, entry *types.FAQEntryPayload) types.FAQFailedEntry {
 	answerAll := false
 	if entry.AnswerStrategy != nil && *entry.AnswerStrategy == types.AnswerStrategyAll {
@@ -415,18 +415,18 @@ func buildFAQPartialFailedEntry(idx int, entry *types.FAQEntryPayload,
 		isDisabled = true
 	}
 
-	// 构建失败原因描述：汇总信息 + 详细信息
+	// Dựng mô tả lý do thất bại: tóm tắt + chi tiết
 	var summary []string
 	if len(removedSimilarQuestions) > 0 {
-		summary = append(summary, fmt.Sprintf("%d条相似问被移除", len(removedSimilarQuestions)))
+		summary = append(summary, fmt.Sprintf("%d câu hỏi tương tự bị gỡ", len(removedSimilarQuestions)))
 	}
 	if len(removedNegativeQuestions) > 0 {
-		summary = append(summary, fmt.Sprintf("%d条反例被移除", len(removedNegativeQuestions)))
+		summary = append(summary, fmt.Sprintf("%d phản ví dụ bị gỡ", len(removedNegativeQuestions)))
 	}
 
-	// 完整的 reason：汇总 | 相似问Details  | 反例Details
+	// reason đầy đủ: tóm tắt | chi tiết câu hỏi tương tự | chi tiết phản ví dụ
 	var reasonParts []string
-	reasonParts = append(reasonParts, "部分成功："+strings.Join(summary, "，"))
+	reasonParts = append(reasonParts, "Thành công một phần: "+strings.Join(summary, ", "))
 	if len(removedSimilarQuestions) > 0 {
 		reasonParts = append(reasonParts, strings.Join(removedSimilarQuestions, "; "))
 	}
@@ -450,16 +450,16 @@ func buildFAQPartialFailedEntry(idx int, entry *types.FAQEntryPayload,
 	}
 }
 
-// executeFAQDryRunValidation 执行 FAQ dry run 验证，返回通过验证的条目索引
+// executeFAQDryRunValidation chạy kiểm tra dry run FAQ, trả về chỉ số các mục đạt
 func (s *knowledgeService) executeFAQDryRunValidation(ctx context.Context,
 	payload *types.FAQImportPayload, progress *types.FAQImportProgress,
 ) []int {
 	entries := payload.Entries
 
-	// 用于记录已通过基本验证和重复检查的条目索引，后续进行安全检查
+	// Ghi chỉ số các mục đã qua kiểm tra cơ bản và kiểm tra trùng để kiểm tra an toàn tiếp
 	validEntryIndices := make([]int, 0, len(entries))
 
-	// 根据模式选择不同的验证逻辑
+	// Chọn logic kiểm tra theo chế độ
 	if payload.Mode == types.FAQBatchModeAppend {
 		validEntryIndices = s.validateEntriesForAppendModeWithProgress(ctx, payload.TenantID, payload.KBID, entries, progress)
 	} else {
@@ -469,37 +469,37 @@ func (s *knowledgeService) executeFAQDryRunValidation(ctx context.Context,
 	return validEntryIndices
 }
 
-// validateEntriesForAppendModeWithProgress 验证 Append 模式下的条目（带进度Update ）
-// 注意：验证阶段不Update  Processed，只有实际导入时才Update
-// validateEntriesForAppendModeWithProgress 验证 Append 模式下的条目（带进度Update ）
-// 注意：验证阶段不Update  Processed，只有实际导入时才Update
+// validateEntriesForAppendModeWithProgress kiểm tra các mục ở chế độ Append (có cập nhật tiến độ)
+// Lưu ý: giai đoạn kiểm tra không cập nhật Processed, chỉ cập nhật khi nhập thật
+// validateEntriesForAppendModeWithProgress kiểm tra các mục ở chế độ Append (có cập nhật tiến độ)
+// Lưu ý: giai đoạn kiểm tra không cập nhật Processed, chỉ cập nhật khi nhập thật
 //
-// 分四阶段校验：
-// 阶段一（预校验）：
-//  1. 标准问 - 仅文件内部去重；如已有KB标准问则标记为合并候选
-//  2. 相似问 - 对比文件+Knowledge Base（合并候选排除自身已有问题） → 单条移除冲突相似问
-//  3. 反例   - 仅对比当前QA自身标准问+相似问 → 单条移除冲突反例
+// Kiểm tra theo bốn giai đoạn:
+// Giai đoạn một (tiền kiểm):
+//  1. Câu hỏi chuẩn - chỉ khử trùng trong tệp; nếu KB đã có câu hỏi chuẩn thì đánh dấu ứng viên gộp
+//  2. Câu hỏi tương tự - so với tệp + kho tri thức (ứng viên gộp loại trừ câu hỏi của chính nó) → gỡ từng câu hỏi tương tự xung đột
+//  3. Phản ví dụ - chỉ so với câu hỏi chuẩn + câu hỏi tương tự của chính QA → gỡ từng phản ví dụ xung đột
 //
-// 阶段二（后校验，仅合并候选）：
-//  4. 对合并后的完整数据重跑反例校验 → 冲突则整条回退到合并前状态
+// Giai đoạn hai (hậu kiểm, chỉ ứng viên gộp):
+//  4. Chạy lại kiểm tra phản ví dụ trên dữ liệu sau gộp → xung đột thì cả mục quay về trạng thái trước gộp
 func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.Context,
 	tenantID uint64, kbID string, entries []types.FAQEntryPayload, progress *types.FAQImportProgress,
 ) []int {
 	totalEntries := len(entries)
 
-	// Query Knowledge Base中已有的所有 FAQ chunks 的 metadata
+	// Truy vấn metadata của mọi chunk FAQ đã có trong kho tri thức
 	existingChunks, err := s.chunkRepo.ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx, tenantID, kbID)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to list existing FAQ chunks for dry run: %v", err)
 	}
 
-	// 构建已存在的标准问 → chunk 映射（用于合并候选识别）
+	// Dựng ánh xạ câu hỏi chuẩn đã có → chunk (để nhận diện ứng viên gộp)
 	existingStdQToChunk := make(map[string]*types.Chunk)
-	// 构建已存在的所有问题 → 所属 chunkID 映射（用于相似问冲突检测）
+	// Dựng ánh xạ mọi câu hỏi đã có → chunkID sở hữu (để phát hiện xung đột câu hỏi tương tự)
 	existingQuestionToChunkID := make(map[string]string)
-	// 构建每个 chunk 拥有的问题集合（用于合并时排除自身）
+	// Dựng tập câu hỏi của từng chunk (để loại trừ chính nó khi gộp)
 	existingChunkQuestions := make(map[string]map[string]bool)
-	// 构建 chunkID → 标准问 映射（用于冲突失败原因展示）
+	// Dựng ánh xạ chunkID → câu hỏi chuẩn (để hiển thị lý do xung đột)
 	existingChunkIDToStdQ := make(map[string]string)
 
 	for _, chunk := range existingChunks {
@@ -523,11 +523,11 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		existingChunkIDToStdQ[chunk.ID] = meta.StandardQuestion
 	}
 
-	// 合并候选跟踪：entry index → 目标已有 chunk
+	// Theo dõi ứng viên gộp: entry index → chunk đích đã có
 	mergeChunkMap := make(map[int]*types.Chunk)
 
-	// ==================== 第一次迭代：基本格式验证 + 文件内标准问去重 + 合并候选识别 ====================
-	batchStandardQuestions := make(map[string]int) // value 为首次出现的索引
+	// ==================== Vòng 1: kiểm tra định dạng cơ bản + khử trùng câu hỏi chuẩn trong tệp + nhận diện ứng viên gộp ====================
+	batchStandardQuestions := make(map[string]int) // value là chỉ số xuất hiện đầu tiên
 	validIndicesAfterStdQ := make([]int, 0, totalEntries)
 
 	for i, entry := range entries {
@@ -541,27 +541,27 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
 
-		// 文件内标准问去重
+		// Khử trùng câu hỏi chuẩn trong tệp
 		if firstIdx, exists := batchStandardQuestions[standardQ]; exists {
 			progress.FailedCount++
-			fe := buildFAQFailedEntry(i, fmt.Sprintf("标准问冲突：与批次内第 %d 条标准问重复", firstIdx+1), &entry)
+			fe := buildFAQFailedEntry(i, fmt.Sprintf("Xung đột câu hỏi chuẩn: trùng với câu hỏi chuẩn ở mục %d trong lô", firstIdx+1), &entry)
 			fe.FailureType = "pre_validation"
 			progress.FailedEntries = append(progress.FailedEntries, fe)
 			continue
 		}
 
-		// 判断是否为合并候选
+		// Xác định có phải ứng viên gộp không
 		if chunk, exists := existingStdQToChunk[standardQ]; exists {
-			// 标准问在 KB 中已存在 → 标记为合并候选
+			// Câu hỏi chuẩn đã có trong KB → đánh dấu ứng viên gộp
 			mergeChunkMap[i] = chunk
 			logger.Infof(ctx, "FAQ entry %d: standard question '%s' exists in KB, marking as merge candidate (chunk_id=%s)", i, standardQ, chunk.ID)
 		} else if conflictChunkID, hit := existingQuestionToChunkID[standardQ]; hit {
-			// 标准问未与任何已有标准问重复，但撞上了 KB 中其他条目的相似问
-			// → 前置校验失败，避免下游 calculateAppendOperations 静默丢弃导致统计失真
+			// Câu hỏi chuẩn không trùng câu hỏi chuẩn nào nhưng trùng câu hỏi tương tự của mục khác trong KB
+			// → tiền kiểm thất bại, tránh calculateAppendOperations phía sau âm thầm bỏ làm sai thống kê
 			conflictStdQ := existingChunkIDToStdQ[conflictChunkID]
 			progress.FailedCount++
 			fe := buildFAQFailedEntry(i,
-				fmt.Sprintf(`标准问冲突：与知识库中标准问"%s"的相似问"%s"重复`, conflictStdQ, standardQ),
+				fmt.Sprintf(`Xung đột câu hỏi chuẩn: trùng câu hỏi tương tự "%s" của câu hỏi chuẩn "%s" trong kho tri thức`, conflictStdQ, standardQ),
 				&entry)
 			fe.FailureType = "pre_validation"
 			progress.FailedEntries = append(progress.FailedEntries, fe)
@@ -575,7 +575,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		validIndicesAfterStdQ = append(validIndicesAfterStdQ, i)
 
 		if (i+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证标准问 %d/%d...", i+1, totalEntries)
+			progress.Message = fmt.Sprintf("Đang kiểm tra câu hỏi chuẩn %d/%d...", i+1, totalEntries)
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -583,8 +583,8 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 	}
 
-	// ==================== 第二次迭代：相似问冲突检测 ====================
-	// 构建批次内所有标准问 + 相似问的集合
+	// ==================== Vòng 2: phát hiện xung đột câu hỏi tương tự ====================
+	// Dựng tập mọi câu hỏi chuẩn + câu hỏi tương tự trong lô
 	batchAllQuestions := make(map[string]int)
 	for _, i := range validIndicesAfterStdQ {
 		standardQ := strings.TrimSpace(entries[i].StandardQuestion)
@@ -606,7 +606,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		entry := &entries[i]
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
 
-		// 合并候选：获取目标 chunk 自身的问题集合，用于排除
+		// Ứng viên gộp: lấy tập câu hỏi của chunk đích để loại trừ
 		var ownChunkQuestions map[string]bool
 		if mergeChunk, isMerge := mergeChunkMap[i]; isMerge {
 			ownChunkQuestions = existingChunkQuestions[mergeChunk.ID]
@@ -619,24 +619,24 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 			if q == "" {
 				continue
 			}
-			// 相似问不能与自己的标准问相同
+			// Câu hỏi tương tự không được trùng câu hỏi chuẩn của chính nó
 			if q == standardQ {
-				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`「相似问冲突」："%s"与本条"标准问"冲突`, q))
+				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`[Xung đột câu hỏi tương tự]: "%s" trùng câu hỏi chuẩn của mục này`, q))
 				continue
 			}
-			// 相似问校验：对比Knowledge Base已有标准问 + 相似问
+			// Kiểm tra câu hỏi tương tự: so với câu hỏi chuẩn + câu hỏi tương tự đã có trong kho tri thức
 			if _, exists := existingQuestionToChunkID[q]; exists {
-				// 合并候选：如果问题属于合并目标自身的 chunk，允许（去重合并时会处理）
+				// Ứng viên gộp: câu hỏi thuộc chunk đích thì cho phép (sẽ xử lý khi gộp khử trùng)
 				if ownChunkQuestions != nil && ownChunkQuestions[q] {
 					validSimilarQuestions = append(validSimilarQuestions, q)
 					continue
 				}
-				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`「相似问冲突」："%s"与知识库已有"标准问/相似问"冲突`, q))
+				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`[Xung đột câu hỏi tương tự]: "%s" trùng câu hỏi chuẩn/câu hỏi tương tự đã có trong kho tri thức`, q))
 				continue
 			}
-			// 相似问校验：对比批次内标准问 + 相似问
+			// Kiểm tra câu hỏi tương tự: so với câu hỏi chuẩn + câu hỏi tương tự trong lô
 			if firstIdx, exists := batchAllQuestions[q]; exists && firstIdx != i {
-				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`「相似问冲突」："%s"与第 %d 行"标准问/相似问"冲突`, q, firstIdx+1))
+				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`[Xung đột câu hỏi tương tự]: "%s" trùng câu hỏi chuẩn/câu hỏi tương tự ở dòng %d`, q, firstIdx+1))
 				continue
 			}
 			validSimilarQuestions = append(validSimilarQuestions, q)
@@ -648,7 +648,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 
 		if (idx+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证相似问 %d/%d...", idx+1, len(validIndicesAfterStdQ))
+			progress.Message = fmt.Sprintf("Đang kiểm tra câu hỏi tương tự %d/%d...", idx+1, len(validIndicesAfterStdQ))
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -656,7 +656,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 	}
 
-	// ==================== 第三次迭代：反例冲突检测（预校验，仅检查新条目自身数据） ====================
+	// ==================== Vòng 3: phát hiện xung đột phản ví dụ (tiền kiểm, chỉ dữ liệu của chính mục mới) ====================
 	for idx, i := range validIndicesAfterStdQ {
 		entry := &entries[i]
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
@@ -675,7 +675,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 				continue
 			}
 			if currentQAQuestions[q] {
-				removedNegativeQuestions = append(removedNegativeQuestions, fmt.Sprintf(`「反例冲突」："%s"与本条"标准问/相似问"冲突`, q))
+				removedNegativeQuestions = append(removedNegativeQuestions, fmt.Sprintf(`[Xung đột phản ví dụ]: "%s" trùng câu hỏi chuẩn/câu hỏi tương tự của mục này`, q))
 				continue
 			}
 			validNegativeQuestions = append(validNegativeQuestions, q)
@@ -687,7 +687,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 
 		if (idx+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证反例 %d/%d...", idx+1, len(validIndicesAfterStdQ))
+			progress.Message = fmt.Sprintf("Đang kiểm tra phản ví dụ %d/%d...", idx+1, len(validIndicesAfterStdQ))
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -695,8 +695,8 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 	}
 
-	// ==================== 第四次迭代：后校验（仅合并候选） ====================
-	// 对合并后的完整数据重跑反例校验，冲突则整条回退到合并前状态
+	// ==================== Vòng 4: hậu kiểm (chỉ ứng viên gộp) ====================
+	// Chạy lại kiểm tra phản ví dụ trên dữ liệu sau gộp, xung đột thì cả mục quay về trạng thái trước gộp
 	postValidationFailed := make(map[int]bool)
 	mergeCount := 0
 	for _, i := range validIndicesAfterStdQ {
@@ -713,18 +713,18 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 
 		entry := &entries[i]
 
-		// 计算合并后的完整数据
+		// Tính dữ liệu đầy đủ sau gộp
 		mergedSimilar := unionStrings(existingMeta.SimilarQuestions, entry.SimilarQuestions)
 		mergedNegative := unionStrings(existingMeta.NegativeQuestions, entry.NegativeQuestions)
 
-		// 构建合并后的冲突集合（标准问 + 所有合并后的相似问）
+		// Dựng tập xung đột sau gộp (câu hỏi chuẩn + mọi câu hỏi tương tự sau gộp)
 		mergedPositiveSet := make(map[string]bool)
 		mergedPositiveSet[existingMeta.StandardQuestion] = true
 		for _, q := range mergedSimilar {
 			mergedPositiveSet[q] = true
 		}
 
-		// 检查每个合并后的反例是否与合并后的标准问 / 相似问冲突
+		// Kiểm tra từng phản ví dụ sau gộp có trùng câu hỏi chuẩn / câu hỏi tương tự sau gộp không
 		var conflictingNegatives []string
 		for _, q := range mergedNegative {
 			if mergedPositiveSet[q] {
@@ -733,11 +733,11 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 
 		if len(conflictingNegatives) > 0 {
-			// 后校验失败 → 整条回退到合并前状态
+			// Hậu kiểm thất bại → cả mục quay về trạng thái trước gộp
 			postValidationFailed[i] = true
 			delete(mergeChunkMap, i)
 			progress.FailedCount++
-			reason := fmt.Sprintf("后校验失败：合并后反例「%s」与相似问冲突", strings.Join(conflictingNegatives, "、"))
+			reason := fmt.Sprintf("Hậu kiểm thất bại: phản ví dụ \"%s\" sau gộp trùng câu hỏi tương tự", strings.Join(conflictingNegatives, ", "))
 			fe := buildFAQFailedEntry(i, reason, entry)
 			fe.FailureType = "post_validation"
 			progress.FailedEntries = append(progress.FailedEntries, fe)
@@ -747,7 +747,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 	}
 
-	// 从有效索引中移除后校验失败的条目
+	// Gỡ các mục hậu kiểm thất bại khỏi danh sách chỉ số hợp lệ
 	if len(postValidationFailed) > 0 {
 		filtered := make([]int, 0, len(validIndicesAfterStdQ))
 		for _, i := range validIndicesAfterStdQ {
@@ -758,7 +758,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		validIndicesAfterStdQ = filtered
 	}
 
-	// 将部分失败信息添加到 FailedEntries
+	// Thêm thông tin thất bại một phần vào FailedEntries
 	for _, i := range validIndicesAfterStdQ {
 		removedSimilar := removedSimilarQuestionsMap[i]
 		removedNegative := removedNegativeQuestionsMap[i]
@@ -769,7 +769,7 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 		}
 	}
 
-	// 记录合并条目索引到 progress（用于执行阶段和重试）
+	// Ghi chỉ số các mục gộp vào progress (dùng cho giai đoạn thực thi và thử lại)
 	mergeIndices := make([]int, 0, mergeCount)
 	for _, i := range validIndicesAfterStdQ {
 		if _, isMerge := mergeChunkMap[i]; isMerge {
@@ -784,24 +784,24 @@ func (s *knowledgeService) validateEntriesForAppendModeWithProgress(ctx context.
 	return validIndicesAfterStdQ
 }
 
-// validateEntriesForReplaceModeWithProgress 验证 Replace 模式下的条目（带进度Update ）
-// 注意：验证阶段不Update  Processed，只有实际导入时才Update
-// 分三次迭代校验，确保前面过滤掉的数据不会被后面考虑：
-// 1. 标准问 - 对比所有标准问 → 整条QA失败「标准问冲突」
-// 2. 相似问 - 对比所有标准问+相似问 → 单条问法失败「相似问冲突」（仅移除冲突的相似问）
-// 3. 反例 - 对比当前QA下所有标准问+相似问 → 单条问法失败「反例冲突」（仅移除冲突的反例）
+// validateEntriesForReplaceModeWithProgress kiểm tra các mục ở chế độ Replace (có cập nhật tiến độ)
+// Lưu ý: giai đoạn kiểm tra không cập nhật Processed, chỉ cập nhật khi nhập thật
+// Kiểm tra qua ba vòng để dữ liệu đã bị lọc ở vòng trước không được xét ở vòng sau:
+// 1. Câu hỏi chuẩn - so với mọi câu hỏi chuẩn → cả QA thất bại [Xung đột câu hỏi chuẩn]
+// 2. Câu hỏi tương tự - so với mọi câu hỏi chuẩn + câu hỏi tương tự → từng câu thất bại [Xung đột câu hỏi tương tự] (chỉ gỡ câu xung đột)
+// 3. Phản ví dụ - so với câu hỏi chuẩn + câu hỏi tương tự của QA hiện tại → từng câu thất bại [Xung đột phản ví dụ] (chỉ gỡ phản ví dụ xung đột)
 func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context.Context,
 	entries []types.FAQEntryPayload, progress *types.FAQImportProgress,
 ) []int {
 	totalEntries := len(entries)
 
-	// ==================== 第一次迭代：基本格式验证 + 标准问冲突检测 ====================
-	// 标准问冲突会导致整条QA失败
-	batchStandardQuestions := make(map[string]int) // value 为首次出现的索引
+	// ==================== Vòng 1: kiểm tra định dạng cơ bản + phát hiện xung đột câu hỏi chuẩn ====================
+	// Xung đột câu hỏi chuẩn làm cả QA thất bại
+	batchStandardQuestions := make(map[string]int) // value là chỉ số xuất hiện đầu tiên
 	validIndicesAfterStdQ := make([]int, 0, totalEntries)
 
 	for i, entry := range entries {
-		// 验证条目基本格式
+		// Kiểm tra định dạng cơ bản của mục
 		if err := validateFAQEntryPayloadBasic(&entry); err != nil {
 			progress.FailedCount++
 			progress.FailedEntries = append(progress.FailedEntries, buildFAQFailedEntry(i, err.Error(), &entry))
@@ -810,20 +810,20 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
 
-		// 标准问校验：对比所有标准问 → 整条QA失败「标准问冲突」
+		// Kiểm tra câu hỏi chuẩn: so với mọi câu hỏi chuẩn → cả QA thất bại [Xung đột câu hỏi chuẩn]
 		if firstIdx, exists := batchStandardQuestions[standardQ]; exists {
 			progress.FailedCount++
-			progress.FailedEntries = append(progress.FailedEntries, buildFAQFailedEntry(i, fmt.Sprintf("标准问冲突：与批次内第 %d 条标准问重复", firstIdx+1), &entry))
+			progress.FailedEntries = append(progress.FailedEntries, buildFAQFailedEntry(i, fmt.Sprintf("Xung đột câu hỏi chuẩn: trùng với câu hỏi chuẩn ở mục %d trong lô", firstIdx+1), &entry))
 			continue
 		}
 
-		// 记录标准问
+		// Ghi nhận câu hỏi chuẩn
 		batchStandardQuestions[standardQ] = i
 		validIndicesAfterStdQ = append(validIndicesAfterStdQ, i)
 
-		// 定期Update 进度消息
+		// Cập nhật thông báo tiến độ định kỳ
 		if (i+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证标准问 %d/%d...", i+1, totalEntries)
+			progress.Message = fmt.Sprintf("Đang kiểm tra câu hỏi chuẩn %d/%d...", i+1, totalEntries)
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -831,17 +831,17 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 		}
 	}
 
-	// ==================== 第二次迭代：相似问冲突检测 ====================
-	// 只处理通过第一次校验的条目，相似问冲突只移除冲突的相似问
-	// 构建所有标准问+相似问的集合（只包含通过第一次校验的条目）
-	batchAllQuestions := make(map[string]int) // value 为首次出现的索引
+	// ==================== Vòng 2: phát hiện xung đột câu hỏi tương tự ====================
+	// Chỉ xử lý các mục qua vòng 1; xung đột câu hỏi tương tự chỉ gỡ câu xung đột
+	// Dựng tập mọi câu hỏi chuẩn + câu hỏi tương tự (chỉ các mục qua vòng 1)
+	batchAllQuestions := make(map[string]int) // value là chỉ số xuất hiện đầu tiên
 	for _, i := range validIndicesAfterStdQ {
 		standardQ := strings.TrimSpace(entries[i].StandardQuestion)
 		batchAllQuestions[standardQ] = i
 		for _, q := range entries[i].SimilarQuestions {
 			q = strings.TrimSpace(q)
 			if q != "" {
-				// 只记录第一次出现的位置
+				// Chỉ ghi vị trí xuất hiện đầu tiên
 				if _, exists := batchAllQuestions[q]; !exists {
 					batchAllQuestions[q] = i
 				}
@@ -849,11 +849,11 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 		}
 	}
 
-	// 用于收集每个条目被移除的相似问和反例
-	removedSimilarQuestionsMap := make(map[int][]string)  // key 为条目索引
-	removedNegativeQuestionsMap := make(map[int][]string) // key 为条目索引
+	// Gom các câu hỏi tương tự và phản ví dụ bị gỡ của từng mục
+	removedSimilarQuestionsMap := make(map[int][]string)  // key là chỉ số mục
+	removedNegativeQuestionsMap := make(map[int][]string) // key là chỉ số mục
 
-	// 对每个通过第一次校验的条目，过滤冲突的相似问
+	// Với mỗi mục qua vòng 1, lọc câu hỏi tương tự xung đột
 	for idx, i := range validIndicesAfterStdQ {
 		entry := &entries[i]
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
@@ -865,31 +865,31 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 			if q == "" {
 				continue
 			}
-			// 相似问校验：对比所有标准问+相似问 → 单条问法失败「相似问冲突」
-			// 如果该相似问与其他条目的标准问或相似问冲突（且不是自己的标准问），则移除
+			// Kiểm tra câu hỏi tương tự: so với mọi câu hỏi chuẩn + câu hỏi tương tự → từng câu thất bại [Xung đột câu hỏi tương tự]
+			// Nếu câu hỏi tương tự trùng câu hỏi chuẩn hoặc câu hỏi tương tự của mục khác (và không phải câu hỏi chuẩn của chính nó) thì gỡ
 			if firstIdx, exists := batchAllQuestions[q]; exists && firstIdx != i {
 				logger.Infof(ctx, "FAQ entry %d: similar question '%s' conflicts with entry %d, removing", i, q, firstIdx+1)
-				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`「相似问冲突」："%s"与第 %d 行"标准问/相似问"冲突`, q, firstIdx+1))
+				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`[Xung đột câu hỏi tương tự]: "%s" trùng câu hỏi chuẩn/câu hỏi tương tự ở dòng %d`, q, firstIdx+1))
 				continue
 			}
-			// 相似问不能与自己的标准问相同
+			// Câu hỏi tương tự không được trùng câu hỏi chuẩn của chính nó
 			if q == standardQ {
 				logger.Infof(ctx, "FAQ entry %d: similar question '%s' same as standard question, removing", i, q)
-				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`「相似问冲突」："%s"与本条"标准问"冲突`, q))
+				removedSimilarQuestions = append(removedSimilarQuestions, fmt.Sprintf(`[Xung đột câu hỏi tương tự]: "%s" trùng câu hỏi chuẩn của mục này`, q))
 				continue
 			}
 			validSimilarQuestions = append(validSimilarQuestions, q)
 		}
 		entries[i].SimilarQuestions = validSimilarQuestions
 
-		// 记录被移除的相似问
+		// Ghi nhận câu hỏi tương tự bị gỡ
 		if len(removedSimilarQuestions) > 0 {
 			removedSimilarQuestionsMap[i] = removedSimilarQuestions
 		}
 
-		// 定期Update 进度消息
+		// Cập nhật thông báo tiến độ định kỳ
 		if (idx+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证相似问 %d/%d...", idx+1, len(validIndicesAfterStdQ))
+			progress.Message = fmt.Sprintf("Đang kiểm tra câu hỏi tương tự %d/%d...", idx+1, len(validIndicesAfterStdQ))
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -897,13 +897,13 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 		}
 	}
 
-	// ==================== 第三次迭代：反例冲突检测 ====================
-	// 只处理通过前两次校验的条目，反例冲突只移除冲突的反例
+	// ==================== Vòng 3: phát hiện xung đột phản ví dụ ====================
+	// Chỉ xử lý các mục qua hai vòng trước; xung đột phản ví dụ chỉ gỡ phản ví dụ xung đột
 	for idx, i := range validIndicesAfterStdQ {
 		entry := &entries[i]
 		standardQ := strings.TrimSpace(entry.StandardQuestion)
 
-		// 构建当前QA的所有问题集合（标准问+通过校验的相似问）
+		// Dựng tập mọi câu hỏi của QA hiện tại (câu hỏi chuẩn + câu hỏi tương tự đã qua kiểm tra)
 		currentQAQuestions := make(map[string]bool)
 		currentQAQuestions[standardQ] = true
 		for _, q := range entry.SimilarQuestions {
@@ -917,24 +917,24 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 			if q == "" {
 				continue
 			}
-			// 反例校验：对比当前QA下所有标准问+相似问 → 单条问法失败「反例冲突」
+			// Kiểm tra phản ví dụ: so với câu hỏi chuẩn + câu hỏi tương tự của QA hiện tại → từng câu thất bại [Xung đột phản ví dụ]
 			if currentQAQuestions[q] {
 				logger.Infof(ctx, "FAQ entry %d: negative question '%s' conflicts with current QA's questions, removing", i, q)
-				removedNegativeQuestions = append(removedNegativeQuestions, fmt.Sprintf(`「反例冲突」："%s"与本条"标准问/相似问"冲突`, q))
+				removedNegativeQuestions = append(removedNegativeQuestions, fmt.Sprintf(`[Xung đột phản ví dụ]: "%s" trùng câu hỏi chuẩn/câu hỏi tương tự của mục này`, q))
 				continue
 			}
 			validNegativeQuestions = append(validNegativeQuestions, q)
 		}
 		entries[i].NegativeQuestions = validNegativeQuestions
 
-		// 记录被移除的反例
+		// Ghi nhận phản ví dụ bị gỡ
 		if len(removedNegativeQuestions) > 0 {
 			removedNegativeQuestionsMap[i] = removedNegativeQuestions
 		}
 
-		// 定期Update 进度消息
+		// Cập nhật thông báo tiến độ định kỳ
 		if (idx+1)%100 == 0 {
-			progress.Message = fmt.Sprintf("正在验证反例 %d/%d...", idx+1, len(validIndicesAfterStdQ))
+			progress.Message = fmt.Sprintf("Đang kiểm tra phản ví dụ %d/%d...", idx+1, len(validIndicesAfterStdQ))
 			progress.UpdatedAt = time.Now().Unix()
 			if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 				logger.Warnf(ctx, "Failed to update FAQ dry run progress: %v", err)
@@ -942,7 +942,7 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 		}
 	}
 
-	// 将部分失败信息添加到 FailedEntries
+	// Thêm thông tin thất bại một phần vào FailedEntries
 	for _, i := range validIndicesAfterStdQ {
 		removedSimilar := removedSimilarQuestionsMap[i]
 		removedNegative := removedNegativeQuestionsMap[i]
@@ -956,7 +956,7 @@ func (s *knowledgeService) validateEntriesForReplaceModeWithProgress(ctx context
 	return validIndicesAfterStdQ
 }
 
-// unionStrings 合并两个字符串切片并去重（完全匹配）
+// unionStrings gộp hai slice chuỗi và khử trùng (khớp chính xác)
 func unionStrings(a, b []string) []string {
 	seen := make(map[string]bool, len(a)+len(b))
 	result := make([]string, 0, len(a)+len(b))
@@ -977,17 +977,17 @@ func unionStrings(a, b []string) []string {
 	return result
 }
 
-// validateFAQEntryPayloadBasic 验证 FAQ 条目的基本格式
+// validateFAQEntryPayloadBasic kiểm tra định dạng cơ bản của mục FAQ
 func validateFAQEntryPayloadBasic(entry *types.FAQEntryPayload) error {
 	if entry == nil {
-		return fmt.Errorf("条目不能为空")
+		return fmt.Errorf("mục không được để trống")
 	}
 	standardQ := strings.TrimSpace(entry.StandardQuestion)
 	if standardQ == "" {
-		return fmt.Errorf("标准问不能为空")
+		return fmt.Errorf("câu hỏi chuẩn không được để trống")
 	}
 	if len(entry.Answers) == 0 {
-		return fmt.Errorf("答案不能为空")
+		return fmt.Errorf("câu trả lời không được để trống")
 	}
 	hasValidAnswer := false
 	for _, a := range entry.Answers {
@@ -997,7 +997,7 @@ func validateFAQEntryPayloadBasic(entry *types.FAQEntryPayload) error {
 		}
 	}
 	if !hasValidAnswer {
-		return fmt.Errorf("答案不能全为空")
+		return fmt.Errorf("câu trả lời không được toàn bộ để trống")
 	}
 	return nil
 }
@@ -1010,14 +1010,14 @@ type faqMergeOperation struct {
 	Detail        types.FAQMergeDetail
 }
 
-// calculateAppendOperations 计算 Append 模式下的操作（支持智能合并）。
-// 如果 entry 的标准问在 KB 中已存在，则视为合并操作（相似问 / 反例并集，
-// 答案 / 策略以新条目为准）；否则视为新建。无变化（hash 一致且操作位
-// 也未变）的合并目标会被 skip 掉，避免无效写库 / 重建索引。
+// calculateAppendOperations tính các thao tác ở chế độ Append (hỗ trợ gộp thông minh).
+// Nếu câu hỏi chuẩn của entry đã có trong KB thì coi là thao tác gộp (hợp câu hỏi tương tự / phản ví dụ,
+// câu trả lời / chiến lược lấy theo mục mới); nếu không thì là tạo mới. Mục đích gộp không đổi (hash trùng và
+// cờ vận hành không đổi) sẽ bị skip để tránh ghi DB / dựng lại chỉ mục vô ích.
 //
-// 内部 master 行为，对应开源版仅 "重复 = 失败" 的简化逻辑。FAQ 导入的
-// 常见使用方式是"导出修改后重新 append"，需要这种合并语义才能正确叠加
-// 新的相似问而不丢历史数据。
+// Hành vi của master nội bộ, bản mã nguồn mở chỉ có logic đơn giản "trùng = thất bại". Cách dùng
+// phổ biến của nhập FAQ là "xuất, sửa rồi append lại", cần ngữ nghĩa gộp này mới chồng đúng
+// câu hỏi tương tự mới mà không mất dữ liệu cũ.
 func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 	tenantID uint64, kbID string, entries []types.FAQEntryPayload,
 ) (newEntries []types.FAQEntryPayload, mergeOps []faqMergeOperation, skippedCount int, err error) {
@@ -1060,7 +1060,7 @@ func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 			continue
 		}
 
-		// 检查标准问是否在 KB 中作为标准问存在 → 合并候选
+		// Kiểm tra câu hỏi chuẩn có tồn tại trong KB dưới dạng câu hỏi chuẩn không → ứng viên gộp
 		existingChunk, isMergeCandidate := existingStdQToChunk[meta.StandardQuestion]
 		if isMergeCandidate {
 			existingMeta, mErr := existingChunk.FAQMetadata()
@@ -1131,9 +1131,9 @@ func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 			}
 		}
 
-		// 走到这里说明既不是合并候选，又跟现有 KB / 当前批次的标准问 / 相似问冲突。
-		// 正常情况下这些冲突应在 executeFAQDryRunValidation 阶段就被拦截，这里
-		// 仅作为防御性兜底；用 Warn 级别打点便于排查验证层漏检。
+		// Tới đây nghĩa là không phải ứng viên gộp mà lại trùng câu hỏi chuẩn / câu hỏi tương tự của KB hoặc lô hiện tại.
+		// Bình thường các xung đột này đã bị chặn ở executeFAQDryRunValidation; ở đây chỉ là
+		// phòng thủ dự phòng; ghi log mức Warn để tiện điều tra sót ở tầng kiểm tra.
 		if existingQuestions[meta.StandardQuestion] || batchQuestions[meta.StandardQuestion] {
 			skippedCount++
 			logger.Warnf(ctx,
@@ -1153,15 +1153,15 @@ func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 	return newEntries, mergeOps, skippedCount, nil
 }
 
-// calculateReplaceOperations 计算Replace模式下需要Delete 、Create 、Update 的条目
-// 同时过滤掉同批次内标准问或相似问重复的条目
+// calculateReplaceOperations tính các mục cần xóa, tạo, cập nhật ở chế độ Replace
+// đồng thời lọc các mục có câu hỏi chuẩn hoặc câu hỏi tương tự trùng trong cùng lô
 func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 	tenantID uint64, knowledgeID string, newEntries []types.FAQEntryPayload,
 ) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
-	// 获取 kbID 用于解析 tag
+	// Lấy kbID để phân giải thẻ
 	var kbID string
 	if len(newEntries) > 0 {
-		// 从 knowledgeID 获取 kbID
+		// Lấy kbID từ knowledgeID
 		knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("failed to get knowledge: %w", err)
@@ -1171,7 +1171,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		}
 	}
 
-	// 计算所有新条目的 content hash，并同时构建 hash 到 entry 的映射
+	// Tính content hash của mọi mục mới và dựng ánh xạ hash → entry
 	type entryWithHash struct {
 		entry types.FAQEntryPayload
 		hash  string
@@ -1179,7 +1179,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 	}
 	entriesWithHash := make([]entryWithHash, 0, len(newEntries))
 	newHashSet := make(map[string]bool)
-	// 用于批次内标准问和相似问去重
+	// Dùng để khử trùng câu hỏi chuẩn và câu hỏi tương tự trong lô
 	batchQuestions := make(map[string]bool)
 	batchSkippedCount := 0
 
@@ -1191,14 +1191,14 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 			continue
 		}
 
-		// 检查标准问是否在同批次中重复
+		// Kiểm tra câu hỏi chuẩn có trùng trong cùng lô không
 		if batchQuestions[meta.StandardQuestion] {
 			batchSkippedCount++
 			logger.Infof(ctx, "Skipping FAQ entry with duplicate standard question in batch: %s", meta.StandardQuestion)
 			continue
 		}
 
-		// 检查相似问是否在同批次中重复
+		// Kiểm tra câu hỏi tương tự có trùng trong cùng lô không
 		hasDuplicateSimilar := false
 		for _, q := range meta.SimilarQuestions {
 			if batchQuestions[q] {
@@ -1212,7 +1212,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 			continue
 		}
 
-		// 将当前条目的标准问和相似问加入批次集合
+		// Thêm câu hỏi chuẩn và câu hỏi tương tự của mục hiện tại vào tập của lô
 		batchQuestions[meta.StandardQuestion] = true
 		for _, q := range meta.SimilarQuestions {
 			batchQuestions[q] = true
@@ -1225,13 +1225,13 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		}
 	}
 
-	// Query 所有已存在的chunks
+	// Truy vấn mọi chunk đã có
 	allExistingChunks, err := s.chunkRepo.ListAllFAQChunksByKnowledgeID(ctx, tenantID, knowledgeID)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to list existing chunks: %w", err)
 	}
 
-	// 在内存中过滤出匹配新条目hash的chunks，并构建map
+	// Lọc trong bộ nhớ các chunk khớp hash của mục mới và dựng map
 	existingHashMap := make(map[string]*types.Chunk)
 	for _, chunk := range allExistingChunks {
 		if chunk.ContentHash != "" && newHashSet[chunk.ContentHash] {
@@ -1239,20 +1239,20 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		}
 	}
 
-	// 计算需要Delete 的chunks（数据库中有但新批次中没有的，或hash不匹配的）
+	// Tính các chunk cần xóa (có trong DB nhưng không có trong lô mới, hoặc hash không khớp)
 	chunksToDelete := make([]*types.Chunk, 0)
 	for _, chunk := range allExistingChunks {
 		if chunk.ContentHash == "" {
-			// 如果没有hash，需要Delete （可能是旧数据）
+			// Không có hash thì cần xóa (có thể là dữ liệu cũ)
 			chunksToDelete = append(chunksToDelete, chunk)
 		} else if !newHashSet[chunk.ContentHash] {
-			// hash不在新条目中，需要Delete
+			// hash không có trong mục mới, cần xóa
 			chunksToDelete = append(chunksToDelete, chunk)
 		}
 	}
 
-	// 批量预加载 tag 信息，避免循环内逐条Query 数据库
-	// 收集所有需要Query 的 tag_id 和 tag_name
+	// Nạp trước thông tin thẻ theo lô, tránh truy vấn DB từng mục trong vòng lặp
+	// Gom mọi tag_id và tag_name cần truy vấn
 	tagSeqIDSet := make(map[int64]bool)
 	tagNameSet := make(map[string]bool)
 	for _, ewh := range entriesWithHash {
@@ -1265,7 +1265,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		}
 	}
 
-	// 批量Query  tag by seq_id
+	// Truy vấn thẻ theo lô bằng seq_id
 	tagSeqIDToUUID := make(map[int64]string)
 	if len(tagSeqIDSet) > 0 {
 		seqIDs := make([]int64, 0, len(tagSeqIDSet))
@@ -1282,7 +1282,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		}
 	}
 
-	// 批量Query  tag by name
+	// Truy vấn thẻ theo lô bằng tên
 	tagNameToUUID := make(map[string]string)
 	if len(tagNameSet) > 0 && kbID != "" {
 		for name := range tagNameSet {
@@ -1295,13 +1295,13 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 	logger.Infof(ctx, "Preloaded %d tags by seq_id, %d tags by name for %d entries",
 		len(tagSeqIDToUUID), len(tagNameToUUID), len(entriesWithHash))
 
-	// resolveTagIDFromCache 从缓存中解析 tag ID，缓存未命中时回退到数据库Query
+	// resolveTagIDFromCache phân giải tag ID từ cache, trượt cache thì quay về truy vấn DB
 	resolveTagIDFromCache := func(entry *types.FAQEntryPayload) (string, error) {
 		if entry.TagID != 0 {
 			if uuid, ok := tagSeqIDToUUID[entry.TagID]; ok {
 				return uuid, nil
 			}
-			// 缓存未命中，回退到数据库Query （可能需要Create ）
+			// Trượt cache, quay về truy vấn DB (có thể cần tạo)
 			return s.resolveTagID(ctx, kbID, entry)
 		}
 		tagName := entry.TagName
@@ -1311,23 +1311,23 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 		if uuid, ok := tagNameToUUID[tagName]; ok {
 			return uuid, nil
 		}
-		// 缓存未命中，回退到数据库Query （可能需要Create ）
+		// Trượt cache, quay về truy vấn DB (có thể cần tạo)
 		return s.resolveTagID(ctx, kbID, entry)
 	}
 
-	// 计算需要Create 的条目（利用已经计算好的hash，避免重复计算）
+	// Tính các mục cần tạo (dùng lại hash đã tính, tránh tính lại)
 	entriesToProcess := make([]types.FAQEntryPayload, 0, len(entriesWithHash))
 	skippedCount := batchSkippedCount
 
 	for idx, ewh := range entriesWithHash {
-		// 每处理 1000 条打印一次进度日志
+		// Cứ 1000 mục ghi log tiến độ một lần
 		if idx > 0 && idx%1000 == 0 {
 			logger.Infof(ctx, "calculateReplaceOperations progress: %d/%d entries processed", idx, len(entriesWithHash))
 		}
 
 		existingChunk := existingHashMap[ewh.hash]
 		if existingChunk != nil {
-			// hash 匹配，检查 tag 是否变化
+			// hash khớp, kiểm tra thẻ có đổi không
 			newTagID, err := resolveTagIDFromCache(&ewh.entry)
 			if err != nil {
 				logger.Warnf(ctx, "Failed to resolve tag for entry, treating as new: %v", err)
@@ -1356,32 +1356,32 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 				chunksToDelete = append(chunksToDelete, existingChunk)
 				entriesToProcess = append(entriesToProcess, ewh.entry)
 			} else {
-				// hash、tag、运营状态都相同，跳过
+				// hash, thẻ, trạng thái vận hành đều giống, bỏ qua
 				skippedCount++
 			}
 			continue
 		}
 
-		// hash 不匹配或不存在，需要Create
+		// hash không khớp hoặc không tồn tại, cần tạo
 		entriesToProcess = append(entriesToProcess, ewh.entry)
 	}
 
 	return entriesToProcess, chunksToDelete, skippedCount, nil
 }
 
-// executeFAQImport 执行实际的FAQ导入逻辑
+// executeFAQImport thực thi logic nhập FAQ thật
 func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, kbID string,
 	payload *types.FAQBatchUpsertPayload, tenantID uint64, processedCount int,
 	progress *types.FAQImportProgress,
 ) (err error) {
-	// 保存Knowledge Base和embedding模型信息，用于清理索引
+	// Lưu thông tin kho tri thức và mô hình embedding để dọn chỉ mục
 	var kb *types.KnowledgeBase
 	var embeddingModel embedding.Embedder
 	totalEntries := len(payload.Entries) + processedCount
 
-	// Recovery机制：如果发生任何错误或panic，回滚所有已Create 的chunks和索引数据
+	// Cơ chế recovery: có lỗi hoặc panic thì rollback mọi chunk và dữ liệu chỉ mục đã tạo
 	defer func() {
-		// 捕获panic
+		// Bắt panic
 		if r := recover(); r != nil {
 			buf := make([]byte, 8192)
 			n := runtime.Stack(buf, false)
@@ -1398,7 +1398,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 
 	kb.EnsureDefaults()
 
-	// 获取embedding模型，用于后续清理索引
+	// Lấy mô hình embedding để dọn chỉ mục sau này
 	embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 	if err != nil {
 		return fmt.Errorf("failed to get embedding model: %w", err)
@@ -1408,19 +1408,19 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		return err
 	}
 
-	// 获取索引模式
+	// Lấy chế độ đánh chỉ mục
 	indexMode := types.FAQIndexModeQuestionOnly
 	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
 		indexMode = kb.FAQConfig.IndexMode
 	}
 
-	// 增量Update 逻辑：计算需要处理的条目
+	// Logic cập nhật tăng dần: tính các mục cần xử lý
 	var entriesToProcess []types.FAQEntryPayload
 	var chunksToDelete []*types.Chunk
 	var skippedCount int
 
 	if payload.Mode == types.FAQBatchModeReplace {
-		// Replace模式：计算需要Delete 、Create 、Update 的条目
+		// Chế độ Replace: tính các mục cần xóa, tạo, cập nhật
 		entriesToProcess, chunksToDelete, skippedCount, err = s.calculateReplaceOperations(
 			ctx,
 			tenantID,
@@ -1431,7 +1431,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			return fmt.Errorf("failed to calculate replace operations: %w", err)
 		}
 
-		// Delete 需要Delete 的chunks（包括需要Update 的旧chunks）
+		// Xóa các chunk cần xóa (gồm cả chunk cũ cần cập nhật)
 		if len(chunksToDelete) > 0 {
 			chunkIDsToDelete := make([]string, 0, len(chunksToDelete))
 			for _, chunk := range chunksToDelete {
@@ -1440,14 +1440,14 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			if err := s.chunkRepo.DeleteChunks(ctx, tenantID, chunkIDsToDelete); err != nil {
 				return fmt.Errorf("failed to delete chunks: %w", err)
 			}
-			// Delete 索引
+			// Xóa chỉ mục
 			if err := s.deleteFAQChunkVectors(ctx, kb, faqKnowledge, chunksToDelete); err != nil {
 				return fmt.Errorf("failed to delete chunk vectors: %w", err)
 			}
 			logger.Infof(ctx, "FAQ import task %s: deleted %d chunks (including updates)", taskID, len(chunksToDelete))
 		}
 	} else {
-		// Append 模式（智能合并）：标准问已存在的条目走 merge ops，其余作为新建。
+		// Chế độ Append (gộp thông minh): mục có câu hỏi chuẩn đã tồn tại đi qua merge ops, còn lại tạo mới.
 		var mergeOps []faqMergeOperation
 		entriesToProcess, mergeOps, skippedCount, err = s.calculateAppendOperations(ctx, tenantID, kb.ID, payload.Entries)
 		if err != nil {
@@ -1476,13 +1476,13 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		progress.MergedCount,
 	)
 
-	// 如果没有需要处理的条目，直接返回
+	// Không có mục cần xử lý thì trả về ngay
 	if len(entriesToProcess) == 0 {
 		logger.Infof(ctx, "FAQ import task %s: no new entries to create", taskID)
 		return nil
 	}
 
-	// 分批处理需要Create 的条目
+	// Xử lý theo lô các mục cần tạo
 	remainingEntries := len(entriesToProcess)
 	totalStartTime := time.Now()
 	actualProcessed := skippedCount + processedCount + progress.MergedCount
@@ -1506,7 +1506,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		batch := entriesToProcess[i:end]
 		logger.Infof(ctx, "FAQ import task %s: processing batch %d-%d (%d entries)", taskID, i+1, end, len(batch))
 
-		// 构建chunks
+		// Dựng chunks
 		buildStartTime := time.Now()
 		chunks := make([]*types.Chunk, 0, len(batch))
 		chunkIds := make([]string, 0, len(batch))
@@ -1520,7 +1520,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 				return fmt.Errorf("failed to sanitize entry at index %d: %w", i+idx, err)
 			}
 
-			// 解析 TagID
+			// Phân giải TagID
 			tagID, err := s.resolveTagID(ctx, kbID, &entry)
 			if err != nil {
 				logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -1534,7 +1534,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			if entry.IsEnabled != nil {
 				isEnabled = *entry.IsEnabled
 			}
-			// ChunkIndex计算：startChunkIndex + (i+idx) + initialProcessed
+			// Tính ChunkIndex: startChunkIndex + (i+idx) + initialProcessed
 			chunk := &types.Chunk{
 				ID:              uuid.New().String(),
 				TenantID:        tenantID,
@@ -1544,10 +1544,10 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 				// ChunkIndex:      0,
 				IsEnabled: isEnabled,
 				ChunkType: types.ChunkTypeFAQ,
-				TagID:     tagID,                        // 使用解析后的 TagID
+				TagID:     tagID,                        // dùng TagID đã phân giải
 				Status:    int(types.ChunkStatusStored), // store but not indexed
 			}
-			// 如果指定了 ID（用于数据迁移），Settings  SeqID
+			// Nếu có chỉ định ID (dùng khi di trú dữ liệu) thì đặt SeqID
 			if entry.ID != nil && *entry.ID > 0 {
 				chunk.SeqID = *entry.ID
 			}
@@ -1576,9 +1576,9 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			createDuration,
 		)
 
-		// 索引chunks
+		// Đánh chỉ mục chunks
 		indexStartTime := time.Now()
-		// 注意：如果索引失败，defer中的recovery机制会自动回滚已Create 的chunks和索引数据
+		// Lưu ý: nếu đánh chỉ mục thất bại, cơ chế recovery trong defer sẽ tự rollback chunk và chỉ mục đã tạo
 		if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, embeddingModel, true, false); err != nil {
 			return fmt.Errorf("failed to index chunks: %w", err)
 		}
@@ -1593,8 +1593,8 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			indexDuration,
 		)
 
-		// Update chunks的Status为已索引：所有行写同一个值，一条 UPDATE ... WHERE id IN 即可，
-		// 不需要把 content 等字段再回传一遍。
+		// Cập nhật Status của chunks thành đã đánh chỉ mục: mọi dòng cùng một giá trị, một câu UPDATE ... WHERE id IN là đủ,
+		// không cần gửi lại content và các trường khác.
 		for _, chunk := range chunks {
 			chunk.Status = int(types.ChunkStatusIndexed) // indexed
 		}
@@ -1604,10 +1604,10 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			return fmt.Errorf("failed to update chunks status: %w", err)
 		}
 
-		// 收集成功条目信息（tag 信息按批一次查出，避免每条一次Query ）
+		// Gom thông tin mục thành công (thông tin thẻ truy vấn một lần mỗi lô, tránh truy vấn từng mục)
 		tagsByID := s.loadFAQTagsForChunks(ctx, tenantID, chunks)
 		for idx, chunk := range chunks {
-			entryIdx := i + idx + processedCount // 原始条目索引
+			entryIdx := i + idx + processedCount // chỉ số mục gốc
 			meta, _ := chunk.FAQMetadata()
 			standardQ := ""
 			if meta != nil {
@@ -1624,9 +1624,9 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		}
 
 		actualProcessed += len(batch)
-		// Update 任务进度
+		// Cập nhật tiến độ tác vụ
 		progress := int(float64(actualProcessed) / float64(totalEntries) * 100)
-		if err := s.updateFAQImportProgressStatus(ctx, taskID, "", 0, types.FAQImportStatusProcessing, progress, totalEntries, actualProcessed, fmt.Sprintf("正在处理第 %d/%d 条", actualProcessed, totalEntries), ""); err != nil {
+		if err := s.updateFAQImportProgressStatus(ctx, taskID, "", 0, types.FAQImportStatusProcessing, progress, totalEntries, actualProcessed, fmt.Sprintf("Đang xử lý mục %d/%d", actualProcessed, totalEntries), ""); err != nil {
 			logger.Errorf(ctx, "Failed to update task progress: %v", err)
 		}
 
@@ -1698,7 +1698,7 @@ func (s *knowledgeService) updateFAQImportProgressStatus(
 		existingProgress.Error = ""
 	}
 
-	// 任务完成或失败时，清除 running key
+	// Khi tác vụ hoàn thành hoặc thất bại, xóa running key
 	if status == types.FAQImportStatusCompleted || status == types.FAQImportStatusFailed {
 		if existingProgress.KBID != "" {
 			if clearErr := s.clearRunningFAQImportInfoIfMatches(ctx, existingProgress.KBID, taskID, instanceID, enqueuedAt); clearErr != nil {
@@ -1710,8 +1710,8 @@ func (s *knowledgeService) updateFAQImportProgressStatus(
 	return s.saveFAQImportProgress(ctx, existingProgress)
 }
 
-// cleanupFAQEntriesFileOnFinalFailure 在任务最终失败时清理对象存储中的 entries 文件
-// 只有当 retryCount >= maxRetry 时才执行清理，否则重试时还需要使用这个文件
+// cleanupFAQEntriesFileOnFinalFailure dọn tệp entries trong object storage khi tác vụ thất bại hẳn
+// Chỉ dọn khi retryCount >= maxRetry, nếu không lần thử lại vẫn cần tệp này
 func (s *knowledgeService) cleanupFAQEntriesFileOnFinalFailure(ctx context.Context, entriesURL string, retryCount, maxRetry int) {
 	if entriesURL == "" || retryCount < maxRetry {
 		return
@@ -1827,8 +1827,8 @@ func runningFAQImportInfoMatches(info *runningFAQImportInfo, taskID, instanceID 
 	return enqueuedAt == 0 || info.EnqueuedAt == 0 || info.EnqueuedAt == enqueuedAt
 }
 
-// incrementalIndexFAQEntry 增量Update FAQ条目的索引
-// 只对内容变化的部分进行embedding计算和索引Update ，跳过未变化的部分
+// incrementalIndexFAQEntry cập nhật tăng dần chỉ mục của mục FAQ
+// Chỉ tính embedding và cập nhật chỉ mục cho phần thay đổi, bỏ qua phần không đổi
 func (s *knowledgeService) incrementalIndexFAQEntry(
 	ctx context.Context,
 	kb *types.KnowledgeBase,
@@ -1855,8 +1855,8 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		indexMode = kb.FAQConfig.IndexMode
 	}
 
-	// 对新旧数据进行归一化处理，确保与 buildFAQIndexInfoList 的行为一致
-	// 旧数据归一化
+	// Chuẩn hóa dữ liệu cũ và mới để nhất quán với buildFAQIndexInfoList
+	// Chuẩn hóa dữ liệu cũ
 	oldStandardQuestion = types.NormalizeQuestion(oldStandardQuestion)
 	normalizedOldSimilarQuestions := make([]string, 0, len(oldSimilarQuestions))
 	for _, q := range oldSimilarQuestions {
@@ -1866,10 +1866,10 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 	}
 	oldSimilarQuestions = normalizedOldSimilarQuestions
 	oldAnswers = types.SanitizeStrings(oldAnswers)
-	// 新数据归一化
+	// Chuẩn hóa dữ liệu mới
 	normalizedNewMeta := newMeta.Normalize()
 
-	// 构建索引内容
+	// Dựng nội dung chỉ mục
 	buildContent := func(question string, answers []string) string {
 		if indexMode == types.FAQIndexModeQuestionAnswer && len(answers) > 0 {
 			var builder strings.Builder
@@ -1883,15 +1883,15 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		return question
 	}
 
-	// 检查答案是否变化（仅在 QuestionAnswer 模式下才影响索引）
+	// Kiểm tra câu trả lời có đổi không (chỉ ảnh hưởng chỉ mục ở chế độ QuestionAnswer)
 	answersChanged := indexMode == types.FAQIndexModeQuestionAnswer && !slices.Equal(oldAnswers, normalizedNewMeta.Answers)
 	logger.Debugf(ctx, "incrementalIndexFAQEntry: answersChanged=%v (indexMode=%s), oldAnswers=%d, newAnswers=%d",
 		answersChanged, indexMode, len(oldAnswers), len(normalizedNewMeta.Answers))
 
-	// 收集需要Update 的索引项
+	// Gom các mục chỉ mục cần cập nhật
 	var indexInfoToUpdate []*types.IndexInfo
 
-	// 1. 检查标准问是否需要Update
+	// 1. Kiểm tra câu hỏi chuẩn có cần cập nhật không
 	oldStdContent := buildContent(oldStandardQuestion, oldAnswers)
 	newStdContent := buildContent(normalizedNewMeta.StandardQuestion, normalizedNewMeta.Answers)
 	stdQuestionChanged := oldStdContent != newStdContent
@@ -1911,20 +1911,20 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		})
 	}
 
-	// 2. 基于内容哈希处理相似问的增删改
-	// 构建旧问题集合 (问题 -> 是否存在)
+	// 2. Xử lý thêm/xóa/sửa câu hỏi tương tự dựa trên hash nội dung
+	// Dựng tập câu hỏi cũ (câu hỏi -> tồn tại)
 	oldQuestionsSet := make(map[string]struct{}, len(oldSimilarQuestions))
 	for _, q := range oldSimilarQuestions {
 		oldQuestionsSet[q] = struct{}{}
 	}
 
-	// 构建新问题集合
+	// Dựng tập câu hỏi mới
 	newQuestionsSet := make(map[string]struct{}, len(normalizedNewMeta.SimilarQuestions))
 	for _, q := range normalizedNewMeta.SimilarQuestions {
 		newQuestionsSet[q] = struct{}{}
 	}
 
-	// 找出需要Delete 的问题（在旧集合中但不在新集合中）
+	// Tìm câu hỏi cần xóa (có trong tập cũ nhưng không có trong tập mới)
 	var sourceIDsToDelete []string
 	var deletedQuestions []string
 	for oldQ := range oldQuestionsSet {
@@ -1935,13 +1935,13 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		}
 	}
 
-	// 找出需要新增或Update 的问题
+	// Tìm câu hỏi cần thêm hoặc cập nhật
 	var addedQuestions, updatedQuestions []string
 	for newQ := range newQuestionsSet {
 		_, existedBefore := oldQuestionsSet[newQ]
-		// 需要Update 的条件：
-		// 1. 新问题（之前不存在）
-		// 2. 答案变化（需要重新embedding）
+		// Điều kiện cần cập nhật:
+		// 1. Câu hỏi mới (trước đó chưa có)
+		// 2. Câu trả lời đổi (cần embedding lại)
 		if !existedBefore || answersChanged {
 			sourceID := fmt.Sprintf("%s-%s", chunk.ID, hashQuestion(newQ))
 			indexInfoToUpdate = append(indexInfoToUpdate, &types.IndexInfo{
@@ -1964,7 +1964,7 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		}
 	}
 
-	// 输出详细的变化日志
+	// Ghi log chi tiết thay đổi
 	if len(deletedQuestions) > 0 {
 		logger.Debugf(ctx, "incrementalIndexFAQEntry: deleted similar questions: %v", deletedQuestions)
 	}
@@ -1975,7 +1975,7 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		logger.Debugf(ctx, "incrementalIndexFAQEntry: updated similar questions (answers changed): %v", updatedQuestions)
 	}
 
-	// 3. Delete 不再存在的相似问索引
+	// 3. Xóa chỉ mục câu hỏi tương tự không còn tồn tại
 	if len(sourceIDsToDelete) > 0 {
 		logger.Debugf(ctx, "incrementalIndexFAQEntry: deleting %d obsolete sourceIDs: %v", len(sourceIDsToDelete), sourceIDsToDelete)
 		if delErr := retrieveEngine.DeleteBySourceIDList(ctx, sourceIDsToDelete, embeddingModel.GetDimensions(), types.KnowledgeTypeFAQ); delErr != nil {
@@ -1983,7 +1983,7 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		}
 	}
 
-	// 4. 批量索引需要Update 的内容
+	// 4. Đánh chỉ mục theo lô nội dung cần cập nhật
 	newCount := len(normalizedNewMeta.SimilarQuestions)
 	if len(indexInfoToUpdate) > 0 {
 		logger.Debugf(ctx, "incrementalIndexFAQEntry: updating %d index entries (skipped %d unchanged)",
@@ -1995,7 +1995,7 @@ func (s *knowledgeService) incrementalIndexFAQEntry(
 		logger.Debugf(ctx, "incrementalIndexFAQEntry: all %d entries unchanged, skipping index update", 1+newCount)
 	}
 
-	// 5. Update  knowledge 记录
+	// 5. Cập nhật bản ghi knowledge
 	now := time.Now()
 	knowledge.UpdatedAt = now
 	knowledge.ProcessedAt = &now
@@ -2028,7 +2028,7 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		return err
 	}
 
-	// 构建索引信息
+	// Dựng thông tin chỉ mục
 	buildIndexInfoStartTime := time.Now()
 	indexInfo := make([]*types.IndexInfo, 0)
 	chunkIDs := make([]string, 0, len(chunks))
@@ -2060,7 +2060,7 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		}
 	}
 
-	// Delete 旧向量
+	// Xóa vector cũ
 	var deleteDuration time.Duration
 	if needDelete {
 		deleteStartTime := time.Now()
@@ -2073,7 +2073,7 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		}
 	}
 
-	// 批量索引（这里可能是性能瓶颈）
+	// Đánh chỉ mục theo lô (có thể là nút thắt hiệu năng)
 	batchIndexStartTime := time.Now()
 	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
 		return err
@@ -2268,7 +2268,7 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		return fmt.Errorf("%w: FAQ task document does not belong to its KB", asynq.SkipRetry)
 	}
 
-	// 获取任务重试信息，用于判断是否是最后一次重试
+	// Lấy thông tin retry của task để biết có phải lần thử cuối không
 	retryCount, _ := asynq.GetRetryCount(ctx)
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 	isLastRetry := retryCount >= maxRetry
@@ -2280,7 +2280,7 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 	}
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
 
-	// 如果 entries 存储在对象存储中，先下载
+	// Nếu entries nằm trong object storage thì tải về trước
 	if payload.EntriesURL != "" && len(payload.Entries) == 0 {
 		logger.Infof(ctx, "Downloading FAQ entries from object storage: %s", payload.EntriesURL)
 		reader, err := s.fileSvc.GetFile(ctx, payload.EntriesURL)
@@ -2312,12 +2312,12 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		return err
 	}
 
-	// 保存原始总数量
+	// Lưu tổng số ban đầu
 	originalTotalEntries := len(payload.Entries)
 
-	// Initialization 进度
-	// 检查是否已有验证结果（用于重试时跳过验证）
-	// 注意：必须在保存新 progress 之前Query ，否则会被覆盖
+	// Khởi tạo tiến độ
+	// Kiểm tra đã có kết quả kiểm tra chưa (để bỏ qua kiểm tra khi thử lại)
+	// Lưu ý: phải truy vấn trước khi lưu progress mới, nếu không sẽ bị ghi đè
 	existingProgress, _ := s.GetFAQImportProgress(ctx, payload.TaskID)
 
 	progress := &types.FAQImportProgress{
@@ -2332,7 +2332,7 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		FailedCount:    0,
 		FailedEntries:  make([]types.FAQFailedEntry, 0),
 		SuccessEntries: make([]types.FAQSuccessEntry, 0),
-		Message:        "正在验证条目...",
+		Message:        "Đang kiểm tra các mục...",
 		CreatedAt:      time.Now().Unix(),
 		UpdatedAt:      time.Now().Unix(),
 		DryRun:         payload.DryRun,
@@ -2343,16 +2343,16 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 
 	var validEntryIndices []int
 	if existingProgress != nil && len(existingProgress.ValidEntryIndices) > 0 {
-		// 重试时直接使用之前的验证结果
+		// Khi thử lại dùng thẳng kết quả kiểm tra trước
 		validEntryIndices = existingProgress.ValidEntryIndices
 		progress.FailedCount = existingProgress.FailedCount
 		progress.FailedEntries = existingProgress.FailedEntries
 		logger.Infof(ctx, "Reusing previous validation result: valid=%d, failed=%d",
 			len(validEntryIndices), progress.FailedCount)
 	} else {
-		// 第一步：执行验证（无论是 dry run 还是 import 模式都需要验证）
+		// Bước 1: chạy kiểm tra (dry run hay import đều cần)
 		validEntryIndices = s.executeFAQDryRunValidation(ctx, &payload, progress)
-		// 保存验证通过的索引，用于重试时跳过验证
+		// Lưu chỉ số các mục đạt để bỏ qua kiểm tra khi thử lại
 		progress.ValidEntryIndices = validEntryIndices
 		if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 			logger.Warnf(ctx, "Failed to save validation result: %v", err)
@@ -2361,31 +2361,31 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 			originalTotalEntries, len(validEntryIndices), progress.FailedCount)
 	}
 
-	// Dry run 模式：验证完成后直接返回结果
+	// Chế độ dry run: kiểm tra xong trả kết quả ngay
 	if payload.DryRun {
 		return s.finalizeFAQValidation(ctx, &payload, progress, originalTotalEntries)
 	}
 
-	// Import 模式：检查是否有有效条目需要导入
+	// Chế độ import: kiểm tra có mục hợp lệ cần nhập không
 	if len(validEntryIndices) == 0 {
-		// 没有有效条目，直接完成
+		// Không có mục hợp lệ, hoàn thành ngay
 		return s.finalizeFAQValidation(ctx, &payload, progress, originalTotalEntries)
 	}
 
-	// 提取有效的条目
+	// Lấy các mục hợp lệ
 	validEntries := make([]types.FAQEntryPayload, 0, len(validEntryIndices))
 	for _, idx := range validEntryIndices {
 		validEntries = append(validEntries, payload.Entries[idx])
 	}
 
-	// Update 进度消息
-	progress.Message = fmt.Sprintf("验证完成，开始导入 %d 条有效数据...", len(validEntries))
+	// Cập nhật thông báo tiến độ
+	progress.Message = fmt.Sprintf("Kiểm tra xong, bắt đầu nhập %d mục hợp lệ...", len(validEntries))
 	progress.UpdatedAt = time.Now().Unix()
 	if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 		logger.Warnf(ctx, "Failed to update FAQ import progress: %v", err)
 	}
 
-	// 检查任务状态 - 幂等性处理（复用之前获取的 existingProgress）
+	// Kiểm tra trạng thái tác vụ - xử lý idempotent (dùng lại existingProgress đã lấy)
 	var processedCount int
 	if existingProgress != nil {
 		if existingProgress.Status == types.FAQImportStatusCompleted {
@@ -2393,23 +2393,23 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 			if clearErr := s.clearRunningFAQImportInfoIfMatches(ctx, payload.KBID, payload.TaskID, payload.InstanceID, payload.EnqueuedAt); clearErr != nil {
 				logger.Warnf(ctx, "Failed to clear running FAQ import info for completed task: %v", clearErr)
 			}
-			return nil // 幂等：已完成的任务直接返回
+			return nil // idempotent: tác vụ đã hoàn thành thì trả về ngay
 		}
-		// 获取已处理的数量（注意：这是相对于 validEntries 的索引）
-		processedCount = existingProgress.Processed - progress.FailedCount // 已处理数 - 验证失败数 = 已导入的有效条目数
+		// Lấy số đã xử lý (lưu ý: đây là chỉ số tương đối với validEntries)
+		processedCount = existingProgress.Processed - progress.FailedCount // số đã xử lý - số kiểm tra thất bại = số mục hợp lệ đã nhập
 		if processedCount < 0 {
 			processedCount = 0
 		}
 		logger.Infof(ctx, "Resuming FAQ import from progress: %d/%d (valid entries)", processedCount, len(validEntries))
 	}
 
-	// 幂等性处理：清理可能已部分处理的chunks和索引数据
+	// Xử lý idempotent: dọn chunk và dữ liệu chỉ mục có thể đã xử lý dở
 	chunksDeleted, err := s.chunkRepo.DeleteUnindexedChunks(ctx, payload.TenantID, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to delete unindexed chunks: %v", err)
-		// 如果是最后一次重试，Update 状态为失败
+		// Nếu là lần thử cuối, cập nhật trạng thái thành thất bại
 		if isLastRetry {
-			if updateErr := s.updateFAQImportProgressStatus(ctx, payload.TaskID, payload.InstanceID, payload.EnqueuedAt, types.FAQImportStatusFailed, 0, originalTotalEntries, 0, "清理未索引数据失败", err.Error()); updateErr != nil {
+			if updateErr := s.updateFAQImportProgressStatus(ctx, payload.TaskID, payload.InstanceID, payload.EnqueuedAt, types.FAQImportStatusFailed, 0, originalTotalEntries, 0, "Dọn dữ liệu chưa đánh chỉ mục thất bại", err.Error()); updateErr != nil {
 				logger.Errorf(ctx, "Failed to update task status to failed: %v", updateErr)
 			}
 			s.recordFAQImportKBActivity(ctx, &payload, progress, originalTotalEntries, types.AuditActionFAQImportFailed, types.AuditOutcomeFailed)
@@ -2420,7 +2420,7 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 	if len(chunksDeleted) > 0 {
 		logger.Infof(ctx, "Deleted unindexed chunks: %d", len(chunksDeleted))
 
-		// Delete 索引数据
+		// Xóa dữ liệu chỉ mục
 		embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 		if err == nil {
 			retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
@@ -2439,15 +2439,15 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		}
 	}
 
-	// 如果已经处理了一部分有效条目，从该位置继续
+	// Nếu đã xử lý một phần mục hợp lệ thì tiếp tục từ vị trí đó
 	entriesToImport := validEntries
 	importMode := payload.Mode
 	if processedCount > 0 && processedCount < len(validEntries) {
 		entriesToImport = validEntries[processedCount:]
-		// 重试场景下，如果之前已经处理了一部分数据，需要切换到 Append 模式
-		// 因为 Replace 模式的Delete 操作在第一次运行时已经执行过了
-		// 如果继续使用 Replace 模式，calculateReplaceOperations 会将之前成功导入的数据标记为Delete
-		// 导致数据丢失
+		// Khi thử lại, nếu trước đó đã xử lý một phần dữ liệu thì phải chuyển sang chế độ Append
+		// vì thao tác xóa của chế độ Replace đã chạy ở lần đầu
+		// nếu tiếp tục dùng Replace, calculateReplaceOperations sẽ đánh dấu xóa dữ liệu đã nhập thành công
+		// gây mất dữ liệu
 		if payload.Mode == types.FAQBatchModeReplace {
 			importMode = types.FAQBatchModeAppend
 			logger.Infof(ctx, "Switching to Append mode for retry, original mode was Replace")
@@ -2455,18 +2455,18 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		logger.Infof(ctx, "Continuing FAQ import from entry %d, remaining: %d entries", processedCount, len(entriesToImport))
 	}
 
-	// 构建FAQBatchUpsertPayload（使用验证通过的有效条目）
+	// Dựng FAQBatchUpsertPayload (dùng các mục hợp lệ đã qua kiểm tra)
 	faqPayload := &types.FAQBatchUpsertPayload{
 		Entries: entriesToImport,
 		Mode:    importMode,
 	}
 
-	// 执行FAQ导入（传入已处理的偏移量，用于进度计算）
+	// Thực thi nhập FAQ (truyền offset đã xử lý để tính tiến độ)
 	if err := s.executeFAQImport(ctx, payload.TaskID, payload.KBID, faqPayload, payload.TenantID, progress.FailedCount+processedCount, progress); err != nil {
 		logger.Errorf(ctx, "FAQ import task failed: %s, error: %v", payload.TaskID, err)
-		// 如果是最后一次重试，Update 状态为失败
+		// Nếu là lần thử cuối, cập nhật trạng thái thành thất bại
 		if isLastRetry {
-			if updateErr := s.updateFAQImportProgressStatus(ctx, payload.TaskID, payload.InstanceID, payload.EnqueuedAt, types.FAQImportStatusFailed, 0, originalTotalEntries, len(validEntries), "导入失败", err.Error()); updateErr != nil {
+			if updateErr := s.updateFAQImportProgressStatus(ctx, payload.TaskID, payload.InstanceID, payload.EnqueuedAt, types.FAQImportStatusFailed, 0, originalTotalEntries, len(validEntries), "Nhập thất bại", err.Error()); updateErr != nil {
 				logger.Errorf(ctx, "Failed to update task status to failed: %v", updateErr)
 			}
 			s.recordFAQImportKBActivity(ctx, &payload, progress, originalTotalEntries, types.AuditActionFAQImportFailed, types.AuditOutcomeFailed)
@@ -2475,19 +2475,19 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		return fmt.Errorf("FAQ import failed: %w", err)
 	}
 
-	// 任务成功完成
+	// Tác vụ hoàn thành thành công
 	logger.Infof(ctx, "FAQ import task completed: %s, imported: %d, failed: %d",
 		payload.TaskID, len(progress.SuccessEntries), progress.FailedCount)
 
-	// 最终完成处理（生成失败条目 CSV 等）
+	// Xử lý hoàn tất (sinh CSV mục thất bại...)
 	return s.finalizeFAQValidation(ctx, &payload, progress, originalTotalEntries)
 }
 
-// finalizeFAQValidation 完成 FAQ 验证/导入任务，生成失败条目 CSV（如果有）
+// finalizeFAQValidation hoàn tất tác vụ kiểm tra/nhập FAQ, sinh CSV mục thất bại (nếu có)
 func (s *knowledgeService) finalizeFAQValidation(ctx context.Context, payload *types.FAQImportPayload,
 	progress *types.FAQImportProgress, originalTotalEntries int,
 ) error {
-	// 清理对象存储中的 entries 文件（如果有）
+	// Dọn tệp entries trong object storage (nếu có)
 	if payload.EntriesURL != "" {
 		if err := s.fileSvc.DeleteFile(ctx, payload.EntriesURL); err != nil {
 			logger.Warnf(ctx, "Failed to delete FAQ entries file from object storage: %v", err)
@@ -2497,19 +2497,19 @@ func (s *knowledgeService) finalizeFAQValidation(ctx context.Context, payload *t
 	}
 	progress.UpdatedAt = time.Now().Unix()
 
-	// 如果有失败条目，生成 CSV 文件
+	// Có mục thất bại thì sinh tệp CSV
 	if len(progress.FailedEntries) > 0 {
 		csvURL, err := s.generateFailedEntriesCSV(ctx, payload.TenantID, payload.TaskID, progress.FailedEntries)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to generate failed entries CSV: %v", err)
 		} else {
 			progress.FailedEntriesURL = csvURL
-			progress.FailedEntries = nil // 清空内联数据，使用 URL
-			progress.Message += " (失败记录已导出为CSV)"
+			progress.FailedEntries = nil // xóa dữ liệu nội tuyến, dùng URL
+			progress.Message += " (bản ghi thất bại đã xuất ra CSV)"
 		}
 	}
 
-	// 必须在 saveFAQImportResultToDatabase 之前计算最终统计。
+	// Phải tính thống kê cuối trước saveFAQImportResultToDatabase.
 	progress.Status = types.FAQImportStatusCompleted
 	progress.Progress = 100
 	progress.Processed = originalTotalEntries
@@ -2541,19 +2541,19 @@ func (s *knowledgeService) finalizeFAQValidation(ctx context.Context, payload *t
 	progress.SkippedCount = skippedCount
 
 	if payload.DryRun {
-		progress.Message = s.buildFAQImportResultMessage("验证完成", progress)
+		progress.Message = s.buildFAQImportResultMessage("Kiểm tra xong", progress)
 	} else {
-		progress.Message = s.buildFAQImportResultMessage("导入完成", progress)
+		progress.Message = s.buildFAQImportResultMessage("Nhập xong", progress)
 	}
 
-	// 如果不是 dry run 模式，保存导入结果统计到数据库
+	// Không phải dry run thì lưu thống kê kết quả nhập vào DB
 	if !payload.DryRun {
 		if err := s.saveFAQImportResultToDatabase(ctx, payload, progress, originalTotalEntries); err != nil {
 			logger.Warnf(ctx, "Failed to save FAQ import result to database: %v", err)
 		}
 
-		// 只有 replace 模式才清理未使用的 Tag
-		// append 模式不应Delete 用户预先Create 的空标签
+		// Chỉ chế độ replace mới dọn thẻ không dùng
+		// chế độ append không được xóa thẻ rỗng người dùng đã tạo trước
 		if payload.Mode == types.FAQBatchModeReplace {
 			deletedTags, err := s.tagRepo.DeleteUnusedTags(ctx, payload.TenantID, payload.KBID)
 			if err != nil {
@@ -2564,13 +2564,13 @@ func (s *knowledgeService) finalizeFAQValidation(ctx context.Context, payload *t
 		}
 	}
 
-	// 使用 updateFAQImportProgressStatus 来确保正确清理 running key
-	// 但是需要先保存其他字段，因为 updateFAQImportProgressStatus 不会保存所有字段
+	// Dùng updateFAQImportProgressStatus để bảo đảm dọn đúng running key
+	// nhưng phải lưu các trường khác trước vì updateFAQImportProgressStatus không lưu hết
 	if err := s.saveFAQImportProgress(ctx, progress); err != nil {
 		logger.Warnf(ctx, "Failed to save final FAQ import progress: %v", err)
 	}
 
-	// 然后调用状态Update 来清理 running key
+	// Rồi gọi cập nhật trạng thái để dọn running key
 	if err := s.updateFAQImportProgressStatus(ctx, payload.TaskID, payload.InstanceID, payload.EnqueuedAt, types.FAQImportStatusCompleted,
 		100, originalTotalEntries, originalTotalEntries, progress.Message, ""); err != nil {
 		logger.Warnf(ctx, "Failed to update final FAQ import status: %v", err)
@@ -2588,14 +2588,14 @@ func (s *knowledgeService) finalizeFAQValidation(ctx context.Context, payload *t
 	return nil
 }
 
-// executeFAQMergeOperations 批量执行 append-mode 合并操作：Update 已有 chunk
-// 的 metadata / content / 索引。使用 ListChunksByID 批量加载 + SaveChunks 事
-// 务批量保存，减少 DB 往返。任一批次失败立即返回，由 executeFAQImport
-// 的 defer recovery 决定是否回滚整次导入。
+// executeFAQMergeOperations thực thi theo lô các thao tác gộp ở chế độ append: cập nhật
+// metadata / content / chỉ mục của chunk đã có. Dùng ListChunksByID nạp theo lô + SaveChunks lưu
+// theo lô trong giao dịch để giảm vòng DB. Lô nào thất bại thì trả về ngay, defer recovery của
+// executeFAQImport quyết định có rollback cả lần nhập không.
 //
-// 必要时这里逐条 fan-out 索引（EFPutDocument），而不是合并 chunks 批量
-// 重建：因为索引底层是按 SourceID 覆盖写入，按合并后的最终内容直接 put
-// 即可。
+// Ở đây fan-out chỉ mục từng mục (EFPutDocument) thay vì gộp chunks dựng lại
+// theo lô: vì tầng chỉ mục ghi đè theo SourceID, put thẳng nội dung cuối sau gộp
+// là đủ.
 func (s *knowledgeService) executeFAQMergeOperations(
 	ctx context.Context,
 	taskID string,
@@ -2620,8 +2620,8 @@ func (s *knowledgeService) executeFAQMergeOperations(
 		}
 		batch := mergeOps[batchStart:batchEnd]
 
-		// 1. 批量加载完整 chunk（calculateAppendOperations 中只加载了部分字段，
-		//    缺少 status/is_enabled/flags/seq_id 等，直接Update 会将这些字段覆盖为零值）
+		// 1. Nạp theo lô chunk đầy đủ (calculateAppendOperations chỉ nạp một phần trường,
+		//    thiếu status/is_enabled/flags/seq_id..., cập nhật thẳng sẽ ghi đè các trường này thành zero)
 		chunkIDs := make([]string, len(batch))
 		for i, op := range batch {
 			chunkIDs[i] = op.ExistingChunk.ID
@@ -2636,7 +2636,7 @@ func (s *knowledgeService) executeFAQMergeOperations(
 			chunkMap[c.ID] = c
 		}
 
-		// 2. 逐条应用合并数据
+		// 2. Áp dữ liệu gộp từng mục
 		mergedChunks := make([]*types.Chunk, 0, len(batch))
 		for _, op := range batch {
 			fullChunk, ok := chunkMap[op.ExistingChunk.ID]
@@ -2654,7 +2654,7 @@ func (s *knowledgeService) executeFAQMergeOperations(
 			fullChunk.ContentHash = types.CalculateFAQContentHash(op.MergedMeta)
 			fullChunk.UpdatedAt = time.Now()
 
-			// 用新值覆盖运营状态
+			// Ghi đè trạng thái vận hành bằng giá trị mới
 			if op.Entry.IsEnabled != nil {
 				fullChunk.IsEnabled = *op.Entry.IsEnabled
 			}
@@ -2669,18 +2669,18 @@ func (s *knowledgeService) executeFAQMergeOperations(
 			mergedChunks = append(mergedChunks, fullChunk)
 		}
 
-		// 3. 事务批量保存（GORM Save 全字段Update ，确保 metadata/content_hash 持久化）
+		// 3. Lưu theo lô trong giao dịch (GORM Save cập nhật mọi trường, bảo đảm metadata/content_hash được lưu)
 		if err := s.chunkRepo.SaveChunks(ctx, mergedChunks); err != nil {
 			logger.Errorf(ctx, "FAQ import task %s: failed to batch save merged chunks: %v", taskID, err)
 			return mergedCount, fmt.Errorf("failed to batch save merged chunks: %w", err)
 		}
 
-		// 4. 重建索引（EFPutDocument 会自动覆盖相同 SourceID）
+		// 4. Dựng lại chỉ mục (EFPutDocument tự ghi đè cùng SourceID)
 		if err := s.indexFAQChunks(ctx, kb, faqKnowledge, mergedChunks, embeddingModel, false, false); err != nil {
 			return mergedCount, fmt.Errorf("failed to re-index merged chunks: %w", err)
 		}
 
-		// 5. 收集成功条目信息
+		// 5. Gom thông tin mục thành công
 		tagsByID := s.loadFAQTagsForChunks(ctx, tenantID, mergedChunks)
 		for i, op := range batch {
 			chunk := mergedChunks[i]
@@ -2750,29 +2750,29 @@ func faqTagInfo(tagsByID map[string]*types.KnowledgeTag, tagID string) (int64, s
 	return 0, ""
 }
 
-// buildFAQImportResultMessage 构建 FAQ 导入 / 验证最终结果的人类可读消息。
-// 前端会把它直接展示在 toast / 任务List 里，所以保持简单清晰：
-//   - 默认形态："导入完成 / 上传 N 条 / 成功 X 条 [/ 失败 Y 条] [/ 部分失败 Z 条]"
-//   - 当 MergedCount > 0 时改用拆分形态："/ 新增 X 条 / 合并Update  Y 条"，
-//     让用户在 append 模式下看到合并了多少条历史 FAQ 而不是只看到总成功数。
+// buildFAQImportResultMessage dựng thông báo dễ đọc cho kết quả cuối của nhập / kiểm tra FAQ.
+// Frontend hiển thị thẳng trong toast / danh sách tác vụ nên giữ đơn giản rõ ràng:
+//   - Dạng mặc định: "Nhập xong / Tải lên N mục / Thành công X mục [/ Thất bại Y mục] [/ Thất bại một phần Z mục]"
+//   - Khi MergedCount > 0 dùng dạng tách: "/ Thêm mới X mục / Gộp cập nhật Y mục",
+//     để người dùng ở chế độ append thấy đã gộp bao nhiêu FAQ cũ thay vì chỉ tổng số thành công.
 //
-// 内部 master 原始实现；HEAD 版本之前没有，所有完成消息只有 "正在处理第 N/M 条"。
+// Bản gốc của master nội bộ; HEAD trước đây không có, mọi thông báo hoàn thành chỉ là "Đang xử lý mục N/M".
 func (s *knowledgeService) buildFAQImportResultMessage(prefix string, progress *types.FAQImportProgress) string {
 	parts := []string{prefix}
-	parts = append(parts, fmt.Sprintf("上传 %d 条", progress.Total))
+	parts = append(parts, fmt.Sprintf("Tải lên %d mục", progress.Total))
 
 	if progress.MergedCount > 0 {
-		parts = append(parts, fmt.Sprintf("新增 %d 条", progress.AddedCount))
-		parts = append(parts, fmt.Sprintf("合并更新 %d 条", progress.MergedCount))
+		parts = append(parts, fmt.Sprintf("Thêm mới %d mục", progress.AddedCount))
+		parts = append(parts, fmt.Sprintf("Gộp cập nhật %d mục", progress.MergedCount))
 	} else {
-		parts = append(parts, fmt.Sprintf("成功 %d 条", progress.SuccessCount))
+		parts = append(parts, fmt.Sprintf("Thành công %d mục", progress.SuccessCount))
 	}
 
 	if progress.FailedCount > 0 {
-		parts = append(parts, fmt.Sprintf("失败 %d 条", progress.FailedCount))
+		parts = append(parts, fmt.Sprintf("Thất bại %d mục", progress.FailedCount))
 	}
 	if progress.PartialFailedCount > 0 {
-		parts = append(parts, fmt.Sprintf("部分失败 %d 条", progress.PartialFailedCount))
+		parts = append(parts, fmt.Sprintf("Thất bại một phần %d mục", progress.PartialFailedCount))
 	}
 
 	return strings.Join(parts, " / ")
@@ -2860,7 +2860,7 @@ func (s *knowledgeService) GetFAQImportProgress(ctx context.Context, taskID stri
 
 // UpdateLastFAQImportResultDisplayStatus updates the display status of FAQ import result
 func (s *knowledgeService) UpdateLastFAQImportResultDisplayStatus(ctx context.Context, kbID string, displayStatus string) error {
-	// 验证displayStatusParameters
+	// Kiểm tra tham số displayStatus
 	if displayStatus != "open" && displayStatus != "close" {
 		return werrors.NewBadRequestError("invalid display status, must be 'open' or 'close'")
 	}
@@ -2871,13 +2871,13 @@ func (s *knowledgeService) UpdateLastFAQImportResultDisplayStatus(ctx context.Co
 	}
 	tenantID := kb.TenantID
 
-	// 查找FAQ类型的knowledge
+	// Tìm knowledge loại FAQ
 	knowledgeList, err := s.repo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, kbID)
 	if err != nil {
 		return fmt.Errorf("failed to list knowledge: %w", err)
 	}
 
-	// 查找FAQ类型的knowledge
+	// Tìm knowledge loại FAQ
 	var faqKnowledge *types.Knowledge
 	for _, k := range knowledgeList {
 		if k.Type == types.KnowledgeTypeFAQ {
@@ -2890,7 +2890,7 @@ func (s *knowledgeService) UpdateLastFAQImportResultDisplayStatus(ctx context.Co
 		return werrors.NewNotFoundError("FAQ knowledge not found in this knowledge base")
 	}
 
-	// 解析当前的导入结果
+	// Phân tích kết quả nhập hiện tại
 	result, err := faqKnowledge.GetLastFAQImportResult()
 	if err != nil {
 		return fmt.Errorf("failed to parse FAQ import result: %w", err)
@@ -2900,15 +2900,15 @@ func (s *knowledgeService) UpdateLastFAQImportResultDisplayStatus(ctx context.Co
 		return werrors.NewNotFoundError("no FAQ import result found")
 	}
 
-	// Update 显示状态
+	// Cập nhật trạng thái hiển thị
 	result.DisplayStatus = displayStatus
 
-	// 保存Update 后的结果
+	// Lưu kết quả đã cập nhật
 	if err := faqKnowledge.SetLastFAQImportResult(result); err != nil {
 		return fmt.Errorf("failed to set FAQ import result: %w", err)
 	}
 
-	// Update 数据库
+	// Cập nhật cơ sở dữ liệu
 	if err := s.repo.UpdateKnowledge(ctx, faqKnowledge); err != nil {
 		return fmt.Errorf("failed to update knowledge: %w", err)
 	}

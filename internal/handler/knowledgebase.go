@@ -36,8 +36,8 @@ type KnowledgeBaseHandler struct {
 	kbAccessGrantService interfaces.KBAccessGrantService
 	asynqClient          interfaces.TaskEnqueuer
 	vectorStoreService   interfaces.VectorStoreService // enriches KB responses with bound store display
-	// userService 仅在 list 类接口里用于批量回填 creator_name；
-	// 真正的鉴权由 RBAC 中间件 + Lookup 完成，这里不参与决策。
+	// userService chỉ dùng trong các API list để điền hàng loạt creator_name;
+	// việc phân quyền thực sự do middleware RBAC + Lookup đảm nhiệm, ở đây không quyết định.
 	userService interfaces.UserService
 	// fileService and storageResolver back the optional `resource_urls=public`
 	// mode on hybrid-search. Both may be nil in tests, in which case only the
@@ -266,16 +266,16 @@ func (h *KnowledgeBaseHandler) resolveKBStoreView(
 }
 
 // HybridSearch godoc
-// @Summary      混合搜索
-// @Description  在Knowledge Base中执行向量和关键词混合搜索。推荐使用 POST；GET 携带 JSON 请求体仍受支持（兼容旧客户端）。
-// @Tags         Knowledge Base
+// @Summary      Tìm kiếm kết hợp
+// @Description  Tìm kiếm kết hợp vector và từ khoá trong kho tri thức. Nên dùng POST; GET kèm body JSON vẫn được hỗ trợ (tương thích client cũ).
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id             path      string             true   "Knowledge BaseID"
-// @Param        request        body      types.SearchParams true   "搜索Parameters "
-// @Param        resource_urls  query     string  false  "文件引用形式，public 返回可加载直链"  Enums(handle, public)  default(handle)
-// @Success      200            {object}  map[string]interface{}  "搜索结果"
-// @Failure      400            {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request        body      types.SearchParams true   "tham số tìm kiếm"
+// @Param        resource_urls  query     string  false  "dạng tham chiếu tệp, public trả về liên kết tải trực tiếp"  Enums(handle, public)  default(handle)
+// @Success      200            {object}  map[string]interface{}  "kết quả tìm kiếm"
+// @Failure      400            {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/hybrid-search [post]
@@ -344,13 +344,13 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 
 // CreateKnowledgeBase godoc
 // @Summary      Create Knowledge Base
-// @Description  Create 新的Knowledge Base
-// @Tags         Knowledge Base
+// @Description  Tạo kho tri thức mới
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.KnowledgeBase  true  "Knowledge Base信息"
-// @Success      201      {object}  map[string]interface{}  "Create 的Knowledge Base"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.KnowledgeBase  true  "thông tin kho tri thức"
+// @Success      201      {object}  map[string]interface{}  "kho tri thức đã tạo"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases [post]
@@ -424,12 +424,12 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 // CreatePublicKnowledgeBase godoc
 // @Summary      Create platform public Knowledge Base
 // @Description  Create a platform-owned public knowledge base (owner and data scope 0). Explicit human SuperAdmin only; never reachable with an API key.
-// @Tags         Knowledge Base
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.KnowledgeBase  true  "Knowledge Base信息"
-// @Success      201      {object}  map[string]interface{}  "Create 的Knowledge Base"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.KnowledgeBase  true  "thông tin kho tri thức"
+// @Success      201      {object}  map[string]interface{}  "kho tri thức đã tạo"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /knowledge-bases/public [post]
 func (h *KnowledgeBaseHandler) CreatePublicKnowledgeBase(c *gin.Context) {
@@ -496,16 +496,16 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(
 }
 
 // GetKnowledgeBase godoc
-// @Summary      获取Knowledge BaseDetails
-// @Description  根据ID获取Knowledge BaseDetails 。当使用共享智能体时，可传 agent_id 以校验该智能体是否有权访问该Knowledge Base。
-// @Tags         Knowledge Base
+// @Summary      Lấy chi tiết kho tri thức
+// @Description  Lấy chi tiết kho tri thức theo ID. Khi dùng trợ lý chia sẻ, có thể truyền agent_id để kiểm tra trợ lý đó có quyền truy cập kho tri thức này không.
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id         path      string  true   "Knowledge BaseID"
-// @Param        agent_id   query     string  false  "共享智能体 ID（用于校验智能体是否有权访问该Knowledge Base）"
+// @Param        agent_id   query     string  false  "ID trợ lý chia sẻ (để kiểm tra trợ lý có quyền truy cập kho tri thức này không)"
 // @Success      200  {object}  map[string]interface{}  "Knowledge BaseDetails "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "Knowledge Base不存在"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy kho tri thức"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id} [get]
@@ -524,21 +524,21 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 	storeView := h.resolveKBStoreView(c.Request.Context(), kb, tenantID)
 	var extras map[string]interface{}
 	if kb.TenantID != tenantID && permission != "" {
-		// Include my_permission in data so frontend can show role (e.g. "只读") instead of "--" for agent-visible KBs
+		// Include my_permission in data so frontend can show role (e.g. "Chỉ đọc") instead of "--" for agent-visible KBs
 		extras = map[string]interface{}{"my_permission": permission}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": buildKBResponse(kb, storeView, extras)})
 }
 
 // ListKnowledgeBases godoc
-// @Summary      获取Knowledge BaseList
-// @Description  获取当前Tenant workspace的所有Knowledge Base；或当传入 agent_id（共享智能体）时，校验权限后返回该智能体Configuration 的Knowledge Base范围（用于 @ 提及）
-// @Tags         Knowledge Base
+// @Summary      Lấy danh sách kho tri thức
+// @Description  Lấy mọi kho tri thức của đơn vị hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        agent_id  query     string  false  "共享智能体 ID（传入时返回该智能体可用的Knowledge Base）"
+// @Param        agent_id  query     string  false  "ID trợ lý chia sẻ (khi truyền sẽ trả về các kho tri thức trợ lý đó dùng được)"
 // @Success      200  {object}  map[string]interface{}  "Knowledge BaseList "
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Failure      500  {object}  errors.AppError         "lỗi hệ thống"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases [get]
@@ -599,9 +599,9 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		}
 	}
 
-	// 批量回填 creator_name，让前端List 能区分「我Create 」与「同Tenant workspace其他成员Create 」。
-	// 仅在 list 接口里回填，Details  / 编辑场景不依赖这个字段；解析失败（用户已Delete 、
-	// CreatorID 为空的老数据）就让字段为空，前端按 fallback 渲染。
+	// Điền hàng loạt creator_name để danh sách ở frontend phân biệt "tôi tạo" với "thành viên khác trong đơn vị tạo".
+	// Chỉ điền trong API list, màn chi tiết / sửa không phụ thuộc trường này; giải mã thất bại (người dùng đã xoá,
+	// dữ liệu cũ CreatorID rỗng) thì để trống, frontend tự hiển thị fallback.
 	enrichKBCreatorNames(ctx, h.userService, kbs)
 
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
@@ -612,14 +612,14 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 }
 
 // ListPublicCatalog godoc
-// @Summary      平台公开 Knowledge Base目录
-// @Description  返回平台公开 KB 的一页（owner_tenant_id=0 且 visibility=public），附带 total/page/page_size 元数据。仅限已认证人类调用；匿名 401，API key 403。无租户上下文的显式人类 SuperAdmin 可调用。
-// @Tags         Knowledge Base
+// @Summary      Danh mục kho tri thức công khai của nền tảng
+// @Description  Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh đơn vị vẫn gọi được.
+// @Tags         Kho tri thức
 // @Produce      json
-// @Param        page       query     int     false  "页码（从 1 开始，默认 1）"
-// @Param        page_size  query     int     false  "每页条数（默认 50，上限 200）"
-// @Param        q          query     string  false  "名称/描述关键字过滤"
-// @Success      200        {object}  map[string]interface{}  "公开目录分页"
+// @Param        page       query     int     false  "số trang (bắt đầu từ 1, mặc định 1)"
+// @Param        page_size  query     int     false  "số mục mỗi trang (mặc định 50, tối đa 200)"
+// @Param        q          query     string  false  "lọc theo từ khoá tên/mô tả"
+// @Success      200        {object}  map[string]interface{}  "trang danh mục công khai"
 // @Security     Bearer
 // @Router       /knowledge-bases/public [get]
 func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
@@ -675,7 +675,7 @@ func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
 // SubscribeKnowledgeBase godoc
 // @Summary      Subscribe to a published knowledge base
 // @Description  Adds a published KB to the default retrieval scope of the caller, or of the whole workspace with scope=tenant (Tenant Admin only).
-// @Tags         Knowledge Base
+// @Tags         Kho tri thức
 // @Param        id     path   string  true   "Knowledge base ID"
 // @Param        scope  query  string  false  "me (default) or tenant"
 // @Success      200  {object}  map[string]interface{}
@@ -687,7 +687,7 @@ func (h *KnowledgeBaseHandler) SubscribeKnowledgeBase(c *gin.Context) {
 
 // UnsubscribeKnowledgeBase godoc
 // @Summary      Unsubscribe from a published knowledge base
-// @Tags         Knowledge Base
+// @Tags         Kho tri thức
 // @Param        id     path   string  true   "Knowledge base ID"
 // @Param        scope  query  string  false  "me (default) or tenant"
 // @Success      200  {object}  map[string]interface{}
@@ -753,9 +753,9 @@ func filterKnowledgeBasesForAPIKeyScope(ctx context.Context, kbs []*types.Knowle
 	return filtered
 }
 
-// enrichKBCreatorNames 把 KB List 里的 CreatorID 批量解析成展示名（username
-// 优先，退化到 email）。任意一步失败都吞掉错误：creator_name 缺失只会影响
-// 卡片右下角的徽章展示，不该影响List 本身可用。
+// enrichKBCreatorNames giải mã hàng loạt CreatorID trong danh sách KB thành tên hiển thị (ưu tiên
+// username, không có thì dùng email). Bước nào lỗi cũng nuốt lỗi: thiếu creator_name chỉ ảnh hưởng
+// huy hiệu góc dưới phải của thẻ, không được làm hỏng danh sách.
 func enrichKBCreatorNames(ctx context.Context, userSvc interfaces.UserService, kbs []*types.KnowledgeBase) {
 	if userSvc == nil || len(kbs) == 0 {
 		return
@@ -804,14 +804,14 @@ func pickUserDisplayName(u *types.User) string {
 }
 
 // TogglePinKnowledgeBase godoc
-// @Summary      置顶/取消置顶Knowledge Base
-// @Description  切换Knowledge Base的置顶状态
-// @Tags         Knowledge Base
+// @Summary      Ghim / bỏ ghim kho tri thức
+// @Description  Chuyển trạng thái ghim của kho tri thức
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id  path      string  true  "Knowledge BaseID"
-// @Success      200  {object}  map[string]interface{}  "Update 后的Knowledge Base"
-// @Failure      404  {object}  errors.AppError         "Knowledge Base不存在"
+// @Success      200  {object}  map[string]interface{}  "kho tri thức sau khi cập nhật"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy kho tri thức"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/pin [put]
@@ -850,14 +850,14 @@ type UpdateKnowledgeBaseRequest struct {
 
 // UpdateKnowledgeBase godoc
 // @Summary      Update Knowledge Base
-// @Description  Update Knowledge Base的名称、描述和Configuration
-// @Tags         Knowledge Base
+// @Description  Cập nhật tên, mô tả và cấu hình kho tri thức
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                     true  "Knowledge BaseID"
-// @Param        request  body      UpdateKnowledgeBaseRequest true  "Update 请求"
-// @Success      200      {object}  map[string]interface{}     "Update 后的Knowledge Base"
-// @Failure      400      {object}  errors.AppError            "请求Parameters 错误"
+// @Param        request  body      UpdateKnowledgeBaseRequest true  "yêu cầu cập nhật"
+// @Success      200      {object}  map[string]interface{}     "kho tri thức sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError            "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id} [put]
@@ -954,15 +954,15 @@ type UpdateKnowledgeBaseVisibilityRequest struct {
 }
 
 // UpdateKnowledgeBaseVisibility godoc
-// @Summary      修改Knowledge Base可见范围
-// @Description  切换Knowledge Base tenant/restricted/published/public 可见范围, member_default (view|contribute)
-// @Tags         Knowledge Base
+// @Summary      Đổi phạm vi hiển thị kho tri thức
+// @Description  Chuyển phạm vi hiển thị kho tri thức tenant/restricted/published/public, member_default (view|contribute)
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                                true  "Knowledge BaseID"
-// @Param        request  body      UpdateKnowledgeBaseVisibilityRequest true  "可见范围请求"
-// @Success      200      {object}  map[string]interface{}               "Update 后的Knowledge Base"
-// @Failure      400      {object}  errors.AppError                      "请求Parameters 错误"
+// @Param        request  body      UpdateKnowledgeBaseVisibilityRequest true  "yêu cầu đổi phạm vi hiển thị"
+// @Success      200      {object}  map[string]interface{}               "kho tri thức sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError                      "tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /knowledge-bases/{id}/visibility [put]
 func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
@@ -1028,7 +1028,7 @@ type TransferKnowledgeBaseOwnerResponse struct {
 // TransferKnowledgeBaseOwner godoc
 // @Summary      Transfer knowledge base owner
 // @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).
-// @Tags         Knowledge Base
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                             true  "Knowledge Base ID"
@@ -1077,13 +1077,13 @@ func (h *KnowledgeBaseHandler) TransferKnowledgeBaseOwner(c *gin.Context) {
 }
 
 // GenerateKnowledgeBaseProfile godoc
-// @Summary      生成Knowledge Base描述
-// @Description  基于文档画像聚合，立即重新生成Knowledge Base的 AI 描述（不覆盖手写描述）
-// @Tags         Knowledge Base
+// @Summary      Sinh mô tả kho tri thức
+// @Description  Dựa trên tổng hợp hồ sơ tài liệu, sinh lại ngay mô tả AI của kho tri thức (không ghi đè mô tả viết tay)
+// @Tags         Kho tri thức
 // @Produce      json
 // @Param        id   path      string  true  "Knowledge BaseID"
-// @Success      200  {object}  map[string]interface{}  "生成的Knowledge Base画像"
-// @Failure      400  {object}  errors.AppError         "Knowledge Base类型不支持或未Configuration 模型"
+// @Success      200  {object}  map[string]interface{}  "hồ sơ kho tri thức đã sinh"
+// @Failure      400  {object}  errors.AppError         "loại kho tri thức không hỗ trợ hoặc chưa cấu hình mô hình"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/profile/generate [post]
@@ -1132,13 +1132,13 @@ const knowledgeBaseProfileRequestTimeout = 2 * time.Minute
 
 // DeleteKnowledgeBase godoc
 // @Summary      Delete Knowledge Base
-// @Description  Delete 指定的Knowledge Base及其所有内容
-// @Tags         Knowledge Base
+// @Description  Xoá kho tri thức chỉ định cùng toàn bộ nội dung
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Knowledge BaseID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "xoá thành công"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id} [delete]
@@ -1205,14 +1205,14 @@ type DuplicateKnowledgeBaseResponse struct {
 }
 
 // CopyKnowledgeBase godoc
-// @Summary      复制Knowledge Base
-// @Description  将一个Knowledge Base的内容复制到另一个Knowledge Base（异步任务）
-// @Tags         Knowledge Base
+// @Summary      Sao chép kho tri thức
+// @Description  Sao chép nội dung một kho tri thức sang kho khác (tác vụ bất đồng bộ)
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CopyKnowledgeBaseRequest   true  "复制请求"
-// @Success      200      {object}  map[string]interface{}     "任务ID"
-// @Failure      400      {object}  errors.AppError            "请求Parameters 错误"
+// @Param        request  body      CopyKnowledgeBaseRequest   true  "yêu cầu sao chép"
+// @Success      200      {object}  map[string]interface{}     "ID tác vụ"
+// @Failure      400      {object}  errors.AppError            "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/copy [post]
@@ -1357,14 +1357,14 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 }
 
 // DuplicateKnowledgeBase godoc
-// @Summary      Create Knowledge Base副本
-// @Description  Create 一个只包含Settings 的新Knowledge Base副本，不复制知识、FAQ 内容、分块、索引、Wiki 页面、分享或置顶状态
-// @Tags         Knowledge Base
+// @Summary      Tạo bản sao kho tri thức
+// @Description  Tạo bản sao kho tri thức chỉ gồm cài đặt, không sao chép tài liệu, FAQ, đoạn (chunk), chỉ mục, trang Wiki, chia sẻ hay trạng thái ghim
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                  true  "源Knowledge Base ID"
-// @Success      201      {object}  map[string]interface{}  "Create 后的Knowledge Base副本"
-// @Failure      400      {object}  errors.AppError                 "请求Parameters 错误"
+// @Param        id       path      string                  true  "ID kho tri thức nguồn"
+// @Success      201      {object}  map[string]interface{}  "bản sao kho tri thức đã tạo"
+// @Failure      400      {object}  errors.AppError                 "tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /knowledge-bases/{id}/duplicate [post]
 func (h *KnowledgeBaseHandler) DuplicateKnowledgeBase(c *gin.Context) {
@@ -1423,14 +1423,14 @@ func (h *KnowledgeBaseHandler) DuplicateKnowledgeBase(c *gin.Context) {
 }
 
 // GetKBCloneProgress godoc
-// @Summary      获取Knowledge Base复制进度
-// @Description  获取Knowledge Base复制任务的进度
-// @Tags         Knowledge Base
+// @Summary      Lấy tiến độ sao chép kho tri thức
+// @Description  Lấy tiến độ tác vụ sao chép kho tri thức
+// @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
-// @Param        task_id  path      string  true  "任务ID"
-// @Success      200      {object}  map[string]interface{}  "进度信息"
-// @Failure      404      {object}  errors.AppError         "任务不存在"
+// @Param        task_id  path      string  true  "ID tác vụ"
+// @Success      200      {object}  map[string]interface{}  "thông tin tiến độ"
+// @Failure      404      {object}  errors.AppError         "không tìm thấy tác vụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/copy/progress/{task_id} [get]
@@ -1538,14 +1538,14 @@ func validateKnowledgeBasePromptInstructions(kb *types.KnowledgeBase) error {
 // Filters: same Type, same EmbeddingModelID, different ID, not temporary.
 //
 // ListMoveTargets godoc
-// @Summary      获取可移动目标Knowledge BaseList
-// @Description  返回与源Knowledge Base Type 一致、EmbeddingModelID 一致、非临时且不是自身的目标Knowledge BaseList
-// @Tags         Knowledge Base
+// @Summary      Lấy danh sách kho tri thức đích có thể di chuyển tới
+// @Description  Trả về các kho tri thức đích cùng Type, cùng EmbeddingModelID với kho nguồn, không tạm thời và không phải chính nó
+// @Tags         Kho tri thức
 // @Produce      json
-// @Param        id   path      string                  true  "源Knowledge Base ID"
-// @Success      200  {object}  map[string]interface{}  "可移动目标List "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "Knowledge Base不存在"
+// @Param        id   path      string                  true  "ID kho tri thức nguồn"
+// @Success      200  {object}  map[string]interface{}  "danh sách đích có thể di chuyển"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy kho tri thức"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/move-targets [get]

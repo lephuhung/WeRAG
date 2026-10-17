@@ -33,6 +33,11 @@ const (
 // summary plus the newest turn no longer fit, and every turn would compact.
 const MinHistoryTokens = 32768
 
+// DefaultHistoryTokens is the history budget of a plan that sets none
+// (SuperAdmin, plans without the key, enforcement off): a long chat is
+// summarized past it instead of filling the model window.
+const DefaultHistoryTokens = 100000
+
 // UsagePlanFeatures is the typed view of the feature keys above. Zero means
 // unlimited for every field.
 type UsagePlanFeatures struct {
@@ -104,13 +109,12 @@ func (f UsagePlanFeatures) EffectiveMaxIterations(agentMax int) int {
 
 // EffectiveHistoryTokens is the history budget of one turn on a model with
 // the given window: the plan's value clamped to [MinHistoryTokens, window],
-// or the window itself when the plan sets none.
+// or DefaultHistoryTokens (at most the window) when the plan sets none.
 func (f UsagePlanFeatures) EffectiveHistoryTokens(window int) int {
-	if f.HistoryTokens <= 0 {
-		return window
+	budget := DefaultHistoryTokens
+	if f.HistoryTokens > 0 {
+		budget = max(int(min(f.HistoryTokens, math.MaxInt32)), MinHistoryTokens)
 	}
-	budget := int(min(f.HistoryTokens, math.MaxInt32))
-	budget = max(budget, MinHistoryTokens)
 	if window > 0 && budget > window {
 		budget = window
 	}

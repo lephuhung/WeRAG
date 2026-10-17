@@ -43,6 +43,8 @@ class Step:
     before: Optional[Callable[[Ctx], None]] = None
     judge: Optional[str] = None
     note: str = ""
+    # extra fields merged into the agent-chat body (e.g. {"recheck_words": [...]})
+    extra: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -140,6 +142,18 @@ def _abbr_looked_up(*shorts):
         got = {str(x.get("short_form", "")).lower() for st in _abbr_states(t) for x in st.get("terms") or []}
         return all(s in got for s in shorts), f"terms {sorted(got)}"
     return C.custom(f"abbreviations {list(shorts)} looked up", fn)
+
+
+def _auto_corrected(word, guess):
+    """the gate read `word` as `guess` silently (≥2 sources agreed); the UI shows "Không phải?" to undo."""
+    def fn(t, ctx):
+        for st in _abbr_states(t):
+            for c in st.get("auto_corrections") or []:
+                if str(c.get("wrong", "")).lower() == word:
+                    return (st.get("status") == "ready" and str(c.get("correct", "")).lower() == guess,
+                            f"auto_corrections {st.get('auto_corrections')}")
+        return False, "no auto_correction"
+    return C.custom(f"'{word}' silently read as '{guess}' (undo via 'Không phải?')", fn)
 
 SCENARIOS: List[Scenario] = [
     # ------------------------------------------------------------------ content
@@ -489,9 +503,10 @@ SCENARIOS: List[Scenario] = [
             S(C.answer_mentions_groups([["452"], ["2,8 tỷ", "2.8 tỷ", "2,8"], ["350"]], 2, warn_at=1),
               C.answer_mentions_groups([["415"], ["2,5 tỷ", "2.5 tỷ", "2,5"], ["320"]], 2, warn_at=1),
               C.any_tool_called(["find_in_documents", "read_document_outline", "mark_passages"], status=WARN),
-              C.no_ops("replaceText"), C.no_ops("replaceParagraph"), C.no_display_type(CLARIFY)),
+              C.no_ops("replaceText"), C.no_ops("replaceParagraph"), C.no_display_type(CLARIFY),
+              C.answer_not_contains(["đã sửa", "đã cập nhật"])),
             mentions=men("bao_cao_dai.docx", "ke_hoach_nguon.docx"),
-            judge="Phải nêu đúng ba chỗ lệch: hồ sơ nộp lưu 415 (báo cáo) với 452 (nguồn); kinh phí 2,5 tỷ với 2,8 tỷ; lượt tập huấn 320 với 350. Không được tự sửa báo cáo; chỉ báo lệch và/hoặc đánh dấu.",
+            judge="Phải nêu đúng ba chỗ lệch: hồ sơ nộp lưu 415 (báo cáo) với 452 (nguồn); kinh phí 2,5 tỷ với 2,8 tỷ; lượt tập huấn 320 với 350. Trợ lý không được tự thay đổi văn bản (không có thao tác sửa); nêu trong chat rằng nên sửa 415 → 452 là ĐẠT vì chỉ là khuyến nghị. Chỉ trượt khi khẳng định đã sửa, hoặc bỏ sót/bịa chỗ lệch.",
         )],
     ),
     Scenario(
@@ -695,39 +710,43 @@ SCENARIOS: List[Scenario] = [
         ],
     ),
     # A suspected keyboard typo in a chat question (raw Telex: cascc = các,
-    # phaps = pháp) is never guessed silently: the gate asks what the word
-    # is (abbreviation / you mistyped "các"? / keep / other), the guess
-    # coming from the spellcheck model; picking the typo option continues
-    # the original question with the corrected word. Real abbreviations
-    # (ubnd, bhxh) still go to the dictionary.
+    # phaps = pháp) is auto-corrected when ≥2 sources agree on the reading
+    # (DecideTypo → auto_corrections); the UI then shows the corrected word
+    # with a "Không phải?" button, which resends the question with
+    # recheck_words → the gate asks with a card (abbreviation / you mistyped
+    # "các"? / keep / other). Real abbreviations (bhxh) still go to the
+    # dictionary.
     Scenario(
-        id="abbr_typo", group="partial", title="Từ nghi gõ sai (cascc) → hỏi lại bằng lựa chọn có gợi ý 'các'; chọn → trả lời câu gốc; ubnd/bhxh vẫn tra từ điển",
+        id="abbr_typo", group="partial", title="Từ gõ sai (cascc) → tự sửa thành 'các' khi các nguồn đồng ý; 'Không phải?' → hỏi lại bằng thẻ; bhxh vẫn tra từ điển",
         documents=[("target", "quy_trinh.docx")],
         requires="vllm-spell (builtin-llm-spellcheck) đang chạy; từ điển dev có UBND, BHXH active",
         steps=[
             Step(
                 "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
-                S(_unclear_card("cascc", "các"), C.answer_contains_any(["chưa rõ ý nghĩa"]), C.no_edit_ops(),
-                  C.custom("offers the rewritten question with 'các'",
-                           lambda t, ctx: any(str(o.get("resend", "")).startswith("số lượng hồ sơ các loại")
-                                              for tc in t.tool_calls if (tc.data or {}).get("display_type") == "abbreviation_choice"
-                                              for o in (tc.data or {}).get("options") or []), status=WARN)),
-                note="Trước đây cổng viết tắt hỏi 'nghĩa đầy đủ của cascc'; giờ hỏi lại kèm lựa chọn 'Bạn gõ sai, ý là “các”'.",
+                S(_auto_corrected("cascc", "các"), C.no_display_type("abbreviation_choice"),
+                  C.answer_not_contains(["chưa rõ ý nghĩa", "nghĩa đầy đủ"]), C.no_edit_ops()),
+                note="Hai nguồn đồng ý 'các' → tự sửa; UI hiện nút 'Không phải?'.",
+            ),
+            Step(
+                "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
+                S(_unclear_card("cascc", "các"), C.answer_contains_any(["chưa rõ ý nghĩa"]), C.no_edit_ops()),
+                extra={"recheck_words": ["cascc"]},
+                note="Mô phỏng bấm 'Không phải?': gửi lại câu hỏi với recheck_words=[cascc] → cổng hỏi lại bằng thẻ.",
             ),
             Step(
                 _pick_typo("cascc"),
-                S(_typo_fixed("cascc"), C.no_display_type("abbreviation_choice"), C.answer_not_contains(["chưa rõ ý nghĩa", "nghĩa đầy đủ"]), C.no_edit_ops()),
+                S(_typo_fixed("cascc"), C.no_display_type("abbreviation_choice"), C.no_edit_ops()),
                 note="Mô phỏng bấm 'Bạn gõ sai, ý là “các”': gửi 'cascc → các', câu gốc chạy tiếp với 'các'.",
             ),
             Step(
                 "phaps luật về bhxh cho cán bộ ubnd xã quy định gì",
-                S(_unclear_card("phaps", "pháp"), C.no_edit_ops()),
-                note="Từ gõ sai thứ hai cũng được hỏi lại, không tự sửa.",
-            ),
-            Step(
-                _pick_typo("phaps"),
-                S(_typo_fixed("phaps"), _abbr_looked_up("ubnd", "bhxh"), C.no_display_type("abbreviation_choice"), C.no_edit_ops()),
-                note="Viết tắt viết thường vẫn được tra từ điển, không bị coi là lỗi gõ.",
+                S(_auto_corrected("phaps", "pháp"), _abbr_looked_up("bhxh"),
+                  C.custom("ubnd looked up",
+                           lambda t, ctx: "ubnd" in {str(x.get("short_form", "")).lower()
+                                                     for st in _abbr_states(t) for x in st.get("terms") or []},
+                           status=WARN),
+                  C.no_display_type("abbreviation_choice"), C.no_edit_ops()),
+                note="Từ gõ sai thứ hai cũng tự sửa; viết tắt viết thường vẫn được tra từ điển (ubnd: WARN, đang điều tra riêng).",
             ),
         ],
     ),

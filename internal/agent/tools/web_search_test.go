@@ -33,7 +33,7 @@ func TestAgentWebSearchUsesProviderWithoutRAGDependencies(t *testing.T) {
 	svc := &searchOnlyWebService{results: []*types.WebSearchResult{
 		nil,
 		{URL: "javascript:alert(1)"},
-		{URL: "https://example.com/a", Title: "A", Snippet: "证据"},
+		{URL: "https://example.com/a", Title: "A", Snippet: "bằng chứng"},
 		{URL: "https://example.com/a#section"},
 		{URL: "https://example.com/b"},
 		{URL: "https://example.com/c"},

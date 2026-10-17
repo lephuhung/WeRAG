@@ -65,7 +65,7 @@ func TestHandleMessageStreamFinalDelivery(t *testing.T) {
 			if messages.saved == nil || !messages.saved.IsCompleted || messages.saved.Content != "complete final answer" {
 				t.Fatalf("final answer not persisted despite delivery outcome: %+v", messages.saved)
 			}
-			if strings.Contains(adapter.finalContent, "思考") {
+			if strings.Contains(adapter.finalContent, "Suy nghĩ") {
 				t.Fatalf("final display still contains progress: %q", adapter.finalContent)
 			}
 		})

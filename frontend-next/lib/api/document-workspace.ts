@@ -428,6 +428,40 @@ export async function uploadDocumentContent(
   };
 }
 
+/** Embedded editor: writes a new NĐ30 document (built here from a ready
+ * prepare_document_template result) into an empty document; the editor
+ * then reloads (new editor_key). `revision` is the one the page last saw.
+ * A 409 means the document has text or changed meanwhile. */
+export async function storeDocumentTemplate(
+  sessionId: string,
+  documentId: string,
+  revision: number,
+  docx: Uint8Array,
+): Promise<{ revision: number; editorKey: string }> {
+  const url = `${base(sessionId, documentId)}/template?revision=${encodeURIComponent(String(revision))}`;
+  const send = () =>
+    fetch(url, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      body: docx as BodyInit,
+    });
+  let res = await send();
+  if (res.status === 401) {
+    await refreshAccessToken();
+    res = await send();
+  }
+  const payload = (await res.json().catch(() => null)) as Envelope<{ revision: number; editor_key: string }> & {
+    error?: { message?: string } | string;
+    message?: string;
+  } | null;
+  if (!res.ok) {
+    const msg =
+      (typeof payload?.error === "string" ? payload.error : payload?.error?.message) ?? payload?.message ?? "Upload failed";
+    throw toWorkspaceError(new ApiError(res.status, msg, payload));
+  }
+  return { revision: Number(payload?.data?.revision) || 0, editorKey: payload?.data?.editor_key ?? "" };
+}
+
 export function downloadDocumentWorkspace(sessionId: string, documentId?: string): Promise<Blob> {
   return apiDownload(`${base(sessionId, documentId)}/download`);
 }
@@ -645,10 +679,55 @@ export interface DocumentFormatReport {
   file_name: string;
   document_type?: string;
   document_type_label?: string;
+  /** full: checked against NĐ30; technical: page and fonts only (a form of
+   * a specialised act, a văn bản quy phạm pháp luật, an unknown type);
+   * attached: a văn bản ban hành kèm theo. scope_reason says why. */
+  scope?: "full" | "technical" | "attached" | string;
+  scope_reason?: string;
   summary?: { pass: number; fail: number; warn: number; skip: number };
   /** Markdown judgment against NĐ30/2020/NĐ-CP. */
   evaluation: string;
   checked_at: string;
+  /** Names this evaluation; feedback is given on it. */
+  report_id?: string;
+  /** The workspace revision that was checked (findings apply to it). */
+  document_revision?: number;
+  findings?: DocumentFormatFinding[];
+}
+
+/** One failing or warning check of a format check report. */
+export interface DocumentFormatFinding {
+  id: string;
+  check_id: string;
+  title: string;
+  reason?: string;
+  current?: string;
+  expected?: string;
+  /** Where it is (absent for a missing part): the paragraph, and the text
+   * inside it. Read with lib/format-findings parseFormatFindings. */
+  anchor?: { text: string; occurrence?: number };
+  text?: string;
+  text_occurrence?: number;
+  /** At most one formatParagraph the user can apply. */
+  ops?: unknown[];
+}
+
+/** The user's feedback on a format check report: false_alarm on one
+ * finding, or not_nd30 / wrong_type / other on the whole report. */
+export type DocumentFormatVerdict = "false_alarm" | "not_nd30" | "wrong_type" | "other";
+
+/** POST …/format-check/feedback: stores the feedback as data for tuning
+ * the checker (nothing is rechecked). A 409 means the report changed. */
+export async function sendDocumentFormatFeedback(
+  sessionId: string,
+  documentId: string,
+  body: { report_id: string; verdict: DocumentFormatVerdict; finding_id?: string; note?: string },
+): Promise<void> {
+  try {
+    await apiPost<Envelope<unknown>>(`${base(sessionId, documentId)}/format-check/feedback`, body);
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
 }
 
 /** GET …/documents/:doc/format-check: the check state and, once ready, its

@@ -27,3 +27,12 @@ func TestBuildVLMCaptionPrompt(t *testing.T) {
 		}
 	})
 }
+
+func TestCaptionEnabledHonoursOCROnly(t *testing.T) {
+	if !captionEnabled(types.VLMConfig{Enabled: true}) {
+		t.Fatal("caption should run by default")
+	}
+	if captionEnabled(types.VLMConfig{Enabled: true, OCROnly: true}) {
+		t.Fatal("caption must be skipped when ocr_only is set")
+	}
+}

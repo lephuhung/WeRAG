@@ -106,7 +106,7 @@ func selectChatModel(models []*types.Model, id string) *types.Model {
 // @Summary      Chat completion with a workspace chat model
 // @Description  Runs one text completion on the workspace default chat model
 // @Description  (or model_id). Model credentials stay server-side.
-// @Tags         模型管理
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
 // @Param        request  body      LLMChatRequest  true  "messages"

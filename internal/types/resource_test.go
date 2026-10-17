@@ -19,7 +19,7 @@ func TestParseResourcePathRejectsMalformedHandles(t *testing.T) {
 		ResourceScheme + strings.Repeat("a", ResourceHandleLength+1),
 		ResourceScheme + strings.Repeat("a", ResourceHandleLength-1) + "/",
 		// Multi-byte input must not slip through a byte-wise character check.
-		ResourceScheme + strings.Repeat("中", ResourceHandleLength),
+		ResourceScheme + strings.Repeat("ă", ResourceHandleLength),
 	} {
 		if _, ok := ParseResourcePath(value); ok {
 			t.Errorf("ParseResourcePath(%q) accepted a malformed reference", value)
@@ -36,10 +36,10 @@ func TestScanResourceReferences(t *testing.T) {
 		text string
 		want []string
 	}{
-		{name: "no references", text: "普通正文，没有引用。", want: nil},
+		{name: "no references", text: "Văn bản thường, không có tham chiếu.", want: nil},
 		{
 			name: "markdown image and link",
-			text: "![图](" + first + ")\n\n[表格](" + second + ")",
+			text: "![hình](" + first + ")\n\n[bảng](" + second + ")",
 			want: []string{first, second},
 		},
 		{
@@ -56,7 +56,7 @@ func TestScanResourceReferences(t *testing.T) {
 		},
 		{
 			name: "trailing punctuation still delimits a handle",
-			text: "见 " + first + "。",
+			text: "xem " + first + "…",
 			want: []string{first},
 		},
 	}

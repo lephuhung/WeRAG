@@ -28,12 +28,15 @@ export function listAbbreviations(params: {
   isActive?: boolean;
   page?: number;
   pageSize?: number;
+  /** Row offset; overrides page. */
+  offset?: number;
 }): Promise<AbbreviationListResponse> {
   const q = new URLSearchParams();
   if (params.search) q.set("search", params.search);
   if (params.isActive !== undefined) q.set("is_active", String(params.isActive));
   if (params.page) q.set("page", String(params.page));
   if (params.pageSize) q.set("page_size", String(params.pageSize));
+  if (params.offset !== undefined) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiGet(`/api/v1/abbreviations${qs ? `?${qs}` : ""}`);
 }

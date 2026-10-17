@@ -9,7 +9,7 @@ import (
 
 func TestFirstBrokenPythonQuoteCatchesNestedASCIIQuotes(t *testing.T) {
 	src := "slides = [\n" +
-		"    (\"这不是一个\"大干快上\"的夜晚，而是一个适合整理、沉淀、\", False),\n" +
+		"    (\"Đây không phải là một đêm \"làm nhanh làm mạnh\", mà là một đêm để sắp xếp, lắng đọng, \", False),\n" +
 		"]\n"
 	line, ok := firstBrokenPythonQuote(src)
 	require.True(t, ok)
@@ -27,12 +27,12 @@ func TestFirstBrokenPythonQuoteAllowsImplicitConcat(t *testing.T) {
 }
 
 func TestFirstBrokenPythonQuoteAllowsSingleQuotedChinese(t *testing.T) {
-	_, ok := firstBrokenPythonQuote("x = '这不是一个\"大干快上\"的夜晚'\n")
+	_, ok := firstBrokenPythonQuote("x = 'Đây không phải là một đêm \"làm nhanh làm mạnh\" mới đúng'\n")
 	assert.False(t, ok)
 }
 
 func TestFirstBrokenPythonQuoteAllowsCornerQuotes(t *testing.T) {
-	_, ok := firstBrokenPythonQuote("x = \"这不是一个「大干快上」的夜晚\"\n")
+	_, ok := firstBrokenPythonQuote("x = \"Đây không phải là một đêm 「làm nhanh làm mạnh」 mới đúng\"\n")
 	assert.False(t, ok)
 }
 
@@ -48,7 +48,7 @@ func TestFirstBrokenPythonQuoteReportsUnclosed(t *testing.T) {
 }
 
 func TestPythonScriptSyntaxHintOnlyForPy(t *testing.T) {
-	src := "(\"这不是一个\"大干快上\"的夜晚\")\n"
+	src := "(\"Đây không phải là một đêm \"làm nhanh làm mạnh\" mới đúng\")\n"
 	assert.Contains(t, pythonScriptSyntaxHint("/workspace/output/x.py", src, ToolEditSandboxFile),
 		ToolEditSandboxFile, "the hint must name the tool that can repair this file")
 	assert.Contains(t, pythonScriptSyntaxHint(testSkillDir+"/run.py", src, ToolEditSkillFile),

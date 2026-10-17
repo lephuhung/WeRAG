@@ -621,7 +621,7 @@ func cubeStandardTemplateSpec(dns []string) map[string]any {
 		// this image must ship envd visible at the call site.
 		"probePort": uint16(CubeEnvdPort),
 		"probePath": CubeEnvdHealthPath,
-		// Without this the template's "公网访问" stays empty and sandboxes
+		// Without this the template's "public access" field stays empty and sandboxes
 		// boot with no outbound route, even if Create sets the same flag.
 		"allowInternetAccess": true,
 	}

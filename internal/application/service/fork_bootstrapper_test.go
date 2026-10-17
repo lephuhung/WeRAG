@@ -231,7 +231,7 @@ func TestAfterCreateIsNoOpForOrdinarySession(t *testing.T) {
 	require.Empty(t, runner.calls)
 }
 
-// 全有或全无：reset 失败必须返回 error，让 lifecycle 销毁这个沙箱。
+// Tất cả hoặc không gì: reset thất bại phải trả về error để lifecycle hủy sandbox này.
 func TestAfterCreateFailsWhenResetFails(t *testing.T) {
 	sessions := newFakeSessionStore(pendingForkSession())
 	runner := &fakeShellRunner{result: &sandbox.ExecuteResult{
@@ -243,7 +243,7 @@ func TestAfterCreateFailsWhenResetFails(t *testing.T) {
 	err := b.AfterCreate(context.Background(), forkKey(), fakeHandle{id: "sbx-2"})
 
 	require.Error(t, err)
-	// 引导失败时清空 bootstrap 并回收快照：下次 resolve 走全新沙箱路径。
+	// Khi khởi tạo thất bại thì xóa bootstrap và thu hồi snapshot: lần resolve sau đi theo đường sandbox mới hoàn toàn.
 	require.Equal(t, []string{"snap-1"}, snapshots.deleted)
 	require.True(t, sessions.bootstrapCleared)
 }

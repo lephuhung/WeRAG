@@ -8,13 +8,13 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// 流管理器类型
+// Loại trình quản lý stream
 const (
 	TypeMemory = "memory"
 	TypeRedis  = "redis"
 )
 
-// NewStreamManager Create 流管理器
+// NewStreamManager tạo trình quản lý stream
 func NewStreamManager() (interfaces.StreamManager, error) {
 	switch os.Getenv("STREAM_MANAGER_TYPE") {
 	case TypeRedis:

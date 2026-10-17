@@ -633,7 +633,7 @@ func (c *Connector) buildDatabaseItem(ctx context.Context, client *notionClient,
 			resolveFileUploads(ctx, client, blocks)
 			markdown, _ := BlocksToMarkdown(blocks)
 			if strings.TrimSpace(markdown) != "" {
-				extraContent.WriteString("\n## " + recordTitle + " 内容\n\n" + markdown + "\n")
+				extraContent.WriteString("\n## " + recordTitle + " - nội dung\n\n" + markdown + "\n")
 			}
 		}
 	}

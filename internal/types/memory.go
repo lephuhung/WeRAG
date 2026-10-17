@@ -293,10 +293,10 @@ type MemoryItem struct {
 	Kind      string `json:"kind"       gorm:"type:varchar(32);not null"`
 	Content   string `json:"content"    gorm:"not null"`
 	// Topic is the readable subject the statement is about, as the extraction
-	// model named it ("在用的数据库"). It is kept verbatim next to the
+	// model named it ("cơ sở dữ liệu đang dùng"). It is kept verbatim next to the
 	// normalized key because it is the best retrieval handle available: a
 	// question often names the topic while the statement itself only carries
-	// the value ("已经迁到 PostgreSQL").
+	// the value ("đã chuyển sang PostgreSQL").
 	Topic string `json:"topic" gorm:"type:varchar(255);not null;default:''"`
 	// NormalizedKey identifies the topic this item is about. A new item with
 	// the same key as an active one supersedes it, which is how contradictions
@@ -375,7 +375,7 @@ type MemoryConfig struct {
 	// when an embedding model is reachable.
 	//
 	// Lexical matching alone cannot find a memory the user has re-worded, which
-	// is most of them: "回答直接给结论" and "别铺垫那么多" share no tokens. The
+	// is most of them: "trả lời thẳng vào kết luận" and "đừng dạo đầu dài dòng" share no tokens. The
 	// cost is one embedding call per turn, bounded and degraded to lexical on
 	// failure, so the feature never becomes a reason a chat is slow.
 	VectorRecall *bool `json:"vector_recall"`
@@ -575,8 +575,8 @@ func DefaultMemoryConfig() *MemoryConfig {
 
 // MemoryItemKey derives the conflict-detection key for a stored memory.
 //
-// A memory's identity is its topic, not its wording: "生产库用的是 MySQL" and
-// "生产库用的是 PostgreSQL" are the same note with a corrected value, and the
+// A memory's identity is its topic, not its wording: "CSDL production dùng MySQL" and
+// "CSDL production dùng PostgreSQL" are the same note with a corrected value, and the
 // second has to replace the first rather than sit beside it. That only works if
 // two labels for the same subject produce the same key, which is why this uses
 // the topic normaliser rather than the character-bag key below — the same
@@ -625,7 +625,7 @@ func NormalizeMemoryKey(key, content string) string {
 	flush()
 
 	// Sorting and de-duplicating makes the key insensitive to word order, so
-	// "偏好 数据库" and "数据库 偏好" describe the same topic.
+	// "sở thích cơ sở dữ liệu" and "cơ sở dữ liệu sở thích" describe the same topic.
 	seen := make(map[string]struct{}, len(words))
 	unique := words[:0]
 	for _, w := range words {
@@ -748,12 +748,20 @@ type MemoryTopicStat struct {
 	// the user sees is the canonical one and every surface form that resolved
 	// to it is kept here — both as an audit trail and as an exact-match index
 	// that saves the resolver from re-deciding the same question.
-	Aliases    MemoryTopicAliases `json:"aliases" gorm:"type:jsonb;column:aliases"`
-	Hits       int                `json:"hits"       gorm:"not null;default:0"`
-	LastSeenAt time.Time          `json:"last_seen_at" gorm:"column:last_seen_at"`
-	PromotedAt *time.Time         `json:"promoted_at"  gorm:"column:promoted_at"`
-	CreatedAt  time.Time          `json:"created_at"`
-	UpdatedAt  time.Time          `json:"updated_at"`
+	Aliases MemoryTopicAliases `json:"aliases" gorm:"type:jsonb;column:aliases"`
+	Hits    int                `json:"hits"       gorm:"not null;default:0"`
+	// Sessions and Days are the distinct conversations and calendar days this
+	// subject came up in (most recent first, bounded). Hits counts extraction
+	// segments, and a single long conversation — or one evaluation run —
+	// produces dozens of those about the same thing. Recurrence that says
+	// something durable about a person is recurrence across conversations.
+	Sessions    MemoryTopicAliases `json:"sessions" gorm:"type:jsonb;column:sessions"`
+	Days        MemoryTopicAliases `json:"days"     gorm:"type:jsonb;column:days"`
+	SessionHits int                `json:"session_hits" gorm:"column:session_hits;not null;default:0"`
+	LastSeenAt  time.Time          `json:"last_seen_at" gorm:"column:last_seen_at"`
+	PromotedAt  *time.Time         `json:"promoted_at"  gorm:"column:promoted_at"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
 func (MemoryTopicStat) TableName() string { return "memory_topic_stats" }
@@ -857,7 +865,7 @@ type MemoryTombstone struct {
 	//
 	// The fingerprint alone is not enough: distillation re-reads that same
 	// message minutes later and usually words the statement slightly
-	// differently ("生产库是 X" versus "我们的生产库是 X"), which hashes
+	// differently ("CSDL production là X" versus "CSDL production của chúng tôi là X"), which hashes
 	// differently and slips through. Remembering the message is content-free
 	// and closes that path exactly, while anything the user says afterwards
 	// comes from a later message and is still allowed through.
@@ -1126,6 +1134,10 @@ type UsedMemory struct {
 	ID      string `json:"id"`
 	Kind    string `json:"kind"`
 	Content string `json:"content"`
+	// Status tells the client whether this is a stored memory or a pending
+	// guess awaiting confirmation; the announcement renders them differently.
+	// Omitted on older rows.
+	Status string `json:"status,omitempty"`
 }
 
 // UsedMemories is the persisted per-message list.
@@ -1167,7 +1179,7 @@ func UsedMemoriesFromItems(items []*MemoryItem) UsedMemories {
 		if item == nil {
 			continue
 		}
-		used = append(used, UsedMemory{ID: item.ID, Kind: item.Kind, Content: item.Content})
+		used = append(used, UsedMemory{ID: item.ID, Kind: item.Kind, Content: item.Content, Status: item.Status})
 	}
 	return used
 }
@@ -1430,12 +1442,85 @@ func TopicLabelIsAnImprovement(canonical, incoming, proposed string) bool {
 		TopicSimilarity(proposed, incoming) >= minAnchor
 }
 
+// MemoryTopicSessionWindow bounds how many distinct sessions and days one
+// topic row remembers.
+const MemoryTopicSessionWindow = 20
+
+// MemoryTopicMinDays is how many distinct calendar days a subject must come up
+// on before it counts as recurring, on top of the session threshold. Two
+// conversations in one afternoon are one piece of work, not a standing
+// interest.
+const MemoryTopicMinDays = 2
+
+// MemoryTopicSighting is one occasion a subject came up: which conversation
+// and which calendar day (YYYY-MM-DD). An empty SessionID counts the hit but
+// never advances recurrence.
+type MemoryTopicSighting struct {
+	SessionID string
+	Day       string
+}
+
+// TopicRecurs reports whether a subject has come up often enough, across
+// enough separate conversations, to be promoted into an interest. A threshold
+// of one means "promote on sight" and is not held to the two-day rule.
+func TopicRecurs(stat *MemoryTopicStat, threshold int) bool {
+	if stat == nil {
+		return false
+	}
+	if threshold < 1 {
+		threshold = 1
+	}
+	minDays := MemoryTopicMinDays
+	if threshold < minDays {
+		minDays = threshold
+	}
+	return stat.SessionHits >= threshold && len(stat.Days) >= minDays
+}
+
+// topicNumberPattern matches the numbers that identify Vietnamese legal
+// instruments and their years: "53", "53/2022", "30/2020/NĐ-CP" (the trailing
+// code is letters and is left alone), "2025".
+var topicNumberPattern = regexp.MustCompile(`\d+(?:/\d+)*`)
+
+// topicNumbers returns the numeric identifiers a label names, split so that
+// "53/2022" yields both "53" and "2022".
+func topicNumbers(label string) map[string]struct{} {
+	numbers := make(map[string]struct{})
+	for _, match := range topicNumberPattern.FindAllString(label, -1) {
+		for _, part := range strings.Split(match, "/") {
+			if part = strings.TrimLeft(part, "0"); part != "" {
+				numbers[part] = struct{}{}
+			}
+		}
+	}
+	return numbers
+}
+
+// TopicsNameDifferentNumbers reports whether two labels each name a document
+// or year and share none of them: "nội dung nghị định 53/2022" against "nội
+// dung nghị định 30/2020", or "luật bí mật nhà nước 2025" against the 2018
+// one. Those are different subjects however similar the wording, and no
+// resolution tier — not even the model — may merge them. A label with no
+// number at all ("kiểm tra hiệu lực văn bản") is unaffected.
+func TopicsNameDifferentNumbers(a, b string) bool {
+	left, right := topicNumbers(a), topicNumbers(b)
+	if len(left) == 0 || len(right) == 0 {
+		return false
+	}
+	for number := range left {
+		if _, shared := right[number]; shared {
+			return false
+		}
+	}
+	return true
+}
+
 // TopicLooksLikeOneQuestion reports whether a label names an individual query
 // rather than a subject.
 //
 // A subject has to recur to be worth anything: it is counted, and only becomes
 // a memory once several conversations touch it. A label like
-// "v2.3版本orders接口分页Parameters 默认值Query " can only ever match
+// "truy vấn giá trị mặc định tham số phân trang API orders phiên bản v2.3" can only ever match
 // itself, so it is counted once and then sits at one hit forever — the counting
 // mechanism is dead and nothing says so.
 //

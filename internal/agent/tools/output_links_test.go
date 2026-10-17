@@ -186,7 +186,7 @@ func TestOutputLinksEscapeNamesAndStayInsideOutputDirectory(t *testing.T) {
 		"/workspace/output/../../tmp/task/previews/page-1.png",
 	)
 	require.Equal(t, []string{"sandbox:report%20%5B1%5D%28final%29.pdf"}, links)
-	require.Equal(t, []string{"sandbox:比赛信息.pptx"}, sandboxOutputLinks("/workspace/output/比赛信息.pptx"))
+	require.Equal(t, []string{"sandbox:Báo_cáo_quý.pptx"}, sandboxOutputLinks("/workspace/output/Báo_cáo_quý.pptx"))
 }
 
 func TestFileMutationToolsReturnDirectHTMLDeliverables(t *testing.T) {

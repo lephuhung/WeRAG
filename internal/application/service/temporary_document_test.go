@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/models/vlm"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // fakeVLM is a minimal VLM stub that records calls and returns a fixed response.
@@ -42,9 +43,10 @@ type promptAwareVLM struct {
 	ocrResponse     string
 	captionResponse string
 
-	mu           sync.Mutex
-	ocrCalls     int
-	captionCalls int
+	mu            sync.Mutex
+	ocrCalls      int
+	captionCalls  int
+	lastOCRPrompt string
 }
 
 func (f *promptAwareVLM) Predict(_ context.Context, _ [][]byte, prompt string) (string, error) {
@@ -55,6 +57,7 @@ func (f *promptAwareVLM) Predict(_ context.Context, _ [][]byte, prompt string) (
 		return f.captionResponse, nil
 	}
 	f.ocrCalls++
+	f.lastOCRPrompt = prompt
 	return f.ocrResponse, nil
 }
 
@@ -111,7 +114,7 @@ func TestApplyImageUnderstandingImageFileRunsVLM(t *testing.T) {
 
 func TestApplyImageUnderstandingImageOCRSufficientSkipsCaption(t *testing.T) {
 	fv := &promptAwareVLM{
-		ocrResponse:     strings.Repeat("发票明细行内容 ", 8), // > temporaryDocumentOCRSufficientRunes
+		ocrResponse:     strings.Repeat("Dòng chi tiết hóa đơn ", 8), // > temporaryDocumentOCRSufficientRunes
 		captionResponse: "should-not-be-used",
 	}
 	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
@@ -190,12 +193,12 @@ func TestApplyImageUnderstandingDocumentGatedByFlag(t *testing.T) {
 }
 
 func TestApplyImageUnderstandingScannedDocumentRunsOCR(t *testing.T) {
-	fv := &fakeVLM{response: "第一页扫描文字内容"}
+	fv := &fakeVLM{response: "Nội dung chữ quét trang một"}
 	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
 	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
 	pages := [][]byte{[]byte("page-1")}
 	content := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, "![p](x)")
-	if !strings.Contains(content, "第一页扫描文字内容") {
+	if !strings.Contains(content, "Nội dung chữ quét trang một") {
 		t.Fatalf("scanned document should get OCR text merged, got %q", content)
 	}
 }
@@ -205,7 +208,7 @@ func TestApplyImageUnderstandingHighTextDocumentSkipsOCR(t *testing.T) {
 	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
 	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
 	pages := [][]byte{[]byte("page-1")}
-	longText := strings.Repeat("这是一段已经解析出来的正文内容。", 40)
+	longText := strings.Repeat("Đây là một đoạn văn bản đã được phân tích xong. ", 40)
 	if got := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, longText); got != "" {
 		t.Fatalf("text-rich document should not trigger OCR, got a change")
 	}
@@ -227,7 +230,7 @@ func TestSelectTemporaryDocumentContentRanksRelevantLargeDocumentChunks(t *testi
 	for i := 0; i < 20; i++ {
 		content := "ordinary background material"
 		if i == 17 {
-			content = "退款政策规定，订阅后七天内可以退款。"
+			content = "Chính sách hoàn tiền quy định, sau khi đăng ký có thể hoàn tiền trong bảy ngày."
 		}
 		chunks = append(chunks, types.TemporaryDocumentChunk{Seq: i, Content: content, TokenCount: 900})
 	}
@@ -236,8 +239,8 @@ func TestSelectTemporaryDocumentContentRanksRelevantLargeDocumentChunks(t *testi
 		t.Fatal(err)
 	}
 	document := &types.TemporaryDocument{Content: "large", TokenCount: 18000, Chunks: types.JSON(raw)}
-	content, selected, total := selectTemporaryDocumentContent(document, "退款政策是什么？")
-	if !strings.Contains(content, "七天内可以退款") {
+	content, selected, total := selectTemporaryDocumentContent(document, "Chính sách hoàn tiền là gì?")
+	if !strings.Contains(content, "hoàn tiền trong bảy ngày") {
 		t.Fatalf("relevant chunk was not selected: %q", content)
 	}
 	if selected == 0 || selected >= total || total != 20 {
@@ -259,12 +262,101 @@ func TestSelectTemporaryDocumentContentHonorsSharedPromptBudget(t *testing.T) {
 }
 
 func TestVisualDocumentQueryDetection(t *testing.T) {
-	for _, query := range []string{"解释第三页的图", "What does this chart show?", "describe the layout"} {
+	for _, query := range []string{"Giải thích hình ở trang ba", "What does this chart show?", "describe the layout"} {
 		if !isVisualDocumentQuery(query) {
 			t.Fatalf("query %q should request visual context", query)
 		}
 	}
-	if isVisualDocumentQuery("总结退款政策") {
+	if isVisualDocumentQuery("Tóm tắt chính sách hoàn tiền") {
 		t.Fatal("plain text query should not request visual context")
+	}
+}
+
+func TestOCRUsageOfParseSumsProcessAndDocreaderCalls(t *testing.T) {
+	sink := &types.VLMUsageSink{}
+	sink.Report(types.VLMUsage{PromptTokens: 912, CompletionTokens: 58, TotalTokens: 970})
+	pages, usage := ocrUsageOfParse(sink, map[string]string{
+		"vn_ocr_pages": "2", "vn_ocr_prompt_tokens": "1800", "vn_ocr_completion_tokens": "100", "vn_ocr_model": "senocr-vi",
+	})
+	if pages != 3 || usage.PromptTokens != 2712 || usage.CompletionTokens != 158 || usage.Total() != 2870 {
+		t.Fatalf("pages=%d usage=%+v", pages, usage)
+	}
+	// Nothing OCR'd: a nil metadata (failed parse) and an empty sink count nothing.
+	if pages, usage := ocrUsageOfParse(&types.VLMUsageSink{}, nil); pages != 0 || usage.Total() != 0 {
+		t.Fatalf("empty parse counted pages=%d usage=%+v", pages, usage)
+	}
+}
+
+func TestCountOCRUsageBillsUploaderWorkspaceAndSession(t *testing.T) {
+	meter := &recordingUsageMeter{}
+	svc := &temporaryDocumentService{usageMeter: meter}
+	sink := &types.VLMUsageSink{}
+	sink.Report(types.VLMUsage{PromptTokens: 900, CompletionTokens: 50, TotalTokens: 950})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
+	payload := types.TemporaryDocumentTaskPayload{TenantID: 10003, DocumentID: "d1"}
+	doc := &types.TemporaryDocument{ID: "d1", TenantID: 10003, SessionID: "sess-1"}
+	svc.countOCRUsage(ctx, payload, doc, sink, map[string]string{})
+	if meter.tenantID != 10003 || meter.userID != "user-1" || meter.sessionID != "sess-1" || meter.pages != 1 || meter.usage.TotalTokens != 950 {
+		t.Fatalf("recorded %+v", meter)
+	}
+	// No OCR → the meter is not called (nil meter must not panic either).
+	meter2 := &recordingUsageMeter{}
+	(&temporaryDocumentService{usageMeter: meter2}).countOCRUsage(ctx, payload, doc, &types.VLMUsageSink{}, nil)
+	if meter2.pages != 0 || meter2.usage.Total() != 0 {
+		t.Fatal("nothing read must count nothing")
+	}
+	(&temporaryDocumentService{}).countOCRUsage(ctx, payload, doc, sink, nil)
+}
+
+// recordingUsageMeter captures the last RecordOCRUsage call.
+type recordingUsageMeter struct {
+	interfaces.UsageMeter
+	tenantID          uint64
+	userID, sessionID string
+	pages             int
+	usage             types.VLMUsage
+}
+
+func (r *recordingUsageMeter) RecordOCRUsage(_ context.Context, tenantID uint64, userID, sessionID string, pages int, usage types.VLMUsage) {
+	r.tenantID, r.userID, r.sessionID, r.pages, r.usage = tenantID, userID, sessionID, pages, usage
+}
+
+// ocrOnlyModelService serves a VLM whose model row is marked OCR-only with
+// its own prompt (senocr-vi).
+type ocrOnlyModelService struct {
+	stubModelService
+	model vlm.VLM
+}
+
+func (s *ocrOnlyModelService) GetVLMModel(context.Context, string) (vlm.VLM, error) {
+	return s.model, nil
+}
+func (s *ocrOnlyModelService) GetModelByID(context.Context, string) (*types.Model, error) {
+	return &types.Model{ID: "senocr", Parameters: types.ModelParameters{ExtraConfig: map[string]string{
+		ModelExtraOCRPrompt: "OCR:", ModelExtraOCROnly: "true",
+	}}}, nil
+}
+
+// A photo without text sent to an OCR-only model: the model's short prompt
+// is used, no caption is asked for, and the few junk runes it answered are
+// all that comes back (the thin-text gate then fails the upload).
+func TestUnderstandImagesWithVLMHonoursOCROnlyModel(t *testing.T) {
+	fv := &promptAwareVLM{ocrResponse: "TỐNG ĐẠI", captionResponse: "should-not-be-used"}
+	svc := &temporaryDocumentService{modelService: &ocrOnlyModelService{model: fv}}
+	got := svc.understandImagesWithVLM(context.Background(), "senocr", [][]byte{[]byte("photo")}, false, true)
+	if got != "TỐNG ĐẠI" {
+		t.Fatalf("got %q", got)
+	}
+	if fv.lastOCRPrompt != "OCR:" {
+		t.Fatalf("model prompt not used: %q", fv.lastOCRPrompt)
+	}
+	// The built-in model profile keeps the long prompt and the caption fallback.
+	fv2 := &promptAwareVLM{ocrResponse: "x", captionResponse: "a portrait"}
+	svc2 := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv2}}
+	if got := svc2.understandImagesWithVLM(context.Background(), "fake", [][]byte{[]byte("photo")}, false, true); !strings.Contains(got, "a portrait") {
+		t.Fatalf("caption fallback lost for a general VLM: %q", got)
+	}
+	if fv2.lastOCRPrompt != vlmOCRPrompt {
+		t.Fatal("built-in OCR prompt must stay for a general VLM")
 	}
 }

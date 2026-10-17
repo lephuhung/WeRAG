@@ -274,12 +274,12 @@ func testWeaviateConnection(ctx context.Context, config types.ConnectionConfig) 
 	return meta.Version, nil
 }
 
-// testDorisConnection 通过 MySQL 协议（database/sql + go-sql-driver）
-// Ping Doris FE 并Query  @@version。
+// testDorisConnection dùng giao thức MySQL (database/sql + go-sql-driver)
+// để ping Doris FE và truy vấn @@version.
 //
-// Doris 的 @@version 形如 "5.7.99 Doris-4.1.0"——前半段是 MySQL 协议
-// 兼容性表达式，"Doris-" 之后才是真实版本号。统一只返回 "4.1.0" 这类
-// 裸版本号，与 Postgres/ES 路径的格式保持一致。
+// @@version của Doris có dạng "5.7.99 Doris-4.1.0": nửa đầu là biểu thức
+// tương thích giao thức MySQL, sau "Doris-" mới là phiên bản thật. Chỉ trả về
+// số phiên bản trần như "4.1.0" cho thống nhất với nhánh Postgres/ES.
 func testDorisConnection(ctx context.Context, config types.ConnectionConfig) (string, error) {
 	testCtx, cancel := context.WithTimeout(ctx, connectionTestTimeout)
 	defer cancel()
@@ -288,14 +288,14 @@ func testDorisConnection(ctx context.Context, config types.ConnectionConfig) (st
 		return "", errors.NewBadRequestError("failed to create doris connection: addr is required")
 	}
 
-	// Database 不强制要求；Ping 时无明确库则用 information_schema（任何 MySQL 兼容服务都有）。
+	// Database không bắt buộc; khi ping mà không có DB rõ ràng thì dùng information_schema (dịch vụ tương thích MySQL nào cũng có).
 	database := config.Database
 	if database == "" {
 		database = "information_schema"
 	}
 
-	// 用 mysql.Config.FormatDSN() 构造 DSN，避免用户名/密码中 `@` `:` `/`
-	// 等特殊字符破坏字面量拼接（fmt.Sprintf 会跑偏，参考 issue #1234 类问题）。
+	// Dùng mysql.Config.FormatDSN() để dựng DSN, tránh các ký tự `@` `:` `/` trong
+	// tên đăng nhập/mật khẩu phá vỡ chuỗi nối tay (fmt.Sprintf sẽ sai, xem các issue kiểu #1234).
 	cfg := mysql.NewConfig()
 	cfg.User = config.Username
 	cfg.Passwd = config.Password

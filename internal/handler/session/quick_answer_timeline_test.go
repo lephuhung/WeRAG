@@ -38,9 +38,9 @@ func TestQuickAnswerTimelineRecorderPersistsSearchWithoutResults(t *testing.T) {
 	registerQuickAnswerTimelineRecorder(bus, msg)
 
 	emitTimelineStage(t, bus, "call-1", "knowledge_search",
-		map[string]any{"query": "你好", "search_source": "knowledge"},
+		map[string]any{"query": "xin chào", "search_source": "knowledge"},
 		event.AgentToolResultData{
-			Output:   "未检索到相关内容",
+			Output:   "Không tìm thấy nội dung liên quan",
 			Success:  true,
 			Duration: 12,
 			Data:     map[string]interface{}{"count": 0, "doc_count": 0, "web_count": 0},
@@ -51,10 +51,10 @@ func TestQuickAnswerTimelineRecorderPersistsSearchWithoutResults(t *testing.T) {
 	call := msg.AgentSteps[0].ToolCalls[0]
 	assert.Equal(t, "knowledge_search", call.Name)
 	assert.Equal(t, types.PipelineToolCallIDPrefix+"call-1", call.ID)
-	assert.Equal(t, "你好", call.Args["query"])
+	assert.Equal(t, "xin chào", call.Args["query"])
 	require.NotNil(t, call.Result)
 	assert.True(t, call.Result.Success)
-	assert.Equal(t, "未检索到相关内容", call.Result.Output)
+	assert.Equal(t, "Không tìm thấy nội dung liên quan", call.Result.Output)
 	assert.Equal(t, 0, call.Result.Data["count"])
 	assert.Equal(t, int64(12), call.Duration)
 }
@@ -65,11 +65,11 @@ func TestQuickAnswerTimelineRecorderKeepsStageOrderAndIgnoresOtherTools(t *testi
 	registerQuickAnswerTimelineRecorder(bus, msg)
 
 	emitTimelineStage(t, bus, "call-1", "query_understand", nil,
-		event.AgentToolResultData{Output: "已完成问题理解", Success: true})
+		event.AgentToolResultData{Output: "Đã hiểu xong câu hỏi", Success: true})
 	emitTimelineStage(t, bus, "call-2", "web_search", nil,
 		event.AgentToolResultData{Output: "ignored", Success: true})
 	emitTimelineStage(t, bus, "call-3", "knowledge_search", nil,
-		event.AgentToolResultData{Output: "检索到 3 条相关内容", Success: true})
+		event.AgentToolResultData{Output: "Tìm thấy 3 nội dung liên quan", Success: true})
 
 	require.Len(t, msg.AgentSteps, 1)
 	names := make([]string, 0, len(msg.AgentSteps[0].ToolCalls))
@@ -100,13 +100,13 @@ func TestQuickAnswerReasoningAndTimelineShareOneStep(t *testing.T) {
 	msg := &types.Message{}
 	registerQuickAnswerTimelineRecorder(bus, msg)
 
-	appendQuickAnswerReasoning(msg, "思考中")
+	appendQuickAnswerReasoning(msg, "Đang suy nghĩ")
 	emitTimelineStage(t, bus, "call-1", "knowledge_search", nil,
-		event.AgentToolResultData{Output: "未检索到相关内容", Success: true})
-	appendQuickAnswerReasoning(msg, "继续")
+		event.AgentToolResultData{Output: "Không tìm thấy nội dung liên quan", Success: true})
+	appendQuickAnswerReasoning(msg, "tiếp tục")
 
 	require.Len(t, msg.AgentSteps, 1)
-	assert.Equal(t, "思考中继续", msg.AgentSteps[0].ReasoningContent)
+	assert.Equal(t, "Đang suy nghĩtiếp tục", msg.AgentSteps[0].ReasoningContent)
 	require.Len(t, msg.AgentSteps[0].ToolCalls, 1)
 }
 

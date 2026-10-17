@@ -7,22 +7,22 @@ import (
 )
 
 const (
-	// QiniuBaseURL 七牛云 API BaseURL (OpenAI 兼容模式)
+	// QiniuBaseURL BaseURL API của Qiniu Cloud (chế độ tương thích OpenAI)
 	QiniuBaseURL = "https://api.qnaigc.com/v1"
 )
 
-// QiniuProvider 实现七牛云的 Provider 接口
+// QiniuProvider triển khai giao diện Provider cho Qiniu Cloud
 type QiniuProvider struct{}
 
 func init() {
 	Register(&QiniuProvider{})
 }
 
-// Info 返回七牛云 provider 的元数据
+// Info trả về metadata của provider Qiniu Cloud
 func (p *QiniuProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderQiniu,
-		DisplayName: "七牛云 Qiniu",
+		DisplayName: "Qiniu Cloud",
 		Description: "deepseek/deepseek-v3.2-251201, z-ai/glm-4.7, etc.",
 		DefaultURLs: map[types.ModelType]string{
 			types.ModelTypeKnowledgeQA: QiniuBaseURL,
@@ -34,7 +34,7 @@ func (p *QiniuProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证七牛云 provider Configuration
+// ValidateConfig kiểm tra cấu hình provider Qiniu Cloud
 func (p *QiniuProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for Qiniu provider")

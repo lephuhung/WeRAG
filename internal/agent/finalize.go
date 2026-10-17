@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/common"
@@ -78,6 +81,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	guard := newAnswerGuard(ctx, emitChunk)
 
 	budget := e.clampCompletionBudgetToContext(e.tokenEstimator.EstimateMessages(messages))
+	noThinking := false
 	llmResult, err := e.streamLLMToEventBus(
 		ctx,
 		messages,
@@ -86,7 +90,11 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			MaxCompletionTokens: budget,
 			PromptCacheKey:      sessionID,
 			ToolChoice:          "none",
-		}, // Thinking disabled for final answer synthesis
+			// Thinking disabled for final answer synthesis: left to the
+			// model default, Qwen3.6 spent the whole budget reasoning and
+			// answered nothing (2026-10-16).
+			Thinking: &noThinking,
+		},
 		func(chunk *types.StreamResponse, fullContent string) {
 			// Defensive filter: only emit answer content, skip thinking chunks
 			if chunk.ResponseType == types.ResponseTypeThinking {
@@ -120,8 +128,15 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	// Safety net: strip any residual <think> blocks that may have leaked through
 	state.FinalAnswer = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
+	if strings.TrimSpace(state.FinalAnswer) == "" {
+		// never end a turn on an empty answer: say what was gathered
+		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis returned no text; emitting the fallback")
+		state.FinalAnswer = e.synthesisFallback(state)
+		emitChunk(state.FinalAnswer)
+	}
 	e.appendLegalHistory(ctx, state, sessionID, answerID)
 	e.appendWikiCaveat(ctx, state, sessionID, answerID)
+	e.appendSourceEditNote(ctx, state, sessionID, answerID, query)
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        answerID,
 		Type:      event.EventAgentFinalAnswer,
@@ -154,6 +169,7 @@ func (e *AgentEngine) handleMaxIterations(
 	reason := e.stopReason
 	if reason == "" {
 		reason = event.TurnLimitMaxIterations
+		e.stopReason = reason // the fallback answer names the cap (synthesisFallback)
 	}
 	logger.Infof(ctx, "Agent loop stopped (%s), generating final answer", reason)
 	common.PipelineWarn(ctx, "Agent", reason+"_reached", map[string]interface{}{
@@ -183,9 +199,144 @@ func (e *AgentEngine) handleMaxIterations(
 		common.PipelineError(ctx, "Agent", "final_answer_failed", map[string]interface{}{
 			"error": err.Error(),
 		})
-		state.FinalAnswer = "Sorry, I was unable to generate a complete answer."
+		state.FinalAnswer = e.synthesisFallback(state)
 	}
 	state.IsComplete = true
+}
+
+// synthesisFallbackMaxTools bounds the tool lines of synthesisFallback.
+const synthesisFallbackMaxTools = 6
+
+// synthesisFallbackLineRunes bounds each tool line of synthesisFallback.
+const synthesisFallbackLineRunes = 160
+
+// legalLookupTools are the tools of a legal lookup: the fallback then asks
+// for the Điều to read.
+var legalLookupTools = map[string]bool{
+	agenttools.ToolCheckLegalStatus:      true,
+	agenttools.ToolSearchDocumentSection: true,
+	"find_related_legal_documents":       true,
+}
+
+// synthesisFallback is the code-built answer of a turn whose synthesis
+// produced no text: why it stopped, what was looked up (a Vietnamese line
+// per successful tool, see fallbackToolLine) and how to ask again.
+func (e *AgentEngine) synthesisFallback(state *types.AgentState) string {
+	var sb strings.Builder
+	steps := len(state.RoundSteps)
+	switch e.stopReason {
+	case event.TurnLimitTurnBudget, event.TurnLimitMaxIterations:
+		fmt.Fprintf(&sb, "Lượt này đã dùng hết ngân sách xử lý sau %d bước nên tôi chưa tổng hợp được câu trả lời.", steps)
+	default:
+		fmt.Fprintf(&sb, "Tôi chưa tổng hợp được câu trả lời sau %d bước xử lý.", steps)
+	}
+	var lines []string
+	legal := false
+	for _, step := range state.RoundSteps {
+		for _, tc := range step.ToolCalls {
+			if tc.Result == nil || !tc.Result.Success {
+				continue
+			}
+			legal = legal || legalLookupTools[tc.ExecutionName()]
+			if line := fallbackToolLine(tc); line != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
+	if len(lines) > 0 {
+		sb.WriteString(" Đã tra:")
+		for i, l := range lines {
+			if i == synthesisFallbackMaxTools {
+				fmt.Fprintf(&sb, "\n- … và %d lần tra khác", len(lines)-i)
+				break
+			}
+			sb.WriteString("\n- " + l)
+		}
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString(" ")
+	}
+	if legal {
+		sb.WriteString("Bạn hãy hỏi gọn hơn hoặc nêu đúng Điều cần xem.")
+	} else {
+		sb.WriteString("Bạn hãy hỏi gọn hơn hoặc chia yêu cầu thành nhiều lượt.")
+	}
+	return sb.String()
+}
+
+// fallbackToolLine describes one successful call for the user, from its
+// Data where the Output is markup or English meant for the model; "" for
+// a call with nothing presentable.
+func fallbackToolLine(tc types.ToolCall) string {
+	r := tc.Result
+	title := func() string {
+		t, _ := r.Data["knowledge_title"].(string)
+		return strings.TrimSpace(t)
+	}
+	switch tc.ExecutionName() {
+	case agenttools.ToolSearchKnowledge:
+		return fmt.Sprintf("tìm trong kho tri thức: %d kết quả", dataInt(r.Data, "count"))
+	case agenttools.ToolReadDocument, agenttools.ToolSearchDocumentSection:
+		t := title()
+		if t == "" {
+			return "đọc văn bản trong kho tri thức"
+		}
+		line := "đọc «" + clipRunes(t, synthesisFallbackLineRunes) + "»"
+		if total := dataInt(r.Data, "total_chunks"); total > 0 {
+			line += fmt.Sprintf(" (%d/%d đoạn)", dataInt(r.Data, "fetched_chunks"), total)
+		}
+		return line
+	case agenttools.ToolCheckLegalStatus:
+		for _, l := range strings.Split(r.Output, "\n") {
+			if h := strings.TrimSpace(strings.TrimPrefix(l, "## ")); strings.HasPrefix(l, "## ") && h != "" {
+				return "tra hiệu lực: " + clipRunes(h, synthesisFallbackLineRunes)
+			}
+		}
+		return "tra hiệu lực văn bản"
+	}
+	for _, l := range strings.Split(r.Output, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		// markup, or plain ASCII (English notes such as "Listed 3/9 chunks …")
+		if strings.HasPrefix(l, "<") || strings.HasPrefix(l, "[") || isASCII(l) {
+			return ""
+		}
+		return clipRunes(l, synthesisFallbackLineRunes)
+	}
+	return ""
+}
+
+// isASCII reports whether s has no non-ASCII rune (no Vietnamese letter).
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// clipRunes cuts s to n runes, marking the cut.
+func clipRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "…"
+}
+
+// dataInt reads a number from tool Data (int or a decoded JSON float).
+func dataInt(data map[string]interface{}, key string) int {
+	switch v := data[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	}
+	return 0
 }
 
 // emitCompletionEvent emits the EventAgentComplete event with execution summary.

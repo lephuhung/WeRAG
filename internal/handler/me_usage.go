@@ -27,7 +27,7 @@ func NewMeUsageHandler(meter interfaces.UsageMeter, guard interfaces.UsageGuard)
 // @Summary      My usage counters
 // @Description  Questions and LLM tokens used today and this month, for the
 // @Description  caller and for the caller's current workspace.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Produce      json
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer

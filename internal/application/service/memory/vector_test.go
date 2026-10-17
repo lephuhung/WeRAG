@@ -32,10 +32,10 @@ func newVectorHarnessWithDB(t *testing.T) (*Service, *gorm.DB, *stubTenantRepo, 
 		},
 		embedder: &stubEmbedder{vectors: map[string][]float32{
 			// Two ways of saying the same thing, no shared characters.
-			"直接给结论": {1, 0, 0},
-			"别铺垫":   {0.98, 0.2, 0},
+			"đi thẳng vào kết luận": {1, 0, 0},
+			"đừng dẫn dắt":          {0.98, 0.2, 0},
 			// A different subject entirely.
-			"连接池": {0, 1, 0},
+			"kết nối CSDL": {0, 1, 0},
 		}},
 	}
 	svc.modelService = models
@@ -47,30 +47,30 @@ func TestARewordedMemoryIsStillFound(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 	_, err = svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库的连接池配置",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "cấu hình kết nối CSDL chính thức",
 	})
 	require.NoError(t, err)
 
 	// The question shares no characters with the stored wording.
-	recall := svc.Recall(ctx, "别铺垫那么多")
+	recall := svc.Recall(ctx, "đừng dẫn dắt nhiều thế")
 	require.NotEmpty(t, recall.Items,
 		"lexical matching cannot find this; that is the entire point of embedding")
-	require.Equal(t, "回答直接给结论", recall.Items[0].Content)
+	require.Equal(t, "Trả lời đi thẳng vào kết luận", recall.Items[0].Content)
 }
 
 // An interest is promoted from a subject label, so its topic and content hold
-// the same string. Joining them sent "WeKnora混合检索：WeKnora混合检索" to the
+// the same string. Joining them sent "WeKnora tìm kiếm lai：WeKnora tìm kiếm lai" to the
 // embedder, which is not a sentence any question resembles.
 func TestEmbeddedTextDoesNotRepeatTheSubject(t *testing.T) {
-	require.Equal(t, "WeKnora混合检索", embeddableText(&types.MemoryItem{
-		Kind: types.MemoryKindInterest, Topic: "WeKnora混合检索", Content: "WeKnora混合检索",
+	require.Equal(t, "WeKnora tìm kiếm lai", embeddableText(&types.MemoryItem{
+		Kind: types.MemoryKindInterest, Topic: "WeKnora tìm kiếm lai", Content: "WeKnora tìm kiếm lai",
 	}, nil))
-	require.Equal(t, "数据库：生产库用 PostgreSQL 17", embeddableText(&types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库用 PostgreSQL 17",
+	require.Equal(t, "CSDL：CSDL chính thức dùng PostgreSQL 17", embeddableText(&types.MemoryItem{
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức dùng PostgreSQL 17",
 	}, nil), "a topic that adds something still has to be kept")
 }
 
@@ -79,10 +79,10 @@ func TestEmbeddedTextDoesNotRepeatTheSubject(t *testing.T) {
 // in the prompt because they never leave the vector.
 func TestInterestEmbedsTheOtherWordingsOfItsSubject(t *testing.T) {
 	text := embeddableText(&types.MemoryItem{
-		Kind: types.MemoryKindInterest, Topic: "WeKnora混合检索", Content: "WeKnora混合检索",
-	}, []string{"混合检索调优", "WeKnora混合检索", "", "召回率优化"})
+		Kind: types.MemoryKindInterest, Topic: "WeKnora tìm kiếm lai", Content: "WeKnora tìm kiếm lai",
+	}, []string{"tinh chỉnh tìm kiếm lai", "WeKnora tìm kiếm lai", "", "tối ưu độ phủ truy hồi"})
 
-	require.Equal(t, "WeKnora混合检索；混合检索调优；召回率优化", text,
+	require.Equal(t, "WeKnora tìm kiếm lai；tinh chỉnh tìm kiếm lai；tối ưu độ phủ truy hồi", text,
 		"aliases are appended once each, and the subject is not repeated")
 }
 
@@ -96,18 +96,18 @@ func TestPromotedInterestIsEmbeddedWithItsOtherWordings(t *testing.T) {
 		EmbeddingModelID: "embed-1",
 	})
 
-	require.Empty(t, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
-	require.Equal(t, []string{"门店排班管理"},
-		svc.ObserveQuestionTopics(ctx, []string{"连锁门店排班管理"}),
+	require.Empty(t, sighting(svc, ctx, 1, []string{"quản lý văn bản đi đến"}))
+	require.Equal(t, []string{"quản lý văn bản đi đến"},
+		sighting(svc, ctx, 2, []string{"việc quản lý văn bản đi đến"}),
 		"the second wording is the same subject, so it promotes")
 
 	var embedded string
 	for _, text := range models.embedder.texts {
-		if strings.Contains(text, "门店排班管理") {
+		if strings.Contains(text, "quản lý văn bản đi đến") {
 			embedded = text
 		}
 	}
-	require.Contains(t, embedded, "连锁门店排班管理",
+	require.Contains(t, embedded, "việc quản lý văn bản đi đến",
 		"the wording the user also used has to be part of what the interest matches")
 }
 
@@ -123,8 +123,8 @@ func TestALaterWordingRebuildsTheInterestVector(t *testing.T) {
 	})
 	scope := scopeFor(t, ctx)
 
-	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
-	require.NotEmpty(t, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
+	sighting(svc, ctx, 1, []string{"quản lý văn bản đi đến"})
+	require.NotEmpty(t, sighting(svc, ctx, 2, []string{"quản lý văn bản đi đến"}))
 
 	items, err := svc.repo.ListActiveByKinds(ctx, scope, []string{types.MemoryKindInterest}, 10)
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestALaterWordingRebuildsTheInterestVector(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, vectors, "promotion embeds the interest")
 
-	svc.ObserveQuestionTopics(ctx, []string{"连锁门店排班管理"})
+	sighting(svc, ctx, 3, []string{"việc quản lý văn bản đi đến"})
 
 	vectors, err = svc.repo.ItemEmbeddings(ctx, scope, []string{items[0].ID}, "embed-1")
 	require.NoError(t, err)
@@ -157,16 +157,16 @@ func TestRecallDegradesToLexicalWhenEmbeddingFails(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库用 PostgreSQL 17",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức dùng PostgreSQL 17",
 	})
 	require.NoError(t, err)
 
 	models.embedder.fail = true
 
-	recall := svc.Recall(ctx, "生产库怎么配")
+	recall := svc.Recall(ctx, "cấu hình CSDL chính thức thế nào")
 	require.NotEmpty(t, recall.Items,
 		"with the embedder down, lexical matching still has to work")
-	require.Equal(t, "生产库用 PostgreSQL 17", recall.Items[0].Content)
+	require.Equal(t, "CSDL chính thức dùng PostgreSQL 17", recall.Items[0].Content)
 }
 
 func TestRecallDoesNotWaitForeverOnTheEmbedder(t *testing.T) {
@@ -174,14 +174,14 @@ func TestRecallDoesNotWaitForeverOnTheEmbedder(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库用 PostgreSQL 17",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức dùng PostgreSQL 17",
 	})
 	require.NoError(t, err)
 
 	models.embedder.delay = embedTimeout * 3
 
 	started := time.Now()
-	recall := svc.Recall(ctx, "生产库怎么配")
+	recall := svc.Recall(ctx, "cấu hình CSDL chính thức thế nào")
 	elapsed := time.Since(started)
 
 	require.Less(t, elapsed, embedTimeout*2,
@@ -199,12 +199,12 @@ func TestVectorRecallCanBeTurnedOff(t *testing.T) {
 	})
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 
 	callsAfterWrite := models.embedder.calls
-	require.Empty(t, svc.Recall(ctx, "别铺垫那么多").Items,
+	require.Empty(t, svc.Recall(ctx, "đừng dẫn dắt nhiều thế").Items,
 		"with vector recall off this falls back to lexical, which cannot match this")
 	require.Equal(t, callsAfterWrite, models.embedder.calls,
 		"and no embedding call is made at all")
@@ -260,8 +260,8 @@ func TestExtractionOnlySeesRelevantMemories(t *testing.T) {
 		{ID: "embed-1", Type: types.ModelTypeEmbedding, Status: types.ModelStatusActive},
 	}
 	models.embedder = &stubEmbedder{vectors: map[string][]float32{
-		"数据库": {1, 0, 0},
-		"生产库": {1, 0, 0},
+		"CSDL":            {1, 0, 0},
+		"CSDL chính thức": {1, 0, 0},
 	}}
 	models.response = `{"memories":[]}`
 
@@ -269,14 +269,14 @@ func TestExtractionOnlySeesRelevantMemories(t *testing.T) {
 	for i := 0; i < extractRelevantCandidates*2; i++ {
 		_, err := svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindFact,
-			Topic:   fmt.Sprintf("话题%d", i),
-			Content: fmt.Sprintf("与本次提问无关的第 %d 条记忆", i),
+			Topic:   fmt.Sprintf("chủ đề %d", i),
+			Content: fmt.Sprintf("ghi nhớ thứ %d không liên quan đến câu hỏi lần này", i),
 		})
 		require.NoError(t, err)
 	}
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "生产库的连接数上限是多少", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "giới hạn số kết nối CSDL chính thức là bao nhiêu", time.Now().Add(-time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -312,18 +312,18 @@ func TestUnrelatedMemoriesAreNotPulledInByVectorRecall(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 	_, err = svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库的连接池配置",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "cấu hình kết nối CSDL chính thức",
 	})
 	require.NoError(t, err)
 
-	recall := svc.Recall(ctx, "别铺垫那么多")
+	recall := svc.Recall(ctx, "đừng dẫn dắt nhiều thế")
 	require.Len(t, recall.Items, 1,
 		"only the memory this question is about belongs in the prompt")
-	require.Equal(t, "回答直接给结论", recall.Items[0].Content)
+	require.Equal(t, "Trả lời đi thẳng vào kết luận", recall.Items[0].Content)
 }
 
 // Semantic recall has to be pinned to one model. Grabbing "the first embedding
@@ -335,13 +335,13 @@ func TestBlankEmbeddingModelDoesNotGrabTheFirstListedModel(t *testing.T) {
 	tenantRepo.set(1, &types.MemoryConfig{Enabled: true, WriteMode: types.MemoryWriteAuto})
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, models.embedder.calls,
 		"a workspace that has not pinned a model must not embed at all")
 
-	require.Empty(t, svc.Recall(ctx, "别铺垫那么多").Items,
+	require.Empty(t, svc.Recall(ctx, "đừng dẫn dắt nhiều thế").Items,
 		"without a pinned model, semantic recall must not silently pick one")
 	require.Equal(t, 0, models.embedder.calls)
 	require.Empty(t, models.requestedEmbedID)
@@ -356,13 +356,13 @@ func TestRecallUsesThePinnedModelNotTheFirstListed(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "embed-1", models.requestedEmbedID,
 		"the workspace pin, not whichever embedding model ListModels returned first")
 
-	recall := svc.Recall(ctx, "别铺垫那么多")
+	recall := svc.Recall(ctx, "đừng dẫn dắt nhiều thế")
 	require.NotEmpty(t, recall.Items)
 	require.Equal(t, "embed-1", models.requestedEmbedID)
 }
@@ -373,7 +373,7 @@ func TestRecallIgnoresVectorsFromAnotherModel(t *testing.T) {
 	scope := scopeFor(t, ctx)
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "回答风格", Content: "回答直接给结论",
+		Kind: types.MemoryKindFact, Topic: "Phong cách trả lời", Content: "Trả lời đi thẳng vào kết luận",
 	})
 	require.NoError(t, err)
 
@@ -384,6 +384,6 @@ func TestRecallIgnoresVectorsFromAnotherModel(t *testing.T) {
 		Vector:  types.EncodeEmbedding([]float32{1, 0, 0}),
 	}))
 
-	require.Empty(t, svc.Recall(ctx, "别铺垫那么多").Items,
+	require.Empty(t, svc.Recall(ctx, "đừng dẫn dắt nhiều thế").Items,
 		"a vector from a different model must not be scored against this query")
 }

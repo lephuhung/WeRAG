@@ -37,9 +37,9 @@ func mapTwoFactorError(err error) *errors.AppError {
 }
 
 // TwoFactorStatus godoc
-// @Summary      2FA 状态
-// @Description  返回当前账户是否已启用 TOTP 两步验证
-// @Tags         认证
+// @Summary      Trạng thái 2FA
+// @Description  Trả về tài khoản hiện tại đã bật xác thực hai bước TOTP hay chưa
+// @Tags         Xác thực
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "success / enabled"
 // @Security     Bearer
@@ -61,9 +61,9 @@ func (h *AuthHandler) TwoFactorStatus(c *gin.Context) {
 }
 
 // TwoFactorSetup godoc
-// @Summary      开始 2FA 绑定
-// @Description  生成待确认的 TOTP 密钥，返回 Base32 密钥与 otpauth:// URI（前端渲染二维码）
-// @Tags         认证
+// @Summary      Bắt đầu liên kết 2FA
+// @Description  Tạo khoá TOTP chờ xác nhận, trả về khoá Base32 và URI otpauth:// (frontend dựng mã QR)
+// @Tags         Xác thực
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "success / secret / otpauth_url"
 // @Security     Bearer
@@ -89,14 +89,14 @@ func (h *AuthHandler) TwoFactorSetup(c *gin.Context) {
 }
 
 // TwoFactorEnable godoc
-// @Summary      启用 2FA
-// @Description  用验证器当前 6 位验证码确认绑定；成功后生成一次性恢复代码（仅本次返回）
-// @Tags         认证
+// @Summary      Bật 2FA
+// @Description  Xác nhận liên kết bằng mã 6 số hiện tại của ứng dụng xác thực; thành công sẽ tạo mã khôi phục dùng một lần (chỉ trả về lần này)
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{code=string}    true  "6 位验证码"
+// @Param        request  body      object{code=string}    true  "mã xác thực 6 số"
 // @Success      200      {object}  map[string]interface{} "success / recovery_codes"
-// @Failure      400      {object}  errors.AppError        "验证码无效"
+// @Failure      400      {object}  errors.AppError        "mã xác thực không hợp lệ"
 // @Security     Bearer
 // @Router       /auth/2fa/enable [post]
 func (h *AuthHandler) TwoFactorEnable(c *gin.Context) {
@@ -126,14 +126,14 @@ func (h *AuthHandler) TwoFactorEnable(c *gin.Context) {
 }
 
 // TwoFactorDisable godoc
-// @Summary      关闭 2FA
-// @Description  用当前 TOTP 验证码（或未使用的恢复代码）关闭两步验证并清除绑定
-// @Tags         认证
+// @Summary      Tắt 2FA
+// @Description  Dùng mã TOTP hiện tại (hoặc mã khôi phục chưa dùng) để tắt xác thực hai bước và xoá liên kết
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{code=string}    true  "6 位验证码或恢复代码"
+// @Param        request  body      object{code=string}    true  "mã xác thực 6 số hoặc mã khôi phục"
 // @Success      200      {object}  map[string]interface{} "success"
-// @Failure      400      {object}  errors.AppError        "验证码无效"
+// @Failure      400      {object}  errors.AppError        "mã xác thực không hợp lệ"
 // @Security     Bearer
 // @Router       /auth/2fa/disable [post]
 func (h *AuthHandler) TwoFactorDisable(c *gin.Context) {

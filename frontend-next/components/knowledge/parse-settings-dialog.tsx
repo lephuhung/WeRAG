@@ -682,7 +682,7 @@ export function ParseSettingsDialog({
                             }
                             options={[
                               { value: "", label: t("ps.descLangAuto") },
-                              { value: "Chinese", label: "中文" },
+                              { value: "Chinese", label: "Tiếng Trung" },
                               { value: "English", label: "English" },
                               { value: "Korean", label: "한국어" },
                               { value: "Russian", label: "Русский" },

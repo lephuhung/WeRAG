@@ -199,7 +199,7 @@ func TestMCPFullSchemaValidation(t *testing.T) {
 }`, `{
   "id": 0
 }`},
-		{"unicode length", `{"properties":{"name":{"type":"string","minLength":2}}}`, `{"name":"中文"}`, `{"name":"中"}`},
+		{"unicode length", `{"properties":{"name":{"type":"string","minLength":2}}}`, `{"name":"ệộ"}`, `{"name":"ệ"}`},
 		{"boolean schema", `{"properties":{"forbidden":false}}`, `{}`, `{"forbidden":true}`},
 	}
 	for _, tc := range cases {

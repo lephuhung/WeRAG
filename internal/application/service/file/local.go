@@ -107,7 +107,7 @@ func (s *localFileService) SaveFile(ctx context.Context,
 // GetFile retrieves a file from the local file system by its path
 // Returns a ReadCloser for reading the file content
 // Supports both provider scheme: local://{relative_path} and legacy absolute paths.
-// 路径必须在 baseDir 下，防止路径遍历（如 ../../）
+// Đường dẫn phải nằm trong baseDir để chống path traversal (như ../../)
 func (s *localFileService) GetFile(ctx context.Context, filePath string) (io.ReadCloser, error) {
 	logger.Infof(ctx, "Getting file: %s", filePath)
 
@@ -133,7 +133,7 @@ func (s *localFileService) GetFile(ctx context.Context, filePath string) (io.Rea
 
 // DeleteFile removes a file from the local file system
 // Returns an error if deletion fails
-// 路径必须在 baseDir 下，防止路径遍历（如 ../../）
+// Đường dẫn phải nằm trong baseDir để chống path traversal (như ../../)
 func (s *localFileService) DeleteFile(ctx context.Context, filePath string) error {
 	logger.Infof(ctx, "Deleting file: %s", filePath)
 
@@ -214,7 +214,7 @@ func (s *localFileService) CopyFile(ctx context.Context,
 
 // SaveBytes saves bytes data to a file and returns the file path
 // temp parameter is ignored for local storage (no auto-expiration support)
-// fileName 仅允许安全文件名，禁止路径遍历（如 ../../）
+// fileName chỉ chấp nhận tên tệp an toàn, cấm path traversal (như ../../)
 func (s *localFileService) SaveBytes(ctx context.Context, data []byte, tenantID uint64, fileName string, temp bool) (string, error) {
 	logger.Infof(ctx, "Saving bytes data: fileName=%s, size=%d, tenantID=%d, temp=%v", fileName, len(data), tenantID, temp)
 

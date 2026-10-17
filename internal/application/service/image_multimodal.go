@@ -50,6 +50,12 @@ const (
 		"</instructions>"
 )
 
+// captionEnabled reports whether the visual-description (caption) call runs
+// for an image. VLMConfig.OCROnly turns it off platform- or KB-wide.
+func captionEnabled(cfg types.VLMConfig) bool {
+	return !cfg.OCROnly
+}
+
 func buildVLMCaptionPrompt(ctx context.Context, cfg types.VLMConfig) string {
 	language := strings.TrimSpace(cfg.DescriptionLanguage)
 	if language == "" {
@@ -251,6 +257,7 @@ func (s *ImageMultimodalService) Handle(ctx context.Context, task *asynq.Task) e
 		return nil
 	}
 	imgOut["image_bytes"] = len(imgBytes)
+	ocrProfile := loadOCRModelProfile(ctx, s.modelService, vlmCfg.ModelID)
 
 	imageInfo := types.ImageInfo{
 		URL:         payload.ImageURL,
@@ -267,6 +274,12 @@ func (s *ImageMultimodalService) Handle(ctx context.Context, task *asynq.Task) e
 			imgOut["ocr_prompt"] = "default"
 		}
 		prompt = types.AppendCustomPromptInstructions(prompt, vlmCfg.CustomInstructions, "image_ocr")
+		if ocrProfile.Prompt != "" {
+			// The model's own OCR prompt replaces the built-in one, custom
+			// instructions included: an OCR-only model follows no instructions.
+			prompt = ocrProfile.Prompt
+			imgOut["ocr_prompt"] = "model"
+		}
 
 		ocrText, ocrErr := vlmModel.Predict(ctx, [][]byte{imgBytes}, prompt)
 		if ocrErr != nil {
@@ -286,14 +299,18 @@ func (s *ImageMultimodalService) Handle(ctx context.Context, task *asynq.Task) e
 		}
 	}
 
-	caption, capErr := vlmModel.Predict(ctx, [][]byte{imgBytes}, buildVLMCaptionPrompt(ctx, vlmCfg))
-	if capErr != nil {
-		logger.Warnf(ctx, "[ImageMultimodal] Caption failed for %s: %v", payload.ImageURL, capErr)
-		imgOut["caption_error"] = capErr.Error()
-	} else if caption != "" {
-		imageInfo.Caption = caption
-		imgOut["caption_chars"] = len([]rune(caption))
-		imgOut["caption_preview"] = previewText(caption, 200)
+	if captionEnabled(vlmCfg) && !ocrProfile.OCROnly {
+		caption, capErr := vlmModel.Predict(ctx, [][]byte{imgBytes}, buildVLMCaptionPrompt(ctx, vlmCfg))
+		if capErr != nil {
+			logger.Warnf(ctx, "[ImageMultimodal] Caption failed for %s: %v", payload.ImageURL, capErr)
+			imgOut["caption_error"] = capErr.Error()
+		} else if caption != "" {
+			imageInfo.Caption = caption
+			imgOut["caption_chars"] = len([]rune(caption))
+			imgOut["caption_preview"] = previewText(caption, 200)
+		}
+	} else {
+		imgOut["caption_skipped"] = "ocr_only"
 	}
 
 	// Build child chunks for OCR and caption results

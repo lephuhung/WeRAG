@@ -139,5 +139,5 @@ func (s *singleDownloadKnowledgeStub) GetKnowledgeFile(ctx context.Context, id s
 		return nil, "", fmt.Errorf("wrong tenant context")
 	}
 	s.opened = append(s.opened, id)
-	return io.NopCloser(strings.NewReader("原文-" + id)), "public-law.txt", nil
+	return io.NopCloser(strings.NewReader("bản gốc-" + id)), "public-law.txt", nil
 }

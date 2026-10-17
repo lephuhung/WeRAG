@@ -159,17 +159,17 @@ content of C here.`
 func TestSplitByHeadings_CoalescesTinyAdjacentSections(t *testing.T) {
 	doc := `# Install Log
 
-## Docker镜像
-使用 daocloud 部署 v0.3.1。
+## Ảnh Docker
+Triển khai v0.3.1 qua daocloud.
 
-## 前端老版本
-浏览器缓存了旧前端资源。
+## Giao diện cũ
+Trình duyệt còn cache giao diện cũ.
 
-## 登录报错
+## Lỗi đăng nhập
 ERROR: column missing.
 
-## 解析失败
-embedding 表缺列。`
+## Phân tích thất bại
+Bảng embedding thiếu cột.`
 	cfg := SplitterConfig{ChunkSize: 500, ChunkOverlap: 0}
 	chunks := splitByHeadingsImpl(doc, cfg, nil)
 	if len(chunks) == 0 {
@@ -188,7 +188,7 @@ embedding 表缺列。`
 	// All four sub-section headings must remain visible somewhere in the
 	// merged content (heading_splitter keeps the heading line as part of
 	// each section's Content).
-	for _, h := range []string{"## Docker镜像", "## 前端老版本", "## 登录报错", "## 解析失败"} {
+	for _, h := range []string{"## Ảnh Docker", "## Giao diện cũ", "## Lỗi đăng nhập", "## Phân tích thất bại"} {
 		seen := false
 		for _, c := range chunks {
 			if strings.Contains(c.Content, h) {

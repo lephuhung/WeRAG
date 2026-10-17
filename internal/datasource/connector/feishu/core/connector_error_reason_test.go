@@ -34,7 +34,7 @@ func TestFeishuFailure(t *testing.T) {
 		},
 		{
 			name:     "export timeout",
-			err:      errors.New("export 季度报告 (docx): export task timed out after 60s (ticket=abc)"),
+			err:      errors.New("export Báo cáo quý (docx): export task timed out after 60s (ticket=abc)"),
 			wantCode: "feishu_timeout",
 			noLeak:   []string{"ticket=", "abc"},
 		},

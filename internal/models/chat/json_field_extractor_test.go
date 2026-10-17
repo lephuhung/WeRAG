@@ -85,10 +85,10 @@ func TestJSONFieldExtractor_UnicodeEscape(t *testing.T) {
 	e := newJSONFieldExtractor("answer")
 
 	got := ""
-	got += e.Feed(`{"answer":"Hello \u4e16\u754c`)
+	got += e.Feed(`{"answer":"Xin ch\u00e0o Vi\u1ec7t`)
 	got += e.Feed(`"}`)
 
-	expected := "Hello 世界"
+	expected := "Xin chào Việt"
 	if got != expected {
 		t.Errorf("expected %q, got %q", expected, got)
 	}

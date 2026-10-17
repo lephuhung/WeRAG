@@ -398,10 +398,10 @@ type PromptTemplateI18n struct {
 
 // PromptTemplate prompt template
 //
-// Field design: 每个模板最多由两部分组成 —— 系统侧 (content) 和用户侧 (user)。
-//   - content: 主要内容 / 系统 Prompt（所有模板都使用此字段）
-//   - user:    用户侧 Prompt（仅在需要 system+user 配对的模板中使用，如 rewrite、keywords_extraction）
-//   - i18n:    多语言 name/description，键为 locale（如 "zh-CN"、"en-US"、"ko-KR"），后端根据请求语言替换 Name/Description 再返回
+// Field design: each template has at most two parts: the system side (content) and the user side (user).
+//   - content: main content / system prompt (used by every template)
+//   - user:    user-side prompt (only for templates that need a system+user pair, e.g. rewrite, keywords_extraction)
+//   - i18n:    localized name/description keyed by locale (e.g. "zh-CN", "en-US", "ko-KR"); the backend swaps Name/Description by request language before returning
 type PromptTemplate struct {
 	ID               string                        `yaml:"id"                 json:"id"`
 	Name             string                        `yaml:"name"               json:"name"`
@@ -417,14 +417,14 @@ type PromptTemplate struct {
 
 // PromptTemplatesConfig prompt templates configuration
 //
-// 每种 Prompt 类型对应一个 YAML 文件，所有模板都在同一个字段（文件）中管理。
-// 每个模板使用 content (system prompt) + user (user prompt) 两个字段。
+// Each prompt type maps to one YAML file; all templates of a type live in the same field (file).
+// Each template uses two fields: content (system prompt) + user (user prompt).
 type PromptTemplatesConfig struct {
 	SystemPrompt    []PromptTemplate `yaml:"system_prompt"    json:"system_prompt"`
 	ContextTemplate []PromptTemplate `yaml:"context_template" json:"context_template"`
-	// Rewrite 合并了前端可选模板和运行时默认模板，每个模板同时包含 content + user
+	// Rewrite merges the frontend-selectable templates and the runtime default template; each one carries content + user
 	Rewrite []PromptTemplate `yaml:"rewrite" json:"rewrite"`
-	// Fallback 合并了固定回复模板和模型兜底 prompt（通过 mode:"model" 区分）
+	// Fallback merges fixed-reply templates and the model fallback prompt (distinguished by mode:"model")
 	Fallback []PromptTemplate `yaml:"fallback" json:"fallback"`
 
 	GenerateSessionTitle []PromptTemplate `yaml:"generate_session_title" json:"generate_session_title,omitempty"`
@@ -563,13 +563,13 @@ func ConfigDir() string {
 
 // LoadConfig loads configuration from config file
 func LoadConfig() (*Config, error) {
-	// Settings Configuration 文件名和路径
+	// Set config file name and search paths
 	viper.SetConfigName("config")         // Config file name (without extension)
 	viper.SetConfigType("yaml")           // Config file type
 	viper.AddConfigPath(".")              // Current directory
-	viper.AddConfigPath("./config")       // config子目录
+	viper.AddConfigPath("./config")       // config subdirectory
 	viper.AddConfigPath("$HOME/.appname") // User directory
-	viper.AddConfigPath("/etc/appname/")  // etc目录
+	viper.AddConfigPath("/etc/appname/")  // etc directory
 
 	// Enable environment variable substitution
 	viper.AutomaticEnv()
@@ -586,13 +586,13 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("error reading config file content: %w", err)
 	}
 
-	// 替换${ENV_VAR}格式的环境变量引用，支持 ${ENV_VAR:-default} 默认值语法
+	// Replace ${ENV_VAR} references, supporting the ${ENV_VAR:-default} default-value syntax
 	re := regexp.MustCompile(`\${([^}:]+)(?::-([^}]*))?}`)
 	result := re.ReplaceAllStringFunc(string(configFileContent), func(match string) string {
-		// 提取环境变量名称（去掉${}部分）与可选默认值
+		// Extract the variable name (without ${}) and the optional default value
 		sub := re.FindStringSubmatch(match)
 		envVar := sub[1]
-		// 获取环境变量值；未Settings 时使用 :- 默认值，无默认值则保持原样
+		// Read the variable; fall back to the :- default when unset, otherwise keep the text as is
 		if value := os.Getenv(envVar); value != "" {
 			return value
 		}
@@ -620,7 +620,7 @@ func LoadConfig() (*Config, error) {
 	promptTemplates, err := loadPromptTemplates(configDir)
 	if err != nil {
 		fmt.Printf("Warning: failed to load prompt templates from directory: %v\n", err)
-		// 如果目录加载失败，使用Configuration 文件中的模板（如果有）
+		// If loading from the directory fails, keep the templates from the config file (if any)
 	} else if promptTemplates != nil {
 		cfg.PromptTemplates = promptTemplates
 	}
@@ -1266,23 +1266,23 @@ func resolveBuiltinAgentPromptIDs(pt *PromptTemplatesConfig) {
 	})
 }
 
-// promptTemplateFile 用于解析模板文件
+// promptTemplateFile is used to parse a template file
 type promptTemplateFile struct {
 	Templates []PromptTemplate `yaml:"templates"`
 }
 
-// loadPromptTemplates 从目录加载Prompt template
+// loadPromptTemplates loads prompt templates from a directory
 func loadPromptTemplates(configDir string) (*PromptTemplatesConfig, error) {
 	templatesDir := filepath.Join(configDir, "prompt_templates")
 
-	// 检查目录是否存在
+	// Check whether the directory exists
 	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		return nil, nil // 目录不存在，返回nil让调用者使用Configuration 文件中的模板
+		return nil, nil // directory missing: return nil so the caller uses the templates from the config file
 	}
 
 	config := &PromptTemplatesConfig{}
 
-	// 定义模板文件映射
+	// Template file mapping
 	templateFiles := map[string]*[]PromptTemplate{
 		"system_prompt.yaml":           &config.SystemPrompt,
 		"context_template.yaml":        &config.ContextTemplate,
@@ -1299,11 +1299,11 @@ func loadPromptTemplates(configDir string) (*PromptTemplatesConfig, error) {
 		"spellcheck_review.yaml":       &config.SpellcheckReview,
 	}
 
-	// 加载每个模板文件
+	// Load each template file
 	for filename, target := range templateFiles {
 		filePath := filepath.Join(templatesDir, filename)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			continue // 文件不存在，跳过
+			continue // file missing, skip
 		}
 
 		data, err := os.ReadFile(filePath)
@@ -1324,5 +1324,5 @@ func loadPromptTemplates(configDir string) (*PromptTemplatesConfig, error) {
 
 // WebSearchConfig represents the web search configuration
 type WebSearchConfig struct {
-	Timeout int `yaml:"timeout" json:"timeout"` // 超时时间（秒）
+	Timeout int `yaml:"timeout" json:"timeout"` // timeout in seconds
 }

@@ -33,6 +33,33 @@ const (
 // stored text alone, no model call, so continuing is instant and cannot fail
 // on a summarizer.
 func (s *sessionService) ContinueSession(ctx context.Context, old *types.Session) (*types.Session, error) {
+	return s.continueSession(ctx, old, "")
+}
+
+// OpenSubChat opens a new sub-chat of from's document chat: a continued
+// session (summary seed) that works on the root chat's documents.
+func (s *sessionService) OpenSubChat(ctx context.Context, from *types.Session) (*types.Session, error) {
+	if from == nil || from.ID == "" {
+		return nil, fmt.Errorf("open sub-chat: no session")
+	}
+	root := from.ChatRootID
+	if root == "" {
+		root = from.ID
+	}
+	return s.continueSession(ctx, from, root)
+}
+
+// ListSubChats returns the root of s's document chat and its sub-chats.
+func (s *sessionService) ListSubChats(ctx context.Context, sess *types.Session) (string, []*types.Session, error) {
+	root := sess.ChatRootID
+	if root == "" {
+		root = sess.ID
+	}
+	chats, err := s.sessionRepo.ListChatFamily(ctx, sess.TenantID, sess.UserID, root)
+	return root, chats, err
+}
+
+func (s *sessionService) continueSession(ctx context.Context, old *types.Session, chatRoot string) (*types.Session, error) {
 	if old == nil || old.ID == "" {
 		return nil, fmt.Errorf("continue session: no session")
 	}
@@ -43,6 +70,7 @@ func (s *sessionService) ContinueSession(ctx context.Context, old *types.Session
 		Description:      old.Description,
 		LastRequestState: old.LastRequestState,
 		ContextSeed:      s.continuationSeed(ctx, old),
+		ChatRootID:       chatRoot,
 	}
 	created, err := s.CreateSession(ctx, next)
 	if err != nil {
@@ -56,8 +84,8 @@ func (s *sessionService) ContinueSession(ctx context.Context, old *types.Session
 // continuedSessionTitle marks a continued session in the list.
 func continuedSessionTitle(title string) string {
 	title = strings.TrimSpace(title)
-	if title == "" {
-		return ""
+	if title == "" || strings.HasSuffix(title, " (tiếp)") {
+		return title
 	}
 	return title + " (tiếp)"
 }

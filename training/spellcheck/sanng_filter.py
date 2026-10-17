@@ -10,8 +10,9 @@ Filters:
   - rows whose errors are all keyboard/telex/vni/transpose/delete are kept with
     probability --typing-keep (they dominate the source, real text is mostly
     tone/diacritic errors);
-  - abbreviation (teencode) errors are dropped: they do not occur in
-    administrative documents.
+  - abbreviation (teencode: ko, dc, vs, ng) errors are dropped: they do not
+    occur in administrative documents. --abbr-only keeps ONLY rows with one,
+    reported as "viết tắt không chuẩn" (chat-style text for round 4).
 
 Input may be a parquet file (pyarrow), the original JSONL, or "-" for JSONL
 on stdin, e.g. streamed with curl so the 6 GB train file never hits disk:
@@ -39,6 +40,7 @@ REASONS = {
     "drop_tone": "thiếu dấu thanh",
     "consonant": "sai phụ âm",
     "swap_tone": "sai dấu hỏi/ngã",
+    "abbreviation": "viết tắt không chuẩn",
 }
 TYPING = {"keyboard", "telex", "vni", "delete", "transpose"}
 
@@ -80,11 +82,11 @@ def convert(row: dict, rng: random.Random, a) -> dict | None:
     if len(errs) > a.max_errors:
         return None
     if not errs:
-        return None if rng.random() > a.clean_rate else {"text": detok(ct), "noisy": detok(ct), "findings": [], "src": "sanng"}
+        return None if a.abbr_only or rng.random() > a.clean_rate else {"text": detok(ct), "noisy": detok(ct), "findings": [], "src": "sanng"}
     types = {et[i] for i in errs}
-    if "abbreviation" in types:
+    if ("abbreviation" in types) != a.abbr_only:
         return None
-    if types <= TYPING and rng.random() > a.typing_keep:
+    if not a.abbr_only and types <= TYPING and rng.random() > a.typing_keep:
         return None
     findings = []
     for i in errs:
@@ -119,6 +121,7 @@ def main() -> int:
     ap.add_argument("--max-tokens", type=int, default=80)
     ap.add_argument("--clean-rate", type=float, default=0.6)
     ap.add_argument("--typing-keep", type=float, default=0.45)
+    ap.add_argument("--abbr-only", action="store_true", help="keep only rows with a teencode (abbreviation) error")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-rows", type=int, default=0, help="skip the first N raw rows (continue a previous streaming pass)")
     a = ap.parse_args()

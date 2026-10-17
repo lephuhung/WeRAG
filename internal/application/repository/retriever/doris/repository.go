@@ -18,14 +18,14 @@ const (
 	envDorisTablePrefix  = "DORIS_TABLE_PREFIX"
 )
 
-// NewDorisRetrieveEngineRepository Create  Doris 检索引擎仓储。
+// NewDorisRetrieveEngineRepository tạo kho truy xuất Doris.
 //
 // Parameters ：
-//   - db：MySQL 协议的 *sql.DB 实例。调用方负责 SetMaxOpenConns 等Parameters 。
-//   - feHTTPBase：Stream Load 用的 FE HTTP 基地址（含 scheme），例如 "http://doris-fe:8030"。
-//   - username/password：MySQL 与 Stream Load 共用的凭据。
-//   - database：目标数据库名（既用于 MySQL DSN，也用于 Stream Load URL 路径）。
-//   - indexCfg：可空。为 nil 时退化为环境变量 + 默认值（env 路径）。
+//   - db: thể hiện *sql.DB giao thức MySQL. Bên gọi chịu trách nhiệm các tham số như SetMaxOpenConns.
+//   - feHTTPBase: địa chỉ HTTP gốc của FE cho Stream Load (có scheme), ví dụ "http://doris-fe:8030".
+//   - username/password: thông tin đăng nhập dùng chung cho MySQL và Stream Load.
+//   - database: tên cơ sở dữ liệu đích (dùng cho cả MySQL DSN lẫn đường dẫn URL Stream Load).
+//   - indexCfg: có thể nil. Khi nil thì lùi về biến môi trường + giá trị mặc định (đường env).
 func NewDorisRetrieveEngineRepository(
 	db *sql.DB,
 	feHTTPBase, username, password, database string,
@@ -68,9 +68,9 @@ func (r *dorisRepository) Support() []types.RetrieverType {
 	return []types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType}
 }
 
-// EstimateStorageSize 估算给定 IndexInfo List 的存储字节数。
+// EstimateStorageSize ước tính số byte lưu trữ của danh sách IndexInfo.
 //
-// 参考 Qdrant 的算法：payload 字段长度 + 向量字节 + HNSW 邻居 + 元数据。
+// Theo thuật toán của Qdrant: độ dài trường payload + byte vector + láng giềng HNSW + metadata.
 func (r *dorisRepository) EstimateStorageSize(_ context.Context,
 	indexInfoList []*types.IndexInfo, params map[string]any,
 ) int64 {
@@ -82,15 +82,15 @@ func (r *dorisRepository) EstimateStorageSize(_ context.Context,
 	return total
 }
 
-// Save 写入单条记录到对应维度的表。空向量在 BatchSave 内部统一拒绝。
+// Save ghi một bản ghi vào bảng ứng với số chiều. Vector rỗng bị BatchSave từ chối thống nhất.
 func (r *dorisRepository) Save(ctx context.Context,
 	info *types.IndexInfo, additionalParams map[string]any,
 ) error {
 	return r.BatchSave(ctx, []*types.IndexInfo{info}, additionalParams)
 }
 
-// BatchSave 把同一批 IndexInfo 按维度分组；Doris ANN 兼容表使用
-// DUPLICATE KEY，因此这里显式按 id 做 delete + insert，保持原先的替换语义。
+// BatchSave gom cùng lô IndexInfo theo số chiều; bảng tương thích ANN của Doris dùng
+// DUPLICATE KEY nên ở đây delete + insert tường minh theo id để giữ ngữ nghĩa thay thế cũ.
 func (r *dorisRepository) BatchSave(ctx context.Context,
 	indexInfoList []*types.IndexInfo, additionalParams map[string]any,
 ) error {
@@ -113,8 +113,8 @@ func (r *dorisRepository) BatchSave(ctx context.Context,
 		if err := validateEmbedding(emb.Embedding); err != nil {
 			return fmt.Errorf("invalid embedding for chunk %s: %w", info.ChunkID, err)
 		}
-		// 给一个稳定的主键。SourceID 是上层最有意义的"行身份"，
-		// 但同 chunk 多 question 的场景下 SourceID 已经唯一，所以直接用它。
+		// Cấp một khóa chính ổn định. SourceID là "danh tính hàng" có ý nghĩa nhất ở tầng trên,
+		// và trong trường hợp một chunk nhiều question thì SourceID đã duy nhất, nên dùng thẳng.
 		if emb.ID == "" {
 			emb.ID = emb.SourceID
 		}
@@ -142,8 +142,8 @@ func (r *dorisRepository) BatchSave(ctx context.Context,
 	return nil
 }
 
-// insertRows 按列序拼一条多 VALUES 的 INSERT。embedding 列由于
-// go-sql-driver/mysql 不支持 ARRAY 占位符，必须以字面量形式拼到 SQL 文本中。
+// insertRows nối một câu INSERT nhiều VALUES theo thứ tự cột. Cột embedding, do
+// go-sql-driver/mysql không hỗ trợ chỗ giữ ARRAY, phải nối dạng literal vào văn bản SQL.
 func (r *dorisRepository) insertRows(ctx context.Context,
 	table string, rows []*DorisVectorEmbedding,
 ) error {
@@ -151,7 +151,7 @@ func (r *dorisRepository) insertRows(ctx context.Context,
 		return nil
 	}
 
-	// 9 个普通占位符 + 1 个 embedding 字面量。
+	// 9 chỗ giữ thường + 1 literal embedding.
 	const perRowPlaceholders = "(?, ?, ?, ?, ?, ?, ?, ?, ?, %s)"
 
 	parts := make([]string, len(rows))
@@ -174,7 +174,7 @@ func (r *dorisRepository) insertRows(ctx context.Context,
 	return err
 }
 
-// replaceRows 在 DUPLICATE KEY 表上显式模拟“按 id 覆盖”的语义。
+// replaceRows mô phỏng tường minh ngữ nghĩa "ghi đè theo id" trên bảng DUPLICATE KEY.
 func (r *dorisRepository) replaceRows(ctx context.Context,
 	table string, rows []*DorisVectorEmbedding,
 ) error {
@@ -231,29 +231,29 @@ func dedupeRowsByID(rows []*DorisVectorEmbedding) []*DorisVectorEmbedding {
 	return out
 }
 
-// DeleteByChunkIDList 用 chunk_id 列Delete 。dimension 用于定位具体表。
+// DeleteByChunkIDList xóa theo cột chunk_id. dimension dùng để xác định bảng cụ thể.
 func (r *dorisRepository) DeleteByChunkIDList(ctx context.Context,
 	chunkIDList []string, dimension int, _ string,
 ) error {
 	return r.deleteByField(ctx, fieldChunkID, chunkIDList, dimension)
 }
 
-// DeleteByKnowledgeIDList 用 knowledge_id 列Delete 。
+// DeleteByKnowledgeIDList xóa theo cột knowledge_id.
 func (r *dorisRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int, _ string,
 ) error {
 	return r.deleteByField(ctx, fieldKnowledgeID, knowledgeIDList, dimension)
 }
 
-// DeleteBySourceIDList 用 source_id 列Delete 。
+// DeleteBySourceIDList xóa theo cột source_id.
 func (r *dorisRepository) DeleteBySourceIDList(ctx context.Context,
 	sourceIDList []string, dimension int, _ string,
 ) error {
 	return r.deleteByField(ctx, fieldSourceID, sourceIDList, dimension)
 }
 
-// deleteByField 是三个 Delete* 方法的统一实现：
-// DELETE FROM <table> WHERE <field> IN (?, ?, ...)。
+// deleteByField là hiện thực chung của ba phương thức Delete*:
+// DELETE FROM <table> WHERE <field> IN (?, ?, ...).
 func (r *dorisRepository) deleteByField(ctx context.Context,
 	field string, ids []string, dimension int,
 ) error {
@@ -280,7 +280,7 @@ func (r *dorisRepository) deleteByField(ctx context.Context,
 	return nil
 }
 
-// Retrieve 根据 RetrieverType 分发到向量检索或关键词检索。
+// Retrieve phân phối theo RetrieverType sang truy xuất vector hoặc từ khóa.
 func (r *dorisRepository) Retrieve(ctx context.Context,
 	params types.RetrieveParams,
 ) ([]*types.RetrieveResult, error) {
@@ -293,9 +293,9 @@ func (r *dorisRepository) Retrieve(ctx context.Context,
 	return nil, fmt.Errorf("invalid retriever type: %v", params.RetrieverType)
 }
 
-// VectorRetrieve 对Query 向量先做单位化，再调用 inner_product_approximate 做
-// ANN 搜索；对单位向量而言，inner product 与 cosine similarity 等价，
-// 因此 score 仍然保持“越大越相似”的语义。
+// VectorRetrieve chuẩn hóa đơn vị vector truy vấn rồi gọi inner_product_approximate để
+// tìm ANN; với vector đơn vị, inner product tương đương cosine similarity,
+// nên score vẫn giữ ngữ nghĩa "càng lớn càng giống".
 func (r *dorisRepository) VectorRetrieve(ctx context.Context,
 	params types.RetrieveParams,
 ) ([]*types.RetrieveResult, error) {
@@ -326,8 +326,8 @@ func (r *dorisRepository) VectorRetrieve(ctx context.Context,
 	wb := buildBaseFilter(params)
 	whereClause, whereArgs := wb.build()
 
-	// embedding 必须用字面量，Doris 不支持 LIMIT/OFFSET 使用占位符，必须内联为字面量。
-	// 使用 HAVING 是因为 score 是 SELECT 列别名，WHERE 阶段还看不到。
+	// embedding phải là literal; Doris không hỗ trợ chỗ giữ cho LIMIT/OFFSET nên cũng phải nội tuyến literal.
+	// Dùng HAVING vì score là bí danh cột SELECT, giai đoạn WHERE chưa thấy.
 	scoreExpr := fmt.Sprintf("inner_product_approximate(`%s`, %s)", fieldEmbedding, embeddingLiteral(queryEmbedding))
 	if compatMode == dorisCompatModeLegacy {
 		scoreExpr = fmt.Sprintf("(1 - cosine_distance_approximate(`%s`, %s))", fieldEmbedding, embeddingLiteral(queryEmbedding))
@@ -359,10 +359,10 @@ func (r *dorisRepository) VectorRetrieve(ctx context.Context,
 	return buildRetrieveResult(results, types.VectorRetrieverType), nil
 }
 
-// KeywordsRetrieve 用 Doris 倒排索引 + MATCH_ANY 做关键词匹配。
+// KeywordsRetrieve dùng chỉ mục đảo của Doris + MATCH_ANY để khớp từ khóa.
 //
-// 不需要 jieba 客户端分词：CREATE TABLE 时 idx_content 已经声明了 chinese parser。
-// 不同维度的表跨表合并取 topK，与 Milvus/Weaviate 现状一致。
+// Không cần tách từ jieba phía client: idx_content đã khai báo chinese parser khi CREATE TABLE.
+// Các bảng khác số chiều được gộp lấy topK, như hiện trạng Milvus/Weaviate.
 func (r *dorisRepository) KeywordsRetrieve(ctx context.Context,
 	params types.RetrieveParams,
 ) ([]*types.RetrieveResult, error) {
@@ -398,7 +398,7 @@ func (r *dorisRepository) KeywordsRetrieve(ctx context.Context,
 			log.Warnf("[Doris] Keyword retrieve in %s failed: %v", table, err)
 			continue
 		}
-		// score 在 KeywordsRetrieve 中固定 1.0，与 Qdrant 行为一致。
+		// score cố định 1.0 trong KeywordsRetrieve, giống hành vi Qdrant.
 		batch, scanErr := scanRetrieveRows(rows, types.MatchTypeKeywords)
 		_ = rows.Close()
 		if scanErr != nil {
@@ -413,13 +413,13 @@ func (r *dorisRepository) KeywordsRetrieve(ctx context.Context,
 	return buildRetrieveResult(all, types.KeywordsRetrieverType), nil
 }
 
-// CopyIndices 把源Knowledge Base的 chunk 复制到目标Knowledge Base，避免重新生成 embedding。
+// CopyIndices sao chép chunk từ kho tri thức nguồn sang kho đích, tránh tạo lại embedding.
 //
-// 与 Qdrant 的实现完全镜像：
-//   - 分页扫描源表
-//   - 按 sourceToTargetChunkIDMap 把 chunk_id 翻译过去
-//   - 处理 source_id 翻译规则（普通 chunk / 生成型问题 / 其他）
-//   - 把目标行写回同一个表
+// Phản chiếu hoàn toàn hiện thực của Qdrant:
+//   - quét bảng nguồn theo trang
+//   - dịch chunk_id theo sourceToTargetChunkIDMap
+//   - xử lý quy tắc dịch source_id (chunk thường / câu hỏi sinh ra / khác)
+//   - ghi hàng đích trở lại cùng bảng
 func (r *dorisRepository) CopyIndices(ctx context.Context,
 	sourceKnowledgeBaseID string,
 	sourceToTargetKBIDMap map[string]string,
@@ -505,17 +505,17 @@ func (r *dorisRepository) CopyIndices(ctx context.Context,
 	return nil
 }
 
-// BatchUpdateChunkEnabledStatus / BatchUpdateChunkTagID 实际实现位于 streamload.go，
-// 会按 compat mode 选择 partial update 或 rewrite rows。
+// BatchUpdateChunkEnabledStatus / BatchUpdateChunkTagID hiện thực thật nằm ở streamload.go,
+// chọn partial update hoặc rewrite rows theo compat mode.
 
 // ---------------------------------------------------------------------------
-// 私有辅助
+// Hàm phụ trợ riêng
 // ---------------------------------------------------------------------------
 
-// toDorisVectorEmbedding 把 IndexInfo + 上层传入的 embedding 映射 转换为
-// Doris 行模型。Embedding 通过 additionalParams[fieldEmbedding] 中的
-// map[string][]float32 按 SourceID 取出，与 Qdrant/Milvus 完全一致。
-// inner_product_duplicate 模式会先单位化，legacy 模式保留原始向量。
+// toDorisVectorEmbedding chuyển IndexInfo + ánh xạ embedding tầng trên truyền vào thành
+// mô hình hàng Doris. Embedding lấy theo SourceID từ map[string][]float32
+// trong additionalParams[fieldEmbedding], giống hệt Qdrant/Milvus.
+// Chế độ inner_product_duplicate chuẩn hóa đơn vị trước, chế độ legacy giữ vector gốc.
 func toDorisVectorEmbedding(
 	info *types.IndexInfo,
 	additionalParams map[string]any,
@@ -561,10 +561,10 @@ func (r *dorisRepository) wrapVectorRetrieveError(table string, compatMode doris
 	return fmt.Errorf("vector retrieve %s in Doris compat mode %s: %w", table, compatMode, err)
 }
 
-// translateSourceID 把源 SourceID 翻译到目标 SourceID，与 Qdrant 实现完全镜像：
-//   - 普通 chunk：SourceID == ChunkID  -> 使用 targetChunkID
-//   - 生成型问题：SourceID == "<chunkID>-<questionID>" -> "<targetChunkID>-<questionID>"
-//   - 其他场景：生成新的 UUID（保持唯一性）
+// translateSourceID dịch SourceID nguồn sang SourceID đích, phản chiếu hiện thực Qdrant:
+//   - chunk thường: SourceID == ChunkID  -> dùng targetChunkID
+//   - câu hỏi sinh ra: SourceID == "<chunkID>-<questionID>" -> "<targetChunkID>-<questionID>"
+//   - trường hợp khác: sinh UUID mới (giữ tính duy nhất)
 func translateSourceID(originalSourceID, sourceChunkID, targetChunkID string) string {
 	switch {
 	case originalSourceID == sourceChunkID:
@@ -577,11 +577,11 @@ func translateSourceID(originalSourceID, sourceChunkID, targetChunkID string) st
 	}
 }
 
-// scanRetrieveRows 把 Retrieve 阶段的 rows 反序列化为 IndexWithScore List 。
+// scanRetrieveRows giải tuần tự rows của giai đoạn Retrieve thành danh sách IndexWithScore.
 //
-// 分两路：
-//   - 列数 == columnsForRetrieve+1：第 N+1 列是 score（向量检索路径）
-//   - 列数 == columnsForRetrieve：score 统一赋 1.0（关键词检索路径）
+// Hai nhánh:
+//   - số cột == columnsForRetrieve+1: cột N+1 là score (đường truy xuất vector)
+//   - số cột == columnsForRetrieve: score gán đồng loạt 1.0 (đường truy xuất từ khóa)
 func scanRetrieveRows(rows *sql.Rows, matchType types.MatchType) ([]*types.IndexWithScore, error) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -626,10 +626,10 @@ func scanRetrieveRows(rows *sql.Rows, matchType types.MatchType) ([]*types.Index
 	return out, rows.Err()
 }
 
-// scanCopyRows 反序列化 CopyIndices 的分页Query 结果。
+// scanCopyRows giải tuần tự kết quả truy vấn phân trang của CopyIndices.
 //
-// 与 scanRetrieveRows 不同，这里需要 embedding 字段（去复制原始向量）。
-// Doris 的 ARRAY<FLOAT> 通过 mysql 协议返回的是字符串字面量 "[1,2,3]"。
+// Khác scanRetrieveRows, ở đây cần trường embedding (để sao chép vector gốc).
+// ARRAY<FLOAT> của Doris qua giao thức mysql trả về literal chuỗi "[1,2,3]".
 func scanCopyRows(rows *sql.Rows) ([]*DorisVectorEmbedding, error) {
 	var out []*DorisVectorEmbedding
 	for rows.Next() {
@@ -664,7 +664,7 @@ func scanCopyRows(rows *sql.Rows) ([]*DorisVectorEmbedding, error) {
 	return out, rows.Err()
 }
 
-// buildRetrieveResult 把 IndexWithScore List 包装成 RetrieveResult。
+// buildRetrieveResult bọc danh sách IndexWithScore thành RetrieveResult.
 func buildRetrieveResult(results []*types.IndexWithScore, retrieverType types.RetrieverType) []*types.RetrieveResult {
 	return []*types.RetrieveResult{{
 		Results:             results,
@@ -674,9 +674,9 @@ func buildRetrieveResult(results []*types.IndexWithScore, retrieverType types.Re
 	}}
 }
 
-// calculateStorageSize 估算单行的存储成本。
+// calculateStorageSize ước tính chi phí lưu trữ một hàng.
 //
-// 与 Qdrant 一致：payload 字符串字节 + 向量 (dim*4) + HNSW M*2*8 + 元数据 24。
+// Giống Qdrant: byte chuỗi payload + vector (dim*4) + HNSW M*2*8 + metadata 24.
 func calculateStorageSize(emb *DorisVectorEmbedding) int64 {
 	var payload int64
 	payload += int64(len(emb.Content))

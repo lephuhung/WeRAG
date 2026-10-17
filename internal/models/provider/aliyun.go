@@ -8,24 +8,24 @@ import (
 )
 
 const (
-	// AliyunChatBaseURL 阿里云 DashScope Chat/Embedding 的默认 BaseURL
+	// AliyunChatBaseURL BaseURL mặc định cho Chat/Embedding của Alibaba Cloud DashScope
 	AliyunChatBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-	// AliyunRerankBaseURL 阿里云 DashScope Rerank 的默认 BaseURL
+	// AliyunRerankBaseURL BaseURL mặc định của Alibaba Cloud DashScope Rerank
 	AliyunRerankBaseURL = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
 )
 
-// AliyunProvider 实现阿里云 DashScope 的 Provider 接口
+// AliyunProvider triển khai giao diện Provider cho Alibaba Cloud DashScope
 type AliyunProvider struct{}
 
 func init() {
 	Register(&AliyunProvider{})
 }
 
-// Info 返回阿里云 provider 的元数据
+// Info trả về metadata của provider Alibaba Cloud
 func (p *AliyunProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderAliyun,
-		DisplayName: "阿里云 DashScope",
+		DisplayName: "Alibaba Cloud DashScope",
 		Description: "qwen-plus, tongyi-embedding-vision-plus, qwen3-rerank, etc.",
 		DefaultURLs: map[types.ModelType]string{
 			types.ModelTypeKnowledgeQA: AliyunChatBaseURL,
@@ -43,7 +43,7 @@ func (p *AliyunProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证阿里云 provider Configuration
+// ValidateConfig kiểm tra cấu hình provider Alibaba Cloud
 func (p *AliyunProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Aliyun DashScope")
@@ -54,8 +54,8 @@ func (p *AliyunProvider) ValidateConfig(config *Config) error {
 	return nil
 }
 
-// IsQwenThinkingModel 检查模型名是否为支持思维链的 Qwen 模型
-// 支持思维链的模型需要特殊处理 enable_thinking Parameters
+// IsQwenThinkingModel kiểm tra tên mô hình có phải Qwen hỗ trợ suy luận không
+// Mô hình hỗ trợ suy luận cần xử lý riêng tham số enable_thinking
 func IsQwenThinkingModel(modelName string) bool {
 	lowerName := strings.ToLower(modelName)
 	return strings.HasPrefix(lowerName, "qwen3") ||
@@ -69,8 +69,8 @@ func IsQwen3Model(modelName string) bool {
 	return strings.HasPrefix(strings.ToLower(modelName), "qwen3")
 }
 
-// IsDeepSeekModel 检查模型名是否为 DeepSeek 模型
-// DeepSeek 模型不支持 tool_choice Parameters
+// IsDeepSeekModel kiểm tra tên mô hình có phải DeepSeek không
+// Mô hình DeepSeek không hỗ trợ tham số tool_choice
 func IsDeepSeekModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek")
 }

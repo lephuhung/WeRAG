@@ -21,10 +21,10 @@ func TestChunkHasExtractableText(t *testing.T) {
 		{"whitespace only", "  \n\t ", false},
 		{"single image link", "![page_1.jpg](resource://abc)", false},
 		{"several image links with newlines", "![p1](resource://a)\n\n![p2](resource://b)\n", false},
-		{"prose", "第1章 総則", true},
+		{"prose", "Chương 1 Quy định chung", true},
 		{"prose around an image link", "See figure: ![fig](resource://x) below.", true},
 		{"image link followed by OCR text", "![page_1.jpg](resource://abc)\nSection 2: Definitions", true},
-		{"title containing right paren", `![a](images/a.png "阶段 1) 结果")`, false},
+		{"title containing right paren", `![a](images/a.png "Giai đoạn 1) Kết quả")`, false},
 		{"path with balanced parens", `![a](images/a_(1).png "title")`, false},
 		{"empty image wrapper", `<image url="x"><image_original>![a](x)</image_original></image>`, false},
 		{"wrapper with OCR body", `<image url="images/p1.png">
@@ -45,7 +45,7 @@ func TestChunkHasExtractableText(t *testing.T) {
 func TestSelectGraphChunks(t *testing.T) {
 	chunks := []*types.Chunk{
 		{ID: "text-link", ChunkType: types.ChunkTypeText, Content: "![page_1.jpg](resource://abc)"},
-		{ID: "ocr-scanned", ChunkType: types.ChunkTypeImageOCR, ParentChunkID: "text-link", Content: "第1章 総則"},
+		{ID: "ocr-scanned", ChunkType: types.ChunkTypeImageOCR, ParentChunkID: "text-link", Content: "Chương 1 Quy định chung"},
 		{
 			ID: "cap-scanned", ChunkType: types.ChunkTypeImageCaption,
 			ParentChunkID: "text-link", Content: "a scanned page of printed text",
@@ -54,7 +54,7 @@ func TestSelectGraphChunks(t *testing.T) {
 		{ID: "ocr-figure", ChunkType: types.ChunkTypeImageOCR, ParentChunkID: "text-prose", Content: "ACME logo"},
 		{
 			ID: "text-title-paren", ChunkType: types.ChunkTypeText,
-			Content: `![a](images/a.png "阶段 1) 结果")`,
+			Content: `![a](images/a.png "Giai đoạn 1) Kết quả")`,
 		},
 		{ID: "ocr-orphan", ChunkType: types.ChunkTypeImageOCR, Content: "standalone OCR"},
 	}
@@ -104,7 +104,7 @@ func TestKnowledgePostProcessGraphEnqueueSelection(t *testing.T) {
 		}},
 		chunkRepo: &wikiEnqueueFailureChunkRepo{chunks: []*types.Chunk{
 			bind("text-link", "", "![page_1.jpg](resource://abc)", types.ChunkTypeText),
-			bind("ocr-scanned", "text-link", "第1章 総則", types.ChunkTypeImageOCR),
+			bind("ocr-scanned", "text-link", "Chương 1 Quy định chung", types.ChunkTypeImageOCR),
 			bind("cap-scanned", "text-link", "a scanned page", types.ChunkTypeImageCaption),
 			bind("text-prose", "", "Contract between Alice and Bob.", types.ChunkTypeText),
 			bind("ocr-figure", "text-prose", "ACME logo", types.ChunkTypeImageOCR),

@@ -106,7 +106,7 @@ func usageHandlerFixture() (*MCPServiceHandler, *usageMCPService, *usageModelSer
 			{ID: "default", Type: types.ModelTypeKnowledgeQA, Status: types.ModelStatusActive, IsDefault: true},
 		},
 		chat: &usageChatModel{result: &types.ChatResponse{
-			Content: "  查询指定模块和时间范围内的日志。  ", FinishReason: "stop",
+			Content: "  Tra cứu nhật ký theo mô-đun và khoảng thời gian chỉ định.  ", FinishReason: "stop",
 		}},
 	}
 	return &MCPServiceHandler{mcpServiceService: svc, modelService: models, mcpToolApprovalService: &usagePolicyService{
@@ -138,7 +138,7 @@ func TestMCPUsageGeneration(t *testing.T) {
 	require.Equal(t, uint64(7), svc.tenant)
 	require.Nil(t, svc.updated, "generation must not persist the result")
 	require.Equal(t, "default", models.selected)
-	require.Contains(t, w.Body.String(), `"usage_instructions":"查询指定模块和时间范围内的日志。"`)
+	require.Contains(t, w.Body.String(), `"usage_instructions":"Tra cứu nhật ký theo mô-đun và khoảng thời gian chỉ định."`)
 	require.Equal(t, "system", models.chat.messages[0].Role)
 	require.Contains(t, models.chat.messages[0].Content, "untrusted reference data")
 	require.Contains(t, models.chat.messages[0].Content, "Output language: English.")
@@ -185,7 +185,7 @@ func TestMCPUsageGenerationRejectsInvalidOutput(t *testing.T) {
 		err    error
 	}{
 		{"empty", &types.ChatResponse{Content: " \n "}, nil},
-		{"too long", &types.ChatResponse{Content: strings.Repeat("中", 501)}, nil},
+		{"too long", &types.ChatResponse{Content: strings.Repeat("ệ", 501)}, nil},
 		{"truncated", &types.ChatResponse{Content: "partial", FinishReason: "length"}, nil},
 		{"upstream failure", nil, errors.New("secret upstream URL")},
 	} {
@@ -201,11 +201,11 @@ func TestMCPUsageGenerationRejectsInvalidOutput(t *testing.T) {
 
 func TestMCPUsageInputBoundsAndUntrustedData(t *testing.T) {
 	_, svc, _ := usageHandlerFixture()
-	svc.snapshot.Instructions = strings.Repeat("中", 10000)
+	svc.snapshot.Instructions = strings.Repeat("ệ", 10000)
 	svc.snapshot.Tools = nil
 	for i := 0; i < 1000; i++ {
 		svc.snapshot.Tools = append(svc.snapshot.Tools, &types.MCPTool{
-			Name: "tool", Description: strings.Repeat("界", 5000),
+			Name: "tool", Description: strings.Repeat("ộ", 5000),
 		})
 	}
 	input, err := buildMCPUsageInput(svc.service, svc.snapshot, nil)
@@ -220,20 +220,20 @@ func TestMCPUsageUpdateRequiresNonBlankString(t *testing.T) {
 	for _, body := range []string{
 		`{"usage_instructions":""}`, `{"usage_instructions":" \n "}`,
 		`{"usage_instructions":null}`, `{"usage_instructions":123}`,
-		`{"usage_instructions":"` + strings.Repeat("中", 16001) + `"}`,
+		`{"usage_instructions":"` + strings.Repeat("ệ", 16001) + `"}`,
 	} {
 		h, svc, _ := usageHandlerFixture()
 		w := usageRequest(h, http.MethodPut, body)
 		require.Equal(t, http.StatusBadRequest, w.Code, body[:min(len(body), 80)])
 		require.Nil(t, svc.updated)
 	}
-	for _, body := range []string{`{"usage_instructions":"  查询日志  "}`, `{"name":"Logs"}`} {
+	for _, body := range []string{`{"usage_instructions":"  Tra cứu nhật ký  "}`, `{"name":"Logs"}`} {
 		h, svc, _ := usageHandlerFixture()
 		w := usageRequest(h, http.MethodPut, body)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.NotNil(t, svc.updated)
 		if strings.Contains(body, "usage_instructions") {
-			require.Equal(t, "查询日志", svc.updated.UsageInstructions)
+			require.Equal(t, "Tra cứu nhật ký", svc.updated.UsageInstructions)
 		}
 	}
 }

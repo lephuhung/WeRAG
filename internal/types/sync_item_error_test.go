@@ -13,10 +13,10 @@ import (
 func TestSyncItemError_UnmarshalAcceptsLegacyStringAndObject(t *testing.T) {
 	// Legacy format: array of plain strings.
 	var legacy []SyncItemError
-	if err := json.Unmarshal([]byte(`["季度报告: export failed"]`), &legacy); err != nil {
+	if err := json.Unmarshal([]byte(`["Báo cáo quý: export failed"]`), &legacy); err != nil {
 		t.Fatalf("legacy string form must still decode: %v", err)
 	}
-	if len(legacy) != 1 || legacy[0].Message != "季度报告: export failed" {
+	if len(legacy) != 1 || legacy[0].Message != "Báo cáo quý: export failed" {
 		t.Fatalf("legacy string should map to Message, got %+v", legacy)
 	}
 	if legacy[0].Code != "" {
@@ -25,7 +25,7 @@ func TestSyncItemError_UnmarshalAcceptsLegacyStringAndObject(t *testing.T) {
 
 	// New format: structured object round-trips.
 	in := SyncItemError{
-		Title:   "季度报告",
+		Title:   "Báo cáo quý",
 		Code:    "feishu_api_error",
 		Params:  map[string]string{"code": "1663"},
 		Message: "Feishu API error (code=1663); will retry",
@@ -38,7 +38,7 @@ func TestSyncItemError_UnmarshalAcceptsLegacyStringAndObject(t *testing.T) {
 	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatalf("unmarshal structured: %v", err)
 	}
-	if len(out) != 1 || out[0].Code != "feishu_api_error" || out[0].Params["code"] != "1663" || out[0].Title != "季度报告" {
+	if len(out) != 1 || out[0].Code != "feishu_api_error" || out[0].Params["code"] != "1663" || out[0].Title != "Báo cáo quý" {
 		t.Fatalf("structured form did not round-trip: %+v", out)
 	}
 }

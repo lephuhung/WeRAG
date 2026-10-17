@@ -28,11 +28,11 @@ func TestBuildExcelCreateTableSQL_SingleSheetTagsSource(t *testing.T) {
 }
 
 func TestBuildExcelCreateTableSQL_MultiSheetUsesUnionAllByName(t *testing.T) {
-	got := buildExcelCreateTableSQL("tbl", "/tmp/data.xlsx", []string{"Sheet1", "Sheet2", "报表"})
+	got := buildExcelCreateTableSQL("tbl", "/tmp/data.xlsx", []string{"Sheet1", "Sheet2", "Báo cáo"})
 
 	// Each sheet must appear as a SELECT reading that specific sheet, and
 	// the __sheet_name column must carry its name for per-sheet filtering.
-	for _, sheet := range []string{"Sheet1", "Sheet2", "报表"} {
+	for _, sheet := range []string{"Sheet1", "Sheet2", "Báo cáo"} {
 		needleRead := "FROM read_xlsx('/tmp/data.xlsx', sheet = '" + sheet + "', header=true, all_varchar=true)"
 		needleTag := "'" + sheet + "' AS " + excelSheetNameColumn
 		if !strings.Contains(got, needleRead) {
@@ -75,12 +75,12 @@ func TestBuildExcelCreateTableSQL_EscapesSingleQuotes(t *testing.T) {
 
 func TestSqlSingleQuoteEscape(t *testing.T) {
 	cases := map[string]string{
-		"":               "",
-		"no_quote":       "no_quote",
-		"a'b":            "a''b",
-		"''":             "''''",
-		"mix'ed'quote":   "mix''ed''quote",
-		"中文 with 'quote": "中文 with ''quote",
+		"":                       "",
+		"no_quote":               "no_quote",
+		"a'b":                    "a''b",
+		"''":                     "''''",
+		"mix'ed'quote":           "mix''ed''quote",
+		"tiếng Việt with 'quote": "tiếng Việt with ''quote",
 	}
 	for in, want := range cases {
 		if got := sqlSingleQuoteEscape(in); got != want {

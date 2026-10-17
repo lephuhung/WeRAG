@@ -14,35 +14,35 @@ import (
 )
 
 // GetMCPMetadata godoc
-// @Summary      读取已保存的 MCP 工具目录
-// @Description  只读数据库，不连接上游。未同步时 data 为 null；连接Configuration 变更后 stale 为 true。OAuth 目录按当前授权主体隔离。
-// @Tags         MCP服务
+// @Summary      Đọc danh mục công cụ MCP đã lưu
+// @Description  Chỉ đọc cơ sở dữ liệu, không kết nối upstream. Chưa đồng bộ thì data là null; sau khi cấu hình kết nối thay đổi thì stale là true. Danh mục OAuth được tách theo chủ thể uỷ quyền hiện tại.
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "目录快照"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      401  {object}  errors.AppError         "OAuth 目录缺少授权主体"
-// @Failure      404  {object}  errors.AppError         "服务不存在"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Ảnh chụp danh mục"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      401  {object}  errors.AppError         "danh mục OAuth thiếu chủ thể uỷ quyền"
+// @Failure      404  {object}  errors.AppError         "dịch vụ không tồn tại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/metadata [get]
 func (h *MCPServiceHandler) GetMCPMetadata(c *gin.Context) { h.mcpMetadata(c, false) }
 
 // RefreshMCPMetadata godoc
-// @Summary      同步 MCP 工具目录
-// @Description  显式连接上游并原子替换完整目录。OAuth 服务写入当前用户的快照，Viewer 及以上可调用；静态认证写入租户共享快照，需要 Admin。
-// @Tags         MCP服务
+// @Summary      Đồng bộ danh mục công cụ MCP
+// @Description  Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của đơn vị, cần Admin.
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "同步后的目录快照"
-// @Failure      400  {object}  errors.AppError         "目录不完整或校验失败"
-// @Failure      401  {object}  errors.AppError         "OAuth 目录缺少授权主体"
-// @Failure      403  {object}  errors.AppError         "静态认证目录需要管理员刷新"
-// @Failure      404  {object}  errors.AppError         "服务不存在"
-// @Failure      409  {object}  errors.AppError         "刷新期间连接Configuration 已变更"
-// @Failure      503  {object}  errors.AppError         "元数据存储不可用"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Ảnh chụp danh mục sau khi đồng bộ"
+// @Failure      400  {object}  errors.AppError         "danh mục không đầy đủ hoặc kiểm tra thất bại"
+// @Failure      401  {object}  errors.AppError         "danh mục OAuth thiếu chủ thể uỷ quyền"
+// @Failure      403  {object}  errors.AppError         "danh mục xác thực tĩnh cần quản trị viên làm mới"
+// @Failure      404  {object}  errors.AppError         "dịch vụ không tồn tại"
+// @Failure      409  {object}  errors.AppError         "cấu hình kết nối đã thay đổi trong lúc làm mới"
+// @Failure      503  {object}  errors.AppError         "kho metadata không khả dụng"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/metadata/refresh [post]

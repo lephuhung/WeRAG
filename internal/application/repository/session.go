@@ -140,7 +140,7 @@ func (r *sessionRepository) GetPagedByTenantID(
 
 	// First query the total count
 	baseQ := applySessionUserScope(
-		r.db.WithContext(ctx).Model(&types.Session{}).Where("tenant_id = ?", tenantID),
+		r.db.WithContext(ctx).Model(&types.Session{}).Where("tenant_id = ? AND NOT is_temporary", tenantID),
 		userID,
 	)
 	err := baseQ.Count(&total).Error
@@ -150,7 +150,7 @@ func (r *sessionRepository) GetPagedByTenantID(
 
 	// Then query the paginated data
 	err = applySessionUserScope(
-		r.db.WithContext(ctx).Where("tenant_id = ?", tenantID),
+		r.db.WithContext(ctx).Where("tenant_id = ? AND NOT is_temporary", tenantID),
 		userID,
 	).
 		Order("updated_at DESC").
@@ -186,7 +186,8 @@ func (r *sessionRepository) QueryPaged(
 
 	// Base filter shared by count and list queries.
 	applyBase := func(db *gorm.DB) *gorm.DB {
-		db = db.Where("s.tenant_id = ? AND s.deleted_at IS NULL", q.TenantID)
+		// temporary sessions (no message yet) are not kept, so not listed
+		db = db.Where("s.tenant_id = ? AND s.deleted_at IS NULL AND NOT s.is_temporary", q.TenantID)
 		if q.UserID != "" {
 			db = db.Where("(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')", q.UserID)
 		}
@@ -199,6 +200,9 @@ func (r *sessionRepository) QueryPaged(
 			"(s.description IS NULL OR s.description NOT LIKE ?)",
 			types.SkillMaintenanceSessionMarker+"%",
 		)
+		// Sub-chats ("chat nhỏ") are listed inside their document chat, not
+		// as rows of their own (SessionService.ListSubChats).
+		db = db.Where("s.chat_root_id = ''")
 		if kw := strings.TrimSpace(q.Keyword); kw != "" {
 			db = db.Where(titleLikeExpr, "%"+escapeLikeKeyword(kw)+"%")
 		}
@@ -382,6 +386,17 @@ func (r *sessionRepository) UpdateLastRequestState(
 			"agent_config": stateValue,
 			"updated_at":   now,
 		})
+	if res.Error == nil && res.RowsAffected > 0 {
+		// a sub-chat's activity moves its document chat up the list, the
+		// only row the list shows for it
+		if err := r.db.WithContext(ctx).Exec(
+			`UPDATE sessions SET updated_at = ? WHERE tenant_id = ? AND id = (
+				SELECT chat_root_id FROM sessions WHERE tenant_id = ? AND id = ? AND chat_root_id <> '')`,
+			now, tenantID, tenantID, sessionID,
+		).Error; err != nil {
+			logger.Warnf(ctx, "touch document chat of sub-chat %s: %v", sessionID, err)
+		}
+	}
 	return res.RowsAffected, res.Error
 }
 
@@ -485,6 +500,34 @@ func (r *sessionRepository) ClearContextSeed(ctx context.Context, tenantID uint6
 	return r.db.WithContext(ctx).Model(&types.Session{}).
 		Where("tenant_id = ? AND id = ?", tenantID, sessionID).
 		Update("context_seed", "").Error
+}
+
+// ListChatFamily returns a document chat's root and its sub-chats, oldest
+// first. Soft-deleted rows are left out.
+func (r *sessionRepository) ListChatFamily(ctx context.Context, tenantID uint64, userID, rootID string) ([]*types.Session, error) {
+	var rows []*types.Session
+	err := applySessionUserScope(
+		r.db.WithContext(ctx).
+			Select("id", "tenant_id", "user_id", "title", "chat_root_id", "created_at", "updated_at").
+			Where("tenant_id = ? AND (id = ? OR chat_root_id = ?)", tenantID, rootID, rootID),
+		userID,
+	).Order("created_at ASC").Find(&rows).Error
+	return rows, err
+}
+
+// ChatRootID returns the session whose documents sessionID works on.
+func (r *sessionRepository) ChatRootID(ctx context.Context, tenantID uint64, sessionID string) (string, error) {
+	var root string
+	err := r.db.WithContext(ctx).Unscoped().Model(&types.Session{}).
+		Where("tenant_id = ? AND id = ?", tenantID, sessionID).
+		Limit(1).Pluck("chat_root_id", &root).Error
+	if err != nil {
+		return sessionID, err
+	}
+	if root == "" {
+		return sessionID, nil
+	}
+	return root, nil
 }
 
 // ListUnconsumedForks returns fork bootstraps the snapshot reaper should

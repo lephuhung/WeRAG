@@ -32,6 +32,16 @@ const (
 	UsageMetricTokens           = "tokens"
 	UsageMetricPromptTokens     = "prompt_tokens"
 	UsageMetricCompletionTokens = "completion_tokens"
+	// UsageMetricOCRTokens is the part of "tokens" spent reading chat
+	// attachments with the vision/OCR model (images and scanned pages).
+	// Those tokens are also added to "tokens" (and its prompt/completion
+	// parts): an OCR call costs the deployment like any other model call,
+	// so it counts against the token quota, and the text it produced is
+	// paid for again when the next question carries it in its prompt.
+	// Uploads into a knowledge base are not counted here.
+	UsageMetricOCRTokens = "ocr_tokens"
+	// UsageMetricOCRPages counts the images / scanned pages those calls read.
+	UsageMetricOCRPages = "ocr_pages"
 
 	// UsageTimezone is the calendar used for period keys. Deployments are
 	// provincial Vietnamese units, so "today" means today in Vietnam
@@ -95,6 +105,10 @@ type UsagePeriodTotals struct {
 	Tokens           int64  `json:"tokens"`
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
+	// OCRTokens is the share of Tokens spent on chat-attachment OCR;
+	// OCRPages the images and scanned pages read.
+	OCRTokens int64 `json:"ocr_tokens"`
+	OCRPages  int64 `json:"ocr_pages"`
 }
 
 // AddMetric folds one counter row into the totals.
@@ -108,6 +122,10 @@ func (t *UsagePeriodTotals) AddMetric(metric string, value int64) {
 		t.PromptTokens += value
 	case UsageMetricCompletionTokens:
 		t.CompletionTokens += value
+	case UsageMetricOCRTokens:
+		t.OCRTokens += value
+	case UsageMetricOCRPages:
+		t.OCRPages += value
 	}
 }
 

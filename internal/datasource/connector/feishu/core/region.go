@@ -33,7 +33,7 @@ type Region struct {
 }
 
 var (
-	// RegionFeishu is the Chinese mainland cloud (飞书).
+	// RegionFeishu is the Chinese mainland cloud (Feishu).
 	RegionFeishu = Region{
 		ConnectorType: types.ConnectorTypeFeishu,
 		OpenBaseURL:   feishuOpenBaseURL,
@@ -49,7 +49,7 @@ var (
 		Label:         "Lark",
 	}
 
-	// RegionFeishuDrive is the Chinese mainland cloud, Drive (云盘) mode.
+	// RegionFeishuDrive is the Chinese mainland cloud, Drive (cloud drive) mode.
 	// Shares the feishu connector package with RegionFeishu; only the connector
 	// type differs so the registry dispatches to the Drive connector.
 	RegionFeishuDrive = Region{

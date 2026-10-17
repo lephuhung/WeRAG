@@ -41,7 +41,7 @@ func WithTiming() Middleware {
 
 			logger.Debugf(ctx, "Event %s took %v", event.Type, duration)
 
-			// 将耗时添加到事件元数据中
+			// ghi thời gian xử lý vào metadata sự kiện
 			if event.Metadata == nil {
 				event.Metadata = make(map[string]interface{})
 			}

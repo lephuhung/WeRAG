@@ -13,6 +13,10 @@ export interface UsagePeriodTotals {
   tokens: number;
   prompt_tokens: number;
   completion_tokens: number;
+  /** Share of `tokens` spent reading chat attachments with the OCR model. */
+  ocr_tokens?: number;
+  /** Images and scanned pages read by the OCR model. */
+  ocr_pages?: number;
 }
 
 /** Every workspace summed — mirrors types.UsageStats. */

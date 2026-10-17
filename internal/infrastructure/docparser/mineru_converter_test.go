@@ -43,7 +43,7 @@ func TestMinerUUploadFileName(t *testing.T) {
 		fileType string
 		want     string
 	}{
-		{name: "original basename", fileName: "reports/Illustrator 研报.pdf", fileType: "pdf", want: "Illustrator 研报.pdf"},
+		{name: "original basename", fileName: "reports/Illustrator báo cáo.pdf", fileType: "pdf", want: "Illustrator báo cáo.pdf"},
 		{
 			name:     "strip multipart controls",
 			fileName: "reports/\r\nIllustrator\x00 export.pdf",
@@ -77,14 +77,14 @@ func TestParseMinerUFileParseResponse(t *testing.T) {
 	}{
 		{
 			name:           "match upload stem",
-			uploadFileName: "Illustrator 研报.pdf",
+			uploadFileName: "Illustrator báo cáo.pdf",
 			response: map[string]any{
 				"results": map[string]any{
-					"Illustrator 研报": map[string]any{"md_content": "from-stem", "images": map[string]any{}},
+					"Illustrator báo cáo": map[string]any{"md_content": "from-stem", "images": map[string]any{}},
 				},
 			},
 			wantMarkdown:  "from-stem",
-			wantResultKey: "Illustrator 研报",
+			wantResultKey: "Illustrator báo cáo",
 		},
 		{
 			name:           "legacy document key",
@@ -143,7 +143,7 @@ func TestMinerUReaderPreservesMultipartFilename(t *testing.T) {
 		fileType string
 		want     string
 	}{
-		{name: "original basename", fileName: "reports/Illustrator 研报.pdf", fileType: "pdf", want: "Illustrator 研报.pdf"},
+		{name: "original basename", fileName: "reports/Illustrator báo cáo.pdf", fileType: "pdf", want: "Illustrator báo cáo.pdf"},
 		{
 			name:     "strip multipart controls",
 			fileName: "reports/\r\nIllustrator\x00 export.pdf",
@@ -294,23 +294,23 @@ func TestProcessImagesKeepsReferencedVariants(t *testing.T) {
 
 // TestProcessImagesMatchesPathsWithSpaces guards against a regression where
 // MinerU image filenames containing spaces (common on Chinese documents,
-// e.g. "images/第 1 页.jpg") would be silently dropped because the markdown
+// e.g. "images/trang 1.jpg") would be silently dropped because the markdown
 // regex used to extract refs disallowed whitespace inside the URL group.
 func TestProcessImagesMatchesPathsWithSpaces(t *testing.T) {
 	reader := &MinerUReader{}
-	mdContent := "![](images/第 1 页.jpg)"
+	mdContent := "![](images/trang 1.jpg)"
 
 	png := createTestPNG(200, 150)
 	b64 := base64.StdEncoding.EncodeToString(png)
 	images := map[string]string{
-		"第 1 页.jpg": "data:image/png;base64," + b64,
+		"trang 1.jpg": "data:image/png;base64," + b64,
 	}
 
 	refs, _ := reader.processImages(mdContent, images)
 	if len(refs) != 1 {
 		t.Fatalf("expected 1 image ref for path with spaces, got %d", len(refs))
 	}
-	if refs[0].OriginalRef != "images/第 1 页.jpg" {
+	if refs[0].OriginalRef != "images/trang 1.jpg" {
 		t.Fatalf("unexpected OriginalRef: %q", refs[0].OriginalRef)
 	}
 }

@@ -38,9 +38,9 @@ import (
 )
 
 const (
-	imNoAnswerFallback  = "抱歉，我暂时无法回答这个问题。"
-	imErrorFallback     = "抱歉，处理您的问题时出现了异常，请稍后再试。"
-	imCancelledFallback = "抱歉，回答已被取消。"
+	imNoAnswerFallback  = "Xin lỗi, hiện tôi chưa thể trả lời câu hỏi này."
+	imErrorFallback     = "Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi của bạn, vui lòng thử lại sau."
+	imCancelledFallback = "Xin lỗi, câu trả lời đã bị huỷ."
 
 	// dedupTTL is how long processed message IDs are retained.
 	dedupTTL = 5 * time.Minute
@@ -639,11 +639,11 @@ func (s *Service) buildIMMCPAuthNotice(ctx context.Context, services []imMCPAuth
 		if authURL != "" {
 			lines = append(lines, fmt.Sprintf("• %s：%s", name, authURL))
 		} else {
-			lines = append(lines, fmt.Sprintf("• %s（请在 WeKnora 管理后台完成 OAuth 授权）", name))
+			lines = append(lines, fmt.Sprintf("• %s (vui lòng hoàn tất uỷ quyền OAuth trong trang quản trị WeKnora)", name))
 		}
 	}
 
-	return "⚠️ 以下 MCP 服务需要授权后才能使用，请点击链接完成授权，然后重新发送你的消息：\n" +
+	return "⚠️ Các dịch vụ MCP sau cần được uỷ quyền trước khi dùng, vui lòng bấm liên kết để uỷ quyền rồi gửi lại tin nhắn:\n" +
 		strings.Join(lines, "\n")
 }
 
@@ -1857,7 +1857,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 		if !s.rateLimiter.Allow(ctx, rateLimitKey, s.rateLimitMax) {
 			logger.Warnf(ctx, "[IM] Rate limited: channel=%s user=%s chat=%s", channelID, msg.UserID, msg.ChatID)
 			_ = adapter.SendReply(ctx, msg, &ReplyMessage{
-				Content: "您的消息发送过于频繁，请稍后再试。",
+				Content: "Bạn gửi tin nhắn quá nhanh, vui lòng thử lại sau.",
 				IsFinal: true,
 			})
 			return nil
@@ -1930,7 +1930,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 	// Unrecognised slash-word: show help hint instead of sending to QA.
 	if LooksLikeCommand(msg.Content) {
 		_ = adapter.SendReply(ctx, msg, &ReplyMessage{
-			Content: "未知指令，发送 `/help` 查看所有可用指令。",
+			Content: "Lệnh không xác định, gửi `/help` để xem tất cả lệnh.",
 			IsFinal: true,
 		})
 		return nil
@@ -2010,7 +2010,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 		qaCancel()
 		logger.Warnf(ctx, "[IM] Queue rejected: user=%s reason=%v", msg.UserID, enqueueErr)
 		_ = adapter.SendReply(ctx, msg, &ReplyMessage{
-			Content: "当前排队人数较多，请稍后再试。",
+			Content: "Hiện có nhiều người đang chờ, vui lòng thử lại sau.",
 			IsFinal: true,
 		})
 		return nil
@@ -2020,9 +2020,9 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 		logger.Infof(ctx, "[IM] Enqueued: user=%s pos=%d depth=%d", msg.UserID, pos, s.qaQueue.Metrics().Depth)
 		// In multi-instance mode the local queue position does not reflect global
 		// depth, so use a generic "queued" hint instead of an exact number.
-		queueMsg := fmt.Sprintf("收到，前面还有 %d 条消息在处理，请稍候 ⏳", pos)
+		queueMsg := fmt.Sprintf("Đã nhận, còn %d tin nhắn phía trước đang xử lý, vui lòng chờ ⏳", pos)
 		if s.redis != nil {
-			queueMsg = "收到，当前排队中，请稍候 ⏳"
+			queueMsg = "Đã nhận, đang xếp hàng, vui lòng chờ ⏳"
 		}
 		_ = adapter.SendReply(ctx, msg, &ReplyMessage{
 			Content: queueMsg,
@@ -2054,11 +2054,11 @@ func emptyIncomingMessageReply(msg *IncomingMessage) (string, bool) {
 	}
 	switch rawType {
 	case "audio":
-		return "未能识别这条语音中的文字内容。请改用纯文本发送，或再说一遍。", true
+		return "Không nhận dạng được nội dung trong đoạn ghi âm này. Vui lòng gửi dạng văn bản hoặc nói lại.", true
 	case "video":
-		return "暂不支持视频消息。请改用纯文本发送；图片或文件请单独发送。", true
+		return "Chưa hỗ trợ tin nhắn video. Vui lòng gửi dạng văn bản; hình ảnh hoặc tệp xin gửi riêng.", true
 	default:
-		return "未能识别这条消息中的文字内容。请改用纯文本发送；图片或文件请单独发送。", true
+		return "Không nhận dạng được nội dung văn bản trong tin nhắn này. Vui lòng gửi dạng văn bản; hình ảnh hoặc tệp xin gửi riêng.", true
 	}
 }
 
@@ -2095,7 +2095,7 @@ func (s *Service) executeQARequest(req *qaRequest) {
 	attachments, imageURLs, downloaded, err := s.prepareIMAttachments(ctx, req.msg, req.adapter)
 	if err != nil {
 		logger.Warnf(ctx, "[IM] attachment preparation failed: %v", err)
-		if sendErr := req.adapter.SendReply(ctx, req.msg, &ReplyMessage{Content: "❌ 无法读取此附件，请重试或改用文字描述。", IsFinal: true}); sendErr != nil {
+		if sendErr := req.adapter.SendReply(ctx, req.msg, &ReplyMessage{Content: "❌ Không đọc được tệp đính kèm này, vui lòng thử lại hoặc mô tả bằng văn bản.", IsFinal: true}); sendErr != nil {
 			logger.Warnf(ctx, "[IM] Failed to send attachment error reply: %v", sendErr)
 		}
 		return
@@ -2252,7 +2252,7 @@ func (s *Service) handleCommand(
 	if err != nil {
 		logger.Errorf(ctx, "[IM] Command /%s error: %v", cmd.Name(), err)
 		_ = adapter.SendReply(ctx, msg, &ReplyMessage{
-			Content: "抱歉，执行指令时出现了异常，请稍后再试。",
+			Content: "Xin lỗi, đã xảy ra lỗi khi thực thi lệnh, vui lòng thử lại sau.",
 			IsFinal: true,
 		})
 		return err

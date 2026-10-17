@@ -257,6 +257,12 @@ func (s *sessionService) AgentQA(
 	if asked, err := s.broadQueryClarification(ctx, req, eventBus, true); asked || err != nil {
 		return err
 	}
+	// files that all failed to be read (a photo without text, an unreadable
+	// scan) are answered with the cause; no model runs, nothing is guessed
+	// from the history
+	if answered, err := s.unreadableAttachmentsAnswer(ctx, req, eventBus, true); answered || err != nil {
+		return err
+	}
 	// the documents the user named with @: the tools edit only these
 	ctx = types.WithMentionedDocuments(ctx, req.MentionedDocumentIDs)
 	// a request about a highlighted passage starts with the tool it needs:
@@ -278,7 +284,7 @@ func (s *sessionService) AgentQA(
 	// law, "iPhone 18 Pro not released"); see tools.ClassifyKnowledgeLookup
 	if types.FirstToolChoiceFromContext(ctx) == "" && req.CustomAgent != nil &&
 		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&
-		tools.ClassifyKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query) {
+		tools.ClassifyKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query, attachmentNames(req.Attachments)...) {
 		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
 		ctx = types.WithGroundingRequired(ctx)
 		logger.Infof(ctx, "Question beyond the open document: the turn starts with %s and needs evidence", tools.ToolSearchKnowledge)
@@ -976,6 +982,17 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 		}
 	}
 	return false
+}
+
+// attachmentNames lists the file names of a turn's attachments.
+func attachmentNames(attachments types.MessageAttachments) []string {
+	names := make([]string, 0, len(attachments))
+	for _, att := range attachments {
+		if att.FileName != "" {
+			names = append(names, att.FileName)
+		}
+	}
+	return names
 }
 
 // attachmentsOutsideOpenDocuments drops the attachments that are already

@@ -34,11 +34,11 @@ type RetrieveEngineRepository interface {
 	DeleteByChunkIDList(ctx context.Context, indexIDList []string, dimension int, knowledgeType string) error
 	// DeleteBySourceIDList deletes the index info by source id list
 	DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int, knowledgeType string) error
-	// 复制索引数据
-	// sourceKnowledgeBaseID: 源Knowledge BaseID
-	// sourceToTargetChunkIDMap: 源分块ID到目标分块ID的映射关系
-	// targetKnowledgeBaseID: 目标Knowledge BaseID
-	// params: 额外Parameters ，如向量表示等
+	// Sao chép dữ liệu chỉ mục
+	// sourceKnowledgeBaseID: ID kho tri thức nguồn
+	// sourceToTargetChunkIDMap: ánh xạ ID chunk nguồn sang ID chunk đích
+	// targetKnowledgeBaseID: ID kho tri thức đích
+	// params: tham số bổ sung, ví dụ biểu diễn vector
 	CopyIndices(
 		ctx context.Context,
 		sourceKnowledgeBaseID string,
@@ -120,10 +120,10 @@ type RetrieveEngineService interface {
 		indexInfoList []*types.IndexInfo,
 		retrieverTypes []types.RetrieverType,
 	) int64
-	// CopyIndices 从源Knowledge Base复制索引到目标Knowledge Base，免去重新计算嵌入向量的开销
-	// sourceKnowledgeBaseID: 源Knowledge BaseID
-	// sourceToTargetChunkIDMap: 源分块ID到目标分块ID的映射关系，key为源分块ID，value为目标分块ID
-	// targetKnowledgeBaseID: 目标Knowledge BaseID
+	// CopyIndices sao chép chỉ mục từ kho tri thức nguồn sang kho tri thức đích, tránh tính lại embedding
+	// sourceKnowledgeBaseID: ID kho tri thức nguồn
+	// sourceToTargetChunkIDMap: ánh xạ ID chunk nguồn sang ID chunk đích, key là ID chunk nguồn, value là ID chunk đích
+	// targetKnowledgeBaseID: ID kho tri thức đích
 	CopyIndices(
 		ctx context.Context,
 		sourceKnowledgeBaseID string,

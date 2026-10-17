@@ -197,3 +197,18 @@ func TestDocumentWorkspaceRolesMigrationRollsBack(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(up)).Error, "up again after down")
 }
+
+// The timestamp columns have no time zone: every time is written in UTC,
+// whatever the server's zone, so it reads back as the same instant.
+func TestDocumentWorkspaceColumnsWriteUTC(t *testing.T) {
+	saved := time.Date(2026, 10, 15, 21, 14, 44, 0, time.FixedZone("CST", 8*3600))
+	ws := &types.DocumentWorkspace{LastSavedAt: &saved, UpdatedAt: saved}
+	cols := documentWorkspaceColumns(ws)
+	got := cols["last_saved_at"].(*time.Time)
+	require.Equal(t, time.UTC, got.Location())
+	require.True(t, got.Equal(saved))
+	require.Equal(t, 13, got.Hour())
+	require.Equal(t, time.UTC, cols["updated_at"].(time.Time).Location())
+	require.Nil(t, cols["closed_at"].(*time.Time))
+	require.Same(t, &saved, ws.LastSavedAt, "the caller's value is left alone")
+}

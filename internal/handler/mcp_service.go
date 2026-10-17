@@ -61,14 +61,14 @@ func (h *MCPServiceHandler) mcpServiceResponses(
 }
 
 // CreateMCPService godoc
-// @Summary      Create MCP服务
-// @Description  Create 新的MCP服务Configuration
-// @Tags         MCP服务
+// @Summary      Tạo dịch vụ MCP
+// @Description  Tạo cấu hình dịch vụ MCP mới
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.MCPService  true  "MCP服务Configuration "
-// @Success      200      {object}  map[string]interface{}  "Create 的MCP服务"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.MCPService  true  "Cấu hình dịch vụ MCP"
+// @Success      200      {object}  map[string]interface{}  "Dịch vụ MCP đã tạo"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services [post]
@@ -119,13 +119,13 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 }
 
 // ListMCPServices godoc
-// @Summary      获取MCP服务List
-// @Description  获取当前Tenant workspace的所有MCP服务（含已保存工具目录数量）
-// @Tags         MCP服务
+// @Summary      Lấy danh sách dịch vụ MCP
+// @Description  Lấy tất cả dịch vụ MCP của không gian làm việc hiện tại (kèm số công cụ đã lưu trong danh mục)
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "MCP服务List "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "Danh sách dịch vụ MCP"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services [get]
@@ -153,14 +153,14 @@ func (h *MCPServiceHandler) ListMCPServices(c *gin.Context) {
 }
 
 // GetMCPService godoc
-// @Summary      获取MCP服务Details
-// @Description  根据ID获取MCP服务Details
-// @Tags         MCP服务
+// @Summary      Lấy chi tiết dịch vụ MCP
+// @Description  Lấy chi tiết dịch vụ MCP theo ID
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "MCP服务Details "
-// @Failure      404  {object}  errors.AppError         "服务不存在"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Chi tiết dịch vụ MCP"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy dịch vụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id} [get]
@@ -192,15 +192,15 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 }
 
 // UpdateMCPService godoc
-// @Summary      Update MCP服务
-// @Description  Update MCP服务Configuration
-// @Tags         MCP服务
+// @Summary      Cập nhật dịch vụ MCP
+// @Description  Cập nhật cấu hình dịch vụ MCP
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "MCP服务ID"
-// @Param        request  body      object  true  "Update 字段"
-// @Success      200      {object}  map[string]interface{}  "Update 后的MCP服务"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        id       path      string  true  "ID dịch vụ MCP"
+// @Param        request  body      object  true  "Các trường cần cập nhật"
+// @Success      200      {object}  map[string]interface{}  "Dịch vụ MCP sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id} [put]
@@ -403,14 +403,14 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 }
 
 // DeleteMCPService godoc
-// @Summary      Delete MCP服务
-// @Description  Delete 指定的MCP服务
-// @Tags         MCP服务
+// @Summary      Xoá dịch vụ MCP
+// @Description  Xoá dịch vụ MCP chỉ định
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
+// @Failure      500  {object}  errors.AppError         "Lỗi hệ thống"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id} [delete]
@@ -439,14 +439,14 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 }
 
 // TestMCPService godoc
-// @Summary      测试MCP服务连接
-// @Description  测试MCP服务是否可以正常连接
-// @Tags         MCP服务
+// @Summary      Kiểm tra kết nối dịch vụ MCP
+// @Description  Kiểm tra dịch vụ MCP có kết nối được hay không
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "测试结果"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Kết quả kiểm tra"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/test [post]
@@ -484,14 +484,14 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 }
 
 // GetMCPServiceTools godoc
-// @Summary      获取MCP服务工具List
-// @Description  获取MCP服务提供的工具List
-// @Tags         MCP服务
+// @Summary      Lấy danh sách công cụ của dịch vụ MCP
+// @Description  Lấy danh sách công cụ mà dịch vụ MCP cung cấp
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "工具List "
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Danh sách công cụ"
+// @Failure      500  {object}  errors.AppError         "Lỗi hệ thống"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/tools [get]
@@ -520,14 +520,14 @@ func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 }
 
 // GetMCPServiceResources godoc
-// @Summary      获取MCP服务资源List
-// @Description  获取MCP服务提供的资源List
-// @Tags         MCP服务
+// @Summary      Lấy danh sách tài nguyên của dịch vụ MCP
+// @Description  Lấy danh sách tài nguyên mà dịch vụ MCP cung cấp
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "MCP服务ID"
-// @Success      200  {object}  map[string]interface{}  "资源List "
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Param        id   path      string  true  "ID dịch vụ MCP"
+// @Success      200  {object}  map[string]interface{}  "Danh sách tài nguyên"
+// @Failure      500  {object}  errors.AppError         "Lỗi hệ thống"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/resources [get]
@@ -592,17 +592,17 @@ type setMCPToolApprovalBody struct {
 // for backwards compatibility with the original approval-only endpoint.
 //
 // SetMCPToolApproval godoc
-// @Summary      Settings  MCP 工具策略
-// @Description  为指定 MCP 服务下的某个工具Update 启用状态和/或人工审批要求。至少提供 require_approval 或 enabled 之一；省略的字段保持原值。
-// @Tags         MCP服务
+// @Summary      Đặt chính sách công cụ MCP
+// @Description  Cập nhật trạng thái bật và/hoặc yêu cầu phê duyệt thủ công cho một công cụ của dịch vụ MCP chỉ định. Phải cung cấp ít nhất require_approval hoặc enabled; trường bỏ trống giữ nguyên giá trị cũ.
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id         path      string                  true  "MCP 服务 ID"
-// @Param        tool_name  path      string                  true  "工具名"
+// @Param        id         path      string                  true  "ID dịch vụ MCP"
+// @Param        tool_name  path      string                  true  "Tên công cụ"
 // @Param        request    body      map[string]interface{}  true  "{require_approval?: bool, enabled?: bool}"
-// @Success      200        {object}  map[string]interface{}  "Update 结果"
-// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404        {object}  errors.AppError         "MCP 服务或工具不存在"
+// @Success      200        {object}  map[string]interface{}  "Kết quả cập nhật"
+// @Failure      400        {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404        {object}  errors.AppError         "Không tìm thấy dịch vụ MCP hoặc công cụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/tool-approvals/{tool_name} [put]
@@ -652,16 +652,16 @@ type resolveToolApprovalBody struct {
 // ResolveToolApproval completes a pending MCP tool approval (agent execution resumes).
 //
 // ResolveToolApproval godoc
-// @Summary      处理 MCP 工具调用待审批请求
-// @Description  用户审批通过或驳回一次工具调用（用于 Agent 阻塞等待审批的场景）
-// @Tags         MCP服务
+// @Summary      Xử lý yêu cầu chờ phê duyệt gọi công cụ MCP
+// @Description  Người dùng phê duyệt hoặc từ chối một lượt gọi công cụ (dùng khi trợ lý đang chờ phê duyệt)
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        pending_id  path      string                  true  "待审批记录 ID"
+// @Param        pending_id  path      string                  true  "ID bản ghi chờ phê duyệt"
 // @Param        request     body      map[string]interface{}  true  "{decision: \"approve\"|\"reject\", reason?: string, modified_args?: object}"
-// @Success      200         {object}  map[string]interface{}  "审批结果"
-// @Failure      400         {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404         {object}  errors.AppError         "待审批记录不存在"
+// @Success      200         {object}  map[string]interface{}  "Kết quả phê duyệt"
+// @Failure      400         {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404         {object}  errors.AppError         "Không tìm thấy bản ghi chờ phê duyệt"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agent/tool-approvals/{pending_id} [post]

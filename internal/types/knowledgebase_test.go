@@ -319,7 +319,7 @@ func TestEffectiveStorageProvider_CrossBackendDetection(t *testing.T) {
 func TestDefaultParserEngine(t *testing.T) {
 	for input, want := range map[string]string{
 		"pptx": "markitdown", ".PPT": "markitdown", "ppt": "markitdown",
-		"pdf": "", "csv": "", "docx": "", "": "",
+		"pdf": "vietnamese_legal", "csv": "", "docx": "", "": "",
 	} {
 		if got := DefaultParserEngine(input); got != want {
 			t.Errorf("DefaultParserEngine(%q) = %q, want %q", input, got, want)
@@ -365,8 +365,8 @@ func TestChunkingConfigResolveParserEngineDefaults(t *testing.T) {
 	if got := empty.ResolveParserEngine("pptx"); got != "markitdown" {
 		t.Fatalf("empty rules ResolveParserEngine(pptx) = %q, want markitdown", got)
 	}
-	if got := empty.ResolveParserEngine("pdf"); got != "" {
-		t.Fatalf("empty rules ResolveParserEngine(pdf) = %q, want empty", got)
+	if got := empty.ResolveParserEngine("pdf"); got != "vietnamese_legal" {
+		t.Fatalf("empty rules ResolveParserEngine(pdf) = %q, want vietnamese_legal", got)
 	}
 
 	configured := ChunkingConfig{ParserEngineRules: []ParserEngineRule{

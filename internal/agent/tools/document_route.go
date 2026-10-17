@@ -124,8 +124,29 @@ func ApplyDocumentScope(ctx context.Context, src DocumentWorkspaceSource, tenant
 		return ctx, nil
 	}
 
-	scope, scores, topID, topScore := routeByKeywords(in.Query, loaded)
+	var (
+		scope    *types.DocumentScope
+		scores   map[string]float64
+		topID    string
+		topScore float64
+	)
 	tier := 1
+	i, pending := attachedDocument(ctx, in.Query, docs, loaded)
+	if pending {
+		// the attached file's text is not ready yet: keywords would pick
+		// another document to set beside the attachment
+		logger.Infof(ctx, "[DocumentRoute] session=%s the attached file is not ready yet; no scope", sessionID)
+		return ctx, nil
+	}
+	if i >= 0 {
+		// the file attached with this request is what it is about ("thông
+		// tin sơ bộ về văn bản"), however its words score against the
+		// other documents (2026-10-16: a similar earlier report won)
+		tier = 0
+		scope = scopeOf(loaded[i], parseSearchQuery(in.Query), in.Query)
+	} else {
+		scope, scores, topID, topScore = routeByKeywords(in.Query, loaded)
+	}
 	if scope == nil {
 		if stored != nil {
 			// a follow-up that matches nothing ("còn gì nữa") stays in the
@@ -158,8 +179,13 @@ func ApplyDocumentScope(ctx context.Context, src DocumentWorkspaceSource, tenant
 		return ctx, nil
 	}
 	SetSessionDocumentScope(ctx, sessionID, scope)
-	logger.Infof(ctx, "[DocumentRoute] session=%s tier %d scope documents=%v sections=%d task=%q (tier 1 scores %v)",
-		sessionID, tier, scope.DocumentIDs, len(scope.Sections), scope.Task, scores)
+	if tier == 0 {
+		logger.Infof(ctx, "[DocumentRoute] session=%s the attached file is the scope: documents=%v sections=%d task=%q",
+			sessionID, scope.DocumentIDs, len(scope.Sections), scope.Task)
+	} else {
+		logger.Infof(ctx, "[DocumentRoute] session=%s tier %d scope documents=%v sections=%d task=%q (tier 1 scores %v)",
+			sessionID, tier, scope.DocumentIDs, len(scope.Sections), scope.Task, scores)
+	}
 	return types.WithDocumentScope(ctx, scope), scope
 }
 
@@ -248,14 +274,7 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.Docu
 	best := argmax(total)
 	topID, topScore = loaded[best].ws.ID, total[best]
 
-	pick := func(i int) *types.DocumentScope {
-		du := loaded[i]
-		s := &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
-		if sec := bestSection(q, du.sections); sec != nil {
-			s.Sections = []types.DocumentScopeSection{{DocumentID: du.ws.ID, From: sec.From, To: sec.To, Title: sec.Title}}
-		}
-		return s
-	}
+	pick := func(i int) *types.DocumentScope { return scopeOf(loaded[i], q, query) }
 	switch named := namedByQuery(query, loaded); len(named) {
 	case 1:
 		topID, topScore = loaded[named[0]].ws.ID, max(topScore, routeFloor)
@@ -278,6 +297,42 @@ func routeByKeywords(query string, loaded []*sessionDocUnits) (scope *types.Docu
 		return nil, scores, topID, topScore // the cards point elsewhere
 	}
 	return pick(best), scores, topID, topScore
+}
+
+// scopeOf is the scope of one document, with its section when one title
+// matches the question clearly.
+func scopeOf(du *sessionDocUnits, q *searchQuery, query string) *types.DocumentScope {
+	s := &types.DocumentScope{DocumentIDs: []string{du.ws.ID}, Task: taskFromQuery(query)}
+	if sec := bestSection(q, du.sections); sec != nil {
+		s.Sections = []types.DocumentScopeSection{{DocumentID: du.ws.ID, From: sec.From, To: sec.To, Title: sec.Title}}
+	}
+	return s
+}
+
+// attachedDocument is the index in loaded of the one source attached with
+// this request, when the question names no other document; else -1.
+// pending reports that source open in the session but not loaded (text not
+// ready, unreadable).
+func attachedDocument(ctx context.Context, query string, docs []*types.DocumentWorkspace, loaded []*sessionDocUnits) (int, bool) {
+	att := attachedSources(ctx)
+	if len(att) != 1 {
+		return -1, false
+	}
+	for i, du := range loaded {
+		if !att[du.ws.ID] {
+			continue
+		}
+		if named := namedByQuery(query, loaded); len(named) == 0 || (len(named) == 1 && named[0] == i) {
+			return i, false
+		}
+		return -1, false
+	}
+	for _, d := range docs {
+		if att[d.ID] {
+			return -1, len(namedByQuery(query, loaded)) == 0
+		}
+	}
+	return -1, false
 }
 
 // unknownStrongCodes lists the strong codes of q (số ký hiệu, references,

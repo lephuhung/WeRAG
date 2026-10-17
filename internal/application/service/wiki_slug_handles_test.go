@@ -21,14 +21,14 @@ func TestWikiSlugHandles_RoundTripEscapesUUIDSlugs(t *testing.T) {
 		t.Fatalf("token %q must not contain '/'", tSummary)
 	}
 
-	body := "See [[" + summarySlug + "|Weknora 试错记录.md - Summary]] and [[" + entitySlug + "]]."
+	body := "See [[" + summarySlug + "|Weknora nhật ký thử nghiệm.md - Summary]] and [[" + entitySlug + "]]."
 	aliased := h.encodeContent(body, known)
 
 	// The high-entropy UUID must no longer be present in what the model sees.
 	if strings.Contains(aliased, "06fb5d5b5b5e") {
 		t.Fatalf("aliased content still exposes the UUID: %q", aliased)
 	}
-	if !strings.Contains(aliased, "[["+tSummary+"|Weknora 试错记录.md - Summary]]") {
+	if !strings.Contains(aliased, "[["+tSummary+"|Weknora nhật ký thử nghiệm.md - Summary]]") {
 		t.Fatalf("summary link not aliased: %q", aliased)
 	}
 	if !strings.Contains(aliased, "[["+tEntity+"]]") {

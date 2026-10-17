@@ -23,7 +23,7 @@ import { IconClock, IconDownload, IconRefresh } from "@/components/icons";
 import { OnlyOfficeEditor, type OnlyOfficeEditorHandle } from "./onlyoffice-editor";
 import { RevisionHistoryPanel } from "./revision-history";
 import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
-import { useLiveSpelling } from "./use-live-spelling";
+import { useLiveSpelling, type EditorActions } from "./use-live-spelling";
 import type { LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
 
 type Phase = { kind: "loading" } | { kind: "disabled" } | { kind: "error"; message: string } | { kind: "editor" };
@@ -83,7 +83,7 @@ export function DocumentPane({
   /** The live spellcheck's progress, reported while this tab is visible. */
   /** The visible document's live spellcheck, and how to select one of its
    * listed mistakes in this editor. */
-  onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions) => void;
+  onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions, editor: EditorActions) => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -308,8 +308,9 @@ export function DocumentPane({
       // every open editor posts to this window: keep this editor's only
       if (!editorRef.current?.ownsMessageSource(event.source)) return;
       const sel = parsePluginSelectionMessage(event.data);
-      if (!sel) return; // not ours, or an empty selection — keep the last one
-      onSelectionRef.current({ ...sel, document_id: documentId });
+      if (sel === undefined) return; // not a selection message
+      // null: the user cleared the selection in the editor — the chip goes
+      onSelectionRef.current(sel ? { ...sel, document_id: documentId } : null);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -353,14 +354,18 @@ export function DocumentPane({
   });
   const scheduleSpelling = liveSpelling.schedule;
   const spellingStatus = liveSpelling.status;
-  const { goTo: spellingGoTo, dismiss: spellingDismiss } = liveSpelling;
+  const { goTo: spellingGoTo, dismiss: spellingDismiss, runOps, readParagraphs } = liveSpelling;
   const spellingActions = useMemo<SpellingActions>(
     () => ({ goTo: spellingGoTo, dismiss: spellingDismiss }),
     [spellingGoTo, spellingDismiss],
   );
+  const editorActions = useMemo<EditorActions>(
+    () => ({ documentId, runOps, readParagraphs }),
+    [documentId, runOps, readParagraphs],
+  );
   useEffect(() => {
-    if (active) onSpellingStatus?.(spellingStatus, spellingActions);
-  }, [active, spellingStatus, spellingActions, onSpellingStatus]);
+    if (active) onSpellingStatus?.(spellingStatus, spellingActions, editorActions);
+  }, [active, spellingStatus, spellingActions, editorActions, onSpellingStatus]);
   liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),

@@ -88,9 +88,9 @@ type CustomAgent struct {
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
 
-	// CreatorName 由 list handler 在返回前批量回填，作用同 KnowledgeBase.CreatorName：
-	// 让前端List 卡片区分「我Create 」与「同Tenant workspace其他成员Create 」。不落库，内建 agent / 老数据
-	// 仍可能为空。
+	// CreatorName được list handler điền hàng loạt trước khi trả về, cùng vai trò với KnowledgeBase.CreatorName:
+	// để thẻ danh sách ở frontend phân biệt "tôi tạo" với "thành viên khác cùng đơn vị tạo". Không lưu DB; trợ lý tích hợp / dữ liệu cũ
+	// vẫn có thể rỗng.
 	CreatorName string `yaml:"-" json:"creator_name,omitempty" gorm:"-"`
 }
 
@@ -668,15 +668,15 @@ func (a *CustomAgent) IsAgentMode() bool {
 	return a.Config.AgentMode == AgentModeSmartReasoning
 }
 
-// SuggestedQuestion 推荐问题
+// SuggestedQuestion là câu hỏi gợi ý
 type SuggestedQuestion struct {
-	// 问题文本
+	// Nội dung câu hỏi
 	Question string `json:"question"`
-	// 来源类型: "agent_config", "faq", "document", "wiki"
+	// Loại nguồn: "agent_config", "faq", "document", "wiki"
 	Source string `json:"source"`
-	// 来源Knowledge BaseID（仅 faq/document/wiki 来源时有值）
+	// ID kho tri thức nguồn (chỉ có khi nguồn là faq/document/wiki)
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
-	// 来源文档ID（仅 faq/document 来源时有值）
+	// ID tài liệu nguồn (chỉ có khi nguồn là faq/document)
 	KnowledgeID string `json:"knowledge_id,omitempty"`
 }
 

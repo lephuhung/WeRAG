@@ -40,14 +40,14 @@ const (
 	// Low on purpose. Candidate selection is recall, not judgement — every
 	// group goes to the model, which answers with an empty statement when the
 	// records turn out to be different things. A strict bar only hides pairs
-	// from the one component able to tell them apart: "我叫wizard，我是一个画家"
-	// against "职业：我叫wizardchen，我是一个作家" shares 0.50 of its tokens and
+	// from the one component able to tell them apart: "Tôi tên Lâm, làm văn thư"
+	// against "Nghề nghiệp: tôi tên Lâm Anh, làm kế toán" shares 0.50 of its tokens and
 	// so never reached the model, yet resolving exactly that contradiction is
 	// why someone presses the button.
 	forcedMinOverlap = 0.3
 	// consolidateMinCosine and forcedMinCosine are the same two bars for
-	// memories that were embedded. Wording overlap cannot see that "喜欢用 Go"
-	// and "偏好 Golang 开发" are one preference; the vectors already stored for
+	// memories that were embedded. Wording overlap cannot see that "thích trả lời ngắn"
+	// and "ưu tiên câu trả lời súc tích" are one preference; the vectors already stored for
 	// recall can, at no extra model call.
 	consolidateMinCosine = 0.86
 	forcedMinCosine      = 0.75

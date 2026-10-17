@@ -15,47 +15,47 @@ type EventType string
 
 const (
 	// Query processing events
-	EventQueryReceived   EventType = "query.received"   // 用户Query 到达
-	EventQueryValidated  EventType = "query.validated"  // Query 验证完成
-	EventQueryPreprocess EventType = "query.preprocess" // Query 预处理
-	EventQueryRewrite    EventType = "query.rewrite"    // Query 改写
-	EventQueryRewritten  EventType = "query.rewritten"  // Query 改写完成
+	EventQueryReceived   EventType = "query.received"   // nhận truy vấn của người dùng
+	EventQueryValidated  EventType = "query.validated"  // truy vấn đã được kiểm tra
+	EventQueryPreprocess EventType = "query.preprocess" // tiền xử lý truy vấn
+	EventQueryRewrite    EventType = "query.rewrite"    // viết lại truy vấn
+	EventQueryRewritten  EventType = "query.rewritten"  // viết lại truy vấn xong
 
 	// Retrieval events
-	EventRetrievalStart    EventType = "retrieval.start"    // 检索开始
-	EventRetrievalVector   EventType = "retrieval.vector"   // 向量检索
-	EventRetrievalKeyword  EventType = "retrieval.keyword"  // 关键词检索
-	EventRetrievalEntity   EventType = "retrieval.entity"   // 实体检索
-	EventRetrievalComplete EventType = "retrieval.complete" // 检索完成
+	EventRetrievalStart    EventType = "retrieval.start"    // bắt đầu truy xuất
+	EventRetrievalVector   EventType = "retrieval.vector"   // truy xuất vector
+	EventRetrievalKeyword  EventType = "retrieval.keyword"  // truy xuất từ khoá
+	EventRetrievalEntity   EventType = "retrieval.entity"   // truy xuất thực thể
+	EventRetrievalComplete EventType = "retrieval.complete" // truy xuất xong
 
 	// Rerank events
-	EventRerankStart    EventType = "rerank.start"    // 排序开始
-	EventRerankComplete EventType = "rerank.complete" // 排序完成
+	EventRerankStart    EventType = "rerank.start"    // bắt đầu rerank
+	EventRerankComplete EventType = "rerank.complete" // rerank xong
 
 	// Merge events
-	EventMergeStart    EventType = "merge.start"    // 合并开始
-	EventMergeComplete EventType = "merge.complete" // 合并完成
+	EventMergeStart    EventType = "merge.start"    // bắt đầu gộp
+	EventMergeComplete EventType = "merge.complete" // gộp xong
 
 	// Chat completion events
-	EventChatStart    EventType = "chat.start"    // 聊天生成开始
-	EventChatComplete EventType = "chat.complete" // 聊天生成完成
-	EventChatStream   EventType = "chat.stream"   // 聊天流式输出
+	EventChatStart    EventType = "chat.start"    // bắt đầu sinh câu trả lời
+	EventChatComplete EventType = "chat.complete" // sinh câu trả lời xong
+	EventChatStream   EventType = "chat.stream"   // streaming câu trả lời
 
 	// Agent events
-	EventAgentQuery    EventType = "agent.query"    // Agent Query 开始
-	EventAgentPlan     EventType = "agent.plan"     // Agent 计划生成
-	EventAgentStep     EventType = "agent.step"     // Agent 步骤执行
-	EventAgentTool     EventType = "agent.tool"     // Agent 工具调用
-	EventAgentComplete EventType = "agent.complete" // Agent 完成
+	EventAgentQuery    EventType = "agent.query"    // trợ lý bắt đầu xử lý truy vấn
+	EventAgentPlan     EventType = "agent.plan"     // trợ lý lập kế hoạch
+	EventAgentStep     EventType = "agent.step"     // trợ lý thực hiện bước
+	EventAgentTool     EventType = "agent.tool"     // trợ lý gọi công cụ
+	EventAgentComplete EventType = "agent.complete" // trợ lý hoàn tất
 
 	// Agent streaming events (for real-time feedback)
-	EventAgentThought       EventType = "thought"        // Agent 思考过程
+	EventAgentThought       EventType = "thought"        // quá trình suy nghĩ của trợ lý
 	EventAgentCommandOutput EventType = "command_output" // bounded command output
-	EventAgentToolCall      EventType = "tool_call"      // 工具调用通知
-	EventAgentToolResult    EventType = "tool_result"    // 工具结果
-	EventAgentReflection    EventType = "reflection"     // Agent 反思
-	EventAgentReferences    EventType = "references"     // 知识引用
-	EventAgentFinalAnswer   EventType = "final_answer"   // 最终答案
+	EventAgentToolCall      EventType = "tool_call"      // thông báo gọi công cụ
+	EventAgentToolResult    EventType = "tool_result"    // kết quả công cụ
+	EventAgentReflection    EventType = "reflection"     // trợ lý phản tư
+	EventAgentReferences    EventType = "references"     // trích dẫn tài liệu
+	EventAgentFinalAnswer   EventType = "final_answer"   // câu trả lời cuối cùng
 
 	// MCP tool human approval (issue #1173)
 	EventToolApprovalRequired EventType = "tool_approval_required"
@@ -69,7 +69,7 @@ const (
 	EventMCPOAuthResolved EventType = "mcp_oauth_resolved"
 
 	// Error events
-	EventError EventType = "error" // 错误事件
+	EventError EventType = "error" // sự kiện lỗi
 
 	// Long-term memory recalled for this turn. Emitted once, before the answer
 	// streams, so the UI can show which memories the answer saw.
@@ -96,20 +96,20 @@ const (
 	EventUserMessageInjected EventType = "user_message_injected"
 
 	// Session events
-	EventSessionTitle EventType = "session_title" // 会话标题Update
+	EventSessionTitle EventType = "session_title" // cập nhật tiêu đề cuộc trò chuyện
 
 	// Control events
-	EventStop EventType = "stop" // 停止对话生成
+	EventStop EventType = "stop" // dừng sinh câu trả lời
 )
 
 // Event represents an event in the system
 type Event struct {
-	ID        string                 // 事件ID (自动生成UUID，用于流式Update 追踪)
-	Type      EventType              // 事件类型
-	SessionID string                 // 会话ID
-	Data      interface{}            // 事件数据
-	Metadata  map[string]interface{} // 事件元数据
-	RequestID string                 // 请求ID
+	ID        string                 // ID sự kiện (UUID tự sinh, dùng để theo dõi cập nhật streaming)
+	Type      EventType              // loại sự kiện
+	SessionID string                 // ID cuộc trò chuyện
+	Data      interface{}            // dữ liệu sự kiện
+	Metadata  map[string]interface{} // metadata sự kiện
+	RequestID string                 // ID yêu cầu
 }
 
 // EventHandler is a function that handles events
@@ -119,7 +119,7 @@ type EventHandler func(ctx context.Context, event Event) error
 type EventBus struct {
 	mu        sync.RWMutex
 	handlers  map[EventType][]EventHandler
-	asyncMode bool // 是否异步处理事件
+	asyncMode bool // có xử lý sự kiện bất đồng bộ hay không
 }
 
 // NewEventBus creates a new EventBus instance

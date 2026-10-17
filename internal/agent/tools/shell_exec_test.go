@@ -518,7 +518,7 @@ func TestInstallShellExecStillPipsIntoTheSkillTree(t *testing.T) {
 	tool := NewInstallShellExecTool(inner, installShellSkillDir)
 
 	result, err := tool.Execute(shellExecTestContext(), json.RawMessage(
-		`{"command":"pip install python-docx","work_dir":"/opt/weknora/tenant/skills/律师助手"}`,
+		`{"command":"pip install python-docx","work_dir":"/opt/weknora/tenant/skills/trợ-lý-pháp-lý"}`,
 	))
 	require.NoError(t, err)
 	require.True(t, result.Success, result.Error)
@@ -528,11 +528,11 @@ func TestInstallShellExecStillPipsIntoTheSkillTree(t *testing.T) {
 func TestShellExecHintsWhenVenvHasNoPip(t *testing.T) {
 	tool := NewShellExecTool(&fakeShellExecutor{result: &sandbox.ExecuteResult{
 		ExitCode: 1,
-		Stderr:   "/opt/weknora/tenant/skills/律师助手/.venv/bin/python: No module named pip\n",
+		Stderr:   "/opt/weknora/tenant/skills/trợ-lý-pháp-lý/.venv/bin/python: No module named pip\n",
 	}}, nil)
 
 	result, err := tool.Execute(shellExecTestContext(), json.RawMessage(
-		`{"command":"/opt/weknora/tenant/skills/律师助手/.venv/bin/python /opt/weknora/tenant/skills/律师助手/scripts/install_deps.py --word --yes"}`,
+		`{"command":"/opt/weknora/tenant/skills/trợ-lý-pháp-lý/.venv/bin/python /opt/weknora/tenant/skills/trợ-lý-pháp-lý/scripts/install_deps.py --word --yes"}`,
 	))
 	require.NoError(t, err)
 	require.True(t, result.Success)

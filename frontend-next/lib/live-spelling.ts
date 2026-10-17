@@ -125,6 +125,8 @@ export type LiveSpellingStatus = {
   checked: number;
   found: number;
   mistakes: LiveMistake[];
+  /** The last read found no paragraph with text (undefined: not read yet). */
+  empty?: boolean;
 };
 
 /** What selecting a listed mistake in the editor did: ok (selected),

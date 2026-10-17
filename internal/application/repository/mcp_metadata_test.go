@@ -27,7 +27,7 @@ func TestMCPMetadataPersistsCompleteScopedSnapshotsAndRejectsOlderWrites(t *test
 		Instructions:      "Server instructions",
 		Tools: []*types.MCPTool{
 			{
-				Name:        "查询",
+				Name:        "Tra cứu",
 				Description: "Full original description",
 				InputSchema: json.RawMessage(
 					`{"type":"object","oneOf":[{"required":["id"]}],` +

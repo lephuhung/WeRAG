@@ -193,3 +193,70 @@ func TestBuildOpenDocumentPromptIndexesSourcesWithoutTheirText(t *testing.T) {
 		t.Fatalf("index of a source-only session:\n%s", got)
 	}
 }
+
+func TestEditWithoutDocumentRefusesTheMentionedSource(t *testing.T) {
+	ws := newSourceWorkspace(t)
+	// the user @-named only the source: the single target must not be
+	// edited in its place
+	ctx := types.WithMentionedDocuments(toolCtx(), []string{"ws-src"})
+	if _, err := resolveDocument(ctx, ws, "s-1", "", true); err == nil ||
+		!strings.HasPrefix(err.Error(), "vb2 là tài liệu nguồn, chỉ tra cứu được.") ||
+		!strings.Contains(err.Error(), `gọi lại với document="vb1"`) {
+		t.Fatalf("an edit next to the mentioned source must name the target to retry with, got %v", err)
+	}
+	// without a target in the session it is the plain refusal
+	srcDoc, _, _ := ws.find("ws-src")
+	if got := mentionedSourceRetry(srcDoc, nil); got != SourceDocumentRefusal(srcDoc) {
+		t.Fatalf("no target: plain refusal, got %q", got)
+	}
+	// reading still falls back as before
+	if got, err := resolveDocument(ctx, ws, "s-1", "", false); err != nil || got == nil {
+		t.Fatalf("reading is unaffected: %v, %v", got, err)
+	}
+	// a highlighted passage in the target designates the target
+	sel := types.WithDocumentSelection(ctx, &types.DocumentSelection{Text: "x", DocumentID: "ws-1"})
+	if got, err := resolveDocument(sel, ws, "s-1", "", true); err != nil || got.ID != "ws-1" {
+		t.Fatalf("a selection in the target wins over the mentioned source: %v, %v", got, err)
+	}
+	// mentioning the target keeps editing it
+	tgt := types.WithMentionedDocuments(toolCtx(), []string{"ws-1"})
+	if got, err := resolveDocument(tgt, ws, "s-1", "", true); err != nil || got.ID != "ws-1" {
+		t.Fatalf("a mentioned target is edited: %v, %v", got, err)
+	}
+}
+
+func TestSourceEditNote(t *testing.T) {
+	ws := newSourceWorkspace(t)
+	ctx := types.WithMentionedDocuments(toolCtx(), []string{"ws-src"})
+	got := SourceEditNote(ctx, ws, "s-1", "Viết lại mục 2 trong @bao-cao.pdf cho rõ nghĩa hơn")
+	if !strings.Contains(got, "bao-cao.pdf là tài liệu nguồn (chỉ tra cứu)") {
+		t.Fatalf("an edit asked of a source gets the note, got %q", got)
+	}
+	if got := SourceEditNote(ctx, ws, "s-1", "Tóm tắt @bao-cao.pdf"); got != "" {
+		t.Fatalf("a read-only question gets no note, got %q", got)
+	}
+	both := types.WithMentionedDocuments(toolCtx(), []string{"ws-src", "ws-1"})
+	if got := SourceEditNote(both, ws, "s-1", "Sửa @vb1 theo @bao-cao.pdf"); got != "" {
+		t.Fatalf("a turn that also names a target gets no note, got %q", got)
+	}
+	if got := SourceEditNote(toolCtx(), ws, "s-1", "Viết lại đoạn này"); got != "" {
+		t.Fatalf("no mention, no note, got %q", got)
+	}
+	// legal read questions use the same verbs (review S2)
+	for _, q := range []string{
+		"Nghị định nào thay thế @bao-cao.pdf?",
+		"@bao-cao.pdf được sửa đổi, bổ sung bởi văn bản nào?",
+		"Văn bản sửa đổi @bao-cao.pdf là gì?",
+		"@bao-cao.pdf cập nhật ngày nào?",
+		"Thay đổi chính của @bao-cao.pdf là gì?",
+	} {
+		if got := SourceEditNote(ctx, ws, "s-1", q); got != "" {
+			t.Fatalf("%q is a read question, got note %q", q, got)
+		}
+	}
+	for _, q := range []string{"Sửa lại mục 2 của @bao-cao.pdf", "Chèn một đoạn vào @bao-cao.pdf", "bổ sung thêm số liệu cho @bao-cao.pdf"} {
+		if got := SourceEditNote(ctx, ws, "s-1", q); got == "" {
+			t.Fatalf("%q asks for an edit, got no note", q)
+		}
+	}
+}

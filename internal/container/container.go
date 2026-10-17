@@ -22,7 +22,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
-	_ "github.com/go-sql-driver/mysql" // 给 Doris (database/sql) 注册 MySQL 协议驱动
+	_ "github.com/go-sql-driver/mysql" // registers the MySQL protocol driver for Doris (database/sql)
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/panjf2000/ants/v2"
@@ -290,6 +290,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAbbreviationTurnCoordinator))
 	must(container.Provide(repository.NewAbbreviationFeedbackRepository))
 	must(container.Provide(repository.NewDocumentSpellingFeedbackRepository))
+	must(container.Provide(repository.NewDocumentFormatFeedbackRepository))
 	must(container.Provide(repository.NewTenantAgencyProfileRepository))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
@@ -513,10 +514,14 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Document assistant: the session's editable .docx and the ONLYOFFICE
 	// Document Server bridge (disabled unless ONLYOFFICE_* is configured).
 	must(container.Provide(service.NewDocumentWorkspaceService))
+	// sub-chats ("chat nhỏ") work on their root chat's documents and uploads
+	must(container.Decorate(service.NewSubChatUploads))
+	must(container.Decorate(service.NewSubChatWorkspaces))
 	must(container.Provide(service.NewDocumentFormatPrecheck))
 	// background format-check results and states outlive a restart in Redis
 	must(container.Invoke(func(rdb *redis.Client) { tools.UseFormatCheckRedis(rdb) }))
 	must(container.Invoke(func(rdb *redis.Client) { tools.UseDocumentTemplateRedis(rdb) }))
+	must(container.Invoke(func(rdb *redis.Client) { handler.UseDeviceLoginRedis(rdb) }))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 
 	// Chat pipeline components for processing chat requests
@@ -686,6 +691,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		if u, ok := sessions.(agencyProfileUser); ok {
 			u.SetAgencyProfiles(profiles)
 		}
+	}))
+	// users' verdicts on the format check reports
+	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
+		precheck.SetFormatFeedback(feedback)
 	}))
 	// the document assistant's spellcheck asks the auxiliary model again
 	// about findings on real words and skips what users said is no mistake
@@ -897,7 +906,7 @@ func initRedisClient() (*redis.Client, error) {
 
 	_, err = client.Ping(context.Background()).Result()
 	if err != nil {
-		return nil, fmt.Errorf("连接Redis失败: %w", err)
+		return nil, fmt.Errorf("kết nối Redis thất bại: %w", err)
 	}
 
 	return client, nil
@@ -1301,8 +1310,8 @@ func initRawFileService(_ *config.Config) (interfaces.FileService, error) {
 			os.Getenv("TOS_SECRET_KEY"),
 			os.Getenv("TOS_BUCKET_NAME"),
 			os.Getenv("TOS_PATH_PREFIX"),
-			os.Getenv("TOS_TEMP_BUCKET_NAME"), // 可选：临时桶名称（桶需Configuration 生命周期规则自动过期）
-			os.Getenv("TOS_TEMP_REGION"),      // 可选：临时桶 region，默认与主桶相同
+			os.Getenv("TOS_TEMP_BUCKET_NAME"), // optional: temp bucket name (bucket needs a lifecycle rule for auto-expiry)
+			os.Getenv("TOS_TEMP_REGION"),      // optional: temp bucket region, defaults to the main bucket's
 		)
 	case "s3":
 		accessKey, secretKey := os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY")
@@ -1621,7 +1630,7 @@ func initRetrieveEngineRegistry(
 	if slices.Contains(retrieveDriver, "doris") {
 		dorisAddr := os.Getenv("DORIS_ADDR")
 		if dorisAddr == "" {
-			// docker-compose 默认服务名 + Doris FE MySQL 端口
+			// docker-compose default service name + Doris FE MySQL port
 			dorisAddr = "doris-fe:9030"
 		}
 		dorisDatabase := os.Getenv("DORIS_DATABASE")
@@ -1953,9 +1962,9 @@ func initConnectorRegistry() (*datasource.ConnectorRegistry, error) {
 	if err := registry.Register(wiki.NewConnector(core.RegionLark)); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register lark connector: %w", err))
 	}
-	// Feishu/Lark Drive (云盘) mode: different connector type so the registry
+	// Feishu/Lark Drive mode: different connector type so the registry
 	// dispatches to the Drive connector. Shares core.Client/Region/export logic
-	// with the wiki connector. See 飞书云盘数据源设计.md / ADR-0001.
+	// with the wiki connector. See the Feishu Drive datasource design doc / ADR-0001.
 	if err := registry.Register(drive.NewDriveConnector(core.RegionFeishuDrive)); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register feishu_drive connector: %w", err))
 	}
@@ -2083,10 +2092,22 @@ func startWikiRunWindow(inspector *asynq.Inspector, settings interfaces.SystemSe
 	})
 }
 
+// Idle time after which a session nobody chatted in is removed: a plain chat,
+// and one with a document open (kept alive by the editor's syncs). Same
+// defaults as purge_expired_temporary_sessions in migration 000153.
+const (
+	temporarySessionPlainTTL    = time.Hour
+	temporarySessionDocumentTTL = 24 * time.Hour
+)
+
 // startTemporaryDocumentCleanup removes expired session attachments and their
-// extracted images. The durable expiry timestamp is the source of truth; the
-// ticker only controls how quickly storage is reclaimed.
-func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, cleaner interfaces.ResourceCleaner) {
+// extracted images, and the temporary sessions nobody chatted in (the insert
+// trigger of migration 000153 purges those too; this covers quiet hours).
+// The durable expiry timestamp is the source of truth; the ticker only
+// controls how quickly storage is reclaimed.
+func startTemporaryDocumentCleanup(
+	svc interfaces.TemporaryDocumentService, db *gorm.DB, cleaner interfaces.ResourceCleaner,
+) {
 	stop := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -2096,6 +2117,13 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 			case <-ticker.C:
 				if err := svc.CleanupExpired(context.Background()); err != nil {
 					logger.Warnf(context.Background(), "[TemporaryDocument] cleanup failed: %v", err)
+				}
+				if n, err := repository.PurgeExpiredTemporarySessions(
+					context.Background(), db, temporarySessionPlainTTL, temporarySessionDocumentTTL,
+				); err != nil {
+					logger.Warnf(context.Background(), "[TemporarySession] purge failed: %v", err)
+				} else if n > 0 {
+					logger.Infof(context.Background(), "[TemporarySession] purged %d idle temporary sessions", n)
 				}
 			case <-stop:
 				return

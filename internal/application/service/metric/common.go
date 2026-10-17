@@ -37,21 +37,21 @@ func max(a, b int) int {
 }
 
 func splitSentences(text string) []string {
-	// 编译正则表达式（匹配中文句号或英文句号）
+	// Biên dịch regex (khớp dấu chấm câu CJK hoặc dấu chấm ASCII)
 	re := regexp.MustCompile(`([。.])`)
 
-	// 分割文本并保留分隔符用于定位
+	// Tách văn bản và giữ lại dấu phân cách để định vị
 	split := re.Split(text, -1)
 
 	var sentences []string
 	current := strings.Builder{}
 
 	for i, s := range split {
-		// 交替获取文本段和分隔符（奇数为分隔符）
+		// Luân phiên lấy đoạn văn bản và dấu phân cách (chỉ số lẻ là dấu phân cách)
 		if i%2 == 0 {
 			current.WriteString(s)
 		} else {
-			// 当遇到分隔符时，完成当前句子
+			// Gặp dấu phân cách thì kết thúc câu hiện tại
 			if current.Len() > 0 {
 				sentence := strings.TrimSpace(current.String())
 				if sentence != "" {
@@ -62,7 +62,7 @@ func splitSentences(text string) []string {
 		}
 	}
 
-	// 处理最后一个无分隔符的文本段
+	// Xử lý đoạn cuối không có dấu phân cách
 	if remaining := strings.TrimSpace(current.String()); remaining != "" {
 		sentences = append(sentences, remaining)
 	}
@@ -71,7 +71,7 @@ func splitSentences(text string) []string {
 }
 
 func splitIntoWords(sentences []string) []string {
-	// 正则匹配中英文段落（中文块、英文块、其他字符）
+	// Regex khớp các khối CJK, khối Latin và ký tự khác
 	re := regexp.MustCompile(`([\p{Han}]+)|([a-zA-Z0-9_.,!?]+)|(\p{P})`)
 
 	var tokens []string
@@ -84,13 +84,13 @@ func splitIntoWords(sentences []string) []string {
 			punctuation := groups[3]
 
 			switch {
-			case chineseBlock != "": // 处理中文部分
+			case chineseBlock != "": // xử lý phần CJK
 				words := types.Jieba.Cut(chineseBlock, true)
 				tokens = append(tokens, words...)
-			case englishBlock != "": // 处理英文部分
+			case englishBlock != "": // xử lý phần Latin
 				engTokens := strings.Fields(englishBlock)
 				tokens = append(tokens, engTokens...)
-			case punctuation != "": // 保留标点符号
+			case punctuation != "": // giữ lại dấu câu
 				tokens = append(tokens, punctuation)
 			}
 		}

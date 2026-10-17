@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -31,6 +32,8 @@ type DocumentFormatPrecheck struct {
 	profiling sync.Map
 	// spelling: the live spellcheck's verifier and the users' verdicts
 	spelling spellingSupport
+	// formatFeedback stores the users' verdicts on format check reports
+	formatFeedback interfaces.DocumentFormatFeedbackRepository
 }
 
 // NewDocumentFormatPrecheck wires the background format check.
@@ -131,6 +134,73 @@ func (p *DocumentFormatPrecheck) RecordSpellingVerdict(
 		}
 	}
 	return p.spelling.feedback.Record(ctx, []types.DocumentSpellingFeedback{row})
+}
+
+// SetFormatFeedback wires the store of the users' verdicts on format check
+// reports.
+func (p *DocumentFormatPrecheck) SetFormatFeedback(repo interfaces.DocumentFormatFeedbackRepository) {
+	p.formatFeedback = repo
+}
+
+// FormatVerdict is the user's feedback on a format check report: the whole
+// report (FindingID "") or one finding of it.
+type FormatVerdict struct {
+	ReportID  string
+	FindingID string
+	Verdict   string
+	Note      string
+}
+
+// ErrFormatReportStale: the feedback names a report that is no longer the
+// document's current one (checked again since).
+var ErrFormatReportStale = errors.New("the format check report changed")
+
+// ErrFormatFindingUnknown: the feedback names a finding the report has not.
+var ErrFormatFindingUnknown = errors.New("no such finding in the report")
+
+// RecordFormatVerdict stores the user's feedback on the current format
+// check report of a document, with the report and the checked file's ref,
+// as labelled data for tuning the checker. Nothing is rechecked or changed.
+func (p *DocumentFormatPrecheck) RecordFormatVerdict(
+	ctx context.Context, tenantID uint64, sessionID, documentID string, v FormatVerdict,
+) error {
+	if p == nil || p.workspaces == nil || !p.workspaces.DocumentsEnabled() {
+		return errors.New("documents are disabled")
+	}
+	if p.formatFeedback == nil {
+		return errors.New("format feedback is not available")
+	}
+	ws, err := p.workspaces.Get(ctx, tenantID, sessionID, documentID)
+	if err != nil {
+		return err
+	}
+	report := p.Report(ctx, ws.ID)
+	if report == nil || report.ReportID == "" || report.ReportID != v.ReportID {
+		return ErrFormatReportStale
+	}
+	userID, _ := types.UserIDFromContext(ctx)
+	row := &types.DocumentFormatFeedback{
+		TenantID: tenantID, UserID: userID, SessionID: sessionID, DocumentID: ws.ID,
+		FileName: ws.FileName, DocumentRef: ws.CurrentRef, DocumentRevision: report.DocumentRevision,
+		ReportID: report.ReportID, DocumentType: report.DocumentType, Scope: report.Scope,
+		FindingID: v.FindingID, Verdict: v.Verdict, Note: v.Note,
+	}
+	if v.FindingID != "" {
+		i := slices.IndexFunc(report.Findings, func(f types.DocumentFormatFinding) bool { return f.ID == v.FindingID })
+		if i < 0 {
+			return ErrFormatFindingUnknown
+		}
+		row.CheckID, row.FindingTitle = report.Findings[i].CheckID, report.Findings[i].Title
+	}
+	if raw, err := json.Marshal(report); err == nil {
+		row.Report = raw
+	}
+	if agent := p.agent(ctx); agent != nil {
+		if m := p.chatModel(ctx, agent); m != nil {
+			row.Model = m.GetModelName()
+		}
+	}
+	return p.formatFeedback.Record(ctx, row)
 }
 
 func allPositions(n int) []int {

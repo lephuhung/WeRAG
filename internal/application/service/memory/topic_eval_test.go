@@ -116,9 +116,9 @@ func TestTopicPromptsCarryTheRulesTheEvalSetDependsOn(t *testing.T) {
 	require.Contains(t, topicAdjudicationPrompt, "narrower concept",
 		"folding subtopics into their parent is what collapsed a domain into one bucket")
 
-	segment := transcriptSegment{lines: []transcriptLine{{content: "问题"}}}
+	segment := transcriptSegment{lines: []transcriptLine{{content: "câu hỏi"}}}
 	prompt := buildExtractionPrompt(segment, nil, nil,
-		[]*types.MemoryTopicStat{{Topic: "门店排班管理"}}, "")
+		[]*types.MemoryTopicStat{{Topic: "quản lý văn bản đi đến"}}, "")
 	require.Contains(t, prompt, "SAME subject",
 		"reuse has to be an identity test; 'is about' is a relatedness test and merges everything adjacent")
 	require.Contains(t, prompt, "Do not force a fit")
@@ -129,12 +129,12 @@ func TestTopicPromptsCarryTheRulesTheEvalSetDependsOn(t *testing.T) {
 func TestExtractionPromptDoesNotDumpEveryTrackedTopic(t *testing.T) {
 	var tracked []*types.MemoryTopicStat
 	for i := 0; i < extractShownTopics*3; i++ {
-		tracked = append(tracked, &types.MemoryTopicStat{Topic: fmt.Sprintf("主题%d", i)})
+		tracked = append(tracked, &types.MemoryTopicStat{Topic: fmt.Sprintf("chủ đề %d", i)})
 	}
 	prompt := buildExtractionPrompt(
-		transcriptSegment{lines: []transcriptLine{{content: "问题"}}}, nil, nil, tracked, "")
-	require.Contains(t, prompt, "主题0")
-	require.NotContains(t, prompt, fmt.Sprintf("主题%d", extractShownTopics))
+		transcriptSegment{lines: []transcriptLine{{content: "câu hỏi"}}}, nil, nil, tracked, "")
+	require.Contains(t, prompt, "chủ đề 0")
+	require.NotContains(t, prompt, fmt.Sprintf("chủ đề %d", extractShownTopics))
 }
 
 // TestTopicMergeEval scores the model tier against the golden set.
@@ -215,6 +215,11 @@ func TestFuzzyThresholdSitsInARealGap(t *testing.T) {
 	for _, c := range set.Cases {
 		score := types.TopicSimilarity(c.Tracked, c.Incoming)
 		if !c.Same {
+			// Pairs told apart by their document numbers never reach the
+			// bigram test, so they do not constrain its threshold.
+			if types.TopicsNameDifferentNumbers(c.Tracked, c.Incoming) {
+				continue
+			}
 			if score > highestDifferent {
 				highestDifferent, highestName = score, c.Name
 			}
@@ -251,9 +256,9 @@ type topicGranularityCase struct {
 // only ever match itself, so it is counted once and sits at one hit forever
 // while the feature looks like it is working.
 //
-// This is not hypothetical: the prompt used to offer "某选手的参赛项目" as the
+// This is not hypothetical: the prompt used to offer "môn thi đấu của một vận động viên" as the
 // model of a good separate subject, and production filled up with labels like
-// "v2.3版本orders接口分页参数默认值查询".
+// "truy vấn giá trị mặc định tham số phân trang API orders phiên bản v2.3".
 func TestGoodSubjectsRecurAndQueryShapedOnesDoNot(t *testing.T) {
 	var set struct {
 		Granularity struct {
@@ -284,9 +289,9 @@ func TestExtractionPromptTeachesSubjectLevelNaming(t *testing.T) {
 		"the opposite failure — naming a category — has to stay ruled out too")
 
 	prompt := buildExtractionPrompt(
-		transcriptSegment{lines: []transcriptLine{{content: "问题"}}}, nil, nil,
-		[]*types.MemoryTopicStat{{Topic: "门店排班管理"}}, "")
-	require.NotContains(t, prompt, "某选手的参赛项目",
+		transcriptSegment{lines: []transcriptLine{{content: "câu hỏi"}}}, nil, nil,
+		[]*types.MemoryTopicStat{{Topic: "quản lý văn bản đi đến"}}, "")
+	require.NotContains(t, prompt, "môn thi đấu của một vận động viên",
 		"that example taught the model to name queries, which is how the topic table filled "+
 			"with labels that can never match anything again")
 	require.Contains(t, prompt, "same level of",

@@ -94,17 +94,17 @@ func fakeFeishuGolden(nodes []core.WikiNode, docToken string, blocks []core.Docx
 	// nested anonymous-struct literals.
 	mux.HandleFunc("/open-apis/sheets/v2/spreadsheets/sht_spread/values/0", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"code":0,"msg":"","data":{"valueRange":{"values":[["名称","数量"],["苹果",3]]}}}`))
+		w.Write([]byte(`{"code":0,"msg":"","data":{"valueRange":{"values":[["Tên","Số lượng"],["Táo",3]]}}}`))
 	})
 
 	// bitable-v1 fields + records: bascApp_tblMain → app "bascApp", table "tblMain".
 	mux.HandleFunc("/open-apis/bitable/v1/apps/bascApp/tables/tblMain/fields", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"code":0,"msg":"","data":{"items":[{"field_name":"任务"},{"field_name":"状态"}]}}`))
+		w.Write([]byte(`{"code":0,"msg":"","data":{"items":[{"field_name":"Công việc"},{"field_name":"Trạng thái"}]}}`))
 	})
 	mux.HandleFunc("/open-apis/bitable/v1/apps/bascApp/tables/tblMain/records/search", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"code":0,"msg":"","data":{"has_more":false,"page_token":"","items":[{"fields":{"任务":"写码","状态":"完成"}}]}}`))
+		w.Write([]byte(`{"code":0,"msg":"","data":{"has_more":false,"page_token":"","items":[{"fields":{"Công việc":"Viết mã","Trạng thái":"Hoàn thành"}}]}}`))
 	})
 
 	// medias download, routed by token embedded in the path.
@@ -137,33 +137,33 @@ func TestGolden_RichDocxAllCapabilities(t *testing.T) {
 
 	blocks := []core.DocxBlock{
 		{BlockID: "root", BlockType: core.BlockTypePage},
-		{BlockID: "h1", BlockType: core.BlockTypeHeading1, Heading1: txt("季度报告")},
-		{BlockID: "p1", BlockType: core.BlockTypeText, Text: txt("本季度概览。")},
-		{BlockID: "h2", BlockType: core.BlockTypeHeading1 + 1, Heading2: txt("关键指标")},
-		{BlockID: "b1", BlockType: core.BlockTypeBullet, Bullet: txt("收入增长")},
-		{BlockID: "o1", BlockType: core.BlockTypeOrdered, Ordered: txt("第一步立项")},
+		{BlockID: "h1", BlockType: core.BlockTypeHeading1, Heading1: txt("Báo cáo quý")},
+		{BlockID: "p1", BlockType: core.BlockTypeText, Text: txt("Tổng quan quý này.")},
+		{BlockID: "h2", BlockType: core.BlockTypeHeading1 + 1, Heading2: txt("Chỉ tiêu chính")},
+		{BlockID: "b1", BlockType: core.BlockTypeBullet, Bullet: txt("Tăng trưởng thu ngân sách")},
+		{BlockID: "o1", BlockType: core.BlockTypeOrdered, Ordered: txt("Bước một lập dự án")},
 		{BlockID: "code1", BlockType: core.BlockTypeCode, Code: txt("SELECT 1")},
-		{BlockID: "q1", BlockType: core.BlockTypeQuote, Quote: txt("重要提示")},
-		{BlockID: "todo1", BlockType: core.BlockTypeTodo, Todo: txt("完成复盘")},
-		{BlockID: "call1", BlockType: core.BlockTypeCallout, Callout: txt("注意风险")},
+		{BlockID: "q1", BlockType: core.BlockTypeQuote, Quote: txt("Lưu ý quan trọng")},
+		{BlockID: "todo1", BlockType: core.BlockTypeTodo, Todo: txt("Hoàn thành tổng kết")},
+		{BlockID: "call1", BlockType: core.BlockTypeCallout, Callout: txt("Chú ý rủi ro")},
 		{BlockID: "div1", BlockType: core.BlockTypeDivider},
 		tableBlk("tbl1", 2, "c1", "c2", "c3", "c4"),
 		sheetBlk("sh1", "sht_spread_0"),
 		bitableBlk("bt1", "bascApp_tblMain"),
 		imageBlk("im1", "img-tok-SECRET"),
-		fileBlk("fbig", "tok-big", "手册.pdf"),
+		fileBlk("fbig", "tok-big", "Sổ_tay.pdf"),
 		fileBlk("flogo", "tok-logo", "logo.png"),    // non-whitelisted ext → no sub-item
 		fileBlk("fsmall", "tok-small", "small.pdf"), // whitelisted but too small → no sub-item
 		// table cells (containers) + their child text blocks — both are core.Skipped by
 		// the main loop and read by the table renderer via the cells' Children.
 		cellBlk("c1"), cellBlk("c2"), cellBlk("c3"), cellBlk("c4"),
-		cellTextBlk("c1", "列A"), cellTextBlk("c2", "列B"),
+		cellTextBlk("c1", "Cột A"), cellTextBlk("c2", "Cột B"),
 		cellTextBlk("c3", "1"), cellTextBlk("c4", "2"),
 	}
 
 	nodes := []core.WikiNode{{
 		NodeToken: "nt-golden", ObjToken: docToken, ObjType: "docx",
-		Title: "季度报告文档", NodeEditTime: "1711468800",
+		Title: "Tài liệu báo cáo quý", NodeEditTime: "1711468800",
 	}}
 	media := map[string][]byte{"tok-big": bigPDF, "tok-small": tinyPDF}
 
@@ -204,26 +204,26 @@ func TestGolden_RichDocxAllCapabilities(t *testing.T) {
 
 	// ── every text construct rendered correctly ──
 	fragments := []string{
-		"# 季度报告",
-		"本季度概览。",
-		"## 关键指标",
-		"- 收入增长",
-		"1. 第一步立项",
+		"# Báo cáo quý",
+		"Tổng quan quý này.",
+		"## Chỉ tiêu chính",
+		"- Tăng trưởng thu ngân sách",
+		"1. Bước một lập dự án",
 		"```\nSELECT 1\n```",
-		"> 重要提示",
-		"- [ ] 完成复盘",
-		"> 注意风险",
+		"> Lưu ý quan trọng",
+		"- [ ] Hoàn thành tổng kết",
+		"> Chú ý rủi ro",
 		"---",
-		"| 列A | 列B |", // native docx table header
-		"| 1 | 2 |",   // native docx table row
-		"| 名称 | 数量 |", // embedded sheet header
-		"| 苹果 | 3 |",  // embedded sheet row
-		"| 任务 | 状态 |", // embedded bitable header
-		"| 写码 | 完成 |", // embedded bitable row
-		"![图片]()",     // token-free image placeholder
-		"📎 附件：手册.pdf",
-		"📎 附件：logo.png",
-		"📎 附件：small.pdf",
+		"| Cột A | Cột B |",          // native docx table header
+		"| 1 | 2 |",                  // native docx table row
+		"| Tên | Số lượng |",         // embedded sheet header
+		"| Táo | 3 |",                // embedded sheet row
+		"| Công việc | Trạng thái |", // embedded bitable header
+		"| Viết mã | Hoàn thành |",   // embedded bitable row
+		"![hình ảnh]()",              // token-free image placeholder
+		"📎 Tệp đính kèm: Sổ_tay.pdf",
+		"📎 Tệp đính kèm: logo.png",
+		"📎 Tệp đính kèm: small.pdf",
 	}
 	for _, f := range fragments {
 		if !strings.Contains(md, f) {
@@ -232,7 +232,7 @@ func TestGolden_RichDocxAllCapabilities(t *testing.T) {
 	}
 
 	// ── document order preserved (heading before table before attachments) ──
-	order := []string{"# 季度报告", "## 关键指标", "| 列A | 列B |", "| 名称 | 数量 |", "| 任务 | 状态 |", "📎 附件：手册.pdf"}
+	order := []string{"# Báo cáo quý", "## Chỉ tiêu chính", "| Cột A | Cột B |", "| Tên | Số lượng |", "| Công việc | Trạng thái |", "📎 Tệp đính kèm: Sổ_tay.pdf"}
 	last := -1
 	for _, f := range order {
 		idx := strings.Index(md, f)
@@ -254,7 +254,7 @@ func TestGolden_RichDocxAllCapabilities(t *testing.T) {
 	if att.ExternalID != "nt-golden#file#tok-big" {
 		t.Errorf("attachment ExternalID = %q, want nt-golden#file#tok-big", att.ExternalID)
 	}
-	if att.Title != "手册.pdf" {
+	if att.Title != "Sổ_tay.pdf" {
 		t.Errorf("attachment Title = %q", att.Title)
 	}
 	if !bytes.Equal(att.Content, bigPDF) {

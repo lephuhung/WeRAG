@@ -607,6 +607,7 @@ func (r *memoryRepository) MarkForcedConsolidated(
 // concurrent turns from both deciding the topic is new.
 func (r *memoryRepository) BumpTopic(
 	ctx context.Context, scope interfaces.MemoryScope, topic, normalizedKey, alias string,
+	sighting types.MemoryTopicSighting,
 ) (*types.MemoryTopicStat, error) {
 	if normalizedKey == "" {
 		return nil, nil
@@ -666,7 +667,47 @@ func (r *memoryRepository) BumpTopic(
 		}
 		updated.Aliases = aliases
 	}
+
+	// Recurrence is measured in distinct conversations and days, not in
+	// extraction segments; see types.TopicRecurs.
+	changes := map[string]interface{}{}
+	if sighting.SessionID != "" && !containsString(updated.Sessions, sighting.SessionID) {
+		updated.Sessions = prependBounded(updated.Sessions, sighting.SessionID, types.MemoryTopicSessionWindow)
+		updated.SessionHits++
+		changes["sessions"] = updated.Sessions
+		changes["session_hits"] = updated.SessionHits
+	}
+	if sighting.SessionID != "" && sighting.Day != "" && !containsString(updated.Days, sighting.Day) {
+		updated.Days = prependBounded(updated.Days, sighting.Day, types.MemoryTopicSessionWindow)
+		changes["days"] = updated.Days
+	}
+	if len(changes) > 0 {
+		changes["updated_at"] = now
+		if err := r.scoped(ctx, scope).
+			Model(&types.MemoryTopicStat{}).
+			Where("normalized_key = ?", normalizedKey).
+			Updates(changes).Error; err != nil {
+			return nil, err
+		}
+	}
 	return &updated, nil
+}
+
+func containsString(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func prependBounded(list types.MemoryTopicAliases, value string, limit int) types.MemoryTopicAliases {
+	out := append(types.MemoryTopicAliases{value}, list...)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 // RenameTopic gives a subject a better canonical label.
@@ -980,8 +1021,8 @@ func (r *memoryRepository) ListUnannounced(
 ) ([]*types.MemoryItem, error) {
 	var items []*types.MemoryItem
 	err := r.scoped(ctx, scope).
-		Where("status = ? AND origin = ? AND announced_at IS NULL",
-			types.MemoryStatusActive, types.MemoryOriginExtracted).
+		Where("status IN ? AND origin = ? AND announced_at IS NULL",
+			[]string{types.MemoryStatusActive, types.MemoryStatusPending}, types.MemoryOriginExtracted).
 		Order("created_at ASC").
 		Limit(limit).
 		Find(&items).Error

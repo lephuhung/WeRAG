@@ -299,21 +299,21 @@ func (h *KnowledgeHandler) enqueueKnowledgeListReparse(
 }
 
 // CreateKnowledgeFromFile godoc
-// @Summary      从文件Create 知识
-// @Description  上传文件并Create 知识条目
-// @Tags         知识管理
+// @Summary      Tạo tài liệu từ tệp
+// @Description  Tải tệp lên và tạo mục tài liệu
+// @Tags         Tài liệu
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        id                path      string  true   "Knowledge BaseID"
-// @Param        file              formData  file    true   "上传的文件"
-// @Param        fileName          formData  string  false  "自定义文件名"
-// @Param        metadata          formData  string  false  "元数据JSON"
-// @Param        enable_multimodel formData  bool    false  "启用多模态处理"
-// @Param        tag_ids       formData  string  false  "分类IDList ，逗号分隔"
-// @Param        process_config    formData  string  false  "处理Configuration JSON（KnowledgeProcessOverrides）"
-// @Success      200               {object}  map[string]interface{}  "Create 的知识"
-// @Failure      400               {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      409               {object}  map[string]interface{}  "文件重复"
+// @Param        file              formData  file    true   "Tệp tải lên"
+// @Param        fileName          formData  string  false  "Tên tệp tuỳ chỉnh"
+// @Param        metadata          formData  string  false  "Metadata dạng JSON"
+// @Param        enable_multimodel formData  bool    false  "Bật xử lý đa phương thức"
+// @Param        tag_ids       formData  string  false  "Danh sách ID thẻ, phân cách bằng dấu phẩy"
+// @Param        process_config    formData  string  false  "Cấu hình xử lý dạng JSON (KnowledgeProcessOverrides)"
+// @Success      200               {object}  map[string]interface{}  "Tài liệu đã tạo"
+// @Failure      400               {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      409               {object}  map[string]interface{}  "tệp bị trùng"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/file [post]
@@ -422,7 +422,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	}
 	processOverrides = platformProcessOverrides(ctx, processOverrides)
 
-	// 获取分类IDList （如果提供），逗号分隔，用于知识多标签分类管理
+	// Lấy danh sách ID thẻ (nếu có), phân cách bằng dấu phẩy, dùng để gắn nhiều thẻ cho tài liệu
 	tagIDs := parseCommaSeparatedTagIDs(c.PostForm("tag_ids"))
 
 	channel := c.PostForm("channel")
@@ -456,16 +456,16 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 }
 
 // CreateKnowledgeFromURL godoc
-// @Summary      从URLCreate 知识
-// @Description  从指定URL抓取内容并Create 知识条目。当提供 file_name/file_type 或 URL 路径含已知文件扩展名时，自动切换为文件下载模式
-// @Tags         知识管理
+// @Summary      Tạo tài liệu từ URL
+// @Description  Lấy nội dung từ URL chỉ định và tạo mục tài liệu. Khi có file_name/file_type hoặc đường dẫn URL chứa phần mở rộng tệp đã biết thì tự chuyển sang chế độ tải tệp
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "Knowledge BaseID"
-// @Param        request  body      object{url=string,file_name=string,file_type=string,enable_multimodel=bool,title=string,tag_ids=[]string}  true  "URL请求"
-// @Success      201      {object}  map[string]interface{}  "Create 的知识"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      409      {object}  map[string]interface{}  "URL重复"
+// @Param        request  body      object{url=string,file_name=string,file_type=string,enable_multimodel=bool,title=string,tag_ids=[]string}  true  "Yêu cầu theo URL"
+// @Success      201      {object}  map[string]interface{}  "Tài liệu đã tạo"
+// @Failure      400      {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      409      {object}  map[string]interface{}  "URL bị trùng"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/url [post]
@@ -562,15 +562,15 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 }
 
 // CreateManualKnowledge godoc
-// @Summary      手工Create 知识
-// @Description  手工录入Markdown格式的知识内容
-// @Tags         知识管理
+// @Summary      Tạo tài liệu thủ công
+// @Description  Nhập thủ công nội dung tài liệu ở định dạng Markdown
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                       true  "Knowledge BaseID"
-// @Param        request  body      types.ManualKnowledgePayload true  "手工知识内容"
-// @Success      200      {object}  map[string]interface{}       "Create 的知识"
-// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
+// @Param        request  body      types.ManualKnowledgePayload true  "Nội dung tài liệu thủ công"
+// @Success      200      {object}  map[string]interface{}       "Tài liệu đã tạo"
+// @Failure      400      {object}  errors.AppError              "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/manual [post]
@@ -623,15 +623,15 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 }
 
 // GetKnowledge godoc
-// @Summary      获取知识Details
-// @Description  根据ID获取知识条目Details
-// @Tags         知识管理
+// @Summary      Lấy chi tiết tài liệu
+// @Description  Lấy chi tiết mục tài liệu theo ID
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识ID"
-// @Success      200  {object}  map[string]interface{}  "知识Details "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "知识不存在"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Success      200  {object}  map[string]interface{}  "Chi tiết tài liệu"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "tài liệu không tồn tại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id} [get]
@@ -670,13 +670,13 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 }
 
 // GetKnowledgeSpans godoc
-// @Summary      获取知识文档解析的 Span 树（含历史尝试）
-// @Description  返回该知识在解析流水线的 trace tree（root → stage → subspan）：每段状态、耗时、input/output、错误码、langfuse_trace_id。支持 ?attempt=N 查看历史尝试；不传则返回最新尝试。前端用于渲染时间线 + 多模态/embedding 子节点 + 一键跳转 Langfuse。
-// @Tags         知识管理
+// @Summary      Lấy cây Span của quá trình phân tích tài liệu (gồm các lần thử trước)
+// @Description  Trả về trace tree của tài liệu trong pipeline phân tích (root → stage → subspan): trạng thái, thời gian, input/output, mã lỗi, langfuse_trace_id của từng đoạn. Hỗ trợ ?attempt=N để xem lần thử trước; không truyền thì trả về lần mới nhất. Frontend dùng để vẽ dòng thời gian + nút con đa phương thức/embedding + mở nhanh Langfuse.
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id        path   string  true   "知识ID"
-// @Param        attempt   query  int     false  "指定尝试号；省略=最新"
+// @Param        id        path   string  true   "ID tài liệu"
+// @Param        attempt   query  int     false  "Số lần thử; bỏ trống = mới nhất"
 // @Success      200       {object}  map[string]interface{}
 // @Router       /api/v1/knowledge/{id}/spans [get]
 //
@@ -937,25 +937,25 @@ func buildSpanTree(knowledgeID string, attempt int, rows []types.KnowledgeProces
 }
 
 // ListKnowledge godoc
-// @Summary      获取知识List
-// @Description  获取Knowledge Base下的知识List ，支持分页和筛选
-// @Tags         知识管理
+// @Summary      Lấy danh sách tài liệu
+// @Description  Lấy danh sách tài liệu trong kho tri thức, hỗ trợ phân trang và lọc
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id         path      string  true   "Knowledge BaseID"
-// @Param        page       query     int     false  "页码"
-// @Param        page_size  query     int     false  "每页数量"
-// @Param        tag_ids       query     string  false  "标签ID筛选，逗号分隔（OR语义）"
-// @Param        keyword       query     string  false  "关键词搜索"
-// @Param        file_type     query     string  false  "文件类型筛选"
-// @Param        parse_status  query     string  false  "解析状态筛选 (pending/processing/completed/failed)"
-// @Param        source        query     string  false  "来源/渠道筛选 (web/api/feishu/notion/yuque/wechat/...，或 manual/url 按 type 过滤)"
-// @Param        start_time    query     string  false  "Update 时间起点，RFC3339 格式"
-// @Param        end_time      query     string  false  "Update 时间终点，RFC3339 格式"
-// @Param        folder_path      query     string  false  "文件夹路径筛选，空字符串表示Knowledge Base根目录；不传该Parameters 则不按文件夹过滤"
-// @Param        folder_recursive query     bool    false  "为 true 时同时返回子文件夹内的文档"
-// @Success      200        {object}  map[string]interface{}  "知识List "
-// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
+// @Param        page       query     int     false  "Số trang"
+// @Param        page_size  query     int     false  "Số mục mỗi trang"
+// @Param        tag_ids       query     string  false  "Lọc theo ID thẻ, phân cách bằng dấu phẩy (ngữ nghĩa OR)"
+// @Param        keyword       query     string  false  "Tìm theo từ khoá"
+// @Param        file_type     query     string  false  "Lọc theo loại tệp"
+// @Param        parse_status  query     string  false  "Lọc theo trạng thái phân tích (pending/processing/completed/failed)"
+// @Param        source        query     string  false  "Lọc theo nguồn/kênh (web/api/feishu/notion/yuque/wechat/..., hoặc manual/url lọc theo type)"
+// @Param        start_time    query     string  false  "Mốc bắt đầu thời gian cập nhật, định dạng RFC3339"
+// @Param        end_time      query     string  false  "Mốc kết thúc thời gian cập nhật, định dạng RFC3339"
+// @Param        folder_path      query     string  false  "Lọc theo đường dẫn thư mục, chuỗi rỗng là thư mục gốc của kho tri thức; không truyền thì không lọc theo thư mục"
+// @Param        folder_recursive query     bool    false  "Nếu true thì trả về cả tài liệu trong thư mục con"
+// @Success      200        {object}  map[string]interface{}  "Danh sách tài liệu"
+// @Failure      400        {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge [get]
@@ -1058,14 +1058,14 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 }
 
 // ListKnowledgeFolders godoc
-// @Summary      获取Knowledge Base文件夹目录树
-// @Description  返回Knowledge Base内由文件夹上传形成的目录树，包含每个文件夹的直接文档数与含子目录的总数
-// @Tags         知识管理
+// @Summary      Lấy cây thư mục của kho tri thức
+// @Description  Trả về cây thư mục hình thành từ việc tải thư mục lên kho tri thức, gồm số tài liệu trực tiếp và tổng số kể cả thư mục con của mỗi thư mục
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Knowledge BaseID"
-// @Success      200  {object}  map[string]interface{}  "目录树"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "Cây thư mục"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/folders [get]
@@ -1107,15 +1107,15 @@ type MoveKnowledgeToFolderRequest struct {
 }
 
 // MoveKnowledgeToFolder godoc
-// @Summary      移动知识到文件夹
-// @Description  批量修改知识条目所属文件夹。文件夹由路径推导而来，因此目标路径不存在时会自动Create ；空路径表示Knowledge Base顶层。仅调整归类，不会重新解析文档
-// @Tags         知识管理
+// @Summary      Chuyển tài liệu vào thư mục
+// @Description  Đổi thư mục của nhiều mục tài liệu cùng lúc. Thư mục được suy ra từ đường dẫn nên đường dẫn đích chưa có sẽ được tạo tự động; đường dẫn rỗng là cấp cao nhất của kho tri thức. Chỉ đổi phân loại, không phân tích lại tài liệu
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        request  body      MoveKnowledgeToFolderRequest  true  "移动请求"
-// @Success      200      {object}  map[string]interface{}        "移动成功"
-// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Param        request  body      MoveKnowledgeToFolderRequest  true  "Yêu cầu di chuyển"
+// @Success      200      {object}  map[string]interface{}        "Di chuyển thành công"
+// @Failure      400      {object}  errors.AppError               "tham số yêu cầu không hợp lệ"
+// @Failure      403      {object}  errors.AppError               "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/folder [post]
@@ -1181,16 +1181,16 @@ type RenameKnowledgeFolderRequest struct {
 }
 
 // RenameKnowledgeFolder godoc
-// @Summary      重命名或移动文件夹
-// @Description  把一个文件夹及其所有子目录改到新路径。目标路径已存在时两个文件夹合并；不能移动到自身子目录下
-// @Tags         知识管理
+// @Summary      Đổi tên hoặc di chuyển thư mục
+// @Description  Chuyển một thư mục cùng toàn bộ thư mục con sang đường dẫn mới. Nếu đường dẫn đích đã tồn tại thì hai thư mục được gộp; không thể chuyển vào thư mục con của chính nó
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                        true  "Knowledge BaseID"
-// @Param        request  body      RenameKnowledgeFolderRequest  true  "重命名请求"
-// @Success      200      {object}  map[string]interface{}        "重命名成功"
-// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Param        request  body      RenameKnowledgeFolderRequest  true  "Yêu cầu đổi tên"
+// @Success      200      {object}  map[string]interface{}        "Đổi tên thành công"
+// @Failure      400      {object}  errors.AppError               "tham số yêu cầu không hợp lệ"
+// @Failure      403      {object}  errors.AppError               "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge/folders [put]
@@ -1303,15 +1303,15 @@ func (h *KnowledgeHandler) requireKnowledgeInKB(
 }
 
 // DeleteKnowledge godoc
-// @Summary      Delete 知识
-// @Description  根据ID异步Delete 知识条目。请求会被入队到与批量Delete 相同的异步管道（asynq）；
-// @Description  接口返回 200 仅表示任务已提交（响应 data.task_id 为任务 ID），实际Delete 由后台 worker 完成。
-// @Tags         知识管理
+// @Summary      Xoá tài liệu
+// @Description  Xoá bất đồng bộ mục tài liệu theo ID. Yêu cầu được đưa vào cùng hàng đợi bất đồng bộ (asynq) với xoá hàng loạt;
+// @Description  API trả 200 chỉ có nghĩa là tác vụ đã được gửi (data.task_id là ID tác vụ), việc xoá thật do worker nền thực hiện.
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识ID"
-// @Success      200  {object}  map[string]interface{}  "任务已提交，返回 task_id"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Success      200  {object}  map[string]interface{}  "Tác vụ đã được gửi, trả về task_id"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id} [delete]
@@ -1373,15 +1373,15 @@ type BatchDeleteKnowledgeRequest struct {
 }
 
 // BatchDeleteKnowledge godoc
-// @Summary      批量Delete 知识
-// @Description  按 ID List 批量Delete 单个Knowledge Base下的多个知识条目
-// @Tags         知识管理
+// @Summary      Xoá nhiều tài liệu
+// @Description  Xoá nhiều mục tài liệu trong một kho tri thức theo danh sách ID
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        request  body      BatchDeleteKnowledgeRequest  true  "批量Delete 请求"
-// @Success      200      {object}  map[string]interface{}       "Delete 成功"
-// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError              "权限不足"
+// @Param        request  body      BatchDeleteKnowledgeRequest  true  "Yêu cầu xoá hàng loạt"
+// @Success      200      {object}  map[string]interface{}       "Xoá thành công"
+// @Failure      400      {object}  errors.AppError              "tham số yêu cầu không hợp lệ"
+// @Failure      403      {object}  errors.AppError              "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/batch-delete [post]
@@ -1477,15 +1477,15 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 }
 
 // ClearKnowledgeBaseContents godoc
-// @Summary      清空Knowledge Base内容
-// @Description  Delete Knowledge Base下的所有知识条目（异步任务）。Knowledge Base本身保留，仅清空其中的内容
-// @Tags         知识管理
+// @Summary      Xoá toàn bộ nội dung kho tri thức
+// @Description  Xoá mọi mục tài liệu trong kho tri thức (tác vụ bất đồng bộ). Kho tri thức vẫn được giữ, chỉ xoá nội dung bên trong
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Knowledge BaseID"
-// @Success      200  {object}  map[string]interface{}  "清空任务已提交"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      403  {object}  errors.AppError         "权限不足"
+// @Success      200  {object}  map[string]interface{}  "Tác vụ xoá toàn bộ đã được gửi"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      403  {object}  errors.AppError         "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/knowledge [delete]
@@ -1552,14 +1552,14 @@ func (h *KnowledgeHandler) ClearKnowledgeBaseContents(c *gin.Context) {
 }
 
 // DownloadKnowledgeFile godoc
-// @Summary      下载知识文件
-// @Description  下载知识条目关联的原始文件
-// @Tags         知识管理
+// @Summary      Tải tệp tài liệu
+// @Description  Tải tệp gốc gắn với mục tài liệu
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      application/octet-stream
-// @Param        id   path      string  true  "知识ID"
-// @Success      200  {file}    file    "文件内容"
-// @Failure      400  {object}  errors.AppError  "请求Parameters 错误"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Success      200  {file}    file    "Nội dung tệp"
+// @Failure      400  {object}  errors.AppError  "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/download [get]
@@ -1602,14 +1602,14 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 }
 
 // PreviewKnowledgeFile godoc
-// @Summary      预览知识文件
-// @Description  返回知识条目关联的原始文件，Content-Type 根据文件类型Settings ，用于浏览器内嵌预览
-// @Tags         知识管理
+// @Summary      Xem trước tệp tài liệu
+// @Description  Trả về tệp gốc gắn với mục tài liệu, Content-Type đặt theo loại tệp, dùng để xem trước nhúng trong trình duyệt
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      application/pdf,image/jpeg,image/png,text/plain
-// @Param        id   path      string  true  "知识ID"
-// @Success      200  {file}    file    "文件内容"
-// @Failure      400  {object}  errors.AppError  "请求Parameters 错误"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Success      200  {file}    file    "Nội dung tệp"
+// @Failure      400  {object}  errors.AppError  "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/preview [get]
@@ -1649,16 +1649,16 @@ type GetKnowledgeBatchRequest struct {
 }
 
 // GetKnowledgeBatch godoc
-// @Summary      批量获取知识
-// @Description  根据IDList 批量获取知识条目。可选 kb_id：指定时按该Knowledge Base校验权限并用于共享Knowledge Base的Tenant workspace解析；可选 agent_id：使用共享智能体时传此Parameters ，后端按智能体所属Tenant workspaceQuery （用于刷新后恢复共享Knowledge Base下的文件）
-// @Tags         知识管理
+// @Summary      Lấy nhiều tài liệu
+// @Description  Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo đơn vị của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        ids       query     []string  true   "知识IDList "
-// @Param        kb_id     query     string   false  "可选，Knowledge BaseID（用于共享Knowledge Base时指定范围）"
-// @Param        agent_id  query     string   false  "可选，共享智能体ID（用于按智能体Tenant workspace批量拉取文件Details ）"
-// @Success      200       {object}  map[string]interface{}  "知识List "
-// @Failure      400       {object}  errors.AppError        "请求Parameters 错误"
+// @Param        ids       query     []string  true   "Danh sách ID tài liệu"
+// @Param        kb_id     query     string   false  "Tuỳ chọn, ID kho tri thức (xác định phạm vi khi dùng kho tri thức chia sẻ)"
+// @Param        agent_id  query     string   false  "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo đơn vị của trợ lý)"
+// @Success      200       {object}  map[string]interface{}  "Danh sách tài liệu"
+// @Failure      400       {object}  errors.AppError        "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/batch [get]
@@ -1739,15 +1739,15 @@ type UpdateKnowledgeRequest struct {
 }
 
 // UpdateKnowledge godoc
-// @Summary      Update 知识
-// @Description  部分Update 知识条目（标题/描述/自定义元数据）；未传字段保持不变，显式传空 description 可清空摘要
-// @Tags         知识管理
+// @Summary      Cập nhật tài liệu
+// @Description  Cập nhật một phần mục tài liệu (tiêu đề/mô tả/metadata tuỳ chỉnh); trường không truyền giữ nguyên, truyền description rỗng để xoá tóm tắt
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                   true  "知识ID"
-// @Param        request  body      UpdateKnowledgeRequest   true  "Update 字段（均可选）"
-// @Success      200      {object}  map[string]interface{}  "Update 成功"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        id       path      string                   true  "ID tài liệu"
+// @Param        request  body      UpdateKnowledgeRequest   true  "Các trường cập nhật (đều tuỳ chọn)"
+// @Success      200      {object}  map[string]interface{}  "Cập nhật thành công"
+// @Failure      400      {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id} [put]
@@ -1851,15 +1851,15 @@ func (h *KnowledgeHandler) RegenerateKnowledgeSummary(c *gin.Context) {
 }
 
 // UpdateManualKnowledge godoc
-// @Summary      Update 手工知识
-// @Description  Update 手工录入的Markdown知识内容
-// @Tags         知识管理
+// @Summary      Cập nhật tài liệu thủ công
+// @Description  Cập nhật nội dung Markdown của tài liệu nhập thủ công
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                       true  "知识ID"
-// @Param        request  body      types.ManualKnowledgePayload true  "手工知识内容"
-// @Success      200      {object}  map[string]interface{}       "Update 后的知识"
-// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
+// @Param        id       path      string                       true  "ID tài liệu"
+// @Param        request  body      types.ManualKnowledgePayload true  "Nội dung tài liệu thủ công"
+// @Success      200      {object}  map[string]interface{}       "Tài liệu sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError              "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/manual/{id} [put]
@@ -1908,16 +1908,16 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 }
 
 // ReparseKnowledge godoc
-// @Summary      重新解析知识
-// @Description  Delete 知识中现有的文档内容并重新解析，使用异步任务方式处理
-// @Tags         知识管理
+// @Summary      Phân tích lại tài liệu
+// @Description  Xoá nội dung hiện có của tài liệu và phân tích lại, xử lý bằng tác vụ bất đồng bộ
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识ID"
-// @Param        body body      object  false  "可选的处理Configuration 覆盖：{\"process_config\": KnowledgeProcessOverrides}"
-// @Success      200  {object}  map[string]interface{}  "重新解析任务已提交"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      403  {object}  errors.AppError         "权限不足"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Param        body body      object  false  "Cấu hình xử lý ghi đè tuỳ chọn: {\"process_config\": KnowledgeProcessOverrides}"
+// @Success      200  {object}  map[string]interface{}  "Tác vụ phân tích lại đã được gửi"
+// @Failure      400  {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
+// @Failure      403  {object}  errors.AppError         "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/reparse [post]
@@ -1977,16 +1977,16 @@ func (h *KnowledgeHandler) ReparseKnowledge(c *gin.Context) {
 }
 
 // CancelKnowledgeParse godoc
-// @Summary      取消知识解析
-// @Description  取消进行中的知识解析任务。当前已写入的 chunk / 索引保留，可通过 reparse 接口重新触发解析。已完成 / 已失败 / Delete 中的知识不支持取消。
-// @Tags         知识管理
+// @Summary      Huỷ phân tích tài liệu
+// @Description  Huỷ tác vụ phân tích tài liệu đang chạy. Các đoạn (chunk) / chỉ mục đã ghi được giữ lại, có thể phân tích lại qua API reparse. Tài liệu đã hoàn thành / thất bại / đang xoá không huỷ được.
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "知识ID"
-// @Success      200  {object}  map[string]interface{}  "取消已提交"
-// @Failure      400  {object}  errors.AppError         "状态不支持取消"
-// @Failure      403  {object}  errors.AppError         "权限不足"
-// @Failure      404  {object}  errors.AppError         "知识不存在"
+// @Param        id   path      string  true  "ID tài liệu"
+// @Success      200  {object}  map[string]interface{}  "Yêu cầu huỷ đã được gửi"
+// @Failure      400  {object}  errors.AppError         "trạng thái hiện tại không cho phép huỷ"
+// @Failure      403  {object}  errors.AppError         "không có quyền"
+// @Failure      404  {object}  errors.AppError         "tài liệu không tồn tại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/{id}/cancel-parse [post]
@@ -2035,14 +2035,14 @@ type knowledgeTagBatchRequest struct {
 }
 
 // UpdateKnowledgeTagBatch godoc
-// @Summary      批量Update 知识标签
-// @Description  批量Update 知识条目的标签。可选 kb_id：指定时按该Knowledge Base校验编辑权限并用于共享Knowledge Base的Tenant workspace解析
-// @Tags         知识管理
+// @Summary      Cập nhật thẻ cho nhiều tài liệu
+// @Description  Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "标签Update 请求（updates 必填，kb_id 可选）"
-// @Success      200      {object}  map[string]interface{}  "Update 成功"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      object  true  "Yêu cầu cập nhật thẻ (updates bắt buộc, kb_id tuỳ chọn)"
+// @Success      200      {object}  map[string]interface{}  "Cập nhật thành công"
+// @Failure      400      {object}  errors.AppError         "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/tags [put]
@@ -2060,7 +2060,7 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 	var req knowledgeTagBatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse knowledge tag batch request", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 	// Resolve effective tenant and the authorized KB scope.
@@ -2110,16 +2110,16 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 }
 
 // UpdateImageInfo godoc
-// @Summary      Update 图像信息
-// @Description  Update 知识分块的图像信息
-// @Tags         知识管理
+// @Summary      Cập nhật thông tin ảnh
+// @Description  Cập nhật thông tin ảnh của đoạn (chunk) tài liệu
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        id        path      string  true  "知识ID"
-// @Param        chunk_id  path      string  true  "分块ID"
-// @Param        request   body      object{image_info=string}  true  "图像信息"
-// @Success      200       {object}  map[string]interface{}     "Update 成功"
-// @Failure      400       {object}  errors.AppError            "请求Parameters 错误"
+// @Param        id        path      string  true  "ID tài liệu"
+// @Param        chunk_id  path      string  true  "ID đoạn (chunk)"
+// @Param        request   body      object{image_info=string}  true  "Thông tin ảnh"
+// @Success      200       {object}  map[string]interface{}     "Cập nhật thành công"
+// @Failure      400       {object}  errors.AppError            "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/image/{id}/{chunk_id} [put]
@@ -2179,7 +2179,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 // SearchKnowledge godoc
 // @Summary      Search knowledge
 // @Description  Search knowledge files by keyword. Pass recent=true without a keyword to browse recent files. When agent_id is set (shared agent), scope is the agent's configured knowledge bases.
-// @Tags         Knowledge
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        keyword    query     string  false "Keyword to search"
@@ -2288,14 +2288,14 @@ type MoveKnowledgeResponse struct {
 // MoveKnowledge moves knowledge items from one knowledge base to another (async task).
 //
 // MoveKnowledge godoc
-// @Summary      移动知识到其他Knowledge Base
-// @Description  将一条或多条知识从源Knowledge Base移动到目标Knowledge Base（异步），返回任务 ID 用于Query 进度
-// @Tags         知识
+// @Summary      Chuyển tài liệu sang kho tri thức khác
+// @Description  Chuyển một hoặc nhiều tài liệu từ kho tri thức nguồn sang kho tri thức đích (bất đồng bộ), trả về ID tác vụ để theo dõi tiến độ
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.MoveKnowledgeRequest  true  "{source_kb_id, target_kb_id, knowledge_ids}"
-// @Success      200      {object}  handler.MoveKnowledgeResponse  "任务信息"
-// @Failure      400      {object}  errors.AppError                "请求Parameters 错误"
+// @Success      200      {object}  handler.MoveKnowledgeResponse  "Thông tin tác vụ"
+// @Failure      400      {object}  errors.AppError                "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/move [post]
@@ -2489,13 +2489,13 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 // GetKnowledgeMoveProgress retrieves the progress of a knowledge move task.
 //
 // GetKnowledgeMoveProgress godoc
-// @Summary      获取知识移动进度
-// @Description  按任务 ID Query 移动进度
-// @Tags         知识
+// @Summary      Lấy tiến độ chuyển tài liệu
+// @Description  Truy vấn tiến độ chuyển theo ID tác vụ
+// @Tags         Tài liệu
 // @Produce      json
-// @Param        task_id  path      string                       true  "移动任务 ID"
-// @Success      200      {object}  types.KnowledgeMoveProgress  "进度信息"
-// @Failure      404      {object}  errors.AppError              "任务不存在"
+// @Param        task_id  path      string                       true  "ID tác vụ di chuyển"
+// @Success      200      {object}  types.KnowledgeMoveProgress  "Thông tin tiến độ"
+// @Failure      404      {object}  errors.AppError              "tác vụ không tồn tại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/move/progress/{task_id} [get]
@@ -2570,15 +2570,15 @@ type batchReparseKnowledgeRequest struct {
 }
 
 // BatchReparseKnowledge godoc
-// @Summary      批量重新解析知识
-// @Description  按 ID List 批量重新解析单个Knowledge Base下的多个知识条目
-// @Tags         知识管理
+// @Summary      Phân tích lại nhiều tài liệu
+// @Description  Phân tích lại nhiều mục tài liệu trong một kho tri thức theo danh sách ID
+// @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
-// @Param        request  body      batchReparseKnowledgeRequest  true  "批量重解析请求"
-// @Success      200      {object}  map[string]interface{}        "任务已提交"
-// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Param        request  body      batchReparseKnowledgeRequest  true  "Yêu cầu phân tích lại hàng loạt"
+// @Success      200      {object}  map[string]interface{}        "Tác vụ đã được gửi"
+// @Failure      400      {object}  errors.AppError               "tham số yêu cầu không hợp lệ"
+// @Failure      403      {object}  errors.AppError               "không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/batch-reparse [post]

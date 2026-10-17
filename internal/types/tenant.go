@@ -342,12 +342,12 @@ type ParserEngineConfig struct {
 	// ChatParserEngineRules selects parser engines for session-scoped chat
 	// documents. Knowledge bases keep their own rules in ChunkingConfig.
 	ChatParserEngineRules []ParserEngineRule `json:"chat_parser_engine_rules,omitempty"`
-	MinerUEndpoint        string             `json:"mineru_endpoint"` // MinerU 自建服务端点
-	MinerUAPIKey          string             `json:"mineru_api_key"`  // MinerU 云 API Key
+	MinerUEndpoint        string             `json:"mineru_endpoint"` // Điểm cuối dịch vụ MinerU tự triển khai
+	MinerUAPIKey          string             `json:"mineru_api_key"`  // API Key MinerU cloud
 
-	// MinerU 自建解析Parameters
+	// Tham số phân tích MinerU tự triển khai
 	MinerUModel         string `json:"mineru_model,omitempty"`          // backend: pipeline, vlm-*, hybrid-*
-	MinerUVLMServerURL  string `json:"mineru_vlm_server_url,omitempty"` // vLLM 服务器地址 (vlm-http-client / hybrid-http-client)
+	MinerUVLMServerURL  string `json:"mineru_vlm_server_url,omitempty"` // Địa chỉ máy chủ vLLM (vlm-http-client / hybrid-http-client)
 	MinerUEnableFormula *bool  `json:"mineru_enable_formula,omitempty"`
 	MinerUEnableTable   *bool  `json:"mineru_enable_table,omitempty"`
 	MinerUParseMethod   string `json:"mineru_parse_method,omitempty"`
@@ -356,7 +356,7 @@ type ParserEngineConfig struct {
 	MinerUEnableOCR *bool  `json:"mineru_enable_ocr,omitempty"`
 	MinerULanguage  string `json:"mineru_language,omitempty"`
 
-	// MinerU 云 API 解析Parameters
+	// Tham số phân tích MinerU cloud API
 	MinerUCloudModel         string `json:"mineru_cloud_model,omitempty"` // model_version: pipeline, vlm, MinerU-HTML
 	MinerUCloudEnableFormula *bool  `json:"mineru_cloud_enable_formula,omitempty"`
 	MinerUCloudEnableTable   *bool  `json:"mineru_cloud_enable_table,omitempty"`
@@ -606,7 +606,7 @@ type COSEngineConfig struct {
 	TempRegion     string `json:"temp_region"`
 }
 
-// TOSEngineConfig is for Volcengine TOS (火山引擎对象存储).
+// TOSEngineConfig is for Volcengine TOS object storage.
 type TOSEngineConfig struct {
 	Endpoint       string `json:"endpoint"`
 	Region         string `json:"region"`
@@ -630,7 +630,7 @@ type S3EngineConfig struct {
 	ForcePathStyle bool   `json:"force_path_style"`
 }
 
-// OSSEngineConfig is for Alibaba Cloud OSS (对象存储服务).
+// OSSEngineConfig is for Alibaba Cloud OSS object storage.
 type OSSEngineConfig struct {
 	Endpoint       string `json:"endpoint"`
 	Region         string `json:"region"`
@@ -653,7 +653,7 @@ type KS3EngineConfig struct {
 	PathPrefix string `json:"path_prefix"`
 }
 
-// OBSEngineConfig is for Huawei Cloud OBS (对象存储服务).
+// OBSEngineConfig is for Huawei Cloud OBS object storage.
 type OBSEngineConfig struct {
 	Endpoint   string `json:"endpoint"`
 	Region     string `json:"region"`
@@ -692,7 +692,7 @@ type TenantSandboxConfig struct {
 	// SandboxType is cube, e2b, or docker; disabled is the hidden policy row.
 	SandboxType string `json:"sandbox_type,omitempty"`
 
-	// ── 通用Configuration （跨后端生效）──────────────────────────────────
+	// ── Cấu hình chung (áp dụng cho mọi backend) ─────────────────────
 
 	// DefaultTimeoutSec is the per-execution timeout in seconds. 0 uses the
 	// program's built-in default.
@@ -749,7 +749,7 @@ type TenantSandboxConfig struct {
 	// outbound egress allowed, inbound public access closed.
 	Network *SandboxNetworkPolicy `json:"network,omitempty"`
 
-	// ── 后端专属Configuration （同一时刻只有一个生效，由 SandboxType 决定）───
+	// ── Cấu hình riêng từng backend (chỉ một cái có hiệu lực, do SandboxType quyết định) ───
 
 	Cube   *CubeSandboxConfig   `json:"cube,omitempty"`
 	E2B    *E2BSandboxConfig    `json:"e2b,omitempty"`
@@ -763,7 +763,7 @@ type CubeSandboxConfig struct {
 	APIURL        string `json:"api_url,omitempty"`
 	ProxyURL      string `json:"proxy_url,omitempty"`
 	SandboxDomain string `json:"sandbox_domain,omitempty"`
-	APIKey        string `json:"api_key,omitempty"` // 加密
+	APIKey        string `json:"api_key,omitempty"` // Đã mã hóa
 	TemplateID    string `json:"template_id,omitempty"`
 
 	// HTTPTimeoutSec bounds each HTTP call to the sandbox control plane.
@@ -784,7 +784,7 @@ type CubeSandboxConfig struct {
 type E2BSandboxConfig struct {
 	APIURL        string `json:"api_url,omitempty"`
 	SandboxDomain string `json:"sandbox_domain,omitempty"`
-	APIKey        string `json:"api_key,omitempty"` // 加密
+	APIKey        string `json:"api_key,omitempty"` // Đã mã hóa
 	TemplateID    string `json:"template_id,omitempty"`
 
 	// ProxyURL is the data-plane gateway that fronts envd. E2B Cloud resolves

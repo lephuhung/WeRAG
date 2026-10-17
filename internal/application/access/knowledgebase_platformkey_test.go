@@ -80,3 +80,24 @@ func TestAuthenticatedHumanHelper(t *testing.T) {
 	)
 	require.False(t, IsAuthenticatedHuman(external, types.CallerFromContext(external)))
 }
+
+// A machine principal of the platform tenant itself (the "SuperAdmin"
+// workspace, PlatformTenantID) administers the platform-public KBs stored
+// there: that is how the legal feed's MCP endpoint writes them. Any other
+// tenant's key stays denied (TestPlatformKeyPublicReadDenied), and a public
+// KB whose data lives elsewhere is not covered.
+func TestPlatformTenantMachinePrincipalAdministersPublicKBs(t *testing.T) {
+	kb := platformPublicKB("pub", types.PlatformTenantID)
+	ctx := platformKeyCtx(types.PlatformTenantID, "pub")
+	grant, err := ResolveKB(ctx, KBRequest{Caller: types.CallerFromContext(ctx)}, kb, types.KBPermissionEditor, nil)
+	require.NoError(t, err)
+	require.Equal(t, types.KBPermissionAdmin, grant.Permission)
+	require.Equal(t, types.PlatformTenantID, grant.EffectiveTenantID)
+
+	_, err = ResolveKB(ctx, KBRequest{Caller: types.CallerFromContext(ctx)}, platformPublicKB("pub", 9), types.KBPermissionViewer, nil)
+	require.Error(t, err, "public KB stored in another tenant is not covered")
+
+	other := platformKeyCtx(types.PlatformTenantID, "other-kb")
+	_, err = ResolveKB(other, KBRequest{Caller: types.CallerFromContext(other)}, kb, types.KBPermissionViewer, nil)
+	require.Error(t, err, "the key's KB allow-list still applies")
+}

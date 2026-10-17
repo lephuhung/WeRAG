@@ -3,99 +3,106 @@
   "cases": [
     {
       "name": "rephrasing",
-      "tracked": "门店排班管理",
-      "incoming": "店员班次安排",
+      "tracked": "thể thức văn bản hành chính",
+      "incoming": "trình bày văn bản theo Nghị định 30",
       "same": true,
-      "why": "两个说法指的是同一件事，只是用词不同。词面几乎不重叠，只有模型层能判。"
+      "why": "Hai cách nói về cùng một việc; mặt chữ gần như không trùng nên chỉ tầng mô hình quyết được."
     },
     {
       "name": "elaboration",
-      "tracked": "连锁门店排班管理",
-      "incoming": "门店排班管理",
+      "tracked": "cấp phép xây dựng nhà ở riêng lẻ",
+      "incoming": "cấp phép xây dựng",
       "same": true,
-      "why": "一方比另一方少一个限定词，说的仍是同一件事。"
+      "why": "Một bên thiếu một định ngữ, vẫn là một việc."
     },
     {
       "name": "harmless qualifier",
-      "tracked": "订单接口限流",
-      "incoming": "订单接口限流问题",
+      "tracked": "xử phạt vi phạm giao thông",
+      "incoming": "vấn đề xử phạt vi phạm giao thông",
       "same": true,
-      "why": "「问题」不改变主题本身。"
+      "why": "\"vấn đề\" không đổi bản thân chủ đề."
     },
     {
       "name": "abbreviation",
-      "tracked": "CI 流水线",
-      "incoming": "持续集成流水线",
+      "tracked": "chế độ BHXH cán bộ xã",
+      "incoming": "chế độ bảo hiểm xã hội cán bộ xã",
       "same": true,
-      "why": "缩写和全称是同一件事，词面上却几乎没有重叠。"
+      "why": "Viết tắt và viết đầy đủ là một việc, mặt chữ lại ít trùng."
     },
     {
       "name": "specific lookup inside a broad subject",
-      "tracked": "仓库入库流程",
-      "incoming": "三号仓库上月入库单号",
+      "tracked": "quy trình tiếp nhận hồ sơ một cửa",
+      "incoming": "số hồ sơ một cửa tháng trước của phường Phú Hội",
       "same": false,
-      "why": "确实属于同一领域，但这是一次具体查询，不是同一个长期关注点。把它折进去会让关注面变成一个什么都装的桶。"
+      "why": "Cùng lĩnh vực thật, nhưng đây là một lần tra cứu cụ thể, không phải cùng một mối quan tâm lâu dài. Gộp vào là biến mối quan tâm thành cái thùng chứa mọi thứ."
     },
     {
       "name": "different question in the same domain",
-      "tracked": "订单接口限流",
-      "incoming": "订单接口鉴权",
+      "tracked": "cấp phép xây dựng",
+      "incoming": "khiếu nại quyết định hành chính về xây dựng",
       "same": false,
-      "why": "同一个接口的两件不同的事。"
+      "why": "Cấp phép và khiếu nại quyết định là hai việc khác nhau của cùng một người."
     },
     {
       "name": "hyponym",
-      "tracked": "后端架构选型",
-      "incoming": "订单接口限流调优",
+      "tracked": "cải cách hành chính",
+      "incoming": "số hóa hồ sơ tại bộ phận một cửa",
       "same": false,
-      "why": "下位概念不是同一件事，否则一个宽泛主题会吸收整个领域。"
+      "why": "Khái niệm hẹp hơn không phải cùng một việc; nếu không một chủ đề rộng sẽ nuốt cả lĩnh vực."
     },
     {
       "name": "two aspects of one thing",
-      "tracked": "年度审计资料准备",
-      "incoming": "年度审计问询回复",
+      "tracked": "chuẩn bị hồ sơ kiểm toán năm",
+      "incoming": "trả lời kiến nghị kiểm toán năm",
       "same": false,
-      "why": "同一件事的两个不同阶段，关心的是不同的东西。线上真实出现过这类被合并。"
+      "why": "Hai giai đoạn khác nhau của một việc, quan tâm những thứ khác nhau. Đã từng bị gộp nhầm trên thực tế."
     },
     {
       "name": "broad subject versus a lookup in it",
-      "tracked": "年会组织",
-      "incoming": "年会报名信息查询",
+      "tracked": "tổ chức hội nghị tổng kết",
+      "incoming": "danh sách đại biểu dự hội nghị tổng kết",
       "same": false,
-      "why": "组织一场活动和查询谁报了名，是两件不同的事。线上真实出现过这类被合并。"
+      "why": "Một bên là công việc, một bên là một lần tra cứu trong công việc đó."
     },
     {
       "name": "unrelated",
-      "tracked": "门店排班管理",
-      "incoming": "订单接口限流",
+      "tracked": "thể thức văn bản hành chính",
+      "incoming": "xử phạt vi phạm giao thông",
       "same": false,
-      "why": "毫无关系，任何一层都不该合并。"
+      "why": "Không liên quan."
     },
     {
       "name": "same word different field",
-      "tracked": "图像分割模型调参",
-      "incoming": "数据库分库分表",
+      "tracked": "phân bổ nhà ở xã hội",
+      "incoming": "phân bổ ngân sách chi thường xuyên",
       "same": false,
-      "why": "共享一个「分」字不构成任何关系。"
+      "why": "Cùng chữ \"phân bổ\", hai lĩnh vực khác nhau."
+    },
+    {
+      "name": "different document numbers",
+      "tracked": "nội dung nghị định 30/2020",
+      "incoming": "nội dung nghị định 53/2022",
+      "same": false,
+      "why": "Hai văn bản khác số hiệu là hai chủ đề, dù câu chữ giống nhau gần hết."
     }
   ],
   "granularity": {
-    "note": "主题必须是能复现的「领域」，不是单个问题。标签里带上人名、编号、日期、版本、数量，就只能匹配它自己：计数一次之后永远停在 1，阈值形同虚设。",
+    "note": "Chủ đề phải là một lĩnh vực có thể lặp lại, không phải một câu hỏi. Nhãn mang tên người, số hiệu, ngày, phiên bản, số lượng thì chỉ khớp được chính nó: đếm một lần rồi đứng ở 1 mãi, ngưỡng thành vô nghĩa.",
     "cases": [
       {
-        "question": "三号仓库上个月的入库单号有哪些？",
-        "good": "仓库入库单查询",
-        "bad": "三号仓库2026年3月入库单号查询记录"
+        "question": "Tháng trước phường Phú Hội tiếp nhận những hồ sơ một cửa số nào?",
+        "good": "tiếp nhận hồ sơ một cửa",
+        "bad": "số hồ sơ một cửa phường Phú Hội tháng 3 năm 2026"
       },
       {
-        "question": "v2.3 版本 orders 接口的分页参数默认值是多少？",
-        "good": "订单接口用法",
-        "bad": "v2.3版本orders接口分页参数默认值查询"
+        "question": "Công văn 125/UBND ngày 12/3 gửi Sở Nội vụ sai thể thức ở đâu?",
+        "good": "thể thức văn bản hành chính",
+        "bad": "lỗi thể thức công văn 125/UBND ngày 12/3 gửi Sở Nội vụ"
       },
       {
-        "question": "结算平台的商务怎么联系？",
-        "good": "结算平台",
-        "bad": "结算平台商务联系方式查询记录"
+        "question": "Liên hệ bộ phận một cửa của Sở Tư pháp bằng số nào?",
+        "good": "bộ phận một cửa Sở Tư pháp",
+        "bad": "số điện thoại liên hệ bộ phận một cửa Sở Tư pháp"
       }
     ]
   }

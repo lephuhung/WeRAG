@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
@@ -476,10 +475,12 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage types.VLMUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return "", fmt.Errorf("invalid OCR response: %w", err)
 	}
+	types.ReportVLMUsage(ctx, parsed.Usage)
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("OCR response has no choices")
 	}
@@ -516,7 +517,7 @@ func stripOCRMarkup(text string) string {
 	// Degenerate repeats (e.g. SenOCR-Vi echoing its instruction template in a
 	// numbered loop until max_tokens) carry no detector markup, so this runs
 	// unconditionally — it is a no-op on clean output.
-	text = searchutil.CollapseDegenerateTail(text)
+	text = CleanOCRLoops(text)
 	return strings.TrimSpace(ocrMultiBlankPattern.ReplaceAllString(text, "\n\n"))
 }
 

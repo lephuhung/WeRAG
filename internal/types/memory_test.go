@@ -6,8 +6,8 @@ import (
 )
 
 func TestNormalizeMemoryKeyIsOrderInsensitive(t *testing.T) {
-	a := NormalizeMemoryKey("", "用户偏好 数据库")
-	b := NormalizeMemoryKey("", "数据库 用户偏好")
+	a := NormalizeMemoryKey("", "sở thích cơ sở dữ liệu")
+	b := NormalizeMemoryKey("", "cơ sở dữ liệu sở thích")
 	if a != b {
 		t.Fatalf("key should not depend on word order: %q vs %q", a, b)
 	}
@@ -19,16 +19,16 @@ func TestNormalizeMemoryKeyIsOrderInsensitive(t *testing.T) {
 func TestNormalizeMemoryKeyPrefersExplicitTopic(t *testing.T) {
 	// Two contradicting statements about the same topic must collide, which is
 	// what lets the newer one supersede the older instead of piling up.
-	old := NormalizeMemoryKey("在用的数据库", "我用的是 MySQL")
-	updated := NormalizeMemoryKey("在用的数据库", "我已经迁移到 PostgreSQL")
+	old := NormalizeMemoryKey("cơ sở dữ liệu đang dùng", "tôi đang dùng MySQL")
+	updated := NormalizeMemoryKey("cơ sở dữ liệu đang dùng", "tôi đã chuyển sang PostgreSQL")
 	if old != updated {
 		t.Fatalf("same topic must produce the same key: %q vs %q", old, updated)
 	}
 }
 
 func TestNormalizeMemoryKeyDistinguishesDifferentTopics(t *testing.T) {
-	a := NormalizeMemoryKey("在用的数据库", "我用 PostgreSQL")
-	b := NormalizeMemoryKey("常用的编程语言", "我写 Go")
+	a := NormalizeMemoryKey("cơ sở dữ liệu đang dùng", "tôi dùng PostgreSQL")
+	b := NormalizeMemoryKey("ngôn ngữ lập trình hay dùng", "tôi viết Go")
 	if a == b {
 		t.Fatal("different topics must not collide")
 	}
@@ -37,17 +37,17 @@ func TestNormalizeMemoryKeyDistinguishesDifferentTopics(t *testing.T) {
 func TestSanitizeMemoryContentCollapsesStructure(t *testing.T) {
 	// A memory is injected into the system prompt, so it must not be able to
 	// introduce line structure of its own.
-	got := SanitizeMemoryContent("第一行\n\n第二行\t结尾  ")
+	got := SanitizeMemoryContent("dòng một\n\ndòng hai\tkết thúc  ")
 	if strings.ContainsAny(got, "\n\r\t") {
 		t.Fatalf("sanitized content still contains structure: %q", got)
 	}
-	if got != "第一行 第二行 结尾" {
+	if got != "dòng một dòng hai kết thúc" {
 		t.Fatalf("unexpected sanitized content: %q", got)
 	}
 }
 
 func TestSanitizeMemoryContentEnforcesLengthBudget(t *testing.T) {
-	got := SanitizeMemoryContent(strings.Repeat("记", MemoryContentMaxRunes+50))
+	got := SanitizeMemoryContent(strings.Repeat("ă", MemoryContentMaxRunes+50))
 	if runes := []rune(got); len(runes) > MemoryContentMaxRunes {
 		t.Fatalf("content exceeds the budget: %d runes", len(runes))
 	}
@@ -55,12 +55,12 @@ func TestSanitizeMemoryContentEnforcesLengthBudget(t *testing.T) {
 
 func TestRenderMemoryBlockGroupsAndRespectsBudget(t *testing.T) {
 	items := []*MemoryItem{
-		{Kind: MemoryKindProfile, Content: "在一家做医疗影像的公司写后端"},
-		{Kind: MemoryKindPreference, Content: "回答请直接给结论，不要铺垫"},
-		{Kind: MemoryKindPreference, Content: strings.Repeat("很长的偏好", 300)},
+		{Kind: MemoryKindProfile, Content: "làm chuyên viên Phòng Tư pháp của UBND huyện"},
+		{Kind: MemoryKindPreference, Content: "trả lời đi thẳng vào kết luận, không dẫn dắt"},
+		{Kind: MemoryKindPreference, Content: strings.Repeat("sở thích rất dài ", 300)},
 	}
 	block := RenderMemoryBlock(items)
-	if !strings.Contains(block, "在一家做医疗影像的公司写后端") {
+	if !strings.Contains(block, "làm chuyên viên Phòng Tư pháp của UBND huyện") {
 		t.Fatalf("profile item missing from block: %q", block)
 	}
 	if !strings.Contains(block, "About the user:") || !strings.Contains(block, "Preferences:") {
@@ -78,7 +78,7 @@ func TestWrapMemoryForPromptEmptyInput(t *testing.T) {
 }
 
 func TestWrapMemoryForPromptLabelsContentAsData(t *testing.T) {
-	got := WrapMemoryForPrompt("About the user:\n- 写 Go", "")
+	got := WrapMemoryForPrompt("About the user:\n- viết Go", "")
 	if !strings.Contains(got, "<user_memory>") || !strings.Contains(got, "</user_memory>") {
 		t.Fatalf("memory is not delimited: %q", got)
 	}
@@ -96,16 +96,16 @@ func TestDetectExplicitMemory(t *testing.T) {
 		want  string
 		ok    bool
 	}{
-		{"chinese colon", "记住：我们的生产库是 PostgreSQL 17", "我们的生产库是 PostgreSQL 17", true},
-		{"chinese polite", "请记住我每周五要交周报", "我每周五要交周报", true},
-		{"chinese helper", "帮我记住，接口超时统一设 30 秒", "接口超时统一设 30 秒", true},
+		{"chinese colon", "记住：CSDL sản xuất là PostgreSQL 17", "CSDL sản xuất là PostgreSQL 17", true},
+		{"chinese polite", "请记住 thứ Sáu hằng tuần tôi nộp báo cáo tuần", "thứ Sáu hằng tuần tôi nộp báo cáo tuần", true},
+		{"chinese helper", "帮我记住，timeout API thống nhất 30 giây", "timeout API thống nhất 30 giây", true},
 		{"english", "Remember that I prefer short answers", "I prefer short answers", true},
 		{"english note", "note that our staging cluster is in Frankfurt", "our staging cluster is in Frankfurt", true},
 		{"vietnamese", "Hãy nhớ rằng tôi làm ở phòng Kế hoạch", "tôi làm ở phòng Kế hoạch", true},
 		{"vietnamese colon", "hãy ghi nhớ: báo cáo tuần nộp thứ Sáu", "báo cáo tuần nộp thứ Sáu", true},
 		{"vietnamese polite", "Bạn hãy nhớ là tôi thích câu trả lời ngắn", "tôi thích câu trả lời ngắn", true},
 		{"vietnamese question", "Bạn còn nhớ câu hỏi lần trước không?", "", false},
-		{"not a directive", "你还记得我上次问的问题吗", "", false},
+		{"not a directive", "Bạn còn nhớ câu tôi hỏi lần trước chứ", "", false},
 		{"bare directive", "记住", "", false},
 		{"empty", "   ", "", false},
 	}
@@ -130,16 +130,16 @@ func TestRedactSensitiveRemovesCredentials(t *testing.T) {
 		name  string
 		input string
 	}{
-		{"openai key", "我的 key 是 sk-abcdefghijklmnop0123456789ABCDEF"},
-		{"github token", "用 ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 拉代码"},
-		{"aws key", "AKIAIOSFODNN7EXAMPLE 是我们的 access key"},
-		{"password assignment", "登录用 password: hunter2xyz"},
-		{"chinese password", "数据库密码是 Tiger#2024"},
-		{"private key header", "-----BEGIN RSA PRIVATE KEY----- 开头那段"},
-		{"id card", "我的身份证号是 110101199003078515"},
-		{"bank card", "工资卡 6222 0202 0001 2345 678"},
-		{"mobile", "我的手机号 13800138000"},
-		{"opaque token", "token 是 abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"},
+		{"openai key", "key của tôi là sk-abcdefghijklmnop0123456789ABCDEF"},
+		{"github token", "dùng ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 để kéo mã"},
+		{"aws key", "AKIAIOSFODNN7EXAMPLE là access key của chúng tôi"},
+		{"password assignment", "đăng nhập bằng password: hunter2xyz"},
+		{"chinese password", "数据库密码是 Tiger#2024"}, // regex 密码 trong memory.go
+		{"private key header", "đoạn bắt đầu bằng -----BEGIN RSA PRIVATE KEY-----"},
+		{"id card", "số CMND của tôi là 110101199003078515"},
+		{"bank card", "thẻ lương 6222 0202 0001 2345 678"},
+		{"mobile", "số di động của tôi 13800138000"},
+		{"opaque token", "token là abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,12 +158,12 @@ func TestRedactSensitiveRemovesCredentials(t *testing.T) {
 // ordinary long numbers while still leaving part of an ID card in place.
 func TestRedactSensitiveLeavesOrdinaryStatementsAlone(t *testing.T) {
 	cases := []string{
-		"生产数据库是 PostgreSQL 17，部署在法兰克福",
-		"订单号 20260809 的那笔要加急",
-		"我在做医疗影像方向的后端开发",
-		"回答请直接给结论，不要铺垫",
-		"联系邮箱是 alice@example.com",
-		"服务跑在 10.0.12.7 的 8080 端口",
+		"CSDL sản xuất là PostgreSQL 17, đặt tại Frankfurt",
+		"đơn số 20260809 cần xử lý gấp",
+		"tôi làm chuyên viên văn thư tại Sở Nội vụ",
+		"trả lời đi thẳng vào kết luận, không dẫn dắt",
+		"email liên hệ là alice@example.com",
+		"dịch vụ chạy ở cổng 8080 của 10.0.12.7",
 	}
 	for _, input := range cases {
 		t.Run(input, func(t *testing.T) {
@@ -180,19 +180,19 @@ func TestIsMostlyRedacted(t *testing.T) {
 	if !IsMostlyRedacted(redacted) {
 		t.Fatal("a statement that was only a credential must not be stored")
 	}
-	kept, _ := RedactSensitive("生产库的密码是 hunter2xyz，库跑在法兰克福")
+	kept, _ := RedactSensitive("CSDL sản xuất có password: hunter2xyz, máy chủ đặt tại Frankfurt")
 	if IsMostlyRedacted(kept) {
 		t.Fatal("a statement with real content left must survive redaction")
 	}
 }
 
 func TestMemoryFingerprintIgnoresFormatting(t *testing.T) {
-	a := MemoryFingerprint("生产数据库是 PostgreSQL 17，部署在法兰克福")
-	b := MemoryFingerprint("生产数据库是 postgresql 17 部署在法兰克福")
+	a := MemoryFingerprint("CSDL sản xuất là PostgreSQL 17, đặt tại Frankfurt")
+	b := MemoryFingerprint("csdl sản xuất là postgresql 17 đặt tại frankfurt")
 	if a != b {
 		t.Fatal("a fingerprint must survive spacing, case and punctuation changes")
 	}
-	if a == MemoryFingerprint("生产数据库是 MySQL 8") {
+	if a == MemoryFingerprint("CSDL sản xuất là MySQL 8") {
 		t.Fatal("different statements must not share a fingerprint")
 	}
 	if MemoryFingerprint("   ") != "" {

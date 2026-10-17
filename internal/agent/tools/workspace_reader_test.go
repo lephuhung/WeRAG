@@ -299,7 +299,7 @@ func TestReadFileWorkspaceCacheIsDroppedAfterShellExec(t *testing.T) {
 func TestPaginateSandboxFileNeverSplitsARune(t *testing.T) {
 	var content strings.Builder
 	for i := 0; i < 100; i++ {
-		content.WriteString("这是一行中文文本，用来测试分页边界")
+		content.WriteString("Dòng chữ tiếng Việt thử ranh giới trang")
 		content.WriteString("\n")
 	}
 

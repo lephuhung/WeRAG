@@ -96,6 +96,9 @@ type TemporaryDocumentTaskPayload struct {
 	// Waits counts how often the task was put back because the uploader
 	// already had the allowed number of uploads being parsed.
 	Waits int `json:"waits,omitempty"`
+	// Initiator is who uploaded the file; the worker restores it so the
+	// OCR calls of the parse are counted against that person's usage.
+	Initiator TaskInitiator `json:"initiator,omitempty"`
 }
 
 type TemporaryDocumentCreateOptions struct {
@@ -114,6 +117,9 @@ type TemporaryDocumentCreateOptions struct {
 	// OCRMaxPages overrides the global VLM OCR page cap for this document.
 	// 0 uses the global default (WEKNORA_CHAT_ATTACHMENT_OCR_MAX_PAGES).
 	OCRMaxPages int `json:"ocr_max_pages,omitempty"`
+	// InputGate selects the page caps checked before the file is stored.
+	// Empty means InputGateChat.
+	InputGate InputGateContext `json:"-"`
 }
 
 // SettingChatAttachmentSectionPicker turns on the outline-based selection
@@ -121,6 +127,15 @@ type TemporaryDocumentCreateOptions struct {
 // the sections the question needs from the document's outline (one short
 // call). Off, the chunks with the most question words are taken.
 const SettingChatAttachmentSectionPicker = "chat.attachment_section_picker"
+
+// SettingChatAttachmentInlineTokens is the size (approx. tokens) up to
+// which an attachment reaches the prompt whole; a longer one goes through
+// the section picker. Lowered on dev to try the picker on short files.
+const SettingChatAttachmentInlineTokens = "chat.attachment_inline_tokens"
+
+// DefaultChatAttachmentInlineTokens is the default of
+// SettingChatAttachmentInlineTokens.
+const DefaultChatAttachmentInlineTokens = 12000
 
 // TemporaryDocumentPromptOptions tunes how attachments reach the prompt.
 type TemporaryDocumentPromptOptions struct {

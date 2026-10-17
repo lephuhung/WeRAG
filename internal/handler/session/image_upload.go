@@ -138,13 +138,13 @@ func (h *Handler) resolveStoredImageBytes(ctx context.Context, url string) []byt
 // single analysis call that is tailored to the user's intent.
 func buildImageAnalysisPrompt(userQuery string) string {
 	if strings.TrimSpace(userQuery) == "" {
-		return "请分析这张图片的内容。如果包含文字，请提取关键文字信息；如果是自然图片，请描述其主要内容。用简洁的中文回答。"
+		return "Hãy phân tích nội dung của hình ảnh này. Nếu có chữ, hãy trích xuất những thông tin văn bản quan trọng; nếu là ảnh thông thường, hãy mô tả nội dung chính. Trả lời ngắn gọn bằng tiếng Việt."
 	}
 	return fmt.Sprintf(
-		"用户的问题是：%s\n\n请分析图片中与用户问题相关的内容。"+
-			"如果图片包含文字/文档/表格，请提取与问题相关的关键信息。"+
-			"如果是自然图片/截图/图表，请描述与问题相关的视觉内容。"+
-			"用简洁的中文回答，只输出分析结果。",
+		"Câu hỏi của người dùng là: %s\n\nHãy phân tích những nội dung trong hình ảnh liên quan đến câu hỏi của người dùng. "+
+			"Nếu hình ảnh chứa chữ/tài liệu/bảng biểu, hãy trích xuất các thông tin quan trọng liên quan đến câu hỏi. "+
+			"Nếu là ảnh thông thường/ảnh chụp màn hình/biểu đồ, hãy mô tả nội dung hình ảnh liên quan đến câu hỏi. "+
+			"Trả lời ngắn gọn bằng tiếng Việt, chỉ xuất kết quả phân tích.",
 		userQuery,
 	)
 }

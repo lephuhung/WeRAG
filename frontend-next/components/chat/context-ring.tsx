@@ -75,6 +75,7 @@ export function ContextRing({
   refreshKey,
   className = "",
   placement = "below",
+  usage: given,
 }: {
   /** null before the session exists ("new"): nothing is shown. */
   sessionId: string | null;
@@ -85,12 +86,16 @@ export function ContextRing({
   className?: string;
   /** Where the details open: "above" when the ring sits in the composer. */
   placement?: "above" | "below";
+  /** Usage the caller already reads with useContextUsage (then the ring
+   * does not fetch its own). */
+  usage?: ContextUsage | null;
 }) {
   const { t, locale } = useT();
   const tipId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const usage = useContextUsage(sessionId, busy, refreshKey);
+  const own = useContextUsage(given === undefined ? sessionId : null, busy, refreshKey);
+  const usage = given === undefined ? own : given;
 
   useEffect(() => {
     if (!open) return;

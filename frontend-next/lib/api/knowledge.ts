@@ -38,6 +38,8 @@ export interface VLMConfigOverride {
   model_id?: string;
   description_language?: string;
   custom_instructions?: string;
+  /** Skip the caption (visual description) call; keep OCR text only. */
+  ocr_only?: boolean;
 }
 
 export interface ASRConfigOverride {
@@ -183,6 +185,7 @@ export type KnowledgeBaseRow = {
     model_id?: string;
     description_language?: string;
     custom_instructions?: string;
+    ocr_only?: boolean;
   };
   asr_config?: { enabled: boolean; model_id?: string; language?: string };
   question_generation_config?: {
@@ -285,6 +288,7 @@ export function createKnowledgeBase(data: {
     model_id?: string;
     description_language?: string;
     custom_instructions?: string;
+    ocr_only?: boolean;
   };
   storage_provider_config?: { provider: string };
   storage_config?: unknown; // legacy, kept for backward compat (dual-write)

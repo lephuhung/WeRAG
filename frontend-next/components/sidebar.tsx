@@ -166,11 +166,20 @@ export function Sidebar() {
       });
     };
 
+    // A session made for a send whose uploads were then refused.
+    const handleSessionRemoved = (e: Event) => {
+      const targetId = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!targetId) return;
+      setLive((prev) => (prev ? prev.filter((item) => item.id !== targetId) : prev));
+    };
+
     window.addEventListener("weknora:session-title-updated", handleTitleUpdated);
     window.addEventListener("weknora:session-created", handleSessionCreated);
+    window.addEventListener("weknora:session-removed", handleSessionRemoved);
     return () => {
       window.removeEventListener("weknora:session-title-updated", handleTitleUpdated);
       window.removeEventListener("weknora:session-created", handleSessionCreated);
+      window.removeEventListener("weknora:session-removed", handleSessionRemoved);
     };
   }, []);
 

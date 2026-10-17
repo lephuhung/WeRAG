@@ -7,7 +7,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/handler/session"
 )
 
-// RegisterMessageRoutes 注册消息相关的路由。
+// RegisterMessageRoutes đăng ký các route tin nhắn.
 //
 // Per-session ownership is already enforced inside each handler (the
 // user must own the session). We add Viewer+ here so non-members
@@ -33,7 +33,7 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler, 
 	}
 }
 
-// RegisterSessionRoutes 注册路由。
+// RegisterSessionRoutes đăng ký các route cuộc trò chuyện.
 //
 // Sessions are per-user resources; the handler enforces user ownership.
 // We gate at Viewer+ to keep non-members out once RBAC is on, matching
@@ -68,6 +68,8 @@ func RegisterSessionRoutes(
 		sessions.POST("/:session_id/stop", handler.StopSession)
 		sessions.POST("/:session_id/fork", handler.ForkSession)
 		sessions.POST("/:session_id/continue", handler.ContinueSession)
+		sessions.GET("/:id/sub-chats", handler.ListSubChats)
+		sessions.POST("/:session_id/sub-chats", handler.OpenSubChat)
 		sessions.POST("/:session_id/sandbox/terminal-ticket", handler.IssueSandboxTerminalTicket)
 		sessions.POST("/:session_id/sandbox/desktop-ticket", handler.IssueSandboxDesktopTicket)
 		sessions.POST("/:session_id/sandbox/desktop/activity", handler.ReportSandboxDesktopActivity)
@@ -91,7 +93,7 @@ func RegisterSessionRoutes(
 		// tree to avoid "wildcard conflicts" panic at route registration.
 		sessions.POST("/:session_id/pin", handler.PinSession)
 		sessions.DELETE("/:id/pin", handler.UnpinSession)
-		// 继续接收活跃流
+		// Tiếp tục nhận luồng đang hoạt động
 		sessions.GET("/continue-stream/:session_id", handler.ContinueStream)
 		if suggestionHandler != nil {
 			// Gin requires wildcard names to be identical within the same HTTP-method
@@ -166,6 +168,7 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.POST("/:session_id/documents/:doc_id/format-check", handler.StartDocumentFormatCheck)
 		// its findings underlined in the editor, when the user asks
 		sessions.POST("/:session_id/documents/:doc_id/format-check/marks", handler.MarkDocumentFormatFindings)
+		sessions.POST("/:session_id/documents/:doc_id/format-check/feedback", handler.RecordFormatVerdict)
 		sessions.POST("/:session_id/documents/:doc_id/word-file", handler.BindWordFile)
 		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)
@@ -174,6 +177,7 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		sessions.POST("/:session_id/documents/:doc_id/spelling/feedback", handler.RecordSpellingVerdict)
 		// the Word add-in uploads the file Word holds (no Document Server)
 		sessions.POST("/:session_id/documents/:doc_id/content", handler.UploadDocumentContent)
+		sessions.POST("/:session_id/documents/:doc_id/template", handler.StoreDocumentTemplate)
 		// snapshot before the user applies a proposed rewrite from the chat
 		sessions.POST("/:session_id/documents/:doc_id/proposals/apply", handler.ApplyRewriteProposal)
 	}
@@ -190,7 +194,7 @@ func RegisterOnlyOfficeCallbackRoutes(r *gin.Engine, handler *session.DocumentWo
 	r.POST("/onlyoffice/callback/:ticket", handler.OnlyOfficeCallback)
 }
 
-// RegisterChatRoutes 注册路由。Chat endpoints are tenant-member usage
+// RegisterChatRoutes đăng ký các route chat.Chat endpoints are tenant-member usage
 // surfaces; Viewer+ is sufficient because per-session/per-agent
 // authorisation is enforced inside the handlers.
 func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
@@ -207,7 +211,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGua
 		agentChat.POST("/:session_id", handler.AgentQA)
 	}
 
-	// 新增知识检索接口，不需要session_id
+	// Endpoint tìm kiếm tài liệu, không cần session_id
 	knowledgeSearch := g.apiKeyGroup(r.Group("/knowledge-search", g.Member()), apiKeyRetrieve(apiKeyFullAccess()))
 	{
 		knowledgeSearch.POST("", handler.SearchKnowledge)

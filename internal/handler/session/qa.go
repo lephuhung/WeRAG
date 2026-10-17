@@ -909,15 +909,15 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext, generateTitle bool, m
 }
 
 // SearchKnowledge godoc
-// @Summary      知识搜索
-// @Description  在Knowledge Base中搜索（不使用LLM总结）
-// @Tags         问答
+// @Summary      Tìm kiếm tài liệu
+// @Description  Tìm kiếm trong kho tri thức (không dùng LLM tóm tắt)
+// @Tags         Hỏi đáp
 // @Accept       json
 // @Produce      json
-// @Param        request  body      SearchKnowledgeRequest  true  "搜索请求"
-// @Param        resource_urls  query     string  false  "文件引用形式，public 返回可加载直链"  Enums(handle, public)  default(handle)
-// @Success      200      {object}  map[string]interface{}  "搜索结果"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      SearchKnowledgeRequest  true  "Yêu cầu tìm kiếm"
+// @Param        resource_urls  query     string  false  "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp"  Enums(handle, public)  default(handle)
+// @Success      200      {object}  map[string]interface{}  "Kết quả tìm kiếm"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-search [post]
@@ -1015,16 +1015,16 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 }
 
 // KnowledgeQA godoc
-// @Summary      知识问答
-// @Description  基于Knowledge Base的问答（使用LLM总结），支持SSE流式响应
-// @Tags         问答
+// @Summary      Hỏi đáp tài liệu
+// @Description  Hỏi đáp dựa trên kho tri thức (dùng LLM tóm tắt), hỗ trợ phản hồi streaming SSE
+// @Tags         Hỏi đáp
 // @Accept       json
 // @Produce      text/event-stream
-// @Param        session_id  path      string                   true  "会话ID"
-// @Param        request     body      CreateKnowledgeQARequest true  "问答请求"
-// @Param        resource_urls  query     string  false  "文件引用形式，public 返回可加载直链"  Enums(handle, public)  default(handle)
-// @Success      200         {object}  map[string]interface{}   "问答结果（SSE流）"
-// @Failure      400         {object}  errors.AppError          "请求Parameters 错误"
+// @Param        session_id  path      string                   true  "ID cuộc trò chuyện"
+// @Param        request     body      CreateKnowledgeQARequest true  "Yêu cầu hỏi đáp"
+// @Param        resource_urls  query     string  false  "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp"  Enums(handle, public)  default(handle)
+// @Success      200         {object}  map[string]interface{}   "Kết quả hỏi đáp (luồng SSE)"
+// @Failure      400         {object}  errors.AppError          "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-chat/{session_id} [post]
@@ -1045,16 +1045,16 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 }
 
 // AgentQA godoc
-// @Summary      Agent问答
-// @Description  基于Agent的智能问答，支持多轮对话和SSE流式响应
-// @Tags         问答
+// @Summary      Hỏi đáp với trợ lý
+// @Description  Hỏi đáp thông minh dựa trên trợ lý, hỗ trợ hội thoại nhiều lượt và phản hồi streaming SSE
+// @Tags         Hỏi đáp
 // @Accept       json
 // @Produce      text/event-stream
-// @Param        session_id  path      string                   true  "会话ID"
-// @Param        request     body      CreateKnowledgeQARequest true  "问答请求"
-// @Param        resource_urls  query     string  false  "文件引用形式，public 返回可加载直链"  Enums(handle, public)  default(handle)
-// @Success      200         {object}  map[string]interface{}   "问答结果（SSE流）"
-// @Failure      400         {object}  errors.AppError          "请求Parameters 错误"
+// @Param        session_id  path      string                   true  "ID cuộc trò chuyện"
+// @Param        request     body      CreateKnowledgeQARequest true  "Yêu cầu hỏi đáp"
+// @Param        resource_urls  query     string  false  "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp"  Enums(handle, public)  default(handle)
+// @Success      200         {object}  map[string]interface{}   "Kết quả hỏi đáp (luồng SSE)"
+// @Failure      400         {object}  errors.AppError          "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agent-chat/{session_id} [post]
@@ -1620,11 +1620,11 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 	success := analyzed > 0
 	switch {
 	case analyzed == 0:
-		outputMsg = "图片内容分析不可用"
+		outputMsg = "Không phân tích được nội dung hình ảnh"
 	case mode == qaModeAgent:
-		outputMsg = fmt.Sprintf("已查看 %d/%d 张图片内容", analyzed, len(reqCtx.images))
+		outputMsg = fmt.Sprintf("Đã xem nội dung %d/%d hình ảnh", analyzed, len(reqCtx.images))
 	default:
-		outputMsg = fmt.Sprintf("已分析 %d/%d 张图片内容", analyzed, len(reqCtx.images))
+		outputMsg = fmt.Sprintf("Đã phân tích nội dung %d/%d hình ảnh", analyzed, len(reqCtx.images))
 	}
 	streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 		Type:      event.EventAgentToolResult,
@@ -1775,12 +1775,12 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 		parsedCount = len(temporaryResult.Attachments)
 	}
 	if toolCallID != "" {
-		output := fmt.Sprintf("已解析 %d 个附件", parsedCount)
+		output := fmt.Sprintf("Đã đọc %d tệp đính kèm", parsedCount)
 		if len(skipped) > 0 {
-			output += fmt.Sprintf("，%d 个不可用已跳过", len(skipped))
+			output += fmt.Sprintf(", bỏ qua %d tệp không đọc được", len(skipped))
 		}
 		if resolveErr != nil {
-			output = fmt.Sprintf("附件解析失败: %v", resolveErr)
+			output = fmt.Sprintf("Đọc tệp đính kèm thất bại: %v", resolveErr)
 		}
 		streamCtx.eventBus.Emit(ctx, event.Event{
 			Type:      event.EventAgentToolResult,

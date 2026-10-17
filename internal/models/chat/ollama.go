@@ -16,14 +16,14 @@ import (
 	ollamaapi "github.com/ollama/ollama/api"
 )
 
-// OllamaChat 实现了基于 Ollama 的聊天
+// OllamaChat cài đặt trò chuyện dựa trên Ollama
 type OllamaChat struct {
 	modelName     string
 	modelID       string
 	ollamaService *ollama.OllamaService
 }
 
-// NewOllamaChat Create  Ollama 聊天实例
+// NewOllamaChat tạo instance trò chuyện Ollama
 func NewOllamaChat(config *ChatConfig, ollamaService *ollama.OllamaService) (*OllamaChat, error) {
 	return &OllamaChat{
 		modelName:     config.ModelName,
@@ -32,7 +32,7 @@ func NewOllamaChat(config *ChatConfig, ollamaService *ollama.OllamaService) (*Ol
 	}, nil
 }
 
-// convertMessages 转换消息格式为Ollama API格式
+// convertMessages chuyển định dạng tin nhắn sang định dạng Ollama API
 func (c *OllamaChat) convertMessages(messages []Message) []ollamaapi.Message {
 	ollamaMessages := make([]ollamaapi.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -85,12 +85,12 @@ func resolveImageForOllama(imageURL string) ollamaapi.ImageData {
 	return nil
 }
 
-// buildChatRequest 构建聊天请求Parameters
+// buildChatRequest dựng tham số yêu cầu trò chuyện
 func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isStream bool) *ollamaapi.ChatRequest {
-	// Settings 流式标志
+	// Đặt cờ stream
 	streamFlag := isStream
 
-	// 构建请求Parameters
+	// Dựng tham số yêu cầu
 	chatReq := &ollamaapi.ChatRequest{
 		Model:    c.modelName,
 		Messages: c.convertMessages(messages),
@@ -98,7 +98,7 @@ func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isS
 		Options:  make(map[string]interface{}),
 	}
 
-	// 添加可选Parameters
+	// Thêm tham số tuỳ chọn
 	if opts != nil {
 		chatReq.Options["temperature"] = opts.Temperature
 		if opts.TopP > 0 {
@@ -123,33 +123,33 @@ func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isS
 	return chatReq
 }
 
-// Chat 进行非流式聊天
+// Chat thực hiện trò chuyện không stream
 func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
-	// 确保模型可用
+	// Đảm bảo mô hình khả dụng
 	if err := c.ensureModelAvailable(ctx); err != nil {
 		return nil, err
 	}
 
-	// 构建请求Parameters
+	// Dựng tham số yêu cầu
 	chatReq := c.buildChatRequest(messages, opts, false)
 
-	// 记录请求日志
-	logger.GetLogger(ctx).Infof("发送聊天请求到模型 %s", c.modelName)
+	// Ghi log yêu cầu
+	logger.GetLogger(ctx).Infof("sending chat request to model %s", c.modelName)
 
 	var responseContent string
 	var toolCalls []types.LLMToolCall
 	var promptTokens, completionTokens int
 
-	// 使用 Ollama 客户端发送请求
+	// Gửi yêu cầu bằng Ollama client
 	err := c.ollamaService.Chat(ctx, chatReq, func(resp ollamaapi.ChatResponse) error {
 		responseContent = resp.Message.Content
-		// 当 Content 为空但 Thinking 有内容时（如推理模型未正确Configuration  thinking Parameters ），使用 Thinking 作为兜底
+		// Khi Content rỗng nhưng Thinking có nội dung (ví dụ mô hình reasoning chưa cấu hình đúng tham số thinking), dùng Thinking làm dự phòng
 		if responseContent == "" && resp.Message.Thinking != "" {
 			responseContent = resp.Message.Thinking
 		}
 		toolCalls = c.toolCallTo(resp.Message.ToolCalls)
 
-		// 获取token计数
+		// Lấy số token
 		if resp.EvalCount > 0 {
 			promptTokens = resp.PromptEvalCount
 			completionTokens = resp.EvalCount - promptTokens
@@ -158,7 +158,7 @@ func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOpt
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("聊天请求失败: %w", err)
+		return nil, fmt.Errorf("yêu cầu trò chuyện thất bại: %w", err)
 	}
 
 	usage := types.TokenUsage{
@@ -176,39 +176,39 @@ func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOpt
 	}, nil
 }
 
-// ChatStream 进行流式聊天
+// ChatStream thực hiện trò chuyện dạng stream
 func (c *OllamaChat) ChatStream(
 	ctx context.Context,
 	messages []Message,
 	opts *ChatOptions,
 ) (<-chan types.StreamResponse, error) {
-	// 确保模型可用
+	// Đảm bảo mô hình khả dụng
 	if err := c.ensureModelAvailable(ctx); err != nil {
 		return nil, err
 	}
 
-	// 构建请求Parameters
+	// Dựng tham số yêu cầu
 	chatReq := c.buildChatRequest(messages, opts, true)
 
-	// 记录请求日志
-	logger.GetLogger(ctx).Infof("发送流式聊天请求到模型 %s", c.modelName)
+	// Ghi log yêu cầu
+	logger.GetLogger(ctx).Infof("sending streaming chat request to model %s", c.modelName)
 
-	// Create 流式响应通道
+	// Tạo kênh phản hồi stream
 	streamChan := make(chan types.StreamResponse)
 
-	// 启动goroutine处理流式响应
+	// Khởi chạy goroutine xử lý phản hồi stream
 	go func() {
 		defer close(streamChan)
 
 		var thinking thinkingEmitter
 		err := c.ollamaService.Chat(ctx, chatReq, func(resp ollamaapi.ChatResponse) error {
-			// 发送思考内容（支持 Qwen3、DeepSeek 等推理模型）
+			// Gửi nội dung suy luận (hỗ trợ các mô hình reasoning như Qwen3, DeepSeek)
 			if resp.Message.Thinking != "" {
 				thinking.emit(streamChan, resp.Message.Thinking)
 			}
 
 			if resp.Message.Content != "" {
-				// 思考阶段结束后，发送思考完成事件
+				// Sau khi giai đoạn suy luận kết thúc, gửi sự kiện hoàn tất suy luận
 				thinking.finish(streamChan)
 				streamChan <- types.StreamResponse{
 					ResponseType: types.ResponseTypeAnswer,
@@ -275,8 +275,8 @@ func (c *OllamaChat) ChatStream(
 			return nil
 		})
 		if err != nil {
-			logger.GetLogger(ctx).Errorf("流式聊天请求失败: %v", err)
-			// 发送错误响应
+			logger.GetLogger(ctx).Errorf("streaming chat request failed: %v", err)
+			// Gửi phản hồi lỗi
 			streamChan <- types.StreamResponse{
 				ResponseType: types.ResponseTypeError,
 				Content:      err.Error(),
@@ -288,23 +288,23 @@ func (c *OllamaChat) ChatStream(
 	return streamChan, nil
 }
 
-// 确保模型可用
+// Đảm bảo mô hình khả dụng
 func (c *OllamaChat) ensureModelAvailable(ctx context.Context) error {
-	logger.GetLogger(ctx).Infof("确保模型 %s 可用", c.modelName)
+	logger.GetLogger(ctx).Infof("ensuring model %s is available", c.modelName)
 	return c.ollamaService.EnsureModelAvailable(ctx, c.modelName)
 }
 
-// GetModelName 获取模型名称
+// GetModelName trả về tên mô hình
 func (c *OllamaChat) GetModelName() string {
 	return c.modelName
 }
 
-// GetModelID 获取模型ID
+// GetModelID trả về ID mô hình
 func (c *OllamaChat) GetModelID() string {
 	return c.modelID
 }
 
-// toolFrom 将本模块的 Tool 转换为 Ollama 的 Tool
+// toolFrom chuyển Tool của module này sang Tool của Ollama
 func (c *OllamaChat) toolFrom(tools []Tool) ollamaapi.Tools {
 	if len(tools) == 0 {
 		return nil
@@ -327,7 +327,7 @@ func (c *OllamaChat) toolFrom(tools []Tool) ollamaapi.Tools {
 	return ollamaTools
 }
 
-// toolTo 将 Ollama 的 Tool 转换为本模块的 Tool
+// toolTo chuyển Tool của Ollama sang Tool của module này
 func (c *OllamaChat) toolTo(ollamaTools ollamaapi.Tools) []Tool {
 	if len(ollamaTools) == 0 {
 		return nil
@@ -347,7 +347,7 @@ func (c *OllamaChat) toolTo(ollamaTools ollamaapi.Tools) []Tool {
 	return tools
 }
 
-// toolCallFrom 将本模块的 ToolCall 转换为 Ollama 的 ToolCall
+// toolCallFrom chuyển ToolCall của module này sang ToolCall của Ollama
 func (c *OllamaChat) toolCallFrom(toolCalls []ToolCall) []ollamaapi.ToolCall {
 	if len(toolCalls) == 0 {
 		return nil
@@ -369,7 +369,7 @@ func (c *OllamaChat) toolCallFrom(toolCalls []ToolCall) []ollamaapi.ToolCall {
 	return ollamaToolCalls
 }
 
-// toolCallTo 将 Ollama 的 ToolCall 转换为本模块的 ToolCall
+// toolCallTo chuyển ToolCall của Ollama sang ToolCall của module này
 func (c *OllamaChat) toolCallTo(ollamaToolCalls []ollamaapi.ToolCall) []types.LLMToolCall {
 	if len(ollamaToolCalls) == 0 {
 		return nil

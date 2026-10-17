@@ -33,6 +33,8 @@ export interface ParseUIState {
     vllmModelId: string;
     descriptionLanguage: string;
     customInstructions: string;
+    /** OCR text only — no caption call (vlm_config.ocr_only). */
+    ocrOnly: boolean;
   };
   asr: { enabled: boolean; modelId: string; language: string };
   question: { enabled: boolean; questionCount: number; customInstructions: string };
@@ -76,7 +78,13 @@ export function createDefaultUIState(): ParseUIState {
       languages: [],
       tableMetadataInstructions: "",
     },
-    multimodal: { enabled: false, vllmModelId: "", descriptionLanguage: "", customInstructions: "" },
+    multimodal: {
+      enabled: false,
+      vllmModelId: "",
+      descriptionLanguage: "",
+      customInstructions: "",
+      ocrOnly: false,
+    },
     asr: { enabled: false, modelId: "", language: "" },
     question: { enabled: true, questionCount: 3, customInstructions: "" },
     graphEnabled: false,
@@ -115,6 +123,7 @@ export function initFromKb(kb: KnowledgeBaseRow | null): ParseUIState {
       vllmModelId: vlm.model_id || "",
       descriptionLanguage: vlm.description_language || "",
       customInstructions: vlm.custom_instructions || "",
+      ocrOnly: !!vlm.ocr_only,
     };
   }
 
@@ -181,6 +190,7 @@ export function applyOverrides(
       s.multimodal.descriptionLanguage = o.vlm_config.description_language;
     if (o.vlm_config.custom_instructions != null)
       s.multimodal.customInstructions = o.vlm_config.custom_instructions;
+    if (o.vlm_config.ocr_only != null) s.multimodal.ocrOnly = o.vlm_config.ocr_only;
   }
   if (o.asr_config) {
     if (o.asr_config.enabled != null) s.asr.enabled = o.asr_config.enabled;
@@ -223,6 +233,7 @@ export function buildProcessOverrides(s: ParseUIState): KnowledgeProcessOverride
       model_id: s.multimodal.vllmModelId,
       description_language: s.multimodal.descriptionLanguage,
       custom_instructions: s.multimodal.customInstructions,
+      ocr_only: s.multimodal.ocrOnly,
     },
     asr_config: {
       enabled: s.asr.enabled,

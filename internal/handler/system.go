@@ -114,7 +114,7 @@ type platformAPIKeyCreateRequest struct {
 // ListPlatformAPIKeys godoc
 // @Summary      List platform API keys
 // @Description  Lists non-workspace API keys. Full tokens are always masked. Human SystemAdmin only.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -137,7 +137,7 @@ func (h *SystemHandler) ListPlatformAPIKeys(c *gin.Context) {
 // CreatePlatformAPIKey godoc
 // @Summary      Create a platform API key
 // @Description  Creates a capability-scoped key that may target any workspace through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body platformAPIKeyCreateRequest true "Platform API key"
@@ -190,7 +190,7 @@ func (h *SystemHandler) CreatePlatformAPIKey(c *gin.Context) {
 // DeletePlatformAPIKey godoc
 // @Summary      Revoke a platform API key
 // @Description  Immediately revokes a platform API key. Human SystemAdmin only.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        key_id path int true "API key ID"
 // @Success      200 {object} map[string]interface{}
@@ -306,7 +306,7 @@ type GetSystemInfoResponse struct {
 	UptimeSeconds int64 `json:"uptime_seconds,omitempty"`
 }
 
-// 编译时注入的版本信息
+// Thông tin phiên bản được chèn lúc biên dịch
 var (
 	Version   = "unknown"
 	Edition   = "standard"
@@ -316,12 +316,12 @@ var (
 )
 
 // GetSystemInfo godoc
-// @Summary      获取系统信息
-// @Description  获取系统版本、构建信息和引擎Configuration
-// @Tags         系统
+// @Summary      Lấy thông tin hệ thống
+// @Description  Lấy phiên bản hệ thống, thông tin bản dựng và cấu hình engine
+// @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  GetSystemInfoResponse  "系统信息"
+// @Success      200  {object}  GetSystemInfoResponse  "Thông tin hệ thống"
 // @Router       /system/info [get]
 func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 	ctx := logger.CloneContext(c.Request.Context())
@@ -399,10 +399,10 @@ func (h *SystemHandler) getDocReaderConnInfo() (addr, transport string) {
 // ListParserEngines returns available document parser engines.
 // Merges Go-native static engines with engines discovered from the remote
 // docreader service, so newly added Python engines are auto-discovered.
-// @Summary      列出可用的文档解析引擎
-// @Tags         系统
+// @Summary      Liệt kê các engine phân tích tài liệu khả dụng
+// @Tags         Hệ thống
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "解析引擎List "
+// @Success      200  {object}  map[string]interface{}  "Danh sách engine phân tích"
 // @Router       /system/parser-engines [get]
 func (h *SystemHandler) ListParserEngines(c *gin.Context) {
 	var overrides map[string]string
@@ -428,11 +428,11 @@ func (h *SystemHandler) ListParserEngines(c *gin.Context) {
 }
 
 // ReconnectDocReader reconnects the document converter to a new (or same) DocReader address.
-// @Summary      重连文档解析服务
-// @Tags         系统
+// @Summary      Kết nối lại dịch vụ phân tích tài liệu
+// @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        request  body  object{addr string} true "DocReader 地址"
+// @Param        request  body  object{addr string} true "Địa chỉ DocReader"
 // @Success      200
 // @Router       /system/docreader/reconnect [post]
 func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
@@ -490,11 +490,11 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 
 // CheckParserEngines runs availability check with the given config overrides (e.g. current form values).
 // Used to test engine availability without saving; body shape matches ParserEngineConfig.
-// @Summary      使用当前Parameters 检测解析引擎可用性
-// @Tags         系统
+// @Summary      Kiểm tra engine phân tích khả dụng với tham số hiện tại
+// @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        body  body  object  true  "解析引擎Configuration （与保存接口同结构）"
+// @Param        body  body  object  true  "Cấu hình engine phân tích (cùng cấu trúc với API lưu)"
 // @Success      200
 // @Router       /system/parser-engines/check [post]
 func (h *SystemHandler) CheckParserEngines(c *gin.Context) {
@@ -795,9 +795,9 @@ type GetStorageEngineStatusResponse struct {
 }
 
 // GetStorageEngineStatus godoc
-// @Summary      获取存储引擎状态
-// @Description  返回 Local、MinIO、COS 各存储引擎的可用状态及说明，供全局Settings 与Knowledge Base选择使用
-// @Tags         系统
+// @Summary      Lấy trạng thái engine lưu trữ
+// @Description  Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO, COS để thiết lập toàn cục và kho tri thức lựa chọn
+// @Tags         Hệ thống
 // @Produce      json
 // @Success      200  {object}  GetStorageEngineStatusResponse
 // @Router       /system/storage-engine-status [get]
@@ -910,12 +910,12 @@ type StorageCheckResponse struct {
 }
 
 // CheckStorageEngine tests connectivity for a single storage engine using the provided config.
-// @Summary      测试存储引擎连通性
-// @Description  使用当前填写的Parameters 测试 MinIO/COS 连通性，不保存Configuration
-// @Tags         系统
+// @Summary      Kiểm tra kết nối engine lưu trữ
+// @Description  Dùng tham số đang điền để kiểm tra kết nối MinIO/COS, không lưu cấu hình
+// @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        body  body  StorageCheckRequest  true  "存储引擎Configuration "
+// @Param        body  body  StorageCheckRequest  true  "Cấu hình engine lưu trữ"
 // @Success      200   {object}  StorageCheckResponse
 // @Router       /system/storage-engine-check [post]
 func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
@@ -1303,7 +1303,7 @@ type PromoteUserToSystemAdminRequest struct {
 // @Description  Grant system administrator privileges to a user (SystemAdmin only).
 // @Description  Idempotent: re-promoting an existing system admin returns 200 with no DB write.
 // @Description  Identify the user by email (preferred for human operators) or user_id (UUID, for API clients).
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body PromoteUserToSystemAdminRequest true "User promotion request"
@@ -1393,7 +1393,7 @@ type RevokeSystemAdminRequest struct {
 // @Description  and revoking the last remaining system admin is rejected — both
 // @Description  prevent a SystemAdmin from accidentally locking the platform out
 // @Description  of system-level administration. Idempotent on already-non-admin users.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body RevokeSystemAdminRequest true "User revocation request"
@@ -1477,7 +1477,7 @@ type ListSystemAdminsResponse struct {
 // @Description  privileges (SystemAdmin only). Supports `offset` (default 0)
 // @Description  and `limit` (default 50, max 200) query parameters. Walks the
 // @Description  partial-friendly idx_users_is_system_admin index.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        offset query int false "Page offset" default(0)
 // @Param        limit  query int false "Page size (max 200)" default(50)
@@ -1547,7 +1547,7 @@ type ListSystemUsersResponse struct {
 // @Description  admins and regular users alike (SystemAdmin only). Supports
 // @Description  `offset`/`limit` (default 50, max 200) and an optional `q`
 // @Description  username/email filter.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        offset query int    false "Page offset" default(0)
 // @Param        limit  query int    false "Page size (max 200)" default(50)
@@ -1605,7 +1605,7 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 // @Description  the caller to be Admin of the target tenant — the route group
 // @Description  already gates on SystemAdmin. The "last admin" invariant is
 // @Description  still enforced by the service layer.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        tenant_id  path  string                  true  "Tenant ID"
@@ -1679,7 +1679,7 @@ type ResetUserPasswordRequest struct {
 // @Summary      Reset another user's password
 // @Description  Replace another user's local password and revoke all of their existing sessions (SystemAdmin only).
 // @Description  A system administrator cannot reset their own password through this endpoint; self-service password change still requires the old password.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body ResetUserPasswordRequest true "Password reset request"
@@ -1752,7 +1752,7 @@ type CreateSystemUserResponse struct {
 // @Description  and returned once in the response body. Any provided value,
 // @Description  including empty string, is policy-checked. Tenant provisioning
 // @Description  follows the shared auth.default_tenant_mode policy.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body types.AdminCreateUserRequest true "User creation request"
@@ -1840,7 +1840,7 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 // @Summary      List all system settings
 // @Description  Return every row in the system_settings table (system-scope,
 // @Description  not workspace-scoped). SystemAdmin only.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200 {array} types.SystemSetting "list of settings"
 // @Failure      403 {object} map[string]interface{} "Forbidden: not a system admin"
@@ -1932,9 +1932,9 @@ func sameQueueWeights(left, right map[string]int) bool {
 }
 
 // GetRuntimeQueues godoc
-// @Summary      获取解析任务队列运行时状态
-// @Description  返回各 asynq 队列的实时深度（pending/active/scheduled/retry 等）与 worker 并发Configuration ，仅系统管理员可见
-// @Tags         系统管理
+// @Summary      Lấy trạng thái runtime của hàng đợi tác vụ phân tích
+// @Description  Trả về độ sâu thời gian thực của các hàng đợi asynq (pending/active/scheduled/retry...) và cấu hình song song của worker; chỉ quản trị viên hệ thống xem được
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200  {object}  RuntimeQueuesResponse
 // @Router       /system/admin/runtime/queues [get]
@@ -2090,7 +2090,7 @@ func (h *SystemHandler) listRuntimeTasks(c *gin.Context, state types.RuntimeTask
 // ListRuntimeTasks returns one live task-state page for the unified operator
 // drawer. Raw task payloads are never included.
 // @Summary      List runtime queue tasks by state
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        queue path string true "Queue name"
 // @Param        state query string true "Task state" Enums(pending,active,scheduled,retry,archived,completed)
@@ -2269,7 +2269,7 @@ func (h *SystemHandler) purgeOrphanRuntimeTask(
 // MutateRuntimeTask executes a backend-advertised action after re-reading the
 // current task state to close click/race windows.
 // @Summary      Run a safe runtime task action
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        queue path string true "Queue name"
 // @Param        task_id path string true "Task ID"
@@ -2286,7 +2286,7 @@ func (h *SystemHandler) MutateRuntimeTask(c *gin.Context) {
 // semantics by leaving business state as-is (archived tasks already had their
 // document status flipped to "failed" on their last retry).
 // @Summary      Purge all archived tasks in a queue
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        queue path string true "Queue name"
 // @Success      200 {object} map[string]interface{}
@@ -2386,7 +2386,7 @@ func (h *SystemHandler) enrichSettingsModifiedBy(ctx context.Context, rows []*ty
 // @Summary      Get a single system setting by key
 // @Description  Returns the row matching :key. 404 when the key is unknown
 // @Description  to the registry; 200 with the row when known.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        key path string true "Setting key (e.g. file.max_size_mb)"
 // @Success      200 {object} types.SystemSetting "the setting row"
@@ -2428,7 +2428,7 @@ type UpdateSystemSettingRequest struct {
 // @Description  rawValue against the registry's declared value_type and
 // @Description  rejects mismatches with 400. SystemAdmin only. Emits an
 // @Description  audit row (action=system.setting_changed) on success.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        key     path string                       true "Setting key"
@@ -2470,7 +2470,7 @@ func (h *SystemHandler) UpdateSystemSetting(c *gin.Context) {
 // @Description  so upload UIs can skip the parse-settings dialog when the
 // @Description  SystemAdmin has locked a default configuration; absent rows
 // @Description  resolve to enabled=false.
-// @Tags         System
+// @Tags         Hệ thống
 // @Produce      json
 // @Success      200 {object} map[string]interface{} "{ success, data: SystemParseDefaults }"
 // @Router       /system/parse-defaults [get]
@@ -2495,7 +2495,7 @@ func (h *SystemHandler) GetSystemParseDefaults(c *gin.Context) {
 // @Description  Returns {"theme": "elevenlabs"|"anthropic"} via the 3-tier
 // @Description  system-setting resolver. Public (no auth) so the login page
 // @Description  and the Word add-in apply the same theme.
-// @Tags         System
+// @Tags         Hệ thống
 // @Produce      json
 // @Success      200 {object} map[string]interface{} "{ success, data: { theme } }"
 // @Router       /system/ui-theme [get]
@@ -2513,7 +2513,7 @@ func (h *SystemHandler) GetSystemUITheme(c *gin.Context) {
 // @Description  the per-workspace PUT whitelist, which forbids storage_quota
 // @Description  edits by workspace Admins. SystemAdmin only.
 // @Description  Idempotent — running twice with the same setting is a no-op.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200 {object} map[string]interface{} "{ affected: int64, quota_bytes: int64 }"
 // @Failure      500 {object} map[string]interface{} "DB write failed"
@@ -2576,7 +2576,7 @@ func (h *SystemHandler) ApplyDefaultStorageQuotaToAllTenants(c *gin.Context) {
 // @Description  falls back to the environment variable (when configured)
 // @Description  or the in-code default. Idempotent — resetting a key
 // @Description  that was never persisted returns 200.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Param        key path string true "Setting key"
 // @Success      200 {object} map[string]interface{} "Reset acknowledged"
 // @Failure      400 {object} map[string]interface{} "Unknown key"

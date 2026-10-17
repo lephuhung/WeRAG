@@ -96,8 +96,8 @@ func (r *fakeTenantAPIKeyRepo) RevokeAPIKey(_ context.Context, tenantID uint64, 
 	return apprepo.ErrTenantAPIKeyNotFound
 }
 
-// UpdateAPIKey 模拟仓储的租户边界并覆盖 API Key 的可配置属性。
-// 传入租户 ID、Key ID 和新配置，返回更新后的 Key；跨租户或已撤销目标返回未找到。
+// UpdateAPIKey mô phỏng ranh giới đơn vị của repository và ghi đè các thuộc tính cấu hình được của API Key.
+// Nhận ID đơn vị, ID Key và cấu hình mới, trả về Key đã cập nhật; mục tiêu khác đơn vị hoặc đã thu hồi trả về không tìm thấy.
 func (r *fakeTenantAPIKeyRepo) UpdateAPIKey(
 	_ context.Context, tenantID uint64, id uint64, update *types.TenantAPIKey,
 ) (*types.TenantAPIKey, error) {
@@ -115,8 +115,8 @@ func (r *fakeTenantAPIKeyRepo) UpdateAPIKey(
 	return nil, apprepo.ErrTenantAPIKeyNotFound
 }
 
-// TestTenantAPIKeyServiceUpdateNormalizesConfiguration 验证通用更新的输入规范化。
-// 输入包含重复 ID/能力和 UTC+8 到期时间，输出应去重、清理名称并统一为 UTC。
+// TestTenantAPIKeyServiceUpdateNormalizesConfiguration kiểm tra việc chuẩn hóa đầu vào của cập nhật chung.
+// Đầu vào có ID/năng lực trùng lặp và hạn dùng theo UTC+8, đầu ra phải khử trùng lặp, làm sạch tên và thống nhất về UTC.
 func TestTenantAPIKeyServiceUpdateNormalizesConfiguration(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeTenantAPIKeyRepo()

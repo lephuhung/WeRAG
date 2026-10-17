@@ -64,7 +64,7 @@ func TestEveryTurnIsEventuallyRead(t *testing.T) {
 	base := time.Now().Add(-time.Hour)
 	var transcript []*types.Message
 	for i := 0; i < 12; i++ {
-		content := fmt.Sprintf("第 %d 句话", i)
+		content := fmt.Sprintf("Câu thứ %d trong phiên", i)
 		transcript = append(transcript, userMessage("session-1", content, base.Add(time.Duration(i)*time.Second)))
 		messages.set("session-1", transcript)
 		svc.ScheduleExtraction(ctx, "session-1", fmt.Sprintf("message-%d", i), "model-1")
@@ -74,7 +74,7 @@ func TestEveryTurnIsEventuallyRead(t *testing.T) {
 
 	seen := models.seenTranscripts()
 	for i := 0; i < 12; i++ {
-		require.Contains(t, seen, fmt.Sprintf("第 %d 句话", i),
+		require.Contains(t, seen, fmt.Sprintf("Câu thứ %d trong phiên", i),
 			"turn %d was never read by distillation", i)
 	}
 }
@@ -90,7 +90,7 @@ func TestTurnsDuringARunAreNotLost(t *testing.T) {
 	models.response = `{"memories":[]}`
 
 	base := time.Now().Add(-time.Hour)
-	messages.set("session-1", []*types.Message{userMessage("session-1", "第一句", base)})
+	messages.set("session-1", []*types.Message{userMessage("session-1", "Câu thứ nhất", base)})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 
 	first := enqueuer.pop()
@@ -98,8 +98,8 @@ func TestTurnsDuringARunAreNotLost(t *testing.T) {
 
 	// The second turn lands while the first run is still queued.
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "第一句", base),
-		userMessage("session-1", "第二句", base.Add(time.Second)),
+		userMessage("session-1", "Câu thứ nhất", base),
+		userMessage("session-1", "Câu thứ hai", base.Add(time.Second)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-2", "model-1")
 
@@ -107,8 +107,8 @@ func TestTurnsDuringARunAreNotLost(t *testing.T) {
 	drainExtractions(t, svc, enqueuer)
 
 	seen := models.seenTranscripts()
-	require.Contains(t, seen, "第一句")
-	require.Contains(t, seen, "第二句")
+	require.Contains(t, seen, "Câu thứ nhất")
+	require.Contains(t, seen, "Câu thứ hai")
 }
 
 // TestMessagesBeyondOneRunsCapAreFollowedUp covers a subject who said more in
@@ -126,7 +126,7 @@ func TestMessagesBeyondOneRunsCapAreFollowedUp(t *testing.T) {
 	var transcript []*types.Message
 	for i := 0; i < total; i++ {
 		transcript = append(transcript,
-			userMessage("session-1", fmt.Sprintf("消息%d号", i), base.Add(time.Duration(i)*time.Second)))
+			userMessage("session-1", fmt.Sprintf("Tin nhắn thứ %d trong phiên", i), base.Add(time.Duration(i)*time.Second)))
 	}
 	messages.set("session-1", transcript)
 	svc.ScheduleExtraction(ctx, "session-1", "message-last", "model-1")
@@ -135,8 +135,8 @@ func TestMessagesBeyondOneRunsCapAreFollowedUp(t *testing.T) {
 	require.Greater(t, runs, 1, "a backlog larger than one run must produce follow-up runs")
 
 	seen := models.seenTranscripts()
-	require.Contains(t, seen, "消息0号", "the oldest unread message must not be skipped")
-	require.Contains(t, seen, fmt.Sprintf("消息%d号", total-1))
+	require.Contains(t, seen, "Tin nhắn thứ 0 trong phiên", "the oldest unread message must not be skipped")
+	require.Contains(t, seen, fmt.Sprintf("Tin nhắn thứ %d trong phiên", total-1))
 }
 
 // TestParallelSessionsAreAllRead: a person talking in two conversations must
@@ -150,16 +150,16 @@ func TestParallelSessionsAreAllRead(t *testing.T) {
 	models.response = `{"memories":[]}`
 
 	base := time.Now().Add(-time.Hour)
-	messages.set("session-a", []*types.Message{userMessage("session-a", "会话A说的话", base)})
-	messages.set("session-b", []*types.Message{userMessage("session-b", "会话B说的话", base.Add(time.Second))})
+	messages.set("session-a", []*types.Message{userMessage("session-a", "Lời nói ở cuộc trò chuyện A", base)})
+	messages.set("session-b", []*types.Message{userMessage("session-b", "Lời nói ở cuộc trò chuyện B", base.Add(time.Second))})
 
 	svc.ScheduleExtraction(ctx, "session-a", "message-a", "model-1")
 	svc.ScheduleExtraction(ctx, "session-b", "message-b", "model-1")
 	drainExtractions(t, svc, enqueuer)
 
 	seen := models.seenTranscripts()
-	require.Contains(t, seen, "会话A说的话")
-	require.Contains(t, seen, "会话B说的话")
+	require.Contains(t, seen, "Lời nói ở cuộc trò chuyện A")
+	require.Contains(t, seen, "Lời nói ở cuộc trò chuyện B")
 }
 
 // TestAlreadyReadMessagesAreNotReread keeps the guarantee from degenerating
@@ -173,14 +173,14 @@ func TestAlreadyReadMessagesAreNotReread(t *testing.T) {
 	models.response = `{"memories":[]}`
 
 	base := time.Now().Add(-time.Hour)
-	messages.set("session-1", []*types.Message{userMessage("session-1", "旧的一句", base)})
+	messages.set("session-1", []*types.Message{userMessage("session-1", "Câu cũ", base)})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
 	require.Equal(t, 1, models.calls)
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "旧的一句", base),
-		userMessage("session-1", "新的一句", base.Add(time.Minute)),
+		userMessage("session-1", "Câu cũ", base),
+		userMessage("session-1", "Câu mới", base.Add(time.Minute)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-2", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -190,8 +190,8 @@ func TestAlreadyReadMessagesAreNotReread(t *testing.T) {
 	// inside the block the model extracts from, or it would be re-derived into
 	// a memory on every run.
 	transcript := transcriptBlock(models.lastPrompt)
-	require.Contains(t, transcript, "新的一句")
-	require.NotContains(t, transcript, "旧的一句",
+	require.Contains(t, transcript, "Câu mới")
+	require.NotContains(t, transcript, "Câu cũ",
 		"a message already behind the watermark must not be extracted from twice")
 	require.Contains(t, models.lastPrompt, "context only",
 		"the earlier turn should still be visible as context")
@@ -207,7 +207,7 @@ func TestFailedRunLeavesMessagesUnread(t *testing.T) {
 	})
 
 	base := time.Now().Add(-time.Hour)
-	messages.set("session-1", []*types.Message{userMessage("session-1", "重要的一句", base)})
+	messages.set("session-1", []*types.Message{userMessage("session-1", "Câu quan trọng", base)})
 	models.failNext = true
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 
@@ -219,7 +219,7 @@ func TestFailedRunLeavesMessagesUnread(t *testing.T) {
 	models.response = `{"memories":[]}`
 	svc.ScheduleExtraction(ctx, "session-1", "message-2", "model-1")
 	drainExtractions(t, svc, enqueuer)
-	require.Contains(t, models.seenTranscripts(), "重要的一句")
+	require.Contains(t, models.seenTranscripts(), "Câu quan trọng")
 }
 
 // TestScheduleUsesTheConfiguredDelay pins that the timers are configuration,
@@ -248,7 +248,7 @@ func TestMinIntervalDefersInsteadOfDropping(t *testing.T) {
 	models.response = `{"memories":[]}`
 
 	base := time.Now().Add(-time.Hour)
-	messages.set("session-1", []*types.Message{userMessage("session-1", "第一句", base)})
+	messages.set("session-1", []*types.Message{userMessage("session-1", "Câu thứ nhất", base)})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	first := enqueuer.pop()
 	require.NotNil(t, first)
@@ -256,8 +256,8 @@ func TestMinIntervalDefersInsteadOfDropping(t *testing.T) {
 
 	// Immediately after a run: well inside the ten-minute floor.
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "第一句", base),
-		userMessage("session-1", "第二句", base.Add(time.Second)),
+		userMessage("session-1", "Câu thứ nhất", base),
+		userMessage("session-1", "Câu thứ hai", base.Add(time.Second)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-2", "model-1")
 
@@ -267,7 +267,7 @@ func TestMinIntervalDefersInsteadOfDropping(t *testing.T) {
 		"the minimum interval must push the run out rather than discard the turn")
 
 	require.NoError(t, svc.Handle(context.Background(), enqueuer.pop()))
-	require.Contains(t, models.seenTranscripts(), "第二句")
+	require.Contains(t, models.seenTranscripts(), "Câu thứ hai")
 }
 
 // TestNothingIsScheduledWhileMemoryIsOff is the other half of the promise: the
@@ -278,7 +278,7 @@ func TestNothingIsScheduledWhileMemoryIsOff(t *testing.T) {
 	ctx := context.WithValue(t.Context(), types.TenantIDContextKey, uint64(1))
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: "alice"})
 
-	messages.set("session-1", []*types.Message{userMessage("session-1", "一句话", time.Now())})
+	messages.set("session-1", []*types.Message{userMessage("session-1", "Một câu", time.Now())})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 
 	require.Empty(t, enqueuer.tasks)
@@ -313,11 +313,11 @@ func TestTopicsAreCountedOnTheBackgroundWorker(t *testing.T) {
 		Enabled: true, WriteMode: types.MemoryWriteAuto,
 		ExtractDelaySeconds: 1, InterestThreshold: 2,
 	})
-	models.response = `{"memories":[],"topics":["医学影像分割"]}`
+	models.response = `{"memories":[],"topics":["số hóa hồ sơ lưu trữ"]}`
 
 	base := time.Now().Add(-time.Hour)
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "分割模型怎么调参", base),
+		userMessage("session-1", "Số hóa hồ sơ lưu trữ theo quy trình ra sao", base),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -327,7 +327,7 @@ func TestTopicsAreCountedOnTheBackgroundWorker(t *testing.T) {
 	stats, err := svc.repo.TopTopics(context.Background(), scope, 10)
 	require.NoError(t, err)
 	require.Len(t, stats, 1, "the worker must be able to count topics without a request context")
-	require.Equal(t, "医学影像分割", stats[0].Topic)
+	require.Equal(t, "số hóa hồ sơ lưu trữ", stats[0].Topic)
 	require.Equal(t, 1, stats[0].Hits)
 }
 
@@ -350,7 +350,7 @@ func TestATruncatedRunDoesNotSwallowTheMessages(t *testing.T) {
 	models.truncateUntilCall = 99
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "我在做医疗影像的后端", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "Tôi đang làm số hóa hồ sơ lưu trữ", time.Now().Add(-time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 
@@ -368,8 +368,8 @@ func TestATruncatedRunDoesNotSwallowTheMessages(t *testing.T) {
 
 	// The same message is still there to be read once the model can answer.
 	models.truncateUntilCall = 0
-	models.response = `{"memories":[{"action":"add","kind":"profile","topic":"职业",` +
-		`"content":"在做医疗影像的后端","importance":4,"source":1}]}`
+	models.response = `{"memories":[{"action":"add","kind":"profile","topic":"Nghề nghiệp",` +
+		`"content":"đang làm số hóa hồ sơ lưu trữ","importance":4,"source":1}]}`
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
 
@@ -387,11 +387,11 @@ func TestTruncationIsRetriedWithMoreRoom(t *testing.T) {
 		Enabled: true, WriteMode: types.MemoryWriteAuto, ExtractDelaySeconds: 1,
 	})
 	models.truncateUntilCall = 1
-	models.response = `{"memories":[{"action":"add","kind":"profile","topic":"职业",` +
-		`"content":"在做医疗影像的后端","importance":4,"source":1}]}`
+	models.response = `{"memories":[{"action":"add","kind":"profile","topic":"Nghề nghiệp",` +
+		`"content":"đang làm số hóa hồ sơ lưu trữ","importance":4,"source":1}]}`
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "我在做医疗影像的后端", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "Tôi đang làm số hóa hồ sơ lưu trữ", time.Now().Add(-time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -416,7 +416,7 @@ func TestExtractionDoesNotAskTheModelToThink(t *testing.T) {
 	models.response = `{"memories":[]}`
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "随便说点什么", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "Chuyện phiếm buổi sáng", time.Now().Add(-time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -440,7 +440,7 @@ func TestNoAvailableModelDoesNotConsumeTheMessages(t *testing.T) {
 	})
 
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "我在做医疗影像的后端", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "Tôi đang làm số hóa hồ sơ lưu trữ", time.Now().Add(-time.Hour)),
 	})
 	// Schedule with no conversation model either, which is what the QA path
 	// actually passes: the effective model is resolved inside the pipeline and
@@ -477,19 +477,19 @@ func TestTopicResolutionUsesTheSameModelFallbackAsExtraction(t *testing.T) {
 	models.responseFor = map[string]string{
 		"You maintain the list of subjects one person keeps asking about": `{"resolutions":[{"index":0,"same_as":0}]}`,
 	}
-	models.response = `{"memories":[],"topics":["订单接口限流"]}`
+	models.response = `{"memories":[],"topics":["hạn mức tiếp nhận hồ sơ"]}`
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "参赛选手名单在哪查", time.Now().Add(-2*time.Hour)),
+		userMessage("session-1", "Danh sách thí sinh dự thi tra ở đâu", time.Now().Add(-2*time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-1", "conversation-model")
 	drainExtractions(t, svc, enqueuer)
 
 	// A second, lexically distant wording of the same subject. Only the model
 	// tier can resolve it, and it only runs if the fallback is applied.
-	models.response = `{"memories":[],"topics":["orders接口限流阈值"]}`
+	models.response = `{"memories":[],"topics":["ngưỡng số hồ sơ một cửa mỗi ngày"]}`
 	messages.set("session-1", []*types.Message{
-		userMessage("session-1", "参赛选手名单在哪查", time.Now().Add(-2*time.Hour)),
-		userMessage("session-1", "决赛参赛人数是多少", time.Now().Add(-time.Hour)),
+		userMessage("session-1", "Danh sách thí sinh dự thi tra ở đâu", time.Now().Add(-2*time.Hour)),
+		userMessage("session-1", "Số thí sinh vào vòng chung kết là bao nhiêu", time.Now().Add(-time.Hour)),
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "message-2", "conversation-model")
 	drainExtractions(t, svc, enqueuer)

@@ -11,7 +11,7 @@ func TestSummarizeMemoryRecallOutput_includesMetaAndItems(t *testing.T) {
 		"matched": 1,
 		"mode":    "lexical_only",
 	}, []*types.MemoryItem{
-		{ID: "m1", Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产用 PostgreSQL 17"},
+		{ID: "m1", Kind: types.MemoryKindFact, Topic: "cơ sở dữ liệu", Content: "Môi trường sản xuất dùng PostgreSQL 17"},
 	})
 
 	if out["matched"] != 1 || out["mode"] != "lexical_only" {

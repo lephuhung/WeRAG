@@ -82,8 +82,8 @@ func NewOpenAIEmbedder(apiKey, baseURL, modelName string,
 	}, nil
 }
 
-// SetCustomHeaders Settings 用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
-// 保留头（Authorization、Content-Type 等）会在发送时被自动跳过。
+// SetCustomHeaders đặt HTTP header tùy chỉnh của người dùng (tương tự extra_headers của OpenAI Python SDK).
+// Header dành riêng (Authorization, Content-Type...) sẽ tự động bị bỏ qua khi gửi.
 func (e *OpenAIEmbedder) SetCustomHeaders(headers map[string]string) {
 	e.customHeaders = headers
 }

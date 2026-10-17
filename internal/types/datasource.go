@@ -18,7 +18,7 @@ const (
 	// ConnectorTypeLark is Feishu's international edition (open.larksuite.com).
 	// It shares the Feishu connector; only the API host and tenant differ.
 	ConnectorTypeLark = "lark"
-	// ConnectorTypeFeishuDrive is the Feishu Drive (云盘) mode: syncs documents
+	// ConnectorTypeFeishuDrive is the Feishu Drive mode: syncs documents
 	// under a user-supplied Drive folder_token, as opposed to a Wiki space.
 	// Shares the feishu connector package; only resource enumeration + fetch differ.
 	ConnectorTypeFeishuDrive = "feishu_drive"

@@ -148,7 +148,7 @@ type tenantAPIKeyCreateRequest struct {
 	ExpiresAt        *int64   `json:"expires_at_unix"`
 }
 
-// tenantAPIKeyUpdateRequest 修改已Create  API Key 的Configuration ，字段语义与Create 接口一致。
+// tenantAPIKeyUpdateRequest sửa cấu hình của API Key đã tạo; ý nghĩa các trường giống endpoint tạo.
 type tenantAPIKeyUpdateRequest struct {
 	Name             string   `json:"name"`
 	FullAccess       bool     `json:"full_access"`
@@ -215,17 +215,17 @@ func (h *TenantHandler) resolveMaxOwnedTenantsPerUser(ctx context.Context) int {
 
 // CreateTenant godoc
 // @Summary      Create Tenant workspace
-// @Description  Create 新的Tenant workspace。任意已登录用户均可调用以建立自己的新工作区，
-// @Description  调用方会被自动设为该Tenant workspace的 Owner。跨Tenant workspace超管仍可像以前一样
-// @Description  通过本接口Create 任意Tenant workspace。
-// @Description  当 tenant.auto_create_api_key（或 WEKNORA_TENANT_AUTO_CREATE_API_KEY）
-// @Description  开启时，会自动Create 一个 full_access API Key，并在响应体的 data.api_key 字段返回其明文 token。
-// @Tags         Tenant workspace管理
+// @Description  Tạo đơn vị mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập không gian làm việc mới của mình,
+// @Description  người gọi tự động trở thành Owner của đơn vị đó. Siêu quản trị liên đơn vị vẫn có thể
+// @Description  tạo đơn vị bất kỳ qua endpoint này như trước.
+// @Description  Khi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)
+// @Description  được bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Param        request  body      handler.createTenantRequest  true  "Tenant workspace信息"
-// @Success      201      {object}  map[string]interface{}  "Create 的Tenant workspace（可选含 api_key）"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      handler.createTenantRequest  true  "Thông tin đơn vị"
+// @Success      201      {object}  map[string]interface{}  "Đơn vị đã tạo (có thể kèm api_key)"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /tenants [post]
 func (h *TenantHandler) CreateTenant(c *gin.Context) {
@@ -533,15 +533,15 @@ func (h *TenantHandler) autoCreateTenantAPIKey(ctx context.Context) bool {
 }
 
 // GetTenant godoc
-// @Summary      获取Tenant workspaceDetails
-// @Description  根据ID获取Tenant workspaceDetails
-// @Tags         Tenant workspace管理
+// @Summary      Lấy chi tiết đơn vị
+// @Description  Lấy chi tiết đơn vị theo ID
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id   path      int  true  "Tenant workspaceID"
 // @Success      200  {object}  map[string]interface{}  "Tenant workspaceDetails "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "Tenant workspace不存在"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy đơn vị"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/{id} [get]
@@ -575,14 +575,14 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 
 // UpdateTenant godoc
 // @Summary      Update Tenant workspace
-// @Description  Update Tenant workspace信息
-// @Tags         Tenant workspace管理
+// @Description  Cập nhật thông tin đơn vị
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path      int           true  "Tenant workspaceID"
-// @Param        request  body      types.Tenant  true  "Tenant workspace信息"
-// @Success      200      {object}  map[string]interface{}  "Update 后的Tenant workspace"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.Tenant  true  "Thông tin đơn vị"
+// @Success      200      {object}  map[string]interface{}  "Đơn vị sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /tenants/{id} [put]
 func (h *TenantHandler) UpdateTenant(c *gin.Context) {
@@ -729,8 +729,8 @@ func (h *TenantHandler) CreateAPIKey(c *gin.Context) {
 	})
 }
 
-// UpdateAPIKey 修改已Create 租户 API Key 的授权范围和其他可Configuration 属性。
-// 路由层要求当前租户 Owner；字段校验与Create 接口保持一致。
+// UpdateAPIKey sửa phạm vi uỷ quyền và các thuộc tính cấu hình khác của API Key đơn vị đã tạo.
+// Tầng router yêu cầu Owner của đơn vị hiện tại; kiểm tra trường giống endpoint tạo.
 func (h *TenantHandler) UpdateAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -840,8 +840,8 @@ func validateTenantAPIKeyRequest(
 	return validateTenantAPIKeyKnowledgeBaseIDs(ctx, kbService, tenantID, req.KnowledgeBaseIDs)
 }
 
-// validateTenantAPIKeyKnowledgeBaseIDs 校验白名单中的Knowledge Base真实存在且属于目标租户。
-// 入参是请求上下文、Knowledge Base服务、租户 ID 和待授权 ID；成功无返回值，失败返回可直接响应的应用错误。
+// validateTenantAPIKeyKnowledgeBaseIDs kiểm tra các kho tri thức trong allow-list thực sự tồn tại và thuộc đơn vị đích.
+// Đầu vào là ngữ cảnh yêu cầu, service kho tri thức, ID đơn vị và các ID cần uỷ quyền; thành công không trả gì, thất bại trả lỗi ứng dụng có thể phản hồi trực tiếp.
 func validateTenantAPIKeyKnowledgeBaseIDs(
 	ctx context.Context,
 	kbService interfaces.KnowledgeBaseService,
@@ -856,8 +856,8 @@ func validateTenantAPIKeyKnowledgeBaseIDs(
 	)
 }
 
-// validateTenantAPIKeyKnowledgeBaseIDsWithLookup 将归属校验与大型Knowledge Base服务接口解耦，便于覆盖边界测试。
-// lookup 输入Knowledge Base ID 并返回真实Knowledge Base；函数输出 nil 或可直接响应的校验错误。
+// validateTenantAPIKeyKnowledgeBaseIDsWithLookup tách kiểm tra quyền sở hữu khỏi giao diện service kho tri thức lớn để dễ viết test biên.
+// lookup nhận ID kho tri thức và trả về kho tri thức thật; hàm trả nil hoặc lỗi kiểm tra có thể phản hồi trực tiếp.
 func validateTenantAPIKeyKnowledgeBaseIDsWithLookup(
 	ctx context.Context,
 	tenantID uint64,
@@ -898,15 +898,15 @@ func apiPrincipalConfigForResponse(cfg *types.APIPrincipalConfig) apiPrincipalCo
 }
 
 // GetAPIPrincipalConfig godoc
-// @Summary      获取Tenant workspace API Key 用户身份Configuration
-// @Description  返回 X-API-Key 请求如何映射为终端 Principal 的Configuration （Owner）
-// @Tags         Tenant workspace管理
+// @Summary      Lấy cấu hình định danh người dùng cho API Key của đơn vị
+// @Description  Trả về cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id   path      int  true  "Tenant workspaceID"
 // @Success      200  {object}  map[string]interface{}  "API principal Configuration "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      403  {object}  errors.AppError         "权限不足"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      403  {object}  errors.AppError         "Không có quyền"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-config [get]
 func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
@@ -932,16 +932,16 @@ func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
 }
 
 // UpdateAPIPrincipalConfig godoc
-// @Summary      Update Tenant workspace API Key 用户身份Configuration
-// @Description  Configuration  X-API-Key 请求如何映射为终端 Principal（Owner）
-// @Tags         Tenant workspace管理
+// @Summary      Cập nhật cấu hình định danh người dùng cho API Key của đơn vị
+// @Description  Cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path      int                           true  "Tenant workspaceID"
 // @Param        request  body      handler.apiPrincipalConfigRequest  true  "API principal Configuration "
-// @Success      200      {object}  map[string]interface{}        "Update 后的Configuration "
-// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Success      200      {object}  map[string]interface{}        "Cấu hình sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError               "Tham số không hợp lệ"
+// @Failure      403      {object}  errors.AppError               "Không có quyền"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-config [put]
 func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
@@ -1020,16 +1020,16 @@ func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
 }
 
 // CreateAPIPrincipalTestToken godoc
-// @Summary      生成 API Playground 测试 JWT
-// @Description  使用Tenant workspace已保存的 HMAC 密钥签发短期外部用户 JWT（Owner）
-// @Tags         Tenant workspace管理
+// @Summary      Sinh JWT thử nghiệm cho API Playground
+// @Description  Dùng khoá HMAC đã lưu của đơn vị để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path      int                                  true  "Tenant workspaceID"
-// @Param        request  body      handler.apiPrincipalTestTokenRequest true  "测试 Token Parameters "
-// @Success      200      {object}  map[string]interface{}               "短期 JWT"
-// @Failure      400      {object}  errors.AppError                      "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError                      "权限不足"
+// @Param        request  body      handler.apiPrincipalTestTokenRequest true  "Tham số token thử nghiệm"
+// @Success      200      {object}  map[string]interface{}               "JWT ngắn hạn"
+// @Failure      400      {object}  errors.AppError                      "Tham số không hợp lệ"
+// @Failure      403      {object}  errors.AppError                      "Không có quyền"
 // @Security     Bearer
 // @Router       /tenants/{id}/api-principal-test-token [post]
 func (h *TenantHandler) CreateAPIPrincipalTestToken(c *gin.Context) {
@@ -1125,13 +1125,13 @@ func validateAPIPrincipalExternalUserID(id string) error {
 
 // DeleteTenant godoc
 // @Summary      Delete Tenant workspace
-// @Description  Delete 指定的Tenant workspace
-// @Tags         Tenant workspace管理
+// @Description  Xoá đơn vị chỉ định
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id   path      int  true  "Tenant workspaceID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /tenants/{id} [delete]
 func (h *TenantHandler) DeleteTenant(c *gin.Context) {
@@ -1179,13 +1179,13 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 }
 
 // ListTenants godoc
-// @Summary      获取Tenant workspaceList
-// @Description  获取当前用户可访问的Tenant workspaceList
-// @Tags         Tenant workspace管理
+// @Summary      Lấy danh sách đơn vị
+// @Description  Lấy danh sách đơn vị người dùng hiện tại truy cập được
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Tenant workspaceList "
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Failure      500  {object}  errors.AppError         "Lỗi hệ thống"
 // @Security     Bearer
 // @Router       /tenants [get]
 func (h *TenantHandler) ListTenants(c *gin.Context) {
@@ -1206,13 +1206,13 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 }
 
 // ListAllTenants godoc
-// @Summary      获取所有Tenant workspaceList
-// @Description  获取系统中所有Tenant workspace（需要跨Tenant workspace访问权限）
-// @Tags         Tenant workspace管理
+// @Summary      Lấy danh sách tất cả đơn vị
+// @Description  Lấy tất cả đơn vị trong hệ thống (cần quyền truy cập liên đơn vị)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "所有Tenant workspaceList "
-// @Failure      403  {object}  errors.AppError         "权限不足"
+// @Success      200  {object}  map[string]interface{}  "Danh sách tất cả đơn vị"
+// @Failure      403  {object}  errors.AppError         "Không có quyền"
 // @Security     Bearer
 // @Router       /tenants/all [get]
 func (h *TenantHandler) ListAllTenants(c *gin.Context) {
@@ -1243,17 +1243,17 @@ func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 }
 
 // SearchTenants godoc
-// @Summary      搜索Tenant workspace
-// @Description  分页搜索Tenant workspace（需要跨Tenant workspace访问权限）
-// @Tags         Tenant workspace管理
+// @Summary      Tìm kiếm đơn vị
+// @Description  Tìm kiếm đơn vị theo trang (cần quyền truy cập liên đơn vị)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Param        keyword    query     string  false  "搜索关键词"
-// @Param        tenant_id  query     int     false  "Tenant workspaceID筛选"
-// @Param        page       query     int     false  "页码"  default(1)
-// @Param        page_size  query     int     false  "每页数量"  default(20)
-// @Success      200        {object}  map[string]interface{}  "搜索结果"
-// @Failure      403        {object}  errors.AppError         "权限不足"
+// @Param        keyword    query     string  false  "Từ khoá tìm kiếm"
+// @Param        tenant_id  query     int     false  "Lọc theo ID đơn vị"
+// @Param        page       query     int     false  "Số trang"  default(1)
+// @Param        page_size  query     int     false  "Số mục mỗi trang"  default(20)
+// @Success      200        {object}  map[string]interface{}  "Kết quả tìm kiếm"
+// @Failure      403        {object}  errors.AppError         "Không có quyền"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/search [get]
@@ -1316,14 +1316,14 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 }
 
 // GetTenantKV godoc
-// @Summary      获取Tenant workspaceKVConfiguration
-// @Description  获取Tenant workspace级别的KVConfiguration （支持web-search-config、prompt-templates、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
-// @Tags         Tenant workspace管理
+// @Summary      Lấy cấu hình KV của đơn vị
+// @Description  Lấy cấu hình KV cấp đơn vị (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Param        key  path      string  true  "Configuration 键名"
-// @Success      200  {object}  map[string]interface{}  "Configuration 值"
-// @Failure      400  {object}  errors.AppError         "不支持的键"
+// @Param        key  path      string  true  "Tên khoá cấu hình"
+// @Success      200  {object}  map[string]interface{}  "Giá trị cấu hình"
+// @Failure      400  {object}  errors.AppError         "Khoá không được hỗ trợ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/{key} [get]
@@ -1370,14 +1370,14 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 
 // UpdateTenantKV godoc
 // @Summary      Update Tenant workspaceKVConfiguration
-// @Description  Update Tenant workspace级别的KVConfiguration （支持web-search-config、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）
-// @Tags         Tenant workspace管理
+// @Description  Cập nhật cấu hình KV cấp đơn vị (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Param        key      path      string  true  "Configuration 键名"
-// @Param        request  body      object  true  "Configuration 值"
-// @Success      200      {object}  map[string]interface{}  "Update 成功"
-// @Failure      400      {object}  errors.AppError         "不支持的键"
+// @Param        key      path      string  true  "Tên khoá cấu hình"
+// @Param        request  body      object  true  "Giá trị cấu hình"
+// @Success      200      {object}  map[string]interface{}  "Cập nhật thành công"
+// @Failure      400      {object}  errors.AppError         "Khoá không được hỗ trợ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/{key} [put]
@@ -1487,13 +1487,13 @@ func (h *TenantHandler) updateTenantWebSearchConfigInternal(c *gin.Context) {
 }
 
 // GetTenantWebSearchConfig godoc
-// @Summary      获取Tenant workspace网络搜索Configuration
-// @Description  获取Tenant workspace的网络搜索Configuration
-// @Tags         Tenant workspace管理
+// @Summary      Lấy cấu hình tìm kiếm web của đơn vị
+// @Description  Lấy cấu hình tìm kiếm web của đơn vị
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "网络搜索Configuration "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "Cấu hình tìm kiếm web"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/web-search-config [get]
@@ -1568,7 +1568,7 @@ func (h *TenantHandler) updateTenantParserEngineConfigInternal(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    types.ParserEngineConfigForResponse(updatedTenant.ParserEngineConfig, true),
-		"message": "解析引擎配置已更新",
+		"message": "đã cập nhật cấu hình engine phân tích tài liệu",
 	})
 }
 
@@ -1634,18 +1634,18 @@ func (h *TenantHandler) updateTenantStorageEngineConfigInternal(c *gin.Context) 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    types.StorageEngineConfigForResponse(updatedTenant.StorageEngineConfig, true),
-		"message": "存储引擎配置已更新",
+		"message": "đã cập nhật cấu hình engine lưu trữ",
 	})
 }
 
 // GetPromptTemplates godoc
-// @Summary      获取Prompt template
-// @Description  获取系统Configuration 的Prompt templateList
-// @Tags         Tenant workspace管理
+// @Summary      Lấy mẫu prompt
+// @Description  Lấy danh sách mẫu prompt cấu hình trong hệ thống
+// @Tags         Đơn vị
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Prompt templateConfiguration "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/kv/prompt-templates [get]
@@ -2089,7 +2089,7 @@ type TenantDirectoryEntry struct {
 // ListTenantDirectory godoc
 // @Summary      List workspace names
 // @Description  Every workspace's id and name, for choosing which unit to share a knowledge base with. Human callers only.
-// @Tags         Tenant workspace管理
+// @Tags         Đơn vị
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer

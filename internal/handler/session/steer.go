@@ -446,17 +446,17 @@ func mentionedItemsToRaw(items types.MentionedItems) []interface{} {
 }
 
 // SteerMessage godoc
-// @Summary      向运行中的对话追加消息
-// @Description  向运行中的 agent turn 追加用户消息（after 排队 / inject 注入）。无活 turn 时返回 new_run。
-// @Tags         问答
+// @Summary      Thêm tin nhắn vào cuộc trò chuyện đang chạy
+// @Description  Thêm tin nhắn người dùng vào lượt trợ lý đang chạy (after: xếp hàng / inject: chèn ngay). Không có lượt đang chạy thì trả về new_run.
+// @Tags         Hỏi đáp
 // @Accept       json
 // @Produce      json
-// @Param        session_id  path  string  true  "会话 ID"
-// @Param        request     body  SteerMessageRequest  true  "追加消息"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
+// @Param        request     body  SteerMessageRequest  true  "Tin nhắn cần thêm"
 // @Success      200  {object}  map[string]interface{}  "queued | new_run"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "会话不存在"
-// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
+// @Failure      503  {object}  errors.AppError         "Truy vấn lượt đang chạy thất bại, có thể thử lại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/steer [post]
@@ -600,16 +600,16 @@ func (h *Handler) SteerMessage(c *gin.Context) {
 }
 
 // PromoteSteerMessage godoc
-// @Summary      将排队消息改为立即注入
-// @Description  把一条 delivery=after 的排队消息改为 inject，运行中的 agent 会在下一轮边界读到它。
-// @Tags         问答
+// @Summary      Chuyển tin nhắn đang xếp hàng sang chèn ngay
+// @Description  Đổi một tin nhắn xếp hàng có delivery=after thành inject; trợ lý đang chạy sẽ đọc nó ở ranh giới lượt kế tiếp.
+// @Tags         Hỏi đáp
 // @Produce      json
-// @Param        session_id  path  string  true  "会话 ID"
-// @Param        steer_id    path  string  true  "排队消息 ID"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
+// @Param        steer_id    path  string  true  "ID tin nhắn xếp hàng"
 // @Success      200  {object}  map[string]interface{}  "queued | new_run"
 // @Failure      400  {object}  errors.AppError
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
+// @Failure      503  {object}  errors.AppError         "Truy vấn lượt đang chạy thất bại, có thể thử lại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/steer/{steer_id}/inject [post]
@@ -681,14 +681,14 @@ func (h *Handler) PromoteSteerMessage(c *gin.Context) {
 }
 
 // ListSteerMessages godoc
-// @Summary      列出当前运行中尚未消费的排队消息
-// @Description  刷新页面后用来恢复输入框上方的队列。没有正在运行的 turn 时返回空List 。
-// @Tags         问答
+// @Summary      Liệt kê các tin nhắn xếp hàng chưa được xử lý của lượt đang chạy
+// @Description  Dùng để khôi phục hàng đợi phía trên ô nhập sau khi tải lại trang. Không có lượt đang chạy thì trả về danh sách rỗng.
+// @Tags         Hỏi đáp
 // @Produce      json
-// @Param        id  path  string  true  "会话 ID"
+// @Param        id  path  string  true  "ID cuộc trò chuyện"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
+// @Failure      503  {object}  errors.AppError         "Truy vấn lượt đang chạy thất bại, có thể thử lại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/steer [get]
@@ -733,15 +733,15 @@ func (h *Handler) ListSteerMessages(c *gin.Context) {
 }
 
 // DeleteSteerMessage godoc
-// @Summary      Delete 一条排队中的消息
-// @Description  从当前运行的排队List 里去掉一条，不再注入也不再作为 follow-up 发出。
-// @Tags         问答
+// @Summary      Xoá một tin nhắn đang xếp hàng
+// @Description  Gỡ một tin nhắn khỏi hàng đợi của lượt đang chạy; không chèn nữa và cũng không gửi như follow-up.
+// @Tags         Hỏi đáp
 // @Produce      json
-// @Param        id        path  string  true  "会话 ID"
-// @Param        steer_id  path  string  true  "排队消息 ID"
+// @Param        id        path  string  true  "ID cuộc trò chuyện"
+// @Param        steer_id  path  string  true  "ID tin nhắn xếp hàng"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      404  {object}  errors.AppError
-// @Failure      503  {object}  errors.AppError         "活 turn Query 失败，可重试"
+// @Failure      503  {object}  errors.AppError         "Truy vấn lượt đang chạy thất bại, có thể thử lại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/steer/{steer_id} [delete]

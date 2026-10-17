@@ -1,9 +1,12 @@
 package service
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 )
 
 func TestSanitizeOCRText(t *testing.T) {
@@ -34,23 +37,23 @@ func TestSanitizeOCRText(t *testing.T) {
 		},
 		{
 			name:  "valid markdown passes through",
-			input: "# 标题\n\n这是一段正文，包含一些内容。\n\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |",
-			want:  "# 标题\n\n这是一段正文，包含一些内容。\n\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |",
+			input: "# Tiêu đề\n\nĐây là một đoạn văn bản, có một số nội dung.\n\n| Cột 1 | Cột 2 |\n| --- | --- |\n| Dữ liệu 1 | Dữ liệu 2 |",
+			want:  "# Tiêu đề\n\nĐây là một đoạn văn bản, có một số nội dung.\n\n| Cột 1 | Cột 2 |\n| --- | --- |\n| Dữ liệu 1 | Dữ liệu 2 |",
 		},
 		{
 			name:  "code block wrapper stripped",
-			input: "```markdown\n# 文档标题\n\n正文内容在这里。\n```",
-			want:  "# 文档标题\n\n正文内容在这里。",
+			input: "```markdown\n# Tiêu đề tài liệu\n\nNội dung chính ở đây.\n```",
+			want:  "# Tiêu đề tài liệu\n\nNội dung chính ở đây.",
 		},
 		{
 			name:  "html code block wrapper stripped",
-			input: "```html\n<p>这是一段内容</p>\n```",
-			want:  "这是一段内容",
+			input: "```html\n<p>Đây là một đoạn nội dung</p>\n```",
+			want:  "Đây là một đoạn nội dung",
 		},
 		{
 			name:  "HTML document converted to markdown",
-			input: "<html><body><h1>标题</h1><p>这是一段很长的正文内容，用来测试 HTML 到 Markdown 的转换。</p></body></html>",
-			want:  "# 标题\n\n这是一段很长的正文内容，用来测试 HTML 到 Markdown 的转换。",
+			input: "<html><body><h1>Tiêu đề</h1><p>Đây là một đoạn văn bản khá dài, dùng để kiểm tra việc chuyển đổi HTML sang Markdown.</p></body></html>",
+			want:  "# Tiêu đề\n\nĐây là một đoạn văn bản khá dài, dùng để kiểm tra việc chuyển đổi HTML sang Markdown.",
 		},
 		{
 			name:  "known empty reply - Chinese",
@@ -63,23 +66,23 @@ func TestSanitizeOCRText(t *testing.T) {
 			want:  "",
 		},
 		{
-			name:  "known empty reply - 图片中没有文字",
+			name:  "known empty reply - Chinese no-text phrase",
 			input: "图片中没有文字",
 			want:  "",
 		},
 		{
 			name:  "plain text with minimal HTML not converted",
-			input: "这是一段正常文本，价格 <100 元。",
-			want:  "这是一段正常文本，价格 <100 元。",
+			input: "Đây là văn bản bình thường, giá <100 nghìn đồng.",
+			want:  "Đây là văn bản bình thường, giá <100 nghìn đồng.",
 		},
 		{
 			name:  "multiple blank lines collapsed",
-			input: "段落一\n\n\n\n\n段落二",
-			want:  "段落一\n\n段落二",
+			input: "Đoạn một\n\n\n\n\nĐoạn hai",
+			want:  "Đoạn một\n\nĐoạn hai",
 		},
 		{
 			name:  "HTML with substantial text content is converted",
-			input: "<div><h2>报告摘要</h2><p>本季度营收同比增长 15%，净利润达到 2.3 亿元。</p><table><tr><th>指标</th><th>数值</th></tr><tr><td>营收</td><td>10亿</td></tr></table></div>",
+			input: "<div><h2>Tóm tắt báo cáo</h2><p>Doanh thu quý này tăng 15% so với cùng kỳ, lợi nhuận ròng đạt 2,3 tỷ đồng.</p><table><tr><th>Chỉ tiêu</th><th>Giá trị</th></tr><tr><td>Doanh thu</td><td>10 tỷ</td></tr></table></div>",
 			want:  "", // placeholder; will be checked for non-empty
 		},
 	}
@@ -196,17 +199,17 @@ func TestLooksLikeHTML(t *testing.T) {
 // the mixed content does not satisfy looksLikeHTML, so the old HTML-to-markdown
 // path never ran and the raw <table> markup reached the chunker.
 func TestSanitizeOCRText_ConvertsInlineHTMLTable(t *testing.T) {
-	para := "本季度公司整体经营情况保持稳定，营收与利润两项核心指标均实现同比增长。" +
-		"为了便于管理层快速了解经营成果，下表汇总了报告期内的主要财务数据，" +
-		"供后续经营分析、预算编制以及年度考核等工作参考使用，" +
-		"请结合实际业务情况综合判断，切勿脱离业务背景单独解读其中任何一项数字。"
-	tail := "以上数据均来自财务部门审核后的正式报表，统计口径与上一报告期保持一致，" +
-		"未发生会计政策变更或追溯调整。如有疑问请与财务部门联系确认，" +
-		"最终解释权归公司财务部门所有。"
-	input := "# 报告\n\n" + para + "\n\n" +
-		`<table><tr><th>指标</th><th>数值</th></tr>` +
-		`<tr><td>营收</td><td>10亿</td></tr>` +
-		`<tr><td>利润</td><td>2.3亿</td></tr></table>` +
+	para := "Trong quý này, tình hình hoạt động chung của đơn vị giữ ổn định, hai chỉ tiêu cốt lõi là doanh thu và lợi nhuận đều tăng so với cùng kỳ. " +
+		"Để lãnh đạo nhanh chóng nắm được kết quả hoạt động, bảng dưới đây tổng hợp các số liệu tài chính chính trong kỳ báo cáo, " +
+		"phục vụ công tác phân tích hoạt động, lập dự toán và đánh giá cuối năm, " +
+		"đề nghị đối chiếu với tình hình thực tế để nhận định tổng hợp, không tách riêng bất kỳ con số nào khỏi bối cảnh nghiệp vụ."
+	tail := "Các số liệu trên đều lấy từ báo cáo chính thức đã được phòng Tài chính thẩm định, tiêu chí thống kê giữ nguyên như kỳ báo cáo trước, " +
+		"không có thay đổi chính sách kế toán hay điều chỉnh hồi tố. Nếu có thắc mắc đề nghị liên hệ phòng Tài chính để xác nhận, " +
+		"quyền giải thích cuối cùng thuộc về phòng Tài chính của đơn vị."
+	input := "# Báo cáo\n\n" + para + "\n\n" +
+		`<table><tr><th>Chỉ tiêu</th><th>Giá trị</th></tr>` +
+		`<tr><td>Doanh thu</td><td>10 tỷ</td></tr>` +
+		`<tr><td>Lợi nhuận</td><td>2,3 tỷ</td></tr></table>` +
 		"\n\n" + tail + "\n\n"
 
 	if looksLikeHTML(input) {
@@ -218,10 +221,10 @@ func TestSanitizeOCRText_ConvertsInlineHTMLTable(t *testing.T) {
 	if strings.Contains(got, "<table") {
 		t.Fatalf("expected inline HTML table to be converted, got:\n%s", got)
 	}
-	if !strings.Contains(got, "# 报告") || !strings.Contains(got, "最终解释权归公司财务部门所有。") {
+	if !strings.Contains(got, "# Báo cáo") || !strings.Contains(got, "quyền giải thích cuối cùng thuộc về phòng Tài chính của đơn vị.") {
 		t.Fatalf("expected surrounding markdown to be preserved, got:\n%s", got)
 	}
-	for _, want := range []string{"指标", "数值", "营收", "10亿", "利润", "2.3亿"} {
+	for _, want := range []string{"Chỉ tiêu", "Giá trị", "Doanh thu", "10 tỷ", "Lợi nhuận", "2,3 tỷ"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected converted table to retain %q, got:\n%s", want, got)
 		}
@@ -242,7 +245,7 @@ func TestIsKnownEmptyReply(t *testing.T) {
 		{"No Text", true},
 		{"NO CONTENT", true},
 		{"empty", true},
-		{"这是正常内容", false},
+		{"Đây là nội dung bình thường", false},
 		{"", false},
 	}
 
@@ -253,5 +256,72 @@ func TestIsKnownEmptyReply(t *testing.T) {
 				t.Errorf("isKnownEmptyReply(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// A portrait photo sent to senocr-vi (2026-10-16): the model recited the OCR
+// prompt's numbered list in a loop until max_tokens, 362 lines of 14
+// distinct, 20 KB. Nothing of it is text from the image.
+func TestSanitizeOCRTextDropsLoopingPromptEcho(t *testing.T) {
+	block := "<system_prompt>\n1. Write a test sentence that shows the following:\n"
+	for i := 2; i <= 10; i++ {
+		block += fmt.Sprintf("%d. Write a test sentence that shows the right order of writing.\n", i)
+	}
+	block += "</system_prompt>\n"
+	if got := sanitizeOCRText(strings.Repeat(block, 30)); got != "" {
+		t.Fatalf("looping prompt echo must be dropped, got %d bytes: %.120q", len(got), got)
+	}
+	// A short echo with nothing else is dropped too; an echo around real text keeps the text.
+	if got := sanitizeOCRText("<system_prompt>\n</system_prompt>"); got != "" {
+		t.Fatalf("bare prompt echo kept: %q", got)
+	}
+	if got := sanitizeOCRText("<system_prompt>\nCông văn số 12/UBND-VP\n</system_prompt>"); got != "Công văn số 12/UBND-VP" {
+		t.Fatalf("text inside an echo lost: %q", got)
+	}
+}
+
+// A scanned PDF page sent with the long OCR prompt (2026-10-16, NQ
+// 74/2018): "1. The text content." up to 566, cut off at "5" by
+// max_tokens. The numbers made every line distinct and the stub hid the
+// run from the tail collapse.
+func TestSanitizeOCRTextDropsANumberedLoop(t *testing.T) {
+	var loop strings.Builder
+	for i := 1; i <= 566; i++ {
+		fmt.Fprintf(&loop, "%d. The text content.\n", i)
+	}
+	loop.WriteString("5")
+	if got := sanitizeOCRText(loop.String()); got != "" {
+		t.Fatalf("numbered loop kept, %d bytes: %.120q", len(got), got)
+	}
+	page := "Điều 2\nGiao Chính phủ tổ chức thực hiện Nghị quyết này.\n" + loop.String()
+	if got := sanitizeOCRText(page); got != "Điều 2\nGiao Chính phủ tổ chức thực hiện Nghị quyết này." {
+		t.Fatalf("real text before the loop: %.200q", got)
+	}
+}
+
+func TestIsDegenerateOCRKeepsRealDocuments(t *testing.T) {
+	// A blank form, one block of the same field labels per family member,
+	// plus dotted leaders: repeated, but not a loop.
+	form := ""
+	for i := 0; i < 5; i++ {
+		form += "Họ và tên: ..........\nNgày sinh: ..........\nNơi sinh: ..........\nQuê quán: ..........\nDân tộc: ..........\nQuan hệ với chủ hộ: ..........\n............................................\n"
+	}
+	if docparser.IsDegenerateOCR(form) {
+		t.Fatal("a blank form repeating its labels per person is not degenerate")
+	}
+	// A table whose rows differ.
+	table := ""
+	for i := 0; i < 30; i++ {
+		table += fmt.Sprintf("| %d | Mặt hàng %d | %d.000 |\n", i, i, i*7)
+	}
+	if docparser.IsDegenerateOCR(table) {
+		t.Fatal("a table of distinct rows is not degenerate")
+	}
+	// Fewer than 12 lines are never judged, however repetitive.
+	if docparser.IsDegenerateOCR(strings.Repeat("KÍNH GỬI\n", 11)) {
+		t.Fatal("short outputs are left to the thin-text gate")
+	}
+	if !docparser.IsDegenerateOCR(strings.Repeat("KÍNH GỬI\n", 12)) {
+		t.Fatal("twelve copies of one line are a loop")
 	}
 }

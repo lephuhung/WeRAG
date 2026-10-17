@@ -35,7 +35,7 @@ const (
 	// run, so the cap never loses a message.
 	extractMaxSegmentsPerRun = 3
 	// extractContextLines is how many earlier user messages are shown as
-	// read-only context, so a statement like "就用前面那个吧" can be resolved.
+	// read-only context, so a statement like "thôi dùng mẫu đầu tiên đi" can be resolved.
 	extractContextLines = 4
 	// extractMaxLineRunes truncates one very long pasted message.
 	extractMaxLineRunes = 1000
@@ -404,7 +404,7 @@ func (s *Service) extractSegment(ctx context.Context, scope interfaces.MemorySco
 	if err := s.applyDecisions(ctx, scope, cfg, segment, existing, parsed.Memories); err != nil {
 		return err
 	}
-	s.observeTopics(ctx, scope, cfg, s.extractionModelID(ctx, cfg, payload), parsed.Topics)
+	s.observeTopics(ctx, scope, cfg, s.extractionModelID(ctx, cfg, payload), segment.sessionID, parsed.Topics)
 	return nil
 }
 
@@ -562,7 +562,7 @@ func (s *Service) collectSessionSegments(ctx context.Context, session types.Memo
 
 // priorContext fetches the few user messages just before a segment.
 //
-// Without it a run sees only what is new, so a turn like "就用前面那个吧" arrives
+// Without it a run sees only what is new, so a turn like "thôi dùng mẫu đầu tiên đi" arrives
 // with nothing to resolve it against and the model either invents a subject or
 // silently drops a real preference. The context is shown to the model and never
 // extracted from, so it cannot re-produce memories from messages the watermark
@@ -625,10 +625,26 @@ What to record
 - profile: who the user is. preference: how they like to work.
   fact: stable facts about their projects or environment.
   task: what they are currently trying to finish.
-- The test is not whether the sentence is a statement or a question. It is
-  whether it says something durable about this person. "Trees have branches" is
-  general knowledge and is not recorded; "I'm looking for a restaurant in
-  Shanghai" is a question and IS recorded, because it says what they are doing.
+- The test is whether the sentence says something durable about THIS PERSON:
+  who they are, how they want to be answered, what their unit uses, what they
+  must finish by when. Most messages do not. In particular:
+  * A request to do something with the document in front of them — tóm tắt,
+    soát lỗi chính tả, kiểm tra thể thức, vẽ sơ đồ, viết lại, dịch, gửi, chèn —
+    is this turn's work. It says nothing about the person. No memory.
+  * A legal or factual question ("Nghị định 53/2022 quy định gì?") is not a
+    memory either. Do NOT guess who the user is from a single question: one
+    question about pensions does not make them a pensions officer. Only when
+    two or more lines in this transcript point the same way may you record a
+    guess, and then only with "inferred": true. Recurrence across
+    conversations is counted through "topics", not through guesses.
+  * Remarks about the assistant or this system ("không có văn bản này trong
+    hệ thống", "sai rồi", "bạn là ai") are feedback on an answer, not facts
+    about the person. No memory.
+  * "Trả lời ngắn", "nhé", "giúp tôi" attached to one request shape this
+    answer only. They are not a preference. A preference needs "từ giờ",
+    "luôn", "đừng", "tôi thích", or a plainly standing instruction.
+  * Saying "tôi là", "tôi đang công tác tại", "bên tôi", "từ giờ", "luôn",
+    "đừng" is what makes a sentence about the person. Record those.
 - Set "inferred" to true when you are deducing something about the user rather
   than repeating what they said — for example concluding from questions about
   award ceremonies and venue clearing that they organise events. Such entries
@@ -642,9 +658,23 @@ The "topics" list
   ordinary. These are only counted; a subject becomes a memory once it RECURS
   across conversations, so listing one costs nothing and omitting one loses a
   signal.
-- Name the subject AREA, at a level that could plausibly come up again in
-  another conversation. Not the individual question. This is the whole point:
-  a label that can only ever match itself is counted once and never again.
+- Name the FIELD the question or document is about, at a level that could
+  plausibly come up again in another conversation. Not the individual question.
+  This is the whole point: a label that can only ever match itself is counted
+  once and never again.
+- Never name the ACTION the user asked for. "tóm tắt văn bản", "kiểm tra lỗi
+  chính tả", "vẽ sơ đồ", "hỏi nội dung ảnh" are things the assistant does, not
+  fields this person works in, and they are discarded. When a request names no
+  field at all ("Tóm tắt văn bản này nhé", "Soát lỗi đoạn này") the topics
+  list is simply empty. When it does name one, name that field:
+
+  request:  Tóm tắt Nghị định 30/2020 về công tác văn thư giúp tôi
+  subject:  công tác văn thư                NOT tóm tắt văn bản
+  request:  Soát lỗi chính tả đoạn này
+  subject:  (none)
+- When a question gives only a document number ("Nghị định 53/2022 quy định
+  gì?", "Thông tư 01 còn hiệu lực không"), name the document ("nghị định
+  53/2022", "thông tư 01"). Do not invent the field it belongs to.
 - The specifics of one question — a name, an identifier, a date, a version, a
   quantity — belong to the question, not to the subject name. Strip them.
 
@@ -672,9 +702,10 @@ Actions
   none: nothing worth doing.
 
 Time
-- REFERENCE TIME is given with each line. Write dates absolutely: "hand in the
-  weekly report before 2026-08-15", never "next Friday" — the note is read
-  months later.
+- REFERENCE TIME is given with each line. Write dates absolutely, in the
+  content as well as in "expires_at": "trình bày dự thảo quy chế trước lãnh
+  đạo Sở ngày 2026-10-20", never "thứ Hai tuần sau" or "cuối tuần này" — the
+  note is read months later, when "tuần sau" means nothing.
 - Set "expires_at" for anything true only for a while, typically a task.
   Use null when the statement has no end.
 
@@ -689,9 +720,17 @@ Existing notes: (none)
  "content":"Chuyên viên văn phòng UBND xã, chủ yếu soạn công văn và tờ trình","importance":4,"source":1,"expires_at":null},
 {"action":"add","target":null,"kind":"preference","topic":"cách trả lời",
  "content":"Trả lời thẳng vào kết luận, không dẫn dắt","importance":5,"source":2,"expires_at":null}],
-"topics":["soạn thảo văn bản hành chính","xử phạt vi phạm hành chính"]}
+"topics":["công tác văn phòng cấp xã","xử phạt vi phạm hành chính"]}
 Line 3 is a passing question about general knowledge, so it produces no memory
 — but its subject still belongs in "topics".
+
+Lines:
+[1] (2026-05-06) Tóm tắt văn bản này nhé
+[2] (2026-05-06) Soát lỗi chính tả đoạn vừa chọn
+Existing notes: (none)
+{"memories":[],"topics":[]}
+Both lines ask for work on the open document. Nothing about the person, and
+no field to name.
 
 Lines:
 [1] (2026-03-09) Bên tôi vừa chuyển từ phần mềm quản lý văn bản cũ sang hệ thống eOffice
@@ -708,19 +747,39 @@ Existing notes:
 Lines:
 [1] (2026-04-02) Hồ sơ đăng ký hộ tịch phải lưu trữ bao nhiêu năm?
 Existing notes: (none)
+{"memories":[],"topics":["lưu trữ hồ sơ hộ tịch"]}
+One question is not enough to say who this person is; the subject is counted
+and will become an interest if it keeps coming up.
+
+Lines:
+[1] (2026-04-02) Hồ sơ đăng ký hộ tịch phải lưu trữ bao nhiêu năm?
+[2] (2026-04-02) Mẫu trích lục khai sinh mới nhất là mẫu nào?
+[3] (2026-04-02) Lệ phí đăng ký kết hôn có yếu tố nước ngoài hiện là bao nhiêu?
+Existing notes: (none)
 {"memories":[
 {"action":"add","target":null,"kind":"profile","topic":"vị trí có thể",
  "content":"Có thể đang phụ trách công tác hộ tịch","importance":2,"source":1,
  "expires_at":null,"inferred":true}],
-"topics":["lưu trữ hồ sơ hộ tịch"]}
-The identity is a guess, so it is marked inferred and waits for confirmation.
-The subject is counted either way.
+"topics":["lưu trữ hồ sơ hộ tịch","hộ tịch"]}
+Three questions in a row about one line of work justify a guess. It is marked
+inferred and waits for the user to confirm it.
+
+Lines:
+[1] (2026-06-11) Em làm ở UBND phường Phú Hội, cho em hỏi thời hiệu xử phạt vi phạm hành chính là bao lâu?
+Existing notes: (none)
+{"memories":[
+{"action":"add","target":null,"kind":"profile","topic":"nơi công tác",
+ "content":"Làm việc tại UBND phường Phú Hội","importance":4,"source":1,"expires_at":null,"inferred":false}],
+"topics":["xử phạt vi phạm hành chính"]}
+The question itself is not recorded, but "em làm ở ..." is the user stating
+where they work: that part is a profile note, stated, not inferred.
 
 Language
 - Write "topic", "content" and every "topics" entry in the language the user
-  writes in — Vietnamese for a Vietnamese speaker, keeping the Vietnamese
-  diacritics. Never translate them into Chinese or English. Keep official
-  names, document numbers and abbreviations (UBND, BHXH, NĐ-CP) as written.
+  writes in: Vietnamese with full diacritics for a Vietnamese speaker, English
+  for someone writing English. Never translate into another language. Keep
+  official names, document numbers and abbreviations (UBND, BHXH, NĐ-CP) as
+  written.
 
 Rules
 - Write "content" as one short sentence.
@@ -810,7 +869,7 @@ func buildExtractionPrompt(
 		// The wording has to test identity, not relatedness. It used to say
 		// "when the transcript is about one of these", and a question about one
 		// athlete's events genuinely *is* about children's swimming events — so
-		// the model dutifully filed it under 门店排班管理 and every specific
+		// the model dutifully filed it under the tracked label and every specific
 		// question in the domain collapsed into one bucket.
 		builder.WriteString("\nSubjects already tracked for this user:\n")
 		shown := 0
@@ -1114,6 +1173,19 @@ func (s *Service) applyDecisions(
 		action := strings.ToLower(strings.TrimSpace(decision.Action))
 		if action == "" || action == "none" || action == "noop" {
 			continue
+		}
+		if action == "add" || action == "update" {
+			// The model decides what a sentence says; the code decides whether
+			// that is a memory at all. Prompt rules alone did not hold.
+			gated, verdict := gateDecision(decision, decision.resolveSource(segment).content)
+			if verdict.dropped() {
+				logger.Infof(ctx, "memory: gate dropped %s %q (%s)", decision.Kind, decision.Topic, verdict)
+				continue
+			}
+			if verdict != gateKept {
+				logger.Infof(ctx, "memory: gate changed %s %q (%s)", decision.Kind, decision.Topic, verdict)
+			}
+			decision = gated
 		}
 
 		topic := types.SanitizeMemoryTopic(decision.Topic)

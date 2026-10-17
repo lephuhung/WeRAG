@@ -84,9 +84,9 @@ func TestRenderDocumentHandlesUnknownAndUnsafeContent(t *testing.T) {
 }
 
 func TestSanitizeFilenameDoesNotSplitUTF8(t *testing.T) {
-	name := strings.Repeat("文", 100) + "/draft"
+	name := strings.Repeat("ầ", 100) + "/draft"
 	sanitized := sanitizeFilename(name)
-	if !strings.HasSuffix(sanitized, "文") || len(sanitized) > 200 {
+	if !strings.HasSuffix(sanitized, "ầ") || len(sanitized) > 200 {
 		t.Fatalf("sanitizeFilename() = %q (%d bytes)", sanitized, len(sanitized))
 	}
 	if sanitized = sanitizeFilename("line\nname"); sanitized != "line_name" {

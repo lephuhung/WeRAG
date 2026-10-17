@@ -40,7 +40,6 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
     labelKey: "settingsNav.groups.account",
     items: [
       { key: "general", labelKey: "settingsNav.general", fallbackLabel: "General", minRole: "member" },
-      { key: "mymemory", labelKey: "settingsNav.mymemory", fallbackLabel: "My memory", minRole: "system" },
     ],
   },
   {
@@ -50,11 +49,7 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Workspace", minRole: "member" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
       { key: "agency", labelKey: "settingsNav.agencyProfile", fallbackLabel: "Agency profile", minRole: "member" },
-      /* Retained for compatibility: the route now renders a retired-notice
-       * pointing at per-KB recipient-bound invites. */
-      { key: "sharing", labelKey: "settingsNav.sharing", fallbackLabel: "Sharing", minRole: "admin" },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "system" },
-      { key: "chathistory", labelKey: "systemNav.chathistory", fallbackLabel: "Chat history", minRole: "system" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "system" },
     ],
   },

@@ -46,11 +46,11 @@ func TestNormalizeKnowledgeFolderPathCapsDepthAndLength(t *testing.T) {
 }
 
 func TestNormalizeKnowledgeFolderPathKeepsSegmentsValidUTF8(t *testing.T) {
-	// 60 Chinese characters is 180 bytes, so the segment cap cuts inside the
+	// 60 three-byte Vietnamese characters is 180 bytes, so the segment cap cuts inside the
 	// 43rd character. The stored folder_path has to stay valid UTF-8: an
 	// invalid one no longer survives a JSON round trip, so the path the client
 	// gets back never matches the row again on rename or move.
-	segment := strings.Repeat("中", 60)
+	segment := strings.Repeat("ầ", 60)
 	normalized := NormalizeKnowledgeFolderPath(segment)
 
 	assert.True(t, utf8.ValidString(normalized),

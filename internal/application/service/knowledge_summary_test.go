@@ -170,7 +170,7 @@ func TestFirstTextChunkSummaryFallback(t *testing.T) {
 
 	t.Run("caps unicode content by runes", func(t *testing.T) {
 		got := firstTextChunkSummaryFallback([]*types.Chunk{{
-			Content: strings.Repeat("摘", summaryFallbackMaxRunes+25),
+			Content: strings.Repeat("ă", summaryFallbackMaxRunes+25),
 		}})
 		if len([]rune(got)) != summaryFallbackMaxRunes {
 			t.Fatalf("fallback rune count = %d, want %d", len([]rune(got)), summaryFallbackMaxRunes)

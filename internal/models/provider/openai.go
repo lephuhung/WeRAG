@@ -11,14 +11,14 @@ const (
 	OpenAIBaseURL = "https://api.openai.com/v1"
 )
 
-// OpenAIProvider 实现 OpenAI 的 Provider 接口
+// OpenAIProvider triển khai giao diện Provider cho OpenAI
 type OpenAIProvider struct{}
 
 func init() {
 	Register(&OpenAIProvider{})
 }
 
-// Info 返回 OpenAI provider 的元数据
+// Info trả về metadata của provider OpenAI
 func (p *OpenAIProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderOpenAI,
@@ -42,7 +42,7 @@ func (p *OpenAIProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 OpenAI provider Configuration
+// ValidateConfig kiểm tra cấu hình provider OpenAI
 func (p *OpenAIProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for OpenAI provider")
@@ -53,20 +53,20 @@ func (p *OpenAIProvider) ValidateConfig(config *Config) error {
 	return nil
 }
 
-// IsOpenAIReasoningOrGPT5Model 判断模型是否为 OpenAI / Azure OpenAI 的
-// 推理类（o-series）或 GPT-5 系列模型。
+// IsOpenAIReasoningOrGPT5Model xác định mô hình có phải dòng suy luận (o-series)
+// hoặc GPT-5 của OpenAI / Azure OpenAI không.
 //
-// 这些模型在 OpenAI Chat Completions API 中：
-//   - 不再支持 `max_tokens`，必须使用 `max_completion_tokens`；
-//   - 仅支持默认的 `temperature=1`、`top_p=1`，且不支持 `frequency_penalty` /
-//     `presence_penalty` 等采样Parameters （传非默认值会被拒绝）。
+// Với OpenAI Chat Completions API, các mô hình này:
+//   - không còn hỗ trợ `max_tokens`, phải dùng `max_completion_tokens`;
+//   - chỉ chấp nhận `temperature=1`, `top_p=1` mặc định và không hỗ trợ `frequency_penalty` /
+//     `presence_penalty` (truyền giá trị khác mặc định sẽ bị từ chối).
 //
-// 参考：
+// Tham khảo:
 //   - https://platform.openai.com/docs/api-reference/chat
 //   - https://learn.microsoft.com/azure/ai-services/openai/how-to/reasoning
 //
-// 仅基于模型名做启发式匹配；对于 Azure OpenAI，因为模型名实际上是 deployment 名，
-// 用户若用了自定义部署名我们无法识别，此时仍会按普通模型处理（保持原行为）。
+// Chỉ so khớp heuristic theo tên mô hình; với Azure OpenAI tên mô hình thực ra là tên deployment,
+// nếu người dùng đặt tên deployment tùy ý thì không nhận ra được và vẫn xử lý như mô hình thường (giữ hành vi cũ).
 func IsOpenAIReasoningOrGPT5Model(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
 	if name == "" {
@@ -76,7 +76,7 @@ func IsOpenAIReasoningOrGPT5Model(modelName string) bool {
 		return true
 	}
 	// o1 / o1-mini / o1-preview / o3 / o3-mini / o4-mini ...
-	// 必须精确匹配，避免误命中 "openai-..." 之类。
+	// Phải khớp chính xác để tránh bắt nhầm kiểu "openai-...".
 	for _, prefix := range []string{"o1", "o3", "o4"} {
 		if name == prefix || strings.HasPrefix(name, prefix+"-") {
 			return true

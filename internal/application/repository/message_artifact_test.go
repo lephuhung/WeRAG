@@ -169,20 +169,20 @@ func TestListArtifactLibraryScopesAndGroupsVersions(t *testing.T) {
 	ctx := context.Background()
 	base := time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC)
 
-	mine := createSession(t, db, &types.Session{TenantID: 7, UserID: "alice", Title: "我的会话"})
-	legacy := createSession(t, db, &types.Session{TenantID: 7, Title: "旧会话"})
+	mine := createSession(t, db, &types.Session{TenantID: 7, UserID: "alice", Title: "Cuộc trò chuyện của tôi"})
+	legacy := createSession(t, db, &types.Session{TenantID: 7, Title: "Cuộc trò chuyện cũ"})
 	bobs := createSession(t, db, &types.Session{TenantID: 7, UserID: "bob", Title: "Bob"})
-	otherTenant := createSession(t, db, &types.Session{TenantID: 8, UserID: "alice", Title: "别的空间"})
+	otherTenant := createSession(t, db, &types.Session{TenantID: 8, UserID: "alice", Title: "Không gian khác"})
 	maintenance := createSession(t, db, &types.Session{
-		TenantID: 7, UserID: "alice", Title: "维护", Description: types.SkillMaintenanceSessionMarker + "x",
+		TenantID: 7, UserID: "alice", Title: "Bảo trì", Description: types.SkillMaintenanceSessionMarker + "x",
 	})
 	// IM sessions are created without an owner, so they look like legacy
 	// tenant-level rows; only the IM mapping tells them apart. A cleared chat
 	// keeps its soft-deleted mapping and must stay out as well.
-	imChat := createSession(t, db, &types.Session{TenantID: 7, Title: "飞书：张三的私聊"})
-	clearedIMChat := createSession(t, db, &types.Session{TenantID: 7, Title: "企微：已清空"})
+	imChat := createSession(t, db, &types.Session{TenantID: 7, Title: "Feishu: chat riêng của Nguyễn Văn A"})
+	clearedIMChat := createSession(t, db, &types.Session{TenantID: 7, Title: "WeCom: đã xoá"})
 	embedChat := createSession(t, db, &types.Session{
-		TenantID: 7, Title: "网页挂件", Description: types.EmbedSessionMarkerPrefix + "ch-1",
+		TenantID: 7, Title: "Tiện ích web", Description: types.EmbedSessionMarkerPrefix + "ch-1",
 	})
 	require.NoError(t, db.Create(&testIMChannelSession{
 		ID: "ics-1", SessionID: imChat, Platform: "feishu", TenantID: 7,
@@ -233,7 +233,7 @@ func TestListArtifactLibraryScopesAndGroupsVersions(t *testing.T) {
 	require.Len(t, items, 3)
 	require.Equal(t, []string{"old.pptx", "data.csv", "report.pptx"},
 		[]string{items[0].FileName, items[1].FileName, items[2].FileName}, "newest first")
-	require.Equal(t, "旧会话", items[0].SessionTitle)
+	require.Equal(t, "Cuộc trò chuyện cũ", items[0].SessionTitle)
 	require.Equal(t, 1, items[0].VersionCount, "re-referencing a file does not add a version")
 
 	report := items[2]

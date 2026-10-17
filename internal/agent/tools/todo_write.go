@@ -287,7 +287,7 @@ func formatPlanStep(index int, step PlanStep) string {
 	output := fmt.Sprintf("  %d. %s [%s] %s\n", index, emoji, step.Status, step.Description)
 
 	// if len(step.ToolsToUse) > 0 {
-	// 	output += fmt.Sprintf("     工具: %s\n", strings.Join(step.ToolsToUse, ", "))
+	// 	output += fmt.Sprintf("     Công cụ: %s\n", strings.Join(step.ToolsToUse, ", "))
 	// }
 
 	return output

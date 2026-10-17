@@ -14,7 +14,7 @@ import (
 )
 
 func TestMissingSkillPackageGuidanceUsesTheUnifiedExecutor(t *testing.T) {
-	hint := missingSkillPackageGuidance("律师助手")
+	hint := missingSkillPackageGuidance("trợ-lý-pháp-lý")
 	require.Contains(t, hint, skillPythonPackageInstallCommand)
 	require.Contains(t, hint, "shell_exec")
 	require.NotContains(t, hint, "execute_skill_script")
@@ -56,7 +56,7 @@ func TestSkillPythonPackageRecoveryInstallsWithoutPip(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			dir := t.TempDir()
-			skillDir := filepath.Join(dir, "staged skill 中文")
+			skillDir := filepath.Join(dir, "staged skill tiếng Việt")
 			require.NoError(t, os.MkdirAll(skillDir, 0o755))
 			env := append(os.Environ(), "WEKNORA_SKILL_DIR="+skillDir,
 				"UV_OFFLINE=1", "UV_CACHE_DIR="+filepath.Join(dir, "uv-cache"),

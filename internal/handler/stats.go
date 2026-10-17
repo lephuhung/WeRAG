@@ -26,7 +26,7 @@ func NewStatsHandler(statsSvc interfaces.StatsService) *StatsHandler {
 // @Summary      Platform usage statistics
 // @Description  Account counters, documents grouped by parse status, and a
 // @Description  per-day message activity series for the heatmap.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        days query int false "Message activity window in days (1-365, default 90)"
 // @Success      200 {object} map[string]interface{}
@@ -54,7 +54,7 @@ func (h *StatsHandler) GetSystemStats(c *gin.Context) {
 // @Summary      Documents in the ingest pipeline
 // @Description  Pending/processing/finalizing documents across every tenant,
 // @Description  oldest first, plus the number of documents failed in 24h.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Produce      json
 // @Param        limit query int false "Max rows (1-200, default 50)"
 // @Success      200 {object} map[string]interface{}

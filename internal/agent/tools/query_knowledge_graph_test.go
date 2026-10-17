@@ -105,18 +105,18 @@ func TestQueryKnowledgeGraph_ReportsConfiguredEntityAndRelationTypes(t *testing.
 			ExtractConfig: &types.ExtractConfig{
 				Enabled: true,
 				Nodes: []*types.GraphNode{
-					{Name: "合同"},
-					{Name: "法务部门"},
-					{Name: "审批流程"},
-					{Name: "合同"},
+					{Name: "Hợp đồng"},
+					{Name: "Phòng Pháp chế"},
+					{Name: "Quy trình phê duyệt"},
+					{Name: "Hợp đồng"},
 					nil,
 					{Name: ""},
 				},
 				Relations: []*types.GraphRelation{
-					{Type: "属于"},
-					{Type: "管理"},
-					{Type: "审批"},
-					{Type: "管理"},
+					{Type: "thuộc về"},
+					{Type: "quản lý"},
+					{Type: "phê duyệt"},
+					{Type: "quản lý"},
 					{Type: ""},
 					nil,
 				},
@@ -125,25 +125,25 @@ func TestQueryKnowledgeGraph_ReportsConfiguredEntityAndRelationTypes(t *testing.
 		results: []*types.SearchResult{
 			{
 				ID:             "chunk-approval-1",
-				Content:        "合同审批流程由法务部门与采购部门共同维护，法务部门负责合规审查。",
+				Content:        "Quy trình phê duyệt hợp đồng do Phòng Pháp chế và Phòng Mua sắm cùng duy trì, Phòng Pháp chế chịu trách nhiệm rà soát tuân thủ.",
 				KnowledgeID:    "doc-approval",
-				KnowledgeTitle: "合同审批管理制度",
+				KnowledgeTitle: "Quy chế quản lý phê duyệt hợp đồng",
 				Score:          0.97,
 				MatchType:      types.MatchTypeEmbedding,
 			},
 			{
 				ID:             "chunk-approval-2",
-				Content:        "采购申请提交后进入合同审批流程，审批完成后归档到合同台账。",
+				Content:        "Sau khi nộp đề nghị mua sắm sẽ vào quy trình phê duyệt hợp đồng, phê duyệt xong thì lưu vào sổ theo dõi hợp đồng.",
 				KnowledgeID:    "doc-procurement",
-				KnowledgeTitle: "采购与合同协作规范",
+				KnowledgeTitle: "Quy định phối hợp mua sắm và hợp đồng",
 				Score:          0.89,
 				MatchType:      types.MatchTypeKeywords,
 			},
 			{
 				ID:             "chunk-approval-3",
-				Content:        "法务部门管理标准合同模板，并维护合同风险审查清单。",
+				Content:        "Phòng Pháp chế quản lý mẫu hợp đồng chuẩn và duy trì danh mục rà soát rủi ro hợp đồng.",
 				KnowledgeID:    "doc-legal",
-				KnowledgeTitle: "法务部职责说明",
+				KnowledgeTitle: "Bản mô tả nhiệm vụ Phòng Pháp chế",
 				Score:          0.84,
 				MatchType:      types.MatchTypeEmbedding,
 			},
@@ -152,7 +152,7 @@ func TestQueryKnowledgeGraph_ReportsConfiguredEntityAndRelationTypes(t *testing.
 
 	args, err := json.Marshal(QueryKnowledgeGraphInput{
 		KnowledgeBaseIDs: []string{"kb-1"},
-		Query:            "合同审批与法务协作",
+		Query:            "Phê duyệt hợp đồng và phối hợp pháp chế",
 	})
 	require.NoError(t, err)
 
@@ -166,21 +166,21 @@ func TestQueryKnowledgeGraph_ReportsConfiguredEntityAndRelationTypes(t *testing.
 	assert.Contains(t, result.Output, "Relationship Types (3)")
 	assert.NotContains(t, result.Output, "No entity types configured")
 	assert.NotContains(t, result.Output, "No relationship types configured")
-	assert.Contains(t, result.Output, "合同")
-	assert.Contains(t, result.Output, "法务部门")
-	assert.Contains(t, result.Output, "审批流程")
-	assert.Contains(t, result.Output, "管理")
-	assert.Contains(t, result.Output, "审批")
+	assert.Contains(t, result.Output, "Hợp đồng")
+	assert.Contains(t, result.Output, "Phòng Pháp chế")
+	assert.Contains(t, result.Output, "Quy trình phê duyệt")
+	assert.Contains(t, result.Output, "quản lý")
+	assert.Contains(t, result.Output, "phê duyệt")
 	assert.Contains(t, result.Output, "✓ Found 3 relevant results (deduplicated)")
 	assert.Contains(t, result.Output, "Result #1:")
 	assert.Contains(t, result.Output, "Result #2:")
 	assert.Contains(t, result.Output, "Result #3:")
-	assert.Contains(t, result.Output, "合同审批管理制度")
+	assert.Contains(t, result.Output, "Quy chế quản lý phê duyệt hợp đồng")
 
 	graphConfig, ok := result.Data["graph_config"].(map[string]interface{})
 	require.True(t, ok)
-	assert.ElementsMatch(t, []string{"合同", "审批流程", "法务部门"}, graphConfig["nodes"])
-	assert.ElementsMatch(t, []string{"属于", "审批", "管理"}, graphConfig["relations"])
+	assert.ElementsMatch(t, []string{"Hợp đồng", "Quy trình phê duyệt", "Phòng Pháp chế"}, graphConfig["nodes"])
+	assert.ElementsMatch(t, []string{"thuộc về", "phê duyệt", "quản lý"}, graphConfig["relations"])
 }
 
 func (s *stubKnowledgeBaseService) CreatePublicKnowledgeBase(context.Context, *types.KnowledgeBase) (*types.KnowledgeBase, error) {

@@ -60,7 +60,10 @@ func (r *abbreviationRepository) List(
 	}
 
 	var rows []*types.Abbreviation
-	err := query.Order("updated_at DESC").Offset(offset).Limit(limit).Find(&rows).Error
+	// Pending rows first so reviewers find them on page one; the rest of the
+	// key never changes on approval, so a row keeps its place within a state.
+	err := query.Order("is_active ASC").Order("created_at DESC").Order("short_form ASC").Order("id ASC").
+		Offset(offset).Limit(limit).Find(&rows).Error
 	return rows, total, err
 }
 

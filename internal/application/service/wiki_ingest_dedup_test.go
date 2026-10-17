@@ -121,7 +121,7 @@ func TestSelectDedupCandidatePages_FiltersUnrelatedHallucinationTarget(t *testin
 	for i := 0; i < 40; i++ {
 		pages = append(pages, makePage(
 			"concept/filler-"+strings.Repeat("x", i+1),
-			"填充概念"+strings.Repeat("占位", i+1),
+			"Khái niệm đệm "+strings.Repeat("đệm", i+1),
 			"concept",
 		))
 	}
@@ -155,7 +155,7 @@ func TestSelectDedupCandidatePages_KeepsRelatedPages(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		pages = append(pages, makePage(
 			"entity/filler-"+strings.Repeat("x", i+1),
-			"填充实体"+strings.Repeat("占位", i+1),
+			"Thực thể đệm "+strings.Repeat("đệm", i+1),
 			"entity",
 		))
 	}
@@ -175,9 +175,9 @@ func TestSelectDedupCandidatePages_SmallCorpusBypass(t *testing.T) {
 		{Slug: "concept/a", Name: "A"},
 	}
 	pages := []*types.WikiPage{
-		makePage("concept/wholly-unrelated-1", "毫不相关一", "concept"),
-		makePage("concept/wholly-unrelated-2", "毫不相关二", "concept"),
-		makePage("concept/wholly-unrelated-3", "毫不相关三", "concept"),
+		makePage("concept/wholly-unrelated-1", "Không liên quan một", "concept"),
+		makePage("concept/wholly-unrelated-2", "Không liên quan hai", "concept"),
+		makePage("concept/wholly-unrelated-3", "Không liên quan ba", "concept"),
 	}
 	got := selectDedupCandidatePages(newItems, pages)
 	if len(got) != len(pages) {
@@ -255,22 +255,22 @@ func TestNormalizeWikiIdentityTitlePreservesSemanticPunctuation(t *testing.T) {
 	if got := normalizeWikiIdentityTitle("  Acme  Corp "); got != "acmecorp" {
 		t.Fatalf("normalizeWikiIdentityTitle whitespace/case = %q, want acmecorp", got)
 	}
-	if normalizeWikiIdentityTitle("寓言") == normalizeWikiIdentityTitle("《寓言》") {
+	if normalizeWikiIdentityTitle("Bình Ngô đại cáo") == normalizeWikiIdentityTitle("«Bình Ngô đại cáo»") {
 		t.Fatal("concept title and work/chapter title must keep distinct identities")
 	}
 }
 
 func TestExactIdentityTargetSameTypeOnly(t *testing.T) {
-	item := extractedItem{Name: "孔子", Slug: "entity/kong-zi"}
+	item := extractedItem{Name: "Vietcombank", Slug: "entity/kong-zi"}
 	pages := map[string]*types.WikiPageLite{
 		"entity/confucius": {
 			Slug:     "entity/confucius",
-			Title:    "孔 子",
+			Title:    "Vietcom bank",
 			PageType: types.WikiPageTypeEntity,
 		},
 		"concept/confucius": {
 			Slug:     "concept/confucius",
-			Title:    "孔子",
+			Title:    "Vietcombank",
 			PageType: types.WikiPageTypeConcept,
 		},
 	}
@@ -309,7 +309,7 @@ func TestWikiIdentityClaimConvergesDifferentSlugs(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			results[i] = svc.claimWikiIdentitySlug(
-				ctx, "kb-1", types.WikiPageTypeEntity, "孔 子", proposal, false, &WikiBatchContext{},
+				ctx, "kb-1", types.WikiPageTypeEntity, "Vietcom bank", proposal, false, &WikiBatchContext{},
 			)
 		}()
 	}
@@ -323,10 +323,10 @@ func TestWikiIdentityClaimConvergesDifferentSlugs(t *testing.T) {
 	// A verified existing page is authoritative and replaces a provisional
 	// reservation left by an earlier map worker.
 	authoritative := svc.claimWikiIdentitySlug(
-		ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/confucius", true, &WikiBatchContext{},
+		ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/confucius", true, &WikiBatchContext{},
 	)
 	third := svc.claimWikiIdentitySlug(
-		ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kongzi", false, &WikiBatchContext{},
+		ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kongzi", false, &WikiBatchContext{},
 	)
 	if authoritative != "entity/confucius" || third != authoritative {
 		t.Fatalf("authoritative identity did not replace claim: authoritative=%q third=%q", authoritative, third)
@@ -339,13 +339,13 @@ func TestWikiIdentityClaimKeepsDistinctTypesAndPunctuation(t *testing.T) {
 	ctx := context.Background()
 
 	concept := svc.claimWikiIdentitySlug(
-		ctx, "kb-1", types.WikiPageTypeConcept, "寓言", "concept/fable-zhuangzi", false, batch,
+		ctx, "kb-1", types.WikiPageTypeConcept, "Bình Ngô đại cáo", "concept/fable-zhuangzi", false, batch,
 	)
 	chapter := svc.claimWikiIdentitySlug(
-		ctx, "kb-1", types.WikiPageTypeConcept, "《寓言》", "concept/yuyan-chapter", false, batch,
+		ctx, "kb-1", types.WikiPageTypeConcept, "«Bình Ngô đại cáo»", "concept/yuyan-chapter", false, batch,
 	)
 	entity := svc.claimWikiIdentitySlug(
-		ctx, "kb-1", types.WikiPageTypeEntity, "寓言", "entity/yuyan-zhuangzi", false, batch,
+		ctx, "kb-1", types.WikiPageTypeEntity, "Bình Ngô đại cáo", "entity/yuyan-zhuangzi", false, batch,
 	)
 	if concept != "concept/fable-zhuangzi" || chapter != "concept/yuyan-chapter" || entity != "entity/yuyan-zhuangzi" {
 		t.Fatalf("distinct identities were collapsed: concept=%q chapter=%q entity=%q", concept, chapter, entity)
@@ -357,12 +357,12 @@ func TestStabilizeExtractedIdentitiesCoalescesEvidence(t *testing.T) {
 	batch := &WikiBatchContext{}
 	items := []extractedItem{
 		{
-			Name: "孔 子", Slug: "entity/kong-zi", Aliases: []string{"孔丘"},
-			Description: "思想家", Details: "短", SourceChunks: []string{"chunk-1"},
+			Name: "Vietcom bank", Slug: "entity/kong-zi", Aliases: []string{"VCB"},
+			Description: "Ngân hàng", Details: "Ngắn", SourceChunks: []string{"chunk-1"},
 		},
 		{
-			Name: "孔子", Slug: "entity/confucius", Aliases: []string{"Confucius"},
-			Description: "中国古代思想家、教育家", Details: "更完整的说明", SourceChunks: []string{"chunk-2"},
+			Name: "Vietcombank", Slug: "entity/confucius", Aliases: []string{"Confucius"},
+			Description: "Ngân hàng thương mại cổ phần Ngoại thương Việt Nam", Details: "Mô tả đầy đủ hơn", SourceChunks: []string{"chunk-2"},
 		},
 	}
 	got := svc.stabilizeExtractedIdentities(
@@ -374,10 +374,10 @@ func TestStabilizeExtractedIdentitiesCoalescesEvidence(t *testing.T) {
 	if got[0].Slug != "entity/kong-zi" {
 		t.Fatalf("stabilized slug = %q, want first claimed slug", got[0].Slug)
 	}
-	if got[0].Name != "孔子" {
+	if got[0].Name != "Vietcombank" {
 		t.Fatalf("compact display name not preferred: %#v", got[0])
 	}
-	if got[0].Description != "中国古代思想家、教育家" || got[0].Details != "更完整的说明" {
+	if got[0].Description != "Ngân hàng thương mại cổ phần Ngoại thương Việt Nam" || got[0].Details != "Mô tả đầy đủ hơn" {
 		t.Fatalf("richer fallback text not preserved: %#v", got[0])
 	}
 	if len(got[0].SourceChunks) != 2 {
@@ -397,13 +397,13 @@ func TestWikiIdentityClaimRedisOverridesStaleLocal(t *testing.T) {
 	svc := &wikiIngestService{redisClient: rdb}
 	ctx := context.Background()
 	batch := &WikiBatchContext{}
-	identity := normalizeWikiIdentityTitle("孔子")
+	identity := normalizeWikiIdentityTitle("Vietcombank")
 	batch.identityClaims.Store(types.WikiPageTypeEntity+"\x00"+identity, "entity/kong-zi")
 	if err := rdb.Set(ctx, wikiIdentityClaimPrefix+"kb-1:"+types.WikiPageTypeEntity+":"+identity, "entity/confucius", wikiIdentityClaimTTL).Err(); err != nil {
 		t.Fatalf("seed redis claim: %v", err)
 	}
 
-	got := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kongqiu", false, batch)
+	got := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kongqiu", false, batch)
 	if got != "entity/confucius" {
 		t.Fatalf("redis claim should beat stale local map: got %q", got)
 	}
@@ -425,13 +425,13 @@ func TestStabilizeLLMMergeDoesNotOverrideRedisClaim(t *testing.T) {
 	ctx := context.Background()
 	batch := &WikiBatchContext{}
 
-	first := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kong-zi", false, batch)
+	first := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kong-zi", false, batch)
 	if first != "entity/kong-zi" {
 		t.Fatalf("provisional claim = %q, want entity/kong-zi", first)
 	}
 
 	got := svc.stabilizeExtractedIdentities(ctx, "kb-1", types.WikiPageTypeEntity, []extractedItem{
-		{Name: "孔子", Slug: "entity/confucius"},
+		{Name: "Vietcombank", Slug: "entity/confucius"},
 	}, map[string]string{"entity/confucius": "entity/kong-zi-institute"}, nil, batch)
 	if len(got) != 1 || got[0].Slug != "entity/kong-zi" {
 		t.Fatalf("LLM merge overwrote identity claim: %#v", got)
@@ -451,15 +451,15 @@ func TestStabilizeExactTargetIsAuthoritative(t *testing.T) {
 	ctx := context.Background()
 	batch := &WikiBatchContext{}
 
-	svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kong-zi", false, batch)
+	svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kong-zi", false, batch)
 	got := svc.stabilizeExtractedIdentities(ctx, "kb-1", types.WikiPageTypeEntity, []extractedItem{
-		{Name: "孔子", Slug: "entity/kong-zi"},
+		{Name: "Vietcombank", Slug: "entity/kong-zi"},
 	}, nil, map[string]string{"entity/kong-zi": "entity/confucius"}, batch)
 	if len(got) != 1 || got[0].Slug != "entity/confucius" {
 		t.Fatalf("exact existing page should replace provisional claim: %#v", got)
 	}
 
-	follow := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kongqiu", false, &WikiBatchContext{})
+	follow := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kongqiu", false, &WikiBatchContext{})
 	if follow != "entity/confucius" {
 		t.Fatalf("authoritative exact hit did not stick in redis: %q", follow)
 	}
@@ -477,7 +477,7 @@ func TestWikiIdentityClaimLiteConcurrentSameBatch(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", proposal, false, batch)
+			results[i] = svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", proposal, false, batch)
 		}()
 	}
 	wg.Wait()
@@ -492,16 +492,16 @@ func TestRemapSlugUpdatesByIdentityConverges(t *testing.T) {
 	svc := &wikiIngestService{}
 	batch := &WikiBatchContext{}
 	ctx := context.Background()
-	svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kong-zi", false, batch)
+	svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kong-zi", false, batch)
 
 	got := svc.remapSlugUpdatesByIdentity(ctx, "kb-1", map[string][]SlugUpdate{
 		"entity/kong-zi": {{
 			Slug: "entity/kong-zi", Type: types.WikiPageTypeEntity,
-			Item: extractedItem{Name: "孔子", Slug: "entity/kong-zi"},
+			Item: extractedItem{Name: "Vietcombank", Slug: "entity/kong-zi"},
 		}},
 		"entity/confucius": {{
 			Slug: "entity/confucius", Type: types.WikiPageTypeEntity,
-			Item: extractedItem{Name: "孔 子", Slug: "entity/confucius"},
+			Item: extractedItem{Name: "Vietcom bank", Slug: "entity/confucius"},
 		}},
 		"summary/doc": {{Slug: "summary/doc", Type: types.WikiPageTypeSummary}},
 	}, batch)
@@ -524,11 +524,11 @@ func TestRemapSlugUpdatesByIdentityConverges(t *testing.T) {
 func TestReclaimExtractedIdentitiesCoalescesCitationSlugs(t *testing.T) {
 	svc := &wikiIngestService{}
 	batch := &WikiBatchContext{}
-	svc.claimWikiIdentitySlug(context.Background(), "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kong-zi", false, batch)
+	svc.claimWikiIdentitySlug(context.Background(), "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kong-zi", false, batch)
 
 	entities, concepts := svc.reclaimExtractedIdentities(context.Background(), "kb-1", []extractedItem{
-		{Name: "孔子", Slug: "entity/kong-zi", SourceChunks: []string{"c1"}},
-		{Name: "孔 子", Slug: "entity/confucius", SourceChunks: []string{"c2"}},
+		{Name: "Vietcombank", Slug: "entity/kong-zi", SourceChunks: []string{"c1"}},
+		{Name: "Vietcom bank", Slug: "entity/confucius", SourceChunks: []string{"c2"}},
 	}, nil, batch)
 	if len(entities) != 1 || entities[0].Slug != "entity/kong-zi" {
 		t.Fatalf("citation slugs did not reclaim onto identity: entities=%#v", entities)
@@ -552,16 +552,16 @@ func TestWikiIdentityClaimReplacesInvalidRedisValue(t *testing.T) {
 	defer rdb.Close()
 	svc := &wikiIngestService{redisClient: rdb}
 	ctx := context.Background()
-	identity := normalizeWikiIdentityTitle("孔子")
+	identity := normalizeWikiIdentityTitle("Vietcombank")
 	if err := rdb.Set(ctx, wikiIdentityClaimPrefix+"kb-1:"+types.WikiPageTypeEntity+":"+identity, "garbage", wikiIdentityClaimTTL).Err(); err != nil {
 		t.Fatalf("seed invalid redis claim: %v", err)
 	}
 
-	first := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/kong-zi", false, &WikiBatchContext{})
+	first := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/kong-zi", false, &WikiBatchContext{})
 	if first != "entity/kong-zi" {
 		t.Fatalf("invalid redis value should be replaced: got %q", first)
 	}
-	second := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "孔子", "entity/confucius", false, &WikiBatchContext{})
+	second := svc.claimWikiIdentitySlug(ctx, "kb-1", types.WikiPageTypeEntity, "Vietcombank", "entity/confucius", false, &WikiBatchContext{})
 	if second != "entity/kong-zi" {
 		t.Fatalf("callers did not converge after replacing invalid value: %q", second)
 	}
@@ -598,16 +598,16 @@ func (s *stubNormalizedTitleWiki) FindPagesByNormalizedTitles(
 func TestAttachExactIdentityPagesBatchesAndCaches(t *testing.T) {
 	stub := &stubNormalizedTitleWiki{
 		pages: []*types.WikiPageLite{
-			{Slug: "entity/confucius", Title: "孔 子", PageType: types.WikiPageTypeEntity},
+			{Slug: "entity/confucius", Title: "Vietcom bank", PageType: types.WikiPageTypeEntity},
 		},
 	}
 	svc := &wikiIngestService{wikiService: stub}
 	batch := &WikiBatchContext{}
 	ctx := context.Background()
 	items := []extractedItem{
-		{Name: "孔子", Slug: "entity/kong-zi"},
-		{Name: "孔 子", Slug: "entity/kongqiu"},
-		{Name: "孟子", Slug: "entity/mencius"},
+		{Name: "Vietcombank", Slug: "entity/kong-zi"},
+		{Name: "Vietcom bank", Slug: "entity/kongqiu"},
+		{Name: "Vietinbank", Slug: "entity/mencius"},
 	}
 
 	candidatePages := make(map[string]*types.WikiPageLite)
@@ -620,7 +620,7 @@ func TestAttachExactIdentityPagesBatchesAndCaches(t *testing.T) {
 		t.Fatalf("exact page not bound to both romanizations: %#v", itemCandidates)
 	}
 	if itemCandidates["entity/mencius"]["entity/confucius"] {
-		t.Fatalf("confucius page leaked onto 孟子: %#v", itemCandidates)
+		t.Fatalf("confucius page leaked onto Vietinbank: %#v", itemCandidates)
 	}
 
 	svc.attachExactIdentityPages(ctx, "kb-1", types.WikiPageTypeEntity, items, candidatePages, itemCandidates, batch)
@@ -629,12 +629,12 @@ func TestAttachExactIdentityPagesBatchesAndCaches(t *testing.T) {
 	}
 
 	svc.attachExactIdentityPages(ctx, "kb-1", types.WikiPageTypeEntity, append(items,
-		extractedItem{Name: "荀子", Slug: "entity/xunzi"},
+		extractedItem{Name: "Agribank", Slug: "entity/xunzi"},
 	), candidatePages, itemCandidates, batch)
 	if stub.calls != 2 {
 		t.Fatalf("cache miss should query only the new identity, got %d last=%v", stub.calls, stub.last)
 	}
-	if len(stub.last) != 1 || stub.last[0] != normalizeWikiIdentityTitle("荀子") {
-		t.Fatalf("second lookup should only ask for 荀子: %v", stub.last)
+	if len(stub.last) != 1 || stub.last[0] != normalizeWikiIdentityTitle("Agribank") {
+		t.Fatalf("second lookup should only ask for Agribank: %v", stub.last)
 	}
 }

@@ -27,7 +27,7 @@ type fakeMemberService struct {
 	failGet    error
 	failHasAny error
 	failAdd    error
-	// 阻止 auto-promote 把 hasAny 翻面：默认 AddMember 成功也会写入 members map。
+	// Ngăn auto-promote lật hasAny: mặc định AddMember thành công cũng ghi vào members map.
 }
 
 func newFakeMemberService() *fakeMemberService {
@@ -39,7 +39,7 @@ func memberKey(u string, t uint64) string {
 }
 
 func uintToStr(t uint64) string {
-	// 简单数字转字符串，避免引入额外依赖。
+	// Chuyển số sang chuỗi đơn giản, tránh thêm phụ thuộc.
 	if t == 0 {
 		return "0"
 	}
@@ -176,7 +176,7 @@ func TestResolveTenantRole_SuperAdminSwitchGetsNoRole_NoAutoPromote(t *testing.T
 
 func TestResolveTenantRole_OrphanForeignTenantNotClaimed(t *testing.T) {
 	// An orphan tenant that is not the caller's home is never claimed.
-	svc := newFakeMemberService() // 空 — 任何空间都是孤儿
+	svc := newFakeMemberService() // rỗng — mọi đơn vị đều là mồ côi
 	user := &types.User{ID: "u1", TenantID: 1, CanAccessAllTenants: true}
 
 	got, ok := resolveTenantRole(context.Background(), svc, user, 42, true, cfgWithRBAC(true))
@@ -190,7 +190,7 @@ func TestResolveTenantRole_OrphanForeignTenantNotClaimed(t *testing.T) {
 
 func TestResolveTenantRole_AutoPromoteSkippedIfTenantHasMembers(t *testing.T) {
 	svc := newFakeMemberService()
-	// 同一 home tenant 已经有其它成员 — 不应自动晋升新登录者。
+	// Đơn vị home đã có thành viên khác — không được tự nâng quyền người mới đăng nhập.
 	svc.seedActive("other", 7, types.TenantRoleOwner)
 	user := &types.User{ID: "u1", TenantID: 7}
 
@@ -215,7 +215,7 @@ func TestResolveTenantRole_NoFailOpenWhenRBACDisabled(t *testing.T) {
 
 func TestResolveTenantRole_FailClosedWhenRBACEnabled(t *testing.T) {
 	svc := newFakeMemberService()
-	// 已有其它成员，自动晋升路径关闭；RBAC 启用 → 必须 403。
+	// Đã có thành viên khác, đường tự nâng quyền đóng; RBAC bật → phải 403.
 	svc.seedActive("other", 8, types.TenantRoleOwner)
 	user := &types.User{ID: "u1", TenantID: 7}
 	if _, ok := resolveTenantRole(context.Background(), svc, user, 8, false, cfgWithRBAC(true)); ok {
@@ -239,8 +239,8 @@ func TestResolveTenantRole_LookupErrorFailsClosedWhenRBACDisabled(t *testing.T) 
 }
 
 func TestResolveTenantRole_DemotedUserCannotReclaimViaOrphan(t *testing.T) {
-	// 边界场景：管理员人为软删全部成员后，被踢出的用户登录自己 home tenant 时
-	// 不能因 HasAnyMembers=false 而自动重新拿到 Admin（孤儿自愈已移除）。
+	// Tình huống biên: sau khi quản trị viên xoá mềm toàn bộ thành viên, người dùng bị loại đăng nhập vào đơn vị home của mình
+	// không được tự nhận lại Admin vì HasAnyMembers=false (cơ chế tự chữa mồ côi đã bỏ).
 	svc := newFakeMemberService()
 	user := &types.User{ID: "demoted", TenantID: 5}
 	got, ok := resolveTenantRole(context.Background(), svc, user, 5, false, cfgWithRBAC(true))

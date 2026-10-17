@@ -11,17 +11,17 @@ import (
 func TestWriteFAQMetadataXML_IncludesAnswers(t *testing.T) {
 	var b strings.Builder
 	meta := &types.FAQChunkMetadata{
-		StandardQuestion: "如何创建知识库？",
-		SimilarQuestions: []string{"怎么创建知识库？"},
-		Answers:          []string{"在控制台点击新建知识库。"},
+		StandardQuestion: "Làm thế nào để tạo kho tri thức?",
+		SimilarQuestions: []string{"Tạo kho tri thức bằng cách nào?"},
+		Answers:          []string{"Trong bảng điều khiển, bấm Tạo kho tri thức mới."},
 	}
 	writeFAQMetadataXML(&b, meta)
 	out := b.String()
 
 	for _, want := range []string{
-		"<faq>", "<question>如何创建知识库？</question>",
-		"<similar_question>怎么创建知识库？</similar_question>",
-		"<answer>在控制台点击新建知识库。</answer>", "</faq>",
+		"<faq>", "<question>Làm thế nào để tạo kho tri thức?</question>",
+		"<similar_question>Tạo kho tri thức bằng cách nào?</similar_question>",
+		"<answer>Trong bảng điều khiển, bấm Tạo kho tri thức mới.</answer>", "</faq>",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
@@ -33,7 +33,7 @@ func TestWriteSimilarQuestionsXML_TruncatesWhenTooMany(t *testing.T) {
 	var b strings.Builder
 	questions := make([]string, 8)
 	for i := range questions {
-		questions[i] = fmt.Sprintf("相似问%d", i+1)
+		questions[i] = fmt.Sprintf("Câu hỏi tương tự %d", i+1)
 	}
 	writeSimilarQuestionsXML(&b, questions)
 	out := b.String()
@@ -55,8 +55,8 @@ func TestWriteFAQEntryXML_UsesFaqNotChunk(t *testing.T) {
 		Content:     "Q: test\nSimilar Questions:\n- alt",
 	}
 	meta := &types.FAQChunkMetadata{
-		StandardQuestion: "如何创建知识库？",
-		Answers:          []string{"点新建即可。"},
+		StandardQuestion: "Làm thế nào để tạo kho tri thức?",
+		Answers:          []string{"Chỉ cần bấm Tạo mới."},
 	}
 	if err := chunk.SetFAQMetadata(meta); err != nil {
 		t.Fatal(err)
@@ -71,8 +71,8 @@ func TestWriteFAQEntryXML_UsesFaqNotChunk(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<faq faq_id="faq-chunk-1"`,
-		"<question>如何创建知识库？</question>",
-		"<answer>点新建即可。</answer>",
+		"<question>Làm thế nào để tạo kho tri thức?</question>",
+		"<answer>Chỉ cần bấm Tạo mới.</answer>",
 		"</faq>",
 	} {
 		if !strings.Contains(out, want) {

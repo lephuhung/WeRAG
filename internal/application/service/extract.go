@@ -510,9 +510,9 @@ func NewDataTableSummaryService(
 }
 
 // Handle implements the TaskHandler interface for table extraction
-// 整体流程：Initialization  -> 准备资源 -> 加载数据 -> 生成摘要 -> Create 索引
+// Luồng tổng thể: khởi tạo -> chuẩn bị tài nguyên -> nạp dữ liệu -> sinh tóm tắt -> tạo chỉ mục
 func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) error {
-	// 1. 解析任务并Initialization 上下文
+	// 1. Phân tích task và khởi tạo ngữ cảnh
 	var payload DataTableSummaryPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		logger.Errorf(ctx, "failed to unmarshal table extract task payload: %v", err)
@@ -525,7 +525,7 @@ func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) err
 
 	logger.Infof(ctx, "Processing table extraction for knowledge: %s", payload.KnowledgeID)
 
-	// 2. 准备所有必需的资源（知识、模型、引擎等）
+	// 2. Chuẩn bị mọi tài nguyên cần thiết (tài liệu, mô hình, engine...)
 	resources, err := s.prepareResources(ctx, payload)
 	if err != nil {
 		return err
@@ -537,13 +537,13 @@ func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) err
 	}
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey, resources.tenant)
 
-	// 3. 加载表格数据并生成摘要
+	// 3. Nạp dữ liệu bảng và sinh tóm tắt
 	chunks, err := s.processTableData(ctx, resources)
 	if err != nil {
 		return err
 	}
 
-	// 4. 索引到Vector Database
+	// 4. Đánh chỉ mục vào kho vector
 	if err := s.indexToVectorDB(ctx, chunks, resources.retrieveEngine, resources.embeddingModel); err != nil {
 		s.cleanupOnFailure(ctx, resources, chunks, err)
 		return err
@@ -553,7 +553,7 @@ func (s *DataTableSummaryService) Handle(ctx context.Context, t *asynq.Task) err
 	return nil
 }
 
-// extractionResources 封装提取过程所需的所有资源
+// extractionResources gói mọi tài nguyên cần cho quá trình trích xuất
 type extractionResources struct {
 	knowledge      *types.Knowledge
 	knowledgeBase  *types.KnowledgeBase
@@ -563,10 +563,10 @@ type extractionResources struct {
 	retrieveEngine *retriever.CompositeRetrieveEngine
 }
 
-// prepareResources 准备提取所需的所有资源
-// 思路：集中加载所有依赖，统一错误处理，避免分散的资源获取逻辑
+// prepareResources chuẩn bị mọi tài nguyên cần cho trích xuất
+// Ý tưởng: nạp tập trung mọi phụ thuộc, xử lý lỗi thống nhất, tránh logic lấy tài nguyên rải rác
 func (s *DataTableSummaryService) prepareResources(ctx context.Context, payload DataTableSummaryPayload) (*extractionResources, error) {
-	// 获取并验证知识文件
+	// Lấy và kiểm tra tệp tài liệu
 	knowledge, err := s.knowledgeService.GetRepository().GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get knowledge: %v", err)
@@ -581,28 +581,28 @@ func (s *DataTableSummaryService) prepareResources(ctx context.Context, payload 
 		return nil, err
 	}
 
-	// 验证文件类型
+	// Kiểm tra loại tệp
 	fileType := strings.ToLower(knowledge.FileType)
 	if fileType != "csv" && fileType != "xlsx" && fileType != "xls" {
 		logger.Warnf(ctx, "knowledge %s is not a CSV or Excel file, skipping table summary", payload.KnowledgeID)
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
 
-	// 获取Tenant workspace信息
+	// Lấy thông tin đơn vị
 	tenantInfo, err := s.tenantService.GetTenantByID(ctx, payload.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get tenant: %v", err)
 		return nil, err
 	}
 
-	// 获取聊天模型（用于生成摘要）
+	// Lấy mô hình chat (dùng để sinh tóm tắt)
 	chatModel, err := s.modelService.GetChatModel(ctx, payload.SummaryModel)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get chat model: %v", err)
 		return nil, err
 	}
 
-	// 获取嵌入模型（用于向量化）
+	// Lấy mô hình embedding (dùng để vector hóa)
 	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, payload.EmbeddingModel)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get embedding model: %v", err)
@@ -673,16 +673,16 @@ func (s *DataTableSummaryService) resolveFileServiceForKnowledge(ctx context.Con
 	return resolvedSvc
 }
 
-// processTableData 处理表格数据：加载 -> 分析 -> 生成摘要 -> Create chunks
-// 思路：将数据处理的核心流程集中在一起，保持逻辑连贯性
+// processTableData xử lý dữ liệu bảng: nạp -> phân tích -> sinh tóm tắt -> tạo chunks
+// Ý tưởng: gom luồng xử lý dữ liệu cốt lõi vào một chỗ cho mạch lạc
 func (s *DataTableSummaryService) processTableData(ctx context.Context, resources *extractionResources) ([]*types.Chunk, error) {
-	// Create DuckDB会话并加载数据
+	// Tạo phiên DuckDB và nạp dữ liệu
 	sessionID := fmt.Sprintf("table_summary_%s", resources.knowledge.ID)
 	fileSvc := s.resolveFileServiceForKnowledge(ctx, resources)
 	duckdbTool := tools.NewDataAnalysisTool(s.knowledgeBaseService, s.knowledgeService, s.tenantService, fileSvc, s.sqlDB, sessionID, s.storageResolver)
 	defer duckdbTool.Cleanup(ctx)
 
-	// 使用knowledge.ID作为表名，根据文件类型自动加载数据
+	// Dùng knowledge.ID làm tên bảng, tự nạp dữ liệu theo loại tệp
 	tableSchema, err := duckdbTool.LoadFromKnowledge(ctx, resources.knowledge)
 	if err != nil {
 		logger.Errorf(ctx, "failed to load data into DuckDB: %v", err)
@@ -691,7 +691,7 @@ func (s *DataTableSummaryService) processTableData(ctx context.Context, resource
 
 	logger.Infof(ctx, "Loaded table %s with %d columns and %d rows", tableSchema.TableName, len(tableSchema.Columns), tableSchema.RowCount)
 
-	// 获取样本数据用于生成摘要
+	// Lấy dữ liệu mẫu để sinh tóm tắt
 	input := tools.DataAnalysisInput{
 		KnowledgeID: resources.knowledge.ID,
 		SQL:         fmt.Sprintf("SELECT * FROM \"%s\" LIMIT 10", tools.DataAnalysisTableName),
@@ -707,11 +707,11 @@ func (s *DataTableSummaryService) processTableData(ctx context.Context, resource
 		return nil, err
 	}
 
-	// 构建共用的schema和样本数据描述
+	// Dựng mô tả schema và dữ liệu mẫu dùng chung
 	schemaDesc := tableSchema.Description()
 	sampleDesc := s.buildSampleDataDescription(ctx, sampleResult, 10)
 
-	// 使用AI生成表格摘要和列描述
+	// Dùng AI sinh tóm tắt bảng và mô tả cột
 	customInstructions := ""
 	if resources.knowledgeBase != nil {
 		var processOverrides *types.KnowledgeProcessOverrides
@@ -738,17 +738,17 @@ func (s *DataTableSummaryService) processTableData(ctx context.Context, resource
 	}
 	logger.Debugf(ctx, "column describe of knowledge %s: %s", resources.knowledge.ID, columnDescription)
 
-	// 构建chunks：一个表格摘要chunk + 多个列描述chunks
+	// Dựng chunks: một chunk tóm tắt bảng + các chunk mô tả cột
 	chunks := s.buildChunks(resources, tableDescription, columnDescription)
 	return chunks, nil
 }
 
-// buildChunks 构建chunk对象
-// tableDescription和columnDescriptions分别生成一个chunk
+// buildChunks dựng các đối tượng chunk
+// tableDescription và columnDescriptions mỗi thứ sinh một chunk
 func (s *DataTableSummaryService) buildChunks(resources *extractionResources, tableDescription string, columnDescription string) []*types.Chunk {
 	chunks := make([]*types.Chunk, 0, 2)
 
-	// 表格摘要chunk
+	// Chunk tóm tắt bảng
 	summaryChunk := &types.Chunk{
 		ID:              uuid.New().String(),
 		TenantID:        resources.knowledge.TenantID,
@@ -762,7 +762,7 @@ func (s *DataTableSummaryService) buildChunks(resources *extractionResources, ta
 	}
 	chunks = append(chunks, summaryChunk)
 
-	// 列描述chunk（所有列的描述合并为一个chunk）
+	// Chunk mô tả cột (mô tả mọi cột gộp vào một chunk)
 	columnChunk := &types.Chunk{
 		ID:              uuid.New().String(),
 		TenantID:        resources.knowledge.TenantID,
@@ -783,15 +783,15 @@ func (s *DataTableSummaryService) buildChunks(resources *extractionResources, ta
 	return chunks
 }
 
-// indexToVectorDB 将chunks索引到Vector Database
-// 思路：批量构建索引信息，统一索引，Update 状态
+// indexToVectorDB đánh chỉ mục chunks vào kho vector
+// Ý tưởng: dựng thông tin chỉ mục theo lô, đánh chỉ mục thống nhất, cập nhật trạng thái
 func (s *DataTableSummaryService) indexToVectorDB(
 	ctx context.Context,
 	chunks []*types.Chunk,
 	engine *retriever.CompositeRetrieveEngine,
 	embedder embedding.Embedder,
 ) error {
-	// 构建索引信息List
+	// Dựng danh sách thông tin chỉ mục
 	indexInfoList := make([]*types.IndexInfo, 0, len(chunks))
 	for _, chunk := range chunks {
 		indexInfoList = append(indexInfoList, &types.IndexInfo{
@@ -805,20 +805,20 @@ func (s *DataTableSummaryService) indexToVectorDB(
 		})
 	}
 
-	// 保存到数据库
+	// Lưu vào cơ sở dữ liệu
 	if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
 		logger.Errorf(ctx, "failed to create chunks: %v", err)
 		return err
 	}
 	logger.Infof(ctx, "Created %d chunks for data table", len(chunks))
 
-	// 批量索引
+	// Đánh chỉ mục theo lô
 	if err := engine.BatchIndex(ctx, embedder, indexInfoList); err != nil {
 		logger.Errorf(ctx, "failed to index chunks: %v", err)
 		return err
 	}
 
-	// Update chunk状态为已索引
+	// Cập nhật trạng thái chunk thành đã đánh chỉ mục
 	for _, chunk := range chunks {
 		chunk.Status = int(types.ChunkStatusIndexed)
 	}
@@ -830,12 +830,12 @@ func (s *DataTableSummaryService) indexToVectorDB(
 	return nil
 }
 
-// cleanupOnFailure 索引失败时的清理工作
-// 思路：Delete 已Create 的chunk和对应的向量索引，避免脏数据残留
+// cleanupOnFailure dọn dẹp khi đánh chỉ mục thất bại
+// Ý tưởng: xóa chunk đã tạo và chỉ mục vector tương ứng, tránh để lại dữ liệu rác
 func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resources *extractionResources, chunks []*types.Chunk, indexErr error) {
 	logger.Warnf(ctx, "Starting cleanup due to failure: %v", indexErr)
 
-	// 1. Update 知识状态为失败
+	// 1. Cập nhật trạng thái tài liệu thành thất bại
 	before, after := *resources.knowledge, *resources.knowledge
 	after.ParseStatus = types.ParseStatusFailed
 	after.ErrorMessage = indexErr.Error()
@@ -844,13 +844,13 @@ func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resource
 		return
 	}
 
-	// 提取chunk IDs
+	// Lấy các chunk ID
 	chunkIDs := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunkIDs = append(chunkIDs, chunk.ID)
 	}
 
-	// Delete 已Create 的chunks
+	// Xóa các chunk đã tạo
 	if len(chunkIDs) > 0 {
 		if err := s.chunkService.GetRepository().DeleteChunks(ctx, resources.knowledge.TenantID, chunkIDs); err != nil {
 			logger.Errorf(ctx, "Failed to delete chunks: %v", err)
@@ -859,7 +859,7 @@ func (s *DataTableSummaryService) cleanupOnFailure(ctx context.Context, resource
 		}
 	}
 
-	// Delete 对应的向量索引
+	// Xóa chỉ mục vector tương ứng
 	if len(chunkIDs) > 0 {
 		if err := resources.retrieveEngine.DeleteBySourceIDList(
 			ctx, chunkIDs, resources.embeddingModel.GetDimensions(), types.KnowledgeBaseTypeDocument,

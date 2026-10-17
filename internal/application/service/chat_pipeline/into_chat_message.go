@@ -67,7 +67,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		})
 	}
 
-	// 验证用户Query 的安全性
+	// Kiểm tra an toàn truy vấn của người dùng
 	safeQuery, isValid := utils.ValidateInput(chatManage.Query)
 	if !isValid {
 		pipelineWarn(ctx, "IntoChatMessage", "invalid_query", map[string]interface{}{
@@ -311,19 +311,19 @@ func buildDocumentHeader(results []*types.SearchResult) string {
 	return b.String()
 }
 
-// getEnrichedPassageForChat 合并Content和ImageInfo的文本内容，为聊天消息准备
+// getEnrichedPassageForChat gộp nội dung văn bản của Content và ImageInfo để chuẩn bị tin nhắn chat
 func getEnrichedPassageForChat(ctx context.Context, result *types.SearchResult) string {
-	// 如果没有图片信息，直接返回内容
+	// Không có thông tin hình ảnh thì trả về nội dung ngay
 	if result.Content == "" && result.ImageInfo == "" {
 		return ""
 	}
 
-	// 如果只有内容，没有图片信息
+	// Chỉ có nội dung, không có thông tin hình ảnh
 	if result.ImageInfo == "" {
 		return result.Content
 	}
 
-	// 处理图片信息并与内容合并
+	// Xử lý thông tin hình ảnh và gộp với nội dung
 	return enrichContentWithImageInfo(ctx, result.Content, result.ImageInfo)
 }
 

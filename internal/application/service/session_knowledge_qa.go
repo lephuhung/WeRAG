@@ -49,6 +49,10 @@ func (s *sessionService) KnowledgeQA(
 	if asked, err := s.broadQueryClarification(ctx, req, eventBus, false); asked || err != nil {
 		return err
 	}
+	// files that all failed to be read are answered with the cause; no model runs
+	if answered, err := s.unreadableAttachmentsAnswer(ctx, req, eventBus, false); answered || err != nil {
+		return err
+	}
 	// Platform-wide SuperAdmin switch: while off, no knowledge-QA turn
 	// performs web search regardless of the request or agent switches.
 	webSearchEnabled := resolveWebSearchEnabled(req) &&
@@ -771,7 +775,7 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 		// retrieval stage short-circuited the pipeline (ErrSearchNothing or a
 		// hard error). The early returns below (fallback / stage_failed) would
 		// otherwise skip EndRetrievalProgress, leaving the "knowledge_search"
-		// tool_call pending — so the frontend keeps spinning on "正在检索Knowledge Base"
+		// tool_call pending — so the frontend keeps spinning on "đang tìm kiếm kho tri thức"
 		// forever even though the fallback answer has already streamed.
 		if retrievalProgress != nil && chatpipeline.ShouldCloseRetrievalProgress(eventType, lastRetrievalStage, err) {
 			chatpipeline.EndRetrievalProgress(stageCtx, chatManage, retrievalProgress, retrievalStart, err)

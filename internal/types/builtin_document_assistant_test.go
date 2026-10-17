@@ -49,7 +49,8 @@ func TestBuiltinDocumentAssistantLoadsFromYAML(t *testing.T) {
 	if cfg.FormatCheckModel() != cfg.ModelID || cfg.SpellcheckModel() != "builtin-llm-spellcheck" {
 		t.Fatal("format check falls back to model_id; spellcheck uses its own model")
 	}
-	if !reflect.DeepEqual(cfg.SupportedFileTypes, []string{"docx", "doc"}) {
+	// Word documents plus what the add-in's picker offers (PDF, text, images); see word-addin ATTACH_ACCEPT.
+	if !reflect.DeepEqual(cfg.SupportedFileTypes, []string{"docx", "doc", "pdf", "txt", "md", "jpg", "jpeg", "png", "gif", "webp"}) {
 		t.Fatalf("supported_file_types = %v", cfg.SupportedFileTypes)
 	}
 	if cfg.SystemPromptID != "document_assistant" || cfg.AgentMode != "smart-reasoning" ||

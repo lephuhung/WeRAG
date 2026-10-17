@@ -8,8 +8,9 @@ import (
 
 // Namespaces of the OOXML parts read here.
 const (
-	nsW = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-	nsA = "http://schemas.openxmlformats.org/drawingml/2006/main"
+	nsW  = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+	nsA  = "http://schemas.openxmlformats.org/drawingml/2006/main"
+	nsMC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 )
 
 // node is a minimal element tree (ElementTree-like): the layout walk needs
@@ -111,6 +112,47 @@ func (n *node) descendants(local string) []*node {
 		}
 	})
 	return out
+}
+
+// isFallback reports whether n is the mc:Fallback branch of an
+// mc:AlternateContent: Word writes a text box twice (DrawingML Choice + VML
+// Fallback), and only the Choice copy is the one shown.
+func (n *node) isFallback() bool { return n != nil && n.local == "Fallback" && n.space == nsMC }
+
+// docxedit tests the same branch by name (it reads raw prefixes); both must
+// skip the same copies so paragraph indexes stay aligned.
+
+// textBoxParagraphs returns the paragraphs of every text box anchored in p
+// (nested boxes included), in document order, skipping mc:Fallback copies.
+func (n *node) textBoxParagraphs() []*node {
+	var out []*node
+	var rec func(*node)
+	rec = func(x *node) {
+		if x.isFallback() {
+			return
+		}
+		if x.is("txbxContent") {
+			out = append(out, x.childrenNamed("p")...)
+		}
+		for _, c := range x.children {
+			rec(c)
+		}
+	}
+	rec(n)
+	return out
+}
+
+// walkText visits n and its descendants in document order like walk, but
+// does not enter text boxes or mc:Fallback copies: their text belongs to the
+// text-box paragraphs, not to the paragraph that anchors the box.
+func (n *node) walkText(fn func(*node)) {
+	if n == nil || n.isFallback() || n.is("txbxContent") {
+		return
+	}
+	fn(n)
+	for _, c := range n.children {
+		c.walkText(fn)
+	}
 }
 
 // wattr returns the w:<local> attribute.

@@ -6,27 +6,27 @@ import (
 	"sync"
 )
 
-// dorisRepository 是 Apache Doris 4.1 的检索引擎仓储实现。
+// dorisRepository là hiện thực kho truy xuất cho Apache Doris 4.1.
 //
-// 通信通道：
-//   - 读写主链路：MySQL 协议（database/sql + go-sql-driver/mysql），FE 默认 9030 端口。
-//   - Stream Load：HTTP（FE 默认 8030 端口），legacy 模式用于 partial update。
+// Kênh giao tiếp:
+//   - Đường đọc/ghi chính: giao thức MySQL (database/sql + go-sql-driver/mysql), FE mặc định cổng 9030.
+//   - Stream Load: HTTP (FE mặc định cổng 8030), chế độ legacy dùng cho partial update.
 //
-// 表结构按维度分表：<tableBaseName>_<dim>。
-// 兼容模式由 DORIS_COMPAT_MODE 决定：
+// Bảng được tách theo số chiều: <tableBaseName>_<dim>.
+// Chế độ tương thích do DORIS_COMPAT_MODE quyết định:
 //   - legacy：UNIQUE KEY(id) + cosine_distance ANN + Stream Load partial update
 //   - inner_product_duplicate：DUPLICATE KEY(id) + normalized inner product + delete/insert rewrite
 //
-// 该Settings 在 embedding 表Create 后不可直接互换；切换模式前需要重建这些表。
+// Thiết lập này không đổi qua lại được sau khi bảng embedding đã tạo; đổi chế độ cần tạo lại các bảng.
 //
-// 与 Qdrant/Milvus/Weaviate 一样，initializedTables 缓存"已确保存在"的维度，
-// 避免每次写入都打 SHOW TABLES。
+// Như Qdrant/Milvus/Weaviate, initializedTables cache các số chiều "đã đảm bảo tồn tại",
+// tránh chạy SHOW TABLES mỗi lần ghi.
 type dorisRepository struct {
 	db *sql.DB
 
 	httpClient *http.Client
-	// fe HTTP base，例如 "http://doris-fe:8030"。Stream Load 路径
-	// 由 streamLoadURL(table) 拼接：<feHTTPBase>/api/<database>/<table>/_stream_load。
+	// fe HTTP base, ví dụ "http://doris-fe:8030". Đường dẫn Stream Load
+	// do streamLoadURL(table) nối: <feHTTPBase>/api/<database>/<table>/_stream_load.
 	feHTTPBase string
 
 	username string
@@ -41,14 +41,14 @@ type dorisRepository struct {
 	compatResolveOnce   sync.Once
 	compatResolveErr    error
 
-	// 已经确保过 ensureTable 的维度集合：dim -> true。
+	// Tập số chiều đã qua ensureTable: dim -> true.
 	initializedTables sync.Map
 }
 
-// DorisVectorEmbedding 是落到 Doris 表里的一行的领域模型。
+// DorisVectorEmbedding là mô hình miền của một hàng ghi vào bảng Doris.
 //
-// 字段顺序与 schema.go 中的 INSERT 列序保持一致，
-// 调整时需要同时Update  createInsert 与 columns。
+// Thứ tự trường thống nhất với thứ tự cột INSERT trong schema.go,
+// khi điều chỉnh cần cập nhật đồng thời createInsert và columns.
 type DorisVectorEmbedding struct {
 	ID              string
 	Content         string
@@ -62,8 +62,8 @@ type DorisVectorEmbedding struct {
 	Embedding       []float32
 }
 
-// DorisVectorEmbeddingWithScore 是检索结果的领域模型，
-// Score 在向量检索时按当前 compat mode 计算，在关键词检索时统一赋 1.0。
+// DorisVectorEmbeddingWithScore là mô hình miền của kết quả truy xuất,
+// Score tính theo compat mode hiện tại khi truy xuất vector, gán đồng loạt 1.0 khi truy xuất từ khóa.
 type DorisVectorEmbeddingWithScore struct {
 	DorisVectorEmbedding
 	Score float64

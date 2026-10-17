@@ -115,7 +115,7 @@ func TestBuildLangfuseChatMetadataKeepsToolSchemas(t *testing.T) {
 }
 
 func TestTruncateLangfuseText(t *testing.T) {
-	if got := truncateLangfuseText("一二三四五", 3); got != "一二三…" {
+	if got := truncateLangfuseText("một hai ba", 3); got != "một…" {
 		t.Fatalf("got %q", got)
 	}
 }

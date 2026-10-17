@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/provider"
+	"github.com/Tencent/WeKnora/internal/types"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -89,7 +90,7 @@ func NewRemoteAPIVLM(config *Config) (*RemoteAPIVLM, error) {
 	}
 	httpClient := newVLMHTTPClient(vlmHTTPTimeout())
 
-	// 注入用户自定义 HTTP header（类似 OpenAI Python SDK 的 extra_headers）
+	// Inject user-defined HTTP headers (like extra_headers in the OpenAI Python SDK)
 	if len(config.CustomHeaders) > 0 {
 		httpClient = secutils.WrapHTTPClientWithHeaders(httpClient, config.CustomHeaders)
 	}
@@ -188,6 +189,9 @@ func (v *RemoteAPIVLM) Predict(ctx context.Context, imgBytesList [][]byte, promp
 
 	choice := resp.Choices[0]
 	content := choice.Message.Content
+	types.ReportVLMUsage(ctx, types.VLMUsage{
+		PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
+	})
 	if strings.TrimSpace(content) == "" && choice.FinishReason == openai.FinishReasonLength {
 		// Reasoning models spend max_completion_tokens on reasoning before any
 		// visible output, so an exhausted budget yields an empty message rather
@@ -273,6 +277,7 @@ func (v *RemoteAPIVLM) predictRaw(ctx context.Context, parts []openai.ChatMessag
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage types.VLMUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return "", fmt.Errorf("OpenAI VLM response: %w", err)
@@ -280,6 +285,7 @@ func (v *RemoteAPIVLM) predictRaw(ctx context.Context, parts []openai.ChatMessag
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("OpenAI VLM returned no choices")
 	}
+	types.ReportVLMUsage(ctx, parsed.Usage)
 
 	choice := parsed.Choices[0]
 	var text string

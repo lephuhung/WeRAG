@@ -53,7 +53,7 @@ func favoriteContext(c *gin.Context) (string, uint64, bool) {
 // ListFavorites godoc
 // @Summary      List my favorites
 // @Description  Lists this user's starred resources in the current workspace for a given type
-// @Tags         User
+// @Tags         Người dùng
 // @Param        type  query     string  true  "Resource type (kb | agent)"
 // @Success      200   {object}  map[string]interface{}
 // @Router       /user/favorites [get]
@@ -88,7 +88,7 @@ type AddFavoriteRequest struct {
 
 // AddFavorite godoc
 // @Summary      Star a resource
-// @Tags         User
+// @Tags         Người dùng
 // @Param        body  body      AddFavoriteRequest  true  "Type + id"
 // @Success      200   {object}  map[string]interface{}
 // @Router       /user/favorites [post]
@@ -117,7 +117,7 @@ func (h *UserResourceFavoriteHandler) AddFavorite(c *gin.Context) {
 
 // RemoveFavorite godoc
 // @Summary      Unstar a resource
-// @Tags         User
+// @Tags         Người dùng
 // @Param        type  path      string  true  "Resource type"
 // @Param        id    path      string  true  "Resource id"
 // @Success      200   {object}  map[string]interface{}

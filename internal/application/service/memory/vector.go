@@ -124,7 +124,7 @@ func (s *Service) storeItemEmbedding(
 //
 // Topic and content together, because the topic carries the subject the
 // statement is about and the statement alone is often too terse to place —
-// "PostgreSQL 17" means little without "生产数据库".
+// "Word 2021" means little without "phần mềm soạn thảo".
 //
 // An interest is promoted from a subject label, so its topic and content are
 // the same string. Joining them would embed "X：X", which is not the sentence

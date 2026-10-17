@@ -15,11 +15,11 @@ func TestStripAtMentionBasic(t *testing.T) {
 		{"mention only no content", "@Bot", "@Bot"},
 		{"single-word bot double-space", "@Bot  /stop", "/stop"},
 		{"single-word bot single-space", "@Bot /stop", "/stop"},
-		{"single-word bot double-space chinese", "@Bot  你好世界", "你好世界"},
+		{"single-word bot double-space vietnamese", "@Bot  xin chào thế giới", "xin chào thế giới"},
 		{"multi-word bot double-space", "@WeKnora Bot  /stop", "/stop"},
-		{"multi-word bot double-space chinese", "@WeKnora Bot  什么是上下文工程", "什么是上下文工程"},
+		{"multi-word bot double-space vietnamese", "@WeKnora Bot  context engineering là gì", "context engineering là gì"},
 		{"multi-word bot single-space command", "@WeKnora Bot /stop", "/stop"},
-		{"multi-word bot single-space chinese", "@WeKnora Bot 什么是老登", "什么是老登"},
+		{"multi-word bot single-space vietnamese", "@WeKnora Bot Ủy ban là gì", "Ủy ban là gì"},
 		{"leading whitespace", "  @Bot  hello  ", "hello"},
 		{"double-space in user content", "@Bot  hello  world", "hello  world"},
 	}
@@ -38,9 +38,9 @@ func TestLongConnClient_StripAtMention(t *testing.T) {
 		c := &LongConnClient{}
 
 		// First message: double-space → learn "WeKnora Bot"
-		got := c.stripAtMention("@WeKnora Bot  什么是上下文工程")
-		if got != "什么是上下文工程" {
-			t.Errorf("first message: got %q, want %q", got, "什么是上下文工程")
+		got := c.stripAtMention("@WeKnora Bot  context engineering là gì")
+		if got != "context engineering là gì" {
+			t.Errorf("first message: got %q, want %q", got, "context engineering là gì")
 		}
 
 		// Verify bot name was cached
@@ -54,10 +54,10 @@ func TestLongConnClient_StripAtMention(t *testing.T) {
 			t.Errorf("second message: got %q, want %q", got, "/stop")
 		}
 
-		// Single-space with chinese content
-		got = c.stripAtMention("@WeKnora Bot 什么是B+树")
-		if got != "什么是B+树" {
-			t.Errorf("chinese single-space: got %q, want %q", got, "什么是B+树")
+		// Single-space with vietnamese content
+		got = c.stripAtMention("@WeKnora Bot B+tree là gì")
+		if got != "B+tree là gì" {
+			t.Errorf("vietnamese single-space: got %q, want %q", got, "B+tree là gì")
 		}
 	})
 
@@ -137,12 +137,12 @@ func TestLongConnClient_StripAtMention(t *testing.T) {
 		}
 	})
 
-	t.Run("cold start single-space chinese", func(t *testing.T) {
+	t.Run("cold start single-space vietnamese", func(t *testing.T) {
 		c := &LongConnClient{}
 		// No cached name, single space → heuristic detects non-ASCII boundary
-		got := c.stripAtMention("@WeKnora Bot 什么是老登")
-		if got != "什么是老登" {
-			t.Errorf("got %q, want %q", got, "什么是老登")
+		got := c.stripAtMention("@WeKnora Bot Ủy ban là gì")
+		if got != "Ủy ban là gì" {
+			t.Errorf("got %q, want %q", got, "Ủy ban là gì")
 		}
 	})
 

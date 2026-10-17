@@ -288,6 +288,13 @@ type Segmentation struct {
 	// in the document: two when a second header opens an attached
 	// document, more in a collection of forms (scope.go).
 	QuocHieuLines int
+	// FormMarker is the "Mẫu số … theo Thông tư …" line at the top of a
+	// form issued by a specialised act (scope.go), "" when there is none.
+	FormMarker string
+	// ModelNotND30 is the labeling model's reason for calling the document
+	// no văn bản hành chính under NĐ30, "" when it did not (or no model
+	// labelled it); ScopeOf weighs it only when code cannot tell.
+	ModelNotND30 string
 }
 
 // Bounds locate the NĐ30 blocks in element (= labeling unit) indexes. All
@@ -314,7 +321,9 @@ func newSegmentation(l *Layout) *Segmentation {
 	for _, p := range l.Paragraphs {
 		s.ParaTable[p.Index] = p.TableIndex
 	}
-	s.QuocHieuLines = len(quocHieuElements(elements(l)))
+	els := elements(l)
+	s.QuocHieuLines = len(quocHieuElements(els))
+	s.FormMarker = formMarker(els)
 	return s
 }
 
@@ -567,6 +576,13 @@ func isHeaderLine(f string) bool {
 
 func isTrue(b *bool) bool { return b != nil && *b }
 
+// floatingBox: a text-box line of the header region that carries no header
+// pattern — a form number ("Mẫu số: 140BH …"), a stamp — which floats over
+// the header and is not part of its columns or of the trích yếu.
+func floatingBox(el element, f string) bool {
+	return el.para.Source == "textbox" && !isHeaderLine(f) && !chiDanRe.MatchString(f)
+}
+
 // isHeading: a full-width line that opens the trích yếu block.
 func isHeading(el element, f string) bool {
 	p := el.para
@@ -603,6 +619,11 @@ func headerEnd(els []element) int {
 		if isHeaderLine(f) || matRe.MatchString(f) || side {
 			seenAnchor = seenAnchor || !side || isHeaderLine(f)
 			end, pending = i+1, 0
+			continue
+		}
+		if floatingBox(el, f) {
+			// a text box ("Mẫu số …", a stamp) floats over the header; it
+			// neither extends nor ends it
 			continue
 		}
 		if chiDanRe.MatchString(f) {
@@ -673,6 +694,9 @@ func Segment(l *Layout) *Segmentation {
 		idx := el.para.Index
 		if chiDanRe.MatchString(f) {
 			seg.add("chi_dan_luu_hanh", idx, el.text, el.zone, hi, el.sub)
+			continue
+		}
+		if floatingBox(el, f) && !matRe.MatchString(f) && !khanRe.MatchString(f) {
 			continue
 		}
 		if matRe.MatchString(f) {
@@ -941,6 +965,53 @@ func quocHieuElements(els []element) []int {
 		}
 	}
 	return out
+}
+
+// formMarkerScan is how many leading elements formMarker reads: the marker
+// sits in the top corner, before or beside the quốc hiệu.
+const formMarkerScan = 12
+
+var (
+	// a line opening "Mẫu số: 140BH", "Mẫu số 01/BB", "Mẫu biên bản số 02"
+	formMarkerOpenRe = regexp.MustCompile(`^\(?\s*MAU(\s+[A-Z]+){0,3}\s+SO\s*:?\s*[0-9]`)
+	// "… (ban hành kèm) theo Thông tư số 128/2025/TT-BCA …"
+	formMarkerActRe = regexp.MustCompile(`\b(KEM\s+)?THEO\s+(THONG TU( LIEN TICH)?|TTLT|TT|QUYET DINH|QD|NGHI DINH|ND)\b(\s+SO)?\s*:?\s*([0-9]+\s*/\s*[0-9]{4}\s*/\s*[A-Z0-9-]+)?`)
+	// NĐ30's own appendix templates ("Mẫu 1.1 …" copied from Nghị định
+	// 30/2020/NĐ-CP) are văn bản hành chính, not a specialised form
+	formMarkerND30Re = regexp.MustCompile(`\b30\s*/\s*2020\s*/\s*ND-CP\b`)
+)
+
+// formMarker returns the form-number line of a form issued by a
+// specialised act — "Mẫu số: 140BH theo TT số 128/2025/TT-BCA ngày
+// 19/12/2025" (tố tụng, xử lý vi phạm hành chính, nghiệp vụ forms) — read
+// from the first elements, text boxes included. A marker line may be split
+// over several text-box paragraphs, so the lines after the opening one are
+// joined until the act reference shows up. "" when there is none or the
+// act is NĐ30 itself.
+func formMarker(els []element) string {
+	n := len(els)
+	if n > formMarkerScan {
+		n = formMarkerScan
+	}
+	for i := 0; i < n; i++ {
+		if !formMarkerOpenRe.MatchString(fold(els[i].text)) {
+			continue
+		}
+		line := strings.TrimSpace(els[i].text)
+		for j := i; j < n && j < i+3; j++ {
+			if j > i {
+				line += " " + strings.TrimSpace(els[j].text)
+			}
+			f := fold(line)
+			if formMarkerND30Re.MatchString(f) {
+				return ""
+			}
+			if formMarkerActRe.MatchString(f) {
+				return truncateRunes(line, 160)
+			}
+		}
+	}
+	return ""
 }
 
 // formCollectionMin quốc hiệu lines make a collection of forms (biểu mẫu),

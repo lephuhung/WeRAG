@@ -29,6 +29,13 @@ type SessionService interface {
 	// excerpts of its newest turns (types.Session.ContextSeed). Callers check
 	// that the caller may read old.
 	ContinueSession(ctx context.Context, old *types.Session) (*types.Session, error)
+	// OpenSubChat opens a new sub-chat ("chat nhỏ") of from's document chat:
+	// like ContinueSession, but the new session works on the root chat's
+	// documents (types.Session.ChatRootID).
+	OpenSubChat(ctx context.Context, from *types.Session) (*types.Session, error)
+	// ListSubChats returns the root of s's document chat and its sub-chats,
+	// oldest first (the root first). Owner-scoped like GetOwnedSession.
+	ListSubChats(ctx context.Context, s *types.Session) (rootID string, chats []*types.Session, err error)
 	// GetSessionsByTenant gets all sessions of a tenant
 	GetSessionsByTenant(ctx context.Context) ([]*types.Session, error)
 	// GetPagedSessionsByTenant gets paged sessions of a tenant
@@ -121,6 +128,12 @@ type SessionRepository interface {
 	// ClearContextSeed empties a session's context seed (a cleared session
 	// must not replay the summary it was continued from).
 	ClearContextSeed(ctx context.Context, tenantID uint64, sessionID string) error
+	// ListChatFamily returns a document chat's root and its sub-chats
+	// (sessions whose chat_root_id is rootID), oldest first.
+	ListChatFamily(ctx context.Context, tenantID uint64, userID, rootID string) ([]*types.Session, error)
+	// ChatRootID returns the session whose documents sessionID works on: its
+	// chat_root_id, or sessionID itself (also when the row is not found).
+	ChatRootID(ctx context.Context, tenantID uint64, sessionID string) (string, error)
 	// ListUnconsumedForks returns fork bootstraps the snapshot reaper should
 	// try to retire: unopened forks older than olderThan, plus consumed forks
 	// that still name a snapshot.

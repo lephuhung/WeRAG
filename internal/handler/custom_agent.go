@@ -28,8 +28,8 @@ type sandboxConfigLookup interface {
 type CustomAgentHandler struct {
 	service   interfaces.CustomAgentService
 	imService *im.Service
-	// userService 仅用于 list 接口批量回填 creator_name，作用见
-	// KnowledgeBaseHandler.userService。
+	// userService chỉ dùng để điền creator_name hàng loạt trong API list, xem
+	// KnowledgeBaseHandler.userService.
 	userService interfaces.UserService
 	// sandboxConfigs validates an agent's sandbox backend selection. Optional —
 	// nil in partially-wired unit tests, where the selection is left unchecked.
@@ -77,14 +77,14 @@ type UpdateAgentRequest struct {
 }
 
 // CreateAgent godoc
-// @Summary      Create 智能体
-// @Description  Create 新的自定义智能体
-// @Tags         智能体
+// @Summary      Tạo trợ lý
+// @Description  Tạo trợ lý tuỳ chỉnh mới
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CreateAgentRequest  true  "智能体信息"
-// @Success      201      {object}  map[string]interface{}  "Create 的智能体"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      CreateAgentRequest  true  "thông tin trợ lý"
+// @Success      201      {object}  map[string]interface{}  "trợ lý vừa tạo"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents [post]
@@ -161,15 +161,15 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 }
 
 // GetAgent godoc
-// @Summary      获取智能体Details
-// @Description  根据ID获取智能体Details
-// @Tags         智能体
+// @Summary      Lấy chi tiết trợ lý
+// @Description  Lấy chi tiết trợ lý theo ID
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "智能体ID"
-// @Success      200  {object}  map[string]interface{}  "智能体Details "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "智能体不存在"
+// @Param        id   path      string  true  "ID trợ lý"
+// @Success      200  {object}  map[string]interface{}  "chi tiết trợ lý"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy trợ lý"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/{id} [get]
@@ -212,13 +212,13 @@ func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
 }
 
 // ListAgents godoc
-// @Summary      获取智能体List
-// @Description  获取当前Tenant workspace的所有智能体（包括内置智能体）
-// @Tags         智能体
+// @Summary      Lấy danh sách trợ lý
+// @Description  Lấy mọi trợ lý của đơn vị hiện tại (gồm cả trợ lý tích hợp sẵn)
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "智能体List "
-// @Failure      500  {object}  errors.AppError         "服务器错误"
+// @Success      200  {object}  map[string]interface{}  "danh sách trợ lý"
+// @Failure      500  {object}  errors.AppError         "lỗi hệ thống"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents [get]
@@ -271,9 +271,9 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	// key stays so the UI keeps its shape.
 	disabledOwnIDs := []string{}
 
-	// 批量回填 creator_name，作用同 KB List ：让前端能区分「我Create 」与「同Tenant workspace其他成员」。
-	// 内建 agent（IsBuiltin=true, CreatedBy=""）不会有 creator_name，前端按 builtin
-	// 分支单独渲染。
+	// Điền creator_name hàng loạt, giống danh sách KB: để frontend phân biệt "tôi tạo" với "thành viên khác cùng đơn vị".
+	// Trợ lý tích hợp sẵn (IsBuiltin=true, CreatedBy="") không có creator_name, frontend
+	// hiển thị riêng theo nhánh builtin.
 	enrichAgentCreatorNames(ctx, h.userService, agents)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -283,8 +283,8 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	})
 }
 
-// enrichAgentCreatorNames 批量把 agent.CreatedBy 解析成展示名。失败吞掉，
-// 不影响List 本身可用。与 enrichKBCreatorNames 行为对齐。
+// enrichAgentCreatorNames phân giải agent.CreatedBy thành tên hiển thị theo lô. Lỗi được nuốt,
+// không ảnh hưởng tới danh sách. Hành vi giống enrichKBCreatorNames.
 func enrichAgentCreatorNames(ctx context.Context, userSvc interfaces.UserService, agents []*types.CustomAgent) {
 	if userSvc == nil || len(agents) == 0 {
 		return
@@ -321,16 +321,16 @@ func enrichAgentCreatorNames(ctx context.Context, userSvc interfaces.UserService
 }
 
 // UpdateAgent godoc
-// @Summary      Update 智能体
-// @Description  Update 智能体的名称、描述和Configuration
-// @Tags         智能体
+// @Summary      Cập nhật trợ lý
+// @Description  Cập nhật tên, mô tả và cấu hình của trợ lý
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string              true  "智能体ID"
-// @Param        request  body      UpdateAgentRequest  true  "Update 请求"
-// @Success      200      {object}  map[string]interface{}  "Update 后的智能体"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError         "无法修改内置智能体"
+// @Param        id       path      string              true  "ID trợ lý"
+// @Param        request  body      UpdateAgentRequest  true  "yêu cầu cập nhật"
+// @Success      200      {object}  map[string]interface{}  "trợ lý sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      403      {object}  errors.AppError         "không thể sửa trợ lý tích hợp sẵn"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/{id} [put]
@@ -429,16 +429,16 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 }
 
 // DeleteAgent godoc
-// @Summary      Delete 智能体
-// @Description  Delete 指定的智能体
-// @Tags         智能体
+// @Summary      Xoá trợ lý
+// @Description  Xoá trợ lý chỉ định
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "智能体ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      403  {object}  errors.AppError         "无法Delete 内置智能体"
-// @Failure      404  {object}  errors.AppError         "智能体不存在"
+// @Param        id   path      string  true  "ID trợ lý"
+// @Success      200  {object}  map[string]interface{}  "xoá thành công"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      403  {object}  errors.AppError         "không thể xoá trợ lý tích hợp sẵn"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy trợ lý"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/{id} [delete]
@@ -500,15 +500,15 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 }
 
 // CopyAgent godoc
-// @Summary      复制智能体
-// @Description  复制指定的智能体
-// @Tags         智能体
+// @Summary      Nhân bản trợ lý
+// @Description  Nhân bản trợ lý chỉ định
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "智能体ID"
-// @Success      201  {object}  map[string]interface{}  "复制成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "智能体不存在"
+// @Param        id   path      string  true  "ID trợ lý"
+// @Success      201  {object}  map[string]interface{}  "nhân bản thành công"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy trợ lý"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/{id}/copy [post]
@@ -576,12 +576,12 @@ func (h *CustomAgentHandler) CopyAgent(c *gin.Context) {
 }
 
 // GetPlaceholders godoc
-// @Summary      获取占位符定义
-// @Description  获取所有可用的提示词占位符定义，按字段类型分组
-// @Tags         智能体
+// @Summary      Lấy định nghĩa placeholder
+// @Description  Lấy mọi định nghĩa placeholder dùng được trong prompt, nhóm theo loại trường
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "占位符定义"
+// @Success      200  {object}  map[string]interface{}  "định nghĩa placeholder"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/placeholders [get]
@@ -602,12 +602,12 @@ func (h *CustomAgentHandler) GetPlaceholders(c *gin.Context) {
 }
 
 // GetAgentTypePresets godoc
-// @Summary      获取智能体类型预设List
-// @Description  返回所有 smart-reasoning 下可用的智能体类型预设（RAG/Wiki/Hybrid/Custom），用于编辑器自动填充系统提示词、工具和 KB 兼容性
-// @Tags         智能体
+// @Summary      Lấy danh sách preset loại trợ lý
+// @Description  Trả về mọi preset loại trợ lý dùng được trong smart-reasoning (RAG/Wiki/Hybrid/Custom), để trình soạn tự điền system prompt, công cụ và tương thích kho tri thức
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "预设List "
+// @Success      200  {object}  map[string]interface{}  "danh sách preset"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/type-presets [get]
@@ -621,19 +621,19 @@ func (h *CustomAgentHandler) GetAgentTypePresets(c *gin.Context) {
 }
 
 // GetSuggestedQuestions godoc
-// @Summary      获取推荐问题
-// @Description  基于智能体关联的Knowledge Base，返回推荐问题供用户快捷提问
-// @Tags         智能体
+// @Summary      Lấy câu hỏi gợi ý
+// @Description  Dựa trên kho tri thức gắn với trợ lý, trả về câu hỏi gợi ý để người dùng hỏi nhanh
+// @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Param        id                  path      string  true   "智能体ID"
-// @Param        knowledge_base_ids  query     string  false  "Knowledge BaseIDList （逗号分隔），覆盖智能体默认Configuration "
-// @Param        knowledge_ids       query     string  false  "知识IDList （逗号分隔），限定到具体文档"
-// @Param        tag_scopes          query     string  false  "带Knowledge Base归属的标签范围（JSON）"
-// @Param        limit               query     int     false  "返回数量上限（未传时使用智能体Configuration 的开场问题数量，最大30）"
-// @Success      200                 {object}  map[string]interface{}  "推荐问题List "
-// @Failure      400                 {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404                 {object}  errors.AppError         "智能体不存在"
+// @Param        id                  path      string  true   "ID trợ lý"
+// @Param        knowledge_base_ids  query     string  false  "danh sách ID kho tri thức (phân cách bằng dấu phẩy), ghi đè cấu hình mặc định của trợ lý"
+// @Param        knowledge_ids       query     string  false  "danh sách ID tài liệu (phân cách bằng dấu phẩy), giới hạn vào tài liệu cụ thể"
+// @Param        tag_scopes          query     string  false  "phạm vi thẻ kèm kho tri thức sở hữu (JSON)"
+// @Param        limit               query     int     false  "số lượng tối đa (bỏ trống thì dùng số câu hỏi mở đầu trong cấu hình trợ lý, tối đa 30)"
+// @Success      200                 {object}  map[string]interface{}  "danh sách câu hỏi gợi ý"
+// @Failure      400                 {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404                 {object}  errors.AppError         "không tìm thấy trợ lý"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/{id}/suggested-questions [get]
@@ -740,7 +740,7 @@ func (h *CustomAgentHandler) validateAgentSandboxConfig(
 			WithDetails(err.Error())
 	}
 	if stored == nil {
-		return errors.NewBadRequestError("所选沙箱后端配置不存在，请重新选择")
+		return errors.NewBadRequestError("cấu hình sandbox đã chọn không tồn tại, vui lòng chọn lại")
 	}
 	return nil
 }

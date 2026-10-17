@@ -420,7 +420,7 @@ func TestResolveItem_FileNamePolicy(t *testing.T) {
 		{"blank", " \n\t\u2003", "untitled.md"},
 		{"line breaks and punctuation", "\u2003 A\nB\rC\tD/E \u2003", "A B C D_E.md"},
 		{"existing extension", "Title.md", "Title.md.md"},
-		{"long title", strings.Repeat("测", 100), strings.Repeat("测", 66) + ".md"},
+		{"long title", strings.Repeat("ệ", 100), strings.Repeat("ệ", 66) + ".md"},
 		{"space at truncation boundary", strings.Repeat("a", 199) + "\nmore", strings.Repeat("a", 199) + " .md"},
 		{"other controls retained", "a\x01b", "a\x01b.md"},
 	} {

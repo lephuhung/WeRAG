@@ -23,7 +23,7 @@ import (
 
 func TestMCPDirectExposurePreservesEveryDescriptionAndRawSchema(t *testing.T) {
 	ctx := catalogTestContext()
-	server := &types.MCPService{ID: "orders", Name: "订单", Enabled: true}
+	server := &types.MCPService{ID: "orders", Name: "Đơn hàng", Enabled: true}
 	gate := &catalogPolicy{disabled: map[string]bool{"orders/disabled": true}}
 	description := strings.Repeat("Detailed capability. ", 40) + "END-OF-DESCRIPTION"
 	schema := json.RawMessage(
@@ -38,7 +38,7 @@ func TestMCPDirectExposurePreservesEveryDescriptionAndRawSchema(t *testing.T) {
 		func(context.Context, *types.MCPService, bool) ([]*MCPTool, error) {
 			var tools []*MCPTool
 			for _, name := range []string{
-				"查询", "查询!", "get-order", "get_order", "Get_Order",
+				"Tra cứu", "Tra cứu!", "get-order", "get_order", "Get_Order",
 				strings.Repeat("long", 30) + "a", strings.Repeat("long", 30) + "b", "disabled",
 			} {
 				tool := NewMCPTool(

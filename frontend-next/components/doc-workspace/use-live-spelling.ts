@@ -7,6 +7,7 @@ import {
   opsBatchFromToolData,
   parsePluginParagraphsMessage,
   readParagraphsMessage,
+  type DocumentOp,
   type OpsBatch,
   type OpsFailure,
 } from "@/lib/api/document-ops";
@@ -52,6 +53,23 @@ const GOTO_TIMEOUT_MS = 10_000;
 const GOTO_BATCH_PREFIX = LIVE_SPELLING_BATCH_PREFIX + "goto-";
 // "Not a mistake": the underline is taken away by a live (silent) batch.
 const DISMISS_BATCH_PREFIX = LIVE_SPELLING_BATCH_PREFIX + "dismiss-";
+// Commands of the page (format review: go to, fix, read back): silent too,
+// their outcome goes back to the caller.
+const COMMAND_BATCH_PREFIX = LIVE_SPELLING_BATCH_PREFIX + "cmd-";
+const COMMAND_TIMEOUT_MS = 15_000;
+
+export type EditorOpsResult = Extract<EditorOpsOutcome, { kind: "result" }>;
+
+/** What the page can do in this document's editor beyond the spellcheck:
+ * run a few ops and get the editor's answer, read the paragraph texts. */
+export type EditorActions = {
+  /** The document this editor shows. */
+  documentId: string;
+  /** Null when the ops did not validate or the editor did not answer. */
+  runOps: (ops: DocumentOp[]) => Promise<EditorOpsResult | null>;
+  /** Every paragraph's text; null when the editor did not answer. */
+  readParagraphs: () => Promise<string[] | null>;
+};
 
 const randomId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -90,11 +108,14 @@ export function useLiveSpelling({
   const foundRef = useRef<Map<string, LiveMistake[]>>(new Map());
   // jumps to a mistake waiting for the editor, by batch id
   const gotoRef = useRef(new Map<string, (r: GoToResult) => void>());
+  // the page's commands waiting for the editor, by batch id
+  const commandRef = useRef(new Map<string, (o: EditorOpsResult | null) => void>());
   const reviewedRef = useRef<Set<string>>(new Set());
   const busyRef = useRef(false);
   const againRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingReadRef = useRef<{ id: string; resolve: (texts: string[] | null) => void } | null>(null);
+  // reads waiting for the plugin, by request id (spellcheck and page reads)
+  const pendingReadRef = useRef(new Map<string, (texts: string[] | null) => void>());
   // batches sent to the editor, by id: the hashes recorded once it applied them
   const awaitingRef = useRef(new Map<string, { docId: string; keys: string[]; opKeys: string[] }>());
   const attemptsRef = useRef(new Map<string, number>());
@@ -126,10 +147,10 @@ export function useLiveSpelling({
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== origin || !editorRef.current?.ownsMessageSource(event.source)) return;
       const msg = parsePluginParagraphsMessage(event.data);
-      const pending = pendingReadRef.current;
-      if (!msg || !pending || msg.requestId !== pending.id) return;
-      pendingReadRef.current = null;
-      pending.resolve(msg.texts);
+      const pending = msg ? pendingReadRef.current.get(msg.requestId) : undefined;
+      if (!msg || !pending) return;
+      pendingReadRef.current.delete(msg.requestId);
+      pending(msg.texts);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -141,19 +162,16 @@ export function useLiveSpelling({
     return new Promise((resolve) => {
       const id = randomId();
       const timer = setTimeout(() => {
-        if (pendingReadRef.current?.id === id) pendingReadRef.current = null;
+        pendingReadRef.current.delete(id);
         resolve(null);
       }, READ_TIMEOUT_MS);
-      pendingReadRef.current = {
-        id,
-        resolve: (texts) => {
-          clearTimeout(timer);
-          resolve(texts);
-        },
-      };
+      pendingReadRef.current.set(id, (texts) => {
+        clearTimeout(timer);
+        resolve(texts);
+      });
       if (!editorRef.current?.postToEditor(readParagraphsMessage(id), target)) {
         clearTimeout(timer);
-        pendingReadRef.current = null;
+        pendingReadRef.current.delete(id);
         resolve(null);
       }
     });
@@ -175,6 +193,12 @@ export function useLiveSpelling({
    * timeout nothing is recorded and the next pass sends them again. */
   const onOutcome = useCallback(
     (o: EditorOpsOutcome) => {
+      const command = commandRef.current.get(o.batchId);
+      if (command) {
+        commandRef.current.delete(o.batchId);
+        command(o.kind === "result" ? o : null);
+        return;
+      }
       const jumped = gotoRef.current.get(o.batchId);
       if (jumped) {
         gotoRef.current.delete(o.batchId);
@@ -203,7 +227,7 @@ export function useLiveSpelling({
 
   const run = useCallback(async () => {
     const { enabled: on, isReady: ready } = live.current;
-    if (!on || !ready() || offRef.current) return;
+    if (!on || !ready()) return;
     if (busyRef.current) {
       againRef.current = true;
       return;
@@ -213,6 +237,13 @@ export function useLiveSpelling({
     try {
       const texts = await readTexts();
       if (!texts || live.current.documentId !== docId) return;
+      // whether the document has text is reported even with spelling off:
+      // the chat offers an NĐ30 draft for an empty document
+      const empty = texts.every((t) => !t.trim());
+      if (offRef.current) {
+        setStatus((s) => (s.empty === empty ? s : { ...s, empty }));
+        return;
+      }
       const plans = planLiveSpelling(texts, reviewedRef.current);
       const total = plans.reduce((n, p) => n + p.paragraphs.length, 0);
       let checked = 0;
@@ -221,7 +252,7 @@ export function useLiveSpelling({
         const mistakes = mistakesIn(texts, foundRef.current);
         return { found: mistakes.length, mistakes };
       };
-      setStatus({ phase: total > 0 ? "checking" : "done", total, checked: 0, ...listed() });
+      setStatus({ phase: total > 0 ? "checking" : "done", total, checked: 0, empty, ...listed() });
       for (const plan of plans) {
         const res = await reviewDocumentSpelling(live.current.sessionId, docId, plan.paragraphs, {
           timeoutMs: REVIEW_TIMEOUT_MS,
@@ -229,7 +260,7 @@ export function useLiveSpelling({
         if (live.current.documentId !== docId) return;
         if (res.off) {
           offRef.current = true; // not reviewed: nothing is recorded
-          setStatus({ ...IDLE_SPELLING, phase: "off" });
+          setStatus({ ...IDLE_SPELLING, phase: "off", empty });
           return;
         }
         if (res.failed) {
@@ -247,7 +278,7 @@ export function useLiveSpelling({
         writeFound(storage(), docId, foundRef.current);
         missedAny ||= missed.size > 0;
         checked += plan.paragraphs.length;
-        setStatus({ phase: "checking", total, checked, ...listed() });
+        setStatus({ phase: "checking", total, checked, empty, ...listed() });
         const keys = reviewedKeys(plan, res.missed);
         const batch = opsBatchFromToolData("check_spelling", {
           document_ops: res.ops,
@@ -267,7 +298,7 @@ export function useLiveSpelling({
         setBatches((prev) => [...prev.slice(-KEEP_BATCHES), batch]);
       }
       if (total > 0 && live.current.documentId === docId) {
-        setStatus({ phase: missedAny ? "failed" : "done", total, checked, ...listed() });
+        setStatus({ phase: missedAny ? "failed" : "done", total, checked, empty, ...listed() });
       }
     } catch {
       /* network / server error: the next pause tries again */
@@ -337,6 +368,27 @@ export function useLiveSpelling({
     });
   }, []);
 
+  /* A few ops built by the page, run in this editor (silently, outside
+   * the applied-batch ledger), resolved with the editor's answer. */
+  const runOps = useCallback((ops: DocumentOp[]): Promise<EditorOpsResult | null> => {
+    const batch = opsBatchFromToolData("check_document_format", {
+      document_ops: ops,
+      ops_batch_id: COMMAND_BATCH_PREFIX + randomId(),
+      document_id: live.current.documentId,
+    });
+    if (!batch || batch.ops.length === 0 || batch.rejected.length > 0) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (commandRef.current.delete(batch.batchId)) resolve(null);
+      }, COMMAND_TIMEOUT_MS);
+      commandRef.current.set(batch.batchId, (o) => {
+        clearTimeout(timer);
+        resolve(o);
+      });
+      setBatches((prev) => [...prev.slice(-KEEP_BATCHES), batch]);
+    });
+  }, []);
+
   /* "Not a mistake": the server records the verdict (training data; the
    * text is not underlined again there), then the underline goes and the
    * mistake leaves the list. False when the verdict was not recorded. */
@@ -373,5 +425,5 @@ export function useLiveSpelling({
     return true;
   }, []);
 
-  return { batches, schedule, onOutcome, status, goTo, dismiss };
+  return { batches, schedule, onOutcome, status, goTo, dismiss, runOps, readParagraphs: readTexts };
 }

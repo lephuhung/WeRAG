@@ -34,7 +34,7 @@ type KnowledgeSpanRepository interface {
 	// CancelAllOpenSpans flips every non-terminal (pending/running) span
 	// for (knowledgeID, attempt) to "cancelled" in one statement,
 	// regardless of tree position. Used by the user-cancel path where
-	// fan-out stages (e.g. "多模态识别") flip themselves to done as soon
+	// fan-out stages (e.g. multimodal recognition) flip themselves to done as soon
 	// as they finish dispatching, while their async children are still
 	// running — a tree walk that stops at terminal parents would miss
 	// those orphan leaves.

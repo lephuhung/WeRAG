@@ -10,18 +10,9 @@ builtin_agents:
       default:
         name: "Quick Answer"
         description: "Knowledge base RAG Q&A for fast and accurate answers"
-      zh-CN:
-        name: "快速问答"
-        description: "基于知识库的 RAG 问答，快速准确地回答问题"
-      zh-TW:
-        name: "快速問答"
-        description: "基於知識庫的 RAG 問答，快速準確地回答問題"
-      ja-JP:
-        name: "クイック回答"
-        description: "ナレッジベース RAG Q&A による迅速で正確な回答"
-      ko-KR:
-        name: "빠른 답변"
-        description: "지식 베이스 RAG Q&A를 통한 빠르고 정확한 답변"
+      vi:
+        name: "Hỏi đáp nhanh"
+        description: "Hỏi đáp RAG trên kho tri thức, trả lời nhanh và chính xác"
     config:
       agent_mode: "quick-answer"
       system_prompt_id: "default_kb"
@@ -53,18 +44,9 @@ builtin_agents:
       default:
         name: "Smart Reasoning"
         description: "ReAct reasoning framework with multi-step thinking and tool calling"
-      zh-CN:
-        name: "智能推理"
-        description: "ReAct 推理框架，支持多步思考与工具调用"
-      zh-TW:
-        name: "智能推理"
-        description: "ReAct 推理框架，支援多步思考與工具呼叫"
-      ja-JP:
-        name: "スマート推論"
-        description: "ReAct 推論フレームワーク、マルチステップ思考とツール呼び出し対応"
-      ko-KR:
-        name: "스마트 추론"
-        description: "ReAct 추론 프레임워크, 다단계 사고 및 도구 호출 지원"
+      vi:
+        name: "Suy luận thông minh"
+        description: "Khung suy luận ReAct, hỗ trợ suy nghĩ nhiều bước và gọi công cụ"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "rag-qa"
@@ -104,18 +86,9 @@ builtin_agents:
       default:
         name: "Data Analyst"
         description: "Professional data analysis agent with SQL query and statistical analysis for CSV/Excel files"
-      zh-CN:
-        name: "数据分析师"
-        description: "专业的数据分析智能体，支持对 CSV/Excel 文件进行 SQL 查询和统计分析"
-      zh-TW:
-        name: "數據分析師"
-        description: "專業的數據分析智能體，支援對 CSV/Excel 檔案進行 SQL 查詢和統計分析"
-      ja-JP:
-        name: "データアナリスト"
-        description: "CSV/Excel ファイルの SQL クエリと統計分析に対応するプロフェッショナルなデータ分析エージェント"
-      ko-KR:
-        name: "데이터 분석가"
-        description: "CSV/Excel 파일에 대한 SQL 쿼리 및 통계 분석을 지원하는 전문 데이터 분석 에이전트"
+      vi:
+        name: "Phân tích dữ liệu"
+        description: "Trợ lý phân tích dữ liệu: truy vấn SQL và thống kê trên tệp CSV/Excel"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "data-analysis"
@@ -148,18 +121,9 @@ builtin_agents:
       default:
         name: "Wiki Questioner"
         description: "Specialized agent for answering questions based on Wiki knowledge bases"
-      zh-CN:
-        name: "维基问答"
-        description: "专注于在 Wiki 知识库中回答问题的智能体"
-      zh-TW:
-        name: "維基問答"
-        description: "專注於在 Wiki 知識庫中回答問題的智能體"
-      ja-JP:
-        name: "Wiki 問答"
-        description: "Wikiナレッジベースでの回答問題に特化したエージェント"
-      ko-KR:
-        name: "위키 질문"
-        description: "위키 지식 베이스에서 답변하는 데 특화된 에이전트"
+      vi:
+        name: "Hỏi đáp Wiki"
+        description: "Trợ lý chuyên trả lời câu hỏi dựa trên kho tri thức Wiki"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "wiki-qa"
@@ -194,18 +158,6 @@ builtin_agents:
       vi:
         name: "Soạn thảo văn bản"
         description: "Chỉnh sửa tài liệu Word ngay trên trình soạn thảo: chuẩn hóa thể thức theo Nghị định 30/2020, viết lại đoạn đã bôi đen, tra cứu căn cứ pháp lý"
-      zh-CN:
-        name: "公文助手"
-        description: "在编辑器中直接修改 Word 文档：按越南第 30/2020 号议定规范版式，改写选中段落，引用法律依据"
-      zh-TW:
-        name: "公文助手"
-        description: "在編輯器中直接修改 Word 文件：依越南第 30/2020 號議定規範版式，改寫選取段落，引用法律依據"
-      ja-JP:
-        name: "文書アシスタント"
-        description: "Word 文書をエディター上で直接編集：政令 30/2020 に沿って書式を整え、選択した箇所を書き直し、法的根拠を引用します"
-      ko-KR:
-        name: "문서 도우미"
-        description: "편집기에서 Word 문서를 바로 수정: 시행령 30/2020에 맞춰 서식을 정리하고, 선택한 부분을 다시 쓰고, 법적 근거를 인용합니다"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "custom"
@@ -215,9 +167,22 @@ builtin_agents:
       max_iterations: 30
       kb_selection_mode: "all"
       retrieve_kb_only_when_mentioned: false
+      # Matches the Word add-in attach picker (ATTACH_ACCEPT): office text,
+      # PDF (scanned pages OCR'd by docreader's vietnamese_legal engine) and
+      # images (OCR'd through vlm_model_id when the deployment sets one).
       supported_file_types:
         - "docx"
         - "doc"
+        - "pdf"
+        - "txt"
+        - "md"
+        - "jpg"
+        - "jpeg"
+        - "png"
+        - "gif"
+        - "webp"
+      image_upload_enabled: true
+      attachment_image_understanding: true
       allowed_tools:
         - "check_document_format"
         - "read_document_outline"
@@ -260,18 +225,9 @@ builtin_agents:
       default:
         name: "Wiki Fixer"
         description: "Specialized agent for revising Wiki pages based on inspection issues"
-      zh-CN:
-        name: "维基修订"
-        description: "专门用于根据巡检问题修订 Wiki 页面的智能体"
-      zh-TW:
-        name: "維基修訂"
-        description: "專門用於根據巡檢問題修訂 Wiki 頁面的智能體"
-      ja-JP:
-        name: "Wiki 修訂"
-        description: "検査の問題に基づいてWikiページを修復および最適化するための専用エージェント"
-      ko-KR:
-        name: "위키 수정"
-        description: "검사 문제를 기반으로 Wiki 페이지를 修復하고 最適化하는 전용 에이전트"
+      vi:
+        name: "Hiệu đính Wiki"
+        description: "Trợ lý chuyên sửa trang Wiki theo các vấn đề phát hiện khi kiểm tra"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "custom"
@@ -309,18 +265,9 @@ builtin_agents:
       default:
         name: "Skill Installer"
         description: "Internal agent that installs an uploaded skill and its dependencies into the sandbox image"
-      zh-CN:
-        name: "技能安装器"
-        description: "把上传的技能及其依赖装进沙箱镜像的内部智能体"
-      zh-TW:
-        name: "技能安裝器"
-        description: "把上傳的技能及其相依套件裝進沙箱鏡像的內部智能體"
-      ja-JP:
-        name: "スキルインストーラー"
-        description: "アップロードされたスキルとその依存関係をサンドボックスイメージにインストールする内部エージェント"
-      ko-KR:
-        name: "스킬 설치 도구"
-        description: "업로드된 스킬과 의존성을 샌드박스 이미지에 설치하는 내부 에이전트"
+      vi:
+        name: "Cài đặt kỹ năng"
+        description: "Trợ lý nội bộ cài kỹ năng đã tải lên cùng các phụ thuộc vào ảnh sandbox"
     config:
       agent_mode: "smart-reasoning"
       agent_type: "custom"

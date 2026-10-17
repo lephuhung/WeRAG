@@ -130,8 +130,8 @@ func (s *tenantAPIKeyService) ListPlatformAPIKeys(ctx context.Context) ([]*types
 	return s.repo.ListPlatformAPIKeys(ctx)
 }
 
-// UpdateAPIKey 按Create 接口的相同语义Update 租户 API Key Configuration 。
-// scoped Key 需要至少一个能力；full-access Key 会清空细粒度能力和Knowledge Base范围。
+// UpdateAPIKey cập nhật cấu hình API key của đơn vị theo cùng ngữ nghĩa với Create.
+// Key scoped cần ít nhất một quyền; key full-access sẽ xóa quyền chi tiết và phạm vi kho tri thức.
 func (s *tenantAPIKeyService) UpdateAPIKey(
 	ctx context.Context, req interfaces.TenantAPIKeyUpdateRequest,
 ) (*types.TenantAPIKey, error) {

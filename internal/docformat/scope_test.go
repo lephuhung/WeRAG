@@ -203,3 +203,39 @@ func TestAttachedHeading(t *testing.T) {
 		}
 	}
 }
+
+func TestFormMarker(t *testing.T) {
+	el := func(src string, texts ...string) []element {
+		var out []element
+		for i, s := range texts {
+			out = append(out, element{&Para{Index: i, Text: s, Source: src}, ZoneFull, s, -1})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name  string
+		els   []element
+		found bool
+	}{
+		{"split over text-box lines", append(el("body", "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"),
+			el("textbox", "Mẫu số: 140", "BH theo TT số 128/2025/TT-BCA", "ngày 19/12/2025")...), true},
+		{"one line, ban hành kèm theo", el("body", "Mẫu số 01/BB (Ban hành kèm theo Thông tư số 61/2017/TT-BCA)",
+			"CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), true},
+		{"mẫu biên bản số, nghị định", el("body", "Mẫu biên bản số 01 theo Nghị định số 118/2021/NĐ-CP"), true},
+		{"NĐ30 appendix template", el("body", "Mẫu số 1.1 theo Nghị định số 30/2020/NĐ-CP"), false},
+		{"no act reference", el("body", "Mẫu số 02", "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), false},
+		{"công văn", el("body", "UBND TỈNH THỪA THIÊN HUẾ", "Số: 45/SNV-VP", "V/v mẫu số liệu theo Thông tư 01/2024/TT-BNV"), false},
+	} {
+		if got := formMarker(tc.els); (got != "") != tc.found {
+			t.Errorf("%s: formMarker = %q, want found=%v", tc.name, got, tc.found)
+		}
+	}
+	s := segOf("bien_ban", map[string]string{
+		"quoc_hieu": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "trich_yeu": "BIÊN BẢN GHI LỜI KHAI",
+		"signature": "CÁN BỘ GHI LỜI KHAI",
+	})
+	s.FormMarker = "Mẫu số: 140BH theo TT số 128/2025/TT-BCA"
+	if got, reason := ScopeOf(s, "bien_ban"); got != ScopeTechnical || !strings.Contains(reason, "128/2025/TT-BCA") {
+		t.Fatalf("form: %s (%s)", got, reason)
+	}
+}

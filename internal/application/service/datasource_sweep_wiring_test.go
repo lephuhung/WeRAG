@@ -316,7 +316,7 @@ func TestIngestItem_NoSweepWhenFlagUnset(t *testing.T) {
 // Skipped, not Failed, so it never marks the whole document sync as failed. A
 // non-image item with the same error must still count as Failed.
 func TestApplyFetchedItem_EmbeddedImageIngestFailureCountsAsSkip(t *testing.T) {
-	ingestErr := errors.New("上传图片文件需要设置VLM模型")
+	ingestErr := errors.New("tải lên tệp ảnh cần cấu hình mô hình VLM")
 	ds := &types.DataSource{ID: "ds-1", Type: "feishu", TenantID: 7, KnowledgeBaseID: "kb-1"}
 	newItem := func(extID string, meta map[string]string) *types.FetchedItem {
 		return &types.FetchedItem{

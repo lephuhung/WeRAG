@@ -26,7 +26,7 @@ func Recovery() gin.HandlerFunc {
 					"stacktrace": string(stacktrace),
 				})
 
-				// 返回500错误
+				// Trả về lỗi 500
 				c.AbortWithStatusJSON(500, gin.H{
 					"error":   "Internal Server Error",
 					"message": fmt.Sprintf("%v", err),

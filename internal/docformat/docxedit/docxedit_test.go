@@ -128,6 +128,32 @@ func countTag(s, tag string) int {
 	return len(regexp.MustCompile(`<w:`+tag+`[ >/]`).FindAllStringIndex(s, -1))
 }
 
+// altContentBox is a quốc hiệu paragraph anchoring a "Mẫu số" text box the
+// way Word saves it: a DrawingML mc:Choice copy and a VML mc:Fallback copy.
+const altContentBox = `<w:p><w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">` +
+	`<mc:Choice Requires="wps"><w:drawing><wps:txbx xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:txbxContent>` +
+	`<w:p><w:r><w:t>Mẫu số: 140BH</w:t></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></mc:Choice>` +
+	`<mc:Fallback><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml"><v:textbox><w:txbxContent>` +
+	`<w:p><w:r><w:t>Mẫu số: 140BH</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>` +
+	`</mc:AlternateContent></w:r><w:r><w:t>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</w:t></w:r></w:p>` +
+	`<w:p><w:r><w:t>Độc lập - Tự do - Hạnh phúc</w:t></w:r></w:p>`
+
+func TestTextBoxOnceAndOutOfAnchor(t *testing.T) {
+	data := makeDocx(t, altContentBox)
+	lay := docformat.InspectDocx(data)
+	var got []string
+	for _, p := range lay.Paragraphs {
+		got = append(got, p.Source+":"+p.Text)
+	}
+	want := []string{"body:CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "textbox:Mẫu số: 140BH", "body:Độc lập - Tự do - Hạnh phúc"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("paragraphs:\n got %q\nwant %q", got, want)
+	}
+	if n := len(mustOpen(t, data).Paragraphs()); n != len(want) {
+		t.Fatalf("docxedit paragraphs: %d, want %d", n, len(want))
+	}
+}
+
 // ---------------------------------------------------------------------------
 
 func TestParityWithInspectDocx(t *testing.T) {
@@ -137,6 +163,7 @@ func TestParityWithInspectDocx(t *testing.T) {
 			`<w:tbl><w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc>` +
 			`<w:tc><w:p><w:r><w:t xml:space="preserve">B1 </w:t></w:r><w:r><w:tab/><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
 			`<w:customXml><w:p><w:r><w:t>custom</w:t></w:r></w:p></w:customXml>`,
+		"alternate_content_textbox": altContentBox,
 	}
 	type tc struct {
 		name string

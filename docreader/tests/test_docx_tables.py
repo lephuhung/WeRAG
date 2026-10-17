@@ -137,20 +137,20 @@ class DocxTableContentTest(unittest.TestCase):
     def test_equal_adjacent_cells_are_not_collapsed(self):
         """Adjacent independent cells with the same text must stay separate.
 
-        Regression for the #2634 control row: ``相同值 | 相同值 | 独立值``.
+        Regression for the #2634 control row: ``Giá trị giống | Giá trị giống | Giá trị riêng``.
         """
 
         def build(doc):
             table = doc.add_table(rows=2, cols=3)
-            table.cell(0, 0).text = "相同值"
-            table.cell(0, 1).text = "相同值"
-            table.cell(0, 2).text = "独立值"
+            table.cell(0, 0).text = "Giá trị giống"
+            table.cell(0, 1).text = "Giá trị giống"
+            table.cell(0, 2).text = "Giá trị riêng"
             table.cell(1, 0).text = "x"
             table.cell(1, 1).text = "y"
             table.cell(1, 2).text = "z"
 
         document = _parse(_docx_bytes(build))
-        self.assertIn("| 相同值 | 相同值 | 独立值 |", document.content)
+        self.assertIn("| Giá trị giống | Giá trị giống | Giá trị riêng |", document.content)
         self.assertIn("| x | y | z |", document.content)
 
     def test_horizontal_merge_keeps_grid_width(self):

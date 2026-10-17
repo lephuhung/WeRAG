@@ -218,7 +218,7 @@ func TestPollSteerDoesNotMutateAlreadyReadEvents(t *testing.T) {
 		"carry-over copy must stay pending so the follow-up run can inject it")
 }
 
-// promoteSteerForTest is the "立即发送" mutation the handler performs.
+// promoteSteerForTest is the "gửi ngay" mutation the handler performs.
 func promoteSteerForTest(
 	ctx context.Context, mgr *stream.MemoryStreamManager, steerID string,
 ) (bool, error) {

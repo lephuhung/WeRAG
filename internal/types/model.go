@@ -145,10 +145,10 @@ type ModelParameters struct {
 	ParameterSize       string              `yaml:"parameter_size"       json:"parameter_size"` // Ollama model parameter size (e.g., "7B", "13B", "70B")
 	Provider            string              `yaml:"provider"             json:"provider"`       // Provider identifier: openai, aliyun, zhipu, generic
 	ExtraConfig         map[string]string   `yaml:"extra_config"         json:"extra_config"`   // Provider-specific configuration
-	// CustomHeaders 允许在调用远程模型 API 时附加自定义 HTTP 请求头，
-	// 用途类似 Python OpenAI SDK 的 extra_headers Parameters ，
-	// 常见场景包括透传企业网关鉴权信息、追踪 ID、路由标识等。
-	// 保留字段（Authorization、api-key、Content-Type、Accept 等）会在运行期被忽略以避免破坏签名/鉴权流程。
+	// CustomHeaders cho phép đính kèm HTTP header tùy chỉnh khi gọi API mô hình từ xa,
+	// tương tự tham số extra_headers của Python OpenAI SDK;
+	// dùng cho các trường hợp như chuyển tiếp thông tin xác thực của gateway doanh nghiệp, trace ID, định tuyến...
+	// Các header dành riêng (Authorization, api-key, Content-Type, Accept...) bị bỏ qua lúc chạy để không phá vỡ luồng ký/xác thực.
 	CustomHeaders  map[string]string `yaml:"custom_headers,omitempty" json:"custom_headers,omitempty"`
 	SupportsVision bool              `yaml:"supports_vision"      json:"supports_vision"` // Whether the model accepts image/multimodal input
 	// ContextWindow is the model's total context window in tokens and
@@ -166,9 +166,9 @@ type ModelParameters struct {
 	// process-wide model.max_concurrency". Interactive user-facing calls are
 	// never gated. Only chat / vlm / embedding honour this (see limiter.Gate).
 	MaxConcurrency int `yaml:"max_concurrency,omitempty" json:"max_concurrency,omitempty"`
-	// WeKnoraCloud 厂商专用凭证
+	// Thông tin xác thực riêng cho nhà cung cấp WeKnoraCloud
 	AppID     string `yaml:"app_id,omitempty"     json:"app_id,omitempty"`
-	AppSecret string `yaml:"app_secret,omitempty" json:"app_secret,omitempty"` // AES-256 加密存储，实际承载上游 API Key
+	AppSecret string `yaml:"app_secret,omitempty" json:"app_secret,omitempty"` // Lưu mã hóa AES-256, thực chất chứa API Key upstream
 }
 
 // Per-response redaction for Model now lives in dto.NewModelResponse. The

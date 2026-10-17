@@ -7,18 +7,18 @@ import (
 )
 
 const (
-	// DeepSeekBaseURL DeepSeek 官方 API BaseURL
+	// DeepSeekBaseURL BaseURL API chính thức của DeepSeek
 	DeepSeekBaseURL = "https://api.deepseek.com/v1"
 )
 
-// DeepSeekProvider 实现 DeepSeek 的 Provider 接口
+// DeepSeekProvider triển khai giao diện Provider cho DeepSeek
 type DeepSeekProvider struct{}
 
 func init() {
 	Register(&DeepSeekProvider{})
 }
 
-// Info 返回 DeepSeek provider 的元数据
+// Info trả về metadata của provider DeepSeek
 func (p *DeepSeekProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderDeepSeek,
@@ -34,7 +34,7 @@ func (p *DeepSeekProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 DeepSeek provider Configuration
+// ValidateConfig kiểm tra cấu hình provider DeepSeek
 func (p *DeepSeekProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for DeepSeek provider")

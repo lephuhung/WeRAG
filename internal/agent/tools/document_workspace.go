@@ -132,6 +132,13 @@ func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID
 	}
 	all := docs
 	if forEdit && strings.TrimSpace(ref) == "" {
+		// the user @-named one document and it is a source: do not fall
+		// back silently to a target they did not name; the error says how
+		// to edit the target instead (unless the highlighted passage is in
+		// a target, which designates that one)
+		if src := mentionedSource(ctx, all); src != nil {
+			return nil, errors.New(mentionedSourceRetry(src, targetDocuments(all)))
+		}
 		// only a target can be edited: the fallbacks below pick among them
 		docs = targetDocuments(docs)
 		if len(docs) == 0 {
@@ -183,6 +190,50 @@ func resolveDocument(ctx context.Context, src DocumentWorkspaceSource, sessionID
 			DocumentLabel(target), len(docs))
 	}
 	return target, nil
+}
+
+// mentionedSource is the source document of the turn's single @-mention,
+// nil when the turn mentions none or several, the one mentioned is a
+// target, or the highlighted passage is in a target.
+func mentionedSource(ctx context.Context, docs []*types.DocumentWorkspace) *types.DocumentWorkspace {
+	mentioned := types.MentionedDocumentsFromContext(ctx)
+	if len(mentioned) != 1 {
+		return nil
+	}
+	sel := types.DocumentSelectionFromContext(ctx)
+	var found *types.DocumentWorkspace
+	for _, d := range docs {
+		if sel != nil && d.ID == sel.DocumentID && !d.IsSource() {
+			return nil
+		}
+		if d.ID == mentioned[0] && d.IsSource() {
+			found = d
+		}
+	}
+	return found
+}
+
+// mentionedSourceRetry is the error of an edit without a document argument
+// whose only @-mention is a source: with targets open, the user likely
+// asked to edit a target using the source, so the model is told to call
+// again naming it; without one, SourceDocumentRefusal.
+func mentionedSourceRetry(src *types.DocumentWorkspace, targets []*types.DocumentWorkspace) string {
+	switch len(targets) {
+	case 0:
+		return SourceDocumentRefusal(src)
+	case 1:
+		return fmt.Sprintf("%s là tài liệu nguồn, chỉ tra cứu được. Nếu yêu cầu là sửa %s (vd. chèn nội dung lấy từ %s vào %s), "+
+			"gọi lại với document=%q. Nếu người dùng muốn sửa chính %s: không sửa được — nói rõ đó là tài liệu nguồn, "+
+			"chỉ mở nó trong trình soạn thảo mới sửa được.",
+			src.Handle(), targets[0].Handle(), src.Handle(), targets[0].Handle(), targets[0].Handle(), src.Handle())
+	default:
+		handles := make([]string, 0, len(targets))
+		for _, d := range targets {
+			handles = append(handles, d.Handle())
+		}
+		return fmt.Sprintf("%s là tài liệu nguồn, chỉ tra cứu được. Để sửa một văn bản làm việc (%s), gọi lại với document là văn bản "+
+			"người dùng đã gọi đích danh; nếu họ chưa gọi, hãy hỏi họ muốn sửa văn bản nào.", src.Handle(), strings.Join(handles, ", "))
+	}
 }
 
 // resolveTargetDocument is resolveDocument for a tool that only works on a

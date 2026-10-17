@@ -176,7 +176,7 @@ type ConnectorMetadata struct {
 var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 	types.ConnectorTypeFeishu: {
 		Type:         types.ConnectorTypeFeishu,
-		Name:         "Feishu (飞书)",
+		Name:         "Feishu",
 		Description:  "Sync documents, wikis, and content from Feishu",
 		Priority:     0,
 		AuthType:     "oauth2",
@@ -192,7 +192,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 	},
 	types.ConnectorTypeFeishuDrive: {
 		Type:         types.ConnectorTypeFeishuDrive,
-		Name:         "Feishu Drive (飞书云盘)",
+		Name:         "Feishu Drive",
 		Description:  "Sync documents and files from a Feishu Drive folder",
 		Priority:     0,
 		AuthType:     "oauth2",
@@ -224,7 +224,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 	},
 	types.ConnectorTypeYuque: {
 		Type:         types.ConnectorTypeYuque,
-		Name:         "Yuque (语雀)",
+		Name:         "Yuque",
 		Description:  "Sync knowledge bases and documents from Yuque",
 		Priority:     3,
 		AuthType:     "api_key",
@@ -264,7 +264,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 	},
 	types.ConnectorTypeDingTalk: {
 		Type:         types.ConnectorTypeDingTalk,
-		Name:         "DingTalk (钉钉)",
+		Name:         "DingTalk",
 		Description:  "Sync online documents from DingTalk knowledge bases",
 		Priority:     7,
 		AuthType:     "oauth2",

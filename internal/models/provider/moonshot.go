@@ -31,18 +31,18 @@ func IsMoonshotFixedTempModel(modelName string) bool {
 	return false
 }
 
-// MoonshotProvider 实现 Moonshot AI (Kimi) 的 Provider 接口
+// MoonshotProvider triển khai giao diện Provider cho Moonshot AI (Kimi)
 type MoonshotProvider struct{}
 
 func init() {
 	Register(&MoonshotProvider{})
 }
 
-// Info 返回 Moonshot provider 的元数据
+// Info trả về metadata của provider Moonshot
 func (p *MoonshotProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderMoonshot,
-		DisplayName: "月之暗面 Moonshot",
+		DisplayName: "Moonshot",
 		Description: "kimi-k2-turbo-preview, moonshot-v1-8k-vision-preview, etc.",
 		DefaultURLs: map[types.ModelType]string{
 			types.ModelTypeKnowledgeQA: MoonshotBaseURL,
@@ -56,7 +56,7 @@ func (p *MoonshotProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Moonshot provider Configuration
+// ValidateConfig kiểm tra cấu hình provider Moonshot
 func (p *MoonshotProvider) ValidateConfig(config *Config) error {
 	if config.BaseURL == "" {
 		return fmt.Errorf("base URL is required for Moonshot provider")

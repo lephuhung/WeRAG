@@ -1,6 +1,7 @@
 "use client";
 
 import type { LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
+import type { EditorActions } from "./use-live-spelling";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
@@ -125,7 +126,7 @@ export const DocWorkspace = memo(function DocWorkspace({
   turnInFlight?: boolean;
   onSelectionChange: (sel: DocumentSelection | null) => void;
   /** The visible document's live spellcheck progress. */
-  onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions) => void;
+  onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions, editor: EditorActions) => void;
   /** Background format check and profile of the visible document (null: none). */
   onFormatCheckChange?: (
     check: DocumentFormatCheck | null,
@@ -471,6 +472,22 @@ export const DocWorkspace = memo(function DocWorkspace({
     }
   };
 
+  /* "Tạo văn bản mới": an empty A4 document opened like a picked file;
+   * the chat then offers the NĐ 30 templates for it. */
+  const createBlank = async () => {
+    setAddOpen(false);
+    try {
+      const { buildBlankDocument } = await import("@/lib/document-templates");
+      const bytes = await buildBlankDocument();
+      const file = new File([bytes as BlobPart], t("docws.newDocumentFile"), {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      await uploadAndOpen(file);
+    } catch (e) {
+      toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
+    }
+  };
+
   const closeTab = async (doc: DocumentWorkspaceView) => {
     if (!sessionId) return;
     const ok = await confirm({
@@ -679,6 +696,15 @@ export const DocWorkspace = memo(function DocWorkspace({
                 >
                   {t("docws.pickFile")}
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={blocked}
+                  title={t("docws.newDocumentHint")}
+                  onClick={() => void createBlank()}
+                >
+                  {t("docws.newDocument")}
+                </button>
               </div>
             </>
           )}
@@ -766,10 +792,10 @@ export const DocWorkspace = memo(function DocWorkspace({
             <button
               type="button"
               className="btn btn-ghost btn-sm h-9 w-9 p-0"
-              disabled={Boolean(busyMsg) || (atLimit && sources.length + uploads.length === 0)}
+              disabled={Boolean(busyMsg)}
               title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
               aria-label={t("docws.addDocument")}
-              onClick={() => (sources.length + uploads.length > 0 ? setAddOpen((o) => !o) : fileInputRef.current?.click())}
+              onClick={() => setAddOpen((o) => !o)}
             >
               <IconPlus className="h-4 w-4" />
             </button>
@@ -789,7 +815,16 @@ export const DocWorkspace = memo(function DocWorkspace({
                   >
                     <IconPlus className="h-3.5 w-3.5" /> {t("docws.uploadNew")}
                   </button>
-                  <div className="px-1.5 pb-1 pt-2">{sourcesList}</div>
+                  <button
+                    type="button"
+                    disabled={atLimit}
+                    title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.newDocumentHint")}
+                    className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-strong disabled:opacity-50 disabled:hover:bg-transparent"
+                    onClick={() => void createBlank()}
+                  >
+                    <IconDoc className="h-3.5 w-3.5" /> {t("docws.newDocument")}
+                  </button>
+                  {sources.length + uploads.length > 0 && <div className="px-1.5 pb-1 pt-2">{sourcesList}</div>}
                 </div>
               </>
             )}

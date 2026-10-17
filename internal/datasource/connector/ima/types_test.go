@@ -155,10 +155,10 @@ func TestAPIEnvelope_AcceptsBothSpellings(t *testing.T) {
 		wantCode int
 		wantMsg  string
 	}{
-		{"code/msg", `{"code":110030,"msg":"无权限"}`, 110030, "无权限"},
-		{"retcode/errmsg", `{"retcode":110030,"errmsg":"无权限"}`, 110030, "无权限"},
+		{"code/msg", `{"code":110030,"msg":"Không có quyền"}`, 110030, "Không có quyền"},
+		{"retcode/errmsg", `{"retcode":110030,"errmsg":"Không có quyền"}`, 110030, "Không có quyền"},
 		{"success", `{"code":0,"msg":"ok"}`, 0, "ok"},
-		{"retcode success", `{"retcode":0,"errmsg":"成功"}`, 0, "成功"},
+		{"retcode success", `{"retcode":0,"errmsg":"Thành công"}`, 0, "Thành công"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -11,9 +11,8 @@ func TestApplyBuiltinAgentLocalizationOverlaysYAMLLocale(t *testing.T) {
 			ID:     BuiltinQuickAnswerID,
 			Avatar: "quick.png",
 			I18n: map[string]BuiltinAgentI18n{
-				"default": {Name: "快速问答", Description: "中文 RAG"},
-				"en-US":   {Name: "Quick Answer", Description: "Knowledge base RAG Q&A"},
-				"zh-CN":   {Name: "快速问答", Description: "中文 RAG"},
+				"default": {Name: "Quick Answer", Description: "Knowledge base RAG Q&A"},
+				"vi":      {Name: "Hỏi đáp nhanh", Description: "Hỏi đáp RAG trên kho tri thức"},
 			},
 		},
 	})
@@ -21,20 +20,20 @@ func TestApplyBuiltinAgentLocalizationOverlaysYAMLLocale(t *testing.T) {
 
 	agent := &CustomAgent{
 		ID:          BuiltinQuickAnswerID,
-		Name:        "快速问答",
-		Description: "中文 RAG",
+		Name:        "Quick Answer",
+		Description: "Knowledge base RAG Q&A",
 		Avatar:      "",
 		IsBuiltin:   true,
 		TenantID:    1,
 	}
-	ctx := context.WithValue(context.Background(), LanguageContextKey, "en-US")
+	ctx := context.WithValue(context.Background(), LanguageContextKey, "vi")
 	ApplyBuiltinAgentLocalization(ctx, agent)
 
-	if agent.Name != "Quick Answer" {
-		t.Fatalf("Name = %q, want Quick Answer", agent.Name)
+	if agent.Name != "Hỏi đáp nhanh" {
+		t.Fatalf("Name = %q, want Hỏi đáp nhanh", agent.Name)
 	}
-	if agent.Description != "Knowledge base RAG Q&A" {
-		t.Fatalf("Description = %q, want English copy", agent.Description)
+	if agent.Description != "Hỏi đáp RAG trên kho tri thức" {
+		t.Fatalf("Description = %q, want Vietnamese copy", agent.Description)
 	}
 	if agent.Avatar != "quick.png" {
 		t.Fatalf("Avatar = %q, want quick.png", agent.Avatar)
@@ -60,8 +59,8 @@ func TestApplyBuiltinAgentLocalizationPreservesCustomizedNameAndDesc(t *testing.
 			ID:     BuiltinQuickAnswerID,
 			Avatar: "quick.png",
 			I18n: map[string]BuiltinAgentI18n{
-				"default": {Name: "快速问答", Description: "中文 RAG"},
-				"en-US":   {Name: "Quick Answer", Description: "Knowledge base RAG Q&A"},
+				"default": {Name: "Quick Answer", Description: "Knowledge base RAG Q&A"},
+				"vi":      {Name: "Hỏi đáp nhanh", Description: "Hỏi đáp RAG trên kho tri thức"},
 			},
 		},
 	})
@@ -74,7 +73,7 @@ func TestApplyBuiltinAgentLocalizationPreservesCustomizedNameAndDesc(t *testing.
 		IsBuiltin:   true,
 		TenantID:    1,
 	}
-	ctx := context.WithValue(context.Background(), LanguageContextKey, "en-US")
+	ctx := context.WithValue(context.Background(), LanguageContextKey, "vi")
 	ApplyBuiltinAgentLocalization(ctx, agent)
 
 	if agent.Name != "My Custom Quick Bot" {

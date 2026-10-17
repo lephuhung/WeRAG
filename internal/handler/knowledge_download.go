@@ -28,7 +28,7 @@ const (
 
 var batchDownloadSlots = make(chan struct{}, maxConcurrentBatchDownloads)
 
-// BatchDownloadKnowledgeRequest 指定同一Knowledge Base中需要下载的文档。
+// BatchDownloadKnowledgeRequest chỉ định các tài liệu cần tải về trong cùng một kho tri thức.
 type BatchDownloadKnowledgeRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1,max=200,dive,required,max=128"`
 }
@@ -39,14 +39,14 @@ type knowledgeDownloadEntry struct {
 }
 
 // BatchDownloadKnowledge godoc
-// @Summary 批量下载知识文件
-// @Description 将同一Knowledge Base的最多 200 个文档打包为 ZIP，原始内容合计不超过 512 MiB。无原文件的条目会被跳过；无权访问、跨库或读取失败时不返回残缺压缩包。
-// @Tags 知识管理
+// @Summary Tải về hàng loạt tệp tài liệu
+// @Description Đóng gói tối đa 200 tài liệu của cùng một kho tri thức thành ZIP, tổng nội dung gốc không quá 512 MiB. Mục không có tệp gốc sẽ bị bỏ qua; khi không có quyền, khác kho hoặc đọc lỗi thì không trả về gói nén dở dang.
+// @Tags Tài liệu
 // @Accept json
 // @Produce application/zip
 // @Param id path string true "Knowledge BaseID"
-// @Param request body BatchDownloadKnowledgeRequest true "文档IDList "
-// @Success 200 {file} file "ZIP 压缩包"
+// @Param request body BatchDownloadKnowledgeRequest true "Danh sách ID tài liệu"
+// @Success 200 {file} file "Gói nén ZIP"
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
 // @Failure 403 {object} errors.AppError
@@ -60,7 +60,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64*1024)
 	var req BatchDownloadKnowledgeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		_ = c.Error(errors.NewBadRequestError("请选择 1～200 个文档进行批量下载"))
+		_ = c.Error(errors.NewBadRequestError("chọn từ 1 đến 200 tài liệu để tải về hàng loạt"))
 		return
 	}
 
@@ -76,13 +76,13 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 	ctx := types.WithExecutionTenant(c.Request.Context(), tenantID)
 	ids := uniqueKnowledgeDownloadIDs(req.IDs)
 	if len(ids) == 0 {
-		_ = c.Error(errors.NewBadRequestError("文档 ID 不能为空"))
+		_ = c.Error(errors.NewBadRequestError("ID tài liệu không được để trống"))
 		return
 	}
 
 	items, err := h.kgService.GetKnowledgeBatch(ctx, tenantID, ids)
 	if err != nil {
-		_ = c.Error(errors.NewInternalServerError("无法获取待下载文档，请稍后重试"))
+		_ = c.Error(errors.NewInternalServerError("không lấy được danh sách tài liệu cần tải, vui lòng thử lại sau"))
 		return
 	}
 	byID := make(map[string]*types.Knowledge, len(items))
@@ -92,11 +92,11 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 		}
 	}
 	entries := make([]knowledgeDownloadEntry, 0, len(ids))
-	// 在读取任何文件之前检查整批文档，防止混入其他Knowledge Base或租户的 ID。
+	// Kiểm tra cả lô tài liệu trước khi đọc bất kỳ tệp nào, tránh lẫn ID của kho tri thức hoặc đơn vị khác.
 	for _, id := range ids {
 		item := byID[id]
 		if item == nil {
-			_ = c.Error(errors.NewNotFoundError("部分文档不存在或不属于当前知识库，请刷新列表后重试"))
+			_ = c.Error(errors.NewNotFoundError("một số tài liệu không tồn tại hoặc không thuộc kho tri thức hiện tại, hãy tải lại danh sách rồi thử lại"))
 			return
 		}
 		if !item.IsManual() && item.FilePath == "" {
@@ -105,20 +105,20 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 		entries = append(entries, knowledgeDownloadEntry{ID: id, FolderPath: item.FolderPath})
 	}
 	if len(entries) == 0 {
-		_ = c.Error(errors.NewBadRequestError("所选文档没有可下载的原始文件，请取消选择后重试"))
+		_ = c.Error(errors.NewBadRequestError("các tài liệu đã chọn không có tệp gốc để tải, hãy bỏ chọn rồi thử lại"))
 		return
 	}
 
 	if !tryAcquireBatchDownloadSlot() {
-		_ = c.Error(errors.NewTooManyRequestsError("当前批量下载过多，请稍后重试"))
+		_ = c.Error(errors.NewTooManyRequestsError("đang có quá nhiều lượt tải hàng loạt, vui lòng thử lại sau"))
 		return
 	}
 	defer releaseBatchDownloadSlot()
 
-	// 先在Temporary files中完整生成压缩包，避免读取失败时向用户返回残缺 ZIP。
+	// Tạo gói nén hoàn chỉnh trong tệp tạm trước, tránh trả về ZIP dở dang cho người dùng khi đọc lỗi.
 	archive, err := os.CreateTemp("", "weknora-download-*.zip")
 	if err != nil {
-		_ = c.Error(errors.NewInternalServerError("无法创建下载压缩包，请稍后重试"))
+		_ = c.Error(errors.NewInternalServerError("không tạo được gói nén tải về, vui lòng thử lại sau"))
 		return
 	}
 	archivePath := archive.Name()
@@ -137,7 +137,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 		return
 	}
 	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		_ = c.Error(errors.NewInternalServerError("无法读取下载压缩包，请稍后重试"))
+		_ = c.Error(errors.NewInternalServerError("không đọc được gói nén tải về, vui lòng thử lại sau"))
 		return
 	}
 	filename := "knowledge-files-" + time.Now().Format("20060102-150405") + ".zip"
@@ -186,7 +186,7 @@ func mapKnowledgeDownloadError(err error) error {
 		return err
 	}
 	if isKnowledgeDownloadCanceled(err) {
-		return errors.NewBadRequestError("下载已取消")
+		return errors.NewBadRequestError("đã huỷ tải về")
 	}
 	return err
 }
@@ -212,16 +212,16 @@ func writeKnowledgeDownloadArchive(
 			if isKnowledgeDownloadCanceled(err) {
 				return err
 			}
-			return errors.NewInternalServerError("部分文件无法读取，未生成压缩包，请检查文档后重试").WithDetails(
+			return errors.NewInternalServerError("một số tệp không đọc được, chưa tạo gói nén, hãy kiểm tra tài liệu rồi thử lại").WithDetails(
 				gin.H{"knowledge_id": entry.ID},
 			)
 		}
 		name := uniqueKnowledgeDownloadZipPath(entry.FolderPath, filename, usedNames)
-		// 原样存储可避免 PDF、Office 等已压缩文件再次压缩的 CPU 开销。
+		// Lưu nguyên dạng để tránh tốn CPU nén lại các tệp đã nén sẵn như PDF, Office.
 		zipEntry, err := writer.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
 		if err != nil {
 			_ = file.Close()
-			return errors.NewInternalServerError("无法写入下载压缩包，请稍后重试")
+			return errors.NewInternalServerError("không ghi được gói nén tải về, vui lòng thử lại sau")
 		}
 		n, copyErr := io.Copy(zipEntry, io.LimitReader(
 			&knowledgeDownloadReader{ctx: ctx, reader: file}, limit-total+1,
@@ -229,24 +229,24 @@ func writeKnowledgeDownloadArchive(
 		closeErr := file.Close()
 		total += n
 		if total > limit {
-			return errors.NewBadRequestError("所选文件合计超过 512 MiB，请分批下载")
+			return errors.NewBadRequestError("tổng dung lượng tệp đã chọn vượt 512 MiB, hãy tải theo từng đợt")
 		}
 		if isKnowledgeDownloadCanceled(copyErr) {
 			return copyErr
 		}
 		if copyErr != nil || closeErr != nil {
-			return errors.NewInternalServerError("部分文件读取失败，未生成压缩包，请稍后重试").WithDetails(
+			return errors.NewInternalServerError("đọc một số tệp thất bại, chưa tạo gói nén, vui lòng thử lại sau").WithDetails(
 				gin.H{"knowledge_id": entry.ID},
 			)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return errors.NewInternalServerError("无法完成下载压缩包，请稍后重试")
+		return errors.NewInternalServerError("không hoàn tất được gói nén tải về, vui lòng thử lại sau")
 	}
 	return nil
 }
 
-// 每次读取前检查取消信号，用户离开页面后停止继续打包。
+// Kiểm tra tín hiệu huỷ trước mỗi lần đọc; người dùng rời trang thì dừng đóng gói.
 type knowledgeDownloadReader struct {
 	ctx    context.Context
 	reader io.Reader

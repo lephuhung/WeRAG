@@ -612,7 +612,7 @@ func TestTenantMemberService_UpdateRole_NoopOnSameRole(t *testing.T) {
 	if _, err := svc.EnsureAdmin(ctx, "owner", 1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	// 把"还是 Admin"作为 no-op 处理，必须不触发 ErrLastAdmin（同一角色不算降级）。
+	// Coi "vẫn là Admin" là no-op, không được kích hoạt ErrLastAdmin (cùng vai trò không tính là hạ cấp).
 	if err := svc.UpdateRole(ctx, "owner", 1, types.TenantRoleAdmin); err != nil {
 		t.Fatalf("UpdateRole same role should be a no-op, got %v", err)
 	}

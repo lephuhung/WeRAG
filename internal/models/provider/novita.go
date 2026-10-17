@@ -11,14 +11,14 @@ const (
 	NovitaOpenAIBaseURL = "https://api.novita.ai/openai/v1"
 )
 
-// NovitaProvider 实现 Novita AI 的 Provider 接口
+// NovitaProvider triển khai giao diện Provider cho Novita AI
 type NovitaProvider struct{}
 
 func init() {
 	Register(&NovitaProvider{})
 }
 
-// Info 返回 Novita provider 的元数据
+// Info trả về metadata của provider Novita
 func (p *NovitaProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderNovita,
@@ -38,7 +38,7 @@ func (p *NovitaProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Novita provider Configuration
+// ValidateConfig kiểm tra cấu hình provider Novita
 func (p *NovitaProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Novita provider")

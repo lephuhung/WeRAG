@@ -27,10 +27,10 @@ func newOwnerScopeDB(t *testing.T, name string) (*gorm.DB, map[string]string) {
 	}
 	migrateAbbreviationTables(t, db)
 	sessions := map[string]*types.Session{
-		"alice":  {TenantID: 7, UserID: "web_user:alice", Title: "Alice 的会话"},
-		"bob":    {TenantID: 7, UserID: "web_user:bob", Title: "Bob 的会话"},
-		"legacy": {TenantID: 7, Title: "API 建的会话"},
-		"other":  {TenantID: 8, UserID: "web_user:alice", Title: "别的工作区"},
+		"alice":  {TenantID: 7, UserID: "web_user:alice", Title: "Cuộc trò chuyện của Alice"},
+		"bob":    {TenantID: 7, UserID: "web_user:bob", Title: "Cuộc trò chuyện của Bob"},
+		"legacy": {TenantID: 7, Title: "Cuộc trò chuyện tạo qua API"},
+		"other":  {TenantID: 8, UserID: "web_user:alice", Title: "Không gian làm việc khác"},
 	}
 	ids := make(map[string]string, len(sessions))
 	for label, session := range sessions {

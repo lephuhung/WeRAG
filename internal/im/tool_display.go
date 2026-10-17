@@ -29,37 +29,37 @@ func imLocalizedToolName(toolName string) string {
 }
 
 var imToolNameLabels = map[string]string{
-	"search_knowledge":        "知识库检索",
-	"knowledge_search":        "知识库检索",
-	"grep_chunks":             "搜索关键词",
-	"read_document":           "阅读文档",
-	"list_documents":          "浏览文档列表",
+	"search_knowledge":        "Tra cứu kho tri thức",
+	"knowledge_search":        "Tra cứu kho tri thức",
+	"grep_chunks":             "Tìm từ khoá",
+	"read_document":           "Đọc tài liệu",
+	"list_documents":          "Duyệt danh sách tài liệu",
 	"search_document_section": "Tra cứu điều khoản",
-	"web_search":              "网络搜索",
-	"web_fetch":               "网页抓取",
-	"get_document_info":       "获取文档信息",
-	"list_knowledge_chunks":   "查看知识分块",
-	"get_related_documents":   "查找相关文档",
-	"get_document_content":    "获取文档内容",
-	"wiki_search":             "Wiki 搜索",
-	"wiki_read_page":          "Wiki 阅读",
-	"wiki_read_source_doc":    "精读源文档",
-	"todo_write":              "计划管理",
-	"knowledge_graph_extract": "知识图谱抽取",
-	"thinking":                "思考",
-	"image_analysis":          "查看图片内容",
-	"query_understand":        "理解问题",
-	"query_knowledge_graph":   "知识图谱查询",
-	"read_skill":              "读取技能",
-	"execute_skill_script":    "执行技能脚本",
-	"list_sandbox_files":      "列出沙箱文件",
-	"read_sandbox_file":       "读取沙箱文件",
-	"write_sandbox_file":      "写入沙箱文件",
-	"edit_sandbox_file":       "编辑沙箱文件",
-	"shell_exec":              "执行沙箱命令",
-	"data_analysis":           "数据分析",
-	"data_schema":             "数据结构",
-	"database_query":          "数据库查询",
+	"web_search":              "Tìm kiếm web",
+	"web_fetch":               "Tải trang web",
+	"get_document_info":       "Lấy thông tin tài liệu",
+	"list_knowledge_chunks":   "Xem đoạn tài liệu",
+	"get_related_documents":   "Tìm tài liệu liên quan",
+	"get_document_content":    "Lấy nội dung tài liệu",
+	"wiki_search":             "Tìm Wiki",
+	"wiki_read_page":          "Đọc Wiki",
+	"wiki_read_source_doc":    "Đọc kỹ tài liệu nguồn",
+	"todo_write":              "Quản lý kế hoạch",
+	"knowledge_graph_extract": "Trích xuất đồ thị tri thức",
+	"thinking":                "Suy nghĩ",
+	"image_analysis":          "Xem nội dung hình ảnh",
+	"query_understand":        "Hiểu câu hỏi",
+	"query_knowledge_graph":   "Truy vấn đồ thị tri thức",
+	"read_skill":              "Đọc kỹ năng",
+	"execute_skill_script":    "Chạy script kỹ năng",
+	"list_sandbox_files":      "Liệt kê tệp sandbox",
+	"read_sandbox_file":       "Đọc tệp sandbox",
+	"write_sandbox_file":      "Ghi tệp sandbox",
+	"edit_sandbox_file":       "Sửa tệp sandbox",
+	"shell_exec":              "Chạy lệnh sandbox",
+	"data_analysis":           "Phân tích dữ liệu",
+	"data_schema":             "Cấu trúc dữ liệu",
+	"database_query":          "Truy vấn cơ sở dữ liệu",
 }
 
 func formatMCPToolName(rawName string) string {
@@ -188,7 +188,7 @@ func imGetWikiPageText(args any) string {
 		seen[slug] = struct{}{}
 		slugs = append(slugs, slug)
 	}
-	return strings.Join(slugs, "、")
+	return strings.Join(slugs, ", ")
 }
 
 func imGetGrepPatterns(args any) []string {
@@ -232,7 +232,7 @@ func imAppendQueryTitle(base, query string) string {
 	if query == "" {
 		return base
 	}
-	return fmt.Sprintf("%s：「%s」", base, query)
+	return fmt.Sprintf("%s: “%s”", base, query)
 }
 
 func imAppendPatternsTitle(base string, patterns []string) string {
@@ -245,7 +245,7 @@ func imAppendPatternsTitle(base string, patterns []string) string {
 		display = patterns[:2]
 		more = fmt.Sprintf(" +%d", len(patterns)-2)
 	}
-	return fmt.Sprintf("%s：「%s%s」", base, strings.Join(display, "、"), more)
+	return fmt.Sprintf("%s: “%s%s”", base, strings.Join(display, ", "), more)
 }
 
 // FormatIMToolLine formats one agent tool step (no emoji; aligned with Web getToolTitle).
@@ -274,28 +274,28 @@ func FormatIMRagPipelineLine(step IMToolStep) string {
 	switch toolName {
 	case "query_understand":
 		if step.Pending {
-			return "正在理解问题..."
+			return "Đang hiểu câu hỏi..."
 		}
-		return "已完成问题理解"
+		return "Đã hiểu câu hỏi"
 	case "knowledge_search", "search_knowledge":
 		source := imRetrievalSearchSource(step)
 		if step.Pending {
 			switch source {
 			case imRetrievalSourceWeb:
 				if query != "" {
-					return fmt.Sprintf("正在检索网络：「%s」", query)
+					return fmt.Sprintf("Đang tìm trên web: “%s”", query)
 				}
-				return "正在检索网络..."
+				return "Đang tìm trên web..."
 			case imRetrievalSourceMixed:
 				if query != "" {
-					return fmt.Sprintf("正在检索知识库和网络：「%s」", query)
+					return fmt.Sprintf("Đang tra cứu kho tri thức và web: “%s”", query)
 				}
-				return "正在检索知识库和网络..."
+				return "Đang tra cứu kho tri thức và web..."
 			default:
 				if query != "" {
-					return fmt.Sprintf("正在检索知识库：「%s」", query)
+					return fmt.Sprintf("Đang tra cứu kho tri thức: “%s”", query)
 				}
-				return "正在检索知识库..."
+				return "Đang tra cứu kho tri thức..."
 			}
 		}
 		base := imRetrievalDoneTitle(source, step.Success)
@@ -366,13 +366,13 @@ func imAgentToolTitle(step IMToolStep) string {
 	if step.Pending {
 		switch step.ToolName {
 		case "image_analysis":
-			return "正在查看图片内容..."
+			return "Đang xem nội dung hình ảnh..."
 		case "wiki_search", "wiki_read_page":
 			return imLocalizedToolName(step.ToolName) + "..."
 		case "write_sandbox_file", "edit_sandbox_file":
 			return imSandboxMutationTitle(step, true)
 		default:
-			return fmt.Sprintf("正在调用 %s...", imLocalizedToolName(step.ToolName))
+			return fmt.Sprintf("Đang gọi %s...", imLocalizedToolName(step.ToolName))
 		}
 	}
 
@@ -431,66 +431,66 @@ func imToolStatusDescription(step IMToolStep) string {
 	switch toolName {
 	case "search_knowledge", "knowledge_search":
 		if success {
-			return "检索知识库"
+			return "Tra cứu kho tri thức"
 		}
-		return "检索知识库失败"
+		return "Tra cứu kho tri thức thất bại"
 	case "wiki_search", "wiki_read_page":
 		name := imLocalizedToolName(toolName)
 		if success {
 			return name
 		}
-		return fmt.Sprintf("调用 %s 失败", name)
+		return fmt.Sprintf("Gọi %s thất bại", name)
 	case "web_search":
 		if success {
-			return "网络搜索"
+			return "Tìm kiếm web"
 		}
-		return "网络搜索失败"
+		return "Tìm kiếm web thất bại"
 	case "grep_chunks":
 		if success {
-			return "搜索关键词"
+			return "Tìm từ khoá"
 		}
-		return "搜索关键词失败"
+		return "Tìm từ khoá thất bại"
 	case "get_document_info":
 		if success {
-			return "获取文档信息"
+			return "Lấy thông tin tài liệu"
 		}
-		return "获取文档信息失败"
+		return "Lấy thông tin tài liệu thất bại"
 	case "get_document_content", "wiki_read_source_doc", "read_document":
 		if success {
-			return "阅读文档"
+			return "Đọc tài liệu"
 		}
-		return "阅读文档失败"
+		return "Đọc tài liệu thất bại"
 	case "list_documents":
 		if success {
-			return "浏览文档列表"
+			return "Duyệt danh sách tài liệu"
 		}
-		return "浏览文档列表失败"
+		return "Duyệt danh sách tài liệu thất bại"
 	case "thinking":
 		if success {
-			return "完成思考"
+			return "Suy nghĩ xong"
 		}
-		return "思考失败"
+		return "Suy nghĩ thất bại"
 	case "todo_write":
 		if success {
-			return "更新任务列表"
+			return "Cập nhật danh sách việc"
 		}
-		return "更新任务列表失败"
+		return "Cập nhật danh sách việc thất bại"
 	case "image_analysis":
 		if success {
-			return "已查看图片内容"
+			return "Đã xem nội dung hình ảnh"
 		}
-		return "图片内容查看失败"
+		return "Xem nội dung hình ảnh thất bại"
 	case "query_understand":
 		if success {
-			return "已完成问题理解"
+			return "Đã hiểu câu hỏi"
 		}
-		return fmt.Sprintf("调用 %s 失败", imLocalizedToolName(toolName))
+		return fmt.Sprintf("Gọi %s thất bại", imLocalizedToolName(toolName))
 	default:
 		name := imLocalizedToolName(toolName)
 		if success {
-			return fmt.Sprintf("调用 %s", name)
+			return fmt.Sprintf("Gọi %s", name)
 		}
-		return fmt.Sprintf("调用 %s 失败", name)
+		return fmt.Sprintf("Gọi %s thất bại", name)
 	}
 }
 
@@ -507,22 +507,22 @@ func imToolHeaderSummary(step IMToolStep) string {
 	case "get_document_info":
 		if data != nil {
 			if title, ok := data["title"].(string); ok && strings.TrimSpace(title) != "" {
-				return fmt.Sprintf("获取文档：%s", strings.TrimSpace(title))
+				return fmt.Sprintf("Lấy tài liệu: %s", strings.TrimSpace(title))
 			}
 		}
 	case "list_knowledge_chunks", "read_document":
 		if data != nil {
 			if question, ok := data["faq_question"].(string); ok && strings.TrimSpace(question) != "" {
-				return fmt.Sprintf("查看 FAQ：%s", strings.TrimSpace(question))
+				return fmt.Sprintf("Xem FAQ: %s", strings.TrimSpace(question))
 			}
 			if _, ok := data["fetched_chunks"]; ok {
-				title := "文档"
+				title := "tài liệu"
 				if t, ok := data["knowledge_title"].(string); ok && strings.TrimSpace(t) != "" {
 					title = strings.TrimSpace(t)
 				} else if id, ok := data["knowledge_id"].(string); ok && strings.TrimSpace(id) != "" {
 					title = strings.TrimSpace(id)
 				}
-				return fmt.Sprintf("查看 %s", title)
+				return fmt.Sprintf("Xem %s", title)
 			}
 		}
 	}
@@ -581,19 +581,19 @@ func imRetrievalDoneTitle(source string, success bool) string {
 	switch source {
 	case imRetrievalSourceWeb:
 		if success {
-			return "网络检索"
+			return "Tìm trên web"
 		}
-		return "网络检索失败"
+		return "Tìm trên web thất bại"
 	case imRetrievalSourceMixed:
 		if success {
-			return "检索知识库和网络"
+			return "Tra cứu kho tri thức và web"
 		}
-		return "检索失败"
+		return "Tra cứu thất bại"
 	default:
 		if success {
-			return "检索知识库"
+			return "Tra cứu kho tri thức"
 		}
-		return "检索知识库失败"
+		return "Tra cứu kho tri thức thất bại"
 	}
 }
 
@@ -619,21 +619,21 @@ func imKnowledgeSearchSummary(data map[string]interface{}) string {
 	}
 	count := imResultCount(data)
 	if count == 0 {
-		return "未找到匹配的内容"
+		return "Không tìm thấy nội dung phù hợp"
 	}
 	source := imSearchSourceFromData(data)
 	webCount := imIntField(data, "web_count")
 	docCount := imIntField(data, "doc_count")
 	if source == imRetrievalSourceWeb || (webCount > 0 && docCount == 0) {
-		return fmt.Sprintf("找到 %d 条网页", count)
+		return fmt.Sprintf("Tìm thấy %d trang web", count)
 	}
 	if kbCounts, ok := data["kb_counts"].(map[string]interface{}); ok && len(kbCounts) > 0 {
-		return fmt.Sprintf("找到 %d 个结果，来自 %d 个文件", count, len(kbCounts))
+		return fmt.Sprintf("Tìm thấy %d kết quả từ %d tệp", count, len(kbCounts))
 	}
 	if source == imRetrievalSourceMixed && docCount > 0 && webCount > 0 {
-		return fmt.Sprintf("找到 %d 个结果（%d 篇文档，%d 条网页）", count, docCount, webCount)
+		return fmt.Sprintf("Tìm thấy %d kết quả (%d tài liệu, %d trang web)", count, docCount, webCount)
 	}
-	return fmt.Sprintf("找到 %d 个结果", count)
+	return fmt.Sprintf("Tìm thấy %d kết quả", count)
 }
 
 func imWebSearchSummary(data map[string]interface{}) string {
@@ -644,7 +644,7 @@ func imWebSearchSummary(data map[string]interface{}) string {
 	if count == 0 {
 		return ""
 	}
-	return fmt.Sprintf("找到 %d 个网络搜索结果", count)
+	return fmt.Sprintf("Tìm thấy %d kết quả tìm kiếm web", count)
 }
 
 func imGrepSearchSummary(data map[string]interface{}) string {
@@ -658,10 +658,10 @@ func imGrepSearchSummary(data map[string]interface{}) string {
 		totalChunks = v
 	}
 	if totalChunks == 0 {
-		return "未找到匹配的内容"
+		return "Không tìm thấy nội dung phù hợp"
 	}
 	docCount := imGrepDocumentCount(data)
-	return fmt.Sprintf("找到 %d 个匹配片段，来自 %d 个文档", totalChunks, docCount)
+	return fmt.Sprintf("Tìm thấy %d đoạn phù hợp từ %d tài liệu", totalChunks, docCount)
 }
 
 func imGrepDocumentCount(data map[string]interface{}) int {
@@ -690,9 +690,9 @@ func imDocumentListSummary(data map[string]interface{}) string {
 		listed = len(docs)
 	}
 	if total == 0 && listed == 0 {
-		return "知识库中没有文档"
+		return "Kho tri thức chưa có tài liệu"
 	}
-	return fmt.Sprintf("列出 %d / %d 个文档", listed, total)
+	return fmt.Sprintf("Liệt kê %d / %d tài liệu", listed, total)
 }
 
 func imKnowledgeChunksSummary(data map[string]interface{}) string {
@@ -705,14 +705,14 @@ func imKnowledgeChunksSummary(data map[string]interface{}) string {
 	}
 	fetchedN := imNumericValue(fetched)
 	totalN := imNumericValue(data["total_chunks"])
-	summary := fmt.Sprintf("已加载 %d / %v 个分块", fetchedN, formatIMOptionalInt(totalN, data["total_chunks"]))
+	summary := fmt.Sprintf("Đã tải %d / %v đoạn", fetchedN, formatIMOptionalInt(totalN, data["total_chunks"]))
 	pageSize := imNumericValue(data["page_size"])
 	if totalN > pageSize && pageSize > 0 {
 		page := imNumericValue(data["page"])
 		if page <= 0 {
 			page = 1
 		}
-		summary += fmt.Sprintf(" · 第 %d 页，每页 %d 个", page, pageSize)
+		summary += fmt.Sprintf(" · trang %d, mỗi trang %d", page, pageSize)
 	}
 	return summary
 }

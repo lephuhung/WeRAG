@@ -152,7 +152,7 @@ func TestHandleModelFallback_IncludesHistoryMessages(t *testing.T) {
 	cm := &types.ChatManage{
 		PipelineRequest: types.PipelineRequest{
 			SessionID:      "session-1",
-			Query:          "现在还能继续讲吗？",
+			Query:          "Bây giờ còn nói tiếp được không?",
 			ChatModelID:    "chat-model",
 			FallbackPrompt: "Answer the latest user question: {{query}}",
 			SummaryConfig: types.SummaryConfig{
@@ -163,8 +163,8 @@ func TestHandleModelFallback_IncludesHistoryMessages(t *testing.T) {
 		PipelineState: types.PipelineState{
 			History: []*types.History{
 				{
-					Query:  "先介绍一下 WeKnora",
-					Answer: "WeKnora 是一个知识库问答系统。",
+					Query:  "Giới thiệu WeKnora trước",
+					Answer: "WeKnora là một hệ thống hỏi đáp kho tri thức.",
 				},
 			},
 		},
@@ -182,9 +182,9 @@ func TestHandleModelFallback_IncludesHistoryMessages(t *testing.T) {
 	assert.Equal(t, "system", chatModel.lastMessages[0].Role)
 	assert.Contains(t, chatModel.lastMessages[0].Content, "Answer the latest user question")
 	assert.Equal(t, "user", chatModel.lastMessages[1].Role)
-	assert.Equal(t, "先介绍一下 WeKnora", chatModel.lastMessages[1].Content)
+	assert.Equal(t, "Giới thiệu WeKnora trước", chatModel.lastMessages[1].Content)
 	assert.Equal(t, "assistant", chatModel.lastMessages[2].Role)
-	assert.Equal(t, "WeKnora 是一个知识库问答系统。", chatModel.lastMessages[2].Content)
+	assert.Equal(t, "WeKnora là một hệ thống hỏi đáp kho tri thức.", chatModel.lastMessages[2].Content)
 	assert.Equal(t, "user", chatModel.lastMessages[3].Role)
-	assert.Contains(t, chatModel.lastMessages[3].Content, "现在还能继续讲吗？")
+	assert.Contains(t, chatModel.lastMessages[3].Content, "Bây giờ còn nói tiếp được không?")
 }

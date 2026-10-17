@@ -38,7 +38,7 @@ func NewKnowledgeGraphViewHandler(
 // @Description  matches' neighbours), types by entity type (comma-separated:
 // @Description  Document, Article, Organization, Person, Task, Location),
 // @Description  knowledge_id by document.
-// @Tags         Knowledge graph
+// @Tags         Đồ thị tri thức
 // @Produce      json
 // @Param        id           path   string true  "Knowledge base ID"
 // @Param        q            query  string false "Name words"
@@ -87,7 +87,7 @@ func (h *KnowledgeGraphViewHandler) GetEntityGraph(c *gin.Context) {
 // @Description  The KB's documents linked to the legal catalogue and their
 // @Description  direct neighbours: replacement, repeal, amendment, guidance,
 // @Description  consolidation, and "căn cứ" between two KB documents.
-// @Tags         Knowledge graph
+// @Tags         Đồ thị tri thức
 // @Produce      json
 // @Param        id    path  string true  "Knowledge base ID"
 // @Param        limit query int    false "Node budget (default 150, max 400)"

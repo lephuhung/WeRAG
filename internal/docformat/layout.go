@@ -628,7 +628,7 @@ func (b *builder) addParagraph(p *node, source string, cell *cellExtent, table, 
 	for _, r := range p.childrenNamed("r") {
 		direct[r] = true
 		var sb strings.Builder
-		r.walk(func(n *node) {
+		r.walkText(func(n *node) {
 			switch {
 			case n.is("t"):
 				sb.WriteString(n.text)
@@ -641,14 +641,19 @@ func (b *builder) addParagraph(p *node, source string, cell *cellExtent, table, 
 		runs = append(runs, b.runFromProps(sb.String(), merge(paraRPr, rprProps(r.child("rPr")))))
 	}
 	// runs nested in hyperlinks / smartTags / sdt
-	for _, r := range p.descendants("r") {
-		if direct[r] {
-			continue
+	var nested []*node
+	p.walkText(func(n *node) {
+		if n.is("r") && !direct[n] {
+			nested = append(nested, n)
 		}
+	})
+	for _, r := range nested {
 		var sb strings.Builder
-		for _, t := range r.descendants("t") {
-			sb.WriteString(t.text)
-		}
+		r.walkText(func(n *node) {
+			if n.is("t") {
+				sb.WriteString(n.text)
+			}
+		})
 		if sb.Len() > 0 {
 			runs = append(runs, b.runFromProps(sb.String(), merge(paraRPr, rprProps(r.child("rPr")))))
 		}
@@ -966,10 +971,8 @@ func (b *builder) addTable(tbl *node) {
 				switch {
 				case child.is("p"):
 					b.addParagraph(child, "table_cell", cell, ptr(ti), &r, &c)
-					for _, tx := range child.descendants("txbxContent") {
-						for _, tp := range tx.childrenNamed("p") {
-							b.addParagraph(tp, "textbox", cell, ptr(ti), &r, &c)
-						}
+					for _, tp := range child.textBoxParagraphs() {
+						b.addParagraph(tp, "textbox", cell, ptr(ti), &r, &c)
 					}
 				case child.is("tbl"):
 					b.addTable(child) // nested table: rare, keep order
@@ -1065,10 +1068,8 @@ func InspectDocx(content []byte) *Layout {
 		switch {
 		case child.is("p"):
 			b.addParagraph(child, "body", nil, nil, nil, nil)
-			for _, tx := range child.descendants("txbxContent") {
-				for _, tp := range tx.childrenNamed("p") {
-					b.addParagraph(tp, "textbox", nil, nil, nil, nil)
-				}
+			for _, tp := range child.textBoxParagraphs() {
+				b.addParagraph(tp, "textbox", nil, nil, nil, nil)
 			}
 		case child.is("tbl"):
 			b.addTable(child)

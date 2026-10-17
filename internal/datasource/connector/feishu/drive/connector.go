@@ -15,9 +15,9 @@ import (
 )
 
 // DriveConnector implements the datasource.Connector (and StreamingConnector)
-// interface for Feishu/Lark Drive (云盘) mode. It shares core.Client/core.Config/core.Region
+// interface for Feishu/Lark Drive (cloud drive) mode. It shares core.Client/core.Config/core.Region
 // and the export/download logic with the wiki Connector; only resource
-// enumeration and Fetch dispatch differ. See 飞书云盘数据源设计.md and
+// enumeration and Fetch dispatch differ. See the Feishu Drive data source design doc and
 // ADR-0001..0004.
 type DriveConnector struct {
 	region core.Region
@@ -365,8 +365,8 @@ func fetchDriveFileContent(
 	editTime := core.ParseFeishuTimestamp(file.ModifiedTime)
 	createTime := core.ParseFeishuTimestamp(file.CreatedTime)
 	// Channel marks the knowledge "source" label. Drive uses its own channel
-	// (feishu_drive / lark_drive) so Drive docs show "飞书云盘" / "Lark 云盘"
-	// distinct from the wiki connector's "飞书".
+	// (feishu_drive / lark_drive) so Drive docs show "Feishu Drive" / "Lark Drive"
+	// distinct from the wiki connector's "Feishu".
 	channel := types.ChannelFeishuDrive
 	if region.ConnectorType == types.ConnectorTypeLarkDrive {
 		channel = types.ChannelLarkDrive

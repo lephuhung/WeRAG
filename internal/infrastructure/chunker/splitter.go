@@ -317,7 +317,7 @@ func SplitText(text string, cfg SplitterConfig) []Chunk {
 // chunkSize is forwarded to splitBySeparators so recursive splitting can keep pieces
 // under the budget when one separator alone leaves a piece oversize.
 func buildUnitsWithProtection(text string, protected []span, separators []string, chunkSize int) []splitUnit {
-	const maxProtectedSize = 7500 // Maximum size for a protected unit (留余量给标题等)
+	const maxProtectedSize = 7500 // Maximum size for a protected unit (leaves headroom for headings etc.)
 
 	var units []splitUnit
 	bytePos := 0

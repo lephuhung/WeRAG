@@ -246,7 +246,7 @@ func TestMCPExposureWithoutMentionReachesProviderAndExecutes(t *testing.T) {
 			require.NoError(t, err)
 			engine := newTestEngine(t, model)
 			engine.toolRegistry = registry
-			state, err := engine.Execute(ctx, "session", "message", "查询订单42的配送状态", nil)
+			state, err := engine.Execute(ctx, "session", "message", "Tra cứu trạng thái giao hàng của đơn 42", nil)
 			require.NoError(t, err)
 			require.Equal(t, "Order shipped.", state.FinalAnswer)
 			require.EqualValues(t, 1, executed.Load())

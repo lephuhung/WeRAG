@@ -114,3 +114,43 @@ func TestOpenAIOCRImageRepetitionPenaltyGating(t *testing.T) {
 		})
 	}
 }
+
+// The locked parse defaults route images to paddleocr_vl; without a local
+// registration the name falls through to the docreader's builtin image
+// parser and the reader below never runs.
+func TestPaddleOCRVLEngineIsRegistered(t *testing.T) {
+	reader, err := NewReader(context.Background(), PaddleOCRVLEngineName, "png", false, ReaderDeps{
+		Overrides: map[string]string{"paddleocr_vl_endpoint": "http://vllm-ocr:8001/v1"},
+	})
+	require.NoError(t, err)
+	assert.IsType(t, &PaddleOCRVLReader{}, reader)
+}
+
+func TestOpenAIOCRImageDropsLoopAndReportsUsage(t *testing.T) {
+	utils.SetSSRFWhitelistFromRaw("127.0.0.1")
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
+	loop := strings.Repeat("1. The text content.\n", 40)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"content": loop}}},
+			"usage":   map[string]any{"prompt_tokens": 900, "completion_tokens": 300, "total_tokens": 1200},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	sink := &types.VLMUsageSink{}
+	ctx := types.WithVLMUsageSink(context.Background(), sink)
+	r := NewPaddleOCRVLReader(map[string]string{
+		"paddleocr_vl_endpoint": srv.URL,
+		"paddleocr_vl_model":    "senocr-vi",
+	}, nil)
+	md, err := r.openAIOCRImage(ctx, []byte(ocrTestImage))
+	require.NoError(t, err)
+	assert.Empty(t, md, "a looping answer is no text, not a document")
+	calls, usage := sink.Snapshot()
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, 1200, usage.Total())
+}

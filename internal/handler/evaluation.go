@@ -30,14 +30,14 @@ type EvaluationRequest struct {
 }
 
 // Evaluation godoc
-// @Summary      执行评估
-// @Description  对Knowledge Base进行评估测试
-// @Tags         评估
+// @Summary      Chạy đánh giá
+// @Description  Chạy kiểm thử đánh giá trên kho tri thức
+// @Tags         Đánh giá
 // @Accept       json
 // @Produce      json
-// @Param        request  body      EvaluationRequest  true  "评估请求Parameters "
-// @Success      200      {object}  map[string]interface{}  "评估任务"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      EvaluationRequest  true  "Tham số yêu cầu đánh giá"
+// @Success      200      {object}  map[string]interface{}  "Tác vụ đánh giá"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /evaluation/ [post]
@@ -93,14 +93,14 @@ type GetEvaluationRequest struct {
 }
 
 // GetEvaluationResult godoc
-// @Summary      获取评估结果
-// @Description  根据任务ID获取评估结果
-// @Tags         评估
+// @Summary      Lấy kết quả đánh giá
+// @Description  Lấy kết quả đánh giá theo ID tác vụ
+// @Tags         Đánh giá
 // @Accept       json
 // @Produce      json
-// @Param        task_id  query     string  true  "评估任务ID"
-// @Success      200      {object}  map[string]interface{}  "评估结果"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        task_id  query     string  true  "ID tác vụ đánh giá"
+// @Success      200      {object}  map[string]interface{}  "Kết quả đánh giá"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /evaluation/ [get]

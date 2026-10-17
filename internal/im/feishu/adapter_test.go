@@ -162,7 +162,7 @@ func TestEndStreamFinalizesCardSummary(t *testing.T) {
 	if err := adapter.UpdateStreamContent(ctx, nil, cardID, "progress"); err != nil {
 		t.Fatalf("UpdateStreamContent: %v", err)
 	}
-	const finalContent = "  最终\n回答  ✅  "
+	const finalContent = "  Câu trả lời\ncuối cùng  ✅  "
 	if err := adapter.FinalizeStream(ctx, nil, cardID, finalContent); err != nil {
 		t.Fatalf("FinalizeStream: %v", err)
 	}
@@ -211,8 +211,8 @@ func TestEndStreamFinalizesCardSummary(t *testing.T) {
 	if settings.Config == nil || settings.Config.StreamingMode == nil || *settings.Config.StreamingMode {
 		t.Fatalf("final settings did not disable streaming under config: %s", requests[2].settings)
 	}
-	if settings.Config.Summary.Content != "最终 回答 ✅" {
-		t.Errorf("summary = %q, want %q", settings.Config.Summary.Content, "最终 回答 ✅")
+	if settings.Config.Summary.Content != "Câu trả lời cuối cùng ✅" {
+		t.Errorf("summary = %q, want %q", settings.Config.Summary.Content, "Câu trả lời cuối cùng ✅")
 	}
 
 	if err := adapter.EndStream(ctx, nil, "missing-card"); err == nil {
@@ -328,13 +328,13 @@ func TestEndStreamFinalizeOnlyUsesFinalContent(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	if err := adapter.FinalizeStream(ctx, nil, cardID, "最终答案"); err != nil {
+	if err := adapter.FinalizeStream(ctx, nil, cardID, "Câu trả lời cuối cùng"); err != nil {
 		t.Fatalf("FinalizeStream: %v", err)
 	}
 	if err := adapter.EndStream(ctx, nil, cardID); err != nil {
 		t.Fatalf("EndStream: %v", err)
 	}
-	assertStreamingClosed(t, finalSettings, "最终答案")
+	assertStreamingClosed(t, finalSettings, "Câu trả lời cuối cùng")
 }
 
 func TestEndStreamOmitsEmptySummary(t *testing.T) {
@@ -385,10 +385,10 @@ func TestCardSummaryPreview(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "collapse whitespace", in: "  最终\n回答\t✅  ", want: "最终 回答 ✅"},
-		{name: "image keeps alt only", in: "![架构图](https://cdn.example/a.png?sig=secret) 说明", want: "架构图 说明"},
-		{name: "link keeps text only", in: "见 [文档](https://cdn.example/a.png?sig=secret) 说明", want: "见 文档 说明"},
-		{name: "unicode limit", in: strings.Repeat("界", 121), want: strings.Repeat("界", 120)},
+		{name: "collapse whitespace", in: "  Câu trả lời\ncuối cùng\t✅  ", want: "Câu trả lời cuối cùng ✅"},
+		{name: "image keeps alt only", in: "![Sơ đồ kiến trúc](https://cdn.example/a.png?sig=secret) ghi chú", want: "Sơ đồ kiến trúc ghi chú"},
+		{name: "link keeps text only", in: "xem [tài liệu](https://cdn.example/a.png?sig=secret) ghi chú", want: "xem tài liệu ghi chú"},
+		{name: "unicode limit", in: strings.Repeat("ệ", 121), want: strings.Repeat("ệ", 120)},
 		{name: "empty", in: " \n\t ", want: ""},
 	}
 	for _, test := range tests {

@@ -49,13 +49,13 @@ func TestExecuteToolPublishesConfiguredBudget(t *testing.T) {
 }
 
 // The ceiling is documented as a rune count. Comparing bytes here used to let
-// CJK output through untouched, because 16000 runes of Chinese are ~48000
+// CJK output through untouched, because 16000 three-byte runes are ~48000
 // bytes: the byte check fired, then TruncateToolOutput saw a rune count under
 // the limit and returned the blob unchanged.
 func TestExecuteToolTruncatesCJKOutputByRuneCount(t *testing.T) {
 	registry := NewToolRegistry()
 	registry.SetMaxToolOutputSize(1000)
-	registry.RegisterTool(&budgetProbeTool{output: strings.Repeat("你", 5000)})
+	registry.RegisterTool(&budgetProbeTool{output: strings.Repeat("ệ", 5000)})
 
 	result, err := registry.ExecuteTool(context.Background(), "budget_probe", json.RawMessage(`{}`))
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestExecuteToolTruncatesCJKOutputByRuneCount(t *testing.T) {
 func TestExecuteToolLeavesOutputWithinBudgetUntouched(t *testing.T) {
 	registry := NewToolRegistry()
 	registry.SetMaxToolOutputSize(1000)
-	output := strings.Repeat("你", 900)
+	output := strings.Repeat("ệ", 900)
 	registry.RegisterTool(&budgetProbeTool{output: output})
 
 	result, err := registry.ExecuteTool(context.Background(), "budget_probe", json.RawMessage(`{}`))

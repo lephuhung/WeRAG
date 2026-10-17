@@ -27,6 +27,9 @@ export type SessionRow = {
   updated_at?: string;
   is_pinned?: boolean;
   last_request_state?: SessionLastRequestState;
+  /** Set on a sub-chat ("chat nhỏ"): the document-assistant chat whose
+   * documents it works on. */
+  chat_root_id?: string;
 };
 
 type SessionListResponse = {
@@ -86,6 +89,19 @@ export function forkSession(id: string, data: { message_id: string; title?: stri
  * way out of a session that reached its plan's per-session cap. */
 export function continueSession(id: string) {
   return apiPost<{ success: boolean; data?: SessionRow }>(`/api/v1/sessions/${id}/continue`, {});
+}
+
+/** A document-assistant chat and its sub-chats ("chat nhỏ"), oldest first. */
+export type SubChats = { root_id: string; chats: (SessionRow & { is_root?: boolean })[] };
+
+export function listSubChats(id: string) {
+  return apiGet<{ success: boolean; data?: SubChats }>(`/api/v1/sessions/${id}/sub-chats`);
+}
+
+/** Opens a new sub-chat of `id`'s document chat: same documents, its own
+ * context, starting from a summary of `id`. */
+export function createSubChat(id: string) {
+  return apiPost<{ success: boolean; data?: SessionRow }>(`/api/v1/sessions/${id}/sub-chats`, {});
 }
 
 export function stopSession(id: string, messageId: string) {

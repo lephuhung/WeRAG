@@ -61,14 +61,14 @@ func TestRuntimeDirectoryEscapesAndBoundsUntrustedContent(t *testing.T) {
 	kbs := []*KnowledgeBaseInfo{nil, {
 		ID:           `kb" hacked="yes`,
 		Name:         "<name>&",
-		Description:  injection + strings.Repeat("长", 1000),
+		Description:  injection + strings.Repeat("ệ", 1000),
 		Type:         "faq",
 		Capabilities: []string{`chunks" malicious="yes`},
 		RecentDocs: []RecentDocInfo{
 			{
 				KnowledgeID:         "doc",
 				ChunkID:             "chunk",
-				FAQStandardQuestion: "Q<&>" + strings.Repeat("问", 1000),
+				FAQStandardQuestion: "Q<&>" + strings.Repeat("ộ", 1000),
 				FAQAnswers:          []string{"SECRET FAQ ANSWER"},
 			},
 			{KnowledgeID: "doc2", Description: "DOCUMENT SUMMARY"},

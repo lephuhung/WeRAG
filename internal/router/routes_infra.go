@@ -20,25 +20,25 @@ func RegisterModelRoutes(
 	credHandler *handler.ModelCredentialsHandler,
 	g *rbacGuards,
 ) {
-	// 模型路由组。读路径：Tenant workspace级基础设施，manage_models / full-access key 可读；
-	// 写路径：platform key + system_models_manage capability（见下方 With()）。
+	// Nhóm route mô hình. Đường đọc: hạ tầng cấp không gian làm việc của đơn vị, key manage_models / full-access đọc được;
+	// đường ghi: platform key + capability system_models_manage (xem With() bên dưới).
 	models := g.apiKeyGroup(r.Group("/models"), apiKeyManageModels(apiKeyFullAccess()))
-	// 平台级写策略：仅 platform API key 且显式持有 system_models_manage。
+	// Chính sách ghi cấp nền tảng: chỉ platform API key có system_models_manage rõ ràng.
 	modelWrites := models.With(apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage))
 	{
-		// 获取模型厂商List  — Owner+ (infra catalog is not a member surface)
+		// Lấy danh sách nhà cung cấp mô hình — Owner+ (infra catalog is not a member surface)
 		models.GET("/providers", g.SystemAdmin(), handler.ListModelProviders)
-		// Create 模型 — SystemAdmin
+		// Tạo mô hình — SystemAdmin
 		modelWrites.POST("", g.SystemAdmin(), g.ConfigProfile(), handler.CreateModel)
-		// 获取模型List  — Owner+
+		// Lấy danh sách mô hình — Owner+
 		models.GET("", g.SystemAdmin(), handler.ListModels)
-		// 调试已保存模型会发起真实上游调用并产生费用 — SystemAdmin
+		// Kiểm thử mô hình đã lưu sẽ gọi upstream thật và phát sinh chi phí — SystemAdmin
 		modelWrites.POST("/:id/debug", g.SystemAdmin(), g.ConfigProfile(), handler.DebugModel)
-		// 获取单个模型 — Owner+
+		// Lấy một mô hình — Owner+
 		models.GET("/:id", g.SystemAdmin(), handler.GetModel)
-		// Update 模型 — SystemAdmin（含 tenant-owned 与 builtin）。
+		// Cập nhật mô hình — SystemAdmin (gồm cả tenant-owned và builtin).
 		modelWrites.PUT("/:id", g.SystemAdmin(), g.ConfigProfile(), handler.UpdateModel)
-		// Delete 模型 — SystemAdmin
+		// Xoá mô hình — SystemAdmin
 		modelWrites.DELETE("/:id", g.SystemAdmin(), g.ConfigProfile(), handler.DeleteModel)
 		// Per-field credential subresource (see internal/handler/model_credentials.go) — SystemAdmin
 		modelWrites.PUT("/:id/credentials", g.SystemAdmin(), g.ConfigProfile(), credHandler.Put)
@@ -113,21 +113,21 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 }
 
 func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler, g *rbacGuards) {
-	// Initialization 接口
-	// GetCurrentConfigByKB 是只读，Viewer+ 即可（KB 受限 key 可读其范围内的 KB）。
+	// Các endpoint khởi tạo
+	// GetCurrentConfigByKB chỉ đọc, Viewer+ là đủ (key giới hạn KB đọc được các KB trong phạm vi của nó).
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/config/:kbId",
 		apiKeyRetrieve(apiKeyFullAccess()), g.Member(), g.KBAccessRead("kbId"), handler.GetCurrentConfigByKB)
-	// InitializeByKB / UpdateKBConfig 都是改 KB 的核心模型/storage Configuration  —
-	// 跟 PUT /knowledge-bases/:id 同等敏感，挂同款 OwnedKB 矩阵 + KBAccessWrite
-	//（API-key 主体短路 Owned* 守卫，KB allow-list 只能靠 KBAccess 兜底）。
+	// InitializeByKB / UpdateKBConfig đều sửa cấu hình mô hình lõi/storage của KB —
+	// nhạy cảm ngang PUT /knowledge-bases/:id, gắn cùng ma trận OwnedKB + KBAccessWrite
+	// (chủ thể API-key bỏ qua guard Owned*, allow-list KB chỉ còn dựa vào KBAccess).
 	g.apiKeyRoute(r, http.MethodPost, "/initialization/initialize/:kbId",
 		apiKeyManageKnowledgeBases(apiKeyFullAccess()), g.TenantAdmin(), g.KBAccessWrite("kbId"), handler.InitializeByKB)
 	g.apiKeyRoute(r, http.MethodPut, "/initialization/config/:kbId",
 		apiKeyManageKnowledgeBases(apiKeyFullAccess()), g.TenantAdmin(), g.KBAccessWrite("kbId"), handler.UpdateKBConfig)
 
-	// Ollama / 远程 API / 抽取等模型平台级探测/下载操作。这些不绑某个 KB，
-	// 会直接调用上游模型、消耗配额并探测模型基础设施 —— 一律 SystemAdmin；
-	// API key 侧仅 platform key + system_models_manage capability 可过。
+	// Các thao tác thăm dò/tải mô hình cấp nền tảng: Ollama / API từ xa / trích xuất. Chúng không gắn với KB nào,
+	// gọi thẳng mô hình upstream, tiêu hao hạn mức và thăm dò hạ tầng mô hình — luôn là SystemAdmin;
+	// phía API key chỉ platform key + capability system_models_manage mới qua được.
 	modelPlatform := apiKeyPlatform(types.APIKeyCapabilitySystemModelsManage)
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/status", modelPlatform, g.SystemAdmin(), handler.CheckOllamaStatus)
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/models", modelPlatform, g.SystemAdmin(), handler.ListOllamaModels)
@@ -136,7 +136,7 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/progress/:taskId", modelPlatform, g.SystemAdmin(), handler.GetDownloadProgress)
 	g.apiKeyRoute(r, http.MethodGet, "/initialization/ollama/download/tasks", modelPlatform, g.SystemAdmin(), handler.ListDownloadTasks)
 
-	// 远程API相关接口 —— SystemAdmin（调用外部模型 provider，属于平台级探测）。
+	// Các endpoint API từ xa — SystemAdmin (gọi provider mô hình bên ngoài, thuộc thăm dò cấp nền tảng).
 	g.apiKeyRoute(r, http.MethodPost, "/initialization/remote/check", modelPlatform, g.SystemAdmin(), handler.CheckRemoteModel)
 	g.apiKeyRoute(r, http.MethodPost, "/initialization/embedding/test", modelPlatform, g.SystemAdmin(), handler.TestEmbeddingModel)
 	g.apiKeyRoute(r, http.MethodPost, "/initialization/rerank/check", modelPlatform, g.SystemAdmin(), handler.CheckRerankModel)
@@ -306,7 +306,7 @@ func RegisterStorageBackendRoutes(r *gin.RouterGroup, h *handler.StorageBackendH
 	}
 }
 
-// RegisterDataSourceRoutes 注册数据源相关的路由
+// RegisterDataSourceRoutes đăng ký các route nguồn dữ liệu
 //
 // Data sources hold external service credentials (Feishu/Notion/Yuque)
 // and trigger sync jobs that mutate KB content tenant-wide. Reads are
@@ -356,7 +356,7 @@ func RegisterDataSourceRoutes(
 	}
 }
 
-// RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud Initialization 路由
+// RegisterWeKnoraCloudRoutes đăng ký các route khởi tạo WeKnoraCloud
 // RegisterWeKnoraCloudRoutes registers the WeKnoraCloud credential
 // management endpoints. SaveCredentials persists external SaaS model
 // credentials — platform-owned, SystemAdmin-only like /models writes.

@@ -32,7 +32,7 @@ var (
 	errInvalidExternalUserToken = errors.New("invalid external user token")
 )
 
-// 无需认证的APIList
+// Danh sách API không cần xác thực
 var noAuthAPI = map[string][]string{
 	"/health":                 {"GET"},
 	"/api/v1/auth/register":   {"POST"},
@@ -56,6 +56,9 @@ var noAuthAPI = map[string][]string{
 	// is authenticated by the opaque, single-use `state` parameter instead.
 	"/api/v1/mcp-oauth/callback": {"GET"},
 	"/api/v1/auth/refresh":       {"POST"},
+	// Word add-in browser sign-in: the add-in has no token yet.
+	"/api/v1/auth/device/start": {"POST"},
+	"/api/v1/auth/device/poll":  {"POST"},
 	// IM platforms (Feishu, Slack, etc.) commonly issue a HEAD request
 	// before GET to validate Content-Type / Content-Length when rendering
 	// image previews — both verbs must be allowed for image links to work.
@@ -66,10 +69,10 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/system/ui-theme": {"GET"},
 }
 
-// 检查请求是否在无需认证的APIList 中
+// Kiểm tra yêu cầu có nằm trong danh sách API không cần xác thực không
 func isNoAuthAPI(path string, method string) bool {
 	for api, methods := range noAuthAPI {
-		// 如果以*结尾，按照前缀匹配，否则按照全路径匹配
+		// Nếu kết thúc bằng * thì so khớp tiền tố, ngược lại so khớp toàn bộ đường dẫn
 		if strings.HasSuffix(api, "*") {
 			if strings.HasPrefix(path, strings.TrimSuffix(api, "*")) && slices.Contains(methods, method) {
 				return true
@@ -385,17 +388,17 @@ func attachTenantlessUserContext(c *gin.Context, user *types.User) {
 	})
 }
 
-// Auth 认证中间件。按顺序尝试三条通道：
+// Auth là middleware xác thực. Thử lần lượt ba kênh:
 //
-//  1. 白名单（isNoAuthAPI）/ OPTIONS 预检 —— 直接放行；
-//  2. Bearer JWT —— 成功则走 authenticateJWTUser 完成Tenant workspace/角色解析；
-//     校验失败不立即拒绝，继续尝试 X-API-Key（保持既有兼容行为：
-//     携带过期 JWT 但同时带有效 API key 的客户端仍可通过）；
-//  3. X-API-Key —— authenticateAPIKeyRequest。
+//  1. Danh sách trắng (isNoAuthAPI) / preflight OPTIONS — cho qua ngay;
+//  2. Bearer JWT — thành công thì qua authenticateJWTUser để xác định đơn vị/vai trò;
+//     kiểm tra thất bại không từ chối ngay mà thử tiếp X-API-Key (giữ hành vi tương thích cũ:
+//     client mang JWT hết hạn nhưng kèm API key hợp lệ vẫn qua được);
+//  3. X-API-Key — authenticateAPIKeyRequest.
 //
-// 三条通道都未命中时返回 401；若调用方提交过 Bearer token，错误消息
-// 明确指出 token 无效而不是笼统的 "missing authentication"，方便客户端
-// 区分「没登录」和「登录态过期」。
+// Cả ba kênh đều không khớp thì trả 401; nếu bên gọi có gửi Bearer token, thông báo lỗi
+// nêu rõ token không hợp lệ thay vì "missing authentication" chung chung, để client
+// phân biệt "chưa đăng nhập" và "phiên đăng nhập hết hạn".
 func Auth(
 	tenantService interfaces.TenantService,
 	userService interfaces.UserService,
@@ -410,13 +413,13 @@ func Auth(
 			return
 		}
 
-		// 检查请求是否在无需认证的APIList 中
+		// Kiểm tra yêu cầu có nằm trong danh sách API không cần xác thực không
 		if isNoAuthAPI(c.Request.URL.Path, c.Request.Method) {
 			c.Next()
 			return
 		}
 
-		// 尝试JWT Token认证
+		// Thử xác thực bằng JWT Token
 		bearerPresented := false
 		if token, ok := bearerToken(c); ok {
 			bearerPresented = true
@@ -430,7 +433,7 @@ func Auth(
 			logger.Warnf(c.Request.Context(), "[auth] bearer token rejected: %v", err)
 		}
 
-		// 尝试X-API-Key认证（兼容模式）
+		// Thử xác thực bằng X-API-Key (chế độ tương thích)
 		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
 			if apiKeyService == nil {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: API key service is not configured"})
@@ -443,7 +446,7 @@ func Auth(
 			return
 		}
 
-		// 没有任何通道认证成功
+		// Không kênh nào xác thực thành công
 		if bearerPresented {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired token"})
 		} else {
@@ -483,8 +486,8 @@ func authenticateJWTUser(
 	}
 
 	if targetTenantID == 0 {
-		// 无可用Tenant workspace：身份级路由（/auth/me 等）放行为 tenantless 会话，
-		// 其余路由返回 TENANT_REQUIRED 让前端引导用户Create /加入Tenant workspace。
+		// Không có đơn vị khả dụng: các route cấp danh tính (/auth/me, ...) cho qua như phiên tenantless,
+		// các route khác trả TENANT_REQUIRED để frontend hướng dẫn người dùng tạo/tham gia đơn vị.
 		if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
 			attachTenantlessUserContext(c, user)
 			return true
@@ -497,8 +500,8 @@ func authenticateJWTUser(
 		return false
 	}
 
-	// 获取Tenant workspace信息（X-Tenant-ID 切换路径已在 resolveTargetTenant 内取到，
-	// 避免二次查库）。
+	// Lấy thông tin đơn vị (đường chuyển X-Tenant-ID đã lấy trong resolveTargetTenant,
+	// tránh truy vấn DB lần hai).
 	if tenant == nil {
 		var err error
 		tenant, err = tenantService.GetTenantByID(ctx, targetTenantID)
@@ -520,7 +523,7 @@ func authenticateJWTUser(
 		return false
 	}
 
-	// 解析当前Tenant workspace内的角色 (issue #1303)
+	// Xác định vai trò trong đơn vị hiện tại (issue #1303)
 	role, ok := resolveTenantRole(ctx, memberService, user, targetTenantID, crossTenantSwitch, cfg)
 	if !ok {
 		// No active membership. A SuperAdmin is still a SuperAdmin without
@@ -614,17 +617,17 @@ func resolveTargetTenant(
 ) (targetTenantID uint64, tenant *types.Tenant, crossTenantSwitch bool, ok bool) {
 	ctx := c.Request.Context()
 
-	// 默认 target = JWT 里的 tenant_id（来自登录或 /auth/switch-tenant），
-	// 兼容 ValidateToken 的 fallback：claim 缺失时 jwtTenantID == user.TenantID。
+	// Mặc định target = tenant_id trong JWT (từ đăng nhập hoặc /auth/switch-tenant),
+	// tương thích với fallback của ValidateToken: thiếu claim thì jwtTenantID == user.TenantID.
 	targetTenantID = jwtTenantID
 	if targetTenantID == 0 {
 		targetTenantID = user.TenantID
 	}
 
 	if tenantHeader := c.GetHeader("X-Tenant-ID"); tenantHeader != "" {
-		// 解析目标Tenant workspaceID。畸形 / 零值必须显式拒绝：静默忽略会让坏掉的
-		// 前端/SDK 悄悄写错Tenant workspace，反而看不到问题。与 RequirePathTenantMatch
-		// 中对 :id 的校验保持一致（非空、可解析、>0）。
+		// Phân tích ID đơn vị đích. Giá trị sai dạng / bằng 0 phải bị từ chối rõ ràng: lặng lẽ bỏ qua sẽ khiến
+		// frontend/SDK lỗi âm thầm ghi nhầm đơn vị mà không thấy vấn đề. Giữ nhất quán với kiểm tra :id
+		// trong RequirePathTenantMatch (không rỗng, phân tích được, >0).
 		parsedTenantID, err := strconv.ParseUint(tenantHeader, 10, 64)
 		if err != nil || parsedTenantID == 0 {
 			logger.Warnf(ctx, "Invalid X-Tenant-ID header from user=%s: %q (err=%v)", user.ID, tenantHeader, err)
@@ -632,8 +635,8 @@ func resolveTargetTenant(
 			c.Abort()
 			return 0, nil, false, false
 		}
-		// 检查用户是否可以选择目标Tenant workspace：自家Tenant workspace、SuperAdmin、或
-		// 有 active membership 行——三选一，由 IsTenantAccessible 统一判定。
+		// Kiểm tra người dùng có được chọn đơn vị đích không: đơn vị của mình, SuperAdmin, hoặc
+		// có bản ghi membership active — một trong ba, do IsTenantAccessible quyết định thống nhất.
 		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
 			c.JSON(http.StatusForbidden, gin.H{
@@ -642,7 +645,7 @@ func resolveTargetTenant(
 			c.Abort()
 			return 0, nil, false, false
 		}
-		// 验证目标Tenant workspace是否存在
+		// Kiểm tra đơn vị đích có tồn tại không
 		targetTenant, err := tenantService.GetTenantByID(ctx, parsedTenantID)
 		if err != nil || targetTenant == nil {
 			logger.Warnf(ctx, "Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
@@ -764,8 +767,8 @@ func authenticateAPIKeyRequest(
 
 func isPlatformTenantOptionalAPI(path, method string) bool {
 	path = strings.TrimSuffix(strings.TrimSpace(path), "/")
-	// 精确匹配 admin 控制面前缀（"/api/v1/system/admin" 本身或其子路径）。
-	// 裸 HasPrefix 会误放行诸如 "/api/v1/system/admin-foo" 的同前缀路径。
+	// So khớp chính xác tiền tố mặt phẳng quản trị ("/api/v1/system/admin" hoặc đường dẫn con của nó).
+	// HasPrefix trần sẽ cho qua nhầm các đường dẫn cùng tiền tố như "/api/v1/system/admin-foo".
 	if path == "/api/v1/system/admin" || strings.HasPrefix(path, "/api/v1/system/admin/") {
 		return true
 	}

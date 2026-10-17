@@ -32,6 +32,9 @@ func (r *messageRepository) CreateMessage(
 		if err := tx.Create(message).Error; err != nil {
 			return err
 		}
+		if err := keepTemporarySession(tx, message.SessionID); err != nil {
+			return err
+		}
 		return insertMessageArtifacts(tx, []*types.Message{message})
 	})
 	if err != nil {

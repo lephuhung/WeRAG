@@ -111,7 +111,7 @@ func TestSkillValidation(t *testing.T) {
 		},
 		{
 			name:        "unicode letters are allowed",
-			skillName:   "律师助手",
+			skillName:   "trợ-lý-pháp-lý",
 			description: "A skill",
 			wantErr:     false,
 		},
@@ -137,15 +137,15 @@ func TestSkillValidation(t *testing.T) {
 			errContains: "maximum is 64",
 		},
 		{
-			name:        "description at 1024 CJK runes is allowed even though it is over 1024 bytes",
+			name:        "description at 1024 multibyte runes is allowed even though it is over 1024 bytes",
 			skillName:   "my-skill",
-			description: strings.Repeat("描", 1024),
+			description: strings.Repeat("ộ", 1024),
 			wantErr:     false,
 		},
 		{
-			name:        "description over 1024 CJK runes is rejected",
+			name:        "description over 1024 multibyte runes is rejected",
 			skillName:   "my-skill",
-			description: strings.Repeat("描", 1025),
+			description: strings.Repeat("ộ", 1025),
 			wantErr:     true,
 			errContains: "maximum is 1024",
 		},

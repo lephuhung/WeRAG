@@ -130,11 +130,24 @@ func (t *CheckLegalStatusTool) Execute(ctx context.Context, args json.RawMessage
 			}
 		}
 	}
+	var derived []map[string]interface{}
 	for i, rep := range reports {
 		if i > 0 {
 			b.WriteString("\n")
 		}
 		writeLegalStatusReport(&b, rep)
+		if by, on := derivedExpiry(rep, legalNow()); by != nil && rep.Document != nil {
+			derived = append(derived, map[string]interface{}{
+				"document_id":        rep.Document.ID,
+				"document_number":    rep.Document.DocumentNumber,
+				"derived_status":     derivedStatusFor(rep.Document),
+				"derived_expired_on": on.Format("2006-01-02"),
+				"derived_from":       by.DocumentNumber,
+			})
+		}
+	}
+	if len(derived) > 0 {
+		data["derived_status"] = derived
 	}
 	return &types.ToolResult{
 		Success: true,
@@ -183,11 +196,27 @@ func writeLegalStatusReport(b *strings.Builder, rep *types.LegalStatusReport) {
 	if status == "" {
 		status = "chưa xác định"
 	}
+	note := ""
+	if by, on := derivedExpiry(rep, legalNow()); by != nil {
+		rel := derivedRelation(rep, by)
+		if partlyExpired(doc) {
+			// the portal judged it partly expired: the link may be partial too
+			note = fmt.Sprintf(" — LƯU Ý: có thể đã hết hiệu lực toàn bộ — %s %s có hiệu lực từ %s; "+
+				"kiểm tra điều khoản chuyển tiếp của %s trước khi kết luận",
+				derivedExpiryVerb[rel], legalShortLabel(by), on.Format("02/01/2006"), legalShortLabel(by))
+		} else {
+			// both facts, so neither the agent nor a reader sees a contradiction
+			note = fmt.Sprintf(" — LƯU Ý: %s %s có hiệu lực từ %s, nên văn bản này hết hiệu lực từ ngày đó "+
+				"(suy ra từ quan hệ %s; %s chưa cập nhật trạng thái)",
+				derivedExpiryVerb[rel], legalShortLabel(by), on.Format("02/01/2006"),
+				derivedExpiryNoun[rel], legalOr(doc.Source, "nguồn"))
+		}
+	}
 	if doc.SourceUpdatedAt != nil {
-		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s, cập nhật %s)\n",
-			status, doc.Source, doc.SourceUpdatedAt.Format("02/01/2006"))
+		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s, cập nhật %s)%s\n",
+			status, doc.Source, doc.SourceUpdatedAt.Format("02/01/2006"), note)
 	} else {
-		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s)\n", status, doc.Source)
+		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s)%s\n", status, doc.Source, note)
 	}
 	for _, g := range legalLinkGroups {
 		var others []*types.LegalDocument
@@ -209,6 +238,110 @@ func writeLegalStatusReport(b *strings.Builder, rep *types.LegalStatusReport) {
 			fmt.Fprintf(b, "  - %s (ban hành %s; %s)\n", legalDocLabel(o), legalDate(o.IssuedOn), legalOr(o.Status, "chưa rõ tình trạng"))
 		}
 	}
+}
+
+// legalNow is the clock of derivedExpiry (a var for tests).
+var legalNow = time.Now
+
+// derivedExpiredStatus is the status derivedExpiry implies for a document
+// the source holds in force; derivedMaybeExpiredStatus for one it holds
+// partly expired (the portal may have judged the replacement partial).
+const (
+	derivedExpiredStatus      = "Hết hiệu lực toàn bộ"
+	derivedMaybeExpiredStatus = "Có thể đã hết hiệu lực toàn bộ"
+	legalStatusInForce        = "Còn hiệu lực"
+	legalStatusPartlyExpired  = "Hết hiệu lực một phần"
+)
+
+// derivableStatus reports whether a source status may be reconciled with
+// the links: in force, unknown, or partly expired (worded softer). Any
+// other status (expired, not yet in force, suspended) is left as is.
+func derivableStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "chưa xác định", strings.ToLower(legalStatusInForce), strings.ToLower(legalStatusPartlyExpired):
+		return true
+	}
+	return false
+}
+
+// partlyExpired reports whether the source holds doc partly expired.
+func partlyExpired(doc *types.LegalDocument) bool {
+	return strings.EqualFold(strings.TrimSpace(doc.Status), legalStatusPartlyExpired)
+}
+
+// derivedStatusFor is the status derivedExpiry implies for doc.
+func derivedStatusFor(doc *types.LegalDocument) string {
+	if partlyExpired(doc) {
+		return derivedMaybeExpiredStatus
+	}
+	return derivedExpiredStatus
+}
+
+// derivedExpiryRelations are the incoming relations that end a document
+// as a whole once the other document takes effect. Repeals is left out:
+// vbpl files partial repeals under it too ("Bị bãi bỏ (toàn bộ hoặc một
+// phần)"), and PartiallyExpires is partial by definition.
+var derivedExpiryRelations = map[types.LegalRelation]bool{
+	types.LegalRelationReplaces: true,
+	types.LegalRelationExpires:  true,
+}
+
+var derivedExpiryVerb = map[types.LegalRelation]string{
+	types.LegalRelationReplaces: "đã bị thay thế bởi",
+	types.LegalRelationExpires:  "đã bị làm hết hiệu lực bởi",
+}
+
+var derivedExpiryNoun = map[types.LegalRelation]string{
+	types.LegalRelationReplaces: "thay thế",
+	types.LegalRelationExpires:  "làm hết hiệu lực",
+}
+
+// derivedExpiry reconciles a stale portal status with the catalogue's own
+// links: the source has no expiry date and does not say the document ended,
+// but an incoming replaces/expires link points at a document already in
+// force (EffectiveOn <= now). It returns the earliest such document and its
+// effective date, the day this one ended; nil when there is none. vbpl
+// still listed 29/2018/QH14 as "Còn hiệu lực" months after 117/2025/QH15
+// replaced it (2026-10-16).
+func derivedExpiry(rep *types.LegalStatusReport, now time.Time) (*types.LegalDocument, *time.Time) {
+	if rep == nil || rep.Document == nil || rep.Document.ExpiredOn != nil || !derivableStatus(rep.Document.Status) {
+		return nil, nil
+	}
+	var by *types.LegalDocument
+	for _, l := range rep.Links {
+		if !l.Incoming || !derivedExpiryRelations[l.Relation] || l.Other == nil || l.Other.EffectiveOn == nil {
+			continue
+		}
+		if l.Other.EffectiveOn.After(now) {
+			continue
+		}
+		if by == nil || l.Other.EffectiveOn.Before(*by.EffectiveOn) {
+			by = l.Other
+		}
+	}
+	if by == nil {
+		return nil, nil
+	}
+	return by, by.EffectiveOn
+}
+
+// derivedRelation is the relation by which `by` ended rep's document.
+func derivedRelation(rep *types.LegalStatusReport, by *types.LegalDocument) types.LegalRelation {
+	for _, l := range rep.Links {
+		if l.Other == by && l.Incoming && derivedExpiryRelations[l.Relation] {
+			return l.Relation
+		}
+	}
+	return types.LegalRelationReplaces
+}
+
+// legalShortLabel names a document by type and number ("Luật 117/2025/QH15"),
+// falling back to legalDocLabel.
+func legalShortLabel(doc *types.LegalDocument) string {
+	if num := strings.TrimSpace(doc.DocumentNumber); num != "" {
+		return strings.TrimSpace(doc.DocType + " " + num)
+	}
+	return legalDocLabel(doc)
 }
 
 func legalDocLabel(doc *types.LegalDocument) string {

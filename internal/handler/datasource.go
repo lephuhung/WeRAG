@@ -81,7 +81,7 @@ func (h *DataSourceHandler) getOwnedDataSource(
 // CreateDataSource godoc
 // @Summary Create a new data source
 // @Description Create a new data source configuration for a knowledge base
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Accept json
 // @Produce json
 // @Param request body types.DataSource true "Data source configuration"
@@ -124,7 +124,7 @@ func (h *DataSourceHandler) CreateDataSource(c *gin.Context) {
 // GetDataSource godoc
 // @Summary Get a data source by ID
 // @Description Retrieve a data source configuration by ID
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Param id path string true "Data source ID"
 // @Success 200 {object} types.DataSource
@@ -152,7 +152,7 @@ func (h *DataSourceHandler) GetDataSource(c *gin.Context) {
 // ListDataSources godoc
 // @Summary List data sources for a knowledge base
 // @Description List all data sources for a specific knowledge base
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Param kb_id query string true "Knowledge base ID"
 // @Success 200 {object} []types.DataSource
@@ -188,7 +188,7 @@ func (h *DataSourceHandler) ListDataSources(c *gin.Context) {
 // UpdateDataSource godoc
 // @Summary Update a data source
 // @Description Update an existing data source configuration
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Accept json
 // @Produce json
 // @Param id path string true "Data source ID"
@@ -233,7 +233,7 @@ func (h *DataSourceHandler) UpdateDataSource(c *gin.Context) {
 // DeleteDataSource godoc
 // @Summary Delete a data source
 // @Description Delete a data source (soft delete)
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Param id path string true "Data source ID"
 // @Success 204
 // @Failure 404 {object} map[string]string
@@ -264,7 +264,7 @@ func (h *DataSourceHandler) DeleteDataSource(c *gin.Context) {
 // ValidateConnection godoc
 // @Summary Test data source connection
 // @Description Validate the connection to an external data source
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Param id path string true "Data source ID"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
@@ -299,7 +299,7 @@ func (h *DataSourceHandler) ValidateConnection(c *gin.Context) {
 //	without creating or updating any database records.
 //	Used by the frontend "Test Connection" button during data source creation.
 //
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Accept json
 // @Produce json
 // @Param request body object true "type and credentials"
@@ -333,7 +333,7 @@ func (h *DataSourceHandler) ValidateCredentials(c *gin.Context) {
 
 // @Summary List available resources in data source
 // @Description List resources available for sync in the external system. Pass parent_id to lazily load the direct children of a resource (used for large hierarchical sources such as Feishu wiki).
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Param id path string true "Data source ID"
 // @Param parent_id query string false "Parent resource ExternalID; empty lists the top level"
@@ -370,7 +370,7 @@ func (h *DataSourceHandler) ListAvailableResources(c *gin.Context) {
 
 // @Summary Resolve resource ancestors
 // @Description Resolve the ancestor ExternalIDs that must be expanded to reveal the given (possibly deeply nested) resources in a lazily-loaded picker. Used to restore an existing selection when editing a data source.
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Accept json
 // @Produce json
 // @Param id path string true "Data source ID"
@@ -419,7 +419,7 @@ type resolveAncestorsRequest struct {
 // ManualSync godoc
 // @Summary Trigger immediate sync
 // @Description Trigger an immediate sync for a data source
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Param id path string true "Data source ID"
 // @Success 200 {object} types.SyncLog
 // @Failure 400 {object} map[string]string
@@ -451,7 +451,7 @@ func (h *DataSourceHandler) ManualSync(c *gin.Context) {
 // PauseDataSource godoc
 // @Summary Pause data source
 // @Description Pause a data source's scheduled syncs
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Param id path string true "Data source ID"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
@@ -482,7 +482,7 @@ func (h *DataSourceHandler) PauseDataSource(c *gin.Context) {
 // ResumeDataSource godoc
 // @Summary Resume data source
 // @Description Resume a paused data source
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Param id path string true "Data source ID"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
@@ -513,7 +513,7 @@ func (h *DataSourceHandler) ResumeDataSource(c *gin.Context) {
 // GetSyncLogs godoc
 // @Summary Get sync logs
 // @Description Retrieve sync history for a data source
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Param id path string true "Data source ID"
 // @Param limit query int false "Limit (default: 10)"
@@ -569,7 +569,7 @@ func (h *DataSourceHandler) GetSyncLogs(c *gin.Context) {
 // GetSyncLog godoc
 // @Summary Get specific sync log
 // @Description Retrieve a specific sync log entry
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Param log_id path string true "Sync log ID"
 // @Success 200 {object} types.SyncLog
@@ -602,7 +602,7 @@ func (h *DataSourceHandler) GetSyncLog(c *gin.Context) {
 // GetAvailableConnectors godoc
 // @Summary Get available connectors
 // @Description Get list of available data source connectors
-// @Tags DataSource
+// @Tags Nguồn dữ liệu
 // @Produce json
 // @Success 200 {object} []datasource.ConnectorMetadata
 // @Router /datasource/types [get]

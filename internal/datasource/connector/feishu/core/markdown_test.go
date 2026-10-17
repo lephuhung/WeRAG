@@ -34,26 +34,26 @@ func TestBlocksToMarkdown_EmbeddedSheetAndFile(t *testing.T) {
 		{BlockID: "root", BlockType: BlockTypePage},
 		{BlockID: "s", BlockType: BlockTypeSheet, Sheet: &BlockTokenRef{Token: "sht_a_0"}},
 		{BlockID: "img", BlockType: BlockTypeImage, Image: &BlockTokenRef{Token: "img_t"}},
-		{BlockID: "f", BlockType: BlockTypeFile, File: &BlockFileRef{Token: "file_t", Name: "报表.pdf"}},
+		{BlockID: "f", BlockType: BlockTypeFile, File: &BlockFileRef{Token: "file_t", Name: "bao-cao.pdf"}},
 	}
-	fr := fakeReader{sheet: [][]string{{"名称", "数量"}, {"苹果", "3"}}}
+	fr := fakeReader{sheet: [][]string{{"Tên hàng", "Số lượng"}, {"Táo", "3"}}}
 	md, atts, err := blocksToMarkdown(context.Background(), fr, blocks)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !strings.Contains(string(md), "| 名称 | 数量 |") || !strings.Contains(string(md), "| 苹果 | 3 |") {
+	if !strings.Contains(string(md), "| Tên hàng | Số lượng |") || !strings.Contains(string(md), "| Táo | 3 |") {
 		t.Errorf("sheet not inlined:\n%s", md)
 	}
-	if !strings.Contains(string(md), "![图片]()") {
+	if !strings.Contains(string(md), "![hình ảnh]()") {
 		t.Errorf("image placeholder missing:\n%s", md)
 	}
 	if strings.Contains(string(md), "feishu-media") {
 		t.Errorf("internal media token leaked into markdown:\n%s", md)
 	}
-	if len(atts) != 1 || atts[0].FileToken != "file_t" || atts[0].Name != "报表.pdf" {
+	if len(atts) != 1 || atts[0].FileToken != "file_t" || atts[0].Name != "bao-cao.pdf" {
 		t.Errorf("attachments = %+v", atts)
 	}
-	if !strings.Contains(string(md), "📎 附件：报表.pdf") {
+	if !strings.Contains(string(md), "📎 Tệp đính kèm: bao-cao.pdf") {
 		t.Errorf("attachment inline reference missing:\n%s", md)
 	}
 }
@@ -68,7 +68,7 @@ func TestBlocksToMarkdown_SheetTruncatedNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !strings.Contains(string(md), "表格已截断") {
+	if !strings.Contains(string(md), "Bảng đã bị cắt bớt") {
 		t.Errorf("want truncation note, got:\n%s", md)
 	}
 }
@@ -83,7 +83,7 @@ func TestBlocksToMarkdown_SheetPermissionDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should not fail on permission error, got %v", err)
 	}
-	if !strings.Contains(string(md), "无法读取内嵌电子表格") {
+	if !strings.Contains(string(md), "Không đọc được bảng tính nhúng") {
 		t.Errorf("want degraded placeholder, got:\n%s", md)
 	}
 }
@@ -101,13 +101,13 @@ func TestBlocksToMarkdown_BitableInlinedAndDegrades(t *testing.T) {
 		return string(md)
 	}
 
-	inlined := mk(fakeReader{bitable: [][]string{{"任务", "状态"}, {"写文档", "进行中"}}})
-	if !strings.Contains(inlined, "| 任务 | 状态 |") || !strings.Contains(inlined, "| 写文档 | 进行中 |") {
+	inlined := mk(fakeReader{bitable: [][]string{{"Công việc", "Trạng thái"}, {"Soạn tờ trình", "Đang thực hiện"}}})
+	if !strings.Contains(inlined, "| Công việc | Trạng thái |") || !strings.Contains(inlined, "| Soạn tờ trình | Đang thực hiện |") {
 		t.Errorf("bitable not inlined:\n%s", inlined)
 	}
 
 	degraded := mk(fakeReader{bitableErr: fmt.Errorf("code=99991672 permission denied")})
-	if !strings.Contains(degraded, "无法读取内嵌多维表格") {
+	if !strings.Contains(degraded, "Không đọc được bảng đa chiều nhúng") {
 		t.Errorf("want bitable degradation note, got:\n%s", degraded)
 	}
 }
@@ -120,19 +120,19 @@ func TestBlocksToMarkdown_NativeTableFromCellChildren(t *testing.T) {
 		{BlockID: "root", BlockType: BlockTypePage},
 		tableBlk("t", 2, "c1", "c2", "c3", "c4"),
 		cellBlk("c1"), cellBlk("c2"), cellBlk("c3"), cellBlk("c4"),
-		cellTextBlk("c1", "姓名"), cellTextBlk("c2", "分数"),
-		cellTextBlk("c3", "张三"), cellTextBlk("c4", "95"),
+		cellTextBlk("c1", "Họ tên"), cellTextBlk("c2", "Điểm"),
+		cellTextBlk("c3", "Nguyễn Văn A"), cellTextBlk("c4", "95"),
 	}
 	md, _, err := blocksToMarkdown(context.Background(), nil, blocks)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	s := string(md)
-	if !strings.Contains(s, "| 姓名 | 分数 |") || !strings.Contains(s, "| 张三 | 95 |") {
+	if !strings.Contains(s, "| Họ tên | Điểm |") || !strings.Contains(s, "| Nguyễn Văn A | 95 |") {
 		t.Errorf("native table not rendered from cell children:\n%s", s)
 	}
 	// Cell text must appear ONLY inside the table, never as a stray paragraph.
-	if n := strings.Count(s, "姓名"); n != 1 {
+	if n := strings.Count(s, "Họ tên"); n != 1 {
 		t.Errorf("cell text leaked outside the table (count=%d, want 1):\n%s", n, s)
 	}
 }
@@ -145,7 +145,7 @@ func TestBlocksToMarkdown_AttachmentInsideTableCellStillCollected(t *testing.T) 
 		{BlockID: "root", BlockType: BlockTypePage},
 		tableBlk("t", 1, "c1"),
 		{BlockID: "c1", BlockType: BlockTypeTableCell, Children: []string{"f1"}},
-		{BlockID: "f1", BlockType: BlockTypeFile, File: &BlockFileRef{Token: "tok-in-cell", Name: "内嵌.pdf"}},
+		{BlockID: "f1", BlockType: BlockTypeFile, File: &BlockFileRef{Token: "tok-in-cell", Name: "dinh-kem.pdf"}},
 	}
 	_, atts, err := blocksToMarkdown(context.Background(), nil, blocks)
 	if err != nil {
@@ -161,8 +161,8 @@ func TestMarkdownTable_RaggedRowClampedToHeader(t *testing.T) {
 	// cells beyond the header range) must be clamped to 2, or the emitted table
 	// has more body cells than header/separator columns → malformed GFM.
 	rows := [][]string{
-		{"名称", "数量"},
-		{"苹果", "3", "多余1", "多余2"},
+		{"Tên hàng", "Số lượng"},
+		{"Táo", "3", "thừa1", "thừa2"},
 	}
 	out := markdownTable(rows)
 	lines := strings.Split(out, "\n")
@@ -176,7 +176,7 @@ func TestMarkdownTable_RaggedRowClampedToHeader(t *testing.T) {
 			t.Errorf("line %d %q has %d pipes, want %d (ragged row not clamped)", i, ln, got, want)
 		}
 	}
-	if strings.Contains(out, "多余") {
+	if strings.Contains(out, "thừa") {
 		t.Errorf("overflow cells must be dropped, got:\n%s", out)
 	}
 }
@@ -207,13 +207,13 @@ func TestBlocksToMarkdown_UnrenderableTablePreservesCellText(t *testing.T) {
 		// tableBlk sets Property (renderable); here we want an UNrenderable one.
 		{BlockID: "t", BlockType: BlockTypeTable, Table: &BlockTable{Cells: []string{"c1"}}},
 		{BlockID: "c1", BlockType: BlockTypeTableCell, Children: []string{"c1_txt"}},
-		cellTextBlk("c1", "重要内容"),
+		cellTextBlk("c1", "Nội dung quan trọng"),
 	}
 	md, _, err := blocksToMarkdown(context.Background(), nil, blocks)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !strings.Contains(string(md), "重要内容") {
+	if !strings.Contains(string(md), "Nội dung quan trọng") {
 		t.Errorf("cell text of an unrenderable table was dropped:\n%s", md)
 	}
 }
@@ -221,9 +221,9 @@ func TestBlocksToMarkdown_UnrenderableTablePreservesCellText(t *testing.T) {
 func TestBlocksToMarkdown_TextConstructs(t *testing.T) {
 	blocks := []DocxBlock{
 		{BlockID: "root", BlockType: BlockTypePage, Children: []string{"h", "p", "b"}},
-		{BlockID: "h", BlockType: BlockTypeHeading1, Heading1: txt("标题")},
-		{BlockID: "p", BlockType: BlockTypeText, Text: txt("一段正文")},
-		{BlockID: "b", BlockType: BlockTypeBullet, Bullet: txt("要点")},
+		{BlockID: "h", BlockType: BlockTypeHeading1, Heading1: txt("Tiêu đề")},
+		{BlockID: "p", BlockType: BlockTypeText, Text: txt("Một đoạn nội dung")},
+		{BlockID: "b", BlockType: BlockTypeBullet, Bullet: txt("Ý chính")},
 	}
 	md, atts, err := blocksToMarkdown(context.Background(), nil, blocks)
 	if err != nil {
@@ -232,7 +232,7 @@ func TestBlocksToMarkdown_TextConstructs(t *testing.T) {
 	if len(atts) != 0 {
 		t.Errorf("want 0 attachments, got %d", len(atts))
 	}
-	want := "# 标题\n\n一段正文\n\n- 要点\n"
+	want := "# Tiêu đề\n\nMột đoạn nội dung\n\n- Ý chính\n"
 	if string(md) != want {
 		t.Errorf("md =\n%q\nwant\n%q", md, want)
 	}
@@ -264,17 +264,17 @@ func TestBlocksToMarkdown_BlankDocRendersEmpty(t *testing.T) {
 func TestBlocksToMarkdown_TodoAndCallout(t *testing.T) {
 	blocks := []DocxBlock{
 		{BlockID: "root", BlockType: BlockTypePage},
-		{BlockID: "t", BlockType: BlockTypeTodo, Todo: txt("买牛奶")},
-		{BlockID: "c", BlockType: BlockTypeCallout, Callout: txt("注意事项")},
+		{BlockID: "t", BlockType: BlockTypeTodo, Todo: txt("Nộp báo cáo quý")},
+		{BlockID: "c", BlockType: BlockTypeCallout, Callout: txt("Lưu ý")},
 	}
 	md, _, err := blocksToMarkdown(context.Background(), nil, blocks)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !strings.Contains(string(md), "- [ ] 买牛奶") {
+	if !strings.Contains(string(md), "- [ ] Nộp báo cáo quý") {
 		t.Errorf("todo not rendered:\n%s", md)
 	}
-	if !strings.Contains(string(md), "> 注意事项") {
+	if !strings.Contains(string(md), "> Lưu ý") {
 		t.Errorf("callout direct text not rendered:\n%s", md)
 	}
 }

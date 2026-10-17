@@ -4,7 +4,7 @@
 import { apiGet, apiPost, apiPut } from "@/lib/api-client";
 
 export type LegalReviewStatus = "pending" | "approved" | "rejected";
-export type LegalReviewFilter = LegalReviewStatus | "alerts";
+export type LegalReviewFilter = LegalReviewStatus | "alerts" | "source_changed";
 
 export type LegalRelation =
   | "replaces"

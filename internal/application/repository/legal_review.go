@@ -153,6 +153,16 @@ func (r *legalReviewRepository) ListSupersededLinks(
 	return r.linkRows(q, offset, limit)
 }
 
+func (r *legalReviewRepository) ListSourceChangedLinks(
+	ctx context.Context, kbID string, offset, limit int,
+) ([]interfaces.LegalLinkRow, int64, error) {
+	q := r.liveLinks(ctx, kbID).
+		Joins("JOIN legal_documents d ON d.id = l.legal_document_id").
+		Where("l.review_status = ?", types.LegalReviewApproved).
+		Where("d.source_pending IS NOT NULL")
+	return r.linkRows(q, offset, limit)
+}
+
 func (r *legalReviewRepository) ApprovedDocumentIDs(ctx context.Context, ids []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	if len(ids) == 0 {

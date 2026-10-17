@@ -42,6 +42,10 @@ func (f *callbackOnlyWorkspaces) BindWordFile(context.Context, uint64, string, s
 func (f *callbackOnlyWorkspaces) StoreClientSave(context.Context, uint64, string, string, int, []byte) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }
+
+func (f *callbackOnlyWorkspaces) StoreTemplate(context.Context, uint64, string, string, int, []byte) (*types.DocumentWorkspace, error) {
+	return nil, nil
+}
 func (f *callbackOnlyWorkspaces) GetBySession(context.Context, uint64, string) (*types.DocumentWorkspace, error) {
 	return nil, nil
 }

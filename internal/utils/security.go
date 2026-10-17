@@ -23,9 +23,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/ipclass"
 )
 
-// XSS 防护相关正则表达式
+// Các biểu thức chính quy phòng chống XSS
 var (
-	// 匹配潜在的 XSS 攻击模式
+	// Khớp các mẫu tấn công XSS tiềm ẩn
 	xssPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)<script[^>]*>.*?</script>`),
 		regexp.MustCompile(`(?i)<iframe[^>]*>.*?</iframe>`),
@@ -46,30 +46,30 @@ var (
 	}
 )
 
-// SanitizeHTML 清理 HTML 内容，防止 XSS 攻击
+// SanitizeHTML làm sạch nội dung HTML, chống XSS
 func SanitizeHTML(input string) string {
 	if input == "" {
 		return ""
 	}
 
-	// 检查输入长度
+	// Kiểm tra độ dài đầu vào
 	if len(input) > 10000 {
 		input = input[:10000]
 	}
 
-	// 检查是否包含潜在的 XSS 攻击
+	// Kiểm tra có chứa mẫu XSS tiềm ẩn không
 	for _, pattern := range xssPatterns {
 		if pattern.MatchString(input) {
-			// 如果包含恶意内容，进行 HTML 转义
+			// Nếu có nội dung độc hại thì escape HTML
 			return html.EscapeString(input)
 		}
 	}
 
-	// 如果内容相对安全，返回原内容
+	// Nội dung tương đối an toàn thì trả về nguyên bản
 	return input
 }
 
-// EscapeHTML 转义 HTML 特殊字符
+// EscapeHTML escape các ký tự đặc biệt HTML
 func EscapeHTML(input string) string {
 	if input == "" {
 		return ""
@@ -77,25 +77,25 @@ func EscapeHTML(input string) string {
 	return html.EscapeString(input)
 }
 
-// ValidateInput 验证用户输入
+// ValidateInput kiểm tra đầu vào của người dùng
 func ValidateInput(input string) (string, bool) {
 	if input == "" {
 		return "", true
 	}
 
-	// 检查是否包含控制字符
+	// Kiểm tra có ký tự điều khiển không
 	for _, r := range input {
 		if r < 32 && r != 9 && r != 10 && r != 13 {
 			return "", false
 		}
 	}
 
-	// 检查 UTF-8 有效性
+	// Kiểm tra UTF-8 hợp lệ
 	if !utf8.ValidString(input) {
 		return "", false
 	}
 
-	// 检查是否包含潜在的 XSS 攻击
+	// Kiểm tra có chứa mẫu XSS tiềm ẩn không
 	for _, pattern := range xssPatterns {
 		if pattern.MatchString(input) {
 			return "", false
@@ -105,8 +105,8 @@ func ValidateInput(input string) (string, bool) {
 	return strings.TrimSpace(input), true
 }
 
-// SafePathUnderBase 校验 filePath 是否落在 baseDir 下，防止路径遍历（如 ../../）。
-// 返回规范化的绝对路径；若路径逃逸出 baseDir 则返回错误。
+// SafePathUnderBase kiểm tra filePath nằm trong baseDir, chống path traversal (như ../../).
+// Trả về đường dẫn tuyệt đối đã chuẩn hóa; nếu thoát khỏi baseDir thì trả lỗi.
 func SafePathUnderBase(baseDir, filePath string) (string, error) {
 	if baseDir == "" || filePath == "" {
 		return "", fmt.Errorf("baseDir and filePath cannot be empty")
@@ -126,9 +126,9 @@ func SafePathUnderBase(baseDir, filePath string) (string, error) {
 	return absPath, nil
 }
 
-// SafeJoinUnderBase 把调用方提供的相对后缀拼到 baseDir 下，并返回仍落在
-// baseDir 内的绝对路径。首尾分隔符会被去掉，避免 "/etc" 一类输入覆盖根目录；
-// ".." 经 path.Clean 后若仍指向父级则拒绝。空后缀表示 baseDir 本身。
+// SafeJoinUnderBase nối hậu tố tương đối do bên gọi cung cấp vào baseDir và trả về đường dẫn
+// tuyệt đối vẫn nằm trong baseDir. Dấu phân cách đầu/cuối bị bỏ để đầu vào kiểu "/etc" không ghi đè thư mục gốc;
+// ".." sau path.Clean mà vẫn trỏ lên cha thì từ chối. Hậu tố rỗng nghĩa là chính baseDir.
 func SafeJoinUnderBase(baseDir, relPath string) (string, error) {
 	if strings.TrimSpace(baseDir) == "" {
 		return "", fmt.Errorf("baseDir cannot be empty")
@@ -145,8 +145,8 @@ func SafeJoinUnderBase(baseDir, relPath string) (string, error) {
 	return SafePathUnderBase(baseDir, filepath.Join(baseDir, filepath.FromSlash(cleaned)))
 }
 
-// SafeFileName 校验并返回安全的“仅文件名”部分，防止路径遍历。
-// 仅保留最后一个路径成分，禁止 ".."、空名或仅含点，用于 SaveBytes 等场景。
+// SafeFileName kiểm tra và trả về phần "chỉ tên tệp" an toàn, chống path traversal.
+// Chỉ giữ thành phần đường dẫn cuối; cấm "..", tên rỗng hoặc chỉ toàn dấu chấm; dùng cho SaveBytes v.v.
 func SafeFileName(fileName string) (string, error) {
 	if fileName == "" {
 		return "", fmt.Errorf("fileName cannot be empty")
@@ -164,7 +164,7 @@ func SafeFileName(fileName string) (string, error) {
 	return base, nil
 }
 
-// SafeObjectKey 校验对象存储的 key（如 COS/MinIO objectName），禁止包含 ".." 等路径遍历
+// SafeObjectKey kiểm tra key của object storage (COS/MinIO objectName), cấm ".." và các kiểu path traversal
 func SafeObjectKey(objectKey string) error {
 	if objectKey == "" {
 		return fmt.Errorf("object key cannot be empty")
@@ -175,13 +175,13 @@ func SafeObjectKey(objectKey string) error {
 	return nil
 }
 
-// IsValidURL 验证 URL 是否安全
+// IsValidURL kiểm tra URL có an toàn không
 func IsValidURL(url string) bool {
 	if url == "" {
 		return false
 	}
 
-	// 检查长度
+	// Kiểm tra độ dài
 	if len(url) > 2048 {
 		return false
 	}
@@ -203,7 +203,7 @@ func IsValidURL(url string) bool {
 		return false
 	}
 
-	// 检查是否包含恶意内容
+	// Kiểm tra có nội dung độc hại không
 	for _, pattern := range xssPatterns {
 		if pattern.MatchString(url) {
 			return false
@@ -411,7 +411,7 @@ func isSSRFSafeURL(rawURL string) (bool, string) {
 	return true, ""
 }
 
-// IsValidImageURL 验证图片 URL 是否安全
+// IsValidImageURL kiểm tra URL ảnh có an toàn không
 func IsValidImageURL(url string) bool {
 	if !IsValidURL(url) {
 		return false
@@ -420,7 +420,7 @@ func IsValidImageURL(url string) bool {
 		return true
 	}
 
-	// 检查是否为图片文件
+	// Kiểm tra có phải tệp ảnh không
 	imageExtensions := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".ico"}
 	lowerURL := strings.ToLower(url)
 
@@ -433,13 +433,13 @@ func IsValidImageURL(url string) bool {
 	return false
 }
 
-// CleanMarkdown 清理 Markdown 内容
+// CleanMarkdown làm sạch nội dung Markdown
 func CleanMarkdown(input string) string {
 	if input == "" {
 		return ""
 	}
 
-	// 移除潜在的恶意脚本
+	// Loại bỏ script độc hại tiềm ẩn
 	cleaned := input
 	for _, pattern := range xssPatterns {
 		cleaned = pattern.ReplaceAllString(cleaned, "")
@@ -448,40 +448,40 @@ func CleanMarkdown(input string) string {
 	return cleaned
 }
 
-// SanitizeForDisplay 为显示清理内容
+// SanitizeForDisplay làm sạch nội dung để hiển thị
 func SanitizeForDisplay(input string) string {
 	if input == "" {
 		return ""
 	}
 
-	// 首先清理 Markdown
+	// Làm sạch Markdown trước
 	cleaned := CleanMarkdown(input)
 
-	// 然后进行 HTML 转义
+	// Rồi escape HTML
 	escaped := html.EscapeString(cleaned)
 
 	return escaped
 }
 
-// SanitizeForLog 清理日志输入,防止日志注入攻击
-// 日志注入攻击是指攻击者通过在输入中插入换行符和其他控制字符,
-// 伪造日志条目,可能导致日志分析工具误判或隐藏恶意活动
+// SanitizeForLog làm sạch đầu vào ghi log, chống log injection
+// Log injection là khi kẻ tấn công chèn ký tự xuống dòng và ký tự điều khiển vào đầu vào
+// để giả mạo dòng log, khiến công cụ phân tích log nhận định sai hoặc che giấu hành vi xấu
 func SanitizeForLog(input string) string {
 	if input == "" {
 		return ""
 	}
 
-	// 替换换行符(LF, CR, CRLF)为空格,防止日志注入
+	// Thay ký tự xuống dòng (LF, CR, CRLF) bằng khoảng trắng để chống log injection
 	sanitized := strings.ReplaceAll(input, "\n", " ")
 	sanitized = strings.ReplaceAll(sanitized, "\r", " ")
 
-	// 替换制表符为空格
+	// Thay tab bằng khoảng trắng
 	sanitized = strings.ReplaceAll(sanitized, "\t", " ")
 
-	// 移除其他控制字符(ASCII 0-31,除了空格已处理的)
+	// Bỏ các ký tự điều khiển khác (ASCII 0-31, trừ những ký tự đã xử lý)
 	var builder strings.Builder
 	for _, r := range sanitized {
-		// 保留可打印字符和常用Unicode字符
+		// Giữ ký tự in được và ký tự Unicode thông dụng
 		if r >= 32 || r == ' ' {
 			builder.WriteRune(r)
 		}
@@ -492,7 +492,7 @@ func SanitizeForLog(input string) string {
 	return sanitized
 }
 
-// SanitizeForLogArray 清理日志输入数组,防止日志注入攻击
+// SanitizeForLogArray làm sạch mảng đầu vào ghi log, chống log injection
 func SanitizeForLogArray(input []string) []string {
 	if len(input) == 0 {
 		return []string{}
@@ -1249,7 +1249,7 @@ func ValidateURLForSSRF(rawURL string) error {
 	return nil
 }
 
-// IsSystemProxy 判断是否为系统代理
+// IsSystemProxy cho biết có phải proxy hệ thống không
 func IsSystemProxy(host string) bool {
 	proxyCfg := httpproxy.FromEnvironment()
 	for _, proxyUrl := range []string{

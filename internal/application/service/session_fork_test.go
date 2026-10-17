@@ -360,7 +360,7 @@ func newForkFixture(t *testing.T, port *fakeForkSandboxPort, messages []*types.M
 ) {
 	t.Helper()
 	sessions := newFakeSessionStore(&types.Session{
-		ID: "src", TenantID: 1, UserID: "u1", Title: "原会话", SandboxConfigID: "cfg-1",
+		ID: "src", TenantID: 1, UserID: "u1", Title: "Cuộc trò chuyện gốc", SandboxConfigID: "cfg-1",
 	})
 	msgs := newFakeMessageStore(messages)
 	sessions.origIDsFrom = msgs
@@ -388,15 +388,15 @@ func TestForkHappyPathTakesSnapshotAndCopiesHistory(t *testing.T) {
 	require.NotNil(t, created)
 	require.Equal(t, "src", created.ParentSessionID)
 	require.Equal(t, "u-msg-2", created.ForkedFromMessageID)
-	require.Equal(t, "cfg-1", created.SandboxConfigID, "必须继承 sandbox_config_id，否则可能落到别的 backend")
-	require.Equal(t, "原会话（分支）", created.Title)
+	require.Equal(t, "cfg-1", created.SandboxConfigID, "sandbox_config_id must be inherited or the fork may land on another backend")
+	require.Equal(t, "Cuộc trò chuyện gốc (nhánh)", created.Title)
 	require.NotNil(t, created.ForkBootstrap)
 	require.Equal(t, "snap-1", created.ForkBootstrap.SnapshotID)
 	require.Equal(t, "sha1", created.ForkBootstrap.CommitSHA)
 	require.Equal(t, "sbx-1", created.ForkBootstrap.SourceSandboxID)
 	require.False(t, created.ForkBootstrap.Consumed())
 
-	// 只复制分叉点之前的消息，且都换了新 ID
+	// Chỉ sao chép các tin nhắn trước điểm rẽ nhánh, và tất cả đều có ID mới
 	require.Equal(t, []string{"u-msg-1", "a-msg-1"}, sessions.copiedFromIDs())
 	for _, m := range sessions.copiedMessages {
 		require.NotEmpty(t, m.ID)
@@ -469,13 +469,13 @@ func TestForkUsesProvidedTitle(t *testing.T) {
 	port := &fakeForkSandboxPort{boundID: "sbx-1", bound: true, snapshotID: "snap-1"}
 	svc, sessions, _ := newForkFixture(t, port, append(turn, forkPoint))
 
-	_, err := svc.Fork(context.Background(), 1, "u1", "src", "u-msg-2", "我的分支")
+	_, err := svc.Fork(context.Background(), 1, "u1", "src", "u-msg-2", "Nhánh của tôi")
 
 	require.NoError(t, err)
-	require.Equal(t, "我的分支", sessions.created.Title)
+	require.Equal(t, "Nhánh của tôi", sessions.created.Title)
 }
 
-// 分叉点是第一条 user 消息：前面本就无产物，全新沙箱才是正确结果，不算降级。
+// Điểm rẽ nhánh là tin nhắn user đầu tiên: trước đó vốn không có sản phẩm, sandbox mới hoàn toàn là kết quả đúng, không tính là hạ cấp.
 func TestForkAtFirstUserMessageIsNotDegraded(t *testing.T) {
 	first := &types.Message{ID: "u-msg-1", SessionID: "src", Role: "user", CreatedAt: forkBase}
 	port := &fakeForkSandboxPort{boundID: "sbx-1", bound: true, snapshotID: "snap-1"}
@@ -486,7 +486,7 @@ func TestForkAtFirstUserMessageIsNotDegraded(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got.Degraded)
 	require.Empty(t, got.Reason)
-	require.Zero(t, port.snapshotCalls, "没有前置产物就不该浪费一个快照")
+	require.Zero(t, port.snapshotCalls, "không có sản phẩm trước đó thì không nên tốn một snapshot")
 	require.Nil(t, sessions.created.ForkBootstrap)
 	require.Empty(t, sessions.copiedFromIDs())
 }
@@ -507,10 +507,10 @@ func TestForkDegradesWhenPrecedingTurnHasNoCheckpoint(t *testing.T) {
 	require.Equal(t, ForkDegradeNoCheckpoint, got.Reason)
 	require.Zero(t, port.snapshotCalls)
 	require.Nil(t, sessions.created.ForkBootstrap)
-	require.Equal(t, []string{"u-msg-1", "a-msg-1"}, sessions.copiedFromIDs(), "降级也要复制消息")
+	require.Equal(t, []string{"u-msg-1", "a-msg-1"}, sessions.copiedFromIDs(), "hạ cấp vẫn phải sao chép tin nhắn")
 }
 
-// 会话中途换过沙箱：旧 sha 在新沙箱的仓库里根本不存在。
+// Cuộc trò chuyện đã đổi sandbox giữa chừng: sha cũ hoàn toàn không tồn tại trong kho của sandbox mới.
 func TestForkDegradesWhenSandboxWasReplaced(t *testing.T) {
 	turn := checkpointedTurn("u-msg-1", "a-msg-1", "sbx-OLD", "sha1", 0)
 	forkPoint := &types.Message{
@@ -604,7 +604,7 @@ func TestForkDegradesWhenSnapshotFails(t *testing.T) {
 
 	got, err := svc.Fork(context.Background(), 1, "u1", "src", "u-msg-2", "")
 
-	require.NoError(t, err, "快照失败是降级，不是报错")
+	require.NoError(t, err, "snapshot thất bại là hạ cấp, không phải lỗi")
 	require.True(t, got.Degraded)
 	require.Equal(t, ForkDegradeSnapshotUnsupported, got.Reason)
 	require.Nil(t, sessions.created.ForkBootstrap)
@@ -645,7 +645,7 @@ func TestForkFinishesSnapshotAfterCallerCancels(t *testing.T) {
 	require.Equal(t, "snap-1", sessions.created.ForkBootstrap.SnapshotID)
 }
 
-// 源沙箱正在跑 agent 时打快照会暂停它、打断执行中的工具。
+// Chụp snapshot khi sandbox nguồn đang chạy trợ lý sẽ tạm dừng nó và ngắt công cụ đang thực thi.
 func TestForkRefusesWhileSourceTurnIsActive(t *testing.T) {
 	turn := checkpointedTurn("u-msg-1", "a-msg-1", "sbx-1", "sha1", 0)
 	forkPoint := &types.Message{
@@ -658,7 +658,7 @@ func TestForkRefusesWhileSourceTurnIsActive(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrForkSourceBusy)
 	require.Zero(t, port.snapshotCalls)
-	require.Nil(t, sessions.created, "拒绝时不得留下半个会话")
+	require.Nil(t, sessions.created, "khi từ chối không được để lại nửa cuộc trò chuyện")
 }
 
 func TestForkAtAssistantCopiesTurnAndUsesItsCheckpoint(t *testing.T) {

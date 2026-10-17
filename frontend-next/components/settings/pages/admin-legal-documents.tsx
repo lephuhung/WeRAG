@@ -40,6 +40,7 @@ const FILTERS: { key: LegalReviewFilter; labelKey: LocaleKey }[] = [
   { key: "pending", labelKey: "lrev.filter.pending" },
   { key: "approved", labelKey: "lrev.filter.approved" },
   { key: "alerts", labelKey: "lrev.filter.alerts" },
+  { key: "source_changed", labelKey: "lrev.filter.sourceChanged" },
   { key: "rejected", labelKey: "lrev.filter.rejected" },
 ];
 

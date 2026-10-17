@@ -53,7 +53,7 @@ func TestTruncateString(t *testing.T) {
 		{"", 10, ""},
 		{"abc", 3, "abc"},
 		{"abcd", 3, "abc..."},
-		{"中文测试", 2, "中文..."},
+		{"Tài liệu", 2, "Tà..."},
 	}
 
 	for _, tt := range tests {

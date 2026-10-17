@@ -60,7 +60,7 @@ func TestValidateZhipuParameters(t *testing.T) {
 }
 
 func TestZhipuProviderSearch(t *testing.T) {
-	query := strings.Repeat("智", maxZhipuQueryRunes+1)
+	query := strings.Repeat("ê", maxZhipuQueryRunes+1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)

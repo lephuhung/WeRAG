@@ -130,7 +130,7 @@ func modelIDOrEmpty(m *types.Model) string {
 	return m.ID
 }
 
-// decryptAppSecret 解密 AppSecret（如果为空或 cryptoSvc 为空则原样返回）
+// decryptAppSecret giải mã AppSecret (trả về nguyên trạng nếu rỗng hoặc cryptoSvc nil)
 func (s *modelService) decryptAppSecret(encrypted string) string {
 	if encrypted == "" {
 		return encrypted
@@ -143,8 +143,8 @@ func (s *modelService) decryptAppSecret(encrypted string) string {
 	return encrypted
 }
 
-// resolveWeKnoraCloudCredentials 为 WeKnoraCloud 厂商模型补全 AppID/AppSecret。
-// 当模型自身Parameters 中未存储凭证时，自动从Tenant configuration中获取（SaveCredentials 保存的凭证）。
+// resolveWeKnoraCloudCredentials bổ sung AppID/AppSecret cho mô hình của nhà cung cấp WeKnoraCloud.
+// Khi Parameters của mô hình không lưu thông tin xác thực thì tự lấy từ cấu hình đơn vị (do SaveCredentials lưu).
 func (s *modelService) resolveWeKnoraCloudCredentials(ctx context.Context, params *types.ModelParameters) (appID, appSecret string) {
 	appID = params.AppID
 	appSecret = s.decryptAppSecret(params.AppSecret)

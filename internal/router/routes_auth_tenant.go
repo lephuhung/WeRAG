@@ -10,7 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// RegisterTenantRoutes 注册Tenant workspace相关的路由
+// RegisterTenantRoutes đăng ký các route đơn vị
 //
 // Tenant-internal RBAC for /tenants/:id:
 //   - GET   /:id          Viewer+ (read tenant settings)
@@ -58,17 +58,17 @@ func RegisterTenantRoutes(
 		apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
 		g.CrossTenant(), handler.SearchTenants)
 
-	// Tenant workspace路由组
+	// Nhóm route đơn vị
 	tenantRoutes := r.Group("/tenants")
 	{
-		// Create Tenant workspace对所有已登录用户开放：用户可以为自己再开一个工作区，
-		// handler 内部会调 EnsureAdmin 把调用者写成新Tenant workspace的 Admin。
-		// 跨Tenant workspace超管走同一个端点，但能携带 storage_quota / status 等
-		// 全字段（见 handler.CreateTenant 内部分支）。
-		// 安全说明：这里不挂 g.CrossTenant()，因为 self-service Create
-		// 不需要跨Tenant workspace特权；handler 也不读写 X-Tenant-ID 指向的现有
-		// Tenant workspace，所以越过 PathTenantMatch 守卫不会扩大攻击面。
-		// Create Tenant workspace不对 API key 开放（注册在原始 group，默认拒绝）。
+		// Tạo đơn vị mở cho mọi người dùng đã đăng nhập: người dùng có thể tự mở thêm một không gian làm việc,
+		// handler gọi EnsureAdmin để ghi người gọi làm Admin của đơn vị mới.
+		// Siêu quản trị liên đơn vị dùng cùng endpoint nhưng được gửi đầy đủ các trường như storage_quota / status
+		// (xem nhánh bên trong handler.CreateTenant).
+		// Lưu ý bảo mật: không gắn g.CrossTenant() ở đây vì tạo self-service
+		// không cần đặc quyền liên đơn vị; handler cũng không đọc/ghi đơn vị hiện có mà
+		// X-Tenant-ID trỏ tới, nên bỏ qua guard PathTenantMatch không mở rộng bề mặt tấn công.
+		// Tạo đơn vị không mở cho API key (đăng ký trên group gốc, mặc định từ chối).
 		g.apiKeyRoute(tenantRoutes, http.MethodPost, "",
 			apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), handler.CreateTenant)
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "", apiKeyManageTenantSettings(apiKeyFullAccess()), handler.ListTenants)
@@ -179,7 +179,7 @@ func RegisterMyInvitationRoutes(r *gin.RouterGroup, invitationHandler *handler.T
 		me.GET("/invitations/pending-count", invitationHandler.CountMyPendingInvitations)
 		me.POST("/invitations/:inv_id/accept", invitationHandler.AcceptMyInvitation)
 		me.POST("/invitations/:inv_id/decline", invitationHandler.DeclineMyInvitation)
-		// 已登录用户用共享链接 token 加入Tenant workspace（对应 register-by-invite，但不建新账号）。
+		// Người dùng đã đăng nhập dùng token liên kết chia sẻ để gia nhập đơn vị (tương ứng register-by-invite nhưng không tạo tài khoản mới).
 		me.POST("/invitations/accept-by-token", invitationHandler.AcceptMyInvitationByToken)
 	}
 }
@@ -231,9 +231,16 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
 	r.GET("/auth/oidc/url", handler.GetOIDCAuthorizationURL)
 	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
-	// /auth/oidc/start：直连 302 跳转到 OIDC 提供方，供前端无法走 JS 拉取 URL 的场景直接发起登录
+	// /auth/oidc/start: chuyển hướng 302 thẳng tới nhà cung cấp OIDC, cho trường hợp frontend không thể lấy URL bằng JS
 	r.GET("/auth/oidc/start", handler.OIDCStart)
 	r.POST("/auth/refresh", handler.RefreshToken)
+	// Browser sign-in for the Word add-in (device-code shape): start and
+	// poll are public (poll is guarded by the secret device_code), lookup
+	// and approve need the web session of the user who approves.
+	r.POST("/auth/device/start", publicAuthRL, handler.DeviceLoginStart)
+	r.POST("/auth/device/poll", handler.DeviceLoginPoll)
+	r.GET("/auth/device/lookup", handler.DeviceLoginLookup)
+	r.POST("/auth/device/approve", handler.DeviceLoginApprove)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
 	// auth/me returns only the caller's own identity/profile, so it is safe

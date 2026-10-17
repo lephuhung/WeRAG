@@ -120,7 +120,7 @@ func respondSandboxesStillLive(c *gin.Context, inv service.SandboxInventory) {
 		"success": false,
 		"error": gin.H{
 			"code":    "sandboxes_still_live",
-			"message": "该配置仍有运行中或已暂停的沙箱，请先结束或删除相关会话，或新建一份配置",
+			"message": "cấu hình này vẫn còn sandbox đang chạy hoặc tạm dừng; hãy kết thúc hoặc xoá các cuộc trò chuyện liên quan, hoặc tạo cấu hình mới",
 			"data":    inv,
 		},
 	})
@@ -131,7 +131,7 @@ func respondSandboxInventoryUnverifiable(c *gin.Context) {
 		"success": false,
 		"error": gin.H{
 			"code":    "sandbox_inventory_unverifiable",
-			"message": "无法连接该后端核实是否仍有沙箱",
+			"message": "không kết nối được backend để kiểm tra còn sandbox hay không",
 		},
 	})
 }
@@ -141,7 +141,7 @@ func respondSkillSnapshotReleaseFailed(c *gin.Context, remaining []string) {
 		"success": false,
 		"error": gin.H{
 			"code":    "skill_snapshot_release_failed",
-			"message": "无法销毁该配置下的技能快照，已中止删除以免快照继续计费",
+			"message": "không huỷ được snapshot kỹ năng của cấu hình này; đã dừng xoá để snapshot không tiếp tục bị tính phí",
 			"data":    gin.H{"snapshot_ids": remaining},
 		},
 	})
@@ -152,7 +152,7 @@ func respondSkillSnapshotBlocksTemplate(c *gin.Context) {
 		"success": false,
 		"error": gin.H{
 			"code":    "skill_snapshot_blocks_template",
-			"message": "该配置已安装 Skill，不能更换连接、DNS 或重建运行模板。请新建一份沙箱后再装 Skill。",
+			"message": "cấu hình này đã cài Skill, không thể đổi kết nối, DNS hay build lại mẫu chạy; hãy tạo sandbox mới rồi cài Skill",
 		},
 	})
 }
@@ -162,7 +162,7 @@ func respondSandboxConfigCordoned(c *gin.Context) {
 		"success": false,
 		"error": gin.H{
 			"code":    "sandbox_config_cordoned",
-			"message": "该配置正在被其他人修改，请稍后重试",
+			"message": "cấu hình này đang được người khác sửa, vui lòng thử lại sau",
 		},
 	})
 }
@@ -217,7 +217,7 @@ func respondSandboxConfigServiceError(c *gin.Context, err error) {
 // List godoc
 // @Summary      List sandbox configs
 // @Description  List workspace sandbox backend configs with credentials masked.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "Sandbox configs and defaults"
 // @Failure      401  {object}  map[string]interface{}   "Unauthorized"
@@ -270,7 +270,7 @@ func (h *SandboxConfigHandler) SetWorkspacePolicy(c *gin.Context) {
 // Create godoc
 // @Summary      Create sandbox config
 // @Description  Create a named workspace sandbox backend config. Credentials are masked in the response.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Accept       json
 // @Produce      json
 // @Param        request  body      sandboxConfigRequest    true  "Sandbox backend config"
@@ -302,7 +302,7 @@ func (h *SandboxConfigHandler) Create(c *gin.Context) {
 // Get godoc
 // @Summary      Get sandbox config
 // @Description  Retrieve a workspace sandbox backend config with credentials masked.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id   path      string  true  "Sandbox config ID"
 // @Success      200  {object}  map[string]interface{}   "Sandbox config"
@@ -327,7 +327,7 @@ func (h *SandboxConfigHandler) Get(c *gin.Context) {
 // Update godoc
 // @Summary      Update sandbox config
 // @Description  Update a sandbox backend config. Identity-field changes are refused while the config owns live or paused sandboxes.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                true  "Sandbox config ID"
@@ -370,7 +370,7 @@ func (h *SandboxConfigHandler) Update(c *gin.Context) {
 // Delete godoc
 // @Summary      Delete sandbox config
 // @Description  Soft-delete a sandbox backend config. force=true only overrides unverifiable provider inventory, never confirmed live sandboxes.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id     path   string  true   "Sandbox config ID"
 // @Param        force  query  bool    false  "Force delete when inventory is unverifiable"
@@ -395,7 +395,7 @@ func (h *SandboxConfigHandler) Delete(c *gin.Context) {
 // Inventory godoc
 // @Summary      Inspect sandbox config inventory
 // @Description  Return live/paused sandbox inventory and affected agent names for one config.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id   path      string  true  "Sandbox config ID"
 // @Success      200  {object}  map[string]interface{}  "Sandbox inventory"

@@ -285,7 +285,7 @@ func TestMergeSandboxConfigForUpdateIgnoresIncomingSkillImageOnCreate(t *testing
 
 // The editor never sends skill_image: that pointer is written only by an
 // install or a removal. A merge that copied the incoming payload as-is would
-// therefore wipe a live snapshot on every "保存运行配置", leaving the skill
+// therefore wipe a live snapshot on every "Lưu cấu hình chạy", leaving the skill
 // rows in place while every session fell back to the base template. VolumeMount
 // is covered here too because the editor omits it for the same reason.
 func TestMergeSandboxConfigForUpdateKeepsSkillImageWhenEditorOmitsIt(t *testing.T) {

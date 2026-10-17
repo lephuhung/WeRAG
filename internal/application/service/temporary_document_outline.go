@@ -87,7 +87,9 @@ var (
 	outlinePartRe    = regexp.MustCompile(`(?i)^phần\s+(thứ\s+\S+|[ivxlc]+|\d+)\b`)
 	outlineChapterRe = regexp.MustCompile(`(?i)^chương\s+([ivxlc]+|\d+)\b`)
 	outlineSectionRe = regexp.MustCompile(`(?i)^mục\s+(\d+|[ivxlc]+)\b`)
-	outlineArticleRe = regexp.MustCompile(`^Điều\s+\d+[a-zđ]?\s*[.:]`)
+	// "Điều 1." or "Điều 1:" with its title, or "Điều 1" alone on its line
+	// (PDF text puts the title on the next line)
+	outlineArticleRe = regexp.MustCompile(`^Điều\s+\d+[a-zđ]?\s*([.:]|$)`)
 	outlineRomanRe   = regexp.MustCompile(`^[IVXLC]{1,6}\s*[.)\-–]\s*\S`)
 	outlineAlphaRe   = regexp.MustCompile(`^[A-ZĐ]\s*[.)]\s+\S`)
 	outlineDottedRe  = regexp.MustCompile(`^(\d{1,2}(\.\d{1,2})+)\.?\s+\p{L}`)
@@ -126,7 +128,8 @@ func headingKind(raw string) (kind, title string) {
 		return fmt.Sprintf("md%d", len(m[1])), title
 	}
 	bold := strings.HasPrefix(line, "**") && strings.HasSuffix(line, "**") && len(line) > 4
-	title = strings.TrimSpace(markdownMarksRe.ReplaceAllString(line, ""))
+	// edge-only trim of leftover italic marks: "***1.1. Dịch vụ công***"
+	title = strings.Trim(markdownMarksRe.ReplaceAllString(line, ""), "*_ \t")
 	n := utf8.RuneCountInString(title)
 	if n < 2 || outlineNoiseRe.MatchString(title) {
 		return "", ""
@@ -149,8 +152,12 @@ func headingKind(raw string) (kind, title string) {
 		return "muc", title
 	}
 	// numbered lines are headings only when short: "1. Giao Sở Tài chính
-	// chủ trì, phối hợp …" is a paragraph of a list
-	if n <= 110 {
+	// chủ trì, phối hợp …" is a paragraph of a list. A whole-line bold one
+	// that does not end like a sentence is a heading up to headingMax:
+	// "**4. Việc triển khai thực hiện các văn bản chỉ đạo về công tác bảo
+	// đảm an toàn thông tin cho …**"
+	sentence := strings.HasSuffix(title, ".") || strings.HasSuffix(title, ";") || strings.HasSuffix(title, ":")
+	if n <= 110 || (bold && !sentence) {
 		switch {
 		case outlineRomanRe.MatchString(title):
 			return "roman", title
@@ -163,7 +170,7 @@ func headingKind(raw string) (kind, title string) {
 			return "num", title
 		}
 	}
-	if n <= 120 && !strings.HasSuffix(title, ":") {
+	if n <= 120 && !(sentence && n > 110) && !strings.HasSuffix(title, ":") {
 		upper := n >= 6 && strings.ToUpper(title) == title && strings.ToLower(title) != title
 		switch {
 		case upper:
@@ -315,8 +322,8 @@ func dottedRank(kind string) int {
 // sections to the chunks. Levels are added from the top while the outline
 // stays within attachmentOutlineMaxSections. Text before the first heading
 // is "Mở đầu". Nil when the document has no usable structure: fewer than
-// attachmentOutlineMinSections sections, or one section holding most of
-// the text.
+// attachmentOutlineMinSections sections, one section holding most of the
+// text, or a top level longer than attachmentOutlineMaxSections.
 func buildAttachmentSections(content string, chunks []types.TemporaryDocumentChunk) []attachmentSection {
 	headings := detectOutlineHeadings(content)
 	// the title block ("BÁO CÁO" + trích yếu) is upper-case or bold lines
@@ -343,6 +350,11 @@ func buildAttachmentSections(content string, chunks []types.TemporaryDocumentChu
 	for lv := 0; lv <= len(levels)+1; lv++ {
 		if countAt[lv] == 0 {
 			continue
+		}
+		if total == 0 && countAt[lv] > attachmentOutlineMaxSections {
+			// the top level alone is a long flat list (OCR of a
+			// worksheet, numbered lines repeating): not an outline
+			return nil
 		}
 		if total > 0 && total+countAt[lv] > attachmentOutlineMaxSections {
 			break
@@ -455,9 +467,10 @@ type attachmentPick struct {
 
 const attachmentPickerPrompt = `Bạn chọn các phần của một tài liệu đính kèm cần đọc để trả lời câu hỏi.
 Bạn nhận mục lục của tài liệu: mỗi phần có mã [S…], tiêu đề và độ dài. Mã phần không phải số Điều.
-Chọn ít phần nhất đủ để trả lời, tối đa %d phần, phần quan trọng nhất trước.
-Nếu câu hỏi hỏi về toàn bộ tài liệu (tóm tắt, nội dung chính, bố cục), đặt "whole": true.
-Nếu không phần nào liên quan, trả về danh sách rỗng.
+Câu hỏi về một chi tiết (con số, tên, ngày, đơn vị, việc cụ thể): chọn 1–4 phần có khả năng chứa chi tiết đó nhất, phần quan trọng nhất trước, tối đa %d phần. Không đặt "whole" cho loại câu hỏi này.
+Người ký, chức vụ người ký, nơi nhận nằm ở phần cuối cùng của tài liệu; số hiệu, ngày, cơ quan ban hành nằm ở phần đầu.
+Chỉ đặt "whole": true khi câu hỏi hỏi về toàn bộ tài liệu (tóm tắt, nội dung chính, bố cục, nhận xét chung).
+Luôn chọn ít nhất một phần nếu câu hỏi nói về tài liệu này; chỉ trả danh sách rỗng khi câu hỏi không liên quan đến tài liệu.
 Chỉ trả lời một đối tượng JSON, không giải thích: {"sections": ["S3", "S12"], "whole": false}`
 
 // pickAttachmentSections asks modelID which sections of the outline the

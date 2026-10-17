@@ -11,13 +11,13 @@ import (
 
 func TestParseSkillFileRepairsKeysNestedUnderName(t *testing.T) {
 	content := `---
-name: 命理大师
+name: trợ-lý-văn-thư
   version: 1.2.6
   description: |
-    全体系命理大师 — 八字四柱。
-    仅作文化参考。
+    Trợ lý văn thư toàn diện — soạn thảo công văn theo Nghị định 30.
+    Chỉ mang tính tham khảo.
 metadata:
-  displayName: "命理大师"
+  displayName: "Trợ lý văn thư"
   version: 1.2.0
 ---
 # Body
@@ -25,8 +25,8 @@ metadata:
 	skill, err := ParseSkillFile(content)
 	require.NoError(t, err)
 	require.True(t, skill.FrontmatterRepaired)
-	require.Equal(t, "命理大师", skill.Name)
-	require.Contains(t, skill.Description, "全体系命理大师")
+	require.Equal(t, "trợ-lý-văn-thư", skill.Name)
+	require.Contains(t, skill.Description, "Trợ lý văn thư toàn diện")
 	require.Contains(t, skill.Instructions, "# Body")
 }
 
@@ -112,14 +112,14 @@ Body
 
 func TestParseSkillFileKeepsUnicodeName(t *testing.T) {
 	content := `---
-name: 律师助手
-description: 法律文书助手
+name: trợ-lý-pháp-lý
+description: Trợ lý soạn thảo văn bản pháp lý
 ---
 Body
 `
 	skill, err := ParseSkillFile(content)
 	require.NoError(t, err)
-	require.Equal(t, "律师助手", skill.Name)
+	require.Equal(t, "trợ-lý-pháp-lý", skill.Name)
 }
 
 func TestParseSkillFileRejectsSkillHubFrontmatterWithBrokenExtraYAML(t *testing.T) {

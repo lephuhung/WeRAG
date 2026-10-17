@@ -60,7 +60,7 @@ def _override_bool(overrides: Optional[Mapping[str, Any]], key: str, default: bo
 
 def _java_available() -> Tuple[bool, str]:
     if not shutil.which("java"):
-        return False, "需要 Java 11+（JRE），请安装并在 PATH 中配置 java"
+        return False, "Cần Java 11+ (JRE); hãy cài đặt và đưa java vào PATH"
     return True, ""
 
 
@@ -68,7 +68,7 @@ def _package_available() -> Tuple[bool, str]:
     try:
         import opendataloader_pdf  # noqa: F401
     except ImportError as e:
-        return False, f"opendataloader-pdf 未安装: {e}"
+        return False, f"Chưa cài opendataloader-pdf: {e}"
     return True, ""
 
 
@@ -85,7 +85,7 @@ def _ping_hybrid(
     health_url = f"{base}/health"
     safe, reason = is_ssrf_safe_url(health_url)
     if not safe:
-        return False, f"OpenDataLoader hybrid URL 被 SSRF 防护拦截: {reason}"
+        return False, f"URL OpenDataLoader hybrid bị chặn bởi bảo vệ SSRF: {reason}"
 
     opener = urllib.request.build_opener(_NoRedirectHandler())
     last_err = ""
@@ -95,16 +95,16 @@ def _ping_hybrid(
             with opener.open(req, timeout=timeout_sec) as resp:
                 if 200 <= resp.status < 300:
                     return True, ""
-                last_err = f"hybrid 健康检查 HTTP {resp.status}: {health_url}"
+                last_err = f"Health check hybrid trả về HTTP {resp.status}: {health_url}"
         except urllib.error.URLError as e:
-            last_err = f"无法连接 OpenDataLoader hybrid 服务 ({health_url}): {e}"
+            last_err = f"Không kết nối được dịch vụ OpenDataLoader hybrid ({health_url}): {e}"
         except Exception as e:
-            last_err = f"hybrid 健康检查失败: {e}"
+            last_err = f"Health check hybrid thất bại: {e}"
         if attempt + 1 < retries:
             time.sleep(retry_delay_sec)
     hint = (
-        "；若刚执行 make dev-start --odl-hybrid，请等待镜像构建/服务就绪"
-        "（docker logs WeKnora-odl-hybrid）"
+        "; nếu vừa chạy make dev-start --odl-hybrid, hãy chờ image build xong/dịch vụ sẵn sàng"
+        " (docker logs WeKnora-odl-hybrid)"
     )
     return False, last_err + hint
 
@@ -153,7 +153,7 @@ def _find_markdown_file(output_dir: str, pdf_stem: str) -> str:
                 path = os.path.join(root, name)
                 candidates.append(path)
     if not candidates:
-        raise FileNotFoundError(f"OpenDataLoader 未在 {output_dir} 生成 markdown 文件")
+        raise FileNotFoundError(f"OpenDataLoader did not produce a markdown file in {output_dir}")
     for path in candidates:
         base = os.path.splitext(os.path.basename(path))[0]
         if base == pdf_stem or base.startswith(pdf_stem):
@@ -294,7 +294,7 @@ def _run_convert(
             safe, reason = is_ssrf_safe_url(hybrid_url)
             if not safe:
                 raise RuntimeError(
-                    f"OpenDataLoader hybrid URL 被 SSRF 防护拦截: {reason}"
+                    f"URL OpenDataLoader hybrid bị chặn bởi bảo vệ SSRF: {reason}"
                 )
             kwargs["hybrid_url"] = hybrid_url
         hybrid_mode = _override_str(overrides, "odl_hybrid_mode", CONFIG.odl_hybrid_mode)

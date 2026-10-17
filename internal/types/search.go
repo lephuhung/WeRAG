@@ -174,11 +174,11 @@ type SearchResult struct {
 	// Metadata
 	Metadata map[string]string `                              json:"metadata"`
 
-	// Chunk 类型
+	// Loại chunk
 	ChunkType string `json:"chunk_type"`
-	// 父 Chunk ID
+	// ID chunk cha
 	ParentChunkID string `json:"parent_chunk_id"`
-	// 图片信息 (JSON 格式)
+	// Thông tin hình ảnh (định dạng JSON)
 	ImageInfo string `json:"image_info"`
 
 	// Knowledge file name

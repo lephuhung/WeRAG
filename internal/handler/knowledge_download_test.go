@@ -41,13 +41,13 @@ func (s *downloadKnowledgeStub) GetKnowledgeFile(ctx context.Context, id string)
 		want = 7
 	}
 	if types.MustTenantIDFromContext(ctx) != want {
-		return nil, "", fmt.Errorf("错误的租户上下文")
+		return nil, "", fmt.Errorf("ngữ cảnh đơn vị không đúng")
 	}
 	s.opened = append(s.opened, id)
 	if s.failID == id {
-		return nil, "", fmt.Errorf("模拟存储读取失败")
+		return nil, "", fmt.Errorf("giả lập lỗi đọc kho lưu trữ")
 	}
-	return io.NopCloser(strings.NewReader("原文-" + id)), s.names[id], nil
+	return io.NopCloser(strings.NewReader("bản gốc-" + id)), s.names[id], nil
 }
 
 type downloadKBStub struct {
@@ -123,7 +123,7 @@ func TestBatchDownloadKnowledgeProducesCompleteZIP(t *testing.T) {
 			{ID: "b", TenantID: 7, KnowledgeBaseID: "kb-1", Type: types.KnowledgeTypeManual},
 			{ID: "c", TenantID: 7, KnowledgeBaseID: "kb-1", FilePath: "stored-c"},
 		},
-		names: map[string]string{"a": "设计说明.md", "b": "设计说明.md", "c": `..\设计说明 (2).md`},
+		names: map[string]string{"a": "thuyết minh thiết kế.md", "b": "thuyết minh thiết kế.md", "c": `..\thuyết minh thiết kế (2).md`},
 	}
 	w := runBatchDownload(t, svc, []string{"a", "b", "a", "c"},
 		&types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant}, nil, nil)
@@ -134,7 +134,7 @@ func TestBatchDownloadKnowledgeProducesCompleteZIP(t *testing.T) {
 	reader, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
 	require.NoError(t, err)
 	require.Len(t, reader.File, 3)
-	for index, name := range []string{"设计说明.md", "设计说明 (2).md", "设计说明 (2) (2).md"} {
+	for index, name := range []string{"thuyết minh thiết kế.md", "thuyết minh thiết kế (2).md", "thuyết minh thiết kế (2) (2).md"} {
 		entry := reader.File[index]
 		require.Equal(t, name, entry.Name)
 		file, err := entry.Open()
@@ -142,12 +142,12 @@ func TestBatchDownloadKnowledgeProducesCompleteZIP(t *testing.T) {
 		content, err := io.ReadAll(file)
 		require.NoError(t, err)
 		require.NoError(t, file.Close())
-		require.Equal(t, "原文-"+[]string{"a", "b", "c"}[index], string(content))
+		require.Equal(t, "bản gốc-"+[]string{"a", "b", "c"}[index], string(content))
 	}
 	require.Equal(t, []string{"a", "b", "c"}, svc.opened)
 	entries, err := os.ReadDir(os.TempDir())
 	require.NoError(t, err)
-	require.Empty(t, entries, "请求完成后不应留下临时压缩包")
+	require.Empty(t, entries, "không được để lại tệp nén tạm sau khi yêu cầu hoàn tất")
 }
 
 func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.T) {
@@ -161,43 +161,43 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 		status int
 	}{
 		{
-			name: "空列表", status: 400,
+			name: "danh sách rỗng", status: 400,
 			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "空白ID", ids: []string{" "}, status: 400,
+			name: "ID trống", ids: []string{" "}, status: 400,
 			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "超出数量", ids: make([]string, maxBatchDownloadFiles+1), status: 400,
+			name: "vượt số lượng", ids: make([]string, maxBatchDownloadFiles+1), status: 400,
 			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "文档缺失", ids: []string{"missing"}, status: 404,
+			name: "thiếu tài liệu", ids: []string{"missing"}, status: 404,
 			kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "跨知识库", ids: []string{"a"}, status: 404,
+			name: "khác kho tri thức", ids: []string{"a"}, status: 404,
 			item: &types.Knowledge{ID: "a", TenantID: 7, KnowledgeBaseID: "other", FilePath: "secret"},
 			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "跨租户", ids: []string{"a"}, status: 404,
+			name: "khác đơn vị", ids: []string{"a"}, status: 404,
 			item: &types.Knowledge{ID: "a", TenantID: 8, KnowledgeBaseID: "kb-1", FilePath: "secret"},
 			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "仅无原文件", ids: []string{"a"}, status: 400,
+			name: "không có tệp gốc", ids: []string{"a"}, status: 400,
 			item: &types.Knowledge{ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", Type: "url"},
 			kb:   &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 		},
 		{
-			name: "共享只读", ids: []string{"a"}, status: 403,
+			name: "chia sẻ chỉ đọc", ids: []string{"a"}, status: 403,
 			kb:     &types.KnowledgeBase{ID: "kb-1", TenantID: 8, OwnerTenantID: 8, Visibility: types.KBVisibilityTenant},
 			grants: &downloadGrantStub{permission: types.KBPermissionViewer},
 		},
 		{
-			name: "密钥无此库权限", ids: []string{"a"}, status: 403,
+			name: "khóa không có quyền kho này", ids: []string{"a"}, status: 403,
 			kb:    &types.KnowledgeBase{ID: "kb-1", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant},
 			scope: &types.TenantAPIKeyScope{KnowledgeBaseIDs: types.StringArray{"other"}},
 		},
@@ -319,7 +319,7 @@ func TestKnowledgeDownloadArchiveStopsWhenCancelled(t *testing.T) {
 	var output bytes.Buffer
 	err := writeKnowledgeDownloadArchive(ctx, &output, []knowledgeDownloadEntry{{ID: "a"}},
 		func(context.Context, string) (io.ReadCloser, string, error) {
-			t.Fatal("取消后不应继续读取文件")
+			t.Fatal("không được tiếp tục đọc tệp sau khi hủy")
 			return nil, "", nil
 		}, 100)
 	require.ErrorIs(t, err, context.Canceled)
@@ -354,8 +354,8 @@ func requireAppHTTP(t *testing.T, err error, status int) {
 func TestKnowledgeDownloadNamesAreSafeForWindowsAndUTF8(t *testing.T) {
 	used := map[string]bool{}
 	for _, name := range []string{
-		"../报告.txt", `C:\secret\Report.TXT`, "report.txt", "CON.txt", "COM¹.txt", "a:b?.txt", "..",
-		strings.Repeat("中", 100) + ".pdf",
+		"../báo cáo.txt", `C:\secret\Report.TXT`, "report.txt", "CON.txt", "COM¹.txt", "a:b?.txt", "..",
+		strings.Repeat("ệ", 100) + ".pdf",
 	} {
 		got := uniqueKnowledgeDownloadName(name, used)
 		require.True(t, utf8.ValidString(got))

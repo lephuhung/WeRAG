@@ -127,6 +127,34 @@ func (w walker) childrenNamed(e *elem, local string) []*elem {
 	return out
 }
 
+// isFallback reports whether e is the mc:Fallback branch of an
+// mc:AlternateContent (the VML copy Word writes next to a DrawingML text
+// box); docformat skips it, so it is not enumerated here either.
+func isFallback(e *elem) bool {
+	return e != nil && e.local == "Fallback" && e.parent != nil && e.parent.local == "AlternateContent"
+}
+
+// textBoxParagraphs returns the paragraphs of every text box anchored in p
+// (nested boxes included), in document order, skipping mc:Fallback copies —
+// docformat.InspectDocx order.
+func (w walker) textBoxParagraphs(p *elem) []*elem {
+	var out []*elem
+	var rec func(*elem)
+	rec = func(x *elem) {
+		if isFallback(x) {
+			return
+		}
+		if w.is(x, "txbxContent") {
+			out = append(out, w.childrenNamed(x, "p")...)
+		}
+		for _, c := range x.children {
+			rec(c)
+		}
+	}
+	rec(p)
+	return out
+}
+
 func (w walker) descendants(e *elem, local string) []*elem {
 	var out []*elem
 	var rec func(*elem)
@@ -323,10 +351,8 @@ func (w walker) enumerate(root *elem) ([]*para, []*elem, error) {
 	}
 	addWithBoxes := func(p *elem, inTable bool) {
 		add(p, inTable)
-		for _, tx := range w.descendants(p, "txbxContent") {
-			for _, tp := range w.childrenNamed(tx, "p") {
-				add(tp, inTable)
-			}
+		for _, tp := range w.textBoxParagraphs(p) {
+			add(tp, inTable)
 		}
 	}
 	var addTable func(tbl *elem)

@@ -24,24 +24,24 @@ type FunctionDef struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-// ChatOptions 聊天选项
+// ChatOptions là các tuỳ chọn trò chuyện
 type ChatOptions struct {
-	Temperature float64 `json:"temperature"` // 温度Parameters
+	Temperature float64 `json:"temperature"` // tham số temperature
 	TopP        float64 `json:"top_p"`       // Top P Parameters
-	Seed        int     `json:"seed"`        // 随机种子
+	Seed        int     `json:"seed"`        // seed ngẫu nhiên
 	// MaxTokens and MaxCompletionTokens are aliases for one completion budget.
 	// Callers may set either; CompletionBudget() prefers MaxCompletionTokens.
 	// The outbound Chat Completions JSON carries exactly one of max_tokens or
 	// max_completion_tokens, chosen per provider (see wireCompletionTokenField).
 	MaxTokens           int             `json:"max_tokens"`
 	MaxCompletionTokens int             `json:"max_completion_tokens"`
-	FrequencyPenalty    float64         `json:"frequency_penalty"`             // 频率惩罚
-	PresencePenalty     float64         `json:"presence_penalty"`              // 存在惩罚
-	Thinking            *bool           `json:"thinking"`                      // 是否启用思考
-	Tools               []Tool          `json:"tools,omitempty"`               // 可用工具List
+	FrequencyPenalty    float64         `json:"frequency_penalty"`             // phạt tần suất
+	PresencePenalty     float64         `json:"presence_penalty"`              // phạt hiện diện
+	Thinking            *bool           `json:"thinking"`                      // có bật suy luận (thinking) không
+	Tools               []Tool          `json:"tools,omitempty"`               // danh sách công cụ khả dụng
 	ToolChoice          string          `json:"tool_choice,omitempty"`         // "auto", "required", "none", or specific tool
-	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"` // 是否允许并行工具调用（默认 nil 表示由模型决定）
-	Format              json.RawMessage `json:"format,omitempty"`              // 响应格式定义
+	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"` // có cho phép gọi công cụ song song không (nil = để mô hình quyết định)
+	Format              json.RawMessage `json:"format,omitempty"`              // định nghĩa định dạng phản hồi
 	// PromptCacheKey is the provider routing key (OpenAI prompt_cache_key).
 	// Empty falls back to the session ID on the call context.
 	PromptCacheKey string `json:"-"`
@@ -75,19 +75,19 @@ type MessageKind string
 // conversation history, so the role alone cannot identify it.
 const MessageKindCompactionSummary MessageKind = "compaction_summary"
 
-// Message 表示聊天消息
+// Message biểu diễn một tin nhắn trò chuyện
 type Message struct {
-	Role         string               `json:"role"`                    // 角色：system, user, assistant, tool
-	Content      string               `json:"content"`                 // 消息内容
-	MultiContent []MessageContentPart `json:"multi_content,omitempty"` // 多内容消息（文本+图片）
+	Role         string               `json:"role"`                    // vai trò: system, user, assistant, tool
+	Content      string               `json:"content"`                 // nội dung tin nhắn
+	MultiContent []MessageContentPart `json:"multi_content,omitempty"` // tin nhắn nhiều phần (văn bản + ảnh)
 	Name         string               `json:"name,omitempty"`          // Function/tool name (for tool role)
 	ToolCallID   string               `json:"tool_call_id,omitempty"`  // Tool call ID (for tool role)
 	ToolCalls    []ToolCall           `json:"tool_calls,omitempty"`    // Tool calls (for assistant role)
 	Images       []string             `json:"images,omitempty"`        // Image URLs for multimodal (only for current user message)
-	// ReasoningContent 是 assistant 推理类模型（DeepSeek thinking、小米 MiMo、vLLM reasoning 等）
-	// 上一轮输出的思考内容。部分供应商（MiMo、DeepSeek V3.2/V4 thinking 模式）要求多轮对话中
-	// 把 assistant 的 reasoning_content 原样回传，否则会以 400 拒绝请求；其他不要求的供应商
-	// 会忽略未知字段，无副作用。
+	// ReasoningContent là nội dung suy luận mà các mô hình reasoning (DeepSeek thinking, Xiaomi MiMo, vLLM reasoning, ...)
+	// đã xuất ra ở lượt trước của assistant. Một số nhà cung cấp (MiMo, DeepSeek V3.2/V4 chế độ thinking) yêu cầu trong hội thoại nhiều lượt
+	// phải gửi lại nguyên vẹn reasoning_content của assistant, nếu không sẽ từ chối với 400; các nhà cung cấp khác
+	// bỏ qua trường lạ, không có tác dụng phụ.
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	// Kind is engine-internal bookkeeping. `json:"-"` keeps it off the wire:
 	// providers reject unknown message fields on some endpoints, and this one
@@ -115,18 +115,18 @@ type FunctionCall struct {
 	Arguments string `json:"arguments"` // JSON string
 }
 
-// Chat 定义了聊天接口
+// Chat định nghĩa giao diện trò chuyện
 type Chat interface {
-	// Chat 进行非流式聊天
+	// Chat thực hiện trò chuyện không stream
 	Chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error)
 
-	// ChatStream 进行流式聊天
+	// ChatStream thực hiện trò chuyện dạng stream
 	ChatStream(ctx context.Context, messages []Message, opts *ChatOptions) (<-chan types.StreamResponse, error)
 
-	// GetModelName 获取模型名称
+	// GetModelName trả về tên mô hình
 	GetModelName() string
 
-	// GetModelID 获取模型ID
+	// GetModelID trả về ID mô hình
 	GetModelID() string
 }
 
@@ -141,16 +141,16 @@ type ChatConfig struct {
 	// back to the process-wide default (see limiter.GateN).
 	MaxConcurrency int
 	ExtraConfig    map[string]string
-	// CustomHeaders 允许在调用远程 OpenAI 兼容 API 时附加自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+	// CustomHeaders cho phép đính kèm header HTTP tuỳ chỉnh khi gọi API tương thích OpenAI từ xa (giống extra_headers của OpenAI Python SDK).
 	CustomHeaders map[string]string
 	AppID         string
-	AppSecret     string // 加密值，由工厂函数调用方传入，在 NewWeKnoraCloudChat 中使用前已解密
+	AppSecret     string // giá trị đã mã hoá, do bên gọi factory truyền vào, đã được giải mã trước khi dùng trong NewWeKnoraCloudChat
 }
 
-// ConfigFromModel 根据 types.Model 构造 ChatConfig。
-// 保证生产路径（service 层根据 DB 中的模型Configuration 拉起实例）和测试路径
-// （handler 层根据前端表单临时拉起实例）走完全相同的字段映射，避免重复样板。
-// appID / appSecret 是已经解密/解析好的 WeKnoraCloud 凭证，调用方负责传入。
+// ConfigFromModel dựng ChatConfig từ types.Model.
+// Đảm bảo đường production (tầng service tạo instance từ cấu hình mô hình trong DB) và đường kiểm thử
+// (tầng handler tạo instance tạm từ form frontend) dùng cùng một ánh xạ trường, tránh lặp boilerplate.
+// appID / appSecret là thông tin xác thực WeKnoraCloud đã giải mã/phân tích sẵn, bên gọi chịu trách nhiệm truyền vào.
 func ConfigFromModel(m *types.Model, appID, appSecret string) *ChatConfig {
 	if m == nil {
 		return nil
@@ -170,7 +170,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) *ChatConfig {
 	}
 }
 
-// NewChat Create 聊天实例
+// NewChat tạo instance trò chuyện
 func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, error) {
 	var c Chat
 	var err error
@@ -189,9 +189,9 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	return wrapChatConcurrency(c, config.MaxConcurrency, err)
 }
 
-// NewRemoteChat 根据 provider Create 远程聊天实例。
-// Anthropic 走独立的 Messages 协议实现；其余 OpenAI 兼容供应商统一由
-// RemoteAPIChat 处理，provider 特定行为在构造时通过 providerAdapter 解析。
+// NewRemoteChat tạo instance trò chuyện từ xa theo provider.
+// Anthropic dùng cài đặt giao thức Messages riêng; các nhà cung cấp tương thích OpenAI còn lại đều do
+// RemoteAPIChat xử lý, hành vi riêng của provider được xác định lúc khởi tạo qua providerAdapter.
 func NewRemoteChat(config *ChatConfig) (Chat, error) {
 	providerName := provider.ProviderName(config.Provider)
 	if providerName == "" {

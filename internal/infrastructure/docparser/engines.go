@@ -41,6 +41,7 @@ func init() {
 	RegisterEngine(&weKnoraCloudEngine{})
 	RegisterEngine(&mineruEngine{})
 	RegisterEngine(&mineruCloudEngine{})
+	RegisterEngine(&paddleOCRVLEngine{})
 	RegisterEngine(&paddleOCRVLCloudEngine{})
 	RegisterEngine(&markitdownEngine{})
 	RegisterEngine(&opendataloaderEngine{})

@@ -31,8 +31,8 @@ func TestNumberedSectionPattern(t *testing.T) {
 		{"1. Introduction", true},
 		{"2.3 Methodology", true}, // multi-level numerals no longer require trailing dot
 		{"2.3. Methodology", true},
-		{"2.2.1 用户与权限", true}, // three-level numbering, Chinese title, no trailing dot
-		{"3.2.1 单机 Docker Compose", true},
+		{"2.2.1 Người dùng và quyền", true}, // three-level numbering, Vietnamese title, no trailing dot
+		{"3.2.1 Triển khai Docker Compose", true},
 		{"IV. Results", true},
 		{"1.Introduction", false},     // requires whitespace
 		{"1.", false},                 // requires title

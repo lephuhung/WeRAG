@@ -10,14 +10,14 @@ const (
 	OpenRouterBaseURL = "https://openrouter.ai/api/v1"
 )
 
-// OpenRouterProvider 实现 OpenRouter 的 Provider 接口
+// OpenRouterProvider triển khai giao diện Provider cho OpenRouter
 type OpenRouterProvider struct{}
 
 func init() {
 	Register(&OpenRouterProvider{})
 }
 
-// Info 返回 OpenRouter provider 的元数据
+// Info trả về metadata của provider OpenRouter
 func (p *OpenRouterProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderOpenRouter,
@@ -37,7 +37,7 @@ func (p *OpenRouterProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 OpenRouter provider Configuration
+// ValidateConfig kiểm tra cấu hình provider OpenRouter
 func (p *OpenRouterProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for OpenRouter provider")

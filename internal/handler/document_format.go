@@ -37,7 +37,7 @@ func NewDocumentFormatHandler(models interfaces.ModelService) *DocumentFormatHan
 
 // ListTypes godoc
 // @Summary      Document types with a format rule set
-// @Tags         Document format
+// @Tags         Thể thức văn bản
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -60,7 +60,7 @@ func (h *DocumentFormatHandler) ListTypes(c *gin.Context) {
 // @Description  Returns every rule with pass/fail/warn/skip, the measured
 // @Description  value, the offending lines, the format data and, with
 // @Description  evaluate, the written evaluation.
-// @Tags         Document format
+// @Tags         Thể thức văn bản
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        file           formData  file    true   ".docx file"

@@ -100,3 +100,41 @@ func TestAbbreviationRepositoryListFilters(t *testing.T) {
 		t.Fatalf("ListActive: %v %v", active, err)
 	}
 }
+
+func TestAbbreviationRepositoryListPendingFirstStableOnApproval(t *testing.T) {
+	db, repo := newAbbrevRepo(t)
+	ctx := context.Background()
+	for _, r := range []*types.Abbreviation{
+		{ShortForm: "UBND", FullForm: "Ủy ban nhân dân", IsActive: true},
+		{ShortForm: "BHXH", FullForm: "Bảo hiểm xã hội"},
+		{ShortForm: "BHYT", FullForm: "Bảo hiểm y tế"},
+		{ShortForm: "CCCD", FullForm: "Căn cước công dân"},
+	} {
+		if err := repo.Create(ctx, r); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	shorts := func(offset, limit int) []string {
+		rows, _, err := repo.List(ctx, "", nil, offset, limit)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		var out []string
+		for _, r := range rows {
+			out = append(out, r.ShortForm)
+		}
+		return out
+	}
+	first := shorts(0, 10)
+	if first[len(first)-1] != "UBND" {
+		t.Fatalf("active row must come after pending rows: %v", first)
+	}
+	// Approving a pending row moves it behind the pending block but leaves
+	// the other pending rows in their order.
+	if err := db.Model(&types.Abbreviation{}).Where("short_form = ?", first[0]).Update("is_active", true).Error; err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if got := shorts(0, 2); got[0] != first[1] || got[1] != first[2] {
+		t.Fatalf("pending order changed after approval: before %v, after %v", first, got)
+	}
+}

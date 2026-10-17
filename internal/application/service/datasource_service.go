@@ -1274,14 +1274,14 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 // If a knowledge item with the same external_id already exists, it is deleted first (update = delete + re-create).
 //
 // Routing logic:
-//   - Has Content bytes → CreateKnowledgeFromFile (走完整的文档解析 pipeline)
-//   - Has URL only      → CreateKnowledgeFromURL  (让 WeKnora 下载并解析)
+//   - Has Content bytes → CreateKnowledgeFromFile (đi qua pipeline phân tích tài liệu đầy đủ)
+//   - Has URL only      → CreateKnowledgeFromURL  (để WeKnora tải về và phân tích)
 //
 // Returns (isUpdate, error) — isUpdate is true when an existing item was replaced.
 func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, tagIDs []string) (bool, error) {
 	// Channel decides the knowledge "source" label shown in the UI. Prefer the
 	// connector-supplied metadata["channel"] (e.g. Feishu Drive sets it to
-	// "feishu" so Drive docs share the wiki's "飞书" label instead of showing
+	// "feishu" so Drive docs share the wiki's Feishu label instead of showing
 	// "unknown" for the raw ds.Type "feishu_drive"). Fall back to ds.Type so
 	// connectors that don't set metadata.channel still get a meaningful label.
 	channel := ds.Type // e.g. "feishu", "notion"

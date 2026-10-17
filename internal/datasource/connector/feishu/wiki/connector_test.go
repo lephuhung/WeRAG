@@ -300,9 +300,9 @@ func TestSanitizeFileName(t *testing.T) {
 }
 
 func TestSanitizeFileName_TruncatesAtRuneBoundary(t *testing.T) {
-	// Each 测 is 3 bytes; raw byte truncation at 200 would split a rune and
+	// Each ệ is 3 bytes; raw byte truncation at 200 would split a rune and
 	// produce invalid UTF-8 that downstream filename validation rejects.
-	long := strings.Repeat("测试", 100)
+	long := strings.Repeat("ệ", 200)
 	got := core.SanitizeFileName(long)
 	if !utf8.ValidString(got) {
 		t.Fatalf("core.SanitizeFileName produced invalid UTF-8: %q", got)
@@ -316,10 +316,10 @@ func TestSanitizeFileName_TruncatesAtRuneBoundary(t *testing.T) {
 }
 
 func TestSanitizeFileName_PreservesExtensionOnTruncation(t *testing.T) {
-	// A pathologically long (>200-byte) CJK attachment name ending in ".pdf".
+	// A pathologically long (>200-byte) multi-byte attachment name ending in ".pdf".
 	// Truncation must keep the ".pdf" suffix — downstream file-type validation
 	// classifies by extension, so a chopped extension would reject the file.
-	long := strings.Repeat("报告", 150) + ".pdf" // 150*6 bytes + ".pdf"
+	long := strings.Repeat("ệ", 300) + ".pdf" // 300*3 bytes + ".pdf"
 	got := core.SanitizeFileName(long)
 	if !utf8.ValidString(got) {
 		t.Fatalf("produced invalid UTF-8: %q", got)
@@ -1786,7 +1786,7 @@ func TestFetchDocxWithBlocks_NonWhitelistedExtNotPromoted(t *testing.T) {
 		t.Fatalf("want 1 item (main doc only, .png not promoted), got %d: %+v", len(items), items)
 	}
 	mainContent := string(items[0].Content)
-	if !strings.Contains(mainContent, "📎 附件：icon.png") {
+	if !strings.Contains(mainContent, "📎 Tệp đính kèm: icon.png") {
 		t.Errorf("main doc missing inline reference for icon.png; got:\n%s", mainContent)
 	}
 }
@@ -1826,7 +1826,7 @@ func TestFetchDocxWithBlocks_WhitelistedTinyAttachmentNotPromoted(t *testing.T) 
 		t.Fatalf("want 1 item (main doc only, tiny .pdf not promoted), got %d: %+v", len(items), items)
 	}
 	mainContent := string(items[0].Content)
-	if !strings.Contains(mainContent, "📎 附件：tiny.pdf") {
+	if !strings.Contains(mainContent, "📎 Tệp đính kèm: tiny.pdf") {
 		t.Errorf("main doc missing inline reference for tiny.pdf; got:\n%s", mainContent)
 	}
 }

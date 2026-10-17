@@ -145,7 +145,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	if knowledgeBaseID == "" {
 		logger.Info(ctx, "No knowledge base ID provided, creating new knowledge base")
 		// Create new knowledge base with default evaluation settings
-		// 获取默认的嵌入模型和LLM模型
+		// Lấy mô hình embedding và LLM mặc định
 		models, err := e.modelService.ListModels(ctx)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to list models: %v", err)
@@ -211,7 +211,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	}
 
 	if rerankModelID == "" {
-		// 获取默认的重排模型
+		// Lấy mô hình rerank mặc định
 		models, err := e.modelService.ListModels(ctx)
 		if err == nil {
 			for _, model := range models {
@@ -232,7 +232,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	}
 
 	if chatModelID == "" {
-		// 获取默认的LLM模型
+		// Lấy mô hình LLM mặc định
 		models, err := e.modelService.ListModels(ctx)
 		if err == nil {
 			for _, model := range models {

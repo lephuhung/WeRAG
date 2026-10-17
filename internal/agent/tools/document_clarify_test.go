@@ -138,6 +138,15 @@ func TestDocumentScopeClarificationDecision(t *testing.T) {
 	if c := ask(long, types.WithMentionedDocuments(toolCtx(), []string{"ws-1"}), "s-clar-2", "góp ý giúp", false); c != nil {
 		t.Error("an @-mention is an anchor")
 	}
+	// "tóm tắt tài liệu này" sent with a file attached is about that file:
+	// its text is in the turn's prompt (Báo cáo UBND tỉnh, 2026-10-16)
+	if c := ask(long, WithAttachedSources(toolCtx(), []string{"ws-1"}), "s-clar-2", "tóm tắt tài liệu này", false); c != nil {
+		t.Error("the long document attached with the request: asked")
+	}
+	// another file attached does not make the long one short
+	if c := ask(long, WithAttachedSources(toolCtx(), []string{"ws-other"}), "s-clar-2", "góp ý giúp", false); c == nil {
+		t.Error("a long document beside a newly attached file: not asked")
+	}
 	sel := &types.DocumentSelection{DocumentID: "ws-1", Text: "Khoản 1"}
 	if c := ask(long, types.WithDocumentSelection(toolCtx(), sel), "s-clar-2", "góp ý giúp", false); c != nil {
 		t.Error("a selection is an anchor")

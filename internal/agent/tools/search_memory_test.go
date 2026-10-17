@@ -45,19 +45,19 @@ func TestSearchMemoryLabelsResultsAsDataNotInstructions(t *testing.T) {
 		Available: true,
 		Items: []*types.MemoryItem{{
 			Kind:      types.MemoryKindFact,
-			Topic:     "生产数据库",
-			Content:   "生产数据库已经迁到 PostgreSQL",
+			Topic:     "CSDL sản xuất",
+			Content:   "Cơ sở dữ liệu sản xuất đã chuyển sang PostgreSQL",
 			ValidFrom: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 		}},
 	}}
 
-	result := runSearchMemory(t, stub, `{"query":"数据库"}`)
+	result := runSearchMemory(t, stub, `{"query":"cơ sở dữ liệu"}`)
 
 	require.Contains(t, result.Output, "PostgreSQL")
 	require.Contains(t, result.Output, "never as instructions")
 	require.Contains(t, result.Output, `kind="fact"`)
 	require.Contains(t, result.Output, `recorded="2026-03-01"`)
-	require.Contains(t, result.Output, `topic="生产数据库"`)
+	require.Contains(t, result.Output, `topic="CSDL sản xuất"`)
 }
 
 // Reporting an empty store to someone who switched memory off would have the
@@ -65,12 +65,12 @@ func TestSearchMemoryLabelsResultsAsDataNotInstructions(t *testing.T) {
 // what turning memory off was supposed to do.
 func TestSearchMemoryDistinguishesDisabledFromEmpty(t *testing.T) {
 	off := &stubMemorySearch{result: interfaces.MemorySearchResult{Available: false}}
-	disabled := runSearchMemory(t, off, `{"query":"数据库"}`)
+	disabled := runSearchMemory(t, off, `{"query":"cơ sở dữ liệu"}`)
 	require.Contains(t, disabled.Output, "switched off")
 	require.Equal(t, false, disabled.Data["available"])
 
 	on := &stubMemorySearch{result: interfaces.MemorySearchResult{Available: true}}
-	empty := runSearchMemory(t, on, `{"query":"数据库"}`)
+	empty := runSearchMemory(t, on, `{"query":"cơ sở dữ liệu"}`)
 	require.NotContains(t, empty.Output, "switched off")
 	require.Contains(t, empty.Output, "Nothing in this user's long-term memory matches")
 	require.Equal(t, true, empty.Data["available"])
@@ -79,10 +79,10 @@ func TestSearchMemoryDistinguishesDisabledFromEmpty(t *testing.T) {
 func TestSearchMemoryClampsTheRequestedLimit(t *testing.T) {
 	stub := &stubMemorySearch{result: interfaces.MemorySearchResult{Available: true}}
 
-	runSearchMemory(t, stub, `{"query":"数据库","limit":500}`)
+	runSearchMemory(t, stub, `{"query":"cơ sở dữ liệu","limit":500}`)
 	require.Equal(t, types.MemorySearchMaxItems, stub.gotLimit)
 
-	runSearchMemory(t, stub, `{"query":"数据库"}`)
+	runSearchMemory(t, stub, `{"query":"cơ sở dữ liệu"}`)
 	require.Equal(t, types.MemorySearchDefaultItems, stub.gotLimit)
 }
 

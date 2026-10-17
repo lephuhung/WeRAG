@@ -63,3 +63,26 @@ func TestContinueSessionWithoutCheckpointQuotesNewestTurns(t *testing.T) {
 	assert.LessOrEqual(t, len([]rune(got.ContextSeed)), continuationSeedRunes+10)
 	assert.Empty(t, got.Title)
 }
+
+// A sub-chat names its document chat's root, also when opened from another
+// sub-chat; a plain continuation names none. The title is marked once.
+func TestOpenSubChatNamesTheRootChat(t *testing.T) {
+	rows := storedTurns(2)
+	svc := &sessionService{sessionRepo: &createOnlySessionRepo{}, messageRepo: &historyRepo{rows: rows}}
+	ctx := context.Background()
+
+	got, err := svc.OpenSubChat(ctx, &types.Session{ID: "root", TenantID: 7, UserID: "u1", Title: "Soạn công văn"})
+	require.NoError(t, err)
+	assert.Equal(t, "root", got.ChatRootID)
+	assert.Equal(t, "Soạn công văn (tiếp)", got.Title)
+	assert.NotEmpty(t, got.ContextSeed, "it starts from the chat it was opened from")
+
+	got, err = svc.OpenSubChat(ctx, &types.Session{ID: "sub-1", ChatRootID: "root", TenantID: 7, UserID: "u1", Title: "Soạn công văn (tiếp)"})
+	require.NoError(t, err)
+	assert.Equal(t, "root", got.ChatRootID)
+	assert.Equal(t, "Soạn công văn (tiếp)", got.Title)
+
+	got, err = svc.ContinueSession(ctx, &types.Session{ID: "plain", TenantID: 7, UserID: "u1"})
+	require.NoError(t, err)
+	assert.Empty(t, got.ChatRootID)
+}

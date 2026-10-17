@@ -17,30 +17,30 @@ func TestMemoryConsistencyInvalidDecisionsDoNotBlockValidOnes(t *testing.T) {
 	s, _, tr := newMemoryHarness(t)
 	ctx := enabledCtx(t, tr, 1, "alice")
 	scope := scopeFor(t, ctx)
-	old, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "职业", Content: "我是工程师"})
+	old, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "Nghề nghiệp", Content: "Tôi là chuyên viên"})
 	require.NoError(t, err)
 	require.NoError(t, s.repo.DeleteItem(ctx, scope, old.ID)) // Snapshot became stale during the model call.
 	zero, invalid := 0, 99
 	require.NoError(t, s.applyDecisions(ctx, scope, s.workspaceConfig(ctx, 1),
 		transcriptSegment{}, []*types.MemoryItem{old}, []extractionDecision{
-			{Action: "update", Target: &zero, Content: "我是经理"},
+			{Action: "update", Target: &zero, Content: "Tôi là trưởng phòng"},
 			{Action: "add", Content: "  "},
-			{Action: "update", Target: &invalid, Content: "错误索引"},
-			{Action: "update", Topic: "不存在", Content: "不应该变成新增"},
-			{Action: "add", Kind: types.MemoryKindFact, Topic: "编辑器", Content: "使用 Neovim"},
+			{Action: "update", Target: &invalid, Content: "chỉ số sai"},
+			{Action: "update", Topic: "Không tồn tại", Content: "không được trở thành mục mới"},
+			{Action: "add", Kind: types.MemoryKindFact, Topic: "Trình soạn thảo", Content: "dùng Neovim"},
 		}))
 	items, total, err := s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
-	require.Equal(t, "使用 Neovim", items[0].Content)
+	require.Equal(t, "dùng Neovim", items[0].Content)
 }
 
 func TestMemoryConsistencyDeleteInvalidatesPendingTarget(t *testing.T) {
 	s, _, tr := newMemoryHarness(t)
 	ctx := enabledCtx(t, tr, 1, "alice")
-	old, err := s.Remember(ctx, types.MemoryItem{Topic: "职业", Content: "我是工程师"})
+	old, err := s.Remember(ctx, types.MemoryItem{Topic: "Nghề nghiệp", Content: "Tôi là chuyên viên"})
 	require.NoError(t, err)
-	proposal, err := s.Remember(ctx, types.MemoryItem{Topic: "职业", Content: "可能是经理", Inferred: true})
+	proposal, err := s.Remember(ctx, types.MemoryItem{Topic: "Nghề nghiệp", Content: "có thể là trưởng phòng", Inferred: true})
 	require.NoError(t, err)
 	require.NoError(t, s.DeleteItem(ctx, old.ID))
 	_, total, err := s.ListItems(ctx, types.MemoryStatusPending, 10, 0)
@@ -169,6 +169,6 @@ func TestMemoryConsistencyDecisionDatabaseErrorsRemainRetryable(t *testing.T) {
 	ctx := enabledCtx(t, tr, 1, "alice")
 	s.repo = brokenDecisionLookup{s.repo}
 	err := s.applyDecisions(ctx, scopeFor(t, ctx), s.workspaceConfig(ctx, 1),
-		transcriptSegment{}, nil, []extractionDecision{{Action: "update", Topic: "职业", Content: "经理"}})
+		transcriptSegment{}, nil, []extractionDecision{{Action: "update", Topic: "Nghề nghiệp", Content: "trưởng phòng"}})
 	require.ErrorContains(t, err, "database unavailable")
 }

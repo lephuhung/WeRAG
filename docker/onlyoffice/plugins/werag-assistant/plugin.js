@@ -22,6 +22,7 @@
   "use strict";
 
   var DEBOUNCE_MS = 120;
+  var CLEAR_DEBOUNCE_MS = 600;
   var timer = null;
   var lastSent = "";
 
@@ -38,6 +39,42 @@
       if (anc && anc.length > 0) return anc[anc.length - 1];
     } catch (e) { /* ignore */ }
     return "*"; // documented fallback, see header
+  }
+
+  /* One callCommand at a time. The plugin SDK keeps a single callback slot
+   * (Asc.plugin.onCallCommandCallback): a command sent while another is
+   * running takes over its callback, so the first answer reaches the wrong
+   * caller and the second none (the live spellcheck's read then never
+   * returned and its ring kept spinning). Every command goes through this
+   * queue; one with no answer in COMMAND_TIMEOUT_MS is given up. */
+  var COMMAND_TIMEOUT_MS = 20000;
+  var commands = [];
+  var commandBusy = false;
+  function runCommand(fn, isCalc, callback) {
+    commands.push({ fn: fn, isCalc: isCalc, callback: callback });
+    nextCommand();
+  }
+  function nextCommand() {
+    if (commandBusy || commands.length === 0) return;
+    commandBusy = true;
+    var job = commands.shift();
+    var done = false;
+    var finish = function (raw) {
+      if (done) return;
+      done = true;
+      clearTimeout(guard);
+      commandBusy = false;
+      try { job.callback(raw); } catch (e) { /* caller's problem */ }
+      nextCommand();
+    };
+    var guard = setTimeout(function () { finish(null); }, COMMAND_TIMEOUT_MS);
+    try {
+      // the Asc.scope a command reads is set right before it is sent
+      if (job.fn === applyOpsCommand) window.Asc.scope.weragOps = job.ops;
+      window.Asc.plugin.callCommand(job.fn, false, job.isCalc, finish);
+    } catch (e) {
+      finish(null);
+    }
   }
 
   // The selection also says where it is: the text of the paragraph it starts
@@ -60,15 +97,11 @@
       } catch (e) { /* host gone or origin mismatch */ }
     };
     setTimeout(function () { send(null); }, PLACE_TIMEOUT_MS);
-    try {
-      window.Asc.plugin.callCommand(selectionPlaceCommand, false, false, function (raw) {
-        var place = null;
-        try { place = typeof raw === "string" && raw ? JSON.parse(raw) : null; } catch (e) { place = null; }
-        send(place);
-      });
-    } catch (e) {
-      send(null);
-    }
+    runCommand(selectionPlaceCommand, false, function (raw) {
+      var place = null;
+      try { place = typeof raw === "string" && raw ? JSON.parse(raw) : null; } catch (e) { place = null; }
+      send(place);
+    });
   }
 
   /* Runs inside the editor via callCommand: no access to this closure. The
@@ -104,7 +137,18 @@
     window.__weragLastSelection = value;
     if (timer) clearTimeout(timer);
     if (!value) {
-      lastSent = ""; // re-selecting the same passage later posts it again
+      // the user cleared the selection: the page drops its chip (debounced,
+      // so a selection being redrawn does not flicker it away)
+      if (lastSent) {
+        timer = setTimeout(function () {
+          timer = null;
+          if (!lastSent) return;
+          lastSent = ""; // re-selecting the same passage later posts it again
+          try {
+            window.top.postMessage({ source: "werag-onlyoffice", type: "selection", text: "" }, hostOrigin());
+          } catch (e) { /* host gone */ }
+        }, CLEAR_DEBOUNCE_MS);
+      }
       return;
     }
     timer = setTimeout(function () {
@@ -173,7 +217,6 @@
     if (running || queue.length === 0) return;
     running = true;
     var job = queue.shift();
-    window.Asc.scope.weragOps = job.ops;
     var finish = function (raw) {
       var res = null;
       try { res = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { res = null; }
@@ -191,11 +234,8 @@
       running = false;
       runNext();
     };
-    try {
-      window.Asc.plugin.callCommand(applyOpsCommand, false, true, finish);
-    } catch (e) {
-      finish(null);
-    }
+    commands.push({ fn: applyOpsCommand, isCalc: true, ops: job.ops, callback: finish });
+    nextCommand();
   }
 
   /* ===================== live spellcheck (read_paragraphs) =====================
@@ -212,11 +252,7 @@
       try { texts = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { texts = null; }
       reply({ type: "paragraphs", requestId: requestId, texts: Array.isArray(texts) ? texts : null });
     };
-    try {
-      window.Asc.plugin.callCommand(readParagraphsCommand, false, false, done);
-    } catch (e) {
-      done(null);
-    }
+    runCommand(readParagraphsCommand, false, done);
   }
 
   /* Runs inside the editor via callCommand: no access to this closure. */
@@ -486,6 +522,13 @@
       // anchor paragraph, its textOccurrence-th instance, as mark finds it):
       // the editor scrolls to it. Nothing in the document changes.
       select: function (op) {
+        // "Về đầu văn bản" (a missing Quốc hiệu / Tiêu ngữ / cơ quan has no
+        // text to select): the cursor goes to the start of the document
+        if (op.anchor && op.anchor.atStart) {
+          if (typeof doc.MoveCursorToStart !== "function") throw new Error("select unsupported");
+          doc.MoveCursorToStart();
+          return;
+        }
         var p = mustFind(op.anchor);
         var target = p.GetRange();
         if (op.text) {
@@ -536,6 +579,33 @@
         if (typeof op.sizePt === "number" && op.sizePt > 0) p.SetFontSize(Math.round(op.sizePt * 2)); // half-points
         if (typeof op.bold === "boolean") p.SetBold(op.bold);
         if (typeof op.italic === "boolean") p.SetItalic(op.italic);
+      },
+      // Reads the anchor paragraph's formatting back after a format fix
+      // (the review's "Kiểm tra lại"): each property in the op must hold
+      // over the whole paragraph; a mixed or missing value fails the op
+      // ("format differs: …"). Nothing in the document changes.
+      checkFormat: function (op) {
+        var p = mustFind(op.anchor);
+        var range = p.GetRange();
+        if (!range || typeof range.GetTextPr !== "function") throw new Error("checkFormat unsupported");
+        var tp = range.GetTextPr();
+        var off = [];
+        if (op.font) {
+          var font = tp.GetFontFamily ? tp.GetFontFamily() : null;
+          if (typeof font !== "string" || font.toLowerCase() !== String(op.font).toLowerCase()) off.push("font=" + font);
+        }
+        if (typeof op.sizePt === "number") {
+          var hps = tp.GetFontSize ? tp.GetFontSize() : null;
+          if (typeof hps !== "number" || Math.abs(hps / 2 - op.sizePt) >= 0.05) off.push("size=" + (typeof hps === "number" ? hps / 2 : hps));
+        }
+        if (typeof op.bold === "boolean" && (tp.GetBold ? tp.GetBold() : null) !== op.bold) off.push("bold");
+        if (typeof op.italic === "boolean" && (tp.GetItalic ? tp.GetItalic() : null) !== op.italic) off.push("italic");
+        if (op.alignment) {
+          var pp = p.GetParaPr ? p.GetParaPr() : null;
+          var jc = pp && pp.GetJc ? pp.GetJc() : null;
+          if (jc !== op.alignment) off.push("alignment=" + jc);
+        }
+        if (off.length) throw new Error("format differs: " + off.join(", "));
       },
       pageSetup: function (op) {
         var secs = doc.GetSections() || [];

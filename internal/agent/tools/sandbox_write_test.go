@@ -90,7 +90,7 @@ func TestWriteSandboxFileWritesTextUnderOutput(t *testing.T) {
 }
 
 func TestWriteSandboxFileFlagsNestedPythonQuotes(t *testing.T) {
-	script := "slides = [(\"这不是一个\"大干快上\"的夜晚\", False)]\n"
+	script := "slides = [(\"Đây không phải là một đêm \"làm nhanh làm mạnh\" mới đúng\", False)]\n"
 	sink := &fakeSandboxFileSink{}
 	result, err := NewWriteSandboxFileTool(sink, 0).Execute(
 		sandboxFileTestContext(),
@@ -317,12 +317,12 @@ func TestWriteSandboxFileAppendChecksSyntaxOfWholeFile(t *testing.T) {
 	sink := &fakeSandboxFileSink{}
 	tool := NewWriteSandboxFileTool(sink, 0)
 
-	first, err := tool.Execute(sandboxFileTestContext(), mustWriteSandboxArgs(path, "title = \"这不是一个\""))
+	first, err := tool.Execute(sandboxFileTestContext(), mustWriteSandboxArgs(path, "title = \"Đây không phải là một đêm \""))
 	require.NoError(t, err)
 	require.True(t, first.Success, first.Error)
 
 	second, err := tool.Execute(sandboxFileTestContext(), json.RawMessage(
-		`{"path":"`+path+`","content":"大干快上\"的夜晚\"\n","mode":"append"}`,
+		`{"path":"`+path+`","content":"làm nhanh làm mạnh\" mới đúng\"\n","mode":"append"}`,
 	))
 	require.NoError(t, err)
 	require.False(t, second.Success, "the assembled file has the broken-quote pattern")

@@ -551,7 +551,7 @@ func (s *wikiPageService) GetIndexView(
 //   - WikiGraphModeOverview (default): returns the top `Limit` pages sorted
 //     by link_count (in+out), plus every edge that connects two surviving
 //     nodes. This is what the frontend fetches on the first graph open —
-//     4万-page wikis would otherwise ship ~30MB of JSON and crash the
+//     40k-page wikis would otherwise ship ~30MB of JSON and crash the
 //     browser trying to render 100k SVG elements.
 //
 //   - WikiGraphModeEgo: returns the BFS neighborhood of `Center` up to
@@ -568,7 +568,7 @@ func (s *wikiPageService) GetIndexView(
 // handler always clamps Limit into a safe range so external traffic can
 // never opt out of truncation.
 //
-// Implementation note: pages are still fetched via repo.ListAll. At 4万
+// Implementation note: pages are still fetched via repo.ListAll. At 40k
 // pages that's ~10MB of rows + deserialization, which is already on the
 // expensive side but still tractable and keeps the repository interface
 // unchanged. Pushing the filter/top-N down into SQL is a follow-up step

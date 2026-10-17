@@ -1,4 +1,4 @@
-// Package wecom implements the WeCom (企业微信) IM adapter for WeKnora.
+// Package wecom implements the WeCom (WeChat Work) IM adapter for WeKnora.
 //
 // WeCom Smart Bot flow:
 // 1. User sends a message to the bot (direct or @mention in group)

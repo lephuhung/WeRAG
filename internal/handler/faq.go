@@ -59,22 +59,22 @@ type updateLastFAQImportResultDisplayStatusRequest struct {
 }
 
 // ListEntries godoc
-// @Summary      获取FAQ条目List
-// @Description  获取Knowledge Base下的FAQ条目List ，支持分页和筛选
-// @Tags         FAQ管理
+// @Summary      Lấy danh sách mục FAQ
+// @Description  Lấy danh sách mục FAQ trong kho tri thức, hỗ trợ phân trang và lọc
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id           path      string  true   "Knowledge BaseID"
-// @Param        page         query     int     false  "页码"
-// @Param        page_size    query     int     false  "每页数量"
-// @Param        tag_id       query     int     false  "标签ID筛选(seq_id)，兼容旧版单标签"
-// @Param        tag_ids      query     string  false  "标签UUID筛选，逗号分隔（OR语义）"
-// @Param        keyword      query     string  false  "关键词搜索"
-// @Param        search_field query     string  false  "搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案), 默认搜索全部"
-// @Param        sort_order   query     string  false  "排序方式: asc(按Update 时间正序), 默认按Update 时间倒序"
-// @Param        is_enabled   query     bool    false  "启用状态筛选；不传时返回全部"
+// @Param        page         query     int     false  "Số trang"
+// @Param        page_size    query     int     false  "Số mục mỗi trang"
+// @Param        tag_id       query     int     false  "Lọc theo ID thẻ (seq_id), tương thích bản cũ một thẻ"
+// @Param        tag_ids      query     string  false  "Lọc theo UUID thẻ, phân cách bằng dấu phẩy (ngữ nghĩa OR)"
+// @Param        keyword      query     string  false  "Tìm theo từ khóa"
+// @Param        search_field query     string  false  "Trường tìm kiếm: standard_question (câu hỏi chuẩn), similar_questions (câu hỏi tương tự), answers (câu trả lời); mặc định tìm tất cả"
+// @Param        sort_order   query     string  false  "Thứ tự sắp xếp: asc (theo thời gian cập nhật tăng dần); mặc định giảm dần theo thời gian cập nhật"
+// @Param        is_enabled   query     bool    false  "Lọc theo trạng thái bật; không truyền thì trả về tất cả"
 // @Success      200        {object}  map[string]interface{}  "FAQList "
-// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
+// @Failure      400        {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [get]
@@ -85,7 +85,7 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 	var page types.Pagination
 	if err := c.ShouldBindQuery(&page); err != nil {
 		logger.Error(ctx, "Failed to bind pagination query", err)
-		c.Error(errors.NewBadRequestError("分页参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số phân trang không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 		var err error
 		legacyTagSeqID, err = strconv.ParseInt(tagIDStr, 10, 64)
 		if err != nil {
-			c.Error(errors.NewBadRequestError("tag_id 必须是整数"))
+			c.Error(errors.NewBadRequestError("tag_id phải là số nguyên"))
 			return
 		}
 	}
@@ -143,17 +143,17 @@ func parseOptionalFAQEnabled(c *gin.Context) (*bool, error) {
 }
 
 // UpsertEntries godoc
-// @Summary      批量Update /插入FAQ条目
-// @Description  异步批量Update 或插入FAQ条目。支持 dry_run 模式（Settings  dry_run=true），异步验证不实际导入。
-// @Description  dry_run 模式是异步操作，返回 task_id，通过 /faq/import/progress/{task_id} Query 进度和结果。
-// @Description  验证内容包括：1) 条目基本格式 2) 重复问题（批次内和Knowledge Base已有） 3) 内容安全检查。
-// @Tags         FAQ管理
+// @Summary      Cập nhật/chèn hàng loạt mục FAQ
+// @Description  Cập nhật hoặc chèn hàng loạt mục FAQ bất đồng bộ. Hỗ trợ chế độ dry_run (đặt dry_run=true): chỉ kiểm tra bất đồng bộ, không nhập thật.
+// @Description  Chế độ dry_run là thao tác bất đồng bộ, trả về task_id; xem tiến độ và kết quả qua /faq/import/progress/{task_id}.
+// @Description  Nội dung kiểm tra gồm: 1) định dạng cơ bản của mục 2) câu hỏi trùng (trong lô và đã có trong kho tri thức) 3) kiểm tra an toàn nội dung.
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                    true  "Knowledge BaseID"
-// @Param        request  body      types.FAQBatchUpsertPayload  true  "批量操作请求"
-// @Success      200      {object}  map[string]interface{}    "任务ID"
-// @Failure      400      {object}  errors.AppError           "请求Parameters 错误"
+// @Param        request  body      types.FAQBatchUpsertPayload  true  "Yêu cầu thao tác hàng loạt"
+// @Success      200      {object}  map[string]interface{}    "ID tác vụ"
+// @Failure      400      {object}  errors.AppError           "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [post]
@@ -164,7 +164,7 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 	var req types.FAQBatchUpsertPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ upsert payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -184,15 +184,15 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 }
 
 // CreateEntry godoc
-// @Summary      Create 单个FAQ条目
-// @Description  同步Create 单个FAQ条目
-// @Tags         FAQ管理
+// @Summary      Tạo một mục FAQ
+// @Description  Tạo đồng bộ một mục FAQ
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                true  "Knowledge BaseID"
-// @Param        request  body      types.FAQEntryPayload true  "FAQ条目"
-// @Success      200      {object}  map[string]interface{}  "Create 的FAQ条目"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.FAQEntryPayload true  "Mục FAQ"
+// @Success      200      {object}  map[string]interface{}  "Mục FAQ đã tạo"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entry [post]
@@ -203,7 +203,7 @@ func (h *FAQHandler) CreateEntry(c *gin.Context) {
 	var req types.FAQEntryPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ entry payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -221,16 +221,16 @@ func (h *FAQHandler) CreateEntry(c *gin.Context) {
 }
 
 // UpdateEntry godoc
-// @Summary      Update FAQ条目
-// @Description  Update 指定的FAQ条目
-// @Tags         FAQ管理
+// @Summary      Cập nhật mục FAQ
+// @Description  Cập nhật mục FAQ chỉ định
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id        path      string                true  "Knowledge BaseID"
-// @Param        entry_id  path      int                   true  "FAQ条目ID(seq_id)"
-// @Param        request   body      types.FAQEntryPayload true  "FAQ条目"
-// @Success      200       {object}  map[string]interface{}  "Update 成功"
-// @Failure      400       {object}  errors.AppError         "请求Parameters 错误"
+// @Param        entry_id  path      int                   true  "ID mục FAQ (seq_id)"
+// @Param        request   body      types.FAQEntryPayload true  "Mục FAQ"
+// @Success      200       {object}  map[string]interface{}  "Cập nhật thành công"
+// @Failure      400       {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/{entry_id} [put]
@@ -241,13 +241,13 @@ func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 	var req types.FAQEntryPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ entry payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
 	entrySeqID, err := strconv.ParseInt(c.Param("entry_id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("entry_id 必须是整数"))
+		c.Error(errors.NewBadRequestError("entry_id phải là số nguyên"))
 		return
 	}
 
@@ -265,15 +265,15 @@ func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 }
 
 // UpdateEntryTagBatch godoc
-// @Summary      批量Update FAQ标签
-// @Description  批量Update FAQ条目的标签
-// @Tags         FAQ管理
+// @Summary      Cập nhật thẻ FAQ hàng loạt
+// @Description  Cập nhật hàng loạt thẻ của các mục FAQ
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "Knowledge BaseID"
-// @Param        request  body      object  true  "标签Update 请求"
-// @Success      200      {object}  map[string]interface{}  "Update 成功"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      object  true  "Yêu cầu cập nhật thẻ"
+// @Success      200      {object}  map[string]interface{}  "Cập nhật thành công"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/tags [put]
@@ -284,7 +284,7 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 	var req faqEntryTagBatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ entry tag batch payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx, kbID, req.Updates); err != nil {
@@ -298,15 +298,15 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 }
 
 // UpdateEntryFieldsBatch godoc
-// @Summary      批量Update FAQ字段
-// @Description  批量Update FAQ条目的多个字段（is_enabled, is_recommended, tag_id）
-// @Tags         FAQ管理
+// @Summary      Cập nhật trường FAQ hàng loạt
+// @Description  Cập nhật hàng loạt nhiều trường của mục FAQ (is_enabled, is_recommended, tag_id)
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                        true  "Knowledge BaseID"
-// @Param        request  body      types.FAQEntryFieldsBatchUpdate  true  "字段Update 请求"
-// @Success      200      {object}  map[string]interface{}        "Update 成功"
-// @Failure      400      {object}  errors.AppError               "请求Parameters 错误"
+// @Param        request  body      types.FAQEntryFieldsBatchUpdate  true  "Yêu cầu cập nhật trường"
+// @Success      200      {object}  map[string]interface{}        "Cập nhật thành công"
+// @Failure      400      {object}  errors.AppError               "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/fields [put]
@@ -317,7 +317,7 @@ func (h *FAQHandler) UpdateEntryFieldsBatch(c *gin.Context) {
 	var req types.FAQEntryFieldsBatchUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ entry fields batch payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 	if err := h.knowledgeService.UpdateFAQEntryFieldsBatch(ctx, kbID, &req); err != nil {
@@ -331,15 +331,15 @@ func (h *FAQHandler) UpdateEntryFieldsBatch(c *gin.Context) {
 }
 
 // DeleteEntries godoc
-// @Summary      批量Delete FAQ条目
-// @Description  批量Delete 指定的FAQ条目
-// @Tags         FAQ管理
+// @Summary      Xóa hàng loạt mục FAQ
+// @Description  Xóa hàng loạt các mục FAQ chỉ định
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "Knowledge BaseID"
-// @Param        request  body      object{ids=[]int}  true  "要Delete 的FAQ IDList (seq_id)"
-// @Success      200      {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      object{ids=[]int}  true  "Danh sách ID FAQ cần xóa (seq_id)"
+// @Success      200      {object}  map[string]interface{}  "Xóa thành công"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries [delete]
@@ -350,7 +350,7 @@ func (h *FAQHandler) DeleteEntries(c *gin.Context) {
 	var req faqDeleteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Errorf(ctx, "Failed to bind FAQ delete payload: %s", secutils.SanitizeForLog(err.Error()))
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -366,15 +366,15 @@ func (h *FAQHandler) DeleteEntries(c *gin.Context) {
 }
 
 // SearchFAQ godoc
-// @Summary      搜索FAQ
-// @Description  使用混合搜索在FAQ中搜索，支持两级优先级标签召回：first_priority_tag_ids优先级最高，second_priority_tag_ids次之
-// @Tags         FAQ管理
+// @Summary      Tìm kiếm FAQ
+// @Description  Tìm trong FAQ bằng tìm kiếm kết hợp, hỗ trợ truy hồi theo thẻ hai mức ưu tiên: first_priority_tag_ids cao nhất, second_priority_tag_ids kế tiếp
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                true  "Knowledge BaseID"
-// @Param        request  body      types.FAQSearchRequest  true  "搜索请求"
-// @Success      200      {object}  map[string]interface{}  "搜索结果"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      types.FAQSearchRequest  true  "Yêu cầu tìm kiếm"
+// @Success      200      {object}  map[string]interface{}  "Kết quả tìm kiếm"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/search [post]
@@ -385,7 +385,7 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 	var req types.FAQSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind FAQ search payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 	req.QueryText = secutils.SanitizeForLog(req.QueryText)
@@ -409,16 +409,16 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 }
 
 // ExportEntries godoc
-// @Summary      导出FAQ条目
-// @Description  将所有FAQ条目导出为 CSV（默认）或 JSON。?format=json 返回与 FAQEntryPayload 结构兼容的数组。
-// @Tags         FAQ管理
+// @Summary      Xuất mục FAQ
+// @Description  Xuất toàn bộ mục FAQ ra CSV (mặc định) hoặc JSON. ?format=json trả về mảng tương thích cấu trúc FAQEntryPayload.
+// @Tags         FAQ
 // @Accept       json
 // @Produce      text/csv
 // @Produce      application/json
 // @Param        id      path      string  true   "Knowledge BaseID"
-// @Param        format  query     string  false  "导出格式：csv（默认）或 json"
-// @Success      200     {file}    file    "导出文件"
-// @Failure      400     {object}  errors.AppError  "请求Parameters 错误"
+// @Param        format  query     string  false  "Định dạng xuất: csv (mặc định) hoặc json"
+// @Success      200     {file}    file    "Tệp xuất"
+// @Failure      400     {object}  errors.AppError  "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/export [get]
@@ -456,16 +456,16 @@ func (h *FAQHandler) ExportEntries(c *gin.Context) {
 }
 
 // GetEntry godoc
-// @Summary      获取FAQ条目Details
-// @Description  根据ID获取单个FAQ条目的Details
-// @Tags         FAQ管理
+// @Summary      Lấy chi tiết mục FAQ
+// @Description  Lấy chi tiết một mục FAQ theo ID
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id        path      string  true  "Knowledge BaseID"
-// @Param        entry_id  path      int     true  "FAQ条目ID(seq_id)"
-// @Success      200       {object}  map[string]interface{}  "FAQ条目Details "
-// @Failure      400       {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404       {object}  errors.AppError         "条目不存在"
+// @Param        entry_id  path      int     true  "ID mục FAQ (seq_id)"
+// @Success      200       {object}  map[string]interface{}  "Chi tiết mục FAQ"
+// @Failure      400       {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
+// @Failure      404       {object}  errors.AppError         "Không tìm thấy mục"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/{entry_id} [get]
@@ -475,7 +475,7 @@ func (h *FAQHandler) GetEntry(c *gin.Context) {
 
 	entrySeqID, err := strconv.ParseInt(c.Param("entry_id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("entry_id 必须是整数"))
+		c.Error(errors.NewBadRequestError("entry_id phải là số nguyên"))
 		return
 	}
 
@@ -493,14 +493,14 @@ func (h *FAQHandler) GetEntry(c *gin.Context) {
 }
 
 // GetImportProgress godoc
-// @Summary      获取FAQ导入进度
-// @Description  获取FAQ导入任务的进度
-// @Tags         FAQ管理
+// @Summary      Lấy tiến độ nhập FAQ
+// @Description  Lấy tiến độ của tác vụ nhập FAQ
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
-// @Param        task_id  path      string  true  "任务ID"
-// @Success      200      {object}  map[string]interface{}  "导入进度"
-// @Failure      404      {object}  errors.AppError         "任务不存在"
+// @Param        task_id  path      string  true  "ID tác vụ"
+// @Success      200      {object}  map[string]interface{}  "Tiến độ nhập"
+// @Failure      404      {object}  errors.AppError         "Không tìm thấy tác vụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /faq/import/progress/{task_id} [get]
@@ -526,16 +526,16 @@ func (h *FAQHandler) GetImportProgress(c *gin.Context) {
 }
 
 // UpdateLastImportResultDisplayStatus godoc
-// @Summary      Update FAQ最后一次导入结果显示状态
-// @Description  Update FAQKnowledge Base导入结果统计卡片的显示或隐藏状态
-// @Tags         FAQ管理
+// @Summary      Cập nhật trạng thái hiển thị kết quả nhập FAQ gần nhất
+// @Description  Cập nhật trạng thái hiện/ẩn thẻ thống kê kết quả nhập của kho tri thức FAQ
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id      path      string                                         true  "Knowledge BaseID"
-// @Param        request body      updateLastFAQImportResultDisplayStatusRequest  true  "状态Update 请求"
-// @Success      200     {object}  map[string]interface{}                         "Update 成功"
-// @Failure      400     {object}  errors.AppError                                "请求Parameters 错误"
-// @Failure      404     {object}  errors.AppError                                "Knowledge Base不存在或无导入记录"
+// @Param        request body      updateLastFAQImportResultDisplayStatusRequest  true  "Yêu cầu cập nhật trạng thái"
+// @Success      200     {object}  map[string]interface{}                         "Cập nhật thành công"
+// @Failure      400     {object}  errors.AppError                                "Tham số yêu cầu không hợp lệ"
+// @Failure      404     {object}  errors.AppError                                "Không tìm thấy kho tri thức hoặc chưa có lần nhập nào"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/import/last-result/display [put]
@@ -546,7 +546,7 @@ func (h *FAQHandler) UpdateLastImportResultDisplayStatus(c *gin.Context) {
 	var req updateLastFAQImportResultDisplayStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind display status update payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -562,17 +562,17 @@ func (h *FAQHandler) UpdateLastImportResultDisplayStatus(c *gin.Context) {
 }
 
 // AddSimilarQuestions godoc
-// @Summary      添加相似问
-// @Description  向指定的FAQ条目添加相似问题
-// @Tags         FAQ管理
+// @Summary      Thêm câu hỏi tương tự
+// @Description  Thêm câu hỏi tương tự vào mục FAQ chỉ định
+// @Tags         FAQ
 // @Accept       json
 // @Produce      json
 // @Param        id        path      string                      true  "Knowledge BaseID"
-// @Param        entry_id  path      int                         true  "FAQ条目ID(seq_id)"
-// @Param        request   body      addSimilarQuestionsRequest  true  "相似问List "
-// @Success      200       {object}  map[string]interface{}      "Update 后的FAQ条目"
-// @Failure      400       {object}  errors.AppError             "请求Parameters 错误"
-// @Failure      404       {object}  errors.AppError             "条目不存在"
+// @Param        entry_id  path      int                         true  "ID mục FAQ (seq_id)"
+// @Param        request   body      addSimilarQuestionsRequest  true  "Danh sách câu hỏi tương tự"
+// @Success      200       {object}  map[string]interface{}      "Mục FAQ sau cập nhật"
+// @Failure      400       {object}  errors.AppError             "Tham số yêu cầu không hợp lệ"
+// @Failure      404       {object}  errors.AppError             "Không tìm thấy mục"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/faq/entries/{entry_id}/similar-questions [post]
@@ -582,14 +582,14 @@ func (h *FAQHandler) AddSimilarQuestions(c *gin.Context) {
 
 	entrySeqID, err := strconv.ParseInt(c.Param("entry_id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("entry_id 必须是整数"))
+		c.Error(errors.NewBadRequestError("entry_id phải là số nguyên"))
 		return
 	}
 
 	var req addSimilarQuestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind add similar questions payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số yêu cầu không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 

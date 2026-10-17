@@ -112,9 +112,9 @@ func TestResolveLanguage(t *testing.T) {
 		{"explicit locale wins over context", ctxWithLocale, "en-US", "", "en-US"},
 		{"blank locale falls back to context", ctxWithLocale, "", "", "ko-KR"},
 		{"whitespace locale falls back to context", ctxWithLocale, "   ", "", "ko-KR"},
-		{"no locale and no context falls back to default", context.Background(), "", "", "zh-CN"},
+		{"no locale and no context falls back to default", context.Background(), "", "", "vi-VN"},
 		{"empty context value falls back to default", context.WithValue(
-			context.Background(), LanguageContextKey, ""), "", "", "zh-CN"},
+			context.Background(), LanguageContextKey, ""), "", "", "vi-VN"},
 		{"deployment override wins over hardcoded default", context.Background(), "", "ru-RU", "ru-RU"},
 		{"explicit locale wins over deployment override", context.Background(), "ja-JP", "ru-RU", "ja-JP"},
 	}
@@ -158,8 +158,8 @@ func TestResolveLanguageNameIsIdempotentOverDisplayNames(t *testing.T) {
 }
 
 func TestLanguageFromContextOrDefault(t *testing.T) {
-	if got := LanguageFromContextOrDefault(context.Background()); got != "zh-CN" {
-		t.Errorf("LanguageFromContextOrDefault(empty) = %q, want %q", got, "zh-CN")
+	if got := LanguageFromContextOrDefault(context.Background()); got != "vi-VN" {
+		t.Errorf("LanguageFromContextOrDefault(empty) = %q, want %q", got, "vi-VN")
 	}
 	ctx := context.WithValue(context.Background(), LanguageContextKey, "en-US")
 	if got := LanguageFromContextOrDefault(ctx); got != "en-US" {

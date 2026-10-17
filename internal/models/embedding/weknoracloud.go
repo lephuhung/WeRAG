@@ -17,7 +17,7 @@ import (
 
 const weKnoraCloudEmbedPath = "/api/v1/embeddings"
 
-// WeKnoraCloudEmbedder 实现 embedding.Embedder 接口，对接 WeKnoraCloud /api/v1/embeddings
+// WeKnoraCloudEmbedder hiện thực giao diện embedding.Embedder, nối tới WeKnoraCloud /api/v1/embeddings
 type WeKnoraCloudEmbedder struct {
 	modelName                 string
 	remoteModelName           string
@@ -31,7 +31,7 @@ type WeKnoraCloudEmbedder struct {
 	EmbedderPooler
 }
 
-// NewWeKnoraCloudEmbedder 构造 WeKnoraCloudEmbedder
+// NewWeKnoraCloudEmbedder khởi tạo WeKnoraCloudEmbedder
 func NewWeKnoraCloudEmbedder(config Config) (*WeKnoraCloudEmbedder, error) {
 	if config.AppID == "" {
 		return nil, fmt.Errorf("WeKnoraCloud embedder: AppID is required")

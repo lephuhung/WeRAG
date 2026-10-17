@@ -44,7 +44,7 @@ func storageTenantID(c *gin.Context) uint64 { return c.GetUint64(types.TenantIDC
 // List godoc
 // @Summary      List storage backends
 // @Description  List all storage backend instances for the current workspace, with credentials masked. The workspace default backend id is returned alongside the list.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "List of storage backends and default_storage_backend_id"
 // @Failure      401  {object}  map[string]interface{}   "Unauthorized"
@@ -80,7 +80,7 @@ func (h *StorageBackendHandler) List(c *gin.Context) {
 // Get godoc
 // @Summary      Get storage backend
 // @Description  Retrieve a single storage backend by ID for the current workspace. Credentials are masked.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Param        id   path      string  true  "Storage backend ID"
 // @Success      200  {object}  map[string]interface{}   "Storage backend details"
@@ -105,7 +105,7 @@ func (h *StorageBackendHandler) Get(c *gin.Context) {
 // Create godoc
 // @Summary      Create storage backend
 // @Description  Register a new object/file storage instance for the current workspace. The configuration is validated and a connectivity test is run before the backend is persisted.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Accept       json
 // @Produce      json
 // @Param        request  body      storageBackendRequest    true  "Storage backend configuration"
@@ -133,7 +133,7 @@ func (h *StorageBackendHandler) Create(c *gin.Context) {
 // Update godoc
 // @Summary      Update storage backend
 // @Description  Update a storage backend's mutable fields (name, credentials, status). Provider and physical location (endpoint, region, bucket, path prefix) are immutable; use storage migration to move data. Environment-sourced backends are read-only. Redacted secret placeholders preserve the stored credentials.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                   true  "Storage backend ID"
@@ -167,7 +167,7 @@ func (h *StorageBackendHandler) Update(c *gin.Context) {
 // Delete godoc
 // @Summary      Delete storage backend
 // @Description  Soft-delete a storage backend. A backend that is the workspace default, still bound to knowledge bases, environment-sourced, or a legacy alias cannot be deleted.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Param        id   path      string  true  "Storage backend ID"
 // @Success      200  {object}  map[string]interface{}   "Deletion success"
@@ -188,7 +188,7 @@ func (h *StorageBackendHandler) Delete(c *gin.Context) {
 // SetDefault godoc
 // @Summary      Set default storage backend
 // @Description  Mark a storage backend as the workspace default. Only an active backend can become the default. New knowledge bases without an explicit binding use the default.
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Param        id   path      string  true  "Storage backend ID"
 // @Success      200  {object}  map[string]interface{}   "Default set successfully"
@@ -209,7 +209,7 @@ func (h *StorageBackendHandler) SetDefault(c *gin.Context) {
 // TestRaw godoc
 // @Summary      Test storage backend with raw config
 // @Description  Test connectivity for the provided storage configuration without persisting it. Returns success=false with a sanitized error message on failure (the HTTP status stays 200).
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Accept       json
 // @Produce      json
 // @Param        request  body      storageBackendRequest    true  "Storage backend configuration to test"
@@ -240,7 +240,7 @@ func (h *StorageBackendHandler) TestRaw(c *gin.Context) {
 // TestByID godoc
 // @Summary      Test storage backend by ID
 // @Description  Test connectivity of an existing saved storage backend using its stored credentials. Returns success=false with a sanitized error message on failure (the HTTP status stays 200).
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Param        id   path      string  true  "Storage backend ID"
 // @Success      200  {object}  map[string]interface{}   "Connectivity test result (success, error)"
@@ -269,7 +269,7 @@ func (h *StorageBackendHandler) TestByID(c *gin.Context) {
 // Types godoc
 // @Summary      List allowed storage provider types
 // @Description  Return the storage provider types allowed by STORAGE_ALLOW_LIST for UI form generation (e.g. local, minio, cos, tos, s3, oss, ks3, obs).
-// @Tags         StorageBackend
+// @Tags         Lưu trữ
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "List of allowed storage provider types"
 // @Security     Bearer

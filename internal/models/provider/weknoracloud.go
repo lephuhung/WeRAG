@@ -5,7 +5,7 @@ import "github.com/Tencent/WeKnora/internal/types"
 const (
 	ProviderWeKnoraCloud ProviderName = "weknoracloud"
 
-	// WeKnoraCloudBaseURL WeKnoraCloud 服务硬编码 Base URL（统一入口，路径由各实现拼接）
+	// WeKnoraCloudBaseURL Base URL cố định của dịch vụ WeKnoraCloud (một điểm vào, từng phần tự nối path)
 	WeKnoraCloudBaseURL = "https://weknora.weixin.qq.com"
 )
 
@@ -19,7 +19,7 @@ func (p *WeKnoraCloudProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderWeKnoraCloud,
 		DisplayName: "WeKnoraCloud",
-		Description: "WeKnora云服务，模型：chat, embedding, rerank, vlm",
+		Description: "Dịch vụ đám mây WeKnora, mô hình: chat, embedding, rerank, vlm",
 		DefaultURLs: map[types.ModelType]string{
 			types.ModelTypeKnowledgeQA: WeKnoraCloudBaseURL,
 			types.ModelTypeEmbedding:   WeKnoraCloudBaseURL,
@@ -37,7 +37,7 @@ func (p *WeKnoraCloudProvider) Info() ProviderInfo {
 }
 
 func (p *WeKnoraCloudProvider) ValidateConfig(config *Config) error {
-	// AppID/AppSecret 通过专用Initialization 接口写入，此处仅做结构校验。
-	// 其中 AppSecret 字段当前实际承载上游 API Key。
+	// AppID/AppSecret được ghi qua API khởi tạo riêng, ở đây chỉ kiểm tra cấu trúc.
+	// Trường AppSecret hiện đang chứa API Key của upstream.
 	return nil
 }

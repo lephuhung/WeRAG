@@ -102,11 +102,11 @@ func (h *SystemHandler) BindDeploymentCapabilities(data DeploymentCapabilitiesDa
 }
 
 // GetDeploymentCapabilities godoc
-// @Summary      获取部署能力清单
-// @Description  返回当前部署版本及实际注册的后端路由所对应的功能能力；仅 supported=false 表示入口应隐藏
-// @Tags         系统
+// @Summary      Lấy danh sách năng lực của bản triển khai
+// @Description  Trả về phiên bản triển khai hiện tại và các năng lực tương ứng với route backend đã đăng ký thật; chỉ supported=false mới có nghĩa là nên ẩn lối vào
+// @Tags         Hệ thống
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "标准 code/msg/data 包装，data 为 DeploymentCapabilitiesData"
+// @Success      200  {object}  map[string]interface{}  "Gói chuẩn code/msg/data, data là DeploymentCapabilitiesData"
 // @Router       /system/capabilities [get]
 func (h *SystemHandler) GetDeploymentCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

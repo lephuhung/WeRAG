@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/ratelimit"
@@ -54,9 +55,17 @@ type Server struct {
 	// usageGuard refuses an ask the workspace's usage package does not cover.
 	usageGuard          interfaces.UsageGuard
 	abbreviationService interfaces.AbbreviationService
-	endpointRepo        interfaces.MCPEndpointRepository
-	db                  *gorm.DB
-	cfg                 *config.Config
+	// legalCatalogService / legalReviewService back the read-only legal
+	// tool group (tools_legal.go); nil when the catalogue is not wired.
+	legalCatalogService interfaces.LegalCatalogService
+	legalReviewService  interfaces.LegalReviewService
+	// wikiCatalogue rebuilds catalogue-mode wikis (legal_wiki_rebuild);
+	// vbplHTTP fetches documents from vbpl.vn (nil = default client).
+	wikiCatalogue *service.WikiCatalogueOverviewService
+	vbplHTTP      *http.Client
+	endpointRepo  interfaces.MCPEndpointRepository
+	db            *gorm.DB
+	cfg           *config.Config
 
 	limiter   *ratelimit.Limiter
 	lastTouch sync.Map // endpoint id -> time.Time of the last last_used_at write
@@ -82,6 +91,9 @@ func NewServer(
 	cfg *config.Config,
 	redisClient *redis.Client,
 	usageGuard interfaces.UsageGuard,
+	legalCatalogService interfaces.LegalCatalogService,
+	legalReviewService interfaces.LegalReviewService,
+	wikiCatalogue *service.WikiCatalogueOverviewService,
 ) *Server {
 	s := &Server{
 		kbService:            kbService,
@@ -95,6 +107,9 @@ func NewServer(
 		tenantService:        tenantService,
 		usageGuard:           usageGuard,
 		abbreviationService:  abbreviationService,
+		legalCatalogService:  legalCatalogService,
+		legalReviewService:   legalReviewService,
+		wikiCatalogue:        wikiCatalogue,
 		endpointRepo:         endpointRepo,
 		db:                   db,
 		cfg:                  cfg,
@@ -130,7 +145,13 @@ const serverInstructions = "WeKnora knowledge workspace. Start with list_knowled
 	"then use search_knowledge for semantic questions, grep_chunks for exact keywords, read_document to read " +
 	"a whole document, and ask to get a synthesized answer with citations. Wiki tools browse the generated " +
 	"wiki when a knowledge base has one. Write tools (add/update/delete_document) exist only on endpoints " +
-	"that enabled them."
+	"that enabled them. Legal tools (legal_*) read the platform legal catalogue: legal_check_status for the " +
+	"validity of one Vietnamese legal document, legal_find_related for guiding/amending/replacing documents, " +
+	"legal_catalog_search to find catalogue rows, legal_list_ingested and legal_expiry_audit to compare the " +
+	"public legal knowledge bases with the catalogue, legal_list_missing for in-scope documents not yet " +
+	"ingested (with the knowledge base to feed them into), legal_catalog_sync_status for the catalogue's freshness. " +
+	"Legal write tools (legal_ingest_document, legal_remove_document, legal_apply_expiry_audit, legal_review_scan, " +
+	"legal_wiki_rebuild) feed the public legal knowledge bases from vbpl.vn and exist only on endpoints that enabled them."
 
 // endpointFromContext returns the endpoint authenticated for this call.
 func endpointFromContext(ctx context.Context) (*types.MCPEndpoint, error) {
@@ -212,6 +233,18 @@ func (s *Server) toolCatalog() []server.ServerTool {
 		{Tool: addDocumentTool(), Handler: s.handleAddDocument},
 		{Tool: updateDocumentTool(), Handler: s.handleUpdateDocument},
 		{Tool: deleteDocumentTool(), Handler: s.handleDeleteDocument},
+		{Tool: legalCheckStatusTool(), Handler: s.handleLegalCheckStatus},
+		{Tool: legalFindRelatedTool(), Handler: s.handleLegalFindRelated},
+		{Tool: legalCatalogSearchTool(), Handler: s.handleLegalCatalogSearch},
+		{Tool: legalListIngestedTool(), Handler: s.handleLegalListIngested},
+		{Tool: legalExpiryAuditTool(), Handler: s.handleLegalExpiryAudit},
+		{Tool: legalSyncStatusTool(), Handler: s.handleLegalSyncStatus},
+		{Tool: legalListMissingTool(), Handler: s.handleLegalListMissing},
+		{Tool: legalIngestTool(), Handler: s.handleLegalIngest},
+		{Tool: legalRemoveTool(), Handler: s.handleLegalRemove},
+		{Tool: legalApplyExpiryTool(), Handler: s.handleLegalApplyExpiry},
+		{Tool: legalReviewScanTool(), Handler: s.handleLegalReviewScan},
+		{Tool: legalWikiRebuildTool(), Handler: s.handleLegalWikiRebuild},
 	}
 }
 

@@ -608,7 +608,7 @@ func (s *tenantInvitationService) AcceptByToken(
 			inv.ID, newUserID, err)
 		return nil, err
 	}
-	// Bump usage counter so the management UI can show "N 人已加入".
+	// Bump usage counter so the management UI can show "N người đã tham gia".
 	// Best-effort: a failure here doesn't undo the membership the user
 	// just earned — log and move on. The counter is for display only;
 	// audit log + tenant_members rows are the authoritative trail.

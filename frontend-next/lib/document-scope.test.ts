@@ -104,7 +104,7 @@ describe("card choice and action", () => {
     assert.deepEqual(choice, { task: "summary", documentId: "ws-1", sections: [1] });
     assert.ok(scopeChoiceReady(card, choice));
   });
-  it("summary stores a user scope with the ticked sections and re-sends the question", () => {
+  it("summary stores a user scope with the ticked sections and asks for a summary of them", () => {
     const action = scopeCardAction(card, { task: "summary", documentId: "ws-1", sections: [2, 0, 2] });
     assert.deepEqual(action, {
       kind: "scope",
@@ -117,8 +117,22 @@ describe("card choice and action", () => {
         task: "summary",
         set_by: "user",
       },
-      resend: "góp ý giúp",
+      resend: "Tóm tắt Điều 1, 3 của vb1",
     });
+  });
+  it("summary with no section ticked asks for the whole document", () => {
+    const action = scopeCardAction(card, { task: "summary", documentId: "ws-1", sections: [] });
+    assert.equal(action?.kind === "scope" && action.resend, "Tóm tắt toàn bộ vb1");
+  });
+  it("one part and compare keep the question and name the scope", () => {
+    const part = scopeCardAction(card, { task: "part", documentId: "ws-1", sections: [1] });
+    assert.equal(part?.kind === "scope" && part.resend, "góp ý giúp — phạm vi: Điều 2 của vb1");
+    const cmp = scopeCardAction(card, { task: "compare", documentId: "ws-1", sections: [] });
+    assert.equal(cmp?.kind === "scope" && cmp.resend, "góp ý giúp — đối chiếu vb1 với văn bản nguồn");
+  });
+  it("a card without a question (the chip) sends nothing", () => {
+    const action = scopeCardAction({ ...card, query: "" }, { task: "summary", documentId: "ws-1", sections: [0] });
+    assert.equal(action?.kind === "scope" && action.resend, "");
   });
   it("one part needs a section and is a lookup", () => {
     assert.equal(scopeChoiceReady(card, { task: "part", documentId: "ws-1", sections: [] }), false);

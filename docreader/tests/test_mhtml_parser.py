@@ -62,11 +62,11 @@ def _mhtml_with_table_image_and_caption() -> bytes:
     main.set_content(
         "<html><body>"
         "<table>"
-        "<tr><th>体验方向</th><th>代表内容</th></tr>"
-        "<tr><td>赛季制建立</td><td>BP、Rank</td></tr>"
+        "<tr><th>Nội dung</th><th>Cơ quan thực hiện</th></tr>"
+        "<tr><td>Ban hành công văn</td><td>UBND, Sở Nội vụ</td></tr>"
         "</table>"
-        '<img src="cid:test-image" alt="图片" title="图片">'
-        "<p>高机动性身法与独特枪械反馈</p>"
+        '<img src="cid:test-image" alt="Hình ảnh" title="Hình ảnh">'
+        "<p>Hướng dẫn thể thức văn bản theo Nghị định 30</p>"
         "</body></html>",
         subtype="html",
     )
@@ -88,19 +88,19 @@ def _mhtml_with_table_image_and_caption() -> bytes:
 
 def _mhtml_with_8bit_utf8_headers() -> bytes:
     """Browser-style MHTML: raw UTF-8 bytes in MIME headers, not RFC 2047."""
-    html_loc = "https://example.com/测试页面.html".encode("utf-8")
-    ad_loc = "https://googleads.example/广告.html".encode("utf-8")
-    image_loc = "https://example.com/图片.png".encode("utf-8")
-    content_id = "<图片@local>".encode("utf-8")
-    attachment_id = "图片".encode("utf-8")
+    html_loc = "https://example.com/trang-thử-nghiệm.html".encode("utf-8")
+    ad_loc = "https://googleads.example/quảng-cáo.html".encode("utf-8")
+    image_loc = "https://example.com/hình-ảnh.png".encode("utf-8")
+    content_id = "<hình-ảnh@local>".encode("utf-8")
+    attachment_id = "hình-ảnh".encode("utf-8")
     main_html = (
-        "<html><body><h1>中文主文</h1>"
-        '<img alt="绝对" src="https://example.com/图片.png">'
-        '<img alt="相对" src="图片.png">'
-        '<img alt="cid" src="cid:图片@local">'
+        "<html><body><h1>Bài chính tiếng Việt</h1>"
+        '<img alt="tuyệt đối" src="https://example.com/hình-ảnh.png">'
+        '<img alt="tương đối" src="hình-ảnh.png">'
+        '<img alt="cid" src="cid:hình-ảnh@local">'
         "</body></html>"
     ).encode("utf-8")
-    ad_html = "<html><body><h1>广告正文</h1></body></html>".encode("utf-8")
+    ad_html = "<html><body><h1>Nội dung quảng cáo</h1></body></html>".encode("utf-8")
     png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
     return b"".join(
         [
@@ -185,13 +185,13 @@ class MHTMLParserTest(unittest.TestCase):
 
         self.assertEqual(len(document.images), 1)
         image_ref = next(iter(document.images))
-        self.assertIn(f'![图片]({image_ref} "图片")', document.content)
+        self.assertIn(f'![Hình ảnh]({image_ref} "Hình ảnh")', document.content)
         self.assertIn(
-            f"| 赛季制建立 | BP、Rank |\n\n![图片]({image_ref} \"图片\")",
+            f"| Ban hành công văn | UBND, Sở Nội vụ |\n\n![Hình ảnh]({image_ref} \"Hình ảnh\")",
             document.content,
         )
         self.assertIn(
-            f'![图片]({image_ref} "图片")\n\n高机动性身法与独特枪械反馈',
+            f'![Hình ảnh]({image_ref} "Hình ảnh")\n\nHướng dẫn thể thức văn bản theo Nghị định 30',
             document.content,
         )
 
@@ -291,27 +291,27 @@ class MHTMLParserTest(unittest.TestCase):
         raw = (
             b"Content-Type: text/plain\r\n"
             b"Content-Location: https://example.com/"
-            + "图片.png".encode("utf-8")
+            + "hình-ảnh.png".encode("utf-8")
             + b"\r\n\r\nbody\r\n"
         )
         value = email.message_from_bytes(raw).get("Content-Location")
         self.assertIsInstance(value, Header)
-        self.assertEqual(_header_str(value), "https://example.com/图片.png")
+        self.assertEqual(_header_str(value), "https://example.com/hình-ảnh.png")
         self.assertEqual(_header_str(None), "")
         self.assertEqual(_header_str("ascii-location"), "ascii-location")
-        self.assertEqual(_header_str("已是unicode"), "已是unicode")
+        self.assertEqual(_header_str("đã là unicode"), "đã là unicode")
 
     def test_parse_8bit_utf8_headers_rewrites_images_without_crashing(self):
         document = MHTMLParser(
             file_name="article.mhtml", file_type="mhtml"
         ).parse_into_text(_mhtml_with_8bit_utf8_headers())
 
-        self.assertIn("中文主文", document.content)
-        self.assertNotIn("广告正文", document.content)
-        self.assertIn("images/图片.png", document.images)
-        self.assertIn("images/图片.png", document.content)
-        self.assertEqual(document.content.count("images/图片.png"), 3)
-        self.assertNotIn("cid:图片@local", document.content)
+        self.assertIn("Bài chính tiếng Việt", document.content)
+        self.assertNotIn("Nội dung quảng cáo", document.content)
+        self.assertIn("images/hình-ảnh.png", document.images)
+        self.assertIn("images/hình-ảnh.png", document.content)
+        self.assertEqual(document.content.count("images/hình-ảnh.png"), 3)
+        self.assertNotIn("cid:hình-ảnh@local", document.content)
         self.assertNotIn("\ufffd", document.content)
         self.assertTrue(all("\ufffd" not in key for key in document.images))
 

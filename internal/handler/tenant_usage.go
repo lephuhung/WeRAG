@@ -25,7 +25,7 @@ func NewTenantUsageHandler(plans interfaces.UsagePlanService) *TenantUsageHandle
 
 // Get godoc
 // @Summary      The workspace's usage package
-// @Tags         Tenant workspace
+// @Tags         Đơn vị
 // @Param        id path string true "workspace id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -45,7 +45,7 @@ func (h *TenantUsageHandler) Get(c *gin.Context) {
 
 // AssignSeat godoc
 // @Summary      Give a member a seat of the workspace package
-// @Tags         Tenant workspace
+// @Tags         Đơn vị
 // @Accept       json
 // @Param        id path string true "workspace id"
 // @Param        body body usageSeatRequest true "seat"
@@ -72,7 +72,7 @@ func (h *TenantUsageHandler) AssignSeat(c *gin.Context) {
 
 // RevokeSeat godoc
 // @Summary      Take a member's seat back
-// @Tags         Tenant workspace
+// @Tags         Đơn vị
 // @Param        id path string true "workspace id"
 // @Param        user_id path string true "user id"
 // @Success      200 {object} map[string]interface{}

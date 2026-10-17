@@ -33,7 +33,7 @@ func TestCreateForkedPersistsSessionAndCopiedMessages(t *testing.T) {
 		ID:                  "fork-1",
 		TenantID:            1,
 		UserID:              "u1",
-		Title:               "原会话（分支）",
+		Title:               "Cuộc trò chuyện gốc (nhánh)",
 		SandboxConfigID:     "cfg-1",
 		ParentSessionID:     "src",
 		ForkedFromMessageID: "u-msg-2",

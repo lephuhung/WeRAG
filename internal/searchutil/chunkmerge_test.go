@@ -7,10 +7,10 @@ import (
 )
 
 func TestAppendWithOverlap_ContiguousNoTrim(t *testing.T) {
-	// 首尾相接（无重叠），且 next 含 HTML 实体使其字符数 > EndAt-StartAt。
-	// 旧的按位置公式会多切掉开头，这里应当整段保留。
-	acc := "## 第二节\n\n"
-	next := "| 列A | 列B |\n| 值1 | 含实体&#34;引号&#34;的内容 |\n"
+	// Hai đoạn nối tiếp nhau (không chồng lấn), và next chứa thực thể HTML nên số ký tự > EndAt-StartAt.
+	// Công thức cắt theo vị trí cũ sẽ cắt mất phần đầu; ở đây phải giữ nguyên cả đoạn.
+	acc := "## Mục 2\n\n"
+	next := "| Cột A | Cột B |\n| Giá trị 1 | Nội dung có thực thể &#34;dấu ngoặc&#34; |\n"
 	got := AppendWithOverlap(acc, next, 0)
 	want := acc + next
 	if got != want {
@@ -19,17 +19,17 @@ func TestAppendWithOverlap_ContiguousNoTrim(t *testing.T) {
 }
 
 func TestAppendWithOverlap_PrependedTableHeaderSkipped(t *testing.T) {
-	// 模拟 chunker 给拆分表格补写表头：next 开头多了一份表头（零宽，位置不可见），
-	// 真正的重叠行在表头之后。按位置裁剪会错位，按文本匹配应正确去重。
-	header := "| 列1 | 列2 | 列3 |\n|:---|:---|:---|\n"
-	overlapRows := "| 第5行 | 内容5A | 内容5B |\n| 第6行 | 内容6A | 内容6B |\n"
-	accTail := "| 第4行 | 内容4A | 内容4B |\n" + overlapRows
-	acc := header + "| 第1行 | x | — |\n" + accTail
+	// Mô phỏng chunker bổ sung tiêu đề cho bảng bị tách: đầu next có thêm một tiêu đề (độ rộng 0, không thấy theo vị trí),
+	// các dòng chồng lấn thật nằm sau tiêu đề. Cắt theo vị trí sẽ lệch; khớp theo văn bản phải khử trùng lặp đúng.
+	header := "| Cột 1 | Cột 2 | Cột 3 |\n|:---|:---|:---|\n"
+	overlapRows := "| Dòng 5 | Nội dung 5A | Nội dung 5B |\n| Dòng 6 | Nội dung 6A | Nội dung 6B |\n"
+	accTail := "| Dòng 4 | Nội dung 4A | Nội dung 4B |\n" + overlapRows
+	acc := header + "| Dòng 1 | x | — |\n" + accTail
 
-	newRows := "| 第7行 | 内容7A | 内容7B |\n| 第8行 | 内容8A | 内容8B |\n"
+	newRows := "| Dòng 7 | Nội dung 7A | Nội dung 7B |\n| Dòng 8 | Nội dung 8A | Nội dung 8B |\n"
 	next := header + overlapRows + newRows
 
-	// 位置重叠量大约是两行的长度（这里给个近似值即可，仅用于窗口估算）。
+	// Lượng chồng lấn theo vị trí xấp xỉ độ dài hai dòng (giá trị gần đúng là đủ, chỉ dùng để ước lượng cửa sổ).
 	got := AppendWithOverlap(acc, next, len([]rune(overlapRows)))
 	want := acc + newRows
 	if got != want {
@@ -39,7 +39,7 @@ func TestAppendWithOverlap_PrependedTableHeaderSkipped(t *testing.T) {
 
 func TestAppendWithOverlap_PlainOverlap(t *testing.T) {
 	acc := "abcdefghijklmnopqrstuvwxyz0123"
-	// next 与 acc 末尾 "klmnopqrstuvwxyz0123" 重叠，再接新内容
+	// next chồng lấn với đuôi acc "klmnopqrstuvwxyz0123", rồi nối nội dung mới
 	next := "klmnopqrstuvwxyz0123ABCDEFG"
 	got := AppendWithOverlap(acc, next, 20)
 	want := "abcdefghijklmnopqrstuvwxyz0123ABCDEFG"
@@ -71,11 +71,11 @@ func TestAppendWithExactOverlap_TrimsKnownOverlap(t *testing.T) {
 }
 
 func TestAppendWithExactOverlap_ZeroOverlapConcatenatesRepeatedText(t *testing.T) {
-	// 首尾相接的两段都由同一周期性文本组成（表格行 / 日志行）。重叠量为 0 时
-	// 必须原样拼接，不能去搜索后缀匹配，否则会吃掉 next 开头的重复行。
+	// Hai đoạn nối tiếp nhau đều gồm cùng một văn bản lặp tuần hoàn (dòng bảng / dòng log). Khi lượng chồng lấn là 0
+	// phải nối nguyên văn, không được tìm khớp hậu tố, nếu không sẽ nuốt mất các dòng lặp ở đầu next.
 	row := "| cell | cell |\n"
-	acc := "前言\n" + row + row
-	next := row + row + row + "结尾\n"
+	acc := "Lời nói đầu\n" + row + row
+	next := row + row + row + "Kết thúc\n"
 	got, ok := AppendWithExactOverlap(acc, next, 0)
 	if !ok {
 		t.Fatal("zero overlap should be accepted")
@@ -86,8 +86,8 @@ func TestAppendWithExactOverlap_ZeroOverlapConcatenatesRepeatedText(t *testing.T
 }
 
 func TestAppendWithExactOverlap_RejectsMismatchedOverlap(t *testing.T) {
-	// 长度不变式成立但文本已经不同（HTML 实体、补写表头等），必须拒绝，
-	// 由调用方回退到按文本匹配。
+	// Bất biến độ dài đúng nhưng văn bản đã khác (thực thể HTML, tiêu đề bổ sung...), phải từ chối,
+	// để bên gọi quay về khớp theo văn bản.
 	if _, ok := AppendWithExactOverlap("abcdefghijkl", "XYZdefghijkl", 6); ok {
 		t.Fatal("mismatched overlap should be rejected")
 	}
@@ -136,7 +136,7 @@ func TestMergeTextChunks_OrdersFiltersAndStitches(t *testing.T) {
 			StartAt: 0, EndAt: 20, ChunkIndex: 0,
 		},
 		{
-			// 补写表头 + 与上一段 r2 重叠 + 新行 r3
+			// tiêu đề bổ sung + chồng lấn r2 với đoạn trước + dòng mới r3
 			Content: header + "| r2 | y |\n| r3 | z |\n", ChunkType: types.ChunkTypeText,
 			StartAt: 10, EndAt: 40, ChunkIndex: 1,
 		},

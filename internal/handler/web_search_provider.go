@@ -141,13 +141,13 @@ func (h *WebSearchProviderHandler) ListProviders(c *gin.Context) {
 // GetProvider retrieves a single web search provider by ID.
 //
 // GetProvider godoc
-// @Summary      获取网络搜索 Provider Details
-// @Description  根据 ID Get specified  provider Configuration
-// @Tags         网络搜索
+// @Summary      Lấy chi tiết Provider tìm kiếm web
+// @Description  Lấy cấu hình provider theo ID
+// @Tags         Tìm kiếm web
 // @Produce      json
 // @Param        id   path      string                          true  "Provider ID"
 // @Success      200  {object}  types.WebSearchProviderEntity   "Provider Details "
-// @Failure      404  {object}  map[string]interface{}          "Provider 不存在"
+// @Failure      404  {object}  map[string]interface{}          "không tìm thấy Provider"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/{id} [get]
@@ -176,16 +176,16 @@ func (h *WebSearchProviderHandler) GetProvider(c *gin.Context) {
 // UpdateProvider updates a web search provider.
 //
 // UpdateProvider godoc
-// @Summary      Update 网络搜索 Provider
-// @Description  Update 指定 provider 的名称/描述/Parameters /是否默认
-// @Tags         网络搜索
+// @Summary      Cập nhật Provider tìm kiếm web
+// @Description  Cập nhật tên / mô tả / tham số / mặc định của provider chỉ định
+// @Tags         Tìm kiếm web
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                          true  "Provider ID"
-// @Param        request  body      handler.UpdateProviderRequest   true  "Update 字段"
-// @Success      200      {object}  types.WebSearchProviderEntity   "Update 后的 Provider"
-// @Failure      400      {object}  map[string]interface{}          "请求Parameters 错误"
-// @Failure      404      {object}  map[string]interface{}          "Provider 不存在"
+// @Param        request  body      handler.UpdateProviderRequest   true  "các trường cập nhật"
+// @Success      200      {object}  types.WebSearchProviderEntity   "Provider sau khi cập nhật"
+// @Failure      400      {object}  map[string]interface{}          "tham số không hợp lệ"
+// @Failure      404      {object}  map[string]interface{}          "không tìm thấy Provider"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/{id} [put]
@@ -272,13 +272,13 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 // DeleteProvider deletes a web search provider.
 //
 // DeleteProvider godoc
-// @Summary      Delete 网络搜索 Provider
-// @Description  Delete 指定 provider Configuration
-// @Tags         网络搜索
+// @Summary      Xoá Provider tìm kiếm web
+// @Description  Xoá cấu hình provider chỉ định
+// @Tags         Tìm kiếm web
 // @Produce      json
 // @Param        id   path      string                  true  "Provider ID"
 // @Success      200  {object}  map[string]interface{}  "success: true"
-// @Failure      404  {object}  map[string]interface{}  "Provider 不存在"
+// @Failure      404  {object}  map[string]interface{}  "không tìm thấy Provider"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/{id} [delete]
@@ -311,11 +311,11 @@ func (h *WebSearchProviderHandler) DeleteProvider(c *gin.Context) {
 // ListProviderTypes returns available provider types and their parameter requirements.
 //
 // ListProviderTypes godoc
-// @Summary      获取网络搜索 Provider 类型元数据
-// @Description  返回 UI 表单需要的 provider 类型及Parameters 定义
-// @Tags         网络搜索
+// @Summary      Lấy metadata các loại Provider tìm kiếm web
+// @Description  Trả về các loại provider và định nghĩa tham số mà biểu mẫu UI cần
+// @Tags         Tìm kiếm web
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "provider 类型List "
+// @Success      200  {object}  map[string]interface{}  "danh sách loại provider"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/types [get]
@@ -329,13 +329,13 @@ func (h *WebSearchProviderHandler) ListProviderTypes(c *gin.Context) {
 // TestProviderByID tests an existing saved provider by performing a sample search.
 //
 // TestProviderByID godoc
-// @Summary      测试已保存的 Provider
-// @Description  使用数据库中已保存的凭证测试连通性
-// @Tags         网络搜索
+// @Summary      Kiểm tra Provider đã lưu
+// @Description  Kiểm tra kết nối bằng thông tin xác thực đã lưu trong cơ sở dữ liệu
+// @Tags         Tìm kiếm web
 // @Produce      json
 // @Param        id   path      string                  true  "Provider ID"
-// @Success      200  {object}  map[string]interface{}  "测试结果"
-// @Failure      404  {object}  map[string]interface{}  "Provider 不存在"
+// @Success      200  {object}  map[string]interface{}  "kết quả kiểm tra"
+// @Failure      404  {object}  map[string]interface{}  "không tìm thấy Provider"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/{id}/test [post]
@@ -373,14 +373,14 @@ type TestProviderRequest struct {
 // TestProviderRaw tests a provider with raw credentials (no persistence).
 //
 // TestProviderRaw godoc
-// @Summary      使用原始凭证测试 Provider（不落库）
-// @Description  使用前端表单中尚未保存的凭证测试连通性，用于"测试连接"按钮
-// @Tags         网络搜索
+// @Summary      Kiểm tra Provider bằng thông tin xác thực thô (không lưu)
+// @Description  Kiểm tra kết nối bằng thông tin xác thực chưa lưu trong biểu mẫu, dùng cho nút "Kiểm tra kết nối"
+// @Tags         Tìm kiếm web
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.TestProviderRequest  true  "{provider, parameters}"
-// @Success      200      {object}  map[string]interface{}  "测试结果"
-// @Failure      400      {object}  map[string]interface{}  "请求Parameters 错误"
+// @Success      200      {object}  map[string]interface{}  "kết quả kiểm tra"
+// @Failure      400      {object}  map[string]interface{}  "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /web-search-providers/test [post]

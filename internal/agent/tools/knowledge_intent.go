@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -41,20 +42,45 @@ lookup = true when the answer rests on facts: what laws, decrees, circulars, reg
 
 lookup = false for greetings and small talk, questions about the assistant itself, and requests that work only on text the user supplied in the message (rewrite, translate, summarise, check spelling, draft from the given content), or pure arithmetic.`
 
+// knowledgeIntentAttachedNote extends knowledgeIntentPrompt when the
+// request comes with files: "cho tôi thông tin sơ bộ về văn bản" sent with
+// a report attached was labeled lookup (2026-10-16) and the turn started
+// with a needless search_knowledge.
+const knowledgeIntentAttachedNote = `
+
+The user attached files to this request (listed before it). Their text is given to the assistant like the open document's: a request about them (summarise, overview, what they say, counts, names in them) is lookup = false. A question about facts outside them (which law applies, whether a rule or document is valid or current, what a photographed sign or object means under the rules) is still lookup = true.`
+
 // ClassifyKnowledgeLookup reports whether a request needs facts from
-// outside the open document; false when unsure, on error or without a
-// model.
-func ClassifyKnowledgeLookup(ctx context.Context, model docformat.Completer, query string) bool {
-	return classifyLookup(ctx, model, knowledgeIntentPrompt, query)
+// outside the open document and the files attached to it (attached: their
+// names); false when unsure, on error or without a model.
+func ClassifyKnowledgeLookup(ctx context.Context, model docformat.Completer, query string, attached ...string) bool {
+	var names []string
+	for _, n := range attached {
+		// a file name is untrusted text: one line, quoted
+		n = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || r == '"' {
+				return ' '
+			}
+			return r
+		}, n))
+		if n != "" {
+			names = append(names, `"`+clipRunes(n, 120)+`"`)
+		}
+	}
+	if len(names) == 0 {
+		return classifyLookup(ctx, model, knowledgeIntentPrompt, query, "")
+	}
+	return classifyLookup(ctx, model, knowledgeIntentPrompt+knowledgeIntentAttachedNote, query,
+		"Tệp đính kèm: "+strings.Join(names, "; ")+"\n")
 }
 
 // ClassifyChatKnowledgeLookup is ClassifyKnowledgeLookup for a chat turn
 // with no open document.
 func ClassifyChatKnowledgeLookup(ctx context.Context, model docformat.Completer, query string) bool {
-	return classifyLookup(ctx, model, chatKnowledgeIntentPrompt, query)
+	return classifyLookup(ctx, model, chatKnowledgeIntentPrompt, query, "")
 }
 
-func classifyLookup(ctx context.Context, model docformat.Completer, prompt, query string) bool {
+func classifyLookup(ctx context.Context, model docformat.Completer, prompt, query, preface string) bool {
 	query = strings.TrimSpace(query)
 	if model == nil || query == "" {
 		return false
@@ -63,7 +89,7 @@ func classifyLookup(ctx context.Context, model docformat.Completer, prompt, quer
 	defer cancel()
 	reply, err := model.Complete(ctx, []docformat.Message{
 		{Role: "system", Content: prompt},
-		{Role: "user", Content: "Yêu cầu: " + clipRunes(query, 400)},
+		{Role: "user", Content: preface + "Yêu cầu: " + clipRunes(query, 400)},
 	})
 	if err != nil {
 		logger.Warnf(ctx, "knowledge lookup intent: %v", err)

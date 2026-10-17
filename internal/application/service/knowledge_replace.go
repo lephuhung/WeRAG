@@ -49,7 +49,7 @@ func (s *knowledgeService) ReplaceKnowledgeFile(ctx context.Context,
 		return nil, err
 	}
 	if kb != nil && kb.Type == types.KnowledgeBaseTypeFAQ {
-		return nil, werrors.NewBadRequestError("FAQ 知识库不支持文件上传，请使用 FAQ 导入功能")
+		return nil, werrors.NewBadRequestError("kho tri thức FAQ không hỗ trợ tải tệp lên, vui lòng dùng chức năng nhập FAQ")
 	}
 	if existing.Type != "file" || existing.FilePath == "" {
 		return nil, werrors.NewBadRequestError("only file knowledge can have its file replaced")
@@ -77,12 +77,12 @@ func (s *knowledgeService) ReplaceKnowledgeFile(ctx context.Context,
 	}
 	safeFileName, ok := secutils.ValidateInput(fileName)
 	if !ok {
-		return nil, werrors.NewValidationError("文件名包含非法字符")
+		return nil, werrors.NewValidationError("tên tệp chứa ký tự không hợp lệ")
 	}
 	if folderPath != "" {
 		safeFolderPath, ok := secutils.ValidateInput(folderPath)
 		if !ok {
-			return nil, werrors.NewValidationError("文件夹路径包含非法字符")
+			return nil, werrors.NewValidationError("đường dẫn thư mục chứa ký tự không hợp lệ")
 		}
 		folderPath = types.NormalizeKnowledgeFolderPath(safeFolderPath)
 	}

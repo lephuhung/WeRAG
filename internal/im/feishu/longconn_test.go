@@ -8,7 +8,7 @@ import (
 )
 
 func TestConvertPostEventPreservesEmbeddedImage(t *testing.T) {
-	content := `{"title":"","content":[[{"tag":"at","user_id":"ou_bot"},{"tag":"text","text":"请描述这张图"},{"tag":"img","image_key":"img_v3_abc"}]]}`
+	content := `{"title":"","content":[[{"tag":"at","user_id":"ou_bot"},{"tag":"text","text":"Hãy mô tả hình này"},{"tag":"img","image_key":"img_v3_abc"}]]}`
 	msg := &larkim.EventMessage{Content: &content}
 
 	got := convertPostEvent(RegionFeishu, msg, "ou_user", "oc_group", im.ChatTypeGroup, "om_message")
@@ -18,8 +18,8 @@ func TestConvertPostEventPreservesEmbeddedImage(t *testing.T) {
 	if got.MessageType != im.MessageTypeImage {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeImage)
 	}
-	if got.Content != "请描述这张图" {
-		t.Fatalf("Content = %q, want %q", got.Content, "请描述这张图")
+	if got.Content != "Hãy mô tả hình này" {
+		t.Fatalf("Content = %q, want %q", got.Content, "Hãy mô tả hình này")
 	}
 	if got.FileKey != "img_v3_abc" {
 		t.Fatalf("FileKey = %q, want %q", got.FileKey, "img_v3_abc")

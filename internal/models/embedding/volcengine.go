@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// VolcengineMultimodalEmbeddingPath 火山引擎 Ark 多模态 Embedding API 路径
+	// VolcengineMultimodalEmbeddingPath là đường dẫn API embedding đa phương thức của Volcengine Ark
 	VolcengineMultimodalEmbeddingPath = "/api/v3/embeddings/multimodal"
 )
 
@@ -35,7 +35,7 @@ type VolcengineEmbedder struct {
 	EmbedderPooler
 }
 
-// SetCustomHeaders Settings 用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+// SetCustomHeaders đặt HTTP header tùy chỉnh của người dùng (tương tự extra_headers của OpenAI Python SDK).
 func (e *VolcengineEmbedder) SetCustomHeaders(headers map[string]string) {
 	e.customHeaders = headers
 }

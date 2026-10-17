@@ -288,8 +288,8 @@ func (s *embedChannelService) chunkAllowedForEmbed(
 	if chunk == nil || chunk.KnowledgeBaseID == "" {
 		return false
 	}
-	// 显式重校验Tenant workspace：GetChunkByIDOnly 无Tenant workspace过滤，且 KBSelectionMode=="all"/默认
-	// 分支会无条件放行，必须在此挡住跨Tenant workspace chunk id 撞库读取他人Knowledge Base正文。
+	// Kiểm tra lại đơn vị một cách tường minh: GetChunkByIDOnly không lọc theo đơn vị, và nhánh KBSelectionMode=="all"/mặc định
+	// sẽ cho qua vô điều kiện, nên phải chặn tại đây việc dò chunk id xuyên đơn vị để đọc nội dung kho tri thức của người khác.
 	if ch == nil || chunk.TenantID != ch.TenantID {
 		return false
 	}

@@ -24,6 +24,9 @@ const (
 	legalReviewHeaderChars = 2500
 	// LegalReviewStatusAlerts lists approved documents a newer one supersedes.
 	LegalReviewStatusAlerts = "alerts"
+	// LegalReviewStatusSourceChanged lists approved documents whose reviewed
+	// catalogue row has newer portal values waiting in source_pending.
+	LegalReviewStatusSourceChanged = "source_changed"
 )
 
 // legalSupersedingRelations are the incoming edges that end a document.
@@ -195,6 +198,8 @@ func (s *legalReviewService) List(
 	switch status {
 	case LegalReviewStatusAlerts:
 		rows, total, err = s.reviews.ListSupersededLinks(ctx, kbID, offset, limit)
+	case LegalReviewStatusSourceChanged:
+		rows, total, err = s.reviews.ListSourceChangedLinks(ctx, kbID, offset, limit)
 	case "", string(types.LegalReviewPending), string(types.LegalReviewApproved), string(types.LegalReviewRejected):
 		rows, total, err = s.reviews.ListLinks(ctx, types.LegalReviewStatus(status), kbID, offset, limit)
 	default:

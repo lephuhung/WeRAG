@@ -36,7 +36,7 @@ func TestReapDeletesSnapshotAndClearsBootstrap(t *testing.T) {
 
 func TestReapReportsZeroWhenNothingIsOldEnough(t *testing.T) {
 	sessions := newFakeSessionStore(nil)
-	sessions.unconsumed = nil // 仓储层已按 retention 过滤
+	sessions.unconsumed = nil // tầng repository đã lọc theo retention
 	reaper := NewForkSnapshotReaper(sessions, &fakeSnapshotDeleter{}, 7*24*time.Hour)
 
 	n, err := reaper.ReapOnce(context.Background())
@@ -45,7 +45,7 @@ func TestReapReportsZeroWhenNothingIsOldEnough(t *testing.T) {
 	require.Zero(t, n)
 }
 
-// 一个删不掉的快照不该挡住后面的。
+// Một snapshot không xóa được không được chặn các snapshot sau.
 func TestReapContinuesAfterOneDeleteFails(t *testing.T) {
 	sessions := newFakeSessionStore(nil)
 	sessions.unconsumed = []*types.Session{
@@ -57,11 +57,11 @@ func TestReapContinuesAfterOneDeleteFails(t *testing.T) {
 
 	_, err := reaper.ReapOnce(context.Background())
 
-	require.NoError(t, err, "单个删除失败不该让整轮回收报错")
-	require.Len(t, snapshots.deleted, 2, "两个都要尝试")
+	require.NoError(t, err, "một lần xóa thất bại không được làm cả vòng thu hồi báo lỗi")
+	require.Len(t, snapshots.deleted, 2, "phải thử cả hai")
 }
 
-// 删不掉时绝不能清空 bootstrap，否则快照 ID 丢失，快照永久泄漏。
+// Khi không xóa được tuyệt đối không xóa bootstrap, nếu không ID snapshot bị mất và snapshot rò rỉ vĩnh viễn.
 func TestReapKeepsBootstrapWhenDeleteFails(t *testing.T) {
 	sessions := newFakeSessionStore(nil)
 	sessions.unconsumed = []*types.Session{agedFork("f1", 8*24*time.Hour)}

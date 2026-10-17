@@ -367,12 +367,12 @@ func TestJsonToMarkdown_BOM(t *testing.T) {
 }
 
 func TestJsonToMarkdown_UnicodeContent(t *testing.T) {
-	input := `{"名称": "WeKnora 知识库", "描述": "支持中文 JSON 🎉", "emoji": "🚀"}`
+	input := `{"tên": "WeKnora kho tri thức", "mô tả": "hỗ trợ JSON tiếng Việt 🎉", "emoji": "🚀"}`
 	result, err := jsonToMarkdown([]byte(input))
-	visualReport(t, "Unicode / Chinese / Emoji", input, result, err, []checkResult{
+	visualReport(t, "Unicode / Vietnamese / Emoji", input, result, err, []checkResult{
 		check("no error", err == nil),
 		check("all blocks are valid JSON", allBlocksValidJSON(result)),
-		check("contains Chinese", strings.Contains(result, "知识库")),
+		check("contains Vietnamese", strings.Contains(result, "kho tri thức")),
 		check("contains emoji", strings.Contains(result, "🚀")),
 	})
 }

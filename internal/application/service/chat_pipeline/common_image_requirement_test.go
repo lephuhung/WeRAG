@@ -12,7 +12,7 @@ func TestImagePolicyUsesStableSystemPrefixAndPreservesUserRequest(t *testing.T) 
 	cm.SummaryConfig.Prompt = "Custom prompt"
 	cm.UserContent = "Return JSON only"
 	without := prepareMessagesWithHistory(cm)
-	cm.RenderedContexts = "![流程图](resource://AbCdEfGhIjKlMnOpQrStUv)"
+	cm.RenderedContexts = "![sơ đồ quy trình](resource://AbCdEfGhIjKlMnOpQrStUv)"
 	with := prepareMessagesWithHistory(cm)
 	require.Equal(t, without[0], with[0], "retrieving images must not change the system prefix")
 	require.Contains(t, with[0].Content, types.SourcedAnswerOutputPrompt)

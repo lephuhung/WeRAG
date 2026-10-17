@@ -104,7 +104,7 @@ type TenantInvitation struct {
 	// through this invitation. Per-user invitations cap out at 1 (and
 	// the row flips to accepted in the same step). Share-link rows can
 	// accumulate many — this is what the management UI surfaces as the
-	// "已加入 N 人" caption so Owners can see whether a link is fresh
+	// "N người đã tham gia" caption so Owners can see whether a link is fresh
 	// or has already been used widely.
 	AcceptedCount int `json:"accepted_count" gorm:"column:accepted_count;not null;default:0"`
 }
@@ -152,7 +152,7 @@ type TenantInvitationResponse struct {
 	// share-link rows from per-user invitations.
 	IsShareLink bool `json:"is_share_link,omitempty"`
 	// AcceptedCount mirrors TenantInvitation.AcceptedCount. Surfaced
-	// for share-link rows so the management UI can show "N 人已通过此
-	// 链接加入"; informational only for per-user invitations.
+	// for share-link rows so the management UI can show "N người đã tham gia
+	// qua liên kết này"; informational only for per-user invitations.
 	AcceptedCount int `json:"accepted_count,omitempty"`
 }

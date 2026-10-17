@@ -100,8 +100,8 @@ func TestWikiReplaceTextExactMatchCases(t *testing.T) {
 			oldText: "X", newText: "", want: "keep--keep-", wantCount: 2,
 		},
 		{
-			name: "unicode exact matches", content: "旧文本与旧文本",
-			oldText: "旧文本", newText: "新文本", want: "新文本与新文本", wantCount: 2,
+			name: "unicode exact matches", content: "văn bản cũ và văn bản cũ",
+			oldText: "văn bản cũ", newText: "văn bản mới", want: "văn bản mới và văn bản mới", wantCount: 2,
 		},
 		{
 			name: "markdown links remain plain exact text", content: "See [[concept/old]] and [[concept/old]].",

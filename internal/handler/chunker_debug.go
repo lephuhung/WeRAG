@@ -108,16 +108,16 @@ type PreviewChunkingResponse struct {
 // calls, no logging of the supplied text.
 //
 // PreviewChunking godoc
-// @Summary      预览分块结果
-// @Description  对提交的文本运行自适应分块器并返回分块预览，不写入数据库不生成 embedding。文本最大 64k 字符
-// @Tags         分块
+// @Summary      Xem trước kết quả chia đoạn
+// @Description  Chạy bộ chia đoạn thích ứng trên văn bản gửi lên và trả về bản xem trước các đoạn; không ghi cơ sở dữ liệu, không tạo embedding. Văn bản tối đa 64k ký tự
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
 // @Param        request  body      handler.PreviewChunkingRequest   true  "{text, chunking_config}"
-// @Success      200      {object}  handler.PreviewChunkingResponse  "分块结果"
-// @Failure      400      {object}  map[string]interface{}           "请求Parameters 错误"
-// @Failure      413      {object}  map[string]interface{}           "文本超过预览限制"
-// @Failure      504      {object}  map[string]interface{}           "分块超时"
+// @Success      200      {object}  handler.PreviewChunkingResponse  "Kết quả chia đoạn"
+// @Failure      400      {object}  map[string]interface{}           "Tham số yêu cầu không hợp lệ"
+// @Failure      413      {object}  map[string]interface{}           "Văn bản vượt giới hạn xem trước"
+// @Failure      504      {object}  map[string]interface{}           "Chia đoạn quá hạn"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunker/preview [post]

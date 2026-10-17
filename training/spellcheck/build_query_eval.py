@@ -4,6 +4,8 @@ as build_eval.py so eval_model.py scores it; append to eval.jsonl or score
 on its own.
 
   python build_query_eval.py --queries held_out.jsonl --out eval_query.jsonl
+  # part "teencode": noisy lines carry ko/dc/vs..., 30% also a keyboard error
+  python build_query_eval.py --queries held_out.jsonl --teen-rate 1 --part teencode --out eval_teen.jsonl
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import sys
 from build_dataset import ABBREVIATIONS, abbreviate_query, load_system_prompt, read_jsonl
 from build_eval import make_request
 from noiser import PROTECTED_WORDS, inject, set_op_weights
+from teencode import substitute as teencode_substitute
 
 
 def main() -> int:
@@ -25,6 +28,8 @@ def main() -> int:
     ap.add_argument("--per-request", type=int, default=5)
     ap.add_argument("--telex-weight", type=float, default=40)
     ap.add_argument("--typo-weight", type=float, default=30)
+    ap.add_argument("--teen-rate", type=float, default=0.0, help="share of noisy lines that get teencode")
+    ap.add_argument("--part", default="query")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -45,7 +50,13 @@ def main() -> int:
         if rng.random() < 0.5:
             q = abbreviate_query(q, rng)
         if noisy_n < a.n_noisy:
-            noisy, fs = inject(q, rng, n_errors=1 if rng.random() < 0.75 else 2)
+            teen = rng.random() < a.teen_rate
+            noisy, fs = q, []
+            if not teen or rng.random() < 0.3:
+                noisy, fs = inject(q, rng, n_errors=1 if rng.random() < 0.75 else 2)
+            if teen:
+                noisy, extra = teencode_substitute(noisy if fs else q, fs, rng, 1 if rng.random() < 0.6 else 2)
+                fs = fs + extra if extra else []  # a teencode line without teencode does not count
             if fs:
                 paras.append((noisy, fs))
                 noisy_n += 1
@@ -58,7 +69,7 @@ def main() -> int:
         for i in range(0, len(paras), a.per_request):
             chunk = paras[i : i + a.per_request]
             clean_idx = {k for k, (_, fs) in enumerate(chunk) if not fs}
-            f.write(json.dumps(make_request(system, chunk, rng.randint(1, 300), "query", clean_idx), ensure_ascii=False) + "\n")
+            f.write(json.dumps(make_request(system, chunk, rng.randint(1, 300), a.part, clean_idx), ensure_ascii=False) + "\n")
     print(f"noisy={noisy_n} clean={clean_n} requests={(len(paras) + a.per_request - 1) // a.per_request}", file=sys.stderr)
     return 0
 

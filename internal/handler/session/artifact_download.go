@@ -34,11 +34,11 @@ func paramSessionID(c *gin.Context) string {
 }
 
 // ListSessionArtifacts godoc
-// @Summary      列出会话生成的产物文件
-// @Description  返回本会话中所有 assistant 消息产生的技能产物元数据（不含 URL）
-// @Tags         会话
+// @Summary      Liệt kê các tệp sản phẩm do cuộc trò chuyện tạo ra
+// @Description  Trả về metadata của các sản phẩm kỹ năng do mọi tin nhắn trợ lý trong cuộc trò chuyện này tạo ra (không kèm URL)
+// @Tags         Cuộc trò chuyện
 // @Produce      json
-// @Param        session_id  path  string  true  "会话ID"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      404  {object}  errors.AppError
 // @Security     Bearer

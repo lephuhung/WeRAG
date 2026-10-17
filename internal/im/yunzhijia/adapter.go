@@ -55,7 +55,7 @@ const maxDownloadFileSize = 32 << 20 // 32 MiB
 // while re-validating the target host stays within the allowed suffix.
 const maxDownloadRedirects = 1
 
-// Adapter implements im.Adapter for Yunzhijia (云之家).
+// Adapter implements im.Adapter for Yunzhijia.
 type Adapter struct {
 	sendMsgURL               string
 	secret                   string

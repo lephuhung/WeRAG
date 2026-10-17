@@ -19,7 +19,8 @@ func TestUsagePlanFeaturesEffectiveMaxIterations(t *testing.T) {
 }
 
 func TestUsagePlanFeaturesEffectiveHistoryTokens(t *testing.T) {
-	require.Equal(t, 250000, UsagePlanFeatures{}.EffectiveHistoryTokens(250000))
+	require.Equal(t, DefaultHistoryTokens, UsagePlanFeatures{}.EffectiveHistoryTokens(250000))
+	require.Equal(t, 64000, UsagePlanFeatures{}.EffectiveHistoryTokens(64000))
 	require.Equal(t, 65536, UsagePlanFeatures{HistoryTokens: 65536}.EffectiveHistoryTokens(250000))
 	require.Equal(t, MinHistoryTokens, UsagePlanFeatures{HistoryTokens: 1000}.EffectiveHistoryTokens(250000))
 	require.Equal(t, 128000, UsagePlanFeatures{HistoryTokens: 500000}.EffectiveHistoryTokens(128000))

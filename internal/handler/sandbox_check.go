@@ -86,12 +86,12 @@ func (r *SandboxCheckResponse) skip(name, reason string) {
 }
 
 // CheckSandboxConfig tests a sandbox configuration without persisting it.
-// @Summary      测试沙箱连通性
-// @Description  使用当前填写的Parameters 测试沙箱后端，不保存Configuration ；deep=true 会执行临时脚本，远端后端还会Create 并销毁一个沙箱
-// @Tags         系统
+// @Summary      Kiểm tra kết nối sandbox
+// @Description  Kiểm tra backend sandbox bằng tham số đang nhập, không lưu cấu hình; deep=true sẽ chạy một script tạm, backend từ xa còn tạo rồi huỷ một sandbox
+// @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        body  body  SandboxCheckRequest  true  "沙箱Configuration "
+// @Param        body  body  SandboxCheckRequest  true  "cấu hình sandbox"
 // @Success      200   {object}  SandboxCheckResponse
 // @Router       /system/sandbox-check [post]
 func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {
@@ -99,12 +99,12 @@ func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {
 
 	var req SandboxCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "请求体格式错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "nội dung yêu cầu không đúng định dạng"})
 		return
 	}
 	tenant, _ := types.TenantInfoFromContext(c.Request.Context())
 	if tenant == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "空间为空"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "thiếu thông tin đơn vị"})
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {
 	incoming := req.Config
 	if req.ConfigID != "" {
 		if h.sandboxConfigSvc == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "沙箱配置服务不可用"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "dịch vụ cấu hình sandbox tạm thời không khả dụng"})
 			return
 		}
 		entity, err := h.sandboxConfigSvc.Get(ctx, tenant.ID, req.ConfigID)
@@ -121,7 +121,7 @@ func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {
 			return
 		}
 		if entity == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "沙箱配置不存在"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "không tìm thấy cấu hình sandbox"})
 			return
 		}
 		stored = entity.Config
@@ -219,13 +219,13 @@ func sandboxConnectionCheckConfig(cfg *types.TenantSandboxConfig) *types.TenantS
 }
 
 // describeProbeMismatch reports why the probe script did not print its marker.
-// "命令输出与预期不符" on its own hides the exit code and the stderr line that
+// "command output did not match" on its own hides the exit code and the stderr line that
 // normally name the actual problem — a missing interpreter, an image entrypoint
 // that swallowed the command, or a bind mount that never reached the Docker VM.
 func describeProbeMismatch(exitCode int, killed bool, stdout, stderr, execErr string) string {
-	parts := []string{fmt.Sprintf("退出码 %d", exitCode)}
+	parts := []string{fmt.Sprintf("mã thoát %d", exitCode)}
 	if killed {
-		parts = append(parts, "执行超时被终止")
+		parts = append(parts, "bị dừng vì quá thời gian")
 	}
 	switch {
 	case firstProbeLine(stderr) != "":
@@ -233,7 +233,7 @@ func describeProbeMismatch(exitCode int, killed bool, stdout, stderr, execErr st
 	case firstProbeLine(stdout) != "":
 		parts = append(parts, "stdout: "+firstProbeLine(stdout))
 	default:
-		parts = append(parts, "没有任何输出")
+		parts = append(parts, "không có đầu ra nào")
 	}
 	if trimmed := strings.TrimSpace(execErr); trimmed != "" {
 		parts = append(parts, trimmed)
@@ -321,7 +321,7 @@ func (h *SystemHandler) runDeepSandboxCheck(
 		result.skip("egress_available", skipReasonSandboxExecFailed)
 		return
 	case execResult == nil:
-		result.add("sandbox_exec", false, "沙箱没有返回执行结果", latency)
+		result.add("sandbox_exec", false, "sandbox không trả về kết quả thực thi", latency)
 		result.skip("egress_available", skipReasonSandboxExecFailed)
 		return
 	case !strings.Contains(execResult.Stdout, marker):
@@ -386,16 +386,16 @@ func (h *SystemHandler) probeSandboxEgress(
 	case err != nil:
 		reportEgressProbe(result, policy, false, sandboxCheckReason(err), latency)
 	case execResult == nil:
-		reportEgressProbe(result, policy, false, "出网探测无返回", latency)
+		reportEgressProbe(result, policy, false, "thăm dò kết nối ra ngoài không có phản hồi", latency)
 	case execResult.Killed:
-		reportEgressProbe(result, policy, false, "出网探测超时", latency)
+		reportEgressProbe(result, policy, false, "thăm dò kết nối ra ngoài quá thời gian", latency)
 	case execResult.ExitCode != 0:
 		msg := strings.TrimSpace(execResult.Stderr)
 		if msg == "" {
 			msg = strings.TrimSpace(execResult.Stdout)
 		}
 		if msg == "" {
-			msg = "国内与国际探测目标均不可达"
+			msg = "không kết nối được tới cả đích thăm dò trong nước lẫn quốc tế"
 		}
 		reportEgressProbe(result, policy, false, msg, latency)
 	default:
@@ -478,25 +478,25 @@ func explainSandboxCreateFailure(
 		}
 		if tpl.Status == sandbox.TemplateStatusUntagged {
 			return fmt.Sprintf(
-				"模板 %s 的构建已完成，但没有一个构建带上 %q 标签，创建沙箱时无法解析；"+
-					"请重新构建该模板（删除后由 WeKnora 重新创建即可）",
+				"mẫu %s đã build xong nhưng không bản build nào mang thẻ %q nên không phân giải được khi tạo sandbox; "+
+					"hãy build lại mẫu này (xoá đi để WeKnora tự tạo lại)",
 				templateID, sandbox.DefaultE2BTemplateTag,
 			)
 		}
 		if tpl.Status == "ready" || tpl.Status == "" {
 			return fmt.Sprintf(
-				"模板 %s 在列表中已就绪，但集群拒绝创建沙箱（HTTP 404）；"+
-					"通常是构建快照尚未生效，请稍后重试或重新构建模板",
+				"mẫu %s đã sẵn sàng trong danh sách nhưng cụm từ chối tạo sandbox (HTTP 404); "+
+					"thường do snapshot build chưa có hiệu lực, hãy thử lại sau hoặc build lại mẫu",
 				templateID,
 			)
 		}
 		return fmt.Sprintf(
-			"模板 %s 存在，但构建状态为 %s，还不能启动沙箱；请等待构建完成或查看构建日志",
+			"mẫu %s tồn tại nhưng trạng thái build là %s, chưa khởi động được sandbox; hãy đợi build xong hoặc xem log build",
 			templateID, tpl.Status,
 		)
 	}
 	return fmt.Sprintf(
-		"当前 API Key 看不到模板 %s：模板可能已删除，或该 Key 属于其他团队/集群",
+		"API Key hiện tại không thấy mẫu %s: mẫu có thể đã bị xoá, hoặc Key thuộc nhóm/cụm khác",
 		templateID,
 	)
 }
@@ -511,14 +511,14 @@ func dockerUnavailableCheckReason(err *sandbox.RemoteError) string {
 	if host == "" {
 		detail := firstProbeLine(err.Message)
 		if detail == "" {
-			return "无法连接 Docker 守护进程"
+			return "không kết nối được Docker daemon"
 		}
-		return "无法连接 Docker 守护进程：" + detail
+		return "không kết nối được Docker daemon: " + detail
 	}
-	return "无法连接 Docker 守护进程 " + host +
-		"。留空地址时跟随本机 docker CLI（DOCKER_HOST 或当前 docker context）。" +
-		"Colima 一般是 unix://$HOME/.colima/default/docker.sock；" +
-		"WeKnora 跑在容器里时需要把该 socket 挂进 app。"
+	return "không kết nối được Docker daemon " + host +
+		". Để trống địa chỉ thì dùng theo docker CLI trên máy (DOCKER_HOST hoặc docker context hiện tại). " +
+		"Colima thường là unix://$HOME/.colima/default/docker.sock; " +
+		"khi WeKnora chạy trong container cần mount socket đó vào app."
 }
 
 func dockerHostFromUnavailableMessage(message string) string {
@@ -545,22 +545,22 @@ func sandboxCheckReason(err error) string {
 	}
 	switch remoteErr.Kind {
 	case sandbox.RemoteErrorKindAuthentication:
-		return "认证失败：API Key 无效或无权限"
+		return "xác thực thất bại: API Key không hợp lệ hoặc không có quyền"
 	case sandbox.RemoteErrorKindNotFound:
-		return "资源不存在：请检查模板 ID"
+		return "không tìm thấy tài nguyên: hãy kiểm tra ID mẫu"
 	case sandbox.RemoteErrorKindTimeout:
-		return "请求超时：端点不可达或响应过慢"
+		return "yêu cầu quá thời gian: không tới được endpoint hoặc phản hồi quá chậm"
 	case sandbox.RemoteErrorKindUnavailable:
 		if remoteErr.Provider == sandbox.SandboxTypeDocker {
 			return dockerUnavailableCheckReason(remoteErr)
 		}
-		return "服务不可用：端点拒绝连接"
+		return "dịch vụ tạm thời không khả dụng: endpoint từ chối kết nối"
 	case sandbox.RemoteErrorKindCapacity:
-		return "配额不足或触发限流"
+		return "hết hạn mức hoặc bị giới hạn tần suất"
 	case sandbox.RemoteErrorKindUnsupported:
-		return "该后端不支持此操作"
+		return "backend này không hỗ trợ thao tác"
 	case sandbox.RemoteErrorKindInvalidRequest:
-		return "参数无效：" + remoteErr.Message
+		return "tham số không hợp lệ: " + remoteErr.Message
 	default:
 		return remoteErr.Message
 	}

@@ -163,34 +163,34 @@ func dataKeys(data map[string]interface{}) []string {
 
 // toolDisplayNames maps internal tool names to user-friendly display labels.
 var toolDisplayNames = map[string]string{
-	agenttools.ToolDiscoverMCPTools:          "查看外部工具",
-	agenttools.ToolCallMCPTool:               "调用外部工具",
-	agenttools.ToolThinking:                  "深度思考",
-	agenttools.ToolTodoWrite:                 "制定计划",
-	agenttools.ToolSearchKnowledge:           "检索知识库",
-	agenttools.ToolReadDocument:              "阅读文档",
-	agenttools.ToolListDocuments:             "浏览文档列表",
+	agenttools.ToolDiscoverMCPTools:          "Xem công cụ ngoài",
+	agenttools.ToolCallMCPTool:               "Gọi công cụ ngoài",
+	agenttools.ToolThinking:                  "Suy nghĩ sâu",
+	agenttools.ToolTodoWrite:                 "Lập kế hoạch",
+	agenttools.ToolSearchKnowledge:           "Tra cứu kho tri thức",
+	agenttools.ToolReadDocument:              "Đọc tài liệu",
+	agenttools.ToolListDocuments:             "Duyệt danh sách tài liệu",
 	agenttools.ToolSearchDocumentSection:     "Tra cứu điều khoản",
-	agenttools.ToolQueryKnowledgeGraph:       "查询知识图谱",
-	agenttools.LegacyToolGrepChunks:          "关键词搜索",
-	agenttools.LegacyToolKnowledgeSearch:     "知识搜索",
-	agenttools.LegacyToolListKnowledgeChunks: "查看文档分块",
-	agenttools.LegacyToolGetDocumentInfo:     "获取文档信息",
-	agenttools.ToolSearchConversations:       "回顾历史对话",
-	agenttools.ToolSearchMemory:              "查询长期记忆",
-	agenttools.ToolDatabaseQuery:             "查询数据",
-	agenttools.ToolDataAnalysis:              "数据分析",
-	agenttools.ToolDataSchema:                "查看数据结构",
-	agenttools.ToolWebSearch:                 "搜索网页",
-	agenttools.ToolWebFetch:                  "获取网页",
-	agenttools.LegacyToolExecuteSkillScript:  "执行技能脚本",
-	agenttools.LegacyToolReadSkill:           "读取技能",
-	agenttools.ToolReadFile:                  "读取文件",
-	agenttools.ToolListSandboxFiles:          "列出沙箱文件",
-	agenttools.LegacyToolReadSandboxFile:     "读取沙箱文件",
-	agenttools.ToolWriteSandboxFile:          "写入沙箱文件",
-	agenttools.ToolEditSandboxFile:           "编辑沙箱文件",
-	agenttools.ToolShellExec:                 "执行沙箱命令",
+	agenttools.ToolQueryKnowledgeGraph:       "Truy vấn đồ thị tri thức",
+	agenttools.LegacyToolGrepChunks:          "Tìm theo từ khoá",
+	agenttools.LegacyToolKnowledgeSearch:     "Tìm kiếm tri thức",
+	agenttools.LegacyToolListKnowledgeChunks: "Xem đoạn tài liệu",
+	agenttools.LegacyToolGetDocumentInfo:     "Lấy thông tin tài liệu",
+	agenttools.ToolSearchConversations:       "Xem lại hội thoại cũ",
+	agenttools.ToolSearchMemory:              "Tra bộ nhớ dài hạn",
+	agenttools.ToolDatabaseQuery:             "Truy vấn dữ liệu",
+	agenttools.ToolDataAnalysis:              "Phân tích dữ liệu",
+	agenttools.ToolDataSchema:                "Xem cấu trúc dữ liệu",
+	agenttools.ToolWebSearch:                 "Tìm kiếm web",
+	agenttools.ToolWebFetch:                  "Tải trang web",
+	agenttools.LegacyToolExecuteSkillScript:  "Chạy script kỹ năng",
+	agenttools.LegacyToolReadSkill:           "Đọc kỹ năng",
+	agenttools.ToolReadFile:                  "Đọc tệp",
+	agenttools.ToolListSandboxFiles:          "Liệt kê tệp sandbox",
+	agenttools.LegacyToolReadSandboxFile:     "Đọc tệp sandbox",
+	agenttools.ToolWriteSandboxFile:          "Ghi tệp sandbox",
+	agenttools.ToolEditSandboxFile:           "Sửa tệp sandbox",
+	agenttools.ToolShellExec:                 "Chạy lệnh sandbox",
 }
 
 // toolHintSensitiveArgs lists tools whose arguments should NOT be shown in hints
@@ -199,7 +199,7 @@ var toolHintSensitiveArgs = map[string]bool{
 	agenttools.ToolDatabaseQuery: true,
 }
 
-// formatToolHint returns a concise human-readable hint for a tool call, e.g. `搜索网页("query text")`.
+// formatToolHint returns a concise human-readable hint for a tool call, e.g. `Tìm kiếm web("query text")`.
 // Uses display names instead of internal tool names, and hides sensitive arguments.
 func formatToolHint(name string, args map[string]any) string {
 	displayName := name

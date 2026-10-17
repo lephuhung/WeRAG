@@ -18,7 +18,7 @@ func newHelpCommand(registry *CommandRegistry) *HelpCommand {
 
 func (c *HelpCommand) Name() string { return "help" }
 func (c *HelpCommand) Description() string {
-	return "显示可用指令列表，或查看某个指令的详细用法"
+	return "Hiển thị danh sách lệnh, hoặc xem cách dùng chi tiết của một lệnh"
 }
 
 func (c *HelpCommand) Execute(_ context.Context, _ *CommandContext, args []string) (*CommandResult, error) {
@@ -28,7 +28,7 @@ func (c *HelpCommand) Execute(_ context.Context, _ *CommandContext, args []strin
 		cmd, _, ok := c.registry.Parse("/" + name)
 		if !ok {
 			return &CommandResult{
-				Content: fmt.Sprintf("未知指令 `%s`，发送 `/help` 查看所有可用指令。", args[0]),
+				Content: fmt.Sprintf("Lệnh không xác định `%s`, gửi `/help` để xem tất cả lệnh.", args[0]),
 			}, nil
 		}
 		return &CommandResult{
@@ -41,10 +41,10 @@ func (c *HelpCommand) Execute(_ context.Context, _ *CommandContext, args []strin
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].Name() < cmds[j].Name() })
 
 	var sb strings.Builder
-	sb.WriteString("**可用指令**\n\n")
+	sb.WriteString("**Các lệnh khả dụng**\n\n")
 	for _, cmd := range cmds {
 		sb.WriteString(fmt.Sprintf("· `/%s` — %s\n", cmd.Name(), cmd.Description()))
 	}
-	sb.WriteString("\n发送 `/help <指令名>` 查看详细用法")
+	sb.WriteString("\nGửi `/help <tên lệnh>` để xem cách dùng chi tiết")
 	return &CommandResult{Content: sb.String()}, nil
 }

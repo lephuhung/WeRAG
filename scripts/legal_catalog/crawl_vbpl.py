@@ -62,7 +62,10 @@ DETAIL_URL = "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/{}"
 # The portal's WAF answers 403 to non-browser user agents.
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 # 403/429 mean "too fast": back off for long. Some documents answer 500 every
-# time, so server errors get only a few short retries before being skipped.
+# time, so server errors get only a few short retries before being skipped —
+# except on the catalogue list, where a 5xx is the portal's nightly outage
+# (02:30 VN, seen 2026-10-15..17): there they get the long back-off too,
+# because nothing can be crawled without the list.
 THROTTLE_STATUS = {403, 429}
 SERVER_ERROR_STATUS = {500, 502, 503, 504}
 SERVER_ERROR_RETRIES = 2
@@ -126,7 +129,9 @@ class Client:
         self.last = 0.0
         self.requests = 0
 
-    def fetch(self, url, data=None, headers=None):
+    def fetch(self, url, data=None, headers=None, patient=False):
+        """patient=True retries server errors as long as throttling (the
+        request is essential, e.g. the list), else only a few times."""
         hdrs = {"User-Agent": USER_AGENT, "Referer": SITE + "/"}
         hdrs.update(headers or {})
         for attempt in range(self.retries + 1):
@@ -140,9 +145,10 @@ class Client:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     return resp.read().decode("utf-8", errors="replace")
             except urllib.error.HTTPError as e:
-                if e.code in SERVER_ERROR_STATUS and attempt < SERVER_ERROR_RETRIES:
+                if e.code in SERVER_ERROR_STATUS and not patient and attempt < SERVER_ERROR_RETRIES:
                     reason, pause = f"HTTP {e.code}", 5 * (attempt + 1)
-                elif e.code in THROTTLE_STATUS and attempt < self.retries:
+                elif e.code in THROTTLE_STATUS | (SERVER_ERROR_STATUS if patient else set()) \
+                        and attempt < self.retries:
                     reason, pause = f"HTTP {e.code}", min(30 * 2 ** attempt, 600)
                 else:
                     raise
@@ -154,9 +160,9 @@ class Client:
             time.sleep(pause)
         raise RuntimeError("unreachable")
 
-    def action(self, action_id, args, page=LIST_PAGE):
+    def action(self, action_id, args, page=LIST_PAGE, patient=False):
         body = json.dumps(args, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        return self.fetch(page, data=body, headers={
+        return self.fetch(page, data=body, patient=patient, headers={
             "Next-Action": action_id,
             "Accept": "text/x-component",
             "Content-Type": "text/plain;charset=UTF-8",
@@ -275,7 +281,7 @@ def crawl_list(client, db, action, args):
         text = client.action(action, [{
             "pageNumber": page, "pageSize": size, "sortBy": "issueDate",
             "sortDirection": "desc", "agencyLevel": level,
-        }], page=LOCAL_PAGE if args.province else LIST_PAGE)
+        }], page=LOCAL_PAGE if args.province else LIST_PAGE, patient=True)
         res = rsc_object(text, "items")
         if res is None:
             raise SystemExit(f"list page {page}: unexpected response (action id changed?): {text[:200]!r}")

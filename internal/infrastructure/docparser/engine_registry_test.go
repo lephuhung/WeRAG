@@ -48,8 +48,8 @@ func TestDefaultParserEnginePrefersAnydocWhenLinked(t *testing.T) {
 	if got := types.DefaultParserEngine("pptx"); got != "markitdown" {
 		t.Fatalf("DefaultParserEngine(pptx) = %q, want markitdown when anydoc is unavailable", got)
 	}
-	if got := types.DefaultParserEngine("pdf"); got != "" {
-		t.Fatalf("DefaultParserEngine(pdf) = %q, want empty when anydoc is unavailable", got)
+	if got := types.DefaultParserEngine("pdf"); got != "vietnamese_legal" {
+		t.Fatalf("DefaultParserEngine(pdf) = %q, want vietnamese_legal when anydoc is unavailable", got)
 	}
 	if got := types.DefaultParserEngine("docx"); got != "" {
 		t.Fatalf("DefaultParserEngine(docx) = %q, want empty when anydoc is unavailable", got)

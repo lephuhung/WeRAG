@@ -8,7 +8,7 @@ func TestCalculateFAQContentHash_NormalizeIsApplied(t *testing.T) {
 	// The core bug: CalculateFAQContentHash must normalize the input so that
 	// sanitized-only data and pre-normalized data produce the same hash.
 	meta := &FAQChunkMetadata{
-		StandardQuestion: "  你好，World？ ",
+		StandardQuestion: "  Xin chào, World? ",
 		SimilarQuestions: []string{"Hello World", "hello world"},
 		Answers:          []string{"answer1"},
 		AnswerStrategy:   AnswerStrategyAll,
@@ -21,7 +21,7 @@ func TestCalculateFAQContentHash_NormalizeIsApplied(t *testing.T) {
 
 	// Path 2: what calculateReplaceOperations does (hash directly from sanitized data)
 	sanitized := &FAQChunkMetadata{
-		StandardQuestion: "  你好，World？ ",
+		StandardQuestion: "  Xin chào, World? ",
 		SimilarQuestions: []string{"Hello World", "hello world"},
 		Answers:          []string{"answer1"},
 		AnswerStrategy:   AnswerStrategyAll,
@@ -39,9 +39,9 @@ func TestCalculateFAQContentHash_NormalizeIsApplied(t *testing.T) {
 func TestCalculateFAQContentHash_ConsistentViaSetFAQMetadata(t *testing.T) {
 	// Simulate the full write path then read-path comparison
 	meta := &FAQChunkMetadata{
-		StandardQuestion: "如何退款？",
-		SimilarQuestions: []string{"怎么退款", "退款流程"},
-		Answers:          []string{"请联系客服"},
+		StandardQuestion: "Thủ tục cấp lại giấy khai sinh?",
+		SimilarQuestions: []string{"cấp lại khai sinh thế nào", "quy trình cấp lại khai sinh"},
+		Answers:          []string{"Liên hệ Phòng Tư pháp"},
 		AnswerStrategy:   AnswerStrategyAll,
 		Version:          1,
 		Source:           "faq",
@@ -58,9 +58,9 @@ func TestCalculateFAQContentHash_ConsistentViaSetFAQMetadata(t *testing.T) {
 
 	// Read path: calculateReplaceOperations calls sanitize + CalculateFAQContentHash
 	readMeta := &FAQChunkMetadata{
-		StandardQuestion: "如何退款？",
-		SimilarQuestions: []string{"怎么退款", "退款流程"},
-		Answers:          []string{"请联系客服"},
+		StandardQuestion: "Thủ tục cấp lại giấy khai sinh?",
+		SimilarQuestions: []string{"cấp lại khai sinh thế nào", "quy trình cấp lại khai sinh"},
+		Answers:          []string{"Liên hệ Phòng Tư pháp"},
 		AnswerStrategy:   AnswerStrategyAll,
 		Version:          1,
 		Source:           "faq",
@@ -129,12 +129,12 @@ func TestCalculateFAQContentHash_TraditionalSimplifiedInvariant(t *testing.T) {
 
 func TestCalculateFAQContentHash_SortInvariant(t *testing.T) {
 	meta1 := &FAQChunkMetadata{
-		StandardQuestion: "问题",
+		StandardQuestion: "câu hỏi",
 		SimilarQuestions: []string{"a", "b", "c"},
 		Answers:          []string{"x", "y", "z"},
 	}
 	meta2 := &FAQChunkMetadata{
-		StandardQuestion: "问题",
+		StandardQuestion: "câu hỏi",
 		SimilarQuestions: []string{"c", "a", "b"},
 		Answers:          []string{"z", "x", "y"},
 	}

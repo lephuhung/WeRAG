@@ -16,10 +16,10 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// RemoteAPIChat 实现了基于 OpenAI 兼容 API 的聊天。
-// 它本身只负责通用的请求/响应/流式处理；所有 provider 特定行为都委托给
-// providerAdapter（见 provider.go），thinking 编码委托给 ThinkingStrategy
-// （见 thinking.go）。
+// RemoteAPIChat cài đặt trò chuyện dựa trên API tương thích OpenAI.
+// Bản thân nó chỉ lo phần yêu cầu/phản hồi/stream chung; mọi hành vi riêng của provider được uỷ quyền cho
+// providerAdapter (xem provider.go), việc mã hoá thinking được uỷ quyền cho ThinkingStrategy
+// (xem thinking.go).
 type RemoteAPIChat struct {
 	modelName string
 	client    *openai.Client
@@ -29,16 +29,16 @@ type RemoteAPIChat struct {
 	provider  provider.ProviderName
 	appID     string
 	appSecret string
-	// customHeaders 为用户在模型Configuration 中指定的自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+	// customHeaders là header HTTP tuỳ chỉnh người dùng đặt trong cấu hình mô hình (giống extra_headers của OpenAI Python SDK).
 	customHeaders map[string]string
 
-	// adapter 承载所有 provider 特定行为（thinking / Parameters 特判 / endpoint / 鉴权 / 消息变换）。
+	// adapter chứa mọi hành vi riêng của provider (thinking / xử lý tham số riêng / endpoint / xác thực / biến đổi tin nhắn).
 	adapter providerAdapter
-	// thinkingOverride 来自 extra_config.thinking_control，非 nil 时覆盖 adapter.Thinking()。
+	// thinkingOverride lấy từ extra_config.thinking_control, khác nil thì ghi đè adapter.Thinking().
 	thinkingOverride ThinkingStrategy
 }
 
-// NewRemoteAPIChat Create 远程 API 聊天实例
+// NewRemoteAPIChat tạo instance trò chuyện qua API từ xa
 func NewRemoteAPIChat(chatConfig *ChatConfig) (*RemoteAPIChat, error) {
 	if chatConfig.BaseURL != "" {
 		if err := secutils.ValidateURLForSSRF(chatConfig.BaseURL); err != nil {
@@ -76,8 +76,8 @@ func NewRemoteAPIChat(chatConfig *ChatConfig) (*RemoteAPIChat, error) {
 	// Constructor-time URL validation alone cannot prevent DNS rebinding or a
 	// later redirect to an internal address.
 	sdkHTTPClient := rawHTTPClient
-	// 如果指定了 CustomHeaders，则给 SDK 使用的 HTTPClient 挂一层 RoundTripper，
-	// 在每个请求上自动注入这些 header（raw HTTP 路径会在发送前单独处理）。
+	// Nếu có CustomHeaders thì gắn thêm một lớp RoundTripper vào HTTPClient của SDK,
+	// tự chèn các header này vào mỗi yêu cầu (đường HTTP thô xử lý riêng trước khi gửi).
 	if len(chatConfig.CustomHeaders) > 0 {
 		sdkHTTPClient = secutils.WrapHTTPClientWithHeaders(sdkHTTPClient, chatConfig.CustomHeaders)
 	}
@@ -165,7 +165,7 @@ func (c *RemoteAPIChat) buildOutbound(
 	return body, endpoint, useRawHTTP, nil
 }
 
-// logRequest 记录请求日志
+// logRequest ghi log yêu cầu
 func (c *RemoteAPIChat) logRequest(ctx context.Context, req any, isStream bool) {
 	if jsonData, err := json.MarshalIndent(req, "", "  "); err == nil {
 		logger.Infof(ctx, "[LLM Request] model=%s, stream=%v, request:\n%s",
@@ -173,10 +173,10 @@ func (c *RemoteAPIChat) logRequest(ctx context.Context, req any, isStream bool) 
 	}
 }
 
-// Chat 进行非流式聊天
+// Chat thực hiện trò chuyện không stream
 func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
-	// 仅在调用方未Settings  deadline 时附加一个兜底超时，防止 hung 请求永久阻塞 worker；
-	// 调用方若显式Settings 了更短或更长的 deadline，都会被原样尊重。
+	// Chỉ thêm timeout dự phòng khi bên gọi chưa đặt deadline, tránh yêu cầu treo chặn worker mãi;
+	// nếu bên gọi đã đặt deadline ngắn hơn hay dài hơn thì đều được tôn trọng nguyên vẹn.
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultChatTimeout)
 	defer cancel()
 
@@ -211,7 +211,7 @@ func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *Chat
 	return result, nil
 }
 
-// chatWithRawHTTP 使用原始 HTTP 请求进行聊天（供自定义请求使用）
+// chatWithRawHTTP trò chuyện bằng yêu cầu HTTP thô (dùng cho yêu cầu tuỳ chỉnh)
 func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, customReq any, opts *ChatOptions) (*types.ChatResponse, error) {
 	jsonData, err := json.Marshal(customReq)
 	if err != nil {
@@ -235,7 +235,7 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.adapter.Auth(httpReq, c.authCreds(), jsonData)
 
-	// 注入用户自定义 header（保留头会在工具内部自动跳过）
+	// Chèn header tuỳ chỉnh của người dùng (các header dành riêng được bỏ qua tự động trong hàm tiện ích)
 	secutils.ApplyCustomHeaders(httpReq, c.customHeaders)
 	attachPromptCacheHeaders(httpReq, promptCachePolicyFor(c.provider, c.baseURL), promptCacheSessionID(ctx, opts))
 
@@ -273,10 +273,10 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	return result, nil
 }
 
-// ChatStream 进行流式聊天
+// ChatStream thực hiện trò chuyện dạng stream
 func (c *RemoteAPIChat) ChatStream(ctx context.Context, messages []Message, opts *ChatOptions) (<-chan types.StreamResponse, error) {
-	// 仅在调用方未Settings  deadline 时附加兜底超时；流式调用默认超时更长，
-	// 因为带思考/推理的模型可能数十秒甚至几分钟才产出首 token。
+	// Chỉ thêm timeout dự phòng khi bên gọi chưa đặt deadline; gọi stream có timeout mặc định dài hơn,
+	// vì mô hình có suy luận có thể mất hàng chục giây đến vài phút mới ra token đầu tiên.
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultStreamTimeout)
 
 	body, endpoint, useRawHTTP, err := c.buildOutbound(timeoutCtx, messages, opts, true)
@@ -325,8 +325,8 @@ func (c *RemoteAPIChat) ChatStream(ctx context.Context, messages []Message, opts
 	return streamChan, nil
 }
 
-// wrapStreamCancel 在子 channel 关闭后执行 cancel，避免 timeout context 泄漏。
-// 当底层调用直接返回 error 时，立即调用 cancel 并将 error 透出。
+// wrapStreamCancel gọi cancel sau khi channel con đóng, tránh rò rỉ timeout context.
+// Khi lời gọi bên dưới trả về error ngay thì gọi cancel lập tức và chuyển error ra ngoài.
 func wrapStreamCancel(in <-chan types.StreamResponse, err error, cancel context.CancelFunc) (<-chan types.StreamResponse, error) {
 	if err != nil {
 		cancel()
@@ -343,7 +343,7 @@ func wrapStreamCancel(in <-chan types.StreamResponse, err error, cancel context.
 	return out, nil
 }
 
-// chatStreamWithRawHTTP 使用原始 HTTP 请求进行流式聊天
+// chatStreamWithRawHTTP trò chuyện dạng stream bằng yêu cầu HTTP thô
 func (c *RemoteAPIChat) chatStreamWithRawHTTP(ctx context.Context, endpoint string, customReq any, opts *ChatOptions) (<-chan types.StreamResponse, error) {
 	jsonData, err := json.Marshal(customReq)
 	if err != nil {
@@ -372,7 +372,7 @@ func (c *RemoteAPIChat) chatStreamWithRawHTTP(ctx context.Context, endpoint stri
 	c.adapter.Auth(httpReq, c.authCreds(), jsonData)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
-	// 注入用户自定义 header（保留头会在工具内部自动跳过）
+	// Chèn header tuỳ chỉnh của người dùng (các header dành riêng được bỏ qua tự động trong hàm tiện ích)
 	secutils.ApplyCustomHeaders(httpReq, c.customHeaders)
 	attachPromptCacheHeaders(httpReq, promptCachePolicyFor(c.provider, c.baseURL), promptCacheSessionID(ctx, opts))
 
@@ -403,27 +403,27 @@ func (c *RemoteAPIChat) chatStreamWithRawHTTP(ctx context.Context, endpoint stri
 	return streamChan, nil
 }
 
-// GetModelName 获取模型名称
+// GetModelName trả về tên mô hình
 func (c *RemoteAPIChat) GetModelName() string {
 	return c.modelName
 }
 
-// GetModelID 获取模型ID
+// GetModelID trả về ID mô hình
 func (c *RemoteAPIChat) GetModelID() string {
 	return c.modelID
 }
 
-// GetProvider 获取 provider 名称
+// GetProvider trả về tên provider
 func (c *RemoteAPIChat) GetProvider() provider.ProviderName {
 	return c.provider
 }
 
-// GetBaseURL 获取 baseURL
+// GetBaseURL trả về baseURL
 func (c *RemoteAPIChat) GetBaseURL() string {
 	return c.baseURL
 }
 
-// GetAPIKey 获取 apiKey
+// GetAPIKey trả về apiKey
 func (c *RemoteAPIChat) GetAPIKey() string {
 	return c.apiKey
 }

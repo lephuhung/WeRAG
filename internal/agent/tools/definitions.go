@@ -105,29 +105,29 @@ type AvailableTool struct {
 // Keep this in sync with registered tools in this package.
 func AvailableToolDefinitions() []AvailableTool {
 	return []AvailableTool{
-		{Name: ToolThinking, Label: "思考", Description: "动态和反思性的问题解决思考工具"},
-		{Name: ToolTodoWrite, Label: "制定计划", Description: "创建结构化的研究计划"},
-		{Name: ToolSearchKnowledge, Label: "检索知识库", Description: "语义、关键词或混合检索知识库分块"},
-		{Name: ToolReadDocument, Label: "阅读文档", Description: "读取文档元数据与分块内容，支持分页和文内查找"},
-		{Name: ToolListDocuments, Label: "浏览文档列表", Description: "分页列出知识库中的文档"},
-		{Name: ToolQueryKnowledgeGraph, Label: "查询知识图谱", Description: "从知识图谱中查询关系"},
+		{Name: ToolThinking, Label: "Suy nghĩ", Description: "Công cụ suy nghĩ linh hoạt và phản tư để giải quyết vấn đề"},
+		{Name: ToolTodoWrite, Label: "Lập kế hoạch", Description: "Tạo kế hoạch nghiên cứu có cấu trúc"},
+		{Name: ToolSearchKnowledge, Label: "Tìm trong kho tri thức", Description: "Tìm các đoạn trong kho tri thức theo ngữ nghĩa, từ khóa hoặc kết hợp"},
+		{Name: ToolReadDocument, Label: "Đọc tài liệu", Description: "Đọc metadata và nội dung các đoạn của tài liệu, hỗ trợ phân trang và tìm trong văn bản"},
+		{Name: ToolListDocuments, Label: "Duyệt danh sách tài liệu", Description: "Liệt kê tài liệu trong kho tri thức theo trang"},
+		{Name: ToolQueryKnowledgeGraph, Label: "Truy vấn đồ thị tri thức", Description: "Truy vấn quan hệ từ đồ thị tri thức"},
 		{
 			Name:        ToolSearchConversations,
-			Label:       "回顾历史对话",
-			Description: "在用户自己的历史会话中查找之前聊过的内容",
+			Label:       "Xem lại trò chuyện trước",
+			Description: "Tìm nội dung đã trao đổi trong các cuộc trò chuyện trước của chính người dùng",
 		},
-		{Name: ToolDatabaseQuery, Label: "查询数据库", Description: "查询数据库中的信息"},
-		{Name: ToolDataAnalysis, Label: "数据分析", Description: "理解数据文件并进行数据分析"},
-		{Name: ToolDataSchema, Label: "查看数据元信息", Description: "获取表格文件的元信息"},
-		{Name: ToolWikiReadPage, Label: "读取Wiki页面", Description: "读取指定的Wiki页面内容"},
-		{Name: ToolWikiSearch, Label: "搜索Wiki", Description: "在Wiki中搜索页面"},
-		{Name: ToolWikiFlagIssue, Label: "标记Wiki问题", Description: "标记页面中存在的事实错误或合并冲突问题"},
-		{Name: ToolWikiWritePage, Label: "创建/覆盖Wiki", Description: "创建新页面或完全覆盖已有页面"},
-		{Name: ToolWikiReplaceText, Label: "局部替换Wiki", Description: "替换Wiki页面中的特定文本"},
-		{Name: ToolWikiRenamePage, Label: "重命名Wiki", Description: "重命名Wiki页面并自动更新关联链接"},
-		{Name: ToolWikiDeletePage, Label: "删除Wiki", Description: "删除Wiki页面并自动清理关联死链"},
-		{Name: ToolWikiReadIssue, Label: "查看Wiki问题", Description: "查看特定的Wiki页面问题详情"},
-		{Name: ToolWikiUpdateIssue, Label: "更新Wiki问题状态", Description: "更新特定的Wiki页面问题状态"},
+		{Name: ToolDatabaseQuery, Label: "Truy vấn cơ sở dữ liệu", Description: "Truy vấn thông tin trong cơ sở dữ liệu"},
+		{Name: ToolDataAnalysis, Label: "Phân tích dữ liệu", Description: "Hiểu tệp dữ liệu và thực hiện phân tích dữ liệu"},
+		{Name: ToolDataSchema, Label: "Xem metadata dữ liệu", Description: "Lấy metadata của tệp bảng tính"},
+		{Name: ToolWikiReadPage, Label: "Đọc trang Wiki", Description: "Đọc nội dung trang Wiki chỉ định"},
+		{Name: ToolWikiSearch, Label: "Tìm trong Wiki", Description: "Tìm trang trong Wiki"},
+		{Name: ToolWikiFlagIssue, Label: "Đánh dấu vấn đề Wiki", Description: "Đánh dấu lỗi sự kiện hoặc xung đột gộp trong trang"},
+		{Name: ToolWikiWritePage, Label: "Tạo/ghi đè Wiki", Description: "Tạo trang mới hoặc ghi đè toàn bộ trang có sẵn"},
+		{Name: ToolWikiReplaceText, Label: "Thay thế cục bộ Wiki", Description: "Thay thế đoạn văn bản cụ thể trong trang Wiki"},
+		{Name: ToolWikiRenamePage, Label: "Đổi tên Wiki", Description: "Đổi tên trang Wiki và tự động cập nhật liên kết liên quan"},
+		{Name: ToolWikiDeletePage, Label: "Xóa Wiki", Description: "Xóa trang Wiki và tự động dọn liên kết hỏng liên quan"},
+		{Name: ToolWikiReadIssue, Label: "Xem vấn đề Wiki", Description: "Xem chi tiết một vấn đề của trang Wiki"},
+		{Name: ToolWikiUpdateIssue, Label: "Cập nhật trạng thái vấn đề Wiki", Description: "Cập nhật trạng thái một vấn đề của trang Wiki"},
 		{
 			Name:        ToolReadDocumentOutline,
 			Label:       "Đọc dàn ý văn bản",
@@ -178,7 +178,7 @@ func DefaultAllowedTools() []string {
 		ToolReadDocument,
 		ToolListDocuments,
 		// Looking up what this user asked before is only ever a read of their
-		// own history, and it is what lets "上次你给我的那个Configuration " resolve at all
+		// own history, and it is what lets "cấu hình lần trước bạn đưa tôi" resolve at all
 		// without stuffing every past conversation into the context window.
 		ToolSearchConversations,
 		// ToolSearchMemory is deliberately absent here and from

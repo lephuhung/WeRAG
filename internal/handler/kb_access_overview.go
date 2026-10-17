@@ -78,7 +78,7 @@ type KBAccessOverview struct {
 // GetAccess godoc
 // @Summary      KB access overview
 // @Description  Owner, scope, member_default, the caller's effective permissions and their sources; grantees for the KB's managers
-// @Tags         Knowledge Base
+// @Tags         Kho tri thức
 // @Produce      json
 // @Param        id   path      string  true  "Knowledge Base ID"
 // @Success      200  {object}  map[string]interface{}

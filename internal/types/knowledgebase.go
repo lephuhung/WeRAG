@@ -297,9 +297,9 @@ type KnowledgeBase struct {
 	ProcessingCount int64 `yaml:"processing_count"        json:"processing_count"        gorm:"-"`
 	// ShareCount indicates the number of live tenant access grants on this knowledge base (not stored in database)
 	ShareCount int64 `yaml:"share_count"             json:"share_count"             gorm:"-"`
-	// CreatorName 是 CreatorID 对应用户的展示名（username / email 等），
-	// 仅在List 场景由 handler 批量回填，不落库；为空表示Create 者无法解析（用户已Delete 、
-	// CreatorID 为空的老数据等）。前端用它在卡片来源徽章上做 mine vs workspace 的二分。
+	// CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),
+	// chỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,
+	// dữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / workspace trên huy hiệu nguồn của thẻ.
 	CreatorName string `yaml:"-"                       json:"creator_name,omitempty"  gorm:"-"`
 	// AccessSource names the access.DecideKB rule that lets the caller
 	// view this KB (superadmin, tenant_admin, tenant_scope, public,
@@ -451,6 +451,11 @@ type ChunkingConfig struct {
 var defaultParserEngineByType = map[string]string{
 	"ppt":  "markitdown",
 	"pptx": "markitdown",
+	// PDFs default to the docreader vietnamese_legal engine: scanned pages
+	// are OCR'd inside docreader by the dedicated Vietnamese OCR endpoint
+	// (DOCREADER_VN_OCR_URL), so their text lands in ordinary chunks without
+	// a KB-level VLM. Without that endpoint the engine behaves like builtin.
+	"pdf": "vietnamese_legal",
 }
 
 // preferParserEngine, if set, may override DefaultParserEngine. The
@@ -732,8 +737,14 @@ type VLMConfig struct {
 	// CustomInstructions adds KB-specific image interpretation guidance without
 	// replacing the system-owned OCR and Markdown output contract.
 	CustomInstructions string `yaml:"custom_instructions,omitempty" json:"custom_instructions,omitempty"`
+	// OCROnly restricts image understanding to text extraction: the caption
+	// (visual description) call is skipped, so each image costs one VLM call
+	// and yields at most one ImageOCR chunk. Meant for OCR-only endpoints
+	// such as senocr-vi, where a "describe this image" prompt would simply
+	// return the OCR text a second time.
+	OCROnly bool `yaml:"ocr_only,omitempty" json:"ocr_only,omitempty"`
 
-	// 兼容老版本
+	// Tương thích phiên bản cũ
 	// Model Name
 	ModelName string `yaml:"model_name" json:"model_name"`
 	// Base URL
@@ -744,15 +755,15 @@ type VLMConfig struct {
 	InterfaceType string `yaml:"interface_type" json:"interface_type"`
 }
 
-// IsEnabled 判断多模态是否启用（兼容新老版本）
-// 新版本：Enabled && ModelID != ""
-// 老版本：ModelName != "" && BaseURL != ""
+// IsEnabled kiểm tra đa phương thức có bật không (tương thích cả phiên bản cũ và mới)
+// Phiên bản mới: Enabled && ModelID != ""
+// Phiên bản cũ: ModelName != "" && BaseURL != ""
 func (c VLMConfig) IsEnabled() bool {
-	// 新版本Configuration
+	// Cấu hình phiên bản mới
 	if c.Enabled && c.ModelID != "" {
 		return true
 	}
-	// 兼容老版本Configuration
+	// Tương thích cấu hình phiên bản cũ
 	if c.ModelName != "" && c.BaseURL != "" {
 		return true
 	}
@@ -863,7 +874,7 @@ func (e *ExtractConfig) Scan(value interface{}) error {
 	return json.Unmarshal(b, e)
 }
 
-// FAQConfig 存储 FAQ Knowledge Base的特有Configuration
+// FAQConfig lưu cấu hình riêng của kho tri thức FAQ
 type FAQConfig struct {
 	IndexMode         FAQIndexMode         `yaml:"index_mode"          json:"index_mode"`
 	QuestionIndexMode FAQQuestionIndexMode `yaml:"question_index_mode" json:"question_index_mode"`
@@ -916,7 +927,7 @@ func (kb *KnowledgeBase) ValidateOwnership() error {
 	return nil
 }
 
-// EnsureDefaults 确保类型与Configuration 具备默认值
+// EnsureDefaults đảm bảo loại và cấu hình có giá trị mặc định
 func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb == nil {
 		return
@@ -1060,7 +1071,7 @@ func (kb *KnowledgeBase) NeedsEmbeddingModel() bool {
 	return kb != nil && kb.IndexingStrategy.NeedsEmbedding()
 }
 
-// IsMultimodalEnabled 判断多模态是否启用，由 VLMConfig.IsEnabled() 决定。
+// IsMultimodalEnabled kiểm tra đa phương thức có bật không, do VLMConfig.IsEnabled() quyết định.
 func (kb *KnowledgeBase) IsMultimodalEnabled() bool {
 	if kb == nil {
 		return false

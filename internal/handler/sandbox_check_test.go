@@ -83,7 +83,7 @@ func TestDeepSandboxCheckReportsEgressRestrictedRatherThanFailed(t *testing.T) {
 }
 
 // ValidateSandboxNetworkPolicy accepts two equivalent spellings of the
-// deny-all fallback — "默认拒绝" and a 0.0.0.0/0 entry in deny_out — and the
+// deny-all fallback — deny_egress_by_default and a 0.0.0.0/0 entry in deny_out — and the
 // drawer offers both. A config that used the second one is behaving exactly as
 // designed when the probe is blocked, so reporting a hard failure would cry
 // wolf over a correct configuration.

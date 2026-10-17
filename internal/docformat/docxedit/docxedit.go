@@ -24,12 +24,10 @@
 //   - docformat appends the text of runs nested in hyperlinks / w:ins /
 //     smart tags after the paragraph's direct runs, and only their w:t (no
 //     tabs/breaks); docxedit keeps document order and includes tabs/breaks.
-//   - docformat includes text-box text in the anchoring paragraph's text
-//     (twice when mc:AlternateContent carries both Choice and Fallback);
-//     docxedit does not descend into drawings, so the anchor paragraph's
-//     Text excludes it. Text-box paragraphs themselves are enumerated
-//     (twice, like docformat, when Choice and Fallback both exist); editing
-//     one copy leaves the other copy unchanged.
+//   - Text-box paragraphs are enumerated once, from the mc:Choice copy;
+//     the mc:Fallback (VML) copy is skipped by both packages, and an edit
+//     of a text-box paragraph leaves that Fallback copy unchanged. Neither
+//     package includes text-box text in the anchoring paragraph's Text.
 //
 // # Visible text
 //

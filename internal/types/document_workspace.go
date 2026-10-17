@@ -272,10 +272,16 @@ type DocumentFormatCheck struct {
 // DocumentFormatReport is the evaluation of a finished background format
 // check, shown to the user as information (not as a chat answer).
 type DocumentFormatReport struct {
-	FileName          string                 `json:"file_name"`
-	DocumentType      string                 `json:"document_type,omitempty"`
-	DocumentTypeLabel string                 `json:"document_type_label,omitempty"`
-	Summary           *DocumentFormatSummary `json:"summary,omitempty"`
+	FileName          string `json:"file_name"`
+	DocumentType      string `json:"document_type,omitempty"`
+	DocumentTypeLabel string `json:"document_type_label,omitempty"`
+	// Scope is how much of NĐ30 was checked: full (a văn bản hành chính),
+	// technical (page and font only: a form of a specialised act, a văn
+	// bản quy phạm pháp luật, an unknown type) or attached; ScopeReason
+	// says why, in Vietnamese.
+	Scope       string                 `json:"scope,omitempty"`
+	ScopeReason string                 `json:"scope_reason,omitempty"`
+	Summary     *DocumentFormatSummary `json:"summary,omitempty"`
 	// Evaluation is the Markdown judgment against NĐ30/2020/NĐ-CP.
 	Evaluation string    `json:"evaluation"`
 	CheckedAt  time.Time `json:"checked_at"`

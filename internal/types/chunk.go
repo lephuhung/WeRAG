@@ -9,98 +9,98 @@ import (
 	"gorm.io/gorm"
 )
 
-// ChunkType 定义了不同类型的 Chunk
+// ChunkType định nghĩa các loại đoạn (chunk)
 type ChunkType = string
 
 const (
-	// ChunkTypeText 表示普通的文本 Chunk
+	// ChunkTypeText là chunk văn bản thường
 	ChunkTypeText ChunkType = "text"
-	// ChunkTypeParentText 表示父子分块策略中的父文本 Chunk（仅用于上下文，不参与向量索引）
+	// ChunkTypeParentText là chunk văn bản cha trong chiến lược cha-con (chỉ dùng làm ngữ cảnh, không đưa vào chỉ mục vector)
 	ChunkTypeParentText ChunkType = "parent_text"
-	// ChunkTypeImageOCR 表示图片 OCR 文本的 Chunk
+	// ChunkTypeImageOCR là chunk văn bản OCR của hình ảnh
 	ChunkTypeImageOCR ChunkType = "image_ocr"
-	// ChunkTypeImageCaption 表示图片描述的 Chunk
+	// ChunkTypeImageCaption là chunk mô tả hình ảnh
 	ChunkTypeImageCaption ChunkType = "image_caption"
-	// ChunkTypeSummary 表示摘要类型的 Chunk
+	// ChunkTypeSummary là chunk tóm tắt
 	ChunkTypeSummary = "summary"
-	// ChunkTypeEntity 表示实体类型的 Chunk
+	// ChunkTypeEntity là chunk thực thể
 	ChunkTypeEntity ChunkType = "entity"
-	// ChunkTypeRelationship 表示关系类型的 Chunk
+	// ChunkTypeRelationship là chunk quan hệ
 	ChunkTypeRelationship ChunkType = "relationship"
-	// ChunkTypeFAQ 表示 FAQ 条目 Chunk
+	// ChunkTypeFAQ là chunk mục FAQ
 	ChunkTypeFAQ ChunkType = "faq"
-	// ChunkTypeWebSearch 表示 Web 搜索结果的 Chunk
+	// ChunkTypeWebSearch là chunk kết quả tìm kiếm web
 	ChunkTypeWebSearch ChunkType = "web_search"
-	// ChunkTypeTableSummary 表示数据表摘要的 Chunk
+	// ChunkTypeTableSummary là chunk tóm tắt bảng dữ liệu
 	ChunkTypeTableSummary ChunkType = "table_summary"
-	// ChunkTypeTableColumn 表示数据表列描述的 Chunk
+	// ChunkTypeTableColumn là chunk mô tả cột của bảng dữ liệu
 	ChunkTypeTableColumn ChunkType = "table_column"
-	// ChunkTypeWikiPage 表示 Wiki 页面同步的 Chunk，用于将 wiki 页面接入现有检索管线
+	// ChunkTypeWikiPage là chunk đồng bộ từ trang Wiki, để đưa trang wiki vào pipeline truy xuất hiện có
 	ChunkTypeWikiPage ChunkType = "wiki_page"
 )
 
-// ChunkStatus 定义了不同状态的 Chunk
+// ChunkStatus định nghĩa các trạng thái của chunk
 type ChunkStatus int
 
 const (
 	ChunkStatusDefault ChunkStatus = 0
-	// ChunkStatusStored 表示已存储的 Chunk
+	// ChunkStatusStored: chunk đã được lưu
 	ChunkStatusStored ChunkStatus = 1
-	// ChunkStatusIndexed 表示已索引的 Chunk
+	// ChunkStatusIndexed: chunk đã được lập chỉ mục
 	ChunkStatusIndexed ChunkStatus = 2
 )
 
-// ChunkFlags 定义 Chunk 的标志位，用于管理多个布尔状态
+// ChunkFlags định nghĩa các bit cờ của chunk, dùng để quản lý nhiều trạng thái boolean
 type ChunkFlags int
 
 const (
-	// ChunkFlagRecommended 表示可推荐状态（1 << 0 = 1）
-	// 当Settings 此标志时，该 Chunk 可以被推荐给用户
+	// ChunkFlagRecommended: trạng thái có thể gợi ý (1 << 0 = 1)
+	// Khi đặt cờ này, chunk có thể được gợi ý cho người dùng
 	ChunkFlagRecommended ChunkFlags = 1 << 0
-	// 未来可扩展更多标志位：
-	// ChunkFlagPinned ChunkFlags = 1 << 1  // 置顶
-	// ChunkFlagHot    ChunkFlags = 1 << 2  // 热门
+	// Có thể mở rộng thêm cờ trong tương lai:
+	// ChunkFlagPinned ChunkFlags = 1 << 1  // ghim
+	// ChunkFlagHot    ChunkFlags = 1 << 2  // nổi bật
 )
 
-// HasFlag 检查是否Settings 了指定标志
+// HasFlag kiểm tra cờ chỉ định đã được đặt chưa
 func (f ChunkFlags) HasFlag(flag ChunkFlags) bool {
 	return f&flag != 0
 }
 
-// SetFlag Settings 指定标志
+// SetFlag đặt cờ chỉ định
 func (f ChunkFlags) SetFlag(flag ChunkFlags) ChunkFlags {
 	return f | flag
 }
 
-// ClearFlag 清除指定标志
+// ClearFlag xóa cờ chỉ định
 func (f ChunkFlags) ClearFlag(flag ChunkFlags) ChunkFlags {
 	return f &^ flag
 }
 
-// ToggleFlag 切换指定标志
+// ToggleFlag đảo cờ chỉ định
 func (f ChunkFlags) ToggleFlag(flag ChunkFlags) ChunkFlags {
 	return f ^ flag
 }
 
-// ImageInfo 表示与 Chunk 关联的图片信息
+// ImageInfo là thông tin hình ảnh gắn với chunk
 type ImageInfo struct {
-	// 图片URL（COS）
+	// URL hình ảnh (COS)
 	URL string `json:"url"          gorm:"type:text"`
-	// 原始图片URL
+	// URL hình ảnh gốc
 	OriginalURL string `json:"original_url" gorm:"type:text"`
-	// 图片在文本中的开始位置
+	// Vị trí bắt đầu của hình ảnh trong văn bản
 	StartPos int `json:"start_pos"`
-	// 图片在文本中的结束位置
+	// Vị trí kết thúc của hình ảnh trong văn bản
 	EndPos int `json:"end_pos"`
-	// 图片描述
+	// Mô tả hình ảnh
 	Caption string `json:"caption"`
-	// 图片OCR文本
+	// Văn bản OCR của hình ảnh
 	OCRText string `json:"ocr_text"`
 }
 
-// VideoInfo 表示与 Chunk 关联的视频信息
+// VideoInfo là thông tin video gắn với chunk
 type VideoInfo struct {
-	// 视频URL
+	// URL video
 	URL string `json:"url"          gorm:"type:text"`
 }
 
@@ -139,8 +139,8 @@ type Chunk struct {
 	ChunkIndex int `json:"chunk_index"`
 	// Whether the chunk is enabled, can be used to temporarily disable certain chunks
 	IsEnabled bool `json:"is_enabled"               gorm:"default:true"`
-	// Flags 存储多个布尔状态的位标志（如推荐状态等）
-	// 默认值为 ChunkFlagRecommended (1)，表示默认可推荐
+	// Flags lưu các bit cờ cho nhiều trạng thái boolean (ví dụ trạng thái gợi ý)
+	// Mặc định là ChunkFlagRecommended (1), tức mặc định có thể gợi ý
 	Flags ChunkFlags `json:"flags"                    gorm:"default:1"`
 	// Status of the chunk
 	Status int `json:"status"                   gorm:"default:0"`
@@ -152,19 +152,19 @@ type Chunk struct {
 	PreChunkID string `json:"pre_chunk_id"`
 	// Next chunk ID
 	NextChunkID string `json:"next_chunk_id"`
-	// Chunk 类型，用于区分不同类型的 Chunk
+	// Loại chunk, để phân biệt các loại chunk khác nhau
 	ChunkType ChunkType `json:"chunk_type"               gorm:"type:varchar(20);default:'text'"`
-	// 父 Chunk ID，用于关联图片 Chunk 和原始文本 Chunk
+	// ID chunk cha, liên kết chunk hình ảnh với chunk văn bản gốc
 	ParentChunkID string `json:"parent_chunk_id"          gorm:"type:varchar(36);index"`
-	// 关系 Chunk ID，用于关联关系 Chunk 和原始文本 Chunk
+	// ID chunk quan hệ, liên kết chunk quan hệ với chunk văn bản gốc
 	RelationChunks JSON `json:"relation_chunks"          gorm:"type:json"`
-	// 间接关系 Chunk ID，用于关联间接关系 Chunk 和原始文本 Chunk
+	// ID chunk quan hệ gián tiếp, liên kết chunk quan hệ gián tiếp với chunk văn bản gốc
 	IndirectRelationChunks JSON `json:"indirect_relation_chunks" gorm:"type:json"`
-	// Metadata 存储 chunk 级别的扩展信息，例如 FAQ 元数据
+	// Metadata lưu thông tin mở rộng ở cấp chunk, ví dụ metadata FAQ
 	Metadata JSON `json:"metadata"                 gorm:"type:json"`
-	// ContentHash 存储内容的 hash 值，用于快速匹配（主要用于 FAQ）
+	// ContentHash lưu giá trị hash của nội dung, dùng để so khớp nhanh (chủ yếu cho FAQ)
 	ContentHash string `json:"content_hash"             gorm:"type:varchar(64)"`
-	// 图片信息，存储为 JSON
+	// Thông tin hình ảnh, lưu dưới dạng JSON
 	ImageInfo string `json:"image_info"               gorm:"type:text"`
 	// Chunk creation time
 	CreatedAt time.Time `json:"created_at"`

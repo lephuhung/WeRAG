@@ -260,8 +260,10 @@ Mỗi unit có: id, text, zone (left/right/full = cột trái/phải/toàn trang
 
 document_type là TÊN LOẠI văn bản in ở dòng tên loại (QUYẾT ĐỊNH, BÁO CÁO, ...); văn bản không có dòng tên loại mà có 'V/v ...' dưới số ký hiệu là cong_van — đừng suy loại từ nội dung trích yếu ('V/v thông báo ...' vẫn là cong_van).
 
+nd30 cho biết văn bản có PHẢI văn bản hành chính trình bày theo Nghị định 30 không: false khi đó là biểu mẫu nghiệp vụ / tố tụng / chuyên ngành ban hành theo luật hoặc thông tư khác (biên bản ghi lời khai, biên bản hỏi cung, biên bản vi phạm hành chính, quyết định xử phạt theo mẫu, lệnh, giấy triệu tập …), đơn, hợp đồng, giấy tờ cá nhân hoặc tài liệu không phải văn bản của cơ quan; true trong mọi trường hợp khác. Khi false, ghi lý do ngắn (căn cứ nhận định, ví dụ "lập theo Bộ luật Tố tụng hình sự") vào nd30_reason. Tên loại trùng với loại của Nghị định 30 (BIÊN BẢN, QUYẾT ĐỊNH, GIẤY MỜI …) KHÔNG đủ để kết luận true.
+
 Trả về DUY NHẤT một JSON object:
-{"document_type": "<một loại>", "labels": {"<id>": "<thành phần>", ...}, "notes": "<ngắn, tuỳ chọn>"}
+{"document_type": "<một loại>", "nd30": true|false, "nd30_reason": "<khi nd30=false>", "labels": {"<id>": "<thành phần>", ...}, "notes": "<ngắn, tuỳ chọn>"}
 - labels phải có mọi id được gửi; chỉ dùng tên thành phần trong danh sách.
 - Chỉ gửi phần đầu và phần cuối văn bản: các unit giữa thân văn bản đã được lược bớt sẽ tự gán noi_dung, phần phụ lục lược bớt giữ nhãn phu_luc.`
 
@@ -404,6 +406,11 @@ type Reply struct {
 	DocumentType string            `json:"document_type"`
 	Labels       map[string]string `json:"labels"`
 	Notes        string            `json:"notes,omitempty"`
+	// NotND30 is the model's view that the document is no văn bản hành
+	// chính under NĐ30 (a tố tụng / nghiệp vụ form, a đơn, a contract);
+	// NotND30Reason says why. Absent "nd30" means NĐ30.
+	NotND30       bool   `json:"not_nd30,omitempty"`
+	NotND30Reason string `json:"not_nd30_reason,omitempty"`
 }
 
 var fenceRe = regexp.MustCompile("^```(?:json)?\\s*|\\s*```$")
@@ -430,6 +437,21 @@ func ParseReply(text string) (*Reply, error) {
 	}
 	if v, ok := raw["notes"]; ok {
 		_ = json.Unmarshal(v, &r.Notes)
+	}
+	if v, ok := raw["nd30"]; ok {
+		var nd30 any
+		if json.Unmarshal(v, &nd30) == nil {
+			switch x := nd30.(type) {
+			case bool:
+				r.NotND30 = !x
+			case string:
+				r.NotND30 = strings.EqualFold(strings.TrimSpace(x), "false")
+			}
+		}
+	}
+	if v, ok := raw["nd30_reason"]; ok && r.NotND30 {
+		_ = json.Unmarshal(v, &r.NotND30Reason)
+		r.NotND30Reason = truncateRunes(strings.TrimSpace(r.NotND30Reason), 200)
 	}
 	if v, ok := raw["labels"]; ok {
 		var m map[string]any
@@ -564,6 +586,12 @@ func ApplyLabels(l *Layout, reply *Reply, task *Task) (*Segmentation, *LabelDiag
 	}
 	if dt != "" && dt != seg.DetectedType {
 		diag.DocumentType = map[string]string{"llm": dt, "used": seg.DetectedType}
+	}
+	if reply.NotND30 {
+		seg.ModelNotND30 = reply.NotND30Reason
+		if seg.ModelNotND30 == "" {
+			seg.ModelNotND30 = "mô hình nhận định không phải văn bản hành chính theo NĐ30"
+		}
 	}
 	return seg, diag
 }

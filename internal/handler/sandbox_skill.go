@@ -187,7 +187,7 @@ func respondSkillServiceError(c *gin.Context, err error) {
 // List godoc
 // @Summary      List installed skills
 // @Description  List the agent skills installed onto one sandbox config's image.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id   path      string  true  "Sandbox config ID"
 // @Success      200  {object}  map[string]interface{}  "Installed skills"
@@ -212,7 +212,7 @@ func (h *SandboxSkillHandler) List(c *gin.Context) {
 // Get godoc
 // @Summary      Get an installed skill
 // @Description  Retrieve one installed skill of a sandbox config.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -234,7 +234,7 @@ func (h *SandboxSkillHandler) Get(c *gin.Context) {
 // ListFiles godoc
 // @Summary      List files of an installed skill
 // @Description  List files in the stored skill bundle without starting a sandbox.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -258,7 +258,7 @@ func (h *SandboxSkillHandler) ListFiles(c *gin.Context) {
 // GetFile godoc
 // @Summary      Read one file of an installed skill
 // @Description  Read one skill file as UTF-8, a small base64 image, or binary.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -295,7 +295,7 @@ func (h *SandboxSkillHandler) GetFile(c *gin.Context) {
 // @Description  must be readable anonymously. The install boots a sandbox and
 // @Description  runs for minutes, so the request is only accepted; follow it
 // @Description  via the install-events stream.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Accept       json
 // @Accept       multipart/form-data
 // @Produce      json
@@ -393,7 +393,7 @@ func (h *SandboxSkillHandler) installFromSource(c *gin.Context) {
 // Reinstall godoc
 // @Summary      Retry a skill install
 // @Description  Retry a failed install from the stored archive; does not re-upload.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -425,7 +425,7 @@ func (h *SandboxSkillHandler) Reinstall(c *gin.Context) {
 // Stop godoc
 // @Summary      Stop a skill install
 // @Description  Abort an in-flight install so the operator can retry or uninstall. After a process restart the row may still say installing with no live process; this rewrites it immediately instead of waiting for the stuck-run reaper. Removal is not stopped.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -477,7 +477,7 @@ type skillPatchRequest struct {
 // Patch godoc
 // @Summary      Update an installed skill
 // @Description  Show or hide an installed skill and set the workspace-wide values of the environment variables it declared. Either field may be sent, or both. The files stay in the image either way; removal is a separate flow.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string             true  "Sandbox config ID"
@@ -534,7 +534,7 @@ func (h *SandboxSkillHandler) Patch(c *gin.Context) {
 // @Description  Remove a skill from the config's image. The removal rebuilds
 // @Description  the image and runs for minutes, so it is only accepted; follow
 // @Description  it via the install-events stream.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      json
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -622,7 +622,7 @@ func terminalSkillEvent(skill *types.TenantSkillEntity) (skillInstallEvent, bool
 // @Description  always terminates: with the run's own terminal event, with one
 // @Description  derived from the durable status, or with a "detached" frame
 // @Description  when it stops following a run that is still going.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      text/event-stream
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"
@@ -747,7 +747,7 @@ func (h *SandboxSkillHandler) InstallEvents(c *gin.Context) {
 // @Description  console renders an install with the components it renders a
 // @Description  chat turn with. 404 once the event log has expired; the
 // @Description  durable message history is the fallback.
-// @Tags         SandboxConfig
+// @Tags         Sandbox
 // @Produce      text/event-stream
 // @Param        id       path      string  true  "Sandbox config ID"
 // @Param        skillId  path      string  true  "Skill ID"

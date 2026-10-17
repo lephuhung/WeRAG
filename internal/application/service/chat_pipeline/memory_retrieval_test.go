@@ -34,33 +34,33 @@ func (s *stubRetrievalMemory) DocumentAffinity(_ context.Context, ids []string) 
 func TestWhoIsAskingReachesTheQueryRewriter(t *testing.T) {
 	memoryService := &stubRetrievalMemory{
 		retrieval: interfaces.RetrievalContext{
-			Background: "在做医学影像的后端",
-			Interests:  []string{"医学影像分割"},
-			Documents:  []string{"分割模型调参手册"},
+			Background: "Đang làm backend cho chẩn đoán hình ảnh y tế",
+			Interests:  []string{"Phân đoạn ảnh y tế"},
+			Documents:  []string{"Sổ tay tinh chỉnh mô hình phân đoạn"},
 			Items: []*types.MemoryItem{
-				{ID: "m1", Kind: types.MemoryKindProfile, Content: "在做医学影像的后端"},
+				{ID: "m1", Kind: types.MemoryKindProfile, Content: "Đang làm backend cho chẩn đoán hình ảnh y tế"},
 			},
 		},
 	}
 	plugin := &PluginQueryUnderstand{
 		memoryService: memoryService,
 		config: &config.Config{Conversation: &config.ConversationConfig{
-			RewritePromptSystem: "改写用户的问题。",
+			RewritePromptSystem: "Viết lại câu hỏi của người dùng.",
 			RewritePromptUser:   "{{query}}",
 		}},
 	}
 
 	chatManage := &types.ChatManage{}
-	chatManage.Query = "分割怎么调参"
+	chatManage.Query = "Phân đoạn thì tinh chỉnh tham số thế nào"
 
 	_, userPrompt := plugin.buildPrompts(t.Context(), chatManage, nil, chatManage.Query)
 
-	require.Contains(t, userPrompt, "在做医学影像的后端",
+	require.Contains(t, userPrompt, "Đang làm backend cho chẩn đoán hình ảnh y tế",
 		"the same question means different things to different people, and only "+
 			"the rewriter can act on that before retrieval runs")
-	require.Contains(t, userPrompt, "医学影像分割")
-	require.Contains(t, userPrompt, "分割模型调参手册")
-	require.Contains(t, userPrompt, "分割怎么调参", "the question itself must survive")
+	require.Contains(t, userPrompt, "Phân đoạn ảnh y tế")
+	require.Contains(t, userPrompt, "Sổ tay tinh chỉnh mô hình phân đoạn")
+	require.Contains(t, userPrompt, "Phân đoạn thì tinh chỉnh tham số thế nào", "the question itself must survive")
 
 	// Conditioning the rewriter is not a recall. The background is fed in
 	// whole, relevant or not, so counting it as "memories this answer used"
@@ -73,12 +73,12 @@ func TestQueryRewriterIsUnchangedWithoutMemory(t *testing.T) {
 	plugin := &PluginQueryUnderstand{
 		memoryService: &stubRetrievalMemory{},
 		config: &config.Config{Conversation: &config.ConversationConfig{
-			RewritePromptSystem: "改写用户的问题。",
+			RewritePromptSystem: "Viết lại câu hỏi của người dùng.",
 			RewritePromptUser:   "{{query}}",
 		}},
 	}
 	chatManage := &types.ChatManage{}
-	chatManage.Query = "分割怎么调参"
+	chatManage.Query = "Phân đoạn thì tinh chỉnh tham số thế nào"
 
 	_, userPrompt := plugin.buildPrompts(t.Context(), chatManage, nil, chatManage.Query)
 	require.NotContains(t, userPrompt, "asker_background")

@@ -26,7 +26,7 @@ import (
 	_ "github.com/Tencent/WeKnora/docs" // swagger docs
 )
 
-// RouterParams 路由Parameters
+// RouterParams là tham số của router
 type RouterParams struct {
 	dig.In
 
@@ -110,7 +110,7 @@ type RouterParams struct {
 	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
 
-// NewRouter Create 新的路由
+// NewRouter tạo router mới
 func NewRouter(params RouterParams) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
@@ -125,12 +125,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 		logger.Errorf(context.Background(), "[Router] failed to set trusted proxies: %v", err)
 	}
 
-	// CORS 中间件应放在最前面。
-	// 注意：通配符 AllowOrigins 下浏览器会拒绝一切带凭据（cookie）的跨域
-	// 请求（CORS 规范禁止 "*" 与 credentials 组合），因此 AllowCredentials
-	// 实际只对未来改为回显具体 Origin 时才生效；当前认证全部走显式的
-	// Authorization / X-API-Key 头，不依赖 ambient 凭据。若引入 cookie
-	// 认证，必须先把 AllowOrigins 换成受控清单。
+	// Middleware CORS phải đặt trước tiên.
+	// Lưu ý: với AllowOrigins là wildcard, trình duyệt từ chối mọi yêu cầu cross-origin kèm thông tin xác thực (cookie)
+	// (đặc tả CORS cấm kết hợp "*" với credentials), nên AllowCredentials
+	// thực tế chỉ có tác dụng khi sau này đổi sang phản hồi Origin cụ thể; hiện xác thực đều qua header
+	// Authorization / X-API-Key tường minh, không dựa vào thông tin xác thực ambient. Nếu đưa vào xác thực
+	// bằng cookie, phải đổi AllowOrigins sang danh sách được kiểm soát trước.
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -140,32 +140,35 @@ func NewRouter(params RouterParams) *gin.Engine {
 			// Streamable HTTP MCP clients running in a browser send these on
 			// the /mcp/:endpoint_id surface.
 			"MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID",
+			// Scripted clients that must stay out of long-term memory.
+			middleware.MemoryOptOutHeader,
 		},
 		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin", "Mcp-Session-Id"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// 基础中间件（不需要认证）
+	// Middleware cơ bản (không cần xác thực)
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Language())
+	r.Use(middleware.MemoryOptOut())
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.ErrorHandler())
 
-	// 健康检查（不需要认证）
+	// Kiểm tra sức khoẻ (không cần xác thực)
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Swagger API 文档（仅在非生产环境下启用）
-	// 通过 GIN_MODE 环境变量判断：release 模式下禁用 Swagger
+	// Tài liệu Swagger API (chỉ bật ngoài môi trường production)
+	// Xét theo biến môi trường GIN_MODE: chế độ release tắt Swagger
 	if gin.Mode() != gin.ReleaseMode {
 		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
-			ginSwagger.DefaultModelsExpandDepth(-1), // 默认折叠 Models
-			ginSwagger.DocExpansion("list"),         // 展开模式: "list"(展开标签), "full"(全部展开), "none"(全部折叠)
-			ginSwagger.DeepLinking(true),            // 启用深度链接
-			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
+			ginSwagger.DefaultModelsExpandDepth(-1), // mặc định thu gọn Models
+			ginSwagger.DocExpansion("list"),         // chế độ mở rộng: "list" (mở các tag), "full" (mở hết), "none" (thu gọn hết)
+			ginSwagger.DeepLinking(true),            // bật deep link
+			ginSwagger.PersistAuthorization(true),   // lưu lại thông tin xác thực
 		))
 	}
 
@@ -178,15 +181,15 @@ func NewRouter(params RouterParams) *gin.Engine {
 		r.Use(embedFrameAncestorsMiddleware(params.EmbedChannelService))
 	}
 
-	// 前端静态文件（仅 Lite 版本内嵌前端）
+	// Tệp tĩnh frontend (chỉ bản Lite nhúng frontend)
 	if handler.Edition == "lite" {
 		serveFrontendStatic(r)
 	}
 
-	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
+	// Route callback IM (đăng ký trước middleware xác thực, dùng xác minh chữ ký riêng của từng nền tảng)
 	RegisterIMRoutes(r, params.IMHandler)
 
-	// Web embed 公开路由（使用 publish token 鉴权，不走全局 Auth）
+	// Route công khai của web embed (xác thực bằng publish token, không qua Auth toàn cục)
 	RegisterEmbedPublicRoutes(
 		r,
 		params.EmbedChannelHandler,
@@ -220,10 +223,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.POST("/api/v1/local-browser/extension/authorize", params.SessionHandler.BrowserSkillAuthorize)
 	r.POST("/api/v1/local-browser/internal", params.SessionHandler.BrowserSkillInternal)
 
-	// 认证中间件
+	// Middleware xác thực
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.TenantAPIKeyService, params.Config))
 
-	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
+	// Dịch vụ tệp: proxy thống nhất cho backend lưu trữ local/MinIO/COS/TOS (cần xác thực)
 	serveFilesWithKBGate(r, params.FileService, params.StorageBackendResolver, params.ResourceCatalog,
 		access.NewKBFileGate(params.ResourceCatalog, params.KBService, params.KBAccessGrantService))
 
@@ -244,7 +247,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// "log to stderr only" instead of crashing.
 	r.Use(middleware.AuditServiceProvider(params.AuditLogService))
 
-	// 需要认证的API路由
+	// Các route API cần xác thực
 	v1 := r.Group("/api/v1")
 	{
 		// rbacGuards bundles the role-gating middleware factories so each

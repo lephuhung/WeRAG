@@ -51,7 +51,7 @@ type topicResolution struct {
 // this person already has.
 //
 // The problem this solves is that a model asked to name a topic will not name
-// it the same way twice: "门店排班管理" one run, "店员班次安排" the
+// it the same way twice: "thể thức văn bản hành chính" one run, "trình bày văn bản theo NĐ 30" the
 // next. Treating the string as an identity means the same subject is counted
 // under several keys and never reaches the promotion threshold — the feature
 // looks enabled and learns nothing.
@@ -111,6 +111,22 @@ func (s *Service) resolveTopics(
 		s.adjudicateTopics(ctx, modelID, existing, resolutions, unresolved)
 	}
 
+	// No tier may fold "nghị định 53/2022" into "nghị định 30/2020" or the
+	// 2025 law into the 2018 one. The model tier did exactly that, and the
+	// alias list it left behind then made the exact tier repeat the mistake.
+	for i := range resolutions {
+		if resolutions[i].Canonical == nil {
+			continue
+		}
+		if types.TopicsNameDifferentNumbers(resolutions[i].Surface, resolutions[i].Canonical.Topic) {
+			logger.Infof(ctx, "memory: refused to merge %q into %q: different document numbers",
+				resolutions[i].Surface, resolutions[i].Canonical.Topic)
+			resolutions[i].Canonical = nil
+			resolutions[i].MergedLabel = ""
+			resolutions[i].Tier = ""
+		}
+	}
+
 	// Two labels in the same run can be the same new subject. Without this the
 	// run creates two rows that every later run then has to keep apart.
 	collapseNewTopicsWithinRun(resolutions)
@@ -127,6 +143,11 @@ func matchTopicExactly(surface string, existing []*types.MemoryTopicStat) *types
 	}
 	for _, stat := range existing {
 		if stat == nil {
+			continue
+		}
+		if types.TopicsNameDifferentNumbers(surface, stat.Topic) {
+			// "nghị định 53/2022" is never "nghị định 30/2020", whatever an
+			// earlier (wrong) merge left in the alias list.
 			continue
 		}
 		if stat.NormalizedKey == key || stat.Aliases.Has(surface) {
@@ -148,6 +169,12 @@ func matchTopicLoosely(surface string, existing []*types.MemoryTopicStat) *types
 	)
 	for _, stat := range existing {
 		if stat == nil || !types.TopicIsSpecificEnoughToMatchLoosely(stat.Topic) {
+			continue
+		}
+		// Two document numbers share almost every character except the digits
+		// ("nội dung nghị định 30/2020" vs "… 53/2022" scores 0.83): the bigram
+		// test is blind to exactly what tells them apart.
+		if types.TopicsNameDifferentNumbers(surface, stat.Topic) {
 			continue
 		}
 		score := types.TopicSimilarity(surface, stat.Topic)

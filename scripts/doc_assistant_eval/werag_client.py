@@ -142,6 +142,8 @@ class WeragClient:
     # ---- plumbing ----------------------------------------------------------
     def _headers(self, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         h = {"Authorization": f"Bearer {self.token}", "X-Request-ID": uuid.uuid4().hex}
+        # Eval traffic must never be distilled into the account's long-term memory.
+        h["X-WeRAG-Memory"] = "off"
         if self.tenant_id:
             h["X-Tenant-ID"] = str(self.tenant_id)
         if extra:

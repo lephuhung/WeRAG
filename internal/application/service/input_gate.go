@@ -92,8 +92,11 @@ func pageLimitMessage(gate types.InputGateContext, fileName, kind string, m docm
 		count = fmt.Sprintf("khoảng %d trang", m.Pages)
 	}
 	where := "kho tri thức"
-	if gate == types.InputGateChat {
+	switch gate {
+	case types.InputGateChat:
 		where = "cuộc hội thoại"
+	case types.InputGateDocument:
+		where = "trợ lý văn bản"
 	}
 	return fmt.Sprintf("%s %s có %s, vượt giới hạn %d trang của %s. Hãy tách tệp hoặc chỉ gửi phần cần dùng.",
 		what, fileName, count, limit, where)
@@ -105,6 +108,13 @@ func pageLimitMessage(gate types.InputGateContext, fileName, kind string, m docm
 func ParsedTextTooThin(content string) bool {
 	return approxTextContentRunes(content) < types.MinParsedTextRunes
 }
+
+// ImageNoTextMessage is the failure for an image without readable text. It
+// states the policy, not only the symptom: the OCR model reads text and
+// nothing else, so a portrait, a landscape or an illustration is refused
+// rather than described.
+const ImageNoTextMessage = "Ảnh không có chữ đọc được. Hệ thống chỉ nhận ảnh chụp văn bản, giấy tờ có chữ; " +
+	"không mô tả ảnh chân dung, phong cảnh hay hình minh họa. Hãy gửi ảnh chụp văn bản rõ nét, thẳng góc, đủ sáng, hoặc tệp văn bản."
 
 // noTextMessage is the failure a user sees when nothing readable came out
 // of the upload. ocrSkipped (see metadataOCRSkipped) names an agent setting
@@ -121,7 +131,7 @@ func noTextMessage(ext string, ocrSkipped string) string {
 	}
 	switch strings.ToLower(strings.TrimPrefix(ext, ".")) {
 	case "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif":
-		return "Không đọc được chữ trong ảnh. Hãy chụp rõ hơn, thẳng góc, đủ sáng, hoặc gửi tệp văn bản thay cho ảnh."
+		return ImageNoTextMessage
 	case "pdf":
 		return "Không đọc được chữ trong tệp PDF: bản scan quá mờ hoặc tệp không có nội dung. Hãy gửi bản scan rõ hơn hoặc tệp có lớp chữ."
 	case "mp3", "wav", "m4a", "flac", "ogg":

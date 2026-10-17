@@ -10,12 +10,12 @@ import (
 
 // pythonQuoteGuidance is the short rule for generated Python. The common
 // failure is ASCII quotation marks inside a same-kind string literal
-// (`"这不是一个"大干快上"..."`), which Python treats as the end of the
+// (`"đây không phải "làm nhanh"..."`), which Python treats as the end of the
 // string. Caught at write/edit time so the model does not burn a round on
 // shell_exec + py_compile.
 const pythonQuoteGuidance = "Python strings: never put ASCII `\"` inside `\"...\"` " +
-	"(or `'` inside `'...'`). Use the other quote for the literal, and 「」 " +
-	"for Chinese quotation."
+	"(or `'` inside `'...'`). Use the other quote for the literal, and “” " +
+	"for quotation marks inside the text."
 
 var pythonKeywords = map[string]bool{
 	"False": true, "None": true, "True": true,
@@ -44,9 +44,9 @@ func pythonScriptSyntaxHint(filePath, src, editTool string) string {
 	return fmt.Sprintf(
 		"Python syntax looks broken around line %d: an ASCII quote inside a "+
 			"string of the same kind closed the literal early "+
-			"(e.g. (\"这不是一个\"大干快上\"...\")). The file was written. "+
+			"(e.g. (\"đây không phải \"làm nhanh\"...\")). The file was written. "+
 			"Fix it with %s: wrap that text in the other quote, "+
-			"or use 「」 / \\\" for the inner quotation. Do not execute the script until it parses.",
+			"or use “” / \\\" for the inner quotation. Do not execute the script until it parses.",
 		line, editTool,
 	)
 }
@@ -56,13 +56,13 @@ func pythonSyntaxErrorHint(stderr string) string {
 		return ""
 	}
 	return "Hint: this is almost always an ASCII quote inside a same-kind Python string " +
-		`(e.g. "这不是一个"大干快上"..."). ` +
-		"edit_sandbox_file: wrap the text in the other quote, or replace inner quotes with 「」 / \\\"."
+		`(e.g. "đây không phải "làm nhanh"..."). ` +
+		"edit_sandbox_file: wrap the text in the other quote, or replace inner quotes with “” / \\\"."
 }
 
 // firstBrokenPythonQuote reports the line of the first string literal that
 // is immediately followed by a non-keyword identifier — the parse error
-// `"这不是一个"大干快上` produces. `"hello" if x` is left alone.
+// `"đây không phải "làm nhanh` produces. `"hello" if x` is left alone.
 func firstBrokenPythonQuote(src string) (int, bool) {
 	line := 1
 	for i := 0; i < len(src); {

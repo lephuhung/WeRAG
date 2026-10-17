@@ -90,6 +90,16 @@ class TestCollapseDegenerateTail(unittest.TestCase):
         text = "Điều 1. Nội dung thật.\n" + junk
         self.assertEqual(_collapse_degenerate_tail(text), "Điều 1. Nội dung thật.")
 
+    def test_collapses_numbered_loop_cut_at_a_bare_number(self):
+        # NQ 74/2018 scan (2026-10-16): "566. The text content.\n5" — the
+        # stub of item 567 hid the whole run.
+        junk = "".join(f"{i}. The text content.\n" for i in range(1, 567)) + "5"
+        text = "Điều 2\nGiao Chính phủ tổ chức thực hiện.\n" + junk
+        self.assertEqual(
+            _collapse_degenerate_tail(text),
+            "Điều 2\nGiao Chính phủ tổ chức thực hiện.",
+        )
+
     def test_entire_output_degenerate_returns_empty(self):
         junk = "".join(
             f"{i}. Use LaTeX to output the output content. " for i in range(1, 21)

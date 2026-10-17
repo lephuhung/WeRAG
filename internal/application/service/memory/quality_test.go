@@ -32,8 +32,8 @@ func TestDeletedMemoryIsNotReExtracted(t *testing.T) {
 	})
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "生产数据库",
-		Content: "生产数据库是 PostgreSQL 17", Origin: types.MemoryOriginExplicit,
+		Kind: types.MemoryKindFact, Topic: "CSDL chính thức",
+		Content: "CSDL chính thức là PostgreSQL 17", Origin: types.MemoryOriginExplicit,
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.DeleteItem(ctx, stored.ID))
@@ -41,11 +41,11 @@ func TestDeletedMemoryIsNotReExtracted(t *testing.T) {
 	messages.set("session-1", []*types.Message{
 		{
 			ID: "m1", SessionID: "session-1", Role: "user",
-			Content: "记住：生产数据库是 PostgreSQL 17", CreatedAt: time.Now().Add(-time.Minute),
+			Content: "Hãy nhớ: CSDL chính thức là PostgreSQL 17", CreatedAt: time.Now().Add(-time.Minute),
 		},
 	})
 	models.response = `{"memories":[{"action":"add","target":null,"kind":"fact",` +
-		`"topic":"生产数据库","content":"生产数据库是 PostgreSQL 17","source":1}]}`
+		`"topic":"CSDL chính thức","content":"CSDL chính thức là PostgreSQL 17","source":1}]}`
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
 
@@ -65,7 +65,7 @@ func TestRewordedMemoryDoesNotComeBack(t *testing.T) {
 	})
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Content: "我们的生产数据库是 PostgreSQL 17，部署在法兰克福",
+		Kind: types.MemoryKindFact, Content: "Hiện nay CSDL chính thức là PostgreSQL 17, đặt tại Trung tâm dữ liệu tỉnh",
 		Origin: types.MemoryOriginExplicit, SourceMessageID: "m1", SourceSessionID: "session-1",
 	})
 	require.NoError(t, err)
@@ -74,13 +74,13 @@ func TestRewordedMemoryDoesNotComeBack(t *testing.T) {
 	messages.set("session-1", []*types.Message{
 		{
 			ID: "m1", SessionID: "session-1", Role: "user",
-			Content:   "记住：我们的生产数据库是 PostgreSQL 17，部署在法兰克福",
+			Content:   "Hãy nhớ: Hiện nay CSDL chính thức là PostgreSQL 17, đặt tại Trung tâm dữ liệu tỉnh",
 			CreatedAt: time.Now().Add(-time.Minute),
 		},
 	})
 	// Same fact, different wording: a different fingerprint.
 	models.response = `{"memories":[{"action":"add","target":null,"kind":"fact",` +
-		`"topic":"生产数据库","content":"生产数据库是 PostgreSQL 17，部署在法兰克福","source":1}]}`
+		`"topic":"CSDL chính thức","content":"CSDL chính thức là PostgreSQL 17, đặt tại Trung tâm dữ liệu tỉnh","source":1}]}`
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
 
@@ -97,7 +97,7 @@ func TestSayingItAgainLaterStillWorks(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Content: "生产库是 PostgreSQL 17",
+		Kind: types.MemoryKindFact, Content: "CSDL chính thức chạy PostgreSQL 17",
 		Origin: types.MemoryOriginExplicit, SourceMessageID: "m1",
 	})
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestSayingItAgainLaterStillWorks(t *testing.T) {
 
 	// A later turn, a later message: this is the user asking again.
 	again, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Content: "生产库确实是 PostgreSQL 17",
+		Kind: types.MemoryKindFact, Content: "CSDL chính thức đúng là chạy PostgreSQL 17",
 		Origin: types.MemoryOriginExplicit, SourceMessageID: "m9",
 	})
 	require.NoError(t, err)
@@ -120,13 +120,13 @@ func TestForgottenTopicsAreShownToTheModel(t *testing.T) {
 	})
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "家庭住址", Content: "住在杭州西湖区",
+		Kind: types.MemoryKindFact, Topic: "Địa chỉ nhà", Content: "ở phường Thuận Hòa, Huế",
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.DeleteItem(ctx, stored.ID))
 
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "随便聊聊", CreatedAt: time.Now()},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Chuyện phiếm buổi sáng", CreatedAt: time.Now()},
 	})
 	models.response = `{"memories":[]}`
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
@@ -134,8 +134,8 @@ func TestForgottenTopicsAreShownToTheModel(t *testing.T) {
 
 	// The fingerprint check only catches an identical restatement, so the model
 	// is also told which topics were rejected.
-	require.Contains(t, models.lastPrompt, "家庭住址")
-	require.NotContains(t, models.lastPrompt, "住在杭州西湖区",
+	require.Contains(t, models.lastPrompt, "Địa chỉ nhà")
+	require.NotContains(t, models.lastPrompt, "ở phường Thuận Hòa, Huế",
 		"a tombstone must not retain the statement the user asked to forget")
 }
 
@@ -144,14 +144,14 @@ func TestClearLeavesTombstones(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库是 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức là PostgreSQL",
 	})
 	require.NoError(t, err)
 	_, err = svc.Clear(ctx)
 	require.NoError(t, err)
 
 	_, err = svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产库是 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức là PostgreSQL",
 	})
 	require.ErrorIs(t, err, ErrPreviouslyForgotten,
 		"clearing is a rejection of everything, not just a bulk delete")
@@ -162,7 +162,7 @@ func TestForgettingDoesNotBlockGenuinelyNewInformation(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	stored, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "在用的数据库", Content: "生产库是 MySQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL đang dùng", Content: "CSDL chính thức là MySQL",
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.DeleteItem(ctx, stored.ID))
@@ -170,10 +170,10 @@ func TestForgettingDoesNotBlockGenuinelyNewInformation(t *testing.T) {
 	// Same topic, different statement: the user moved on, and suppressing this
 	// would make deleting one memory quietly ban a subject forever.
 	updated, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "在用的数据库", Content: "生产库已经迁到 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL đang dùng", Content: "CSDL chính thức đã chuyển sang PostgreSQL",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "生产库已经迁到 PostgreSQL", updated.Content)
+	require.Equal(t, "CSDL chính thức đã chuyển sang PostgreSQL", updated.Content)
 }
 
 // ---------------------------------------------------------------------------
@@ -194,17 +194,17 @@ func TestProvenancePointsAtTheRightMessage(t *testing.T) {
 	messages.set("session-a", []*types.Message{
 		{
 			ID: "msg-a1", SessionID: "session-a", Role: "user",
-			Content: "我在做医疗影像", CreatedAt: base,
+			Content: "Tôi đang làm số hóa hồ sơ lưu trữ", CreatedAt: base,
 		},
 	})
 	messages.set("session-b", []*types.Message{
 		{
 			ID: "msg-b1", SessionID: "session-b", Role: "user",
-			Content: "顺便问下天气", CreatedAt: base.Add(time.Second),
+			Content: "Tiện thể hỏi thời tiết", CreatedAt: base.Add(time.Second),
 		},
 	})
 	models.response = `{"memories":[{"action":"add","target":null,"kind":"profile",` +
-		`"topic":"职业","content":"在做医疗影像","source":1}]}`
+		`"topic":"Nghề nghiệp","content":"đang làm số hóa hồ sơ lưu trữ","source":1}]}`
 
 	svc.ScheduleExtraction(ctx, "session-a", "trigger-msg", "model-1")
 	svc.ScheduleExtraction(ctx, "session-b", "trigger-msg", "model-1")
@@ -214,7 +214,7 @@ func TestProvenancePointsAtTheRightMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, items)
 	for _, item := range items {
-		if item.Content != "在做医疗影像" {
+		if item.Content != "đang làm số hóa hồ sơ lưu trữ" {
 			continue
 		}
 		require.Equal(t, "session-a", item.SourceSessionID)
@@ -226,8 +226,8 @@ func TestProvenancePointsAtTheRightMessage(t *testing.T) {
 
 func TestOutOfRangeSourceFallsBackInsideTheSegment(t *testing.T) {
 	segment := transcriptSegment{lines: []transcriptLine{
-		{sessionID: "s1", messageID: "m1", content: "第一句"},
-		{sessionID: "s1", messageID: "m2", content: "第二句"},
+		{sessionID: "s1", messageID: "m1", content: "Câu thứ nhất"},
+		{sessionID: "s1", messageID: "m2", content: "Câu thứ hai"},
 	}}
 	bogus := 99
 	resolved := extractionDecision{Source: &bogus}.resolveSource(segment)
@@ -240,7 +240,7 @@ func TestOutOfRangeSourceFallsBackInsideTheSegment(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestPriorContextResolvesAReferringStatement: a run sees only what is new, so
-// without a lead-in a turn like "就用前面那个吧" has nothing to resolve against.
+// without a lead-in a turn like "Thì dùng cái trước đó đi" has nothing to resolve against.
 func TestPriorContextResolvesAReferringStatement(t *testing.T) {
 	svc, tenantRepo, messages, models, enqueuer := newExtractionHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
@@ -253,7 +253,7 @@ func TestPriorContextResolvesAReferringStatement(t *testing.T) {
 	messages.set("session-1", []*types.Message{
 		{
 			ID: "m1", SessionID: "session-1", Role: "user",
-			Content: "我在评估 PostgreSQL 和 MySQL", CreatedAt: base,
+			Content: "Tôi đang đánh giá PostgreSQL và MySQL", CreatedAt: base,
 		},
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
@@ -262,19 +262,19 @@ func TestPriorContextResolvesAReferringStatement(t *testing.T) {
 	messages.set("session-1", []*types.Message{
 		{
 			ID: "m1", SessionID: "session-1", Role: "user",
-			Content: "我在评估 PostgreSQL 和 MySQL", CreatedAt: base,
+			Content: "Tôi đang đánh giá PostgreSQL và MySQL", CreatedAt: base,
 		},
 		{
 			ID: "m2", SessionID: "session-1", Role: "user",
-			Content: "就用前面那个吧", CreatedAt: base.Add(time.Minute),
+			Content: "Thì dùng cái trước đó đi", CreatedAt: base.Add(time.Minute),
 		},
 	})
 	svc.ScheduleExtraction(ctx, "session-1", "m2", "model-1")
 	drainExtractions(t, svc, enqueuer)
 
-	require.Contains(t, models.lastPrompt, "我在评估",
+	require.Contains(t, models.lastPrompt, "Tôi đang đánh giá",
 		"a referring statement needs the turn it refers to")
-	require.NotContains(t, transcriptBlock(models.lastPrompt), "我在评估",
+	require.NotContains(t, transcriptBlock(models.lastPrompt), "Tôi đang đánh giá",
 		"context must not be extracted from a second time")
 }
 
@@ -294,9 +294,9 @@ func TestLongSilenceStartsANewSegment(t *testing.T) {
 
 	base := time.Now().Add(-24 * time.Hour)
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "上午聊的事", CreatedAt: base},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Chuyện bàn buổi sáng", CreatedAt: base},
 		{
-			ID: "m2", SessionID: "session-1", Role: "user", Content: "晚上聊的事",
+			ID: "m2", SessionID: "session-1", Role: "user", Content: "Chuyện bàn buổi tối",
 			CreatedAt: base.Add(6 * time.Hour),
 		},
 	})
@@ -305,8 +305,8 @@ func TestLongSilenceStartsANewSegment(t *testing.T) {
 
 	require.Equal(t, 2, models.calls, "a six-hour gap must split the run into two calls")
 	seen := models.seenTranscripts()
-	require.Contains(t, seen, "上午聊的事")
-	require.Contains(t, seen, "晚上聊的事")
+	require.Contains(t, seen, "Chuyện bàn buổi sáng")
+	require.Contains(t, seen, "Chuyện bàn buổi tối")
 }
 
 func TestSeparateSessionsAreSeparateSegments(t *testing.T) {
@@ -319,11 +319,11 @@ func TestSeparateSessionsAreSeparateSegments(t *testing.T) {
 
 	base := time.Now().Add(-time.Hour)
 	messages.set("session-a", []*types.Message{
-		{ID: "a1", SessionID: "session-a", Role: "user", Content: "会话A的话", CreatedAt: base},
+		{ID: "a1", SessionID: "session-a", Role: "user", Content: "lời ở cuộc trò chuyện A", CreatedAt: base},
 	})
 	messages.set("session-b", []*types.Message{
 		{
-			ID: "b1", SessionID: "session-b", Role: "user", Content: "会话B的话",
+			ID: "b1", SessionID: "session-b", Role: "user", Content: "lời ở cuộc trò chuyện B",
 			CreatedAt: base.Add(time.Second),
 		},
 	})
@@ -334,7 +334,7 @@ func TestSeparateSessionsAreSeparateSegments(t *testing.T) {
 	require.Equal(t, 2, models.calls)
 	for _, prompt := range models.prompts {
 		block := transcriptBlock(prompt)
-		require.False(t, strings.Contains(block, "会话A的话") && strings.Contains(block, "会话B的话"),
+		require.False(t, strings.Contains(block, "lời ở cuộc trò chuyện A") && strings.Contains(block, "lời ở cuộc trò chuyện B"),
 			"two conversations must not be merged into one call")
 	}
 }
@@ -354,7 +354,7 @@ func TestSegmentCapStillCoversEverything(t *testing.T) {
 	for i := 0; i < extractMaxSegmentsPerRun*2+1; i++ {
 		transcript = append(transcript, &types.Message{
 			ID: fmt.Sprintf("m%d", i), SessionID: "session-1", Role: "user",
-			Content:   fmt.Sprintf("第%d段的话", i),
+			Content:   fmt.Sprintf("Lời ở đoạn thứ %d trong phiên", i),
 			CreatedAt: base.Add(time.Duration(i) * 3 * time.Hour),
 		})
 	}
@@ -364,7 +364,7 @@ func TestSegmentCapStillCoversEverything(t *testing.T) {
 
 	seen := models.seenTranscripts()
 	for i := 0; i < extractMaxSegmentsPerRun*2+1; i++ {
-		require.Contains(t, seen, fmt.Sprintf("第%d段的话", i),
+		require.Contains(t, seen, fmt.Sprintf("Lời ở đoạn thứ %d trong phiên", i),
 			"segment %d was never read", i)
 	}
 }
@@ -382,10 +382,10 @@ func TestEmptyActionIsIgnored(t *testing.T) {
 		Enabled: true, WriteMode: types.MemoryWriteAuto, ExtractDelaySeconds: 5,
 	})
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "随便说点什么", CreatedAt: time.Now()},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Chuyện phiếm buổi sáng", CreatedAt: time.Now()},
 	})
-	models.response = `{"memories":[{"kind":"fact","topic":"t","content":"某个事实"},` +
-		`{"action":"none","kind":"fact","topic":"t2","content":"另一个事实"}]}`
+	models.response = `{"memories":[{"kind":"fact","topic":"t","content":"một sự việc"},` +
+		`{"action":"none","kind":"fact","topic":"t2","content":"một sự việc khác"}]}`
 
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -405,19 +405,19 @@ func TestUpdateAddressesTheNoteByIndex(t *testing.T) {
 	})
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "在用的数据库", Content: "生产库是 MySQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL đang dùng", Content: "CSDL chính thức là MySQL",
 	})
 	require.NoError(t, err)
 
 	messages.set("session-1", []*types.Message{
 		{
 			ID: "m1", SessionID: "session-1", Role: "user",
-			Content: "我们迁到 PostgreSQL 了", CreatedAt: time.Now(),
+			Content: "Đơn vị tôi đã chuyển sang PostgreSQL", CreatedAt: time.Now(),
 		},
 	})
 	// The topic is deliberately misspelled; the index is what must win.
 	models.response = `{"memories":[{"action":"delete","target":0,"kind":"fact",` +
-		`"topic":"在用的資料庫","content":"不再使用 MySQL","source":1}]}`
+		`"topic":"CSDL đang dung","content":"Không còn dùng MySQL","source":1}]}`
 
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -434,11 +434,11 @@ func TestDuplicateTopicsInOneResponseDoNotChurn(t *testing.T) {
 		Enabled: true, WriteMode: types.MemoryWriteAuto, ExtractDelaySeconds: 5,
 	})
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "说了两遍", CreatedAt: time.Now()},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Đơn vị tôi dùng PostgreSQL 17, nhắc lại hai lần", CreatedAt: time.Now()},
 	})
 	models.response = `{"memories":[
-		{"action":"add","target":null,"kind":"fact","topic":"数据库","content":"用 PostgreSQL","source":1},
-		{"action":"add","target":null,"kind":"fact","topic":"数据库","content":"用 PostgreSQL 17","source":1}]}`
+		{"action":"add","target":null,"kind":"fact","topic":"CSDL","content":"dùng PostgreSQL","source":1},
+		{"action":"add","target":null,"kind":"fact","topic":"CSDL","content":"dùng PostgreSQL 17","source":1}]}`
 
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
@@ -459,26 +459,26 @@ func TestExpiredTaskLeavesTheContext(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(48 * time.Hour)
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindTask, Topic: "过期的事", Content: "上周要交的周报",
+		Kind: types.MemoryKindTask, Topic: "Việc đã quá hạn", Content: "báo cáo tuần phải nộp tuần trước",
 		ExpiresAt: &past,
 	})
 	require.NoError(t, err)
 	_, err = svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindTask, Topic: "在做的事", Content: "这周要交的周报",
+		Kind: types.MemoryKindTask, Topic: "Việc đang làm", Content: "báo cáo tuần phải nộp tuần này",
 		ExpiresAt: &future,
 	})
 	require.NoError(t, err)
 
-	prompt := svc.Recall(ctx, "周报的事怎么样了").Prompt
-	require.Contains(t, prompt, "这周要交的周报")
-	require.NotContains(t, prompt, "上周要交的周报",
+	prompt := svc.Recall(ctx, "báo cáo tuần đến đâu rồi").Prompt
+	require.Contains(t, prompt, "báo cáo tuần phải nộp tuần này")
+	require.NotContains(t, prompt, "báo cáo tuần phải nộp tuần trước",
 		"an expired task must stop being recalled")
 }
 
 func TestParseExpiryRejectsUnusableDates(t *testing.T) {
 	require.Nil(t, parseExpiry(""))
 	require.Nil(t, parseExpiry("null"))
-	require.Nil(t, parseExpiry("下周五"))
+	require.Nil(t, parseExpiry("thứ sáu tuần sau"))
 	require.Nil(t, parseExpiry("2020-01-01"), "a date already past would be stored and archived at once")
 	require.NotNil(t, parseExpiry(time.Now().Add(72*time.Hour).Format("2006-01-02")))
 }
@@ -492,16 +492,16 @@ func TestWorkspaceInstructionsReachThePrompt(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	tenantRepo.set(1, &types.MemoryConfig{
 		Enabled: true, WriteMode: types.MemoryWriteAuto, ExtractDelaySeconds: 5,
-		ExtractInstructions: "永远不要记录客户的姓名",
+		ExtractInstructions: "Không bao giờ ghi lại tên của công dân",
 	})
 	models.response = `{"memories":[]}`
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "随便聊", CreatedAt: time.Now()},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Chuyện phiếm buổi sáng", CreatedAt: time.Now()},
 	})
 
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")
 	drainExtractions(t, svc, enqueuer)
-	require.Contains(t, models.lastPrompt, "永远不要记录客户的姓名")
+	require.Contains(t, models.lastPrompt, "Không bao giờ ghi lại tên của công dân")
 }
 
 // ---------------------------------------------------------------------------
@@ -516,7 +516,7 @@ func TestExtractionRequestsStructuredOutput(t *testing.T) {
 	})
 	models.response = `{"memories":[]}`
 	messages.set("session-1", []*types.Message{
-		{ID: "m1", SessionID: "session-1", Role: "user", Content: "随便聊", CreatedAt: time.Now()},
+		{ID: "m1", SessionID: "session-1", Role: "user", Content: "Chuyện phiếm buổi sáng", CreatedAt: time.Now()},
 	})
 
 	svc.ScheduleExtraction(ctx, "session-1", "m1", "model-1")

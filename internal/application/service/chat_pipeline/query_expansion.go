@@ -157,7 +157,7 @@ func (p *PluginSearch) expandQueries(ctx context.Context, chatManage *types.Chat
 		}
 	}
 
-	// 4. Remove question words (什么/如何/怎么/为什么/哪个 etc.)
+	// 4. Remove question words (CJK interrogatives, see questionWords)
 	cleaned := removeQuestionWords(query)
 	if cleaned != query {
 		addIfNew(cleaned)

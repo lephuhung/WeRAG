@@ -580,7 +580,28 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	}
 
 	s.releaseForkSnapshot(ctx, session)
+	if session.ChatRootID == "" {
+		s.deleteSubChats(ctx, tenantID, userID, id)
+	}
 	return nil
+}
+
+// deleteSubChats deletes the sub-chats of a deleted document chat: they are
+// listed only inside it, so they would otherwise linger out of reach.
+func (s *sessionService) deleteSubChats(ctx context.Context, tenantID uint64, userID, rootID string) {
+	chats, err := s.sessionRepo.ListChatFamily(ctx, tenantID, userID, rootID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to list sub-chats of session %s: %v", rootID, err)
+		return
+	}
+	for _, c := range chats {
+		if c.ID == rootID || c.ChatRootID != rootID {
+			continue
+		}
+		if err := s.DeleteSession(ctx, c.ID); err != nil && !stderrors.Is(err, apperrors.ErrSessionNotFound) {
+			logger.Warnf(ctx, "Failed to delete sub-chat %s of session %s: %v", c.ID, rootID, err)
+		}
+	}
 }
 
 // BatchDeleteSessions deletes multiple sessions by IDs
@@ -655,6 +676,11 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 	}
 
 	s.releaseForkSnapshots(ctx, visible)
+	for _, sess := range visible {
+		if sess != nil && sess.ChatRootID == "" {
+			s.deleteSubChats(ctx, tenantID, userID, sess.ID)
+		}
+	}
 	return nil
 }
 

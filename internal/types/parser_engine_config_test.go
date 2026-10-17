@@ -16,8 +16,8 @@ func TestParserEngineConfigResolveChatParserEngine(t *testing.T) {
 		}
 	}
 	var nilConfig *ParserEngineConfig
-	if actual := nilConfig.ResolveChatParserEngine("pdf"); actual != "" {
-		t.Fatalf("nil config resolved %q", actual)
+	if actual := nilConfig.ResolveChatParserEngine("pdf"); actual != "vietnamese_legal" {
+		t.Fatalf("nil config pdf resolved %q, want vietnamese_legal", actual)
 	}
 	if actual := nilConfig.ResolveChatParserEngine("pptx"); actual != "markitdown" {
 		t.Fatalf("nil config pptx resolved %q, want markitdown", actual)

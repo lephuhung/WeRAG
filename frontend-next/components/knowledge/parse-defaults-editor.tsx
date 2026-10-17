@@ -424,6 +424,17 @@ export function ParseDefaultsEditor() {
                 ),
               )}
               {row(
+                t("ps.ocrOnlyLabel"),
+                t("ps.ocrOnlyDesc"),
+                <Toggle
+                  checked={state.multimodal.ocrOnly}
+                  onChange={(v) =>
+                    patch((s) => ({ ...s, multimodal: { ...s.multimodal, ocrOnly: v } }))
+                  }
+                />,
+                )}
+              {!state.multimodal.ocrOnly &&
+                row(
                 t("ps.descLangLabel"),
                 t("ps.descLangDesc"),
                 <Select
@@ -438,7 +449,7 @@ export function ParseDefaultsEditor() {
                   options={[
                     { value: "", label: t("ps.descLangAuto") },
                     { value: "Vietnamese", label: "Tiếng Việt" },
-                    { value: "Chinese", label: "中文" },
+                    { value: "Chinese", label: "Tiếng Trung" },
                     { value: "English", label: "English" },
                     { value: "Korean", label: "한국어" },
                     { value: "Russian", label: "Русский" },

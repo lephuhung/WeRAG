@@ -1,23 +1,23 @@
-// Package runtime 提供应用程序运行时的依赖注入容器
-// 该包使用 uber 的 dig 库来管理依赖项注入
+// Package runtime cung cấp container dependency injection cho runtime của ứng dụng
+// Gói này dùng thư viện dig của uber để quản lý dependency injection
 package runtime
 
 import (
 	"go.uber.org/dig"
 )
 
-// container 是应用程序的全局依赖注入容器
-// 所有服务和组件都通过它进行注册和解析
+// container là container dependency injection toàn cục của ứng dụng
+// Mọi service và thành phần đều đăng ký và resolve qua nó
 var container *dig.Container
 
-// init Initialization 依赖注入容器
-// 在程序启动时自动调用
+// init khởi tạo container dependency injection
+// Tự động gọi khi chương trình khởi động
 func init() {
 	container = dig.New()
 }
 
-// GetContainer 返回全局依赖注入容器的引用
-// 供其他包使用以注册或获取服务
+// GetContainer trả về tham chiếu tới container dependency injection toàn cục
+// Để các gói khác đăng ký hoặc lấy service
 func GetContainer() *dig.Container {
 	return container
 }

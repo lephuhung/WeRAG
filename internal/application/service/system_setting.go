@@ -121,8 +121,8 @@ var registry = map[string]settingSpec{
 		Default:  "elevenlabs",
 		Enum:     []string{"elevenlabs", "anthropic"},
 		Category: "appearance",
-		Description: "平台级界面主题。elevenlabs = 内置设计语言；anthropic = Anthropic 风格预设。" +
-			"修改后立即对所有用户生效，无需重启。",
+		Description: "Giao diện cấp nền tảng. elevenlabs = ngôn ngữ thiết kế tích hợp; anthropic = preset kiểu Anthropic. " +
+			"Có hiệu lực ngay với mọi người dùng sau khi thay đổi, không cần khởi động lại.",
 	},
 	// NOTE: file.max_size_mb is intentionally NOT registered. Although
 	// the Go upload handlers accept a runtime override via
@@ -147,16 +147,16 @@ var registry = map[string]settingSpec{
 		EnvName:  "SSRF_WHITELIST",
 		Default:  []string{},
 		Category: "security",
-		Description: "SSRF 防护白名单。可填入 example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1。" +
-			"修改后立即生效。SSRF_WHITELIST_EXTRA 环境变量仍由部署方维护，不在此处覆盖。",
+		Description: "Danh sách trắng chống SSRF. Có thể nhập example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. " +
+			"Có hiệu lực ngay sau khi thay đổi. Biến môi trường SSRF_WHITELIST_EXTRA vẫn do bên triển khai quản lý, không bị ghi đè ở đây.",
 	},
 	"sandbox.docker_enabled": {
 		Type:     "bool",
 		EnvName:  sandbox.DockerBackendEnabledEnv,
 		Default:  false,
 		Category: "security",
-		Description: "是否允许 Docker 沙箱后端。本机 docker.sock 等同宿主机 root，默认关闭。" +
-			"仅系统管理员可打开；打开后立即生效，无需重启。私有化单机且已挂载 daemon socket，或配置了带 TLS 的远程 tcp:// 时再启用。",
+		Description: "Cho phép backend sandbox Docker hay không. docker.sock cục bộ tương đương root của máy chủ, mặc định tắt. " +
+			"Chỉ quản trị hệ thống mới bật được; có hiệu lực ngay, không cần khởi động lại. Chỉ bật khi triển khai đơn máy đã mount daemon socket, hoặc đã cấu hình tcp:// từ xa có TLS.",
 	},
 	"auth.registration_mode": {
 		Type:     "string",
@@ -164,8 +164,8 @@ var registry = map[string]settingSpec{
 		Default:  "self_serve",
 		Enum:     []string{"self_serve", "invite_only"},
 		Category: "auth",
-		Description: "自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，" +
-			"仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。",
+		Description: "Chế độ tự đăng ký. self_serve = ai cũng có thể đăng ký; invite_only = tắt đăng ký công khai, " +
+			"chỉ Owner/Admin mới mời được. Có hiệu lực ngay sau khi thay đổi, nhưng cân nhắc kỹ với self_serve (Internet công khai sẽ nhận spam).",
 	},
 	"auth.default_tenant_mode": {
 		Type:     "string",
@@ -173,16 +173,16 @@ var registry = map[string]settingSpec{
 		Default:  "create_personal",
 		Enum:     []string{"create_personal", "tenantless"},
 		Category: "auth",
-		Description: "公开注册成功后的默认空间策略。create_personal = 自动创建个人空间并设为 Owner；" +
-			"tenantless = 仅创建用户，等待接受邀请或主动创建空间。修改后只影响新注册用户。",
+		Description: "Chính sách đơn vị mặc định sau khi đăng ký công khai thành công. create_personal = tự tạo đơn vị cá nhân và đặt làm Owner; " +
+			"tenantless = chỉ tạo người dùng, chờ nhận lời mời hoặc tự tạo đơn vị. Thay đổi chỉ ảnh hưởng người dùng đăng ký mới.",
 	},
 	"auth.complex_password_enabled": {
 		Type:     "bool",
 		EnvName:  "WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED",
 		Default:  false,
 		Category: "auth",
-		Description: "是否启用复杂密码。开启后密码必须包含大小写字母、数字和特殊字符。" +
-			"修改后立即生效，只影响新注册用户或新密码修改/重置操作。特殊字符包含：!@#$%^&*()_+-=[]{}|;:,.<>?",
+		Description: "Bật mật khẩu phức tạp hay không. Khi bật, mật khẩu phải có chữ hoa, chữ thường, chữ số và ký tự đặc biệt. " +
+			"Có hiệu lực ngay sau khi thay đổi, chỉ ảnh hưởng người dùng đăng ký mới hoặc thao tác đổi/đặt lại mật khẩu. Ký tự đặc biệt gồm: !@#$%^&*()_+-=[]{}|;:,.<>?",
 	},
 	// tenant.max_owned_per_user caps how many tenants a single non-superuser
 	// can create (and Own) via self-service POST /tenants. Read on every
@@ -235,16 +235,16 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_MAX_OWNED_PER_USER",
 		Default:  int64(10),
 		Category: "tenant",
-		Description: "每个非超管用户通过自助创建可拥有的最大空间数。每次创建空间时实时读取，" +
-			"修改后立即生效。0 表示使用内置默认值 10；负数表示完全关闭限制（不建议在公开部署使用）。",
+		Description: "Số đơn vị tối đa mỗi người dùng không phải SuperAdmin được tự tạo. Đọc trực tiếp mỗi lần tạo đơn vị, " +
+			"có hiệu lực ngay sau khi thay đổi. 0 = dùng mặc định tích hợp 10; số âm = bỏ hoàn toàn giới hạn (không khuyến nghị khi triển khai công khai).",
 	},
 	"tenant.self_service_creation_enabled": {
 		Type:     "bool",
 		EnvName:  "WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED",
 		Default:  true,
 		Category: "tenant",
-		Description: "是否允许非超管用户主动创建空间。关闭后，普通用户只能通过邀请加入已有空间；" +
-			"跨空间超管仍可创建。修改后立即生效。",
+		Description: "Cho phép người dùng không phải SuperAdmin tự tạo đơn vị hay không. Khi tắt, người dùng thường chỉ tham gia đơn vị có sẵn qua lời mời; " +
+			"SuperAdmin vẫn tạo được. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// tenant.default_storage_quota_gb is the default storage quota (in GB)
 	// applied to a newly-created tenant when the caller doesn't specify
@@ -258,9 +258,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_DEFAULT_STORAGE_QUOTA_GB",
 		Default:  int64(10),
 		Category: "tenant",
-		Description: "新建空间时默认分配的存储配额（GB），包含向量、原文、文本、索引等。" +
-			"仅在创建时读取，修改后只对之后新建的空间生效，不会回写已存在的空间。" +
-			"0 或负数表示使用内置默认值 10GB。",
+		Description: "Hạn mức lưu trữ (GB) cấp mặc định khi tạo đơn vị mới, gồm vector, tệp gốc, văn bản, chỉ mục... " +
+			"Chỉ đọc lúc tạo; thay đổi chỉ áp dụng cho đơn vị tạo sau đó, không ghi lại cho đơn vị đã có. " +
+			"0 hoặc số âm = dùng mặc định tích hợp 10GB.",
 	},
 	// tenant.auto_create_api_key restores the legacy behaviour where creating
 	// a tenant also minted a full-access API key and returned its plaintext
@@ -275,9 +275,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_AUTO_CREATE_API_KEY",
 		Default:  false,
 		Category: "tenant",
-		Description: "创建空间时是否自动生成一个全量权限（full_access）的 API Key，并在创建接口的响应中返回其明文 token。" +
-			"用于兼容旧版本「创建空间即下发默认 API Key」的行为（属于破坏性变更的回退开关）。" +
-			"每次创建空间时实时读取，修改后立即生效。默认 false（不自动创建，需通过 API Key 管理显式创建）。",
+		Description: "Khi tạo đơn vị có tự sinh một API key toàn quyền (full_access) và trả token dạng rõ trong phản hồi của API tạo hay không. " +
+			"Dùng để tương thích hành vi cũ \"tạo đơn vị là cấp API key mặc định\" (công tắc quay lui cho thay đổi phá vỡ tương thích). " +
+			"Đọc trực tiếp mỗi lần tạo đơn vị, có hiệu lực ngay. Mặc định false (không tự tạo, phải tạo tường minh trong quản lý API key).",
 	},
 	// tenant.auto_accept_invitation: invite = auto-join switch (default false).
 	"tenant.auto_accept_invitation": {
@@ -285,9 +285,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_AUTO_ACCEPT_INVITATION",
 		Default:  false,
 		Category: "tenant",
-		Description: "全局开关：开启后，空间管理员通过邮箱邀请已注册用户加入空间时，" +
-			"被邀请人将被立即自动加入（直接写入成员关系），无需在收件箱手动接受，也不再生成待接受的邀请记录。" +
-			"关闭时保持原有「发出邀请 → 被邀请人收件箱确认」流程。每次邀请时实时读取，修改后立即生效。默认 false。",
+		Description: "Công tắc toàn cục: khi bật, lúc quản trị đơn vị mời người dùng đã đăng ký qua email, " +
+			"người được mời sẽ được thêm ngay (ghi thẳng quan hệ thành viên), không cần chấp nhận trong hộp thư và không tạo bản ghi lời mời chờ. " +
+			"Khi tắt giữ nguyên luồng \"gửi lời mời → người được mời xác nhận trong hộp thư\". Đọc trực tiếp mỗi lần mời, có hiệu lực ngay. Mặc định false.",
 	},
 	"asynq.core_concurrency": {
 		Type:            "int",
@@ -295,7 +295,7 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultCoreWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description:     "文档解析、手工重解析等核心任务的每实例保底并发。可额外使用共享弹性池；修改后需重启。",
+		Description:     "Số luồng đồng thời bảo đảm mỗi instance cho các tác vụ cốt lõi như phân tích tài liệu, phân tích lại thủ công. Có thể dùng thêm pool co giãn chung; cần khởi động lại sau khi thay đổi.",
 	},
 	"asynq.postprocess_concurrency": {
 		Type:            "int",
@@ -303,7 +303,7 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultPostProcessWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description:     "解析完成后的轻量编排与富化扇出专用并发，避免被长时间文档解析阻塞；修改后需重启。",
+		Description:     "Số luồng đồng thời riêng cho điều phối nhẹ và fan-out làm giàu sau khi phân tích xong, tránh bị phân tích tài liệu dài chặn; cần khởi động lại sau khi thay đổi.",
 	},
 	"asynq.enrichment_concurrency": {
 		Type:            "int",
@@ -311,7 +311,7 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultEnrichmentWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description:     "摘要、图片、图谱和问题生成的每实例保底并发。可额外使用共享弹性池；修改后需重启。",
+		Description:     "Số luồng đồng thời bảo đảm mỗi instance cho sinh tóm tắt, hình ảnh, đồ thị và câu hỏi. Có thể dùng thêm pool co giãn chung; cần khởi động lại sau khi thay đổi.",
 	},
 	"asynq.maintenance_concurrency": {
 		Type:            "int",
@@ -319,7 +319,7 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultMaintenanceWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description:     "数据源同步、批处理、移动和删除清理的每实例保底并发，与用户面流水线硬隔离；修改后需重启。",
+		Description:     "Số luồng đồng thời bảo đảm mỗi instance cho đồng bộ nguồn dữ liệu, xử lý lô, di chuyển và dọn dẹp xóa, cách ly cứng với pipeline phía người dùng; cần khởi động lại sau khi thay đổi.",
 	},
 	"asynq.shared_concurrency": {
 		Type:            "int",
@@ -327,7 +327,7 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultSharedWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description:     "核心解析与内容富化共用的每实例弹性并发。空闲容量由有积压的一侧借用；修改后需重启。",
+		Description:     "Số luồng co giãn mỗi instance dùng chung cho phân tích cốt lõi và làm giàu nội dung. Bên đang tồn đọng sẽ mượn phần rảnh; cần khởi động lại sau khi thay đổi.",
 	},
 	// asynq.wiki_concurrency is the size of the DEDICATED wiki worker pool,
 	// separate from the upstream pools. Read once when the wiki asynq server
@@ -339,9 +339,9 @@ var registry = map[string]settingSpec{
 		Default:         int64(types.DefaultWikiWorkerConcurrency),
 		Category:        "worker",
 		RequiresRestart: true,
-		Description: "Wiki 生成专用池的 worker 并发数（与文档解析池相互隔离）。" +
-			"Wiki 生成以合成大模型调用为主，独立并发预算可避免上传高峰期被解析任务饿死，" +
-			"同时不会因 Wiki 洪峰拖慢用户面解析。修改后需重启服务进程方可生效。",
+		Description: "Số worker đồng thời của pool riêng cho sinh Wiki (cách ly với pool phân tích tài liệu). " +
+			"Sinh Wiki chủ yếu là gọi LLM tổng hợp; ngân sách đồng thời riêng giúp không bị tác vụ phân tích bỏ đói lúc tải lên cao điểm, " +
+			"đồng thời không để đợt Wiki dồn dập làm chậm phân tích phía người dùng. Cần khởi động lại tiến trình dịch vụ mới có hiệu lực.",
 	},
 	// wiki.run_window confines wiki generation to off-hours: outside the
 	// window the wiki queue is paused so chat gets the LLM. Read every 30s by
@@ -368,9 +368,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_MODEL_MAX_CONCURRENCY",
 		Default:  int64(32),
 		Category: "worker",
-		Description: "后台任务（文档入库/富化）对单个模型的默认并发上限，按模型 ID 全副本共享。" +
-			"每次调用实时读取，修改后立即生效、无需重启。0 或负数表示关闭默认限制" +
-			"（各模型仍会尊重自身在模型管理里配置的上限）。仅影响后台任务，不影响交互式对话。",
+		Description: "Giới hạn đồng thời mặc định của tác vụ nền (nhập tài liệu/làm giàu) trên một mô hình, chia sẻ giữa mọi bản sao theo ID mô hình. " +
+			"Đọc trực tiếp mỗi lần gọi, có hiệu lực ngay, không cần khởi động lại. 0 hoặc số âm = tắt giới hạn mặc định " +
+			"(mỗi mô hình vẫn tuân theo giới hạn riêng cấu hình trong quản lý mô hình). Chỉ ảnh hưởng tác vụ nền, không ảnh hưởng trò chuyện tương tác.",
 	},
 	// memory.platform_enabled is the platform-wide memory kill switch. When
 	// false, long-term memory is off for every tenant and every user — the
@@ -383,8 +383,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  true,
 		Category: "memory",
-		Description: "平台级长期记忆总开关。关闭后所有空间和所有用户的长期记忆立即停用，" +
-			"个人与空间的记忆设置保留但不生效。修改后立即生效。",
+		Description: "Công tắc tổng bộ nhớ dài hạn cấp nền tảng. Khi tắt, bộ nhớ dài hạn của mọi đơn vị và mọi người dùng dừng ngay, " +
+			"cài đặt bộ nhớ của cá nhân và đơn vị được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// memory.config is the platform-wide memory configuration (on/off,
 	// write mode, extraction and embedding models, budgets). It replaces the
@@ -416,6 +416,12 @@ var registry = map[string]settingSpec{
 		Description: "Tệp đính kèm quá dài cho một lượt hỏi: model trả lời đọc mục lục của tệp (Chương, Mục, Điều, đề mục) " +
 			"và chọn các phần cần cho câu hỏi (một lượt gọi ngắn), thay vì lấy các đoạn chứa nhiều từ của câu hỏi nhất. " +
 			"Chọn lỗi thì tự quay về cách lấy theo từ. Có hiệu lực ngay.",
+	},
+	types.SettingChatAttachmentInlineTokens: {
+		Type: "int", Default: int64(types.DefaultChatAttachmentInlineTokens), Category: "chat",
+		Description: "Tệp đính kèm dài tới bao nhiêu token (ước lượng) thì đưa nguyên văn vào lượt hỏi; dài hơn thì " +
+			"model chọn phần theo mục lục (khi bật chọn theo mục lục), hoặc lấy các đoạn khớp câu hỏi. " +
+			"Tối đa bằng ngân sách một lượt hỏi (12000); giá trị lớn hơn không có tác dụng. Có hiệu lực ngay.",
 	},
 	// llm.auxiliary_model_id: the small model for session titles and
 	// follow-up suggestions (measured 2026-10-14: as good as Qwen on
@@ -477,8 +483,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  true,
 		Category: "chat",
-		Description: "平台级联网搜索开关。关闭后所有会话（含智能体与本地浏览器工具）不再执行联网搜索，" +
-			"用户侧开关保留但无效。修改后立即生效。",
+		Description: "Công tắc tìm kiếm Internet cấp nền tảng. Khi tắt, mọi cuộc trò chuyện (gồm trợ lý và công cụ trình duyệt cục bộ) không còn tìm kiếm Internet, " +
+			"công tắc phía người dùng được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// chat.mcp_enabled gates MCP tool invocation platform-wide. Agent configs
 	// keep their MCP selection but every run resolves to "none" while this is
@@ -488,8 +494,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  true,
 		Category: "chat",
-		Description: "平台级 MCP 工具开关。关闭后所有智能体运行不加载任何 MCP 服务，" +
-			"智能体配置中的 MCP 选择保留但无效。修改后立即生效。",
+		Description: "Công tắc công cụ MCP cấp nền tảng. Khi tắt, mọi lượt chạy trợ lý không nạp dịch vụ MCP nào, " +
+			"lựa chọn MCP trong cấu hình trợ lý được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// knowledge.parse_defaults is the platform-wide default parse
 	// configuration published by a SystemAdmin. While enabled it replaces
@@ -502,9 +508,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  map[string]any{"enabled": false},
 		Category: "knowledge",
-		Description: "全系统默认解析配置。enabled=true 后，所有上传/重解析/数据源导入都按此配置执行，" +
-			"忽略每次上传携带的 process_config（锁定模式）。用于管理员不需要了解解析参数即可直接解析的场景；" +
-			"字段与上传接口的 process_config 相同（vlm_config、asr_config、chunking_config、parser_engine_rules 等）。",
+		Description: "Cấu hình phân tích tài liệu mặc định toàn hệ thống. Khi enabled=true, mọi lượt tải lên/phân tích lại/nhập từ nguồn dữ liệu đều chạy theo cấu hình này, " +
+			"bỏ qua process_config gửi kèm mỗi lần tải lên (chế độ khóa). Dành cho trường hợp quản trị viên muốn phân tích ngay mà không cần hiểu tham số; " +
+			"các trường giống process_config của API tải lên (vlm_config, asr_config, chunking_config, parser_engine_rules...).",
 	},
 }
 

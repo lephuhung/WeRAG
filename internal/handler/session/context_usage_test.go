@@ -69,6 +69,6 @@ func TestGetContextUsageOnlyForTheOwner(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Positive(t, body.Data.HistoryTokens)
-	require.Equal(t, types.DefaultMaxContextTokens, body.Data.HistoryBudget)
+	require.Equal(t, types.DefaultHistoryTokens, body.Data.HistoryBudget, "no plan: the default history budget")
 	require.Equal(t, []string{"mine", "mine"}, messages.listed)
 }

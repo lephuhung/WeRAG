@@ -6,8 +6,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// TestConfigFromModel 验证 ConfigFromModel 能把 types.Model 完整映射到 ChatConfig，
-// 避免后续新加字段时只在生产路径或测试路径其中一侧更新导致功能漏配。
+// TestConfigFromModel kiểm tra ConfigFromModel ánh xạ đầy đủ types.Model sang ChatConfig,
+// tránh việc sau này thêm trường mới mà chỉ cập nhật một phía (đường chạy thật hoặc test) dẫn đến thiếu cấu hình.
 func TestConfigFromModel(t *testing.T) {
 	m := &types.Model{
 		ID:     "model-123",

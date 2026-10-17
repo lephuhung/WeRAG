@@ -1,0 +1,441 @@
+{
+  "cases": [
+    {
+      "name": "cmd_summarize_this",
+      "group": "doc_command",
+      "lines": [
+        "Tóm tắt văn bản này nhé"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_summarize_for_me",
+      "group": "doc_command",
+      "lines": [
+        "Tóm tắt nội dung văn bản cho tôi"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_spell_selection",
+      "group": "doc_command",
+      "lines": [
+        "Soát lỗi chính tả đoạn này"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_list_typos",
+      "group": "doc_command",
+      "lines": [
+        "Liệt kê các lỗi chính tả trong văn bản"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_diagram",
+      "group": "doc_command",
+      "lines": [
+        "Vẽ sơ đồ cho nội dung này"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_format_check",
+      "group": "doc_command",
+      "lines": [
+        "kiểm tra thể thức văn bản này"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "cmd_rewrite_formal",
+      "group": "doc_command",
+      "lines": [
+        "Gợi ý viết lại đoạn này theo văn phong hành chính"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_image_info",
+      "group": "doc_command",
+      "lines": [
+        "Cho tôi thông tin ảnh này"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_paragraph_count",
+      "group": "doc_command",
+      "lines": [
+        "Văn bản đang mở có mấy đoạn, đoạn đầu là gì? Trả lời ngắn."
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_doc_overview",
+      "group": "doc_command",
+      "lines": [
+        "cho tôi thông tin sơ bộ về văn bản"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_send_email",
+      "group": "doc_command",
+      "lines": [
+        "Gửi văn bản này qua email cho Giám đốc Sở ngay bây giờ"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_two_variants",
+      "group": "doc_command",
+      "lines": [
+        "Đề xuất 2 phương án viết lại đoạn này"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_compare_two_docs",
+      "group": "doc_command",
+      "lines": [
+        "Đối chiếu các số liệu trong @bao_cao_dai.docx với tài liệu nguồn @ke_hoach_nguon.docx và chỉ ra những chỗ lệch nhau"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_with_subject_decree30",
+      "group": "command_with_subject",
+      "lines": [
+        "Tóm tắt Nghị định 30/2020 về công tác văn thư giúp tôi"
+      ],
+      "mem_max": 1,
+      "topics_no_action": true,
+      "topic_any": [
+        "văn thư"
+      ]
+    },
+    {
+      "name": "cmd_with_subject_validity",
+      "group": "command_with_subject",
+      "lines": [
+        "Kiểm tra xem Thông tư 01/2011 hướng dẫn thể thức văn bản hành chính còn hiệu lực không"
+      ],
+      "mem_max": 1,
+      "topics_no_action": true,
+      "topic_any": [
+        "thể thức",
+        "hiệu lực"
+      ]
+    },
+    {
+      "name": "cmd_with_subject_draft_letter",
+      "group": "command_with_subject",
+      "lines": [
+        "Soạn giúp tôi công văn gửi Sở Nội vụ về kế hoạch tập huấn nghiệp vụ văn thư"
+      ],
+      "mem_max": 1,
+      "topics_no_action": true,
+      "topic_any": [
+        "tập huấn",
+        "văn thư"
+      ]
+    },
+    {
+      "name": "cmd_with_subject_fine",
+      "group": "command_with_subject",
+      "lines": [
+        "Tra cứu mức phạt nồng độ cồn đối với xe máy"
+      ],
+      "mem_max": 1,
+      "topics_no_action": true,
+      "topic_any": [
+        "giao thông",
+        "nồng độ cồn"
+      ]
+    },
+    {
+      "name": "cmd_with_subject_translate",
+      "group": "command_with_subject",
+      "lines": [
+        "Dịch đoạn này sang tiếng Anh"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "q_bhxh_commune",
+      "group": "legal_question",
+      "lines": [
+        "phaps luật về bhxh cho cán bộ ubnd xã quy định gì"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_decree53",
+      "group": "legal_question",
+      "lines": [
+        "Nghị định 53/2022/NĐ-CP quy định gì?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true,
+      "topic_any": [
+        "53"
+      ]
+    },
+    {
+      "name": "q_secret_law",
+      "group": "legal_question",
+      "lines": [
+        "Luật bí mật nhà nước 2025 có những điểm gì mới so với luật cũ?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_contract_price",
+      "group": "legal_question",
+      "lines": [
+        "Trong trường hợp nào thì chủ đầu tư có thể quyết định giá ký kết hợp đồng xây dựng vượt quá giá trúng thầu?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_salt_quota",
+      "group": "legal_question",
+      "lines": [
+        "Một doanh nghiệp muốn nhập khẩu muối vào năm 2025. Doanh nghiệp này cần phải làm gì để được phân giao hạn ngạch thuế quan nhập khẩu?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_hiv_disclosure",
+      "group": "legal_question",
+      "lines": [
+        "Trong trường hợp nào thì nhân viên y tế được phép tiết lộ thông tin về tình trạng nhiễm HIV của một người?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_resolution57",
+      "group": "legal_question",
+      "lines": [
+        "Nghị quyết 57 nói về vấn đề gì",
+        "Không có văn bản này trong hệ thống"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "q_housing_formula",
+      "group": "legal_question",
+      "lines": [
+        "công thức phân bổ căn hộ cho đối tượng ưu tiên như thế nào",
+        "vậy công thức này có đúng không?"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true
+    },
+    {
+      "name": "self_job_and_request",
+      "group": "self_statement",
+      "lines": [
+        "Tôi đang công tác tại Sở Tư pháp, đơn vị Phòng Hành chính tư pháp, cần xem văn bản về hộ tịch"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "not_inferred_kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Sở Tư pháp"
+      ]
+    },
+    {
+      "name": "self_job_then_question",
+      "group": "self_statement",
+      "lines": [
+        "Em làm ở UBND phường Phú Hội, cho em hỏi thời hiệu xử phạt vi phạm hành chính là bao lâu?"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "not_inferred_kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Phú Hội"
+      ]
+    },
+    {
+      "name": "self_preference_short",
+      "group": "self_statement",
+      "lines": [
+        "Từ giờ trả lời thẳng vào kết luận, đừng dẫn dắt dài dòng"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "preference"
+      ]
+    },
+    {
+      "name": "self_preference_formal",
+      "group": "self_statement",
+      "lines": [
+        "Khi viết lại văn bản cho tôi, luôn dùng văn phong trang trọng, xưng hô theo chuẩn hành chính"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "preference"
+      ]
+    },
+    {
+      "name": "self_fact_eoffice",
+      "group": "self_statement",
+      "lines": [
+        "Bên tôi vừa chuyển từ phần mềm quản lý văn bản cũ sang hệ thống eOffice"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "fact"
+      ],
+      "expect_substrings": [
+        "eOffice"
+      ]
+    },
+    {
+      "name": "self_task_weekly_report",
+      "group": "self_statement",
+      "lines": [
+        "Tuần này phải xong báo cáo tổng kết công tác cải cách hành chính"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "task"
+      ],
+      "expect_expiry": true
+    },
+    {
+      "name": "self_remember_name",
+      "group": "self_statement",
+      "lines": [
+        "Hãy nhớ tên tôi là Lâm, phụ trách văn thư của Công an phường"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Lâm"
+      ]
+    },
+    {
+      "name": "self_update_unit",
+      "group": "self_statement",
+      "lines": [
+        "Tôi đã chuyển sang Phòng Tổ chức cán bộ từ tháng này rồi"
+      ],
+      "existing": [
+        {
+          "kind": "profile",
+          "topic": "đơn vị công tác",
+          "content": "Công tác tại Phòng Hành chính tư pháp, Sở Tư pháp"
+        }
+      ],
+      "mem_min": 1,
+      "actions": [
+        "update"
+      ],
+      "targets": [
+        0
+      ]
+    },
+    {
+      "name": "noise_hello",
+      "group": "noise",
+      "lines": [
+        "Xin chào, bạn là ai?"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "noise_phone_price",
+      "group": "noise",
+      "lines": [
+        "giá hornor magic 9 pro"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "noise_iphone",
+      "group": "noise",
+      "lines": [
+        "iPhone 18 Pro ra mắt khi nào và giá bao nhiêu?"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "noise_thanks",
+      "group": "noise",
+      "lines": [
+        "ok cảm ơn, được rồi"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "cmd_answer_short_once",
+      "group": "doc_command",
+      "lines": [
+        "Văn bản này nói về gì, trả lời ngắn thôi nhé"
+      ],
+      "mem_max": 0,
+      "topics_empty": true
+    },
+    {
+      "name": "q_bare_circular",
+      "group": "legal_question",
+      "lines": [
+        "Thông tư 01 còn hiệu lực không"
+      ],
+      "mem_max": 1,
+      "inferred_only": true,
+      "topics_no_action": true,
+      "topic_any": [
+        "thông tư 01",
+        "hiệu lực"
+      ]
+    }
+  ]
+}

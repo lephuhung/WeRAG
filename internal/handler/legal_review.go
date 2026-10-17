@@ -27,7 +27,7 @@ func NewLegalReviewHandler(svc interfaces.LegalReviewService) *LegalReviewHandle
 // @Description  Pages the review queue of public-KB documents. status is
 // @Description  pending, approved, rejected, alerts (approved documents a
 // @Description  newer one supersedes) or empty for all.
-// @Tags         Legal review
+// @Tags         Rà soát pháp lý
 // @Produce      json
 // @Param        status    query  string  false  "Review status or alerts"
 // @Param        knowledge_base_id query string false "Only this KB"
@@ -60,7 +60,7 @@ func (h *LegalReviewHandler) ListLegalReviews(c *gin.Context) {
 // @Description  Reads the header of every parsed public-KB document without
 // @Description  a review yet and stores a pending suggestion matched against
 // @Description  the legal catalogue.
-// @Tags         Legal review
+// @Tags         Rà soát pháp lý
 // @Produce      json
 // @Success      200 {object} map[string]interface{} "created count"
 // @Router       /system/legal-reviews/scan [post]
@@ -77,7 +77,7 @@ func (h *LegalReviewHandler) ScanLegalReviews(c *gin.Context) {
 
 // DecideLegalReview godoc
 // @Summary      Approve or reject a document's legal identity
-// @Tags         Legal review
+// @Tags         Rà soát pháp lý
 // @Accept       json
 // @Produce      json
 // @Param        knowledge_id path string                     true "Knowledge ID"
@@ -104,7 +104,7 @@ func (h *LegalReviewHandler) DecideLegalReview(c *gin.Context) {
 // @Summary      Search the legal catalogue
 // @Description  Finds catalogue documents by số hiệu or title words so a
 // @Description  reviewer can link a document by hand.
-// @Tags         Legal review
+// @Tags         Rà soát pháp lý
 // @Produce      json
 // @Param        q query string true "Number or title words"
 // @Success      200 {object} map[string]interface{} "Documents"
@@ -125,7 +125,7 @@ func (h *LegalReviewHandler) SearchLegalCatalog(c *gin.Context) {
 // @Description  Checks Vietnamese spelling of the given chunk texts (as the
 // @Description  reviewer has them, saved or not) with the KB's summary
 // @Description  model. Nothing is saved; at most 40 chunks per call.
-// @Tags         Legal review
+// @Tags         Rà soát pháp lý
 // @Accept       json
 // @Produce      json
 // @Param        knowledge_id path string true "Knowledge ID"

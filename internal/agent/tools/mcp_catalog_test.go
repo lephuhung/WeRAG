@@ -52,7 +52,7 @@ func catalogFixture(t *testing.T, n int) (context.Context, *ToolRegistry, *MCPCa
 	ctx := catalogTestContext()
 	server := &types.MCPService{
 		ID:          "server-1",
-		Name:        "订单",
+		Name:        "Đơn hàng",
 		Description: "customer orders",
 		Enabled:     true,
 		AuthConfig:  &types.MCPAuthConfig{Token: "DO-NOT-EXPOSE"},
@@ -258,11 +258,11 @@ func TestMCPCatalogEnumeratesAllToolsWithoutSchemas(t *testing.T) {
 			map[string]any{"mode": "list_tools", "server_id": "server-1", "limit": 17, "cursor": cursor},
 		)
 		require.Equal(t, 125, page.Total)
-		require.Equal(t, "订单", page.ServerName)
+		require.Equal(t, "Đơn hàng", page.ServerName)
 		for _, tool := range page.Tools {
 			require.False(t, found[tool.Name])
 			found[tool.Name] = true
-			require.Equal(t, "订单", tool.ServerName)
+			require.Equal(t, "Đơn hàng", tool.ServerName)
 			require.Empty(t, tool.ToolRef, "listing must not expose callable references")
 		}
 		if !page.HasMore {
@@ -289,7 +289,7 @@ func TestMCPCatalogEnumeratesAllToolsWithoutSchemas(t *testing.T) {
 
 func TestMCPCatalogSearchMissStillAllowsExactDiscovery(t *testing.T) {
 	ctx, r, _, _, _ := catalogFixture(t, 1)
-	page := discoverPage(ctx, t, r, map[string]any{"mode": "search", "server_id": "server-1", "query": "中文不匹配"})
+	page := discoverPage(ctx, t, r, map[string]any{"mode": "search", "server_id": "server-1", "query": "không khớp gì cả"})
 	require.Zero(t, page.Total)
 	require.Equal(t, "ready", page.Status)
 	page = discoverPage(ctx, t, r, map[string]any{"mode": "list_tools", "server_id": "server-1"})
@@ -382,7 +382,7 @@ func TestMCPCatalogIdentityDoesNotUseSanitizedName(t *testing.T) {
 	require.Same(t, b, resolved)
 	target := r.MCPCallTarget(ctx, ToolCallMCPTool, raw)
 	require.Equal(t, "foo_bar", target.ToolName)
-	require.Equal(t, "订单", target.ServiceName)
+	require.Equal(t, "Đơn hàng", target.ServiceName)
 }
 
 func TestMCPCatalogRefreshRetiresRemovedAndChangedDefinitions(t *testing.T) {
@@ -473,7 +473,7 @@ func TestMCPCatalogJSONBudgetAndCompleteSchema(t *testing.T) {
 	require.Less(t, len(page.Tools), 25)
 	// Full description and schema must survive a small generic output budget.
 	entry := c.servers["server-1"]
-	tool := catalogTestTool(entry.service, "large", strings.Repeat("中", 20000), gate)
+	tool := catalogTestTool(entry.service, "large", strings.Repeat("ệ", 20000), gate)
 	c.load = func(context.Context, *types.MCPService, bool) ([]*MCPTool, error) { return []*MCPTool{tool}, nil }
 	discoverPage(ctx, t, r, map[string]any{"mode": "list_tools", "server_id": "server-1", "refresh": true})
 	result, err := r.ExecuteTool(ctx, ToolDiscoverMCPTools, json.RawMessage(`{
@@ -484,7 +484,7 @@ func TestMCPCatalogJSONBudgetAndCompleteSchema(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.True(t, json.Valid([]byte(result.Output)))
-	require.Contains(t, result.Output, strings.Repeat("中", 20000))
+	require.Contains(t, result.Output, strings.Repeat("ệ", 20000))
 	tool.mcpTool.Description = strings.Repeat("x", maxMCPDefinitionChars+1)
 	result, err = r.ExecuteTool(ctx, ToolDiscoverMCPTools, json.RawMessage(`{
   "mode": "describe",

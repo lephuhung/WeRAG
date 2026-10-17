@@ -323,7 +323,7 @@ export async function generateMCPUsageInstructions(id: string, language: string)
 
 // ---- MCP endpoints (public tool surface) ---------------------------------------
 
-export type McpEndpointToolGroup = "retrieve" | "chat" | "wiki" | "ingest";
+export type McpEndpointToolGroup = "retrieve" | "chat" | "wiki" | "ingest" | "legal" | "legal_write";
 
 export interface McpEndpoint {
   id: string;

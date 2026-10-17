@@ -26,7 +26,9 @@ from pathlib import Path
 
 import yaml
 
-from noiser import PROTECTED_WORDS, inject, set_op_weights, set_telex_kind_weights, set_vocab
+import confusion
+from noiser import PROTECTED_WORDS, inject, op_weights, set_confusions, set_op_weights, set_telex_kind_weights, set_vocab
+from teencode import substitute as teencode_substitute
 from vi_text import split_sentences, syllable_count, vietnamese_ratio
 
 # Full form → short forms used in chat queries. The short form replaces the
@@ -123,8 +125,14 @@ class Pools:
                     self.kb_pairs.append({"noisy": r["orig"], "findings": r["findings"]})
                 self.kb_clean.append(r["text"])
         for p in a.pairs or []:
-            self.pairs.extend(r for r in read_jsonl(p) if r.get("findings"))
-            self.clean.extend(r["text"] for r in read_jsonl(p) if not r.get("findings"))
+            # "path@N" keeps a random N of the file's pairs (rebalances a typing-heavy file)
+            path, _, cap = p.partition("@")
+            rows = read_jsonl(path)
+            noisy = [r for r in rows if r.get("findings")]
+            if cap and len(noisy) > int(cap):
+                noisy = rng.sample(noisy, int(cap))
+            self.pairs.extend(noisy)
+            self.clean.extend(r["text"] for r in rows if not r.get("findings"))
         for p in a.clean or []:
             for r in read_jsonl(p):
                 self.clean.append(r["text"])
@@ -193,7 +201,8 @@ class Pools:
 
 def build_query_sample(pools: Pools, a, rng: random.Random, system: str) -> dict:
     """A batch of 1..6 short chat questions; errors are keyboard-heavy, some
-    questions carry abbreviations (never flagged), some batches are clean."""
+    questions carry abbreviations (never flagged) or teencode (ko, dc: flagged
+    with the full word), some batches are clean."""
     n = rng.choices([1, 2, 3, 4, 5, 6], weights=[25, 20, 20, 15, 10, 10])[0]
     start = rng.randint(0, 400)
     all_clean = rng.random() < a.clean_batch_rate
@@ -205,9 +214,16 @@ def build_query_sample(pools: Pools, a, rng: random.Random, system: str) -> dict
         want_clean = all_clean or rng.random() < a.clean_slot_rate
         fs: list[dict] = []
         if not want_clean:
-            noisy, fs = inject(q, rng, n_errors=rng.choices([1, 1, 2], weights=[70, 0, 30])[0])
-            if fs:
-                q = noisy
+            teen = rng.random() < a.query_teen_rate
+            # a teencode line keeps a keyboard error now and then (dc ko bít cacs)
+            if not teen or rng.random() < 0.3:
+                with op_weights(**a.query_weights):
+                    noisy, fs = inject(q, rng, n_errors=rng.choices([1, 1, 2], weights=[70, 0, 30])[0])
+                if fs:
+                    q = noisy
+            if teen:
+                q, extra = teencode_substitute(q, fs, rng, rng.choices([1, 2, 3], weights=[55, 30, 15])[0])
+                fs = fs + extra
         idx = start + k
         lines.append(f"[{idx}] {q}")
         for f in fs:
@@ -264,13 +280,19 @@ def main() -> int:
     ap.add_argument("--kb")
     ap.add_argument("--kb-holdout", type=int, default=200, help="last N unchanged and N/2 changed KB rows are reserved for eval")
     ap.add_argument("--kb-max-uses", type=int, default=0, help="cap on draws of one KB paragraph or pair (0 = no cap); one real error (wrong, correct) is capped at 10x this")
-    ap.add_argument("--pairs", action="append")
+    ap.add_argument("--pairs", action="append", help="sanng_filter.py-style pairs; path@N keeps N random pairs")
     ap.add_argument("--clean", action="append")
     ap.add_argument("--queries", action="append", help="JSONL of short chat questions (\"text\")")
     ap.add_argument("--query-rate", type=float, default=0.0, help="share of samples that are query batches")
     ap.add_argument("--query-abbr-rate", type=float, default=0.35, help="share of query lines that get an abbreviation substituted")
+    ap.add_argument("--query-teen-rate", type=float, default=0.0, help="share of noisy query lines that get teencode (ko, dc, vs) substituted")
     ap.add_argument("--telex-weight", type=float, help="noiser weight for telex_vni (default 3)")
     ap.add_argument("--typo-weight", type=float, help="noiser weight for typo (default 12)")
+    ap.add_argument("--query-telex-weight", type=float, help="telex_vni weight in query lines only (default: as documents)")
+    ap.add_argument("--query-typo-weight", type=float, help="typo weight in query lines only (default: as documents)")
+    ap.add_argument("--confusion-weight", type=float, default=0, help="noiser weight for real-word swaps from confusion sets (0 = off)")
+    ap.add_argument("--confusion-min-freq", type=int, default=30, help="syllables rarer than this in the pools get no confusion set")
+    ap.add_argument("--mined", action="append", default=[], help="pair files whose single-word real errors join the confusion sets")
     ap.add_argument("--raw-extra-weight", type=float, help="telex_vni weight of raw keys with a doubled key, cascc (default 15)")
     ap.add_argument("--tone-mid-rate", type=float, help="share of raw Telex syllables with the tone key right after the vowel, casc (default 0.3)")
     ap.add_argument("--protect-words", help="file with one lower-case word per line the noiser must not corrupt")
@@ -291,8 +313,15 @@ def main() -> int:
         overrides["telex_vni"] = a.telex_weight
     if a.typo_weight is not None:
         overrides["typo"] = a.typo_weight
+    if a.confusion_weight:
+        overrides["confusion"] = a.confusion_weight
     if overrides:
         set_op_weights(**overrides)
+    a.query_weights = {}
+    if a.query_telex_weight is not None:
+        a.query_weights["telex_vni"] = a.query_telex_weight
+    if a.query_typo_weight is not None:
+        a.query_weights["typo"] = a.query_typo_weight
     if a.raw_extra_weight is not None:
         set_telex_kind_weights(raw_extra=a.raw_extra_weight)
     if a.tone_mid_rate is not None:
@@ -315,6 +344,11 @@ def main() -> int:
                 counts[core] = counts.get(core, 0) + 1
     set_vocab(w for w, c in counts.items() if c >= 3)
     print(f"syllable vocab={sum(1 for c in counts.values() if c >= 3)}", file=sys.stderr)
+    if a.confusion_weight:
+        conf = confusion.build(counts, a.confusion_min_freq)
+        mined = confusion.add_mined(conf, a.mined)
+        set_confusions(conf)
+        print(f"confusion sets={len(conf)} mined={mined} {confusion.stats(conf)}", file=sys.stderr)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stats = {"samples": 0, "paragraphs": 0, "findings": 0, "clean_paragraphs": 0, "empty_answers": 0}

@@ -65,8 +65,8 @@ func TestCleanAtMentionRequiresNameBoundary(t *testing.T) {
 	if _, mentioned := cleanAtMention("@WeKnoraPlus hello", "WeKnora"); mentioned {
 		t.Fatal("longer user name must not be treated as a robot mention")
 	}
-	if got, mentioned := cleanAtMention("@WeKnora：你好", "WeKnora"); !mentioned || got != "你好" {
-		t.Fatalf("cleanAtMention() = %q, %v; want 你好, true", got, mentioned)
+	if got, mentioned := cleanAtMention("@WeKnora: xin chào", "WeKnora"); !mentioned || got != "xin chào" {
+		t.Fatalf("cleanAtMention() = %q, %v; want xin chào, true", got, mentioned)
 	}
 }
 
@@ -81,10 +81,10 @@ func TestToIncomingMessageParsesMsgParamImage(t *testing.T) {
 		OperatorName:   "User",
 		Time:           123,
 		MsgID:          "message",
-		Content:        "@Websocket 图片测试一下看看[图片]",
+		Content:        "@Websocket thử gửi ảnh xem sao[ảnh]",
 		GroupType:      2,
 		MsgParam: `{"desc":[{"data":"BOT-1","length":10,"start":0,"type":"at"},` +
-			`{"data":"file-1","h":1032,"length":4,"start":19,"type":"image","w":1920}],` +
+			`{"data":"file-1","h":1032,"length":5,"start":30,"type":"image","w":1920}],` +
 			`"notifyTo":["BOT-1"],"notifyType":1}`,
 	}
 
@@ -104,7 +104,7 @@ func TestToIncomingMessageParsesMsgParamImage(t *testing.T) {
 	if got.ChatID != "group-1" {
 		t.Fatalf("ChatID = %q, want group-1", got.ChatID)
 	}
-	if got.Content != "图片测试一下看看[图片]" {
+	if got.Content != "thử gửi ảnh xem sao[ảnh]" {
 		t.Fatalf("Content = %q", got.Content)
 	}
 	if got.Extra["yunzhijia_image_width"] != "1920" || got.Extra["yunzhijia_image_height"] != "1032" {
@@ -160,7 +160,7 @@ func TestToIncomingMessageAcceptsMsgParamMention(t *testing.T) {
 		OperatorName:   "User",
 		Time:           123,
 		MsgID:          "message",
-		Content:        "图片测试一下看看[图片]",
+		Content:        "thử gửi ảnh xem sao[ảnh]",
 		MsgParam:       `{"desc":[{"data":"BOT-1","type":"at"},{"data":"file-1","type":"image"}]}`,
 	}
 

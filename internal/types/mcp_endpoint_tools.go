@@ -13,6 +13,15 @@ const (
 	MCPEndpointToolGroupChat     MCPEndpointToolGroup = "chat"
 	MCPEndpointToolGroupWiki     MCPEndpointToolGroup = "wiki"
 	MCPEndpointToolGroupIngest   MCPEndpointToolGroup = "ingest"
+	// MCPEndpointToolGroupLegal reads the platform-wide legal catalogue
+	// (validity, relations) and audits the public legal KBs. Read-only; it
+	// maps onto the retrieve capability like the other read groups.
+	MCPEndpointToolGroupLegal MCPEndpointToolGroup = "legal"
+	// MCPEndpointToolGroupLegalWrite feeds the public legal knowledge bases
+	// (ingest / remove vbpl.vn documents, review scan, wiki rebuild). Every
+	// tool is destructive and needs the ingest capability; writes are
+	// logged in legal_feed_log.
+	MCPEndpointToolGroupLegalWrite MCPEndpointToolGroup = "legal_write"
 )
 
 // MCP endpoint tool names. These are the names external MCP clients see.
@@ -31,6 +40,18 @@ const (
 	MCPEndpointToolAddDocument        = "add_document"
 	MCPEndpointToolUpdateDocument     = "update_document"
 	MCPEndpointToolDeleteDocument     = "delete_document"
+	MCPEndpointToolLegalCheckStatus   = "legal_check_status"
+	MCPEndpointToolLegalFindRelated   = "legal_find_related"
+	MCPEndpointToolLegalCatalogSearch = "legal_catalog_search"
+	MCPEndpointToolLegalListIngested  = "legal_list_ingested"
+	MCPEndpointToolLegalExpiryAudit   = "legal_expiry_audit"
+	MCPEndpointToolLegalSyncStatus    = "legal_catalog_sync_status"
+	MCPEndpointToolLegalListMissing   = "legal_list_missing"
+	MCPEndpointToolLegalIngest        = "legal_ingest_document"
+	MCPEndpointToolLegalRemove        = "legal_remove_document"
+	MCPEndpointToolLegalApplyExpiry   = "legal_apply_expiry_audit"
+	MCPEndpointToolLegalReviewScan    = "legal_review_scan"
+	MCPEndpointToolLegalWikiRebuild   = "legal_wiki_rebuild"
 )
 
 // MCPEndpointToolDefinition is the settings-facing description of one tool.
@@ -58,6 +79,18 @@ var mcpEndpointToolCatalog = []MCPEndpointToolDefinition{
 	{Name: MCPEndpointToolAddDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
 	{Name: MCPEndpointToolUpdateDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
 	{Name: MCPEndpointToolDeleteDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
+	{Name: MCPEndpointToolLegalCheckStatus, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalFindRelated, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalCatalogSearch, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalListIngested, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalExpiryAudit, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalSyncStatus, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalListMissing, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalIngest, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalRemove, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalApplyExpiry, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalReviewScan, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalWikiRebuild, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 }
 
 // MCPEndpointToolCatalog returns a copy of the ordered tool catalog.
@@ -74,6 +107,8 @@ func MCPEndpointToolGroups() []MCPEndpointToolGroup {
 		MCPEndpointToolGroupChat,
 		MCPEndpointToolGroupWiki,
 		MCPEndpointToolGroupIngest,
+		MCPEndpointToolGroupLegal,
+		MCPEndpointToolGroupLegalWrite,
 	}
 }
 
@@ -130,13 +165,14 @@ func MCPEndpointCapabilitiesForTools(tools []string) []string {
 		}
 	}
 	caps := []string{}
-	if groups[MCPEndpointToolGroupRetrieve] || groups[MCPEndpointToolGroupWiki] || groups[MCPEndpointToolGroupChat] {
+	if groups[MCPEndpointToolGroupRetrieve] || groups[MCPEndpointToolGroupWiki] || groups[MCPEndpointToolGroupChat] ||
+		groups[MCPEndpointToolGroupLegal] {
 		caps = append(caps, string(APIKeyCapabilityRetrieve))
 	}
 	if groups[MCPEndpointToolGroupChat] {
 		caps = append(caps, string(APIKeyCapabilityChat), string(APIKeyCapabilityReadAgents))
 	}
-	if groups[MCPEndpointToolGroupIngest] {
+	if groups[MCPEndpointToolGroupIngest] || groups[MCPEndpointToolGroupLegalWrite] {
 		caps = append(caps, string(APIKeyCapabilityIngest))
 	}
 	return caps

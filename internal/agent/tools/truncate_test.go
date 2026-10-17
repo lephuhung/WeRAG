@@ -68,39 +68,39 @@ func TestTruncateToolOutput(t *testing.T) {
 		assert.True(t, strings.HasSuffix(result, "CCCC"))
 	})
 
-	t.Run("Chinese text truncated by rune count not bytes", func(t *testing.T) {
-		// Each Chinese character is 3 bytes in UTF-8 but 1 rune.
-		// 10000 Chinese chars = 30000 bytes. With maxChars=5000 runes,
+	t.Run("multibyte text truncated by rune count not bytes", func(t *testing.T) {
+		// Each precomposed Vietnamese letter (ệ, ộ) is 3 bytes in UTF-8 but 1 rune.
+		// 10000 such letters = 30000 bytes. With maxChars=5000 runes,
 		// the result should have ~5000 runes, not be cut at 5000 bytes.
-		head := strings.Repeat("你", 5000)
-		tail := strings.Repeat("好", 5000)
+		head := strings.Repeat("ệ", 5000)
+		tail := strings.Repeat("ộ", 5000)
 		input := head + tail
 		result := TruncateToolOutput(input, 5000)
 
 		resultRunes := utf8.RuneCountInString(result)
 		assert.LessOrEqual(t, resultRunes, 5000+truncationMarkerReserve,
 			"should truncate by rune count, not byte count")
-		assert.True(t, strings.HasPrefix(result, "你你你"),
-			"should preserve Chinese head content")
-		assert.True(t, strings.HasSuffix(result, "好好好"),
-			"should preserve Chinese tail content")
+		assert.True(t, strings.HasPrefix(result, "ệệệ"),
+			"should preserve multibyte head content")
+		assert.True(t, strings.HasSuffix(result, "ộộộ"),
+			"should preserve multibyte tail content")
 		assert.Contains(t, result, "10000 → 5000 chars")
 	})
 
 	t.Run("mixed CJK and ASCII", func(t *testing.T) {
 		// Mix of 1-byte and 3-byte chars
-		input := strings.Repeat("a", 3000) + strings.Repeat("中", 3000) +
-			strings.Repeat("b", 3000) + strings.Repeat("文", 3000)
+		input := strings.Repeat("a", 3000) + strings.Repeat("ệ", 3000) +
+			strings.Repeat("b", 3000) + strings.Repeat("ộ", 3000)
 		result := TruncateToolOutput(input, 5000)
 
 		resultRunes := utf8.RuneCountInString(result)
 		assert.LessOrEqual(t, resultRunes, 5000+truncationMarkerReserve)
 		assert.True(t, strings.HasPrefix(result, "aaa"))
-		assert.True(t, strings.HasSuffix(result, "文文文"))
+		assert.True(t, strings.HasSuffix(result, "ộộộ"))
 	})
 
 	t.Run("CJK within limit unchanged", func(t *testing.T) {
-		input := strings.Repeat("测", 100)
+		input := strings.Repeat("ệ", 100)
 		result := TruncateToolOutput(input, 200)
 		assert.Equal(t, input, result)
 	})

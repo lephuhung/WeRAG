@@ -177,8 +177,8 @@ func newFullOutputHarness(answer string) (*Service, *fullOutputAdapter, *fullOut
 }
 
 func TestHandleMessageFullOutputShowsPlaceholderWithoutIntermediateUpdates(t *testing.T) {
-	service, adapter, _, order := newFullOutputHarness("最终答案")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"}
+	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
+	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -195,8 +195,8 @@ func TestHandleMessageFullOutputShowsPlaceholderWithoutIntermediateUpdates(t *te
 	if adapter.updates != 0 {
 		t.Fatalf("full output sent %d intermediate updates, want 0", adapter.updates)
 	}
-	if adapter.finalContent != "最终答案" {
-		t.Fatalf("final content = %q, want %q", adapter.finalContent, "最终答案")
+	if adapter.finalContent != "Câu trả lời cuối cùng" {
+		t.Fatalf("final content = %q, want %q", adapter.finalContent, "Câu trả lời cuối cùng")
 	}
 	if adapter.plainReplies != 0 {
 		t.Fatalf("plain fallback replies = %d, want 0", adapter.plainReplies)
@@ -207,7 +207,7 @@ func TestHandleMessageFullOutputReplacesPlaceholderAfterCancel(t *testing.T) {
 	service, adapter, sessionSvc, order := newFullOutputHarness("")
 	sessionSvc.hangUntilCancel = true
 	sessionSvc.started = make(chan struct{})
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"}
+	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -247,9 +247,9 @@ func TestHandleMessageFullOutputReplacesPlaceholderAfterCancel(t *testing.T) {
 }
 
 func TestHandleMessageFullOutputStartStreamErrorFallsBackToPlainReply(t *testing.T) {
-	service, adapter, _, order := newFullOutputHarness("最终答案")
+	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	adapter.startErr = errors.New("create card failed")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"}
+	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -266,8 +266,8 @@ func TestHandleMessageFullOutputStartStreamErrorFallsBackToPlainReply(t *testing
 	if adapter.plainReplies != 1 {
 		t.Fatalf("plain fallback replies = %d, want 1", adapter.plainReplies)
 	}
-	if adapter.plainContent != "最终答案" {
-		t.Fatalf("plain reply = %q, want %q", adapter.plainContent, "最终答案")
+	if adapter.plainContent != "Câu trả lời cuối cùng" {
+		t.Fatalf("plain reply = %q, want %q", adapter.plainContent, "Câu trả lời cuối cùng")
 	}
 	if adapter.finalContent != "" {
 		t.Fatalf("FinalizeStream ran after StartStream failure, content=%q", adapter.finalContent)
@@ -275,9 +275,9 @@ func TestHandleMessageFullOutputStartStreamErrorFallsBackToPlainReply(t *testing
 }
 
 func TestHandleMessageFullOutputFinalizeFailureSendsPlainReply(t *testing.T) {
-	service, adapter, _, order := newFullOutputHarness("最终答案")
+	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	adapter.finalizeErr = errors.New("card update failed")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"}
+	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -294,14 +294,14 @@ func TestHandleMessageFullOutputFinalizeFailureSendsPlainReply(t *testing.T) {
 	if adapter.plainReplies != 1 {
 		t.Fatalf("plain fallback replies = %d, want 1", adapter.plainReplies)
 	}
-	if adapter.plainContent != "最终答案" {
-		t.Fatalf("plain reply = %q, want %q", adapter.plainContent, "最终答案")
+	if adapter.plainContent != "Câu trả lời cuối cùng" {
+		t.Fatalf("plain reply = %q, want %q", adapter.plainContent, "Câu trả lời cuối cùng")
 	}
 }
 
 func TestHandleMessageFullOutputThinkOnlyReplacesWithNoAnswerFallback(t *testing.T) {
 	service, adapter, _, _ := newFullOutputHarness("<think>only reasoning</think>")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"}
+	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -316,12 +316,12 @@ func TestHandleMessageFullOutputThinkOnlyReplacesWithNoAnswerFallback(t *testing
 }
 
 func TestExecuteQARequestFullOutputDispatchesToProgressSender(t *testing.T) {
-	service, adapter, _, order := newFullOutputHarness("最终答案")
+	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	ctx, cancel := context.WithCancel(context.Background())
 	service.executeQARequest(&qaRequest{
 		ctx:     ctx,
 		cancel:  cancel,
-		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"},
+		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"},
 		session: &types.Session{ID: "session-1"},
 		adapter: adapter,
 		channel: &IMChannel{OutputMode: "full"},
@@ -338,13 +338,13 @@ func TestExecuteQARequestFullOutputDispatchesToProgressSender(t *testing.T) {
 }
 
 func TestExecuteQARequestFullOutputSkipsProgressWhenNotSupported(t *testing.T) {
-	service, inner, _, order := newFullOutputHarness("最终答案")
+	service, inner, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	adapter := &fullOutputNoProgressAdapter{fullOutputAdapter: inner}
 	ctx, cancel := context.WithCancel(context.Background())
 	service.executeQARequest(&qaRequest{
 		ctx:     ctx,
 		cancel:  cancel,
-		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "问题"},
+		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"},
 		session: &types.Session{ID: "session-1"},
 		adapter: adapter,
 		channel: &IMChannel{OutputMode: "full"},
@@ -355,8 +355,8 @@ func TestExecuteQARequestFullOutputSkipsProgressWhenNotSupported(t *testing.T) {
 	if got := order.snapshot(); !reflect.DeepEqual(got, wantOrder) {
 		t.Fatalf("lifecycle order = %v, want %v", got, wantOrder)
 	}
-	if inner.plainContent != "最终答案" {
-		t.Fatalf("plain reply = %q, want %q", inner.plainContent, "最终答案")
+	if inner.plainContent != "Câu trả lời cuối cùng" {
+		t.Fatalf("plain reply = %q, want %q", inner.plainContent, "Câu trả lời cuối cùng")
 	}
 }
 

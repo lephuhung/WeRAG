@@ -24,7 +24,10 @@ import (
 //     detected, the scope is technical. A quyết định cá biệt "Số:
 //     125/QĐ-SYT" has no year and is checked in full. A document whose
 //     quốc hiệu line occurs three times or more is a collection of forms
-//     (tập biểu mẫu), technical as well. Only the technical layout is checked
+//     (tập biểu mẫu), technical as well, and so is a form issued by a
+//     specialised act — "Mẫu số: 140BH theo TT số 128/2025/TT-BCA" at the
+//     top (tố tụng, xử lý vi phạm hành chính, nghiệp vụ forms), whatever
+//     its tên loại ("BIÊN BẢN GHI LỜI KHAI" is no NĐ30 biên bản). Only the technical layout is checked
 //     (page, body font/size/colour/alignment/indent/spacing, page number,
 //     stray characters); no component requirement, no model.
 //   - attached: a văn bản ban hành kèm theo (quy chế, quy định, kế hoạch,
@@ -96,7 +99,9 @@ func IsHanhChinhType(docType string) bool {
 }
 
 // ScopeOf classifies a segmented document: technical when its số ký hiệu
-// carries a year (a văn bản quy phạm pháp luật); attached when its heading
+// carries a year (a văn bản quy phạm pháp luật), when it is a form of a
+// specialised act (FormMarker), or when the labeling model judged it no
+// văn bản hành chính and code found no cơ quan ban hành with a số ký hiệu; attached when its heading
 // block has the "kèm theo" line and it lacks a số ký hiệu or a khối ký of
 // its own; technical when it is a collection of forms (quốc hiệu three
 // times or more); full when the detected type is a văn bản hành chính and at
@@ -120,10 +125,21 @@ func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
 		return ScopeAttached, fmt.Sprintf("văn bản ban hành kèm theo (%q), không có số ký hiệu hoặc khối ký riêng",
 			truncateRunes(line, 100))
 	}
+	if seg.FormMarker != "" {
+		return ScopeTechnical, fmt.Sprintf("biểu mẫu chuyên ngành (%q), không trình bày theo NĐ30",
+			seg.FormMarker)
+	}
 	if seg.QuocHieuLines >= formCollectionMin {
 		return ScopeTechnical, fmt.Sprintf("tập biểu mẫu: quốc hiệu xuất hiện %d lần", seg.QuocHieuLines)
 	}
 	quocHieu := found("quoc_hieu") || hasLine(seg, quocHieuRe)
+	if seg.ModelNotND30 != "" && !(found("co_quan_ban_hanh") && found("so_ky_hieu")) {
+		// the model reads a tố tụng / nghiệp vụ form, a đơn …; an issuing
+		// agency with its own số ký hiệu is the NĐ30 identity the model
+		// cannot overrule
+		return ScopeTechnical, "không phải văn bản hành chính theo NĐ30 (mô hình nhận định: " +
+			truncateRunes(seg.ModelNotND30, 160) + ")"
+	}
 	if !IsHanhChinhType(detectedType) {
 		if d := vl.DocTypeBySlug(detectedType); d != nil {
 			return ScopeTechnical, fmt.Sprintf("loại %q là văn bản quy phạm pháp luật, không thuộc 29 loại văn bản hành chính", d.Name)

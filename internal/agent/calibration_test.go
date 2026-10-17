@@ -46,7 +46,7 @@ func (r *calibrationRun) appendRound(result string) int {
 	appended := []chat.Message{
 		{Role: "assistant", ToolCalls: []chat.ToolCall{{
 			ID: "call", Type: "function",
-			Function: chat.FunctionCall{Name: "search_knowledge", Arguments: `{"query":"条款"}`},
+			Function: chat.FunctionCall{Name: "search_knowledge", Arguments: `{"query":"điều khoản"}`},
 		}}},
 		{Role: "tool", Name: "search_knowledge", ToolCallID: "call", Content: result},
 	}
@@ -58,7 +58,7 @@ func (r *calibrationRun) appendRound(result string) int {
 	return estimated
 }
 
-var chineseResult = strings.Repeat("合同第十二条约定，乙方应在验收合格后三十日内支付剩余款项。", 40)
+var chineseResult = strings.Repeat("Điều 12 của hợp đồng quy định bên B phải thanh toán số tiền còn lại trong vòng ba mươi ngày sau khi nghiệm thu đạt yêu cầu. ", 40)
 
 // The scale is the provider's growth between two requests over the estimate
 // of what was appended, and it is carried to the next turn on the usage.
@@ -184,16 +184,16 @@ func TestExecuteCalibratesFromPromptCountsWithoutATotal(t *testing.T) {
 			Usage: &types.TokenUsage{PromptTokens: 1000},
 		}}},
 		{chunks: []types.StreamResponse{{
-			ResponseType: types.ResponseTypeAnswer, Content: "付款期限为验收后三十日。",
+			ResponseType: types.ResponseTypeAnswer, Content: "Thời hạn thanh toán là ba mươi ngày sau nghiệm thu.",
 			Done: true, FinishReason: "stop",
-			Usage: &types.TokenUsage{PromptTokens: 1000 + 700},
+			Usage: &types.TokenUsage{PromptTokens: 1000 + 1430},
 		}}},
 	}}
 	engine := newTestEngine(t, model)
 	engine.toolRegistry = agenttools.NewToolRegistry()
 	engine.toolRegistry.RegisterTool(tool)
 
-	state, err := engine.Execute(context.Background(), "session", "message", "付款期限是多久", nil)
+	state, err := engine.Execute(context.Background(), "session", "message", "Thời hạn thanh toán là bao lâu", nil)
 	require.NoError(t, err)
 	require.InDelta(t, 0.6, state.TurnUsage.ContextTokenScale, 0.1)
 	usage := turnUsage(state)
@@ -205,12 +205,12 @@ func TestExecuteCalibratesFromPromptCountsWithoutATotal(t *testing.T) {
 // it started from, so the newest turn always carries the latest known scale.
 func TestExecuteCarriesTheStartingScaleForward(t *testing.T) {
 	model := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{{
-		ResponseType: types.ResponseTypeAnswer, Content: "你好", Done: true, FinishReason: "stop",
+		ResponseType: types.ResponseTypeAnswer, Content: "Xin chào", Done: true, FinishReason: "stop",
 	}}}}}
 	engine := newTestEngine(t, model, func(cfg *types.AgentConfig) { cfg.ContextTokenScale = 0.7 })
 	engine.toolRegistry = agenttools.NewToolRegistry()
 
-	state, err := engine.Execute(context.Background(), "session", "message", "你好", nil)
+	state, err := engine.Execute(context.Background(), "session", "message", "Xin chào", nil)
 	require.NoError(t, err)
 	usage := turnUsage(state)
 	require.NotNil(t, usage)

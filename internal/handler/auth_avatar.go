@@ -41,7 +41,7 @@ func sniffAvatarExt(data []byte) string {
 // @Description  via the tenant's file service and records the returned
 // @Description  provider path on the caller's profile. Clients render it back
 // @Description  through the authenticated /files proxy.
-// @Tags         Auth
+// @Tags         Xác thực
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        file  formData  file  true  "Avatar image"

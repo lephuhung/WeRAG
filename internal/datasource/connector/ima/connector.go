@@ -27,7 +27,7 @@ func (c *Connector) Type() string { return types.ConnectorTypeIMA }
 
 // Validate verifies the credentials by calling get_addable_knowledge_base_list
 // — the endpoint most likely to succeed even when the token has zero KBs, and
-// the same one ListResources uses. It returns 110030 (无权限) when the token
+// the same one ListResources uses. It returns 110030 (no permission) when the token
 // itself is invalid, which client.callAPI already maps to ErrInvalidCredentials.
 func (c *Connector) Validate(ctx context.Context, config *types.DataSourceConfig) error {
 	cfg, err := parseIMAConfig(config)

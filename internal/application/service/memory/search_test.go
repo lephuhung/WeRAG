@@ -17,8 +17,8 @@ func TestSearchFindsWhatTheOpeningQuestionDidNotMatch(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	for _, item := range []types.MemoryItem{
-		{Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产数据库用的是 PostgreSQL"},
-		{Kind: types.MemoryKindFact, Topic: "部署", Content: "部署走的是蓝绿发布"},
+		{Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức đang dùng PostgreSQL"},
+		{Kind: types.MemoryKindFact, Topic: "Triển khai", Content: "Triển khai theo hình thức cuốn chiếu từng đơn vị"},
 	} {
 		_, err := svc.Remember(ctx, item)
 		require.NoError(t, err)
@@ -26,15 +26,15 @@ func TestSearchFindsWhatTheOpeningQuestionDidNotMatch(t *testing.T) {
 
 	// The turn opened with a database question, so that is what recall ranked
 	// against and the deployment memory is nowhere in the prompt.
-	recall := svc.Recall(ctx, "帮我看看数据库连接池的配置")
+	recall := svc.Recall(ctx, "giúp tôi xem kết nối CSDL")
 	require.Contains(t, recall.Prompt, "PostgreSQL")
-	require.NotContains(t, recall.Prompt, "蓝绿发布")
+	require.NotContains(t, recall.Prompt, "cuốn chiếu")
 
 	// Several iterations later the agent is looking at deployment instead.
-	result := svc.SearchMemory(ctx, "部署方式", 10)
+	result := svc.SearchMemory(ctx, "cách triển khai", 10)
 	require.True(t, result.Available)
 	require.Len(t, result.Items, 1)
-	require.Equal(t, "部署走的是蓝绿发布", result.Items[0].Content)
+	require.Equal(t, "Triển khai theo hình thức cuốn chiếu từng đơn vị", result.Items[0].Content)
 }
 
 // The other half of the gap: recall admits five situational items no matter
@@ -47,16 +47,16 @@ func TestSearchReachesPastTheFiveItemTurnBudget(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		_, err := svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindFact,
-			Topic:   fmt.Sprintf("配置项-%d", i),
-			Content: fmt.Sprintf("网关配置第 %d 项已经调过", i),
+			Topic:   fmt.Sprintf("Mục cấu hình-%d", i),
+			Content: fmt.Sprintf("Mục cấu hình cổng dịch vụ số %d đã chỉnh", i),
 		})
 		require.NoError(t, err)
 	}
 
-	recall := svc.Recall(ctx, "网关配置")
+	recall := svc.Recall(ctx, "cấu hình cổng dịch vụ")
 	require.Len(t, recall.Items, types.MemoryRecallMaxItems)
 
-	result := svc.SearchMemory(ctx, "网关配置", 8)
+	result := svc.SearchMemory(ctx, "cấu hình cổng dịch vụ", 8)
 	require.True(t, result.Available)
 	require.Len(t, result.Items, 8)
 }
@@ -70,11 +70,11 @@ func TestSearchCoversTheResidentKindsToo(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindPreference, Topic: "代码风格", Content: "代码注释统一用英文",
+		Kind: types.MemoryKindPreference, Topic: "Phong cách soạn thảo", Content: "Chú thích trong văn bản thống nhất dùng tiếng Việt",
 	})
 	require.NoError(t, err)
 
-	result := svc.SearchMemory(ctx, "代码注释", 10)
+	result := svc.SearchMemory(ctx, "chú thích văn bản", 10)
 	require.True(t, result.Available)
 	require.Len(t, result.Items, 1)
 	require.Equal(t, types.MemoryKindPreference, result.Items[0].Kind)
@@ -88,15 +88,15 @@ func TestSearchDoesNotResurrectReplacedMemories(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "生产数据库", Content: "生产数据库用的是 MySQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL chính thức", Content: "CSDL chính thức đang dùng MySQL",
 	})
 	require.NoError(t, err)
 	_, err = svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "生产数据库", Content: "生产数据库已经迁到 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL chính thức", Content: "CSDL chính thức đã chuyển sang PostgreSQL",
 	})
 	require.NoError(t, err)
 
-	result := svc.SearchMemory(ctx, "生产数据库", 10)
+	result := svc.SearchMemory(ctx, "CSDL chính thức", 10)
 	require.True(t, result.Available)
 	require.Len(t, result.Items, 1)
 	require.Contains(t, result.Items[0].Content, "PostgreSQL")
@@ -109,16 +109,16 @@ func TestSearchTellsDisabledApartFromEmpty(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产数据库用的是 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức đang dùng PostgreSQL",
 	})
 	require.NoError(t, err)
 
-	empty := svc.SearchMemory(ctx, "完全无关的题目", 10)
+	empty := svc.SearchMemory(ctx, "chủ đề hoàn toàn không liên quan", 10)
 	require.True(t, empty.Available, "memory is on, this user simply has no match")
 	require.Empty(t, empty.Items)
 
 	disabled := false
-	off := svc.SearchMemory(types.ApplyAgentMemoryPreference(ctx, &disabled), "数据库", 10)
+	off := svc.SearchMemory(types.ApplyAgentMemoryPreference(ctx, &disabled), "CSDL", 10)
 	require.False(t, off.Available, "an agent opting out must not be able to search either")
 	require.Empty(t, off.Items)
 }
@@ -147,15 +147,15 @@ func TestMemoryAvailableAgreesWithSearch(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	_, err := svc.Remember(ctx, types.MemoryItem{
-		Kind: types.MemoryKindFact, Topic: "数据库", Content: "生产数据库用的是 PostgreSQL",
+		Kind: types.MemoryKindFact, Topic: "CSDL", Content: "CSDL chính thức đang dùng PostgreSQL",
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "数据库", 10).Available)
+	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "CSDL", 10).Available)
 
 	tenantRepo.set(1, &types.MemoryConfig{Enabled: false})
-	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "数据库", 10).Available)
-	require.False(t, svc.SearchMemory(ctx, "数据库", 10).Available)
+	require.Equal(t, svc.MemoryAvailable(ctx), svc.SearchMemory(ctx, "CSDL", 10).Available)
+	require.False(t, svc.SearchMemory(ctx, "CSDL", 10).Available)
 }
 
 func TestSearchWithoutPrincipalIsUnavailable(t *testing.T) {
@@ -163,7 +163,7 @@ func TestSearchWithoutPrincipalIsUnavailable(t *testing.T) {
 	tenantRepo.set(1, &types.MemoryConfig{Enabled: true})
 	ctx := t.Context()
 
-	result := svc.SearchMemory(ctx, "数据库", 10)
+	result := svc.SearchMemory(ctx, "CSDL", 10)
 	require.False(t, result.Available,
 		"a request with no principal has no memory space to search")
 }
@@ -175,13 +175,13 @@ func TestSearchClampsAnAbsurdLimit(t *testing.T) {
 	for i := 0; i < types.MemorySearchMaxItems+10; i++ {
 		_, err := svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindFact,
-			Topic:   fmt.Sprintf("网关-%d", i),
-			Content: fmt.Sprintf("网关配置第 %d 项已经调过", i),
+			Topic:   fmt.Sprintf("Cổng-%d", i),
+			Content: fmt.Sprintf("Mục cấu hình cổng dịch vụ số %d đã chỉnh", i),
 		})
 		require.NoError(t, err)
 	}
 
-	result := svc.SearchMemory(ctx, "网关配置", 10_000)
+	result := svc.SearchMemory(ctx, "cấu hình cổng dịch vụ", 10_000)
 	require.True(t, result.Available)
 	require.LessOrEqual(t, len(result.Items), types.MemorySearchMaxItems)
 }

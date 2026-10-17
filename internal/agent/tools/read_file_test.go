@@ -81,7 +81,7 @@ func TestReadFileSkillPagesPreserveEveryLineAndSuppressBinary(t *testing.T) {
 	mgr, dir := readFileSkills(t)
 	var content strings.Builder
 	for i := 0; i < 250; i++ {
-		fmt.Fprintf(&content, "line-%03d-%s\n", i, strings.Repeat("文", 50))
+		fmt.Fprintf(&content, "line-%03d-%s\n", i, strings.Repeat("ệ", 50))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "guide.txt"), []byte(content.String()), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "image.bin"), []byte{0, 1, 2, 3}, 0644))

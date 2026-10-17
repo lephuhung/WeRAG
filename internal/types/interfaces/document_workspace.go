@@ -75,6 +75,13 @@ type DocumentWorkspaceService interface {
 	// then answers a conflict.
 	StoreClientSave(ctx context.Context, tenantID uint64, sessionID, documentID string, baseRevision int, data []byte) (*types.DocumentWorkspace, error)
 
+	// StoreTemplate writes a document built from a ready
+	// prepare_document_template result into an embedded-editor target that
+	// is still empty (the state before is kept as a revision; a document
+	// with text is a conflict). baseRevision is the revision the page last
+	// saw; a restore or AI write since then is a conflict.
+	StoreTemplate(ctx context.Context, tenantID uint64, sessionID, documentID string, baseRevision int, data []byte) (*types.DocumentWorkspace, error)
+
 	// BindWordFile ties a Word add-in target to the Word file fileID (an ID
 	// the add-in keeps inside the .docx), so another file never uploads
 	// itself over it. The same ID is accepted; a document not bound yet is

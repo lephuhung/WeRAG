@@ -81,7 +81,7 @@ func TestContextUsageWithoutCheckpoint(t *testing.T) {
 
 	assert.Equal(t, types.ContextUsageModeAgent, got.Mode)
 	assert.Equal(t, 250000, got.ModelWindow)
-	assert.Equal(t, 250000, got.HistoryBudget, "no plan: the window is the budget")
+	assert.Equal(t, types.DefaultHistoryTokens, got.HistoryBudget, "no plan: the default budget, below the window")
 	assert.Equal(t, estimateLoaded(t, repo, ""), got.HistoryTokens, "the estimate is what a turn loads")
 	assert.Positive(t, got.HistoryTokens)
 	assert.Zero(t, got.SummaryTokens)

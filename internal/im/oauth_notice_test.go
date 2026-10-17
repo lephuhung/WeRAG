@@ -31,7 +31,7 @@ func TestBuildIMMCPAuthNotice(t *testing.T) {
 		{
 			name:     "single service",
 			input:    []imMCPAuthService{{ID: "svc-1", Name: "GitHub MCP"}},
-			contains: []string{"GitHub MCP", "OAuth 授权"},
+			contains: []string{"GitHub MCP", "uỷ quyền OAuth"},
 		},
 		{
 			name: "dedupe by id",
@@ -62,7 +62,7 @@ func TestBuildIMMCPAuthNotice(t *testing.T) {
 }
 
 func TestAppendIMAuthNotice(t *testing.T) {
-	notice := "⚠️ 需要授权"
+	notice := "⚠️ Cần cấp quyền"
 	tests := []struct {
 		name   string
 		body   string

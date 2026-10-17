@@ -12,7 +12,7 @@ func TestListDocumentsShowsHabitsNotOneOffs(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
 	ref := []types.MemoryDocAffinity{{
-		KnowledgeID: "doc-1", KnowledgeBaseID: "kb-1", Title: "排班手册",
+		KnowledgeID: "doc-1", KnowledgeBaseID: "kb-1", Title: "Sổ tay văn thư",
 	}}
 	svc.RecordAnswerSources(ctx, ref)
 	docs, total, err := svc.ListDocuments(ctx, 10, 0)
@@ -25,7 +25,7 @@ func TestListDocumentsShowsHabitsNotOneOffs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, docs, 1)
-	require.Equal(t, "排班手册", docs[0].Title)
+	require.Equal(t, "Sổ tay văn thư", docs[0].Title)
 	require.Equal(t, 2, docs[0].Hits)
 	require.Equal(t, []string{"doc-1"}, svc.FamiliarKnowledgeIDs(ctx))
 }
@@ -34,7 +34,7 @@ func TestListDocumentsDoesNotLeakAcrossPeople(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	alice := enabledCtx(t, tenantRepo, 1, "alice")
 	bob := enabledCtx(t, tenantRepo, 1, "bob")
-	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "排班手册"}}
+	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "Sổ tay văn thư"}}
 	svc.RecordAnswerSources(alice, ref)
 	svc.RecordAnswerSources(alice, ref)
 
@@ -48,7 +48,7 @@ func TestListDocumentsDoesNotLeakAcrossPeople(t *testing.T) {
 func TestDeleteDocumentStopsPersonalizingRetrieval(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
-	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "排班手册"}}
+	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "Sổ tay văn thư"}}
 	svc.RecordAnswerSources(ctx, ref)
 	svc.RecordAnswerSources(ctx, ref)
 
@@ -67,7 +67,7 @@ func TestDeleteDocumentStopsPersonalizingRetrieval(t *testing.T) {
 func TestClearDropsDocumentAffinity(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
-	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "排班手册"}}
+	ref := []types.MemoryDocAffinity{{KnowledgeID: "doc-1", Title: "Sổ tay văn thư"}}
 	svc.RecordAnswerSources(ctx, ref)
 	svc.RecordAnswerSources(ctx, ref)
 

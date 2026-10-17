@@ -164,14 +164,14 @@ func NewHandler(
 }
 
 // CreateSession godoc
-// @Summary      Create 会话
-// @Description  Create 新的对话会话
-// @Tags         会话
+// @Summary      Tạo cuộc trò chuyện
+// @Description  Tạo cuộc trò chuyện mới
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CreateSessionRequest  true  "会话Create 请求"
-// @Success      201      {object}  map[string]interface{}  "Create 的会话"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      CreateSessionRequest  true  "Yêu cầu tạo cuộc trò chuyện"
+// @Success      201      {object}  map[string]interface{}  "Cuộc trò chuyện đã tạo"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions [post]
@@ -207,6 +207,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		TenantID:    tenantID.(uint64),
 		Title:       request.Title,
 		Description: types.SanitizeClientSessionDescription(request.Description, ""),
+		// Kept only once someone chats in it; see types.Session.IsTemporary.
+		IsTemporary: true,
 	}
 	// Attach the calling user as the session owner when available.
 	// API-key callers scope sessions per external user when configured;
@@ -233,14 +235,14 @@ func (h *Handler) CreateSession(c *gin.Context) {
 }
 
 // GetSession godoc
-// @Summary      获取会话Details
-// @Description  根据ID获取会话Details
-// @Tags         会话
+// @Summary      Lấy chi tiết cuộc trò chuyện
+// @Description  Lấy chi tiết cuộc trò chuyện theo ID
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "会话Details "
-// @Failure      404  {object}  errors.AppError         "会话不存在"
+// @Param        id   path      string  true  "ID cuộc trò chuyện"
+// @Success      200  {object}  map[string]interface{}  "Chi tiết cuộc trò chuyện"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id} [get]
@@ -280,18 +282,18 @@ func (h *Handler) GetSession(c *gin.Context) {
 }
 
 // GetSessionsByTenant godoc
-// @Summary      获取会话List
-// @Description  获取当前Tenant workspace的会话List ，支持分页、关键字搜索、按来源/Agent 筛选
-// @Tags         会话
+// @Summary      Lấy danh sách cuộc trò chuyện
+// @Description  Lấy danh sách cuộc trò chuyện của không gian làm việc hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        page       query     int     false  "页码"
-// @Param        page_size  query     int     false  "每页数量"
-// @Param        keyword    query     string  false  "标题模糊搜索"
-// @Param        source     query     string  false  "来源过滤：web / embed / api / feishu / wechat / slack / ...（api、embed、IM 渠道需 Admin+）"
-// @Param        agent_id   query     string  false  "按 Agent 过滤（仅对 IM 会话生效）"
-// @Success      200        {object}  map[string]interface{}  "会话List "
-// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
+// @Param        page       query     int     false  "Số trang"
+// @Param        page_size  query     int     false  "Số mục mỗi trang"
+// @Param        keyword    query     string  false  "Tìm gần đúng theo tiêu đề"
+// @Param        source     query     string  false  "Lọc theo nguồn: web / embed / api / feishu / wechat / slack / ... (api, embed, kênh IM cần Admin+)"
+// @Param        agent_id   query     string  false  "Lọc theo trợ lý (chỉ áp dụng cho cuộc trò chuyện IM)"
+// @Success      200        {object}  map[string]interface{}  "Danh sách cuộc trò chuyện"
+// @Failure      400        {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions [get]
@@ -332,15 +334,15 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 }
 
 // UpdateSession godoc
-// @Summary      Update 会话
-// @Description  Update 会话属性
-// @Tags         会话
+// @Summary      Cập nhật cuộc trò chuyện
+// @Description  Cập nhật thuộc tính cuộc trò chuyện
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string         true  "会话ID"
-// @Param        request  body      types.Session  true  "会话信息"
-// @Success      200      {object}  map[string]interface{}  "Update 后的会话"
-// @Failure      404      {object}  errors.AppError         "会话不存在"
+// @Param        id       path      string         true  "ID cuộc trò chuyện"
+// @Param        request  body      types.Session  true  "Thông tin cuộc trò chuyện"
+// @Success      200      {object}  map[string]interface{}  "Cuộc trò chuyện sau khi cập nhật"
+// @Failure      404      {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id} [put]
@@ -403,14 +405,14 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 }
 
 // DeleteSession godoc
-// @Summary      Delete 会话
-// @Description  Delete 指定的会话
-// @Tags         会话
+// @Summary      Xoá cuộc trò chuyện
+// @Description  Xoá cuộc trò chuyện chỉ định
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      404  {object}  errors.AppError         "会话不存在"
+// @Param        id   path      string  true  "ID cuộc trò chuyện"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id} [delete]
@@ -447,15 +449,15 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 }
 
 // ClearSessionMessages godoc
-// @Summary      清空会话消息
-// @Description  Delete 会话中的所有消息，同时清除 LLM 上下文和聊天历史Knowledge Base条目。会话本身保留。
-// @Tags         会话
+// @Summary      Xoá toàn bộ tin nhắn của cuộc trò chuyện
+// @Description  Xoá mọi tin nhắn trong cuộc trò chuyện, đồng thời xoá ngữ cảnh LLM và các mục lịch sử trò chuyện trong kho tri thức. Cuộc trò chuyện vẫn được giữ lại.
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "清空成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "会话不存在"
+// @Param        id   path      string  true  "ID cuộc trò chuyện"
+// @Success      200  {object}  map[string]interface{}  "Xoá toàn bộ thành công"
+// @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/messages [delete]
@@ -496,14 +498,14 @@ type batchDeleteRequest struct {
 }
 
 // BatchDeleteSessions godoc
-// @Summary      批量Delete 会话
-// @Description  根据IDList 批量Delete 对话会话，或Settings  delete_all=true Delete 当前Tenant workspace的所有会话
-// @Tags         会话
+// @Summary      Xoá hàng loạt cuộc trò chuyện
+// @Description  Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của không gian làm việc hiện tại
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        request  body      batchDeleteRequest  true  "批量Delete 请求"
-// @Success      200      {object}  map[string]interface{}  "Delete 结果"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      batchDeleteRequest  true  "Yêu cầu xoá hàng loạt"
+// @Success      200      {object}  map[string]interface{}  "Kết quả xoá"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/batch [delete]
@@ -569,13 +571,13 @@ func (h *Handler) BatchDeleteSessions(c *gin.Context) {
 }
 
 // PinSession godoc
-// @Summary      置顶会话
-// @Description  将指定会话置顶（用户维度）
-// @Tags         会话
+// @Summary      Ghim cuộc trò chuyện
+// @Description  Ghim cuộc trò chuyện chỉ định (theo từng người dùng)
+// @Tags         Cuộc trò chuyện
 // @Produce      json
-// @Param        session_id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "置顶成功"
-// @Failure      404  {object}  errors.AppError         "会话不存在"
+// @Param        session_id   path      string  true  "ID cuộc trò chuyện"
+// @Success      200  {object}  map[string]interface{}  "Ghim thành công"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/pin [post]
@@ -584,13 +586,13 @@ func (h *Handler) PinSession(c *gin.Context) {
 }
 
 // UnpinSession godoc
-// @Summary      取消置顶会话
-// @Description  取消指定会话的置顶
-// @Tags         会话
+// @Summary      Bỏ ghim cuộc trò chuyện
+// @Description  Bỏ ghim cuộc trò chuyện chỉ định
+// @Tags         Cuộc trò chuyện
 // @Produce      json
-// @Param        id   path      string  true  "会话ID"
-// @Success      200  {object}  map[string]interface{}  "取消置顶成功"
-// @Failure      404  {object}  errors.AppError         "会话不存在"
+// @Param        id   path      string  true  "ID cuộc trò chuyện"
+// @Success      200  {object}  map[string]interface{}  "Bỏ ghim thành công"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/pin [delete]

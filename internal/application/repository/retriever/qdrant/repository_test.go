@@ -37,7 +37,7 @@ func TestNewQdrantValueMapSanitizesInvalidUTF8AndNUL(t *testing.T) {
 }
 
 func TestNewQdrantValueMapPreservesValidUTF8(t *testing.T) {
-	valid := "valid UTF-8 中文内容"
+	valid := "valid UTF-8 nội dung tiếng Việt"
 	payload := newQdrantValueMap(map[string]any{
 		fieldContent: valid,
 	})

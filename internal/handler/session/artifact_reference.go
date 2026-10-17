@@ -10,7 +10,7 @@ import (
 )
 
 // Models routinely reference the files they generated in the sandbox from
-// their final answer, most often as a Markdown image (`![评分](市场画像评分.html)`).
+// their final answer, most often as a Markdown image (`![Điểm số](Điểm số thị trường.html)`).
 // A bare file name resolves to nothing once the sandbox is gone, so this is the
 // boundary where an answer's transient, sandbox-local references are normalized
 // into the one reference form that survives: `resource://<handle>`.
@@ -46,9 +46,9 @@ var titleSuffixRE = regexp.MustCompile(`(?s)^(.*?)(\s+(?:"[^"]*"|'[^']*'))$`)
 // Three destination spellings are accepted, because models are inconsistent
 // about the prefix even when the prompt asks for one:
 //
-//	![评分](sandbox:市场画像评分.html)
-//	![评分](市场画像评分.html)
-//	![评分](./output/市场画像评分.html)
+//	![Điểm số](sandbox:Điểm số thị trường.html)
+//	![Điểm số](Điểm số thị trường.html)
+//	![Điểm số](./output/Điểm số thị trường.html)
 //
 // Anything else — an http URL, a resource:// handle the model copied from
 // context, an unknown file name — is returned unchanged so existing behaviour
@@ -83,7 +83,7 @@ func rewriteArtifactReferences(content string, artifacts types.MessageArtifacts)
 //
 // Destinations are located by matching parentheses rather than by regex,
 // because skill-generated file names routinely contain both spaces and
-// parentheses (`腾讯控股(00700) 成交量_838ccc.html`). A regex that stops at the
+// parentheses (`Vietcombank (VCB) khối lượng_838ccc.html`). A regex that stops at the
 // first space or paren would capture half the name and never match.
 func rewriteArtifactReferencesInSegment(segment string, byName map[string]string) string {
 	if segment == "" || !strings.Contains(segment, "](") {

@@ -525,7 +525,7 @@ func (t *spanTracker) FailSpan(ctx context.Context, span *Span, errorCode, error
 		t.cascadeDependentStages(ctx, span, reason)
 		// Any failure in a MAIN pipeline stage means the attempt is
 		// done — the parse cannot succeed past this point. Close the
-		// root span as failed so the UI doesn't show "进行中" forever.
+		// root span as failed so the UI doesn't show "đang xử lý" forever.
 		// Optional downstream stages (summary/question/wiki/graph) do
 		// not poison the attempt: they can fail without invalidating
 		// the parsed document.
@@ -822,7 +822,7 @@ func (t *spanTracker) FinalizeAttempt(ctx context.Context, knowledgeID string, a
 // cancelled — regardless of tree position — and then closes the root.
 //
 // Why a flat sweep instead of CancelDescendants' BFS: fan-out stages
-// (e.g. 多模态识别) call EndSpan on the stage as soon as they finish
+// (e.g. multimodal recognition) call EndSpan on the stage as soon as they finish
 // DISPATCHING their async per-image work, so by the time the user
 // hits cancel the stage row is already status=done but its image[*]
 // children are still status=running. A BFS that stops at terminal

@@ -39,7 +39,7 @@ func NewOpenAIASR(config *Config) (*OpenAIASR, error) {
 	}
 	httpClient := newASRHTTPClient(asrDefaultTimeout)
 
-	// 注入用户自定义 HTTP header（类似 OpenAI Python SDK 的 extra_headers）
+	// Chèn HTTP header tùy chỉnh của người dùng (tương tự extra_headers của OpenAI Python SDK)
 	if len(config.CustomHeaders) > 0 {
 		apiCfg.HTTPClient = secutils.WrapHTTPClientWithHeaders(httpClient, config.CustomHeaders)
 	} else {

@@ -131,7 +131,7 @@ func writeTenantMemberTargetError(c *gin.Context, err error) {
 // @Description  SystemAdmin only. Creates the workspace and makes the named
 // @Description  (or newly created) user its Tenant Admin. The calling
 // @Description  SystemAdmin does not become a member.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        request body ProvisionTenantRequest true "Workspace and admin"
@@ -223,7 +223,7 @@ func parseSystemTenantID(c *gin.Context) (uint64, bool) {
 // @Summary      Rename any workspace
 // @Description  SystemAdmin only. Changes the name and/or description of a
 // @Description  workspace the caller does not need to belong to.
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        tenant_id path string true "Workspace ID"
@@ -280,7 +280,7 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 // @Summary      Add a user to any workspace
 // @Description  SystemAdmin only. Adds an existing or new user to the
 // @Description  workspace with the given role (admin or member).
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
 // @Param        tenant_id path string true "Workspace ID"
@@ -346,7 +346,7 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 
 // RemoveSystemTenantMember godoc
 // @Summary      Remove a user from any workspace
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Param        tenant_id path string true "Workspace ID"
 // @Param        user_id   path string true "User ID"
 // @Success      200  {object}  map[string]interface{}
@@ -386,7 +386,7 @@ func (h *SystemHandler) RemoveSystemTenantMember(c *gin.Context) {
 
 // ListSystemTenantMembers godoc
 // @Summary      List the members of any workspace
-// @Tags         System Admin
+// @Tags         Quản trị hệ thống
 // @Param        tenant_id path string true "Workspace ID"
 // @Success      200  {object}  map[string]interface{}
 // @Router       /system/admin/tenants/{tenant_id}/members [get]

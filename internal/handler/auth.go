@@ -175,27 +175,27 @@ func (h *SystemHandler) complexPasswordEnabled(ctx context.Context) bool {
 }
 
 // Register godoc
-// @Summary      用户注册
-// @Description  注册新用户账号
-// @Tags         认证
+// @Summary      Đăng ký người dùng
+// @Description  Đăng ký tài khoản người dùng mới
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.RegisterRequest  true  "注册请求Parameters "
+// @Param        request  body      types.RegisterRequest  true  "tham số đăng ký"
 // @Success      201      {object}  types.RegisterResponse
-// @Failure      400      {object}  errors.AppError  "请求Parameters 错误"
-// @Failure      403      {object}  errors.AppError  "注册功能已禁用"
+// @Failure      400      {object}  errors.AppError  "tham số không hợp lệ"
+// @Failure      403      {object}  errors.AppError  "chức năng đăng ký đã bị tắt"
 // @Router       /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Start user registration")
 
-	// 当 auth.registration_mode=invite_only 时，public 注册被关闭。
-	// 优先级：DB system_settings > cfg.Auth.RegistrationMode > "self_serve"。
-	// SystemAdmin 通过「全局Settings 」UI 实时切换 self_serve / invite_only，立即
-	// 生效，不需要重启服务。历史变量 DISABLE_REGISTRATION=true 仍在 config
-	// 启动阶段被等价提升为 invite_only（applyAuthAndTenantDefaults），
-	// 作为 cfg-default 进入 resolveRegistrationMode。
+	// Khi auth.registration_mode=invite_only, đăng ký công khai bị đóng.
+	// Thứ tự ưu tiên: DB system_settings > cfg.Auth.RegistrationMode > "self_serve".
+	// SuperAdmin chuyển self_serve / invite_only trong UI "Cài đặt hệ thống", có hiệu lực
+	// ngay, không cần khởi động lại. Biến cũ DISABLE_REGISTRATION=true vẫn được nâng
+	// thành invite_only lúc nạp config (applyAuthAndTenantDefaults) và đi vào
+	// resolveRegistrationMode như cfg-default.
 	if h.resolveRegistrationMode(ctx) == config.AuthRegistrationModeInviteOnly {
 		logger.Warn(ctx, "Registration rejected: auth.registration_mode=invite_only")
 		appErr := errors.NewForbiddenError("Registration is invite-only")
@@ -261,14 +261,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // Login godoc
-// @Summary      用户登录
-// @Description  用户登录并获取访问令牌
-// @Tags         认证
+// @Summary      Đăng nhập
+// @Description  Đăng nhập và nhận access token
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      types.LoginRequest  true  "登录请求Parameters "
+// @Param        request  body      types.LoginRequest  true  "tham số đăng nhập"
 // @Success      200      {object}  types.LoginResponse
-// @Failure      401      {object}  errors.AppError  "认证失败"
+// @Failure      401      {object}  errors.AppError  "xác thực thất bại"
 // @Router       /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -315,15 +315,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // GetOIDCAuthorizationURL godoc
-// @Summary      获取OIDC授权地址
-// @Description  根据后端OIDCConfiguration 生成第三方登录跳转地址
-// @Tags         认证
+// @Summary      Lấy địa chỉ ủy quyền OIDC
+// @Description  Tạo địa chỉ chuyển hướng đăng nhập bên thứ ba từ cấu hình OIDC của backend
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        redirect_uri  query     string  true  "OIDC回调地址"
+// @Param        redirect_uri  query     string  true  "địa chỉ callback OIDC"
 // @Success      200           {object}  types.OIDCAuthURLResponse
-// @Failure      400           {object}  errors.AppError  "请求Parameters 错误"
-// @Failure      403           {object}  errors.AppError  "OIDC未启用"
+// @Failure      400           {object}  errors.AppError  "tham số không hợp lệ"
+// @Failure      403           {object}  errors.AppError  "OIDC chưa được bật"
 // @Router       /auth/oidc/url [get]
 func (h *AuthHandler) GetOIDCAuthorizationURL(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -373,11 +373,11 @@ func oidcCallbackURL(c *gin.Context) string {
 }
 
 // OIDCStart godoc
-// @Summary      发起 OIDC 登录（直接 302）
-// @Description  与 /auth/oidc/url 不同，此端点直接 302 重定向到 OIDC Provider 的授权页，
-// @Description  无需前端 JS 介入。适用于外部平台（如企业门户）直接给出一个链接即可
-// @Description  触发 OIDC 授权码流程，借助 IdP 的 SSO session 实现免再次输密码。
-// @Tags         认证
+// @Summary      Bắt đầu đăng nhập OIDC (302 trực tiếp)
+// @Description  Khác với /auth/oidc/url, endpoint này chuyển hướng 302 thẳng tới trang ủy quyền của OIDC Provider,
+// @Description  không cần JS phía frontend. Phù hợp cho nền tảng bên ngoài (cổng thông tin cơ quan) chỉ cần đưa một liên kết
+// @Description  để kích hoạt luồng authorization code, tận dụng phiên SSO của IdP để khỏi nhập lại mật khẩu.
+// @Tags         Xác thực
 // @Success      302
 // @Router       /auth/oidc/start [get]
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
@@ -394,9 +394,9 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 }
 
 // GetOIDCConfig godoc
-// @Summary      获取OIDC登录Configuration
-// @Description  返回OIDC是否启用以及provider展示名称，供前端决定是否展示OIDC登录入口
-// @Tags         认证
+// @Summary      Lấy cấu hình đăng nhập OIDC
+// @Description  Trả về OIDC có bật hay không và tên hiển thị của provider để frontend quyết định có hiện nút đăng nhập OIDC
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  types.OIDCConfigResponse
@@ -418,14 +418,14 @@ func (h *AuthHandler) GetOIDCConfig(c *gin.Context) {
 }
 
 // OIDCRedirectCallback godoc
-// @Summary      OIDC登录重定向回调
-// @Description  接收OIDC provider回调并由后端完成code交换，随后重定向回前端登录页
-// @Tags         认证
+// @Summary      Callback chuyển hướng đăng nhập OIDC
+// @Description  Nhận callback từ OIDC provider, backend đổi code lấy token rồi chuyển hướng về trang đăng nhập frontend
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        code   query string false "OIDC授权码"
-// @Param        state  query string false "OIDC状态"
-// @Param        error  query string false "OIDC错误码"
+// @Param        code   query string false "mã ủy quyền OIDC"
+// @Param        state  query string false "trạng thái OIDC"
+// @Param        error  query string false "mã lỗi OIDC"
 // @Success      302
 // @Router       /auth/oidc/callback [get]
 func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
@@ -523,13 +523,13 @@ func urlQueryEscape(value string) string {
 }
 
 // Logout godoc
-// @Summary      用户登出
-// @Description  撤销当前访问令牌并登出
-// @Tags         认证
+// @Summary      Đăng xuất
+// @Description  Thu hồi access token hiện tại và đăng xuất
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "登出成功"
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "đăng xuất thành công"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -575,14 +575,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 // RefreshToken godoc
-// @Summary      刷新令牌
-// @Description  使用刷新令牌获取新的访问令牌
-// @Tags         认证
+// @Summary      Làm mới token
+// @Description  Dùng refresh token để lấy access token mới
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{refreshToken=string}  true  "刷新令牌"
-// @Success      200      {object}  map[string]interface{}       "新令牌"
-// @Failure      401      {object}  errors.AppError              "令牌无效"
+// @Param        request  body      object{refreshToken=string}  true  "refresh token"
+// @Success      200      {object}  map[string]interface{}       "token mới"
+// @Failure      401      {object}  errors.AppError              "token không hợp lệ"
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -619,13 +619,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 }
 
 // GetCurrentUser godoc
-// @Summary      获取当前用户信息
-// @Description  Get current logged-in user的详细信息
-// @Tags         认证
+// @Summary      Lấy thông tin người dùng hiện tại
+// @Description  Trả về thông tin chi tiết của người dùng đang đăng nhập
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "用户信息"
-// @Failure      401  {object}  errors.AppError         "未授权"
+// @Success      200  {object}  map[string]interface{}  "thông tin người dùng"
+// @Failure      401  {object}  errors.AppError         "chưa xác thực"
 // @Security     Bearer
 // @Router       /auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
@@ -668,8 +668,8 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	}
 	userInfo := user.ToUserInfo()
 	userInfo.CanAccessAllTenants = user.CanAccessAllTenants && h.configInfo.Tenant.EnableCrossTenantAccess
-	// 同步返回当前用户的 memberships，让前端在页面刷新（仅命中 /auth/me）
-	// 后也能恢复 currentTenantRole，避免角色信息只在 login 那一刻可用。
+	// Trả kèm memberships của người dùng để frontend khôi phục được currentTenantRole
+	// sau khi tải lại trang (chỉ gọi /auth/me), tránh việc vai trò chỉ có lúc login.
 	memberships := h.userService.BuildLoginMemberships(ctx, user, tenant)
 	// Mirrors CreateTenant's catalogManager: the legacy flag grants nothing.
 	canCreateTenant := user.IsSystemAdmin ||
@@ -716,16 +716,16 @@ type updateMyPreferencesRequest struct {
 }
 
 // UpdateMyPreferences godoc
-// @Summary      Update 当前用户的个性化Settings
-// @Description  按 PATCH 语义合并用户偏好（仅覆盖请求体里出现的字段，其余字段保持不变），
-// @Description  数据存放在 users.preferences (JSON)，跨设备/浏览器自动同步。
-// @Tags         认证
+// @Summary      Cập nhật tuỳ chọn cá nhân của người dùng hiện tại
+// @Description  Gộp tuỳ chọn theo ngữ nghĩa PATCH (chỉ ghi đè các trường có trong body, giữ nguyên phần còn lại),
+// @Description  dữ liệu lưu ở users.preferences (JSON), tự đồng bộ giữa các thiết bị/trình duyệt.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
 // @Param        request  body      updateMyPreferencesRequest  true  "Preferences patch"
-// @Success      200      {object}  map[string]interface{}      "Update 后的偏好"
-// @Failure      400      {object}  errors.AppError             "请求Parameters 错误"
-// @Failure      401      {object}  errors.AppError             "未授权"
+// @Success      200      {object}  map[string]interface{}      "tuỳ chọn sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError             "tham số không hợp lệ"
+// @Failure      401      {object}  errors.AppError             "chưa xác thực"
 // @Security     Bearer
 // @Router       /auth/me/preferences [put]
 func (h *AuthHandler) UpdateMyPreferences(c *gin.Context) {
@@ -773,15 +773,15 @@ type updateMyProfileRequest struct {
 }
 
 // UpdateMyProfile godoc
-// @Summary      Update 当前用户的显示名称
-// @Description  修改当前登录用户的 username（全站展示名）。名称全局唯一，2–50 个字符。
-// @Tags         认证
+// @Summary      Cập nhật tên hiển thị của người dùng hiện tại
+// @Description  Đổi username (tên hiển thị toàn hệ thống) của người dùng đang đăng nhập. Tên là duy nhất, 2–50 ký tự.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
 // @Param        request  body      updateMyProfileRequest  true  "Profile update"
-// @Success      200      {object}  map[string]interface{}  "Update 后的用户信息"
-// @Failure      400      {object}  errors.AppError         "请求参数错误或名称已被占用"
-// @Failure      401      {object}  errors.AppError         "未授权"
+// @Success      200      {object}  map[string]interface{}  "thông tin người dùng sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ hoặc tên đã được dùng"
+// @Failure      401      {object}  errors.AppError         "chưa xác thực"
 // @Security     Bearer
 // @Router       /auth/me [put]
 func (h *AuthHandler) UpdateMyProfile(c *gin.Context) {
@@ -829,14 +829,14 @@ func (h *AuthHandler) UpdateMyProfile(c *gin.Context) {
 }
 
 // ChangePassword godoc
-// @Summary      修改密码
-// @Description  修改当前用户的登录密码。新密码须满足 8–32 位且同时包含字母与数字；开启复杂密码后还需包含大小写与特殊字符。成功后所有会话被撤销，需重新登录。
-// @Tags         认证
+// @Summary      Đổi mật khẩu
+// @Description  Đổi mật khẩu đăng nhập của người dùng hiện tại. Mật khẩu mới dài 8–32 ký tự, có cả chữ và số; khi bật mật khẩu phức tạp còn cần chữ hoa, chữ thường và ký tự đặc biệt. Thành công thì mọi phiên bị thu hồi, phải đăng nhập lại.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{old_password=string,new_password=string}  true  "密码修改请求"
-// @Success      200      {object}  map[string]interface{}                           "修改成功"
-// @Failure      400      {object}  errors.AppError                                  "请求Parameters 错误"
+// @Param        request  body      object{old_password=string,new_password=string}  true  "yêu cầu đổi mật khẩu"
+// @Success      200      {object}  map[string]interface{}                           "đổi mật khẩu thành công"
+// @Failure      400      {object}  errors.AppError                                  "tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /auth/change-password [post]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
@@ -902,12 +902,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 }
 
 // GetAuthConfig godoc
-// @Summary      获取认证Configuration
-// @Description  返回当前部署的注册模式与密码复杂度开关，供前端决定是否展示注册入口以及密码校验规则
-// @Tags         认证
+// @Summary      Lấy cấu hình xác thực
+// @Description  Trả về chế độ đăng ký và cờ mật khẩu phức tạp của bản triển khai hiện tại để frontend quyết định hiện nút đăng ký và quy tắc kiểm tra mật khẩu
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "认证Configuration "
+// @Success      200  {object}  map[string]interface{}  "cấu hình xác thực"
 // @Router       /auth/config [get]
 //
 // GetAuthConfig is intentionally a no-auth endpoint: the frontend reads
@@ -932,17 +932,17 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 }
 
 // SwitchTenant godoc
-// @Summary      切换激活Tenant workspace
-// @Description  为当前用户在目标Tenant workspace重新签发访问令牌；要求该用户在目标Tenant workspace存在 active 成员关系（跨租户超级用户除外）。
-// @Description  成功换签会把目标Tenant workspace写入「最近活跃租户」偏好，下次登录与 refresh 都落在该Tenant workspace（refresh JWT 不含 tenant_id）。
-// @Description  该偏好是账号级的：一次换签会改变该用户所有设备的下次登录/refresh 落点。偏好写入失败则整次换签失败，不会发出新 token。
-// @Tags         认证
+// @Summary      Chuyển đơn vị đang hoạt động
+// @Description  Cấp lại access token cho người dùng hiện tại trên đơn vị đích; người dùng phải là thành viên active của đơn vị đó (trừ SuperAdmin liên đơn vị).
+// @Description  Chuyển thành công sẽ ghi đơn vị đích vào tuỳ chọn "đơn vị hoạt động gần nhất"; lần đăng nhập và refresh sau đều rơi vào đơn vị này (refresh JWT không chứa tenant_id).
+// @Description  Tuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "切换请求"
+// @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "yêu cầu chuyển đơn vị"
 // @Success      200      {object}  types.LoginResponse
-// @Failure      400      {object}  errors.AppError  "Parameters 错误"
-// @Failure      403      {object}  errors.AppError  "无该Tenant workspace成员关系或偏好写入失败"
+// @Failure      400      {object}  errors.AppError  "tham số không hợp lệ"
+// @Failure      403      {object}  errors.AppError  "không phải thành viên của đơn vị này hoặc ghi tuỳ chọn thất bại"
 // @Security     Bearer
 // @Router       /auth/switch-tenant [post]
 //
@@ -980,13 +980,13 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(resp))
 }
 
-// @Summary      自动Initialization （Lite 桌面版）
-// @Description  Lite 版专用：首次启动时自动Create 默认用户和Tenant workspace并返回令牌，首次及后续启动均须通过桌面原生凭据认证，免除手动注册/登录流程
-// @Tags         认证
+// @Summary      Khởi tạo tự động (bản Lite desktop)
+// @Description  Chỉ dành cho bản Lite: lần khởi động đầu tự tạo người dùng và đơn vị mặc định rồi trả token; mọi lần khởi động đều phải xác thực bằng thông tin xác thực gốc của desktop, bỏ qua đăng ký/đăng nhập thủ công
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  types.LoginResponse
-// @Failure      403  {object}  errors.AppError  "非 Lite 版本"
+// @Failure      403  {object}  errors.AppError  "không phải bản Lite"
 // @Router       /auth/auto-setup [post]
 func (h *AuthHandler) AutoSetup(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -1074,13 +1074,13 @@ func tenantNameOrEmpty(t *types.Tenant) string {
 }
 
 // ValidateToken godoc
-// @Summary      验证令牌
-// @Description  验证访问令牌是否有效
-// @Tags         认证
+// @Summary      Kiểm tra token
+// @Description  Kiểm tra access token còn hiệu lực hay không
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "令牌有效"
-// @Failure      401  {object}  errors.AppError         "令牌无效"
+// @Success      200  {object}  map[string]interface{}  "token hợp lệ"
+// @Failure      401  {object}  errors.AppError         "token không hợp lệ"
 // @Security     Bearer
 // @Router       /auth/validate [get]
 func (h *AuthHandler) ValidateToken(c *gin.Context) {
@@ -1129,7 +1129,7 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 // @Summary      Provinces for the user profile
 // @Description  The 34 provincial units in force since the 2025 merger, with
 // @Description  the former provinces each absorbed.
-// @Tags         Auth
+// @Tags         Xác thực
 // @Produce      json
 // @Success      200 {object} map[string]interface{} "Provinces"
 // @Router       /auth/provinces [get]

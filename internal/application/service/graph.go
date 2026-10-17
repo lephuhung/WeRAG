@@ -346,8 +346,8 @@ func (b *graphBuilder) findRelationChunkIDs(source, target string, entities []*t
 // mergeChunkContents merges content from multiple document chunks
 // It accounts for overlapping portions between chunks to ensure coherent content
 func (b *graphBuilder) mergeChunkContents(chunks []*types.Chunk) string {
-	// 重叠去重统一交给公共逻辑（按文本匹配，兼容补写表头 / HTML 实体）。
-	// 无间隙分隔符，保持与原实现一致的直接拼接行为。
+	// Khử trùng lặp chồng lấn giao cho logic chung (khớp theo văn bản, tương thích tiêu đề bổ sung / thực thể HTML).
+	// Không có dấu phân cách, giữ hành vi nối trực tiếp như bản gốc.
 	return searchutil.MergeTextChunks(chunks, "")
 }
 

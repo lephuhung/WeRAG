@@ -85,6 +85,9 @@ export type StreamParams = {
   suggestionAttribution?: { suggestion_set_id: string; question_id: string };
   questionOrigin?: { knowledge_base_id: string; knowledge_id?: string };
   abbreviationCandidates?: string[];
+  /** A chat-driven NĐ30 template request (prepare_document_template):
+   * follow-up turns of one request carry the same request_id. */
+  documentTemplateRequest?: { schema_version: 1; request_id: string; template_id: string; document_id?: string };
   /** Words the user rejected the automatic reading of ("Không phải?"): the
    * gate asks about them instead. */
   abbreviationAskWords?: string[];
@@ -174,6 +177,7 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
       ? { document_selection: params.documentSelection }
       : {}),
     ...(params.abbreviationAskWords?.length ? { recheck_words: params.abbreviationAskWords } : {}),
+    ...(params.documentTemplateRequest ? { document_template_request: params.documentTemplateRequest } : {}),
     channel: isEmbed ? "embed" : "web",
   };
 }

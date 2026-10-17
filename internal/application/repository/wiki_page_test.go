@@ -209,7 +209,7 @@ func TestList_CategoryPathFilterMatchesOnSQLite(t *testing.T) {
 	pages := []*types.WikiPage{
 		makeCategorizedWikiPage("kb-c", "entity/in-ai", entity, published, "AI"),
 		makeCategorizedWikiPage("kb-c", "entity/in-ai-llm", entity, published, "AI", "LLM"),
-		makeCategorizedWikiPage("kb-c", "entity/in-people", entity, published, "人物"),
+		makeCategorizedWikiPage("kb-c", "entity/in-people", entity, published, "Nhân vật"),
 		makeWikiPage("kb-c", "entity/root", entity, published),
 	}
 	for _, p := range pages {
@@ -233,7 +233,7 @@ func TestList_CategoryPathFilterMatchesOnSQLite(t *testing.T) {
 	got, total, err = repo.List(ctx, &types.WikiPageListRequest{
 		KnowledgeBaseID: "kb-c",
 		PageType:        types.WikiPageTypeEntity,
-		CategoryPath:    types.StringArray{"人物"},
+		CategoryPath:    types.StringArray{"Nhân vật"},
 		Page:            1,
 		PageSize:        10,
 	})
@@ -259,13 +259,13 @@ func TestFolderTree_CRUDAndChildListing(t *testing.T) {
 		}
 	}
 	ai := mk("f-ai", types.WikiFolderRootID, "AI", "AI", 1)
-	people := mk("f-people", types.WikiFolderRootID, "人物", "人物", 1)
+	people := mk("f-people", types.WikiFolderRootID, "Nhân vật", "Nhân vật", 1)
 	llm := mk("f-llm", "f-ai", "LLM", "AI/LLM", 2)
 	for _, f := range []*types.WikiFolder{ai, people, llm} {
 		require.NoError(t, repo.CreateFolder(ctx, f))
 	}
 
-	// Root children: AI, 人物 (ordered by name within equal sort_order).
+	// Root children: AI, Nhân vật (ordered by name within equal sort_order).
 	roots, err := repo.ListChildFolders(ctx, "kb-f", types.WikiFolderRootID)
 	require.NoError(t, err)
 	require.Len(t, roots, 2)
@@ -299,7 +299,7 @@ func TestFolderTree_CRUDAndChildListing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, paths, []string{"AI"})
 	assert.Contains(t, paths, []string{"AI", "LLM"})
-	assert.Contains(t, paths, []string{"人物"})
+	assert.Contains(t, paths, []string{"Nhân vật"})
 
 	// Pages can be fetched by their folder ids for subtree recompute.
 	pages, err := repo.ListPagesByFolderIDs(ctx, "kb-f", []string{"f-ai", "f-llm"})

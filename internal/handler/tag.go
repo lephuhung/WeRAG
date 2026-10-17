@@ -57,7 +57,7 @@ func (h *TagHandler) resolveTagIDWithCtx(c *gin.Context, ctx context.Context) (s
 		tenantID := types.MustTenantIDFromContext(ctx)
 		tag, err := h.tagRepo.GetBySeqID(ctx, tenantID, seqID)
 		if err != nil {
-			return "", errors.NewNotFoundError("标签不存在")
+			return "", errors.NewNotFoundError("không tìm thấy thẻ")
 		}
 		return tag.ID, nil
 	}
@@ -70,17 +70,17 @@ func (h *TagHandler) getChunksBySeqIDs(ctx context.Context, tenantID uint64, seq
 }
 
 // ListTags godoc
-// @Summary      获取标签List
-// @Description  获取Knowledge Base下的所有标签及统计信息
-// @Tags         标签管理
+// @Summary      Lấy danh sách thẻ
+// @Description  Lấy mọi thẻ trong kho tri thức kèm số liệu thống kê
+// @Tags         Thẻ
 // @Accept       json
 // @Produce      json
 // @Param        id         path      string  true   "Knowledge BaseID"
-// @Param        page       query     int     false  "页码"
-// @Param        page_size  query     int     false  "每页数量"
-// @Param        keyword    query     string  false  "关键词搜索"
-// @Success      200        {object}  map[string]interface{}  "标签List "
-// @Failure      400        {object}  errors.AppError         "请求Parameters 错误"
+// @Param        page       query     int     false  "số trang"
+// @Param        page_size  query     int     false  "số mục mỗi trang"
+// @Param        keyword    query     string  false  "từ khoá tìm kiếm"
+// @Success      200        {object}  map[string]interface{}  "danh sách thẻ"
+// @Failure      400        {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags [get]
@@ -91,7 +91,7 @@ func (h *TagHandler) ListTags(c *gin.Context) {
 	var page types.Pagination
 	if err := c.ShouldBindQuery(&page); err != nil {
 		logger.Error(ctx, "Failed to bind pagination query", err)
-		c.Error(errors.NewBadRequestError("分页参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số phân trang không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -117,15 +117,15 @@ type createTagRequest struct {
 }
 
 // CreateTag godoc
-// @Summary      Create 标签
-// @Description  在Knowledge Base下Create 新标签
-// @Tags         标签管理
+// @Summary      Tạo thẻ
+// @Description  Tạo thẻ mới trong kho tri thức
+// @Tags         Thẻ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "Knowledge BaseID"
-// @Param        request  body      object{name=string,color=string,sort_order=int}  true  "标签信息"
-// @Success      200      {object}  map[string]interface{}  "Create 的标签"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      object{name=string,color=string,sort_order=int}  true  "thông tin thẻ"
+// @Success      200      {object}  map[string]interface{}  "thẻ đã tạo"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags [post]
@@ -136,7 +136,7 @@ func (h *TagHandler) CreateTag(c *gin.Context) {
 	var req createTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind create tag payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -163,16 +163,16 @@ type updateTagRequest struct {
 }
 
 // UpdateTag godoc
-// @Summary      Update 标签
-// @Description  Update 标签信息
-// @Tags         标签管理
+// @Summary      Cập nhật thẻ
+// @Description  Cập nhật thông tin thẻ
+// @Tags         Thẻ
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string  true  "Knowledge BaseID"
-// @Param        tag_id   path      string  true  "标签ID (UUID或seq_id)"
-// @Param        request  body      object  true  "标签Update 信息"
-// @Success      200      {object}  map[string]interface{}  "Update 后的标签"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        tag_id   path      string  true  "ID thẻ (UUID hoặc seq_id)"
+// @Param        request  body      object  true  "thông tin cập nhật thẻ"
+// @Success      200      {object}  map[string]interface{}  "thẻ sau khi cập nhật"
+// @Failure      400      {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags/{tag_id} [put]
@@ -188,7 +188,7 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 	var req updateTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind update tag payload", err)
-		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		c.Error(errors.NewBadRequestError("tham số không hợp lệ").WithDetails(err.Error()))
 		return
 	}
 
@@ -208,18 +208,18 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 }
 
 // DeleteTag godoc
-// @Summary      Delete 标签
-// @Description  Delete 标签，可使用force=true强制Delete 被引用的标签，content_only=true仅Delete 标签下的内容而保留标签本身
-// @Tags         标签管理
+// @Summary      Xoá thẻ
+// @Description  Xoá thẻ; force=true để xoá cả thẻ đang được tham chiếu, content_only=true chỉ xoá nội dung thuộc thẻ và giữ lại thẻ
+// @Tags         Thẻ
 // @Accept       json
 // @Produce      json
 // @Param        id            path      string              true   "Knowledge BaseID"
-// @Param        tag_id        path      string              true   "标签ID (UUID或seq_id)"
-// @Param        force         query     bool                false  "强制Delete "
-// @Param        content_only  query     bool                false  "仅Delete 内容，保留标签"
-// @Param        body          body      DeleteTagRequest    false  "Delete 选项"
-// @Success      200           {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
+// @Param        tag_id        path      string              true   "ID thẻ (UUID hoặc seq_id)"
+// @Param        force         query     bool                false  "xoá cưỡng bức"
+// @Param        content_only  query     bool                false  "chỉ xoá nội dung, giữ lại thẻ"
+// @Param        body          body      DeleteTagRequest    false  "tuỳ chọn xoá"
+// @Success      200           {object}  map[string]interface{}  "xoá thành công"
+// @Failure      400           {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags/{tag_id} [delete]
@@ -237,7 +237,7 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 
 	var req DeleteTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !stderrors.Is(err, io.EOF) {
-		_ = c.Error(errors.NewBadRequestError("删除选项不合法"))
+		_ = c.Error(errors.NewBadRequestError("tuỳ chọn xoá không hợp lệ"))
 		return
 	}
 
@@ -247,7 +247,7 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 		wanted := make(map[int64]bool, len(req.ExcludeIDs))
 		for _, id := range req.ExcludeIDs {
 			if id <= 0 {
-				_ = c.Error(errors.NewBadRequestError("排除条目 ID 必须为正整数"))
+				_ = c.Error(errors.NewBadRequestError("ID mục loại trừ phải là số nguyên dương"))
 				return
 			}
 			wanted[id] = true
@@ -263,14 +263,14 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 			}
 			if chunk.TenantID != tenantID || chunk.KnowledgeBaseID != c.Param("id") ||
 				chunk.ChunkType != types.ChunkTypeFAQ {
-				_ = c.Error(errors.NewForbiddenError("排除条目不属于当前知识库"))
+				_ = c.Error(errors.NewForbiddenError("mục loại trừ không thuộc kho tri thức hiện tại"))
 				return
 			}
 			excludeUUIDs = append(excludeUUIDs, chunk.ID)
 			delete(wanted, chunk.SeqID)
 		}
 		if len(wanted) != 0 {
-			_ = c.Error(errors.NewNotFoundError("排除条目不存在"))
+			_ = c.Error(errors.NewNotFoundError("không tìm thấy mục loại trừ"))
 			return
 		}
 	}

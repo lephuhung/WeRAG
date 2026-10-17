@@ -30,14 +30,14 @@ func topicItem(kind, topic, content string, importance int) *types.MemoryItem {
 // value, so matching on the statement alone would miss it.
 func TestTopicIsPartOfTheRetrievalHandle(t *testing.T) {
 	items := []*types.MemoryItem{
-		topicItem(types.MemoryKindFact, "在用的数据库", "已经从 MySQL 迁到 PostgreSQL", 3),
-		topicItem(types.MemoryKindFact, "前端技术栈", "用的是 Vue 3 加 Vite", 3),
+		topicItem(types.MemoryKindFact, "CSDL đang dùng", "đã chuyển từ MySQL sang PostgreSQL", 3),
+		topicItem(types.MemoryKindFact, "Công nghệ giao diện", "Giao diện xây dựng trên Vue 3 và Vite", 3),
 	}
-	selected := selectRecallItems("写一段连接数据库的示例代码", items,
+	selected := selectRecallItems("Viết mã mẫu kết nối CSDL đang dùng", items,
 		types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget)
 	require.NotEmpty(t, selected)
-	require.Equal(t, "已经从 MySQL 迁到 PostgreSQL", selected[0].Content)
-	require.NotContains(t, contents(selected), "用的是 Vue 3 加 Vite")
+	require.Equal(t, "đã chuyển từ MySQL sang PostgreSQL", selected[0].Content)
+	require.NotContains(t, contents(selected), "Giao diện xây dựng trên Vue 3 và Vite")
 }
 
 func contents(items []*types.MemoryItem) []string {
@@ -85,22 +85,22 @@ func TestSelectRecallItemsDropsWeakMatches(t *testing.T) {
 func TestSelectRecallItemsRespectsCountBudget(t *testing.T) {
 	var items []*types.MemoryItem
 	for i := 0; i < 20; i++ {
-		items = append(items, item(types.MemoryKindFact, "数据库相关的事实 "+string(rune('a'+i)), 3))
+		items = append(items, item(types.MemoryKindFact, "sự việc liên quan CSDL "+string(rune('a'+i)), 3))
 	}
-	selected := selectRecallItems("数据库", items, types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget)
+	selected := selectRecallItems("CSDL", items, types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget)
 	require.LessOrEqual(t, len(selected), types.MemoryRecallMaxItems)
 }
 
 func TestSelectRecallItemsRespectsRuneBudget(t *testing.T) {
 	var items []*types.MemoryItem
 	for i := 0; i < 5; i++ {
-		long := "数据库"
+		long := "CSDL"
 		for j := 0; j < 60; j++ {
-			long += "很长的说明"
+			long += " mô tả dài"
 		}
 		items = append(items, item(types.MemoryKindFact, long, 3))
 	}
-	selected := selectRecallItems("数据库", items, types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget)
+	selected := selectRecallItems("CSDL", items, types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget)
 	total := 0
 	for _, entry := range selected {
 		total += len([]rune(entry.Content))
@@ -109,7 +109,7 @@ func TestSelectRecallItemsRespectsRuneBudget(t *testing.T) {
 }
 
 func TestSelectRecallItemsEmptyQuery(t *testing.T) {
-	items := []*types.MemoryItem{item(types.MemoryKindFact, "任何事实", 3)}
+	items := []*types.MemoryItem{item(types.MemoryKindFact, "sự việc bất kỳ", 3)}
 	require.Empty(t, selectRecallItems("   ", items,
 		types.MemoryRecallMaxItems, types.MemoryRecallRuneBudget))
 }

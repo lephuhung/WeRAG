@@ -20,7 +20,7 @@ const (
 	defaultOllamaWebSearchURL = "https://ollama.com/api/web_search"
 	defaultOllamaTimeout      = 10 * time.Second
 	defaultOllamaResults      = 5
-	maxOllamaResults          = 10 // Ollama限制最多10个结果
+	maxOllamaResults          = 10 // Ollama giới hạn tối đa 10 kết quả
 )
 
 // OllamaProvider implements web search using Ollama Cloud API
@@ -66,7 +66,7 @@ func (p *OllamaProvider) Search(
 		maxResults = defaultOllamaResults
 	}
 
-	// Ollama限制最多10个结果
+	// Ollama giới hạn tối đa 10 kết quả
 	if maxResults > maxOllamaResults {
 		maxResults = maxOllamaResults
 	}

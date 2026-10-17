@@ -37,90 +37,90 @@ type memoryScenario struct {
 func TestCrossSessionMemoryScenarios(t *testing.T) {
 	scenarios := []memoryScenario{
 		{
-			name:      "记住个人画像并在新会话里带上",
-			userTurns: []string{"我是做医疗影像的后端工程师，主要写 Go"},
+			name:      "ghi nhớ hồ sơ cá nhân và mang sang cuộc trò chuyện mới",
+			userTurns: []string{"Tôi là chuyên viên văn thư lưu trữ, chủ yếu soạn thảo công văn"},
 			extracted: []map[string]any{
 				{
-					"action": "add", "kind": "profile", "topic": "职业",
-					"content": "医疗影像方向的后端工程师，主要写 Go",
+					"action": "add", "kind": "profile", "topic": "Nghề nghiệp",
+					"content": "chuyên viên văn thư lưu trữ, chủ yếu soạn thảo công văn",
 				},
 			},
-			laterQuery:   "帮我设计一个接口",
-			wantInPrompt: []string{"医疗影像", "后端工程师"},
+			laterQuery:   "Giúp tôi soạn một tờ trình",
+			wantInPrompt: []string{"văn thư lưu trữ", "chuyên viên văn thư"},
 		},
 		{
-			name:      "偏好常驻，与问题内容无关也会带上",
-			userTurns: []string{"以后回答直接给结论，不要长篇铺垫"},
+			name:      "sở thích luôn thường trực, không liên quan câu hỏi vẫn mang theo",
+			userTurns: []string{"Từ nay trả lời đi thẳng vào kết luận, đừng dẫn dắt dài dòng"},
 			extracted: []map[string]any{
-				{"action": "add", "kind": "preference", "topic": "回答风格", "content": "回答直接给结论，不要铺垫"},
+				{"action": "add", "kind": "preference", "topic": "Phong cách trả lời", "content": "Trả lời đi thẳng vào kết luận, không dẫn dắt"},
 			},
-			laterQuery:   "今天的天气适合跑步吗",
-			wantInPrompt: []string{"直接给结论"},
+			laterQuery:   "Hôm nay thời tiết có hợp để chạy bộ không",
+			wantInPrompt: []string{"đi thẳng vào kết luận"},
 		},
 		{
-			name: "事实按问题相关性召回，不相关的不进上下文",
+			name: "sự việc được gợi lại theo độ liên quan, không liên quan thì không vào ngữ cảnh",
 			userTurns: []string{
-				"我们生产库是 PostgreSQL 17，跑在法兰克福",
-				"前端是 Vue 3 加 Vite",
+				"CSDL chính thức của đơn vị tôi là PostgreSQL 17, đặt tại Trung tâm dữ liệu tỉnh",
+				"Giao diện của đơn vị tôi dùng Vue 3 và Vite",
 			},
 			extracted: []map[string]any{
 				{
-					"action": "add", "kind": "fact", "topic": "生产数据库",
-					"content": "生产库是 PostgreSQL 17，部署在法兰克福",
+					"action": "add", "kind": "fact", "topic": "CSDL chính thức",
+					"content": "CSDL chính thức là PostgreSQL 17, đặt tại Trung tâm dữ liệu tỉnh",
 				},
-				{"action": "add", "kind": "fact", "topic": "前端技术栈", "content": "前端是 Vue 3 加 Vite"},
+				{"action": "add", "kind": "fact", "topic": "Công nghệ giao diện", "content": "Giao diện của đơn vị tôi dùng Vue 3 và Vite"},
 			},
-			laterQuery:   "数据库连接池应该配多大",
+			laterQuery:   "kết nối CSDL chính thức nên cấu hình bao nhiêu",
 			wantInPrompt: []string{"PostgreSQL 17"},
 			wantAbsent:   []string{"Vue 3"},
 		},
 		{
-			name: "修正矛盾信息后只保留最新的",
+			name: "sau khi đính chính mâu thuẫn chỉ giữ thông tin mới nhất",
 			userTurns: []string{
-				"我们用的是 MySQL",
-				"更正一下，我们上个月已经迁到 PostgreSQL 了",
+				"Đơn vị tôi dùng MySQL",
+				"Đính chính: đơn vị tôi đã chuyển sang PostgreSQL từ tháng trước",
 			},
 			extracted: []map[string]any{
-				{"action": "add", "kind": "fact", "topic": "在用的数据库", "content": "用的是 MySQL"},
-				{"action": "update", "kind": "fact", "topic": "在用的数据库", "content": "已经迁到 PostgreSQL"},
+				{"action": "add", "kind": "fact", "topic": "CSDL đang dùng", "content": "đang dùng MySQL"},
+				{"action": "update", "kind": "fact", "topic": "CSDL đang dùng", "content": "đã chuyển sang PostgreSQL"},
 			},
-			laterQuery:   "写一段连接数据库的示例代码",
+			laterQuery:   "Viết mã mẫu kết nối CSDL đang dùng",
 			wantInPrompt: []string{"PostgreSQL"},
 			wantAbsent:   []string{"MySQL"},
 		},
 		{
-			name:      "在办事项可以跨会话续接",
-			userTurns: []string{"这周在重构订单服务的支付流程，还没弄完"},
+			name:      "việc đang làm tiếp nối được qua các cuộc trò chuyện",
+			userTurns: []string{"Tuần này tôi đang rà soát quy trình tiếp nhận hồ sơ một cửa, chưa xong"},
 			extracted: []map[string]any{
 				{
-					"action": "add", "kind": "task", "topic": "在做的重构",
-					"content": "在重构订单服务的支付流程，尚未完成",
+					"action": "add", "kind": "task", "topic": "Việc rà soát đang làm",
+					"content": "đang rà soát quy trình tiếp nhận hồ sơ một cửa, chưa hoàn thành",
 				},
 			},
-			laterQuery:   "订单服务那个重构接着往下怎么做",
-			wantInPrompt: []string{"支付流程"},
+			laterQuery:   "việc rà soát quy trình một cửa tiếp theo làm thế nào",
+			wantInPrompt: []string{"quy trình tiếp nhận hồ sơ"},
 		},
 		{
-			name: "事情做完后不再被召回",
+			name: "việc đã xong không được gợi lại nữa",
 			userTurns: []string{
-				"在重构订单服务的支付流程",
-				"支付流程重构已经上线了",
+				"đang rà soát quy trình tiếp nhận hồ sơ một cửa",
+				"Việc rà soát quy trình một cửa đã hoàn thành rồi",
 			},
 			extracted: []map[string]any{
-				{"action": "add", "kind": "task", "topic": "在做的重构", "content": "在重构订单服务的支付流程"},
-				{"action": "delete", "kind": "task", "topic": "在做的重构", "content": "支付流程重构已完成"},
+				{"action": "add", "kind": "task", "topic": "Việc rà soát đang làm", "content": "đang rà soát quy trình tiếp nhận hồ sơ một cửa"},
+				{"action": "delete", "kind": "task", "topic": "Việc rà soát đang làm", "content": "rà soát quy trình một cửa đã hoàn thành"},
 			},
-			laterQuery: "订单服务现在还有什么在做的",
-			wantAbsent: []string{"在重构订单服务的支付流程"},
+			laterQuery: "bộ phận một cửa hiện còn việc gì đang làm",
+			wantAbsent: []string{"đang rà soát quy trình tiếp nhận hồ sơ một cửa"},
 		},
 		{
-			name:      "一次性的提问不该被记成长期事实",
-			userTurns: []string{"Go 的 map 是并发安全的吗"},
+			name:      "câu hỏi một lần không được ghi thành sự việc lâu dài",
+			userTurns: []string{"Map trong Go có an toàn khi dùng đồng thời không"},
 			// A well-behaved extraction returns nothing here, which is the
 			// normal outcome; the assertion is that we store nothing either.
 			extracted:  nil,
-			laterQuery: "Go 的 slice 底层是怎么扩容的",
-			wantAbsent: []string{"map", "并发安全"},
+			laterQuery: "Slice trong Go mở rộng dung lượng thế nào",
+			wantAbsent: []string{"map", "đồng thời"},
 		},
 	}
 
@@ -174,14 +174,14 @@ func TestReadPathMakesNoModelCall(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		_, err := svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindFact,
-			Topic:   "事实" + string(rune('a'+i)),
-			Content: "数据库相关的事实 " + string(rune('a'+i)),
+			Topic:   "sự việc " + string(rune('a'+i)),
+			Content: "sự việc liên quan CSDL " + string(rune('a'+i)),
 		})
 		require.NoError(t, err)
 	}
 
 	for i := 0; i < 5; i++ {
-		require.NotEmpty(t, svc.Recall(ctx, "数据库怎么调优").Prompt)
+		require.NotEmpty(t, svc.Recall(ctx, "tinh chỉnh CSDL thế nào").Prompt)
 	}
 	require.Zero(t, models.calls, "the read path must not call a model")
 }
@@ -194,19 +194,19 @@ func TestInjectedMemoryStaysInsideItsBudget(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		_, err := svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindPreference,
-			Topic:   "偏好" + string(rune('a'+i)),
-			Content: strings.Repeat("很长的偏好说明", 8) + string(rune('a'+i)),
+			Topic:   "sở thích " + string(rune('a'+i)),
+			Content: strings.Repeat("mô tả sở thích dài ", 8) + string(rune('a'+i)),
 		})
 		require.NoError(t, err)
 		_, err = svc.Remember(ctx, types.MemoryItem{
 			Kind:    types.MemoryKindFact,
-			Topic:   "事实" + string(rune('a'+i)),
-			Content: "数据库" + strings.Repeat("很长的事实说明", 8) + string(rune('a'+i)),
+			Topic:   "sự việc " + string(rune('a'+i)),
+			Content: "CSDL " + strings.Repeat("mô tả sự việc dài ", 8) + string(rune('a'+i)),
 		})
 		require.NoError(t, err)
 	}
 
-	prompt := svc.Recall(ctx, "数据库怎么调优").Prompt
+	prompt := svc.Recall(ctx, "tinh chỉnh CSDL thế nào").Prompt
 	require.NotEmpty(t, prompt)
 	// Envelope wording aside, the memory content itself must fit in the two
 	// declared budgets.

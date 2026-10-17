@@ -87,6 +87,12 @@ type Session struct {
 	UserID string `json:"user_id,omitempty" gorm:"type:varchar(512);index"`
 	// IsPinned indicates whether the session is pinned in the list.
 	IsPinned bool `json:"is_pinned" gorm:"default:false"`
+	// IsTemporary marks a session opened ahead of its first message (POST
+	// /sessions). It is not listed, the first message of the session or of a
+	// sub-chat clears it (messageRepository.CreateMessage), and one still
+	// temporary when idle is purged (migration 000153). Written on create
+	// only, so a Save of a stale copy never sets it back.
+	IsTemporary bool `json:"is_temporary" gorm:"<-:create;not null;default:false"`
 	// PinnedAt records when the session was pinned; nil when not pinned.
 	PinnedAt *time.Time `json:"pinned_at,omitempty"`
 
@@ -132,22 +138,29 @@ type Session struct {
 	// sessions.
 	ContextSeed string `json:"-" gorm:"column:context_seed;type:text"`
 
+	// ChatRootID names the document-assistant chat this session is a sub-chat
+	// ("chat nhỏ") of. The root owns the documents and uploads; a sub-chat
+	// works on the root's (see SessionService.DocumentSessionID) with its own
+	// messages and context. Empty for ordinary sessions and for roots. Only
+	// roots are listed in the sidebar.
+	ChatRootID string `json:"chat_root_id,omitempty" gorm:"type:varchar(36);not null;default:''"`
+
 	// // Strategy configuration
-	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // 关联的Knowledge BaseID
-	// MaxRounds         int                 `json:"max_rounds"`                           // 多轮保持轮数
-	// EnableRewrite     bool                `json:"enable_rewrite"`                       // 多轮改写开关
-	// FallbackStrategy  FallbackStrategy    `json:"fallback_strategy"`                    // 兜底策略
-	// FallbackResponse  string              `json:"fallback_response"`                    // 固定回复内容
-	// EmbeddingTopK     int                 `json:"embedding_top_k"`                      // 向量召回TopK
-	// KeywordThreshold  float64             `json:"keyword_threshold"`                    // 关键词召回阈值
-	// VectorThreshold   float64             `json:"vector_threshold"`                     // 向量召回阈值
-	// RerankModelID     string              `json:"rerank_model_id"`                      // 排序模型ID
-	// RerankTopK        int                 `json:"rerank_top_k"`                         // 排序TopK
-	// RerankThreshold   float64             `json:"rerank_threshold"`                     // 排序阈值
-	// SummaryModelID    string              `json:"summary_model_id"`                     // 总结模型ID
-	// SummaryParameters *SummaryConfig      `json:"summary_parameters" gorm:"type:json"`  // 总结模型Parameters
-	// AgentConfig       *SessionAgentConfig `json:"agent_config"       gorm:"type:jsonb"` // Agent Configuration （会话级别，仅存储enabled和knowledge_bases）
-	// ContextConfig     *ContextConfig      `json:"context_config"     gorm:"type:jsonb"` // 上下文管理Configuration （可选）
+	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // ID kho tri thức liên kết
+	// MaxRounds         int                 `json:"max_rounds"`                           // Số lượt giữ ngữ cảnh nhiều lượt
+	// EnableRewrite     bool                `json:"enable_rewrite"`                       // Bật/tắt viết lại câu hỏi nhiều lượt
+	// FallbackStrategy  FallbackStrategy    `json:"fallback_strategy"`                    // Chiến lược dự phòng
+	// FallbackResponse  string              `json:"fallback_response"`                    // Nội dung trả lời cố định
+	// EmbeddingTopK     int                 `json:"embedding_top_k"`                      // TopK truy hồi vector
+	// KeywordThreshold  float64             `json:"keyword_threshold"`                    // Ngưỡng truy hồi từ khóa
+	// VectorThreshold   float64             `json:"vector_threshold"`                     // Ngưỡng truy hồi vector
+	// RerankModelID     string              `json:"rerank_model_id"`                      // ID mô hình rerank
+	// RerankTopK        int                 `json:"rerank_top_k"`                         // TopK rerank
+	// RerankThreshold   float64             `json:"rerank_threshold"`                     // Ngưỡng rerank
+	// SummaryModelID    string              `json:"summary_model_id"`                     // ID mô hình tóm tắt
+	// SummaryParameters *SummaryConfig      `json:"summary_parameters" gorm:"type:json"`  // Tham số mô hình tóm tắt
+	// AgentConfig       *SessionAgentConfig `json:"agent_config"       gorm:"type:jsonb"` // Cấu hình trợ lý (cấp cuộc trò chuyện, chỉ lưu enabled và knowledge_bases)
+	// ContextConfig     *ContextConfig      `json:"context_config"     gorm:"type:jsonb"` // Cấu hình quản lý ngữ cảnh (tùy chọn)
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

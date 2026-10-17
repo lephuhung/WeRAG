@@ -167,8 +167,8 @@ export function scopeChoiceReady(card: ScopeClarification, choice: ScopeCardChoi
 
 /** The action of a confirmed choice: format and spelling send a canned
  * request naming the document (those tools need no text); "other" hands
- * the composer back; the rest store a user scope then re-send the
- * question. */
+ * the composer back; the rest store a user scope then send a request
+ * naming the choice (none from the chip, which has no question). */
 export function scopeCardAction(card: ScopeClarification, choice: ScopeCardChoice): ScopeCardAction | null {
   const doc = card.documents.find((d) => d.id === choice.documentId);
   if (!doc || !choice.task) return null;
@@ -189,7 +189,27 @@ export function scopeCardAction(card: ScopeClarification, choice: ScopeCardChoic
   if (choice.task === "part" && picked.length === 0) return null;
   const task: DocumentScopeTask = choice.task === "part" ? "lookup" : choice.task;
   const ids = choice.task === "compare" ? [doc.id, ...card.documents.filter((d) => d.id !== doc.id).map((d) => d.id)] : [doc.id];
-  return { kind: "scope", scope: { document_ids: ids, sections: picked, task, set_by: "user" }, resend: card.query };
+  return {
+    kind: "scope",
+    scope: { document_ids: ids, sections: picked, task, set_by: "user" },
+    resend: card.query.trim() ? scopeChoiceRequest(card.query, choice.task, name, sectionsLabel(picked)) : "",
+  };
+}
+
+/** The request sent after a confirmed choice: it says what was chosen, so
+ * the user's bubble shows it and the turn reads as the next step rather
+ * than the first question again. A summary is its own request; one part
+ * and a comparison keep the question and name the scope. */
+function scopeChoiceRequest(query: string, task: "summary" | "part" | "compare", name: string, sections: string): string {
+  const where = sections ? `${sections} của ${name}` : name;
+  switch (task) {
+    case "summary":
+      return sections ? `Tóm tắt ${where}` : `Tóm tắt toàn bộ ${name}`;
+    case "part":
+      return `${query.trim()} — phạm vi: ${where}`;
+    case "compare":
+      return `${query.trim()} — đối chiếu ${where} với văn bản nguồn`;
+  }
 }
 
 /** The card's starting choice: the suggestion, its sections ticked. */

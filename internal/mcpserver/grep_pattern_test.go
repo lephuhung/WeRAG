@@ -26,7 +26,7 @@ func TestGrepPatternAndTermsKeepsRegexSemantics(t *testing.T) {
 			query: "C++", terms: "C",
 			matches: []string{"written in C++"}, rejects: []string{"written in C"},
 		},
-		{query: "图片素材", terms: "图片素材", matches: []string{"关于图片素材的说明"}},
+		{query: "ảnh minh hoạ", terms: "ảnh minh hoạ", matches: []string{"ghi chú về ảnh minh hoạ"}},
 	}
 	for _, tc := range cases {
 		re, terms := grepPatternAndTerms(tc.query)

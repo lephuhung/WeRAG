@@ -10,7 +10,7 @@ import (
 )
 
 // TestIntegrationCubeClient_PublicEgress is the same check the settings
-// wizard runs as "出网可用". It needs cube-egress listening on the cube-dev
+// wizard runs as the "egress available" check. It needs cube-egress listening on the cube-dev
 // gateway and FORWARD/MASQUERADE for sandbox DNS.
 func TestIntegrationCubeClient_PublicEgress(t *testing.T) {
 	cfg := integrationConfig(t)

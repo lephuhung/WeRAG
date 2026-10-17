@@ -18,9 +18,9 @@ func NewWebSearchHandler() *WebSearchHandler {
 // GetProviders returns the list of available web search provider types.
 //
 // GetProviders godoc
-// @Summary      获取可用网络搜索 Provider List
-// @Description  返回所有已注册的网络搜索 provider（含元数据）
-// @Tags         网络搜索
+// @Summary      Lấy danh sách Provider tìm kiếm web khả dụng
+// @Description  Trả về mọi provider tìm kiếm web đã đăng ký (kèm metadata)
+// @Tags         Tìm kiếm web
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "provider List "
 // @Security     Bearer

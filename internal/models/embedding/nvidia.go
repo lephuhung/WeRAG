@@ -29,7 +29,7 @@ type NvidiaEmbedder struct {
 	EmbedderPooler
 }
 
-// SetCustomHeaders Settings 用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
+// SetCustomHeaders đặt HTTP header tùy chỉnh của người dùng (tương tự extra_headers của OpenAI Python SDK).
 func (e *NvidiaEmbedder) SetCustomHeaders(headers map[string]string) {
 	e.customHeaders = headers
 }

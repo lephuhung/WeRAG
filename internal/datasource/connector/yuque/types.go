@@ -1,4 +1,4 @@
-// Package yuque implements the Yuque (语雀) data source connector for WeKnora.
+// Package yuque implements the Yuque data source connector for WeKnora.
 //
 // It syncs documents from personal and group knowledge bases (books/repos) into WeKnora
 // knowledge bases, preserving Markdown formatting.

@@ -9,9 +9,9 @@ import (
 
 func TestParseGeneratedSuggestionsFiltersAndDeduplicates(t *testing.T) {
 	content := "```json\n{\"questions\":[" +
-		"{\"text\":\"如何继续实施？\",\"category\":\"action\"}," +
-		"{\"text\":\"如何继续实施?\",\"category\":\"action\"}," +
-		"{\"text\":\"有哪些风险？\",\"category\":\"unknown\"}" +
+		"{\"text\":\"Làm thế nào để tiếp tục triển khai？\",\"category\":\"action\"}," +
+		"{\"text\":\"Làm thế nào để tiếp tục triển khai?\",\"category\":\"action\"}," +
+		"{\"text\":\"Có những rủi ro nào?\",\"category\":\"unknown\"}" +
 		"]}\n```"
 	items, err := parseGeneratedSuggestions(content, []string{"clarify", "action"}, 3)
 	if err != nil {
@@ -47,13 +47,13 @@ func TestMergeSuggestionItemsPreservesPriorityAndLimit(t *testing.T) {
 }
 
 func TestAnswerEndsWithQuestion(t *testing.T) {
-	if !answerEndsWithQuestion("请补充具体时间？  ") {
-		t.Fatal("Chinese question ending was not detected")
+	if !answerEndsWithQuestion("Vui lòng bổ sung thời gian cụ thể？  ") {
+		t.Fatal("fullwidth question ending was not detected")
 	}
-	if answerEndsWithQuestion("结论已经给出。") {
+	if answerEndsWithQuestion("Kết luận đã được đưa ra.") {
 		t.Fatal("statement was incorrectly detected as question")
 	}
-	if !answerEndsWithQuestion("需要我继续展开吗？\n<kb>1</kb>") {
+	if !answerEndsWithQuestion("Tôi có cần triển khai thêm không?\n<kb>1</kb>") {
 		t.Fatal("question before a trailing citation was not detected")
 	}
 }

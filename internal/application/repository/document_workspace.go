@@ -20,6 +20,14 @@ func NewDocumentWorkspaceRepository(db *gorm.DB) interfaces.DocumentWorkspaceRep
 }
 
 func (r *documentWorkspaceRepository) Create(ctx context.Context, ws *types.DocumentWorkspace) error {
+	if ws.CreatedAt.IsZero() {
+		ws.CreatedAt = time.Now()
+	}
+	if ws.UpdatedAt.IsZero() {
+		ws.UpdatedAt = ws.CreatedAt
+	}
+	ws.CreatedAt, ws.UpdatedAt = ws.CreatedAt.UTC(), ws.UpdatedAt.UTC()
+	ws.ActiveAt, ws.LastSavedAt, ws.ClosedAt = utcTime(ws.ActiveAt), utcTime(ws.LastSavedAt), utcTime(ws.ClosedAt)
 	return r.db.WithContext(ctx).Create(ws).Error
 }
 
@@ -76,7 +84,7 @@ func (r *documentWorkspaceRepository) NextPosition(ctx context.Context, tenantID
 func (r *documentWorkspaceRepository) SetActive(ctx context.Context, id string, at time.Time) error {
 	return r.db.WithContext(ctx).Model(&types.DocumentWorkspace{}).
 		Where("id = ?", id).
-		UpdateColumn("active_at", at).Error
+		UpdateColumn("active_at", at.UTC()).Error
 }
 
 // DeleteByID soft-deletes one document of the session.
@@ -140,10 +148,23 @@ func documentWorkspaceColumns(ws *types.DocumentWorkspace) map[string]interface{
 		"save_count":    ws.SaveCount,
 		"role":          ws.Role,
 		"text_status":   ws.TextStatus,
-		"last_saved_at": ws.LastSavedAt,
-		"closed_at":     ws.ClosedAt,
-		"updated_at":    ws.UpdatedAt,
+		"last_saved_at": utcTime(ws.LastSavedAt),
+		"closed_at":     utcTime(ws.ClosedAt),
+		"updated_at":    ws.UpdatedAt.UTC(),
 	}
+}
+
+// utcTime converts a timestamp to UTC before it is written. The columns are
+// "timestamp without time zone" and the driver stores the wall clock, so a
+// local time (the server runs in UTC+8) read back as UTC was hours in the
+// future: a finished format check looked older than the last save and the
+// web hid it.
+func utcTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 // SaveText stores (or replaces) the text of a source document.

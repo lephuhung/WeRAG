@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -31,6 +32,7 @@ func newEvalChatModel(modelID string) (chat.Chat, error) {
 		ModelName: modelID,
 		BaseURL:   baseURL,
 		APIKey:    apiKey,
+		Provider:  firstNonEmpty(os.Getenv("WEKNORA_MEMORY_EVAL_PROVIDER"), string(provider.ProviderGeneric)),
 	}, nil)
 }
 
@@ -49,12 +51,23 @@ func firstNonEmpty(values ...string) string {
 func runEvalExtraction(
 	ctx context.Context, chatModel chat.Chat, userPrompt string,
 ) ([]extractionDecision, error) {
+	// Thinking off, as in production: a reasoning model left to think spends
+	// the whole budget before the JSON and the case scores as a parse error.
+	thinking := false
+	systemPrompt := extractionSystemPrompt
+	// A candidate prompt can be scored without editing the product constant.
+	if path := strings.TrimSpace(os.Getenv("WEKNORA_MEMORY_EVAL_PROMPT_FILE")); path != "" {
+		if raw, err := os.ReadFile(path); err == nil {
+			systemPrompt = string(raw)
+		}
+	}
 	response, err := chatModel.Chat(ctx, []chat.Message{
-		{Role: "system", Content: extractionSystemPrompt},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
 	}, &chat.ChatOptions{
 		Temperature:         0,
 		MaxCompletionTokens: 1200,
+		Thinking:            &thinking,
 		Format:              extractionSchema,
 	})
 	if err != nil {

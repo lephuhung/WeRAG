@@ -131,7 +131,7 @@ func NewConflictError(message string) *AppError {
 // guards (e.g. per-user self-service tenant creation cap).
 func NewTooManyRequestsError(message string) *AppError {
 	if message == "" {
-		message = "too many requests"
+		message = "quá nhiều yêu cầu, vui lòng thử lại sau"
 	}
 	return &AppError{
 		Code:     ErrTooManyRequests,
@@ -143,7 +143,7 @@ func NewTooManyRequestsError(message string) *AppError {
 // NewInternalServerError creates an internal server error
 func NewInternalServerError(message string) *AppError {
 	if message == "" {
-		message = "服务器内部错误"
+		message = "lỗi hệ thống"
 	}
 	return &AppError{
 		Code:     ErrInternalServer,
@@ -156,7 +156,7 @@ func NewInternalServerError(message string) *AppError {
 // error. Used for transient failures where the caller can retry.
 func NewServiceUnavailableError(message string) *AppError {
 	if message == "" {
-		message = "服务暂时不可用"
+		message = "dịch vụ tạm thời không khả dụng"
 	}
 	return &AppError{
 		Code:     ErrServiceUnavailable,
@@ -178,7 +178,7 @@ func NewValidationError(message string) *AppError {
 func NewTenantNotFoundError() *AppError {
 	return &AppError{
 		Code:     ErrTenantNotFound,
-		Message:  "空间不存在",
+		Message:  "không tìm thấy đơn vị",
 		HTTPCode: http.StatusNotFound,
 	}
 }
@@ -187,7 +187,7 @@ func NewTenantNotFoundError() *AppError {
 func NewTenantAlreadyExistsError() *AppError {
 	return &AppError{
 		Code:     ErrTenantAlreadyExists,
-		Message:  "空间已存在",
+		Message:  "đơn vị đã tồn tại",
 		HTTPCode: http.StatusConflict,
 	}
 }
@@ -196,7 +196,7 @@ func NewTenantAlreadyExistsError() *AppError {
 func NewTenantInactiveError() *AppError {
 	return &AppError{
 		Code:     ErrTenantInactive,
-		Message:  "空间已停用",
+		Message:  "đơn vị đã bị vô hiệu hóa",
 		HTTPCode: http.StatusForbidden,
 	}
 }
@@ -206,7 +206,7 @@ func NewTenantInactiveError() *AppError {
 func NewTenantCreationDisabledError() *AppError {
 	return &AppError{
 		Code:     ErrTenantCreationDisabled,
-		Message:  "self-service workspace creation is disabled; join a workspace by invitation",
+		Message:  "đã tắt tự tạo đơn vị; hãy tham gia đơn vị qua lời mời",
 		HTTPCode: http.StatusForbidden,
 	}
 }
@@ -215,7 +215,7 @@ func NewTenantCreationDisabledError() *AppError {
 func NewAgentMissingThinkingModelError() *AppError {
 	return &AppError{
 		Code:     ErrAgentMissingThinkingModel,
-		Message:  "启用Agent模式前，请先选择思考模型",
+		Message:  "cần chọn mô hình suy luận trước khi bật chế độ trợ lý",
 		HTTPCode: http.StatusBadRequest,
 	}
 }
@@ -223,7 +223,7 @@ func NewAgentMissingThinkingModelError() *AppError {
 func NewAgentMissingAllowedToolsError() *AppError {
 	return &AppError{
 		Code:     ErrAgentMissingAllowedTools,
-		Message:  "至少需要选择一个允许的工具",
+		Message:  "cần chọn ít nhất một công cụ được phép",
 		HTTPCode: http.StatusBadRequest,
 	}
 }
@@ -231,7 +231,7 @@ func NewAgentMissingAllowedToolsError() *AppError {
 func NewAgentInvalidMaxIterationsError() *AppError {
 	return &AppError{
 		Code:     ErrAgentInvalidMaxIterations,
-		Message:  "最大迭代次数须为正整数，或 -1 表示不限制",
+		Message:  "số vòng lặp tối đa phải là số nguyên dương, hoặc -1 nếu không giới hạn",
 		HTTPCode: http.StatusBadRequest,
 	}
 }
@@ -239,7 +239,7 @@ func NewAgentInvalidMaxIterationsError() *AppError {
 func NewAgentInvalidTemperatureError() *AppError {
 	return &AppError{
 		Code:     ErrAgentInvalidTemperature,
-		Message:  "温度参数必须在0-2之间",
+		Message:  "tham số temperature phải nằm trong khoảng 0-2",
 		HTTPCode: http.StatusBadRequest,
 	}
 }
@@ -251,7 +251,7 @@ func NewAgentInvalidTemperatureError() *AppError {
 // log at the call site for the tenant/store pair.
 func NewVectorStoreBindingInvalidError(message string) *AppError {
 	if message == "" {
-		message = "vector store not found"
+		message = "không tìm thấy kho vector"
 	}
 	return &AppError{
 		Code:     ErrVectorStoreBindingInvalid,
@@ -266,7 +266,7 @@ func NewVectorStoreBindingInvalidError(message string) *AppError {
 // or stale state after a connection-config rotation).
 func NewVectorStoreUnavailableError(message string) *AppError {
 	if message == "" {
-		message = "vector store is currently unavailable"
+		message = "kho vector tạm thời không khả dụng"
 	}
 	return &AppError{
 		Code:     ErrVectorStoreUnavailable,

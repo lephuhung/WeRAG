@@ -163,8 +163,11 @@ type MemoryRepository interface {
 
 	// BumpTopic records one more sighting of a topic and returns the running
 	// total, so a caller can decide whether it has recurred enough to promote.
+	// The sighting says which conversation and day it came from; distinct
+	// sessions and days are what recurrence is measured in.
 	BumpTopic(
 		ctx context.Context, scope MemoryScope, topic, normalizedKey, alias string,
+		sighting types.MemoryTopicSighting,
 	) (*types.MemoryTopicStat, error)
 	// RenameTopic gives a subject a better canonical label, keeping the old one
 	// as an alias. Reports false when another row already holds the new key.

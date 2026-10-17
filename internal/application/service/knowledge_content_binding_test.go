@@ -75,7 +75,7 @@ func TestBindContentResourcesClaimsEveryReferencedFile(t *testing.T) {
 	catalog := &resolvingCatalog{tenantByRef: map[string]uint64{chart: 7, table: 7}}
 	svc := &knowledgeService{resourceCatalog: catalog}
 
-	content := "## 结论\n\n![评分](" + chart + ")\n\n数据见 [表格](" + table + ")"
+	content := "## Kết luận\n\n![Điểm số](" + chart + ")\n\nSố liệu xem [bảng](" + table + ")"
 	svc.bindContentResources(context.Background(), 7, "kn-1", content)
 
 	if len(catalog.binds) != 2 {

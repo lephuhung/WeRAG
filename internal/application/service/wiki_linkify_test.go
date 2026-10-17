@@ -116,10 +116,10 @@ func TestLinkifyContent_SkipsInsideInlineCode(t *testing.T) {
 
 func TestLinkifyContent_SkipsInsideMarkdownLink(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
+		{slug: "hanoi", matchText: "Hà Nội"},
 	}
 	// Occurrence inside [text](url) should be skipped.
-	in := "参见 [北京](https://example.com/beijing)"
+	in := "Xem [Hà Nội](https://example.com/hanoi)"
 	got, changed := linkifyContent(in, refs, "")
 	if changed {
 		t.Fatalf("should not link inside markdown link text: %q", got)
@@ -128,30 +128,30 @@ func TestLinkifyContent_SkipsInsideMarkdownLink(t *testing.T) {
 
 func TestLinkifyContent_OnlyFirstOccurrenceWrapped(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
+		{slug: "hanoi", matchText: "Hà Nội"},
 	}
-	in := "北京很大。北京有很多人。北京是首都。"
+	in := "Hà Nội rất lớn. Hà Nội có nhiều người. Hà Nội là thủ đô."
 	got, changed := linkifyContent(in, refs, "")
 	if !changed {
 		t.Fatalf("expected change")
 	}
 	// Only first match should be wrapped.
-	count := strings.Count(got, "[[beijing|北京]]")
+	count := strings.Count(got, "[[hanoi|Hà Nội]]")
 	if count != 1 {
 		t.Fatalf("expected exactly 1 link, got %d: %q", count, got)
 	}
 	// Later occurrences remain bare.
-	if strings.Count(got, "北京") != 3 {
-		t.Fatalf("expected 3 total 北京 (incl. one inside the link), got content %q", got)
+	if strings.Count(got, "Hà Nội") != 3 {
+		t.Fatalf("expected 3 total Hà Nội (incl. one inside the link), got content %q", got)
 	}
 }
 
 func TestLinkifyContent_SkipsSelfSlug(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
+		{slug: "hanoi", matchText: "Hà Nội"},
 	}
 	// Rendering on the beijing page itself — must not self-link.
-	got, changed := linkifyContent("北京是首都", refs, "beijing")
+	got, changed := linkifyContent("Hà Nội là thủ đô", refs, "hanoi")
 	if changed {
 		t.Fatalf("should not self-link: %q", got)
 	}
@@ -160,10 +160,10 @@ func TestLinkifyContent_SkipsSelfSlug(t *testing.T) {
 func TestLinkifyContent_SkipsWhenSlugAlreadyUsed(t *testing.T) {
 	// Title matches by alias, but slug already appears via a different mention.
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
-		{slug: "beijing", matchText: "京师"},
+		{slug: "hanoi", matchText: "Hà Nội"},
+		{slug: "hanoi", matchText: "Thủ đô"},
 	}
-	in := "我在[[beijing|京师]]出差，后来去了北京。"
+	in := "Tôi đi công tác ở [[hanoi|Thủ đô]], sau đó đến Hà Nội."
 	got, changed := linkifyContent(in, refs, "")
 	if changed {
 		t.Fatalf("should skip when slug already linked: %q", got)
@@ -172,19 +172,19 @@ func TestLinkifyContent_SkipsWhenSlugAlreadyUsed(t *testing.T) {
 
 func TestLinkifyContent_MultipleRefsDisjoint(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
-		{slug: "shanghai", matchText: "上海"},
+		{slug: "hanoi", matchText: "Hà Nội"},
+		{slug: "hue", matchText: "Huế"},
 	}
-	in := "我今天去北京，明天去上海。"
+	in := "Hôm nay tôi đi Hà Nội, ngày mai đi Huế."
 	got, changed := linkifyContent(in, refs, "")
 	if !changed {
 		t.Fatalf("expected change")
 	}
-	if !strings.Contains(got, "[[beijing|北京]]") {
-		t.Fatalf("missing beijing link: %q", got)
+	if !strings.Contains(got, "[[hanoi|Hà Nội]]") {
+		t.Fatalf("missing hanoi link: %q", got)
 	}
-	if !strings.Contains(got, "[[shanghai|上海]]") {
-		t.Fatalf("missing shanghai link: %q", got)
+	if !strings.Contains(got, "[[hue|Huế]]") {
+		t.Fatalf("missing hue link: %q", got)
 	}
 }
 
@@ -235,9 +235,9 @@ func TestComputeForbiddenSpans_FencedCode(t *testing.T) {
 }
 
 func TestComputeForbiddenSpans_CollectsUsedSlugs(t *testing.T) {
-	s := "Refer to [[beijing|北京]] and [[shanghai]] and [[nope|x]]."
+	s := "Refer to [[hanoi|Hà Nội]] and [[hue]] and [[nope|x]]."
 	_, used := computeForbiddenSpans(s)
-	for _, slug := range []string{"beijing", "shanghai", "nope"} {
+	for _, slug := range []string{"hanoi", "hue", "nope"} {
 		if _, ok := used[slug]; !ok {
 			t.Fatalf("expected slug %q in used set, got %v", slug, used)
 		}
@@ -246,10 +246,10 @@ func TestComputeForbiddenSpans_CollectsUsedSlugs(t *testing.T) {
 
 func TestLinkifyContent_SkipsInsideReferenceStyleLink(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
+		{slug: "hanoi", matchText: "Hà Nội"},
 	}
 	// [text][label] form — occurrence should not be linkified.
-	in := "See [北京][capital] for details.\n\n[capital]: https://example.com/beijing"
+	in := "See [Hà Nội][capital] for details.\n\n[capital]: https://example.com/hanoi"
 	got, changed := linkifyContent(in, refs, "")
 	if changed {
 		t.Fatalf("should not link inside reference-style link or definition: %q", got)
@@ -270,10 +270,10 @@ func TestLinkifyContent_SkipsReferenceDefinitionLine(t *testing.T) {
 
 func TestLinkifyContent_RepeatedLinkifyIsIdempotent(t *testing.T) {
 	refs := []linkRef{
-		{slug: "beijing", matchText: "北京"},
-		{slug: "shanghai", matchText: "上海"},
+		{slug: "hanoi", matchText: "Hà Nội"},
+		{slug: "hue", matchText: "Huế"},
 	}
-	in := "今天去北京，明天去上海。"
+	in := "Hôm nay đi Hà Nội, ngày mai đi Huế."
 	once, _ := linkifyContent(in, refs, "")
 	twice, changed := linkifyContent(once, refs, "")
 	if changed {

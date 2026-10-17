@@ -17,12 +17,12 @@ const (
 	MatchTypeKeywords
 	MatchTypeNearByChunk
 	MatchTypeHistory
-	MatchTypeParentChunk   // 父Chunk匹配类型
-	MatchTypeRelationChunk // 关系Chunk匹配类型
+	MatchTypeParentChunk   // Loại khớp chunk cha
+	MatchTypeRelationChunk // Loại khớp chunk quan hệ
 	MatchTypeGraph
-	MatchTypeWebSearch    // 网络搜索匹配类型
+	MatchTypeWebSearch    // Loại khớp tìm kiếm web
 	MatchTypeDirectLoad   // Deprecated: reserved to preserve serialized enum values
-	MatchTypeDataAnalysis // 数据分析匹配类型
+	MatchTypeDataAnalysis // Loại khớp phân tích dữ liệu
 )
 
 // IndexInfo contains information about indexed content

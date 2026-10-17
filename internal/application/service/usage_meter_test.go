@@ -132,3 +132,26 @@ func TestUsageMeterRecordMessageUsageOncePerMessage(t *testing.T) {
 	require.Len(t, repo.added, 12)
 	require.False(t, repo.claimed["m2"])
 }
+
+func TestUsageMeterRecordOCRUsageJoinsTokenQuota(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	m := &usageMeter{repo: repo, now: time.Now}
+	m.RecordOCRUsage(context.Background(), 10003, "user-1", "sess-1", 2,
+		types.VLMUsage{PromptTokens: 1800, CompletionTokens: 120, TotalTokens: 1920})
+	sum := map[string]int64{}
+	for _, inc := range repo.added {
+		if inc.ScopeType == types.UsageScopeSession {
+			sum[inc.Metric] += inc.Delta
+		}
+	}
+	require.Equal(t, int64(1920), sum[types.UsageMetricTokens], "OCR tokens count against the token quota")
+	require.Equal(t, int64(1920), sum[types.UsageMetricOCRTokens])
+	require.Equal(t, int64(1800), sum[types.UsageMetricPromptTokens])
+	require.Equal(t, int64(2), sum[types.UsageMetricOCRPages])
+	// {tenant,user} x {day,month} + session, for 5 metrics
+	require.Len(t, repo.added, 5*5)
+
+	repo.added = nil
+	m.RecordOCRUsage(context.Background(), 10003, "user-1", "", 0, types.VLMUsage{})
+	require.Empty(t, repo.added, "nothing read, nothing counted")
+}

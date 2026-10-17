@@ -9,31 +9,31 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 )
 
-// 默认的桶数 / 副本数。Doris 在 PROPERTIES 不指定时会用集群默认值，
-// 这里给一个对单机/小集群更友好的保守值。
+// Số bucket / số bản sao mặc định. Doris dùng mặc định của cụm khi PROPERTIES không chỉ định,
+// ở đây đặt giá trị bảo thủ thân thiện hơn với máy đơn / cụm nhỏ.
 const (
 	defaultBucketsNum     = 10
 	defaultReplicationNum = 1
 
-	// ANN 索引就绪轮询的最大等待时间。索引未就绪不阻塞写入路径，
-	// 只阻塞 ensureTable 自身（首次建表场景），所以 30s 是可接受的。
+	// Thời gian chờ tối đa khi thăm dò chỉ mục ANN sẵn sàng. Chỉ mục chưa sẵn sàng không chặn đường ghi,
+	// chỉ chặn chính ensureTable (lần tạo bảng đầu), nên 30s là chấp nhận được.
 	annReadyTimeout = 30 * time.Second
 	annReadyPoll    = 1 * time.Second
 )
 
-// getTableName 返回某个维度对应的物理表名：<base>_<dim>。
+// getTableName trả về tên bảng vật lý ứng với một số chiều: <base>_<dim>.
 //
-// 与 Qdrant/Milvus/Weaviate 的 collection 命名约定一致，
-// 这样不同 embedding 模型（不同维度）的数据互不冲突。
+// Thống nhất với quy ước đặt tên collection của Qdrant/Milvus/Weaviate,
+// nhờ đó dữ liệu của các mô hình embedding khác nhau (khác số chiều) không xung đột.
 func (r *dorisRepository) getTableName(dimension int) string {
 	return fmt.Sprintf("%s_%d", r.tableBaseName, dimension)
 }
 
-// ensureTable 保证目标维度对应的表已经存在；
-// 不存在则用 CREATE TABLE IF NOT EXISTS Create ，并在Create 后轮询 ANN 索引就绪。
+// ensureTable đảm bảo bảng ứng với số chiều đích đã tồn tại;
+// chưa có thì tạo bằng CREATE TABLE IF NOT EXISTS, rồi thăm dò chỉ mục ANN sẵn sàng sau khi tạo.
 //
-// 该方法在每次 Save / BatchSave 之前调用，结果缓存在 initializedTables 中，
-// 同一进程内同一 dimension 只会真正打一次 SHOW TABLES + DDL。
+// Phương thức này được gọi trước mỗi Save / BatchSave, kết quả cache trong initializedTables,
+// trong cùng tiến trình mỗi dimension chỉ thực sự chạy SHOW TABLES + DDL một lần.
 func (r *dorisRepository) ensureTable(ctx context.Context, dimension int) error {
 	if _, ok := r.initializedTables.Load(dimension); ok {
 		return nil
@@ -59,11 +59,11 @@ func (r *dorisRepository) ensureTable(ctx context.Context, dimension int) error 
 			return fmt.Errorf("create table: %w", err)
 		}
 
-		// ANN 索引在 Doris 端异步构建。这里在后台 goroutine 里轮询就绪，
-		// 写入路径不阻塞——索引未就绪期间检索会退化为 brute-force（结果对、速度慢），
-		// 比让首批写入卡 30s 更可接受。
+		// Chỉ mục ANN được Doris xây bất đồng bộ. Ở đây thăm dò sẵn sàng trong goroutine nền,
+		// đường ghi không bị chặn; khi chỉ mục chưa sẵn sàng, truy xuất lùi về brute-force (kết quả đúng, chậm),
+		// chấp nhận được hơn là để lô ghi đầu kẹt 30s.
 		go func(tn string) {
-			// 用独立 context（带 timeout），避免请求级 ctx 取消把后台轮询也带走。
+			// Dùng context riêng (có timeout) để ctx cấp yêu cầu bị hủy không kéo theo thăm dò nền.
 			bgCtx, cancel := context.WithTimeout(context.Background(), annReadyTimeout)
 			defer cancel()
 			if err := r.waitANNReady(bgCtx, tn); err != nil {
@@ -81,10 +81,10 @@ func (r *dorisRepository) ensureTable(ctx context.Context, dimension int) error 
 	return nil
 }
 
-// tableExists 通过 information_schema 判断表是否存在。
+// tableExists kiểm tra bảng tồn tại qua information_schema.
 //
-// 不直接用 SHOW TABLES 是因为 Doris 4.1 对 SHOW TABLES LIKE 大小写敏感，
-// 而 information_schema 与 MySQL 兼容性更好。
+// Không dùng thẳng SHOW TABLES vì Doris 4.1 phân biệt hoa thường với SHOW TABLES LIKE,
+// còn information_schema tương thích MySQL tốt hơn.
 func (r *dorisRepository) tableExists(ctx context.Context, tableName string) (bool, error) {
 	const q = `SELECT COUNT(1) FROM information_schema.tables
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`
@@ -95,8 +95,8 @@ func (r *dorisRepository) tableExists(ctx context.Context, tableName string) (bo
 	return n > 0, nil
 }
 
-// createTable 发出 CREATE TABLE DDL。Doris DDL 是同步的（除 ANN 索引构建外），
-// 返回成功即代表表已可写。
+// createTable phát DDL CREATE TABLE. DDL của Doris là đồng bộ (trừ việc xây chỉ mục ANN),
+// trả về thành công nghĩa là bảng đã ghi được.
 func (r *dorisRepository) createTable(ctx context.Context, tableName string, dimension int, compatMode dorisCompatMode) error {
 	buckets := r.bucketsNum
 	if buckets <= 0 {
@@ -122,17 +122,17 @@ func (r *dorisRepository) createTable(ctx context.Context, tableName string, dim
 	return err
 }
 
-// buildCreateTableDDL 根据维度生成 CREATE TABLE DDL。
+// buildCreateTableDDL sinh DDL CREATE TABLE theo số chiều.
 //
-// 关键点：
-//   - DUPLICATE KEY(id)：兼容当前 Doris/SelectDB 对 ANN 索引的表模型要求。
-//     WeKnora 在 Go 端用 delete + insert 保持按 id 替换的写入语义。
-//   - INVERTED 索引覆盖所有过滤字段 + 中文分词的 content 全文索引。
-//   - ANN 索引使用 HNSW + inner_product；Doris 写入/Query 前会对向量单位化，
-//     因此整体仍保持与其他Vector Database一致的 cosine 相似度语义。
+// Điểm chính:
+//   - DUPLICATE KEY(id): tương thích yêu cầu mô hình bảng cho chỉ mục ANN của Doris/SelectDB hiện tại.
+//     WeKnora dùng delete + insert phía Go để giữ ngữ nghĩa ghi thay thế theo id.
+//   - Chỉ mục INVERTED phủ mọi trường lọc + chỉ mục toàn văn content với bộ tách từ tiếng Trung.
+//   - Chỉ mục ANN dùng HNSW + inner_product; vector được chuẩn hóa đơn vị trước khi ghi/truy vấn Doris,
+//     nên tổng thể vẫn giữ ngữ nghĩa cosine similarity như các kho vector khác.
 //
-// 注意：DDL 中 dimension / buckets / replication 三个数值字段是 Go 端格式化拼接的，
-// 不存在 SQL 注入风险（来源都是受控的 IndexConfig int）。
+// Lưu ý: ba trường số dimension / buckets / replication trong DDL được định dạng và nối phía Go,
+// không có rủi ro SQL injection (nguồn đều là IndexConfig int được kiểm soát).
 func buildCreateTableDDL(tableName string, dimension, buckets, replication int, compatMode dorisCompatMode) string {
 	metricType := "inner_product"
 	keyMode := "DUPLICATE KEY(id)"
@@ -177,10 +177,10 @@ PROPERTIES(
 	return fmt.Sprintf(tpl, tableName, metricType, dimension, keyMode, buckets, properties)
 }
 
-// waitANNReady 轮询 SHOW INDEX，等待 ANN 索引进入 FINISHED 状态。
+// waitANNReady thăm dò SHOW INDEX, chờ chỉ mục ANN vào trạng thái FINISHED.
 //
-// Doris 的 ANN 索引在建表后会异步构建，期间Query 会退化为 brute-force（结果对，速度慢）。
-// 此处仅做"尽力而为"的等待：到点未就绪只记 warning，不阻塞写入。
+// Chỉ mục ANN của Doris được xây bất đồng bộ sau khi tạo bảng; trong lúc đó truy vấn lùi về brute-force (kết quả đúng, chậm).
+// Ở đây chỉ chờ kiểu "cố gắng hết sức": hết giờ chưa sẵn sàng chỉ ghi warning, không chặn ghi.
 func (r *dorisRepository) waitANNReady(ctx context.Context, tableName string) error {
 	deadline := time.Now().Add(annReadyTimeout)
 	for {
@@ -202,14 +202,14 @@ func (r *dorisRepository) waitANNReady(ctx context.Context, tableName string) er
 	}
 }
 
-// annIndexReady 检查 ANN 索引的 State 是否为 FINISHED。
+// annIndexReady kiểm tra State của chỉ mục ANN có phải FINISHED không.
 //
-// SHOW INDEX FROM <table> 在 Doris 上返回多列；不同小版本列序略有差异，
-// 这里以列名匹配（来自 information_schema.statistics + 自定义 view 不可行，
-// 直接用 SHOW INDEX 然后扫描即可）。
+// SHOW INDEX FROM <table> trên Doris trả về nhiều cột; thứ tự cột hơi khác giữa các phiên bản nhỏ,
+// nên ở đây khớp theo tên cột (information_schema.statistics + view tùy chỉnh không khả thi,
+// dùng thẳng SHOW INDEX rồi quét là đủ).
 //
-// 兼容策略：如果 SHOW INDEX 返回中找不到 idx_emb 行（极旧版本），视为已就绪，
-// 避免因为不同 Doris 版本的输出差异把启动卡死。
+// Chiến lược tương thích: nếu SHOW INDEX không có hàng idx_emb (phiên bản rất cũ) thì coi là đã sẵn sàng,
+// tránh kẹt khởi động do khác biệt đầu ra giữa các phiên bản Doris.
 func (r *dorisRepository) annIndexReady(ctx context.Context, tableName string) (bool, error) {
 	rows, err := r.db.QueryContext(ctx,
 		fmt.Sprintf("SHOW INDEX FROM `%s`", tableName))
@@ -233,7 +233,7 @@ func (r *dorisRepository) annIndexReady(ctx context.Context, tableName string) (
 	}
 
 	for rows.Next() {
-		// 使用 sql.RawBytes 接收以兼容不同列类型。
+		// Nhận bằng sql.RawBytes để tương thích các kiểu cột khác nhau.
 		raw := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
 		for i := range raw {
@@ -255,7 +255,7 @@ func (r *dorisRepository) annIndexReady(ctx context.Context, tableName string) (
 			continue
 		}
 		if stateIdx < 0 {
-			// 旧版本不暴露 state 列，乐观认为已就绪。
+			// Phiên bản cũ không lộ cột state, lạc quan coi là đã sẵn sàng.
 			return true, nil
 		}
 		if !strings.EqualFold(state, "FINISHED") &&
@@ -266,15 +266,15 @@ func (r *dorisRepository) annIndexReady(ctx context.Context, tableName string) (
 	if err := rows.Err(); err != nil {
 		return false, err
 	}
-	// 走到这里有两种情况：
-	//   1. 找到了 idx_emb 行，且 state 已是 FINISHED/NORMAL（或 stateIdx<0 的旧版本）；
-	//   2. 没找到 idx_emb 行（极旧 Doris 不暴露该索引名）；
-	// 都视为已就绪，不阻塞。未就绪的分支已在循环内提前 return false。
+	// Tới đây có hai trường hợp:
+	//   1. Tìm thấy hàng idx_emb và state đã là FINISHED/NORMAL (hoặc phiên bản cũ với stateIdx<0);
+	//   2. Không tìm thấy hàng idx_emb (Doris rất cũ không lộ tên chỉ mục này);
+	// đều coi là sẵn sàng, không chặn. Nhánh chưa sẵn sàng đã return false sớm trong vòng lặp.
 	return true, nil
 }
 
-// listEmbeddingTables 返回当前 database 下所有 <base>_% 命名的表，
-// 用于关键词检索 / 跨维度 BatchUpdate。
+// listEmbeddingTables trả về mọi bảng tên <base>_% trong database hiện tại,
+// dùng cho truy xuất từ khóa / BatchUpdate xuyên số chiều.
 func (r *dorisRepository) listEmbeddingTables(ctx context.Context) ([]string, error) {
 	const q = `SELECT TABLE_NAME FROM information_schema.tables
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE ?`
@@ -294,8 +294,8 @@ func (r *dorisRepository) listEmbeddingTables(ctx context.Context) ([]string, er
 	return names, rows.Err()
 }
 
-// bytesToString 把 SHOW INDEX 返回的 raw any（通常是 []byte 或 string）
-// 安全转成字符串。
+// bytesToString chuyển raw any mà SHOW INDEX trả về (thường là []byte hoặc string)
+// thành chuỗi một cách an toàn.
 func bytesToString(v any) string {
 	switch s := v.(type) {
 	case []byte:

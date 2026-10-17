@@ -52,13 +52,11 @@ class TextSplitter(BaseModel, Generic[T]):
 
     # Try to keep the matched characters as a whole.
     # If it's too long, the content will be further segmented.
-    # 尝试将匹配的字符作为整体保留，如果太长则进一步分段
     protected_regex: List[str] = Field(
         description="Protected regex for splitting into words"
     )
     len_function: Callable[[str], int] = Field(description="The length function.")
     # Header tracking Hook related attributes
-    # 标题跟踪钩子相关属性
     header_hook: HeaderTracker = Field(default_factory=HeaderTracker, exclude=True)
 
     # Compiled regex patterns for protected content
@@ -572,18 +570,18 @@ class TextSplitter(BaseModel, Generic[T]):
 
 if __name__ == "__main__":
     s = """
-    这是一些普通文本。
+    Đây là một đoạn văn bản thường.
 
-    | 姓名 | 年龄 | 城市 |
-    |------|------|------|
-    | 张三 | 25   | 北京 |
-    | 李四 | 30   | 上海 |
-    | 王五 | 28   | 广州 |
-    | 张三 | 25   | 北京 |
-    | 李四 | 30   | 上海 |
-    | 王五 | 28   | 广州 |
+    | Họ tên | Tuổi | Thành phố |
+    |--------|------|-----------|
+    | Nguyễn Văn A | 25 | Hà Nội |
+    | Trần Thị B   | 30 | Huế |
+    | Lê Văn C     | 28 | Đà Nẵng |
+    | Nguyễn Văn A | 25 | Hà Nội |
+    | Trần Thị B   | 30 | Huế |
+    | Lê Văn C     | 28 | Đà Nẵng |
 
-    这是文本结束。
+    Đây là phần kết văn bản.
 
 """
 

@@ -74,13 +74,13 @@ func isDataTableFileType(ext string) bool {
 func validateImportFileType(fileType string) error {
 	fileType = normalizeFileExtension(fileType)
 	if fileType == "" || fileType == unknownFileType {
-		return werrors.NewBadRequestError("无法确定文件类型")
+		return werrors.NewBadRequestError("không xác định được loại tệp")
 	}
 	if IsVideoType(fileType) {
-		return werrors.NewBadRequestError("暂不支持上传视频文件")
+		return werrors.NewBadRequestError("chưa hỗ trợ tải lên tệp video")
 	}
 	if !isSupportedImportExtension(fileType) {
-		return werrors.NewBadRequestError(fmt.Sprintf("不支持的文件类型: %s", fileType))
+		return werrors.NewBadRequestError(fmt.Sprintf("loại tệp không được hỗ trợ: %s", fileType))
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func getFileType(filename string) string {
 }
 
 // isValidURL verifies if a URL is valid
-// isValidURL 检查URL是否有效
+// isValidURL kiểm tra URL có hợp lệ không
 func isValidURL(url string) bool {
 	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 		return true
@@ -135,7 +135,7 @@ func (s *knowledgeService) getVLMConfig(ctx context.Context, kb *types.Knowledge
 	if kb == nil {
 		return nil, nil
 	}
-	// 兼容老版本：直接使用 ModelName 和 BaseURL
+	// Tương thích bản cũ: dùng trực tiếp ModelName và BaseURL
 	if kb.VLMConfig.ModelName != "" && kb.VLMConfig.BaseURL != "" {
 		return &types.DocParserVLMConfig{
 			ModelName:     kb.VLMConfig.ModelName,
@@ -145,7 +145,7 @@ func (s *knowledgeService) getVLMConfig(ctx context.Context, kb *types.Knowledge
 		}, nil
 	}
 
-	// 新版本：未启用或无模型ID时返回nil
+	// Bản mới: chưa bật hoặc không có ID mô hình thì trả về nil
 	if !kb.VLMConfig.Enabled || kb.VLMConfig.ModelID == "" {
 		return nil, nil
 	}

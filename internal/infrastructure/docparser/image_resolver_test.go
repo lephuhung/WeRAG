@@ -281,7 +281,7 @@ func TestResolveAndStore_MultipleFormats(t *testing.T) {
 func TestResolveAndStoreMarkdownImageWithTitle(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![图片](images/test.png "图片")`,
+		MarkdownContent: `![hình ảnh](images/test.png "hình ảnh")`,
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    "test.png",
@@ -304,7 +304,7 @@ func TestResolveAndStoreMarkdownImageWithTitle(t *testing.T) {
 	if len(svc.saved) != 1 {
 		t.Fatalf("expected SaveBytes to be called once but got %d", len(svc.saved))
 	}
-	if !strings.Contains(out, `![图片](local://test/`) || !strings.Contains(out, ` "图片")`) {
+	if !strings.Contains(out, `![hình ảnh](local://test/`) || !strings.Contains(out, ` "hình ảnh")`) {
 		t.Fatalf("markdown image title was not preserved around stored URL: %s", out)
 	}
 	if strings.Contains(out, "images/test.png") {
@@ -315,7 +315,7 @@ func TestResolveAndStoreMarkdownImageWithTitle(t *testing.T) {
 func TestResolveAndStoreMarkdownImageWithSingleQuotedTitle(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![图片](images/test.png '图片')`,
+		MarkdownContent: `![hình ảnh](images/test.png 'hình ảnh')`,
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    "test.png",
@@ -335,7 +335,7 @@ func TestResolveAndStoreMarkdownImageWithSingleQuotedTitle(t *testing.T) {
 	if len(imgs) != 1 || len(svc.saved) != 1 {
 		t.Fatalf("expected one stored image, got imgs=%d saved=%d", len(imgs), len(svc.saved))
 	}
-	if !strings.Contains(out, `![图片](local://test/`) || !strings.Contains(out, ` '图片')`) {
+	if !strings.Contains(out, `![hình ảnh](local://test/`) || !strings.Contains(out, ` 'hình ảnh')`) {
 		t.Fatalf("markdown image title was not preserved around stored URL: %s", out)
 	}
 }
@@ -343,11 +343,11 @@ func TestResolveAndStoreMarkdownImageWithSingleQuotedTitle(t *testing.T) {
 func TestResolveAndStoreMarkdownImageWithSpacedFilename(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![](images/第 1 页.png)`,
+		MarkdownContent: `![](images/trang 1.png)`,
 		ImageRefs: []types.ImageRef{
 			{
-				Filename:    "第 1 页.png",
-				OriginalRef: "images/第 1 页.png",
+				Filename:    "trang 1.png",
+				OriginalRef: "images/trang 1.png",
 				MimeType:    "image/png",
 				ImageData:   png,
 			},
@@ -371,7 +371,7 @@ func TestResolveAndStoreMarkdownImageWithSpacedFilename(t *testing.T) {
 func TestResolveAndStoreMarkdownImageTitleContainingRightParen(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![图片](images/test.png "阶段 1) 图片")`,
+		MarkdownContent: `![hình ảnh](images/test.png "giai đoạn 1) hình ảnh")`,
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    "test.png",
@@ -391,7 +391,7 @@ func TestResolveAndStoreMarkdownImageTitleContainingRightParen(t *testing.T) {
 	if len(imgs) != 1 || len(svc.saved) != 1 {
 		t.Fatalf("expected one stored image, got imgs=%d saved=%d", len(imgs), len(svc.saved))
 	}
-	if !strings.Contains(out, `![图片](local://test/`) || !strings.Contains(out, ` "阶段 1) 图片")`) {
+	if !strings.Contains(out, `![hình ảnh](local://test/`) || !strings.Contains(out, ` "giai đoạn 1) hình ảnh")`) {
 		t.Fatalf("right-paren title was not preserved around stored URL: %s", out)
 	}
 }
@@ -399,7 +399,7 @@ func TestResolveAndStoreMarkdownImageTitleContainingRightParen(t *testing.T) {
 func TestResolveAndStoreMarkdownImageWithMultilineTitle(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: "![图片](images/test.png\n  \"图片说明\")",
+		MarkdownContent: "![hình ảnh](images/test.png\n  \"chú thích hình\")",
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    "test.png",
@@ -419,7 +419,7 @@ func TestResolveAndStoreMarkdownImageWithMultilineTitle(t *testing.T) {
 	if len(imgs) != 1 || len(svc.saved) != 1 {
 		t.Fatalf("expected one stored image, got imgs=%d saved=%d", len(imgs), len(svc.saved))
 	}
-	if !strings.Contains(out, "![图片](local://test/") || !strings.Contains(out, "\n  \"图片说明\")") {
+	if !strings.Contains(out, "![hình ảnh](local://test/") || !strings.Contains(out, "\n  \"chú thích hình\")") {
 		t.Fatalf("multiline title was not preserved around stored URL: %s", out)
 	}
 }
@@ -427,11 +427,11 @@ func TestResolveAndStoreMarkdownImageWithMultilineTitle(t *testing.T) {
 func TestResolveAndStoreMarkdownImageWithAngleDestination(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![图片](<images/第 1 页 (测试).png> "阶段 1) 图片")`,
+		MarkdownContent: `![hình ảnh](<images/trang 1 (thử).png> "giai đoạn 1) hình ảnh")`,
 		ImageRefs: []types.ImageRef{
 			{
-				Filename:    "第 1 页 (测试).png",
-				OriginalRef: "images/第 1 页 (测试).png",
+				Filename:    "trang 1 (thử).png",
+				OriginalRef: "images/trang 1 (thử).png",
 				MimeType:    "image/png",
 				ImageData:   png,
 			},
@@ -447,7 +447,7 @@ func TestResolveAndStoreMarkdownImageWithAngleDestination(t *testing.T) {
 	if len(imgs) != 1 || len(svc.saved) != 1 {
 		t.Fatalf("expected one stored image, got imgs=%d saved=%d", len(imgs), len(svc.saved))
 	}
-	if !strings.Contains(out, `![图片](<local://test/`) || !strings.Contains(out, `> "阶段 1) 图片")`) {
+	if !strings.Contains(out, `![hình ảnh](<local://test/`) || !strings.Contains(out, `> "giai đoạn 1) hình ảnh")`) {
 		t.Fatalf("angle destination wrapper or title was not preserved: %s", out)
 	}
 }
@@ -456,8 +456,8 @@ func TestResolveAndStoreDuplicateReferencesStoreOnce(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
 		MarkdownContent: strings.Join([]string{
-			`![图片](images/test.png "第一处")`,
-			`![图片](images/test.png "第二处")`,
+			`![hình ảnh](images/test.png "chỗ một")`,
+			`![hình ảnh](images/test.png "chỗ hai")`,
 		}, "\n\n"),
 		ImageRefs: []types.ImageRef{
 			{
@@ -484,7 +484,7 @@ func TestResolveAndStoreDuplicateReferencesStoreOnce(t *testing.T) {
 	if strings.Count(out, "local://test/") != 2 {
 		t.Fatalf("expected both markdown references to be replaced: %s", out)
 	}
-	if !strings.Contains(out, `"第一处"`) || !strings.Contains(out, `"第二处"`) {
+	if !strings.Contains(out, `"chỗ một"`) || !strings.Contains(out, `"chỗ hai"`) {
 		t.Fatalf("duplicate reference titles were not preserved: %s", out)
 	}
 }
@@ -492,7 +492,7 @@ func TestResolveAndStoreDuplicateReferencesStoreOnce(t *testing.T) {
 func TestResolveAndStoreUnknownReferenceUnchanged(t *testing.T) {
 	png := createTestPNG(200, 150)
 	result := &types.ReadResult{
-		MarkdownContent: `![图片](images/missing.png "图片")`,
+		MarkdownContent: `![hình ảnh](images/missing.png "hình ảnh")`,
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    "test.png",

@@ -323,7 +323,7 @@ export function getQueryText(args: unknown): string {
 function getWikiPageText(args: unknown): string {
   const record = asRecord(args);
   const slugs = [...collectQueryStrings(record.slug), ...collectQueryStrings(record.slugs)];
-  return Array.from(new Set(slugs)).join("、");
+  return Array.from(new Set(slugs)).join(", ");
 }
 
 type RetrievalSearchSource = "knowledge" | "web" | "mixed";
@@ -460,7 +460,7 @@ export function localizedToolName(t: TFn, toolName?: string | null): string {
 // ---- titles --------------------------------------------------------------------
 
 const withDetail = (base: string, detail: string) =>
-  detail.trim() ? `${base}：「${detail.trim()}」` : base;
+  detail.trim() ? `${base}: "${detail.trim()}"` : base;
 
 const SANDBOX_FILE_TOOLS = new Set([
   "list_sandbox_files",
@@ -477,7 +477,7 @@ export function toolStepTitle(t: TFn, step: ToolStep): string {
   const failed = step.status === "error";
   const query = getQueryText(step.args) || getQueryText(step.tool_data);
   const loc = (n: string) => localizedToolName(t, n);
-  const quoted = (base: string) => (query ? `${base}：「${query}」` : base);
+  const quoted = (base: string) => (query ? `${base}: "${query}"` : base);
 
   if (pending) {
     if (name === "image_analysis") return t("step.imageAnalyzing");
@@ -528,9 +528,9 @@ export function toolStepTitle(t: TFn, step: ToolStep): string {
     const base = t(failed ? "step.grepSearchFailed" : "step.grepSearch");
     const pats = grepPatterns(step);
     if (pats.length) {
-      const shown = pats.slice(0, 2).join("、");
+      const shown = pats.slice(0, 2).join(", ");
       const more = pats.length > 2 ? ` +${pats.length - 2}` : "";
-      return `${base}：「${shown}${more}」`;
+      return `${base}: "${shown}${more}"`;
     }
     return base;
   }
@@ -539,7 +539,7 @@ export function toolStepTitle(t: TFn, step: ToolStep): string {
       step.tool_data?.title || getWikiPageText(step.args) || getWikiPageText(step.tool_data) || "",
     ).trim();
     const base = failed ? t("step.calledFailed", { name: loc(name) }) : loc(name);
-    return page ? `${base}：「${page}」` : base;
+    return page ? `${base}: "${page}"` : base;
   }
   if (name === "get_document_info" || name === "list_documents") {
     const title = step.tool_data?.title;
@@ -736,7 +736,7 @@ function attachSummary(t: TFn, step: ToolStep): ReactNode {
   if (step.status === "error") {
     const err = String(step.error || step.output || "")
       .trim()
-      .replace(/^附件解析失败:\s*/i, "")
+      .replace(/^(?:attachment parsing failed|phân tích tệp đính kèm thất bại):\s*/i, "")
       .trim();
     return err || null;
   }
@@ -747,13 +747,12 @@ function attachSummary(t: TFn, step: ToolStep): ReactNode {
     const output = String(step.output || "");
     parsed =
       Number(
-        output.match(/已解析\s*(\d+)\s*个附件/)?.[1] ??
-          output.match(/Parsed\s*(\d+)\s*attachment/i)?.[1] ??
+        output.match(/Parsed\s*(\d+)\s*attachment/i)?.[1] ??
           0,
       ) || 0;
     skipped =
       Number(
-        output.match(/(\d+)\s*个未完成已跳过/)?.[1] ?? output.match(/(\d+)\s*skipped/i)?.[1] ?? 0,
+        output.match(/(\d+)\s*skipped/i)?.[1] ?? 0,
       ) || 0;
   }
   if (parsed === 0 && skipped === 0) return t("step.res.attachNone");

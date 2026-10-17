@@ -43,8 +43,8 @@ func (s *failingSearchKnowledgeBaseService) HybridSearch(
 	return nil, s.err
 }
 
-// embedding 失败会先降级为关键词检索；本用例中关键词检索也失败，
-// 此时必须仍报 search_failed 并保留根因，而不是伪装成"无结果"。
+// Khi embedding lỗi, tìm kiếm hạ cấp sang tìm theo từ khoá; trong ca này tìm theo từ khoá cũng lỗi,
+// lúc đó vẫn phải báo search_failed và giữ nguyên nhân gốc, không được giả thành "không có kết quả".
 func TestSearchEmbeddingFailureIsNotReportedAsNoResults(t *testing.T) {
 	rootCause := errors.New("embedding endpoint unavailable")
 	plugin := &PluginSearch{
@@ -58,7 +58,7 @@ func TestSearchEmbeddingFailureIsNotReportedAsNoResults(t *testing.T) {
 			}},
 			EmbeddingTopK: 10,
 		},
-		PipelineState: types.PipelineState{RewriteQuery: "精简邮件效果"},
+		PipelineState: types.PipelineState{RewriteQuery: "rút gọn hiệu quả công văn"},
 	}
 
 	err := plugin.OnEvent(context.Background(), types.CHUNK_SEARCH, chatManage, func() *PluginError {
@@ -109,13 +109,13 @@ func (s *degradingSearchKnowledgeBaseService) HybridSearch(
 	return s.searchResult, nil
 }
 
-// embedding API 限流/长尾时检索必须降级为纯关键词模式返回结果，
-// 而不是让整次 knowledge-search 以 500 失败（评测中三次复现的故障）。
+// Khi embedding API bị giới hạn tần suất/trễ đuôi dài, tìm kiếm phải hạ cấp sang chế độ từ khoá thuần và trả kết quả,
+// thay vì để cả lượt knowledge-search lỗi 500 (sự cố tái hiện ba lần khi đánh giá).
 func TestSearchEmbeddingFailureDegradesToKeywordSearch(t *testing.T) {
 	svc := &degradingSearchKnowledgeBaseService{
 		embedErr: errors.New("embedding rate limited"),
 		searchResult: []*types.SearchResult{
-			{ID: "chunk-1", Content: "关键词命中的内容", KnowledgeID: "k-1"},
+			{ID: "chunk-1", Content: "nội dung khớp từ khoá", KnowledgeID: "k-1"},
 		},
 	}
 	plugin := &PluginSearch{knowledgeBaseService: svc}
@@ -127,7 +127,7 @@ func TestSearchEmbeddingFailureDegradesToKeywordSearch(t *testing.T) {
 			}},
 			EmbeddingTopK: 10,
 		},
-		PipelineState: types.PipelineState{RewriteQuery: "树状筛选器 新建入口"},
+		PipelineState: types.PipelineState{RewriteQuery: "bộ lọc dạng cây lối vào tạo mới"},
 	}
 
 	err := plugin.OnEvent(context.Background(), types.CHUNK_SEARCH, chatManage, func() *PluginError {
@@ -195,7 +195,7 @@ func TestSearchEmbeddingFailureOnVectorOnlyTargetPreservesRootCause(t *testing.T
 			}},
 			EmbeddingTopK: 10,
 		},
-		PipelineState: types.PipelineState{RewriteQuery: "退款规则"},
+		PipelineState: types.PipelineState{RewriteQuery: "quy định hoàn phí"},
 	}
 
 	err := plugin.OnEvent(context.Background(), types.CHUNK_SEARCH, chatManage, func() *PluginError {
@@ -254,7 +254,7 @@ func (s *partialSearchKnowledgeBaseService) HybridSearch(
 	if id == "kb-bad" {
 		return nil, s.rootCause
 	}
-	return []*types.SearchResult{{ID: "chunk-good", Content: "可用结果", KnowledgeID: "knowledge-good"}}, nil
+	return []*types.SearchResult{{ID: "chunk-good", Content: "kết quả dùng được", KnowledgeID: "knowledge-good"}}, nil
 }
 
 type stubWebSearchService struct {
@@ -291,7 +291,7 @@ func TestSearchKeepsWebResultsWhenKnowledgeBaseFails(t *testing.T) {
 			WebSearchEnabled:    true,
 			WebSearchProviderID: "provider-1",
 		},
-		PipelineState: types.PipelineState{RewriteQuery: "并发检索"},
+		PipelineState: types.PipelineState{RewriteQuery: "tìm kiếm song song"},
 	}
 	nextCalled := false
 
@@ -384,7 +384,7 @@ func TestSearchKeepsSuccessfulResultsWhenAnotherTargetFails(t *testing.T) {
 			},
 			EmbeddingTopK: 10,
 		},
-		PipelineState: types.PipelineState{RewriteQuery: "部分成功"},
+		PipelineState: types.PipelineState{RewriteQuery: "thành công một phần"},
 	}
 	nextCalled := false
 

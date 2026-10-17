@@ -770,7 +770,7 @@ func (c *Client) downloadRawBytes(ctx context.Context, path string) ([]byte, err
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Drive (云盘) file listing: for feishu_drive / lark_drive connectors.
+// Drive (cloud drive) file listing: for feishu_drive / lark_drive connectors.
 // Mirrors the wiki ListWikiNodes / ListWikiNodesRecursiveFrom shape so the
 // Drive connector's FetchStream mirrors the wiki connector's. See ADR-0001/0002.
 // ──────────────────────────────────────────────────────────────────────

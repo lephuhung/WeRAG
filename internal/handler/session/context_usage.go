@@ -11,7 +11,7 @@ import (
 // GetContextUsage godoc
 // @Summary      Session context usage
 // @Description  How full the history of the session's next turn is, next to the plan's caps (chat UI context indicator)
-// @Tags         会话
+// @Tags         Cuộc trò chuyện
 // @Produce      json
 // @Param        id   path      string  true  "Session ID"
 // @Success      200  {object}  types.SessionContextUsage

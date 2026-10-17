@@ -122,7 +122,7 @@ func TestBuildAssistantHistoryMessages_StripsThinkBlocks(t *testing.T) {
 
 func TestAssistantHistoryScopesArtifactVersionsToHistoricalTurn(t *testing.T) {
 	for _, labels := range [][2]string{
-		{"本轮生成的文件", "该历史消息生成的文件"},
+		{"Tệp tạo trong lượt này", "Tệp tạo trong lượt trước đó"},
 		{"File generated this turn", "File generated in that historical turn"},
 	} {
 		body := "Done.\n\n" + labels[0] + ": ![deck](resource://AbCdEfGhIjKlMnOpQrStUv)"
@@ -207,7 +207,7 @@ func TestBuildAssistantHistoryMessages_ToolCallsExpandIntoOpenAIShape(t *testing
 func TestBuildAssistantHistoryMessages_SkipsPipelineTimelineToolCalls(t *testing.T) {
 	msg := &types.Message{
 		Role:    "assistant",
-		Content: "你好！很高兴见到你。",
+		Content: "Xin chào! Rất vui được gặp bạn.",
 		AgentSteps: types.AgentSteps{
 			{
 				Iteration: 0,
@@ -215,8 +215,8 @@ func TestBuildAssistantHistoryMessages_SkipsPipelineTimelineToolCalls(t *testing
 					{
 						ID:     types.PipelineToolCallIDPrefix + "abc",
 						Name:   agenttools.ToolSearchKnowledge,
-						Args:   map[string]interface{}{"query": "你好"},
-						Result: &types.ToolResult{Success: true, Output: "未检索到相关内容"},
+						Args:   map[string]interface{}{"query": "xin chào"},
+						Result: &types.ToolResult{Success: true, Output: "Không tìm thấy nội dung liên quan"},
 					},
 				},
 			},
@@ -227,7 +227,7 @@ func TestBuildAssistantHistoryMessages_SkipsPipelineTimelineToolCalls(t *testing
 		return
 	}
 	assert.Equal(t, "assistant", got[0].Role)
-	assert.Equal(t, "你好！很高兴见到你。", got[0].Content)
+	assert.Equal(t, "Xin chào! Rất vui được gặp bạn.", got[0].Content)
 	assert.Empty(t, got[0].ToolCalls)
 }
 
@@ -269,7 +269,7 @@ func TestBuildAssistantHistoryMessages_ToolFailureSurfacesAsError(t *testing.T) 
 }
 
 func TestBuildAssistantHistoryMessages_SkillScriptFailureKeepsStdout(t *testing.T) {
-	stdout := `{"chart":{"success":false,"error":{"error":"X轴字段不存在：工作项目"}}}`
+	stdout := `{"chart":{"success":false,"error":{"error":"Trường trục X không tồn tại: Hạng mục công việc"}}}`
 	msg := &types.Message{
 		Role:    "assistant",
 		Content: "I will retry with a different axis.",
@@ -300,7 +300,7 @@ func TestBuildAssistantHistoryMessages_SkillScriptFailureKeepsStdout(t *testing.
 	got := buildAssistantHistoryMessages(msg)
 	require.Len(t, got, 3)
 	assert.Equal(t, "tool", got[1].Role)
-	assert.Contains(t, got[1].Content, "X轴字段不存在：工作项目")
+	assert.Contains(t, got[1].Content, "Trường trục X không tồn tại: Hạng mục công việc")
 	assert.Contains(t, got[1].Content, "Error: Script exited with code 1")
 }
 

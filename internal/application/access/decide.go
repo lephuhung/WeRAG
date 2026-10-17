@@ -176,6 +176,15 @@ func decideMachineKB(caller types.Caller, kb *types.KnowledgeBase) *Decision {
 	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == caller.TenantID {
 		return grantDecision(kb, types.KBPermissionAdmin, true, SourceTenantScope)
 	}
+	// A machine principal of the platform tenant (an API key or MCP endpoint
+	// a SuperAdmin created in the "SuperAdmin" workspace) administers the
+	// platform-public KBs whose data lives in that workspace — the legal
+	// feed (docs/legal-document-feed-spec.md) runs this way. Keys of every
+	// other tenant still get nothing on public KBs; route capabilities and
+	// the key's KB allow-list narrow this grant as usual.
+	if IsPlatformPublicKB(kb) && caller.TenantID == types.PlatformTenantID && kb.TenantID == types.PlatformTenantID {
+		return grantDecision(kb, types.KBPermissionAdmin, true, SourceTenantScope)
+	}
 	return nil
 }
 

@@ -49,7 +49,7 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	if len(tagUUIDs) == 0 && legacyTagSeqID > 0 {
 		tag, err := s.tagRepo.GetBySeqID(ctx, effectiveTenantID, legacyTagSeqID)
 		if err != nil {
-			return nil, werrors.NewNotFoundError("标签不存在")
+			return nil, werrors.NewNotFoundError("không tìm thấy thẻ")
 		}
 		tagUUIDs = []string{tag.ID}
 	}
@@ -116,7 +116,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 	kbID string, payload *types.FAQEntryPayload,
 ) (*types.FAQEntry, error) {
 	if payload == nil {
-		return nil, werrors.NewBadRequestError("请求体不能为空")
+		return nil, werrors.NewBadRequestError("nội dung yêu cầu không được để trống")
 	}
 
 	kb, ctx, err := s.writableFAQKnowledgeBase(ctx, kbID)
@@ -127,44 +127,44 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// 验证并清理输入
+	// Kiểm tra và làm sạch đầu vào
 	meta, err := sanitizeFAQEntryPayload(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	// 解析 TagID
+	// Phân giải TagID
 	tagID, err := s.resolveTagID(ctx, kbID, payload)
 	if err != nil {
 		return nil, err
 	}
 
-	// 同一标准问的并发Create 必须串行：下面的重复校验只看得到已落库的条目，
-	// 拦不住还在索引中的兄弟请求（上游超时重试就会造出这种并发）。
+	// Tạo đồng thời cùng một câu hỏi chuẩn phải tuần tự: kiểm tra trùng bên dưới chỉ thấy mục đã ghi DB,
+	// không chặn được request anh em còn đang đánh chỉ mục (retry do timeout phía trên gây ra kiểu đồng thời này).
 	releaseGuard, err := s.acquireFAQCreateGuard(ctx, tenantID, kb.ID, meta.StandardQuestion)
 	if err != nil {
 		return nil, err
 	}
 	defer releaseGuard()
 
-	// 检查标准问和相似问是否与其他条目重复
+	// Kiểm tra câu hỏi chuẩn và câu hỏi tương tự có trùng với mục khác không
 	if err := s.checkFAQQuestionDuplicate(ctx, tenantID, kb.ID, "", meta); err != nil {
 		return nil, err
 	}
 
-	// 确保FAQ Knowledge存在
+	// Bảo đảm knowledge FAQ tồn tại
 	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure FAQ knowledge: %w", err)
 	}
 
-	// 获取索引模式
+	// Lấy chế độ đánh chỉ mục
 	indexMode := types.FAQIndexModeQuestionOnly
 	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
 		indexMode = kb.FAQConfig.IndexMode
 	}
 
-	// 获取embedding模型
+	// Lấy mô hình embedding
 	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -175,7 +175,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 	if payload.IsEnabled != nil {
 		isEnabled = *payload.IsEnabled
 	}
-	// 默认可推荐
+	// Mặc định cho phép gợi ý
 	flags := types.ChunkFlagRecommended
 	if payload.IsRecommended != nil && !*payload.IsRecommended {
 		flags = 0
@@ -190,10 +190,10 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		IsEnabled:       isEnabled,
 		Flags:           flags,
 		ChunkType:       types.ChunkTypeFAQ,
-		TagID:           tagID, // 使用解析后的 TagID
+		TagID:           tagID, // dùng TagID đã phân giải
 		Status:          int(types.ChunkStatusStored),
 	}
-	// 如果指定了 ID（用于数据迁移），Settings  SeqID
+	// Nếu có chỉ định ID (dùng khi di trú dữ liệu) thì đặt SeqID
 	if payload.ID != nil && *payload.ID > 0 {
 		chunk.SeqID = *payload.ID
 	}
@@ -202,18 +202,18 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, fmt.Errorf("failed to set FAQ metadata: %w", err)
 	}
 
-	// 保存chunk
+	// Lưu chunk
 	if err := s.chunkService.CreateChunks(ctx, []*types.Chunk{chunk}); err != nil {
 		return nil, fmt.Errorf("failed to create chunk: %w", err)
 	}
 
-	// 索引chunk：交互式Create 给索引步骤设硬上限，避免 embedding 抖动把请求拖长
+	// Đánh chỉ mục chunk: tạo tương tác đặt giới hạn cứng cho bước đánh chỉ mục, tránh embedding chập chờn kéo dài request
 	indexCtx, cancelIndex := context.WithTimeout(ctx, faqCreateIndexBudget)
 	indexErr := s.indexFAQChunks(indexCtx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, true, false)
 	cancelIndex()
 	if indexErr != nil {
-		// 如果索引失败，Delete 已Create 的chunk。回滚失败会留下一条 stored 状态的
-		// 残留：它不出现在List 里，却会被重复校验命中，因此必须告警而非静默。
+		// Nếu đánh chỉ mục thất bại thì xóa chunk đã tạo. Rollback thất bại sẽ để lại một bản ghi trạng thái stored
+		// mồ côi: không hiện trong danh sách nhưng bị kiểm tra trùng bắt được, nên phải cảnh báo thay vì im lặng.
 		if delErr := s.chunkService.DeleteChunk(ctx, chunk.ID); delErr != nil {
 			logger.Errorf(ctx,
 				"CreateFAQEntry: rollback failed, chunk %s left in stored state: %v", chunk.ID, delErr)
@@ -221,7 +221,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, fmt.Errorf("failed to index chunk: %w", indexErr)
 	}
 
-	// Update chunk状态为已索引
+	// Cập nhật trạng thái chunk thành đã đánh chỉ mục
 	chunk.Status = int(types.ChunkStatusIndexed)
 	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
 		return nil, fmt.Errorf("failed to update chunk status: %w", err)
@@ -236,7 +236,7 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		}
 	}
 
-	// 转换为FAQEntry返回
+	// Chuyển sang FAQEntry để trả về
 	entry, err := s.chunkToFAQEntry(chunk, kb, tagSeqIDMap)
 	if err != nil {
 		return nil, err
@@ -261,7 +261,7 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 	kbID string, entrySeqID int64,
 ) (*types.FAQEntry, error) {
 	if entrySeqID <= 0 {
-		return nil, werrors.NewBadRequestError("条目ID不能为空")
+		return nil, werrors.NewBadRequestError("thiếu ID mục")
 	}
 
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
@@ -272,20 +272,20 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// 获取chunk by seq_id
+	// Lấy chunk theo seq_id
 	chunk, err := s.chunkRepo.GetChunkBySeqID(ctx, tenantID, entrySeqID)
 	if err != nil {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy mục FAQ")
 	}
 
-	// 验证chunk属于当前Knowledge Base
+	// Kiểm tra chunk thuộc kho tri thức hiện tại
 	if chunk.KnowledgeBaseID != kb.ID || chunk.TenantID != tenantID {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy mục FAQ")
 	}
 
-	// 验证是FAQ类型
+	// Kiểm tra là loại FAQ
 	if chunk.ChunkType != types.ChunkTypeFAQ {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy mục FAQ")
 	}
 
 	// Build tag seq_id map for conversion
@@ -297,7 +297,7 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 		}
 	}
 
-	// 转换为FAQEntry返回
+	// Chuyển sang FAQEntry để trả về
 	entry, err := s.chunkToFAQEntry(chunk, kb, tagSeqIDMap)
 	if err != nil {
 		return nil, err
@@ -318,7 +318,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	kbID string, entrySeqID int64, payload *types.FAQEntryPayload,
 ) (*types.FAQEntry, error) {
 	if payload == nil {
-		return nil, werrors.NewBadRequestError("请求体不能为空")
+		return nil, werrors.NewBadRequestError("nội dung yêu cầu không được để trống")
 	}
 	kb, ctx, err := s.writableFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
@@ -329,25 +329,25 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 
 	chunk, err := s.chunkRepo.GetChunkBySeqID(ctx, tenantID, entrySeqID)
 	if err != nil {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy mục FAQ")
 	}
 	if chunk.KnowledgeBaseID != kb.ID {
-		return nil, werrors.NewForbiddenError("无权操作该 FAQ 条目")
+		return nil, werrors.NewForbiddenError("không có quyền thao tác trên mục FAQ này")
 	}
 	if chunk.ChunkType != types.ChunkTypeFAQ {
-		return nil, werrors.NewBadRequestError("仅支持更新 FAQ 条目")
+		return nil, werrors.NewBadRequestError("chỉ hỗ trợ cập nhật mục FAQ")
 	}
 	meta, err := sanitizeFAQEntryPayload(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	// 检查标准问和相似问是否与其他条目重复
+	// Kiểm tra câu hỏi chuẩn và câu hỏi tương tự có trùng với mục khác không
 	if err := s.checkFAQQuestionDuplicate(ctx, tenantID, kb.ID, chunk.ID, meta); err != nil {
 		return nil, err
 	}
 
-	// 获取旧的相似问List ，用于增量Update
+	// Lấy danh sách câu hỏi tương tự cũ để cập nhật tăng dần
 	var oldSimilarQuestions []string
 	var oldStandardQuestion string
 	var oldAnswers []string
@@ -357,7 +357,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	}
 	if existing, err := chunk.FAQMetadata(); err == nil && existing != nil {
 		meta.Version = existing.Version + 1
-		// 保存旧的内容用于增量比较
+		// Lưu nội dung cũ để so sánh tăng dần
 		if questionIndexMode == types.FAQQuestionIndexModeSeparate {
 			oldSimilarQuestions = existing.SimilarQuestions
 			oldStandardQuestion = existing.StandardQuestion
@@ -367,7 +367,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if err := chunk.SetFAQMetadata(meta); err != nil {
 		return nil, err
 	}
-	// 获取索引模式
+	// Lấy chế độ đánh chỉ mục
 	indexMode := types.FAQIndexModeQuestionOnly
 	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
 		indexMode = kb.FAQConfig.IndexMode
@@ -378,7 +378,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if payload.TagID > 0 {
 		tag, tagErr := s.tagRepo.GetBySeqID(ctx, tenantID, payload.TagID)
 		if tagErr != nil {
-			return nil, werrors.NewNotFoundError("标签不存在")
+			return nil, werrors.NewNotFoundError("không tìm thấy thẻ")
 		}
 		chunk.TagID = tag.ID
 	} else {
@@ -388,7 +388,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if payload.IsEnabled != nil {
 		chunk.IsEnabled = *payload.IsEnabled
 	}
-	// 处理推荐状态
+	// Xử lý trạng thái gợi ý
 	if payload.IsRecommended != nil {
 		if *payload.IsRecommended {
 			chunk.Flags = chunk.Flags.SetFlag(types.ChunkFlagRecommended)
@@ -415,16 +415,16 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
-	// 增量索引优化：只对变化的内容进行索引操作
+	// Tối ưu chỉ mục tăng dần: chỉ đánh chỉ mục phần nội dung thay đổi
 	if questionIndexMode == types.FAQQuestionIndexModeSeparate && len(oldSimilarQuestions) > 0 {
-		// 分别索引模式下的增量Update
+		// Cập nhật tăng dần ở chế độ đánh chỉ mục riêng rẽ
 		if err := s.incrementalIndexFAQEntry(ctx, kb, faqKnowledge, chunk, embeddingModel,
 			oldStandardQuestion, oldSimilarQuestions, oldAnswers, meta); err != nil {
 			return nil, err
 		}
 	} else {
-		// Combined 模式或首次Create ，使用全量索引
-		// 增量Delete ：只Delete 被移除的相似问索引
+		// Chế độ Combined hoặc tạo lần đầu: đánh chỉ mục toàn bộ
+		// Xóa tăng dần: chỉ xóa chỉ mục của câu hỏi tương tự bị gỡ
 		oldSimilarQuestionCount := len(oldSimilarQuestions)
 		newSimilarQuestionCount := len(meta.SimilarQuestions)
 		if questionIndexMode == types.FAQQuestionIndexModeSeparate && oldSimilarQuestionCount > newSimilarQuestionCount {
@@ -444,7 +444,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 			}
 		}
 
-		// 使用 needDelete=false，因为 EFPutDocument 会自动覆盖相同 SourceID 的文档
+		// Dùng needDelete=false vì EFPutDocument tự ghi đè tài liệu cùng SourceID
 		if err := s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, false, false); err != nil {
 			return nil, err
 		}
@@ -459,7 +459,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		}
 	}
 
-	// 转换为FAQEntry返回
+	// Chuyển sang FAQEntry để trả về
 	entry, err := s.chunkToFAQEntry(chunk, kb, tagSeqIDMap)
 	if err != nil {
 		return nil, err
@@ -485,7 +485,7 @@ func (s *knowledgeService) AddSimilarQuestions(ctx context.Context,
 	kbID string, entrySeqID int64, questions []string,
 ) (*types.FAQEntry, error) {
 	if len(questions) == 0 {
-		return nil, werrors.NewBadRequestError("相似问列表不能为空")
+		return nil, werrors.NewBadRequestError("danh sách câu hỏi tương tự không được để trống")
 	}
 
 	kb, ctx, err := s.writableFAQKnowledgeBase(ctx, kbID)
@@ -498,19 +498,19 @@ func (s *knowledgeService) AddSimilarQuestions(ctx context.Context,
 	// Get existing FAQ entry
 	chunk, err := s.chunkRepo.GetChunkBySeqID(ctx, tenantID, entrySeqID)
 	if err != nil {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy mục FAQ")
 	}
 	if chunk.KnowledgeBaseID != kb.ID {
-		return nil, werrors.NewForbiddenError("无权操作该 FAQ 条目")
+		return nil, werrors.NewForbiddenError("không có quyền thao tác trên mục FAQ này")
 	}
 	if chunk.ChunkType != types.ChunkTypeFAQ {
-		return nil, werrors.NewBadRequestError("仅支持更新 FAQ 条目")
+		return nil, werrors.NewBadRequestError("chỉ hỗ trợ cập nhật mục FAQ")
 	}
 
 	// Get existing metadata
 	meta, err := chunk.FAQMetadata()
 	if err != nil || meta == nil {
-		return nil, werrors.NewBadRequestError("获取 FAQ 元数据失败")
+		return nil, werrors.NewBadRequestError("lấy metadata FAQ thất bại")
 	}
 
 	// Deduplicate and sanitize new questions
@@ -643,7 +643,7 @@ func (s *knowledgeService) UpdateFAQEntryStatus(ctx context.Context,
 		return err
 	}
 	if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
-		return werrors.NewBadRequestError("仅支持更新 FAQ 条目")
+		return werrors.NewBadRequestError("chỉ hỗ trợ cập nhật mục FAQ")
 	}
 	if chunk.IsEnabled == isEnabled {
 		return nil
@@ -869,7 +869,7 @@ func (s *knowledgeService) UpdateFAQEntryTag(ctx context.Context, kbID string, e
 		return err
 	}
 	if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
-		return werrors.NewBadRequestError("仅支持更新 FAQ 条目标签")
+		return werrors.NewBadRequestError("chỉ hỗ trợ cập nhật thẻ của mục FAQ")
 	}
 
 	var resolvedTagID string
@@ -879,7 +879,7 @@ func (s *knowledgeService) UpdateFAQEntryTag(ctx context.Context, kbID string, e
 			return err
 		}
 		if tag.KnowledgeBaseID != kb.ID {
-			return werrors.NewBadRequestError("标签不属于当前知识库")
+			return werrors.NewBadRequestError("thẻ không thuộc kho tri thức hiện tại")
 		}
 		resolvedTagID = tag.ID
 	}
@@ -1211,9 +1211,9 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 		entries = entries[:req.MatchCount]
 	}
 
-	// 批量Query TagName并补充到结果中
+	// Truy vấn TagName theo lô và bổ sung vào kết quả
 	if len(entries) > 0 {
-		// 收集所有需要Query 的TagID (seq_id)
+		// Gom mọi TagID (seq_id) cần truy vấn
 		tagSeqIDs := make([]int64, 0)
 		tagSeqIDSet := make(map[int64]struct{})
 		for _, entry := range entries {
@@ -1225,19 +1225,19 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 			}
 		}
 
-		// 批量Query 标签
+		// Truy vấn thẻ theo lô
 		if len(tagSeqIDs) > 0 {
 			tags, err := s.tagRepo.GetBySeqIDs(ctx, tenantID, tagSeqIDs)
 			if err != nil {
 				logger.Warnf(ctx, "Failed to batch query tags: %v", err)
 			} else {
-				// 构建TagSeqID到TagName的映射
+				// Dựng ánh xạ TagSeqID -> TagName
 				tagNameMap := make(map[int64]string)
 				for _, tag := range tags {
 					tagNameMap[tag.SeqID] = tag.Name
 				}
 
-				// 补充TagName
+				// Bổ sung TagName
 				for _, entry := range entries {
 					if entry.TagID != 0 {
 						if tagName, exists := tagNameMap[entry.TagID]; exists {
@@ -1257,7 +1257,7 @@ func (s *knowledgeService) DeleteFAQEntries(ctx context.Context,
 	kbID string, entrySeqIDs []int64,
 ) error {
 	if len(entrySeqIDs) == 0 {
-		return werrors.NewBadRequestError("请选择需要删除的 FAQ 条目")
+		return werrors.NewBadRequestError("vui lòng chọn mục FAQ cần xóa")
 	}
 	kb, ctx, err := s.writableFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
@@ -1281,7 +1281,7 @@ func (s *knowledgeService) DeleteFAQEntries(ctx context.Context,
 			}
 			if knowledge == nil || knowledge.TenantID != tenantID || knowledge.KnowledgeBaseID != kb.ID ||
 				knowledge.Type != types.KnowledgeTypeFAQ {
-				return werrors.NewForbiddenError("FAQ 文档不属于当前知识库")
+				return werrors.NewForbiddenError("tài liệu FAQ không thuộc kho tri thức hiện tại")
 			}
 			knowledges[chunk.KnowledgeID] = knowledge
 		}
@@ -1313,9 +1313,9 @@ func (s *knowledgeService) DeleteFAQEntries(ctx context.Context,
 
 // ExportFAQEntries exports all FAQ entries for a knowledge base as CSV data.
 // The CSV format matches the import example format with 8 columns:
-// 分类(必填), 问题(必填), 相似问题(选填-多个用##分隔), 反例问题(选填-多个用##分隔),
-// 机器人回答(必填-多个用##分隔), 是否全部回复(选填-默认FALSE), 是否停用(选填-默认FALSE),
-// 是否禁止被推荐(选填-默认False 可被推荐)
+// Phân loại(bắt buộc), Câu hỏi(bắt buộc), Câu hỏi tương tự(tùy chọn-nhiều giá trị cách nhau bằng ##), Câu hỏi phản ví dụ(tùy chọn-nhiều giá trị cách nhau bằng ##),
+// Câu trả lời(bắt buộc-nhiều giá trị cách nhau bằng ##), Trả lời tất cả(tùy chọn-mặc định FALSE), Ngừng dùng(tùy chọn-mặc định FALSE),
+// Không gợi ý(tùy chọn-mặc định FALSE, được gợi ý)
 func (s *knowledgeService) ExportFAQEntries(ctx context.Context, kbID string) ([]byte, error) {
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
@@ -1347,8 +1347,8 @@ func (s *knowledgeService) ExportFAQEntries(ctx context.Context, kbID string) ([
 	return s.buildFAQCSV(chunks, tagMap), nil
 }
 
-// ExportFAQEntriesJSON 以 JSON 数组形式导出 FAQ Knowledge Base下的全部条目，
-// 字段与 FAQEntryPayload 兼容，便于"导出 → 编辑 → 重新 append 导入"循环。
+// ExportFAQEntriesJSON xuất toàn bộ mục của kho tri thức FAQ dưới dạng mảng JSON,
+// trường tương thích FAQEntryPayload, thuận tiện cho vòng "xuất → sửa → nhập lại ở chế độ append".
 func (s *knowledgeService) ExportFAQEntriesJSON(ctx context.Context, kbID string) ([]byte, error) {
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
@@ -1436,14 +1436,14 @@ func (s *knowledgeService) buildFAQCSV(chunks []*types.Chunk, tagMap map[string]
 
 	// Write CSV header (matching import example format)
 	headers := []string{
-		"分类(必填)",
-		"问题(必填)",
-		"相似问题(选填-多个用##分隔)",
-		"反例问题(选填-多个用##分隔)",
-		"机器人回答(必填-多个用##分隔)",
-		"是否全部回复(选填-默认FALSE)",
-		"是否停用(选填-默认FALSE)",
-		"是否禁止被推荐(选填-默认False 可被推荐)",
+		"Phân loại(bắt buộc)",
+		"Câu hỏi(bắt buộc)",
+		"Câu hỏi tương tự(tùy chọn-nhiều giá trị cách nhau bằng ##)",
+		"Câu hỏi phản ví dụ(tùy chọn-nhiều giá trị cách nhau bằng ##)",
+		"Câu trả lời(bắt buộc-nhiều giá trị cách nhau bằng ##)",
+		"Trả lời tất cả(tùy chọn-mặc định FALSE)",
+		"Ngừng dùng(tùy chọn-mặc định FALSE)",
+		"Không gợi ý(tùy chọn-mặc định FALSE, được gợi ý)",
 	}
 	buf.WriteString(strings.Join(headers, ","))
 	buf.WriteString("\n")
@@ -1471,8 +1471,8 @@ func (s *knowledgeService) buildFAQCSV(chunks []*types.Chunk, tagMap map[string]
 			escapeCSVField(strings.Join(meta.NegativeQuestions, "##")),
 			escapeCSVField(strings.Join(meta.Answers, "##")),
 			boolToCSV(meta.AnswerStrategy == types.AnswerStrategyAll),
-			boolToCSV(!chunk.IsEnabled),                                 // 是否停用：取反
-			boolToCSV(!chunk.Flags.HasFlag(types.ChunkFlagRecommended)), // 是否禁止被推荐：取反
+			boolToCSV(!chunk.IsEnabled),                                 // Ngừng dùng: đảo giá trị
+			boolToCSV(!chunk.Flags.HasFlag(types.ChunkFlagRecommended)), // Không gợi ý: đảo giá trị
 		}
 		buf.WriteString(strings.Join(row, ","))
 		buf.WriteString("\n")
@@ -1500,18 +1500,18 @@ func boolToCSV(b bool) string {
 
 func (s *knowledgeService) validateFAQKnowledgeBase(ctx context.Context, kbID string) (*types.KnowledgeBase, error) {
 	if kbID == "" {
-		return nil, werrors.NewBadRequestError("知识库 ID 不能为空")
+		return nil, werrors.NewBadRequestError("thiếu ID kho tri thức")
 	}
 	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
 		return nil, err
 	}
 	if kb == nil || kb.ID != kbID {
-		return nil, werrors.NewNotFoundError("知识库不存在")
+		return nil, werrors.NewNotFoundError("không tìm thấy kho tri thức")
 	}
 	kb.EnsureDefaults()
 	if kb.Type != types.KnowledgeBaseTypeFAQ {
-		return nil, werrors.NewBadRequestError("仅 FAQ 知识库支持该操作")
+		return nil, werrors.NewBadRequestError("chỉ kho tri thức FAQ mới hỗ trợ thao tác này")
 	}
 	return kb, nil
 }
@@ -1551,7 +1551,7 @@ func (s *knowledgeService) ensureFAQKnowledge(
 		Type:             types.KnowledgeTypeFAQ,
 		Channel:          types.ChannelWeb,
 		Title:            buildFAQKnowledgeTitle(kb.Name),
-		Description:      "FAQ 条目容器",
+		Description:      "Vùng chứa các mục FAQ",
 		Source:           types.KnowledgeTypeFAQ,
 		ParseStatus:      "completed",
 		EnableStatus:     "enabled",
@@ -1597,7 +1597,7 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 	if meta == nil {
 		meta = &types.FAQChunkMetadata{StandardQuestion: chunk.Content}
 	}
-	// 默认使用 all 策略
+	// Mặc định dùng chiến lược all
 	answerStrategy := meta.AnswerStrategy
 	if answerStrategy == "" {
 		answerStrategy = types.AnswerStrategyAll
@@ -1639,8 +1639,8 @@ func buildFAQChunkContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 			builder.WriteString(fmt.Sprintf("- %s\n", q))
 		}
 	}
-	// 负例不应该包含在 Content 中，因为它们不应该被索引
-	// 答案根据索引模式决定是否包含
+	// Phản ví dụ không nên nằm trong Content vì không được đánh chỉ mục
+	// Câu trả lời có đưa vào hay không tùy chế độ đánh chỉ mục
 	if mode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {
 		builder.WriteString("Answers:\n")
 		for _, ans := range meta.Answers {
@@ -1650,9 +1650,9 @@ func buildFAQChunkContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 	return builder.String()
 }
 
-// checkFAQQuestionDuplicate 检查标准问和相似问是否与Knowledge Base中其他条目重复
-// excludeChunkID 用于排除当前正在编辑的条目（Update 时使用）
-// 按照批量导入时的检查方式：先构建已存在问题集合，再统一检查
+// checkFAQQuestionDuplicate kiểm tra câu hỏi chuẩn và câu hỏi tương tự có trùng với mục khác trong kho tri thức không
+// excludeChunkID dùng để loại trừ mục đang sửa (khi cập nhật)
+// Theo cách kiểm tra của nhập hàng loạt: dựng tập câu hỏi đã có rồi kiểm tra thống nhất
 func (s *knowledgeService) checkFAQQuestionDuplicate(
 	ctx context.Context,
 	tenantID uint64,
@@ -1660,23 +1660,23 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 	excludeChunkID string,
 	meta *types.FAQChunkMetadata,
 ) error {
-	// 1. 首先检查当前条目自身的相似问是否与标准问重复
+	// 1. Trước hết kiểm tra câu hỏi tương tự của chính mục này có trùng câu hỏi chuẩn không
 	for _, q := range meta.SimilarQuestions {
 		if q == meta.StandardQuestion {
-			return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」不能与标准问相同", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi tương tự \"%s\" không được trùng câu hỏi chuẩn", q))
 		}
 	}
 
-	// 2. 检查当前条目自身的相似问之间是否有重复
+	// 2. Kiểm tra các câu hỏi tương tự của chính mục này có trùng nhau không
 	seen := make(map[string]struct{})
 	for _, q := range meta.SimilarQuestions {
 		if _, exists := seen[q]; exists {
-			return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」重复", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi tương tự \"%s\" bị trùng", q))
 		}
 		seen[q] = struct{}{}
 	}
 
-	// 3. 检查反例问题是否与标准问或相似问重复（反例不能和正例相同）
+	// 3. Kiểm tra phản ví dụ có trùng câu hỏi chuẩn hoặc câu hỏi tương tự không (phản ví dụ không được trùng ví dụ dương)
 	positiveQuestions := make(map[string]struct{})
 	positiveQuestions[meta.StandardQuestion] = struct{}{}
 	for _, q := range meta.SimilarQuestions {
@@ -1687,22 +1687,22 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 		if q == "" {
 			continue
 		}
-		// 检查反例是否与标准问重复
+		// Kiểm tra phản ví dụ có trùng câu hỏi chuẩn không
 		if q == meta.StandardQuestion {
-			return werrors.NewBadRequestError(fmt.Sprintf("反例问题「%s」不能与标准问相同", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi phản ví dụ \"%s\" không được trùng câu hỏi chuẩn", q))
 		}
-		// 检查反例是否与相似问重复
+		// Kiểm tra phản ví dụ có trùng câu hỏi tương tự không
 		if _, exists := positiveQuestions[q]; exists {
-			return werrors.NewBadRequestError(fmt.Sprintf("反例问题「%s」不能与相似问相同", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi phản ví dụ \"%s\" không được trùng câu hỏi tương tự", q))
 		}
-		// 检查反例之间是否重复
+		// Kiểm tra các phản ví dụ có trùng nhau không
 		if _, exists := negativeQuestionsSeen[q]; exists {
-			return werrors.NewBadRequestError(fmt.Sprintf("反例问题「%s」重复", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi phản ví dụ \"%s\" bị trùng", q))
 		}
 		negativeQuestionsSeen[q] = struct{}{}
 	}
 
-	// 4. 将标准问和所有相似问合并，用一条 DB Query 检查是否与其他条目冲突（替代全量扫描）
+	// 4. Gộp câu hỏi chuẩn và mọi câu hỏi tương tự, dùng một truy vấn DB kiểm tra xung đột với mục khác (thay cho quét toàn bộ)
 	allQuestions := make([]string, 0, 1+len(meta.SimilarQuestions))
 	allQuestions = append(allQuestions, meta.StandardQuestion)
 	allQuestions = append(allQuestions, meta.SimilarQuestions...)
@@ -1717,10 +1717,10 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 
 	existingMeta, err := dupChunk.FAQMetadata()
 	if err != nil || existingMeta == nil {
-		return werrors.NewBadRequestError("标准问或相似问与已有条目重复")
+		return werrors.NewBadRequestError("câu hỏi chuẩn hoặc câu hỏi tương tự trùng với mục đã có")
 	}
 
-	// 5–7. 与原先全量扫描一致的报错语义：先检查标准问，再逐条检查相似问
+	// 5–7. Giữ ngữ nghĩa báo lỗi như quét toàn bộ trước đây: kiểm tra câu hỏi chuẩn trước, rồi từng câu hỏi tương tự
 	existingSimilarSet := make(map[string]struct{}, len(existingMeta.SimilarQuestions))
 	for _, q := range existingMeta.SimilarQuestions {
 		if q != "" {
@@ -1730,10 +1730,10 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 
 	if meta.StandardQuestion != "" {
 		if meta.StandardQuestion == existingMeta.StandardQuestion {
-			return werrors.NewBadRequestError(fmt.Sprintf("标准问「%s」已存在", meta.StandardQuestion))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi chuẩn \"%s\" đã tồn tại", meta.StandardQuestion))
 		}
 		if _, ok := existingSimilarSet[meta.StandardQuestion]; ok {
-			return werrors.NewBadRequestError(fmt.Sprintf("标准问「%s」已存在", meta.StandardQuestion))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi chuẩn \"%s\" đã tồn tại", meta.StandardQuestion))
 		}
 	}
 
@@ -1742,20 +1742,20 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 			continue
 		}
 		if q == existingMeta.StandardQuestion {
-			return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」已存在", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi tương tự \"%s\" đã tồn tại", q))
 		}
 		if _, ok := existingSimilarSet[q]; ok {
-			return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」已存在", q))
+			return werrors.NewBadRequestError(fmt.Sprintf("câu hỏi tương tự \"%s\" đã tồn tại", q))
 		}
 	}
 
-	return werrors.NewBadRequestError("标准问或相似问与已有条目重复")
+	return werrors.NewBadRequestError("câu hỏi chuẩn hoặc câu hỏi tương tự trùng với mục đã có")
 }
 
 // faqTagResolver resolves a payload's TagID/TagName to the tag's internal UUID.
 type faqTagResolver func(*types.FAQEntryPayload) (string, error)
 
-// buildFAQTagResolver 预加载 entries 引用的 tag UUID 映射，避免逐条 resolveTagID。
+// buildFAQTagResolver nạp trước ánh xạ UUID của các thẻ mà entries tham chiếu, tránh resolveTagID từng mục.
 func (s *knowledgeService) buildFAQTagResolver(
 	ctx context.Context, kbID string, entries []types.FAQEntryPayload,
 ) faqTagResolver {
@@ -1816,19 +1816,19 @@ func (s *knowledgeService) buildFAQTagResolver(
 	}
 }
 
-// hashQuestion 计算问题内容的哈希值，用于生成稳定的 sourceID。
+// hashQuestion tính hash nội dung câu hỏi để sinh sourceID ổn định.
 func hashQuestion(question string) string {
 	h := md5.Sum([]byte(question))
 	return hex.EncodeToString(h[:4])
 }
 
 // resolveTagID resolves tag ID (UUID) from payload, prioritizing tag_id (seq_id) over tag_name
-// If no tag is specified, creates or finds the "未分类" tag
+// If no tag is specified, creates or finds the default untagged tag (types.UntaggedTagName)
 // Returns the internal UUID of the tag
 func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payload *types.FAQEntryPayload) (string, error) {
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// 如果提供了 tag_id (seq_id)，优先使用 tag_id
+	// Nếu có tag_id (seq_id) thì ưu tiên tag_id
 	if payload.TagID != 0 {
 		tag, err := s.tagRepo.GetBySeqID(ctx, tenantID, payload.TagID)
 		if err != nil {
@@ -1840,7 +1840,7 @@ func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payloa
 		return tag.ID, nil
 	}
 
-	// 如果提供了 tag_name，查找或Create 标签
+	// Nếu có tag_name thì tìm hoặc tạo thẻ
 	if payload.TagName != "" {
 		tag, err := s.tagService.FindOrCreateTagByName(ctx, kbID, payload.TagName)
 		if err != nil {
@@ -1849,7 +1849,7 @@ func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payloa
 		return tag.ID, nil
 	}
 
-	// 都没有提供，使用"未分类"标签
+	// Không có cả hai thì dùng thẻ mặc định (UntaggedTagName)
 	tag, err := s.tagService.FindOrCreateTagByName(ctx, kbID, types.UntaggedTagName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get or create default untagged tag: %w", err)
@@ -1858,14 +1858,14 @@ func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payloa
 }
 
 func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMetadata, error) {
-	// 处理 AnswerStrategy，默认为 all
+	// Xử lý AnswerStrategy, mặc định all
 	answerStrategy := types.AnswerStrategyAll
 	if payload.AnswerStrategy != nil && *payload.AnswerStrategy != "" {
 		switch *payload.AnswerStrategy {
 		case types.AnswerStrategyAll, types.AnswerStrategyRandom:
 			answerStrategy = *payload.AnswerStrategy
 		default:
-			return nil, werrors.NewBadRequestError("answer_strategy 必须是 'all' 或 'random'")
+			return nil, werrors.NewBadRequestError("answer_strategy phải là 'all' hoặc 'random'")
 		}
 	}
 	meta := &types.FAQChunkMetadata{
@@ -1879,10 +1879,10 @@ func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMet
 	}
 	meta.Normalize()
 	if meta.StandardQuestion == "" {
-		return nil, werrors.NewBadRequestError("标准问不能为空")
+		return nil, werrors.NewBadRequestError("câu hỏi chuẩn không được để trống")
 	}
 	if len(meta.Answers) == 0 {
-		return nil, werrors.NewBadRequestError("至少提供一个答案")
+		return nil, werrors.NewBadRequestError("cần ít nhất một câu trả lời")
 	}
 	return meta, nil
 }
@@ -1903,7 +1903,7 @@ func buildFAQIndexContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 	return builder.String()
 }
 
-// buildFAQIndexInfoList 构建FAQ索引信息List ，支持分别索引模式
+// buildFAQIndexInfoList dựng danh sách thông tin chỉ mục FAQ, hỗ trợ chế độ đánh chỉ mục riêng rẽ
 func (s *knowledgeService) buildFAQIndexInfoList(
 	ctx context.Context,
 	kb *types.KnowledgeBase,
@@ -1928,7 +1928,7 @@ func (s *knowledgeService) buildFAQIndexInfoList(
 		meta = &types.FAQChunkMetadata{StandardQuestion: chunk.Content}
 	}
 
-	// 如果是一起索引模式，使用原有逻辑
+	// Chế độ đánh chỉ mục gộp thì dùng logic cũ
 	if questionIndexMode == types.FAQQuestionIndexModeCombined {
 		content := buildFAQIndexContent(meta, indexMode)
 		return []*types.IndexInfo{
@@ -1947,10 +1947,10 @@ func (s *knowledgeService) buildFAQIndexInfoList(
 		}, nil
 	}
 
-	// 分别索引模式：为每个问题Create 独立的索引项
+	// Chế độ riêng rẽ: mỗi câu hỏi một mục chỉ mục độc lập
 	indexInfoList := make([]*types.IndexInfo, 0)
 
-	// 标准问索引项
+	// Mục chỉ mục cho câu hỏi chuẩn
 	standardContent := meta.StandardQuestion
 	if indexMode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {
 		var builder strings.Builder
@@ -1974,7 +1974,7 @@ func (s *knowledgeService) buildFAQIndexInfoList(
 		IsRecommended:   chunk.Flags.HasFlag(types.ChunkFlagRecommended),
 	})
 
-	// 每个相似问Create 一个索引项
+	// Mỗi câu hỏi tương tự một mục chỉ mục
 	for i, similarQ := range meta.SimilarQuestions {
 		similarContent := similarQ
 		if indexMode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {

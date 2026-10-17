@@ -175,6 +175,27 @@ python audit_clean.py merge $V/vbpl_paragraphs.jsonl --run-a $V/vbpl_run_gemma.j
 # then build with --kb $V/kb_audited.jsonl --kb-holdout 0 --kb-max-uses 3 --clean $V/vbpl_audited.jsonl
 ```
 
+### Teencode (ko, dc, vs, ntn)
+
+Chat-style short forms are reported with the full word, reason "viết tắt
+không chuẩn"; name abbreviations (UBND, bhxh, gplx) stay unflagged.
+`teencode.py` holds the lexicon (~45 forms; single letters a/e/j/r/s/w/z
+only in chat questions, never capitalised, because documents use them as
+legal points) and substitutes them into query lines
+(`build_dataset.py --query-teen-rate`). `sanng_filter.py --abbr-only` keeps
+the Sanng rows with its own teencode type (vs, dc/đc, ng, nhìu, ko/khg/k/kh,
+qá/wa, j, nx, chs), which the earlier rounds dropped.
+
+```bash
+curl ... train_full.jsonl -r 0-1600000000 | python sanng_filter.py - --abbr-only --max-errors 4 --limit 8000 --out $V/sanng_teencode.jsonl
+python build_query_eval.py --queries $R/queries_real_holdout.jsonl --queries $R/queries_gen_holdout.jsonl \
+  --teen-rate 1 --part teencode --n-noisy 120 --n-clean 40 --seed 11 --out $V/eval_teen.jsonl
+# build: add --pairs $V/sanng_teencode.jsonl --query-teen-rate 0.3
+```
+
+v3.2 baseline on eval_teen (106 teencode errors): detected 0.92, corrected
+0.67 (ntn→như, vs/w→về, kh→khi, hok→hơn), clean-line FP 5%.
+
 Throughput: the spell model audits 30k paragraphs in 5 min; the 35B at 4
 workers takes about 3 h, so run it at night or keep the worker count low
 while people chat. KB audit result: 1,861 clean, 11 fixed (all "Chuyển

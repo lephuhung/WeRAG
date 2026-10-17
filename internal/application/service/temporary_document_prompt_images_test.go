@@ -100,7 +100,7 @@ func TestResolveForPromptOwnershipRespectsVisualFilter(t *testing.T) {
 	require.Len(t, plain.AttachmentImageURLs, 1)
 	require.Empty(t, plain.AttachmentImageURLs[0])
 
-	visual := resolvePrompt(t, docs, []string{"doc-text"}, "解释第三页的图")
+	visual := resolvePrompt(t, docs, []string{"doc-text"}, "Giải thích hình ở trang ba")
 	require.Equal(t, []string{"https://cdn/p1.png", "https://cdn/p2.png"}, visual.ImageURLs)
 	require.Len(t, visual.AttachmentImageURLs, 1)
 	require.Equal(t, []string{"https://cdn/p1.png", "https://cdn/p2.png"}, visual.AttachmentImageURLs[0])

@@ -55,14 +55,14 @@ type createInviteLinkRequest struct {
 }
 
 // CreateInviteLink godoc
-// @Summary      生成共享邀请链接
-// @Description  生成一条多次使用的共享邀请链接：谁拿到链接谁就能注册并加入当前Tenant workspace。
-// @Description  链接持续有效，直到过期或被撤销。
-// @Tags         Tenant workspace邀请
+// @Summary      Tạo liên kết mời dùng chung
+// @Description  Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia đơn vị hiện tại.
+// @Description  Liên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.
+// @Tags         Lời mời đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path  string                   true  "Tenant workspace ID"
-// @Param        request  body  createInviteLinkRequest  true  "共享链接Configuration "
+// @Param        request  body  createInviteLinkRequest  true  "cấu hình liên kết mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/invite-links [post]

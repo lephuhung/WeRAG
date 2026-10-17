@@ -55,10 +55,10 @@ type IMStreamParts struct {
 
 	// Quick-QA (RagPipelineProgress on Web):
 	PipelineToolSteps []IMToolStep // query_understand / knowledge_search rows
-	ReasoningInner    string       // model reasoning_content — separate "思考" section
+	ReasoningInner    string       // model reasoning_content — separate "Suy nghĩ" section
 
 	// Agent (AgentStreamDisplay on Web):
-	AgentInner     string       // retracted preambles + thoughts ("思考过程")
+	AgentInner     string       // retracted preambles + thoughts ("Quá trình suy nghĩ")
 	AgentToolSteps []IMToolStep // tool progress lines (one row per tool_call_id)
 	LiveAnswer     string       // optimistic answer stream before tools retract it
 
@@ -76,8 +76,8 @@ func quickQAPipelineContent(parts IMStreamParts) string {
 
 // RAGThinkingStyle matches Web RagPipelineProgress thinking row (agent.think).
 var RAGThinkingStyle = ThinkBlockStyle{
-	ThinkingHeader: "> 💭 **思考中...**\n",
-	ThoughtHeader:  "> 💭 **思考**\n",
+	ThinkingHeader: "> 💭 **Đang suy nghĩ...**\n",
+	ThoughtHeader:  "> 💭 **Suy nghĩ**\n",
 	LinePrefix:     "> ",
 	LineSuffix:     "",
 	Separator:      "\n---\n\n",
@@ -105,7 +105,7 @@ func BuildIMAgentStreamRaw(parts IMStreamParts, agentInProgress bool) string {
 }
 
 // formatIMAgentIntermediate mirrors Web AgentStreamDisplay:
-// stream answer text first; when tools run, retract into "思考过程";
+// stream answer text first; when tools run, retract into "Quá trình suy nghĩ";
 // once tools exist, keep the think block visible above the streaming answer.
 func formatIMAgentIntermediate(parts IMStreamParts) string {
 	think := strings.TrimSpace(agentThinkContent(parts))
@@ -122,7 +122,7 @@ func formatIMAgentIntermediate(parts IMStreamParts) string {
 }
 
 // formatIMQuickQAIntermediate mirrors Web RagPipelineProgress:
-// pipeline steps as plain lines, model reasoning in a separate "思考" block,
+// pipeline steps as plain lines, model reasoning in a separate "Suy nghĩ" block,
 // and once answer starts streaming the progress collapses to answer-only preview.
 func formatIMQuickQAIntermediate(parts IMStreamParts) string {
 	if answer := strings.TrimSpace(parts.Answer); answer != "" {
@@ -175,9 +175,9 @@ func trimIMOuterWhitespace(s string) string {
 // ThinkBlockStyle controls how <think>...</think> blocks are rendered.
 type ThinkBlockStyle struct {
 	// ThinkingHeader is shown when the think block is still in-progress (no closing tag yet).
-	ThinkingHeader string // e.g. "> 💭 **思考中...**\n" or "💭 _思考中..._\n"
+	ThinkingHeader string // e.g. "> 💭 **Đang suy nghĩ...**\n" or "💭 _Đang suy nghĩ..._\n"
 	// ThoughtHeader is shown before the think block content.
-	ThoughtHeader string // e.g. "> 💭 **思考过程**\n" or "💭 *思考过程*\n"
+	ThoughtHeader string // e.g. "> 💭 **Quá trình suy nghĩ**\n" or "💭 *Quá trình suy nghĩ*\n"
 	// LinePrefix is prepended to each line of think content.
 	LinePrefix string // e.g. "> " or "> _"
 	// LineSuffix is appended to each line of think content (before newline).
@@ -195,8 +195,8 @@ type ThinkBlockStyle struct {
 // FormatIMDisplayContent, which is called from the shared streaming path with no
 // platform context — a cross-platform change rather than a per-platform patch.
 var MarkdownThinkStyle = ThinkBlockStyle{
-	ThinkingHeader: "> 💭 **思考中...**\n",
-	ThoughtHeader:  "> 💭 **思考过程**\n",
+	ThinkingHeader: "> 💭 **Đang suy nghĩ...**\n",
+	ThoughtHeader:  "> 💭 **Quá trình suy nghĩ**\n",
 	LinePrefix:     "> ",
 	LineSuffix:     "",
 	Separator:      "\n---\n\n",
@@ -206,8 +206,8 @@ var MarkdownThinkStyle = ThinkBlockStyle{
 // Uses the same blockquote format as other platforms for reliable rendering
 // during streaming (where incomplete markdown can cause API failures).
 var TelegramThinkStyle = ThinkBlockStyle{
-	ThinkingHeader: "> 💭 *思考中...*\n",
-	ThoughtHeader:  "> 💭 *思考过程*\n",
+	ThinkingHeader: "> 💭 *Đang suy nghĩ...*\n",
+	ThoughtHeader:  "> 💭 *Quá trình suy nghĩ*\n",
 	LinePrefix:     "> ",
 	LineSuffix:     "",
 	Separator:      "\n---\n\n",

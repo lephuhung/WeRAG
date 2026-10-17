@@ -276,10 +276,10 @@ Use this skill for .docx files.
 	t.Run("repairs version and description nested under name", func(t *testing.T) {
 		data := zipBundle(t, map[string]string{
 			"SKILL.md": `---
-name: 命理大师
+name: chuyên-gia-pháp-lý
   version: 1.2.6
   description: |
-    全体系命理大师。
+    Chuyên gia pháp lý toàn diện.
 ---
 Use the scripts in this skill.
 `,
@@ -289,18 +289,18 @@ Use the scripts in this skill.
 
 		require.NoError(t, err)
 		require.True(t, bundle.FrontmatterRepaired)
-		require.Equal(t, "命理大师", bundle.Name)
+		require.Equal(t, "chuyên-gia-pháp-lý", bundle.Name)
 		require.Equal(t, "1.2.6", bundle.Version)
-		require.Contains(t, bundle.Description, "全体系命理大师")
+		require.Contains(t, bundle.Description, "Chuyên gia pháp lý toàn diện")
 	})
 
 	t.Run("rejects a SkillHub archive whose extra YAML is still invalid after repair", func(t *testing.T) {
 		data := zipBundle(t, map[string]string{
 			"SKILL.md": `---
-name: 命理大师
+name: chuyên-gia-pháp-lý
   version: 1.2.6
   description: |
-    全体系命理大师。
+    Chuyên gia pháp lý toàn diện.
 metadata:
   openclaw:
     install:
@@ -476,12 +476,12 @@ Use the scripts in this skill.
 
 	t.Run("accepts non-ASCII entry names", func(t *testing.T) {
 		bundle, err := ParseSkillBundle(zipBundle(t, map[string]string{
-			"SKILL.md":            validSkillMD,
-			"references/参考 手册.md": "x",
+			"SKILL.md":                         validSkillMD,
+			"references/tài liệu tham khảo.md": "x",
 		}))
 
 		require.NoError(t, err)
-		require.Contains(t, bundle.Files, "references/参考 手册.md",
+		require.Contains(t, bundle.Files, "references/tài liệu tham khảo.md",
 			"real skills ship documents named in the operator's own language")
 	})
 

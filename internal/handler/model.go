@@ -53,14 +53,14 @@ type CreateModelRequest struct {
 }
 
 // CreateModel godoc
-// @Summary      Create 模型
-// @Description  Create 新的模型Configuration
-// @Tags         模型管理
+// @Summary      Tạo mô hình
+// @Description  Tạo cấu hình mô hình mới
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CreateModelRequest  true  "模型信息"
-// @Success      201      {object}  map[string]interface{}  "Create 的模型"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
+// @Param        request  body      CreateModelRequest  true  "Thông tin mô hình"
+// @Success      201      {object}  map[string]interface{}  "Mô hình đã tạo"
+// @Failure      400      {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models [post]
@@ -124,14 +124,14 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 }
 
 // GetModel godoc
-// @Summary      获取模型Details
-// @Description  根据ID获取模型Details
-// @Tags         模型管理
+// @Summary      Lấy chi tiết mô hình
+// @Description  Lấy chi tiết mô hình theo ID
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "模型ID"
-// @Success      200  {object}  map[string]interface{}  "模型Details "
-// @Failure      404  {object}  errors.AppError         "模型不存在"
+// @Param        id   path      string  true  "ID mô hình"
+// @Success      200  {object}  map[string]interface{}  "Chi tiết mô hình"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy mô hình"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models/{id} [get]
@@ -169,13 +169,13 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 }
 
 // ListModels godoc
-// @Summary      获取模型List
-// @Description  获取当前Tenant workspace的所有模型
-// @Tags         模型管理
+// @Summary      Lấy danh sách mô hình
+// @Description  Lấy toàn bộ mô hình của đơn vị hiện tại
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "模型List "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
+// @Success      200  {object}  map[string]interface{}  "Danh sách mô hình"
+// @Failure      400  {object}  errors.AppError         "Tham số yêu cầu không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models [get]
@@ -778,15 +778,15 @@ func mergeModelParameters(
 }
 
 // UpdateModel godoc
-// @Summary      Update 模型
-// @Description  Update 模型Configuration 信息
-// @Tags         模型管理
+// @Summary      Cập nhật mô hình
+// @Description  Cập nhật thông tin cấu hình mô hình
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string              true  "模型ID"
-// @Param        request  body      UpdateModelRequest  true  "Update 信息"
-// @Success      200      {object}  map[string]interface{}  "Update 后的模型"
-// @Failure      404      {object}  errors.AppError         "模型不存在"
+// @Param        id       path      string              true  "ID mô hình"
+// @Param        request  body      UpdateModelRequest  true  "Thông tin cập nhật"
+// @Success      200      {object}  map[string]interface{}  "Mô hình sau cập nhật"
+// @Failure      404      {object}  errors.AppError         "Không tìm thấy mô hình"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models/{id} [put]
@@ -912,15 +912,15 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 }
 
 // DeleteModel godoc
-// @Summary      Delete 模型
-// @Description  Delete 指定的模型
-// @Tags         模型管理
+// @Summary      Xóa mô hình
+// @Description  Xóa mô hình chỉ định
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "模型ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400  {object}  errors.AppError         "模型仍被Knowledge Base、智能体或长期记忆引用"
-// @Failure      404  {object}  errors.AppError         "模型不存在"
+// @Param        id   path      string  true  "ID mô hình"
+// @Success      200  {object}  map[string]interface{}  "Xóa thành công"
+// @Failure      400  {object}  errors.AppError         "Mô hình vẫn đang được kho tri thức, trợ lý hoặc bộ nhớ dài hạn tham chiếu"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy mô hình"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models/{id} [delete]
@@ -959,16 +959,16 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 	})
 }
 
-// ModelProviderDTO 模型厂商信息 DTO
+// ModelProviderDTO là DTO thông tin nhà cung cấp mô hình
 type ModelProviderDTO struct {
-	Value       string            `json:"value"`       // provider 标识符
-	Label       string            `json:"label"`       // 显示名称
-	Description string            `json:"description"` // 描述
-	DefaultURLs map[string]string `json:"defaultUrls"` // 按模型类型区分的默认 URL
-	ModelTypes  []string          `json:"modelTypes"`  // 支持的模型类型
+	Value       string            `json:"value"`       // định danh provider
+	Label       string            `json:"label"`       // tên hiển thị
+	Description string            `json:"description"` // mô tả
+	DefaultURLs map[string]string `json:"defaultUrls"` // URL mặc định theo từng loại mô hình
+	ModelTypes  []string          `json:"modelTypes"`  // các loại mô hình hỗ trợ
 }
 
-// modelTypeToFrontend 将后端 ModelType 转换为前端兼容的字符串
+// modelTypeToFrontend chuyển ModelType phía backend thành chuỗi tương thích frontend
 // KnowledgeQA -> chat, Embedding -> embedding, Rerank -> rerank, VLLM -> vllm
 func modelTypeToFrontend(mt types.ModelType) string {
 	switch mt {
@@ -990,13 +990,13 @@ func modelTypeToFrontend(mt types.ModelType) string {
 }
 
 // ListModelProviders godoc
-// @Summary      获取模型厂商List
-// @Description  根据模型类型获取支持的厂商List 及Configuration 信息
-// @Tags         模型管理
+// @Summary      Lấy danh sách nhà cung cấp mô hình
+// @Description  Lấy danh sách nhà cung cấp được hỗ trợ và thông tin cấu hình theo loại mô hình
+// @Tags         Mô hình
 // @Accept       json
 // @Produce      json
-// @Param        model_type  query     string  false  "模型类型 (chat, embedding, rerank, vllm)"
-// @Success      200         {object}  map[string]interface{}  "厂商List "
+// @Param        model_type  query     string  false  "Loại mô hình (chat, embedding, rerank, vllm)"
+// @Success      200         {object}  map[string]interface{}  "Danh sách nhà cung cấp"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /models/providers [get]
@@ -1006,9 +1006,9 @@ func (h *ModelHandler) ListModelProviders(c *gin.Context) {
 	modelType := c.Query("model_type")
 	logger.Infof(ctx, "Listing model providers for type: %s", secutils.SanitizeForLog(modelType))
 
-	// 将前端类型映射到后端类型
-	// 前端: chat, embedding, rerank, vllm
-	// 后端: KnowledgeQA, Embedding, Rerank, VLLM
+	// Ánh xạ loại phía frontend sang loại phía backend
+	// Frontend: chat, embedding, rerank, vllm
+	// Backend: KnowledgeQA, Embedding, Rerank, VLLM
 	var backendModelType types.ModelType
 	switch modelType {
 	case "chat":
@@ -1029,25 +1029,25 @@ func (h *ModelHandler) ListModelProviders(c *gin.Context) {
 
 	var providers []provider.ProviderInfo
 	if modelType != "" {
-		// 按模型类型过滤
+		// Lọc theo loại mô hình
 		providers = provider.ListByModelType(backendModelType)
 	} else {
-		// 返回所有 provider
+		// Trả về mọi provider
 		providers = provider.List()
 	}
 
-	// 转换为 DTO
+	// Chuyển sang DTO
 	result := make([]ModelProviderDTO, 0, len(providers))
 	for _, p := range providers {
-		// 转换 DefaultURLs map[types.ModelType]string -> map[string]string
-		// 使用前端兼容的 key (chat 而不是 KnowledgeQA)
+		// Chuyển DefaultURLs map[types.ModelType]string -> map[string]string
+		// Dùng key tương thích frontend (chat thay vì KnowledgeQA)
 		defaultURLs := make(map[string]string)
 		for mt, url := range p.DefaultURLs {
 			frontendType := modelTypeToFrontend(mt)
 			defaultURLs[frontendType] = url
 		}
 
-		// 转换 ModelTypes 为前端兼容格式
+		// Chuyển ModelTypes sang định dạng tương thích frontend
 		modelTypes := make([]string, 0, len(p.ModelTypes))
 		for _, mt := range p.ModelTypes {
 			modelTypes = append(modelTypes, modelTypeToFrontend(mt))

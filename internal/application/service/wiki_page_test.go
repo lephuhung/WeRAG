@@ -55,8 +55,8 @@ func TestPruneEmptyFolderChainsDeletesOnlyEmptyCandidateAncestors(t *testing.T) 
 }
 
 func TestStripWikiInlineChunkCitations(t *testing.T) {
-	input := "[**橡皮障夹**](#)**钳**\n\n夹钳是用于夹持橡皮障夹的专用器械[c003]。手柄便于操作 [c003]。多个来源[c003, c1000]。"
-	want := "[**橡皮障夹**](#)**钳**\n\n夹钳是用于夹持橡皮障夹的专用器械。手柄便于操作。多个来源。"
+	input := "[**Kẹp đê cao su**](#)**kìm**\n\nKìm kẹp là dụng cụ chuyên dụng để giữ kẹp đê cao su[c003]. Tay cầm dễ thao tác [c003]. Nhiều nguồn[c003, c1000]."
+	want := "[**Kẹp đê cao su**](#)**kìm**\n\nKìm kẹp là dụng cụ chuyên dụng để giữ kẹp đê cao su. Tay cầm dễ thao tác. Nhiều nguồn."
 
 	if got := stripWikiInlineChunkCitations(input); got != want {
 		t.Fatalf("stripWikiInlineChunkCitations() = %q, want %q", got, want)
@@ -64,7 +64,7 @@ func TestStripWikiInlineChunkCitations(t *testing.T) {
 }
 
 func TestStripWikiInlineChunkCitationsPreservesOrdinaryMarkdown(t *testing.T) {
-	input := "保留 [citation]、[C003]、[c12] 和 [[concept/c003|页面链接]]。"
+	input := "Giữ lại [citation], [C003], [c12] và [[concept/c003|liên kết trang]]."
 	if got := stripWikiInlineChunkCitations(input); got != input {
 		t.Fatalf("stripWikiInlineChunkCitations() changed ordinary Markdown: %q", got)
 	}
@@ -195,17 +195,17 @@ func TestRepairContentLinks(t *testing.T) {
 
 	// Real summary page (clean UUID slug) + a distractor summary + an entity.
 	realSummary := "summary/07a20bb1-a662-47cf-9929-06fb5d5b5b5e"
-	seed(realSummary, "Weknora 试错记录.md - Summary", types.WikiPageTypeSummary)
+	seed(realSummary, "Weknora nhật ký thử nghiệm.md - Summary", types.WikiPageTypeSummary)
 	seed("summary/fcadcaab-e094-4037-b71c-9edfdcdba058", "Another Doc - Summary", types.WikiPageTypeSummary)
 	seed("entity/mongodb", "MongoDB", types.WikiPageTypeEntity)
 
 	t.Run("mangled uuid summary link repaired via bigram", func(t *testing.T) {
 		// One hex digit inserted into the last group — 404s on exact lookup.
-		content := "See [[summary/07a20bb1-a662-47cf-9929-06fb14d5b14b14e|Weknora 试错记录.md - Summary]] for context."
+		content := "See [[summary/07a20bb1-a662-47cf-9929-06fb14d5b14b14e|Weknora nhật ký thử nghiệm.md - Summary]] for context."
 		got, changed, err := svc.RepairContentLinks(ctx, kbID, "synthesis/notes", content)
 		require.NoError(t, err)
 		require.True(t, changed, "expected the mangled summary link to be rewritten")
-		require.Contains(t, got, "[["+realSummary+"|Weknora 试错记录.md - Summary]]")
+		require.Contains(t, got, "[["+realSummary+"|Weknora nhật ký thử nghiệm.md - Summary]]")
 		require.NotContains(t, got, "06fb14d5b14b14e")
 	})
 
@@ -252,14 +252,14 @@ func TestNormalizeSlug(t *testing.T) {
 func TestNormalizeWikiHierarchyCleansModelCategoryNoise(t *testing.T) {
 	page := &types.WikiPage{
 		Slug:         "concept/ai-knowledge",
-		Title:        "AI时代的知识困境",
+		Title:        "Khủng hoảng tri thức thời AI",
 		PageType:     types.WikiPageTypeConcept,
-		CategoryPath: types.StringArray{"概念/爱护花草", " 实体/标牌 ", "摘要", "生态/平台", "多余层级"},
+		CategoryPath: types.StringArray{"Concept/Bảo vệ cây xanh", " Entity/Biển báo ", "Summary", "Sinh thái/Nền tảng", "Tầng thừa"},
 	}
 
 	normalizeWikiHierarchy(page)
 
-	want := types.StringArray{"爱护花草", "标牌", "生态"}
+	want := types.StringArray{"Bảo vệ cây xanh", "Biển báo", "Sinh thái"}
 	if len(page.CategoryPath) != len(want) {
 		t.Fatalf("CategoryPath = %v, want %v", page.CategoryPath, want)
 	}
@@ -271,7 +271,7 @@ func TestNormalizeWikiHierarchyCleansModelCategoryNoise(t *testing.T) {
 	if page.Depth != 3 {
 		t.Fatalf("Depth = %d, want 3", page.Depth)
 	}
-	if page.WikiPath != "concept/爱护花草/标牌/生态/AI时代的知识困境" {
+	if page.WikiPath != "concept/Bảo vệ cây xanh/Biển báo/Sinh thái/Khủng hoảng tri thức thời AI" {
 		t.Fatalf("WikiPath = %q", page.WikiPath)
 	}
 }
@@ -279,13 +279,13 @@ func TestNormalizeWikiHierarchyCleansModelCategoryNoise(t *testing.T) {
 func TestNormalizeWikiIndexEntryHierarchyCleansModelCategoryNoise(t *testing.T) {
 	entry := &types.WikiIndexEntry{
 		Slug:         "entity/sign",
-		Title:        "爱护花草标牌",
-		CategoryPath: types.StringArray{"实体/标牌", "概念", "生态/行为倡导"},
+		Title:        "Biển báo bảo vệ cây xanh",
+		CategoryPath: types.StringArray{"Entity/Biển báo", "Concept", "Sinh thái/Vận động hành vi"},
 	}
 
 	normalizeWikiIndexEntryHierarchy(entry, types.WikiPageTypeEntity)
 
-	want := types.StringArray{"标牌", "生态", "行为倡导"}
+	want := types.StringArray{"Biển báo", "Sinh thái", "Vận động hành vi"}
 	if len(entry.CategoryPath) != len(want) {
 		t.Fatalf("CategoryPath = %v, want %v", entry.CategoryPath, want)
 	}
@@ -294,7 +294,7 @@ func TestNormalizeWikiIndexEntryHierarchyCleansModelCategoryNoise(t *testing.T) 
 			t.Fatalf("CategoryPath[%d] = %q, want %q; full path=%v", i, entry.CategoryPath[i], want[i], entry.CategoryPath)
 		}
 	}
-	if entry.WikiPath != "entity/标牌/生态/行为倡导/爱护花草标牌" {
+	if entry.WikiPath != "entity/Biển báo/Sinh thái/Vận động hành vi/Biển báo bảo vệ cây xanh" {
 		t.Fatalf("WikiPath = %q", entry.WikiPath)
 	}
 }
@@ -404,7 +404,7 @@ func nodeSlugs(data *types.WikiGraphData) map[string]bool {
 
 // TestComputeGraphSubset_OverviewTruncatesByLinkCount verifies that overview
 // mode returns the most-connected nodes first and reports truncation
-// honestly in Meta. At 4万 pages this is the path that must NOT return the
+// honestly in Meta. At 40k pages this is the path that must NOT return the
 // full graph — the cap is what keeps the response size and frontend
 // rendering tractable.
 func TestComputeGraphSubset_OverviewTruncatesByLinkCount(t *testing.T) {
@@ -445,7 +445,7 @@ func TestComputeGraphSubset_OverviewTruncatesByLinkCount(t *testing.T) {
 
 func TestComputeGraphSubset_MarksFamiliarSourcePages(t *testing.T) {
 	pages := makeGraphFixture()
-	pages[0].SourceRefs = types.StringArray{"doc-1|排班手册"}
+	pages[0].SourceRefs = types.StringArray{"doc-1|Sổ tay phân ca"}
 	pages[1].SourceRefs = types.StringArray{"doc-2"}
 
 	got, err := computeGraphSubset(pages, &types.WikiGraphRequest{
@@ -617,30 +617,30 @@ func TestFindPagesByNormalizedTitleMatchesWhitespace(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, repo.Create(ctx, &types.WikiPage{
 		ID: "page-kong", TenantID: 1, KnowledgeBaseID: "kb-id", Slug: "entity/confucius",
-		Title: "孔 子", PageType: types.WikiPageTypeEntity, Status: types.WikiPageStatusPublished,
+		Title: "Vietcom bank", PageType: types.WikiPageTypeEntity, Status: types.WikiPageStatusPublished,
 		Version: 1, CreatedAt: now, UpdatedAt: now,
 	}))
 	require.NoError(t, repo.Create(ctx, &types.WikiPage{
 		ID: "page-fable", TenantID: 1, KnowledgeBaseID: "kb-id", Slug: "concept/yuyan",
-		Title: "《寓言》", PageType: types.WikiPageTypeConcept, Status: types.WikiPageStatusPublished,
+		Title: "«Bình Ngô đại cáo»", PageType: types.WikiPageTypeConcept, Status: types.WikiPageStatusPublished,
 		Version: 1, CreatedAt: now, UpdatedAt: now,
 	}))
 
-	pages, err := svc.FindPagesByNormalizedTitle(ctx, "kb-id", types.WikiPageTypeEntity, "孔子")
+	pages, err := svc.FindPagesByNormalizedTitle(ctx, "kb-id", types.WikiPageTypeEntity, "vietcombank")
 	require.NoError(t, err)
 	require.Len(t, pages, 1)
 	require.Equal(t, "entity/confucius", pages[0].Slug)
 
-	none, err := svc.FindPagesByNormalizedTitle(ctx, "kb-id", types.WikiPageTypeConcept, "寓言")
+	none, err := svc.FindPagesByNormalizedTitle(ctx, "kb-id", types.WikiPageTypeConcept, normalizeWikiIdentityTitle("Bình Ngô đại cáo"))
 	require.NoError(t, err)
 	require.Empty(t, none, "punctuation-significant titles must stay distinct")
 
 	require.NoError(t, repo.Create(ctx, &types.WikiPage{
 		ID: "page-mencius", TenantID: 1, KnowledgeBaseID: "kb-id", Slug: "entity/mencius",
-		Title: "孟子", PageType: types.WikiPageTypeEntity, Status: types.WikiPageStatusPublished,
+		Title: "Vietinbank", PageType: types.WikiPageTypeEntity, Status: types.WikiPageStatusPublished,
 		Version: 1, CreatedAt: now, UpdatedAt: now,
 	}))
-	batched, err := svc.FindPagesByNormalizedTitles(ctx, "kb-id", types.WikiPageTypeEntity, []string{"孔子", "孟子", "孔子"})
+	batched, err := svc.FindPagesByNormalizedTitles(ctx, "kb-id", types.WikiPageTypeEntity, []string{"vietcombank", "vietinbank", "vietcombank"})
 	require.NoError(t, err)
 	require.Len(t, batched, 2)
 	slugs := []string{batched[0].Slug, batched[1].Slug}
@@ -650,18 +650,18 @@ func TestFindPagesByNormalizedTitleMatchesWhitespace(t *testing.T) {
 func TestNormalizeWikiHierarchyKeepsFolderBackedPathVerbatim(t *testing.T) {
 	page := &types.WikiPage{
 		Slug:         "concept/plan",
-		Title:        "将计就计",
+		Title:        "Tương kế tựu kế",
 		PageType:     types.WikiPageTypeConcept,
 		FolderID:     "folder-concepts",
-		CategoryPath: types.StringArray{"概念", " 概念 ", "Concepts", ""},
+		CategoryPath: types.StringArray{"Concept", " Concept ", "Concepts", ""},
 	}
 
 	normalizeWikiHierarchy(page)
 
-	want := types.StringArray{"概念", "概念", "Concepts"}
+	want := types.StringArray{"Concept", "Concept", "Concepts"}
 	require.Equal(t, want, page.CategoryPath)
 	require.Equal(t, 3, page.Depth)
-	require.Equal(t, "concept/概念/概念/Concepts/将计就计", page.WikiPath)
+	require.Equal(t, "concept/Concept/Concept/Concepts/Tương kế tựu kế", page.WikiPath)
 }
 
 func TestMovePageIntoTypeLabelNamedFolderKeepsHierarchy(t *testing.T) {
@@ -674,11 +674,11 @@ func TestMovePageIntoTypeLabelNamedFolderKeepsHierarchy(t *testing.T) {
 	svc := NewWikiPageService(repo, nil, nil, nil, nil)
 	now := time.Now()
 
-	folder, err := svc.CreateFolder(ctx, "kb-move", 1, types.WikiFolderRootID, "概念")
+	folder, err := svc.CreateFolder(ctx, "kb-move", 1, types.WikiFolderRootID, "Concept")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, &types.WikiPage{
 		ID: "page-plan", TenantID: 1, KnowledgeBaseID: "kb-move", Slug: "concept/plan",
-		Title: "将计就计", PageType: types.WikiPageTypeConcept, Status: types.WikiPageStatusPublished,
+		Title: "Tương kế tựu kế", PageType: types.WikiPageTypeConcept, Status: types.WikiPageStatusPublished,
 		Version: 1, CreatedAt: now, UpdatedAt: now,
 	}))
 
@@ -689,9 +689,9 @@ func TestMovePageIntoTypeLabelNamedFolderKeepsHierarchy(t *testing.T) {
 	stored, err := repo.GetBySlug(ctx, "kb-move", "concept/plan")
 	require.NoError(t, err)
 	require.Equal(t, folder.ID, stored.FolderID)
-	require.Equal(t, types.StringArray{"概念"}, stored.CategoryPath)
+	require.Equal(t, types.StringArray{"Concept"}, stored.CategoryPath)
 	require.Equal(t, 1, stored.Depth)
-	require.Equal(t, "concept/概念/将计就计", stored.WikiPath)
+	require.Equal(t, "concept/Concept/Tương kế tựu kế", stored.WikiPath)
 
 	// Reading the page back through ListPages must not strip the folder name
 	// either: the directory tree places pages by these fields.
@@ -702,7 +702,7 @@ func TestMovePageIntoTypeLabelNamedFolderKeepsHierarchy(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, listed.Pages, 1)
-	require.Equal(t, types.StringArray{"概念"}, listed.Pages[0].CategoryPath)
+	require.Equal(t, types.StringArray{"Concept"}, listed.Pages[0].CategoryPath)
 	require.Equal(t, 1, listed.Pages[0].Depth)
-	require.Equal(t, "concept/概念/将计就计", listed.Pages[0].WikiPath)
+	require.Equal(t, "concept/Concept/Tương kế tựu kế", listed.Pages[0].WikiPath)
 }

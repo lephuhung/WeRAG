@@ -6,14 +6,14 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// AzureOpenAIProvider 实现 Azure OpenAI 的 Provider 接口
+// AzureOpenAIProvider triển khai giao diện Provider cho Azure OpenAI
 type AzureOpenAIProvider struct{}
 
 func init() {
 	Register(&AzureOpenAIProvider{})
 }
 
-// Info 返回 Azure OpenAI provider 的元数据
+// Info trả về metadata của provider Azure OpenAI
 func (p *AzureOpenAIProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderAzureOpenAI,
@@ -46,7 +46,7 @@ func (p *AzureOpenAIProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 Azure OpenAI provider Configuration
+// ValidateConfig kiểm tra cấu hình provider Azure OpenAI
 func (p *AzureOpenAIProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for Azure OpenAI provider")

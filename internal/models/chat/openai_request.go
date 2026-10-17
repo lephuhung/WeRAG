@@ -7,7 +7,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// ConvertMessages 转换消息格式为 OpenAI 格式（导出供子类使用）
+// ConvertMessages chuyển định dạng tin nhắn sang định dạng OpenAI (export để lớp con dùng)
 func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatCompletionMessage {
 	openaiMessages := make([]openai.ChatCompletionMessage, 0, len(messages))
 	for _, msg := range messages {
@@ -16,7 +16,7 @@ func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatComplet
 			Role: msg.Role,
 		}
 
-		// 优先处理多内容消息（包含图片等）
+		// Ưu tiên xử lý tin nhắn nhiều phần (có ảnh, ...)
 		if len(msg.MultiContent) > 0 {
 			openaiMsg.MultiContent = make([]openai.ChatMessagePart, 0, len(msg.MultiContent))
 			for _, part := range msg.MultiContent {
@@ -93,13 +93,13 @@ func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatComplet
 	return openaiMessages
 }
 
-// BuildChatCompletionRequest 构建标准聊天请求Parameters （导出供子类使用）。
+// BuildChatCompletionRequest dựng tham số yêu cầu chat chuẩn (export để lớp con dùng).
 //
-// 采样Parameters （temperature / top_p / penalties）按 opts 直接映射。完成预算经
-// CompletionBudget 收成一个值，再按供应商只写入 max_tokens 或
-// max_completion_tokens 之一（二者互斥，见 #3014）。其余供应商特判
-// （o-series / GPT-5 采样Parameters 、Moonshot 固定温度等）仍由
-// providerAdapter.ShapeRequest 在事后施加，见 provider.go。
+// Tham số lấy mẫu (temperature / top_p / penalties) ánh xạ trực tiếp từ opts. Ngân sách hoàn thành được
+// CompletionBudget gom thành một giá trị, rồi tuỳ nhà cung cấp chỉ ghi vào max_tokens hoặc
+// max_completion_tokens (hai trường loại trừ nhau, xem #3014). Các xử lý riêng khác của nhà cung cấp
+// (tham số lấy mẫu o-series / GPT-5, temperature cố định của Moonshot, ...) vẫn do
+// providerAdapter.ShapeRequest áp dụng sau đó, xem provider.go.
 func (c *RemoteAPIChat) BuildChatCompletionRequest(
 	messages []Message, opts *ChatOptions, isStream bool,
 ) openai.ChatCompletionRequest {
@@ -130,7 +130,7 @@ func (c *RemoteAPIChat) BuildChatCompletionRequest(
 
 	applyCompletionBudget(&req, opts.CompletionBudget(), wireCompletionTokenField(c.provider, c.modelName))
 
-	// 处理 Tools
+	// Xử lý Tools
 	if len(opts.Tools) > 0 {
 		req.Tools = make([]openai.Tool, 0, len(opts.Tools))
 		for _, tool := range opts.Tools {
@@ -149,13 +149,13 @@ func (c *RemoteAPIChat) BuildChatCompletionRequest(
 		}
 	}
 
-	// 处理 ParallelToolCalls
+	// Xử lý ParallelToolCalls
 	if opts.ParallelToolCalls != nil {
 		val := *opts.ParallelToolCalls
 		req.ParallelToolCalls = val
 	}
 
-	// 处理 ToolChoice（标准实现）
+	// Xử lý ToolChoice (cài đặt chuẩn)
 	if opts.ToolChoice != "" {
 		switch opts.ToolChoice {
 		case "none", "required", "auto":

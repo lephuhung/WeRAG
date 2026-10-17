@@ -134,7 +134,7 @@ func TestSplitText_ProtectedPattern_ChineseContext(t *testing.T) {
 func TestSplitText_SimulateMergeSlicing(t *testing.T) {
 	// Simulate what merge.go:104-106 does to ensure it won't panic.
 	// This is the exact pattern that caused the production crash.
-	line := "这是第一段内容用于模拟知识库问答的文本"
+	line := "Nội dung đoạn hỏi đáp mẫu"
 	text := line + "\n\n" + line + "\n\n" + line
 
 	cfg := SplitterConfig{ChunkSize: 25, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
@@ -256,8 +256,8 @@ func TestSplitText_CodeBlockInChinese(t *testing.T) {
 
 func TestSplitText_OverlapChunks_NonNegativeStart(t *testing.T) {
 	// When overlap is used, start of the next chunk could go before 0 if broken.
-	text := strings.Repeat("中文测试内容，", 50)
-	cfg := SplitterConfig{ChunkSize: 20, ChunkOverlap: 5, Separators: []string{"，"}}
+	text := strings.Repeat("nội dung thử, ", 50)
+	cfg := SplitterConfig{ChunkSize: 20, ChunkOverlap: 5, Separators: []string{", "}}
 	chunks := SplitText(text, cfg)
 
 	for i, c := range chunks {
@@ -278,28 +278,28 @@ func TestFindSemanticOverlapBoundary_PriorityThenEarliest(t *testing.T) {
 	}{
 		{
 			name: "paragraph outranks earlier sentence and line",
-			text: "第一句。第二句\n普通换行后的内容\n\n最后一段",
-			want: "最后一段",
+			text: "Câu một. Câu hai\nnội dung sau xuống dòng\n\nĐoạn cuối",
+			want: "Đoạn cuối",
 		},
 		{
 			name: "earliest sentence wins within same priority",
-			text: "第一句。第二句。第三句",
-			want: "第二句。第三句",
+			text: "Câu một. Câu hai. Câu ba",
+			want: "Câu hai. Câu ba",
 		},
 		{
 			name: "windows paragraph break",
-			text: "第一段。\r\n\r\n第二段",
-			want: "第二段",
+			text: "Đoạn một.\r\n\r\nĐoạn hai",
+			want: "Đoạn hai",
 		},
 		{
 			name: "line outranks earlier sentence",
-			text: "第一句。第一行\n第二行",
-			want: "第二行",
+			text: "Câu một. Dòng một\nDòng hai",
+			want: "Dòng hai",
 		},
 		{
 			name: "windows line break",
-			text: "第一句。第一行\r\n第二行",
-			want: "第二行",
+			text: "Câu một. Dòng một\r\nDòng hai",
+			want: "Dòng hai",
 		},
 		{
 			name: "chinese question mark",
@@ -344,7 +344,7 @@ func TestFindSemanticOverlapBoundary_PriorityThenEarliest(t *testing.T) {
 
 func TestFindSemanticOverlapBoundary_NoConfiguredSemanticSeparator(t *testing.T) {
 	for _, text := range []string{
-		"没有任何语义分隔符的连续文本",
+		"văn bản liên tục không có dấu phân cách ngữ nghĩa",
 		"只有，逗号；分号：冒号",
 		"version1.2 remains one unit",
 		"address 192.168.1.1 remains one unit",
@@ -358,9 +358,9 @@ func TestFindSemanticOverlapBoundary_NoConfiguredSemanticSeparator(t *testing.T)
 
 func TestFindSemanticOverlapBoundary_IgnoresProtectedContent(t *testing.T) {
 	for _, text := range []string{
-		"代码是 `fmt.Println(\"hello. world\")` 后续内容",
-		"代码块 ```go\nfmt.Println(\"hello. world\")\n``` 后续内容",
-		"公式 $$x. y$$ 后续内容",
+		"mã là `fmt.Println(\"hello. world\")` nội dung tiếp",
+		"khối mã ```go\nfmt.Println(\"hello. world\")\n``` nội dung tiếp",
+		"công thức $$x. y$$ nội dung tiếp",
 	} {
 		if end, ok := findSemanticOverlapBoundary(text); ok {
 			t.Errorf("findSemanticOverlapBoundary(%q) returned protected boundary at %d", text, end)
@@ -403,15 +403,15 @@ func TestFindSemanticOverlapBoundary_FiltersEligibilityBeforePriorityAndPosition
 }
 
 func TestComputeOverlap_FindsBoundaryInsideLargeUnit(t *testing.T) {
-	text := "abcdefgh。尾巴内容"
+	text := "abcdefgh。đuôi"
 	unit := splitUnit{text: text, start: 100, end: 100 + len([]rune(text))}
 
 	overlap, overlapLen := computeOverlap([]splitUnit{unit}, 8, 32, 8)
-	if got := unitsText(overlap); got != "尾巴内容" {
-		t.Fatalf("overlap = %q, want %q", got, "尾巴内容")
+	if got := unitsText(overlap); got != "đuôi" {
+		t.Fatalf("overlap = %q, want %q", got, "đuôi")
 	}
-	if overlapLen != len([]rune("尾巴内容")) {
-		t.Fatalf("overlapLen = %d, want %d", overlapLen, len([]rune("尾巴内容")))
+	if overlapLen != len([]rune("đuôi")) {
+		t.Fatalf("overlapLen = %d, want %d", overlapLen, len([]rune("đuôi")))
 	}
 	if len(overlap) != 1 || overlap[0].start != 109 || overlap[0].end != 113 {
 		t.Fatalf("overlap source span = %+v, want [109,113)", overlap)
@@ -419,7 +419,7 @@ func TestComputeOverlap_FindsBoundaryInsideLargeUnit(t *testing.T) {
 }
 
 func TestComputeOverlap_NoBoundaryMeansNoOverlap(t *testing.T) {
-	text := "abcdefgh尾巴内容"
+	text := "abcdefghđuôi"
 	unit := splitUnit{text: text, start: 0, end: len([]rune(text))}
 
 	overlap, overlapLen := computeOverlap([]splitUnit{unit}, 8, 32, 8)
@@ -429,12 +429,12 @@ func TestComputeOverlap_NoBoundaryMeansNoOverlap(t *testing.T) {
 }
 
 func TestComputeOverlap_RespectsNextChunkCapacity(t *testing.T) {
-	text := "abcdefgh。尾巴"
+	text := "abcdefgh。đi"
 	unit := splitUnit{text: text, start: 0, end: len([]rune(text))}
 
 	overlap, overlapLen := computeOverlap([]splitUnit{unit}, 10, 8, 5)
-	if got := unitsText(overlap); got != "尾巴" {
-		t.Fatalf("overlap = %q, want %q", got, "尾巴")
+	if got := unitsText(overlap); got != "đi" {
+		t.Fatalf("overlap = %q, want %q", got, "đi")
 	}
 	if overlapLen+5 > 8 {
 		t.Fatalf("overlap plus next content exceeds chunk size: %d + %d > %d", overlapLen, 5, 8)
@@ -512,19 +512,19 @@ func TestBuildUnitsWithProtection_InlineCodeNotSplit(t *testing.T) {
 }
 
 func TestSplitText_SemanticOverlapInsideParagraph(t *testing.T) {
-	first := strings.Repeat("甲", 15) + "。尾巴"
-	text := first + "\n\n" + "后续内容"
+	first := strings.Repeat("a", 12) + ". đuôi"
+	text := first + "\n\n" + "phần sau"
 	cfg := SplitterConfig{
 		ChunkSize:    20,
 		ChunkOverlap: 10,
-		Separators:   []string{"\n\n", "\n", "。"},
+		Separators:   []string{"\n\n", "\n", ". "},
 	}
 
 	chunks := SplitText(text, cfg)
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d: %#v", len(chunks), chunks)
 	}
-	if !strings.HasPrefix(chunks[1].Content, "尾巴\n\n") {
+	if !strings.HasPrefix(chunks[1].Content, "đuôi\n\n") {
 		t.Fatalf("second chunk should start at the sentence boundary inside the large unit, got %q", chunks[1].Content)
 	}
 	if got := chunks[1].End - chunks[1].Start; got != len([]rune(chunks[1].Content)) {
@@ -533,7 +533,7 @@ func TestSplitText_SemanticOverlapInsideParagraph(t *testing.T) {
 }
 
 func TestBuildUnitsWithProtection_RuneOffsets(t *testing.T) {
-	text := "你好世界"
+	text := "Việt"
 	units := buildUnitsWithProtection(text, nil, []string{"\n"}, 0)
 
 	if len(units) != 1 {
@@ -541,8 +541,8 @@ func TestBuildUnitsWithProtection_RuneOffsets(t *testing.T) {
 	}
 
 	u := units[0]
-	expectedRuneLen := 4 // 4 Chinese characters
-	byteLen := len(text) // 12 bytes
+	expectedRuneLen := 4 // 4 runes, multi-byte
+	byteLen := len(text) // 6 bytes
 
 	if u.start != 0 {
 		t.Errorf("start: got %d, want 0", u.start)
@@ -553,7 +553,7 @@ func TestBuildUnitsWithProtection_RuneOffsets(t *testing.T) {
 }
 
 func TestBuildUnitsWithProtection_WithProtectedSpan(t *testing.T) {
-	text := "前面![alt](url)后面"
+	text := "trước![alt](url)sau"
 	protected := protectedSpans(text)
 	units := buildUnitsWithProtection(text, protected, []string{"\n"}, 0)
 
@@ -665,18 +665,18 @@ func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
 	// A markdown table large enough to span multiple chunks.
 	// Each chunk after the first should have the header row + separator prepended.
 	text := "" +
-		"前面的文字\n\n" +
-		"| 姓名 | 年龄 | 城市 |\n" +
+		"Văn bản trước\n\n" +
+		"| Tên | Tuổi | Nơi |\n" +
 		"| --- | --- | --- |\n" +
-		"| 张三 | 25 | 北京 |\n" +
-		"| 李四 | 30 | 上海 |\n" +
-		"| 王五 | 28 | 广州 |\n" +
-		"| 赵六 | 35 | 深圳 |\n" +
-		"| 孙七 | 22 | 杭州 |\n" +
-		"| 周八 | 40 | 成都 |\n" +
-		"\n后面的文字"
+		"| Nam | 25 | Huế |\n" +
+		"| Hoa | 30 | HCM |\n" +
+		"| Lan | 28 | Huế |\n" +
+		"| Mai | 35 | HCM |\n" +
+		"| Tâm | 22 | Huế |\n" +
+		"| Đạt | 40 | HN |\n" +
+		"\nVăn bản sau"
 
-	tableHeader := "| 姓名 | 年龄 | 城市 |\n| --- | --- | --- |\n"
+	tableHeader := "| Tên | Tuổi | Nơi |\n| --- | --- | --- |\n"
 
 	cfg := SplitterConfig{ChunkSize: 60, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -689,10 +689,10 @@ func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
 	// These should have the header prepended.
 	headerPrependCount := 0
 	for _, c := range chunks {
-		if strings.Contains(c.Content, "| 李四") || strings.Contains(c.Content, "| 王五") ||
-			strings.Contains(c.Content, "| 赵六") || strings.Contains(c.Content, "| 孙七") ||
-			strings.Contains(c.Content, "| 周八") {
-			if !strings.Contains(c.Content, "| 张三") {
+		if strings.Contains(c.Content, "| Hoa") || strings.Contains(c.Content, "| Lan") ||
+			strings.Contains(c.Content, "| Mai") || strings.Contains(c.Content, "| Tâm") ||
+			strings.Contains(c.Content, "| Đạt") {
+			if !strings.Contains(c.Content, "| Nam") {
 				// This is a chunk with table rows but not the first row;
 				// it should have the header prepended.
 				if !strings.HasPrefix(c.Content, tableHeader) {
@@ -715,7 +715,7 @@ func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
 
 func TestSplitText_NoHeaderForNonTableContent(t *testing.T) {
 	// Ensure header prepending doesn't affect non-table content.
-	text := strings.Repeat("这是一段普通的中文文本，不包含任何表格。\n\n", 10)
+	text := strings.Repeat("Văn bản thường, không bảng.\n\n", 10)
 
 	cfg := SplitterConfig{ChunkSize: 30, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -741,15 +741,15 @@ func TestSplitText_TableHeaderEndedByEmptyLine(t *testing.T) {
 		"| 1 | 2 |\n" +
 		"| 3 | 4 |\n" +
 		"\n" +
-		"这是表格之后的普通文本内容，不应该包含表头。\n" +
-		"更多的普通文本内容用于填充。"
+		"Văn bản sau bảng, không được kèm tiêu đề bảng.\n" +
+		"Thêm văn bản thường để làm đầy."
 
 	cfg := SplitterConfig{ChunkSize: 40, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
 
 	for _, c := range chunks {
 		hasTableRow := strings.Contains(c.Content, "| A | B |") || strings.Contains(c.Content, "|")
-		hasPlainText := strings.Contains(c.Content, "这是表格之后") || strings.Contains(c.Content, "更多的普通")
+		hasPlainText := strings.Contains(c.Content, "Văn bản sau bảng") || strings.Contains(c.Content, "Thêm văn bản")
 		if hasPlainText && !hasTableRow {
 			// This chunk is purely post-table text; should NOT have table header
 			if strings.Contains(c.Content, "| --- |") {
@@ -812,11 +812,11 @@ func TestHeaderTracker_EmptyHeaderRowRewrite(t *testing.T) {
 	t.Logf("after empty header unit (pending): %q", h)
 
 	// First data row → becomes the real column names
-	ht.update("| 测试用例 ID | 测试模块 | 备注 |\n")
+	ht.update("| Mã ca kiểm thử | Mô-đun | Ghi chú |\n")
 	h = ht.getHeaders()
 	t.Logf("after rewrite: %q", h)
 
-	if !strings.Contains(h, "测试用例 ID") {
+	if !strings.Contains(h, "Mã ca kiểm thử") {
 		t.Errorf("rewritten header should contain column names, got:\n%s", h)
 	}
 	if strings.Contains(h, "||") {
@@ -826,14 +826,14 @@ func TestHeaderTracker_EmptyHeaderRowRewrite(t *testing.T) {
 		t.Errorf("rewritten header should contain separator, got:\n%s", h)
 	}
 	// Column names should come BEFORE the separator
-	colIdx := strings.Index(h, "测试用例 ID")
+	colIdx := strings.Index(h, "Mã ca kiểm thử")
 	sepIdx := strings.Index(h, "---")
 	if colIdx > sepIdx {
 		t.Errorf("column names should appear before separator in rewritten header:\n%s", h)
 	}
 
 	// Subsequent data rows should NOT be absorbed
-	ht.update("| TC-001 | 模块A | 备注1 |\n")
+	ht.update("| TC-001 | Mô-đun A | Ghi chú 1 |\n")
 	h2 := ht.getHeaders()
 	if strings.Contains(h2, "TC-001") {
 		t.Errorf("header should NOT include subsequent data rows, got:\n%s", h2)
@@ -850,16 +850,16 @@ func TestHeaderTracker_NormalHeaderNoExtension(t *testing.T) {
 	// A table with proper column names in the header row should NOT be extended.
 	ht := newHeaderTracker()
 
-	ht.update("| 姓名 | 年龄 |\n| --- | --- |\n")
+	ht.update("| Họ tên | Tuổi |\n| --- | --- |\n")
 	h := ht.getHeaders()
 	if h == "" {
 		t.Fatal("expected active header")
 	}
 
 	// First data row should NOT be absorbed into the header
-	ht.update("| 张三 | 25 |\n")
+	ht.update("| Nam | 25 |\n")
 	h2 := ht.getHeaders()
-	if strings.Contains(h2, "张三") {
+	if strings.Contains(h2, "Nam") {
 		t.Errorf("normal header should not absorb data rows, got:\n%s", h2)
 	}
 }
@@ -867,16 +867,16 @@ func TestHeaderTracker_NormalHeaderNoExtension(t *testing.T) {
 func TestSplitText_EmptyHeaderRowPrepend(t *testing.T) {
 	// Simulate MarkItDown output: empty header row, real column names in first data row.
 	text := "" +
-		"前言\n\n" +
+		"Mở đầu\n\n" +
 		"||\n" +
 		"| --- | --- | --- |\n" +
-		"| 用例ID | 模块 | 步骤 |\n" +
-		"| TC-001 | A | 步骤1 |\n" +
-		"| TC-002 | B | 步骤2 |\n" +
-		"| TC-003 | C | 步骤3 |\n" +
-		"| TC-004 | D | 步骤4 |\n" +
+		"| Mã ca | Mô-đun | Bước |\n" +
+		"| TC-001 | A | Bước 1 |\n" +
+		"| TC-002 | B | Bước 2 |\n" +
+		"| TC-003 | C | Bước 3 |\n" +
+		"| TC-004 | D | Bước 4 |\n" +
 		"\n" +
-		"结尾"
+		"Kết thúc"
 
 	cfg := SplitterConfig{ChunkSize: 80, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -892,7 +892,7 @@ func TestSplitText_EmptyHeaderRowPrepend(t *testing.T) {
 			strings.Contains(c.Content, "TC-004")
 		if hasLaterRow && !strings.Contains(c.Content, "TC-001") {
 			// Should have column names prepended
-			if !strings.Contains(c.Content, "用例ID") {
+			if !strings.Contains(c.Content, "Mã ca") {
 				t.Errorf("chunk with data rows should have real column names prepended:\n%s", c.Content)
 			}
 			// Should NOT have the empty || row
@@ -979,7 +979,7 @@ func TestSplitText_EnTablesNoCrossTableHeader(t *testing.T) {
 		"| Simple  Multiparagraph | Table  Full |\n" +
 		"| Of  Paragraphs | In each  Cell. |\n"
 
-	cfg := SplitterConfig{ChunkSize: 200, ChunkOverlap: 20, Separators: []string{"\n\n", "\n", "。"}}
+	cfg := SplitterConfig{ChunkSize: 200, ChunkOverlap: 20, Separators: []string{"\n\n", "\n", ". "}}
 	chunks := SplitText(text, cfg)
 	if len(chunks) < 2 {
 		t.Fatalf("expected multiple chunks, got %d", len(chunks))
@@ -998,21 +998,21 @@ func TestSplitText_EnTablesNoCrossTableHeader(t *testing.T) {
 
 func TestSplitText_MultipleTablesInDocument(t *testing.T) {
 	text := "" +
-		"第一个表格：\n\n" +
-		"| 名称 | 值 |\n" +
+		"Bảng thứ nhất:\n\n" +
+		"| Tên | Giá trị |\n" +
 		"| --- | --- |\n" +
 		"| A | 1 |\n" +
 		"| B | 2 |\n" +
 		"| C | 3 |\n" +
 		"\n" +
-		"中间的文字\n\n" +
-		"| 项目 | 状态 |\n" +
+		"Văn bản ở giữa\n\n" +
+		"| Việc | Kết quả |\n" +
 		"| --- | --- |\n" +
-		"| X | 完成 |\n" +
-		"| Y | 进行中 |\n" +
-		"| Z | 未开始 |\n" +
+		"| X | Xong |\n" +
+		"| Y | Đang |\n" +
+		"| Z | Chưa |\n" +
 		"\n" +
-		"结尾文字"
+		"Văn bản kết"
 
 	cfg := SplitterConfig{ChunkSize: 50, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -1020,10 +1020,10 @@ func TestSplitText_MultipleTablesInDocument(t *testing.T) {
 	// Verify that if a chunk has rows from table 2, it has table 2's header, not table 1's.
 	for _, c := range chunks {
 		if strings.Contains(c.Content, "| Y |") && !strings.Contains(c.Content, "| X |") {
-			if !strings.Contains(c.Content, "| 项目 | 状态 |") {
+			if !strings.Contains(c.Content, "| Việc | Kết quả |") {
 				t.Errorf("chunk with table-2 rows should have table-2 header:\n%s", c.Content)
 			}
-			if strings.Contains(c.Content, "| 名称 | 值 |") {
+			if strings.Contains(c.Content, "| Tên | Giá trị |") {
 				t.Errorf("chunk with table-2 rows should NOT have table-1 header:\n%s", c.Content)
 			}
 		}
@@ -1090,15 +1090,15 @@ func restoreTextFromChunks(chunks []Chunk) string {
 }
 
 func TestSplitText_RestoreTextNoTable(t *testing.T) {
-	// Plain Chinese text without any tables — baseline restoration check.
+	// Plain Vietnamese text without any tables — baseline restoration check.
 	var sb strings.Builder
 	for i := 0; i < 30; i++ {
-		sb.WriteString(fmt.Sprintf("第%d段：这是一段用于测试的中文内容，包含各种标点符号。", i))
+		sb.WriteString(fmt.Sprintf("Đoạn %d: nội dung dùng để kiểm thử, có nhiều dấu câu.", i))
 		sb.WriteString("\n\n")
 	}
 	text := sb.String()
 
-	cfg := SplitterConfig{ChunkSize: 50, ChunkOverlap: 10, Separators: []string{"\n\n", "\n", "。"}}
+	cfg := SplitterConfig{ChunkSize: 50, ChunkOverlap: 10, Separators: []string{"\n\n", "\n", ". "}}
 	chunks := SplitText(text, cfg)
 
 	restored := restoreTextFromChunks(chunks)
@@ -1126,20 +1126,20 @@ func TestSplitText_RestoreTextWithTable(t *testing.T) {
 	// Use a 2-column table (shorter header ~24 runes) + ChunkSize 80 so the
 	// header can be prepended (header 24 + row ~16 = 40 < 80).
 	text := "" +
-		"这是文档前言部分的内容。\n\n" +
-		"| 姓名 | 城市 |\n" +
+		"Đây là phần mở đầu của tài liệu.\n\n" +
+		"| Họ tên | Tỉnh |\n" +
 		"| --- | --- |\n" +
-		"| 张三 | 北京 |\n" +
-		"| 李四 | 上海 |\n" +
-		"| 王五 | 广州 |\n" +
-		"| 赵六 | 深圳 |\n" +
-		"| 孙七 | 杭州 |\n" +
-		"| 周八 | 成都 |\n" +
-		"| 吴九 | 武汉 |\n" +
-		"| 郑十 | 南京 |\n" +
+		"| Nam | Huế |\n" +
+		"| Hoa | Vinh |\n" +
+		"| Lan | Đà Lạt |\n" +
+		"| Mai | Cần Thơ |\n" +
+		"| Tâm | Hà Nội |\n" +
+		"| Đạt | Hải Phòng |\n" +
+		"| Hà | Quy Nhơn |\n" +
+		"| Thu | Đà Nẵng |\n" +
 		"\n" +
-		"这是表格之后的文字内容。\n" +
-		"这里还有更多的普通段落。"
+		"Đây là văn bản sau bảng.\n" +
+		"Còn thêm vài đoạn thường nữa."
 
 	cfg := SplitterConfig{ChunkSize: 80, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -1239,13 +1239,13 @@ func TestSplitText_RestoreTextWithTable(t *testing.T) {
 
 func TestSplitText_RestoreTextWithMultipleTables(t *testing.T) {
 	text := "" +
-		"前言\n\n" +
+		"Mở đầu\n\n" +
 		"| A | B |\n| --- | --- |\n" +
 		"| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n| 7 | 8 |\n" +
-		"\n中间文字\n\n" +
+		"\nVăn bản giữa\n\n" +
 		"| X | Y |\n| --- | --- |\n" +
 		"| a | b |\n| c | d |\n| e | f |\n" +
-		"\n结尾"
+		"\nKết thúc"
 
 	cfg := SplitterConfig{ChunkSize: 50, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
@@ -1277,16 +1277,16 @@ func TestSplitText_RestoreTextWithMultipleTables(t *testing.T) {
 func TestSplitText_RestoreTextWithOverlap(t *testing.T) {
 	// Larger overlap to stress the overlap+header interaction.
 	text := "" +
-		"| 列1 | 列2 | 列3 |\n" +
+		"| Tên | Mã | Số |\n" +
 		"| --- | --- | --- |\n" +
-		"| 数据A1 | 数据A2 | 数据A3 |\n" +
-		"| 数据B1 | 数据B2 | 数据B3 |\n" +
-		"| 数据C1 | 数据C2 | 数据C3 |\n" +
-		"| 数据D1 | 数据D2 | 数据D3 |\n" +
-		"| 数据E1 | 数据E2 | 数据E3 |\n" +
-		"| 数据F1 | 数据F2 | 数据F3 |\n" +
+		"| Ô A1 | Ô A2 | Ô A3 |\n" +
+		"| Ô B1 | Ô B2 | Ô B3 |\n" +
+		"| Ô C1 | Ô C2 | Ô C3 |\n" +
+		"| Ô D1 | Ô D2 | Ô D3 |\n" +
+		"| Ô E1 | Ô E2 | Ô E3 |\n" +
+		"| Ô F1 | Ô F2 | Ô F3 |\n" +
 		"\n" +
-		"表后文本。"
+		"Văn bản sau bảng."
 
 	for _, overlap := range []int{0, 3, 10, 20} {
 		t.Run(fmt.Sprintf("overlap=%d", overlap), func(t *testing.T) {
@@ -1307,15 +1307,15 @@ func TestSplitText_RestoreTextWithOverlap(t *testing.T) {
 
 func TestSplitTextParentChild_WithTableHeaders(t *testing.T) {
 	text := "" +
-		"前言\n\n" +
-		"| 列A | 列B |\n" +
+		"Mở đầu\n\n" +
+		"| Cột A | Cột B |\n" +
 		"| --- | --- |\n" +
-		"| 数据1 | 数据2 |\n" +
-		"| 数据3 | 数据4 |\n" +
-		"| 数据5 | 数据6 |\n" +
-		"| 数据7 | 数据8 |\n" +
+		"| Ô 1 | Ô 2 |\n" +
+		"| Ô 3 | Ô 4 |\n" +
+		"| Ô 5 | Ô 6 |\n" +
+		"| Ô 7 | Ô 8 |\n" +
 		"\n" +
-		"结尾"
+		"Kết thúc"
 
 	parentCfg := SplitterConfig{ChunkSize: 200, ChunkOverlap: 0, Separators: []string{"\n\n", "\n"}}
 	childCfg := SplitterConfig{ChunkSize: 40, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}

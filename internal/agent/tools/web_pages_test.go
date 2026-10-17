@@ -77,7 +77,7 @@ func TestFetchSavedPageSurvivesCacheEvictionAndModelEncoding(t *testing.T) {
 }
 
 func TestSavedWebPageReadsOversizedUnicodeLineWithoutShell(t *testing.T) {
-	line := strings.Repeat("正文", 18000)
+	line := strings.Repeat("nội dung ", 4000)
 	store := &memoryWebPages{pages: map[string]string{"web://long": line + "\nlast line"}}
 	registry := NewToolRegistry()
 	registry.SetMaxToolOutputSize(4096)

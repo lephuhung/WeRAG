@@ -31,14 +31,16 @@ import (
 //     hiệu naming a document, and no scope the user set;
 //  3. the request is generic (genericScopeRequest).
 //
-// It never asks when the task needs no text (format, spelling), when the
+// A source attached with the request is never long that turn (its text
+// is in the prompt). It never asks when the task needs no text (format,
+// spelling), when the
 // user asks for the whole document (toàn bộ, cả văn bản, đầy đủ), when the
 // user already answered for that document and task in this session (see
 // MarkScopeClarificationAnswered), or when the agent turns it off.
 const (
 	clarifyTargetRunes      = openDocumentPromptRunes
 	clarifyTargetParagraphs = 150
-	clarifySourceRunes      = 16000
+	clarifySourceRunes      = 2 * sourceOutlineRunes // two read_document_outline calls
 	clarifyTotalRunes       = 24000
 	clarifyMaxWords         = 12
 	clarifyRunesPerPage     = 2000 // an A4 page of Times New Roman 14
@@ -200,10 +202,14 @@ func DocumentScopeClarification(ctx context.Context, src DocumentWorkspaceSource
 		}
 	}
 
+	// a source attached with this request is never long this turn: its
+	// text is in the prompt (whole, or the sections the attachment picker
+	// chose). A long target next to it still gets the question.
+	attached := attachedSources(ctx)
 	readCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	var loaded []*sessionDocUnits
 	for _, d := range inPlay {
-		if d.IsSource() && d.TextStatus != types.DocumentSourceTextReady {
+		if attached[d.ID] || (d.IsSource() && d.TextStatus != types.DocumentSourceTextReady) {
 			continue
 		}
 		du, err := loadDocumentUnits(readCtx, src, sessionID, d, len(loaded))

@@ -12,15 +12,15 @@ func faqChunkForSnippetTest(t *testing.T) *types.Chunk {
 	t.Helper()
 	chunk := &types.Chunk{
 		ChunkType: types.ChunkTypeFAQ,
-		Content: `Q: 离职原因是否可以自定义
+		Content: `Q: Lý do nghỉ việc có thể tự định nghĩa không
 Similar Questions:
-- 离职原因自定义
-- 设置离职原因`,
+- Tùy chỉnh lý do nghỉ việc
+- Thiết lập lý do nghỉ việc`,
 	}
 	meta := &types.FAQChunkMetadata{
-		StandardQuestion: "离职原因是否可以自定义",
-		SimilarQuestions: []string{"离职原因自定义", "设置离职原因"},
-		Answers:          []string{"可以，在系统设置中自定义离职原因。"},
+		StandardQuestion: "Lý do nghỉ việc có thể tự định nghĩa không",
+		SimilarQuestions: []string{"Tùy chỉnh lý do nghỉ việc", "Thiết lập lý do nghỉ việc"},
+		Answers:          []string{"Có thể, tự định nghĩa lý do nghỉ việc trong phần cài đặt hệ thống."},
 	}
 	if err := chunk.SetFAQMetadata(meta); err != nil {
 		t.Fatalf("SetFAQMetadata: %v", err)
@@ -30,16 +30,16 @@ Similar Questions:
 
 func TestFaqMatchSnippet_StandardQuestionAndMetadataAnswer(t *testing.T) {
 	chunk := faqChunkForSnippetTest(t)
-	re := regexp.MustCompile(`(?i)是否可以自定义`)
+	re := regexp.MustCompile(`(?i)có thể tự định nghĩa không`)
 	snippet := faqMatchSnippet(chunk, []*regexp.Regexp{re})
 
-	if !strings.Contains(snippet, "Q: 离职原因是否可以自定义") {
+	if !strings.Contains(snippet, "Q: Lý do nghỉ việc có thể tự định nghĩa không") {
 		t.Fatalf("want standard question in snippet, got: %s", snippet)
 	}
-	if !strings.Contains(snippet, "A: 可以，在系统设置中") {
+	if !strings.Contains(snippet, "A: Có thể, tự định nghĩa lý do") {
 		t.Fatalf("want metadata answer in snippet, got: %s", snippet)
 	}
-	for _, unwanted := range []string{"Similar Questions", "离职原因自定义", "设置离职原因"} {
+	for _, unwanted := range []string{"Similar Questions", "Tùy chỉnh lý do nghỉ việc", "Thiết lập lý do nghỉ việc"} {
 		if strings.Contains(snippet, unwanted) {
 			t.Errorf("snippet should not include similar-question noise %q: %s", unwanted, snippet)
 		}
@@ -48,16 +48,16 @@ func TestFaqMatchSnippet_StandardQuestionAndMetadataAnswer(t *testing.T) {
 
 func TestFaqMatchSnippetFromQueries_StandardQuestionAndMetadataAnswer(t *testing.T) {
 	meta := &types.FAQChunkMetadata{
-		StandardQuestion: "离职原因是否可以自定义",
-		SimilarQuestions: []string{"离职原因自定义", "设置离职原因"},
-		Answers:          []string{"可以，在系统设置中自定义离职原因。"},
+		StandardQuestion: "Lý do nghỉ việc có thể tự định nghĩa không",
+		SimilarQuestions: []string{"Tùy chỉnh lý do nghỉ việc", "Thiết lập lý do nghỉ việc"},
+		Answers:          []string{"Có thể, tự định nghĩa lý do nghỉ việc trong phần cài đặt hệ thống."},
 	}
-	snippet := faqMatchSnippetFromQueries(meta, []string{"是否可以自定义"})
+	snippet := faqMatchSnippetFromQueries(meta, []string{"có thể tự định nghĩa không"})
 
-	if !strings.Contains(snippet, "Q: 离职原因是否可以自定义") {
+	if !strings.Contains(snippet, "Q: Lý do nghỉ việc có thể tự định nghĩa không") {
 		t.Fatalf("want standard question, got: %s", snippet)
 	}
-	if !strings.Contains(snippet, "A: 可以，在系统设置中") {
+	if !strings.Contains(snippet, "A: Có thể, tự định nghĩa lý do") {
 		t.Fatalf("want metadata answer, got: %s", snippet)
 	}
 	if strings.Contains(snippet, "Similar Questions") {
@@ -67,32 +67,32 @@ func TestFaqMatchSnippetFromQueries_StandardQuestionAndMetadataAnswer(t *testing
 
 func TestFaqMatchSnippetFromQueries_SimilarQuestionHitShowsMatchedVariant(t *testing.T) {
 	meta := &types.FAQChunkMetadata{
-		StandardQuestion: "离职原因是否可以自定义",
-		SimilarQuestions: []string{"离职原因自定义", "设置离职原因"},
-		Answers:          []string{"可以自定义。"},
+		StandardQuestion: "Lý do nghỉ việc có thể tự định nghĩa không",
+		SimilarQuestions: []string{"Tùy chỉnh lý do nghỉ việc", "Thiết lập lý do nghỉ việc"},
+		Answers:          []string{"Có thể tự định nghĩa."},
 	}
-	snippet := faqMatchSnippetFromQueries(meta, []string{"离职原因自定义"})
+	snippet := faqMatchSnippetFromQueries(meta, []string{"Tùy chỉnh lý do nghỉ việc"})
 
-	if !strings.Contains(snippet, "Q: 离职原因自定义") {
+	if !strings.Contains(snippet, "Q: Tùy chỉnh lý do nghỉ việc") {
 		t.Fatalf("want matched similar question, got: %s", snippet)
 	}
 }
 
 func TestFaqMatchSnippet_SimilarQuestionHitShowsMatchedVariant(t *testing.T) {
 	chunk := faqChunkForSnippetTest(t)
-	re := regexp.MustCompile(`(?i)离职原因自定义`)
+	re := regexp.MustCompile(`(?i)Tùy chỉnh lý do nghỉ việc`)
 	snippet := faqMatchSnippet(chunk, []*regexp.Regexp{re})
 
-	if !strings.Contains(snippet, "Q: 离职原因自定义") {
+	if !strings.Contains(snippet, "Q: Tùy chỉnh lý do nghỉ việc") {
 		t.Fatalf("want matched similar question, got: %s", snippet)
 	}
-	if strings.Contains(snippet, "是否可以自定义") {
+	if strings.Contains(snippet, "có thể tự định nghĩa không") {
 		t.Fatalf("should not show standard question when similar question matched: %s", snippet)
 	}
 }
 
 func TestExtractChunkMatchSnippet_NonFAQUsesBodyContext(t *testing.T) {
-	content := strings.Repeat("前置。", 50) + "TARGET" + strings.Repeat("后续。", 50)
+	content := strings.Repeat("Phần trước. ", 50) + "TARGET" + strings.Repeat("Phần sau. ", 50)
 	chunk := &types.Chunk{ChunkType: types.ChunkTypeText, Content: content}
 	re := regexp.MustCompile(`TARGET`)
 	snippet := extractChunkMatchSnippet(chunk, []*regexp.Regexp{re})
@@ -100,7 +100,7 @@ func TestExtractChunkMatchSnippet_NonFAQUsesBodyContext(t *testing.T) {
 	if !strings.Contains(snippet, "TARGET") {
 		t.Fatalf("missing match: %s", snippet)
 	}
-	if !strings.Contains(snippet, "前置") || !strings.Contains(snippet, "后续") {
+	if !strings.Contains(snippet, "Phần trước") || !strings.Contains(snippet, "Phần sau") {
 		t.Fatalf("expected expanded body context: %s", snippet)
 	}
 }

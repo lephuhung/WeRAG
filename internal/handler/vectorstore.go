@@ -80,7 +80,7 @@ func envStoreReadonlyError() gin.H {
 // CreateStore godoc
 // @Summary      Create vector store
 // @Description  Create a new vector store configuration for the current workspace
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CreateStoreRequest       true  "Vector store configuration"
@@ -130,7 +130,7 @@ func (h *VectorStoreHandler) CreateStore(c *gin.Context) {
 // ListStores godoc
 // @Summary      List vector stores
 // @Description  List all vector stores for the current workspace, including environment-configured and user-created stores
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "List of vector stores (env + DB)"
 // @Failure      401  {object}  map[string]interface{}   "Unauthorized"
@@ -175,7 +175,7 @@ func (h *VectorStoreHandler) ListStores(c *gin.Context) {
 // GetStore godoc
 // @Summary      Get vector store
 // @Description  Retrieve a single vector store by ID. Supports both DB stores and env stores (__env_* IDs)
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Produce      json
 // @Param        id   path      string  true  "Vector store ID"
 // @Success      200  {object}  map[string]interface{}   "Vector store details"
@@ -225,7 +225,7 @@ func (h *VectorStoreHandler) GetStore(c *gin.Context) {
 // UpdateStore godoc
 // @Summary      Update vector store
 // @Description  Update a vector store (name only). Engine type, connection config, and index config are immutable. Env stores cannot be modified.
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string               true  "Vector store ID"
@@ -296,7 +296,7 @@ func (h *VectorStoreHandler) UpdateStore(c *gin.Context) {
 // DeleteStore godoc
 // @Summary      Delete vector store
 // @Description  Soft-delete a vector store. Env stores cannot be deleted.
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Produce      json
 // @Param        id   path      string  true  "Vector store ID"
 // @Success      200  {object}  map[string]interface{}   "Deletion success"
@@ -341,7 +341,7 @@ func (h *VectorStoreHandler) DeleteStore(c *gin.Context) {
 // ListStoreTypes godoc
 // @Summary      List vector store types
 // @Description  Return supported engine types with connection and index field schemas for UI form generation
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "List of engine types with config schemas"
 // @Router       /vector-stores/types [get]
@@ -355,7 +355,7 @@ func (h *VectorStoreHandler) ListStoreTypes(c *gin.Context) {
 // TestStoreByID godoc
 // @Summary      Test vector store connection by ID
 // @Description  Test connectivity of an existing saved or env store. Returns detected server version. For DB stores, the version is automatically saved to connection_config.
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Produce      json
 // @Param        id   path      string  true  "Vector store ID"
 // @Success      200  {object}  map[string]interface{}   "Connection test result (success, version)"
@@ -419,7 +419,7 @@ func (h *VectorStoreHandler) TestStoreByID(c *gin.Context) {
 // TestStoreRaw godoc
 // @Summary      Test vector store connection with raw credentials
 // @Description  Test connectivity using provided credentials without persisting. Returns detected server version.
-// @Tags         VectorStore
+// @Tags         Kho vector
 // @Accept       json
 // @Produce      json
 // @Param        request  body      TestStoreRequest         true  "Engine type and connection config"

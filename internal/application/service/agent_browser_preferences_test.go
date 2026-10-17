@@ -52,7 +52,7 @@ func TestBrowserPreferencesSaveReloadResetAndUserIsolation(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, types.DefaultBrowserSearchInstructions, got)
 	}
-	tooLong := strings.Repeat("中", types.MaxBrowserSearchInstructionsLength+1)
+	tooLong := strings.Repeat("ư", types.MaxBrowserSearchInstructionsLength+1)
 	_, err = users.UpdateUserPreferences(alice, "alice", types.UserPreferences{BrowserSearchInstructions: &tooLong})
 	require.ErrorContains(t, err, "4000")
 	require.Nil(t, repo.users["alice"].Preferences.BrowserSearchInstructions)

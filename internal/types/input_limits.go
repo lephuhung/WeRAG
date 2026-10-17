@@ -49,6 +49,10 @@ type InputGateContext string
 const (
 	InputGateKnowledgeBase InputGateContext = "kb"
 	InputGateChat          InputGateContext = "chat"
+	// InputGateDocument is the file the document assistant opens to edit
+	// (role "target"). The assistant reads it section by section, so it
+	// takes the knowledge-base caps, not the tight chat-attachment ones.
+	InputGateDocument InputGateContext = "document"
 )
 
 // Reasons carried in the error envelope's details.reason so a client can

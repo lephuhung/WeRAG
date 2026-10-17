@@ -45,14 +45,26 @@ export type DocumentOp =
       style: MarkStyle;
     }
   | {
-      /** Selects a listed mistake so the editor scrolls to it (page-built). */
+      /** Selects a listed mistake so the editor scrolls to it (page-built);
+       * atStart moves the cursor to the start of the document. */
       op: "select";
-      anchor: ParagraphAnchor;
+      anchor: ParagraphAnchor | StartAnchor;
       text?: string;
       textOccurrence?: number;
     }
   | {
       op: "formatParagraph";
+      anchor: ParagraphAnchor;
+      alignment?: Alignment;
+      font?: string;
+      sizePt?: number;
+      bold?: boolean;
+      italic?: boolean;
+    }
+  | {
+      /** Fails unless the paragraph has this formatting throughout (the
+       * format review's check after a fix; page-built, changes nothing). */
+      op: "checkFormat";
       anchor: ParagraphAnchor;
       alignment?: Alignment;
       font?: string;
@@ -155,13 +167,14 @@ export function opValidationError(raw: unknown): string | null {
       return validAnchor(raw.anchor) ? null : "bad anchor";
     case "select":
       // moves the selection to a listed mistake (built by the page)
-      if (!validAnchor(raw.anchor)) return "bad anchor";
+      if (!validAnchor(raw.anchor, true)) return "bad anchor";
       if (raw.text !== undefined && !isStr(raw.text)) return "bad text";
       return raw.textOccurrence === undefined ||
         (typeof raw.textOccurrence === "number" && Number.isInteger(raw.textOccurrence) && raw.textOccurrence >= 1)
         ? null
         : "bad textOccurrence";
     case "formatParagraph":
+    case "checkFormat":
       if (!validAnchor(raw.anchor)) return "bad anchor";
       if (!optAlign(raw.alignment)) return "bad alignment";
       if (raw.font !== undefined && !isStr(raw.font)) return "bad font";

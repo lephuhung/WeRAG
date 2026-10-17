@@ -37,15 +37,13 @@ import { ConfirmProvider } from "@/components/confirm-dialog";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { SecuritySettings } from "@/components/settings/security-settings";
-import { MemoryPersonalSettings } from "@/components/settings/memory-personal-settings";
+import { MemoryHub } from "@/components/settings/memory-hub";
 import { TenantInfo } from "@/components/settings/tenant-info";
 import { AgencyProfileSettings } from "@/components/settings/agency-profile";
 import { TenantMembers } from "@/components/settings/tenant-members";
 import { TenantUsage } from "@/components/settings/tenant-usage";
 import { BillingPage } from "@/components/settings/billing";
 import { ApiKeysSection } from "@/components/settings/api-keys";
-import { ChatHistorySettings } from "@/components/settings/chat-history-settings";
-import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
 import { BrowserConnectionSettings } from "@/components/settings/browser-connection-settings";
 import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
 import { AbbreviationsSettings } from "@/components/settings/abbreviations-settings";
@@ -57,7 +55,6 @@ import { SandboxSettings } from "@/components/settings/sandbox-settings";
 import {
   IconAgent,
   IconBook,
-  IconBookmark,
   IconBulb,
   IconChevronLeft,
   IconChat,
@@ -85,7 +82,6 @@ import {
  * eagerly — they stream in only when the section is opened. The section
  * modules live in components/settings/pages; the old /platform/system/*
  * routes redirect here and open the matching section. */
-const SharingPage = lazy(() => import("@/components/settings/pages/sharing"));
 const McpServersPage = lazy(() => import("@/components/settings/pages/mcp-servers"));
 const AgentsPage = lazy(() => import("@/components/settings/pages/system-agents"));
 const IMChannelsPage = lazy(() => import("@/components/settings/pages/im-channels"));
@@ -131,7 +127,14 @@ const GROUPS: SettingsGroup[] = [
       { key: "general", labelKey: "settingsNav.general", fallback: "General", icon: IconSettings, render: () => <GeneralSettings />, route: W },
       { key: "profile", labelKey: "userSettings.profile", fallback: "Profile", icon: IconUser, render: () => <ProfileSettings /> },
       { key: "security", labelKey: "userSettings.security", fallback: "Security", icon: IconLock, render: () => <SecuritySettings /> },
-      { key: "mymemory", labelKey: "settingsNav.mymemory", fallback: "My memory", icon: IconBookmark, minRole: "system", render: () => <MemoryPersonalSettings />, route: `${W}/mymemory` },
+    ],
+  },
+  {
+    key: "plan",
+    labelKey: "settingsNav.groups.plan",
+    items: [
+      { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, render: () => <TenantUsage />, route: `${W}/usage` },
+      { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, render: () => <BillingPage />, route: `${W}/billing` },
     ],
   },
   {
@@ -141,12 +144,8 @@ const GROUPS: SettingsGroup[] = [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Workspace info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
       { key: "agency", labelKey: "settingsNav.agencyProfile", fallback: "Agency profile", icon: IconInfoCircle, render: () => <AgencyProfileSettings />, route: `${W}/agency` },
-      { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, render: () => <TenantUsage />, route: `${W}/usage` },
-      { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, render: () => <BillingPage />, route: `${W}/billing` },
-      { key: "sharing", labelKey: "settingsNav.sharing", fallback: "Sharing", icon: IconGlobe, minRole: "admin", render: () => <SharingPage />, route: `${W}/sharing` },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "system", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
-      { key: "chathistory", labelKey: "systemNav.chathistory", fallback: "Chat history", icon: IconClock, minRole: "system", render: () => <ChatHistorySettings />, route: `${W}/chathistory` },
-      { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "system", render: () => <MemoryWorkspaceSettings />, route: `${W}/memory` },
+      { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "system", render: () => <MemoryHub />, route: `${W}/memory` },
     ],
   },
   {

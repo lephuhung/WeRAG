@@ -48,9 +48,9 @@ type SkillInfoResponse struct {
 }
 
 // ListSkills godoc
-// @Summary      获取当前沙箱Configuration 上可执行的 Skills
-// @Description  返回指定沙箱Configuration 镜像内、智能体实际能调用的已安装技能（ready 且启用）。不传 sandbox_config_id 时List 为空。
-// @Tags         Skills
+// @Summary      Lấy các Skill chạy được trên cấu hình sandbox hiện tại
+// @Description  Trả về các skill đã cài trong image của cấu hình sandbox chỉ định mà trợ lý thực sự gọi được (ready và đang bật). Không truyền sandbox_config_id thì danh sách rỗng.
+// @Tags         Kỹ năng
 // @Accept       json
 // @Produce      json
 // @Param        sandbox_config_id  query     string  false  "Sandbox config ID"

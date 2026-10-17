@@ -195,14 +195,14 @@ func (h *TenantInvitationHandler) hydrateTenants(c *gin.Context, invs []*types.T
 }
 
 // ListTenantInvitations godoc
-// @Summary      列出Tenant workspace邀请
-// @Description  按Tenant workspace列出待接受 / 历史邀请。query include_terminal=true 时附带 accepted/declined/revoked/expired。
-// @Tags         Tenant workspace邀请
+// @Summary      Liệt kê lời mời của đơn vị
+// @Description  Liệt kê lời mời đang chờ / lịch sử theo đơn vị. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.
+// @Tags         Lời mời đơn vị
 // @Produce      json
 // @Param        id                path   string  true   "Tenant workspace ID"
-// @Param        include_terminal  query  bool    false  "是否包含终止态行（默认 false）"
-// @Param        page              query  int     false  "页码（从 1 起）"  default(1)
-// @Param        page_size         query  int     false  "每页数量"  default(20)
+// @Param        include_terminal  query  bool    false  "Có gồm các dòng ở trạng thái kết thúc không (mặc định false)"
+// @Param        page              query  int     false  "Số trang (bắt đầu từ 1)"  default(1)
+// @Param        page_size         query  int     false  "Số mục mỗi trang"  default(20)
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/invitations [get]
@@ -254,13 +254,13 @@ func (h *TenantInvitationHandler) ListTenantInvitations(c *gin.Context) {
 }
 
 // CreateInvitation godoc
-// @Summary      发出Tenant workspace邀请
-// @Description  Owner 通过邮箱邀请已注册用户加入Tenant workspace。开启 tenant.auto_accept_invitation 后被邀请人立即自动加入（响应为成员结构），否则需在 /me/invitations 接受后成为成员。
-// @Tags         Tenant workspace邀请
+// @Summary      Gửi lời mời vào đơn vị
+// @Description  Owner mời người dùng đã đăng ký vào đơn vị qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.
+// @Tags         Lời mời đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path  string                   true  "Tenant workspace ID"
-// @Param        request  body  createInvitationRequest  true  "邀请请求"
+// @Param        request  body  createInvitationRequest  true  "Yêu cầu mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/invitations [post]
@@ -390,12 +390,12 @@ func (h *TenantInvitationHandler) autoAcceptInvitationAndRespond(
 }
 
 // RevokeInvitation godoc
-// @Summary      撤销待接受邀请
-// @Description  Owner 取消一条还在 pending 的邀请；已 accepted/declined/revoked/expired 的行不可再撤销。
-// @Tags         Tenant workspace邀请
+// @Summary      Thu hồi lời mời đang chờ
+// @Description  Owner hủy một lời mời còn pending; dòng đã accepted/declined/revoked/expired không thu hồi được nữa.
+// @Tags         Lời mời đơn vị
 // @Produce      json
 // @Param        id      path  string  true  "Tenant workspace ID"
-// @Param        inv_id  path  string  true  "邀请 ID"
+// @Param        inv_id  path  string  true  "ID lời mời"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/invitations/{inv_id} [delete]
@@ -450,11 +450,11 @@ func (h *TenantInvitationHandler) RevokeInvitation(c *gin.Context) {
 }
 
 // ListMyInvitations godoc
-// @Summary      列出我的待接受邀请
-// @Description  返回当前登录用户的待接受邀请（默认仅 pending），用于头像入口和 /invitations 收件箱页。
-// @Tags         我的邀请
+// @Summary      Liệt kê lời mời đang chờ của tôi
+// @Description  Trả về lời mời đang chờ của người dùng đang đăng nhập (mặc định chỉ pending), dùng cho mục ở ảnh đại diện và trang hộp thư /invitations.
+// @Tags         Lời mời của tôi
 // @Produce      json
-// @Param        include_terminal  query  bool  false  "是否包含已处理 / 已过期等终止态行（默认 false）"
+// @Param        include_terminal  query  bool  false  "Có gồm các dòng đã xử lý / đã hết hạn (trạng thái kết thúc) không (mặc định false)"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /me/invitations [get]
@@ -490,9 +490,9 @@ func (h *TenantInvitationHandler) ListMyInvitations(c *gin.Context) {
 }
 
 // CountMyPendingInvitations godoc
-// @Summary      获取我的待处理邀请数
-// @Description  轻量级 endpoint，返回当前登录用户的 pending 邀请数，用于头像旁的角标轮询。
-// @Tags         我的邀请
+// @Summary      Lấy số lời mời đang chờ xử lý của tôi
+// @Description  Endpoint nhẹ, trả về số lời mời pending của người dùng đang đăng nhập, dùng để thăm dò huy hiệu cạnh ảnh đại diện.
+// @Tags         Lời mời của tôi
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -518,11 +518,11 @@ func (h *TenantInvitationHandler) CountMyPendingInvitations(c *gin.Context) {
 }
 
 // AcceptMyInvitation godoc
-// @Summary      接受邀请
-// @Description  当前登录用户接受一条 pending 邀请；服务端会同时写入 tenant_members 行。
-// @Tags         我的邀请
+// @Summary      Chấp nhận lời mời
+// @Description  Người dùng đang đăng nhập chấp nhận một lời mời pending; máy chủ đồng thời ghi dòng tenant_members.
+// @Tags         Lời mời của tôi
 // @Produce      json
-// @Param        inv_id  path  string  true  "邀请 ID"
+// @Param        inv_id  path  string  true  "ID lời mời"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /me/invitations/{inv_id}/accept [post]
@@ -583,21 +583,21 @@ func (h *TenantInvitationHandler) AcceptMyInvitation(c *gin.Context) {
 	})
 }
 
-// acceptInvitationByTokenRequest: POST /me/invitations/accept-by-token 的请求体。
-// 已登录用户用 token 加入Tenant workspace（与 register-by-invite 不同，不Create 新账号）。
+// acceptInvitationByTokenRequest: thân yêu cầu của POST /me/invitations/accept-by-token.
+// Người dùng đã đăng nhập dùng token để tham gia đơn vị (khác register-by-invite, không tạo tài khoản mới).
 type acceptInvitationByTokenRequest struct {
 	Token string `json:"token" binding:"required"`
 }
 
 // AcceptMyInvitationByToken godoc
-// @Summary      通过共享链接加入Tenant workspace
-// @Description  已登录用户用共享邀请链接 token 加入Tenant workspace，不Create 新账号；对已是成员的用户幂等。
-// @Tags         我的邀请
+// @Summary      Tham gia đơn vị qua liên kết chia sẻ
+// @Description  Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia đơn vị, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.
+// @Tags         Lời mời của tôi
 // @Accept       json
 // @Produce      json
-// @Param        request  body      acceptInvitationByTokenRequest  true  "邀请 token"
+// @Param        request  body      acceptInvitationByTokenRequest  true  "Token lời mời"
 // @Success      200      {object}  map[string]interface{}
-// @Failure      410      {object}  apperrors.AppError  "链接无效或已撤销"
+// @Failure      410      {object}  apperrors.AppError  "Liên kết không hợp lệ hoặc đã bị thu hồi"
 // @Security     Bearer
 // @Router       /me/invitations/accept-by-token [post]
 func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
@@ -623,7 +623,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvitationTokenInvalid):
-			// 无效/过期/撤销统一返回 410（与 LookupInvitationByToken 一致）。
+			// Không hợp lệ/hết hạn/đã thu hồi đều trả 410 (thống nhất với LookupInvitationByToken).
 			c.Error(&apperrors.AppError{
 				Code:     apperrors.ErrNotFound,
 				Message:  "invitation link is invalid or has been revoked",
@@ -636,7 +636,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 		return
 	}
 
-	// 无租户用户将首个加入的Tenant workspace设为默认Tenant workspace（与 AcceptMyInvitation 同理）。
+	// Người dùng chưa có đơn vị sẽ lấy đơn vị tham gia đầu tiên làm mặc định (như AcceptMyInvitation).
 	if user, userErr := h.userService.GetUserByID(ctx, caller); userErr == nil && user != nil && user.TenantID == 0 {
 		user.TenantID = member.TenantID
 		if updateErr := h.userService.UpdateUser(ctx, user); updateErr != nil {
@@ -647,7 +647,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 		}
 	}
 
-	// 供前端切换Tenant workspace展示用。
+	// Để frontend hiển thị khi chuyển đơn vị.
 	tenantName := ""
 	if tenant, terr := h.tenantService.GetTenantByID(ctx, member.TenantID); terr == nil && tenant != nil {
 		tenantName = tenant.Name
@@ -668,11 +668,11 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 }
 
 // DeclineMyInvitation godoc
-// @Summary      拒绝邀请
-// @Description  当前登录用户拒绝一条 pending 邀请；不Create  tenant_members 行。
-// @Tags         我的邀请
+// @Summary      Từ chối lời mời
+// @Description  Người dùng đang đăng nhập từ chối một lời mời pending; không tạo dòng tenant_members.
+// @Tags         Lời mời của tôi
 // @Produce      json
-// @Param        inv_id  path  string  true  "邀请 ID"
+// @Param        inv_id  path  string  true  "ID lời mời"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /me/invitations/{inv_id}/decline [post]

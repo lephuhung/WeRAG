@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -130,4 +131,50 @@ func outlineSource(ctx context.Context, src DocumentWorkspaceSource, sessionID s
 			"to":         to,
 		},
 	}
+}
+
+// sourceEditRequest matches a request to change text: the verbs a user
+// asks a rewrite or an insertion with, anchored to a word start and, for
+// verbs that legal questions use too (sửa, bổ sung, thay, cập nhật), to
+// what follows them in an edit request.
+var sourceEditRequest = regexp.MustCompile(`(^|[\s,.;:"“(])(viết lại|viết thêm|soạn lại|diễn đạt lại|sửa lại|chỉnh sửa|` +
+	`sửa (giúp|hộ|cho|câu|đoạn|mục|phần|lỗi|chính tả)|chèn|bổ sung (thêm|vào|câu|đoạn|mục|nội dung)|` +
+	`thay (bằng|câu|đoạn|từ|chữ)|cập nhật (lại|số liệu|đoạn|mục|nội dung))`)
+
+// sourceLegalQuestion matches the legal vocabulary of a read question
+// ("được sửa đổi, bổ sung bởi văn bản nào", "nghị định nào thay thế …"):
+// no edit is asked even when an edit verb also matches.
+var sourceLegalQuestion = regexp.MustCompile(`sửa đổi,? bổ sung|được sửa đổi|bị thay thế|thay thế (cho|bởi)|` +
+	`văn bản (sửa đổi|thay thế)|nào thay thế`)
+
+// SourceEditNote is the fixed line appended to the answer of a turn whose
+// @-mentions are all source documents and that asks for a change: a source
+// has no editor, so a proposal can only live in the chat. "" otherwise
+// (the caller skips it when an edit tool succeeded). Code-built, as Qwen
+// ignores the prompt rule.
+func SourceEditNote(ctx context.Context, src DocumentWorkspaceSource, sessionID, query string) string {
+	mentioned := types.MentionedDocumentsFromContext(ctx)
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if len(mentioned) == 0 || !ok || src == nil || sessionID == "" ||
+		!sourceEditRequest.MatchString(strings.ToLower(query)) || sourceLegalQuestion.MatchString(strings.ToLower(query)) {
+		return ""
+	}
+	docs, err := src.List(ctx, tenantID, sessionID)
+	if err != nil {
+		return ""
+	}
+	byID := make(map[string]*types.DocumentWorkspace, len(docs))
+	for _, d := range docs {
+		byID[d.ID] = d
+	}
+	var names []string
+	for _, id := range mentioned {
+		d := byID[id]
+		if d == nil || !d.IsSource() {
+			return ""
+		}
+		names = append(names, d.FileName)
+	}
+	return fmt.Sprintf("Lưu ý: %s là tài liệu nguồn (chỉ tra cứu); đề xuất trên chỉ hiển thị trong chat — "+
+		"mở tệp trong trình soạn thảo nếu muốn áp dụng.", strings.Join(names, ", "))
 }

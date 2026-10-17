@@ -210,15 +210,15 @@ func (s *abbreviationService) Get(ctx context.Context, id string) (*types.Abbrev
 }
 
 func (s *abbreviationService) List(
-	ctx context.Context, search string, isActive *bool, page, perPage int,
+	ctx context.Context, search string, isActive *bool, offset, limit int,
 ) ([]*types.Abbreviation, int64, error) {
-	if page < 1 {
-		page = 1
+	if offset < 0 {
+		offset = 0
 	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 20
+	if limit < 1 || limit > 100 {
+		limit = 20
 	}
-	return s.repo.List(ctx, search, isActive, (page-1)*perPage, perPage)
+	return s.repo.List(ctx, search, isActive, offset, limit)
 }
 
 func (s *abbreviationService) Update(

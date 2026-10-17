@@ -222,18 +222,18 @@ func TestAppendToolResultsKeepsImageOutputPolicyInStableSystemPrefix(t *testing.
 	engine.systemPromptTemplate = "Custom agent prompt."
 	prior := []chat.Message{
 		{Role: "system", Content: engine.buildSystemPrompt(t.Context())},
-		{Role: "user", Content: "解释流程"},
+		{Role: "user", Content: "Giải thích quy trình"},
 	}
 	step := types.AgentStep{ToolCalls: []types.ToolCall{{
 		ID: "call-image", Name: "knowledge_search",
-		Result: &types.ToolResult{Success: true, Output: "结果\n![流程图](resource://AbCdEfGhIjKlMnOpQrStUv)"},
+		Result: &types.ToolResult{Success: true, Output: "Kết quả\n![Sơ đồ quy trình](resource://AbCdEfGhIjKlMnOpQrStUv)"},
 	}}}
 	out := engine.appendToolResults(prior, step)
 	require.Len(t, out, 4)
 	assert.Equal(t, prior[0], out[0], "the system prefix stays stable after retrieval")
 	assert.Contains(t, out[0].Content, types.SourcedAnswerOutputPrompt)
 	assert.Equal(t, "tool", out[3].Role)
-	assert.Contains(t, out[3].Content, "![流程图](res://0001)")
+	assert.Contains(t, out[3].Content, "![Sơ đồ quy trình](res://0001)")
 	out = engine.appendToolResults(out, step)
 	require.Len(t, out, 6, "image results append no synthetic user instruction")
 }
@@ -289,7 +289,7 @@ func TestRenderUserTurnContent_QuestionOriginUsesHandles(t *testing.T) {
 			Document:          &SelectedDocumentInfo{KnowledgeID: "doc-real-id", Title: "Corners"},
 		},
 	}
-	out := engine.RenderUserTurnContent("sess-1", "为什么在比较图形时需要谨慎处理？")
+	out := engine.RenderUserTurnContent("sess-1", "Vì sao cần thận trọng khi so sánh các hình?")
 	assert.Contains(t, out, `<question_origin knowledge_base_id="b1" name="TEST">`)
 	assert.Contains(t, out, `<document knowledge_id="d1" title="Corners" />`)
 	assert.NotContains(t, out, "kb-real-id")

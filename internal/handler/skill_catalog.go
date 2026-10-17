@@ -17,7 +17,7 @@ import (
 // ListCatalog godoc
 // @Summary      List workspace skills
 // @Description  Returns every skill definition in this workspace and which sandbox configs it is installed on.
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -39,7 +39,7 @@ func (h *SkillHandler) ListCatalog(c *gin.Context) {
 // RegisterCatalog godoc
 // @Summary      Add a skill to the workspace catalog
 // @Description  Records a skill without installing it. Send a zip as multipart field "file", or JSON {"source":"..."}.
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Accept       json
 // @Accept       multipart/form-data
 // @Produce      json
@@ -125,7 +125,7 @@ type catalogInstallRequest struct {
 // InstallCatalog godoc
 // @Summary      Install a catalog skill onto sandboxes
 // @Description  Runs the existing snapshot install onto each named sandbox config.
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Accept       json
 // @Produce      json
 // @Param        id   path  string  true  "Catalog skill ID"
@@ -169,7 +169,7 @@ func (h *SkillHandler) InstallCatalog(c *gin.Context) {
 // DeleteCatalog godoc
 // @Summary      Delete a catalog skill
 // @Description  Refused while any sandbox still has an installation of this skill.
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Param        id   path  string  true  "Catalog skill ID"
 // @Success      200  {object}  map[string]interface{}
 // @Router       /skills/catalog/{id} [delete]
@@ -190,7 +190,7 @@ func (h *SkillHandler) DeleteCatalog(c *gin.Context) {
 // ListCatalogFiles godoc
 // @Summary      List files of a catalog skill
 // @Description  Lists the stored catalog bundle. Files belong to the skill definition, not a sandbox install.
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Produce      json
 // @Param        id   path  string  true  "Catalog skill ID"
 // @Success      200  {object}  map[string]interface{}
@@ -212,7 +212,7 @@ func (h *SkillHandler) ListCatalogFiles(c *gin.Context) {
 
 // GetCatalogFile godoc
 // @Summary      Read one file of a catalog skill
-// @Tags         Skills
+// @Tags         Kỹ năng
 // @Produce      json
 // @Param        id    path   string  true  "Catalog skill ID"
 // @Param        path  query  string  true  "Skill-root-relative file path"

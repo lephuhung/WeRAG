@@ -74,7 +74,7 @@ func canSeeOrder(c *gin.Context, o *types.UsageOrder) bool {
 
 // Info godoc
 // @Summary      Payment details for the purchase page
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /billing/info [get]
@@ -84,7 +84,7 @@ func (h *UsageBillingHandler) Info(c *gin.Context) {
 
 // Plans godoc
 // @Summary      Plans that can be bought online
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Param        scope query string false "tenant or user"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -100,7 +100,7 @@ func (h *UsageBillingHandler) Plans(c *gin.Context) {
 
 // Quote godoc
 // @Summary      Price a purchase (with an optional promo code)
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Accept       json
 // @Param        body body types.UsageQuoteRequest true "what to buy"
 // @Success      200 {object} map[string]interface{}
@@ -126,7 +126,7 @@ func (h *UsageBillingHandler) Quote(c *gin.Context) {
 
 // CreateOrder godoc
 // @Summary      Place an order for the workspace or for oneself
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Accept       json
 // @Param        body body types.UsageQuoteRequest true "what to buy"
 // @Success      200 {object} map[string]interface{}
@@ -153,7 +153,7 @@ func (h *UsageBillingHandler) CreateOrder(c *gin.Context) {
 
 // ListOrders godoc
 // @Summary      My orders and, for a workspace admin, the workspace's
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /billing/orders [get]
@@ -194,7 +194,7 @@ func (h *UsageBillingHandler) ListOrders(c *gin.Context) {
 
 // GetOrder godoc
 // @Summary      One order by its code
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Param        code path string true "order code"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -214,7 +214,7 @@ func (h *UsageBillingHandler) GetOrder(c *gin.Context) {
 
 // CancelOrder godoc
 // @Summary      Cancel a pending order of mine / of my workspace
-// @Tags         Billing
+// @Tags         Thanh toán
 // @Param        code path string true "order code"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -241,7 +241,7 @@ func (h *UsageBillingHandler) CancelOrder(c *gin.Context) {
 
 // AdminListOrders godoc
 // @Summary      Every order (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        status query string false "pending|paid|cancelled|expired"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -259,7 +259,7 @@ func (h *UsageBillingHandler) AdminListOrders(c *gin.Context) {
 
 // AdminConfirmOrder godoc
 // @Summary      Mark an order paid and apply it (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "order id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -276,7 +276,7 @@ func (h *UsageBillingHandler) AdminConfirmOrder(c *gin.Context) {
 
 // AdminCancelOrder godoc
 // @Summary      Cancel a pending order (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "order id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -292,7 +292,7 @@ func (h *UsageBillingHandler) AdminCancelOrder(c *gin.Context) {
 
 // ListPromos godoc
 // @Summary      Promo codes (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        include_inactive query bool false "include deactivated codes"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -309,7 +309,7 @@ func (h *UsageBillingHandler) ListPromos(c *gin.Context) {
 
 // CreatePromo godoc
 // @Summary      Create a promo code (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        promo body types.UsagePromoCode true "promo"
 // @Success      200 {object} map[string]interface{}
@@ -331,7 +331,7 @@ func (h *UsageBillingHandler) CreatePromo(c *gin.Context) {
 
 // UpdatePromo godoc
 // @Summary      Update a promo code (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        id path string true "promo id"
 // @Param        promo body types.UsagePromoCode true "promo"
@@ -355,7 +355,7 @@ func (h *UsageBillingHandler) UpdatePromo(c *gin.Context) {
 
 // DeletePromo godoc
 // @Summary      Delete a promo code (SuperAdmin)
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "promo id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer

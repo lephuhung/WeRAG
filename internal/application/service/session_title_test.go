@@ -16,8 +16,8 @@ func TestSanitizeGeneratedTitle(t *testing.T) {
 	}{
 		{
 			name: "plain title is kept as is",
-			raw:  "保单理赔流程咨询",
-			want: "保单理赔流程咨询",
+			raw:  "Tư vấn quy trình bồi thường bảo hiểm",
+			want: "Tư vấn quy trình bồi thường bảo hiểm",
 		},
 		{
 			name: "thinking prefix and surrounding whitespace are dropped",
@@ -32,14 +32,14 @@ func TestSanitizeGeneratedTitle(t *testing.T) {
 		},
 		{
 			name:          "over-long cjk title is truncated by rune, not byte",
-			raw:           strings.Repeat("保", 300),
-			want:          strings.Repeat("保", maxSessionTitleRunes),
+			raw:           strings.Repeat("ă", 300),
+			want:          strings.Repeat("ă", maxSessionTitleRunes),
 			wantTruncated: true,
 		},
 		{
 			name: "title exactly at the limit is not truncated",
-			raw:  strings.Repeat("保", maxSessionTitleRunes),
-			want: strings.Repeat("保", maxSessionTitleRunes),
+			raw:  strings.Repeat("ă", maxSessionTitleRunes),
+			want: strings.Repeat("ă", maxSessionTitleRunes),
 		},
 		{
 			name: "empty completion stays empty",

@@ -33,7 +33,7 @@ func usageAdminFail(c *gin.Context, err error) {
 
 // ListPlans godoc
 // @Summary      List usage plans
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        include_inactive query bool false "include deactivated plans"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -50,7 +50,7 @@ func (h *UsageAdminHandler) ListPlans(c *gin.Context) {
 
 // CreatePlan godoc
 // @Summary      Create a usage plan
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        plan body types.UsagePlan true "plan"
 // @Success      200 {object} map[string]interface{}
@@ -72,7 +72,7 @@ func (h *UsageAdminHandler) CreatePlan(c *gin.Context) {
 
 // UpdatePlan godoc
 // @Summary      Update a usage plan
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        id path string true "plan id"
 // @Param        plan body types.UsagePlan true "plan"
@@ -96,7 +96,7 @@ func (h *UsageAdminHandler) UpdatePlan(c *gin.Context) {
 
 // DeletePlan godoc
 // @Summary      Delete an unused usage plan
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "plan id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -111,7 +111,7 @@ func (h *UsageAdminHandler) DeletePlan(c *gin.Context) {
 
 // ListSubscriptions godoc
 // @Summary      List subscriptions
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        scope_type query string false "tenant|user"
 // @Param        scope_id   query string false "scope id"
 // @Param        status     query string false "active|cancelled"
@@ -136,7 +136,7 @@ func (h *UsageAdminHandler) ListSubscriptions(c *gin.Context) {
 
 // CreateSubscription godoc
 // @Summary      Attach a plan to a workspace or person
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        subscription body types.UsageSubscription true "subscription"
 // @Success      200 {object} map[string]interface{}
@@ -158,7 +158,7 @@ func (h *UsageAdminHandler) CreateSubscription(c *gin.Context) {
 
 // UpdateSubscription godoc
 // @Summary      Update a subscription
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        id path string true "subscription id"
 // @Param        subscription body types.UsageSubscription true "subscription"
@@ -182,7 +182,7 @@ func (h *UsageAdminHandler) UpdateSubscription(c *gin.Context) {
 
 // DeleteSubscription godoc
 // @Summary      Delete a subscription
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "subscription id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -197,7 +197,7 @@ func (h *UsageAdminHandler) DeleteSubscription(c *gin.Context) {
 
 // TenantOverview godoc
 // @Summary      Every workspace with its subscription and usage
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /system/admin/usage/tenants [get]
@@ -212,7 +212,7 @@ func (h *UsageAdminHandler) TenantOverview(c *gin.Context) {
 
 // ListSeats godoc
 // @Summary      Seats of a seat-mode subscription
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "subscription id"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -232,7 +232,7 @@ type usageSeatRequest struct {
 
 // AssignSeat godoc
 // @Summary      Give a person a seat
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Accept       json
 // @Param        id path string true "subscription id"
 // @Param        body body usageSeatRequest true "seat"
@@ -255,7 +255,7 @@ func (h *UsageAdminHandler) AssignSeat(c *gin.Context) {
 
 // RevokeSeat godoc
 // @Summary      Take a seat back
-// @Tags         UsageAdmin
+// @Tags         Gói sử dụng
 // @Param        id path string true "subscription id"
 // @Param        user_id path string true "user id"
 // @Success      200 {object} map[string]interface{}

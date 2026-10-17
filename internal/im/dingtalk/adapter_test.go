@@ -188,9 +188,9 @@ func TestParseCallbackMessage_RichTextPreservesTextAndPictureMetadata(t *testing
 		RobotCode: "robot-123",
 		Content: json.RawMessage(`{
 			"richText":[
-				{"text":"  这个问题示例图如下：  "},
+				{"text":"  Hình minh hoạ cho vấn đề này như sau:  "},
 				{"pictureDownloadCode":"PIC-FALLBACK","downloadCode":"PIC-CODE","type":"picture"},
-				{"text":"通过以上示意图可以明白完整的交互流程"}
+				{"text":"Qua sơ đồ trên có thể hiểu toàn bộ luồng tương tác"}
 			]
 		}`),
 	}
@@ -199,7 +199,7 @@ func TestParseCallbackMessage_RichTextPreservesTextAndPictureMetadata(t *testing
 	if got.MessageType != im.MessageTypeImage {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeImage)
 	}
-	if got.Content != "这个问题示例图如下：\n通过以上示意图可以明白完整的交互流程" {
+	if got.Content != "Hình minh hoạ cho vấn đề này như sau:\nQua sơ đồ trên có thể hiểu toàn bộ luồng tương tác" {
 		t.Errorf("Content = %q", got.Content)
 	}
 	if got.FileKey != "PIC-CODE" {
@@ -244,15 +244,15 @@ func TestParseCallbackMessage_RichTextTextOnly(t *testing.T) {
 	msg := &callbackMessage{
 		MsgID:   "rich-text",
 		Msgtype: "richText",
-		Content: json.RawMessage(`{"richText":[{"text":"  只发文字  "}]}`),
+		Content: json.RawMessage(`{"richText":[{"text":"  chỉ gửi chữ  "}]}`),
 	}
 
 	got := parseCallbackMessage(msg)
 	if got.MessageType != im.MessageTypeText {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeText)
 	}
-	if got.Content != "只发文字" {
-		t.Errorf("Content = %q, want 只发文字", got.Content)
+	if got.Content != "chỉ gửi chữ" {
+		t.Errorf("Content = %q, want chỉ gửi chữ", got.Content)
 	}
 	if got.FileKey != "" {
 		t.Errorf("FileKey = %q, want empty", got.FileKey)
@@ -266,7 +266,7 @@ func TestParseCallbackMessage_RichTextOfficialPictureSample(t *testing.T) {
 		RobotCode: "robot-123",
 		Content: json.RawMessage(`{
 			"richText":[
-				{"text":"你好"},
+				{"text":"xin chào"},
 				{"downloadCode":"OFFICIAL-PIC","type":"picture"}
 			]
 		}`),
@@ -276,8 +276,8 @@ func TestParseCallbackMessage_RichTextOfficialPictureSample(t *testing.T) {
 	if got.MessageType != im.MessageTypeImage {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeImage)
 	}
-	if got.Content != "你好" {
-		t.Errorf("Content = %q, want 你好", got.Content)
+	if got.Content != "xin chào" {
+		t.Errorf("Content = %q, want xin chào", got.Content)
 	}
 	if got.FileKey != "OFFICIAL-PIC" {
 		t.Errorf("FileKey = %q, want OFFICIAL-PIC", got.FileKey)
@@ -290,7 +290,7 @@ func TestParseCallbackMessage_RichTextKeepsFirstPictureAndHints(t *testing.T) {
 		Msgtype: "richText",
 		Content: json.RawMessage(`{
 			"richText":[
-				{"text":"对比这几张图"},
+				{"text":"so sánh mấy hình này"},
 				{"downloadCode":"PIC-1","type":"picture"},
 				{"downloadCode":"PIC-2","type":"picture"},
 				{"downloadCode":"PIC-3","type":"picture"}
@@ -305,7 +305,7 @@ func TestParseCallbackMessage_RichTextKeepsFirstPictureAndHints(t *testing.T) {
 	if got.Extra["rich_text_picture_count"] != "3" {
 		t.Errorf("rich_text_picture_count = %q, want 3", got.Extra["rich_text_picture_count"])
 	}
-	if !strings.Contains(got.Content, "对比这几张图") || !strings.Contains(got.Content, "共 3 张图片") {
+	if !strings.Contains(got.Content, "so sánh mấy hình này") || !strings.Contains(got.Content, "có 3 hình ảnh") {
 		t.Errorf("Content = %q, want text plus dropped-picture hint", got.Content)
 	}
 }
@@ -350,14 +350,14 @@ func TestParseCallbackMessage_AudioUsesRecognition(t *testing.T) {
 	msg := &callbackMessage{
 		MsgID:   "audio-1",
 		Msgtype: "audio",
-		Content: json.RawMessage(`{"duration":4000,"downloadCode":"AUD-CODE","recognition":"  钉钉，让进步发生  "}`),
+		Content: json.RawMessage(`{"duration":4000,"downloadCode":"AUD-CODE","recognition":"  DingTalk, để tiến bộ diễn ra  "}`),
 	}
 
 	got := parseCallbackMessage(msg)
 	if got.MessageType != im.MessageTypeText {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeText)
 	}
-	if got.Content != "钉钉，让进步发生" {
+	if got.Content != "DingTalk, để tiến bộ diễn ra" {
 		t.Errorf("Content = %q, want recognition text", got.Content)
 	}
 	if got.Extra["raw_msgtype"] != "audio" {
@@ -444,7 +444,7 @@ func TestStreamToIncoming_RichTextPreservesTextAndPictureMetadata(t *testing.T) 
 		Msgtype: "richText",
 		Content: map[string]interface{}{
 			"richText": []interface{}{
-				map[string]interface{}{"text": "这种场景下，AI 去纹身去不干净"},
+				map[string]interface{}{"text": "Trường hợp này, AI xoá hình xăm không sạch"},
 				map[string]interface{}{"downloadCode": "STREAM-PIC", "type": "picture"},
 			},
 		},
@@ -454,7 +454,7 @@ func TestStreamToIncoming_RichTextPreservesTextAndPictureMetadata(t *testing.T) 
 	if got.MessageType != im.MessageTypeImage {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeImage)
 	}
-	if got.Content != "这种场景下，AI 去纹身去不干净" {
+	if got.Content != "Trường hợp này, AI xoá hình xăm không sạch" {
 		t.Errorf("Content = %q", got.Content)
 	}
 	if got.FileKey != "STREAM-PIC" {
@@ -473,7 +473,7 @@ func TestStreamToIncoming_AudioUsesRecognition(t *testing.T) {
 		MsgId:   "stream-audio",
 		Msgtype: "audio",
 		Content: map[string]interface{}{
-			"recognition":  "语音转写结果",
+			"recognition":  "kết quả chuyển giọng nói thành văn bản",
 			"downloadCode": "STREAM-AUD",
 		},
 	}
@@ -482,7 +482,7 @@ func TestStreamToIncoming_AudioUsesRecognition(t *testing.T) {
 	if got.MessageType != im.MessageTypeText {
 		t.Fatalf("MessageType = %q, want %q", got.MessageType, im.MessageTypeText)
 	}
-	if got.Content != "语音转写结果" {
+	if got.Content != "kết quả chuyển giọng nói thành văn bản" {
 		t.Errorf("Content = %q, want recognition text", got.Content)
 	}
 }

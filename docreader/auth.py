@@ -1,20 +1,21 @@
-"""gRPC TLS 和认证模块
+"""Mô-đun TLS và xác thực cho gRPC.
 
-环境变量配置：
-    TLS 相关：
-        GRPC_TLS_ENABLED: 是否启用 TLS（true/false），默认 false
-        GRPC_TLS_CERT: TLS 证书文件路径（GRPC_TLS_ENABLED=true 时必填）
-        GRPC_TLS_KEY: TLS 私钥文件路径（GRPC_TLS_ENABLED=true 时必填）
-        GRPC_TLS_CA: CA 证书路径
-        GRPC_MTLS_REQUIRE_CLIENT_CERT: 设为 true 时启用 mTLS，要求客户端
-            出示由 GRPC_TLS_CA 签发的证书。未设置时默认按 GRPC_TLS_CA 是否
-            存在自动判断（保留向后兼容）。
+Cấu hình qua biến môi trường:
+    Liên quan TLS:
+        GRPC_TLS_ENABLED: có bật TLS hay không (true/false), mặc định false
+        GRPC_TLS_CERT: đường dẫn tệp chứng chỉ TLS (bắt buộc khi GRPC_TLS_ENABLED=true)
+        GRPC_TLS_KEY: đường dẫn tệp khóa riêng TLS (bắt buộc khi GRPC_TLS_ENABLED=true)
+        GRPC_TLS_CA: đường dẫn chứng chỉ CA
+        GRPC_MTLS_REQUIRE_CLIENT_CERT: đặt true để bật mTLS, yêu cầu client
+            xuất trình chứng chỉ do GRPC_TLS_CA ký. Nếu không đặt, mặc định tự
+            suy ra theo việc GRPC_TLS_CA có tồn tại hay không (giữ tương thích ngược).
 
-    认证相关：
-        GRPC_AUTH_TOKEN: 认证 Token，如果设置则启用认证
+    Liên quan xác thực:
+        GRPC_AUTH_TOKEN: token xác thực; nếu được đặt thì bật xác thực
 
-注意：当 GRPC_TLS_ENABLED=true 但任何 TLS 配置项缺失或加载失败时，
-本模块会抛出异常以触发 fail-fast，避免静默降级到明文。
+Lưu ý: khi GRPC_TLS_ENABLED=true nhưng thiếu bất kỳ mục cấu hình TLS nào hoặc
+tải thất bại, mô-đun này ném ngoại lệ để fail-fast, tránh âm thầm hạ cấp xuống
+kết nối không mã hóa.
 """
 
 import hmac
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class TLSConfigError(RuntimeError):
-    """TLS 配置错误，用于 fail-fast。"""
+    """Lỗi cấu hình TLS, dùng để fail-fast."""
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -39,10 +40,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def load_tls_credentials() -> Optional[grpc.ServerCredentials]:
-    """构建 server 端 TLS 凭据。
+    """Tạo thông tin xác thực TLS phía server.
 
-    GRPC_TLS_ENABLED=false 时返回 None；为 true 时如果配置无效会抛出
-    TLSConfigError，由调用方决定是否终止启动。
+    Trả về None khi GRPC_TLS_ENABLED=false; khi là true mà cấu hình không hợp lệ
+    thì ném TLSConfigError, bên gọi quyết định có dừng khởi động hay không.
     """
     if not _env_bool("GRPC_TLS_ENABLED", False):
         logger.info("TLS disabled (GRPC_TLS_ENABLED is not 'true')")
@@ -98,7 +99,8 @@ def load_tls_credentials() -> Optional[grpc.ServerCredentials]:
     return credentials
 
 
-# gRPC 健康检查标准服务路径，需在鉴权前放行，便于 K8s/Docker 探活。
+# Đường dẫn dịch vụ health check chuẩn của gRPC; phải cho qua trước bước xác thực
+# để K8s/Docker thăm dò được.
 _HEALTH_METHODS = frozenset(
     {
         "/grpc.health.v1.Health/Check",
@@ -108,11 +110,12 @@ _HEALTH_METHODS = frozenset(
 
 
 def _make_abort_handler(original: Optional[grpc.RpcMethodHandler]) -> grpc.RpcMethodHandler:
-    """为给定的原 handler 构造一个匹配 RPC kind 的鉴权失败 handler。
+    """Tạo handler báo lỗi xác thực khớp với loại RPC (kind) của handler gốc.
 
-    如果原 handler 不可用（理论上不会发生，但作为兜底），返回 unary_unary。
-    直接返回 None 而不是 set_code 也可，但显式调用 abort 能确保框架按
-    UNAUTHENTICATED 收尾，且匹配 kind 防止 grpc 触发 INTERNAL。
+    Nếu không có handler gốc (về lý thuyết không xảy ra, chỉ để phòng hờ) thì
+    trả về unary_unary. Có thể trả về None thay vì set_code, nhưng gọi abort
+    tường minh bảo đảm framework kết thúc với UNAUTHENTICATED, và khớp kind
+    tránh để grpc sinh lỗi INTERNAL.
     """
     def _abort(_request, context):
         context.abort(
@@ -154,14 +157,14 @@ def _make_abort_handler(original: Optional[grpc.RpcMethodHandler]) -> grpc.RpcMe
 
 
 class AuthInterceptor(grpc.ServerInterceptor):
-    """Token 认证拦截器
+    """Interceptor xác thực bằng token.
 
-    环境变量配置：
-        GRPC_AUTH_TOKEN: 认证 Token，如果设置则启用认证
+    Cấu hình qua biến môi trường:
+        GRPC_AUTH_TOKEN: token xác thực; nếu được đặt thì bật xác thực
 
-    客户端需要在 metadata 中传递 Token：
+    Client phải truyền token trong metadata:
         - key: "authorization"
-        - value: "Bearer <token>" 或直接 "<token>"
+        - value: "Bearer <token>" hoặc chỉ "<token>"
     """
 
     def __init__(self) -> None:

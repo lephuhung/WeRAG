@@ -115,11 +115,14 @@ export function TenantUsage() {
           </Row>
           <Row label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")}>
             <span className="caption text-body">
-              {sub.mode === "seat" && mine?.user
-                ? t("acct.usageLine", { questions: mine.user.month.questions.toLocaleString(), tokens: formatTokens(mine.user.month.tokens) })
-                : mine?.tenant
-                  ? t("acct.usageLine", { questions: mine.tenant.month.questions.toLocaleString(), tokens: formatTokens(mine.tenant.month.tokens) })
-                  : "—"}
+              {(() => {
+                const month = sub.mode === "seat" && mine?.user ? mine.user.month : mine?.tenant?.month;
+                if (!month) return "—";
+                const line = t("acct.usageLine", { questions: month.questions.toLocaleString(), tokens: formatTokens(month.tokens) });
+                return month.ocr_tokens
+                  ? line + t("acct.usageLineOCR", { tokens: formatTokens(month.ocr_tokens), pages: (month.ocr_pages ?? 0).toLocaleString() })
+                  : line;
+              })()}
             </span>
           </Row>
         </div>

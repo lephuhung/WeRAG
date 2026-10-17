@@ -233,7 +233,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 			}
 
 			// FAQ type: search based on searchField
-			// 根据数据库类型使用不同的 JSON Query 语法
+			// Dùng cú pháp truy vấn JSON khác nhau tùy loại cơ sở dữ liệu
 			isPostgres := db.Dialector.Name() == "postgres"
 
 			switch searchField {
@@ -243,7 +243,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 					db = db.Where("metadata->>'standard_question' ILIKE ?", like)
 				} else {
 					// MySQL: metadata->>'$.standard_question' (MySQL 5.7.13+)
-					// 也可以用 JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.standard_question'))
+					// Cũng có thể dùng JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.standard_question'))
 					db = db.Where("metadata->>'$.standard_question' LIKE ?", like)
 				}
 			case "similar_questions":
@@ -737,7 +737,7 @@ func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
 	tenantID uint64,
 	knowledgeID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批Query 1000条
+	const batchSize = 1000 // mỗi lượt truy vấn 1000 bản ghi
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -752,14 +752,14 @@ func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
 			return nil, err
 		}
 
-		// 如果没有Query 到数据，说明已经Query 完毕
+		// Không còn dữ liệu nghĩa là đã truy vấn xong
 		if len(batchChunks) == 0 {
 			break
 		}
 
 		allChunks = append(allChunks, batchChunks...)
 
-		// 如果返回的数据少于批次大小，说明已经是最后一批
+		// Số bản ghi trả về ít hơn kích thước lô nghĩa là đây là lô cuối
 		if len(batchChunks) < batchSize {
 			break
 		}
@@ -778,7 +778,7 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 	tenantID uint64,
 	kbID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批Query 1000条
+	const batchSize = 1000 // mỗi lượt truy vấn 1000 bản ghi
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -794,14 +794,14 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 			return nil, err
 		}
 
-		// 如果没有Query 到数据，说明已经Query 完毕
+		// Không còn dữ liệu nghĩa là đã truy vấn xong
 		if len(batchChunks) == 0 {
 			break
 		}
 
 		allChunks = append(allChunks, batchChunks...)
 
-		// 如果返回的数据少于批次大小，说明已经是最后一批
+		// Số bản ghi trả về ít hơn kích thước lô nghĩa là đây là lô cuối
 		if len(batchChunks) < batchSize {
 			break
 		}
@@ -889,7 +889,7 @@ func (r *chunkRepository) ListAllFAQChunksForExport(
 	tenantID uint64,
 	knowledgeID string,
 ) ([]*types.Chunk, error) {
-	const batchSize = 1000 // 每批Query 1000条
+	const batchSize = 1000 // mỗi lượt truy vấn 1000 bản ghi
 	var allChunks []*types.Chunk
 	offset := 0
 
@@ -906,14 +906,14 @@ func (r *chunkRepository) ListAllFAQChunksForExport(
 			return nil, err
 		}
 
-		// 如果没有Query 到数据，说明已经Query 完毕
+		// Không còn dữ liệu nghĩa là đã truy vấn xong
 		if len(batchChunks) == 0 {
 			break
 		}
 
 		allChunks = append(allChunks, batchChunks...)
 
-		// 如果返回的数据少于批次大小，说明已经是最后一批
+		// Số bản ghi trả về ít hơn kích thước lô nghĩa là đây là lô cuối
 		if len(batchChunks) < batchSize {
 			break
 		}
@@ -1330,7 +1330,7 @@ func (r *chunkRepository) ListRecentDocumentChunksWithQuestions(
 	if len(kbIDs) > 0 && len(knowledgeIDs) > 0 {
 		baseQuery = baseQuery.Where("knowledge_base_id IN ? OR knowledge_id IN ?", kbIDs, knowledgeIDs)
 	} else if len(knowledgeIDs) > 0 {
-		// 指定了具体知识文档，直接按 knowledge_id 过滤（忽略 kbIDs）
+		// Đã chỉ định tài liệu cụ thể thì lọc thẳng theo knowledge_id (bỏ qua kbIDs)
 		baseQuery = baseQuery.Where("knowledge_id IN ?", knowledgeIDs)
 	} else if len(kbIDs) > 0 {
 		baseQuery = baseQuery.Where("knowledge_base_id IN ?", kbIDs)

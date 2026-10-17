@@ -81,6 +81,12 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 			options.OCRMaxPages = agent.Config.AttachmentOCRMaxPages
 		}
 	}
+	// The document the assistant opens to edit is read section by section,
+	// so it is not held to the chat-attachment page caps.
+	if agent != nil && agent.ID == types.BuiltinDocumentAssistantID &&
+		strings.TrimSpace(c.PostForm("document_role")) == types.DocumentWorkspaceRoleTarget {
+		options.InputGate = types.InputGateDocument
+	}
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	// In the document assistant a chat upload becomes a source document of
 	// the session; check the source limit before storing and parsing it.

@@ -19,42 +19,42 @@ func RegisterChunkerDebugRoutes(r *gin.RouterGroup, g *rbacGuards) {
 	g.apiKeyRoute(r, http.MethodPost, "/chunker/preview", apiKeyRetrieve(apiKeyIngest(apiKeyFullAccess())), g.SystemAdmin(), handler.PreviewChunking)
 }
 
-// RegisterChunkRoutes 注册分块相关的路由
+// RegisterChunkRoutes đăng ký các route đoạn (chunk)
 //
 // Mutating routes addressed via :knowledge_id inherit per-KB ownership
 // from the owning knowledge entry's KB (PR 5, #1303); the chain hop is
 // shared with RegisterKnowledgeRoutes via OwnedChunkKBOrAdmin so the
 // same "creator-of-the-KB OR Admin+" rule applies to chunk edits.
 func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *rbacGuards) {
-	// 分块路由组。Scoped API key 需要 ingest 能力写内容，retrieve 能力读内容；
-	// 两者仍受 KB 白名单约束。
+	// Nhóm route đoạn (chunk). Scoped API key cần capability ingest để ghi, retrieve để đọc;
+	// cả hai vẫn bị ràng buộc bởi allow-list KB.
 	chunks := g.apiKeyGroup(r.Group("/chunks"), apiKeyIngest(apiKeyFullAccess()))
 	chunkRead := chunks.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{
-		// 获取分块List  — Viewer+ 且对父 KB 有 read 权限（own / shared / via shared agent）
+		// Lấy danh sách đoạn — Viewer+ và có quyền read trên KB cha (own / shared / qua trợ lý được chia sẻ)
 		chunkRead.GET("/:knowledge_id", g.Member(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListKnowledgeChunks)
-		// 通过chunk_id获取单个chunk（不需要knowledge_id） — Viewer+ 且对父 KB 有 read 权限
+		// Lấy một chunk theo chunk_id (không cần knowledge_id) — Viewer+ và có quyền read trên KB cha
 		chunkRead.GET("/by-id/:id", g.Member(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
 		chunkRead.GET("/:knowledge_id/:id/revisions", g.Member(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListChunkRevisions)
-		// Delete 分块 — Tenant Admin，且对父 KB 有 write 权限
+		// Xoá đoạn — Tenant Admin và có quyền write trên KB cha
 		chunks.DELETE("/:knowledge_id/:id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
-		// Delete 知识下的所有分块 — Tenant Admin，且对父 KB 有 write 权限
+		// Xoá mọi đoạn của một tài liệu — Tenant Admin và có quyền write trên KB cha
 		chunks.DELETE("/:knowledge_id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
-		// Update 分块信息 — Tenant Admin，且对父 KB 有 write 权限
+		// Cập nhật thông tin đoạn — Tenant Admin và có quyền write trên KB cha
 		chunks.PUT("/:knowledge_id/:id", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
 		chunks.POST("/:knowledge_id/:id/revert", g.ChunkDocumentEditor(), g.KBAccessManageFromKnowledgeIDParam("knowledge_id"), handler.RevertChunk)
-		// Delete 单个生成的问题（通过分块 id） — 与其它 chunk mutation 一致：
-		// KB owner OR Admin+。早期这里因为链路 (chunk_id -> knowledge_id ->
-		// kb -> creator_id) 还没接通，被临时降级成 Contributor，导致一个
-		// 「能编辑所有 chunk 的同样规则在这条路由上反而更宽松」的不一致。
-		// 现在通过 KBCreatorLookupFromChunkIDParam 把那一跳补上，统一矩阵。
+		// Xoá một câu hỏi đã sinh (theo id đoạn) — giống các mutation chunk khác:
+		// KB owner HOẶC Admin+. Trước đây vì chuỗi tra cứu (chunk_id -> knowledge_id ->
+		// kb -> creator_id) chưa nối thông nên tạm hạ xuống Contributor, gây ra sự thiếu nhất quán:
+		// route này lại lỏng hơn quy tắc chung cho phép sửa mọi chunk.
+		// Nay bổ sung bước đó bằng KBCreatorLookupFromChunkIDParam để thống nhất ma trận.
 		chunks.DELETE("/by-id/:id/questions", g.TenantAdmin(), g.KBAccessManageFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
 		chunks.PUT("/by-id/:id/questions", g.TenantAdmin(), g.KBAccessManageFromChunkIDParam("id"), handler.UpsertGeneratedQuestion)
 		chunks.POST("/by-id/:id/questions/regenerate", g.TenantAdmin(), g.KBAccessManageFromChunkIDParam("id"), handler.RegenerateGeneratedQuestions)
 	}
 }
 
-// RegisterKnowledgeRoutes 注册知识相关的路由
+// RegisterKnowledgeRoutes đăng ký các route tài liệu
 //
 // Per-KB ownership applies on the per-:id mutating routes (PR 5,
 // #1303): the URL :id is a knowledge id, OwnedKnowledgeKBOrAdmin
@@ -65,8 +65,8 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 // Body-scoped batch operations have a Contributor route gate and resolve
 // their KB ownership plus Editor operation grant inside the handler.
 func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandler, g *rbacGuards) {
-	// Knowledge Base下的知识路由组（URL :id is the KB id）。Scoped API key 需要
-	// ingest 能力才能写内容，且仍受 KB 范围限制；清空 KB 只允许 full-access key。
+	// Nhóm route tài liệu trong kho tri thức (URL :id is the KB id). Scoped API key cần
+	// capability ingest mới ghi được và vẫn bị giới hạn phạm vi KB; xoá sạch KB chỉ cho phép full-access key.
 	kb := g.apiKeyGroup(r.Group("/knowledge-bases/:id/knowledge"), apiKeyIngest(apiKeyFullAccess()))
 	kbRead := kb.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{
@@ -79,8 +79,8 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kb.POST("/url", g.Member(), g.KBAccessManage("id"), handler.CreateKnowledgeFromURL)
 		kb.POST("/manual", g.Member(), g.KBAccessManage("id"), handler.CreateManualKnowledge)
 		kbRead.GET("", g.Member(), g.KBAccessRead("id"), handler.ListKnowledge)
-		// 原始文件批量下载走 KBAccessDownload：自有 KB 沿用租户下载策略，
-		// 平台公开 KB 的已认证人类读者可下载，受邀只读者仍不可下载。
+		// Tải hàng loạt tệp gốc đi qua KBAccessDownload: KB của mình theo chính sách tải của đơn vị,
+		// người đọc đã xác thực của KB công khai nền tảng được tải, người được mời chỉ đọc vẫn không được tải.
 		kbRead.POST("/batch-download", g.Member(), g.KBAccessDownload("id"), handler.BatchDownloadKnowledge)
 		kbRead.GET("/folders", g.Member(), g.KBAccessRead("id"), handler.ListKnowledgeFolders)
 		kb.PUT("/folders", g.TenantAdmin(), g.KBAccessManage("id"), handler.RenameKnowledgeFolder)
@@ -89,7 +89,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kb.With(apiKeyFullAccess()).DELETE("", g.TenantAdmin(), g.KBAccessManage("id"), handler.ClearKnowledgeBaseContents)
 	}
 
-	// 知识路由组（URL :id is a knowledge id; the guard walks it to the parent KB）
+	// Nhóm route tài liệu (URL :id is a knowledge id; the guard walks it to the parent KB)
 	kgrp := r.Group("/knowledge")
 	k := g.apiKeyGroup(kgrp, apiKeyIngest(apiKeyFullAccess()))
 	kRead := k.With(apiKeyRetrieve(apiKeyFullAccess()))
@@ -144,7 +144,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 	}
 }
 
-// RegisterFAQRoutes 注册 FAQ 相关路由
+// RegisterFAQRoutes đăng ký các route FAQ
 //
 // FAQ entries are KB content: reads are Viewer+, all mutations
 // (create / update / upsert / delete / batch field+tag updates,
@@ -153,10 +153,10 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacG
 	if handler == nil {
 		return
 	}
-	// FAQ entries 是 KB 的子资源（FAQ-type KB 的内容主体）。修改 FAQ
-	// 等价于修改 KB 内容，必须遵循 KB 的"creator OR Admin+"矩阵 ——
-	// 跟 chunks / wiki pages 保持一致。Viewer+ 可以读，Contributor 不能
-	// 改不属于自己的 KB 的 FAQ。
+	// FAQ entries là tài nguyên con của KB (phần nội dung chính của KB kiểu FAQ). Sửa FAQ
+	// tương đương sửa nội dung KB, phải theo ma trận "creator OR Admin+" của KB —
+	// nhất quán với chunks / wiki pages. Viewer+ đọc được, Contributor không được
+	// sửa FAQ của KB không thuộc về mình.
 	faq := g.apiKeyGroup(r.Group("/knowledge-bases/:id/faq"), apiKeyIngest(apiKeyFullAccess()))
 	faqRead := faq.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{
@@ -190,29 +190,29 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacG
 		apiKeyRetrieve(apiKeyIngest(apiKeyFullAccess())), g.Member(), handler.GetImportProgress)
 }
 
-// RegisterKnowledgeBaseRoutes 注册Knowledge Base相关的路由
+// RegisterKnowledgeBaseRoutes đăng ký các route kho tri thức
 func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeBaseHandler, g *rbacGuards) {
-	// Knowledge Base路由组。API-key 可达性按能力分两档，全部通过 apiKeyGroup 声明，
-	// 不要再用裸 kbgrp.Handle 注册（那会绕过网关、对所有 key 静默默认拒绝）：
+	// Nhóm route kho tri thức. Khả năng truy cập bằng API key chia hai mức theo capability, tất cả khai báo qua apiKeyGroup,
+	// không đăng ký bằng kbgrp.Handle trần nữa (sẽ bỏ qua gateway và âm thầm từ chối mọi key):
 	//
-	//   1. 读取（list/detail/search/progress/move-targets）—— retrieve OR full-access（kb）
-	//   2. KB 生命周期管理（create/copy/duplicate/update/delete）
-	//      —— manage_kbs OR full-access（kbManagement）。租户 create 只产出
-	//      租户自有 KB；平台公开 KB 走下面的 POST /public（显式人类 SuperAdmin，
-	//      不声明 API-key 策略）。
+	//   1. Đọc (list/detail/search/progress/move-targets) — retrieve OR full-access (kb)
+	//   2. Quản lý vòng đời KB (create/copy/duplicate/update/delete)
+	//      — manage_kbs OR full-access (kbManagement). create của đơn vị chỉ tạo ra
+	//      KB thuộc đơn vị; KB công khai nền tảng đi qua POST /public bên dưới (SuperAdmin là người thật,
+	//      không khai báo chính sách API-key).
 	//
-	// 第 2 档整条 KB 生命周期共用同一策略：manage_kbs 是「管理Knowledge Base」capability，
-	// 建/拷/改/删都是它的分内事。KB 的 allow-list 仍在下游生效——copy/duplicate/
-	// update/delete 的目标 KB 会被 allow-list 兜住；create 无源可约束，限定 allow-list
-	// 的 key 建出的新 KB 落在其 allow-list 之外（同租户、无越权，只是建完自己管不到），
-	// 空 allow-list 的 key 则是全租户 KB 管理、新建天然在范围内。KB 内容写入（文档/
-	// 分块/FAQ/Tag/Wiki）由对应子路由的 ingest 能力控制，不在本组。
+	// Mức 2: toàn bộ vòng đời KB dùng chung một chính sách: manage_kbs là capability "quản lý kho tri thức",
+	// tạo/sao chép/sửa/xoá đều thuộc phận sự của nó. Allow-list KB vẫn có hiệu lực ở hạ nguồn — KB đích của copy/duplicate/
+	// update/delete bị allow-list chặn; create không có nguồn để ràng buộc, key có allow-list giới hạn
+	// tạo ra KB mới nằm ngoài allow-list của nó (cùng đơn vị, không vượt quyền, chỉ là tạo xong không tự quản được),
+	// key có allow-list rỗng thì quản mọi KB của đơn vị, KB mới tự nhiên nằm trong phạm vi. Ghi nội dung KB (tài liệu/
+	// đoạn/FAQ/Tag/Wiki) do capability ingest của các route con tương ứng kiểm soát, không thuộc nhóm này.
 	kbgrp := r.Group("/knowledge-bases")
 	kb := g.apiKeyGroup(kbgrp, apiKeyRetrieve(apiKeyFullAccess()))
 	kbManagement := kb.With(apiKeyManageKnowledgeBases(apiKeyFullAccess()))
 	{
 		// Create Knowledge Base — Tenant Admin only (strict: enforced even
-		// when the RBAC rollout flag is off); API key 需 manage_kbs 或 full-access。
+		// when the RBAC rollout flag is off); API key cần manage_kbs hoặc full-access.
 		// The tenant create flow mints tenant-owned KBs only: a public
 		// visibility payload is rejected by the service. Platform-owned
 		// public KBs use POST /knowledge-bases/public below.
@@ -235,18 +235,18 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// omitting it keeps a single human-enforcement layer instead of
 		// two that could diverge.)
 		kbgrp.GET("/public", handler.ListPublicCatalog)
-		// 获取Knowledge BaseList  — Viewer+ for JWT callers; retrieve-capable API keys pass via the gate.
+		// Lấy danh sách kho tri thức — Viewer+ for JWT callers; retrieve-capable API keys pass via the gate.
 		kb.GET("", g.Member(), handler.ListKnowledgeBases)
-		// 获取Knowledge BaseDetails  — Viewer+ 且对 KB 有 read 权限
+		// Lấy chi tiết kho tri thức — Viewer+ và có quyền read trên KB
 		kb.GET("/:id", g.Member(), g.KBAccessRead("id"), handler.GetKnowledgeBase)
-		// Update /Delete Knowledge Base — 两层正交鉴权，缺一不可：
-		//   OwnedKBOrAdmin  管「租户内」归属：非Create 者的 Contributor 改不了
-		//                   同事的 KB（跨租户 KB 在此走 lookup=NotFound → 交给
-		//                   下游处理，不在此拦）。
-		//   KBAccessWrite   管「跨租户」访问级：自有 KB 或被组织共享(editor)。
-		// handler 内再按 permission/所有者租户做最终判定 —— 尤其 DeleteKnowledgeBase
-		// 以调用者「自身」租户(c.Keys，未被 KBAccess 改写)校验 kb.TenantID，
-		// 把Delete 锁死为「所有者租户 + Admin」，共享 editor 无法Delete 源 KB。
+		// Cập nhật / xoá kho tri thức — hai lớp kiểm quyền trực giao, thiếu một là không đủ:
+		//   OwnedKBOrAdmin  quản quyền sở hữu "trong đơn vị": Contributor không phải người tạo không sửa được
+		//                   KB của đồng nghiệp (KB khác đơn vị ở đây đi lookup=NotFound → giao cho
+		//                   hạ nguồn xử lý, không chặn ở đây).
+		//   KBAccessWrite   quản mức truy cập "liên đơn vị": KB của mình hoặc được tổ chức chia sẻ (editor).
+		// Trong handler còn xét permission/đơn vị sở hữu để quyết định cuối — nhất là DeleteKnowledgeBase
+		// kiểm tra kb.TenantID theo đơn vị "của chính" người gọi (c.Keys, chưa bị KBAccess ghi đè),
+		// khoá chặt xoá thành "đơn vị sở hữu + Admin"; editor được chia sẻ không xoá được KB nguồn.
 		// Update /Delete Knowledge Base, visibility scope changes, and
 		// profile regeneration share one owner-aware manage guard
 		// (KBAccessManage): the owning tenant keeps its TenantAdmin role
@@ -258,7 +258,7 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// API-key manage_kbs keeps working for tenant-owned KBs through
 		// its declared policy, but never qualifies on public rows.
 		kbManagement.PUT("/:id", g.TenantAdmin(), g.KBAccessManage("id"), handler.UpdateKnowledgeBase)
-		// 可见范围切换 — tenant/restricted/published and member_default:
+		// Chuyển phạm vi hiển thị — tenant/restricted/published and member_default:
 		// owner Tenant Admin or SuperAdmin; public promotion and transfer:
 		// explicit human SuperAdmin only (service-enforced).
 		kbManagement.PUT("/:id/visibility", g.TenantAdmin(), g.KBAccessManage("id"), handler.UpdateKnowledgeBaseVisibility)
@@ -267,11 +267,11 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// declared: API keys stay default-denied. Revokes every share of
 		// the KB in the same transaction (service).
 		kbgrp.POST("/:id/transfer-owner", g.PlatformSuperAdmin(), handler.TransferKnowledgeBaseOwner)
-		// 立即重新生成Knowledge Base AI 描述 — 与Update Knowledge Base同档鉴权；同步执行一次小模型调用。
+		// Sinh lại ngay mô tả AI của kho tri thức — cùng mức kiểm quyền với cập nhật kho tri thức; gọi đồng bộ một lần mô hình nhỏ.
 		kbManagement.POST("/:id/profile/generate", g.TenantAdmin(), g.KBAccessManage("id"),
 			handler.GenerateKnowledgeBaseProfile)
 		kbManagement.DELETE("/:id", g.TenantAdmin(), g.KBAccessManage("id"), handler.DeleteKnowledgeBase)
-		// 置顶/取消置顶Knowledge Base — Create 者本人 OR Admin+ 且对 KB 有 write 权限
+		// Ghim/bỏ ghim kho tri thức — chính người tạo HOẶC Admin+ và có quyền write trên KB
 		// Pin state is now per-(user, kb) (migration 000050). Anyone with
 		// at least Viewer-level read access to the KB — including users
 		// who reached it via a shared agent — may pin it for themselves;
@@ -286,25 +286,25 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// API-key policy is declared.
 		kbgrp.POST("/:id/subscription", g.Member(), g.KBAccessRead("id"), handler.SubscribeKnowledgeBase)
 		kbgrp.DELETE("/:id/subscription", g.Member(), handler.UnsubscribeKnowledgeBase)
-		// 混合搜索 — Viewer+ 且对 KB 有 read 权限 (read-only)
+		// Tìm kiếm lai — Viewer+ và có quyền read trên KB (read-only)
 		// POST is preferred; GET with JSON body is kept for backward compatibility (#1727).
 		kb.POST("/:id/hybrid-search", g.Member(), g.KBAccessRead("id"), handler.HybridSearch)
 		kb.GET("/:id/hybrid-search", g.Member(), g.KBAccessRead("id"), handler.HybridSearch)
-		// 拷贝Knowledge Base — 产出新 KB，与 create 同档：JWT Admin+，API key 需 manage_kbs 或 full-access。
-		// 源 KB 通过 body 里的 source_id 传入（非 :id 路径Parameters ），无法套用基于路径Parameters
-		// 的 KBAccessRead，故源/目标 KB 的租户归属与 allow-list 校验在 handler 内完成
-		// （requireTenantAPIKeyKnowledgeBases 会把 source_id/target_id 兜进 allow-list）。
-		// 副本归调用者所有，不需要原 KB 的所有权。
+		// Sao chép kho tri thức — tạo KB mới, cùng mức với create: JWT Admin+, API key cần manage_kbs hoặc full-access.
+		// KB nguồn truyền qua source_id trong body (không phải tham số đường dẫn :id), nên không áp dụng được KBAccessRead
+		// dựa trên tham số đường dẫn; việc kiểm tra đơn vị sở hữu và allow-list của KB nguồn/đích làm trong handler
+		// (requireTenantAPIKeyKnowledgeBases đưa source_id/target_id vào kiểm tra allow-list).
+		// Bản sao thuộc về người gọi, không cần quyền sở hữu KB gốc.
 		kbManagement.POST("/copy", g.TenantAdmin(), handler.CopyKnowledgeBase)
-		// Create Knowledge Base副本 — 产出新 KB，与 create 同档：JWT TenantAdmin，API key 需 manage_kbs 或 full-access；
-		// 且对源 KB 有 read 权限（KBAccessRead 会对限定 key 兜住源 KB）。只Create 新的 KB Settings 记录，不复制内容/索引/分享。
+		// Tạo bản sao kho tri thức — tạo KB mới, cùng mức với create: JWT TenantAdmin, API key cần manage_kbs hoặc full-access;
+		// và có quyền read trên KB nguồn (KBAccessRead chặn KB nguồn với key giới hạn). Chỉ tạo bản ghi cài đặt KB mới, không sao chép nội dung/chỉ mục/chia sẻ.
 		kbManagement.POST("/:id/duplicate", g.TenantAdmin(), g.KBAccessRead("id"), handler.DuplicateKnowledgeBase)
-		// 获取Knowledge Base复制进度 — Viewer+；只读。manage_kbs（发起 copy 的 key）或
-		// retrieve 均可轮询；任务按租户隔离（requireTaskProgressTenant），key 只能
-		// 查本租户任务。
+		// Lấy tiến độ sao chép kho tri thức — Viewer+; chỉ đọc. manage_kbs (key đã khởi tạo copy) hoặc
+		// retrieve đều thăm dò được; tác vụ cách ly theo đơn vị (requireTaskProgressTenant), key chỉ
+		// xem được tác vụ của đơn vị mình.
 		kb.With(apiKeyRetrieve(apiKeyManageKnowledgeBases(apiKeyFullAccess()))).
 			GET("/copy/progress/:task_id", g.Member(), handler.GetKBCloneProgress)
-		// 获取可移动目标Knowledge BaseList  — Viewer+ 且对 KB 有 read 权限
+		// Lấy danh sách kho tri thức đích có thể di chuyển tới — Viewer+ và có quyền read trên KB
 		kb.GET("/:id/move-targets", g.Member(), g.KBAccessRead("id"), handler.ListMoveTargets)
 	}
 }
@@ -320,7 +320,7 @@ func RegisterKnowledgeBaseActivityRoutes(r *gin.RouterGroup, auditHandler *handl
 		g.TenantAdmin(), g.KBAccessRead("id"), auditHandler.ListKnowledgeBaseActivity)
 }
 
-// RegisterKnowledgeTagRoutes 注册Knowledge Base标签相关路由。
+// RegisterKnowledgeTagRoutes đăng ký các route thẻ của kho tri thức.
 //
 // Tags are KB metadata: Viewer reads, Contributor writes. Per-KB
 // ownership granularity for tags is out of scope for PR 2; this is
@@ -329,9 +329,9 @@ func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandl
 	if tagHandler == nil {
 		return
 	}
-	// Tags 是 KB 的子资源 — Create /编辑/Delete 标签会改变 KB 内容的检索分类
-	// 行为，应该与 KB 主体的"creator OR Admin+"矩阵一致，避免一个无
-	// 关 Contributor 在他人 KB 里乱建/删标签影响 KB owner 的内容组织。
+	// Tags là tài nguyên con của KB — tạo/sửa/xoá thẻ làm thay đổi cách phân loại truy xuất
+	// nội dung KB, nên phải theo ma trận "creator OR Admin+" của KB, tránh một Contributor
+	// không liên quan tạo/xoá thẻ bừa trong KB người khác làm hỏng cách tổ chức nội dung của KB owner.
 	kbTags := g.apiKeyGroup(r.Group("/knowledge-bases/:id/tags"), apiKeyIngest(apiKeyFullAccess()))
 	kbTagsRead := kbTags.With(apiKeyRetrieve(apiKeyFullAccess()))
 	{

@@ -77,7 +77,7 @@ func TestBrowserFlatArgumentsRejectBeforeDispatch(t *testing.T) {
 		`{"method":"window_resize","width":800}`, `{"method":"window_resize","width":1,"height":600}`,
 		`{"method":"emulate"}`, `{"method":"emulate","off":true,"overrides":{"width":800}}`,
 		`{"method":"emulate","overrides":"{}"}`, `{"method":"request_help","prompt":null}`,
-		`{"method":"request_help","prompt":"Sign in","completion_criteria":{"any":[{"text_exists":"看过"}]}}`,
+		`{"method":"request_help","prompt":"Sign in","completion_criteria":{"any":[{"text_exists":"đã xem"}]}}`,
 	} {
 		t.Run(raw, func(t *testing.T) { require.Error(t, tool.ValidateArguments(json.RawMessage(raw))) })
 	}

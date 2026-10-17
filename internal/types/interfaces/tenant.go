@@ -84,8 +84,8 @@ type TenantAPIKeyCreateResult struct {
 	Token  string
 }
 
-// TenantAPIKeyUpdateRequest 修改已Create 租户 API Key 的可Configuration 属性。
-// Configuration 语义与Create 接口一致：FullAccess 为 true 时忽略细粒度能力和Knowledge Base范围。
+// TenantAPIKeyUpdateRequest sửa các thuộc tính có thể cấu hình của API Key đơn vị đã tạo.
+// Ngữ nghĩa cấu hình giống API tạo: khi FullAccess là true thì bỏ qua quyền chi tiết và phạm vi kho tri thức.
 type TenantAPIKeyUpdateRequest struct {
 	TenantID         uint64
 	APIKeyID         uint64

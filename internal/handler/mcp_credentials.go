@@ -50,16 +50,16 @@ type mcpCredentialsPutRequest struct {
 // new credential.
 //
 // Put godoc
-// @Summary      Settings  MCP 服务凭据
-// @Description  为指定字段写入新凭据；省略的字段保留原值；空字符串视为 no-op（如需Delete 请用 DELETE）
-// @Tags         MCP服务
+// @Summary      Đặt thông tin xác thực dịch vụ MCP
+// @Description  Ghi thông tin xác thực mới cho các trường chỉ định; trường bỏ trống giữ nguyên giá trị cũ; chuỗi rỗng xem như no-op (muốn xoá hãy dùng DELETE)
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                  true  "MCP 服务 ID"
+// @Param        id       path      string                  true  "ID dịch vụ MCP"
 // @Param        request  body      map[string]interface{}  true  "{api_key?: string, token?: string}"
-// @Success      200      {object}  map[string]interface{}  "写入后的凭据状态"
-// @Failure      400      {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404      {object}  errors.AppError         "服务不存在"
+// @Success      200      {object}  map[string]interface{}  "Trạng thái thông tin xác thực sau khi ghi"
+// @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
+// @Failure      404      {object}  errors.AppError         "Không tìm thấy dịch vụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/credentials [put]
@@ -117,15 +117,15 @@ func (h *MCPCredentialsHandler) Put(c *gin.Context) {
 // "token". Returns 204 on success (even if the field was already empty).
 //
 // DeleteField godoc
-// @Summary      移除 MCP 服务的单个凭据字段
-// @Description  Delete 指定字段的存储凭据；Delete 已为空的字段是幂等的
-// @Tags         MCP服务
+// @Summary      Gỡ một trường thông tin xác thực của dịch vụ MCP
+// @Description  Xoá thông tin xác thực đã lưu của trường chỉ định; xoá trường đã trống là idempotent
+// @Tags         Dịch vụ MCP
 // @Produce      json
-// @Param        id     path      string  true  "MCP 服务 ID"
-// @Param        field  path      string  true  "字段名（api_key | token）"
+// @Param        id     path      string  true  "ID dịch vụ MCP"
+// @Param        field  path      string  true  "Tên trường (api_key | token)"
 // @Success      204
-// @Failure      400  {object}  errors.AppError  "字段名非法"
-// @Failure      404  {object}  errors.AppError  "服务不存在"
+// @Failure      400  {object}  errors.AppError  "Tên trường không hợp lệ"
+// @Failure      404  {object}  errors.AppError  "Không tìm thấy dịch vụ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /mcp-services/{id}/credentials/{field} [delete]

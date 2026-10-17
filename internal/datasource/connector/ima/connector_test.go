@@ -518,7 +518,7 @@ func TestFetchAll_FileNamePolicy(t *testing.T) {
 		for _, tt := range []struct{ name, title, want string }{
 			{"punctuation", "A/B:C", "A_B_C.md"},
 			{"existing extension and whitespace", " \tA/B.MD", " \tA_B.MD"},
-			{"long title", strings.Repeat("测", 100) + ".MD", strings.Repeat("测", 66) + ".md"},
+			{"long title", strings.Repeat("ệ", 100) + ".MD", strings.Repeat("ệ", 66) + ".md"},
 		} {
 			t.Run(media.name+"/"+tt.name, func(t *testing.T) {
 				f := newFakeIMA(t)

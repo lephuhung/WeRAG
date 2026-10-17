@@ -674,12 +674,12 @@ func cleanPassageForRerank(text string) string {
 	return strings.TrimSpace(text)
 }
 
-// getEnrichedPassage 合并Content、ImageInfo和GeneratedQuestions的文本内容
+// getEnrichedPassage gộp nội dung văn bản của Content, ImageInfo và GeneratedQuestions
 func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string {
 	combinedText := cleanPassageForRerank(result.Content)
 	var enrichments []string
 
-	// 解析ImageInfo
+	// Phân tích ImageInfo
 	if result.ImageInfo != "" {
 		var imageInfos []types.ImageInfo
 		err := json.Unmarshal([]byte(result.ImageInfo), &imageInfos)
@@ -688,7 +688,7 @@ func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string 
 				"error": err.Error(),
 			})
 		} else {
-			// 提取所有图片的描述和OCR文本
+			// Lấy mô tả và văn bản OCR của mọi hình ảnh
 			for _, img := range imageInfos {
 				if img.Caption != "" {
 					enrichments = append(enrichments, img.Caption)
@@ -700,7 +700,7 @@ func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string 
 		}
 	}
 
-	// 解析ChunkMetadata中的GeneratedQuestions
+	// Phân tích GeneratedQuestions trong ChunkMetadata
 	if len(result.ChunkMetadata) > 0 {
 		var docMeta types.DocumentChunkMetadata
 		err := json.Unmarshal(result.ChunkMetadata, &docMeta)
@@ -717,7 +717,7 @@ func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string 
 		return combinedText
 	}
 
-	// 组合内容和增强信息
+	// Ghép nội dung với thông tin bổ sung
 	if combinedText != "" {
 		combinedText += "\n\n"
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// parseCompletionResponse 解析非流式响应
+// parseCompletionResponse phân tích phản hồi không stream
 func (c *RemoteAPIChat) parseCompletionResponse(resp *openai.ChatCompletionResponse) (*types.ChatResponse, error) {
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from API")
@@ -22,8 +22,8 @@ func (c *RemoteAPIChat) parseCompletionResponse(resp *openai.ChatCompletionRespo
 
 	choice := resp.Choices[0]
 
-	// 处理思考模型的输出：移除 <think></think> 标签包裹的思考过程
-	// 为Settings 了 Thinking=false 但模型仍返回思考内容的情况和部分不支持Thinking=false的思考模型(例如Miniax-M2.1)提供兜底策略
+	// Xử lý đầu ra của mô hình reasoning: bỏ phần suy luận bọc trong thẻ <think></think>
+	// Dự phòng cho trường hợp đã đặt Thinking=false nhưng mô hình vẫn trả nội dung suy luận, và một số mô hình reasoning không hỗ trợ Thinking=false (ví dụ Minimax-M2.1)
 	content := removeThinkingContent(choice.Message.Content)
 
 	usage := tokenUsageFromOpenAI(resp.Usage, c.provider)
@@ -81,8 +81,8 @@ func (c *RemoteAPIChat) applyCompletionToolCallMetadata(body []byte, result *typ
 	}
 }
 
-// removeThinkingContent 移除思考模型输出中的 <think></think> 思考过程
-// 仅当内容以 <think> 开头时才处理
+// removeThinkingContent bỏ phần suy luận <think></think> trong đầu ra của mô hình reasoning
+// Chỉ xử lý khi nội dung bắt đầu bằng <think>
 func removeThinkingContent(content string) string {
 	const thinkStartTag = "<think>"
 	const thinkEndTag = "</think>"
@@ -92,7 +92,7 @@ func removeThinkingContent(content string) string {
 		return content
 	}
 
-	// 查找最后一个 </think> 标签（处理嵌套情况）
+	// Tìm thẻ </think> cuối cùng (xử lý trường hợp lồng nhau)
 	if lastEndIdx := strings.LastIndex(trimmed, thinkEndTag); lastEndIdx != -1 {
 		if result := strings.TrimSpace(trimmed[lastEndIdx+len(thinkEndTag):]); result != "" {
 			return result
@@ -100,10 +100,10 @@ func removeThinkingContent(content string) string {
 		return ""
 	}
 
-	return "" // 未找到 </think>，可能思考内容过长被截断，返回空字符串
+	return "" // không thấy </think>, có thể nội dung suy luận quá dài bị cắt, trả về chuỗi rỗng
 }
 
-// processStream 处理 OpenAI SDK 流式响应
+// processStream xử lý phản hồi stream của OpenAI SDK
 func (c *RemoteAPIChat) processStream(
 	ctx context.Context,
 	stream *openai.ChatCompletionStream,
@@ -159,7 +159,7 @@ func (c *RemoteAPIChat) processStream(
 	}
 }
 
-// processRawHTTPStream 处理原始 HTTP 流式响应
+// processRawHTTPStream xử lý phản hồi stream HTTP thô
 func (c *RemoteAPIChat) processRawHTTPStream(
 	ctx context.Context,
 	resp *http.Response,
@@ -222,13 +222,13 @@ func (c *RemoteAPIChat) processRawHTTPStream(
 		}
 
 		if dumper != nil {
-			// 保留上游 SSE data 行的原始 JSON，不经过中间结构体裁剪。
+			// Giữ nguyên JSON gốc của dòng SSE data từ upstream, không cắt qua struct trung gian.
 			raw := make([]byte, len(event.Data))
 			copy(raw, event.Data)
 			dumper.WritePacketRaw(raw)
 		}
 
-		// 使用局部结构体进行一次性解析，同时捕捉标准字段和 vLLM 的 reasoning 字段，避免性能损失
+		// Dùng struct cục bộ để phân tích một lần, bắt cả trường chuẩn lẫn trường reasoning của vLLM, tránh tốn hiệu năng
 		var streamResp struct {
 			openai.ChatCompletionStreamResponse
 			Choices []struct {
@@ -254,13 +254,13 @@ func (c *RemoteAPIChat) processRawHTTPStream(
 
 		if len(streamResp.Choices) > 0 {
 			choice := streamResp.Choices[0]
-			// 统一获取逻辑（支持标准和 vLLM 两种路径）
+			// Logic lấy thống nhất (hỗ trợ cả đường chuẩn và vLLM)
 			reasoning := choice.Delta.Reasoning
 			if reasoning == "" {
 				reasoning = choice.Delta.ReasoningContent
 			}
 
-			// 构造一个标准 SDK 兼容的 choice 对象传给下游，保证现有逻辑完全不动
+			// Dựng một đối tượng choice tương thích SDK chuẩn để truyền xuống, giữ nguyên logic hiện có
 			sdkChoice := openai.ChatCompletionStreamChoice{
 				Index:        choice.Index,
 				Delta:        choice.Delta.ChatCompletionStreamChoiceDelta,
@@ -305,7 +305,7 @@ func (c *RemoteAPIChat) applyStreamToolCallMetadata(data []byte, state *streamSt
 	}
 }
 
-// streamState 流式处理状态
+// streamState là trạng thái xử lý stream
 type streamState struct {
 	thinkingEmitter
 	toolCallMap      map[int]*types.LLMToolCall
@@ -385,7 +385,7 @@ func (s *streamState) setToolCallProviderMetadata(index int, metadata types.Tool
 	toolCallEntry.ProviderMetadata = metadata
 }
 
-// processStreamDelta 处理流式响应的单个 delta
+// processStreamDelta xử lý một delta của phản hồi stream
 func (c *RemoteAPIChat) processStreamDelta(
 	ctx context.Context,
 	choice *openai.ChatCompletionStreamChoice,
@@ -401,7 +401,7 @@ func (c *RemoteAPIChat) processStreamDelta(
 		state.lastFinishReason = string(choice.FinishReason)
 	}
 
-	// 处理 tool calls
+	// Xử lý tool calls
 	if len(delta.ToolCalls) > 0 {
 		c.processToolCallsDelta(ctx, delta.ToolCalls, state, streamChan)
 	}
@@ -421,7 +421,7 @@ func (c *RemoteAPIChat) processStreamDelta(
 		state.noToolCallStopLogged = true
 	}
 
-	// 发送思考内容（ReasoningContent，支持 DeepSeek 等模型）
+	// Gửi nội dung suy luận (ReasoningContent, hỗ trợ DeepSeek, ...)
 	if reasoningContent != "" {
 		// Earliest reasoning_content signal at the OpenAI-protocol level. Fired
 		// once per stream so we can distinguish "model emitted thinking before
@@ -435,7 +435,7 @@ func (c *RemoteAPIChat) processStreamDelta(
 		state.emit(streamChan, reasoningContent)
 	}
 
-	// 发送回答内容
+	// Gửi nội dung trả lời
 	if delta.Content != "" {
 		// Earliest delta.Content signal at the OpenAI-protocol level. Fired once
 		// per stream so we can measure TTFC (time-to-first-content) and tell
@@ -487,7 +487,7 @@ func (c *RemoteAPIChat) processStreamDelta(
 	}
 }
 
-// processToolCallsDelta 处理 tool calls 的增量Update
+// processToolCallsDelta xử lý cập nhật tăng dần của tool calls
 func (c *RemoteAPIChat) processToolCallsDelta(
 	ctx context.Context,
 	toolCalls []openai.ToolCall,
@@ -545,8 +545,8 @@ func (c *RemoteAPIChat) processToolCallsDelta(
 			toolCallEntry.Type = string(tc.Type)
 		}
 		if tc.Function.Name != "" {
-			// 防御性校验：解决部分供应商（如vLLM Ascend等）在每个流 Chunk 中重复发送完整工具名的问题。
-			// 如果当前已存名字与新收到名字一致，则视为冗余重复，不进行叠加。
+			// Kiểm tra phòng vệ: một số nhà cung cấp (như vLLM Ascend) gửi lặp tên công cụ đầy đủ trong mỗi chunk của stream.
+			// Nếu tên đã lưu trùng với tên mới nhận thì coi là lặp thừa, không nối thêm.
 			if toolCallEntry.Function.Name != tc.Function.Name {
 				toolCallEntry.Function.Name += tc.Function.Name
 			}

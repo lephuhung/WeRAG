@@ -54,7 +54,7 @@ func TestSandboxesStillLiveMapsTo409WithCounts(t *testing.T) {
 		respondSandboxesStillLive(c, service.SandboxInventory{
 			SandboxCount: 3,
 			SessionIDs:   []string{"s-1", "s-2"},
-			AgentNames:   []string{"数据分析"},
+			AgentNames:   []string{"Phân tích dữ liệu"},
 		})
 	})
 
@@ -79,7 +79,7 @@ func TestSandboxesStillLiveMapsTo409WithCounts(t *testing.T) {
 	require.Equal(t, "sandboxes_still_live", payload.Error.Code)
 	require.Equal(t, 3, payload.Error.Data.SandboxCount)
 	require.Len(t, payload.Error.Data.SessionIDs, 2)
-	require.Equal(t, []string{"数据分析"}, payload.Error.Data.AgentNames)
+	require.Equal(t, []string{"Phân tích dữ liệu"}, payload.Error.Data.AgentNames)
 }
 
 func TestSandboxInventoryUnverifiableMapsToDistinct409(t *testing.T) {
@@ -103,7 +103,7 @@ func TestSandboxInventoryUnverifiableMapsToDistinct409(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
 	require.Equal(t, "sandbox_inventory_unverifiable", payload.Error.Code)
-	require.Contains(t, payload.Error.Message, "无法连接")
+	require.Contains(t, payload.Error.Message, "không kết nối được")
 }
 
 func TestSkillSnapshotReleaseFailedMapsTo409WithRemaining(t *testing.T) {
@@ -159,7 +159,7 @@ func TestSkillSnapshotBlocksTemplateMapsTo409(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
 	require.Equal(t, "skill_snapshot_blocks_template", payload.Error.Code)
-	require.Contains(t, payload.Error.Message, "不能更换连接")
+	require.Contains(t, payload.Error.Message, "không thể đổi kết nối")
 }
 
 func TestSandboxConfigDeletePassesForceQuery(t *testing.T) {

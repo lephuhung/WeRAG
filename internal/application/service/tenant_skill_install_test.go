@@ -3252,6 +3252,12 @@ func (s *installSessionService) SetSessionOwnerID(context.Context, uint64, strin
 func (s *installSessionService) ContinueSession(context.Context, *types.Session) (*types.Session, error) {
 	return nil, errors.New("not implemented")
 }
+func (s *installSessionService) OpenSubChat(context.Context, *types.Session) (*types.Session, error) {
+	return nil, errors.New("not implemented")
+}
+func (s *installSessionService) ListSubChats(context.Context, *types.Session) (string, []*types.Session, error) {
+	return "", nil, errors.New("not implemented")
+}
 func (s *installSessionService) GetSessionsByTenant(context.Context) ([]*types.Session, error) {
 	return nil, nil
 }

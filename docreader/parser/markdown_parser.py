@@ -42,13 +42,13 @@ class MarkdownTableUtil:
     - Handling both header rows and data rows
 
     Example:
-        Input:  |姓名|年龄|城市|
+        Input:  |Họ tên|Tuổi|Thành phố|
                 |:---|---:|:---:|
-                |张三|25|北京|
+                |Nguyễn Văn A|25|Hà Nội|
 
-        Output: | 姓名 | 年龄 | 城市 |
+        Output: | Họ tên | Tuổi | Thành phố |
                 | :--- | ---: | :---: |
-                | 张三 | 25 | 北京 |
+                | Nguyễn Văn A | 25 | Hà Nội |
     """
 
     @staticmethod
@@ -189,19 +189,19 @@ class MarkdownTableUtil:
     @staticmethod
     def _self_test():
         test_content = """
-# 测试表格
-普通文本---不会被匹配
+# Bảng thử nghiệm
+Văn bản thường---sẽ không bị khớp
 
-## 表格1（无前置空格）
+## Bảng 1 (không thụt đầu dòng)
 
-| 姓名   | 年龄  | 城市          |
+| Họ tên   | Tuổi  | Thành phố          |
 |      :---------- | -------: | :------      |
-| 张三 | 25 | 北京 |
+| Nguyễn Văn A | 25 | Hà Nội |
 
-## 表格3（前置4个空格+首尾|）
-    |   产品   |   价格   |   库存   |
+## Bảng 3 (thụt 4 khoảng trắng + có | đầu/cuối)
+    |   Sản phẩm   |   Giá   |   Tồn kho   |
     | :-------------: | ----------- | :-----------: |
-    | 手机 | 5999       | 100 |
+    | Điện thoại | 5999       | 100 |
 """
         util = MarkdownTableUtil()
         format_content = util.format_table(test_content)

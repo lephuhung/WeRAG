@@ -68,84 +68,84 @@ func TestCleanPassageForRerank(t *testing.T) {
 	}{
 		{
 			name:   "plain text unchanged",
-			input:  "这是一段普通的文本内容",
-			expect: "这是一段普通的文本内容",
+			input:  "Đây là một đoạn văn bản thông thường",
+			expect: "Đây là một đoạn văn bản thông thường",
 		},
 		{
 			name:   "remove markdown images",
-			input:  "前文 ![图片说明](https://example.com/img.png) 后文",
-			expect: "前文  后文",
+			input:  "Phần trước ![mô tả ảnh](https://example.com/img.png) phần sau",
+			expect: "Phần trước  phần sau",
 		},
 		{
 			name:   "convert markdown links to text",
-			input:  "请参考 [官方文档](https://docs.example.com) 了解详情",
-			expect: "请参考 官方文档 了解详情",
+			input:  "Xem [tài liệu chính thức](https://docs.example.com) để biết chi tiết",
+			expect: "Xem tài liệu chính thức để biết chi tiết",
 		},
 		{
 			name:   "remove standalone URLs",
-			input:  "访问 https://example.com/path?q=1&b=2 获取更多信息",
-			expect: "访问  获取更多信息",
+			input:  "Truy cập https://example.com/path?q=1&b=2 để biết thêm thông tin",
+			expect: "Truy cập  để biết thêm thông tin",
 		},
 		{
 			name:   "unwrap code blocks",
-			input:  "示例代码：\n```python\nprint('hello')\n```\n以上是示例",
-			expect: "示例代码：\nprint('hello')\n以上是示例",
+			input:  "Mã ví dụ:\n```python\nprint('hello')\n```\nTrên đây là ví dụ",
+			expect: "Mã ví dụ:\nprint('hello')\nTrên đây là ví dụ",
 		},
 		{
 			name:   "unwrap LaTeX blocks",
-			input:  "公式如下 $$E=mc^2$$ 其中E是能量",
-			expect: "公式如下 E=mc^2 其中E是能量",
+			input:  "Công thức như sau $$E=mc^2$$ trong đó E là năng lượng",
+			expect: "Công thức như sau E=mc^2 trong đó E là năng lượng",
 		},
 		{
 			name:   "remove table separator rows and convert data rows",
-			input:  "| 名称 | 值 |\n| --- | --- |\n| A | 1 |",
-			expect: "名称, 值\n\nA, 1",
+			input:  "| Tên | Giá trị |\n| --- | --- |\n| A | 1 |",
+			expect: "Tên, Giá trị\n\nA, 1",
 		},
 		{
 			name:   "strip heading markers",
-			input:  "## 第二章 概述\n### 2.1 背景",
-			expect: "第二章 概述\n2.1 背景",
+			input:  "## Chương II Tổng quan\n### 2.1 Bối cảnh",
+			expect: "Chương II Tổng quan\n2.1 Bối cảnh",
 		},
 		{
 			name:   "strip blockquote markers",
-			input:  "> 这是一段引用\n> 第二行引用",
-			expect: "这是一段引用\n第二行引用",
+			input:  "> Đây là một đoạn trích dẫn\n> Dòng trích dẫn thứ hai",
+			expect: "Đây là một đoạn trích dẫn\nDòng trích dẫn thứ hai",
 		},
 		{
 			name:   "unwrap bold and italic",
-			input:  "这是 **加粗** 和 *斜体* 以及 ***粗斜体*** 文本",
-			expect: "这是 加粗 和 斜体 以及 粗斜体 文本",
+			input:  "Đây là văn bản **đậm** và *nghiêng* cùng ***đậm nghiêng***",
+			expect: "Đây là văn bản đậm và nghiêng cùng đậm nghiêng",
 		},
 		{
 			name:   "strip list markers",
-			input:  "- 项目一\n- 项目二\n1. 有序一\n2. 有序二",
-			expect: "项目一\n项目二\n有序一\n有序二",
+			input:  "- Mục một\n- Mục hai\n1. Thứ tự một\n2. Thứ tự hai",
+			expect: "Mục một\nMục hai\nThứ tự một\nThứ tự hai",
 		},
 		{
 			name:   "remove HTML tags",
-			input:  "文本<br>换行<div class=\"test\">内容</div>结尾",
-			expect: "文本换行内容结尾",
+			input:  "Văn bản<br>xuống dòng<div class=\"test\">nội dung</div>kết thúc",
+			expect: "Văn bảnxuống dòngnội dungkết thúc",
 		},
 		{
 			name:   "collapse excessive newlines",
-			input:  "段落一\n\n\n\n\n段落二",
-			expect: "段落一\n\n段落二",
+			input:  "Đoạn một\n\n\n\n\nĐoạn hai",
+			expect: "Đoạn một\n\nĐoạn hai",
 		},
 		{
 			name: "combined real-world passage",
-			input: `## 产品介绍
+			input: `## Giới thiệu sản phẩm
 
-这是一个 **重要的** 产品。详见 [产品页面](https://example.com/product)。
+Đây là một sản phẩm **quan trọng**. Xem [trang sản phẩm](https://example.com/product).
 
-![产品截图](images/product.png)
+![ảnh chụp sản phẩm](images/product.png)
 
-> 用户评价：非常好用
+> Đánh giá của người dùng: rất dễ dùng
 
-- 功能一
-- 功能二
+- Tính năng một
+- Tính năng hai
 
 ` + "```json\n{\"key\": \"value\"}\n```",
-			expect: "产品介绍\n\n这是一个 重要的 产品。详见 产品页面。\n\n用户评价：非常好用\n\n功能一\n功能二\n\n{\"key\": \"value\"}",
+			expect: "Giới thiệu sản phẩm\n\nĐây là một sản phẩm quan trọng. Xem trang sản phẩm.\n\nĐánh giá của người dùng: rất dễ dùng\n\nTính năng một\nTính năng hai\n\n{\"key\": \"value\"}",
 		},
 		{
 			name:   "convert table data rows to plain text",

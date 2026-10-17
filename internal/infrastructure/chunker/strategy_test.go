@@ -81,7 +81,7 @@ func TestSplit_PreservesPositionInvariantAcrossTiers(t *testing.T) {
 			"\n\n" + strings.Repeat("Kapitel 2: Hauptteil\n", 1) + strings.Repeat("Mehr Text. ", 50),
 		"recursive-tier": strings.Repeat("plain prose without structure. ", 100),
 	}
-	cfg := SplitterConfig{ChunkSize: 300, ChunkOverlap: 30, Separators: []string{"\n\n", "\n", "。", ". "}, Strategy: StrategyAuto}
+	cfg := SplitterConfig{ChunkSize: 300, ChunkOverlap: 30, Separators: []string{"\n\n", "\n", ". "}, Strategy: StrategyAuto}
 
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -76,7 +76,7 @@ func (w *weaviateRepository) ensureCollection(ctx context.Context, dimension int
 	if !exists {
 		log.Infof("[Weaviate] Creating collection %s with dimension %d", collectionName, dimension)
 
-		//定义class结构
+		// Định nghĩa cấu trúc class
 		classObj := models.Class{
 			Class:       collectionName,
 			Description: fmt.Sprintf("WeKnora embeddings collection with dimension %d", dimension),
@@ -817,7 +817,7 @@ func (w *weaviateRepository) CopyIndices(ctx context.Context,
 func (w *weaviateRepository) ListCollections(ctx context.Context) ([]string, error) {
 	schema, err := w.client.Schema().Getter().Do(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("weaviate 获取 schema 失败: %w", err)
+		return nil, fmt.Errorf("weaviate: không lấy được schema: %w", err)
 	}
 	var collectionNames []string
 	for _, class := range schema.Classes {

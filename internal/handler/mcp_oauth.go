@@ -58,12 +58,12 @@ type mcpOAuthAuthorizeRequest struct {
 // AuthorizeURL begins authorization and returns the URL the browser must open.
 //
 // AuthorizeURL godoc
-// @Summary      发起 MCP OAuth 授权
-// @Description  对使用 OAuth 的 MCP 服务执行发现与动态客户端注册，返回浏览器应跳转的授权地址（当前用户维度）
-// @Tags         MCP服务
+// @Summary      Bắt đầu ủy quyền OAuth cho MCP
+// @Description  Thực hiện discovery và đăng ký client động cho dịch vụ MCP dùng OAuth, trả về địa chỉ ủy quyền để trình duyệt chuyển tới (theo người dùng hiện tại)
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                    true  "MCP 服务 ID"
+// @Param        id       path      string                    true  "ID dịch vụ MCP"
 // @Param        request  body      map[string]interface{}    true  "{redirect_uri: string, frontend_redirect?: string}"
 // @Success      200      {object}  map[string]interface{}    "{authorization_url: string, authorization_attempt: string}"
 // @Failure      400      {object}  errors.AppError
@@ -126,12 +126,12 @@ func (h *MCPOAuthHandler) AuthorizeURL(c *gin.Context) {
 // the frontend with the result encoded in the URL fragment.
 //
 // Callback godoc
-// @Summary      MCP OAuth 回调
-// @Description  接收授权服务器回调并完成 code 交换，随后重定向回前端
-// @Tags         MCP服务
-// @Param        code   query  string  false  "授权码"
-// @Param        state  query  string  false  "状态Parameters "
-// @Param        error  query  string  false  "授权错误码"
+// @Summary      Callback OAuth của MCP
+// @Description  Nhận callback từ máy chủ ủy quyền, đổi code lấy token rồi chuyển hướng về frontend
+// @Tags         Dịch vụ MCP
+// @Param        code   query  string  false  "mã ủy quyền"
+// @Param        state  query  string  false  "tham số state"
+// @Param        error  query  string  false  "mã lỗi ủy quyền"
 // @Success      302
 // @Router       /mcp-services/oauth/callback [get]
 func (h *MCPOAuthHandler) Callback(c *gin.Context) {
@@ -172,12 +172,12 @@ func (h *MCPOAuthHandler) Callback(c *gin.Context) {
 // Status reports whether the current user has authorized this service.
 //
 // Status godoc
-// @Summary      Query  MCP OAuth 授权状态
-// @Description  返回当前用户的 OAuth Token 生命周期状态；传 authorization_attempt 时只检查本次授权流程
-// @Tags         MCP服务
+// @Summary      Tra cứu trạng thái ủy quyền OAuth của MCP
+// @Description  Trả về trạng thái vòng đời OAuth token của người dùng hiện tại; truyền authorization_attempt thì chỉ kiểm tra lượt ủy quyền này
+// @Tags         Dịch vụ MCP
 // @Produce      json
-// @Param        id   path      string                  true  "MCP 服务 ID"
-// @Param        authorization_attempt  query  string  false  "本次授权尝试 ID；传入后不会接受历史 Token"
+// @Param        id   path      string                  true  "ID dịch vụ MCP"
+// @Param        authorization_attempt  query  string  false  "ID lượt ủy quyền này; khi truyền sẽ không chấp nhận token cũ"
 // @Success      200  {object}  map[string]interface{}  "{authorized: bool, state: string, refresh_available: bool, expires_at?: string}"
 // @Security     Bearer
 // @Router       /mcp-services/{id}/oauth/status [get]
@@ -222,11 +222,11 @@ func (h *MCPOAuthHandler) Status(c *gin.Context) {
 // Revoke removes the current user's stored token and recycles connections.
 //
 // Revoke godoc
-// @Summary      撤销 MCP OAuth 授权
-// @Description  Delete 当前用户对指定 MCP 服务的 OAuth 令牌
-// @Tags         MCP服务
+// @Summary      Thu hồi ủy quyền OAuth của MCP
+// @Description  Xoá OAuth token của người dùng hiện tại đối với dịch vụ MCP chỉ định
+// @Tags         Dịch vụ MCP
 // @Produce      json
-// @Param        id   path  string  true  "MCP 服务 ID"
+// @Param        id   path  string  true  "ID dịch vụ MCP"
 // @Success      204
 // @Security     Bearer
 // @Router       /mcp-services/{id}/oauth/token [delete]
@@ -264,16 +264,16 @@ type resolveMCPOAuthBody struct {
 // resume the tool into another failure.
 //
 // ResolveMCPOAuth godoc
-// @Summary      完成对话内 MCP OAuth 授权
-// @Description  用户在对话中完成 OAuth 授权后调用，校验令牌存在后恢复被暂停的 Agent 工具调用
-// @Tags         MCP服务
+// @Summary      Hoàn tất ủy quyền OAuth của MCP trong cuộc trò chuyện
+// @Description  Gọi sau khi người dùng hoàn tất ủy quyền OAuth trong cuộc trò chuyện; kiểm tra token tồn tại rồi tiếp tục lượt gọi công cụ của trợ lý đang tạm dừng
+// @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
-// @Param        pending_id  path  string                  true  "待授权 ID"
+// @Param        pending_id  path  string                  true  "ID chờ ủy quyền"
 // @Param        request     body  map[string]interface{}  true  "{service_id: string}"
 // @Success      200         {object}  map[string]interface{}
 // @Failure      400         {object}  errors.AppError
-// @Failure      409         {object}  errors.AppError  "用户尚未完成授权"
+// @Failure      409         {object}  errors.AppError  "người dùng chưa hoàn tất ủy quyền"
 // @Security     Bearer
 // @Router       /agent/mcp-oauth-resolutions/{pending_id} [post]
 func (h *MCPOAuthHandler) ResolveMCPOAuth(c *gin.Context) {
@@ -375,11 +375,11 @@ func (h *MCPOAuthHandler) ResolveMCPOAuth(c *gin.Context) {
 // completing authorization. This unblocks the paused agent with a denial.
 //
 // CancelMCPOAuth godoc
-// @Summary      跳过对话内 MCP OAuth 授权
-// @Description  用户主动跳过 OAuth 授权，解除 Agent 阻塞
-// @Tags         MCP服务
+// @Summary      Bỏ qua ủy quyền OAuth của MCP trong cuộc trò chuyện
+// @Description  Người dùng chủ động bỏ qua ủy quyền OAuth, gỡ chặn cho trợ lý
+// @Tags         Dịch vụ MCP
 // @Produce      json
-// @Param        pending_id  path  string  true  "待授权 ID"
+// @Param        pending_id  path  string  true  "ID chờ ủy quyền"
 // @Success      200         {object}  map[string]interface{}
 // @Failure      404         {object}  errors.AppError
 // @Security     Bearer

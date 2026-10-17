@@ -287,6 +287,12 @@ func (s *agentService) CreateAgentEngine(
 	if fn := s.legalHistoryFunc(kbIDs); fn != nil {
 		engine.SetLegalHistory(fn)
 	}
+	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
+		docs := s.documentWorkspaces
+		engine.SetSourceEditNote(func(ctx context.Context, query string) string {
+			return tools.SourceEditNote(ctx, docs, sessionID, query)
+		})
+	}
 	pinnedMCP := s.resolvePinnedMCPServiceInfos(ctx, config)
 	s.attachPinnedMCPToolNames(toolRegistry, pinnedMCP)
 	engine.SetQuestionOrigin(s.resolveQuestionOriginInfo(ctx, config.QuestionOrigin, config.SearchTargets, kbInfos))

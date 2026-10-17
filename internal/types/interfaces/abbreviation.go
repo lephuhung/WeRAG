@@ -48,8 +48,10 @@ type AbbreviationService interface {
 	// Get returns one row or nil.
 	Get(ctx context.Context, id string) (*types.Abbreviation, error)
 
-	// List returns filtered rows plus total.
-	List(ctx context.Context, search string, isActive *bool, page, perPage int) ([]*types.Abbreviation, int64, error)
+	// List returns filtered rows plus total, pending rows first. offset is a
+	// row offset (not a page) so a review screen can resume exactly after the
+	// rows it approved in place.
+	List(ctx context.Context, search string, isActive *bool, offset, limit int) ([]*types.Abbreviation, int64, error)
 
 	// Update applies a partial update. Only admins may flip IsActive —
 	// the handler enforces that before calling.
@@ -87,4 +89,10 @@ type DocumentSpellingFeedbackRepository interface {
 	// Dismissed returns the tenant's "not a mistake" verdicts on the
 	// paragraphs with these hashes (paragraph_hash and wrong only).
 	Dismissed(ctx context.Context, tenantID uint64, paragraphHashes []string) ([]types.DocumentSpellingFeedback, error)
+}
+
+// DocumentFormatFeedbackRepository stores users' verdicts on the NĐ30
+// format check reports as labelled data for tuning the checker.
+type DocumentFormatFeedbackRepository interface {
+	Record(ctx context.Context, row *types.DocumentFormatFeedback) error
 }

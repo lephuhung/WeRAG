@@ -305,7 +305,7 @@ func TestPreviewChunking_LineEndingsMatchUpload(t *testing.T) {
 	payload := PreviewChunkingPayload{
 		ChunkSize:    500,
 		ChunkOverlap: 20,
-		Separators:   []string{"\n\n", "\n", "。", "！", "？", ";", "；"},
+		Separators:   []string{"\n\n", "\n", ". ", "! ", "? ", ";"},
 		Strategy:     chunker.StrategyHeading,
 	}
 	actual := chunker.Split(chunker.NormalizeLineEndings(uploaded), chunker.NormalizeSplitterConfig(chunker.SplitterConfig{

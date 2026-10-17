@@ -46,10 +46,10 @@ func TestApplyFetchedItem_ProducesLocalisableStructuredError(t *testing.T) {
 
 	s.applyFetchedItem(context.Background(), ds, &types.FetchedItem{
 		ExternalID: "nt1",
-		Title:      "季度报告",
+		Title:      "Báo cáo quý",
 		Metadata: map[string]string{
 			// raw, for logs only
-			"error": `export 季度报告 (docx): feishu api error: status=500 body={"code":1663,"error":{"log_id":"20260"}}`,
+			"error": `export Báo cáo quý (docx): feishu api error: status=500 body={"code":1663,"error":{"log_id":"20260"}}`,
 			// classification, for a localisable UI sample
 			"error_reason_code":       "feishu_api_error",
 			"error_reason_code_value": "1663",
@@ -59,7 +59,7 @@ func TestApplyFetchedItem_ProducesLocalisableStructuredError(t *testing.T) {
 
 	assert.Equal(t, 1, len(result.Errors))
 	got := result.Errors[0]
-	assert.Equal(t, "季度报告", got.Title, "title is a separate field, not embedded in the message")
+	assert.Equal(t, "Báo cáo quý", got.Title, "title is a separate field, not embedded in the message")
 	assert.Equal(t, "feishu_api_error", got.Code, "stable i18n code drives frontend localisation")
 	assert.Equal(t, "1663", got.Params["code"], "feishu error code is passed as an interpolation param")
 	assert.NotContains(t, got.Message, "body=", "raw API body must not reach the UI sample")

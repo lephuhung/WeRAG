@@ -29,7 +29,7 @@ import (
 
 const (
 	temporaryDocumentDefaultTTL     = 24 * time.Hour
-	temporaryDocumentInlineTokens   = 12000
+	temporaryDocumentInlineTokens   = types.DefaultChatAttachmentInlineTokens
 	temporaryDocumentPromptBudget   = 12000
 	temporaryDocumentMaxPromptParts = 16
 	// defaultTemporaryDocumentImageOCRMaxPages caps how many page images a
@@ -113,6 +113,9 @@ type temporaryDocumentService struct {
 	taskEnqueuer       interfaces.TaskEnqueuer
 	sessionAttachments sessionAttachmentLookup
 	auditLog           interfaces.AuditLogService
+	// usageMeter counts the OCR calls of a parse against the uploader's
+	// token quota (nil in tests: nothing is counted)
+	usageMeter interfaces.UsageMeter
 	// gate refuses an upload with more pages than a chat attachment may have
 	gate     *inputGate
 	settings interfaces.SystemSettingService
@@ -155,12 +158,13 @@ func NewTemporaryDocumentService(
 	messages interfaces.MessageRepository,
 	auditLog interfaces.AuditLogService,
 	settings interfaces.SystemSettingService,
+	usageMeter interfaces.UsageMeter,
 ) interfaces.TemporaryDocumentService {
 	return &temporaryDocumentService{
 		repo: repo, fileService: fileService, resourceCatalog: resourceCatalog,
 		documentReader: documentReader, imageResolver: imageResolver,
 		modelService: modelService, tenantService: tenantService, taskEnqueuer: taskEnqueuer,
-		sessionAttachments: messages, auditLog: auditLog, gate: newInputGate(settings), settings: settings,
+		sessionAttachments: messages, auditLog: auditLog, usageMeter: usageMeter, gate: newInputGate(settings), settings: settings,
 	}
 }
 
@@ -216,7 +220,11 @@ func (s *temporaryDocumentService) Create(
 	}
 	// The page gate runs before the file is stored: a document that would
 	// keep the parser busy for minutes is refused with the reason.
-	if err := s.gate.CheckPages(ctx, types.InputGateChat, baseName, ext, data); err != nil {
+	gate := options.InputGate
+	if gate == "" {
+		gate = types.InputGateChat
+	}
+	if err := s.gate.CheckPages(ctx, gate, baseName, ext, data); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +251,9 @@ func (s *temporaryDocumentService) Create(
 			return nil, fmt.Errorf("bind attachment resource: %w", err)
 		}
 	}
-	payload, _ := json.Marshal(types.TemporaryDocumentTaskPayload{TenantID: tenantID, DocumentID: document.ID})
+	payload, _ := json.Marshal(types.TemporaryDocumentTaskPayload{
+		TenantID: tenantID, DocumentID: document.ID, Initiator: types.TaskInitiatorFromContext(ctx),
+	})
 	queue, _ := types.QueueForTaskType(types.TypeTemporaryDocumentProcess)
 	if _, err := s.taskEnqueuer.Enqueue(
 		asynq.NewTask(types.TypeTemporaryDocumentProcess, payload),
@@ -426,7 +436,14 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 	if tenant, tenantErr := s.tenantService.GetTenantByID(ctx, resourceTenantID); tenantErr == nil && tenant != nil {
 		ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenant)
 	}
+	ctx = payload.Initiator.Apply(ctx)
+	// Every vision-model call of this parse (OCR of images and scanned
+	// pages, a caption) reports its token usage here; it is billed to the
+	// uploader below whatever the parse's outcome, since the calls were made.
+	vlmUsage := &types.VLMUsageSink{}
+	ctx = types.WithVLMUsageSink(ctx, vlmUsage)
 	content, images, metadata, parseErr := s.parse(ctx, document)
+	ocrPages, ocrUsage := s.countOCRUsage(ctx, payload, document, vlmUsage, metadata)
 	if parseErr != nil {
 		retryCount, hasRetryCount := asynq.GetRetryCount(ctx)
 		maxRetry, hasMaxRetry := asynq.GetMaxRetry(ctx)
@@ -449,6 +466,10 @@ func (s *temporaryDocumentService) Process(ctx context.Context, task *asynq.Task
 		// Lite mode doesn't expose Asynq retry metadata in the context. Surface
 		// a terminal state immediately instead of leaving the UI spinning.
 		return nil
+	}
+	if ocrPages > 0 || ocrUsage.Total() > 0 {
+		metadata[metadataOCRPages] = strconv.Itoa(ocrPages)
+		metadata[metadataOCRTokens] = strconv.Itoa(ocrUsage.Total())
 	}
 	content = common.CleanInvalidUTF8(content)
 	content = chunker.NormalizeLineEndings(content)
@@ -646,6 +667,62 @@ func (s *temporaryDocumentService) parse(ctx context.Context, document *types.Te
 	return content, images, metadata, nil
 }
 
+// Attachment metadata keys of what the OCR cost: the images / scanned pages
+// read by the vision model and the tokens those calls used (the same numbers
+// the usage meter counted).
+const (
+	metadataOCRPages  = "ocr_pages"
+	metadataOCRTokens = "ocr_tokens"
+)
+
+// Docreader metadata keys of the OCR it ran itself (vietnamese_legal engine,
+// scanned pages sent to the OCR endpoint from inside the parser).
+const (
+	metadataVNOCRPages            = "vn_ocr_pages"
+	metadataVNOCRPromptTokens     = "vn_ocr_prompt_tokens"
+	metadataVNOCRCompletionTokens = "vn_ocr_completion_tokens"
+)
+
+// ocrUsageOfParse sums what reading one upload with the vision model cost:
+// the calls made from this process (sink) plus the pages docreader OCR'd
+// itself, which it reports in the parse metadata. Pages counts images /
+// scanned pages read; a caption call over an image counts as one more.
+func ocrUsageOfParse(sink *types.VLMUsageSink, metadata map[string]string) (pages int, usage types.VLMUsage) {
+	pages, usage = sink.Snapshot()
+	atoi := func(key string) int {
+		n, _ := strconv.Atoi(strings.TrimSpace(metadata[key]))
+		if n < 0 {
+			return 0
+		}
+		return n
+	}
+	pages += atoi(metadataVNOCRPages)
+	usage.Add(types.VLMUsage{
+		PromptTokens:     atoi(metadataVNOCRPromptTokens),
+		CompletionTokens: atoi(metadataVNOCRCompletionTokens),
+	})
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	return pages, usage
+}
+
+// countOCRUsage bills the OCR of one upload to the uploader: their
+// workspace (the attachment's owner, not a shared agent's source workspace),
+// themselves and the session. Returns what it counted for the metadata.
+func (s *temporaryDocumentService) countOCRUsage(
+	ctx context.Context, payload types.TemporaryDocumentTaskPayload, document *types.TemporaryDocument,
+	sink *types.VLMUsageSink, metadata map[string]string,
+) (int, types.VLMUsage) {
+	pages, usage := ocrUsageOfParse(sink, metadata)
+	if s.usageMeter == nil || (pages == 0 && usage.Total() == 0) {
+		return pages, usage
+	}
+	userID, _ := types.UserIDFromContext(ctx)
+	s.usageMeter.RecordOCRUsage(ctx, payload.TenantID, userID, document.SessionID, pages, usage)
+	logger.Infof(ctx, "temporary document %s OCR counted: pages=%d tokens=%d (prompt=%d completion=%d)",
+		document.ID, pages, usage.Total(), usage.PromptTokens, usage.CompletionTokens)
+	return pages, usage
+}
+
 // metadataOCRSkipped is the attachment metadata key telling why a text-poor
 // upload has no OCR text: no_vlm (the agent has no vision model),
 // scan_disabled (the agent does not OCR scanned documents) or ocr_error
@@ -747,6 +824,13 @@ func (s *temporaryDocumentService) understandImagesWithVLM(
 	ocrPrompt := vlmOCRPrompt
 	if scanned {
 		ocrPrompt = vlmOCRScannedPDFPrompt
+	}
+	// An OCR-only model gets its own short prompt and is never asked for a
+	// caption: on a photo without text it would answer with invented text.
+	profile := loadOCRModelProfile(ctx, s.modelService, vlmModelID)
+	ocrPrompt = profile.ocrPrompt(ocrPrompt)
+	if profile.OCROnly {
+		captionFallback = false
 	}
 
 	// Page OCR runs with bounded concurrency so multi-page scans don't pay the
@@ -900,10 +984,16 @@ type promptSelection struct {
 func (s *temporaryDocumentService) selectForPrompt(
 	ctx context.Context, document *types.TemporaryDocument, query string, budget int, opts types.TemporaryDocumentPromptOptions,
 ) promptSelection {
-	if sel, ok := s.selectSections(ctx, document, query, budget, opts); ok {
+	inline := temporaryDocumentInlineTokens
+	if s.settings != nil {
+		if v := int(s.settings.GetInt(ctx, types.SettingChatAttachmentInlineTokens, "", int64(inline))); v > 0 {
+			inline = v
+		}
+	}
+	if sel, ok := s.selectSections(ctx, document, query, budget, inline, opts); ok {
 		return sel
 	}
-	content, selected, total := selectTemporaryDocumentContentWithBudget(document, query, budget)
+	content, selected, total := selectTemporaryDocumentContentWithLimits(document, query, budget, inline)
 	return promptSelection{
 		content: content, selected: selected, total: total,
 		mode: map[bool]string{true: "full", false: "selected_chunks"}[selected == total],
@@ -914,7 +1004,7 @@ func (s *temporaryDocumentService) selectForPrompt(
 // choice to the keyword selection (document fits, picker off, too few
 // sections, pick failed).
 func (s *temporaryDocumentService) selectSections(
-	ctx context.Context, document *types.TemporaryDocument, query string, budget int, opts types.TemporaryDocumentPromptOptions,
+	ctx context.Context, document *types.TemporaryDocument, query string, budget, inline int, opts types.TemporaryDocumentPromptOptions,
 ) (promptSelection, bool) {
 	if opts.ModelID == "" || s.modelService == nil || strings.TrimSpace(query) == "" {
 		return promptSelection{}, false
@@ -925,7 +1015,7 @@ func (s *temporaryDocumentService) selectSections(
 	if budget <= 0 {
 		budget = temporaryDocumentPromptBudget
 	}
-	if document.TokenCount <= temporaryDocumentInlineTokens && document.TokenCount <= budget {
+	if document.TokenCount <= inline && document.TokenCount <= budget {
 		return promptSelection{}, false
 	}
 	var chunks []types.TemporaryDocumentChunk
@@ -970,12 +1060,19 @@ func selectTemporaryDocumentContent(document *types.TemporaryDocument, query str
 }
 
 func selectTemporaryDocumentContentWithBudget(document *types.TemporaryDocument, query string, budget int) (string, int, int) {
+	return selectTemporaryDocumentContentWithLimits(document, query, budget, temporaryDocumentInlineTokens)
+}
+
+// selectTemporaryDocumentContentWithLimits takes the whole document when it
+// is at most inline tokens and fits budget, else the chunks with the most
+// question words.
+func selectTemporaryDocumentContentWithLimits(document *types.TemporaryDocument, query string, budget, inline int) (string, int, int) {
 	var chunks []types.TemporaryDocumentChunk
 	_ = json.Unmarshal(document.Chunks, &chunks)
 	if budget <= 0 {
 		budget = temporaryDocumentPromptBudget
 	}
-	if len(chunks) == 0 || (document.TokenCount <= temporaryDocumentInlineTokens && document.TokenCount <= budget) {
+	if len(chunks) == 0 || (document.TokenCount <= inline && document.TokenCount <= budget) {
 		return document.Content, len(chunks), len(chunks)
 	}
 	terms := temporaryDocumentQueryTerms(query)
@@ -1050,7 +1147,7 @@ func temporaryDocumentQueryTerms(query string) []string {
 
 func isVisualDocumentQuery(query string) bool {
 	lower := strings.ToLower(query)
-	for _, marker := range []string{"图", "表格", "截图", "页面", "排版", "chart", "figure", "diagram", "image", "layout"} {
+	for _, marker := range []string{"hình", "biểu đồ", "bảng", "ảnh chụp", "trang", "bố cục", "sơ đồ", "图", "表格", "截图", "页面", "排版", "chart", "figure", "diagram", "image", "layout"} {
 		if strings.Contains(lower, marker) {
 			return true
 		}

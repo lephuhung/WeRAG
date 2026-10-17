@@ -1,4 +1,4 @@
-// Package feishu implements the Feishu (飞书) IM adapter for WeKnora, and with
+// Package feishu implements the Feishu (Lark CN) IM adapter for WeKnora, and with
 // it the Lark adapter: Feishu and Lark are the same product on two isolated
 // clouds (open.feishu.cn and open.larksuite.com) sharing one API surface, so a
 // single implementation serves both. A Region picks the cloud — see region.go.

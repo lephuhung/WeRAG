@@ -29,8 +29,8 @@ func TestFileMessageQAContent(t *testing.T) {
 	}{
 		{
 			name: "preserves caption",
-			msg:  &IncomingMessage{Content: "请总结这个文件", FileName: "report.pdf"},
-			want: "请总结这个文件",
+			msg:  &IncomingMessage{Content: "Hãy tóm tắt tệp này", FileName: "report.pdf"},
+			want: "Hãy tóm tắt tệp này",
 		},
 		{
 			name: "builds query for file-only event",
@@ -69,7 +69,7 @@ func TestEmptyIncomingMessageReply(t *testing.T) {
 			name:      "blank text is rejected",
 			msg:       &IncomingMessage{MessageType: MessageTypeText, Content: " \n\t "},
 			wantEmpty: true,
-			wantHint:  "未能识别这条消息中的文字内容。请改用纯文本发送；图片或文件请单独发送。",
+			wantHint:  "Không nhận dạng được nội dung văn bản trong tin nhắn này. Vui lòng gửi dạng văn bản; hình ảnh hoặc tệp xin gửi riêng.",
 		},
 		{
 			name:      "image without caption is accepted before QA content fill",
@@ -93,7 +93,7 @@ func TestEmptyIncomingMessageReply(t *testing.T) {
 				Extra:       map[string]string{"raw_msgtype": "audio"},
 			},
 			wantEmpty: true,
-			wantHint:  "未能识别这条语音中的文字内容。请改用纯文本发送，或再说一遍。",
+			wantHint:  "Không nhận dạng được nội dung trong đoạn ghi âm này. Vui lòng gửi dạng văn bản hoặc nói lại.",
 		},
 		{
 			name: "video uses an unsupported-type hint",
@@ -102,7 +102,7 @@ func TestEmptyIncomingMessageReply(t *testing.T) {
 				Extra:       map[string]string{"raw_msgtype": "video"},
 			},
 			wantEmpty: true,
-			wantHint:  "暂不支持视频消息。请改用纯文本发送；图片或文件请单独发送。",
+			wantHint:  "Chưa hỗ trợ tin nhắn video. Vui lòng gửi dạng văn bản; hình ảnh hoặc tệp xin gửi riêng.",
 		},
 	}
 
@@ -163,7 +163,7 @@ func TestApplyIMAttachmentTruncationLimitsLargeSingleLine(t *testing.T) {
 
 func TestApplyIMAttachmentTruncationPreservesUTF8(t *testing.T) {
 	attachment := &types.MessageAttachment{}
-	applyIMAttachmentTruncation(strings.Repeat("中", maxIMAttachmentContentBytes), attachment)
+	applyIMAttachmentTruncation(strings.Repeat("ộ", maxIMAttachmentContentBytes), attachment)
 
 	if !attachment.IsTruncated {
 		t.Fatal("expected content to be truncated")

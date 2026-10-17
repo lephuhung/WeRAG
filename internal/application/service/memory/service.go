@@ -41,6 +41,9 @@ const rejectedMessageWindow = time.Hour
 
 // Service implements interfaces.MemoryService.
 type Service struct {
+	// now is the clock recurrence is dated by; nil means types.PromptNow.
+	// Tests move it to simulate conversations on different days.
+	now            func() time.Time
 	repo           interfaces.MemoryRepository
 	tenantRepo     interfaces.TenantRepository
 	messageRepo    interfaces.MessageRepository
@@ -414,7 +417,7 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 	if existing == nil {
 		// The same fact often arrives twice: once because the user said
 		// "remember ..." and again from the background distillation, phrased
-		// slightly differently ("我们的生产库是 X" vs "生产库是 X"). They get
+		// slightly differently ("bên tôi dùng eOffice" vs "đơn vị dùng eOffice"). They get
 		// different topic keys, so key matching alone lets both through and
 		// the user sees their memory duplicated.
 		duplicate, longer, err := s.findContainedDuplicate(ctx, scope, item.Kind, content)
@@ -566,17 +569,18 @@ func wordOverlap(want, have string) float64 {
 	return float64(matched) / float64(len(wantWords))
 }
 
-// inferenceStatus is statusForWrite once users stopped reviewing memory. An
-// inference that stands on its own is used at once and announced on the next
-// turn (TakeNewlySaved), so a wrong one can be taken back. An inference that
-// would replace something already stored stays a pending proposal: it is
-// never injected, and a guess must not overwrite what the user said.
-func inferenceStatus(item types.MemoryItem, replaces *types.MemoryItem) string {
-	status := statusForWrite(item)
-	if status == types.MemoryStatusPending && replaces == nil {
-		return types.MemoryStatusActive
-	}
-	return status
+// inferenceStatus is statusForWrite: a guess about the person waits for them
+// to confirm it in the memory settings, whether or not it would replace a
+// stored note.
+//
+// Standalone inferences used to go active at once and be announced on the next
+// turn. In practice nobody takes a note back from a one-line notice, and the
+// guesses were wrong often enough — a question about commune staff pensions
+// made the user a commune employee, injected into 268 later turns — that the
+// damage outweighed the convenience. The review queue exists (pending filter
+// + confirm button), so it is used.
+func inferenceStatus(item types.MemoryItem, _ *types.MemoryItem) string {
+	return statusForWrite(item)
 }
 
 // newlySavedLimit bounds how many fresh memories one turn announces.
@@ -1211,6 +1215,13 @@ func (s *Service) RecordAnswerSources(ctx context.Context, refs []types.MemoryDo
 // first is how MemoryOS separates the two without a rule that throws away every
 // question. Returns the interests promoted by this call.
 func (s *Service) ObserveQuestionTopics(ctx context.Context, topics []string) []string {
+	// No conversation is known here, so the sighting is counted but never
+	// advances recurrence; see types.TopicRecurs.
+	return s.observeQuestionTopicsIn(ctx, "", topics)
+}
+
+// observeQuestionTopicsIn is ObserveQuestionTopics for a known conversation.
+func (s *Service) observeQuestionTopicsIn(ctx context.Context, sessionID string, topics []string) []string {
 	if len(topics) == 0 {
 		return nil
 	}
@@ -1218,7 +1229,18 @@ func (s *Service) ObserveQuestionTopics(ctx context.Context, topics []string) []
 	if !ok {
 		return nil
 	}
-	return s.observeTopics(ctx, scope, cfg, cfg.ExtractModelID, topics)
+	return s.observeTopics(ctx, scope, cfg, cfg.ExtractModelID, sessionID, topics)
+}
+
+func (s *Service) topicSighting(sessionID string) types.MemoryTopicSighting {
+	if sessionID == "" {
+		return types.MemoryTopicSighting{}
+	}
+	now := types.PromptNow()
+	if s.now != nil {
+		now = s.now()
+	}
+	return types.MemoryTopicSighting{SessionID: sessionID, Day: now.Format("2006-01-02")}
 }
 
 // observeTopics is the scope-explicit form.
@@ -1231,6 +1253,7 @@ func (s *Service) observeTopics(
 	scope interfaces.MemoryScope,
 	cfg *types.MemoryConfig,
 	modelID string,
+	sessionID string,
 	topics []string,
 ) []string {
 	if len(topics) == 0 || cfg == nil || !cfg.AutoExtractEnabled() {
@@ -1247,9 +1270,16 @@ func (s *Service) observeTopics(
 	// so each sighting landed under its own key and no topic ever recurred.
 	surfaces := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		if topic = types.SanitizeMemoryTopic(topic); topic != "" {
-			surfaces = append(surfaces, topic)
+		if topic = types.SanitizeMemoryTopic(topic); topic == "" {
+			continue
 		}
+		// A label that names what the user asked for ("tóm tắt văn bản") is
+		// the tool's feature, not the person's field; it is never counted.
+		if topicIsAnAction(topic) {
+			logger.Infof(ctx, "memory: topic %q names an action, not a subject; not counted", topic)
+			continue
+		}
+		surfaces = append(surfaces, topic)
 	}
 	if len(surfaces) == 0 {
 		return nil
@@ -1274,7 +1304,7 @@ func (s *Service) observeTopics(
 			continue
 		}
 		aliasesBefore := s.topicAliasCount(ctx, scope, key)
-		stat, err := s.repo.BumpTopic(ctx, scope, canonicalTopic, key, resolution.Surface)
+		stat, err := s.repo.BumpTopic(ctx, scope, canonicalTopic, key, resolution.Surface, s.topicSighting(sessionID))
 		if err != nil {
 			logger.Warnf(ctx, "memory: count topic %q failed: %v", canonicalTopic, err)
 			continue
@@ -1287,8 +1317,9 @@ func (s *Service) observeTopics(
 		// a topic was counted, which subject it was folded into, or which tier
 		// decided — and "hits is always 1" looks identical to "nothing ran".
 		logger.Infof(ctx,
-			"memory: topic %q -> %q (tier=%s, hits=%d, threshold=%d)",
-			resolution.Surface, canonicalTopic, resolutionTier(resolution), stat.Hits, threshold)
+			"memory: topic %q -> %q (tier=%s, hits=%d, sessions=%d, days=%d, threshold=%d)",
+			resolution.Surface, canonicalTopic, resolutionTier(resolution),
+			stat.Hits, stat.SessionHits, len(stat.Days), threshold)
 		if types.TopicLooksLikeOneQuestion(canonicalTopic) {
 			logger.Warnf(ctx,
 				"memory: topic %q names one question rather than a subject, so it will never "+
@@ -1304,7 +1335,10 @@ func (s *Service) observeTopics(
 			canonicalTopic, key = s.renameTopic(ctx, scope, stat, resolution.MergedLabel, key)
 		}
 
-		if stat.PromotedAt != nil || stat.Hits < threshold {
+		// Promotion is decided on distinct conversations and days, never on
+		// the segment counter: one long chat, or one evaluation run, used to
+		// turn a passing question into a "long-term focus" within minutes.
+		if stat.PromotedAt != nil || !types.TopicRecurs(stat, threshold) {
 			continue
 		}
 		if _, err := s.write(ctx, scope, cfg, types.MemoryItem{

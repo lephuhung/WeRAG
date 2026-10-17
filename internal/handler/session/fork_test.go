@@ -129,7 +129,7 @@ func TestForkSessionMapsUnknownErrorTo500(t *testing.T) {
 func TestForkSessionPassesTitleThrough(t *testing.T) {
 	forker := &stubForker{result: &service.ForkResult{SessionID: "new-1"}}
 
-	performFork(t, forker, `{"message_id":"u-2","title":"我的分支"}`)
+	performFork(t, forker, `{"message_id":"u-2","title":"Nhánh của tôi"}`)
 
-	require.Equal(t, "我的分支", forker.gotTit)
+	require.Equal(t, "Nhánh của tôi", forker.gotTit)
 }

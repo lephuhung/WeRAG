@@ -136,16 +136,16 @@ func (h *Handler) generateSessionTitle(streamCtx *sseStreamContext, reqCtx *qaRe
 }
 
 // RetryAbbreviationSuggestions godoc
-// @Summary      重试缩写建议写入
-// @Description  重试处于 save_failed 状态的缩写词典建议写入
-// @Tags         问答
+// @Summary      Thử lại việc ghi gợi ý viết tắt
+// @Description  Thử lại việc ghi gợi ý từ điển viết tắt đang ở trạng thái save_failed
+// @Tags         Hỏi đáp
 // @Accept       json
 // @Produce      json
-// @Param        session_id  path      string  true   "会话ID"
-// @Param        request_id  path      string  true   "缩写解析请求ID"
-// @Success      200         {object}  map[string]interface{}  "重试成功"
-// @Failure      404         {object}  errors.AppError         "会话或解析请求不存在"
-// @Failure      409         {object}  errors.AppError         "解析请求状态不允许重试"
+// @Param        session_id  path      string  true   "ID cuộc trò chuyện"
+// @Param        request_id  path      string  true   "ID yêu cầu giải nghĩa viết tắt"
+// @Success      200         {object}  map[string]interface{}  "Thử lại thành công"
+// @Failure      404         {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện hoặc yêu cầu giải nghĩa"
+// @Failure      409         {object}  errors.AppError         "Trạng thái yêu cầu giải nghĩa không cho phép thử lại"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/abbreviation-clarifications/{request_id}/retry-suggestions [post]

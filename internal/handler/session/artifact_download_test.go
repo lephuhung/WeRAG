@@ -219,7 +219,7 @@ func TestDownloadMessageArtifact_HappyPath(t *testing.T) {
 					ID: mid, SessionID: sid,
 					Artifacts: types.MessageArtifacts{{
 						URL:      url,
-						FileName: "报告.pptx", // non-ASCII to exercise RFC 5987 encoding
+						FileName: "Báo cáo.pptx", // non-ASCII to exercise RFC 5987 encoding
 						FileType: ".pptx",
 						FileSize: int64(len(body)),
 					}},
@@ -409,8 +409,8 @@ func TestListSessionArtifacts_StripsURL(t *testing.T) {
 
 func TestBuildAttachmentHeader_CJK(t *testing.T) {
 	// The RFC 5987 filename* segment must percent-encode every non-attr-char
-	// byte so downstream browsers preserve "报告.pptx" instead of mojibake.
-	got := buildAttachmentHeader("报告.pptx")
+	// byte so downstream browsers preserve "Báo cáo.pptx" instead of mojibake.
+	got := buildAttachmentHeader("Báo cáo.pptx")
 	if !strings.Contains(got, "filename=") {
 		t.Fatalf("missing ASCII filename fallback: %q", got)
 	}
@@ -418,8 +418,8 @@ func TestBuildAttachmentHeader_CJK(t *testing.T) {
 		t.Fatalf("missing RFC 5987 filename*: %q", got)
 	}
 	// Non-ASCII bytes must be percent-encoded (never appear literally).
-	if strings.ContainsRune(got, '报') {
-		t.Fatalf("filename* contains raw CJK: %q", got)
+	if strings.ContainsRune(got, 'á') {
+		t.Fatalf("filename* contains raw non-ASCII: %q", got)
 	}
 }
 

@@ -553,6 +553,38 @@ func (h *DocumentWorkspaceHandler) UploadDocumentContent(c *gin.Context) {
 	}})
 }
 
+// StoreDocumentTemplate writes a new NĐ30 document, built by the page from
+// a ready prepare_document_template result, into an empty document of the
+// embedded editor. The body is the .docx; ?revision= is the revision the
+// page last saw. A document with text answers 409.
+// POST /sessions/:session_id/documents/:doc_id/template
+func (h *DocumentWorkspaceHandler) StoreDocumentTemplate(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	revision, err := strconv.Atoi(strings.TrimSpace(c.Query("revision")))
+	if err != nil || revision < 0 {
+		c.Error(apperrors.NewBadRequestError("revision is required"))
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(c.Request.Body, types.MaxDocumentWorkspaceFileBytes+1))
+	if err != nil {
+		c.Error(apperrors.NewBadRequestError("could not read the uploaded document"))
+		return
+	}
+	ws, err := h.workspaces.StoreTemplate(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), revision, data)
+	if err != nil {
+		h.fail(c, err, "Failed to store the new document")
+		return
+	}
+	h.precheck.StartProfile(ctx, ws)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"revision": ws.Revision, "editor_key": ws.EditorKey()}})
+}
+
 // SnapshotDocumentWorkspaceRequest is a manual snapshot from the UI.
 type SnapshotDocumentWorkspaceRequest struct {
 	Label string `json:"label"`
@@ -675,6 +707,63 @@ func (h *DocumentWorkspaceHandler) RecordSpellingVerdict(c *gin.Context) {
 		})
 	if err != nil {
 		h.fail(c, err, "Failed to record spelling feedback")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// FormatVerdictRequest is the user's feedback on the document's current
+// format check report (report_id): on one finding (finding_id, verdict
+// false_alarm) or on the whole report (not_nd30, wrong_type, other), with
+// an optional note.
+type FormatVerdictRequest struct {
+	ReportID  string `json:"report_id"`
+	FindingID string `json:"finding_id"`
+	Verdict   string `json:"verdict"`
+	Note      string `json:"note"`
+}
+
+// formatVerdictNoteMax bounds the note of a format feedback.
+const formatVerdictNoteMax = 2000
+
+// RecordFormatVerdict stores the user's feedback on a format check report
+// (training data for tuning the checker); nothing is rechecked. 409: the
+// report is no longer the document's current one.
+// POST /sessions/:session_id/documents/:doc_id/format-check/feedback
+func (h *DocumentWorkspaceHandler) RecordFormatVerdict(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	var req FormatVerdictRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid format feedback"))
+		return
+	}
+	req.ReportID, req.FindingID = strings.TrimSpace(req.ReportID), strings.TrimSpace(req.FindingID)
+	req.Verdict, req.Note = strings.TrimSpace(req.Verdict), strings.TrimSpace(req.Note)
+	if req.ReportID == "" || !types.ValidFormatVerdict(req.Verdict) ||
+		(req.Verdict == types.FormatVerdictFalseAlarm) != (req.FindingID != "") ||
+		(req.Verdict == types.FormatVerdictOther && req.Note == "") ||
+		utf8.RuneCountInString(req.Note) > formatVerdictNoteMax {
+		c.Error(apperrors.NewBadRequestError("invalid format feedback"))
+		return
+	}
+	err := h.precheck.RecordFormatVerdict(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
+		documentIDParam(c), service.FormatVerdict{
+			ReportID: req.ReportID, FindingID: req.FindingID, Verdict: req.Verdict, Note: req.Note,
+		})
+	switch {
+	case stderrors.Is(err, service.ErrFormatReportStale):
+		c.Error(apperrors.NewConflictError("the format check report changed; reload it"))
+		return
+	case stderrors.Is(err, service.ErrFormatFindingUnknown):
+		c.Error(apperrors.NewBadRequestError("no such finding in the report"))
+		return
+	case err != nil:
+		h.fail(c, err, "Failed to record format feedback")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})

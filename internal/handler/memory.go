@@ -29,11 +29,11 @@ func NewMemoryHandler(memoryService interfaces.MemoryService) *MemoryHandler {
 }
 
 // GetSettings godoc
-// @Summary      获取我的记忆Settings
-// @Description  返回合并后的记忆开关状态（Tenant workspace级 + 个人级）与记忆条数
-// @Tags         长期记忆
+// @Summary      Lấy cài đặt bộ nhớ của tôi
+// @Description  Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp đơn vị + cấp cá nhân) và số mục bộ nhớ
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "记忆Settings "
+// @Success      200  {object}  map[string]interface{}  "Cài đặt bộ nhớ"
 // @Security     Bearer
 // @Router       /memory/settings [get]
 func (h *MemoryHandler) GetSettings(c *gin.Context) {
@@ -51,13 +51,13 @@ type updateMemorySettingsRequest struct {
 }
 
 // UpdateSettings godoc
-// @Summary      Update 我的记忆Settings
-// @Description  开启或关闭当前用户自己的长期记忆
-// @Tags         长期记忆
+// @Summary      Cập nhật cài đặt bộ nhớ của tôi
+// @Description  Bật hoặc tắt bộ nhớ dài hạn của chính người dùng hiện tại
+// @Tags         Bộ nhớ
 // @Accept       json
 // @Produce      json
 // @Param        request  body      object  true  "Settings "
-// @Success      200      {object}  map[string]interface{}  "Update 后的Settings "
+// @Success      200      {object}  map[string]interface{}  "Cài đặt sau khi cập nhật"
 // @Security     Bearer
 // @Router       /memory/settings [put]
 func (h *MemoryHandler) UpdateSettings(c *gin.Context) {
@@ -84,14 +84,14 @@ func (h *MemoryHandler) UpdateSettings(c *gin.Context) {
 }
 
 // ListItems godoc
-// @Summary      列出我的记忆
-// @Description  分页返回当前用户的记忆条目，可按状态过滤
-// @Tags         长期记忆
+// @Summary      Liệt kê bộ nhớ của tôi
+// @Description  Trả về theo trang các mục bộ nhớ của người dùng hiện tại, có thể lọc theo trạng thái
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        status  query     string  false  "状态过滤"  Enums(active, superseded, archived, pending)
-// @Param        limit   query     int     false  "每页条数"  default(50)
-// @Param        offset  query     int     false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "记忆List "
+// @Param        status  query     string  false  "Lọc theo trạng thái"  Enums(active, superseded, archived, pending)
+// @Param        limit   query     int     false  "Số mục mỗi trang"  default(50)
+// @Param        offset  query     int     false  "Độ lệch"
+// @Success      200     {object}  map[string]interface{}  "Danh sách bộ nhớ"
 // @Security     Bearer
 // @Router       /memory/items [get]
 func (h *MemoryHandler) ListItems(c *gin.Context) {
@@ -139,13 +139,13 @@ func memoryListPaging(c *gin.Context) (limit, offset int) {
 }
 
 // ListTopics godoc
-// @Summary      列出正在观察的主题
-// @Description  返回已计数、尚未提升为长期关注的主题，以及距离阈值还差几次
-// @Tags         长期记忆
+// @Summary      Liệt kê các chủ đề đang theo dõi
+// @Description  Trả về các chủ đề đã đếm nhưng chưa nâng thành mối quan tâm dài hạn, kèm số lần còn thiếu để đạt ngưỡng
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        limit   query     int  false  "每页条数"  default(50)
-// @Param        offset  query     int  false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "主题List "
+// @Param        limit   query     int  false  "Số mục mỗi trang"  default(50)
+// @Param        offset  query     int  false  "Độ lệch"
+// @Success      200     {object}  map[string]interface{}  "Danh sách chủ đề"
 // @Security     Bearer
 // @Router       /memory/topics [get]
 func (h *MemoryHandler) ListTopics(c *gin.Context) {
@@ -164,12 +164,12 @@ func (h *MemoryHandler) ListTopics(c *gin.Context) {
 }
 
 // PromoteTopic godoc
-// @Summary      立即记为长期关注
-// @Description  不等待剩余次数，把正在观察的主题提升为一条长期关注记忆
-// @Tags         长期记忆
+// @Summary      Ghi ngay thành mối quan tâm dài hạn
+// @Description  Không chờ đủ số lần còn lại, nâng chủ đề đang theo dõi thành một mục bộ nhớ quan tâm dài hạn
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id   path      string  true  "主题 ID"
-// @Success      200  {object}  map[string]interface{}  "新增的记忆"
+// @Param        id   path      string  true  "ID chủ đề"
+// @Success      200  {object}  map[string]interface{}  "Mục bộ nhớ mới"
 // @Security     Bearer
 // @Router       /memory/topics/{id}/promote [post]
 func (h *MemoryHandler) PromoteTopic(c *gin.Context) {
@@ -183,12 +183,12 @@ func (h *MemoryHandler) PromoteTopic(c *gin.Context) {
 }
 
 // DeleteTopic godoc
-// @Summary      停止跟踪一个主题
-// @Description  Delete 尚未提升的主题计数，并记住这次拒绝，之后不会再自动记为长期关注
-// @Tags         长期记忆
+// @Summary      Ngừng theo dõi một chủ đề
+// @Description  Xoá bộ đếm của chủ đề chưa được nâng và ghi nhớ lần từ chối này, sau đó sẽ không tự ghi thành mối quan tâm dài hạn nữa
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id   path      string  true  "主题 ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
+// @Param        id   path      string  true  "ID chủ đề"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
 // @Security     Bearer
 // @Router       /memory/topics/{id} [delete]
 func (h *MemoryHandler) DeleteTopic(c *gin.Context) {
@@ -201,13 +201,13 @@ func (h *MemoryHandler) DeleteTopic(c *gin.Context) {
 }
 
 // ListDocuments godoc
-// @Summary      列出常用资料
-// @Description  返回当前用户回答里反复引用的文档，次数未达习惯门槛的不展示
-// @Tags         长期记忆
+// @Summary      Liệt kê tài liệu hay dùng
+// @Description  Trả về các tài liệu được trích dẫn lặp lại trong câu trả lời của người dùng hiện tại, chưa đạt ngưỡng thói quen thì không hiển thị
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        limit   query     int  false  "每页条数"  default(50)
-// @Param        offset  query     int  false  "偏移量"
-// @Success      200     {object}  map[string]interface{}  "文档List "
+// @Param        limit   query     int  false  "Số mục mỗi trang"  default(50)
+// @Param        offset  query     int  false  "Độ lệch"
+// @Success      200     {object}  map[string]interface{}  "Danh sách tài liệu"
 // @Security     Bearer
 // @Router       /memory/documents [get]
 func (h *MemoryHandler) ListDocuments(c *gin.Context) {
@@ -226,12 +226,12 @@ func (h *MemoryHandler) ListDocuments(c *gin.Context) {
 }
 
 // DeleteDocument godoc
-// @Summary      停止用某份文档做个性化检索
-// @Description  Delete 一条文档亲和度计数，之后检索不再因为这份文档而加权
-// @Tags         长期记忆
+// @Summary      Ngừng dùng một tài liệu để cá nhân hoá tìm kiếm
+// @Description  Xoá một bộ đếm mức độ gắn bó với tài liệu, sau đó tìm kiếm không còn ưu tiên tài liệu này nữa
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id   path      string  true  "亲和度 ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
+// @Param        id   path      string  true  "ID mức độ gắn bó"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
 // @Security     Bearer
 // @Router       /memory/documents/{id} [delete]
 func (h *MemoryHandler) DeleteDocument(c *gin.Context) {
@@ -250,13 +250,13 @@ type createMemoryItemRequest struct {
 }
 
 // CreateItem godoc
-// @Summary      新增一条记忆
-// @Description  手动添加一条长期记忆
-// @Tags         长期记忆
+// @Summary      Thêm một mục bộ nhớ
+// @Description  Thêm thủ công một mục bộ nhớ dài hạn
+// @Tags         Bộ nhớ
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "记忆内容"
-// @Success      200      {object}  map[string]interface{}  "新增的记忆"
+// @Param        request  body      object  true  "Nội dung bộ nhớ"
+// @Success      200      {object}  map[string]interface{}  "Mục bộ nhớ mới"
 // @Security     Bearer
 // @Router       /memory/items [post]
 func (h *MemoryHandler) CreateItem(c *gin.Context) {
@@ -280,14 +280,14 @@ type updateMemoryItemRequest struct {
 }
 
 // UpdateItem godoc
-// @Summary      修改一条记忆
-// @Description  修改记忆内容与重要度，修改后该条记忆不会被后台抽取覆盖
-// @Tags         长期记忆
+// @Summary      Sửa một mục bộ nhớ
+// @Description  Sửa nội dung và mức quan trọng của mục bộ nhớ; sau khi sửa, mục này sẽ không bị quá trình trích xuất nền ghi đè
+// @Tags         Bộ nhớ
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string  true  "记忆ID"
-// @Param        request  body      object  true  "记忆内容"
-// @Success      200      {object}  map[string]interface{}  "Update 后的记忆"
+// @Param        id       path      string  true  "ID bộ nhớ"
+// @Param        request  body      object  true  "Nội dung bộ nhớ"
+// @Success      200      {object}  map[string]interface{}  "Mục bộ nhớ sau khi cập nhật"
 // @Security     Bearer
 // @Router       /memory/items/{id} [put]
 func (h *MemoryHandler) UpdateItem(c *gin.Context) {
@@ -306,12 +306,12 @@ func (h *MemoryHandler) UpdateItem(c *gin.Context) {
 }
 
 // DeleteItem godoc
-// @Summary      Delete 一条记忆
-// @Description  永久Delete 一条记忆
-// @Tags         长期记忆
+// @Summary      Xoá một mục bộ nhớ
+// @Description  Xoá vĩnh viễn một mục bộ nhớ
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id  path      string  true  "记忆ID"
-// @Success      200  {object}  map[string]interface{}  "Delete 成功"
+// @Param        id  path      string  true  "ID bộ nhớ"
+// @Success      200  {object}  map[string]interface{}  "Xoá thành công"
 // @Security     Bearer
 // @Router       /memory/items/{id} [delete]
 func (h *MemoryHandler) DeleteItem(c *gin.Context) {
@@ -324,12 +324,12 @@ func (h *MemoryHandler) DeleteItem(c *gin.Context) {
 }
 
 // ConfirmItem godoc
-// @Summary      确认一条推断出的记忆
-// @Description  接受系统推断的记忆，使其开始生效
-// @Tags         长期记忆
+// @Summary      Xác nhận một mục bộ nhớ được suy luận
+// @Description  Chấp nhận mục bộ nhớ hệ thống suy luận để bắt đầu có hiệu lực
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id   path      string  true  "记忆 ID"
-// @Success      200  {object}  map[string]interface{}  "确认成功"
+// @Param        id   path      string  true  "ID bộ nhớ"
+// @Success      200  {object}  map[string]interface{}  "Xác nhận thành công"
 // @Security     Bearer
 // @Router       /memory/items/{id}/confirm [post]
 //
@@ -346,12 +346,12 @@ func (h *MemoryHandler) ConfirmItem(c *gin.Context) {
 }
 
 // RejectItem godoc
-// @Summary      否决一条推断出的记忆
-// @Description  拒绝系统推断的记忆，并记住这次拒绝
-// @Tags         长期记忆
+// @Summary      Từ chối một mục bộ nhớ được suy luận
+// @Description  Từ chối mục bộ nhớ hệ thống suy luận và ghi nhớ lần từ chối này
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Param        id   path      string  true  "记忆 ID"
-// @Success      200  {object}  map[string]interface{}  "否决成功"
+// @Param        id   path      string  true  "ID bộ nhớ"
+// @Success      200  {object}  map[string]interface{}  "Từ chối thành công"
 // @Security     Bearer
 // @Router       /memory/items/{id}/reject [post]
 func (h *MemoryHandler) RejectItem(c *gin.Context) {
@@ -364,11 +364,11 @@ func (h *MemoryHandler) RejectItem(c *gin.Context) {
 }
 
 // Clear godoc
-// @Summary      清空我的记忆
-// @Description  永久Delete 当前用户的全部记忆
-// @Tags         长期记忆
+// @Summary      Xoá toàn bộ bộ nhớ của tôi
+// @Description  Xoá vĩnh viễn toàn bộ bộ nhớ của người dùng hiện tại
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "清空成功"
+// @Success      200  {object}  map[string]interface{}  "Đã xoá toàn bộ"
 // @Security     Bearer
 // @Router       /memory/items [delete]
 func (h *MemoryHandler) Clear(c *gin.Context) {
@@ -382,11 +382,11 @@ func (h *MemoryHandler) Clear(c *gin.Context) {
 }
 
 // Export godoc
-// @Summary      导出我的记忆
-// @Description  以 JSON 导出当前用户的全部记忆
-// @Tags         长期记忆
+// @Summary      Xuất bộ nhớ của tôi
+// @Description  Xuất toàn bộ bộ nhớ của người dùng hiện tại dưới dạng JSON
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "记忆导出"
+// @Success      200  {object}  map[string]interface{}  "Bản xuất bộ nhớ"
 // @Security     Bearer
 // @Router       /memory/export [get]
 func (h *MemoryHandler) Export(c *gin.Context) {
@@ -427,11 +427,11 @@ func (h *MemoryHandler) Export(c *gin.Context) {
 }
 
 // Consolidate godoc
-// @Summary      立刻整理我的记忆
-// @Description  合并意思接近的条目、归档到期事项，不等待每日后台整理
-// @Tags         长期记忆
+// @Summary      Sắp xếp bộ nhớ của tôi ngay
+// @Description  Gộp các mục gần nghĩa, lưu trữ các việc đã đến hạn, không chờ đợt sắp xếp nền hằng ngày
+// @Tags         Bộ nhớ
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "整理结果"
+// @Success      200  {object}  map[string]interface{}  "Kết quả sắp xếp"
 // @Security     Bearer
 // @Router       /memory/consolidate [post]
 func (h *MemoryHandler) Consolidate(c *gin.Context) {

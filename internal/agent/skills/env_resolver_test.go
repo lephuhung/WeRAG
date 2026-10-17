@@ -31,7 +31,7 @@ func TestApplyResolvedEnvAddsNewKeysAndKeepsExistingOnes(t *testing.T) {
 // Python is deliberately absent here: the skill's venv interpreter carries its
 // own packages, so an injected PYTHONPATH would only be able to shadow them.
 func TestApplySkillNodePathAppendsAfterTheCallersValue(t *testing.T) {
-	skillDir := sandbox.SkillsImageRoot + "/律师助手"
+	skillDir := sandbox.SkillsImageRoot + "/trợ-lý-pháp-lý"
 
 	env := map[string]string{nodePathEnvVar: "/already"}
 	applySkillNodePath(env, skillDir)

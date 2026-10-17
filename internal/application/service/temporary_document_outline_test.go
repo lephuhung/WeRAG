@@ -129,6 +129,45 @@ func TestBuildAttachmentSectionsOfALocalReport(t *testing.T) {
 	require.Greater(t, ii.Tokens, sections[3].Tokens)
 }
 
+// A whole-line bold numbered heading longer than a list item is still a
+// heading (Báo cáo UBND tỉnh, 2026-10-16: "1." merged into "I." and "4."
+// fell out of the outline).
+func TestBuildAttachmentSectionsKeepsLongBoldNumberedHeadings(t *testing.T) {
+	body := strings.Repeat("- Ưu điểm: các đơn vị đã triển khai đầy đủ theo kế hoạch được giao trong năm.\n\n", 4)
+	text := "**BÁO CÁO**\n\nKết quả kiểm tra công tác đảm bảo an toàn hệ thống thông tin\n\n" +
+		"**I. CÔNG TÁC QUẢN LÝ NHÀ NƯỚC HỆ THỐNG THÔNG TIN**\n\n" +
+		"**1. Việc ban hành quy chế hoạt động và chấp hành quy định vận hành Cổng/Trang thông tin điện tử đối với tên miền “.vn”**\n\n" + body +
+		"**2. Việc công khai, minh bạch thông tin trên Cổng/Trang thông tin điện tử của đơn vị**\n\n" + body +
+		"**3. Việc tuân thủ các quy định về đảm bảo an toàn thông tin và ứng cứu sự cố an toàn**\n\n" + body +
+		"**4. Việc triển khai thực hiện các văn bản chỉ đạo về công tác bảo đảm an toàn thông tin cho cán bộ, công chức, viên chức tại đơn vị**\n\n" + body +
+		"**II. NHẬN XÉT, ĐÁNH GIÁ**\n\n" + body
+	sections := buildAttachmentSections(text, paragraphChunks(text))
+	var got []string
+	for _, s := range sections {
+		got = append(got, fmt.Sprintf("%d %s", s.Depth, strings.SplitN(s.Title, " ", 3)[0]))
+	}
+	require.Equal(t, []string{"0 Mở", "0 I.", "1 1.", "1 2.", "1 3.", "1 4.", "0 II."}, got)
+	require.Equal(t, "I. CÔNG TÁC QUẢN LÝ NHÀ NƯỚC HỆ THỐNG THÔNG TIN", sections[1].Title)
+
+	// a bold sentence of a list stays body text, and is not merged into
+	// the heading above it
+	for _, line := range []string{
+		"**1. Giao Sở Tài chính chủ trì, phối hợp với các sở, ban, ngành và Ủy ban nhân dân các huyện, thị xã, thành phố tham mưu bố trí kinh phí theo quy định.**",
+		"**2. Các sở, ban, ngành, Ủy ban nhân dân các huyện, thị xã, thành phố căn cứ chức năng, nhiệm vụ được giao tổ chức triển khai thực hiện;**",
+	} {
+		kind, _ := headingKind(line)
+		require.Equal(t, "", kind, line)
+	}
+	// bold italic keeps its numbering level
+	kind, title := headingKind("***1.1. Dịch vụ công Hà Tĩnh***")
+	require.Equal(t, "dot2", kind)
+	require.Equal(t, "1.1. Dịch vụ công Hà Tĩnh", title)
+
+	// a plain (not bold) numbered line that long stays body text
+	kind, _ = headingKind("1. Việc ban hành quy chế hoạt động và chấp hành quy định vận hành Cổng/Trang thông tin điện tử đối với tên miền “.vn”")
+	require.Equal(t, "", kind)
+}
+
 func TestBuildAttachmentSectionsKeepsTheLegalOrder(t *testing.T) {
 	// Chương I has no Mục, so Điều appears before the first Mục
 	text := "Chương I\n\nQUY ĐỊNH CHUNG\n\nĐiều 1. Phạm vi\n\nNội dung.\n\nĐiều 2. Đối tượng\n\nNội dung.\n\n" +
@@ -172,6 +211,29 @@ func TestBuildAttachmentSectionsWithoutStructure(t *testing.T) {
 	// two small headings and one section with almost all of the text
 	lopsided := "I. MỞ ĐẦU\n\nNgắn.\n\nII. NỘI DUNG\n\n" + plain + "III. KẾT LUẬN\n\nNgắn.\n"
 	require.Nil(t, buildAttachmentSections(lopsided, paragraphChunks(lopsided)))
+}
+
+func TestBuildAttachmentSectionsSkipsALongFlatList(t *testing.T) {
+	// OCR of a worksheet: the same numbered lines over and over
+	var b strings.Builder
+	for i := 0; i < 40; i++ {
+		for j := 1; j <= 8; j++ {
+			fmt.Fprintf(&b, "%d. Write a test sentence.\n\nanswer line\n\n", j)
+		}
+	}
+	text := b.String()
+	require.Nil(t, buildAttachmentSections(text, paragraphChunks(text)))
+}
+
+func TestBuildAttachmentSectionsKeepsABareArticleLine(t *testing.T) {
+	// PDF text puts the article title on its own line, or leaves none
+	text := "NGHỊ QUYẾT\n\nKỳ họp thứ 6\n\nĐiều 1\n\nQuốc hội đã hoàn thành chương trình kỳ họp.\n\n" +
+		"Điều 2\n\nGiao Chính phủ tổ chức thực hiện.\n\nĐiều 3.\n\nNghị quyết có hiệu lực từ ngày ký.\n"
+	sections := buildAttachmentSections(text, paragraphChunks(text))
+	require.Equal(t, []string{"0 Mở đầu: NGHỊ QUYẾT", "0 Điều 1", "0 Điều 2", "0 Điều 3."}, sectionTitles(sections))
+
+	kind, _ := headingKind("Điều 5 Luật này quy định về trách nhiệm của cơ quan")
+	require.Equal(t, "", kind, "a sentence that starts with Điều 5 is body text")
 }
 
 func TestBuildAttachmentSectionsLimitsTheDepth(t *testing.T) {
@@ -256,7 +318,15 @@ func TestPackPickedSectionsCountsAdjacentChunksAsOnePart(t *testing.T) {
 
 type pickerSettings struct {
 	interfaces.SystemSettingService
-	on bool
+	on     bool
+	inline int64 // chat.attachment_inline_tokens; 0 = default
+}
+
+func (s pickerSettings) GetInt(_ context.Context, key, _ string, def int64) int64 {
+	if key == types.SettingChatAttachmentInlineTokens && s.inline > 0 {
+		return s.inline
+	}
+	return def
 }
 
 func (s pickerSettings) GetBool(_ context.Context, key, _ string, def bool) bool {
@@ -305,6 +375,30 @@ func TestSelectForPromptFallsBackToKeywords(t *testing.T) {
 			sel := tc.svc.selectForPrompt(context.Background(), largeReportDoc(), "nộp lưu hồ sơ", 60, tc.opts)
 			require.Equal(t, "selected_chunks", sel.mode)
 			require.Empty(t, sel.outline)
+		})
+	}
+}
+
+func TestSelectForPromptInlineTokensSetting(t *testing.T) {
+	doc := largeReportDoc()
+	doc.TokenCount = 4373
+	for name, tc := range map[string]struct {
+		inline int64
+		mode   string
+	}{
+		"default 12000: whole file": {0, "full"},
+		"lowered to 3000: picker":   {3000, "selected_sections"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := &temporaryDocumentService{
+				settings: pickerSettings{on: true, inline: tc.inline},
+				modelService: auxModelService{chats: map[string]chat.Chat{
+					"qwen": replyChat{id: "qwen", reply: `{"sections": ["S5"], "whole": false}`, calls: new([]string)},
+				}},
+			}
+			sel := svc.selectForPrompt(context.Background(), doc, "Đã nộp lưu bao nhiêu hồ sơ?", 12000,
+				types.TemporaryDocumentPromptOptions{ModelID: "qwen"})
+			require.Equal(t, tc.mode, sel.mode)
 		})
 	}
 }

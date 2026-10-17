@@ -69,41 +69,41 @@ func runeSlicesEqual(left, right []rune) bool {
 	return true
 }
 
-// 这里实现 chunk 内容的「重叠拼接」公共逻辑，供文档重建（reconstructContent）、
-// 知识Graph内容合并（graph mergeChunkContents）等路径复用。聊天检索链路允许
-// 用户编辑 Chunk，使用上面的 JoinChunkContent，避免依赖原文位置坐标。
+// Phần này cài đặt logic chung "ghép nối có chồng lấn" nội dung chunk, dùng chung cho tái dựng tài liệu (reconstructContent),
+// gộp nội dung đồ thị tri thức (graph mergeChunkContents), ... Luồng truy xuất trong chat cho phép
+// người dùng sửa chunk nên dùng JoinChunkContent ở trên, tránh phụ thuộc toạ độ vị trí trong văn bản gốc.
 //
-// 历史上各处都用「按位置」的公式裁剪重叠（offset = len(content) - (EndAt -
-// lastEndAt) 之类），它默认 len([]rune(Content)) == EndAt-StartAt。但有两类
-// 数据会破坏这个不变式，导致拼接错位、丢字或重复：
-//  1. 父子分块器会给被拆开的表格「补写表头」，补进去的表头是零宽度的
-//     （start == end），位置坐标无法表达它，content 比 EndAt-StartAt 更长；
-//  2. content 里可能保留 HTML 实体（如 &#34; / &gt;），其字符数比原文区间长。
+// Trước đây mọi nơi đều cắt chồng lấn bằng công thức "theo vị trí" (offset = len(content) - (EndAt -
+// lastEndAt) hoặc tương tự), ngầm định len([]rune(Content)) == EndAt-StartAt. Nhưng có hai loại
+// dữ liệu phá vỡ bất biến này, gây ghép lệch, mất chữ hoặc lặp:
+//  1. Bộ chia cha-con "bổ sung tiêu đề bảng" cho bảng bị tách, tiêu đề bổ sung có độ rộng bằng 0
+//     (start == end), toạ độ vị trí không biểu diễn được, content dài hơn EndAt-StartAt;
+//  2. content có thể còn HTML entity (như &#34; / &gt;), số ký tự dài hơn khoảng trong văn bản gốc.
 //
-// 因此这里改为「按文本」匹配重叠：在下一段开头的窗口里查找已合并文本的后缀首次
-// 出现的位置，从该位置之后接上。位置信息（StartAt/EndAt）仅用于估算搜索窗口
-// 大小，不再用于裁剪。
+// Vì vậy ở đây đổi sang khớp chồng lấn "theo văn bản": tìm trong cửa sổ đầu đoạn kế tiếp vị trí xuất hiện đầu tiên
+// của hậu tố văn bản đã gộp, rồi nối từ sau vị trí đó. Thông tin vị trí (StartAt/EndAt) chỉ dùng để ước lượng
+// kích thước cửa sổ tìm kiếm, không còn dùng để cắt.
 
 const (
-	// minOverlapRunes 是参与匹配的最短后缀长度。太短（如表格分隔行 |---|）
-	// 容易误匹配，因此忽略。
+	// minOverlapRunes là độ dài hậu tố ngắn nhất tham gia khớp. Quá ngắn (như dòng phân cách bảng |---|)
+	// dễ khớp nhầm nên bỏ qua.
 	minOverlapRunes = 12
-	// defaultSearchSpan 是搜索窗口的下限，保证即使位置信息缺失/为 0 也能
-	// 检测到一定范围内的真实重叠。
+	// defaultSearchSpan là cận dưới của cửa sổ tìm kiếm, đảm bảo kể cả khi thiếu thông tin vị trí / bằng 0
+	// vẫn phát hiện được chồng lấn thật trong một phạm vi nhất định.
 	defaultSearchSpan = 400
 )
 
-// AppendWithOverlap 把 next 追加到 acc 之后，并去除二者之间的重叠部分。
+// AppendWithOverlap nối next vào sau acc và bỏ phần chồng lấn giữa hai bên.
 //
-// positionOverlap 是由 StartAt/EndAt 估算的重叠量（lastEnd - curStart），仅用于
-// 界定搜索窗口大小；真正的重叠按文本匹配，能兼容补写表头与 HTML 实体长度偏差。
-// 若找不到文本重叠，则原样拼接（不裁剪），宁可保留也不破坏内容。
+// positionOverlap là lượng chồng lấn ước lượng từ StartAt/EndAt (lastEnd - curStart), chỉ dùng để
+// giới hạn kích thước cửa sổ tìm kiếm; chồng lấn thật khớp theo văn bản, chịu được tiêu đề bảng bổ sung và lệch độ dài do HTML entity.
+// Không tìm thấy chồng lấn văn bản thì nối nguyên vẹn (không cắt), thà giữ thừa còn hơn làm hỏng nội dung.
 //
-// positionOverlap <= 0 时两段位置上严格相邻或不相交，没有可去重的重叠；
-// 此时进入文本匹配会因 headSlack 下限 320 在 next 开头窗口内误命中
-// acc 后缀的真实内容重复（如同一句话在文档多次出现），把 next 开头
-// 整段误判为补写表头删掉，造成不可逆的内容丢失。直接拼接，补写表头
-// 重复交给调用方后处理。
+// Khi positionOverlap <= 0, hai đoạn kề nhau hoặc rời nhau về vị trí, không có chồng lấn để loại;
+// lúc này nếu vẫn khớp văn bản thì cận dưới headSlack 320 có thể khớp nhầm trong cửa sổ đầu next
+// với nội dung thật lặp lại của hậu tố acc (như cùng một câu xuất hiện nhiều lần trong tài liệu), coi nhầm
+// cả đoạn đầu next là tiêu đề bảng bổ sung rồi xoá, gây mất nội dung không khôi phục được. Nối thẳng, phần
+// tiêu đề bảng lặp giao cho bên gọi xử lý sau.
 func AppendWithOverlap(acc, next string, positionOverlap int) string {
 	if acc == "" {
 		return next
@@ -124,7 +124,7 @@ func AppendWithOverlap(acc, next string, positionOverlap int) string {
 	if cap := maxInt(span*3, defaultSearchSpan); maxK > cap {
 		maxK = cap
 	}
-	// 重叠内容之前最多允许跳过多少前缀（即补写的表头等合成文本）。
+	// Số tiền tố tối đa được phép bỏ qua trước phần chồng lấn (tức văn bản tổng hợp như tiêu đề bảng bổ sung).
 	headSlack := maxInt(span*2, 320)
 
 	for k := maxK; k >= minOverlapRunes; k-- {
@@ -136,15 +136,15 @@ func AppendWithOverlap(acc, next string, positionOverlap int) string {
 	return acc + next
 }
 
-// AppendWithExactOverlap 在调用方已确认位置坐标可信时，按坐标给出的精确重叠量
-// 拼接 acc 与 next：校验 acc 的末 overlap 个字符与 next 的前 overlap 个字符逐字
-// 符相等，相等则精确裁剪，overlap 为 0 时直接拼接。
+// AppendWithExactOverlap dùng khi bên gọi đã xác nhận toạ độ vị trí đáng tin: nối acc và next theo lượng chồng lấn
+// chính xác do toạ độ cho: kiểm tra overlap ký tự cuối của acc và overlap ký tự đầu của next bằng nhau
+// từng ký tự, bằng nhau thì cắt chính xác, overlap bằng 0 thì nối thẳng.
 //
-// 与 AppendWithOverlap 的区别在于「不猜」：后者为兼容补写表头、HTML 实体等长度
-// 偏差，会在窗口内搜索最长后缀匹配，重复周期性文本（表格、日志）可能被误判成重
-// 叠而裁掉真实内容。坐标可信时重叠量是已知的，不需要搜索。
+// Khác với AppendWithOverlap ở chỗ "không đoán": hàm kia để chịu được lệch độ dài do tiêu đề bảng bổ sung, HTML entity
+// sẽ tìm hậu tố khớp dài nhất trong cửa sổ, văn bản lặp tuần hoàn (bảng, log) có thể bị coi nhầm là
+// chồng lấn và cắt mất nội dung thật. Khi toạ độ đáng tin thì lượng chồng lấn đã biết, không cần tìm.
 //
-// 校验不通过返回 ok=false，由调用方决定是否回退到 AppendWithOverlap。
+// Kiểm tra không đạt thì trả ok=false, bên gọi quyết định có lui về AppendWithOverlap không.
 func AppendWithExactOverlap(acc, next string, overlap int) (string, bool) {
 	if acc == "" {
 		return next, true
@@ -170,11 +170,11 @@ func AppendWithExactOverlap(acc, next string, overlap int) (string, bool) {
 	return acc + string(nextRunes[overlap:]), true
 }
 
-// MergeTextChunks 按 StartAt（并列时按 ChunkIndex）排序后，用 AppendWithOverlap
-// 把多个 chunk 的内容重建为完整文本。gapSep 用于位置不相邻（有间隙）的两段之间
-// 的分隔符（如 "\n"），传空串则直接拼接。
+// MergeTextChunks sắp xếp theo StartAt (bằng nhau thì theo ChunkIndex), rồi dùng AppendWithOverlap
+// tái dựng nội dung nhiều chunk thành văn bản đầy đủ. gapSep là dấu phân cách giữa hai đoạn không kề nhau
+// về vị trí (có khoảng trống), ví dụ "\n"; truyền chuỗi rỗng thì nối thẳng.
 //
-// 调用方负责先做类型过滤（例如只保留文本 chunk）；本函数不感知 ChunkType。
+// Bên gọi chịu trách nhiệm lọc loại trước (ví dụ chỉ giữ chunk văn bản); hàm này không biết ChunkType.
 func MergeTextChunks(chunks []*types.Chunk, gapSep string) string {
 	if len(chunks) == 0 {
 		return ""
@@ -203,7 +203,7 @@ func MergeTextChunks(chunks []*types.Chunk, gapSep string) string {
 			continue
 		}
 
-		// 间隙 / 位置信息缺失（EndAt==0）：作为独立段落拼接，不做重叠裁剪。
+		// Có khoảng trống / thiếu thông tin vị trí (EndAt==0): nối như đoạn độc lập, không cắt chồng lấn.
 		if c.StartAt > mergedEnd || c.EndAt == 0 {
 			if gapSep != "" {
 				merged += gapSep
@@ -215,19 +215,19 @@ func MergeTextChunks(chunks []*types.Chunk, gapSep string) string {
 			continue
 		}
 
-		// 部分重叠或首尾相接：按文本匹配去重叠后拼接。
+		// Chồng lấn một phần hoặc nối đuôi: khớp văn bản để bỏ chồng lấn rồi nối.
 		if c.EndAt > mergedEnd {
 			merged = AppendWithOverlap(merged, c.Content, mergedEnd-c.StartAt)
 			mergedEnd = c.EndAt
 		}
-		// 否则被上一段完全覆盖，跳过。
+		// Ngược lại bị đoạn trước bao trùm hoàn toàn, bỏ qua.
 	}
 
 	return merged
 }
 
-// indexRunes 在 haystack 中查找 needle 首次出现的 rune 下标，且起始位置不超过
-// maxStart。找不到返回 -1。
+// indexRunes tìm chỉ số rune của lần xuất hiện đầu tiên của needle trong haystack, với vị trí bắt đầu không quá
+// maxStart. Không tìm thấy trả về -1.
 func indexRunes(haystack, needle []rune, maxStart int) int {
 	if len(needle) == 0 || len(needle) > len(haystack) {
 		return -1

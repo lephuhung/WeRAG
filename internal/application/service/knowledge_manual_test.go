@@ -69,8 +69,8 @@ func TestSanitizeManualDownloadFilename(t *testing.T) {
 		},
 		{
 			name:  "Chinese title preserved",
-			title: "知识库文章",
-			want:  "知识库文章.md",
+			title: "Bài viết kho tri thức",
+			want:  "Bài viết kho tri thức.md",
 		},
 		{
 			name:  "tab character stripped",

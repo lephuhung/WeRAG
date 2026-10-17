@@ -111,6 +111,22 @@ func (m *usageMeter) RecordMessageUsage(ctx context.Context, msg *types.Message)
 	}
 }
 
+func (m *usageMeter) RecordOCRUsage(
+	ctx context.Context, tenantID uint64, userID, sessionID string, pages int, usage types.VLMUsage,
+) {
+	total := usage.Total()
+	if total <= 0 && pages <= 0 {
+		return
+	}
+	m.add(context.WithoutCancel(ctx), buildUsageIncrements(tenantID, userID, sessionID, m.now(), map[string]int64{
+		types.UsageMetricTokens:           int64(total),
+		types.UsageMetricPromptTokens:     int64(usage.PromptTokens),
+		types.UsageMetricCompletionTokens: int64(usage.CompletionTokens),
+		types.UsageMetricOCRTokens:        int64(total),
+		types.UsageMetricOCRPages:         int64(pages),
+	}))
+}
+
 func (m *usageMeter) ResetSession(ctx context.Context, sessionID string) {
 	if sessionID == "" {
 		return

@@ -588,7 +588,7 @@ func TestModelOutputWebFetchKeepsEveryPageAndAccurateContinuation(t *testing.T) 
 	for i := 0; i < 8; i++ {
 		rows = append(rows, map[string]interface{}{
 			"url": fmt.Sprintf("https://example.com/%d", i), "status": "success",
-			"raw_content": strings.Repeat("文字", 5000), "offset": 100, "content_length": 20000, "truncated": true,
+			"raw_content": strings.Repeat("chữ ", 5000), "offset": 100, "content_length": 20000, "truncated": true,
 		})
 	}
 	output := registry.ModelOutput(&types.ToolResult{
@@ -597,7 +597,7 @@ func TestModelOutputWebFetchKeepsEveryPageAndAccurateContinuation(t *testing.T) 
 	for i := 1; i <= 8; i++ {
 		require.Contains(t, output, fmt.Sprintf(`url="w%d" next_offset="2100"`, i))
 	}
-	require.Equal(t, 8, strings.Count(output, `<content truncated="true">文字`))
+	require.Equal(t, 8, strings.Count(output, `<content truncated="true">chữ `))
 	require.NotContains(t, output, `view="full"`)
 	require.Contains(t, output, `trust="untrusted"`)
 }

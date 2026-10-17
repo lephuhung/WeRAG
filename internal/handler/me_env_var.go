@@ -67,7 +67,7 @@ func respondEnvVarError(c *gin.Context, err error) {
 // List godoc
 // @Summary      List my environment variables
 // @Description  List every sandbox config of this workspace with the caller's own config-wide variables and the credentials its skills declared, each reporting whether it is unset, filled in workspace-wide, or filled in by the caller. Values are never returned.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "One group per sandbox config"
 // @Failure      401  {object}  map[string]interface{}  "Unauthorized"
@@ -85,7 +85,7 @@ func (h *MeEnvVarHandler) List(c *gin.Context) {
 // SetSkill godoc
 // @Summary      Set one of my skill credentials
 // @Description  Store the caller's own value for one variable the skill declared. It overrides the workspace-wide value for this caller only, and is injected only into executions that name this skill.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json
 // @Param        request  body      meEnvVarRequest         true  "Skill, variable name and value"
@@ -108,7 +108,7 @@ func (h *MeEnvVarHandler) SetSkill(c *gin.Context) {
 // DeleteSkill godoc
 // @Summary      Delete one of my skill credentials
 // @Description  Remove the caller's own value. The workspace-wide value, if there is one, applies again afterwards.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json
 // @Param        request  body      meEnvVarRequest         true  "Skill and variable name"
@@ -131,7 +131,7 @@ func (h *MeEnvVarHandler) DeleteSkill(c *gin.Context) {
 // SetSandbox godoc
 // @Summary      Set one of my sandbox environment variables
 // @Description  Store the caller's own value for one variable on a sandbox config. It is injected into every skill script and shell command this caller's turns run on that config.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json
 // @Param        request  body      meEnvVarRequest         true  "Sandbox config, variable name and value"
@@ -156,7 +156,7 @@ func (h *MeEnvVarHandler) SetSandbox(c *gin.Context) {
 // DeleteSandbox godoc
 // @Summary      Delete one of my sandbox environment variables
 // @Description  Remove the caller's own value for one variable on a sandbox config.
-// @Tags         Me
+// @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json
 // @Param        request  body      meEnvVarRequest         true  "Sandbox config and variable name"

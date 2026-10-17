@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import random
 import re
+from contextlib import contextmanager
 
 from vi_text import (
     MODIFIERS,
@@ -42,6 +43,8 @@ OPS = [
     ("double", 4, "lặp từ"),
     ("split_merge", 6, "thiếu hoặc dư dấu cách"),
     ("punct_space", 3, "dấu cách trước dấu câu"),
+    # real-word swap from a confusion set (confusion.py), off unless set
+    ("confusion", 0, "lỗi chính tả"),
 ]
 _OP_NAMES = [o[0] for o in OPS]
 _OP_WEIGHTS = [o[1] for o in OPS]
@@ -58,6 +61,39 @@ def set_op_weights(**overrides: float) -> None:
             raise KeyError(name)
         _OP_WEIGHTS[_OP_NAMES.index(name)] = w
 REASON = {o[0]: o[2] for o in OPS}
+
+
+@contextmanager
+def op_weights(**overrides: float):
+    """Temporarily override operation weights (query lines are keyboard-heavy,
+    document paragraphs are not)."""
+    saved = list(_OP_WEIGHTS)
+    set_op_weights(**overrides)
+    try:
+        yield
+    finally:
+        _OP_WEIGHTS[:] = saved
+
+
+# syllable -> [(confusable, weight, class)], see confusion.py
+CONFUSIONS: dict[str, list[tuple[str, float, str]]] = {}
+
+
+def set_confusions(conf: dict) -> None:
+    CONFUSIONS.clear()
+    CONFUSIONS.update(conf)
+
+
+def _confusion(core: str, rng: random.Random) -> tuple[str, str] | None:
+    from confusion import REASON as CONF_REASON
+
+    opts = CONFUSIONS.get(core.lower())
+    if not opts:
+        return None
+    new, _, cls = rng.choices(opts, weights=[o[1] for o in opts])[0]
+    if core[0].isupper():
+        new = new[0].upper() + new[1:]
+    return new, CONF_REASON[cls]
 
 # Known syllables (lowercase). When set, syllable-level corruptions prefer
 # outputs that are real syllables (real-word errors such as sự→tự, the kind
@@ -382,14 +418,19 @@ def inject(paragraph: str, rng: random.Random, n_errors: int | None = None, max_
                     findings.append({"i": i, "wrong": core + " " + trail, "correct": core + trail, "reason": REASON[op]})
                     break
                 continue
-            new = corrupt_syllable(core, op, rng)
+            reason = REASON[op]
+            if op == "confusion":
+                got = _confusion(core, rng)
+                new, reason = got if got else (None, reason)
+            else:
+                new = corrupt_syllable(core, op, rng)
             if not new or new == core or accepted_variant(new, core):
                 continue
             if VOCAB and op in ("tone_wrong", "hoi_nga", "vowel_mod", "initial", "final") and new.lower() not in VOCAB and rng.random() < REAL_WORD_PREFERENCE:
                 continue
             tokens[i] = lead + new + trail
             used.add(i)
-            findings.append({"i": i, "wrong": new, "correct": core, "reason": REASON[op]})
+            findings.append({"i": i, "wrong": new, "correct": core, "reason": reason})
             break
     noisy = " ".join(tokens)
     out = []

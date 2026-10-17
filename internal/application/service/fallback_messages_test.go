@@ -15,12 +15,12 @@ import (
 // [user, assistant, user] input with no system message.
 func TestBuildFallbackMessages_PrependsSystemAndEndsWithUser(t *testing.T) {
 	cm := &types.ChatManage{}
-	cm.Query = "这个文件内容"
+	cm.Query = "Nội dung tệp này"
 	cm.History = []*types.History{
-		{Query: "上一个问题", Answer: "上一个回答"},
+		{Query: "Câu hỏi trước", Answer: "Câu trả lời trước"},
 	}
 
-	msgs := buildFallbackMessages(cm, "No content directly matched...\n\nUser question: 这个文件内容")
+	msgs := buildFallbackMessages(cm, "No content directly matched...\n\nUser question: Nội dung tệp này")
 
 	require.GreaterOrEqual(t, len(msgs), 2)
 	assert.Equal(t, "system", msgs[0].Role, "fallback input must start with a system message")
@@ -28,27 +28,27 @@ func TestBuildFallbackMessages_PrependsSystemAndEndsWithUser(t *testing.T) {
 
 	// History is replayed between system and the trailing user turn.
 	assert.Equal(t, "user", msgs[1].Role)
-	assert.Equal(t, "上一个问题", msgs[1].Content)
+	assert.Equal(t, "Câu hỏi trước", msgs[1].Content)
 	assert.Equal(t, "assistant", msgs[2].Role)
-	assert.Equal(t, "上一个回答", msgs[2].Content)
+	assert.Equal(t, "Câu trả lời trước", msgs[2].Content)
 
 	last := msgs[len(msgs)-1]
 	assert.Equal(t, "user", last.Role, "generation must be prompted by a trailing user turn")
-	assert.Equal(t, "这个文件内容", last.Content)
+	assert.Equal(t, "Nội dung tệp này", last.Content)
 }
 
 // TestBuildFallbackMessages_PrefersRewriteQuery verifies the trailing user turn
 // uses the rewritten query when available.
 func TestBuildFallbackMessages_PrefersRewriteQuery(t *testing.T) {
 	cm := &types.ChatManage{}
-	cm.Query = "它怎么样"
-	cm.RewriteQuery = "混元大模型性能怎么样"
+	cm.Query = "Nó thế nào"
+	cm.RewriteQuery = "Hiệu năng mô hình Hunyuan thế nào"
 
 	msgs := buildFallbackMessages(cm, "fallback instruction")
 
 	last := msgs[len(msgs)-1]
 	assert.Equal(t, "user", last.Role)
-	assert.Equal(t, "混元大模型性能怎么样", last.Content)
+	assert.Equal(t, "Hiệu năng mô hình Hunyuan thế nào", last.Content)
 }
 
 // TestBuildFallbackMessages_EmptyPromptSkipsSystem ensures we don't inject an
@@ -68,7 +68,7 @@ func TestBuildFallbackMessages_EmptyPromptSkipsSystem(t *testing.T) {
 // trailing user message only when the chat model supports vision.
 func TestBuildFallbackMessages_AttachesImagesToUserTurn(t *testing.T) {
 	cm := &types.ChatManage{}
-	cm.Query = "看图"
+	cm.Query = "Xem hình"
 	cm.Images = []string{"https://example.com/a.png"}
 
 	cm.ChatModelSupportsVision = false

@@ -110,18 +110,18 @@ func TestEnrichContentWithImageInfoForChat_UsesMarkdownForMultilineMetadata(t *t
 	raw, _ := json.Marshal([]types.ImageInfo{
 		{
 			URL:     "resource://AbCdEfGhIjKlMnOpQrStUv",
-			Caption: "目标说话人提取流程图",
-			OCRText: "输入\n目标说话人提取\n输出",
+			Caption: "Sơ đồ quy trình trích xuất người nói mục tiêu",
+			OCRText: "Đầu vào\nTrích xuất người nói mục tiêu\nĐầu ra",
 		},
 	})
 
 	got := EnrichContentWithImageInfoForChat(content, string(raw))
 	for _, want := range []string{
 		"![flow](resource://AbCdEfGhIjKlMnOpQrStUv)",
-		"> **Image caption:** 目标说话人提取流程图",
-		"> **Image text (OCR):** 输入",
-		"> 目标说话人提取",
-		"> 输出",
+		"> **Image caption:** Sơ đồ quy trình trích xuất người nói mục tiêu",
+		"> **Image text (OCR):** Đầu vào",
+		"> Trích xuất người nói mục tiêu",
+		"> Đầu ra",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in enriched Markdown:\n%s", want, got)
@@ -148,13 +148,13 @@ func TestEnrichContentWithImageInfoForChat_EnrichesRepeatedImagesOnceEach(t *tes
 func TestBuildImageInfoMarkdownWithURL(t *testing.T) {
 	got := BuildImageInfoMarkdownWithURL(
 		"resource://AbCdEfGhIjKlMnOpQrStUv",
-		&types.ImageInfo{Caption: "流程图 [测试]", OCRText: "输入\n输出"},
+		&types.ImageInfo{Caption: "Sơ đồ [thử nghiệm]", OCRText: "Đầu vào\nĐầu ra"},
 	)
 	for _, want := range []string{
-		`![流程图 \[测试\]](resource://AbCdEfGhIjKlMnOpQrStUv)`,
-		"> **Image caption:** 流程图 [测试]",
-		"> **Image text (OCR):** 输入",
-		"> 输出",
+		`![Sơ đồ \[thử nghiệm\]](resource://AbCdEfGhIjKlMnOpQrStUv)`,
+		"> **Image caption:** Sơ đồ [thử nghiệm]",
+		"> **Image text (OCR):** Đầu vào",
+		"> Đầu ra",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in image Markdown:\n%s", want, got)

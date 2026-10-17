@@ -22,7 +22,7 @@ func TestSupportIncludesKeywordAndVectorRetrieval(t *testing.T) {
 func TestToDocumentIncludesSparseVector(t *testing.T) {
 	embedding := &vectorEmbedding{
 		ID:              "chunk-1",
-		Content:         "腾讯云向量数据库支持关键词检索",
+		Content:         "Kho vector Tencent Cloud hỗ trợ tìm kiếm theo từ khóa",
 		SourceID:        "source-1",
 		SourceType:      int(types.ChunkSourceType),
 		ChunkID:         "chunk-1",
@@ -42,7 +42,7 @@ func TestToDocumentIncludesSparseVector(t *testing.T) {
 	assert.Equal(t, embedding.ID, doc.Id)
 	assert.Equal(t, embedding.Embedding, doc.Vector)
 	assert.Equal(t, embedding.SparseVector, doc.SparseVector)
-	assert.Equal(t, "腾讯云向量数据库支持关键词检索", doc.Fields[fieldContent].String())
+	assert.Equal(t, "Kho vector Tencent Cloud hỗ trợ tìm kiếm theo từ khóa", doc.Fields[fieldContent].String())
 	assert.Equal(t, uint64(1), doc.Fields[fieldIsEnabled].Uint64())
 }
 

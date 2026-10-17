@@ -175,8 +175,8 @@ func ValidateSandboxNetworkPolicy(cfg *TenantSandboxConfig) error {
 		(len(p.AllowOut) > 0 || len(p.DenyOut) > 0 ||
 			len(p.CubeRules) > 0 || len(p.E2BHostRules) > 0) {
 		return errors.New(
-			"docker 后端只能整体开关出网，无法按 IP、域名或 HTTP 规则放行；" +
-				"请清空放行/拒绝列表，或改用 cube / e2b 后端")
+			"backend docker chỉ bật/tắt toàn bộ truy cập ra ngoài, không cho phép theo IP, tên miền hay quy tắc HTTP; " +
+				"hãy xóa danh sách cho phép/từ chối hoặc chuyển sang backend cube / e2b")
 	}
 
 	allowKeys := make(map[string]string, len(p.AllowOut))
@@ -187,7 +187,7 @@ func ValidateSandboxNetworkPolicy(cfg *TenantSandboxConfig) error {
 			return fmt.Errorf("allow_out %q: %w", target, err)
 		}
 		if prior, seen := allowKeys[key]; seen {
-			return fmt.Errorf("allow_out 中 %q 与 %q 是同一个目标，请只保留一条", prior, target)
+			return fmt.Errorf("trong allow_out, %q và %q là cùng một đích, chỉ giữ lại một mục", prior, target)
 		}
 		allowKeys[key] = target
 		if kind == targetDomain {
@@ -204,11 +204,11 @@ func ValidateSandboxNetworkPolicy(cfg *TenantSandboxConfig) error {
 		}
 		if kind == targetDomain {
 			return fmt.Errorf(
-				"deny_out 不支持域名（%q）：拒绝判定只按目的 IP 匹配。"+
-					"如需只放行少数域名，请启用「默认拒绝」并把它们写进 allow_out", target)
+				"deny_out không hỗ trợ tên miền (%q): việc từ chối chỉ so khớp theo IP đích. "+
+					"Nếu chỉ muốn cho phép vài tên miền, hãy bật \"mặc định từ chối\" và ghi chúng vào allow_out", target)
 		}
 		if prior, seen := denyKeys[key]; seen {
-			return fmt.Errorf("deny_out 中 %q 与 %q 是同一个目标，请只保留一条", prior, target)
+			return fmt.Errorf("trong deny_out, %q và %q là cùng một đích, chỉ giữ lại một mục", prior, target)
 		}
 		denyKeys[key] = target
 		if key == DenyAllIPv4 {
@@ -218,9 +218,9 @@ func ValidateSandboxNetworkPolicy(cfg *TenantSandboxConfig) error {
 
 	if hasDomainAllow && !deniesEverything {
 		return errors.New(
-			"allow_out 里有域名时必须同时兜底拒绝其余流量：" +
-				"启用「默认拒绝」，或在 deny_out 中加入 0.0.0.0/0。" +
-				"否则未经 DNS 学习的目的 IP 仍会默认放行，白名单形同虚设")
+			"khi allow_out có tên miền thì phải đồng thời từ chối phần lưu lượng còn lại: " +
+				"bật \"mặc định từ chối\" hoặc thêm 0.0.0.0/0 vào deny_out. " +
+				"Nếu không, IP đích chưa học qua DNS vẫn được cho phép mặc định và danh sách trắng trở nên vô nghĩa")
 	}
 
 	if err := validateCubeEgressRules(p.CubeRules); err != nil {
@@ -289,20 +289,20 @@ func classifyNetworkTarget(
 ) (kind networkTargetKind, key string, err error) {
 	trimmed := strings.TrimSpace(target)
 	if trimmed == "" {
-		return 0, "", errors.New("不能为空")
+		return 0, "", errors.New("không được để trống")
 	}
 	if strings.ContainsAny(trimmed, " \t") {
-		return 0, "", errors.New("不能包含空格")
+		return 0, "", errors.New("không được chứa khoảng trắng")
 	}
 	if ip := net.ParseIP(trimmed); ip != nil {
 		if ip.To4() == nil {
-			return 0, "", errors.New("暂不支持 IPv6")
+			return 0, "", errors.New("chưa hỗ trợ IPv6")
 		}
 		return targetIP, ip.String() + "/32", nil
 	}
 	if _, network, cidrErr := net.ParseCIDR(trimmed); cidrErr == nil {
 		if network.IP.To4() == nil {
-			return 0, "", errors.New("暂不支持 IPv6 CIDR")
+			return 0, "", errors.New("chưa hỗ trợ IPv6 CIDR")
 		}
 		return targetIP, network.String(), nil
 	}
@@ -315,42 +315,42 @@ func classifyDomainTarget(
 ) (networkTargetKind, string, error) {
 	domain := strings.ToLower(strings.TrimSuffix(trimmed, "."))
 	if strings.Contains(domain, ":") {
-		return 0, "", errors.New("不能带端口")
+		return 0, "", errors.New("không được kèm cổng")
 	}
 	wildcard := false
 	if strings.HasPrefix(domain, "*.") {
 		if !allowWildcard {
-			return 0, "", errors.New("此处不支持通配域名")
+			return 0, "", errors.New("không hỗ trợ tên miền wildcard ở đây")
 		}
 		wildcard = true
 		domain = strings.TrimPrefix(domain, "*.")
 	}
 	if strings.Trim(domain, "0123456789.") == "" {
-		return 0, "", errors.New("不是合法 IPv4 地址")
+		return 0, "", errors.New("không phải địa chỉ IPv4 hợp lệ")
 	}
 	if domain == "" || strings.Contains(domain, "*") {
-		return 0, "", errors.New("通配符只能是单层前缀，例如 *.example.com")
+		return 0, "", errors.New("wildcard chỉ được là tiền tố một cấp, ví dụ *.example.com")
 	}
 	if strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") ||
 		strings.Contains(domain, "..") {
-		return 0, "", errors.New("不是合法域名")
+		return 0, "", errors.New("không phải tên miền hợp lệ")
 	}
 	labels := strings.Split(domain, ".")
 	if len(labels) < 2 {
-		return 0, "", errors.New("不是合法域名")
+		return 0, "", errors.New("không phải tên miền hợp lệ")
 	}
 	for _, label := range labels {
 		if label == "" || len(label) > 63 {
-			return 0, "", errors.New("不是合法域名")
+			return 0, "", errors.New("không phải tên miền hợp lệ")
 		}
 		for _, r := range label {
 			isAlnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 			if !isAlnum && r != '-' {
-				return 0, "", errors.New("不是合法域名")
+				return 0, "", errors.New("không phải tên miền hợp lệ")
 			}
 		}
 		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
-			return 0, "", errors.New("不是合法域名")
+			return 0, "", errors.New("không phải tên miền hợp lệ")
 		}
 	}
 	key := domain
@@ -365,66 +365,66 @@ func validateCubeEgressRules(rules []CubeEgressRule) error {
 	for _, rule := range rules {
 		name := strings.TrimSpace(rule.Name)
 		if name == "" {
-			return errors.New("每条 Cube HTTP 规则都需要 name，用于审计与模板合并")
+			return errors.New("mỗi quy tắc HTTP Cube cần có name, dùng cho kiểm toán và gộp mẫu")
 		}
 		if names[name] {
-			return fmt.Errorf("cube HTTP 规则 name %q 重复", name)
+			return fmt.Errorf("name %q của quy tắc HTTP cube bị trùng", name)
 		}
 		names[name] = true
 
 		if strings.TrimSpace(rule.Host) == "" && strings.TrimSpace(rule.SNI) == "" {
 			return fmt.Errorf(
-				"cube HTTP 规则 %q 必须填 host 或 sni：网络层只从这两个字段提取放行目标，"+
-					"只写 method / path 的规则永远到不了 CubeEgress", name)
+				"quy tắc HTTP cube %q phải có host hoặc sni: tầng mạng chỉ lấy đích cho phép từ hai trường này, "+
+					"quy tắc chỉ có method / path sẽ không bao giờ tới được CubeEgress", name)
 		}
 		if host := strings.TrimSpace(rule.Host); host != "" {
 			if _, _, err := classifyNetworkTarget(hostWithoutPort(host), true); err != nil {
-				return fmt.Errorf("cube HTTP 规则 %q 的 host %q: %w", name, rule.Host, err)
+				return fmt.Errorf("host %q của quy tắc HTTP cube %q: %w", rule.Host, name, err)
 			}
 		}
 		if sni := strings.TrimSpace(rule.SNI); sni != "" {
 			kind, _, err := classifyNetworkTarget(sni, true)
 			if err != nil {
-				return fmt.Errorf("cube HTTP 规则 %q 的 sni %q: %w", name, rule.SNI, err)
+				return fmt.Errorf("sni %q của quy tắc HTTP cube %q: %w", rule.SNI, name, err)
 			}
 			if kind != targetDomain {
-				return fmt.Errorf("cube HTTP 规则 %q 的 sni 只能是域名，不能是 IP", name)
+				return fmt.Errorf("sni của quy tắc HTTP cube %q chỉ được là tên miền, không phải IP", name)
 			}
 		}
 		switch strings.ToLower(strings.TrimSpace(rule.Scheme)) {
 		case "", "http", "https":
 		default:
-			return fmt.Errorf("cube HTTP 规则 %q 的 scheme 只能是 http 或 https", name)
+			return fmt.Errorf("scheme của quy tắc HTTP cube %q chỉ được là http hoặc https", name)
 		}
 		if !cubeAuditLevels[strings.ToLower(strings.TrimSpace(rule.Audit))] {
-			return fmt.Errorf("cube HTTP 规则 %q 的 audit 只能是 none、metadata 或 full", name)
+			return fmt.Errorf("audit của quy tắc HTTP cube %q chỉ được là none, metadata hoặc full", name)
 		}
 		for _, method := range rule.Methods {
 			if !httpMethods[strings.ToUpper(strings.TrimSpace(method))] {
-				return fmt.Errorf("cube HTTP 规则 %q 的 method %q 不是标准 HTTP 方法", name, method)
+				return fmt.Errorf("method %q của quy tắc HTTP cube %q không phải phương thức HTTP chuẩn", method, name)
 			}
 		}
 		injectHeaders := make(map[string]bool, len(rule.Inject))
 		for _, inject := range rule.Inject {
 			header := strings.TrimSpace(inject.Header)
 			if header == "" {
-				return fmt.Errorf("cube HTTP 规则 %q 的注入 header 名不能为空", name)
+				return fmt.Errorf("tên header chèn thêm của quy tắc HTTP cube %q không được để trống", name)
 			}
 			if err := validateHTTPHeaderName(header); err != nil {
-				return fmt.Errorf("规则 %q 的注入 header 名 %q: %w", name, header, err)
+				return fmt.Errorf("tên header chèn thêm %q của quy tắc %q: %w", header, name, err)
 			}
 			if injectHeaders[header] {
-				return fmt.Errorf("cube HTTP 规则 %q 的注入 header 名 %q 重复", name, header)
+				return fmt.Errorf("tên header chèn thêm %q của quy tắc HTTP cube %q bị trùng", header, name)
 			}
 			injectHeaders[header] = true
 			if err := validateHTTPHeaderValue(inject.Secret); err != nil {
-				return fmt.Errorf("规则 %q 的注入 header %q 的值: %w", name, header, err)
+				return fmt.Errorf("giá trị của header chèn thêm %q trong quy tắc %q: %w", header, name, err)
 			}
 			if err := validateHTTPHeaderValue(inject.Format); err != nil {
-				return fmt.Errorf("规则 %q 的注入 header %q 的 format: %w", name, header, err)
+				return fmt.Errorf("format của header chèn thêm %q trong quy tắc %q: %w", header, name, err)
 			}
 			if rule.Deny && inject.Secret != "" {
-				return fmt.Errorf("cube HTTP 规则 %q 是拒绝规则，注入 header 不会生效", name)
+				return fmt.Errorf("quy tắc HTTP cube %q là quy tắc từ chối, header chèn thêm sẽ không có tác dụng", name)
 			}
 		}
 	}
@@ -440,53 +440,53 @@ func hostWithoutPort(host string) string {
 
 func validateE2BHostRules(rules []E2BHostRule, allowKeys map[string]string) error {
 	if len(rules) > e2bMaxRuleDomains {
-		return fmt.Errorf("e2b 每个沙箱最多 %d 个 host 规则域名", e2bMaxRuleDomains)
+		return fmt.Errorf("e2b: mỗi sandbox tối đa %d tên miền trong quy tắc host", e2bMaxRuleDomains)
 	}
 	seen := make(map[string]bool, len(rules))
 	for _, rule := range rules {
 		host := strings.TrimSpace(rule.Host)
 		if host == "" {
-			return errors.New("e2b host 规则的 host 不能为空")
+			return errors.New("host của quy tắc host e2b không được để trống")
 		}
 		if len(host) > e2bMaxRuleDomainLength {
-			return fmt.Errorf("e2b host 规则的 host %q 超过 %d 字符", host, e2bMaxRuleDomainLength)
+			return fmt.Errorf("host %q của quy tắc host e2b vượt quá %d ký tự", host, e2bMaxRuleDomainLength)
 		}
 		kind, key, err := classifyNetworkTarget(host, true)
 		if err != nil {
-			return fmt.Errorf("e2b host 规则的 host %q: %w", host, err)
+			return fmt.Errorf("host %q của quy tắc host e2b: %w", host, err)
 		}
 		if kind != targetDomain {
-			return fmt.Errorf("e2b host 规则的 host %q 只能是域名", host)
+			return fmt.Errorf("host %q của quy tắc host e2b chỉ được là tên miền", host)
 		}
 		if seen[key] {
-			return fmt.Errorf("e2b host 规则 %q 重复：每个域名只能有一条规则", host)
+			return fmt.Errorf("quy tắc host e2b %q bị trùng: mỗi tên miền chỉ được một quy tắc", host)
 		}
 		seen[key] = true
 
 		if !allowListCovers(allowKeys, key) {
 			return fmt.Errorf(
-				"e2b host 规则的 host %q 必须同时出现在 allow_out 中："+
-					"规则本身只做 header 注入，不授权出网", host)
+				"host %q của quy tắc host e2b phải đồng thời có trong allow_out: "+
+					"bản thân quy tắc chỉ chèn header, không cấp quyền truy cập ra ngoài", host)
 		}
 		if len(rule.Headers) > e2bMaxHeadersPerRule {
-			return fmt.Errorf("e2b host 规则 %q 最多 %d 个 header", host, e2bMaxHeadersPerRule)
+			return fmt.Errorf("quy tắc host e2b %q tối đa %d header", host, e2bMaxHeadersPerRule)
 		}
 		for name, value := range rule.Headers {
 			if strings.TrimSpace(name) == "" {
-				return fmt.Errorf("e2b host 规则 %q 的 header 名不能为空", host)
+				return fmt.Errorf("tên header của quy tắc host e2b %q không được để trống", host)
 			}
 			if err := validateHTTPHeaderName(name); err != nil {
-				return fmt.Errorf("host 规则 %q 的 header 名 %q: %w", host, name, err)
+				return fmt.Errorf("tên header %q của quy tắc host %q: %w", name, host, err)
 			}
 			if len(name) > e2bMaxHeaderNameLength {
-				return fmt.Errorf("e2b host 规则 %q 的 header 名超过 %d 字符",
+				return fmt.Errorf("tên header của quy tắc host e2b %q vượt quá %d ký tự",
 					host, e2bMaxHeaderNameLength)
 			}
 			if err := validateHTTPHeaderValue(value); err != nil {
-				return fmt.Errorf("host 规则 %q 的 header %q 的值: %w", host, name, err)
+				return fmt.Errorf("giá trị của header %q trong quy tắc host %q: %w", name, host, err)
 			}
 			if len(value) > e2bMaxHeaderValueLen {
-				return fmt.Errorf("e2b host 规则 %q 的 header 值超过 %d 字符",
+				return fmt.Errorf("giá trị header của quy tắc host e2b %q vượt quá %d ký tự",
 					host, e2bMaxHeaderValueLen)
 			}
 		}
@@ -499,11 +499,11 @@ func validateE2BHostRules(rules []E2BHostRule, allowKeys map[string]string) erro
 // CubeEgress / E2B request transforms.
 func validateHTTPHeaderName(name string) error {
 	if name == "" {
-		return errors.New("不能为空")
+		return errors.New("không được để trống")
 	}
 	for _, r := range name {
 		if !isHTTPTokenChar(r) {
-			return errors.New("不是合法 HTTP header 名")
+			return errors.New("không phải tên HTTP header hợp lệ")
 		}
 	}
 	return nil
@@ -514,7 +514,7 @@ func validateHTTPHeaderName(name string) error {
 // Empty is allowed (unset / placeholder).
 func validateHTTPHeaderValue(value string) error {
 	if strings.ContainsAny(value, "\r\n\x00") {
-		return errors.New("不能包含换行或 NUL")
+		return errors.New("không được chứa xuống dòng hoặc NUL")
 	}
 	return nil
 }

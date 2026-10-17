@@ -49,16 +49,16 @@ type invitationLookupRequest struct {
 }
 
 // LookupInvitationByToken godoc
-// @Summary      解析共享邀请链接 token
-// @Description  根据邀请链接中的 token 返回邀请上下文（Tenant workspace名 / 角色 / 过期时间），
-// @Description  供注册页展示。无认证；token 无效或被撤销返回 410。
-// @Description  使用 POST + body 而非 GET + path，避免 token 落入访问日志 / 浏览器历史 / tracing。
-// @Tags         认证
+// @Summary      Giải mã token của liên kết mời dùng chung
+// @Description  Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên đơn vị / vai trò / thời hạn)
+// @Description  để trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.
+// @Description  Dùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      invitationLookupRequest  true  "邀请 token"
+// @Param        request  body      invitationLookupRequest  true  "token mời"
 // @Success      200      {object}  invitationLookupResponse
-// @Failure      410      {object}  apperrors.AppError  "链接无效或已撤销"
+// @Failure      410      {object}  apperrors.AppError  "liên kết không hợp lệ hoặc đã thu hồi"
 // @Router       /auth/invitations/lookup [post]
 func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -106,17 +106,17 @@ func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 }
 
 // RegisterByInvite godoc
-// @Summary      使用共享链接注册
-// @Description  通过 Owner 生成的共享邀请链接 token 完成注册，绕过 invite_only 模式拦截。
-// @Description  注册者自填邮箱（与 token 不绑定）；注册成功后自动加入对应Tenant workspace。
-// @Tags         认证
+// @Summary      Đăng ký bằng liên kết mời dùng chung
+// @Description  Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.
+// @Description  Người đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào đơn vị tương ứng.
+// @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      registerByInviteRequest  true  "邀请注册请求"
+// @Param        request  body      registerByInviteRequest  true  "yêu cầu đăng ký qua lời mời"
 // @Success      201      {object}  types.LoginResponse
-// @Failure      400      {object}  apperrors.AppError  "请求Parameters 错误"
-// @Failure      409      {object}  apperrors.AppError  "邮箱已注册"
-// @Failure      410      {object}  apperrors.AppError  "链接无效或已撤销"
+// @Failure      400      {object}  apperrors.AppError  "tham số không hợp lệ"
+// @Failure      409      {object}  apperrors.AppError  "email đã được đăng ký"
+// @Failure      410      {object}  apperrors.AppError  "liên kết không hợp lệ hoặc đã thu hồi"
 // @Router       /auth/register-by-invite [post]
 //
 // RegisterByInvite is intentionally NOT subject to the invite_only gate:

@@ -124,6 +124,33 @@ func TestRouteTier2AsksTheModelWhenTier1IsUnclear(t *testing.T) {
 	}
 }
 
+// A file attached with the request is what it is about, unless the
+// question names another document (2026-10-16: "thông tin sơ bộ về văn
+// bản" went to a similar earlier report).
+func TestRoutePrefersTheFileAttachedWithTheRequest(t *testing.T) {
+	freshDocProfiles(t)
+	ws := routeWorkspace(t)
+	model := &fakeRouter{reply: `{"documents":[{"handle":"vb2"}],"confidence":0.9}`}
+	attached := WithAttachedSources(toolCtx(), []string{"ws-1"})
+
+	_, scope := ApplyDocumentScope(attached, ws, 7, "s-att-1", DocumentRouteInput{Query: "cho tôi thông tin sơ bộ về văn bản", Model: model})
+	if scope == nil || scope.DocumentIDs[0] != "ws-1" || model.calls != 0 {
+		t.Fatalf("the attached file, no model call: %+v (calls %d)", scope, model.calls)
+	}
+	if st := SessionDocumentScope(toolCtx(), "s-att-1"); st == nil || st.DocumentIDs[0] != "ws-1" {
+		t.Fatalf("stored for the follow-ups: %+v", st)
+	}
+	// a code only the other document holds names it
+	if _, scope := ApplyDocumentScope(attached, ws, 7, "s-att-2", DocumentRouteInput{Query: "tóm tắt nhiệm vụ của PA05", Model: model}); scope == nil || scope.DocumentIDs[0] != "ws-2" {
+		t.Fatalf("PA05 names vb2: %+v", scope)
+	}
+	// two files attached: the router decides as before
+	two := WithAttachedSources(toolCtx(), []string{"ws-1", "ws-2"})
+	if _, scope := ApplyDocumentScope(two, ws, 7, "s-att-3", DocumentRouteInput{Query: "tổng thu ngân sách năm 2025 đạt bao nhiêu"}); scope == nil || scope.DocumentIDs[0] != "ws-2" {
+		t.Fatalf("two attached: %+v", scope)
+	}
+}
+
 func TestRoutePrecedence(t *testing.T) {
 	freshDocProfiles(t)
 	ws := routeWorkspace(t)

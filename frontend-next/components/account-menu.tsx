@@ -14,6 +14,7 @@ import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
 import { useToast } from "@/components/toast";
 import { SettingsModal } from "@/components/settings-modal";
+import { UsagePlanPill } from "@/components/usage-plan-pill";
 import { ADMIN_PATH } from "@/components/admin/admin-routes";
 import {
   IconBook,
@@ -33,24 +34,26 @@ const PENDING_POLL_MS = 20_000;
 /* Pending ids are fetched newest first; a page this size covers any
  * realistic backlog between two polls. */
 const PENDING_PAGE_SIZE = 100;
-/* Pending suggestion ids already announced in this browser session, so a
- * reload or a second tab does not repeat the toast for the same backlog. */
-const NOTIFIED_KEY = "werag_abbrev_notified";
+/* Kept per browser session, so a reload or a second tab does not repeat the
+ * toast for the same backlog. */
+const NOTIFIED_KEY = "werag_abbrev_notified_at";
 
-function loadNotified(): Set<string> {
+/* Newest created_at already announced. Pending rows are listed newest first,
+ * so only a row created after this mark is a new suggestion; approving one
+ * just slides an older row into the polled window and must stay quiet. */
+function loadNotified(): string {
   try {
-    const raw = sessionStorage.getItem(NOTIFIED_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    return sessionStorage.getItem(NOTIFIED_KEY) ?? "";
   } catch {
-    return new Set();
+    return "";
   }
 }
 
-function saveNotified(ids: Set<string>) {
+function saveNotified(mark: string) {
   try {
-    sessionStorage.setItem(NOTIFIED_KEY, JSON.stringify([...ids]));
+    sessionStorage.setItem(NOTIFIED_KEY, mark);
   } catch {
-    /* storage full / disabled — at worst the toast repeats after reload */
+    /* storage disabled — at worst the toast repeats after reload */
   }
 }
 
@@ -73,22 +76,20 @@ export function AccountMenu() {
   tLatest.current = t;
 
   /* Suggestions are mostly created server-side (the agent's abbreviation
-   * tools), so the browser only learns about them by polling. Track pending
-   * ids rather than the total: any id not yet announced this session raises
-   * one toast — including a backlog that was already waiting at sign-in —
-   * and an approval landing in the same interval cannot mask a new one. */
+   * tools), so the browser only learns about them by polling. A pending row
+   * newer than the last announced one raises one toast — including a backlog
+   * already waiting at sign-in — and an approval landing in the same
+   * interval cannot mask it. */
   const refreshPending = useCallback(async () => {
     try {
       const res = await listAbbreviations({ isActive: false, page: 1, pageSize: PENDING_PAGE_SIZE });
       const total = res.total ?? 0;
       setPending(total);
-      const ids = (res.data ?? []).map((a) => a.id);
-      const notified = loadNotified();
-      const fresh = ids.filter((id) => !notified.has(id));
-      /* Forget approved/deleted ids so the stored set stays small. */
-      const next = new Set(ids);
-      saveNotified(next);
-      if (fresh.length > 0) {
+      const times = (res.data ?? []).map((a) => new Date(a.created_at).getTime()).filter((n) => !Number.isNaN(n));
+      const newest = times.length ? Math.max(...times) : 0;
+      const mark = Number(loadNotified()) || 0;
+      if (newest > mark) saveNotified(String(newest));
+      if (newest > mark) {
         // Longer dwell (20s): admin may be away from the screen when a new
         // suggestion lands, and 5s was easy to miss.
         toastRef.current.info(
@@ -268,10 +269,7 @@ export function AccountMenu() {
                 <div className="mt-1.5 border-t border-hairline pt-1.5">
                   <div className="flex items-center justify-between text-[12.5px]">
                     <span className="text-muted">{t("acct.plan")}</span>
-                    <span className={`truncate text-ink ${usage.entitlement.expired ? "text-error" : ""}`}>
-                      {usage.entitlement.plan_name}
-                      {usage.entitlement.expired ? ` · ${t("acct.planExpired")}` : ""}
-                    </span>
+                    <UsagePlanPill entitlement={usage.entitlement} />
                   </div>
                   {usage.entitlement.limits.map((l, i) => (
                     <div key={i} className="flex items-center justify-between text-[12.5px]">

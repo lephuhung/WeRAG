@@ -2,7 +2,7 @@
 
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, autoCorrectionsOf } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, deleteSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, autoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
@@ -13,7 +13,8 @@ import { useT } from "@/lib/i18n";
 import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
-import { ContextRing } from "@/components/chat/context-ring";
+import { ContextRing, useContextUsage } from "@/components/chat/context-ring";
+import { SubChatBanner, SubChatSwitcher, shouldOfferSubChat, useSubChats } from "@/components/chat/sub-chats";
 import {
   clearDocumentScope,
   documentSelectionForDisplay,
@@ -72,8 +73,13 @@ import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { FormatCheckButton, SpellingRing } from "@/components/doc-workspace/spelling-ring";
-import type { GoToResult, LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
+import { goToResult, type GoToResult, type LiveSpellingStatus, type SpellingActions } from "@/lib/live-spelling";
 import { FormatCheckReportModal } from "@/components/doc-workspace/format-check-report";
+import type { EditorActions, EditorOpsResult } from "@/components/doc-workspace/use-live-spelling";
+import { useDocumentTemplate } from "@/components/doc-workspace/use-document-template";
+import { DocumentTemplateBar, DocumentTemplatePicker } from "@/components/doc-workspace/document-template-picker";
+import { templatePrompt } from "@/lib/template-protocol";
+import { findingCheckOp, findingSelectOp, type FormatFinding } from "@/lib/format-findings";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/toast";
 import { Composer, type ComposerSend } from "@/components/composer";
@@ -831,7 +837,6 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork,
   onRegenerate,
   onAsk,
-  onScopeAction,
   onChoicePick,
   scopeCardActive = false,
   activeProposalIds = "",
@@ -846,11 +851,9 @@ const AssistantMessage = memo(function AssistantMessage({
 }: {
   m: UiMessage;
   index: number;
-  /** Runs a confirmed choice of the scope clarification card. */
-  onScopeAction?: (action: ScopeCardAction) => Promise<void>;
   /** Sends the message of a picked option (choice list under the answer). */
   onChoicePick?: (option: ChoiceOption) => Promise<void>;
-  /** The card is live only on the last turn; older ones show their text. */
+  /** The cards are live only on the last turn; older ones show their text. */
   scopeCardActive?: boolean;
   /** Comma-joined batch ids of this turn's proposals that are the newest of
    * their document (only those can apply). */
@@ -876,6 +879,7 @@ const AssistantMessage = memo(function AssistantMessage({
   onRegenerate: (index: number) => void;
   onAsk: (text: string, attribution: { setId: string; questionId: string }, kbIds: string[]) => void;
 }) {
+  const { t } = useT();
   const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
   const shownContent = stripPeopleDump(m.content, hasPeopleCard);
   return (
@@ -925,8 +929,9 @@ const AssistantMessage = memo(function AssistantMessage({
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
         {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
-        {!m.streaming && m.scopeCard && scopeCardActive && onScopeAction && (
-          <DocumentScopeCard card={m.scopeCard} disabled={busy} onAction={onScopeAction} />
+        {/* the card itself sits above the composer (see pendingScopeCard) */}
+        {!m.streaming && m.scopeCard && scopeCardActive && (
+          <p className="caption mt-2 text-muted-soft">{t("docws.scopeCard.pickBelow")}</p>
         )}
         {!m.streaming && m.choiceList && scopeCardActive && onChoicePick && (
           <ChoiceListView card={m.choiceList} disabled={busy} onPick={onChoicePick} />
@@ -1070,7 +1075,10 @@ function ChatBody({ id }: { id: string }) {
   // editor by DocWorkspace (append-only; it dedupes by batch id).
   const [pendingSelection, setPendingSelection] = useState<DocumentSelection | null>(null);
   const [docOpsBatches, setDocOpsBatches] = useState<(OpsBatch & { rejected?: OpsFailure[] })[]>([]);
+  // set below by the template flow (declared after `busy`)
+  const templateToolRef = useRef<(c: StreamChunk) => boolean>(() => false);
   const noteDocOps = (c: StreamChunk) => {
+    if (templateToolRef.current(c)) return;
     const batch = opsBatchFromToolData(c.tool_name, c.data);
     if (!batch) return;
     setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
@@ -1245,9 +1253,14 @@ function ChatBody({ id }: { id: string }) {
   useEffect(() => setSpellingStatus(null), [id]);
   // selects / dismisses a listed mistake in the visible document's editor
   const spellingActionsRef = useRef<SpellingActions | null>(null);
-  const onSpellingStatus = useCallback((status: LiveSpellingStatus, actions: SpellingActions) => {
+  // the visible editor: the format review and the template flow use it
+  const editorActionsRef = useRef<EditorActions | null>(null);
+  const [editorDocId, setEditorDocId] = useState<string | null>(null);
+  const onSpellingStatus = useCallback((status: LiveSpellingStatus, actions: SpellingActions, editor: EditorActions) => {
     setSpellingStatus(status);
     spellingActionsRef.current = actions;
+    editorActionsRef.current = editor;
+    setEditorDocId(editor.documentId);
   }, []);
   const [seenFormatCheck, setSeenFormatCheck] = useState<string | null>(null);
   const formatCheckKey =
@@ -1350,6 +1363,53 @@ function ChatBody({ id }: { id: string }) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
+  // The report's per-finding review, run in the visible editor: it must
+  // show the checked document (another tab → open it first).
+  const findingEditor = () => {
+    const editor = editorActionsRef.current;
+    if (!editor || !formatCheckDoc || editor.documentId !== formatCheckDoc.id) throw new Error(tr("docws.fcRvOtherDoc"));
+    return editor;
+  };
+  const editorProblem = (o: EditorOpsResult | null, failedError = "") => {
+    const r = o ? goToResult(o) : "noAnswer";
+    if (r === "outdated" || /checkFormat unsupported/.test(failedError)) return tr("docws.spGoToOutdated");
+    return r === "noAnswer" ? tr("docws.spGoToNoAnswer") : tr("docws.spGoToFailed");
+  };
+  const locateFinding = async (finding: FormatFinding) => {
+    const op = findingSelectOp(finding);
+    if (!op) return;
+    const o = await findingEditor().runOps([op]);
+    if (!o || o.applied < 1) throw new Error(editorProblem(o));
+  };
+  // reads the paragraph back: true when it has the op's formatting; a
+  // plugin that cannot read it back is an error, not a "no"
+  const checkFinding = async (finding: FormatFinding) => {
+    const o = await findingEditor().runOps([findingCheckOp(finding.ops[0])]);
+    if (o && o.applied === 1) return true;
+    const err = o?.failed[0]?.error ?? "";
+    if (o && /^format differs/.test(err)) return false;
+    throw new Error(editorProblem(o, err));
+  };
+  const applyFinding = async (finding: FormatFinding, revision: number) => {
+    const doc = formatCheckDoc;
+    const editor = findingEditor();
+    if (!doc || id === "new") throw new Error(tr("docws.fcRvOtherDoc"));
+    // a restore or an assistant edit since the check moved the revision:
+    // the finding may no longer describe the document
+    const view = await getDocumentWorkspace(id, doc.id);
+    if (!view || view.revision !== revision) throw new Error(tr("docws.fcRvStale"));
+    const op = finding.ops[0];
+    const o = await editor.runOps([op, findingCheckOp(op)]);
+    if (!o) throw new Error(editorProblem(null));
+    const failed = new Map(o.failed.map((f) => [f.index, f.error]));
+    if (failed.has(0)) {
+      const err = failed.get(0) ?? "";
+      throw new Error(/anchor not found/.test(err) ? tr("docws.spGoToFailed") : tr("docws.fcRvFailed", { error: err }));
+    }
+    const checkErr = failed.get(1);
+    if (checkErr !== undefined && !/^format differs/.test(checkErr)) return { verified: false };
+    return { verified: checkErr === undefined };
+  };
   // Bumped whenever an assistant turn ends (complete, error, abort, resumed
   // stream done): DocWorkspace re-GETs the workspace and refreshes the editor
   // if editor_key moved — tool results can be lost on a dropped stream.
@@ -1375,6 +1435,23 @@ function ChatBody({ id }: { id: string }) {
     busyRef.current = v;
     setBusyState(v);
   };
+  // Document assistant: a new NĐ30 document drafted from chat into the
+  // visible, empty document (picker in the empty chat, bar above the composer)
+  const [templateHint, setTemplateHint] = useState(false);
+  const docTemplate = useDocumentTemplate({
+    sessionId: id === "new" ? null : id,
+    documentId: editorDocId,
+    tenantKey: String(user?.tenant_id ?? "web"),
+    enabled: ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID && id !== "new" && !busy,
+    emptyDocId: spellingStatus?.empty ? editorDocId : null,
+    editorRef: editorActionsRef,
+    onWritten: () => requestDocRecheck(),
+  });
+  templateToolRef.current = docTemplate.onToolResult;
+  useEffect(() => setTemplateHint(false), [id]);
+  // in a chat with messages the picker can be hidden, per chat and document
+  const [templatePickerClosed, setTemplatePickerClosed] = useState<string | null>(null);
+  const templatePickerKey = `${id}:${editorDocId ?? ""}`;
   const [assistantMessageId, setAssistantMessageId] = useState<string | null>(null);
   // Session whose turn activity we report to the sidebar. Tracks `id` except
   // on the "new" route, where send() points it at the freshly-created session
@@ -1467,6 +1544,14 @@ function ChatBody({ id }: { id: string }) {
   const accRef = useRef("");
   const stepsRef = useRef<AgentStepItem[]>([]);
   const srcSetRef = useRef<StreamChunk["knowledge_references"] | null>(null);
+  // context fill of this chat: the composer ring, and the sub-chat banner
+  const contextUsage = useContextUsage(id === "new" ? null : id, busy, compactionCount);
+  // document assistant: the sub-chats ("chat nhỏ") sharing this chat's documents
+  const subChats = useSubChats(
+    ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID && id !== "new" ? id : null,
+    `${id}:${sessionTitle}`,
+  );
+  const [subChatBannerClosed, setSubChatBannerClosed] = useState<string | null>(null);
 
   // References slide-out panel (drawer)
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1920,8 +2005,13 @@ function ChatBody({ id }: { id: string }) {
     }
 
     let activeSessionId = id;
+    /* Set when this send made the session: if the uploads then fail, it is
+     * removed again so a refused send leaves no empty chat behind (and a
+     * retry on the still-"new" route does not pile up more). */
+    let createdHere: { sid: string; url: string } | null = null;
     if (activeSessionId === "new") {
       try {
+        const url = typeof window !== "undefined" ? window.location.pathname + window.location.search : "";
         const res = await createSession({});
         // Route may have moved while createSession was pending: a stale A
         // turn must not reroute B's URL, dispatch session-created for B,
@@ -1930,6 +2020,7 @@ function ChatBody({ id }: { id: string }) {
         const sid = res.data?.id;
         if (!sid) throw new Error("Failed to create session");
         activeSessionId = sid;
+        createdHere = { sid, url };
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", `/platform/chat/${sid}`);
           window.dispatchEvent(
@@ -2000,6 +2091,13 @@ function ChatBody({ id }: { id: string }) {
         // Route may have moved while the local uploads were pending.
         if (!isLive()) return;
       } catch (e) {
+        if (createdHere) {
+          const { sid, url } = createdHere;
+          void deleteSession(sid).catch(() => {});
+          window.dispatchEvent(new CustomEvent("weknora:session-removed", { detail: { sessionId: sid } }));
+          // Back on the route the user sent from; harmless if it moved on.
+          if (isLive()) window.history.replaceState(null, "", url);
+        }
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
@@ -2496,6 +2594,7 @@ function ChatBody({ id }: { id: string }) {
       abbreviationCandidates: priorCandidates?.slice(0, 10),
       abbreviationAskWords: s.abbreviationAskWords,
       documentSelection,
+      documentTemplateRequest: selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? docTemplate.forSend() : undefined,
       signal: ctrl.signal,
       onChunk: applyChunk,
     })
@@ -2530,6 +2629,8 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         setAbbreviationRefreshKey((v) => v + 1);
         requestDocRecheck();
+        docTemplate.turnEnded();
+        setTemplateHint(false);
         setBusy(false);
         setAssistantMessageId(null);
         // Streams that end without a `complete` event (abort, socket drop)
@@ -2594,6 +2695,13 @@ function ChatBody({ id }: { id: string }) {
     [scopeEditing, scopeDocs, currentScope],
   );
   const composerBoxRef = useRef<HTMLDivElement>(null);
+  // The last turn's clarification card waits above the composer, where the
+  // eye is when the next thing to do is answer it.
+  const lastMessage = messages[messages.length - 1];
+  const pendingScopeCard =
+    lastMessage?.role === "assistant" && !lastMessage.streaming && lastMessage.scopeCard
+      ? { id: lastMessage.id, card: lastMessage.scopeCard }
+      : null;
   // A confirmed card choice: a user scope is stored and the question asked
   // again (the next turn reads that scope); format and spelling send their
   // request; "something else" hands the composer back.
@@ -2773,10 +2881,27 @@ function ChatBody({ id }: { id: string }) {
   // layout — base (unprefixed) classes only, full column width, smaller type.
   const compact = isDocumentAssistant;
 
+  const templatePicker = (
+    <DocumentTemplatePicker
+      disabled={busy}
+      onClose={messages.length > 0 ? () => setTemplatePickerClosed(templatePickerKey) : undefined}
+      onChoose={(templateId) => {
+        docTemplate.begin(templateId);
+        setTemplateHint(true);
+        setInput(templatePrompt(templateId));
+        requestAnimationFrame(() => {
+          const box = composerBoxRef.current?.querySelector("textarea");
+          box?.focus();
+          box?.setSelectionRange(box.value.length, box.value.length);
+        });
+      }}
+    />
+  );
   const chatColumn = (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
       <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
         <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
+        {isDocumentAssistant && id !== "new" && <SubChatSwitcher sessionId={id} chats={subChats} disabled={busy} />}
         {isDocumentAssistant && id !== "new" && (
           <FormatCheckReportModal
             open={formatReportOpen}
@@ -2787,12 +2912,16 @@ function ChatBody({ id }: { id: string }) {
             onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
             onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
             onMark={markFormatFindings}
+            onLocateFinding={locateFinding}
+            onApplyFinding={applyFinding}
+            onVerifyFinding={checkFinding}
           />
         )}
       </div>
 
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
         <div className={compact ? "w-full px-[17px] py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
+          {isDocumentAssistant && docTemplate.showPicker && messages.length === 0 && templatePicker}
           {messages.map((m, index) =>
             m.role === "user" ? (
               <UserMessageBubble
@@ -2816,7 +2945,6 @@ function ChatBody({ id }: { id: string }) {
                   onFork={handleFork}
                   onRegenerate={handleRegenerate}
                   onAsk={handleAskFollowUp}
-                  onScopeAction={runScopeAction}
                   onChoicePick={runChoicePick}
                   scopeCardActive={index === messages.length - 1}
                   activeProposalIds={(m.rewriteProposals ?? [])
@@ -2848,6 +2976,14 @@ function ChatBody({ id }: { id: string }) {
           {sessionUsage && sessionUsage.forSession === id && sessionLimitFor !== id && (
             <SessionUsageBanner usage={sessionUsage} sessionId={id} compact={compact} />
           )}
+          {isDocumentAssistant &&
+            docTemplate.showPicker &&
+            messages.length > 0 &&
+            templatePickerClosed !== templatePickerKey &&
+            templatePicker}
+          {isDocumentAssistant && id !== "new" && !busy && contextUsage && shouldOfferSubChat(contextUsage) && subChatBannerClosed !== id && (
+            <SubChatBanner sessionId={id} usage={contextUsage} disabled={busy} compact={compact} onClose={() => setSubChatBannerClosed(id)} />
+          )}
           <input
             ref={attachments.inputRef}
             type="file"
@@ -2877,19 +3013,30 @@ function ChatBody({ id }: { id: string }) {
                   ? tr("docws.selectionLabelIn", {
                       name: openDocs.find((d) => d.id === pendingSelection.document_id)?.file_name ?? "",
                     })
-                  : tr("docws.selectionLabel")
+                  : undefined
               }
               clearLabel={tr("docws.selectionClear")}
               onClear={() => setPendingSelection(null)}
+              actions={
+                !busy && !input.trim() && selectionActions.length > 0 ? (
+                  <SelectionSuggestionChips
+                    actions={selectionActions}
+                    labelOf={(k) => tr(`docws.selSuggest.${k}`)}
+                    onPick={(k) => setSelectionSend({ text: tr(`docws.selSuggest.${k}.q`), seq: Date.now() })}
+                  />
+                ) : null
+              }
             />
           )}
-          {isDocumentAssistant && pendingSelection && !busy && !input.trim() && selectionActions.length > 0 && (
-            <SelectionSuggestionChips
-              actions={selectionActions}
-              title={tr("docws.selSuggest.title")}
-              labelOf={(k) => tr(`docws.selSuggest.${k}`)}
-              onPick={(k) => setSelectionSend({ text: tr(`docws.selSuggest.${k}.q`), seq: Date.now() })}
-            />
+          {isDocumentAssistant && pendingScopeCard && !scopeEditCard && (
+            <div className="mb-2">
+              <DocumentScopeCard
+                key={pendingScopeCard.id}
+                card={pendingScopeCard.card}
+                disabled={busy}
+                onAction={runScopeAction}
+              />
+            </div>
           )}
           {isDocumentAssistant && scopeChip && !scopeEditCard && (
             <ScopeChip
@@ -2927,6 +3074,22 @@ function ChatBody({ id }: { id: string }) {
               onDismiss={() => dropFreshSource(null)}
             />
           )}
+          {isDocumentAssistant && (
+            <DocumentTemplateBar
+              open={!!docTemplate.request}
+              hint={templateHint}
+              notice={docTemplate.notice}
+              disabled={busy}
+              onCancel={() => {
+                docTemplate.cancel();
+                setTemplateHint(false);
+                setInput("");
+              }}
+              onSkip={() =>
+                void sendRef.current({ query: tr("docws.tplSkipMessage"), attachments: [], imageFiles: [], mentionedItems: [], modelId: "" })
+              }
+            />
+          )}
           <div ref={composerBoxRef}>
           <Composer
             sessionId={id === "new" ? undefined : id}
@@ -2954,7 +3117,7 @@ function ChatBody({ id }: { id: string }) {
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
             toolbarEnd={
               <div className="flex shrink-0 items-center gap-1">
-                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" />
+                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" usage={contextUsage} />
                 {isDocumentAssistant && spellingStatus && (
                   <SpellingRing
                     placement="above"
@@ -3157,66 +3320,102 @@ function ScopeChip({
   );
 }
 
-/* Quick actions for the highlighted passage: picking one fills the composer
- * with its request (the user can add to it before sending). */
+/* Quick actions for the highlighted passage: round icon buttons riding the
+ * bottom edge of the selection box (same as the Word add-in); the name is in
+ * the tooltip. Picking one sends its request. */
 function SelectionSuggestionChips({
   actions,
-  title,
   labelOf,
   onPick,
 }: {
   actions: SelectionSuggestionKey[];
-  title: string;
   labelOf: (key: SelectionSuggestionKey) => string;
   onPick: (key: SelectionSuggestionKey) => void;
 }) {
   return (
-    <div className="mb-2 flex w-full min-w-0 flex-wrap items-center gap-1.5">
-      <span className="caption-uppercase shrink-0 text-muted-soft">{title}</span>
+    <div className="absolute bottom-0 right-2 z-10 flex max-w-[calc(100%-1rem)] translate-y-1/2 items-center gap-1.5" data-testid="selection-actions">
       {actions.map((k) => (
         <button
           key={k}
           type="button"
           onClick={() => onPick(k)}
-          className="flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3 py-1 text-[12.5px] text-body transition-colors hover:border-ink hover:text-ink"
+          aria-label={labelOf(k)}
+          title={labelOf(k)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-hairline bg-surface-card text-muted transition-colors hover:border-ink hover:bg-surface-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-primary"
         >
-          <span className="text-muted-soft">›</span>
-          <span className="min-w-0 truncate">{labelOf(k)}</span>
+          <SelectionActionIcon action={k} />
         </button>
       ))}
     </div>
   );
 }
 
-/* Editor selection attached to the next turn (document assistant). */
+function SelectionActionIcon({ action }: { action: SelectionSuggestionKey }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {action === "rewrite" ? (
+        <path d="m4 16 11-11 4 4L8 20H4v-4ZM13 7l4 4M4 4h6M16 20h4" />
+      ) : action === "spelling" ? (
+        <>
+          <text x="1" y="11" fill="currentColor" stroke="none" fontSize="9" fontWeight="700">ABC</text>
+          <path d="m8 17 3 3 7-7" />
+        </>
+      ) : action === "shorten" ? (
+        <path d="M4 6h16M4 12h10M4 18h6m10-4-4 4 4 4" />
+      ) : action === "legal" ? (
+        <path d="M12 3v18M5 21h14M4 7h16M5 7l-3 7h6L5 7Zm14 0-3 7h6l-3-7Z" />
+      ) : action.startsWith("diagram") ? (
+        <>
+          <rect x="8" y="2" width="8" height="6" rx="1" />
+          <rect x="2" y="16" width="7" height="6" rx="1" />
+          <rect x="15" y="16" width="7" height="6" rx="1" />
+          <path d="M12 8v4H5v4m7-4h7v4" />
+        </>
+      ) : (
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <circle cx="8" cy="8" r="1.5" />
+          <path d="m3 17 5-5 4 4 4-6 5 7" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/* Editor selection attached to the next turn (document assistant): the
+ * passage in a light-blue box, its quick actions on the bottom edge. The
+ * label names the document only when several are open. */
 function SelectionChip({
   selection,
   label,
   clearLabel,
   onClear,
+  actions,
 }: {
   selection: DocumentSelection;
-  label: string;
+  label?: string;
   clearLabel: string;
   onClear: () => void;
+  actions?: React.ReactNode;
 }) {
-  const flat = selection.text.replace(/\s+/g, " ").trim();
   return (
     <div
-      className="mb-2 flex w-full min-w-0 items-center gap-2.5 rounded-r-[8px] border-l-2 border-hairline-strong bg-surface-strong/50 px-3 py-2"
-      title={selection.text}
+      className={`relative flex w-full min-w-0 items-start gap-2 rounded-lg border border-[#c5ddfa] bg-[#e3efff] px-2.5 pt-2 dark:border-[#2a4a72] dark:bg-[#15273f] ${actions ? "mb-6 pb-6" : "mb-2 pb-2"}`}
     >
-      <span className="caption-uppercase shrink-0 text-muted-soft">{label.replace(/:\s*$/, "")}</span>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-body">{flat}</span>
+      <div className="min-w-0 flex-1 border-l-2 border-[#8bb8ee] pl-2 dark:border-[#4b7bb5]" title={selection.text}>
+        {label && <div className="caption truncate text-[#0f2d59]/70 dark:text-[#dce9fe]/70">{label.replace(/:\s*$/, "")}</div>}
+        <div className="line-clamp-2 whitespace-pre-line text-[12.5px] leading-[18px] text-black dark:text-[#dce9fe]">{selection.text.trim()}</div>
+      </div>
       <button
         type="button"
         onClick={onClear}
         aria-label={clearLabel}
         title={clearLabel}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink cursor-pointer"
+        className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:text-ink"
       >
         <IconClose className="h-3 w-3" />
       </button>
+      {actions}
     </div>
   );
 }

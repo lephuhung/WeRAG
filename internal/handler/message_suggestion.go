@@ -32,14 +32,14 @@ type SuggestionEventRequest struct {
 }
 
 // Ensure godoc
-// @Summary      确保生成回答后推荐问题
-// @Description  对已完成的助手消息异步生成或重新生成推荐问题；相同Configuration 快照会复用持久化结果
-// @Tags         会话
+// @Summary      Đảm bảo tạo câu hỏi gợi ý sau câu trả lời
+// @Description  Tạo hoặc tạo lại câu hỏi gợi ý bất đồng bộ cho tin nhắn trợ lý đã hoàn tất; cùng ảnh chụp cấu hình sẽ dùng lại kết quả đã lưu
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        session_id  path  string  true  "会话 ID"
-// @Param        message_id  path  string  true  "助手消息 ID"
-// @Param        request     body  EnsureMessageSuggestionsRequest  false  "生成选项"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
+// @Param        message_id  path  string  true  "ID tin nhắn trợ lý"
+// @Param        request     body  EnsureMessageSuggestionsRequest  false  "Tùy chọn tạo"
 // @Success      200  {object}  map[string]interface{}
 // @Success      202  {object}  map[string]interface{}
 // @Security     Bearer
@@ -71,11 +71,11 @@ func (h *MessageSuggestionHandler) Ensure(c *gin.Context) {
 }
 
 // Get godoc
-// @Summary      获取回答后推荐问题
-// @Tags         会话
+// @Summary      Lấy câu hỏi gợi ý sau câu trả lời
+// @Tags         Cuộc trò chuyện
 // @Produce      json
-// @Param        session_id  path  string  true  "会话 ID"
-// @Param        message_id  path  string  true  "助手消息 ID"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
+// @Param        message_id  path  string  true  "ID tin nhắn trợ lý"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -102,12 +102,12 @@ func messageSuggestionSessionID(c *gin.Context) string {
 }
 
 // RecordEvent godoc
-// @Summary      上报推荐问题事件
-// @Description  记录曝光、点击或关闭事件
-// @Tags         会话
+// @Summary      Báo cáo sự kiện câu hỏi gợi ý
+// @Description  Ghi nhận sự kiện hiển thị, nhấp hoặc đóng
+// @Tags         Cuộc trò chuyện
 // @Accept       json
-// @Param        session_id  path  string  true  "会话 ID"
-// @Param        request     body  SuggestionEventRequest  true  "事件"
+// @Param        session_id  path  string  true  "ID cuộc trò chuyện"
+// @Param        request     body  SuggestionEventRequest  true  "Sự kiện"
 // @Success      204
 // @Security     Bearer
 // @Security     ApiKeyAuth

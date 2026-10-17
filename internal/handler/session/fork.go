@@ -35,17 +35,17 @@ type ForkSessionRequest struct {
 }
 
 // ForkSession godoc
-// @Summary      分叉会话
-// @Description  从指定的用户或助手消息处分叉出一个新会话。用户消息：复制其之前的历史并预填该问题；助手消息：复制含该回答在内的历史，从该轮沙箱状态继续。
-// @Tags         会话
+// @Summary      Rẽ nhánh cuộc trò chuyện
+// @Description  Tạo cuộc trò chuyện mới rẽ nhánh từ một tin nhắn người dùng hoặc trợ lý. Tin nhắn người dùng: sao chép lịch sử trước đó và điền sẵn câu hỏi; tin nhắn trợ lý: sao chép lịch sử gồm cả câu trả lời đó và tiếp tục từ trạng thái sandbox của lượt đó.
+// @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
-// @Param        session_id  path      string              true  "源会话 ID"
-// @Param        request     body      ForkSessionRequest  true  "分叉请求"
-// @Success      200         {object}  map[string]interface{}  "新会话"
-// @Failure      400         {object}  errors.AppError         "请求Parameters 错误 / 分叉点角色不支持"
-// @Failure      404         {object}  errors.AppError         "会话或消息不存在"
-// @Failure      409         {object}  errors.AppError         "源会话正在生成中"
+// @Param        session_id  path      string              true  "ID cuộc trò chuyện nguồn"
+// @Param        request     body      ForkSessionRequest  true  "Yêu cầu rẽ nhánh"
+// @Success      200         {object}  map[string]interface{}  "Cuộc trò chuyện mới"
+// @Failure      400         {object}  errors.AppError         "Tham số không hợp lệ / vai trò tại điểm rẽ nhánh không được hỗ trợ"
+// @Failure      404         {object}  errors.AppError         "Không tìm thấy cuộc trò chuyện hoặc tin nhắn"
+// @Failure      409         {object}  errors.AppError         "Cuộc trò chuyện nguồn đang sinh câu trả lời"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{session_id}/fork [post]

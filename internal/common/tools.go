@@ -185,7 +185,7 @@ func ExtractBalancedJSON(s string) string {
 	return ""
 }
 
-// CleanInvalidUTF8 移除字符串中的非法 UTF-8 字符和 \x00
+// CleanInvalidUTF8 loại bỏ ký tự UTF-8 không hợp lệ và \x00 khỏi chuỗi
 func CleanInvalidUTF8(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -193,12 +193,12 @@ func CleanInvalidUTF8(s string) string {
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == utf8.RuneError && size == 1 {
-			// 非法 UTF-8 字节，跳过
+			// byte UTF-8 không hợp lệ, bỏ qua
 			i++
 			continue
 		}
 		if r == 0 {
-			// NULL 字符 \x00，跳过
+			// ký tự NULL \x00, bỏ qua
 			i += size
 			continue
 		}

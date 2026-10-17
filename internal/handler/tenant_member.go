@@ -87,14 +87,14 @@ func parseTenantIDFromPath(c *gin.Context) (uint64, bool) {
 }
 
 // ListMembers godoc
-// @Summary      列出Tenant workspace成员
-// @Description  分页返回当前Tenant workspace内 active 成员（含每位成员的角色、邮箱、头像）；支持 q 按邮箱/用户名筛选
-// @Tags         Tenant workspace成员
+// @Summary      Liệt kê thành viên đơn vị
+// @Description  Trả về theo trang các thành viên active của đơn vị hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng
+// @Tags         Thành viên đơn vị
 // @Produce      json
 // @Param        id         path   string  true   "Tenant workspace ID"
-// @Param        q          query  string  false  "按邮箱/用户名模糊筛选"
-// @Param        page       query  int     false  "页码（从 1 起）"  default(1)
-// @Param        page_size  query  int     false  "每页数量（最大 100）"  default(20)
+// @Param        q          query  string  false  "Lọc gần đúng theo email/tên người dùng"
+// @Param        page       query  int     false  "Số trang (bắt đầu từ 1)"  default(1)
+// @Param        page_size  query  int     false  "Số mục mỗi trang (tối đa 100)"  default(20)
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/members [get]
@@ -164,27 +164,27 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 }
 
 // AddMember godoc
-// @Summary      直接添加Tenant workspace成员（直加路径）
+// @Summary      Thêm trực tiếp thành viên đơn vị (đường thêm thẳng)
 // @Description
 //
-//	Owner 通过 email 直接把用户作为 active 成员添加进当前Tenant workspace。
+//	Owner thêm thẳng người dùng theo email làm thành viên active của đơn vị hiện tại.
 //
-//	这是【直加路径】，被加入的用户没有任何确认机会就出现在Tenant workspace里——
-//	保留它是为了三类不需要走邀请确认的场景：
-//	  1. 自动化脚本 / 平台运维 / 数据迁移；
-//	  2. 跨Tenant workspace超管 (CanAccessAllTenants) 的批量编排；
-//	  3. 对接外部 IdP 时由身份源单向同步成员。
+//	Đây là [đường thêm thẳng]: người được thêm xuất hiện trong đơn vị mà không có cơ hội xác nhận —
+//	giữ lại nó cho ba trường hợp không cần qua xác nhận lời mời:
+//	  1. script tự động / vận hành nền tảng / di chuyển dữ liệu;
+//	  2. siêu quản trị liên đơn vị (CanAccessAllTenants) điều phối hàng loạt;
+//	  3. đồng bộ thành viên một chiều từ nguồn định danh khi tích hợp IdP bên ngoài.
 //
-//	所有由 UI 触发的「邀请伙伴加入」交互应改走
-//	POST /tenants/:id/invitations，那条路径会先Create  pending 行，让被邀请
-//	人在 /me/invitations 主动接受后再写 tenant_members 行（PR #1303 后续）。
-//	这条路径与 invitations 路径共存而不互相替代。
+//	Mọi tương tác "mời đồng nghiệp tham gia" từ UI nên chuyển sang
+//	POST /tenants/:id/invitations; đường đó tạo hàng pending trước, để người được mời
+//	chủ động chấp nhận tại /me/invitations rồi mới ghi hàng tenant_members (tiếp theo PR #1303).
+//	Đường này và đường invitations cùng tồn tại, không thay thế nhau.
 //
-// @Tags         Tenant workspace成员
+// @Tags         Thành viên đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id        path  string                 true  "Tenant workspace ID"
-// @Param        request   body  addMemberRequest       true  "邀请请求"
+// @Param        request   body  addMemberRequest       true  "Yêu cầu mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/members [post]
@@ -311,14 +311,14 @@ func addMemberAndRespond(
 }
 
 // UpdateMemberRole godoc
-// @Summary      修改Tenant workspace成员角色
-// @Description  Owner 修改某位成员在当前Tenant workspace内的角色；不能将最后一位 Owner 降级
-// @Tags         Tenant workspace成员
+// @Summary      Đổi vai trò thành viên đơn vị
+// @Description  Owner đổi vai trò của một thành viên trong đơn vị hiện tại; không được hạ cấp Owner cuối cùng
+// @Tags         Thành viên đơn vị
 // @Accept       json
 // @Produce      json
 // @Param        id       path  string                  true  "Tenant workspace ID"
-// @Param        user_id  path  string                  true  "用户 ID"
-// @Param        request  body  updateMemberRoleRequest true  "目标角色"
+// @Param        user_id  path  string                  true  "ID người dùng"
+// @Param        request  body  updateMemberRoleRequest true  "Vai trò đích"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/members/{user_id} [put]
@@ -372,12 +372,12 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 }
 
 // RemoveMember godoc
-// @Summary      移除Tenant workspace成员
-// @Description  Owner 将某位成员从当前Tenant workspace中移除（软Delete  tenant_members 行）；不能移除最后一位 Owner
-// @Tags         Tenant workspace成员
+// @Summary      Gỡ thành viên đơn vị
+// @Description  Owner gỡ một thành viên khỏi đơn vị hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng
+// @Tags         Thành viên đơn vị
 // @Produce      json
 // @Param        id       path  string  true  "Tenant workspace ID"
-// @Param        user_id  path  string  true  "用户 ID"
+// @Param        user_id  path  string  true  "ID người dùng"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/members/{user_id} [delete]
@@ -411,13 +411,13 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 }
 
 // LeaveTenant godoc
-// @Summary      退出当前Tenant workspace
-// @Description  调用方主动退出当前Tenant workspace。等价于以自己的 user_id 调 RemoveMember，
+// @Summary      Rời đơn vị hiện tại
+// @Description  Người gọi chủ động rời đơn vị hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,
 //
-//	但不需要 Admin 权限——非 Admin 也可以自助离开。最后一位 Admin 仍然不能离开
-//	（需先把其他成员提升为 Admin），由服务层 ErrLastAdmin 拦截。
+//	nhưng không cần quyền Admin — người không phải Admin cũng tự rời được. Admin cuối cùng vẫn không được rời
+//	(phải nâng thành viên khác lên Admin trước), do tầng service chặn bằng ErrLastAdmin.
 //
-// @Tags         Tenant workspace成员
+// @Tags         Thành viên đơn vị
 // @Produce      json
 // @Param        id  path  string  true  "Tenant workspace ID"
 // @Success      200  {object}  map[string]interface{}

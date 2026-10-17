@@ -7,9 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Users have no review queue, so a memory the system inferred is used at once
-// and announced on the next turn instead of waiting as pending.
-func TestInferredMemoryIsActiveAndAnnouncedOnce(t *testing.T) {
+// A memory the system inferred waits as a pending proposal (confirmable in the
+// memory settings) and is announced on the next turn so the user knows it is
+// there; it is never injected until confirmed.
+func TestInferredMemoryIsPendingAndAnnouncedOnce(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 
@@ -18,7 +19,8 @@ func TestInferredMemoryIsActiveAndAnnouncedOnce(t *testing.T) {
 		Origin: types.MemoryOriginExtracted, Inferred: true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, types.MemoryStatusActive, inferred.Status)
+	require.Equal(t, types.MemoryStatusPending, inferred.Status)
+	require.NotContains(t, svc.Recall(ctx, "phòng Kế hoạch").Prompt, "Kế hoạch", "a guess is not injected")
 
 	_, err = svc.Remember(ctx, types.MemoryItem{
 		Kind: types.MemoryKindFact, Content: "Báo cáo tuần nộp thứ Sáu", Origin: types.MemoryOriginExplicit,

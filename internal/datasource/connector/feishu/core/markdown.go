@@ -69,8 +69,8 @@ func blocksToMarkdown(ctx context.Context, client sheetReader, blocks []DocxBloc
 		case BlockTypeImage:
 			// Emit a token-free placeholder: images carry no retrievable text, and
 			// leaking the internal media token would pollute embeddings. A neutral
-			// marker preserves surrounding context (e.g. "如下图所示").
-			writePara(&sb, "![图片]()")
+			// marker preserves surrounding context (e.g. "as shown in the figure below").
+			writePara(&sb, "![hình ảnh]()")
 		case BlockTypeTodo:
 			if t := plainText(textBearingField(b)); t != "" {
 				writePara(&sb, "- [ ] "+t)
@@ -88,7 +88,7 @@ func blocksToMarkdown(ctx context.Context, client sheetReader, blocks []DocxBloc
 				if name == "" {
 					name = b.File.Token
 				}
-				writePara(&sb, "📎 附件："+name)
+				writePara(&sb, "📎 Tệp đính kèm: "+name)
 				atts = append(atts, pendingAttachment{FileToken: b.File.Token, Name: b.File.Name})
 			}
 		default:
@@ -298,13 +298,13 @@ func inlineTable(ctx context.Context, client sheetReader, token, kind string) st
 	)
 	if kind == "sheet" {
 		rows, truncated, err = client.readSheetRange(ctx, token)
-		noun = "内嵌电子表格"
+		noun = "bảng tính nhúng"
 	} else {
 		rows, truncated, err = client.readBitableRecords(ctx, token)
-		noun = "内嵌多维表格"
+		noun = "bảng đa chiều nhúng"
 	}
 	if err != nil {
-		return fmt.Sprintf("> [无法读取%s]", noun)
+		return fmt.Sprintf("> [Không đọc được %s]", noun)
 	}
 	// markdownTable returns "" when there is nothing renderable (no rows, or a
 	// header with no columns). Skip the truncation note too in that case, since it
@@ -314,7 +314,7 @@ func inlineTable(ctx context.Context, client sheetReader, token, kind string) st
 		return ""
 	}
 	if truncated {
-		table += fmt.Sprintf("\n\n> 表格已截断（仅显示前 %d 行）", maxTableRows)
+		table += fmt.Sprintf("\n\n> Bảng đã bị cắt bớt (chỉ hiển thị %d dòng đầu)", maxTableRows)
 	}
 	return table
 }

@@ -14,9 +14,9 @@ func TestRelocalizeBuiltinChannelAgentNames(t *testing.T) {
 			ID:     types.BuiltinQuickAnswerID,
 			Avatar: "quick.png",
 			I18n: map[string]types.BuiltinAgentI18n{
-				"default": {Name: "快速问答"},
+				"default": {Name: "Hỏi đáp nhanh"},
 				"en-US":   {Name: "Quick Answer"},
-				"zh-CN":   {Name: "快速问答"},
+				"vi-VN":   {Name: "Hỏi đáp nhanh"},
 			},
 		},
 	})

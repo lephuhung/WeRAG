@@ -30,7 +30,7 @@ func TestReapStuckRunsFailsAbandonedInstalls(t *testing.T) {
 	got := fx.skills.mustGet("sk-1")
 	require.Equal(t, types.SkillStatusFailed, got.Status,
 		"a row left installing after the process died must stop spinning in the UI")
-	require.Contains(t, got.Error, "安装进程中断")
+	require.Contains(t, got.Error, "cài đặt bị gián đoạn")
 	require.Contains(t, strings.ToLower(got.Error), "process died")
 	require.Nil(t, got.InstallingSince)
 }

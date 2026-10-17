@@ -133,8 +133,10 @@ func formatCheckKey(content []byte, model, docType string) string {
 }
 
 // formatCheckResultVersion changes when a kept result gains data a reader
-// needs (v2: report ID and findings), so older results are checked again.
-const formatCheckResultVersion = "v2"
+// needs (v2: report ID and findings; v3: text boxes read once, biểu mẫu
+// chuyên ngành checked in the technical scope), so older results are
+// checked again.
+const formatCheckResultVersion = "v3"
 
 func (c *formatCheckCache) redisGet(ctx context.Context, key string, into interface{}) bool {
 	if c.rdb == nil {
@@ -261,6 +263,9 @@ func SessionFormatCheckReport(ctx context.Context, documentID string) *types.Doc
 	}
 	if s := r.Summary; s != nil {
 		report.Summary = &types.DocumentFormatSummary{Pass: s.Pass, Fail: s.Fail, Warn: s.Warn, Skip: s.Skip}
+	}
+	if sc := r.Scope; sc != nil {
+		report.Scope, report.ScopeReason = sc.Used, sc.Reason
 	}
 	// the findings only with the revision their anchors hold for: the
 	// add-in applies nothing to another one

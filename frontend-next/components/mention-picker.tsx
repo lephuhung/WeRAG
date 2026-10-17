@@ -259,28 +259,75 @@ export function MentionPicker({
   );
 }
 
+/* The KB, files and tags quoted into the next turn: icon + name, no type
+ * badge. The remove button sits on the top-right corner and shows on hover
+ * or keyboard focus (always on touch screens). */
+const VISIBLE_MENTIONS = 3;
+
 export function MentionChips({ onRemove }: { onRemove?: (item: MentionRequestItem) => void }) {
+  const { t } = useT();
   const { mentionItems, removeMention } = useChatContext();
+  const [expanded, setExpanded] = useState(false);
+  const overflow = mentionItems.length > VISIBLE_MENTIONS;
+  useEffect(() => {
+    if (!overflow) setExpanded(false);
+  }, [overflow]);
   if (mentionItems.length === 0) return null;
+  const shown = expanded ? mentionItems : mentionItems.slice(0, VISIBLE_MENTIONS);
+  const hidden = mentionItems.length - shown.length;
   return (
-    <div className="mb-2 flex flex-wrap gap-1.5">
-      {mentionItems.map((item) => (
+    <div className="mb-2 flex flex-wrap items-center gap-2 pt-1.5 pr-1.5">
+      {shown.map((item) => (
         <span
           key={`${item.type}:${item.id}:${item.kb_id ?? ""}`}
-          className="flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[13px] font-medium text-ink"
-          title={item.kb_name || item.name}
+          className="group relative flex max-w-[240px] items-center gap-2 py-0.5 pr-2"
+          title={item.kb_name ? `${item.name} · ${item.kb_name}` : item.name}
         >
-          <span className="caption font-semibold uppercase text-muted">@{item.type}</span>
-          <span className="max-w-[180px] truncate">{item.name}</span>
+          <MentionIcon item={item} />
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium leading-4 text-ink">{item.name}</span>
+            {item.kb_name && <span className="block truncate text-[11px] leading-[14px] text-muted">{item.kb_name}</span>}
+          </span>
           <button
-            className="text-muted hover:text-ink"
+            type="button"
+            className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-hairline bg-canvas text-muted opacity-0 shadow-sm transition-opacity hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
             onClick={() => (onRemove ? onRemove(item) : removeMention(item))}
-            aria-label="Remove"
+            aria-label={`${t("common.remove")} ${item.name}`}
           >
-            ×
+            <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
         </span>
       ))}
+      {overflow && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          title={hidden > 0 ? t("mention.more", { count: hidden }) : t("mention.less")}
+          className="rounded-full px-2 py-0.5 text-[12.5px] font-medium text-muted transition-colors hover:bg-surface-strong hover:text-ink"
+        >
+          {hidden > 0 ? `+${hidden}` : t("mention.less")}
+        </button>
+      )}
     </div>
+  );
+}
+
+function MentionIcon({ item }: { item: MentionRequestItem }) {
+  if (item.type === "file" || item.type === "document") return <FileTypeIcon name={item.name} fileType={item.file_type} className="h-6 w-5" />;
+  return (
+    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] ${item.type === "kb" ? "bg-primary/10 text-primary" : "bg-surface-strong text-muted"}`}>
+      {item.type === "kb" ? (
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+          <path d="M4 5.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+          <path d="M4 11.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+        </svg>
+      ) : (
+        <IconDoc className="h-3.5 w-3.5" />
+      )}
+    </span>
   );
 }

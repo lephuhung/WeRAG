@@ -18,19 +18,19 @@ func TestListTopicsShowsUnpromotedSubjects(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	tenantRepo.set(1, trackingConfig(3))
 
-	require.Empty(t, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
-	require.Empty(t, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
+	require.Empty(t, sighting(svc, ctx, 1, []string{"quản lý văn bản đi đến"}))
+	require.Empty(t, sighting(svc, ctx, 2, []string{"quản lý văn bản đi đến"}))
 
 	topics, total, err := svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, topics, 1)
-	require.Equal(t, "门店排班管理", topics[0].Topic)
+	require.Equal(t, "quản lý văn bản đi đến", topics[0].Topic)
 	require.Equal(t, 2, topics[0].Hits)
 	require.Equal(t, 3, topics[0].Threshold)
 	require.NotEmpty(t, topics[0].ID)
 
-	require.Equal(t, []string{"门店排班管理"}, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
+	require.Equal(t, []string{"quản lý văn bản đi đến"}, sighting(svc, ctx, 3, []string{"quản lý văn bản đi đến"}))
 
 	topics, total, err = svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
@@ -44,7 +44,7 @@ func TestListTopicsDoesNotLeakAcrossPeople(t *testing.T) {
 	bob := enabledCtx(t, tenantRepo, 1, "bob")
 	tenantRepo.set(1, trackingConfig(3))
 
-	svc.ObserveQuestionTopics(alice, []string{"医学影像分割"})
+	svc.ObserveQuestionTopics(alice, []string{"số hóa hồ sơ lưu trữ"})
 	topics, total, err := svc.ListTopics(bob, 10, 0)
 	require.NoError(t, err)
 	require.Zero(t, total)
@@ -56,7 +56,7 @@ func TestPromoteTopicCreatesAnInterestImmediately(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	tenantRepo.set(1, trackingConfig(5))
 
-	require.Empty(t, svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"}))
+	require.Empty(t, svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"}))
 	topics, _, err := svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
 	require.Len(t, topics, 1)
@@ -65,7 +65,7 @@ func TestPromoteTopicCreatesAnInterestImmediately(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.MemoryKindInterest, item.Kind)
 	require.Equal(t, types.MemoryOriginManual, item.Origin)
-	require.Equal(t, "门店排班管理", item.Content)
+	require.Equal(t, "quản lý văn bản đi đến", item.Content)
 
 	left, total, err := svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
@@ -86,8 +86,8 @@ func TestDeleteTopicStopsAutomaticPromotion(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	tenantRepo.set(1, trackingConfig(3))
 
-	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
-	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
+	svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"})
+	svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"})
 	topics, _, err := svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
 	require.Len(t, topics, 1)
@@ -99,7 +99,7 @@ func TestDeleteTopicStopsAutomaticPromotion(t *testing.T) {
 	require.Empty(t, left)
 
 	for i := 0; i < 3; i++ {
-		svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
+		svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"})
 	}
 	items, itemTotal, err := svc.ListItems(ctx, "", 10, 0)
 	require.NoError(t, err)
@@ -117,8 +117,8 @@ func TestClearDropsUnpromotedTopics(t *testing.T) {
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	tenantRepo.set(1, trackingConfig(3))
 
-	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
-	svc.ObserveQuestionTopics(ctx, []string{"门店排班管理"})
+	svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"})
+	svc.ObserveQuestionTopics(ctx, []string{"quản lý văn bản đi đến"})
 	topics, total, err := svc.ListTopics(ctx, 10, 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)

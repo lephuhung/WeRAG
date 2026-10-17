@@ -8,26 +8,26 @@ import (
 )
 
 const (
-	// LKEAPBaseURL 腾讯云知识引擎原子能力 (LKEAP) 兼容 OpenAI 协议的 BaseURL
+	// LKEAPBaseURL BaseURL tương thích giao thức OpenAI của Tencent Cloud LKEAP
 	LKEAPBaseURL = "https://api.lkeap.cloud.tencent.com/v1"
-	// LKEAPRerankBaseURL 腾讯云知识引擎原子能力 Rerank API 域名（TC3 签名）
+	// LKEAPRerankBaseURL tên miền Rerank API của Tencent Cloud LKEAP (ký TC3)
 	LKEAPRerankBaseURL = "https://lkeap.tencentcloudapi.com"
 )
 
-// LKEAPProvider 实现腾讯云 LKEAP 的 Provider 接口
-// 支持 DeepSeek-R1, DeepSeek-V3 系列模型，具备思维链能力
+// LKEAPProvider triển khai giao diện Provider cho Tencent Cloud LKEAP
+// Hỗ trợ các dòng mô hình DeepSeek-R1, DeepSeek-V3 có khả năng suy luận chuỗi (thinking)
 type LKEAPProvider struct{}
 
 func init() {
 	Register(&LKEAPProvider{})
 }
 
-// Info 返回 LKEAP provider 的元数据
+// Info trả về metadata của provider LKEAP
 func (p *LKEAPProvider) Info() ProviderInfo {
 	return ProviderInfo{
 		Name:        ProviderLKEAP,
-		DisplayName: "腾讯云 LKEAP",
-		Description: "DeepSeek-R1, DeepSeek-V3, lke-reranker-base 等",
+		DisplayName: "Tencent Cloud LKEAP",
+		Description: "DeepSeek-R1, DeepSeek-V3, lke-reranker-base, ...",
 		DefaultURLs: map[types.ModelType]string{
 			types.ModelTypeKnowledgeQA: LKEAPBaseURL,
 			types.ModelTypeRerank:      LKEAPRerankBaseURL,
@@ -40,7 +40,7 @@ func (p *LKEAPProvider) Info() ProviderInfo {
 	}
 }
 
-// ValidateConfig 验证 LKEAP provider Configuration
+// ValidateConfig kiểm tra cấu hình provider LKEAP
 func (p *LKEAPProvider) ValidateConfig(config *Config) error {
 	if config.APIKey == "" {
 		return fmt.Errorf("API key is required for LKEAP provider")
@@ -51,19 +51,19 @@ func (p *LKEAPProvider) ValidateConfig(config *Config) error {
 	return nil
 }
 
-// IsLKEAPDeepSeekV3Model 检查是否为 DeepSeek V3.x 系列模型
-// V3.x 系列支持通过 Thinking Parameters 控制思维链开关
+// IsLKEAPDeepSeekV3Model kiểm tra có phải mô hình dòng DeepSeek V3.x không
+// Dòng V3.x cho phép bật/tắt suy luận qua tham số Thinking
 func IsLKEAPDeepSeekV3Model(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek-v3")
 }
 
-// IsLKEAPDeepSeekR1Model 检查是否为 DeepSeek R1 系列模型
-// R1 系列默认开启思维链
+// IsLKEAPDeepSeekR1Model kiểm tra có phải mô hình dòng DeepSeek R1 không
+// Dòng R1 mặc định bật suy luận
 func IsLKEAPDeepSeekR1Model(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "deepseek-r1")
 }
 
-// IsLKEAPThinkingModel 检查是否为支持思维链的 LKEAP 模型
+// IsLKEAPThinkingModel kiểm tra có phải mô hình LKEAP hỗ trợ suy luận không
 func IsLKEAPThinkingModel(modelName string) bool {
 	return IsLKEAPDeepSeekR1Model(modelName) || IsLKEAPDeepSeekV3Model(modelName)
 }

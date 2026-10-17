@@ -104,7 +104,7 @@ func TestRewriteStorageURLs_MinIOFallbackViaGlobal(t *testing.T) {
 			},
 		},
 	}
-	in := `![知识助理"知识库"管理视图界面](minio://wizard-test/10000/exports/c91cf852.png)`
+	in := `![Trợ lý tri thức "kho tri thức" giao diện quản lý](minio://wizard-test/10000/exports/c91cf852.png)`
 	resolver := newIMFileServiceResolver(tenant, stub)
 	out := rewriteStorageURLs(context.Background(), in, resolver)
 	assert.Contains(t, out, "https://minio.example/presigned")

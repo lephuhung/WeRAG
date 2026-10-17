@@ -2,8 +2,8 @@ package provider
 
 import "testing"
 
-// TestIsOpenAIReasoningOrGPT5Model 验证 GPT-5 / o-series 模型识别逻辑。
-// 见 issue #1283：这些模型必须使用 max_completion_tokens 替代 max_tokens。
+// TestIsOpenAIReasoningOrGPT5Model kiểm tra logic nhận diện mô hình GPT-5 / o-series.
+// Xem issue #1283: các mô hình này phải dùng max_completion_tokens thay cho max_tokens.
 func TestIsOpenAIReasoningOrGPT5Model(t *testing.T) {
 	cases := []struct {
 		name  string

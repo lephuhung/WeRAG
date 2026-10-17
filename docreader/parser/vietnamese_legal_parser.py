@@ -156,7 +156,10 @@ def _collapse_degenerate_tail(text: str) -> str:
         prev_end, prev_bound = b.end(), b.start()
     segs.append((_degen_norm(text[prev_end:]), prev_bound))
 
-    while segs and segs[-1][0] == "":
+    # Trailing blank segments carry no text; a bare number is the stub of
+    # the next list item cut off by max_tokens ("566. X\n5") and would
+    # hide the run in front of it.
+    while segs and (segs[-1][0] == "" or segs[-1][0].isdigit()):
         segs.pop()
     if not segs:
         return text
@@ -240,8 +243,13 @@ def _ocr_page_image(
     prompt: str = "",
     vllm_xargs: bool = False,
     repetition_penalty=None,
+    usage_sink: list | None = None,
 ) -> str:
-    """One page image → OCR text via an OpenAI-compatible chat endpoint."""
+    """One page image → OCR text via an OpenAI-compatible chat endpoint.
+
+    ``usage_sink`` collects the endpoint's ``usage`` object of each call so
+    the caller can report what the OCR cost (list.append is thread-safe).
+    """
     data_uri = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
     payload = {
         "model": model,
@@ -279,7 +287,10 @@ def _ocr_page_image(
             timeout=VN_OCR_TIMEOUT,
         )
         resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"]
+        body = resp.json()
+        text = body["choices"][0]["message"]["content"]
+        if usage_sink is not None and isinstance(body.get("usage"), dict):
+            usage_sink.append(body["usage"])
         return _collapse_degenerate_tail(_strip_ocr_markup(text or ""))
     except Exception as e:
         logger.error("[VN-OCR] page %d failed: %s", page_no, e)
@@ -412,6 +423,7 @@ class VietnameseLegalPDFParser(PDFParser):
             return doc
 
         results = {}
+        usage_sink: list = []
         workers = max(1, VN_OCR_CONCURRENCY)
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futs = {
@@ -425,6 +437,7 @@ class VietnameseLegalPDFParser(PDFParser):
                     prompt=self._ocr_prompt,
                     vllm_xargs=self._ocr_vllm_xargs,
                     repetition_penalty=self._ocr_repetition_penalty,
+                    usage_sink=usage_sink,
                 ): i
                 for i, (page_no, ref) in jobs.items()
             }
@@ -456,6 +469,13 @@ class VietnameseLegalPDFParser(PDFParser):
         doc.content = "\n\n".join(blocks)
         doc.metadata["vn_ocr_pages"] = ocr_pages
         doc.metadata["vn_ocr_model"] = self._ocr_model
+        # Token usage of the OCR calls (vLLM reports it like any chat
+        # completion); the Go side bills chat-attachment OCR with it.
+        prompt_tokens = sum(int(u.get("prompt_tokens") or 0) for u in usage_sink)
+        completion_tokens = sum(int(u.get("completion_tokens") or 0) for u in usage_sink)
+        if prompt_tokens or completion_tokens:
+            doc.metadata["vn_ocr_prompt_tokens"] = prompt_tokens
+            doc.metadata["vn_ocr_completion_tokens"] = completion_tokens
         if ocr_pages:
             # Only claim vn_ocr when every scanned-page image was
             # replaced. With any residual scanned image left for the

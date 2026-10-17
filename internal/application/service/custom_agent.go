@@ -499,7 +499,7 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 	// Create a new agent with copied data
 	newAgent := &types.CustomAgent{
 		ID:          uuid.New().String(),
-		Name:        sourceAgent.Name + " (副本)",
+		Name:        sourceAgent.Name + " (bản sao)",
 		Description: sourceAgent.Description,
 		Avatar:      sourceAgent.Avatar,
 		IsBuiltin:   false, // Copied agents are never built-in

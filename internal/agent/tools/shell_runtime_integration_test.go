@@ -127,7 +127,7 @@ sys.stdout.write(sys.stdin.read())
 	require.NoError(t, hostSkills.Initialize(ctx))
 	registry = NewToolRegistry()
 	registry.RegisterTool(NewShellExecTool(mgr, nil).WithSkillEnvironment(hostSkills))
-	stdin := "literal $HOME and $(printf wrong)\n中文\n\n"
+	stdin := "literal $HOME and $(printf wrong)\ntiếng Việt\n\n"
 	args, err := json.Marshal(ShellExecInput{
 		SkillName: "host-probe", Command: `python3 "$WEKNORA_SKILL_DIR/scripts/run.py" 'argument with spaces'`, Stdin: stdin,
 	})

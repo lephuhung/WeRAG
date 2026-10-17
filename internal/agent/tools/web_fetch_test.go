@@ -189,7 +189,7 @@ func webFetchArgs(items ...WebFetchItem) json.RawMessage {
 
 func TestWebFetchPaginationUsesSnapshotAndUnicodeOffsets(t *testing.T) {
 	const rawURL = "https://example.com/page"
-	fetcher := newStubWebContentFetcher(map[string]string{rawURL: "你好世界abcdef"}, nil)
+	fetcher := newStubWebContentFetcher(map[string]string{rawURL: "Việtabcdef"}, nil)
 	tool := newWebFetchTool(fetcher)
 	registry := NewToolRegistry()
 	registry.RegisterTool(tool)
@@ -197,14 +197,14 @@ func TestWebFetchPaginationUsesSnapshotAndUnicodeOffsets(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, first.Success, first.Error)
 	row := first.Data["results"].([]map[string]interface{})[0]
-	assert.Equal(t, "你好世", row["raw_content"])
+	assert.Equal(t, "Việ", row["raw_content"])
 	assert.Equal(t, 3, row["next_offset"])
 	fetcher.contents[rawURL] = "changed page"
 	second, err := registry.ExecuteTool(t.Context(), ToolWebFetch, webFetchArgs(WebFetchItem{URL: rawURL, Offset: 3}))
 	require.NoError(t, err)
 	require.True(t, second.Success, second.Error)
 	row = second.Data["results"].([]map[string]interface{})[0]
-	assert.Equal(t, "界abcdef", row["raw_content"])
+	assert.Equal(t, "tabcdef", row["raw_content"])
 	assert.Equal(t, false, row["truncated"])
 	assert.Equal(t, 1, fetcher.callCount[rawURL])
 }
@@ -214,7 +214,7 @@ func TestWebFetchBatchRetainsEveryPageWithinBudget(t *testing.T) {
 	items := []WebFetchItem{}
 	for i := 0; i < 8; i++ {
 		u := fmt.Sprintf("https://example.com/%d", i)
-		contents[u] = strings.Repeat("页面内容", 5000)
+		contents[u] = strings.Repeat("nội ", 5000)
 		items = append(items, WebFetchItem{URL: u})
 	}
 	tool := newWebFetchTool(newStubWebContentFetcher(contents, nil))

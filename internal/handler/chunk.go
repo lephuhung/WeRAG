@@ -40,15 +40,15 @@ func NewChunkHandler(service interfaces.ChunkService, kgService interfaces.Knowl
 }
 
 // GetChunkByIDOnly godoc
-// @Summary      通过ID获取分块
-// @Description  仅通过分块ID获取分块Details （不需要knowledge_id）；支持共享Knowledge Base下的分块访问
-// @Tags         分块管理
+// @Summary      Lấy đoạn (chunk) theo ID
+// @Description  Lấy chi tiết đoạn chỉ bằng ID đoạn (không cần knowledge_id); hỗ trợ truy cập đoạn trong kho tri thức được chia sẻ
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "分块ID"
-// @Success      200  {object}  map[string]interface{}  "分块Details "
-// @Failure      400  {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404  {object}  errors.AppError         "分块不存在"
+// @Param        id   path      string  true  "ID đoạn (chunk)"
+// @Success      200  {object}  map[string]interface{}  "chi tiết đoạn (chunk)"
+// @Failure      400  {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404  {object}  errors.AppError         "không tìm thấy đoạn (chunk)"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/by-id/{id} [get]
@@ -97,18 +97,18 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 }
 
 // ListKnowledgeChunks godoc
-// @Summary      获取知识分块List
-// @Description  Get specified 知识下的所有分块List ，支持分页
-// @Tags         分块管理
+// @Summary      Lấy danh sách đoạn (chunk) của tài liệu
+// @Description  Lấy danh sách mọi đoạn thuộc tài liệu chỉ định, có phân trang
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        knowledge_id       path      string  true   "知识ID"
-// @Param        page               query     int     false  "页码"  default(1)
-// @Param        page_size          query     int     false  "每页数量"  default(10)
-// @Param        chunk_type         query     []string false "分块类型（默认 text，可重复）"
-// @Param        include_image_text query     bool    false  "将 image_ocr/image_caption 子分块的文本内联到 content 的图片占位处（扫描件需要）"
-// @Success      200           {object}  map[string]interface{}  "分块List "
-// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
+// @Param        knowledge_id       path      string  true   "ID tài liệu"
+// @Param        page               query     int     false  "số trang"  default(1)
+// @Param        page_size          query     int     false  "số mục mỗi trang"  default(10)
+// @Param        chunk_type         query     []string false "loại đoạn (mặc định text, có thể lặp)"
+// @Param        include_image_text query     bool    false  "chèn văn bản của các đoạn con image_ocr/image_caption vào chỗ giữ ảnh trong content (cần cho bản scan)"
+// @Success      200           {object}  map[string]interface{}  "danh sách đoạn (chunk)"
+// @Failure      400           {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/{knowledge_id} [get]
@@ -232,17 +232,17 @@ func (h *ChunkHandler) fetchChunkAndVerifyOwnership(c *gin.Context) (*types.Chun
 }
 
 // UpdateChunk godoc
-// @Summary      Update 分块
-// @Description  Update 指定分块的内容和属性
-// @Tags         分块管理
+// @Summary      Cập nhật đoạn (chunk)
+// @Description  Cập nhật nội dung và thuộc tính của đoạn chỉ định
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        knowledge_id  path      string              true  "知识ID"
-// @Param        id            path      string              true  "分块ID"
-// @Param        request       body      UpdateChunkRequest  true  "Update 请求"
-// @Success      200           {object}  map[string]interface{}  "Update 后的分块"
-// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404           {object}  errors.AppError         "分块不存在"
+// @Param        knowledge_id  path      string              true  "ID tài liệu"
+// @Param        id            path      string              true  "ID đoạn (chunk)"
+// @Param        request       body      UpdateChunkRequest  true  "yêu cầu cập nhật"
+// @Success      200           {object}  map[string]interface{}  "đoạn (chunk) sau khi cập nhật"
+// @Failure      400           {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404           {object}  errors.AppError         "không tìm thấy đoạn (chunk)"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/{knowledge_id}/{id} [put]
@@ -391,16 +391,16 @@ func (h *ChunkHandler) RegenerateGeneratedQuestions(c *gin.Context) {
 }
 
 // DeleteChunk godoc
-// @Summary      Delete 分块
-// @Description  Delete 指定的分块
-// @Tags         分块管理
+// @Summary      Xoá đoạn (chunk)
+// @Description  Xoá đoạn chỉ định
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        knowledge_id  path      string  true  "知识ID"
-// @Param        id            path      string  true  "分块ID"
-// @Success      200           {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
-// @Failure      404           {object}  errors.AppError         "分块不存在"
+// @Param        knowledge_id  path      string  true  "ID tài liệu"
+// @Param        id            path      string  true  "ID đoạn (chunk)"
+// @Success      200           {object}  map[string]interface{}  "xoá thành công"
+// @Failure      400           {object}  errors.AppError         "tham số không hợp lệ"
+// @Failure      404           {object}  errors.AppError         "không tìm thấy đoạn (chunk)"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/{knowledge_id}/{id} [delete]
@@ -427,14 +427,14 @@ func (h *ChunkHandler) DeleteChunk(c *gin.Context) {
 }
 
 // DeleteChunksByKnowledgeID godoc
-// @Summary      Delete 知识下所有分块
-// @Description  Delete 指定知识下的所有分块
-// @Tags         分块管理
+// @Summary      Xoá mọi đoạn (chunk) của tài liệu
+// @Description  Xoá toàn bộ đoạn thuộc tài liệu chỉ định
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        knowledge_id  path      string  true  "知识ID"
-// @Success      200           {object}  map[string]interface{}  "Delete 成功"
-// @Failure      400           {object}  errors.AppError         "请求Parameters 错误"
+// @Param        knowledge_id  path      string  true  "ID tài liệu"
+// @Success      200           {object}  map[string]interface{}  "xoá thành công"
+// @Failure      400           {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/{knowledge_id} [delete]
@@ -462,16 +462,16 @@ func (h *ChunkHandler) DeleteChunksByKnowledgeID(c *gin.Context) {
 }
 
 // DeleteGeneratedQuestion godoc
-// @Summary      Delete 生成的问题
-// @Description  Delete 分块中生成的问题
-// @Tags         分块管理
+// @Summary      Xoá câu hỏi đã sinh
+// @Description  Xoá một câu hỏi đã sinh trong đoạn (chunk)
+// @Tags         Đoạn (chunk)
 // @Accept       json
 // @Produce      json
-// @Param        id       path      string                       true  "分块ID"
-// @Param        request  body      object{question_id=string}   true  "问题ID"
-// @Success      200      {object}  map[string]interface{}       "Delete 成功"
-// @Failure      400      {object}  errors.AppError              "请求Parameters 错误"
-// @Failure      404      {object}  errors.AppError              "分块不存在"
+// @Param        id       path      string                       true  "ID đoạn (chunk)"
+// @Param        request  body      object{question_id=string}   true  "ID câu hỏi"
+// @Success      200      {object}  map[string]interface{}       "xoá thành công"
+// @Failure      400      {object}  errors.AppError              "tham số không hợp lệ"
+// @Failure      404      {object}  errors.AppError              "không tìm thấy đoạn (chunk)"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /chunks/by-id/{id}/questions [delete]

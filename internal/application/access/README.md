@@ -10,7 +10,8 @@ codes, RBAC rollout behavior, and response projection at their existing boundari
 permission decision; `ResolveKB`, `ResolveKBWithInvite`, `ResolveKBForDownload`
 and `ResolveKBForManage` are thin wrappers that project its `Decision` onto
 `KBAccess` (which carries `Source`). Order: API-key/machine principals keep the
-owner-tenant-only rule; SuperAdmin → every right; owner-tenant Admin → every
+owner-tenant-only rule (plus, for keys of the platform tenant only, Admin on
+platform-public KBs stored in that tenant); SuperAdmin → every right; owner-tenant Admin → every
 right; owner-tenant member on `tenant`/`published` → `member_default`
 (view | contribute) + download; `public`/`published` → every signed-in human
 reads and downloads; `restricted` (and `tenant` read from outside) → ACL only

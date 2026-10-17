@@ -28,14 +28,14 @@ type Region struct {
 }
 
 var (
-	// RegionFeishu is the Chinese mainland cloud (飞书). Its users are addressed
+	// RegionFeishu is the Chinese mainland cloud (Feishu). Its users are addressed
 	// in Chinese, matching the console and app language.
 	RegionFeishu = Region{
 		Platform:           im.PlatformFeishu,
 		OpenBaseURL:        feishuOpenBaseURL,
 		Label:              "Feishu",
-		ThinkingText:       "正在思考...",
-		ImageFallbackLabel: "图片",
+		ThinkingText:       "Đang suy nghĩ...",
+		ImageFallbackLabel: "Hình ảnh",
 	}
 
 	// RegionLark is the international cloud (Lark), addressed in English.

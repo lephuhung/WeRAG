@@ -20,7 +20,7 @@ func newConsolidationHarness(t *testing.T) (*Service, *stubTenantRepo, *stubMode
 		workspaceModels: []*types.Model{
 			{ID: "chat-1", Type: types.ModelTypeKnowledgeQA, Status: types.ModelStatusActive},
 		},
-		response: `{"statement":"回答直接给结论，不要铺垫"}`,
+		response: `{"statement":"Trả lời đi thẳng vào kết luận, không dẫn dắt"}`,
 	}
 	svc.modelService = models
 	return svc, tenantRepo, models
@@ -41,8 +41,8 @@ func seedItem(
 
 func seedSimilarPreferences(t *testing.T, svc *Service, ctx context.Context, scope interfaces.MemoryScope) {
 	t.Helper()
-	seedItem(t, svc, ctx, scope, types.MemoryKindPreference, "回答风格", "回答直接给结论不要铺垫", "k-a")
-	seedItem(t, svc, ctx, scope, types.MemoryKindPreference, "回答风格", "回答直接给结论不用铺垫", "k-b")
+	seedItem(t, svc, ctx, scope, types.MemoryKindPreference, "Phong cách trả lời", "Trả lời đi thẳng vào kết luận không dẫn dắt", "k-a")
+	seedItem(t, svc, ctx, scope, types.MemoryKindPreference, "Phong cách trả lời", "Trả lời đi thẳng vào kết luận khỏi dẫn dắt", "k-b")
 }
 
 func TestConsolidateNowMergesNearDuplicatesWithoutWaiting(t *testing.T) {
@@ -74,13 +74,13 @@ func TestConsolidateNowMergesNearDuplicatesWithoutWaiting(t *testing.T) {
 // seeing the one contradiction a person would want resolved.
 func TestAReviewSomeoneAskedForShowsTheModelBorderlinePairs(t *testing.T) {
 	svc, tenantRepo, models := newConsolidationHarness(t)
-	models.response = `{"statement":"我叫wizardchen，我是一个作家"}`
+	models.response = `{"statement":"Tôi tên là Minh Châu, tôi là một nhà văn"}`
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
 	scope := scopeFor(t, ctx)
 	_, err := svc.repo.EnsureSubject(ctx, scope)
 	require.NoError(t, err)
-	seedItem(t, svc, ctx, scope, types.MemoryKindProfile, "", "我叫wizard，我是一个画家", "p-a")
-	seedItem(t, svc, ctx, scope, types.MemoryKindProfile, "职业", "我叫wizardchen，我是一个作家", "p-b")
+	seedItem(t, svc, ctx, scope, types.MemoryKindProfile, "", "Tôi tên là Minh, tôi là một họa sĩ", "p-a")
+	seedItem(t, svc, ctx, scope, types.MemoryKindProfile, "Nghề nghiệp", "Tôi tên là Minh Châu, tôi là một nhà văn", "p-b")
 
 	items, _, err := svc.repo.ListItems(ctx, scope, types.MemoryStatusActive, 50, 0)
 	require.NoError(t, err)
@@ -147,8 +147,8 @@ func TestAReviewThatChangesNothingSaysWhy(t *testing.T) {
 	scope := scopeFor(t, ctx)
 	_, err := svc.repo.EnsureSubject(ctx, scope)
 	require.NoError(t, err)
-	seedItem(t, svc, ctx, scope, types.MemoryKindInterest, "小微SDK设备接入", "小微SDK设备接入", "i-a")
-	seedItem(t, svc, ctx, scope, types.MemoryKindInterest, "WeKnora混合检索", "WeKnora混合检索", "i-b")
+	seedItem(t, svc, ctx, scope, types.MemoryKindInterest, "tích hợp dịch vụ công trực tuyến", "tích hợp dịch vụ công trực tuyến", "i-a")
+	seedItem(t, svc, ctx, scope, types.MemoryKindInterest, "WeKnora tìm kiếm lai", "WeKnora tìm kiếm lai", "i-b")
 
 	result, err := svc.ConsolidateNow(ctx)
 	require.NoError(t, err)

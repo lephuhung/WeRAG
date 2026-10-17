@@ -85,7 +85,7 @@ func TestBuildChatCompletionRequest_ParallelToolCalls(t *testing.T) {
 
 func TestBuildChatCompletionRequest_MCPToolsFormat(t *testing.T) {
 	chat := newTestRemoteChat(t)
-	messages := []Message{{Role: "user", Content: "查询乙醇的理化性质"}}
+	messages := []Message{{Role: "user", Content: "Tra cứu tính chất lý hóa của ethanol"}}
 
 	mcpTools := []Tool{
 		{
@@ -129,9 +129,9 @@ func TestBuildChatCompletionRequest_MCPToolsFormat(t *testing.T) {
 	}
 }
 
-// TestBuildChatCompletionRequest_GPT5MaxCompletionTokens 验证 GPT-5 / o-series
-// 模型的 MaxTokens 自动迁移到 MaxCompletionTokens，且采样参数被剔除。
-// 见 issue #1283：Azure OpenAI 的 gpt-5 系列模型不再支持 max_tokens 字段。
+// TestBuildChatCompletionRequest_GPT5MaxCompletionTokens kiểm tra mô hình GPT-5 / o-series
+// tự chuyển MaxTokens sang MaxCompletionTokens và loại bỏ các tham số lấy mẫu.
+// Xem issue #1283: dòng gpt-5 của Azure OpenAI không còn hỗ trợ trường max_tokens.
 func TestBuildChatCompletionRequest_GPT5MaxCompletionTokens(t *testing.T) {
 	build := func(t *testing.T, providerName, modelName string) *RemoteAPIChat {
 		t.Helper()
@@ -329,13 +329,13 @@ func TestApplyStreamToolCallMetadata(t *testing.T) {
 		string(toolCalls[0].ProviderMetadata["google"]))
 }
 
-// TestRemoteAPIChat 综合测试 Remote API Chat 的所有功能
+// TestRemoteAPIChat kiểm tra tổng hợp mọi chức năng của Remote API Chat
 func TestRemoteAPIChat(t *testing.T) {
-	// 获取环境变量
+	// Lấy biến môi trường
 	deepseekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
 	aliyunAPIKey := os.Getenv("ALIYUN_API_KEY")
 
-	// 定义测试配置
+	// Định nghĩa cấu hình test
 	testConfigs := []struct {
 		name    string
 		apiKey  string
@@ -392,7 +392,7 @@ func TestRemoteAPIChat(t *testing.T) {
 		},
 	}
 
-	// 测试消息
+	// Tin nhắn test
 	testMessages := []Message{
 		{
 			Role:    "user",
@@ -400,31 +400,31 @@ func TestRemoteAPIChat(t *testing.T) {
 		},
 	}
 
-	// 测试选项
+	// Tùy chọn test
 	testOptions := &ChatOptions{
 		Temperature: 0.7,
 		MaxTokens:   100,
 	}
 
-	// 创建上下文
+	// Tạo context
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 遍历所有配置进行测试
+	// Chạy test lần lượt với từng cấu hình
 	for _, tc := range testConfigs {
 		t.Run(tc.name, func(t *testing.T) {
-			// 检查 API Key
+			// Kiểm tra API Key
 			if tc.apiKey == "" {
 				t.Skip(tc.skipMsg)
 			}
 
-			// 创建聊天实例
+			// Tạo thể hiện chat
 			chat, err := NewRemoteAPIChat(tc.config)
 			require.NoError(t, err)
 			assert.Equal(t, tc.config.ModelName, chat.GetModelName())
 			assert.Equal(t, tc.config.ModelID, chat.GetModelID())
 
-			// 测试基本聊天功能
+			// Kiểm tra chức năng chat cơ bản
 			t.Run("Basic Chat", func(t *testing.T) {
 				response, err := chat.Chat(ctx, testMessages, testOptions)
 				require.NoError(t, err)
