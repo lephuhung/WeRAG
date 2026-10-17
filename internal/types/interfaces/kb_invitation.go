@@ -63,10 +63,11 @@ type KBInvitationRepository interface {
 	// ownerTenantID, the KB's CURRENT owner. Invites issued by a previous
 	// owner never count.
 	HasAcceptedInviteForOwner(ctx context.Context, kbID, recipientUserID string, ownerTenantID uint64) (bool, error)
-	// ListAcceptedKBIDsByUser returns the KB IDs on which userID holds a
-	// live (accepted, unexpired) invite — recipient-side discovery. Rows
-	// are not owner-checked; callers re-check each KB (HasAcceptedInvite).
-	ListAcceptedKBIDsByUser(ctx context.Context, userID string) ([]string, error)
+	// ListLiveInvitedKBIDsByUser returns, in one query, the KB IDs on which
+	// userID holds a live invite: accepted, unexpired, and issued by the
+	// KB's CURRENT owner (joined on knowledge_bases.owner_tenant_id).
+	// Recipient-side discovery; deleted KBs are excluded.
+	ListLiveInvitedKBIDsByUser(ctx context.Context, userID string) ([]string, error)
 	// DeleteByKBID soft-deletes all invite rows for a KB.
 	DeleteByKBID(ctx context.Context, kbID string) error
 }
@@ -92,6 +93,7 @@ type KBInvitationService interface {
 	// issued by the KB's current owner (implements access.KBInviteLookup).
 	HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error)
 	// InvitedKBIDs returns the KB IDs on which userID holds a live
-	// (accepted, unexpired) invite — recipient-side discovery.
+	// (accepted, unexpired, issued by the KB's current owner) invite —
+	// recipient-side discovery.
 	InvitedKBIDs(ctx context.Context, userID string) ([]string, error)
 }

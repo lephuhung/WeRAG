@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -129,4 +130,67 @@ func TestAPIKeyNeverCountsAsSuperAdmin(t *testing.T) {
 
 func withSystemAdmin(ctx context.Context) context.Context {
 	return context.WithValue(ctx, types.SystemAdminContextKey, true)
+}
+
+// guestHarness runs the JWT half of Auth with no X-Tenant-ID in front of
+// the KB-creating routes guarded as in production (RequireTenantAdmin).
+func guestHarness(t *testing.T, user *types.User, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	cfg := cfgWithRBAC(true)
+	members := newFakeMemberService()
+	tenants := &fakeTenantService{tenant: &types.Tenant{ID: user.TenantID}}
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		if authenticateJWTUser(c, tenants, members, cfg, user, user.TenantID) {
+			c.Next()
+		}
+	})
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	r.POST("/api/v1/knowledge-bases", RequireTenantAdmin(cfg), ok)
+	r.POST("/api/v1/knowledge-bases/copy", RequireTenantAdmin(cfg), ok)
+	r.POST("/api/v1/knowledge-bases/:id/duplicate", RequireTenantAdmin(cfg), ok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+	return w
+}
+
+// Phase 2: a Guest (no active membership) cannot create, copy or
+// duplicate a KB: tenantless it gets TENANT_REQUIRED, with a stale home
+// tenant it gets 403.
+func TestGuestCannotCreateKnowledgeBase(t *testing.T) {
+	paths := []string{
+		"/api/v1/knowledge-bases",
+		"/api/v1/knowledge-bases/copy",
+		"/api/v1/knowledge-bases/kb-1/duplicate",
+	}
+	for _, p := range paths {
+		w := guestHarness(t, &types.User{ID: "guest"}, http.MethodPost, p)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "TENANT_REQUIRED") {
+			t.Errorf("tenantless guest POST %s = %d %s, want 409 TENANT_REQUIRED", p, w.Code, w.Body.String())
+		}
+		w = guestHarness(t, &types.User{ID: "guest", TenantID: 7}, http.MethodPost, p)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("guest with stale home tenant POST %s = %d, want 403", p, w.Code)
+		}
+	}
+}
+
+// RequireTenantAdmin itself refuses a caller without a tenant role even if
+// a tenant context is present (defence in depth for the empty role).
+func TestRequireTenantAdminRefusesEmptyRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := cfgWithRBAC(true)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(types.WithCaller(c.Request.Context(),
+			types.Caller{TenantID: 7, UserID: "guest"}))
+		c.Next()
+	})
+	r.POST("/api/v1/knowledge-bases", RequireTenantAdmin(cfg), func(c *gin.Context) { c.Status(http.StatusOK) })
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/knowledge-bases", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("empty role = %d, want 403", w.Code)
+	}
 }

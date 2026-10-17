@@ -36,7 +36,8 @@ func kbWritableIDs(
 		if !scope.FullAccess && !scope.HasCapability(types.APIKeyCapabilityIngest) {
 			return nil
 		}
-	} else if roleEnforced && !caller.Role.HasPermission(types.TenantRoleMember) {
+	} else if roleEnforced && !caller.Role.HasPermission(types.TenantRoleMember) &&
+		!access.IsExplicitHumanSuperAdmin(ctx, caller) {
 		return nil
 	}
 	seen := make(map[string]bool, len(targets))

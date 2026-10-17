@@ -62,10 +62,11 @@ type CreatorLookup func(c *gin.Context) (creatorID string, err error)
 // affects identity resolution (a caller without an active membership
 // never reaches a tenant route at all).
 //
-// The auth middleware always sets a TenantRole; if for some reason it
-// is missing, TenantRoleFromContext defaults to TenantRoleMember, which
-// is the safest fail-closed value: anything that requires more than
-// Member will reject.
+// A caller without a tenant role (no active membership: a SuperAdmin
+// visiting a tenant, or a missing context value) has the empty role;
+// TenantRoleFromContext returns "" in that case, which satisfies no role
+// gate (fail closed). SuperAdmins pass through the explicit branch above,
+// never through a defaulted role.
 func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
 	return func(c *gin.Context) {

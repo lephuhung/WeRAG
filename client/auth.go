@@ -94,11 +94,13 @@ type AuthCapabilities struct {
 type CurrentUserResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
-		User           *AuthUser         `json:"user,omitempty"`
-		Tenant         *AuthTenant       `json:"tenant,omitempty"`
-		Memberships    []AuthMembership  `json:"memberships,omitempty"`
-		TenantRequired bool              `json:"tenant_required,omitempty"`
-		Capabilities   *AuthCapabilities `json:"capabilities,omitempty"`
+		User        *AuthUser        `json:"user,omitempty"`
+		Tenant      *AuthTenant      `json:"tenant,omitempty"`
+		Memberships []AuthMembership `json:"memberships,omitempty"`
+		// MembershipState is "superadmin", "member" or "guest".
+		MembershipState string            `json:"membership_state,omitempty"`
+		TenantRequired  bool              `json:"tenant_required,omitempty"`
+		Capabilities    *AuthCapabilities `json:"capabilities,omitempty"`
 	} `json:"data"`
 }
 

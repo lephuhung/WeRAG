@@ -136,15 +136,22 @@ func (r *kbInvitationRepository) MarkRevoked(ctx context.Context, id string) err
 	return nil
 }
 
-func (r *kbInvitationRepository) ListAcceptedKBIDsByUser(ctx context.Context, userID string) ([]string, error) {
+func (r *kbInvitationRepository) ListLiveInvitedKBIDsByUser(ctx context.Context, userID string) ([]string, error) {
 	if userID == "" {
 		return nil, nil
 	}
 	var ids []string
+	// One query: an invite counts only while the KB still belongs to the
+	// tenant that issued it (same rule as HasAcceptedInviteForOwner).
 	err := r.db.WithContext(ctx).Model(&types.KBInvitation{}).
-		Where("recipient_user_id = ? AND status = ?", userID, types.KBInvitationStatusAccepted).
-		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
-		Pluck("kb_id", &ids).Error
+		Joins("JOIN knowledge_bases ON knowledge_bases.id = kb_invitations.kb_id"+
+			" AND knowledge_bases.owner_tenant_id = kb_invitations.owner_tenant_id"+
+			" AND knowledge_bases.deleted_at IS NULL").
+		Where("kb_invitations.recipient_user_id = ? AND kb_invitations.status = ?",
+			userID, types.KBInvitationStatusAccepted).
+		Where("(kb_invitations.expires_at IS NULL OR kb_invitations.expires_at > ?)", time.Now()).
+		Distinct().
+		Pluck("kb_invitations.kb_id", &ids).Error
 	if err != nil {
 		return nil, err
 	}

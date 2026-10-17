@@ -271,6 +271,8 @@ export type CurrentUserResponse = {
     user: UserInfo;
     tenant?: TenantInfo | null;
     memberships?: MembershipInfo[];
+    /** Account kind: SuperAdmin takes precedence; "member" = ≥1 active membership. */
+    membership_state?: "superadmin" | "member" | "guest";
     tenant_required?: boolean;
     capabilities?: AuthCapabilities;
     preference_defaults?: { browser_search_instructions: string };

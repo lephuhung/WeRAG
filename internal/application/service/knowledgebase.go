@@ -828,20 +828,10 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 						}
 					}
 					if len(fresh) > 0 {
+						// InvitedKBIDs already keeps only invites issued by
+						// each KB's current owner (one joined query).
 						if invitedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, fresh); kerr == nil {
-							// Re-check each row against the KB's current
-							// owner: an invite from a previous owner must
-							// not list the KB.
-							live := make([]*types.KnowledgeBase, 0, len(invitedKBs))
-							for _, kb := range invitedKBs {
-								if kb == nil {
-									continue
-								}
-								if ok, cerr := s.kbInviteService.HasAcceptedInvite(ctx, kb.ID, userID); cerr == nil && ok {
-									live = append(live, kb)
-								}
-							}
-							kbs = appendInvitedKBs(kbs, live)
+							kbs = appendInvitedKBs(kbs, invitedKBs)
 						}
 					}
 				}

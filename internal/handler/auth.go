@@ -678,6 +678,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 			"preference_defaults": gin.H{"browser_search_instructions": types.DefaultBrowserSearchInstructions},
 			"tenant":              dto.NewTenantResponse(ctx, tenant),
 			"memberships":         memberships,
+			"membership_state":    types.ResolveMembershipState(user.IsSystemAdmin, memberships),
 			"tenant_required":     tenant == nil,
 			"capabilities": gin.H{
 				"can_create_tenant":      canCreateTenant,

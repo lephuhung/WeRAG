@@ -362,9 +362,10 @@ func (s *kbInvitationService) HasAcceptedInvite(ctx context.Context, kbID, userI
 }
 
 // InvitedKBIDs returns the KB IDs on which userID holds a live (accepted,
-// unexpired) invite — used for recipient-side discovery (listing).
+// unexpired, issued by the KB's current owner) invite — used for
+// recipient-side discovery (listing). One repository query.
 func (s *kbInvitationService) InvitedKBIDs(ctx context.Context, userID string) ([]string, error) {
-	return s.invites.ListAcceptedKBIDsByUser(ctx, userID)
+	return s.invites.ListLiveInvitedKBIDsByUser(ctx, userID)
 }
 
 // emitInviteAudit writes a best-effort audit row for the invite

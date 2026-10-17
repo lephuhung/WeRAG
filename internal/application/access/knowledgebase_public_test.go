@@ -55,7 +55,8 @@ func TestResolveKBPublicReadDeniesUnauthenticated(t *testing.T) {
 	_, err := ResolveKB(context.Background(),
 		KBRequest{}, kb, types.KBPermissionViewer, nil)
 	require.ErrorIs(t, err, ErrUnauthorized)
-	_, err = ResolveKB(humanCallerCtx(0, ""), KBRequest{Caller: types.Caller{TenantID: 0}}, kb,
+	_, err = ResolveKB(humanCallerCtx(0, ""),
+		KBRequest{Caller: types.Caller{TenantID: 0, Role: types.TenantRoleMember}}, kb,
 		types.KBPermissionViewer, nil)
 	require.ErrorIs(t, err, ErrUnauthorized)
 }

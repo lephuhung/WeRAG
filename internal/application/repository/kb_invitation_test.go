@@ -51,9 +51,29 @@ func TestKBInvitationRepoMarkRevoked(t *testing.T) {
 	require.ErrorIs(t, repo.MarkRevoked(ctx, "missing"), gorm.ErrRecordNotFound)
 }
 
-func TestKBInvitationRepoListAcceptedKBIDsByUser(t *testing.T) {
+func TestKBInvitationRepoListLiveInvitedKBIDsByUser(t *testing.T) {
 	ctx := context.Background()
 	db := newKBInviteTestDB(t)
+	// Minimal knowledge_bases table for the current-owner join.
+	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (
+		id TEXT PRIMARY KEY, owner_tenant_id INTEGER, deleted_at DATETIME)`).Error)
+	for _, kb := range []struct {
+		id      string
+		owner   uint64
+		deleted bool
+	}{
+		{"kb-1", 100, false}, {"kb-2", 100, false}, {"kb-3", 100, false},
+		{"kb-4", 100, false}, {"kb-5", 100, false},
+		{"kb-moved", 300, false}, // owner changed after the invite
+		{"kb-gone", 100, true},   // deleted KB
+	} {
+		var deletedAt any
+		if kb.deleted {
+			deletedAt = time.Now()
+		}
+		require.NoError(t, db.Exec(`INSERT INTO knowledge_bases (id, owner_tenant_id, deleted_at) VALUES (?, ?, ?)`,
+			kb.id, kb.owner, deletedAt).Error)
+	}
 	repo := NewKBInvitationRepository(db)
 
 	future := time.Now().Add(time.Hour)
@@ -63,12 +83,16 @@ func TestKBInvitationRepoListAcceptedKBIDsByUser(t *testing.T) {
 	seedKBInvite(t, db, "exp-1", "kb-3", "user-b", types.KBInvitationStatusAccepted, &past)
 	seedKBInvite(t, db, "pend-1", "kb-4", "user-b", types.KBInvitationStatusPending, nil)
 	seedKBInvite(t, db, "other-1", "kb-5", "user-c", types.KBInvitationStatusAccepted, nil)
+	seedKBInvite(t, db, "stale-1", "kb-moved", "user-b", types.KBInvitationStatusAccepted, nil)
+	seedKBInvite(t, db, "gone-1", "kb-gone", "user-b", types.KBInvitationStatusAccepted, nil)
+	seedKBInvite(t, db, "nokb-1", "kb-missing", "user-b", types.KBInvitationStatusAccepted, nil)
 
-	ids, err := repo.ListAcceptedKBIDsByUser(ctx, "user-b")
+	ids, err := repo.ListLiveInvitedKBIDsByUser(ctx, "user-b")
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"kb-1", "kb-2"}, ids)
+	require.ElementsMatch(t, []string{"kb-1", "kb-2"}, ids,
+		"only accepted, unexpired invites from the current owner of a live KB")
 
-	ids, err = repo.ListAcceptedKBIDsByUser(ctx, "")
+	ids, err = repo.ListLiveInvitedKBIDsByUser(ctx, "")
 	require.NoError(t, err)
 	require.Empty(t, ids)
 }

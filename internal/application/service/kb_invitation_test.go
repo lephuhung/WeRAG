@@ -129,7 +129,10 @@ func (f *fakeKBInviteRepo) MarkRevoked(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeKBInviteRepo) ListAcceptedKBIDsByUser(_ context.Context, userID string) ([]string, error) {
+// ListLiveInvitedKBIDsByUser: the fake has no knowledge_bases table, so the
+// current-owner join is covered by the repository test; here every row's
+// owner is taken as current.
+func (f *fakeKBInviteRepo) ListLiveInvitedKBIDsByUser(_ context.Context, userID string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []string
@@ -517,5 +520,51 @@ func TestKBInviteStaleAfterOwnerChange(t *testing.T) {
 	}
 	if got, _ := repo.GetByID(ctx, "inv-old"); got == nil || got.Status != types.KBInvitationStatusRevoked {
 		t.Fatalf("stale invite must be revoked, got %+v", got)
+	}
+}
+
+// guestMemberReader reports a non-active (suspended / invited) row for
+// every lookup: the recipient is a Guest with no active membership.
+type guestMemberReader struct{ status types.TenantMemberStatus }
+
+func (g guestMemberReader) GetMembership(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+	return &types.TenantMember{UserID: userID, TenantID: tenantID, Status: g.status}, nil
+}
+
+// Phase 2: a Guest (signed-in user with no active membership anywhere)
+// gets no ACL. Issue refuses the recipient whoever issues it — a Tenant
+// Admin or an explicit SuperAdmin — and a Guest cannot accept.
+func TestKBInviteGuestGetsNoACL(t *testing.T) {
+	ctx := context.Background()
+	kbRepo := &fakeKBRepoForInvite{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 100, OwnerTenantID: 100, Visibility: types.KBVisibilityTenant, Name: "KB"}}
+	admin := types.Caller{TenantID: 100, UserID: "admin-1", Role: types.TenantRoleAdmin}
+	superCtx := context.WithValue(ctx, types.SystemAdminContextKey, true)
+	superAdmin := types.Caller{TenantID: 0, UserID: "root"}
+	for _, status := range []types.TenantMemberStatus{
+		types.TenantMemberStatusSuspended, types.TenantMemberStatusInvited,
+	} {
+		svc := NewKBInvitationService(newFakeKBInviteRepo(), kbRepo, guestMemberReader{status: status}, nil, nil)
+		req := &types.CreateKBInviteRequest{RecipientUserID: "guest-1", RecipientTenantID: 200}
+		if _, err := svc.Issue(ctx, admin, "kb-1", req); !errors.Is(err, ErrKBInviteRecipientNotMember) {
+			t.Fatalf("status=%s: tenant admin inviting a Guest: want ErrKBInviteRecipientNotMember, got %v", status, err)
+		}
+		if _, err := svc.Issue(superCtx, superAdmin, "kb-1", req); !errors.Is(err, ErrKBInviteRecipientNotMember) {
+			t.Fatalf("status=%s: SuperAdmin inviting a Guest: want ErrKBInviteRecipientNotMember, got %v", status, err)
+		}
+	}
+
+	// An invite issued while the recipient was a member cannot be accepted
+	// once they are a Guest (tenantless caller, no active membership).
+	repo := newFakeKBInviteRepo()
+	svc := NewKBInvitationService(repo, kbRepo, &fakeMemberSvcForInvite{active: map[string]bool{"user-b": true}}, nil, nil)
+	created, err := svc.Issue(ctx, admin, "kb-1", &types.CreateKBInviteRequest{
+		RecipientUserID: "user-b", RecipientTenantID: 200,
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	guestSvc := NewKBInvitationService(repo, kbRepo, guestMemberReader{status: types.TenantMemberStatusSuspended}, nil, nil)
+	if _, err := guestSvc.Accept(ctx, types.Caller{UserID: "user-b"}, created.Token); err == nil {
+		t.Fatal("a Guest must not accept a KB invite")
 	}
 }
