@@ -139,6 +139,16 @@ type Tenant struct {
 }
 
 // Tenant kinds.
+// PlatformTenantID is the id of the platform tenant, named "SuperAdmin"
+// and seeded by migrations/versioned/000150_platform_tenant_seed. It is
+// where SuperAdmins create and feed the platform-wide public knowledge
+// bases (laws, decrees, ...) before promoting them to visibility 'public',
+// and where the shared built-in model catalog is stored
+// (DefaultBuiltinModelTenantID). The tenants_id_seq starts right after it.
+// Membership in it grants nothing beyond ordinary tenant rights; platform
+// authority still comes from users.is_system_admin alone.
+const PlatformTenantID uint64 = 10000
+
 const (
 	// TenantKindWorkspace is a real unit: members, knowledge bases, sessions.
 	TenantKindWorkspace = "workspace"

@@ -186,11 +186,10 @@ type ModelParameters struct {
 const ModelIDMaxLen = 64
 
 // DefaultBuiltinModelTenantID is the tenant id that built-in models are
-// assigned to when YAML does not specify one. Kept in sync with the seed
-// value of tenants_id_seq in migrations/versioned/000000_init.up.sql
-// (and the equivalent SQLite init); changing one without the other will
-// break visibility of built-in models for the default tenant.
-const DefaultBuiltinModelTenantID uint64 = 10000
+// assigned to when YAML does not specify one. It is the platform tenant
+// (PlatformTenantID, seeded by migrations/versioned/000150) so the shared
+// model catalog lives next to the platform's public knowledge bases.
+const DefaultBuiltinModelTenantID uint64 = PlatformTenantID
 
 // Model represents the AI model
 type Model struct {
