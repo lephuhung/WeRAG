@@ -14,10 +14,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// validIMPlatforms is the set of supported IM platforms.
+// validIMPlatforms is the set of IM platforms a channel can be created for.
+// This deployment offers Telegram only; the other adapters are being removed
+// so new channels for them are refused here
+// even while their code is still compiled in.
 var validIMPlatforms = map[string]bool{
-	"wecom": true, "feishu": true, "lark": true, "slack": true, "telegram": true, "dingtalk": true,
-	"mattermost": true, "wechat": true, "qqbot": true, "yunzhijia": true,
+	"telegram": true,
 }
 
 // invalidIMPlatformError is the 400 message listing the accepted platforms. It
@@ -29,7 +31,7 @@ var invalidIMPlatformError = func() string {
 		names = append(names, "'"+p+"'")
 	}
 	sort.Strings(names)
-	return "platform must be one of: " + strings.Join(names, ", ")
+	return "nền tảng IM phải là một trong: " + strings.Join(names, ", ")
 }()
 
 // IMHandler handles IM platform callback requests and channel CRUD.

@@ -5,20 +5,18 @@ import (
 	"testing"
 )
 
-// The channel-creation endpoint rejects any platform without a registered
-// adapter factory, so this set must track the factories wired in the container.
-func TestValidIMPlatforms_CoversLark(t *testing.T) {
-	want := []string{
-		"wecom", "feishu", "lark", "slack", "telegram",
-		"dingtalk", "mattermost", "wechat", "qqbot",
+// This deployment offers Telegram only: channel creation must accept it and
+// refuse every other platform, including ones whose adapter is still compiled in.
+func TestValidIMPlatforms_TelegramOnly(t *testing.T) {
+	if !validIMPlatforms["telegram"] {
+		t.Error("telegram is not accepted")
 	}
-	for _, platform := range want {
-		if !validIMPlatforms[platform] {
-			t.Errorf("platform %q is not accepted", platform)
+	for _, platform := range []string{
+		"wecom", "feishu", "lark", "slack", "dingtalk", "mattermost", "wechat", "qqbot", "yunzhijia", "nonsense",
+	} {
+		if validIMPlatforms[platform] {
+			t.Errorf("platform %q must not be accepted", platform)
 		}
-	}
-	if validIMPlatforms["nonsense"] {
-		t.Error("unknown platform is accepted")
 	}
 }
 

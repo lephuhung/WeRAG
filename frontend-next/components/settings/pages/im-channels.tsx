@@ -1,5 +1,5 @@
 /* IM channels — tenant-wide overview of every messaging-app channel
- * (Telegram, Slack, Feishu…) bound to any agent. Read-only overview with
+ * (Telegram) bound to any agent. Read-only overview with
  * quick enable toggle; create/edit/delete reuse the per-agent
  * AgentIMChannels slide panel, so all channel mechanics live in one place. */
 "use client";

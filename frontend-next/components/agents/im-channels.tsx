@@ -1,10 +1,9 @@
-/* Ported from frontend/src/components/IMChannelPanel.vue (Telegram-focused
- * subset + the shared channel mechanics: mode/output/session chips, webhook
- * callback URL display, enable toggle). Credential field sets per platform
- * follow the backend reader in internal/im/types.go + per-platform factories:
+/* Ported from frontend/src/components/IMChannelPanel.vue. Telegram is the
+ * only IM platform this deployment offers (the other adapters are being
+ * removed); the shared channel mechanics stay: mode/output/session chips,
+ * webhook callback URL display, enable toggle. Credential fields follow the
+ * backend reader in internal/im/types.go:
  *   telegram: bot_token (+ secret_token for webhook)
- *   slack:    webhook → bot_token + signing_secret; websocket → app_token + bot_token
- *   feishu/lark: app_id + app_secret
  */
 "use client";
 
@@ -32,17 +31,9 @@ type Platform = IMChannel["platform"];
 
 const PLATFORMS: { value: Platform; label: string; consoleUrl?: string }[] = [
   { value: "telegram", label: "Telegram", consoleUrl: "https://t.me/BotFather" },
-  { value: "slack", label: "Slack", consoleUrl: "https://api.slack.com/apps" },
-  { value: "feishu", label: "Feishu", consoleUrl: "https://open.feishu.cn/" },
-  { value: "lark", label: "Lark", consoleUrl: "https://open.larksuite.com/" },
-  { value: "wecom", label: "WeCom" },
-  { value: "wechat", label: "WeChat" },
-  { value: "dingtalk", label: "DingTalk" },
-  { value: "qqbot", label: "QQ Bot" },
-  { value: "mattermost", label: "Mattermost" },
 ];
 
-const THREAD_PLATFORMS: Platform[] = ["slack", "feishu", "lark", "telegram"];
+const THREAD_PLATFORMS: Platform[] = ["telegram"];
 
 function supportsThread(p: Platform) {
   return THREAD_PLATFORMS.includes(p);
@@ -239,7 +230,6 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
   }, []);
 
   const webhookForTelegram = platform === "telegram" && mode === "webhook";
-  const slackWebhook = platform === "slack" && mode === "webhook";
 
   const submit = async () => {
     if (!name.trim()) return;
@@ -276,11 +266,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
             <Select
               value={platform}
               disabled={Boolean(channel)}
-              onChange={(v) => {
-                const p = v as Platform;
-                setPlatform(p);
-                if (p === "dingtalk") setMode("websocket");
-              }}
+              onChange={(v) => setPlatform(v as Platform)}
               options={PLATFORMS.map((p) => ({
                 value: p.value,
                 label: (
@@ -320,8 +306,8 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
               value={mode}
               onChange={setMode}
               options={[
-                { value: "websocket", label: platform === "dingtalk" ? "Stream" : "WebSocket" },
-                { value: "webhook", label: "Webhook", disabled: platform === "dingtalk" || platform === "qqbot" },
+                { value: "websocket", label: "WebSocket" },
+                { value: "webhook", label: "Webhook" },
               ]}
             />
           </div>
@@ -380,29 +366,18 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
               <span className="ml-2 text-muted">{t("agentEditor.im.consoleTip")}</span>
             </p>
           )}
-          {(platform === "telegram" || platform === "slack") && (
+          {platform === "telegram" && (
             <>
               <label className="mb-3 block">
                 <span className="caption mb-1.5 block text-muted">Bot Token</span>
                 <input
                   className="input"
                   type="password"
-                  placeholder={platform === "telegram" ? "123456789:AABBccdd…" : "xoxb-…"}
+                  placeholder="123456789:AABBccdd…"
                   value={creds.bot_token ?? ""}
                   onChange={(e) => setCreds({ ...creds, bot_token: e.target.value })}
                 />
               </label>
-              {slackWebhook && (
-                <label className="mb-3 block">
-                  <span className="caption mb-1.5 block text-muted">Signing Secret</span>
-                  <input
-                    className="input"
-                    type="password"
-                    value={creds.signing_secret ?? ""}
-                    onChange={(e) => setCreds({ ...creds, signing_secret: e.target.value })}
-                  />
-                </label>
-              )}
               {webhookForTelegram && (
                 <label className="block">
                   <span className="caption mb-1.5 block text-muted">Secret Token</span>
@@ -415,18 +390,6 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
                   />
                 </label>
               )}
-            </>
-          )}
-          {(platform === "feishu" || platform === "lark") && (
-            <>
-              <label className="mb-3 block">
-                <span className="caption mb-1.5 block text-muted">App ID</span>
-                <input className="input" value={creds.app_id ?? ""} onChange={(e) => setCreds({ ...creds, app_id: e.target.value })} />
-              </label>
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">App Secret</span>
-                <input className="input" type="password" value={creds.app_secret ?? ""} onChange={(e) => setCreds({ ...creds, app_secret: e.target.value })} />
-              </label>
             </>
           )}
         </div>
