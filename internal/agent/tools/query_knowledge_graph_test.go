@@ -218,3 +218,9 @@ func (s *stubKnowledgeBaseService) SetKnowledgeBaseMemberDefault(
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
+
+func (s *stubKnowledgeBaseService) TransferKnowledgeBaseOwner(
+	ctx context.Context, id string, targetTenantID uint64,
+) (*types.KBOwnerTransferResult, error) {
+	return nil, nil
+}

@@ -82,6 +82,8 @@ type fakeKBRepo struct {
 	// scopeRevokeReasons records revokeSharesReason of every
 	// UpdateKnowledgeBaseScope call.
 	scopeRevokeReasons []string
+	// scopeRevoked is what an owner-changing UpdateKnowledgeBaseScope reports.
+	scopeRevoked types.KBShareRevocation
 	// Task 4 catalog fixtures.
 	owned          []*types.KnowledgeBase
 	catalogItems   []*types.KnowledgeBase
@@ -160,9 +162,14 @@ func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBa
 	return r.updateErr
 }
 
-func (r *fakeKBRepo) UpdateKnowledgeBaseScope(_ context.Context, _ *types.KnowledgeBase, reason string) error {
+func (r *fakeKBRepo) UpdateKnowledgeBaseScope(
+	_ context.Context, _ *types.KnowledgeBase, reason string,
+) (types.KBShareRevocation, error) {
 	r.scopeRevokeReasons = append(r.scopeRevokeReasons, reason)
-	return r.updateErr
+	if r.updateErr != nil || reason == "" {
+		return types.KBShareRevocation{}, r.updateErr
+	}
+	return r.scopeRevoked, nil
 }
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }
 func (r *fakeKBRepo) TogglePinKnowledgeBase(_ context.Context, _ string, _ uint64) (*types.KnowledgeBase, error) {

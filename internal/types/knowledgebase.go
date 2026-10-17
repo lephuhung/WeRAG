@@ -117,6 +117,25 @@ func (d KBMemberDefault) Permission() KBPermission {
 	return KBPermissionEditor
 }
 
+// KBShareRevocation counts the shares an owner change revoked in the same
+// transaction as the scope write.
+type KBShareRevocation struct {
+	Invitations int64
+	Grants      int64
+}
+
+// KBOwnerTransferResult is what TransferKnowledgeBaseOwner reports: the
+// updated KB, the previous owner, the revoked share counts, and whether the
+// KB was published (or platform public) and is no longer.
+type KBOwnerTransferResult struct {
+	KnowledgeBase          *KnowledgeBase
+	PreviousOwnerTenantID  uint64
+	PreviousVisibility     KBVisibility
+	RevokedInvitations     int64
+	RevokedGrants          int64
+	WithdrawnFromPublished bool
+}
+
 // Public catalog pagination bounds (Task 4). The main KB list embeds the
 // first default-sized public page so its array response shape is preserved;
 // the dedicated catalog endpoint accepts page/page_size (clamped to the max)

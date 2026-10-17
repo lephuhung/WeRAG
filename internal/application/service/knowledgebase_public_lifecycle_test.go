@@ -264,13 +264,15 @@ func TestPublicLifecycle_PublicToTenantRequiresValidTarget(t *testing.T) {
 	}
 	ctx := superAdminNoTenantLifecycleCtx()
 
+	// Phase 4: public→tenant is an owner transfer (TransferKnowledgeBaseOwner);
+	// the visibility call rejects it (TestSetVisibility_PublicToTenantPointsToTransfer).
 	repo, _, svc := setup()
-	_, err := svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 0)
+	_, err := svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 0)
 	require.Error(t, err, "missing target must be rejected")
 	assert.Equal(t, uint64(0), repo.rows["pub-1"].OwnerTenantID, "rejected transition must not mutate")
 
 	repo, _, svc = setup()
-	_, err = svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 99)
+	_, err = svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 99)
 	require.Error(t, err, "unknown target tenant must be rejected")
 	// The production mapping for a missing destination is 404, not merely
 	// any error: the fake returns repository.ErrTenantNotFound exactly so
@@ -282,8 +284,9 @@ func TestPublicLifecycle_PublicToTenantRequiresValidTarget(t *testing.T) {
 	assert.Equal(t, types.KBVisibilityPublic, repo.rows["pub-1"].Visibility)
 
 	repo, _, svc = setup()
-	kb, err := svc.SetKnowledgeBaseVisibility(ctx, "pub-1", types.KBVisibilityTenant, 2)
+	res, err := svc.TransferKnowledgeBaseOwner(ctx, "pub-1", 2)
 	require.NoError(t, err)
+	kb := res.KnowledgeBase
 	assert.Equal(t, "pub-1", kb.ID)
 	assert.Equal(t, uint64(0), kb.TenantID, "transition preserves the platform data scope")
 	assert.Equal(t, uint64(2), kb.OwnerTenantID)
@@ -352,11 +355,12 @@ func TestPublicLifecycle_ScopeChangeAuditedPublicToTenant(t *testing.T) {
 	}
 	audit := &lifecycleAudit{}
 	svc := newLifecycleService(repo, newLifecycleTenantRepo(2), audit)
-	_, err := svc.SetKnowledgeBaseVisibility(superAdminNoTenantLifecycleCtx(), "pub-1", types.KBVisibilityTenant, 2)
+	_, err := svc.TransferKnowledgeBaseOwner(superAdminNoTenantLifecycleCtx(), "pub-1", 2)
 	require.NoError(t, err)
 	require.Len(t, audit.entries, 1)
 	entry := audit.entries[0]
-	assert.Equal(t, types.AuditActionKBScopeChanged, entry.Action)
+	// Phase 4: owner changes go through transfer-owner and audit as such.
+	assert.Equal(t, types.AuditActionKBOwnerTransferred, entry.Action)
 	assert.Equal(t, "pub-1", entry.ScopeID)
 	assert.Equal(t, "pub-1", entry.TargetID)
 	assert.Equal(t, "super-1", entry.ActorUserID)
@@ -476,10 +480,10 @@ func TestScopeChange_OwnerChangeRevokesShares(t *testing.T) {
 
 	_, err := svc.SetKnowledgeBaseVisibility(superAdminLifecycleCtx(1), "kb-1", types.KBVisibilityPublic, 0)
 	require.NoError(t, err)
-	_, err = svc.SetKnowledgeBaseVisibility(superAdminNoTenantLifecycleCtx(), "pub-1", types.KBVisibilityTenant, 2)
+	_, err = svc.TransferKnowledgeBaseOwner(superAdminNoTenantLifecycleCtx(), "pub-1", 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{types.KBInviteRevokedReasonOwnerChanged, types.KBInviteRevokedReasonOwnerChanged},
-		repo.scopeRevokeReasons, "tenant→public and public→tenant both change the owner")
+		repo.scopeRevokeReasons, "tenant→public and the public→tenant transfer both change the owner")
 
 	repo.scopeRevokeReasons = nil
 	repo.rows["kb-2"] = &types.KnowledgeBase{

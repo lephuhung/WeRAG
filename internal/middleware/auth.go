@@ -340,7 +340,8 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 }
 
 // under /api/v1/knowledge-bases/: single-segment update/delete, the
-// two-segment visibility switch, and the three-segment profile regeneration.
+// two-segment visibility switch and owner transfer, and the three-segment
+// profile regeneration.
 // Reads (GET detail/list/search) and every nested content route keep
 // requiring a workspace.
 func isTenantlessKBLifecyclePath(path, method string) bool {
@@ -360,6 +361,10 @@ func isTenantlessKBLifecyclePath(path, method string) bool {
 			// A tenantless SuperAdmin shares any KB; TenantAdmin route
 			// guards deny every other tenantless caller.
 			return true
+		}
+		if segs[1] == "transfer-owner" {
+			// Owner transfer is SuperAdmin-only (route guard).
+			return method == http.MethodPost
 		}
 		return segs[1] == "visibility" && method == http.MethodPut
 	case 3:

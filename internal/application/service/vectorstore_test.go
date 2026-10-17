@@ -970,8 +970,9 @@ func (r *realKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, _ uint64) (
 func (r *realKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return nil
 }
-func (r *realKBRepo) UpdateKnowledgeBaseScope(_ context.Context, _ *types.KnowledgeBase, _ string) error {
-	return nil
+func (r *realKBRepo) UpdateKnowledgeBaseScope(_ context.Context, _ *types.KnowledgeBase, _ string,
+) (types.KBShareRevocation, error) {
+	return types.KBShareRevocation{}, nil
 }
 func (r *realKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error {
 	return nil

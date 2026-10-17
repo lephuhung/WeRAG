@@ -1008,6 +1008,73 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
 	})
 }
 
+// TransferKnowledgeBaseOwnerRequest moves a KB to another owner tenant.
+type TransferKnowledgeBaseOwnerRequest struct {
+	TargetTenantID uint64 `json:"target_tenant_id" binding:"required"`
+}
+
+// TransferKnowledgeBaseOwnerResponse is the transfer-owner payload: the
+// updated KB plus what the transfer revoked.
+type TransferKnowledgeBaseOwnerResponse struct {
+	KnowledgeBase          interface{}        `json:"knowledge_base"`
+	PreviousOwnerTenantID  uint64             `json:"previous_owner_tenant_id"`
+	PreviousVisibility     types.KBVisibility `json:"previous_visibility"`
+	RevokedInvitations     int64              `json:"revoked_invitations"`
+	RevokedGrants          int64              `json:"revoked_grants"`
+	WithdrawnFromPublished bool               `json:"withdrawn_from_published"`
+}
+
+// TransferKnowledgeBaseOwner godoc
+// @Summary      Transfer knowledge base owner
+// @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id in 'tenant' scope; data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed); a published KB is withdrawn.
+// @Tags         Knowledge Base
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                             true  "Knowledge Base ID"
+// @Param        request  body      TransferKnowledgeBaseOwnerRequest  true  "Target tenant"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      403      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /knowledge-bases/{id}/transfer-owner [post]
+func (h *KnowledgeBaseHandler) TransferKnowledgeBaseOwner(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		_ = c.Error(apperrors.NewBadRequestError("knowledge base ID cannot be empty"))
+		return
+	}
+	var req TransferKnowledgeBaseOwnerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(apperrors.NewBadRequestError("target_tenant_id is required").WithDetails(err.Error()))
+		return
+	}
+	res, err := h.service.TransferKnowledgeBaseOwner(ctx, c.Param("id"), req.TargetTenantID)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			_ = c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"knowledge_base_id": id})
+		_ = c.Error(apperrors.NewInternalServerError(err.Error()))
+		return
+	}
+	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": TransferKnowledgeBaseOwnerResponse{
+			KnowledgeBase: buildKBResponse(res.KnowledgeBase,
+				h.resolveKBStoreView(ctx, res.KnowledgeBase, callerTenantID), nil),
+			PreviousOwnerTenantID:  res.PreviousOwnerTenantID,
+			PreviousVisibility:     res.PreviousVisibility,
+			RevokedInvitations:     res.RevokedInvitations,
+			RevokedGrants:          res.RevokedGrants,
+			WithdrawnFromPublished: res.WithdrawnFromPublished,
+		},
+	})
+}
+
 // GenerateKnowledgeBaseProfile godoc
 // @Summary      生成Knowledge Base描述
 // @Description  基于文档画像聚合，立即重新生成Knowledge Base的 AI 描述（不覆盖手写描述）

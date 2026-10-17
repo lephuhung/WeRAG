@@ -421,11 +421,12 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBase(ctx context.Context, kb *t
 // UpdateKnowledgeBaseScope saves kb and, when revokeSharesReason is set,
 // revokes the KB's live invitations and tenant grants in one transaction,
 // so no request can observe the new owner together with shares the
-// previous owner issued.
+// previous owner issued. It returns how many rows of each were revoked.
 func (r *knowledgeBaseRepository) UpdateKnowledgeBaseScope(
 	ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string,
-) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+) (types.KBShareRevocation, error) {
+	var revoked types.KBShareRevocation
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(kb).Error; err != nil {
 			return err
 		}
@@ -433,7 +434,7 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBaseScope(
 			return nil
 		}
 		now := time.Now()
-		if err := tx.Model(&types.KBInvitation{}).
+		inv := tx.Model(&types.KBInvitation{}).
 			Where("kb_id = ? AND status IN ?", kb.ID, []types.KBInvitationStatus{
 				types.KBInvitationStatusPending, types.KBInvitationStatusAccepted,
 			}).
@@ -441,10 +442,11 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBaseScope(
 				"status":         types.KBInvitationStatusRevoked,
 				"revoked_reason": revokeSharesReason,
 				"updated_at":     now,
-			}).Error; err != nil {
-			return err
+			})
+		if inv.Error != nil {
+			return inv.Error
 		}
-		return tx.Model(&types.KBAccessGrant{}).
+		grants := tx.Model(&types.KBAccessGrant{}).
 			Where("kb_id = ? AND status IN ?", kb.ID, []types.GrantStatus{
 				types.GrantStatusPending, types.GrantStatusApproved,
 			}).
@@ -452,8 +454,17 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBaseScope(
 				"status":       types.GrantStatusRevoked,
 				"responded_at": now,
 				"updated_at":   now,
-			}).Error
+			})
+		if grants.Error != nil {
+			return grants.Error
+		}
+		revoked = types.KBShareRevocation{Invitations: inv.RowsAffected, Grants: grants.RowsAffected}
+		return nil
 	})
+	if err != nil {
+		return types.KBShareRevocation{}, err
+	}
+	return revoked, nil
 }
 
 // UpdateKnowledgeBaseGeneratedProfile writes the generated_profile column

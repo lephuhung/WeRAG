@@ -107,20 +107,26 @@ type KnowledgeBaseService interface {
 	SetKnowledgeBaseMemberDefault(ctx context.Context, id string, memberDefault types.KBMemberDefault,
 	) (*types.KnowledgeBase, error)
 
-	// SetKnowledgeBaseVisibility changes the KB scope. Moves among the
-	// tenant-owned scopes (tenant, restricted, published) keep the owner
-	// and are decided by the owner's Tenant Admin or a SuperAdmin. Only an
-	// explicit human SuperAdmin may promote (tenant→public) or transfer
-	// scope (public→tenant).
-	// A public→tenant transition requires the nonzero destination tenant
-	// in targetTenantID (0 means omitted); the destination must exist.
-	// A tenant→tenant call with a different target is rejected; with an
-	// omitted or same-owner target it is a no-op. Transitions modify
-	// owner/visibility metadata only: KB ID and data-scope tenant_id are
+	// SetKnowledgeBaseVisibility changes the KB scope without changing its
+	// owner. Moves among the tenant-owned scopes (tenant, restricted,
+	// published) are decided by the owner's Tenant Admin or a SuperAdmin;
+	// promotion to platform public (tenant→public) needs an explicit human
+	// SuperAdmin. public→tenant and any target tenant other than the owner
+	// are rejected with 400: owner changes go through
+	// TransferKnowledgeBaseOwner. KB ID and data-scope tenant_id are
 	// preserved and no child rows, indexes, or background jobs are touched.
 	SetKnowledgeBaseVisibility(ctx context.Context,
 		id string, visibility types.KBVisibility, targetTenantID uint64,
 	) (*types.KnowledgeBase, error)
+
+	// TransferKnowledgeBaseOwner moves a KB to another owner tenant
+	// (explicit human SuperAdmin only). The source must be tenant-owned
+	// (tenant/restricted/published) or platform public; the KB ends in
+	// 'tenant' scope of the target, data-scope tenant_id and member_default
+	// unchanged, and every invitation and tenant grant is revoked in the
+	// same transaction (revoked_reason=owner_changed).
+	TransferKnowledgeBaseOwner(ctx context.Context, id string, targetTenantID uint64,
+	) (*types.KBOwnerTransferResult, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
@@ -299,8 +305,10 @@ type KnowledgeBaseRepository interface {
 	// UpdateKnowledgeBaseScope saves an owner/visibility change. When
 	// revokeSharesReason is non-empty it also, in the same transaction,
 	// revokes every pending/accepted kb_invitations row of the KB (stamping
-	// revoked_reason) and every pending/approved kb_access_grants row.
-	UpdateKnowledgeBaseScope(ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string) error
+	// revoked_reason) and every pending/approved kb_access_grants row, and
+	// returns how many of each it revoked.
+	UpdateKnowledgeBaseScope(ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string,
+	) (types.KBShareRevocation, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base record
 	// Parameters:
