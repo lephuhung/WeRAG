@@ -1,10 +1,10 @@
 // RED: request()/downloadRequest() ignore opts.headers — embed chunks /
-// suggestions and desktop autoSetup lose their credentials.
+// suggestions lose their credentials.
 // Runs with: node --experimental-strip-types --test lib/api-client.headers.test.ts
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { apiGet, apiPost, apiDownload } from "./api-client.ts";
+import { apiGet, apiDownload } from "./api-client.ts";
 
 type FetchCall = { url: string; headers: Record<string, string>; body: string };
 
@@ -83,13 +83,6 @@ describe("api-client opts.headers (issue 1)", () => {
     assert.equal(calls[0].headers["x-embed-session"], "sig-1");
     assert.equal(calls[0].headers["x-embed-visitor"], "v-1");
     assert.ok(!("x-tenant-id" in calls[0].headers));
-  });
-
-  it("forwards the desktop token on auto-setup", async () => {
-    await apiPost("/api/v1/auth/auto-setup", {}, {
-      headers: { "X-WeKnora-Desktop-Token": "desk-1" },
-    });
-    assert.equal(calls[0].headers["x-weknora-desktop-token"], "desk-1");
   });
 
   it("custom tenant / request-id / language override the defaults", async () => {

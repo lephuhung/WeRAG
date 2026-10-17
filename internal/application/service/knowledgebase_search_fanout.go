@@ -175,8 +175,7 @@ func hasMixedEngineTypes(results []*types.RetrieveResult) bool {
 // request.
 func isKnownEngineType(t types.RetrieverEngineType) bool {
 	switch t {
-	case types.PostgresRetrieverEngineType,
-		types.SQLiteRetrieverEngineType:
+	case types.PostgresRetrieverEngineType:
 		return true
 	}
 	return false

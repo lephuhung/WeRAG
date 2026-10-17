@@ -11,20 +11,17 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/panjf2000/ants/v2"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/agent/approval"
@@ -32,7 +29,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	neo4jRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/neo4j"
 	postgresRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/postgres"
-	sqliteRetrieverRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/sqlite"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/application/service/file"
@@ -890,7 +886,6 @@ func initRedisClient() (*redis.Client, error) {
 func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	var migrateDSN string
-	var sqliteDBPath string
 	switch os.Getenv("DB_DRIVER") {
 	case "postgres":
 		// DSN for GORM (key-value format)
@@ -935,22 +930,6 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 			os.Getenv("DB_PORT"),
 			os.Getenv("DB_NAME"),
 		)
-	case "sqlite":
-		dbPath := os.Getenv("DB_PATH")
-		if dbPath == "" {
-			dbPath = "./data/weknora.db"
-		}
-		if dir := filepath.Dir(dbPath); dir != "." && dir != "" {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return nil, fmt.Errorf("failed to create SQLite data directory %s: %w", dir, err)
-			}
-		}
-		sqlite_vec.Auto()
-		dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
-		dialector = sqlite.Open(dsn)
-		sqliteDBPath = dbPath
-		migrateDSN = "sqlite3://" + dbPath
-		logger.Infof(context.Background(), "DB Config: driver=sqlite path=%s", dbPath)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", os.Getenv("DB_DRIVER"))
 	}
@@ -964,25 +943,14 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Sanity check: dialect-specific code in services (notably the
-	// vector_stores delete guard) compares Dialector.Name() to "postgres" /
-	// "sqlite" string literals. A future driver swap that produces a
-	// different name (e.g., a wrapper dialect for managed PG) would silently
-	// fall back to the SQLite path, dropping the row-level X-lock. Catching
-	// the mismatch at startup is loud and inexpensive.
-	if name := db.Dialector.Name(); name != "postgres" && name != "sqlite" {
+	// vector_stores delete guard) compares Dialector.Name() to "postgres".
+	// A future driver swap that produces a different name (e.g., a wrapper
+	// dialect for managed PG) would silently drop the row-level X-lock.
+	// Catching the mismatch at startup is loud and inexpensive.
+	if name := db.Dialector.Name(); name != "postgres" {
 		return nil, fmt.Errorf(
-			"unsupported gorm dialector %q; expected postgres or sqlite "+
+			"unsupported gorm dialector %q; expected postgres "+
 				"(see vectorStoreService.isPostgres for impact)", name)
-	}
-
-	if os.Getenv("DB_DRIVER") == "sqlite" {
-		sqlDB, err := db.DB()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-		}
-		if err := sqlDB.Ping(); err != nil {
-			return nil, fmt.Errorf("failed to ping SQLite database: %w", err)
-		}
 	}
 
 	// Run database migrations automatically (optional, can be disabled via env var)
@@ -994,7 +962,6 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		autoRecover := os.Getenv("AUTO_RECOVER_DIRTY") != "false"
 		migrationOpts := database.MigrationOptions{
 			AutoRecoverDirty: autoRecover,
-			SQLiteDBPath:     sqliteDBPath,
 		}
 
 		// Run base migrations (all versioned migrations including embeddings)
@@ -1029,14 +996,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Configure connection pool parameters
-	if os.Getenv("DB_DRIVER") == "sqlite" {
-		// SQLite only supports one concurrent writer even in WAL mode.
-		// Limiting to a single open connection serialises all DB access and
-		// prevents "database is locked" errors from concurrent goroutines.
-		sqlDB.SetMaxOpenConns(1)
-	} else {
-		sqlDB.SetMaxIdleConns(10)
-	}
+	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
 
 	return db, nil
@@ -1076,8 +1036,7 @@ func resolveStorageProviderPending(db *gorm.DB) {
 // existing knowledge bases to the resulting backend.
 //
 // The table, columns and indexes are created by the SQL migrations
-// (migrations/versioned/000068 for Postgres, migrations/sqlite/000000_init for
-// SQLite); this step only handles data that cannot be expressed portably in
+// (migrations/versioned/000068); this step only handles data that cannot be expressed portably in
 // SQL: environment snapshots, JSON→config mapping, AES-encrypted credentials,
 // UUID generation and the per-startup refresh of env-backed aliases.
 // The migration is idempotent: one legacy_alias row per tenant/provider.
@@ -1260,7 +1219,7 @@ func initRawFileService(_ *config.Config) (interfaces.FileService, error) {
 
 // initRetrieveEngineRegistry initializes the retrieval engine registry
 // Sets up and configures various search engine backends based on configuration
-// Registers the Postgres retrieval engine (and SQLite for the Lite build)
+// Registers the Postgres retrieval engine
 // Parameters:
 //   - db: Database connection
 //   - cfg: Application configuration
@@ -1287,16 +1246,6 @@ func initRetrieveEngineRegistry(
 			log.Errorf("Register postgres retrieve engine failed: %v", err)
 		} else {
 			log.Infof("Register postgres retrieve engine success")
-		}
-	}
-	if slices.Contains(retrieveDriver, "sqlite") {
-		sqliteRepo := sqliteRetrieverRepo.NewSQLiteRetrieveEngineRepository(db)
-		if err := registry.Register(
-			retriever.NewKVHybridRetrieveEngine(sqliteRepo, types.SQLiteRetrieverEngineType),
-		); err != nil {
-			log.Errorf("Register sqlite retrieve engine failed: %v", err)
-		} else {
-			log.Infof("Register sqlite retrieve engine success")
 		}
 	}
 	// ─── DB store registration (byStoreID) ───

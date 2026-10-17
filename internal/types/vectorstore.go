@@ -36,7 +36,7 @@ type VectorStore struct {
 	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
 	// User-friendly name, e.g., "elasticsearch-hot"
 	Name string `yaml:"name" json:"name" gorm:"type:varchar(255);not null"`
-	// Engine type: postgres, elasticsearch, qdrant, milvus, weaviate, sqlite
+	// Engine type: postgres
 	EngineType RetrieverEngineType `yaml:"engine_type" json:"engine_type" gorm:"type:varchar(50);not null"`
 	// Driver-specific connection parameters (sensitive fields encrypted with AES-GCM)
 	ConnectionConfig ConnectionConfig `yaml:"connection_config" json:"connection_config" gorm:"type:json"`
@@ -64,11 +64,11 @@ func (v *VectorStore) BeforeCreate(tx *gorm.DB) error {
 
 // validEngineTypes defines the engine types that can be registered as a
 // DB-managed VectorStore (persisted to the vector_stores table and listed in
-// GetVectorStoreTypes for the UI). It is empty: Postgres and SQLite are only
+// GetVectorStoreTypes for the UI). It is empty: Postgres is only
 // meaningful on the app's default DB connection (the Postgres retriever's
 // embeddings table has no per-store partitioning, so a second Postgres store
 // would share the same table). They are reachable as env stores
-// (RETRIEVE_DRIVER=postgres/sqlite) through BuildEnvVectorStores, which does
+// (RETRIEVE_DRIVER=postgres) through BuildEnvVectorStores, which does
 // not pass through this validation.
 var validEngineTypes = map[RetrieverEngineType]bool{}
 
@@ -461,7 +461,7 @@ type VectorStoreFieldInfo struct {
 }
 
 // GetVectorStoreTypes returns metadata for the engine types that can be added
-// as DB stores. There are none: Postgres and SQLite only use the app's default
+// as DB stores. There are none: Postgres only uses the app's default
 // DB connection and appear as env stores (RETRIEVE_DRIVER).
 func GetVectorStoreTypes() []VectorStoreTypeInfo {
 	return []VectorStoreTypeInfo{}
@@ -523,12 +523,6 @@ func buildEnvStoreForDriver(driver string, envLookup EnvLookupFunc) *VectorStore
 			ConnectionConfig: ConnectionConfig{
 				UseDefaultConnection: true,
 			},
-		}
-	case "sqlite":
-		return &VectorStore{
-			ID:         "__env_sqlite__",
-			Name:       "SQLite",
-			EngineType: SQLiteRetrieverEngineType,
 		}
 	default:
 		return nil

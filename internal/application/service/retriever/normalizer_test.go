@@ -48,7 +48,6 @@ func TestEngineAwareNormalizer_UnitInterval(t *testing.T) {
 	}
 	for _, engine := range []types.RetrieverEngineType{
 		types.PostgresRetrieverEngineType,
-		types.SQLiteRetrieverEngineType,
 	} {
 		for _, tc := range cases {
 			got := n.Normalize(context.Background(), tc.score,
@@ -114,11 +113,11 @@ func TestEngineAwareNormalizer_NaNAndInf(t *testing.T) {
 	if got != 0 {
 		t.Fatalf("-Inf clamp: want 0, got %v", got)
 	}
-	// NaN through the SQLite case too.
+	// NaN through an unknown engine too.
 	got = n.Normalize(context.Background(), math.NaN(),
-		types.VectorRetrieverType, types.SQLiteRetrieverEngineType)
+		types.VectorRetrieverType, types.RetrieverEngineType("other"))
 	if got != 0 {
-		t.Fatalf("NaN sqlite: want 0, got %v", got)
+		t.Fatalf("NaN unknown engine: want 0, got %v", got)
 	}
 }
 

@@ -58,20 +58,10 @@ func TestBuildEnvVectorStores(t *testing.T) {
 		assert.True(t, stores[0].ConnectionConfig.UseDefaultConnection)
 	})
 
-	t.Run("single driver sqlite", func(t *testing.T) {
-		stores := BuildEnvVectorStores("sqlite", lookup)
-		require.Len(t, stores, 1)
-		assert.Equal(t, "__env_sqlite__", stores[0].ID)
-		assert.Equal(t, "SQLite", stores[0].Name)
-		assert.Equal(t, SQLiteRetrieverEngineType, stores[0].EngineType)
-		assert.False(t, stores[0].ConnectionConfig.UseDefaultConnection)
-	})
-
-	t.Run("multiple drivers", func(t *testing.T) {
+	t.Run("sqlite driver is no longer built", func(t *testing.T) {
 		stores := BuildEnvVectorStores("postgres,sqlite", lookup)
-		require.Len(t, stores, 2)
+		require.Len(t, stores, 1)
 		assert.Equal(t, "__env_postgres__", stores[0].ID)
-		assert.Equal(t, "__env_sqlite__", stores[1].ID)
 	})
 
 	t.Run("unknown driver is skipped", func(t *testing.T) {
@@ -87,8 +77,9 @@ func TestBuildEnvVectorStores(t *testing.T) {
 	})
 
 	t.Run("whitespace trimmed", func(t *testing.T) {
-		stores := BuildEnvVectorStores(" postgres , sqlite ", lookup)
-		require.Len(t, stores, 2)
+		stores := BuildEnvVectorStores(" postgres , unknown_db ", lookup)
+		require.Len(t, stores, 1)
+		assert.Equal(t, "__env_postgres__", stores[0].ID)
 	})
 }
 
@@ -185,7 +176,7 @@ func TestVectorStore_Validate(t *testing.T) {
 	})
 
 	t.Run("unsupported engine type returns error", func(t *testing.T) {
-		for _, et := range []RetrieverEngineType{"unknown", PostgresRetrieverEngineType, SQLiteRetrieverEngineType, "qdrant"} {
+		for _, et := range []RetrieverEngineType{"unknown", PostgresRetrieverEngineType, "sqlite", "qdrant"} {
 			s := base
 			s.EngineType = et
 			err := s.Validate()
@@ -224,7 +215,7 @@ func TestIsValidEngineType(t *testing.T) {
 		"unknown",
 		"",
 		PostgresRetrieverEngineType,
-		SQLiteRetrieverEngineType,
+		RetrieverEngineType("sqlite"),
 		"elasticsearch",
 		"qdrant",
 		"milvus",
@@ -498,13 +489,13 @@ func TestIndexConfig_GetIndexNameOrDefault(t *testing.T) {
 		{
 			name:       "sqlite returns empty (no index config)",
 			config:     IndexConfig{},
-			engineType: SQLiteRetrieverEngineType,
+			engineType: RetrieverEngineType("sqlite"),
 			expected:   "",
 		},
 		{
 			name:       "collection fields are not used as index name",
 			config:     IndexConfig{CollectionPrefix: "prefix", CollectionName: "name"},
-			engineType: SQLiteRetrieverEngineType,
+			engineType: RetrieverEngineType("sqlite"),
 			expected:   "",
 		},
 	}
@@ -715,7 +706,7 @@ func TestVectorStore_PostgresSqliteNotRegisterable(t *testing.T) {
 	t.Run("Validate rejects sqlite as DB store", func(t *testing.T) {
 		v := &VectorStore{
 			Name: "test", TenantID: 1,
-			EngineType: SQLiteRetrieverEngineType,
+			EngineType: RetrieverEngineType("sqlite"),
 		}
 		err := v.Validate()
 		require.Error(t, err)
@@ -730,7 +721,7 @@ func TestVectorStore_PostgresSqliteNotRegisterable(t *testing.T) {
 		}
 		assert.NotContains(t, got, string(PostgresRetrieverEngineType),
 			"postgres must not appear in the UI dropdown — env-store only")
-		assert.NotContains(t, got, string(SQLiteRetrieverEngineType),
+		assert.NotContains(t, got, string(RetrieverEngineType("sqlite")),
 			"sqlite must not appear in the UI dropdown — env-store only")
 	})
 }

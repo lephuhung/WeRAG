@@ -19,6 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// otherEngineType stands in for a second engine in mixed-engine tests.
+const otherEngineType types.RetrieverEngineType = "other"
+
 // ---------------------------------------------------------------------------
 // Fan-out helper unit tests — no service dependencies
 // ---------------------------------------------------------------------------
@@ -66,7 +69,7 @@ func TestHasMixedEngineTypes(t *testing.T) {
 		}, false},
 		{"two different", []*types.RetrieveResult{
 			{RetrieverEngineType: types.PostgresRetrieverEngineType},
-			{RetrieverEngineType: types.SQLiteRetrieverEngineType},
+			{RetrieverEngineType: otherEngineType},
 		}, true},
 		{"empty + nonempty engine", []*types.RetrieveResult{
 			{RetrieverEngineType: ""},
@@ -85,7 +88,6 @@ func TestIsKnownEngineType(t *testing.T) {
 	t.Parallel()
 	known := []types.RetrieverEngineType{
 		types.PostgresRetrieverEngineType,
-		types.SQLiteRetrieverEngineType,
 	}
 	for _, k := range known {
 		if !isKnownEngineType(k) {
@@ -586,7 +588,7 @@ func TestRetrieveFromStores_MixedEngine_Normalizes(t *testing.T) {
 	// First sub-case below pins the SQLite passthrough; the last sub-case
 	// pins the clamp so the negative branch stays under coverage.
 	fakeSQLite := &fakeRetrieveEngineService{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 		canned:     []*types.IndexWithScore{{ChunkID: "sq1", Score: 1.0}}, // top cosine
 	}
@@ -618,7 +620,7 @@ func TestRetrieveFromStores_MixedEngine_Normalizes(t *testing.T) {
 	// SQLite passthrough on a mid-range cosine: 0.3 → 0.3 (below PG 0.8,
 	// so PG out-ranks SQLite).
 	fakeSQLite2 := &fakeRetrieveEngineService{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 		canned:     []*types.IndexWithScore{{ChunkID: "sq2", Score: 0.3}},
 	}
@@ -644,7 +646,7 @@ func TestRetrieveFromStores_MixedEngine_Normalizes(t *testing.T) {
 
 	// Clamp coverage: a negative cosine (raw -0.4) clamps to 0.
 	fakeSQLite3 := &fakeRetrieveEngineService{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 		canned:     []*types.IndexWithScore{{ChunkID: "sq3", Score: -0.4}},
 	}
@@ -675,7 +677,7 @@ func TestRetrieveFromStores_KeywordPassthroughOnMixed(t *testing.T) {
 	// types, the keyword score is NOT rescaled (BM25 unbounded — RRF
 	// fusion handles via rank).
 	fakeSQLite := &fakeRetrieveEngineService{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 		canned:     []*types.IndexWithScore{{ChunkID: "v1", Score: 1.0}},
 	}

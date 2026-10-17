@@ -35,12 +35,6 @@ func TestValidateConnectionAddrSSRF(t *testing.T) {
 		wantError  bool
 	}{
 		{
-			name:       "sqlite skipped (no remote address)",
-			engineType: types.SQLiteRetrieverEngineType,
-			config:     types.ConnectionConfig{},
-			wantError:  false,
-		},
-		{
 			// postgres only runs on the app's own connection; it has no
 			// DB-store address mapping.
 			name:       "postgres fails closed",
@@ -119,11 +113,6 @@ func TestTestRawConnection_Rejections(t *testing.T) {
 			name:       "postgres rejected by engine allowlist",
 			engineType: types.PostgresRetrieverEngineType,
 			config:     types.ConnectionConfig{Addr: "postgres://u:p@vector.allowed.test:5432/db"},
-		},
-		{
-			name:       "sqlite rejected by engine allowlist",
-			engineType: types.SQLiteRetrieverEngineType,
-			config:     types.ConnectionConfig{},
 		},
 		{
 			name:       "removed engine rejected by engine allowlist",

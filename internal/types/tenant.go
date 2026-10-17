@@ -19,10 +19,6 @@ var retrieverEngineMapping = map[string][]RetrieverEngineParams{
 		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: PostgresRetrieverEngineType},
 		{RetrieverType: VectorRetrieverType, RetrieverEngineType: PostgresRetrieverEngineType},
 	},
-	"sqlite": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
-	},
 }
 
 // GetRetrieverEngineMapping returns the retriever engine mapping

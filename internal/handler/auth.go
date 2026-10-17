@@ -2,12 +2,9 @@ package handler
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	stderrors "errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -22,12 +19,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
-
-var liteSetupToken string
-
-// SetLiteSetupToken is called by the native desktop host before serving requests.
-// Web deployments leave it empty and cannot issue anonymous administrator tokens.
-func SetLiteSetupToken(token string) { liteSetupToken = token }
 
 const (
 	oidcNonceCookieName   = "weknora_oidc_nonce"
@@ -980,92 +971,8 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(resp))
 }
 
-// @Summary      Khởi tạo tự động (bản Lite desktop)
-// @Description  Chỉ dành cho bản Lite: lần khởi động đầu tự tạo người dùng và đơn vị mặc định rồi trả token; mọi lần khởi động đều phải xác thực bằng thông tin xác thực gốc của desktop, bỏ qua đăng ký/đăng nhập thủ công
-// @Tags         Xác thực
-// @Accept       json
-// @Produce      json
-// @Success      200  {object}  types.LoginResponse
-// @Failure      403  {object}  errors.AppError  "không phải bản Lite"
-// @Router       /auth/auto-setup [post]
-func (h *AuthHandler) AutoSetup(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	if Edition != "lite" {
-		appErr := errors.NewForbiddenError("auto-setup is only available in lite edition")
-		c.Error(appErr)
-		return
-	}
-
-	if liteSetupToken == "" ||
-		subtle.ConstantTimeCompare([]byte(c.GetHeader("X-WeKnora-Desktop-Token")), []byte(liteSetupToken)) != 1 {
-		_ = c.Error(errors.NewUnauthorizedError("desktop authentication is required"))
-		return
-	}
-
-	const defaultEmail = "admin@weknora.local"
-
-	user, _ := h.userService.GetUserByEmail(ctx, defaultEmail)
-	if user == nil {
-		logger.Info(ctx, "Auto-setup: creating default user and tenant for lite edition")
-
-		randomBytes := make([]byte, 24)
-		if _, err := rand.Read(randomBytes); err != nil {
-			appErr := errors.NewInternalServerError("auto-setup failed: unable to generate credentials")
-			c.Error(appErr)
-			return
-		}
-		randomPassword := base64.RawURLEncoding.EncodeToString(randomBytes)
-		randomUsername := fmt.Sprintf("user_%s", base64.RawURLEncoding.EncodeToString(randomBytes[:6]))
-
-		_, err := h.userService.Register(ctx, &types.RegisterRequest{
-			Username: randomUsername,
-			Email:    defaultEmail,
-			Password: randomPassword,
-		})
-		if err != nil {
-			logger.Errorf(ctx, "Auto-setup: failed to register default user: %v", err)
-			appErr := errors.NewInternalServerError("auto-setup failed").WithDetails(err.Error())
-			c.Error(appErr)
-			return
-		}
-		user, _ = h.userService.GetUserByEmail(ctx, defaultEmail)
-		if user == nil {
-			appErr := errors.NewInternalServerError("auto-setup failed: user not found after registration")
-			c.Error(appErr)
-			return
-		}
-	}
-
-	accessToken, refreshToken, err := h.userService.GenerateTokens(ctx, user)
-	if err != nil {
-		logger.Errorf(ctx, "Auto-setup: failed to generate tokens: %v", err)
-		appErr := errors.NewInternalServerError("auto-setup failed").WithDetails(err.Error())
-		c.Error(appErr)
-		return
-	}
-
-	tenant, _ := h.tenantService.GetTenantByID(ctx, user.TenantID)
-
-	logger.Info(ctx, "Auto-setup: completed successfully")
-	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(&types.LoginResponse{
-		Success:      true,
-		Message:      "Auto-setup successful",
-		User:         user,
-		ActiveTenant: tenant,
-		Memberships: []types.Membership{{
-			TenantID:   user.TenantID,
-			TenantName: tenantNameOrEmpty(tenant),
-			Role:       types.TenantRoleAdmin,
-		}},
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-	}))
-}
-
-// tenantNameOrEmpty returns t.Name when t is non-nil, "" otherwise.
-// Used by AutoSetup to populate Membership.TenantName without crashing
-// if the tenant lookup failed.
+// tenantNameOrEmpty returns t.Name when t is non-nil, "" otherwise, so a
+// failed tenant lookup does not crash the login response.
 func tenantNameOrEmpty(t *types.Tenant) string {
 	if t == nil {
 		return ""

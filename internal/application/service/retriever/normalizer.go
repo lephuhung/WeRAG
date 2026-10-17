@@ -29,10 +29,8 @@ type ScoreNormalizer interface {
 // caller (HybridSearch) enforces a same-embedding-model precondition via
 // ResolveEmbeddingModelKeys, so post-normalization values are comparable.
 //
-// Both engines compute `1 - cosine distance`:
-//   - Postgres pgvector — `(1 - distance) as score`, `<=>` cosine distance
-//     in [0, 2].
-//   - SQLite sqlite-vec — `1 - v.Distance` with distance_metric=cosine.
+// Postgres pgvector computes `1 - cosine distance` (`(1 - distance) as
+// score`, `<=>` cosine distance in [0, 2]).
 //
 // The theoretical range is therefore [-1, 1], but modern RAG embeddings are
 // L2-normalized positive-component unit vectors (BGE, E5, OpenAI
@@ -62,8 +60,7 @@ func (EngineAwareNormalizer) Normalize(
 	}
 
 	switch engineType {
-	case types.PostgresRetrieverEngineType,
-		types.SQLiteRetrieverEngineType:
+	case types.PostgresRetrieverEngineType:
 		// See the struct godoc: theoretical [-1, 1], observed [0, 1].
 		return clamp01(score)
 	default:

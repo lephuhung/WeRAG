@@ -426,8 +426,6 @@ func validateConnectionConfig(engineType types.RetrieverEngineType, config types
 		if !config.UseDefaultConnection && config.Addr == "" {
 			return errors.NewValidationError("addr or use_default_connection is required for postgres")
 		}
-	case types.SQLiteRetrieverEngineType:
-		// No connection config needed for SQLite
 	}
 	return nil
 }
@@ -443,18 +441,12 @@ func validateConnectionConfig(engineType types.RetrieverEngineType, config types
 // Empty fields are skipped — required-field presence is the responsibility of
 // validateConnectionConfig, which runs first on every guarded path.
 func validateConnectionAddrSSRF(engineType types.RetrieverEngineType, _ types.ConnectionConfig) error {
-	switch engineType {
-	case types.SQLiteRetrieverEngineType:
-		// File-based engine; no remote address to validate.
-		return nil
-	default:
-		// Fail closed. Engines without a DB-store address mapping (postgres
-		// and any future engine) must not silently bypass SSRF validation. The guarded callers (CreateStore,
-		// TestRawConnection) already restrict to validEngineTypes, so this is
-		// defence-in-depth rather than a user-facing path.
-		return errors.NewValidationError(
-			fmt.Sprintf("SSRF validation is not configured for engine type: %s", engineType))
-	}
+	// Fail closed. Engines without a DB-store address mapping (postgres
+	// and any future engine) must not silently bypass SSRF validation. The guarded callers (CreateStore,
+	// TestRawConnection) already restrict to validEngineTypes, so this is
+	// defence-in-depth rather than a user-facing path.
+	return errors.NewValidationError(
+		fmt.Sprintf("SSRF validation is not configured for engine type: %s", engineType))
 }
 
 // TestRawConnection validates raw (unpersisted) user-supplied connection config

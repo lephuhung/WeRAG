@@ -6,8 +6,6 @@ type RetrieverEngineType string
 // RetrieverEngineType constants
 const (
 	PostgresRetrieverEngineType RetrieverEngineType = "postgres"
-	// SQLiteRetrieverEngineType backs the unmaintained Lite build only.
-	SQLiteRetrieverEngineType RetrieverEngineType = "sqlite"
 )
 
 // RetrieverType represents the type of retriever

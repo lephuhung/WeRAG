@@ -8,7 +8,6 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.1
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/alicebob/miniredis/v2 v2.38.0
-	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/chromedp/chromedp v0.15.1
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/gin-contrib/cors v1.7.7

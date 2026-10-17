@@ -24,9 +24,6 @@ func (s *vectorStoreService) TestConnection(
 	switch engineType {
 	case types.PostgresRetrieverEngineType:
 		return testPostgresConnection(ctx, config)
-	case types.SQLiteRetrieverEngineType:
-		// SQLite is file-based, no remote connection to test
-		return "", nil
 	default:
 		return "", errors.NewBadRequestError(
 			fmt.Sprintf("connection test not supported for engine type: %s", engineType))

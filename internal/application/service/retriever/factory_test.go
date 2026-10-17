@@ -14,6 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// otherEngineType stands in for a second engine in mixed-engine tests.
+const otherEngineType types.RetrieverEngineType = "other"
+
 // ----- test fakes -----
 
 // fakeOwnership is an in-memory TenantStoreOwnership implementation.
@@ -186,7 +189,7 @@ func TestCreateRetrieveEngineForKB_UnboundMissingTenant(t *testing.T) {
 
 func TestCreateRetrieveEngineForKB_StoreBound(t *testing.T) {
 	sqliteEngine := &fakeEngine{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
@@ -210,7 +213,7 @@ func TestCreateRetrieveEngineForKB_StoreBound(t *testing.T) {
 
 func TestCreateRetrieveEngineForKB_CrossTenant(t *testing.T) {
 	sqliteEngine := &fakeEngine{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
@@ -318,7 +321,7 @@ func TestCreateRetrieveEngineFromPayload_LegacyUnbound(t *testing.T) {
 
 func TestCreateRetrieveEngineFromPayload_Bound(t *testing.T) {
 	sqliteEngine := &fakeEngine{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
@@ -338,7 +341,7 @@ func TestCreateRetrieveEngineFromPayload_Bound(t *testing.T) {
 }
 
 func TestCreateRetrieveEngineFromPayload_TamperedCrossTenant(t *testing.T) {
-	sqliteEngine := &fakeEngine{engineType: types.SQLiteRetrieverEngineType,
+	sqliteEngine := &fakeEngine{engineType: otherEngineType,
 		support: []types.RetrieverType{types.VectorRetrieverType}}
 	registry := registryWithStores(t,
 		map[string]*fakeEngine{"store-A": sqliteEngine}, nil)
@@ -362,7 +365,7 @@ func TestCreateRetrieveEngineFromPayload_TamperedCrossTenant(t *testing.T) {
 // guards against accidental shared state being introduced later.
 func TestFactoryParallelInvocation(t *testing.T) {
 	sqliteEngine := &fakeEngine{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
@@ -396,7 +399,7 @@ func TestFactoryParallelInvocation(t *testing.T) {
 func TestVerifyBinding(t *testing.T) {
 	ctx := context.Background()
 	sqliteEngine := &fakeEngine{
-		engineType: types.SQLiteRetrieverEngineType,
+		engineType: otherEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 

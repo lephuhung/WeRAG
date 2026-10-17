@@ -84,7 +84,7 @@ func TestRegistry_GetRetrieveEngineService(t *testing.T) {
 	})
 
 	t.Run("not found", func(t *testing.T) {
-		_, err := reg.GetRetrieveEngineService(types.SQLiteRetrieverEngineType)
+		_, err := reg.GetRetrieveEngineService(otherEngineType)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
@@ -93,7 +93,7 @@ func TestRegistry_GetRetrieveEngineService(t *testing.T) {
 func TestRegistry_GetAllRetrieveEngineServices(t *testing.T) {
 	reg := NewRetrieveEngineRegistry(nil, nil).(*RetrieveEngineRegistry)
 	_ = reg.Register(newMock(types.PostgresRetrieverEngineType))
-	_ = reg.Register(newMock(types.SQLiteRetrieverEngineType))
+	_ = reg.Register(newMock(otherEngineType))
 
 	t.Run("returns all byEngineType entries", func(t *testing.T) {
 		all := reg.GetAllRetrieveEngineServices()
@@ -120,11 +120,11 @@ func TestRegistry_RegisterWithStoreID(t *testing.T) {
 	})
 
 	t.Run("upsert overwrites existing", func(t *testing.T) {
-		newSvc := newMock(types.SQLiteRetrieverEngineType)
+		newSvc := newMock(otherEngineType)
 		reg.RegisterWithStoreID("store-1", newSvc)
 		svc, err := reg.GetByStoreID("store-1")
 		assert.NoError(t, err)
-		assert.Equal(t, types.SQLiteRetrieverEngineType, svc.EngineType())
+		assert.Equal(t, otherEngineType, svc.EngineType())
 	})
 
 	t.Run("same engine type different store IDs", func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestRegistry_DualMapIsolation(t *testing.T) {
 
 	_ = reg.Register(newMock(types.PostgresRetrieverEngineType))
 	reg.RegisterWithStoreID("store-pg", newMock(types.PostgresRetrieverEngineType))
-	reg.RegisterWithStoreID("store-sqlite", newMock(types.SQLiteRetrieverEngineType))
+	reg.RegisterWithStoreID("store-sqlite", newMock(otherEngineType))
 
 	t.Run("GetAllRetrieveEngineServices returns only byEngineType", func(t *testing.T) {
 		all := reg.GetAllRetrieveEngineServices()
@@ -186,7 +186,7 @@ func TestRegistry_DualMapIsolation(t *testing.T) {
 	})
 
 	t.Run("byStoreID does not affect byEngineType lookup", func(t *testing.T) {
-		_, err := reg.GetRetrieveEngineService(types.SQLiteRetrieverEngineType)
+		_, err := reg.GetRetrieveEngineService(otherEngineType)
 		assert.Error(t, err) // SQLite is only in byStoreID, not byEngineType
 	})
 

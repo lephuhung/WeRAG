@@ -199,7 +199,6 @@ function withoutCustomAuth(
 /* Share-link / embed endpoints are reachable anonymously — a 401 there must
  * surface to the caller, not trigger refresh-then-redirect (issue #1617). */
 const PUBLIC_AUTH_PATHS = [
-  "/auth/auto-setup",
   "/auth/login",
   "/auth/register",
   "/auth/oidc/",

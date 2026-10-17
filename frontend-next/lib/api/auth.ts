@@ -139,8 +139,7 @@ export interface UserInfo {
  * missed (is_system_admin shipped that way once). **Add new user fields
  * here only**.
  *
- * fallbackTenantId backs up tenant_id when missing (autoSetup returns
- * tenant.id at top level but not on the user object; /auth/me occasionally
+ * fallbackTenantId backs up tenant_id when missing (/auth/me occasionally
  * returns user without tenant).
  *
  * Boolean reads use `=== true` to strictly converge odd truthy payloads
@@ -330,29 +329,6 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
     return {
       success: false,
       message: error instanceof Error ? error.message : "Registration failed",
-    };
-  }
-}
-
-/* Lite-edition auto-setup: creates default user/tenant and returns tokens.
- * Requires the Wails desktop token; unavailable in the browser build. */
-export async function autoSetup(): Promise<LoginResponse> {
-  try {
-    const nativeApp = (window as unknown as { go?: { main?: { App?: { GetAutoSetupToken?: () => Promise<string> } } } })
-      .go?.main?.App;
-    if (!nativeApp?.GetAutoSetupToken) {
-      return { success: false, message: "Desktop authentication required" };
-    }
-    const token = await nativeApp.GetAutoSetupToken();
-    return await apiPost<LoginResponse>(
-      "/api/v1/auth/auto-setup",
-      {},
-      { headers: { "X-WeKnora-Desktop-Token": token } },
-    );
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "Auto-setup unavailable",
     };
   }
 }

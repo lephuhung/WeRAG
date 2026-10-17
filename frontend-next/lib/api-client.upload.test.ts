@@ -108,11 +108,10 @@ describe("apiUpload custom headers", () => {
     assert.ok(!("x-tenant-id" in xhr.headers));
   });
 
-  it("forwards the desktop token and other custom headers", async () => {
-    const xhr = await uploadOnce("/api/v1/auth/auto-setup", {
-      headers: { "X-WeKnora-Desktop-Token": "desk-1", "X-Custom": "yes" },
+  it("forwards custom headers", async () => {
+    const xhr = await uploadOnce("/api/v1/sessions/s2/attachments", {
+      headers: { "X-Custom": "yes" },
     });
-    assert.equal(xhr.headers["x-weknora-desktop-token"], "desk-1");
     assert.equal(xhr.headers["x-custom"], "yes");
   });
 

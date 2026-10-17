@@ -203,7 +203,6 @@ func TestCreateStore_RejectsEveryEngineType(t *testing.T) {
 		config types.ConnectionConfig
 	}{
 		{"postgres", types.PostgresRetrieverEngineType, types.ConnectionConfig{UseDefaultConnection: true}},
-		{"sqlite", types.SQLiteRetrieverEngineType, types.ConnectionConfig{}},
 		{"removed engine", types.RetrieverEngineType("qdrant"), types.ConnectionConfig{Host: "qdrant-host"}},
 	}
 
@@ -350,15 +349,6 @@ func TestTestConnection_UnsupportedEngineType(t *testing.T) {
 	assert.Equal(t, errors.ErrBadRequest, appErr.Code)
 }
 
-func TestTestConnection_SQLiteAlwaysSucceeds(t *testing.T) {
-	repo := &mockVectorStoreRepo{}
-	svc := NewVectorStoreService(repo, nil, nil, nil, nil)
-
-	version, err := svc.TestConnection(context.Background(), types.SQLiteRetrieverEngineType, types.ConnectionConfig{})
-	assert.NoError(t, err)
-	assert.Empty(t, version)
-}
-
 func TestTestConnection_PostgresDefaultConnection(t *testing.T) {
 	repo := &mockVectorStoreRepo{}
 	svc := NewVectorStoreService(repo, nil, nil, nil, nil)
@@ -397,12 +387,6 @@ func TestValidateConnectionConfig(t *testing.T) {
 			engineType: types.PostgresRetrieverEngineType,
 			config:     types.ConnectionConfig{},
 			wantError:  true,
-		},
-		{
-			name:       "sqlite always valid",
-			engineType: types.SQLiteRetrieverEngineType,
-			config:     types.ConnectionConfig{},
-			wantError:  false,
 		},
 		{
 			// Engine-type validity is Validate()'s job; this helper only
@@ -810,19 +794,19 @@ func TestBatchResolveStoreView(t *testing.T) {
 	insertGuardStore(t, db, "store-A", 1)
 	insertGuardStore(t, db, "store-B", 1)
 	svc.envStores = []types.VectorStore{
-		{ID: "__env_sqlite__", Name: "SQLite", EngineType: types.SQLiteRetrieverEngineType},
+		{ID: "__env_postgres__", Name: "PostgreSQL", EngineType: types.PostgresRetrieverEngineType},
 	}
 
 	got, err := svc.BatchResolveStoreView(ctx, 1, []string{
-		"store-A", "store-zzz", "__env_sqlite__", "",
+		"store-A", "store-zzz", "__env_postgres__", "",
 	})
 	require.NoError(t, err)
 	require.Len(t, got, 4)
 	assert.Equal(t, types.StoreSourceUser, got["store-A"].Source)
 	assert.Equal(t, "store-A", got["store-A"].Name)
 	assert.Equal(t, types.StoreSourceUnavailable, got["store-zzz"].Source)
-	assert.Equal(t, types.StoreSourceEnv, got["__env_sqlite__"].Source)
-	assert.Equal(t, "SQLite", got["__env_sqlite__"].Name)
+	assert.Equal(t, types.StoreSourceEnv, got["__env_postgres__"].Source)
+	assert.Equal(t, "PostgreSQL", got["__env_postgres__"].Name)
 	assert.Equal(t, types.StoreSourceEnv, got[""].Source)
 	assert.Equal(t, "System default", got[""].Name)
 }

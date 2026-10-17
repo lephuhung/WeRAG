@@ -180,11 +180,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 		r.Use(embedFrameAncestorsMiddleware(params.EmbedChannelService))
 	}
 
-	// Tệp tĩnh frontend (chỉ bản Lite nhúng frontend)
-	if handler.Edition == "lite" {
-		serveFrontendStatic(r)
-	}
-
 	// Route callback IM (đăng ký trước middleware xác thực, dùng xác minh chữ ký riêng của từng nền tảng)
 	RegisterIMRoutes(r, params.IMHandler)
 

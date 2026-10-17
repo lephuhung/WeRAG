@@ -20,7 +20,7 @@ func (e *moveTestEngine) MoveKnowledgeIndices(context.Context, string, string, s
 
 func TestCompositeMoveChecksAllEnginesBeforeMutation(t *testing.T) {
 	supported := &moveTestEngine{fakeEngine: fakeEngine{engineType: types.PostgresRetrieverEngineType}}
-	unsupported := &fakeEngine{engineType: types.SQLiteRetrieverEngineType}
+	unsupported := &fakeEngine{engineType: otherEngineType}
 	c := &CompositeRetrieveEngine{
 		engineInfos: []*engineInfo{{retrieveEngine: supported}, {retrieveEngine: unsupported}},
 	}
