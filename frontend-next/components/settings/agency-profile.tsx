@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api-client";
 import { getAgencyProfile, updateAgencyProfile, type AgencyProfile } from "@/lib/api/agency-profile";
 import { useAuth } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { TemplateFontSizesSettings } from "@/components/settings/template-font-sizes";
 
 const EMPTY: AgencyProfile = {
   parent_agency: "", agency_name: "", agency_abbr: "", locality: "",
@@ -138,6 +139,7 @@ export function AgencyProfileSettings() {
           {saved && <span className="caption text-muted">{t("agencyProfile.saved")}</span>}
         </div>
       )}
+      <TemplateFontSizesSettings canEditTenant={canEdit} isSystemAdmin={isSystemAdmin} />
     </div>
   );
 }

@@ -20,3 +20,17 @@ func RegisterAgencyProfileRoutes(r *gin.RouterGroup, h *handler.AgencyProfileHan
 		p.PUT("", g.TenantAdmin(), h.UpdateAgencyProfile)
 	}
 }
+
+// RegisterTemplateStyleRoutes wires the workspace's template font sizes:
+// every member reads them, the workspace's admin saves its override. The
+// platform default is the system setting document_template.font_sizes.
+func RegisterTemplateStyleRoutes(r *gin.RouterGroup, h *handler.TemplateStyleHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	p := g.apiKeyGroup(r.Group("/tenant/document-template-style"), apiKeyFullAccess())
+	{
+		p.GET("", g.MemberOrSystemAdmin(), h.GetTemplateStyle)
+		p.PUT("", g.TenantAdmin(), h.UpdateTemplateStyle)
+	}
+}

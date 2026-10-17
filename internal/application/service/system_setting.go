@@ -403,6 +403,18 @@ var registry = map[string]settingSpec{
 	// subscription, holds no seat, or has used up a limit. Off by default
 	// so subscriptions can be assigned first. SystemAdmins are exempt.
 	// Read live per QA turn.
+	// document_template.font_sizes: the platform-wide font sizes of the
+	// NĐ30 templates drafted from chat, within the NĐ30 ranges
+	// (types.TemplateFontSizeSpecs); a workspace may override them. Read per
+	// template, so edits apply to the next document.
+	types.DocumentTemplateFontSizesSettingKey: {
+		Type:     "json",
+		EnvName:  "",
+		Default:  map[string]any{},
+		Category: "chat",
+		Description: "Cỡ chữ (quốc hiệu, tiêu ngữ, cơ quan, …) và lề trang (le_tren, le_duoi, le_trai, le_phai, mm) mặc định của văn bản mẫu NĐ30 tạo từ chat, " +
+			"trong khoảng NĐ30 cho phép. Đơn vị có thể ghi đè trong Hồ sơ đơn vị. Có hiệu lực từ văn bản tạo tiếp theo.",
+	},
 	types.UsageEnforceSettingKey: {
 		Type:     "bool",
 		EnvName:  "",
@@ -1579,6 +1591,14 @@ func validateRegistryEntry(key string, rawValue any) error {
 			return fmt.Errorf("cannot encode value: %w", err)
 		}
 		if _, err := types.ParseMemoryConfig(raw); err != nil {
+			return err
+		}
+	case types.DocumentTemplateFontSizesSettingKey:
+		raw, err := json.Marshal(rawValue)
+		if err != nil {
+			return fmt.Errorf("cannot encode value: %w", err)
+		}
+		if _, err := types.ParseTemplateFontSizes(raw); err != nil {
 			return err
 		}
 	case types.WikiRunWindowSettingKey:

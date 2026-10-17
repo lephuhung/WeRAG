@@ -292,6 +292,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewDocumentSpellingFeedbackRepository))
 	must(container.Provide(repository.NewDocumentFormatFeedbackRepository))
 	must(container.Provide(repository.NewTenantAgencyProfileRepository))
+	must(container.Provide(repository.NewTenantTemplateStyleRepository))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -632,6 +633,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(handler.NewAbbreviationHandler))
 	must(container.Provide(handler.NewAgencyProfileHandler))
+	must(container.Provide(handler.NewTemplateStyleHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
@@ -684,12 +686,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		}
 	}))
 	// documents drafted from chat take the header from the agency profile
-	must(container.Invoke(func(sessions interfaces.SessionService, profiles interfaces.TenantAgencyProfileRepository) {
+	// and the font sizes from the template style
+	must(container.Invoke(func(sessions interfaces.SessionService, profiles interfaces.TenantAgencyProfileRepository,
+		styles interfaces.TenantTemplateStyleRepository,
+	) {
 		type agencyProfileUser interface {
 			SetAgencyProfiles(interfaces.TenantAgencyProfileRepository)
+			SetTemplateStyles(interfaces.TenantTemplateStyleRepository)
 		}
 		if u, ok := sessions.(agencyProfileUser); ok {
 			u.SetAgencyProfiles(profiles)
+			u.SetTemplateStyles(styles)
 		}
 	}))
 	// users' verdicts on the format check reports

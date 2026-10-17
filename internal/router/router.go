@@ -106,6 +106,7 @@ type RouterParams struct {
 	MemoryHandler                *handler.MemoryHandler
 	AbbreviationHandler          *handler.AbbreviationHandler
 	AgencyProfileHandler         *handler.AgencyProfileHandler
+	TemplateStyleHandler         *handler.TemplateStyleHandler
 	LegalReviewHandler           *handler.LegalReviewHandler
 	KnowledgeGraphViewHandler    *handler.KnowledgeGraphViewHandler
 }
@@ -357,6 +358,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		RegisterAbbreviationRoutes(v1, params.AbbreviationHandler, rbacGuards)
 		RegisterAgencyProfileRoutes(v1, params.AgencyProfileHandler, rbacGuards)
+		RegisterTemplateStyleRoutes(v1, params.TemplateStyleHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 

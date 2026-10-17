@@ -42,6 +42,27 @@ func (s *sessionService) SetAgencyProfiles(repo interfaces.TenantAgencyProfileRe
 	s.agencyProfiles = repo
 }
 
+// SetTemplateStyles gives the template flow the workspaces' font sizes.
+func (s *sessionService) SetTemplateStyles(repo interfaces.TenantTemplateStyleRepository) {
+	s.templateStyles = repo
+}
+
+// templateFontSizes resolves the font sizes a ready template is built with.
+func (s *sessionService) templateFontSizes(ctx context.Context, tenantID uint64) types.TemplateFontSizes {
+	tenant := types.TemplateFontSizes{}
+	if s.templateStyles != nil {
+		st, err := s.templateStyles.Get(ctx, tenantID)
+		if err != nil {
+			logger.Warnf(ctx, "document template: font sizes of tenant %d: %v", tenantID, err)
+		} else if st != nil {
+			if f, err := types.ParseTemplateFontSizes(st.FontSizes); err == nil {
+				tenant = f
+			}
+		}
+	}
+	return types.ResolveTemplateFontSizes(types.PlatformTemplateFontSizes(ctx, s.systemSettings), tenant)
+}
+
 // documentTemplateTurn answers a template request turn; false when the turn
 // carries none. agentMode says which stream the turn runs on (see
 // broadQueryClarification).
@@ -115,6 +136,9 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 		s.rememberTemplateUser(ctx, req, *out.Learned)
 	}
 	logger.Infof(ctx, "document template %s (%s): ready=%v", tr.RequestID, tr.TemplateID, out.Ready)
+	if out.Ready && out.Data != nil {
+		out.Data["font_sizes"] = s.templateFontSizes(ctx, tenantID)
+	}
 	return true, emitTemplateAnswer(ctx, bus, req, agentMode, out.Answer, out.Data)
 }
 

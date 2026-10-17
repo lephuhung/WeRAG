@@ -19,8 +19,12 @@ export type TemplateFields = {
   paragraphs: { kind: 'body' | 'heading' | 'article'; text: string }[];
   recipients: string[]; signature_lines: string[]; signer_name: string;
 };
+/** Font size (pt) per component and page margins (le_*, mm), resolved by the
+ * server from the platform default and the workspace's override
+ * (types.TemplateFontSizeSpecs). */
+export type TemplateFontSizes = Partial<Record<string, number>>;
 export type TemplateResponse = Required<TemplateRequest> & (
-  { status: 'needs_input'; missing_fields: string[] } | { status: 'ready'; fields: TemplateFields }
+  { status: 'needs_input'; missing_fields: string[] } | { status: 'ready'; fields: TemplateFields; font_sizes?: TemplateFontSizes }
 );
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max = 2000): v is string => typeof v === 'string' && !!v.trim() && v.length <= max && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(v);
@@ -38,6 +42,11 @@ export function parseTemplateResponse(value: unknown): TemplateResponse | null {
   if (f.grounds !== undefined && !strings(f.grounds,50)) return null;
   if ((value.template_id === 'cong-van' || value.template_id === 'to-trinh') && !text(f.addressee)) return null;
   if (value.template_id === 'quyet-dinh' && (!strings(f.grounds,50) || !text(f.request_basis) || !text(f.decision_authority))) return null;
+  // sizes are optional: an unreadable set falls back to the built-in sizes
+  if (value.font_sizes !== undefined && !(record(value.font_sizes) && Object.values(value.font_sizes).every(v => Number.isInteger(v) && (v as number) >= 8 && (v as number) <= 40))) {
+    const { font_sizes: _ignored, ...rest } = value;
+    return rest as TemplateResponse;
+  }
   return value as TemplateResponse;
 }
 

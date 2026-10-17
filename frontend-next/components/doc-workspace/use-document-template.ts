@@ -185,10 +185,10 @@ export function useDocumentTemplate({
         setNotice({ kind: "needs", fields: result.missing_fields });
         return true;
       }
-      const fields = result.fields;
+      const { fields, font_sizes: sizes } = result;
       void write(sessionId, r, async () => {
         const { buildDocumentTemplate } = await import("@/lib/document-templates");
-        return buildDocumentTemplate(result.template_id, fields);
+        return buildDocumentTemplate(result.template_id, fields, sizes);
       });
       return true;
     },

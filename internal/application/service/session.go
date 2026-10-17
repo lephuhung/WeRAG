@@ -144,6 +144,8 @@ type sessionService struct {
 	// agencyProfiles gives the document templates the workspace's issuing
 	// agency (SetAgencyProfiles); nil leaves the agency to the chat.
 	agencyProfiles interfaces.TenantAgencyProfileRepository
+	// templateStyles: the workspaces' template font sizes (SetTemplateStyles)
+	templateStyles interfaces.TenantTemplateStyleRepository
 	// systemSettings answers the platform-wide chat switches
 	// (chat.web_search_enabled, chat.mcp_enabled) owned by SuperAdmin.
 	systemSettings interfaces.SystemSettingService

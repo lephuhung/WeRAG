@@ -34,3 +34,31 @@ test("the blank document is empty, A4", async () => {
   assert.match(xml, /<w:pgSz w:w="11906" w:h="16838"/);
   assert.ok(!/<w:t[ >]/.test(xml));
 });
+
+function sizeOf(xml: string, text: string): number {
+  const run = xml.split("</w:r>").find((r) => r.includes(`>${text}</w:t>`)) ?? "";
+  return Number(/<w:sz w:val="(\d+)"/.exec(run)?.[1]) / 2;
+}
+
+test("the header uses NĐ30 13/14 sizes, or the server's sizes when sent", async () => {
+  let xml = await documentXml(await buildDocumentTemplate("thong-bao", fields));
+  assert.equal(sizeOf(xml, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), 13);
+  assert.equal(sizeOf(xml, "Độc lập - Tự do - Hạnh phúc"), 14);
+  assert.equal(sizeOf(xml, "ỦY BAN NHÂN DÂN TỈNH"), 13);
+  xml = await documentXml(await buildDocumentTemplate("thong-bao", fields, { quoc_hieu: 12, tieu_ngu: 13, co_quan_ban_hanh: 12, noi_dung: 13 }));
+  assert.equal(sizeOf(xml, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), 12);
+  assert.equal(sizeOf(xml, "Độc lập - Tự do - Hạnh phúc"), 13);
+  assert.equal(sizeOf(xml, "ỦY BAN NHÂN DÂN TỈNH"), 12);
+  assert.equal(sizeOf(xml, "Tổ chức đào tạo."), 13);
+});
+
+test("page margins follow the server's values and the header table fits the text width", async () => {
+  let xml = await documentXml(await buildDocumentTemplate("cong-van", fields));
+  assert.match(xml, /w:top="1134"[^>]*w:right="1134"[^>]*w:bottom="1134"[^>]*w:left="1701"/);
+  assert.match(xml, /<w:tblW w:type="dxa" w:w="9071"\/>/);
+  xml = await documentXml(await buildDocumentTemplate("cong-van", fields, { le_tren: 25, le_trai: 35, le_phai: 15 }));
+  assert.match(xml, /w:top="1417"[^>]*w:right="850"[^>]*w:bottom="1134"[^>]*w:left="1984"/);
+  assert.match(xml, /<w:tblW w:type="dxa" w:w="9071"\/>/); // 210 - 35 - 15 = 160 mm
+  xml = await documentXml(await buildDocumentTemplate("cong-van", fields, { le_trai: 35 }));
+  assert.match(xml, /<w:tblW w:type="dxa" w:w="8787"\/>/); // 210 - 35 - 20 = 155 mm
+});
