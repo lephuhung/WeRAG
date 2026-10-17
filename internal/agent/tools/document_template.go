@@ -26,6 +26,9 @@ import (
 // would invent: a signer, a form of signing, a legal ground, a proposing
 // unit or a number the user never wrote. Until all is known the answer is
 // needs_input with what is missing; the add-in writes nothing before ready.
+// The user may skip the questions ("bỏ qua", "để trống"): the document is
+// then built with what is known and a blank (templateBlank) wherever a
+// value is missing, for them to fill in; still nothing is invented.
 
 // TemplateUserContext is what is remembered of the person drafting.
 type TemplateUserContext struct {
@@ -118,7 +121,52 @@ const (
 	templateMaxTokens     = 6000
 	// templateContentAsksMax caps the content facts the model may ask for.
 	templateContentAsksMax = 3
+	// templateBlank stands for a value the user chose to fill in later.
+	templateBlank = "……"
 )
+
+// skipAsksRe: the user's message asks to build the document now and leave
+// what is missing blank.
+var skipAsksRe = regexp.MustCompile(`bỏ qua|để trống|điền sau|bổ sung sau|tự điền|cứ tạo|tạo luôn|tạo ngay|khỏi hỏi|không cần hỏi|không cần (thêm )?thông tin|\bskip\b|leave (it |them )?blanks?`)
+
+// wantsBlanks: the current message (the last input) skips the questions.
+func wantsBlanks(inputs []string) bool {
+	return len(inputs) > 0 && skipAsksRe.MatchString(fold(inputs[len(inputs)-1]))
+}
+
+// blankedLabels are the questions of a skipped needs_input as what was
+// left blank: a conflict with the agency profile kept the saved value (not
+// blank), an unconfirmed work context left the agency and the place blank.
+func blankedLabels(missing []string) []string {
+	var out []string
+	for _, m := range missing {
+		switch {
+		case strings.HasPrefix(m, "Xác nhận các số liệu"):
+			out = append(out, "Các số liệu, thời hạn bạn chưa nêu trong nội dung")
+		case strings.HasPrefix(m, "Xác nhận thông tin lấy từ hồ sơ công tác"):
+			out = append(out, "Tên cơ quan ban hành và địa danh")
+		case strings.HasPrefix(m, "Xác nhận "):
+			// the profile's value was used
+		default:
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// blankInvented replaces the numbers and placeholders the user never wrote
+// (draftViolations) with templateBlank.
+func blankInvented(s string, invented []string) string {
+	for _, v := range invented {
+		if ph := strings.TrimPrefix(v, "placeholder "); ph != v {
+			s = strings.ReplaceAll(s, ph, templateBlank)
+			continue
+		}
+		n := regexp.QuoteMeta(strings.TrimPrefix(v, "the number "))
+		s = regexp.MustCompile(`(^|\D)`+n+`(\D|$)`).ReplaceAllString(s, "${1}"+templateBlank+"${2}")
+	}
+	return s
+}
 
 // templateTypeCodes are the số ký hiệu codes of the types (NĐ30 Phụ lục
 // III); công văn has none (<cơ quan>-<đơn vị soạn thảo>).
@@ -520,10 +568,11 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		"schema_version": 1, "request_id": req.RequestID, "document_id": req.DocumentID, "template_id": req.TemplateID,
 	}
 	name := types.DocumentTemplateNames[req.TemplateID]
-	if len(missing) > 0 {
-		if len(missing) > templateMissingMax {
-			missing = missing[:templateMissingMax]
-		}
+	if len(missing) > templateMissingMax {
+		missing = missing[:templateMissingMax]
+	}
+	blanks := len(missing) > 0 && wantsBlanks(in.Inputs)
+	if len(missing) > 0 && !blanks {
 		base["status"] = "needs_input"
 		base["missing_fields"] = missing
 		out.Data = base
@@ -532,9 +581,50 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		for _, m := range missing {
 			b.WriteString("- " + m + "\n")
 		}
-		b.WriteString("Bạn trả lời trong khung chat; văn bản chỉ được tạo khi đủ thông tin.")
+		b.WriteString("Bạn trả lời trong khung chat; hoặc trả lời «bỏ qua» để tạo ngay, các phần còn thiếu để trống (" +
+			templateBlank + ") cho bạn tự điền.")
 		out.Answer = b.String()
 		return out
+	}
+	if blanks {
+		// the user fills these in later: what is known stays, the rest is
+		// a blank — a work-context guess they did not confirm is not used
+		blank := func(v *string) {
+			if strings.TrimSpace(*v) == "" {
+				*v = templateBlank
+			}
+		}
+		for _, v := range []*string{&agency, &abbr, &locality, &user.UnitAbbr, &subject} {
+			blank(v)
+		}
+		if len(invented) > 0 {
+			subject = blankInvented(subject, invented)
+			addressee = blankInvented(addressee, invented)
+			for i := range paragraphs {
+				paragraphs[i].Text = blankInvented(paragraphs[i].Text, invented)
+			}
+		}
+		if len(paragraphs) == 0 {
+			paragraphs = []templateParagraph{{Kind: "body", Text: templateBlank}}
+		}
+		if req.TemplateID == "cong-van" || req.TemplateID == "to-trinh" {
+			blank(&addressee)
+		}
+		if req.TemplateID == "quyet-dinh" {
+			if len(grounds) == 0 {
+				grounds = []string{"Căn cứ " + templateBlank + ";"}
+			}
+			if requestBasis == "" {
+				requestBasis = "Theo đề nghị của " + templateBlank + "."
+			}
+			blank(&decisionAuthority)
+		}
+		blank(&signerName)
+		blank(&signerPos)
+		if form == "" {
+			form = "truc_tiep"
+		}
+		blank(&onBehalf)
 	}
 
 	var signature []string
@@ -574,6 +664,17 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	base["status"] = "ready"
 	base["fields"] = fields
 	out.Data, out.Ready = base, true
+	if blanks {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Đã tạo %s «%s» theo Nghị định 30/2020/NĐ-CP; các phần bạn chưa cung cấp được để trống (%s) để bạn tự điền:\n",
+			strings.ToLower(name), subject, templateBlank)
+		for _, m := range blankedLabels(missing) {
+			b.WriteString("- " + m + "\n")
+		}
+		b.WriteString("Số văn bản để trống chờ cấp số. Kiểm tra và điền đủ trước khi trình ký.")
+		out.Answer = b.String()
+		return out
+	}
 	out.Answer = fmt.Sprintf("Đã chuẩn bị %s «%s» theo Nghị định 30/2020/NĐ-CP với thông tin của %s; số văn bản để trống chờ cấp số. Kiểm tra lại nội dung trước khi trình ký.",
 		strings.ToLower(name), subject, strings.ToUpper(agency))
 	return out

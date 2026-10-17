@@ -486,3 +486,89 @@ func TestSubjectCase(t *testing.T) {
 		}
 	}
 }
+
+func TestDocumentTemplateSkipLeavesBlanks(t *testing.T) {
+	d := planDraft()
+	// nobody named a signer; the body holds a date the user never wrote
+	d["signer"] = map[string]string{}
+	d["paragraphs"] = []map[string]string{{"kind": "body", "text": "Hoàn thành trước ngày 15 tháng 3."}}
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "ke-hoach", "Tạo kế hoạch đào tạo AI cho cán bộ")
+	in.Profile, in.User = nil, TemplateUserContext{}
+	out, _ := PrepareDocumentTemplate(context.Background(), in)
+	if out.Ready || !strings.Contains(out.Answer, "«bỏ qua»") {
+		t.Fatalf("first turn: ready %v, answer %s", out.Ready, out.Answer)
+	}
+
+	in.Inputs = append(in.Inputs, "Bỏ qua, cứ tạo văn bản để tôi tự điền sau")
+	out, _ = PrepareDocumentTemplate(context.Background(), in)
+	if !out.Ready || out.Data["status"] != "ready" {
+		t.Fatalf("skipped turn not ready: %+v", out.Data)
+	}
+	f := out.Data["fields"].(map[string]interface{})
+	want := map[string]interface{}{
+		"agency": templateBlank, "locality": templateBlank, "signer_name": templateBlank,
+		"number_symbol": "      /KH-" + templateBlank,
+	}
+	for k, v := range want {
+		if f[k] != v {
+			t.Errorf("%s = %q, want %q", k, f[k], v)
+		}
+	}
+	if sig := f["signature_lines"].([]string); len(sig) != 1 || sig[0] != templateBlank {
+		t.Errorf("signature: %q", sig)
+	}
+	body := f["paragraphs"].([]templateParagraph)
+	if len(body) != 1 || strings.Contains(body[0].Text, "15") || !strings.Contains(body[0].Text, templateBlank) {
+		t.Errorf("invented date kept: %+v", body)
+	}
+	for _, m := range []string{"Người ký", "Tên cơ quan ban hành", "Các số liệu"} {
+		if !strings.Contains(out.Answer, m) {
+			t.Errorf("answer does not list %q as blank: %s", m, out.Answer)
+		}
+	}
+	if strings.Contains(out.Answer, "Xác nhận") {
+		t.Errorf("answer still asks: %s", out.Answer)
+	}
+}
+
+func TestDocumentTemplateSkipDecisionAndLetter(t *testing.T) {
+	d := planDraft()
+	d["signer"] = map[string]string{}
+	d["paragraphs"] = []map[string]string{{"kind": "article", "text": "Điều 1. Cử cán bộ đi học."}}
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "quyet-dinh", "Quyết định cử cán bộ đi học", "để trống phần còn thiếu")
+	out, _ := PrepareDocumentTemplate(context.Background(), in)
+	if !out.Ready {
+		t.Fatalf("decision not ready: %s", out.Answer)
+	}
+	f := out.Data["fields"].(map[string]interface{})
+	if g := f["grounds"].([]string); len(g) != 1 || g[0] != "Căn cứ "+templateBlank+";" {
+		t.Errorf("grounds: %q", g)
+	}
+	if f["request_basis"] != "Theo đề nghị của "+templateBlank+"." || f["decision_authority"] == "" {
+		t.Errorf("basis %q, authority %q", f["request_basis"], f["decision_authority"])
+	}
+
+	model = &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in = templateInput(model, "cong-van", "Công văn đề nghị cử cán bộ đi học", "bỏ qua")
+	out, _ = PrepareDocumentTemplate(context.Background(), in)
+	if !out.Ready || out.Data["fields"].(map[string]interface{})["addressee"] != templateBlank {
+		t.Fatalf("letter: %+v", out.Data)
+	}
+}
+
+func TestWantsBlanksOnlyFromTheCurrentMessage(t *testing.T) {
+	if wantsBlanks([]string{"bỏ qua", "Người ký: Nguyễn Văn A"}) {
+		t.Error("an earlier skip carried over")
+	}
+	for _, m := range []string{"Bỏ qua", "cứ tạo đi", "Tạo luôn, tôi điền sau", "không cần hỏi thêm",
+		"Skip the missing details: create the document and leave blanks for me to fill in."} {
+		if !wantsBlanks([]string{"x", m}) {
+			t.Errorf("%q is not a skip", m)
+		}
+	}
+	if wantsBlanks([]string{"Nội dung: đào tạo AI cho cán bộ"}) {
+		t.Error("an ordinary answer is a skip")
+	}
+}
