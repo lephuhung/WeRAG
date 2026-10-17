@@ -43,7 +43,6 @@ func CheckSandboxTerminalAuth(
 	members interfaces.TenantMemberService,
 	sessions interfaces.SessionService,
 	claims SandboxTerminalTicketClaims,
-	rbacEnforced bool,
 	rejectExpired bool,
 ) (*types.User, error) {
 	if users == nil || members == nil || sessions == nil {
@@ -86,7 +85,7 @@ func CheckSandboxTerminalAuth(
 		return nil, ErrTerminalAuthDenied
 	}
 
-	if err := terminalMembershipStillValid(ctx, members, user, claims.TenantID, rbacEnforced); err != nil {
+	if err := terminalMembershipStillValid(ctx, members, user, claims.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -142,24 +141,19 @@ func AssertAccessTokenStillActive(token *types.AuthToken, userID string, now tim
 }
 
 // terminalMembershipStillValid answers "may this user still act in this
-// workspace", the recheck counterpart to middleware.resolveTenantRole.
+// workspace", the recheck counterpart to middleware.resolveTenantRole and
+// the SuperAdmin branch of authenticateJWTUser.
 //
-// The two are deliberately NOT shared. resolveTenantRole derives a role for a
-// fresh request and self-heals (it can auto-promote the owner of an orphan
-// workspace, writing a tenant_members row); a recheck on a live socket must
-// only observe, never grant. What the two do share — active membership,
-// superuser bypass, and the RBAC fail-open switch — is kept in step here on
-// purpose, so change both if that policy moves.
-//
-// Where they differ, this one is the more permissive: the handshake already
-// passed the middleware, so a recheck that is stricter would kill sessions
-// the middleware just admitted.
+// The rule is the same as the middleware's: an active membership, or an
+// explicit human SuperAdmin (IsSystemAdmin on a non-synthetic user), who is
+// admitted to every tenant without one. The legacy CanAccessAllTenants
+// attribute grants nothing, and enable_rbac=false does not fail open:
+// identity never depends on the RBAC rollout switch.
 func terminalMembershipStillValid(
 	ctx context.Context,
 	members interfaces.TenantMemberService,
 	user *types.User,
 	tenantID uint64,
-	rbacEnforced bool,
 ) error {
 	member, err := members.GetMembership(ctx, user.ID, tenantID)
 	if err != nil {
@@ -168,10 +162,7 @@ func terminalMembershipStillValid(
 	if member != nil && member.Status == types.TenantMemberStatusActive {
 		return nil
 	}
-	if user.CanAccessAllTenants {
-		return nil
-	}
-	if !rbacEnforced {
+	if user.IsSystemAdmin && !types.IsSyntheticUserID(user.ID) {
 		return nil
 	}
 	return ErrTerminalAuthDenied

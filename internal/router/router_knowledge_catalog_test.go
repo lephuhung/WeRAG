@@ -141,7 +141,12 @@ func TestProductionPublicCatalogRoute_GuardSensitivity(t *testing.T) {
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.Use(func(c *gin.Context) {
-		c.Request = c.Request.WithContext(tenantlessHumanCtx())
+		// An ordinary tenantless human (no system-admin flag): an explicit
+		// SuperAdmin passes every role gate, so it cannot serve as the
+		// control for an over-strict floor.
+		c.Request = c.Request.WithContext(types.WithCaller(context.Background(), types.Caller{
+			TenantID: 0, UserID: "user-a",
+		}))
 		c.Next()
 	})
 	h := handler.NewKnowledgeBaseHandler(nil, &stubPublicCatalogService{}, nil, nil, nil, nil, nil, nil, nil, nil)

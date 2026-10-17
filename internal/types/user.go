@@ -32,7 +32,7 @@ type UserPreferences struct {
 	// PUT and by service-level SwitchTenant (including when switching
 	// home, which stores the home ID). Login / RefreshToken validate that
 	// the workspace still exists and the user still has an active membership
-	// (or CanAccessAllTenants) before honouring this preference; an
+	// (or is a SuperAdmin) before honouring this preference; an
 	// invalid pointer is best-effort cleared and the user falls back to
 	// home. Refresh JWT claims have no tenant_id, so RefreshToken
 	// re-resolves from this field.

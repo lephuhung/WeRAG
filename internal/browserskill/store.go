@@ -87,9 +87,11 @@ func (s *Store) member(ctx context.Context, scope Scope) error {
 	err := s.db.WithContext(ctx).
 		Table("users AS u").
 		Where("u.id = ? AND u.is_active = ? AND u.deleted_at IS NULL", scope.User, true).
-		Where("(u.can_access_all_tenants = ? AND u.tenant_id <> ?) OR EXISTS (SELECT 1 FROM tenant_members "+
+		// A SuperAdmin acts in every tenant without a membership; the
+		// legacy can_access_all_tenants attribute grants nothing.
+		Where("u.is_system_admin = ? OR EXISTS (SELECT 1 FROM tenant_members "+
 			"AS m WHERE m.user_id = u.id AND m.tenant_id = ? AND m.status = ? AND m.deleted_at IS NULL)",
-			true, scope.Tenant, scope.Tenant, "active").
+			true, scope.Tenant, "active").
 		Count(&count).
 		Error
 	if err != nil {

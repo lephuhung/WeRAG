@@ -15,7 +15,7 @@ import (
 )
 
 // access_test.go covers the four exported helpers in access.go:
-// IsCrossTenantSuperuser, IsTenantAccessible, RequireCrossTenantAccess,
+// IsPlatformSuperAdmin, IsTenantAccessible, RequireCrossTenantAccess,
 // RequirePathTenantMatch. The shapes are similar — feature-flag +
 // per-user attribute combinations — so the tests are organised around
 // the truth-table for each helper rather than per-handler scenarios.
@@ -28,48 +28,36 @@ func cfgCrossTenant(enabled bool) *config.Config {
 	return &config.Config{Tenant: &config.TenantConfig{EnableCrossTenantAccess: enabled}}
 }
 
-// ---------- IsCrossTenantSuperuser ----------
-
-func TestIsCrossTenantSuperuser_NilCfgRejects(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.UserContextKey,
-		&types.User{ID: "u1", CanAccessAllTenants: true})
-	if IsCrossTenantSuperuser(ctx, nil) {
-		t.Fatalf("nil cfg must reject (no flag implies no cross-tenant access)")
-	}
+// superAdminCtx marks ctx the way applyAuthSession does for a signed-in
+// user: the user, its ID, the caller and the system-admin flag.
+func superAdminCtx(ctx context.Context, user *types.User) context.Context {
+	ctx = context.WithValue(ctx, types.UserContextKey, user)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, user.ID)
+	ctx = context.WithValue(ctx, types.SystemAdminContextKey, user.IsSystemAdmin)
+	return ctx
 }
 
-func TestIsCrossTenantSuperuser_FlagOffRejectsEvenWithAttribute(t *testing.T) {
-	// The user attribute alone is not enough — by design. This is the
-	// "stale claim revocation" guarantee: flipping the cluster flag off
-	// disables every CanAccessAllTenants user without a re-issue.
-	ctx := context.WithValue(context.Background(), types.UserContextKey,
-		&types.User{ID: "u1", CanAccessAllTenants: true})
-	if IsCrossTenantSuperuser(ctx, cfgCrossTenant(false)) {
-		t.Fatalf("flag off must reject even when User.CanAccessAllTenants=true")
-	}
-}
+// ---------- IsPlatformSuperAdmin ----------
 
-func TestIsCrossTenantSuperuser_FlagOnNoAttributeRejects(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.UserContextKey,
-		&types.User{ID: "u1", CanAccessAllTenants: false})
-	if IsCrossTenantSuperuser(ctx, cfgCrossTenant(true)) {
-		t.Fatalf("ordinary user must not pass even when flag is on")
+func TestIsPlatformSuperAdmin(t *testing.T) {
+	sa := &types.User{ID: "sa1", IsSystemAdmin: true}
+	if !IsPlatformSuperAdmin(superAdminCtx(context.Background(), sa)) {
+		t.Fatalf("explicit human SuperAdmin must qualify")
 	}
-}
-
-func TestIsCrossTenantSuperuser_BothAllow(t *testing.T) {
-	ctx := context.WithValue(context.Background(), types.UserContextKey,
-		&types.User{ID: "u1", CanAccessAllTenants: true})
-	if !IsCrossTenantSuperuser(ctx, cfgCrossTenant(true)) {
-		t.Fatalf("flag on + attribute true must allow")
+	flagOnly := &types.User{ID: "u1", CanAccessAllTenants: true}
+	if IsPlatformSuperAdmin(superAdminCtx(context.Background(), flagOnly)) {
+		t.Fatalf("the legacy CanAccessAllTenants attribute must not qualify")
 	}
-}
-
-func TestIsCrossTenantSuperuser_NoUserInCtxRejects(t *testing.T) {
-	// Defensive: a context lacking UserContextKey should never be
-	// promoted. Returning false rather than panicking keeps the caller
-	// (auth.go fast paths) safe to use even before user resolution.
-	if IsCrossTenantSuperuser(context.Background(), cfgCrossTenant(true)) {
+	synthetic := &types.User{ID: "system-7", IsSystemAdmin: true}
+	if IsPlatformSuperAdmin(superAdminCtx(context.Background(), synthetic)) {
+		t.Fatalf("a synthetic identity must not qualify")
+	}
+	keyCtx := types.WithTenantAPIKeyScope(superAdminCtx(context.Background(), sa),
+		types.TenantAPIKeyScope{FullAccess: true})
+	if IsPlatformSuperAdmin(keyCtx) {
+		t.Fatalf("an API-key principal must not qualify")
+	}
+	if IsPlatformSuperAdmin(context.Background()) {
 		t.Fatalf("missing user must reject")
 	}
 }
@@ -159,9 +147,7 @@ func runCrossTenantHandler(cfg *config.Config, user *types.User) *httptest.Respo
 	r.Use(ErrorHandler())
 	r.Use(func(c *gin.Context) {
 		if user != nil {
-			ctx := context.WithValue(c.Request.Context(), types.UserContextKey, user)
-			ctx = context.WithValue(ctx, types.UserIDContextKey, user.ID)
-			c.Request = c.Request.WithContext(ctx)
+			c.Request = c.Request.WithContext(superAdminCtx(c.Request.Context(), user))
 		}
 		c.Next()
 	})
@@ -174,27 +160,33 @@ func runCrossTenantHandler(cfg *config.Config, user *types.User) *httptest.Respo
 	return w
 }
 
-func TestRequireCrossTenantAccess_FlagOffBlocksEveryone(t *testing.T) {
-	w := runCrossTenantHandler(cfgCrossTenant(false),
-		&types.User{ID: "u1", CanAccessAllTenants: true})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("flag off must 403 even for superuser, got %d", w.Code)
+// The legacy attribute grants nothing, with or without the cluster flag.
+func TestRequireCrossTenantAccess_LegacyFlagBlocks(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		w := runCrossTenantHandler(cfgCrossTenant(on),
+			&types.User{ID: "u1", CanAccessAllTenants: true})
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("cluster flag=%v: CanAccessAllTenants alone must 403, got %d", on, w.Code)
+		}
 	}
 }
 
-func TestRequireCrossTenantAccess_FlagOnNoAttributeBlocks(t *testing.T) {
-	w := runCrossTenantHandler(cfgCrossTenant(true),
-		&types.User{ID: "u1", CanAccessAllTenants: false})
+func TestRequireCrossTenantAccess_OrdinaryUserBlocks(t *testing.T) {
+	w := runCrossTenantHandler(cfgCrossTenant(true), &types.User{ID: "u1"})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("ordinary user must 403 even with flag on, got %d", w.Code)
 	}
 }
 
-func TestRequireCrossTenantAccess_BothAllow(t *testing.T) {
-	w := runCrossTenantHandler(cfgCrossTenant(true),
-		&types.User{ID: "u1", CanAccessAllTenants: true})
-	if w.Code != http.StatusOK {
-		t.Fatalf("flag + superuser must allow, got %d", w.Code)
+// Platform authority is IsSystemAdmin only; the cluster flag is not
+// consulted.
+func TestRequireCrossTenantAccess_SuperAdminAllows(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		w := runCrossTenantHandler(cfgCrossTenant(on),
+			&types.User{ID: "sa1", IsSystemAdmin: true})
+		if w.Code != http.StatusOK {
+			t.Fatalf("cluster flag=%v: SuperAdmin must pass, got %d", on, w.Code)
+		}
 	}
 }
 
@@ -219,8 +211,7 @@ func runPathTenantHandler(
 			ctx = context.WithValue(ctx, types.TenantIDContextKey, ctxTenantID)
 		}
 		if user != nil {
-			ctx = context.WithValue(ctx, types.UserContextKey, user)
-			ctx = context.WithValue(ctx, types.UserIDContextKey, user.ID)
+			ctx = superAdminCtx(ctx, user)
 		}
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
@@ -248,25 +239,27 @@ func TestRequirePathTenantMatch_MismatchRejects(t *testing.T) {
 	}
 }
 
-func TestRequirePathTenantMatch_SuperuserBypassesMismatch(t *testing.T) {
-	// Pinned regression: this is the same carve-out
-	// resolveTenantIDFromPath used to enforce in tenant_member.go.
-	// Both flag and attribute must be set; either alone must reject
-	// (covered by the next test).
-	w := runPathTenantHandler(cfgCrossTenant(true), 7,
-		&types.User{ID: "su1", CanAccessAllTenants: true},
-		"/tenants/9")
-	if w.Code != http.StatusOK {
-		t.Fatalf("superuser must bypass mismatch with flag on, got %d", w.Code)
+func TestRequirePathTenantMatch_SuperAdminBypassesMismatch(t *testing.T) {
+	// A SuperAdmin's authority does not depend on the active tenant; the
+	// cluster flag is not consulted.
+	for _, on := range []bool{false, true} {
+		w := runPathTenantHandler(cfgCrossTenant(on), 7,
+			&types.User{ID: "sa1", IsSystemAdmin: true},
+			"/tenants/9")
+		if w.Code != http.StatusOK {
+			t.Fatalf("cluster flag=%v: SuperAdmin must bypass mismatch, got %d", on, w.Code)
+		}
 	}
 }
 
-func TestRequirePathTenantMatch_SuperuserNeedsClusterFlag(t *testing.T) {
-	w := runPathTenantHandler(cfgCrossTenant(false), 7,
-		&types.User{ID: "su1", CanAccessAllTenants: true},
-		"/tenants/9")
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("superuser without flag must 403, got %d", w.Code)
+func TestRequirePathTenantMatch_LegacyFlagDoesNotBypass(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		w := runPathTenantHandler(cfgCrossTenant(on), 7,
+			&types.User{ID: "su1", CanAccessAllTenants: true},
+			"/tenants/9")
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("cluster flag=%v: CanAccessAllTenants alone must 403, got %d", on, w.Code)
+		}
 	}
 }
 
@@ -302,7 +295,7 @@ func TestRequirePathTenantMatch_ZeroIDRejects(t *testing.T) {
 // `success` and `error.code`. If a future change drops c.Error in
 // favour of a raw c.JSON, this test catches the regression.
 func TestAccessMiddleware_ResponseEnvelope(t *testing.T) {
-	t.Run("RequireCrossTenantAccess_FlagOff", func(t *testing.T) {
+	t.Run("RequireCrossTenantAccess_NotSuperAdmin", func(t *testing.T) {
 		w := runCrossTenantHandler(cfgCrossTenant(false),
 			&types.User{ID: "u1", CanAccessAllTenants: true})
 		assertEnvelope(t, w, http.StatusForbidden, apperrors.ErrForbidden)

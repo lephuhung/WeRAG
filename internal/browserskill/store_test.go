@@ -157,7 +157,7 @@ func TestSuspendedMembershipInvalidatesDevice(t *testing.T) {
 		t,
 		s.db.Exec(
 			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at DATETIME,
- can_access_all_tenants BOOLEAN DEFAULT 0,tenant_id BIGINT DEFAULT 1)`,
+ can_access_all_tenants BOOLEAN DEFAULT 0,is_system_admin BOOLEAN DEFAULT 0,tenant_id BIGINT DEFAULT 1)`,
 		).Error,
 	)
 	require.NoError(
@@ -196,6 +196,8 @@ func TestSuspendedMembershipInvalidatesDevice(t *testing.T) {
 	require.ErrorIs(t, err, ErrAuthorization)
 }
 
+// A SuperAdmin acts in every tenant (its own included) without a
+// membership; the legacy can_access_all_tenants attribute grants nothing.
 func TestCrossTenantAdministratorMembership(t *testing.T) {
 	s := testStore(t)
 	s.checkMember = true
@@ -204,16 +206,18 @@ func TestCrossTenantAdministratorMembership(t *testing.T) {
 		t,
 		s.db.Exec(
 			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at DATETIME,
- can_access_all_tenants BOOLEAN,tenant_id BIGINT)`,
+ can_access_all_tenants BOOLEAN,is_system_admin BOOLEAN,tenant_id BIGINT)`,
 		).Error,
 	)
 	require.NoError(
 		t,
 		s.db.Exec(`CREATE TABLE tenant_members (user_id TEXT,tenant_id BIGINT,status TEXT,deleted_at DATETIME)`).Error,
 	)
-	require.NoError(t, s.db.Exec(`INSERT INTO users VALUES ('admin',1,NULL,1,1)`).Error)
+	require.NoError(t, s.db.Exec(`INSERT INTO users VALUES ('admin',1,NULL,1,1,1)`).Error)
 	require.NoError(t, s.member(ctx, Scope{2, "admin"}))
+	require.NoError(t, s.member(ctx, Scope{1, "admin"}))
+	require.NoError(t, s.db.Exec(`UPDATE users SET is_system_admin=0`).Error)
+	require.ErrorIs(t, s.member(ctx, Scope{2, "admin"}), ErrAuthorization,
+		"the legacy flag alone must not grant a foreign tenant")
 	require.ErrorIs(t, s.member(ctx, Scope{1, "admin"}), ErrAuthorization)
-	require.NoError(t, s.db.Exec(`UPDATE users SET can_access_all_tenants=0`).Error)
-	require.ErrorIs(t, s.member(ctx, Scope{2, "admin"}), ErrAuthorization)
 }

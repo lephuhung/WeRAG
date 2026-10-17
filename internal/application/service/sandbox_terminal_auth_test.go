@@ -106,14 +106,13 @@ func handshakeAuth(
 	members interfaces.TenantMemberService,
 	sessions interfaces.SessionService,
 	claims SandboxTerminalTicketClaims,
-	rbacEnforced bool,
 ) (*types.User, error) {
-	return CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, rbacEnforced, true)
+	return CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, true)
 }
 
 func TestCheckSandboxTerminalAuthAllowsCurrentIdentity(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
-	user, err := handshakeAuth(users, members, sessions, claims, true)
+	user, err := handshakeAuth(users, members, sessions, claims)
 	require.NoError(t, err)
 	// The handshake installs its auth session from this user rather than
 	// looking it up again.
@@ -124,14 +123,14 @@ func TestCheckSandboxTerminalAuthAllowsCurrentIdentity(t *testing.T) {
 func TestCheckSandboxTerminalAuthDeniesRevokedToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.IsRevoked = true
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
 func TestCheckSandboxTerminalAuthDeniesExpiredToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.ExpiresAt = time.Now().Add(-time.Minute)
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
@@ -140,7 +139,7 @@ func TestCheckSandboxTerminalAuthDeniesExpiredToken(t *testing.T) {
 func TestCheckSandboxTerminalAuthRecheckAllowsExpiredUnrevokedToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.ExpiresAt = time.Now().Add(-time.Minute)
-	user, err := CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, true, false)
+	user, err := CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, false)
 	require.NoError(t, err)
 	require.Equal(t, "user-1", user.ID)
 }
@@ -149,35 +148,35 @@ func TestCheckSandboxTerminalAuthRecheckStillDeniesRevokedToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.IsRevoked = true
 	users.token.ExpiresAt = time.Now().Add(-time.Minute)
-	_, err := CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, true, false)
+	_, err := CheckSandboxTerminalAuth(context.Background(), users, members, sessions, claims, false)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
 func TestCheckSandboxTerminalAuthDeniesTokenOwnedBySomeoneElse(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.UserID = "other-user"
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
 func TestCheckSandboxTerminalAuthDeniesRefreshToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token.TokenType = "refresh_token"
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
 func TestCheckSandboxTerminalAuthDeniesMissingToken(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.token = nil
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
 func TestCheckSandboxTerminalAuthDeniesDeletedUser(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.user = nil
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
@@ -188,7 +187,7 @@ func TestCheckSandboxTerminalAuthPropagatesTokenLookupError(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	lookupErr := errors.New("auth_tokens db down")
 	users.tokenFail = lookupErr
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, lookupErr)
 	require.False(t, errors.Is(err, ErrTerminalAuthDenied))
 }
@@ -197,7 +196,7 @@ func TestCheckSandboxTerminalAuthPropagatesUserLookupError(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	lookupErr := errors.New("users db down")
 	users.userFail = lookupErr
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, lookupErr)
 	require.False(t, errors.Is(err, ErrTerminalAuthDenied))
 }
@@ -206,7 +205,7 @@ func TestCheckSandboxTerminalAuthPropagatesSessionLookupError(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	lookupErr := errors.New("sessions db down")
 	sessions.err = lookupErr
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, lookupErr)
 	require.False(t, errors.Is(err, ErrTerminalAuthDenied))
 }
@@ -214,36 +213,41 @@ func TestCheckSandboxTerminalAuthPropagatesSessionLookupError(t *testing.T) {
 func TestCheckSandboxTerminalAuthDeniesInactiveUser(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.user.IsActive = false
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
-func TestCheckSandboxTerminalAuthDeniesMissingMembershipWhenRBACOn(t *testing.T) {
+// A missing membership is denied whatever the RBAC rollout switch says:
+// identity never fails open (the enable_rbac=false allowance was removed).
+func TestCheckSandboxTerminalAuthDeniesMissingMembership(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	members.member = nil
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
-func TestCheckSandboxTerminalAuthAllowsMissingMembershipWhenRBACOff(t *testing.T) {
-	users, members, sessions, claims := validTerminalAuthInputs()
-	members.member = nil
-	_, err := handshakeAuth(users, members, sessions, claims, false)
-	require.NoError(t, err)
-}
-
-func TestCheckSandboxTerminalAuthAllowsSuperuserWithoutMembership(t *testing.T) {
+// The legacy cross-tenant flag grants nothing without a membership.
+func TestCheckSandboxTerminalAuthDeniesLegacyFlagWithoutMembership(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	users.user.CanAccessAllTenants = true
 	members.member = nil
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
+	require.ErrorIs(t, err, ErrTerminalAuthDenied)
+}
+
+// A SuperAdmin needs no membership, as in the auth middleware.
+func TestCheckSandboxTerminalAuthAllowsSuperAdminWithoutMembership(t *testing.T) {
+	users, members, sessions, claims := validTerminalAuthInputs()
+	users.user.IsSystemAdmin = true
+	members.member = nil
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.NoError(t, err)
 }
 
 func TestCheckSandboxTerminalAuthDeniesSuspendedMembership(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	members.member.Status = types.TenantMemberStatusSuspended
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 
@@ -251,7 +255,7 @@ func TestCheckSandboxTerminalAuthPropagatesMembershipLookupError(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	lookupErr := errors.New("membership db down")
 	members.fail = lookupErr
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, lookupErr)
 	require.False(t, errors.Is(err, ErrTerminalAuthDenied))
 }
@@ -259,7 +263,7 @@ func TestCheckSandboxTerminalAuthPropagatesMembershipLookupError(t *testing.T) {
 func TestCheckSandboxTerminalAuthDeniesDeletedSession(t *testing.T) {
 	users, members, sessions, claims := validTerminalAuthInputs()
 	sessions.err = apperrors.ErrSessionNotFound
-	_, err := handshakeAuth(users, members, sessions, claims, true)
+	_, err := handshakeAuth(users, members, sessions, claims)
 	require.ErrorIs(t, err, ErrTerminalAuthDenied)
 }
 

@@ -519,15 +519,33 @@ func authenticateJWTUser(
 	role, ok := resolveTenantRole(ctx, memberService, user, targetTenantID, crossTenantSwitch, cfg)
 	if !ok {
 		// No active membership. A SuperAdmin is still a SuperAdmin without
-		// one: identity and platform routes are served tenantless, exactly
-		// as for a SuperAdmin with no workspace at all. Every tenant route
-		// is refused.
-		if user.IsSystemAdmin && !types.IsSyntheticUserID(user.ID) &&
-			isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
+		// one (platform authority does not depend on tenant membership):
+		//   - identity and platform routes are served tenantless, exactly
+		//     as for a SuperAdmin with no workspace at all;
+		//   - every other route runs in the selected tenant as execution
+		//     context with NO tenant role (""). Role gates admit the
+		//     SuperAdmin through access.IsExplicitHumanSuperAdmin, never
+		//     through a synthesized membership role.
+		// Everyone else without an active membership is refused.
+		if user.IsSystemAdmin && !types.IsSyntheticUserID(user.ID) {
+			if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
+				logger.Infof(ctx,
+					"[auth] SuperAdmin %s has no membership in tenant %d; serving %s tenantless",
+					user.ID, targetTenantID, c.Request.URL.Path)
+				attachTenantlessUserContext(c, user)
+				return true
+			}
 			logger.Infof(ctx,
-				"[auth] SuperAdmin %s has no membership in tenant %d; serving %s tenantless",
+				"[auth] SuperAdmin %s has no membership in tenant %d; serving %s with no tenant role",
 				user.ID, targetTenantID, c.Request.URL.Path)
-			attachTenantlessUserContext(c, user)
+			applyAuthSession(c, authSession{
+				User:        user,
+				Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+				TenantID:    targetTenantID,
+				Tenant:      tenant,
+				Role:        "",
+				SystemAdmin: true,
+			})
 			return true
 		}
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
@@ -1022,7 +1040,7 @@ func principalTenantIDFromClaims(claims jwt.MapClaims) uint64 {
 //
 // Returns ("", false) when there is no active membership (including
 // suspended rows and lookup errors); the caller answers 403, or serves a
-// SuperAdmin tenantless on tenant-optional routes.
+// SuperAdmin without a tenant role (tenantless on tenant-optional routes).
 //
 // crossTenantSwitch and cfg are kept for the call-site contract and
 // logging; neither widens the result.

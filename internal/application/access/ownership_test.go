@@ -19,11 +19,11 @@ func TestCheckOwnershipOrRoleSkipsLookupWhenGateAlreadyResolved(t *testing.T) {
 		{name: "admin", request: OwnershipRequest{Role: types.TenantRoleAdmin, Enforce: true}},
 		{name: "owner role", request: OwnershipRequest{Role: types.TenantRoleOwner, Enforce: true}},
 		{
-			name: "cross tenant superuser",
+			name: "explicit SuperAdmin",
 			request: OwnershipRequest{
-				Role:                 types.TenantRoleMember,
-				CrossTenantSuperuser: true,
-				Enforce:              true,
+				Role:       types.TenantRoleMember,
+				SuperAdmin: true,
+				Enforce:    true,
 			},
 		},
 

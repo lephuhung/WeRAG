@@ -968,9 +968,10 @@ func (s *userService) resolveLoginTenantID(ctx context.Context, user *types.User
 		}
 	}
 
-	// Membership (or cross-tenant superuser) must still be valid. Mirrors
-	// the gate in SwitchTenant so the two entry points stay consistent.
-	if !user.CanAccessAllTenants {
+	// Membership (or SuperAdmin) must still be valid. Mirrors the gate in
+	// SwitchTenant so the two entry points stay consistent. The legacy
+	// CanAccessAllTenants attribute does not skip the check.
+	if !user.IsSystemAdmin {
 		if s.memberService == nil {
 			logger.Warnf(ctx,
 				"resolveLoginTenantID: member service unavailable; falling back to home for user %s",
@@ -1004,8 +1005,9 @@ func (s *userService) resolveLoginTenantID(ctx context.Context, user *types.User
 // LastActiveTenantID). A dangling home pointer is common after
 // RemoveMember: the membership row is soft-deleted but users.tenant_id
 // was historically left untouched, which made the removed workspace
-// reappear via synthFallbackMembership (#2586). Superusers that can
-// access every tenant skip the membership gate.
+// reappear via synthFallbackMembership (#2586). SuperAdmins
+// (IsSystemAdmin) skip the membership gate; the legacy
+// CanAccessAllTenants attribute does not.
 func (s *userService) homeOrFirstMembershipTenant(ctx context.Context, user *types.User) uint64 {
 	if user == nil {
 		return 0
@@ -1013,7 +1015,7 @@ func (s *userService) homeOrFirstMembershipTenant(ctx context.Context, user *typ
 	if user.TenantID == 0 {
 		return s.resolveFirstMembershipTenant(ctx, user)
 	}
-	if user.CanAccessAllTenants || s.memberService == nil {
+	if user.IsSystemAdmin || s.memberService == nil {
 		return user.TenantID
 	}
 	member, err := s.memberService.GetMembership(ctx, user.ID, user.TenantID)

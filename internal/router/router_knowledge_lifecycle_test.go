@@ -75,14 +75,19 @@ func TestLifecycleUpdateManageGuard(t *testing.T) {
 	adminEngine.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/knowledge-bases/kb-pub", nil))
 	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
 
-	// Tenantless SuperAdmin on a tenant-owned row is rejected (401): the
-	// owner-aware guard — and the service behind it — prevent platform
-	// authority from overriding tenant ownership.
+	// Settled 2026-10-17 (Phase 2, F7): an explicit human SuperAdmin holds
+	// every right on every KB, tenant-owned included, without a membership.
 	owned := ownedRouteKB("kb-own", 1)
 	foreignSuper, _ := newLifecycleRouteEngine(t, 0, "super-1", types.TenantRoleMember, true, owned, lifecycleRegister)
 	rec = httptest.NewRecorder()
 	foreignSuper.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/knowledge-bases/kb-own", nil))
-	require.Equal(t, http.StatusUnauthorized, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, http.StatusNoContent, rec.Code, "body=%s", rec.Body.String())
+
+	// A tenantless non-SuperAdmin still cannot touch the tenant-owned row.
+	tenantless, _ := newLifecycleRouteEngine(t, 0, "user-a", types.TenantRoleMember, false, owned, lifecycleRegister)
+	rec = httptest.NewRecorder()
+	tenantless.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/knowledge-bases/kb-own", nil))
+	require.NotEqual(t, http.StatusNoContent, rec.Code, "body=%s", rec.Body.String())
 }
 
 func TestLifecycleVisibilityManageGuard(t *testing.T) {

@@ -165,6 +165,12 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == request.Caller.TenantID {
 		return grant(types.KBPermissionAdmin)
 	}
+	// An explicit human SuperAdmin holds every right on every tenant-owned
+	// KB without a membership in the owner tenant. Platform-owned rows keep
+	// the rule below: reads here, writes only via ResolveKBForManage.
+	if !IsPlatformPublicKB(kb) && IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+		return grant(types.KBPermissionAdmin)
+	}
 	if IsPlatformPublicKB(kb) {
 		// Platform-public rows are readable by every authenticated human
 		// (Viewer only) — including tenantless humans with no active
@@ -232,7 +238,7 @@ func HasTenantGrant(ctx context.Context, caller types.Caller, kbID string, owner
 // ResolveKBForDownload is the dedicated original-download decision,
 // distinct from write permission: platform-public viewers may fetch original
 // bytes, same-owner-tenant callers keep the tenant download policy, and an
-// explicit human SuperAdmin may download from platform-owned rows.
+// explicit human SuperAdmin may download from every KB.
 // Invitation viewers are never consulted here, so their existing
 // no-download behavior is unchanged; uninvited private cross-tenant callers
 // stay denied. The grant carries at most Viewer for public rows and never
@@ -256,6 +262,11 @@ func ResolveKBForDownload(ctx context.Context, request KBRequest, kb *types.Know
 		}, nil
 	}
 	if kb.OwnerTenantID != 0 && kb.OwnerTenantID == request.Caller.TenantID {
+		return grant(types.KBPermissionAdmin)
+	}
+	// An explicit human SuperAdmin downloads originals from every KB,
+	// tenant-owned included, without a membership in the owner tenant.
+	if !IsPlatformPublicKB(kb) && IsExplicitHumanSuperAdmin(ctx, request.Caller) {
 		return grant(types.KBPermissionAdmin)
 	}
 	if IsPlatformPublicKB(kb) {
@@ -284,9 +295,9 @@ func ResolveKBForDownload(ctx context.Context, request KBRequest, kb *types.Know
 
 // ResolveKBForManage authorizes content mutations by owner: the owning
 // tenant keeps its existing access (role floors stay at the route layer),
-// while platform-owned rows admit only an explicit human SuperAdmin.
-// CanAccessAllTenants alone and every machine principal stay denied on
-// platform-owned rows. KB creation and owner/scope transitions are out of
+// an explicit human SuperAdmin manages every KB, and platform-owned rows
+// admit nobody else. CanAccessAllTenants alone and every machine principal
+// stay denied. KB creation and owner/scope transitions are out of
 // scope here; Task 3 owns those privileged flows.
 func ResolveKBForManage(ctx context.Context, request KBRequest, kb *types.KnowledgeBase) (*KBAccess, error) {
 	if kb == nil || kb.ID == "" {
@@ -306,10 +317,13 @@ func ResolveKBForManage(ctx context.Context, request KBRequest, kb *types.Knowle
 			operationPermission: types.KBPermissionEditor,
 		}, nil
 	}
+	// An explicit human SuperAdmin manages every KB (platform-owned and
+	// tenant-owned) without a membership in the owner tenant. The grant
+	// keeps the caller identity; only execution scope follows kb.TenantID.
+	if IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+		return grant(types.KBPermissionAdmin)
+	}
 	if IsPlatformPublicKB(kb) {
-		if IsExplicitHumanSuperAdmin(ctx, request.Caller) {
-			return grant(types.KBPermissionAdmin)
-		}
 		if request.Caller.TenantID == 0 {
 			return nil, ErrUnauthorized
 		}
@@ -325,18 +339,19 @@ func ResolveKBForManage(ctx context.Context, request KBRequest, kb *types.Knowle
 }
 
 // RequireKBManage consumes an explicit operation grant for content
-// mutations. Platform-owned rows admit only an explicit human SuperAdmin
-// (machine principals stay denied even with a grant); tenant-owned rows
-// keep the existing editor-grant plus ingest-capability policy. An execution
-// tenant alone never authorizes a mutation.
+// mutations. An explicit human SuperAdmin passes on every KB; otherwise
+// platform-owned rows deny (machine principals stay denied even with a
+// grant) and tenant-owned rows keep the existing editor-grant plus
+// ingest-capability policy. An execution tenant alone never authorizes a
+// mutation.
 func RequireKBManage(ctx context.Context, kb *types.KnowledgeBase) error {
 	if kb == nil || kb.ID == "" {
 		return ErrNotFound
 	}
+	if IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
+		return nil
+	}
 	if IsPlatformPublicKB(kb) {
-		if IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
-			return nil
-		}
 		if types.CallerFromContext(ctx).TenantID == 0 {
 			return ErrUnauthorized
 		}
