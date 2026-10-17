@@ -88,6 +88,10 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if tenantlessPublicReadPassesRoleFloor(ctx, caller, min, c.Request.Method, c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		uid, _ := types.UserIDFromContext(ctx)
 		if !rbacEnforcementEnabled(cfg) {
 			logger.Warnf(ctx,
@@ -112,6 +116,40 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 		})
 		c.Abort()
 	}
+}
+
+// tenantlessPublicReadPassesRoleFloor reports whether a Member role floor
+// should step aside for a tenantless authenticated human on a public read
+// route.
+//
+// Public and published KB reads (detail, hybrid/FAQ search, document and
+// chunk reads, previews, original downloads, wiki reads) are
+// tenant-optional: auth admits a signed-in human without any active
+// membership (a Guest, including one whose stale tenant was dropped) on
+// exactly the shapes isTenantlessPublicReadPath lists, and every such
+// route carries a per-KB guard (KBAccessRead/Download -> access.DecideKB)
+// that loads the KB and grants Viewer only on platform public/published
+// rows. That guard is the gate for these callers; the Member floor would
+// otherwise reject them with an empty role before it ever runs.
+//
+// The bypass is deliberately narrow: only the Member floor, only callers
+// with no tenant context at all (TenantID == 0), only authenticated humans
+// (never API keys or synthetic identities), and only the read shapes in
+// isTenantlessPublicReadPath. A caller with a tenant but no role there,
+// and every write or tenant-list route, keeps the normal role check.
+func tenantlessPublicReadPassesRoleFloor(
+	ctx context.Context,
+	caller types.Caller,
+	min types.TenantRole,
+	method, path string,
+) bool {
+	if min != types.TenantRoleMember || caller.TenantID != 0 || caller.UserID == "" {
+		return false
+	}
+	if !access.IsAuthenticatedHuman(ctx, caller) {
+		return false
+	}
+	return isTenantlessPublicReadPath(path, method)
 }
 
 // RequireTenantAdmin is the plan-mandated guard for tenant-sensitive
