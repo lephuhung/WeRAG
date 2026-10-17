@@ -30,12 +30,6 @@ services:
     restart: unless-stopped
 
   app:
-        condition: service_healthy
-    networks:
-      - WeKnora-network
-    restart: unless-stopped
-
-  app:
     image: wechatopenai/weknora-app:${WEKNORA_VERSION:-latest}
     build:
       context: .
