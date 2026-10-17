@@ -608,3 +608,39 @@ func TestKBInviteHasLiveInviteRequiresCurrentOwnerAndActiveMembership(t *testing
 		t.Fatal("an invite from a previous owner never counts")
 	}
 }
+
+// Phase 3: a same-tenant invite is the per-user ACL of a restricted KB. The
+// recipient still needs an active membership in recipient_tenant_id.
+func TestKBInviteIssueSameTenant(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeKBInviteRepo()
+	kbRepo := &fakeKBRepoForInvite{kb: &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 100, OwnerTenantID: 100, Visibility: types.KBVisibilityRestricted, Name: "KB",
+	}}
+	admin := types.Caller{TenantID: 100, UserID: "admin-1", Role: types.TenantRoleAdmin}
+
+	members := &fakeMemberSvcForInvite{active: map[string]bool{"colleague": true}}
+	svc := NewKBInvitationService(repo, kbRepo, members, nil, nil)
+	created, err := svc.Issue(ctx, admin, "kb-1", &types.CreateKBInviteRequest{
+		RecipientUserID: "colleague", RecipientTenantID: 100,
+	})
+	if err != nil {
+		t.Fatalf("same-tenant invite must be allowed: %v", err)
+	}
+	if created.RecipientTenantID != 100 || created.OwnerTenantID != 100 {
+		t.Fatalf("unexpected invite %+v", created)
+	}
+
+	noMember := NewKBInvitationService(repo, kbRepo, &fakeMemberSvcForInvite{active: map[string]bool{}}, nil, nil)
+	if _, err := noMember.Issue(ctx, admin, "kb-1", &types.CreateKBInviteRequest{
+		RecipientUserID: "guest", RecipientTenantID: 100,
+	}); err == nil {
+		t.Fatal("a recipient without an active membership (a Guest) gets no ACL")
+	}
+	member := types.Caller{TenantID: 100, UserID: "member-1", Role: types.TenantRoleMember}
+	if _, err := svc.Issue(ctx, member, "kb-1", &types.CreateKBInviteRequest{
+		RecipientUserID: "colleague", RecipientTenantID: 100,
+	}); err == nil {
+		t.Fatal("only the owner tenant's admin issues invites")
+	}
+}

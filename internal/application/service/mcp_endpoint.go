@@ -299,10 +299,13 @@ func (s *mcpEndpointService) getOwned(ctx context.Context, tenantID uint64, id s
 }
 
 // validateKnowledgeBases confirms every ID names a knowledge base the
-// workspace owns or has been granted through an organization share, and
-// returns the deduplicated list. The lookup is tenant-agnostic on purpose so
-// that shared knowledge bases resolve; authorization is then decided by
-// access.ResolveKB for the calling principal, never inferred from the ID.
+// endpoint's workspace could read as an ordinary member (access.DecideKB,
+// ActionView, for a synthetic member of tenantID with the tenant-wide grant
+// lookup but no per-user invites), and returns the deduplicated list. The
+// decision is the workspace's, not the editor's: a SuperAdmin (who reads
+// every KB) cannot attach another tenant's private KB, and nobody can hand
+// a tenant-wide endpoint their personal invite. The lookup is
+// tenant-agnostic on purpose so that shared knowledge bases resolve.
 func (s *mcpEndpointService) validateKnowledgeBases(
 	ctx context.Context, tenantID uint64, ids []string,
 ) ([]string, error) {
@@ -327,14 +330,32 @@ func (s *mcpEndpointService) validateKnowledgeBases(
 		if err != nil || kb == nil {
 			return nil, apperrors.NewNotFoundError("knowledge base not found: " + id)
 		}
-		if _, err := access.ResolveKB(ctx, access.KBRequest{Caller: caller}, kb,
-			types.KBPermissionViewer, s.kbAccessGrantService); err != nil {
+		if !endpointTenantCanRead(tenantID, kb, s.kbAccessGrantService) {
 			return nil, apperrors.NewNotFoundError("knowledge base not found: " + id)
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// mcpEndpointMemberCheckUser is the user ID of the synthetic member used
+// to ask "could this workspace read the KB". It is not a "system-" ID, so
+// DecideKB treats it as a human member; it holds no invites.
+const mcpEndpointMemberCheckUser = "mcp-endpoint-member-check"
+
+// endpointTenantCanRead decides whether an ordinary active member of
+// tenantID may read kb. The check runs on a fresh context carrying only
+// that synthetic member, so the editor's identity, SuperAdmin flag or API
+// key never leak into it (grant lookups are by KB and tenant ID only).
+func endpointTenantCanRead(tenantID uint64, kb *types.KnowledgeBase, grants access.KBGrantLookup) bool {
+	if tenantID == 0 || kb == nil {
+		return false
+	}
+	member := types.Caller{TenantID: tenantID, UserID: mcpEndpointMemberCheckUser, Role: types.TenantRoleMember}
+	memberCtx := types.WithCaller(context.Background(), member)
+	_, err := access.DecideKB(memberCtx, member, kb, access.ActionView, access.KBLookups{Grants: grants})
+	return err == nil
 }
 
 // validateAgent accepts a tenant-owned agent or a user-facing builtin. The

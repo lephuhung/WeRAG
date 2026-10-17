@@ -35,6 +35,7 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/faq/entries/export", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/faq/entries/e-1", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/tags", true},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/access", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages/some-slug", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/revisions/some-slug", true},

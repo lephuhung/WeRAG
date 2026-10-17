@@ -160,8 +160,6 @@ func kbInviteHTTPError(err error) error {
 			Message:  "kb invitation token is invalid or has been revoked",
 			HTTPCode: http.StatusGone,
 		}
-	case stderrors.Is(err, service.ErrKBInviteSelfTarget):
-		return apperrors.NewBadRequestError("cannot invite a member of the owning tenant via cross-tenant invite")
 	case stderrors.Is(err, service.ErrKBInviteNotOwnerAdmin):
 		return apperrors.NewForbiddenError("only a tenant admin of the owning tenant can manage kb invitations")
 	case stderrors.Is(err, service.ErrKBInviteRecipientNotMember):

@@ -428,6 +428,7 @@ func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
 type oldKBScope struct {
 	OwnerTenantID uint64
 	Visibility    types.KBVisibility
+	MemberDefault types.KBMemberDefault
 	Known         bool
 }
 
@@ -436,7 +437,9 @@ func newKBScopeOf(kb *types.KnowledgeBase) oldKBScope {
 	if kb == nil {
 		return oldKBScope{}
 	}
-	return oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
+	return oldKBScope{
+		OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, MemberDefault: kb.MemberDefault, Known: true,
+	}
 }
 
 // recordKBScopeChange writes one kb.scope_changed audit event carrying the
@@ -471,9 +474,15 @@ func (s *knowledgeBaseService) recordKBScopeChange(
 		"new_visibility":   string(newScope.Visibility),
 		"outcome":          string(outcome),
 	}
+	if newScope.MemberDefault != "" {
+		details["new_member_default"] = string(newScope.MemberDefault)
+	}
 	if oldScope.Known {
 		details["old_owner_tenant"] = oldScope.OwnerTenantID
 		details["old_visibility"] = string(oldScope.Visibility)
+		if oldScope.MemberDefault != "" {
+			details["old_member_default"] = string(oldScope.MemberDefault)
+		}
 	}
 	if targetTenantID != 0 {
 		details["target_tenant_id"] = targetTenantID
@@ -517,57 +526,48 @@ func (s *knowledgeBaseService) logKBAuditAllowZero(
 	})
 }
 
-// requireKBLifecycleAccess enforces the owner-aware mutation policy for KB
-// lifecycle operations (update/delete). Platform-owned public rows admit
-// only an explicit human SuperAdmin. Tenant-owned rows require the caller
-// to act inside the owning tenant under its existing role policy: platform
-// SuperAdmin authority alone never overrides tenant ownership, so a
-// SuperAdmin without (or outside) the owning tenant is denied. API-key
-// principals never qualify on public rows and stay bounded by the
-// allowlist checks elsewhere on tenant rows.
+// requireKBLifecycleAccess enforces KB lifecycle operations
+// (update/delete) through access.DecideKB with ActionManage: an explicit
+// human SuperAdmin on every KB, the owner tenant's Tenant Admin, and the
+// owner tenant's machine principals (API keys keep their allow-list and
+// capability checks elsewhere). Temporary KBs (chat/web-search scratch
+// KBs cleaned up from their creator's session) need only Contribute, so
+// a member's session cleanup keeps working.
 func requireKBLifecycleAccess(ctx context.Context, kb *types.KnowledgeBase) error {
 	if kb == nil || kb.ID == "" {
 		return apperrors.NewNotFoundError("knowledge base not found")
 	}
-	caller := types.CallerFromContext(ctx)
-	if access.IsPlatformPublicKB(kb) {
-		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
-			return nil
-		}
-		if caller.TenantID == 0 {
-			return apperrors.NewUnauthorizedError("Unauthorized")
-		}
-		return apperrors.NewForbiddenError("only an explicit platform SuperAdmin may manage this public knowledge base")
+	action := access.ActionManage
+	if kb.IsTemporary {
+		action = access.ActionContribute
 	}
-	owner := kb.OwnerTenantID
-	if owner == 0 {
-		// Legacy rows predating the owner backfill: the data scope is
-		// the only ownership signal available.
-		owner = kb.TenantID
-	}
-	if owner == 0 {
-		// Platform data-scope row that is not public: fail closed to
-		// explicit human SuperAdmins only.
-		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
-			return nil
+	subject := kb
+	if kb.OwnerTenantID == 0 && !access.IsPlatformPublicKB(kb) && kb.TenantID != 0 {
+		// Legacy rows predating the owner backfill (000113): the data
+		// scope is the only ownership signal available.
+		legacy := *kb
+		legacy.OwnerTenantID = kb.TenantID
+		if !legacy.Visibility.IsValid() {
+			legacy.Visibility = types.KBVisibilityTenant
 		}
-		if caller.TenantID == 0 {
-			return apperrors.NewUnauthorizedError("Unauthorized")
-		}
-		return apperrors.NewForbiddenError("only an explicit platform SuperAdmin may manage this knowledge base")
+		subject = &legacy
 	}
-	if caller.TenantID == 0 || caller.TenantID != owner {
-		if caller.TenantID == 0 {
-			return apperrors.NewUnauthorizedError("Unauthorized")
-		}
-		return apperrors.NewForbiddenError("không thể sửa knowledge base thuộc workspace khác")
+	_, err := access.DecideKB(ctx, types.CallerFromContext(ctx), subject, action, access.KBLookups{})
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, access.ErrUnauthorized):
+		return apperrors.NewUnauthorizedError("Unauthorized")
+	case errors.Is(err, access.ErrNotFound):
+		return apperrors.NewNotFoundError("knowledge base not found")
+	default:
+		return apperrors.NewForbiddenError("không có quyền quản lý knowledge base này")
 	}
-	return nil
 }
 
-// SetKnowledgeBaseVisibility changes a KB's owner/scope. Publishing a
-// tenant KB (tenant↔published) keeps its owner and is decided by the owning
-// tenant's admin or a SuperAdmin. Promotion to platform public
+// SetKnowledgeBaseVisibility changes a KB's owner/scope. Moving between the
+// tenant-owned scopes (tenant, restricted, published) keeps the owner and
+// is decided by the owning tenant's admin or a SuperAdmin. Promotion to platform public
 // (tenant→public) and scope transfer (public→tenant) require an explicit
 // human SuperAdmin — tenant Admins, CanAccessAllTenants-only operators, and
 // API-key principals are all denied. A public→tenant
@@ -593,19 +593,20 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		return nil, apperrors.NewNotFoundError("knowledge base not found")
 	}
 	caller := types.CallerFromContext(ctx)
-	oldScope := oldKBScope{OwnerTenantID: kb.OwnerTenantID, Visibility: kb.Visibility, Known: true}
-	// Publishing a tenant KB to every reader (and withdrawing it) keeps the
-	// owner: its Tenant Admin decides, as does a SuperAdmin.
+	oldScope := newKBScopeOf(kb)
+	// Moving between tenant, restricted and published keeps the owner: its
+	// Tenant Admin decides, as does a SuperAdmin. A different target tenant
+	// is an owner change, which this call does not do.
 	if kb.OwnerTenantID != 0 && isTenantOwnedVisibility(kb.Visibility) && isTenantOwnedVisibility(visibility) &&
-		(kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished) {
+		kb.Visibility != visibility {
 		if targetTenantID != 0 && targetTenantID != kb.OwnerTenantID {
-			return nil, apperrors.NewBadRequestError("publishing keeps the owning tenant; omit target tenant")
+			return nil, apperrors.NewBadRequestError("tenant-to-tenant scope transfer is not supported")
 		}
 		if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
 			if caller.TenantID == 0 {
 				return nil, apperrors.NewUnauthorizedError("Unauthorized")
 			}
-			return nil, apperrors.NewForbiddenError("only the owning tenant's admin may publish this knowledge base")
+			return nil, apperrors.NewForbiddenError("only the owning tenant's admin may change this knowledge base's scope")
 		}
 		if kb.Visibility == visibility {
 			return kb, nil
@@ -619,8 +620,16 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		}
 		return nil, apperrors.NewForbiddenError("only an explicit platform SuperAdmin may change knowledge base scope")
 	}
-	if kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished {
-		return nil, apperrors.NewBadRequestError("withdraw the published knowledge base to tenant scope first")
+	if kb.Visibility == visibility && kb.OwnerTenantID != 0 &&
+		(kb.Visibility == types.KBVisibilityPublished || kb.Visibility == types.KBVisibilityRestricted) {
+		if targetTenantID == 0 || targetTenantID == kb.OwnerTenantID {
+			return kb, nil
+		}
+		return nil, apperrors.NewBadRequestError("tenant-to-tenant scope transfer is not supported")
+	}
+	if kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished ||
+		kb.Visibility == types.KBVisibilityRestricted || visibility == types.KBVisibilityRestricted {
+		return nil, apperrors.NewBadRequestError("move the knowledge base to tenant scope first")
 	}
 	switch {
 	case kb.Visibility == types.KBVisibilityPublic && visibility == types.KBVisibilityPublic:
@@ -668,6 +677,45 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		return nil, apperrors.NewBadRequestError("invalid visibility")
 	}
 	return s.persistKBScopeChange(ctx, kb, oldScope, targetTenantID)
+}
+
+// SetKnowledgeBaseMemberDefault sets what active members of the owner
+// tenant may do on a 'tenant' KB (view | contribute). Only the owner
+// tenant's Tenant Admin or an explicit human SuperAdmin decides; API keys
+// never do. The change is audited as a scope change and never touches
+// invitations or grants.
+func (s *knowledgeBaseService) SetKnowledgeBaseMemberDefault(
+	ctx context.Context, id string, memberDefault types.KBMemberDefault,
+) (*types.KnowledgeBase, error) {
+	if id == "" {
+		return nil, apperrors.NewBadRequestError("knowledge base ID cannot be empty")
+	}
+	if !memberDefault.IsValid() {
+		return nil, apperrors.NewBadRequestError("invalid member_default")
+	}
+	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if kb == nil {
+		return nil, apperrors.NewNotFoundError("knowledge base not found")
+	}
+	if kb.OwnerTenantID == 0 {
+		return nil, apperrors.NewBadRequestError("member_default applies to tenant-owned knowledge bases only")
+	}
+	caller := types.CallerFromContext(ctx)
+	if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
+		if caller.TenantID == 0 {
+			return nil, apperrors.NewUnauthorizedError("Unauthorized")
+		}
+		return nil, apperrors.NewForbiddenError("only the owning tenant's admin may change member access")
+	}
+	if kb.MemberDefault == memberDefault {
+		return kb, nil
+	}
+	oldScope := newKBScopeOf(kb)
+	kb.MemberDefault = memberDefault
+	return s.persistKBScopeChange(ctx, kb, oldScope, 0)
 }
 
 // isTenantOwnedVisibility reports whether v keeps a nonzero owner tenant.

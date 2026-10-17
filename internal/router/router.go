@@ -89,6 +89,7 @@ type RouterParams struct {
 	SkillHandler                 *handler.SkillHandler
 	KBAccessGrantHandler         *handler.KBAccessGrantHandler
 	KBInvitationHandler          *handler.KBInvitationHandler
+	KBAccessOverviewHandler      *handler.KBAccessOverviewHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -341,6 +342,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
 		RegisterKBAccessGrantRoutes(v1, params.KBAccessGrantHandler, rbacGuards)
 		RegisterKBInvitationRoutes(v1, params.KBInvitationHandler, rbacGuards)
+		RegisterKBAccessOverviewRoutes(v1, params.KBAccessOverviewHandler, rbacGuards)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)

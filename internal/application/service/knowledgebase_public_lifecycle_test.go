@@ -420,20 +420,33 @@ func TestPublicLifecycle_ScopeChangeFailedOutcomeAudited(t *testing.T) {
 	assert.Equal(t, "failed", details["outcome"])
 }
 
-func TestPublicLifecycle_SuperAdminOutsideTenantCannotMutateTenantKB(t *testing.T) {
+// Settled 2026-10-17: an explicit SuperAdmin holds every right on every KB,
+// tenant-owned included, from another tenant or none (DecideKB).
+func TestPublicLifecycle_SuperAdminOutsideTenantMutatesTenantKB(t *testing.T) {
 	repo := newFakeKBRepo()
 	repo.rows["kb-1"] = &types.KnowledgeBase{
 		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "kb",
 	}
 	audit := &lifecycleAudit{}
 	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), audit)
-	// Explicit SuperAdmin acting in another tenant (or none) is denied on
-	// tenant-owned rows; only the owning tenant's policy grants mutation.
 	_, err := svc.UpdateKnowledgeBase(superAdminLifecycleCtx(9), "kb-1", "new", "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "new", repo.rows["kb-1"].Name)
+	require.NoError(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "kb-1"))
+}
+
+// A member of the owner tenant cannot update or delete a regular KB at the
+// service layer (Manage needs a Tenant Admin).
+func TestLifecycle_MemberCannotManageTenantKB(t *testing.T) {
+	repo := newFakeKBRepo()
+	repo.rows["kb-1"] = &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant, Name: "kb",
+	}
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1), &lifecycleAudit{})
+	ctx := types.WithCaller(context.Background(), types.Caller{TenantID: 1, UserID: "member-1", Role: types.TenantRoleMember})
+	_, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "new", "", nil)
 	require.Error(t, err)
 	assert.Equal(t, "kb", repo.rows["kb-1"].Name)
-	require.Error(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "kb-1"))
-	assert.Contains(t, repo.rows, "kb-1")
 }
 
 func TestPublicLifecycle_SuperAdminManagesPublicKB(t *testing.T) {

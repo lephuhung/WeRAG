@@ -942,13 +942,19 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 // visibility = tenant | public. target_tenant_id carries the destination
 // tenant for public→tenant transfers and must be omitted otherwise.
 type UpdateKnowledgeBaseVisibilityRequest struct {
-	Visibility     types.KBVisibility `json:"visibility" binding:"required"`
+	// Visibility: tenant | restricted | published (owner Tenant Admin or
+	// SuperAdmin) or public (SuperAdmin). Optional when only
+	// member_default changes.
+	Visibility     types.KBVisibility `json:"visibility"`
 	TargetTenantID uint64             `json:"target_tenant_id"`
+	// MemberDefault (optional): view | contribute — what owner-tenant
+	// members may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.
+	MemberDefault *types.KBMemberDefault `json:"member_default"`
 }
 
 // UpdateKnowledgeBaseVisibility godoc
 // @Summary      修改Knowledge Base可见范围
-// @Description  切换Knowledge Base tenant/public 可见范围
+// @Description  切换Knowledge Base tenant/restricted/published/public 可见范围, member_default (view|contribute)
 // @Tags         Knowledge Base
 // @Accept       json
 // @Produce      json
@@ -972,14 +978,28 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBaseVisibility(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-	kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.TargetTenantID)
-	if err != nil {
+	if req.Visibility == "" && req.MemberDefault == nil {
+		c.Error(apperrors.NewBadRequestError("visibility or member_default is required"))
+		return
+	}
+	fail := func(err error) {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.Error(appErr)
 			return
 		}
 		c.Error(apperrors.NewInternalServerError(err.Error()))
-		return
+	}
+	if req.Visibility != "" {
+		if kb, err = h.service.SetKnowledgeBaseVisibility(ctx, id, req.Visibility, req.TargetTenantID); err != nil {
+			fail(err)
+			return
+		}
+	}
+	if req.MemberDefault != nil {
+		if kb, err = h.service.SetKnowledgeBaseMemberDefault(ctx, id, *req.MemberDefault); err != nil {
+			fail(err)
+			return
+		}
 	}
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	c.JSON(http.StatusOK, gin.H{
@@ -1065,26 +1085,12 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	// Only owner (admin with matching tenant) can delete knowledge base.
-	// Platform-owned public rows admit only an explicit human SuperAdmin.
-	// Tenant-owned rows compare against the authorization owner (not the
-	// data scope) so converted rows stay manageable by their owning tenant.
-	if access.IsPlatformPublicKB(kb) {
-		if !access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx)) {
-			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
-			return
-		}
-	} else {
-		ownerTenantID := kb.OwnerTenantID
-		if ownerTenantID == 0 {
-			ownerTenantID = kb.TenantID
-		}
-		tenantID, _ := c.Get(types.TenantIDContextKey.String())
-		callerTenantID, _ := tenantID.(uint64)
-		if ownerTenantID != callerTenantID || permission != types.KBPermissionAdmin {
-			c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
-			return
-		}
+	// Deleting a KB is a Manage decision (access.DecideKB, carried by the
+	// guard's grant): an explicit human SuperAdmin on every KB, or the
+	// owner tenant's Tenant Admin. Members contribute but never delete.
+	if permission != types.KBPermissionAdmin {
+		c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+		return
 	}
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",

@@ -580,6 +580,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTenantInvitationHandler))
 	must(container.Provide(handler.NewKBAccessGrantHandler))
 	must(container.Provide(handler.NewKBInvitationHandler))
+	must(container.Provide(handler.NewKBAccessOverviewHandler))
 	must(container.Provide(handler.NewAuditLogHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))

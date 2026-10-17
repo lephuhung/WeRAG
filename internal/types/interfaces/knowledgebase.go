@@ -101,9 +101,17 @@ type KnowledgeBaseService interface {
 		id string, name string, description string, config *types.KnowledgeBaseConfig,
 	) (*types.KnowledgeBase, error)
 
-	// SetKnowledgeBaseVisibility changes the KB scope (tenant/public).
-	// Only an explicit human SuperAdmin may invoke it — for promotion
-	// (tenant→public) and for scope transfer (public→tenant) alike.
+	// SetKnowledgeBaseMemberDefault sets what active members of the owner
+	// tenant may do on a 'tenant' KB (view | contribute). Owner Tenant
+	// Admin or SuperAdmin only.
+	SetKnowledgeBaseMemberDefault(ctx context.Context, id string, memberDefault types.KBMemberDefault,
+	) (*types.KnowledgeBase, error)
+
+	// SetKnowledgeBaseVisibility changes the KB scope. Moves among the
+	// tenant-owned scopes (tenant, restricted, published) keep the owner
+	// and are decided by the owner's Tenant Admin or a SuperAdmin. Only an
+	// explicit human SuperAdmin may promote (tenant→public) or transfer
+	// scope (public→tenant).
 	// A public→tenant transition requires the nonzero destination tenant
 	// in targetTenantID (0 means omitted); the destination must exist.
 	// A tenant→tenant call with a different target is rejected; with an

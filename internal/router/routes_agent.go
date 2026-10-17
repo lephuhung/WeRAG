@@ -163,6 +163,18 @@ func RegisterKBInvitationRoutes(r *gin.RouterGroup, inviteHandler *handler.KBInv
 		apiKeyFullAccess(), g.Member(), inviteHandler.ListMine)
 }
 
+// RegisterKBAccessOverviewRoutes registers GET /knowledge-bases/:id/access:
+// anyone who can read the KB sees its owner, scope and their own effective
+// permissions; the owner tenant's Admins and SuperAdmins also see the
+// grantees. Not exposed to scoped API keys.
+func RegisterKBAccessOverviewRoutes(r *gin.RouterGroup, h *handler.KBAccessOverviewHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	g.apiKeyRoute(r, http.MethodGet, "/knowledge-bases/:id/access",
+		apiKeyFullAccess(), g.KBAccessRead("id"), h.GetAccess)
+}
+
 // RegisterEmbedPublicRoutes registers anonymous embed endpoints secured by publish tokens.
 func RegisterEmbedPublicRoutes(
 	r *gin.Engine,

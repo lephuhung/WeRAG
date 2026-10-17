@@ -761,6 +761,12 @@ func (s *processSyncKBService) SetKnowledgeBaseVisibility(
 	return nil, nil
 }
 
+func (s *processSyncKBService) SetKnowledgeBaseMemberDefault(
+	ctx context.Context, id string, memberDefault types.KBMemberDefault,
+) (*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
 func (s *processSyncKBService) ListPublicCatalog(
 	context.Context, int, int, string,
 ) ([]*types.KnowledgeBase, int64, error) {

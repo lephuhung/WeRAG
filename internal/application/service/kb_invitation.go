@@ -24,7 +24,6 @@ var (
 	ErrKBInviteExpired       = errors.New("kb invitation has expired")
 	ErrKBInviteForbidden     = errors.New("only the invited recipient can accept this invitation")
 	ErrKBInviteTokenInvalid  = errors.New("kb invitation token is invalid or has been revoked")
-	ErrKBInviteSelfTarget    = errors.New("cannot invite a member of the owning tenant via cross-tenant invite")
 	ErrKBInviteNotOwnerAdmin = errors.New("only a tenant admin of the owning tenant can manage kb invitations")
 	// ErrKBInviteRecipientNotMember is returned at issuance when the
 	// named recipient holds no active membership in recipient_tenant_id.
@@ -85,14 +84,15 @@ func inviteToResponse(inv *types.KBInvitation, kbName, token string) *types.KBIn
 		RecipientUserID: inv.RecipientUserID, RecipientTenantID: inv.RecipientTenantID,
 		Status: inv.Status, Message: inv.Message,
 		ExpiresAt: inv.ExpiresAt, AcceptedAt: inv.AcceptedAt,
-		CreatedAt: inv.CreatedAt, Token: token,
+		CreatedAt: inv.CreatedAt, Token: token, RevokedReason: inv.RevokedReason,
 	}
 }
 
 // Issue creates a pending invite on a KB owned by the caller's tenant.
 // The recipient must be an ACTIVE MEMBER of recipient_tenant_id (not
-// merely an existing user); inviting a member of the owning tenant is
-// rejected (they already have access). Emits a kb.invite_issued audit row.
+// merely an existing user), which may be the owner tenant itself: a
+// same-tenant invite is the per-user ACL of a restricted KB. Emits a
+// kb.invite_issued audit row.
 func (s *kbInvitationService) Issue(ctx context.Context, caller types.Caller, kbID string, req *types.CreateKBInviteRequest) (*types.KBInviteResponse, error) {
 	caller = caller.Normalize()
 	if kbID == "" || req == nil || req.RecipientTenantID == 0 {
@@ -121,9 +121,6 @@ func (s *kbInvitationService) Issue(ctx context.Context, caller types.Caller, kb
 	}
 	if err := s.requireOwnerAdmin(ctx, caller, kb.OwnerTenantID); err != nil {
 		return nil, err
-	}
-	if req.RecipientTenantID == kb.OwnerTenantID {
-		return nil, ErrKBInviteSelfTarget
 	}
 	// Recipient must be a real user when the user repo is available.
 	if s.users != nil {

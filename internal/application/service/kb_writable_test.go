@@ -15,8 +15,14 @@ import (
 // writes.
 type writableGrantLookup map[string]types.KBPermission
 
-func (l writableGrantLookup) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
-	return nil, nil
+// GetKBScope: every target KB is a tenant-visibility KB owned by its data
+// tenant (DecideKB needs the real scope; an unknown KB fails closed).
+func (l writableGrantLookup) GetKBScope(_ context.Context, kbID string) (*types.KBScope, error) {
+	tenant := uint64(7)
+	if kbID == "own" {
+		tenant = 42
+	}
+	return &types.KBScope{TenantID: tenant, OwnerTenantID: tenant, Visibility: types.KBVisibilityTenant}, nil
 }
 
 func (l writableGrantLookup) ApprovedKBPermission(
@@ -60,9 +66,9 @@ func TestKBWritableIDs(t *testing.T) {
 
 	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, true))
 	require.Equal(t, []string{"own"}, kbWritableIDs(caller(types.TenantRoleMember, "u"), grants, targets, false))
-	// A stale public marker does not reduce the owning tenant Member's
-	// ability to upload into their own KB.
-	require.Equal(t, []string{"own"}, kbWritableIDs(
+	// Settled 2026-10-17: a platform-owned public KB (owner 0) is written
+	// only by a SuperAdmin, even when its data scope is the caller's tenant.
+	require.Empty(t, kbWritableIDs(
 		caller(types.TenantRoleMember, "u"), publicWritableLookup{}, targets[:1], true))
 
 	// Scoped API keys write only with the ingest capability.
@@ -70,4 +76,35 @@ func TestKBWritableIDs(t *testing.T) {
 	require.Empty(t, kbWritableIDs(apiKey(chatOnly), grants, targets, true))
 	ingest := types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityIngest)}}
 	require.Equal(t, []string{"own"}, kbWritableIDs(apiKey(ingest), grants, targets, true))
+}
+
+type scopeLookup map[string]*types.KBScope
+
+func (l scopeLookup) GetKBScope(_ context.Context, kbID string) (*types.KBScope, error) {
+	return l[kbID], nil
+}
+
+func (scopeLookup) ApprovedKBPermission(context.Context, string, uint64) (types.KBPermission, bool, error) {
+	return types.KBPermissionViewer, true, nil
+}
+
+// Agent writes follow DecideKB Contribute inside the caller's workspace.
+func TestKBWritableIDsFollowsDecideKB(t *testing.T) {
+	scopes := scopeLookup{
+		"contribute": {TenantID: 42, OwnerTenantID: 42, Visibility: types.KBVisibilityTenant,
+			MemberDefault: types.KBMemberDefaultContribute},
+		"view-only": {TenantID: 42, OwnerTenantID: 42, Visibility: types.KBVisibilityTenant,
+			MemberDefault: types.KBMemberDefaultView},
+		"restricted": {TenantID: 42, OwnerTenantID: 42, Visibility: types.KBVisibilityRestricted},
+	}
+	targets := types.SearchTargets{
+		{KnowledgeBaseID: "contribute", TenantID: 42},
+		{KnowledgeBaseID: "view-only", TenantID: 42},
+		{KnowledgeBaseID: "restricted", TenantID: 42},
+		{KnowledgeBaseID: "missing", TenantID: 42},
+	}
+	member := types.WithCaller(context.Background(), types.Caller{TenantID: 42, UserID: "u", Role: types.TenantRoleMember})
+	require.Equal(t, []string{"contribute"}, kbWritableIDs(member, scopes, targets, true))
+	admin := types.WithCaller(context.Background(), types.Caller{TenantID: 42, UserID: "a", Role: types.TenantRoleAdmin})
+	require.Equal(t, []string{"contribute", "view-only", "restricted"}, kbWritableIDs(admin, scopes, targets, true))
 }

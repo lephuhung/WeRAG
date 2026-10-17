@@ -147,6 +147,8 @@ type KBInviteResponse struct {
 	ExpiresAt         *time.Time         `json:"expires_at,omitempty"`
 	AcceptedAt        *time.Time         `json:"accepted_at,omitempty"`
 	CreatedAt         time.Time          `json:"created_at"`
+	// RevokedReason says why the system revoked the row ("owner_changed").
+	RevokedReason string `json:"revoked_reason,omitempty"`
 	// Token carries the plaintext exactly once at creation.
 	Token string `json:"token,omitempty"`
 }

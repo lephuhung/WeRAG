@@ -20,9 +20,12 @@ func kbReadPermissions(ctx context.Context, lookup access.KBGrantLookup) *access
 	return p
 }
 
-// kbWritableIDs returns the target KBs the caller may modify: only those of
-// its own workspace. Tenant access grants are viewer-only — a foreign grant
-// never makes a KB writable.
+// kbWritableIDs returns the target KBs the caller may modify through an
+// agent turn: KBs of its own workspace (the execution boundary, unchanged)
+// on which access.DecideKB grants Contribute — so member_default=view and
+// restricted KBs without a manager role stay read-only, and platform-owned
+// rows are never written by a member. ACL (invites, tenant grants) never
+// makes a KB writable. A KB whose scope cannot be loaded fails closed.
 //
 // The caller must also be allowed to write KB content at all, as on the HTTP
 // write routes: Member+, or for a scoped API key the ingest capability, as in
@@ -40,6 +43,9 @@ func kbWritableIDs(
 		!access.IsExplicitHumanSuperAdmin(ctx, caller) {
 		return nil
 	}
+	if lookup == nil || caller.TenantID == 0 {
+		return nil
+	}
 	seen := make(map[string]bool, len(targets))
 	var ids []string
 	for _, target := range targets {
@@ -47,8 +53,18 @@ func kbWritableIDs(
 			continue
 		}
 		seen[target.KnowledgeBaseID] = true
-		writable := caller.TenantID != 0 && target.TenantID == caller.TenantID
-		if writable {
+		if target.TenantID != caller.TenantID {
+			continue
+		}
+		scope, err := lookup.GetKBScope(ctx, target.KnowledgeBaseID)
+		if err != nil || scope == nil || scope.TenantID != target.TenantID {
+			continue
+		}
+		kb := &types.KnowledgeBase{
+			ID: target.KnowledgeBaseID, TenantID: scope.TenantID, OwnerTenantID: scope.OwnerTenantID,
+			Visibility: scope.Visibility, MemberDefault: scope.MemberDefault,
+		}
+		if _, err := access.DecideKB(ctx, caller, kb, access.ActionContribute, access.KBLookups{}); err == nil {
 			ids = append(ids, target.KnowledgeBaseID)
 		}
 	}
