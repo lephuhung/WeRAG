@@ -164,7 +164,7 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
                 continue
             log(f"  [{sc.id}] step {i + 1}: {query[:70]}")
             turn = client.chat(sid, query, selection=selection, mentions=mentions, web_search=step.web_search,
-                               extra=step.extra)
+                               extra=step.extra(ctx) if callable(step.extra) else step.extra)
             ctx["turns"].append(turn)
             results: List[C.Result] = []
             for chk in step.checks:

@@ -15,10 +15,14 @@ Groups (the pipelines a real user goes through):
   diagram   – vẽ sơ đồ, hình minh họa
   multi     – nhiều văn bản: đối chiếu, gọi tên bằng @, nguồn chỉ đọc
   suggest   – gợi ý hoàn thiện, chèn đoạn, yêu cầu ngoài phạm vi
+  template  – soạn văn bản mẫu NĐ30 từ chat, "tạo lại", cỡ chữ/lề trang
+  handoff   – đang dùng agent khác mà muốn tạo file Word → chuyển sang Soạn thảo văn bản
   web       – tìm kiếm web (phụ thuộc mạng)
 """
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -43,8 +47,9 @@ class Step:
     before: Optional[Callable[[Ctx], None]] = None
     judge: Optional[str] = None
     note: str = ""
-    # extra fields merged into the agent-chat body (e.g. {"recheck_words": [...]})
-    extra: Optional[Dict[str, Any]] = None
+    # extra fields merged into the agent-chat body (e.g. {"recheck_words": [...]}),
+    # or a function of ctx returning them
+    extra: Any = None
 
 
 @dataclass
@@ -154,6 +159,119 @@ def _auto_corrected(word, guess):
                             f"auto_corrections {st.get('auto_corrections')}")
         return False, "no auto_correction"
     return C.custom(f"'{word}' silently read as '{guess}' (undo via 'Không phải?')", fn)
+
+TEMPLATE_TOOL = "prepare_document_template"
+FONT_SIZE_KEYS = {"co_quan_chu_quan", "co_quan_ban_hanh", "quoc_hieu", "tieu_ngu", "trich_yeu_cong_van",
+                  "dia_danh_ngay_thang", "ten_loai", "trich_yeu", "tham_quyen_ban_hanh", "noi_dung",
+                  "chuc_vu_nguoi_ky", "ho_ten_nguoi_ky", "so_trang", "le_tren", "le_duoi", "le_trai", "le_phai"}
+
+
+def _template_card(t):
+    """the prepare_document_template result of a turn, {} when none."""
+    return next((tc.data for tc in t.tool_calls if tc.name == TEMPLATE_TOOL), {})
+
+
+def _template_request(key: str, template_id: str, doc_name: str, redo: bool = False):
+    """the document_template_request of a request kept under ctx[key] (one request ID across its turns)."""
+    def f(ctx: Ctx) -> Dict[str, Any]:
+        rid = ctx.setdefault(key, str(uuid.uuid4()))
+        r = {"schema_version": 1, "request_id": rid, "template_id": template_id, "document_id": doc(ctx, doc_name)["id"]}
+        if redo:
+            r["redo"] = True
+        return {"document_template_request": r}
+    return f
+
+
+def _template_answered():
+    """the turn ended on the template card or on the abbreviation card (PV01)."""
+    def fn(t, ctx):
+        card = _template_card(t)
+        return bool(card) or "abbreviation_choice" in t.display_types(), \
+            f"template status={card.get('status')} display_types={t.display_types()}"
+    return C.custom("template card or abbreviation card", fn)
+
+
+def _template_status(*want):
+    def fn(t, ctx):
+        st = _template_card(t).get("status")
+        return st in want, f"status={st} missing={_template_card(t).get('missing_fields')}"
+    return C.custom(f"template status in {list(want)}", fn)
+
+
+def _template_ready_with_sizes():
+    """ready, with every NĐ30 font size / margin resolved by the server."""
+    def fn(t, ctx):
+        card = _template_card(t)
+        sizes = card.get("font_sizes") or {}
+        ok = card.get("status") == "ready" and set(sizes) == FONT_SIZE_KEYS and all(isinstance(v, int) for v in sizes.values())
+        return ok, f"status={card.get('status')} font_sizes={sizes}"
+    return C.custom("ready with all 17 font sizes / margins", fn)
+
+
+def _template_keeps(*words):
+    """what the first message said is kept: in the drafted fields when ready,
+    and not asked for again (content / purpose) while details are missing."""
+    def fn(t, ctx):
+        card = _template_card(t)
+        if card.get("status") == "needs_input":
+            asked = [m for m in card.get("missing_fields") or [] if any(w in str(m).lower() for w in ("nội dung", "mục đích"))]
+            return not asked, f"content asked again: {asked}"
+        blob = str(card.get("fields") or "")
+        missing = [w for w in words if w.lower() not in blob.lower()]
+        return not missing, f"missing {missing}"
+    return C.custom(f"first message kept ({list(words)})", fn, status=WARN)
+
+
+def _keep_abbr(word):
+    """the resend of the card's "keep as typed" option, "" when no card asked about the word."""
+    def q(ctx):
+        for tc in ctx["turns"][-1].tool_calls:
+            d = tc.data or {}
+            if d.get("display_type") == "abbreviation_choice" and str(d.get("subject", "")).upper() == word.upper():
+                for o in d.get("options") or []:
+                    if o.get("resend") == f"{word} → {word}":
+                        return o["resend"]
+        return ""
+    return q
+
+
+def _if_status(status, text):
+    """send text only when the last turn ended on the template card with this status."""
+    return lambda ctx: text if _template_card(ctx["turns"][-1]).get("status") == status else ""
+
+
+def _no_card_text_copied():
+    """a choice card's numbered question appears only as a card, never copied into a plain answer."""
+    def fn(t, ctx):
+        copied = any(p in t.text for p in ("nghĩa nào", "chưa rõ ý nghĩa")) and "abbreviation_choice" not in t.display_types()
+        return not copied, f"display_types={t.display_types()}"
+    return C.custom("no choice-card question copied as plain text", fn)
+
+DOCUMENT_ASSISTANT_ID = "builtin-document-assistant"
+
+
+def _switched_to_document_assistant():
+    """the turn hands over to the document assistant in a form the UI can act on
+    (an event / card naming builtin-document-assistant, or the template card),
+    not just a sentence telling the user to switch."""
+    def fn(t, ctx):
+        names = {"agent_switch", "agent_handoff", "switch_agent", TEMPLATE_TOOL}
+        hit = [e.get("response_type") or e.get("type") for e in t.events
+               if DOCUMENT_ASSISTANT_ID in json.dumps(e, ensure_ascii=False)]
+        hit += [d for d in t.display_types() if d in names] + [tc.name for tc in t.tool_calls if tc.name in names]
+        return bool(hit), f"signals {hit or 'none'}; display_types={t.display_types()}"
+    return C.custom("switched to the document assistant (structured, not only text)", fn)
+
+
+def _no_fake_file():
+    """no claim of a Word file that was never produced (no artifacts in the turn)."""
+    def fn(t, ctx):
+        produced = any((e.get("response_type") or e.get("type")) in ("artifacts_pending",) or (e.get("data") or {}).get("artifacts")
+                       for e in t.events)
+        claims = [p for p in ("đã tạo file", "đã tạo tệp", "đã tạo xong file", "file word đã", "tải xuống tại", "đã lưu file", ".docx](")
+                  if p in t.text.lower()]
+        return produced or not claims, f"artifacts={produced} claims={claims}"
+    return C.custom("no claim of a Word file that does not exist", fn)
 
 SCENARIOS: List[Scenario] = [
     # ------------------------------------------------------------------ content
@@ -749,6 +867,93 @@ SCENARIOS: List[Scenario] = [
                 note="Từ gõ sai thứ hai cũng tự sửa; viết tắt viết thường vẫn được tra từ điển (ubnd: WARN, đang điều tra riêng).",
             ),
         ],
+    ),
+    # ------------------------------------------------------------ choice cards
+    # A turn that ended on a choice card replays a note in history, not the
+    # card's numbered question (session 681b6a7a: a later turn copied it as
+    # plain text with nothing to click).
+    Scenario(
+        id="abbr_card_history", group="partial", title="Thẻ chọn nghĩa (ATTT) rồi hỏi việc khác → không chép lại câu hỏi của thẻ thành chữ",
+        documents=[("target", "quy_trinh.docx")],
+        requires="Từ điển viết tắt dev có 2 nghĩa active cho ATTT",
+        steps=[
+            Step(
+                "ATTT có những yêu cầu gì theo quy định?",
+                S(C.display_type("abbreviation_choice"), C.no_edit_ops()),
+            ),
+            Step(
+                "Văn bản này do ai ký?",
+                S(_no_card_text_copied(), C.answer_contains_any(["Trần Minh Quang"]), C.no_edit_ops()),
+                note="Không bấm thẻ mà hỏi việc khác: lịch sử của lượt thẻ là ghi chú, câu hỏi đánh số không được lặp lại.",
+            ),
+        ],
+    ),
+    # --------------------------------------------------------------- template
+    # A NĐ30 document drafted from chat (document_template_request): the
+    # abbreviation card on PV01 keeps the first message; "bỏ qua" fills the
+    # blanks; the ready result carries the font sizes / margins in force; a
+    # redo ("tạo lại công văn", new request, redo=true) starts from what was
+    # said and is ready without asking again.
+    Scenario(
+        id="template_redo", group="template", title="Soạn công văn NĐ30 từ chat (PV01) → bỏ qua → sẵn sàng kèm cỡ chữ; 'tạo lại' → sẵn sàng ngay",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[
+            Step(
+                "Tạo cho tôi văn bản công văn theo NĐ 30, thông tin tôi cần là: gửi PV01 đề nghị cử 02 cán bộ "
+                "tham dự lớp tập huấn chuyển đổi số ngày 25/10/2026 tại hội trường Công an tỉnh.",
+                S(_template_answered(), C.no_edit_ops()),
+                extra=_template_request("tpl_req", "cong-van", "quy_trinh.docx"),
+                note="Lượt đầu có thể dừng ở thẻ hỏi PV01 (cổng viết tắt) hoặc ở thẻ văn bản mẫu.",
+            ),
+            Step(
+                _keep_abbr("PV01"),
+                S(_template_status("ready", "needs_input"), _template_keeps("tập huấn"), C.no_display_type("abbreviation_choice"), C.no_edit_ops()),
+                extra=_template_request("tpl_req", "cong-van", "quy_trinh.docx"),
+                note="Mô phỏng bấm 'giữ nguyên PV01': câu gốc (nội dung tập huấn) phải được giữ, không hỏi lại từ đầu.",
+            ),
+            Step(
+                _if_status("needs_input", "bỏ qua"),
+                S(_template_ready_with_sizes(), C.no_edit_ops()),
+                extra=_template_request("tpl_req", "cong-van", "quy_trinh.docx"),
+                note="'bỏ qua' → các mục còn thiếu để trống (……), văn bản sẵn sàng.",
+            ),
+            Step(
+                "Tạo lại công văn nhé",
+                S(_template_ready_with_sizes(), _template_keeps("tập huấn"), C.no_edit_ops()),
+                extra=_template_request("tpl_redo", "cong-van", "quy_trinh.docx", redo=True),
+                note="Yêu cầu mới (request_id khác, redo=true) → dùng lại thông tin lần trước, không hỏi lại.",
+            ),
+        ],
+    ),
+    # ---------------------------------------------------------------- handoff
+    # The user is talking to another agent (no document open) and asks for a
+    # Word file. Wanted: the turn moves to "Soạn thảo văn bản" (the only
+    # agent that writes documents) and drafts the content there. The switch
+    # checks FAIL until that hand-off exists (2026-10-17: only an open
+    # document pins the document assistant, qa.go pinDocumentAssistantForTurn).
+    Scenario(
+        id="handoff_reasoning_word_file", group="handoff", title="Đang ở agent Suy luận, muốn tạo file Word → chuyển sang Soạn thảo văn bản và soạn nội dung",
+        documents=[],
+        steps=[Step(
+            'Tôi muốn tạo một file Word công văn gửi các phòng thông báo lịch tập huấn chuyển đổi số ngày 25/10/2026 tại hội trường Công an tỉnh, giúp tôi soạn nhé.',
+            S(_switched_to_document_assistant(), _no_fake_file(), C.no_edit_ops(),
+              C.answer_contains_any(["Soạn thảo văn bản", "soạn thảo văn bản"]),
+              C.answer_contains_any(["tập huấn"], status=WARN)),
+            extra={"agent_id": "builtin-smart-reasoning"},
+            note="Mong muốn: chuyển agent (có cấu trúc, UI bấm được) rồi soạn nội dung; tối thiểu: chỉ đúng agent, không bịa đã tạo file.",
+        )],
+    ),
+    Scenario(
+        id="handoff_quick_word_file", group="handoff", title="Đang ở agent Hỏi đáp nhanh, muốn tạo file Word → chuyển sang Soạn thảo văn bản và soạn nội dung",
+        documents=[],
+        steps=[Step(
+            'Tôi muốn tạo một file Word công văn gửi các phòng thông báo lịch tập huấn chuyển đổi số ngày 25/10/2026 tại hội trường Công an tỉnh, giúp tôi soạn nhé.',
+            S(_switched_to_document_assistant(), _no_fake_file(), C.no_edit_ops(),
+              C.answer_contains_any(["Soạn thảo văn bản", "soạn thảo văn bản"]),
+              C.answer_contains_any(["tập huấn"], status=WARN)),
+            extra={"agent_id": "builtin-quick-answer"},
+            note="Hỏi đáp nhanh không có công cụ: không được giả vờ đã tạo file.",
+        )],
     ),
 ]
 
