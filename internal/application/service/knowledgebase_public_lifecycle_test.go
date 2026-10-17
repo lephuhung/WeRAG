@@ -448,3 +448,31 @@ func TestPublicLifecycle_SuperAdminManagesPublicKB(t *testing.T) {
 	assert.Equal(t, "pub2", kb.Name)
 	require.NoError(t, svc.DeleteKnowledgeBase(superAdminNoTenantLifecycleCtx(), "pub-1"))
 }
+
+// F5: an owner change revokes the previous owner's invites and grants in
+// the same write; a publish that keeps the owner revokes nothing.
+func TestScopeChange_OwnerChangeRevokesShares(t *testing.T) {
+	repo := newFakeKBRepo()
+	repo.rows["kb-1"] = &types.KnowledgeBase{
+		ID: "kb-1", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant,
+	}
+	repo.rows["pub-1"] = &types.KnowledgeBase{
+		ID: "pub-1", TenantID: 0, OwnerTenantID: 0, Visibility: types.KBVisibilityPublic,
+	}
+	svc := newLifecycleService(repo, newLifecycleTenantRepo(1, 2), &lifecycleAudit{})
+
+	_, err := svc.SetKnowledgeBaseVisibility(superAdminLifecycleCtx(1), "kb-1", types.KBVisibilityPublic, 0)
+	require.NoError(t, err)
+	_, err = svc.SetKnowledgeBaseVisibility(superAdminNoTenantLifecycleCtx(), "pub-1", types.KBVisibilityTenant, 2)
+	require.NoError(t, err)
+	assert.Equal(t, []string{types.KBInviteRevokedReasonOwnerChanged, types.KBInviteRevokedReasonOwnerChanged},
+		repo.scopeRevokeReasons, "tenant→public and public→tenant both change the owner")
+
+	repo.scopeRevokeReasons = nil
+	repo.rows["kb-2"] = &types.KnowledgeBase{
+		ID: "kb-2", TenantID: 1, OwnerTenantID: 1, Visibility: types.KBVisibilityTenant,
+	}
+	_, err = svc.SetKnowledgeBaseVisibility(superAdminLifecycleCtx(1), "kb-2", types.KBVisibilityPublished, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{""}, repo.scopeRevokeReasons, "publishing keeps the owner and its shares")
+}

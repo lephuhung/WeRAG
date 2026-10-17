@@ -128,39 +128,6 @@ func TestRequireRole_NilConfigFailsOpen(t *testing.T) {
 	}
 }
 
-func TestRequireRole_CrossTenantSuperuserBypass(t *testing.T) {
-	// Org-level superusers (User.CanAccessAllTenants) bypass tenant role
-	// gates — see auth.go's resolveTenantRole, which gives them a
-	// transient Admin in foreign tenants. RequireRole has to honour the
-	// same bypass for Owner-only gates, otherwise a superuser would be
-	// locked out of DELETE /tenants/:id once enforcement turns on.
-	//
-	// Pinned as a regression test: if anyone reorders the fast paths so
-	// the superuser check ends up after the enforcement branch, this
-	// test fails before the change ships.
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		ctx := c.Request.Context()
-		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleMember)
-		ctx = context.WithValue(ctx, types.UserIDContextKey, "su1")
-		ctx = context.WithValue(ctx, types.UserContextKey, &types.User{
-			ID: "su1", CanAccessAllTenants: true,
-		})
-		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-	})
-	router.GET("/protected",
-		RequireRole(types.TenantRoleOwner, cfgRBACWithCrossTenant(true)),
-		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) },
-	)
-	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("superuser must bypass Owner role gate, got %d", w.Code)
-	}
-}
-
 // ---------- RequireOwnershipOrRole ----------
 
 func TestRequireOwnershipOrRole_AdminBypassesLookup(t *testing.T) {
@@ -282,10 +249,9 @@ func TestRequireOwnershipOrRole_SkipsLookupWhenRBACDisabled(t *testing.T) {
 	}
 }
 
-func TestRequireOwnershipOrRole_CrossTenantSuperuserBypass(t *testing.T) {
-	// Cross-tenant superusers resolve to Admin in foreign tenants (see
-	// resolveTenantRole). For Owner-only gates we additionally let them
-	// through to preserve the pre-RBAC ability to administer any tenant.
+func TestRequireOwnershipOrRole_LegacyCrossTenantFlagDoesNotBypass(t *testing.T) {
+	// The legacy CanAccessAllTenants attribute no longer bypasses an
+	// Owner gate: the creator lookup runs and a non-creator is rejected.
 	calls := 0
 	lookup := func(c *gin.Context) (string, error) {
 		calls++
@@ -309,11 +275,11 @@ func TestRequireOwnershipOrRole_CrossTenantSuperuserBypass(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("superuser must bypass Owner gate, got %d", w.Code)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("legacy flag must not bypass Owner gate, got %d", w.Code)
 	}
-	if calls != 0 {
-		t.Fatalf("superuser bypass must skip lookup, got %d", calls)
+	if calls != 1 {
+		t.Fatalf("lookup must run once, got %d", calls)
 	}
 }
 

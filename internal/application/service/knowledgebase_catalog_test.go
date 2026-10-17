@@ -62,6 +62,17 @@ func (s *catalogInviteService) InvitedKBIDs(context.Context, string) ([]string, 
 	return s.ids, nil
 }
 
+// HasAcceptedInvite: the listing re-checks each invited KB against its
+// current owner; every fixture invite here is live.
+func (s *catalogInviteService) HasAcceptedInvite(_ context.Context, kbID, _ string) (bool, error) {
+	for _, id := range s.ids {
+		if id == kbID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func catalogHumanCtx(tenant uint64, user string) context.Context {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, tenant)
 	ctx = context.WithValue(ctx, types.UserIDContextKey, user)

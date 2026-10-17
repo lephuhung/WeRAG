@@ -162,12 +162,12 @@ func TestSwitchTenantPreferenceWriteFailureAbortsSwitch(t *testing.T) {
 }
 
 // TestSwitchTenantSuperuserRecordsPreferenceWithoutMembership covers
-// CanAccessAllTenants switching into a tenant with no membership row:
+// a SuperAdmin switching into a tenant with no membership row:
 // the preference still has to persist so refresh/login follow the switch.
 func TestSwitchTenantSuperuserRecordsPreferenceWithoutMembership(t *testing.T) {
 	ctx := context.Background()
 	repo := &switchTenantUserRepo{users: map[string]types.User{
-		"alice": {ID: "alice", TenantID: 7, CanAccessAllTenants: true},
+		"alice": {ID: "alice", TenantID: 7, IsSystemAdmin: true, CanAccessAllTenants: true},
 	}}
 	svc := newSwitchTenantTestService(repo, &membershipLookupService{byTenant: map[uint64]*types.TenantMember{}})
 	user, _ := repo.GetUserByID(ctx, "alice")
@@ -276,8 +276,8 @@ func TestUpdateUserRejectsCrossTenantFlagOnNonSystemAdmin(t *testing.T) {
 	repo := &switchTenantUserRepo{users: map[string]types.User{}}
 	svc := newSwitchTenantTestService(repo, nil)
 
-	if err := svc.UpdateUser(ctx, &types.User{ID: "plain", CanAccessAllTenants: true}); err == nil {
-		t.Fatal("setting can_access_all_tenants on a non-SuperAdmin must be rejected")
+	if err := svc.UpdateUser(ctx, &types.User{ID: "plain", CanAccessAllTenants: true}); !errors.Is(err, ErrCrossTenantFlagRequiresSystemAdmin) {
+		t.Fatalf("setting can_access_all_tenants on a non-SuperAdmin: err = %v, want ErrCrossTenantFlagRequiresSystemAdmin", err)
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("rejected write must not reach the repository, got %d writes", repo.updateCalls)

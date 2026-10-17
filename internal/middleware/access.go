@@ -63,11 +63,14 @@ func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
 	return u.CanAccessAllTenants
 }
 
-// IsTenantAccessible reports whether `user` is allowed to operate inside
-// `targetTenantID`. The decision order is:
+// IsTenantAccessible reports whether `user` may select `targetTenantID`
+// (X-Tenant-ID). Selecting a tenant is scope selection, not a grant: the
+// role inside it still comes only from an active membership
+// (resolveTenantRole). The decision order is:
 //
 //  1. Home tenant (user.TenantID == targetTenantID): always.
-//  2. Cross-tenant superuser: governed by IsCrossTenantSuperuser.
+//  2. SuperAdmin (user.IsSystemAdmin): any tenant. The legacy
+//     CanAccessAllTenants attribute no longer qualifies.
 //  3. Multi-tenant member: an active tenant_members row in the target
 //     tenant grants access (this is what makes cross-tenant browsing
 //     work for non-superusers added via PR 3's member management).
@@ -87,7 +90,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && user.CanAccessAllTenants {
+	if user.IsSystemAdmin {
 		return true
 	}
 	if memberService == nil {

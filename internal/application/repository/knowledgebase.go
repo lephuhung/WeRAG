@@ -320,6 +320,44 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBase(ctx context.Context, kb *t
 	return r.db.WithContext(ctx).Save(kb).Error
 }
 
+// UpdateKnowledgeBaseScope saves kb and, when revokeSharesReason is set,
+// revokes the KB's live invitations and tenant grants in one transaction,
+// so no request can observe the new owner together with shares the
+// previous owner issued.
+func (r *knowledgeBaseRepository) UpdateKnowledgeBaseScope(
+	ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(kb).Error; err != nil {
+			return err
+		}
+		if revokeSharesReason == "" {
+			return nil
+		}
+		now := time.Now()
+		if err := tx.Model(&types.KBInvitation{}).
+			Where("kb_id = ? AND status IN ?", kb.ID, []types.KBInvitationStatus{
+				types.KBInvitationStatusPending, types.KBInvitationStatusAccepted,
+			}).
+			Updates(map[string]any{
+				"status":         types.KBInvitationStatusRevoked,
+				"revoked_reason": revokeSharesReason,
+				"updated_at":     now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&types.KBAccessGrant{}).
+			Where("kb_id = ? AND status IN ?", kb.ID, []types.GrantStatus{
+				types.GrantStatusPending, types.GrantStatusApproved,
+			}).
+			Updates(map[string]any{
+				"status":       types.GrantStatusRevoked,
+				"responded_at": now,
+				"updated_at":   now,
+			}).Error
+	})
+}
+
 // UpdateKnowledgeBaseGeneratedProfile writes the generated_profile column
 // only. The rest of the row is left untouched so a settings save that lands
 // while a profile is being generated is not overwritten by the worker.

@@ -27,6 +27,11 @@ const (
 	KBInvitationStatusExpired  KBInvitationStatus = "expired"
 )
 
+// KBInviteRevokedReasonOwnerChanged marks invites (and their tenant-wide
+// grant counterparts) withdrawn because the KB's owner tenant changed: an
+// invitation is the previous owner's decision and does not carry over.
+const KBInviteRevokedReasonOwnerChanged = "owner_changed"
+
 // IsTerminal reports whether the status can no longer grant access.
 func (s KBInvitationStatus) IsTerminal() bool {
 	switch s {
@@ -64,6 +69,9 @@ type KBInvitation struct {
 	TokenHash string             `json:"-" gorm:"type:varchar(64);not null;uniqueIndex:idx_kb_invites_token_hash"`
 	Status    KBInvitationStatus `json:"status" gorm:"type:varchar(16);not null;default:'pending';index"`
 	Message   string             `json:"message,omitempty" gorm:"type:varchar(500)"`
+	// RevokedReason says why a revoked row was revoked by the system
+	// (KBInviteRevokedReasonOwnerChanged); empty for manual revokes.
+	RevokedReason string `json:"revoked_reason,omitempty" gorm:"type:varchar(32);not null;default:''"`
 
 	ExpiresAt  *time.Time     `json:"expires_at,omitempty" gorm:"type:timestamp with time zone"`
 	AcceptedAt *time.Time     `json:"accepted_at,omitempty" gorm:"type:timestamp with time zone"`

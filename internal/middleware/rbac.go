@@ -49,17 +49,14 @@ type CreatorLookup func(c *gin.Context) (creatorID string, err error)
 // HTTP 403 unless the caller's TenantRole (set by the auth middleware
 // in TenantRoleContextKey) is at least min.
 //
-// Cross-tenant superusers (User.CanAccessAllTenants) automatically
-// satisfy any role gate. Otherwise rolling out tenant-RBAC would silently
-// break organisation-level operators who own no tenant_members row in
-// the tenant they're administering. The escape hatch is bounded by the
-// existing canAccessTenant gate in auth.go; this middleware does not
-// grant extra reach, only honours what was already approved.
+// The legacy User.CanAccessAllTenants attribute does not satisfy any role
+// gate: a role comes only from an active membership (resolveTenantRole).
 //
 // When cfg.Tenant.EnableRBAC is false, the middleware logs the would-be
-// rejection but lets the request through — preserving today's behaviour
-// during the rollout window. Once operators flip the flag to true,
-// the same code paths start rejecting unauthorised callers.
+// rejection but lets the request through. That is the only remaining
+// meaning of the flag: it relaxes role gates during rollout and never
+// affects identity resolution (a caller without an active membership
+// never reaches a tenant route at all).
 //
 // The auth middleware always sets a TenantRole; if for some reason it
 // is missing, TenantRoleFromContext defaults to TenantRoleMember, which
@@ -78,10 +75,6 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 		}
 		role := types.CallerFromContext(ctx).Role
 		if role.HasPermission(min) {
-			c.Next()
-			return
-		}
-		if IsCrossTenantSuperuser(ctx, cfg) {
 			c.Next()
 			return
 		}
@@ -338,7 +331,8 @@ func RequireSystemAdmin(cfg *config.Config) gin.HandlerFunc {
 // API-key principals skip this human ownership gate; route capabilities and
 // allowed KB scope remain mandatory. For human callers, decision order is:
 //  1. role >= min -> allow without running lookup.
-//  2. cross-tenant superuser -> allow without running lookup.
+//  2. (removed) the legacy CanAccessAllTenants attribute no longer
+//     bypasses this gate.
 //  3. enforcement off -> log, allow without running lookup. This is the
 //     critical rollout-safety guarantee: when EnableRBAC is false, the
 //     lookup is NEVER invoked, so dormant mode incurs zero extra DB
@@ -422,10 +416,12 @@ func ownershipRequestFromContext(ctx context.Context, cfg *config.Config) access
 	caller := types.CallerFromContext(ctx)
 	_, apiKey := types.TenantAPIKeyScopeFromContext(ctx)
 	return access.OwnershipRequest{
-		UserID:               caller.UserID,
-		Role:                 caller.Role,
-		APIKey:               apiKey,
-		CrossTenantSuperuser: IsCrossTenantSuperuser(ctx, cfg),
+		UserID: caller.UserID,
+		Role:   caller.Role,
+		APIKey: apiKey,
+		// The legacy CanAccessAllTenants attribute no longer bypasses
+		// ownership/role gates (same rule as RequireRole).
+		CrossTenantSuperuser: false,
 		Enforce:              rbacEnforcementEnabled(cfg),
 	}
 }

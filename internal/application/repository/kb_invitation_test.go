@@ -42,7 +42,7 @@ func TestKBInvitationRepoMarkRevoked(t *testing.T) {
 	require.NoError(t, repo.MarkRevoked(ctx, "pending-1"))
 	// Accepted revoke works (access stops immediately).
 	require.NoError(t, repo.MarkRevoked(ctx, "accepted-1"))
-	ok, err := repo.HasAcceptedInvite(ctx, "kb-1", "user-c")
+	ok, err := repo.HasAcceptedInviteForOwner(ctx, "kb-1", "user-c", 100)
 	require.NoError(t, err)
 	require.False(t, ok, "revoked accepted invite must stop authorizing reads")
 	// Already-terminal revoke fails.

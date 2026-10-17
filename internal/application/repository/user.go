@@ -249,6 +249,9 @@ func (r *userRepository) RevokeSystemAdmin(ctx context.Context, userID, actorID 
 		}
 
 		user.IsSystemAdmin = false
+		// Only SuperAdmins may carry can_access_all_tenants; drop it with
+		// the role so the row stays valid for later writes.
+		user.CanAccessAllTenants = false
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}

@@ -151,13 +151,16 @@ func (r *kbInvitationRepository) ListAcceptedKBIDsByUser(ctx context.Context, us
 	return ids, nil
 }
 
-func (r *kbInvitationRepository) HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error) {
-	if kbID == "" || userID == "" {
+func (r *kbInvitationRepository) HasAcceptedInviteForOwner(
+	ctx context.Context, kbID, userID string, ownerTenantID uint64,
+) (bool, error) {
+	if kbID == "" || userID == "" || ownerTenantID == 0 {
 		return false, nil
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.KBInvitation{}).
-		Where("kb_id = ? AND recipient_user_id = ? AND status = ?", kbID, userID, types.KBInvitationStatusAccepted).
+		Where("kb_id = ? AND recipient_user_id = ? AND owner_tenant_id = ? AND status = ?",
+			kbID, userID, ownerTenantID, types.KBInvitationStatusAccepted).
 		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
 		Count(&count).Error
 	if err != nil {

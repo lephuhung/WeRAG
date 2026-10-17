@@ -676,7 +676,10 @@ func isTenantOwnedVisibility(v types.KBVisibility) bool {
 }
 
 // persistKBScopeChange validates and stores an owner/visibility change and
-// records the scope-change audit row.
+// records the scope-change audit row. When the owner tenant changes, the
+// previous owner's invitations and tenant grants are revoked in the same
+// transaction (revoked_reason=owner_changed): sharing is the owner's
+// decision and the new owner re-shares if it wants to.
 func (s *knowledgeBaseService) persistKBScopeChange(
 	ctx context.Context, kb *types.KnowledgeBase, oldScope oldKBScope, targetTenantID uint64,
 ) (*types.KnowledgeBase, error) {
@@ -686,7 +689,11 @@ func (s *knowledgeBaseService) persistKBScopeChange(
 		return nil, apperrors.NewBadRequestError(err.Error())
 	}
 	kb.UpdatedAt = time.Now()
-	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
+	revokeReason := ""
+	if oldScope.Known && oldScope.OwnerTenantID != kb.OwnerTenantID {
+		revokeReason = types.KBInviteRevokedReasonOwnerChanged
+	}
+	if err := s.repo.UpdateKnowledgeBaseScope(ctx, kb, revokeReason); err != nil {
 		s.recordKBScopeChange(ctx, kb.ID, oldScope, newKBScopeOf(kb), targetTenantID, types.AuditOutcomeFailed)
 		return nil, err
 	}
@@ -822,7 +829,19 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 					}
 					if len(fresh) > 0 {
 						if invitedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, fresh); kerr == nil {
-							kbs = appendInvitedKBs(kbs, invitedKBs)
+							// Re-check each row against the KB's current
+							// owner: an invite from a previous owner must
+							// not list the KB.
+							live := make([]*types.KnowledgeBase, 0, len(invitedKBs))
+							for _, kb := range invitedKBs {
+								if kb == nil {
+									continue
+								}
+								if ok, cerr := s.kbInviteService.HasAcceptedInvite(ctx, kb.ID, userID); cerr == nil && ok {
+									live = append(live, kb)
+								}
+							}
+							kbs = appendInvitedKBs(kbs, live)
 						}
 					}
 				}

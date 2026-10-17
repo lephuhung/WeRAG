@@ -10,7 +10,8 @@ import (
 // service implements it; a nil lookup fails closed (no invite access).
 type KBInviteLookup interface {
 	// HasAcceptedInvite reports whether userID holds a live (accepted,
-	// unexpired) invite on kbID.
+	// unexpired) invite on kbID issued by the KB's current owner tenant;
+	// invites from a previous owner never count.
 	HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error)
 }
 

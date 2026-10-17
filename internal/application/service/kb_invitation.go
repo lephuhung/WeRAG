@@ -186,8 +186,8 @@ func (s *kbInvitationService) ListByKB(ctx context.Context, caller types.Caller,
 	return out, nil
 }
 
-// Revoke withdraws a pending OR accepted invite on a KB owned by the
-// caller's tenant. The transition is atomic (single UPDATE with a
+// Revoke withdraws a pending OR accepted invite on a KB currently owned by
+// the caller's tenant, including a stale row issued by a previous owner. The transition is atomic (single UPDATE with a
 // status-in predicate): revoking an accepted invite stops all future
 // reads immediately because HasAcceptedInvite only counts accepted rows.
 // Emits a kb.invite_revoked audit row.
@@ -201,9 +201,9 @@ func (s *kbInvitationService) Revoke(ctx context.Context, caller types.Caller, i
 	if err != nil || kb == nil {
 		return ErrKBInviteNotFound
 	}
-	if kb.OwnerTenantID != inv.OwnerTenantID {
-		return ErrKBInviteNotFound
-	}
+	// Authorize against the KB's CURRENT owner. A row issued by a previous
+	// owner (stale after an owner change) is still revocable by the
+	// current owner's admin, never by the previous owner's.
 	if err := s.requireOwnerAdmin(ctx, caller, kb.OwnerTenantID); err != nil {
 		return err
 	}
@@ -344,9 +344,21 @@ func (s *kbInvitationService) ListMine(ctx context.Context, caller types.Caller)
 	return out, nil
 }
 
-// HasAcceptedInvite implements access.KBInviteLookup.
+// HasAcceptedInvite implements access.KBInviteLookup. Only an invite issued
+// by the KB's current owner counts: after an owner change, the previous
+// owner's invites authorize nothing.
 func (s *kbInvitationService) HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error) {
-	return s.invites.HasAcceptedInvite(ctx, kbID, userID)
+	if kbID == "" || userID == "" {
+		return false, nil
+	}
+	kb, err := s.kbs.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return false, err
+	}
+	if kb == nil {
+		return false, nil
+	}
+	return s.invites.HasAcceptedInviteForOwner(ctx, kbID, userID, kb.OwnerTenantID)
 }
 
 // InvitedKBIDs returns the KB IDs on which userID holds a live (accepted,

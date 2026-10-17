@@ -283,6 +283,11 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
 	UpdateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) error
+	// UpdateKnowledgeBaseScope saves an owner/visibility change. When
+	// revokeSharesReason is non-empty it also, in the same transaction,
+	// revokes every pending/accepted kb_invitations row of the KB (stamping
+	// revoked_reason) and every pending/approved kb_access_grants row.
+	UpdateKnowledgeBaseScope(ctx context.Context, kb *types.KnowledgeBase, revokeSharesReason string) error
 
 	// DeleteKnowledgeBase deletes a knowledge base record
 	// Parameters:

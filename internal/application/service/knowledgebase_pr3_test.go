@@ -79,6 +79,9 @@ type fakeKBRepo struct {
 	rows      map[string]*types.KnowledgeBase
 	createErr error
 	updateErr error
+	// scopeRevokeReasons records revokeSharesReason of every
+	// UpdateKnowledgeBaseScope call.
+	scopeRevokeReasons []string
 	// Task 4 catalog fixtures.
 	owned          []*types.KnowledgeBase
 	catalogItems   []*types.KnowledgeBase
@@ -150,6 +153,11 @@ func (r *fakeKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, tenantID ui
 }
 
 func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
+	return r.updateErr
+}
+
+func (r *fakeKBRepo) UpdateKnowledgeBaseScope(_ context.Context, _ *types.KnowledgeBase, reason string) error {
+	r.scopeRevokeReasons = append(r.scopeRevokeReasons, reason)
 	return r.updateErr
 }
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }

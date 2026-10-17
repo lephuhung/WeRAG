@@ -24,7 +24,6 @@ func TestBodyKBOwnershipSkipsUnnecessaryLookup(t *testing.T) {
 	}{
 		{name: "owner", role: types.TenantRoleOwner},
 		{name: "API key", role: types.TenantRoleMember, apiKey: true},
-		{name: "cross tenant superuser", role: types.TenantRoleMember, superuser: true},
 		{name: "RBAC disabled", role: types.TenantRoleMember, disabled: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

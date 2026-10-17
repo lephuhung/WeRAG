@@ -99,18 +99,15 @@ func TestIsTenantAccessible_ZeroTargetRejects(t *testing.T) {
 	}
 }
 
-func TestIsTenantAccessible_SuperuserPathRequiresFlag(t *testing.T) {
+func TestIsTenantAccessible_LegacyFlagNeverGrants(t *testing.T) {
 	user := &types.User{ID: "u1", TenantID: 1, CanAccessAllTenants: true}
-	// With flag OFF, the superuser attribute alone must NOT grant
-	// cross-tenant access — same revocation rule as
-	// IsCrossTenantSuperuser.
+	// The legacy attribute grants no tenant selection, with the cluster
+	// flag off or on; only SuperAdmin or an active membership does.
 	if IsTenantAccessible(context.Background(), user, 99, nil, cfgCrossTenant(false)) {
-		t.Fatalf("superuser without cluster flag must reject cross-tenant target")
+		t.Fatalf("legacy flag without cluster flag must reject cross-tenant target")
 	}
-	// With the flag ON, no membership lookup is needed — the user can
-	// reach any tenant.
-	if !IsTenantAccessible(context.Background(), user, 99, nil, cfgCrossTenant(true)) {
-		t.Fatalf("superuser with cluster flag must allow without membership lookup")
+	if IsTenantAccessible(context.Background(), user, 99, nil, cfgCrossTenant(true)) {
+		t.Fatalf("legacy flag with cluster flag must reject cross-tenant target")
 	}
 }
 

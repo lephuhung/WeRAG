@@ -245,9 +245,9 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	apiKeyScope, hasAPIKeyScope := types.TenantAPIKeyScopeFromContext(ctx)
 	platformCaller := hasAPIKeyScope && apiKeyScope.IsPlatform()
-	// SuperAdmins provision workspaces; CanAccessAllTenants keeps the
-	// legacy cross-tenant operator path working.
-	catalogManager := caller.IsSystemAdmin || caller.CanAccessAllTenants || platformCaller
+	// SuperAdmins and platform API keys provision workspaces. The legacy
+	// CanAccessAllTenants attribute grants nothing on its own.
+	catalogManager := caller.IsSystemAdmin || platformCaller
 
 	// Deployment-level policy: ordinary users may be restricted to joining
 	// existing workspaces by invitation. This check is authoritative; the
