@@ -47,13 +47,8 @@ func TestBuildIMFileServiceForProvider_FallbackToGlobal(t *testing.T) {
 	stub := &stubIMFileService{}
 	tenant := &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			DefaultProvider: "cos",
-			COS: &types.COSEngineConfig{
-				SecretID:   "id",
-				SecretKey:  "key",
-				BucketName: "bucket",
-				Region:     "ap-shanghai",
-			},
+			DefaultProvider: "local",
+			Local:           &types.LocalEngineConfig{},
 		},
 	}
 
@@ -68,13 +63,8 @@ func TestIMFileServiceResolver_CachesPerProvider(t *testing.T) {
 	stub := &stubIMFileService{}
 	tenant := &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			DefaultProvider: "cos",
-			COS: &types.COSEngineConfig{
-				SecretID:   "id",
-				SecretKey:  "key",
-				BucketName: "bucket",
-				Region:     "ap-shanghai",
-			},
+			DefaultProvider: "local",
+			Local:           &types.LocalEngineConfig{},
 		},
 	}
 	r := newIMFileServiceResolver(tenant, stub)
@@ -95,13 +85,8 @@ func TestRewriteStorageURLs_MinIOFallbackViaGlobal(t *testing.T) {
 	}
 	tenant := &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			DefaultProvider: "cos",
-			COS: &types.COSEngineConfig{
-				SecretID:   "id",
-				SecretKey:  "key",
-				BucketName: "bucket",
-				Region:     "ap-shanghai",
-			},
+			DefaultProvider: "local",
+			Local:           &types.LocalEngineConfig{},
 		},
 	}
 	in := `![Trợ lý tri thức "kho tri thức" giao diện quản lý](minio://wizard-test/10000/exports/c91cf852.png)`
@@ -160,7 +145,7 @@ func TestCleanIMContent_MinIOFallbackIntegration(t *testing.T) {
 		},
 	}
 	tenant := &types.Tenant{
-		StorageEngineConfig: &types.StorageEngineConfig{DefaultProvider: "cos"},
+		StorageEngineConfig: &types.StorageEngineConfig{DefaultProvider: "local"},
 	}
 	in := "see ![x](minio://wizard-test/10000/exports/x.png) ok"
 	out := cleanIMContent(context.Background(), in, tenant, stub)

@@ -126,7 +126,7 @@ type KBModelConfigRequest struct {
 		Enabled bool `json:"enabled"`
 	} `json:"multimodal"`
 
-	// Storage engine ("local" | "minio" | "cos") for document uploads and in-document images; parameters come from global settings
+	// Storage engine ("local" | "minio") for document uploads and in-document images; parameters come from global settings
 	StorageProvider  string `json:"storageProvider"`
 	StorageBackendID string `json:"storageBackendId"`
 
@@ -181,15 +181,7 @@ type InitializationRequest struct {
 			InterfaceType string `json:"interfaceType"` // "ollama" or "openai"
 		} `json:"vlm,omitempty"`
 		StorageType string `json:"storageType"`
-		COS         *struct {
-			SecretID   string `json:"secretId"`
-			SecretKey  string `json:"secretKey"`
-			Region     string `json:"region"`
-			BucketName string `json:"bucketName"`
-			AppID      string `json:"appId"`
-			PathPrefix string `json:"pathPrefix"`
-		} `json:"cos,omitempty"`
-		Minio *struct {
+		Minio       *struct {
 			BucketName string `json:"bucketName"`
 			PathPrefix string `json:"pathPrefix"`
 		} `json:"minio,omitempty"`
@@ -708,13 +700,6 @@ func (h *InitializationHandler) validateMultimodalConfig(ctx context.Context, re
 	}
 
 	switch storageType {
-	case "cos":
-		if req.Multimodal.COS == nil || req.Multimodal.COS.SecretID == "" || req.Multimodal.COS.SecretKey == "" ||
-			req.Multimodal.COS.Region == "" || req.Multimodal.COS.BucketName == "" ||
-			req.Multimodal.COS.AppID == "" {
-			logger.Error(ctx, "COS configuration incomplete")
-			return errors.NewBadRequestError("cấu hình COS chưa đầy đủ")
-		}
 	case "minio":
 		if req.Multimodal.Minio == nil || req.Multimodal.Minio.BucketName == "" ||
 			os.Getenv("MINIO_ACCESS_KEY_ID") == "" || os.Getenv("MINIO_SECRET_ACCESS_KEY") == "" {
@@ -938,20 +923,6 @@ func (h *InitializationHandler) applyKnowledgeBaseInitialization(
 			ModelID: vlmModelID,
 		}
 		switch req.Multimodal.StorageType {
-		case "cos":
-			if req.Multimodal.COS != nil {
-				kb.SetStorageProvider("cos")
-				// Legacy: also write to cos_config for backward compat with old code paths
-				kb.StorageConfig = types.StorageConfig{
-					Provider:   req.Multimodal.StorageType,
-					BucketName: req.Multimodal.COS.BucketName,
-					AppID:      req.Multimodal.COS.AppID,
-					PathPrefix: req.Multimodal.COS.PathPrefix,
-					SecretID:   req.Multimodal.COS.SecretID,
-					SecretKey:  req.Multimodal.COS.SecretKey,
-					Region:     req.Multimodal.COS.Region,
-				}
-			}
 		case "minio":
 			if req.Multimodal.Minio != nil {
 				kb.SetStorageProvider("minio")
@@ -1655,17 +1626,6 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 			multimodal := config["multimodal"].(map[string]interface{})
 			multimodal["storageType"] = effectiveProvider
 			switch effectiveProvider {
-			case "cos":
-				multimodal["cos"] = map[string]interface{}{
-					"region":     kb.StorageConfig.Region,
-					"bucketName": kb.StorageConfig.BucketName,
-					"appId":      kb.StorageConfig.AppID,
-					"pathPrefix": kb.StorageConfig.PathPrefix,
-					"credentials": map[string]bool{
-						"secretId":  kb.StorageConfig.SecretID != "",
-						"secretKey": kb.StorageConfig.SecretKey != "",
-					},
-				}
 			case "minio":
 				multimodal["minio"] = map[string]interface{}{
 					"bucketName": kb.StorageConfig.BucketName,
@@ -1674,7 +1634,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 			}
 			if !ownWorkspace {
 				// Bucket locations are the owner's infrastructure too.
-				for _, provider := range []string{"cos", "minio"} {
+				for _, provider := range []string{"minio"} {
 					if detail, ok := multimodal[provider].(map[string]interface{}); ok {
 						for _, field := range []string{"region", "bucketName", "appId", "pathPrefix"} {
 							delete(detail, field)
@@ -2246,14 +2206,6 @@ type testMultimodalForm struct {
 
 	StorageType string `form:"storage_type"`
 
-	// COS Configuration
-	COSSecretID   string `form:"cos_secret_id"`
-	COSSecretKey  string `form:"cos_secret_key"`
-	COSRegion     string `form:"cos_region"`
-	COSBucketName string `form:"cos_bucket_name"`
-	COSAppID      string `form:"cos_app_id"`
-	COSPathPrefix string `form:"cos_path_prefix"`
-
 	// MinIO config (when storage is minio)
 	MinioBucketName string `form:"minio_bucket_name"`
 	MinioPathPrefix string `form:"minio_path_prefix"`
@@ -2275,7 +2227,7 @@ type testMultimodalForm struct {
 // @Param        vlm_base_url      formData  string  true   "VLM Base URL"
 // @Param        vlm_api_key       formData  string  false  "VLM API Key"
 // @Param        vlm_interface_type formData string  false  "loại giao diện VLM"
-// @Param        storage_type      formData  string  true   "loại lưu trữ (cos/minio)"
+// @Param        storage_type      formData  string  true   "loại lưu trữ (minio)"
 // @Success      200               {object}  map[string]interface{}  "kết quả kiểm tra"
 // @Failure      400               {object}  errors.AppError         "tham số không hợp lệ"
 // @Security     Bearer
@@ -2313,15 +2265,6 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	}
 
 	switch req.StorageType {
-	case "cos":
-		// Required: SecretID/SecretKey/Region/BucketName/AppID; PathPrefix optional
-		if req.COSSecretID == "" || req.COSSecretKey == "" ||
-			req.COSRegion == "" || req.COSBucketName == "" ||
-			req.COSAppID == "" {
-			logger.Error(ctx, "COS configuration is required")
-			c.Error(errors.NewBadRequestError("thiếu thông tin cấu hình COS"))
-			return
-		}
 	case "minio":
 		if req.MinioBucketName == "" {
 			logger.Error(ctx, "MinIO configuration is required")

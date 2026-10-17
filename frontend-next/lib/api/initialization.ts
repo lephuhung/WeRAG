@@ -7,11 +7,6 @@ export interface ModelCredentialStatus {
   apiKey?: boolean;
 }
 
-export interface COSCredentialStatus {
-  secretId?: boolean;
-  secretKey?: boolean;
-}
-
 export interface Node {
   name: string;
   attributes: string[];
@@ -51,7 +46,7 @@ export interface InitializationConfig {
   };
   multimodal: {
     enabled: boolean;
-    storageType: "cos" | "minio";
+    storageType: "minio";
     vlm?: {
       modelName: string;
       baseUrl: string;
@@ -59,17 +54,6 @@ export interface InitializationConfig {
       apiKey?: string;
       interfaceType?: string; // "ollama" or "openai"
       credentials?: ModelCredentialStatus;
-    };
-    cos?: {
-      region: string;
-      bucketName: string;
-      appId: string;
-      pathPrefix?: string;
-      /** @deprecated Use credentials from GET responses */
-      secretId?: string;
-      /** @deprecated Use credentials from GET responses */
-      secretKey?: string;
-      credentials?: COSCredentialStatus;
     };
     minio?: {
       bucketName: string;
@@ -90,7 +74,7 @@ export interface InitializationConfig {
     languages?: string[];
   };
   /** Frontend-only hint for storage selection UI. */
-  storageType?: "cos" | "minio";
+  storageType?: "minio";
   nodeExtract: {
     enabled: boolean;
     text: string;
@@ -153,7 +137,7 @@ export interface KBModelConfigRequest {
   multimodal: {
     enabled: boolean;
   };
-  /** Storage engine ("local" | "minio" | "cos" | "obs" ...) for uploads and
+  /** Storage engine ("local" | "minio") for uploads and
    * in-document images. */
   storageBackendId?: string;
   storageProvider?: string;
@@ -336,14 +320,7 @@ export function testMultimodalFunction(testData: {
   vlm_base_url: string;
   vlm_api_key?: string;
   vlm_interface_type?: string;
-  storage_type?: "cos" | "minio";
-  // COS fields (required only when storage_type === 'cos')
-  cos_secret_id?: string;
-  cos_secret_key?: string;
-  cos_region?: string;
-  cos_bucket_name?: string;
-  cos_app_id?: string;
-  cos_path_prefix?: string;
+  storage_type?: "minio";
   // MinIO fields
   minio_bucket_name?: string;
   minio_path_prefix?: string;
@@ -365,15 +342,6 @@ export function testMultimodalFunction(testData: {
   if (testData.vlm_interface_type)
     formData.append("vlm_interface_type", testData.vlm_interface_type);
   if (testData.storage_type) formData.append("storage_type", testData.storage_type);
-  if (testData.storage_type === "cos") {
-    if (testData.cos_secret_id) formData.append("cos_secret_id", testData.cos_secret_id);
-    if (testData.cos_secret_key) formData.append("cos_secret_key", testData.cos_secret_key);
-    if (testData.cos_region) formData.append("cos_region", testData.cos_region);
-    if (testData.cos_bucket_name)
-      formData.append("cos_bucket_name", testData.cos_bucket_name);
-    if (testData.cos_app_id) formData.append("cos_app_id", testData.cos_app_id);
-    if (testData.cos_path_prefix) formData.append("cos_path_prefix", testData.cos_path_prefix);
-  }
   if (testData.minio_bucket_name)
     formData.append("minio_bucket_name", testData.minio_bucket_name);
   if (testData.minio_path_prefix)

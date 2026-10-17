@@ -187,21 +187,10 @@ func (s *knowledgeService) buildStorageConfig(ctx context.Context, kb *types.Kno
 		provider = "local"
 	}
 
-	// Backward compatibility: if legacy cos_config has full params for the chosen provider, use them.
-	// Note: legacy StorageConfig predates tos/s3/oss/ks3, so those providers always
-	// resolve via the tenant-merge path below. Listing them here keeps the fall-through
-	// intentional (instead of an unrecognised provider silently sliding past the switch).
-	// See issue #1117: provider enum was missing tos/s3/oss in this switch.
+	// Backward compatibility: if the legacy cos_config column has a MinIO
+	// bucket, use it. Local always resolves via the tenant-merge path below.
 	sc := &kb.StorageConfig
-	hasKBFull := false
-	switch provider {
-	case "cos":
-		hasKBFull = sc.SecretID != "" && sc.BucketName != ""
-	case "minio":
-		hasKBFull = sc.BucketName != ""
-	case "local", "tos", "s3", "oss", "ks3", "obs":
-		hasKBFull = false
-	}
+	hasKBFull := provider == "minio" && sc.BucketName != ""
 
 	if hasKBFull {
 		logger.Infof(ctx, "[storage] buildStorageConfig use legacy kb config: kb=%s provider=%s bucket=%s path_prefix=%s",
@@ -227,7 +216,7 @@ func (s *knowledgeService) buildStorageConfig(ctx context.Context, kb *types.Kno
 			provider = strings.ToLower(strings.TrimSpace(sec.DefaultProvider))
 			out.Provider = strings.ToUpper(provider)
 		}
-		// Provider list must match types.StorageEngineConfig + ParseProviderScheme.
+		// Provider list must match types.StorageEngineConfig (local, minio).
 		// Missing a case here causes DocParserStorageConfig to be returned with only
 		// Provider set — bucket/endpoint/credentials are silently dropped, and the
 		// docreader then fails or fetches from the wrong location. See issue #1117.
@@ -249,60 +238,6 @@ func (s *knowledgeService) buildStorageConfig(ctx context.Context, kb *types.Kno
 					out.AccessKeyID = os.Getenv("MINIO_ACCESS_KEY_ID")
 					out.SecretAccessKey = os.Getenv("MINIO_SECRET_ACCESS_KEY")
 				}
-			}
-		case "cos":
-			if sec.COS != nil {
-				out.Region = sec.COS.Region
-				out.BucketName = sec.COS.BucketName
-				out.AccessKeyID = sec.COS.SecretID
-				out.SecretAccessKey = sec.COS.SecretKey
-				out.AppID = sec.COS.AppID
-				out.PathPrefix = sec.COS.PathPrefix
-			}
-		case "tos":
-			if sec.TOS != nil {
-				out.Endpoint = sec.TOS.Endpoint
-				out.Region = sec.TOS.Region
-				out.AccessKeyID = sec.TOS.AccessKey
-				out.SecretAccessKey = sec.TOS.SecretKey
-				out.BucketName = sec.TOS.BucketName
-				out.PathPrefix = sec.TOS.PathPrefix
-			}
-		case "s3":
-			if sec.S3 != nil {
-				out.Endpoint = sec.S3.Endpoint
-				out.Region = sec.S3.Region
-				out.AccessKeyID = sec.S3.AccessKey
-				out.SecretAccessKey = sec.S3.SecretKey
-				out.BucketName = sec.S3.BucketName
-				out.PathPrefix = sec.S3.PathPrefix
-			}
-		case "oss":
-			if sec.OSS != nil {
-				out.Endpoint = sec.OSS.Endpoint
-				out.Region = sec.OSS.Region
-				out.AccessKeyID = sec.OSS.AccessKey
-				out.SecretAccessKey = sec.OSS.SecretKey
-				out.BucketName = sec.OSS.BucketName
-				out.PathPrefix = sec.OSS.PathPrefix
-			}
-		case "ks3":
-			if sec.KS3 != nil {
-				out.Endpoint = sec.KS3.Endpoint
-				out.Region = sec.KS3.Region
-				out.AccessKeyID = sec.KS3.AccessKey
-				out.SecretAccessKey = sec.KS3.SecretKey
-				out.BucketName = sec.KS3.BucketName
-				out.PathPrefix = sec.KS3.PathPrefix
-			}
-		case "obs":
-			if sec.OBS != nil {
-				out.Endpoint = sec.OBS.Endpoint
-				out.Region = sec.OBS.Region
-				out.AccessKeyID = sec.OBS.AccessKey
-				out.SecretAccessKey = sec.OBS.SecretKey
-				out.BucketName = sec.OBS.BucketName
-				out.PathPrefix = sec.OBS.PathPrefix
 			}
 		}
 	}

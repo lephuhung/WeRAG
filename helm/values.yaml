@@ -95,7 +95,7 @@ app:
     GIN_MODE: release
     # -- Retrieval driver: postgres (the only vector store)
     RETRIEVE_DRIVER: postgres
-    # -- Storage type: local, minio, cos, tos, s3
+    # -- Storage type: local or minio
     STORAGE_TYPE: local
     LOCAL_STORAGE_BASE_DIR: /data/files
     AUTO_RECOVER_DIRTY: "true"

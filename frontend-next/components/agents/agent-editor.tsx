@@ -973,10 +973,6 @@ export function AgentEditorModal({
                       { value: "", label: t("agent.storageDefault") },
                       { value: "local", label: "Local" },
                       { value: "minio", label: `MinIO${storageStatus.minio === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
-                      { value: "cos", label: `Tencent COS${storageStatus.cos === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
-                      { value: "tos", label: `Volcengine TOS${storageStatus.tos === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
-                      { value: "s3", label: `Amazon S3${storageStatus.s3 === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
-                      { value: "oss", label: `Aliyun OSS${storageStatus.oss === false ? ` (${t("agent.storageNotConfigured")})` : ""}` },
                     ]}
                   />
                   <p className="caption text-muted mt-1">{t("agent.storageProviderDesc")}</p>

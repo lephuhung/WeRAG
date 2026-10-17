@@ -400,13 +400,13 @@ func TestValidateProcessOverrides_ImageAllowsStorageFallback(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.TenantInfoContextKey, &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			COS: &types.COSEngineConfig{SecretID: "id"},
+			MinIO: &types.MinIOEngineConfig{Mode: "remote", AccessKeyID: "id"},
 		},
 	})
 	kb := &types.KnowledgeBase{
 		VLMConfig: types.VLMConfig{Enabled: true, ModelID: "vlm-1"},
 	}
-	kb.SetStorageProvider("cos")
+	kb.SetStorageProvider("minio")
 
 	err := ValidateProcessOverrides(ctx, kb, &types.KnowledgeProcessOverrides{}, []string{"png"})
 	require.NoError(t, err)
@@ -638,7 +638,8 @@ func TestResolveFileImportProcessConfig_LockedDefaultsProvideVLM(t *testing.T) {
 	withParseDefaults(t, enabledParseDefaults())
 
 	kb := &types.KnowledgeBase{} // no VLM configured on the KB
-	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "png", nil, nil)
+	// KBs take documents only; the VLM default still reaches scanned PDFs.
+	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "pdf", nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "sys-vlm", eff.VLMConfig.ModelID)
 }

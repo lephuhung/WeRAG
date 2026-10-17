@@ -349,18 +349,6 @@ func (s *tenantService) validateStorageBucketUniqueness(ctx context.Context, ten
 		if cfg.MinIO != nil && cfg.MinIO.BucketName != "" {
 			res["minio"] = cfg.MinIO.BucketName
 		}
-		if cfg.COS != nil && cfg.COS.BucketName != "" {
-			res["cos"] = cfg.COS.BucketName
-		}
-		if cfg.TOS != nil && cfg.TOS.BucketName != "" {
-			res["tos"] = cfg.TOS.BucketName
-		}
-		if cfg.S3 != nil && cfg.S3.BucketName != "" {
-			res["s3"] = cfg.S3.BucketName
-		}
-		if cfg.OSS != nil && cfg.OSS.BucketName != "" {
-			res["oss"] = cfg.OSS.BucketName
-		}
 		return res
 	}
 

@@ -33,9 +33,19 @@ func (f *fakeStorageBackendRepo) FindLegacyAlias(context.Context, uint64, string
 	return nil, nil
 }
 
-func TestGetStorageEngineStatus_IncludesOBS(t *testing.T) {
+// clearMinioEnv makes MinIO availability depend only on the tenant config and
+// registered backends, not on the developer's environment.
+func clearMinioEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("MINIO_ENDPOINT", "")
+	t.Setenv("MINIO_ACCESS_KEY_ID", "")
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", "")
+}
+
+func TestGetStorageEngineStatus_ListsLocalAndMinIO(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(storageallowlist.AllowListEnv, "")
+	clearMinioEnv(t)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -56,33 +66,34 @@ func TestGetStorageEngineStatus_IncludesOBS(t *testing.T) {
 	require.Equal(t, 0, resp.Code)
 
 	names := make([]string, 0, len(resp.Data.Engines))
-	obsStatus := StorageEngineStatusItem{}
+	minioStatus := StorageEngineStatusItem{}
 	for _, engine := range resp.Data.Engines {
 		names = append(names, engine.Name)
-		if engine.Name == "obs" {
-			obsStatus = engine
+		if engine.Name == "minio" {
+			minioStatus = engine
 		}
 	}
-	assert.Contains(t, names, "obs")
-	assert.True(t, obsStatus.Allowed)
-	assert.False(t, obsStatus.Available)
+	assert.Equal(t, []string{"local", "minio"}, names)
+	assert.True(t, minioStatus.Allowed)
+	assert.False(t, minioStatus.Available)
 }
 
-func TestGetStorageEngineStatus_OBSConfiguredFromTenant(t *testing.T) {
+func TestGetStorageEngineStatus_MinIOConfiguredFromTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(storageallowlist.AllowListEnv, "")
+	clearMinioEnv(t)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/system/storage-engine-status", nil)
 	tenant := &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			OBS: &types.OBSEngineConfig{
-				Endpoint:   "obs.example.com",
-				Region:     "cn-north-4",
-				AccessKey:  "ak",
-				SecretKey:  "sk",
-				BucketName: "bucket",
+			MinIO: &types.MinIOEngineConfig{
+				Mode:            "remote",
+				Endpoint:        "minio.example.com:9000",
+				AccessKeyID:     "ak",
+				SecretAccessKey: "sk",
+				BucketName:      "bucket",
 			},
 		},
 	}
@@ -100,48 +111,54 @@ func TestGetStorageEngineStatus_OBSConfiguredFromTenant(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	var obsStatus *StorageEngineStatusItem
+	var minioStatus *StorageEngineStatusItem
 	for i := range resp.Data.Engines {
-		if resp.Data.Engines[i].Name == "obs" {
-			obsStatus = &resp.Data.Engines[i]
+		if resp.Data.Engines[i].Name == "minio" {
+			minioStatus = &resp.Data.Engines[i]
 			break
 		}
 	}
-	require.NotNil(t, obsStatus)
-	assert.True(t, obsStatus.Available)
+	require.NotNil(t, minioStatus)
+	assert.True(t, minioStatus.Available)
 }
 
-// A workspace that configured COS only through the new multi-instance Storage
+// A workspace that configured MinIO only through the new multi-instance Storage
 // settings (storage_backends), with an empty legacy StorageEngineConfig, must
-// still be reported as available.
+// still be reported as available; a disabled backend does not count.
 func TestGetStorageEngineStatus_AvailableFromActiveBackend(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(storageallowlist.AllowListEnv, "")
+	clearMinioEnv(t)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/system/storage-engine-status", nil)
-	c.Set(types.TenantInfoContextKey.String(), &types.Tenant{ID: 42})
+	minioAvailable := func(t *testing.T, status string) bool {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/system/storage-engine-status", nil)
+		c.Set(types.TenantInfoContextKey.String(), &types.Tenant{ID: 42})
 
-	h := &SystemHandler{storageBackendRepo: &fakeStorageBackendRepo{backends: []*types.StorageBackend{
-		{Provider: "cos", Status: types.StorageBackendStatusActive},
-		{Provider: "s3", Status: types.StorageBackendStatusDisabled},
-	}}}
-	h.GetStorageEngineStatus(c)
+		h := &SystemHandler{storageBackendRepo: &fakeStorageBackendRepo{backends: []*types.StorageBackend{
+			{Provider: "minio", Status: status},
+		}}}
+		h.GetStorageEngineStatus(c)
 
-	require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, http.StatusOK, w.Code)
 
-	var resp struct {
-		Data struct {
-			Engines []StorageEngineStatusItem `json:"engines"`
-		} `json:"data"`
+		var resp struct {
+			Data struct {
+				Engines []StorageEngineStatusItem `json:"engines"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		for _, engine := range resp.Data.Engines {
+			if engine.Name == "minio" {
+				return engine.Available
+			}
+		}
+		t.Fatal("minio engine missing from status")
+		return false
 	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	status := map[string]bool{}
-	for _, engine := range resp.Data.Engines {
-		status[engine.Name] = engine.Available
-	}
-	assert.True(t, status["cos"], "active COS backend should be available")
-	assert.False(t, status["s3"], "disabled S3 backend should not be available")
+	assert.True(t, minioAvailable(t, types.StorageBackendStatusActive), "active MinIO backend should be available")
+	assert.False(t, minioAvailable(t, types.StorageBackendStatusDisabled), "disabled MinIO backend should not be available")
 }

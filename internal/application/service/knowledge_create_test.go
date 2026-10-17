@@ -202,7 +202,7 @@ func TestCreateKnowledgeFromImageFallsBackWhenLegacyStorageConfigIsIncomplete(t 
 		ID:        "kb-1",
 		VLMConfig: types.VLMConfig{Enabled: true, ModelID: "vlm-1"},
 	}
-	kb.SetStorageProvider("cos")
+	kb.SetStorageProvider("minio")
 	svc := &knowledgeService{
 		repo:      repo,
 		kbService: &createKnowledgeFileKBServiceStub{kb: kb},
@@ -211,8 +211,8 @@ func TestCreateKnowledgeFromImageFallsBackWhenLegacyStorageConfigIsIncomplete(t 
 	}
 	ctx := context.WithValue(newCreateKnowledgeFileContext(), types.TenantInfoContextKey, &types.Tenant{
 		StorageEngineConfig: &types.StorageEngineConfig{
-			DefaultProvider: "cos",
-			COS:             &types.COSEngineConfig{SecretID: "incomplete"},
+			DefaultProvider: "minio",
+			MinIO:           &types.MinIOEngineConfig{Mode: "remote", AccessKeyID: "incomplete"},
 		},
 	})
 

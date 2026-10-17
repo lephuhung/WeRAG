@@ -7,7 +7,7 @@ import (
 
 const AllowListEnv = "STORAGE_ALLOW_LIST"
 
-var supported = []string{"local", "minio", "cos", "tos", "s3", "oss", "ks3", "obs"}
+var supported = []string{"local", "minio"}
 
 // Supported returns the canonical storage provider names in display order.
 func Supported() []string {

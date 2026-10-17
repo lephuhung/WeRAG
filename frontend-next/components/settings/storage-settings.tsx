@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   listStorageBackends,
-  listStorageBackendTypes,
   createStorageBackend,
   deleteStorageBackend,
   setDefaultStorageBackend,
@@ -20,7 +19,6 @@ export function StorageSettings() {
   const confirmAction = useConfirm();
   const [backends, setBackends] = useState<StorageBackend[]>([]);
   const [defaultId, setDefaultId] = useState<string | null>(null);
-  const [types, setTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,18 +38,9 @@ export function StorageSettings() {
     setLoading(true);
     setError("");
     try {
-      const [bRes, tRes] = await Promise.allSettled([
-        listStorageBackends(),
-        listStorageBackendTypes(),
-      ]);
-
-      if (bRes.status === "fulfilled" && bRes.value) {
-        setBackends(bRes.value.data ?? []);
-        setDefaultId(bRes.value.default_storage_backend_id ?? null);
-      }
-      if (tRes.status === "fulfilled" && tRes.value?.data) {
-        setTypes(tRes.value.data);
-      }
+      const res = await listStorageBackends();
+      setBackends(res?.data ?? []);
+      setDefaultId(res?.default_storage_backend_id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("stor.loadFailed"));
     } finally {
@@ -228,13 +217,7 @@ export function StorageSettings() {
               onChange={(v) => setFormData({ ...formData, provider: v })}
               options={[
                 { value: "local", label: t("stor.pLocal") },
-                { value: "s3", label: "AWS S3 / S3 Compatible" },
                 { value: "minio", label: "MinIO" },
-                { value: "oss", label: "Aliyun OSS" },
-                { value: "cos", label: "Tencent COS" },
-                ...types
-                  .filter((t) => !["local", "s3", "minio", "oss", "cos"].includes(t))
-                  .map((t) => ({ value: t, label: t.toUpperCase() })),
               ]}
             />
           </div>
@@ -245,7 +228,7 @@ export function StorageSettings() {
                 <label className="caption mb-1 block font-medium text-ink">{t("stor.endpoint")}</label>
                 <input
                   className="input h-9 w-full text-[13px]"
-                  placeholder="https://s3.amazonaws.com or http://minio:9000"
+                  placeholder="http://minio:9000"
                   value={formData.endpoint}
                   onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
                 />

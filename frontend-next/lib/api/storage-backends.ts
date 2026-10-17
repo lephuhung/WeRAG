@@ -40,10 +40,6 @@ export function listStorageBackends(): Promise<StorageBackendListResponse> {
   return apiGet("/api/v1/storage-backends");
 }
 
-export function listStorageBackendTypes(): Promise<{ success: boolean; data: string[] }> {
-  return apiGet("/api/v1/storage-backends/types");
-}
-
 export function createStorageBackend(data: Partial<StorageBackend>) {
   return apiPost("/api/v1/storage-backends", data);
 }

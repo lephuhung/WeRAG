@@ -232,18 +232,6 @@ func (s *StorageBackendService) Test(ctx context.Context, backend *types.Storage
 			}
 		}
 		return filesvc.CheckMinioConnectivity(ctx, c.Endpoint, c.AccessKeyID, c.SecretAccessKey, c.BucketName, c.UseSSL)
-	case "cos":
-		return filesvc.CheckCosConnectivity(ctx, c.BucketName, c.Region, c.AccessKeyID, c.SecretAccessKey)
-	case "tos":
-		return filesvc.CheckTosConnectivity(ctx, c.Endpoint, c.Region, c.AccessKeyID, c.SecretAccessKey, c.BucketName)
-	case "s3":
-		return filesvc.CheckS3ConnectivityWithOptions(ctx, c.Endpoint, c.AccessKeyID, c.SecretAccessKey, c.BucketName, c.Region, c.ForcePathStyle)
-	case "oss":
-		return filesvc.CheckOssConnectivity(ctx, c.Endpoint, c.Region, c.AccessKeyID, c.SecretAccessKey, c.BucketName)
-	case "ks3":
-		return filesvc.CheckKS3Connectivity(ctx, c.Endpoint, c.Region, c.AccessKeyID, c.SecretAccessKey, c.BucketName)
-	case "obs":
-		return filesvc.CheckObsConnectivity(ctx, c.Endpoint, c.Region, c.AccessKeyID, c.SecretAccessKey, c.BucketName)
 	default:
 		return fmt.Errorf("unsupported storage provider: %s", backend.Provider)
 	}

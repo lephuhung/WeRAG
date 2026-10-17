@@ -698,82 +698,9 @@ func (h *SystemHandler) isMinioEnvAvailable() bool {
 		os.Getenv("MINIO_SECRET_ACCESS_KEY") != ""
 }
 
-// isCOSConfigured checks whether COS connection info is available from tenant config.
-func (h *SystemHandler) isCOSConfigured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.COS != nil {
-			cosConf := tenant.StorageEngineConfig.COS
-			return cosConf.SecretID != "" && cosConf.SecretKey != "" && cosConf.Region != "" && cosConf.BucketName != ""
-		}
-	}
-	return false
-}
-
-// isTOSConfigured checks whether TOS connection info is available from tenant config or env.
-func (h *SystemHandler) isTOSConfigured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.TOS != nil {
-			tosConf := tenant.StorageEngineConfig.TOS
-			return tosConf.Endpoint != "" && tosConf.Region != "" && tosConf.AccessKey != "" && tosConf.SecretKey != "" && tosConf.BucketName != ""
-		}
-	}
-	return h.isTOSEnvAvailable()
-}
-
-// isOSSConfigured checks whether OSS connection info is available from tenant config.
-func (h *SystemHandler) isOSSConfigured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.OSS != nil {
-			ossConf := tenant.StorageEngineConfig.OSS
-			return ossConf.Endpoint != "" && ossConf.Region != "" && ossConf.AccessKey != "" && ossConf.SecretKey != "" && ossConf.BucketName != ""
-		}
-	}
-	return false
-}
-
-// isKS3Configured checks whether KS3 connection info is available from tenant config.
-func (h *SystemHandler) isKS3Configured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.KS3 != nil {
-			ks3Conf := tenant.StorageEngineConfig.KS3
-			return ks3Conf.Endpoint != "" && ks3Conf.Region != "" && ks3Conf.AccessKey != "" && ks3Conf.SecretKey != "" && ks3Conf.BucketName != ""
-		}
-	}
-	return false
-}
-
-// isOBSConfigured checks whether OBS connection info is available from tenant config or env.
-func (h *SystemHandler) isOBSConfigured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.OBS != nil {
-			obsConf := tenant.StorageEngineConfig.OBS
-			return obsConf.Endpoint != "" && obsConf.Region != "" && obsConf.AccessKey != "" && obsConf.SecretKey != "" && obsConf.BucketName != ""
-		}
-	}
-	return h.isOBSEnvAvailable()
-}
-
-// isTOSEnvAvailable checks whether TOS env vars are set.
-func (h *SystemHandler) isTOSEnvAvailable() bool {
-	return os.Getenv("TOS_ENDPOINT") != "" &&
-		os.Getenv("TOS_REGION") != "" &&
-		os.Getenv("TOS_ACCESS_KEY") != "" &&
-		os.Getenv("TOS_SECRET_KEY") != "" &&
-		os.Getenv("TOS_BUCKET_NAME") != ""
-}
-
-// isOBSEnvAvailable checks whether OBS env vars are set.
-func (h *SystemHandler) isOBSEnvAvailable() bool {
-	return os.Getenv("OBS_ENDPOINT") != "" &&
-		os.Getenv("OBS_REGION") != "" &&
-		os.Getenv("OBS_ACCESS_KEY") != "" &&
-		os.Getenv("OBS_SECRET_KEY") != "" &&
-		os.Getenv("OBS_BUCKET_NAME") != ""
-}
-
 // StorageEngineStatusItem describes one storage engine's availability and description.
 type StorageEngineStatusItem struct {
-	Name        string `json:"name"` // "local", "minio", "cos", "tos", "s3", "oss", "ks3", "obs"
+	Name        string `json:"name"` // "local" or "minio"
 	Allowed     bool   `json:"allowed"`
 	Available   bool   `json:"available"`   // whether the engine can be used
 	Description string `json:"description"` // short description for UI
@@ -788,7 +715,7 @@ type GetStorageEngineStatusResponse struct {
 
 // GetStorageEngineStatus godoc
 // @Summary      Lấy trạng thái engine lưu trữ
-// @Description  Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO, COS để thiết lập toàn cục và kho tri thức lựa chọn
+// @Description  Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO để thiết lập toàn cục và kho tri thức lựa chọn
 // @Tags         Hệ thống
 // @Produce      json
 // @Success      200  {object}  GetStorageEngineStatusResponse
@@ -801,12 +728,6 @@ func (h *SystemHandler) GetStorageEngineStatus(c *gin.Context) {
 	activeBackend := h.activeBackendProviders(c)
 	minioConfigured := h.isMinioConfigured(c) || activeBackend["minio"]
 	minioEnvAvailable := h.isMinioEnvAvailable()
-	cosConfigured := h.isCOSConfigured(c) || activeBackend["cos"]
-	tosConfigured := h.isTOSConfigured(c) || activeBackend["tos"]
-	s3Configured := h.isS3Configured(c) || activeBackend["s3"]
-	ossConfigured := h.isOSSConfigured(c) || activeBackend["oss"]
-	ks3Configured := h.isKS3Configured(c) || activeBackend["ks3"]
-	obsConfigured := h.isOBSConfigured(c) || activeBackend["obs"]
 	allowed := getAllowedStorageProviders()
 	allowedProviders := make([]string, 0, len(getSupportedStorageProviders()))
 	for _, provider := range getSupportedStorageProviders() {
@@ -817,12 +738,6 @@ func (h *SystemHandler) GetStorageEngineStatus(c *gin.Context) {
 	engines := []StorageEngineStatusItem{
 		{Name: "local", Allowed: allowed["local"], Available: true, Description: "Local filesystem storage, best for single-node deployments"},
 		{Name: "minio", Allowed: allowed["minio"], Available: minioConfigured || minioEnvAvailable, Description: "S3-compatible self-hosted object storage, for intranet and private cloud"},
-		{Name: "cos", Allowed: allowed["cos"], Available: cosConfigured, Description: "Tencent Cloud object storage, for public cloud with CDN acceleration"},
-		{Name: "tos", Allowed: allowed["tos"], Available: tosConfigured, Description: "Volcengine object storage service, for public cloud"},
-		{Name: "s3", Allowed: allowed["s3"], Available: s3Configured, Description: "AWS S3 and compatible object storage, for public and hybrid cloud"},
-		{Name: "oss", Allowed: allowed["oss"], Available: ossConfigured, Description: "Alibaba Cloud object storage, for public cloud with S3-compatible API"},
-		{Name: "ks3", Allowed: allowed["ks3"], Available: ks3Configured, Description: "Kingsoft Cloud object storage, for public cloud"},
-		{Name: "obs", Allowed: allowed["obs"], Available: obsConfigured, Description: "Huawei Cloud object storage, for public cloud"},
 	}
 	c.JSON(200, gin.H{
 		"code": 0,
@@ -832,7 +747,7 @@ func (h *SystemHandler) GetStorageEngineStatus(c *gin.Context) {
 }
 
 // --- Storage engine helpers ---
-// cosFieldPattern validates COS region and bucket name format to prevent URL injection.
+// cosFieldPattern validates a bucket name to prevent URL injection.
 var cosFieldPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
 
 // ossFieldPattern validates OSS region and bucket name format to prevent URL injection.
@@ -884,14 +799,8 @@ func isBlockedStorageEndpoint(endpoint string) (bool, string) {
 
 // StorageCheckRequest is the body for POST /system/storage-engine-check.
 type StorageCheckRequest struct {
-	Provider string                   `json:"provider"` // "minio", "cos", "tos", "s3", "oss", "ks3", "obs"
+	Provider string                   `json:"provider"` // "minio"
 	MinIO    *types.MinIOEngineConfig `json:"minio,omitempty"`
-	COS      *types.COSEngineConfig   `json:"cos,omitempty"`
-	TOS      *types.TOSEngineConfig   `json:"tos,omitempty"`
-	S3       *types.S3EngineConfig    `json:"s3,omitempty"`
-	OSS      *types.OSSEngineConfig   `json:"oss,omitempty"`
-	KS3      *types.KS3EngineConfig   `json:"ks3,omitempty"`
-	OBS      *types.OBSEngineConfig   `json:"obs,omitempty"`
 }
 
 // StorageCheckResponse is the response for a single-engine connectivity check.
@@ -903,7 +812,7 @@ type StorageCheckResponse struct {
 
 // CheckStorageEngine tests connectivity for a single storage engine using the provided config.
 // @Summary      Kiểm tra kết nối engine lưu trữ
-// @Description  Dùng tham số đang điền để kiểm tra kết nối MinIO/COS, không lưu cấu hình
+// @Description  Dùng tham số đang điền để kiểm tra kết nối MinIO, không lưu cấu hình
 // @Tags         Hệ thống
 // @Accept       json
 // @Produce      json
@@ -926,31 +835,9 @@ func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
 	switch req.Provider {
 	case "minio":
 		h.checkMinio(c, ctx, req.MinIO)
-	case "cos":
-		h.checkCOS(c, ctx, req.COS)
-	case "tos":
-		h.checkTOS(c, ctx, req.TOS)
-	case "s3":
-		h.checkS3(c, ctx, req.S3)
-	case "oss":
-		h.checkOSS(c, ctx, req.OSS)
-	case "ks3":
-		h.checkKS3(c, ctx, req.KS3)
-	case "obs":
-		h.checkOBS(c, ctx, req.OBS)
 	default:
 		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: "local storage needs no check"}})
 	}
-}
-
-func (h *SystemHandler) isS3Configured(c *gin.Context) bool {
-	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
-		if tenant, ok := v.(*types.Tenant); ok && tenant != nil && tenant.StorageEngineConfig != nil && tenant.StorageEngineConfig.S3 != nil {
-			s3Conf := tenant.StorageEngineConfig.S3
-			return s3Conf.Region != "" && s3Conf.BucketName != "" && (s3Conf.AccessKey == "") == (s3Conf.SecretKey == "")
-		}
-	}
-	return false
 }
 
 func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *types.MinIOEngineConfig) {
@@ -1008,247 +895,6 @@ func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *typ
 		msg = fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)
 	}
 	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: msg}})
-}
-
-func (h *SystemHandler) checkCOS(c *gin.Context, ctx context.Context, cfg *types.COSEngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "COS config not provided"}})
-		return
-	}
-	if cfg.SecretID == "" || cfg.SecretKey == "" || cfg.Region == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Secret ID, Secret Key, Region and Bucket name must not be empty"}})
-		return
-	}
-	if !cosFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-	if !cosFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-
-	err := file.CheckCosConnectivity(ctx, cfg.BucketName, cfg.Region, cfg.SecretID, cfg.SecretKey)
-	if err != nil {
-		logger.Errorf(ctx, "Storage check: COS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Secret ID / Secret Key"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
-			return
-		}
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
-		return
-	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) checkTOS(c *gin.Context, ctx context.Context, cfg *types.TOSEngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "TOS config not provided"}})
-		return
-	}
-	if cfg.Endpoint == "" || cfg.Region == "" || cfg.AccessKey == "" || cfg.SecretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
-		return
-	}
-
-	if blocked, reason := isBlockedStorageEndpoint(cfg.Endpoint); blocked {
-		logger.Warnf(ctx, "Storage check: TOS endpoint blocked by SSRF protection, endpoint: %s", cfg.Endpoint)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
-		return
-	}
-
-	err := file.CheckTosConnectivity(ctx, cfg.Endpoint, cfg.Region, cfg.AccessKey, cfg.SecretKey, cfg.BucketName)
-	if err != nil {
-		logger.Errorf(ctx, "Storage check: TOS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
-			return
-		}
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
-		return
-	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) checkS3(c *gin.Context, ctx context.Context, cfg *types.S3EngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "S3 config not provided"}})
-		return
-	}
-	if cfg.Region == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Region and Bucket name must not be empty"}})
-		return
-	}
-	if (cfg.AccessKey == "") != (cfg.SecretKey == "") {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Access Key and Secret Key must both be set or both be empty (uses the AWS default credential chain)"}})
-		return
-	}
-
-	if cfg.Endpoint != "" {
-		if blocked, reason := isBlockedStorageEndpoint(cfg.Endpoint); blocked {
-			logger.Warnf(ctx, "Storage check: S3 endpoint blocked by SSRF protection, endpoint: %s", cfg.Endpoint)
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
-			return
-		}
-	}
-
-	err := file.CheckS3Connectivity(ctx, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey, cfg.BucketName, cfg.Region)
-	if err != nil {
-		logger.Errorf(ctx, "Storage check: S3 connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check static keys or AWS IAM Role / default credential chain permissions"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NotFound") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
-			return
-		}
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
-		return
-	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) checkOSS(c *gin.Context, ctx context.Context, cfg *types.OSSEngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "OSS config not provided"}})
-		return
-	}
-
-	endpoint, accessKey, secretKey := cfg.Endpoint, cfg.AccessKey, cfg.SecretKey
-	if endpoint == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Access Key, Secret Key and Bucket Name must not be empty"}})
-		return
-	}
-
-	// Strip URL scheme before SSRF check — OSS endpoint may include http:// or https://
-	ssrfEndpoint := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
-	if blocked, reason := isBlockedStorageEndpoint(ssrfEndpoint); blocked {
-		logger.Warnf(ctx, "Storage check: OSS endpoint blocked by SSRF protection, endpoint: %s", endpoint)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
-		return
-	}
-	if !ossFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-	if !ossFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-
-	err := file.CheckOssConnectivity(ctx, endpoint, cfg.Region, accessKey, secretKey, cfg.BucketName)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
-			logger.Errorf(ctx, "Storage check: OSS auth failed, endpoint: %s, bucket: %s", endpoint, cfg.BucketName)
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			logger.Errorf(ctx, "Storage check: OSS bucket not found, bucket: %s", cfg.BucketName)
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist", cfg.BucketName)}})
-			return
-		}
-		logger.Errorf(ctx, "Storage check: OSS connectivity failed, endpoint: %s, bucket: %s, error: %v", endpoint, cfg.BucketName, err)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("OSS connectivity check failed: %s", sanitizeStorageCheckError(err))}})
-		return
-	}
-
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) checkKS3(c *gin.Context, ctx context.Context, cfg *types.KS3EngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "KS3 config not provided"}})
-		return
-	}
-
-	endpoint, region, accessKey, secretKey := cfg.Endpoint, cfg.Region, cfg.AccessKey, cfg.SecretKey
-	if endpoint == "" || region == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
-		return
-	}
-
-	if blocked, reason := isBlockedStorageEndpoint(endpoint); blocked {
-		logger.Warnf(ctx, "Storage check: KS3 endpoint blocked by SSRF protection, endpoint: %s", endpoint)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
-		return
-	}
-
-	err := file.CheckKS3Connectivity(ctx, endpoint, region, accessKey, secretKey, cfg.BucketName)
-	if err != nil {
-		logger.Errorf(ctx, "Storage check: KS3 connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
-			return
-		}
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
-		return
-	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) checkOBS(c *gin.Context, ctx context.Context, cfg *types.OBSEngineConfig) {
-	if cfg == nil {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "OBS config not provided"}})
-		return
-	}
-
-	endpoint, region, accessKey, secretKey := cfg.Endpoint, cfg.Region, cfg.AccessKey, cfg.SecretKey
-	if endpoint == "" || region == "" || accessKey == "" || secretKey == "" || cfg.BucketName == "" {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "Endpoint, Region, Access Key, Secret Key and Bucket name must not be empty"}})
-		return
-	}
-
-	ssrfEndpoint := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
-	if blocked, reason := isBlockedStorageEndpoint(ssrfEndpoint); blocked {
-		logger.Warnf(ctx, "Storage check: OBS endpoint blocked by SSRF protection, endpoint: %s", endpoint)
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
-		return
-	}
-
-	if !ossFieldPattern.MatchString(cfg.Region) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid Region format: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-	if !ossFieldPattern.MatchString(cfg.BucketName) {
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "invalid bucket name: only letters, digits, dots and hyphens are allowed"}})
-		return
-	}
-
-	err := file.CheckObsConnectivity(ctx, endpoint, region, accessKey, secretKey, cfg.BucketName)
-	if err != nil {
-		logger.Errorf(ctx, "Storage check: OBS connectivity failed, bucket: %s, error: %v", cfg.BucketName, err)
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "AccessDenied") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: "authentication failed, please check Access Key / Secret Key"}})
-			return
-		}
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NoSuchBucket") {
-			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: fmt.Sprintf("BucketBucket \"%s\" does not exist, please check the name and Region", cfg.BucketName)}})
-			return
-		}
-		c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: sanitizeStorageCheckError(err)}})
-		return
-	}
-	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
 }
 
 // PromoteUserToSystemAdminRequest defines the request for promoting a user to system admin.

@@ -106,16 +106,6 @@ services:
       # - APP_EXTERNAL_URL=${APP_EXTERNAL_URL:-}
       # 前端外部 origin，用于邀请链接等绝对 URL（留空走 host-relative）
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-}
-      # ========== 对象存储 - 腾讯云 COS ==========
-      - COS_SECRET_ID=${COS_SECRET_ID:-}
-      - COS_SECRET_KEY=${COS_SECRET_KEY:-}
-      - COS_REGION=${COS_REGION:-}
-      - COS_BUCKET_NAME=${COS_BUCKET_NAME:-}
-      - COS_APP_ID=${COS_APP_ID:-}
-      - COS_PATH_PREFIX=${COS_PATH_PREFIX:-}
-      - COS_TEMP_BUCKET_NAME=${COS_TEMP_BUCKET_NAME:-}
-      - COS_TEMP_REGION=${COS_TEMP_REGION:-}
-
       # 认证 / Tenant workspace / RBAC / 审计
       # 禁止新用户注册（生产建议 true）
       - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
@@ -186,42 +176,6 @@ services:
       - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-}
       - MINIO_PATH_PREFIX=${MINIO_PATH_PREFIX:-}
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
-      # ----- 火山引擎 TOS（STORAGE_TYPE=tos）-----
-      - TOS_ENDPOINT=${TOS_ENDPOINT:-}
-      - TOS_REGION=${TOS_REGION:-}
-      - TOS_ACCESS_KEY=${TOS_ACCESS_KEY:-}
-      - TOS_SECRET_KEY=${TOS_SECRET_KEY:-}
-      - TOS_BUCKET_NAME=${TOS_BUCKET_NAME:-}
-      - TOS_PATH_PREFIX=${TOS_PATH_PREFIX:-}
-      - TOS_TEMP_BUCKET_NAME=${TOS_TEMP_BUCKET_NAME:-}
-      - TOS_TEMP_REGION=${TOS_TEMP_REGION:-}
-      # ----- AWS S3（STORAGE_TYPE=s3）-----
-      - S3_ENDPOINT=${S3_ENDPOINT:-}
-      - S3_REGION=${S3_REGION:-}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
-      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
-      - S3_PATH_PREFIX=${S3_PATH_PREFIX:-weknora/}
-      - S3_USE_SSL=${S3_USE_SSL:-true}
-      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-false}
-      # ----- 华为云 OBS（STORAGE_TYPE=obs）-----
-      - OBS_ENDPOINT=${OBS_ENDPOINT:-}
-      - OBS_REGION=${OBS_REGION:-}
-      - OBS_ACCESS_KEY=${OBS_ACCESS_KEY:-}
-      - OBS_SECRET_KEY=${OBS_SECRET_KEY:-}
-      - OBS_BUCKET_NAME=${OBS_BUCKET_NAME:-}
-      - OBS_PATH_PREFIX=${OBS_PATH_PREFIX:-weknora/}
-      - OBS_USE_SSL=${OBS_USE_SSL:-true}
-      - OBS_PROXY_DOMAIN=${OBS_PROXY_DOMAIN:-}
-      # ----- 阿里云 OSS（STORAGE_TYPE=oss）-----
-      - OSS_ENDPOINT=${OSS_ENDPOINT:-}
-      - OSS_REGION=${OSS_REGION:-}
-      - OSS_ACCESS_KEY=${OSS_ACCESS_KEY:-}
-      - OSS_SECRET_KEY=${OSS_SECRET_KEY:-}
-      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME:-}
-      - OSS_PATH_PREFIX=${OSS_PATH_PREFIX:-weknora/}
-      - OSS_TEMP_BUCKET_NAME=${OSS_TEMP_BUCKET_NAME:-}
-      - OSS_TEMP_REGION=${OSS_TEMP_REGION:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # Ollama 不可用时仅告警不阻断（true 时生效）
       - OLLAMA_OPTIONAL=${OLLAMA_OPTIONAL:-true}
