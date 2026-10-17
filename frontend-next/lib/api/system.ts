@@ -177,8 +177,15 @@ export interface ParserEngineConfig {
   mineru_cloud_enable_table?: boolean | null;
   mineru_cloud_enable_ocr?: boolean | null;
   mineru_cloud_language?: string;
-  // PaddleOCR-VL self-hosted
+  // PaddleOCR-VL self-hosted, or an OpenAI-compatible OCR model (vLLM)
+  // when the endpoint ends in /v1 or paddleocr_vl_api is "openai"
   paddleocr_vl_endpoint?: string;
+  paddleocr_vl_api?: string; // "" (auto) | layout | openai
+  paddleocr_vl_model?: string;
+  paddleocr_vl_api_key?: string;
+  paddleocr_vl_prompt?: string;
+  paddleocr_vl_vllm_xargs?: string;
+  paddleocr_vl_repetition_penalty?: string;
   paddleocr_vl_use_seal_recognition?: boolean | null;
   paddleocr_vl_use_chart_recognition?: boolean | null;
   // PaddleOCR-VL cloud API

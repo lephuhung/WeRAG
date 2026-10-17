@@ -50,6 +50,7 @@ import { AbbreviationsSettings } from "@/components/settings/abbreviations-setti
 import { SkillsSettings } from "@/components/settings/skills-settings";
 import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
 import { StorageSettings } from "@/components/settings/storage-settings";
+import { ParserEngineSettings } from "@/components/settings/parser-engine-settings";
 import { WebSearchSettings } from "@/components/settings/web-search-settings";
 import { SandboxSettings } from "@/components/settings/sandbox-settings";
 import {
@@ -68,6 +69,7 @@ import {
   IconKey,
   IconLock,
   IconOrg,
+  IconParserEngine,
   IconPower,
   IconPulse,
   IconSearch,
@@ -169,6 +171,7 @@ const GROUPS: SettingsGroup[] = [
       { key: "ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "owner", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
       { key: "weknoracloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "owner", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
       { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector` },
+      { key: "parser", labelKey: "settingsNav.parser", fallback: "Parser engines", icon: IconParserEngine, minRole: "system", render: () => <ParserEngineSettings />, route: `${SYS}/engines/parser` },
       { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage` },
       { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
       { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
