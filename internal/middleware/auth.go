@@ -531,7 +531,7 @@ func authenticateJWTUser(
 		//     context with NO tenant role (""). Role gates admit the
 		//     SuperAdmin through access.IsExplicitHumanSuperAdmin, never
 		//     through a synthesized membership role.
-		// Everyone else without an active membership is refused.
+		// Everyone else without an active membership is a Guest (below).
 		if user.IsSystemAdmin && !types.IsSyntheticUserID(user.ID) {
 			if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
 				logger.Infof(ctx,
@@ -553,9 +553,23 @@ func authenticateJWTUser(
 			})
 			return true
 		}
+		// A signed-in user whose target tenant (JWT claim or stale
+		// users.tenant_id) holds no active membership — removed, suspended,
+		// or a stale claim — is a Guest: identity routes and public KB reads
+		// are served tenantless, exactly as for a user with no tenant at all
+		// (the KB guard still admits public/published KBs only). Tenant
+		// routes stay closed with a code the frontend can recover from.
+		if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
+			logger.Infof(ctx,
+				"[auth] user %s has no active membership in tenant %d; serving %s tenantless (guest)",
+				user.ID, targetTenantID, c.Request.URL.Path)
+			attachTenantlessUserContext(c, user)
+			return true
+		}
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "Forbidden: not a member of the target workspace",
+			"code":  "TENANT_MEMBERSHIP_REQUIRED",
 		})
 		c.Abort()
 		return false

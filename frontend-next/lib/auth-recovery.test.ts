@@ -5,7 +5,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { ApiError } from "./api-client.ts";
-import { loadWithStaleTenantRecovery } from "./auth-recovery.ts";
+import {
+  isStaleTenantGuest,
+  isTenantMembershipRequired,
+  loadWithStaleTenantRecovery,
+} from "./auth-recovery.ts";
 
 const unauthorized = () => new ApiError(401, "unauthorized");
 const forbidden = () => new ApiError(403, "forbidden", { success: false });
@@ -152,5 +156,63 @@ describe("loadWithStaleTenantRecovery on tenant-header 400 (issue 1)", () => {
     // No stored tenant means the 400 did not come from our header: retain.
     assert.equal(outcome.kind, "transient");
     assert.equal(loads, 1);
+  });
+});
+
+describe("TENANT_MEMBERSHIP_REQUIRED (stale home tenant guest)", () => {
+  // internal/middleware/auth.go: valid session, tenant without membership.
+  const membershipRequired = () =>
+    new ApiError(403, "Forbidden: not a member of the target workspace", {
+      error: "Forbidden: not a member of the target workspace",
+      code: "TENANT_MEMBERSHIP_REQUIRED",
+    });
+
+  it("recognises only the coded 403", () => {
+    assert.equal(isTenantMembershipRequired(membershipRequired()), true);
+    assert.equal(isTenantMembershipRequired(forbidden()), false);
+    assert.equal(
+      isTenantMembershipRequired(new ApiError(409, "x", { code: "TENANT_MEMBERSHIP_REQUIRED" })),
+      false,
+    );
+    assert.equal(isTenantMembershipRequired(networkError()), false);
+  });
+
+  it("retries tenantless and recovers, flagging the stale tenant", async () => {
+    const seen: boolean[] = [];
+    const outcome = await loadWithStaleTenantRecovery(async (skipTenant: boolean) => {
+      seen.push(skipTenant);
+      if (!skipTenant) throw membershipRequired();
+      return { user: "u1" };
+    }, true);
+    assert.equal(outcome.kind, "ok");
+    assert.deepEqual(seen, [false, true]);
+    assert.equal(outcome.kind === "ok" && outcome.recoveredFromStaleTenant, true);
+  });
+
+  it("never signs out: a repeated membership 403 is transient", async () => {
+    const outcome = await loadWithStaleTenantRecovery(async () => {
+      throw membershipRequired();
+    }, true);
+    assert.equal(outcome.kind, "transient");
+  });
+
+  it("never signs out even with no stored tenant", async () => {
+    let loads = 0;
+    const outcome = await loadWithStaleTenantRecovery(async () => {
+      loads++;
+      throw membershipRequired();
+    }, false);
+    assert.equal(outcome.kind, "transient");
+    assert.equal(loads, 1);
+  });
+
+  it("isStaleTenantGuest: tenantless non-SuperAdmin only", () => {
+    assert.equal(isStaleTenantGuest({ tenant_required: true, user: {} }), true);
+    assert.equal(
+      isStaleTenantGuest({ tenant_required: true, user: { is_system_admin: true } }),
+      false,
+    );
+    assert.equal(isStaleTenantGuest({ tenant_required: false, user: {} }), false);
+    assert.equal(isStaleTenantGuest(undefined), false);
   });
 });
