@@ -308,13 +308,6 @@ type ParserEngineConfig struct {
 	// documents. Knowledge bases keep their own rules in ChunkingConfig.
 	ChatParserEngineRules []ParserEngineRule `json:"chat_parser_engine_rules,omitempty"`
 
-	// OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service.
-	ODLHybrid           string `json:"odl_hybrid,omitempty"`      // off (default), docling-fast, hancom-ai
-	ODLHybridURL        string `json:"odl_hybrid_url,omitempty"`  // e.g. http://odl-hybrid:5002
-	ODLHybridMode       string `json:"odl_hybrid_mode,omitempty"` // auto, full
-	ODLHybridFallback   *bool  `json:"odl_hybrid_fallback,omitempty"`
-	ODLMarkdownWithHTML *bool  `json:"odl_markdown_with_html,omitempty"`
-
 	// PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API),
 	// or an OpenAI-compatible VLM OCR endpoint (vLLM /chat/completions)
 	// when PaddleOCRVLEndpoint ends in /v1 or PaddleOCRVLAPI is "openai".
@@ -354,21 +347,6 @@ func (c *ParserEngineConfig) ToOverridesMap() map[string]string {
 		return nil
 	}
 	m := make(map[string]string)
-	if c.ODLHybrid != "" {
-		m["odl_hybrid"] = c.ODLHybrid
-	}
-	if c.ODLHybridURL != "" {
-		m["odl_hybrid_url"] = c.ODLHybridURL
-	}
-	if c.ODLHybridMode != "" {
-		m["odl_hybrid_mode"] = c.ODLHybridMode
-	}
-	if c.ODLHybridFallback != nil {
-		m["odl_hybrid_fallback"] = fmt.Sprintf("%v", *c.ODLHybridFallback)
-	}
-	if c.ODLMarkdownWithHTML != nil {
-		m["odl_markdown_with_html"] = fmt.Sprintf("%v", *c.ODLMarkdownWithHTML)
-	}
 	if c.PaddleOCRVLEndpoint != "" {
 		m["paddleocr_vl_endpoint"] = c.PaddleOCRVLEndpoint
 	}

@@ -8,7 +8,6 @@ import (
 )
 
 var parserOutboundURLKeys = []string{
-	"odl_hybrid_url",
 	"paddleocr_vl_endpoint",
 }
 

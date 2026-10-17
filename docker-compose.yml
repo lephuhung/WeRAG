@@ -353,13 +353,6 @@ services:
       # 出站 HTTP/HTTPS 代理（抓取网页 / 远程图片时）
       - DOCREADER_EXTERNAL_HTTP_PROXY=${DOCREADER_EXTERNAL_HTTP_PROXY:-}
       - DOCREADER_EXTERNAL_HTTPS_PROXY=${DOCREADER_EXTERNAL_HTTPS_PROXY:-}
-      # ========== OpenDataLoader hybrid ==========
-      - DOCREADER_ODL_MAX_WORKERS=${DOCREADER_ODL_MAX_WORKERS:-1}
-      - DOCREADER_ODL_HYBRID=${DOCREADER_ODL_HYBRID:-off}
-      - DOCREADER_ODL_HYBRID_URL=${DOCREADER_ODL_HYBRID_URL:-http://odl-hybrid:5002}
-      - DOCREADER_ODL_HYBRID_MODE=${DOCREADER_ODL_HYBRID_MODE:-auto}
-      - DOCREADER_ODL_HYBRID_FALLBACK=${DOCREADER_ODL_HYBRID_FALLBACK:-false}
-      - DOCREADER_ODL_MARKDOWN_WITH_HTML=${DOCREADER_ODL_MARKDOWN_WITH_HTML:-false}
       # ========== PDF 渲染 ==========
       - DOCREADER_PDF_RENDER_MAX_WORKERS=${DOCREADER_PDF_RENDER_MAX_WORKERS:-1}
       # 单个 PDF 内部扫描页渲染并行进程数（pdfium 非线程安全）。留空走代码默认 min(4,cpu)，
@@ -447,24 +440,6 @@ services:
     volumes:
       - ./docker/onlyoffice/fonts:/usr/share/fonts/truetype/custom
       - ./docker/onlyoffice/plugins/werag-assistant:/var/www/onlyoffice/documentserver/sdkjs-plugins/werag-assistant
-    networks:
-      - WeKnora-network
-    restart: unless-stopped
-
-  # OpenDataLoader hybrid backend (optional). Default --no-ocr (no EasyOCR/libGL).
-  # Local build only — not published to Docker Hub; use --profile odl-hybrid --build.
-  odl-hybrid:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.odl-hybrid
-    image: weknora-odl-hybrid:local
-    container_name: WeKnora-odl-hybrid
-    profiles:
-      - odl-hybrid
-    expose:
-      - "5002"
-    environment:
-      - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
     networks:
       - WeKnora-network
     restart: unless-stopped

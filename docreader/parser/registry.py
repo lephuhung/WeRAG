@@ -4,23 +4,17 @@ from typing import Callable, Dict, List, Optional, Tuple, Type
 from docreader.parser.base_parser import BaseParser
 from docreader.parser.doc_parser import DocParser
 from docreader.parser.docx2_parser import Docx2Parser
-from docreader.parser.epub_parser import EPUBParser
 from docreader.parser.excel_parser import ExcelParser
 from docreader.parser.html_parser import HTMLParser
 from docreader.parser.image_parser import ImageParser
 from docreader.parser.markdown_parser import MarkdownParser
 from docreader.parser.markitdown_parser import MarkitdownParser
 from docreader.parser.mhtml_parser import MHTMLParser
-from docreader.parser.opendataloader_parser import (
-    OpenDataLoaderParser,
-    opendataloader_available,
-)
 from docreader.parser.pdf_parser import PDFParser
 from docreader.parser.vietnamese_legal_parser import (
     VietnameseLegalPDFParser,
     vietnamese_legal_available,
 )
-from docreader.parser.xmind_parser import XMindParser
 
 logger = logging.getLogger(__name__)
 
@@ -172,11 +166,9 @@ def _build_default_registry() -> ParserEngineRegistry:
             "xls": ExcelParser,
             "pptx": MarkitdownParser,
             "ppt": MarkitdownParser,
-            "epub": EPUBParser,
             "html": HTMLParser,
             "htm": HTMLParser,
             "mhtml": MHTMLParser,
-            "xmind": XMindParser,
             **_image_types,
         },
         description="Built-in parser engine",
@@ -197,16 +189,6 @@ def _build_default_registry() -> ParserEngineRegistry:
             "csv": MarkitdownParser,
         },
         description="MarkItDown parser engine (Microsoft MarkItDown library)",
-    )
-
-    reg.register(
-        "opendataloader",
-        {"pdf": OpenDataLoaderParser},
-        description="OpenDataLoader PDF (layout analysis, requires Java 11+)",
-        check_available=lambda overrides: opendataloader_available(
-            overrides, quick=True
-        ),
-        unavailable_hint="Please install opendataloader-pdf and Java 11+",
     )
 
     reg.register(

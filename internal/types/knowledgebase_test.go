@@ -386,6 +386,7 @@ func TestParserEngineInUseReplacesRemovedEngines(t *testing.T) {
 		{"mineru", "pdf", "vietnamese_legal"},
 		{"MinerU_Cloud", "pptx", "markitdown"},
 		{"anydoc", "docx", ""},
+		{"opendataloader", "pdf", "vietnamese_legal"},
 		{"paddleocr_vl", "png", "paddleocr_vl"},
 		{"builtin", "pdf", "builtin"},
 		{"", "pdf", ""},

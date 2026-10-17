@@ -83,7 +83,7 @@ func envPositiveInt(key string, def int) int {
 var markdownImagePattern = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
 
 var temporaryDocumentExtensions = map[string]struct{}{
-	".docx": {}, ".doc": {}, ".pdf": {}, ".ppt": {}, ".pptx": {}, ".epub": {}, ".mhtml": {},
+	".docx": {}, ".doc": {}, ".pdf": {}, ".ppt": {}, ".pptx": {}, ".mhtml": {},
 	".xlsx": {}, ".xls": {},
 	".md": {}, ".markdown": {}, ".txt": {}, ".csv": {}, ".json": {}, ".xml": {}, ".yaml": {}, ".yml": {}, ".log": {}, ".html": {},
 	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".bmp": {}, ".tiff": {}, ".webp": {},

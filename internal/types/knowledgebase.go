@@ -467,7 +467,7 @@ func DefaultParserEngine(fileType string) string {
 // before they were removed may still name them.
 var removedParserEngines = map[string]bool{
 	"mineru": true, "mineru_cloud": true, "paddleocr_vl_cloud": true,
-	"weknoracloud": true, "anydoc": true,
+	"weknoracloud": true, "anydoc": true, "opendataloader": true,
 }
 
 // ParserEngineInUse returns engine, or the type-level default when engine is

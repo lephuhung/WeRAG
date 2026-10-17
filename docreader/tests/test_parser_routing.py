@@ -6,7 +6,6 @@ from docreader.parser.parser import Parser, detect_effective_file_type
 from docreader.parser.markitdown_parser import MarkitdownParser
 from docreader.parser.pdf_parser import PDFParser
 from docreader.parser.registry import BUILTIN_ENGINE, ParserEngineRegistry, registry
-from docreader.parser.xmind_parser import XMindParser
 
 
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -33,10 +32,10 @@ class _RecordingRegistry:
 
 
 class ParserRoutingTest(unittest.TestCase):
-    def test_builtin_registry_routes_xmind_to_xmind_parser(self):
-        parser_class = registry.get_parser_class(BUILTIN_ENGINE, "xmind")
-
-        self.assertIs(parser_class, XMindParser)
+    def test_dropped_formats_are_not_routed(self):
+        for file_type in ("xmind", "epub"):
+            with self.assertRaises(ValueError):
+                registry.get_parser_class(BUILTIN_ENGINE, file_type)
 
     def test_legacy_doc_payload_renamed_to_docx_uses_doc_parser(self):
         registry = _RecordingRegistry()
@@ -92,13 +91,13 @@ class ParserRoutingTest(unittest.TestCase):
     def test_actionable_error_lists_supporting_engines(self):
         isolated = ParserEngineRegistry()
         isolated.register(BUILTIN_ENGINE, {"pdf": PDFParser})
-        isolated.register("opendataloader", {"xmind": XMindParser})
+        isolated.register("markitdown", {"rtf": PDFParser})
 
         with self.assertRaises(ValueError) as ctx:
-            isolated.get_parser_class(BUILTIN_ENGINE, "xmind")
+            isolated.get_parser_class(BUILTIN_ENGINE, "rtf")
         message = str(ctx.exception)
         self.assertIn("Configure one of:", message)
-        self.assertIn("opendataloader", message)
+        self.assertIn("markitdown", message)
 
 
 if __name__ == "__main__":

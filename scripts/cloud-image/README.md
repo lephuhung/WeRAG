@@ -87,7 +87,6 @@ WeKnora `docker-compose.yml` 大量服务是 **profile 限定**，本镜像只�
 | `neo4j` | GraphRAG 知识图谱 |
 | `langfuse` | 自建 Langfuse 可观测平台 |
 | `dex` | OIDC 登录 |
-| `odl-hybrid` | OpenDataLoader Docling hybrid（体积大，无预发布镜像，需 `--build`） |
 
 启用方式：
 
@@ -95,7 +94,6 @@ WeKnora `docker-compose.yml` 大量服务是 **profile 限定**，本镜像只�
 cd /opt/WeKnora
 docker compose --profile neo4j up -d                 # 启用 GraphRAG
 docker compose --profile langfuse up -d              # 启用自建 Langfuse
-docker compose --profile odl-hybrid up -d --build odl-hybrid  # Docling hybrid（按需）
 ```
 
 ---

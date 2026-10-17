@@ -174,13 +174,6 @@ services:
       # Outbound HTTP/HTTPS proxy (when scraping web pages / remote images)
       - DOCREADER_EXTERNAL_HTTP_PROXY=${DOCREADER_EXTERNAL_HTTP_PROXY:-}
       - DOCREADER_EXTERNAL_HTTPS_PROXY=${DOCREADER_EXTERNAL_HTTPS_PROXY:-}
-      # ========== OpenDataLoader hybrid ==========
-      - DOCREADER_ODL_MAX_WORKERS=${DOCREADER_ODL_MAX_WORKERS:-1}
-      - DOCREADER_ODL_HYBRID=${DOCREADER_ODL_HYBRID:-off}
-      - DOCREADER_ODL_HYBRID_URL=${DOCREADER_ODL_HYBRID_URL:-http://odl-hybrid:5002}
-      - DOCREADER_ODL_HYBRID_MODE=${DOCREADER_ODL_HYBRID_MODE:-auto}
-      - DOCREADER_ODL_HYBRID_FALLBACK=${DOCREADER_ODL_HYBRID_FALLBACK:-false}
-      - DOCREADER_ODL_MARKDOWN_WITH_HTML=${DOCREADER_ODL_MARKDOWN_WITH_HTML:-false}
       # ========== PDF Rendering ==========
       - DOCREADER_PDF_RENDER_MAX_WORKERS=${DOCREADER_PDF_RENDER_MAX_WORKERS:-1}
       # Parallel processes for rendering scanned pages inside a single PDF (pdfium is not thread-safe). Empty defaults to code default min(4,cpu),
@@ -231,27 +224,6 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  # OpenDataLoader hybrid backend (optional). Enable profile "odl-hybrid" and set
-  # DOCREADER_ODL_HYBRID=docling-fast on docreader. Default --no-ocr (no EasyOCR).
-  # Local build only — not published to Docker Hub.
-  odl-hybrid:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.odl-hybrid
-    image: weknora-odl-hybrid:local
-    container_name: WeKnora-odl-hybrid
-    profiles:
-      - odl-hybrid
-    ports:
-      - "${ODL_HYBRID_PORT:-5002}:5002"
-    environment:
-      # Default --no-ocr (digital PDFs). Scanned PDFs: use builtin OCR / PaddleOCR-VL, or
-      # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (needs EasyOCR + libGL in image).
-      - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
-    networks:
-      - WeKnora-network-dev
-    restart: unless-stopped
 
   dex:
     image: dexidp/dex:latest

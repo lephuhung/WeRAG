@@ -28,10 +28,9 @@ const unknownFileType = "unknown"
 // and the worker's post-download re-check. Keeping one set avoids the drift
 // that let direct upload accept xlsx while URL import rejected it (#2447).
 var supportedImportFileExtensions = map[string]struct{}{
-	"pdf": {}, "txt": {}, "docx": {}, "doc": {}, "epub": {},
+	"pdf": {}, "txt": {}, "docx": {}, "doc": {},
 	"html": {}, "htm": {}, "mhtml": {}, "md": {}, "markdown": {},
-	"xmind": {},
-	"png":   {}, "jpg": {}, "jpeg": {}, "gif": {},
+	"png": {}, "jpg": {}, "jpeg": {}, "gif": {},
 	"csv": {}, "xlsx": {}, "xls": {}, "pptx": {}, "ppt": {}, "json": {},
 	"mp3": {}, "wav": {}, "m4a": {}, "flac": {}, "ogg": {},
 }

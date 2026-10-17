@@ -2056,11 +2056,6 @@ func validateParserEngineOutboundURLs(cfg *types.ParserEngineConfig) error {
 	if cfg == nil {
 		return nil
 	}
-	if odlURL := strings.TrimSpace(cfg.ODLHybridURL); odlURL != "" {
-		if err := secutils.ValidateURLForSSRF(odlURL); err != nil {
-			return fmt.Errorf("odl_hybrid_url failed SSRF validation: %v", err)
-		}
-	}
 	if endpoint := strings.TrimSpace(cfg.PaddleOCRVLEndpoint); endpoint != "" {
 		if err := secutils.ValidateURLForSSRF(endpoint); err != nil {
 			return fmt.Errorf("paddleocr_vl_endpoint failed SSRF validation: %v", err)

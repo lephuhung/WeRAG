@@ -11,8 +11,8 @@ func TestIsValidFileTypeHTML(t *testing.T) {
 		{name: "html", filename: "index.html", want: true},
 		{name: "uppercase html", filename: "INDEX.HTML", want: true},
 		{name: "htm", filename: "legacy.htm", want: true},
-		{name: "xmind", filename: "architecture.xmind", want: true},
-		{name: "uppercase xmind", filename: "ARCHITECTURE.XMIND", want: true},
+		{name: "xmind dropped", filename: "architecture.xmind", want: false},
+		{name: "epub dropped", filename: "book.epub", want: false},
 		{name: "unsupported", filename: "payload.exe", want: false},
 	}
 
@@ -38,8 +38,8 @@ func TestIsSupportedImportExtension(t *testing.T) {
 		{name: "uppercase", ext: "XLSX", want: true},
 		{name: "surrounding space", ext: " xlsx ", want: true},
 		{name: "pdf", ext: "pdf", want: true},
-		{name: "xmind", ext: "xmind", want: true},
-		{name: "uppercase xmind", ext: "XMIND", want: true},
+		{name: "xmind dropped", ext: "xmind", want: false},
+		{name: "epub dropped", ext: "epub", want: false},
 		{name: "unsupported", ext: "exe", want: false},
 		{name: "video", ext: "mp4", want: false},
 		{name: "empty", ext: "", want: false},

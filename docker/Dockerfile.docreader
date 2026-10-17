@@ -94,7 +94,6 @@ RUN apt-get update && apt-get install -y \
     libjpeg62-turbo \
     wget \
     gnupg \
-    openjdk-17-jre-headless \
     libgl1 \
     libglib2.0-0 \
     antiword \
@@ -109,6 +108,8 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libreoffice \
     curl \
+    # LibreOffice only recommends a JRE (macros, Base); nothing here needs Java.
+    default-jre- default-jre-headless- openjdk-17-jre- openjdk-17-jre-headless- \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 grpc_health_probe
