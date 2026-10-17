@@ -55,12 +55,41 @@ function isTenantHeaderRejection(message: string | null): boolean {
   );
 }
 
+/* internal/middleware/auth.go answers a tenant route with
+ * 403 {error, code: "TENANT_MEMBERSHIP_REQUIRED"} when the session is valid
+ * but its tenant (stored X-Tenant-ID, JWT claim or stale home tenant) holds
+ * no active membership. That is a stale tenant, never invalid auth: it must
+ * not sign the user out. */
+export const TENANT_MEMBERSHIP_REQUIRED = "TENANT_MEMBERSHIP_REQUIRED";
+
+export function isTenantMembershipRequired(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 403) return false;
+  const payload = error.payload;
+  return (
+    !!payload &&
+    typeof payload === "object" &&
+    (payload as { code?: unknown }).code === TENANT_MEMBERSHIP_REQUIRED
+  );
+}
+
+/* /auth/me served tenantless to a non-SuperAdmin (tenant_required) means
+ * the account is a Guest: any stored X-Tenant-ID and the users.tenant_id it
+ * reports are stale and must not be (re)seeded as the selected tenant. A
+ * SuperAdmin may legitimately run tenantless with a selected tenant. */
+export function isStaleTenantGuest(data: {
+  tenant_required?: boolean;
+  user?: { is_system_admin?: boolean } | null;
+} | null | undefined): boolean {
+  return data?.tenant_required === true && data.user?.is_system_admin !== true;
+}
+
 /* Classify without conflating: a 400 can only implicate the stored tenant
  * header when one was actually stored — without it the header was never
  * sent, so the 400 did not come from us and must stay transient (retain
  * tokens) rather than clearing a valid session as invalid-auth. */
 function rejectionKind(error: unknown): "auth" | "tenant" | "transient" {
   if (!(error instanceof ApiError)) return "transient";
+  if (isTenantMembershipRequired(error)) return "tenant";
   if (error.status === 401 || error.status === 403) return "auth";
   return isTenantHeaderRejection(tenantHeaderErrorMessage(error))
     ? "tenant"

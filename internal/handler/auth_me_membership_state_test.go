@@ -28,16 +28,20 @@ func TestAuthMeMembershipState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	one := []types.Membership{{TenantID: 7, Role: types.TenantRoleMember}}
 	cases := []struct {
-		name        string
-		user        *types.User
-		memberships []types.Membership
-		want        string
+		name         string
+		user         *types.User
+		memberships  []types.Membership
+		want         string
+		wantNoTenant bool
 	}{
-		{"superadmin without membership", &types.User{ID: "root", IsSystemAdmin: true}, nil, "superadmin"},
-		{"superadmin with membership", &types.User{ID: "root", IsSystemAdmin: true}, one, "superadmin"},
-		{"member", &types.User{ID: "u1"}, one, "member"},
-		{"guest", &types.User{ID: "g1"}, []types.Membership{}, "guest"},
-		{"legacy flag is still a guest", &types.User{ID: "g2", CanAccessAllTenants: true}, nil, "guest"},
+		{"superadmin without membership", &types.User{ID: "root", IsSystemAdmin: true}, nil, "superadmin", false},
+		{"superadmin with membership", &types.User{ID: "root", IsSystemAdmin: true}, one, "superadmin", false},
+		{"member", &types.User{ID: "u1"}, one, "member", false},
+		{"guest", &types.User{ID: "g1"}, []types.Membership{}, "guest", false},
+		{"legacy flag is still a guest", &types.User{ID: "g2", CanAccessAllTenants: true}, nil, "guest", false},
+		// Stale users.tenant_id without membership: the middleware serves
+		// /auth/me tenantless; the handler must not resurrect the home tenant.
+		{"guest with stale home tenant", &types.User{ID: "g3", TenantID: 7}, []types.Membership{}, "guest", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -59,6 +63,7 @@ func TestAuthMeMembershipState(t *testing.T) {
 			var body struct {
 				Data struct {
 					MembershipState string `json:"membership_state"`
+					TenantRequired  bool   `json:"tenant_required"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -66,6 +71,9 @@ func TestAuthMeMembershipState(t *testing.T) {
 			}
 			if body.Data.MembershipState != tc.want {
 				t.Fatalf("membership_state=%q, want %q", body.Data.MembershipState, tc.want)
+			}
+			if tc.wantNoTenant && !body.Data.TenantRequired {
+				t.Fatalf("tenant_required=false, want true for a guest with a stale home tenant")
 			}
 		})
 	}

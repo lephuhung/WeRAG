@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet, clearTokens, getTokens, setTokens } from "@/lib/api-client";
-import { loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
+import { isStaleTenantGuest, loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
 import { useT } from "@/lib/i18n";
 import { resolveMembershipState, type MembershipState } from "@/lib/tenant-roles";
 
@@ -102,6 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             tenant?: TenantInfo | null;
             memberships?: AuthState["memberships"];
             membership_state?: string;
+            tenant_required?: boolean;
           };
         }>("/api/v1/auth/me", skipTenant ? { skipTenant: true } : undefined),
       tenantStored,
@@ -133,7 +134,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
          * After a stale-tenant recovery the stored id is known-bad: drop it
          * first so the session tenant below replaces it instead of the
          * stale value surviving. */
-        if (outcome.recoveredFromStaleTenant) {
+        const staleGuest = isStaleTenantGuest(res.data);
+        if (outcome.recoveredFromStaleTenant || staleGuest) {
           try {
             localStorage.removeItem(TENANT_KEY);
           } catch {
@@ -141,7 +143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setSelectedTenantId(null);
         }
-        const sessionTenantId = res.data.tenant?.id ?? res.data.user?.tenant_id;
+        /* A Guest's users.tenant_id is the stale tenant itself — seed only
+         * from a tenant the server actually resolved. */
+        const sessionTenantId =
+          res.data.tenant?.id ?? (staleGuest ? undefined : res.data.user?.tenant_id);
         if (sessionTenantId != null && Number(sessionTenantId) > 0) {
           try {
             const current = localStorage.getItem(TENANT_KEY);

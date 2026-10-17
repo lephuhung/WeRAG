@@ -651,7 +651,12 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	// the wrong role. Pull the active tenant id from context instead.
 	var tenant *types.Tenant
 	activeTenantID, _ := types.TenantIDFromContext(ctx)
-	if activeTenantID == 0 {
+	// A tenantless session falls back to the home tenant only for a
+	// SuperAdmin. For anyone else the middleware serves /auth/me tenantless
+	// precisely because users.tenant_id holds no active membership (removed,
+	// suspended or stale): reporting it would hide the Guest state
+	// (tenant_required must be true).
+	if activeTenantID == 0 && user.IsSystemAdmin {
 		activeTenantID = user.TenantID
 	}
 	if activeTenantID > 0 {
