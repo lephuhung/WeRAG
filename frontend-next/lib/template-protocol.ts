@@ -12,7 +12,9 @@ export function templatePrompt(id: DocumentTemplateId): string {
   return `Tạo cho tôi văn bản ${name?.toLocaleLowerCase('vi-VN')} theo NĐ 30, thông tin tôi cần là: `;
 }
 export const TEMPLATE_HINT = 'Bạn có thể nhập: mục đích, nội dung chính, đối tượng nhận, thời gian, phạm vi và yêu cầu thực hiện. Bổ sung cơ quan hoặc người ký nếu khác thông tin đơn vị đã lưu; trợ lý sẽ hỏi tiếp những mục còn thiếu.';
-export type TemplateRequest = { schema_version: 1; request_id: string; template_id: DocumentTemplateId; document_id?: string };
+/** redo: the first turn of a request asked in plain chat to draft the last
+ * one of this type again; the server starts it from what was said for that. */
+export type TemplateRequest = { schema_version: 1; request_id: string; template_id: DocumentTemplateId; document_id?: string; redo?: true };
 export type TemplateFields = {
   parent_agency?: string; agency: string; locality: string; date: string; number_symbol: string; subject: string;
   addressee?: string; grounds?: string[]; request_basis?: string; decision_authority?: string;
@@ -71,4 +73,26 @@ export function restoreTemplateRequest(store: TemplateStore, tenant: string, ses
     if (!record(value) || value.schema_version !== 1 || !text(value.request_id,128) || value.sessionId !== session || value.document_id !== document || !TEMPLATE_CHOICES.some(([id]) => id === value.template_id) || typeof value.savedAt !== 'number' || Date.now() - value.savedAt > 86400000) return null;
     return { schema_version: 1, request_id: value.request_id, template_id: value.template_id as DocumentTemplateId, document_id: document, sessionId: session };
   } catch { return null; }
+}
+
+const lastKey = (tenant: string, session: string) => `werag.template-last:${tenant}:${session}`;
+/** The type of the session's last document built from a template, for a redo that names none. */
+export function rememberLastTemplate(store: TemplateStore, tenant: string, session: string, id: DocumentTemplateId): void {
+  try { store?.setItem(lastKey(tenant, session), id); } catch { /* unavailable */ }
+}
+export function lastTemplate(store: TemplateStore, tenant: string, session: string): DocumentTemplateId | null {
+  try {
+    const value = store?.getItem(lastKey(tenant, session));
+    return TEMPLATE_CHOICES.some(([id]) => id === value) ? value as DocumentTemplateId : null;
+  } catch { return null; }
+}
+/** The type a plain chat message asks to draft again ("tạo lại công văn",
+ * "soạn lại văn bản giúp tôi"), null when it asks no such thing. A type named
+ * wins; "văn bản" means the last one built in the session. */
+export function redoTemplateId(text: string, last: DocumentTemplateId | null): DocumentTemplateId | null {
+  const t = text.normalize('NFC').toLocaleLowerCase('vi-VN');
+  if (t.length > 300 || !/(^|[\s,.!:;])(tạo|soạn|làm|viết)\s+lại(?=$|[\s,.!?:;])/u.test(t)) return null;
+  const named = TEMPLATE_CHOICES.find(([, name]) => t.includes(name.toLocaleLowerCase('vi-VN').replace(' cá biệt', '')));
+  if (named) return named[0];
+  return /(^|\s)văn bản(?=$|[\s,.!?:;])/u.test(t) ? last : null;
 }

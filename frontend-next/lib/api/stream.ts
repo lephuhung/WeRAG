@@ -87,7 +87,7 @@ export type StreamParams = {
   abbreviationCandidates?: string[];
   /** A chat-driven NĐ30 template request (prepare_document_template):
    * follow-up turns of one request carry the same request_id. */
-  documentTemplateRequest?: { schema_version: 1; request_id: string; template_id: string; document_id?: string };
+  documentTemplateRequest?: { schema_version: 1; request_id: string; template_id: string; document_id?: string; redo?: true };
   /** Words the user rejected the automatic reading of ("Không phải?"): the
    * gate asks about them instead. */
   abbreviationAskWords?: string[];

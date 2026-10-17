@@ -29,7 +29,9 @@ type DocumentTemplateState struct {
 	DocumentID string            `json:"document_id"`
 	Inputs     []string          `json:"inputs"`
 	Asked      map[string]string `json:"asked,omitempty"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	// Redo: the request started from the last ready one (KeepBlanks).
+	Redo      bool      `json:"redo,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type documentTemplateStore struct {
@@ -48,6 +50,13 @@ func UseDocumentTemplateRedis(rdb *redis.Client) {
 
 func templateStateKey(sessionID, requestID string) string {
 	return templateStateKeyPrefix + sessionID + ":" + requestID
+}
+
+// LastDocumentTemplateRequestID is the request ID the state of the session's
+// last ready request of a template type is also kept under (a redo starts
+// from it). Client request IDs are UUIDs and never take this form.
+func LastDocumentTemplateRequestID(templateID string) string {
+	return "last/" + templateID
 }
 
 // LoadDocumentTemplateState returns the state of a request of the session,

@@ -7,7 +7,10 @@ import { DocumentWorkspaceError, getDocumentWorkspace, storeDocumentTemplate } f
 import type { DocumentTemplateId } from "@/lib/document-templates";
 import {
   forgetTemplateRequest,
+  lastTemplate,
   parseTemplateResponse,
+  redoTemplateId,
+  rememberLastTemplate,
   restoreTemplateRequest,
   saveTemplateRequest,
   type PendingTemplate,
@@ -122,16 +125,29 @@ export function useDocumentTemplate({
     setNotice(null);
   }, [tenantKey]);
 
-  /** The request a turn sent now carries (undefined: none). */
-  const forSend = useCallback(() => {
+  /** The request a turn sent now carries (undefined: none). text is the
+   * message: asking in plain chat to draft a type again ("tạo lại công
+   * văn") into the visible, empty document opens a redo request. */
+  const forSend = useCallback((text?: string) => {
     // the last turn's notice is about the last turn
     setNotice(null);
-    const r = requestRef.current;
+    let r = requestRef.current;
+    const docId = editorRef.current?.documentId;
+    if (!r && text && sessionId && docId && emptyDocId === docId) {
+      const templateId = redoTemplateId(text, lastTemplate(storage(), tenantKey, sessionId));
+      if (templateId) {
+        r = { schema_version: 1, request_id: randomId(), template_id: templateId, document_id: docId, sessionId, redo: true };
+        update(r);
+      }
+    }
     if (!r || !sessionId || r.sessionId !== sessionId) return undefined;
     saveTemplateRequest(storage(), tenantKey, r);
     receivedRef.current = false;
-    return { schema_version: 1 as const, request_id: r.request_id, template_id: r.template_id, document_id: r.document_id };
-  }, [sessionId, tenantKey]);
+    return {
+      schema_version: 1 as const, request_id: r.request_id, template_id: r.template_id, document_id: r.document_id,
+      ...(r.redo ? { redo: true as const } : {}),
+    };
+  }, [sessionId, tenantKey, emptyDocId, editorRef]);
 
   /** A turn of the request ended without a result: say so. */
   const turnEnded = useCallback(() => {
@@ -157,6 +173,7 @@ export function useDocumentTemplate({
       if (!still()) return;
       await storeDocumentTemplate(sid, r.document_id, view.revision, bytes);
       rememberAppliedBatch(storage(), sid, key);
+      rememberLastTemplate(storage(), tenantKey, sid, r.template_id);
       forgetTemplateRequest(storage(), tenantKey, r);
       if (still()) update(null);
       setNotice({ kind: "done" });

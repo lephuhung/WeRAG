@@ -61,6 +61,10 @@ type DocumentTemplateInput struct {
 	// Asked are the conflicts with the profile already put to the user
 	// (field → the user's value); asked again, the user's value stands.
 	Asked map[string]string
+	// KeepBlanks: the request drafts again a document the user already had
+	// built ("tạo lại công văn"), so what was left blank then stays blank
+	// and nothing is asked again.
+	KeepBlanks bool
 }
 
 // DocumentTemplateOutcome is the answer to one turn.
@@ -571,7 +575,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if len(missing) > templateMissingMax {
 		missing = missing[:templateMissingMax]
 	}
-	blanks := len(missing) > 0 && wantsBlanks(in.Inputs)
+	blanks := len(missing) > 0 && (in.KeepBlanks || wantsBlanks(in.Inputs))
 	if len(missing) > 0 && !blanks {
 		base["status"] = "needs_input"
 		base["missing_fields"] = missing

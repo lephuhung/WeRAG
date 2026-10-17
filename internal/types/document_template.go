@@ -15,6 +15,10 @@ type DocumentTemplateRequest struct {
 	RequestID     string `json:"request_id"`
 	TemplateID    string `json:"template_id"`
 	DocumentID    string `json:"document_id"`
+	// Redo starts the request from what the user said for the last ready
+	// request of this type in the session ("tạo lại công văn" in a new,
+	// empty document), so it is drafted again without asking again.
+	Redo bool `json:"redo,omitempty"`
 }
 
 // DocumentTemplateToolName is the tool name of the structured answer.
@@ -42,6 +46,7 @@ func (r *DocumentTemplateRequest) Normalized() *DocumentTemplateRequest {
 		RequestID:     strings.TrimSpace(r.RequestID),
 		TemplateID:    strings.TrimSpace(r.TemplateID),
 		DocumentID:    strings.TrimSpace(r.DocumentID),
+		Redo:          r.Redo,
 	}
 	if _, ok := DocumentTemplateNames[out.TemplateID]; !ok {
 		return nil

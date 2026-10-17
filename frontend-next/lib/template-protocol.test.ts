@@ -26,3 +26,14 @@ test('pending requests survive pane reload only in the matching tenant/session/d
  const newer={...pending,request_id:'r2'};saveTemplateRequest(store,'t1',newer);forgetTemplateRequest(store,'t1',pending);assert.deepEqual(restoreTemplateRequest(store,'t1','s1','doc1'),newer);
  forgetTemplateRequest(store,'t1',newer);assert.equal(restoreTemplateRequest(store,'t1','s1','doc1'),null);
 });
+
+test('a plain chat "draft it again" names the type to redo', async()=>{
+ const { redoTemplateId }=await import('./template-protocol.ts');
+ assert.equal(redoTemplateId('Tạo lại công văn nhé',null),'cong-van');
+ assert.equal(redoTemplateId('soạn lại quyết định giúp tôi','cong-van'),'quyet-dinh');
+ assert.equal(redoTemplateId('Làm lại văn bản','to-trinh'),'to-trinh');
+ assert.equal(redoTemplateId('Tạo lại văn bản',null),null);
+ assert.equal(redoTemplateId('tạo lại sơ đồ','cong-van'),null);
+ assert.equal(redoTemplateId('Tạo công văn mới gửi PV01','cong-van'),null);
+ assert.equal(redoTemplateId('tạo lạinh công văn',null),null);
+});

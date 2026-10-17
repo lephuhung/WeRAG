@@ -231,6 +231,33 @@ func TestBuildAssistantHistoryMessages_SkipsPipelineTimelineToolCalls(t *testing
 	assert.Empty(t, got[0].ToolCalls)
 }
 
+// A turn that ended on a gate's choice card replays a note, not the card's
+// numbered question: replayed as the model's answer, a later turn copied it
+// as plain text with nothing to click.
+func TestBuildAssistantHistoryMessages_ChoiceCardReplaysNote(t *testing.T) {
+	question := "Tôi nhận thấy từ “PV01” chưa rõ ý nghĩa, bạn giúp tôi cung cấp thêm thông tin nhé:\n1. Là từ viết tắt"
+	msg := &types.Message{
+		Role:    "assistant",
+		Content: question,
+		AgentSteps: types.AgentSteps{{ToolCalls: []types.ToolCall{{
+			ID:     types.PipelineToolCallIDPrefix + "abbrchoice-m1",
+			Name:   AbbreviationChoiceType,
+			Result: &types.ToolResult{Success: true, Output: question, Data: map[string]interface{}{"subject": "PV01"}},
+		}}}},
+	}
+	got := buildAssistantHistoryMessages(msg)
+	if !assert.Len(t, got, 1) {
+		return
+	}
+	assert.Equal(t, "assistant", got[0].Role)
+	assert.Contains(t, got[0].Content, "“PV01”")
+	assert.NotContains(t, got[0].Content, "1. Là từ viết tắt")
+
+	// the same card id prefix with a model tool name is not a choice card
+	msg.AgentSteps[0].ToolCalls[0].Name = agenttools.ToolSearchKnowledge
+	assert.Equal(t, question, buildAssistantHistoryMessages(msg)[0].Content)
+}
+
 // TestBuildAssistantHistoryMessages_ToolFailureSurfacesAsError ensures a
 // historical failed tool call is replayed as an "Error: …" tool message so the
 // model can see (and avoid retrying) the same failure path.

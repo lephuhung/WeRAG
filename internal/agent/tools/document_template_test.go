@@ -558,6 +558,21 @@ func TestDocumentTemplateSkipDecisionAndLetter(t *testing.T) {
 	}
 }
 
+// A redo of a document built with blanks ("tạo lại công văn") keeps the
+// blanks: the message asking for it is not a skip, yet nothing is asked.
+func TestDocumentTemplateRedoKeepsBlanks(t *testing.T) {
+	d := planDraft()
+	d["signer"] = map[string]string{}
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "ke-hoach", "Tạo kế hoạch đào tạo AI cho cán bộ", "bỏ qua", "Tạo lại kế hoạch nhé")
+	in.Profile, in.User = nil, TemplateUserContext{}
+	in.KeepBlanks = true
+	out, _ := PrepareDocumentTemplate(context.Background(), in)
+	if !out.Ready || out.Data["fields"].(map[string]interface{})["signer_name"] != templateBlank {
+		t.Fatalf("redo not ready with blanks: %s", out.Answer)
+	}
+}
+
 func TestWantsBlanksOnlyFromTheCurrentMessage(t *testing.T) {
 	if wantsBlanks([]string{"bỏ qua", "Người ký: Nguyễn Văn A"}) {
 		t.Error("an earlier skip carried over")
@@ -570,5 +585,34 @@ func TestWantsBlanksOnlyFromTheCurrentMessage(t *testing.T) {
 	}
 	if wantsBlanks([]string{"Nội dung: đào tạo AI cho cán bộ"}) {
 		t.Error("an ordinary answer is a skip")
+	}
+}
+
+// A redo request ("tạo lại") keeps its flag through normalization, and the
+// last ready request is kept apart from any client request ID.
+func TestDocumentTemplateRedoStateKeptUnderLastKey(t *testing.T) {
+	req := &types.DocumentTemplateRequest{SchemaVersion: 1, RequestID: "r2", TemplateID: "cong-van", DocumentID: "d2", Redo: true}
+	if n := req.Normalized(); n == nil || !n.Redo {
+		t.Fatalf("redo lost in normalization: %+v", n)
+	}
+	ctx := context.Background()
+	session := "sess-redo-" + time.Now().Format("150405.000000")
+	last := LastDocumentTemplateRequestID("cong-van")
+	if last == "r2" || last == LastDocumentTemplateRequestID("ke-hoach") {
+		t.Fatalf("last key %q collides", last)
+	}
+	SaveDocumentTemplateState(ctx, session, last, &DocumentTemplateState{
+		TemplateID: "cong-van", Inputs: []string{"Tạo công văn", "bỏ qua"}, Asked: map[string]string{"signer": "Người ký?"}, Redo: true,
+	})
+	got := LoadDocumentTemplateState(ctx, session, last)
+	if got == nil || len(got.Inputs) != 2 || got.Asked["signer"] == "" || !got.Redo {
+		t.Fatalf("last state: %+v", got)
+	}
+	got.Inputs[0] = "changed"
+	if again := LoadDocumentTemplateState(ctx, session, last); again.Inputs[0] != "Tạo công văn" {
+		t.Fatal("a loaded state shares its inputs with the store")
+	}
+	if LoadDocumentTemplateState(ctx, session, "r2") != nil || LoadDocumentTemplateState(ctx, "other", last) != nil {
+		t.Fatal("the last state leaked to another request or session")
 	}
 }

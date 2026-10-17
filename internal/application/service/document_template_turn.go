@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -87,8 +88,23 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	state := tools.LoadDocumentTemplateState(ctx, sessionID, tr.RequestID)
 	if state == nil || state.TemplateID != tr.TemplateID || state.DocumentID != tr.DocumentID {
 		state = &tools.DocumentTemplateState{TemplateID: tr.TemplateID, DocumentID: tr.DocumentID}
+		// a redo starts from what was said for the last one; with none
+		// kept it is a new request
+		for _, scope := range lastTemplateScopes(req.Session) {
+			if !tr.Redo {
+				break
+			}
+			if last := tools.LoadDocumentTemplateState(ctx, scope, tools.LastDocumentTemplateRequestID(tr.TemplateID)); last != nil {
+				state.Inputs, state.Asked, state.Redo = last.Inputs, last.Asked, true
+				break
+			}
+		}
+		logger.Infof(ctx, "document template %s (%s): new request, redo=%v, inputs carried=%d",
+			tr.RequestID, tr.TemplateID, tr.Redo, len(state.Inputs))
 	}
-	state.Inputs = append(state.Inputs, strings.TrimSpace(req.Query))
+	// the question as the abbreviation gate settled it: a turn resumed from
+	// its card carries the card's answer ("PV01 → PV01") as the raw query
+	state.Inputs = append(state.Inputs, strings.TrimSpace(abbreviationEffectiveQuery(ctx, req.Query)))
 
 	var profile *types.TenantAgencyProfile
 	if s.agencyProfiles != nil {
@@ -110,7 +126,7 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	}
 	in := tools.DocumentTemplateInput{
 		Request: tr, Profile: profile, User: s.templateUser(ctx), Inputs: state.Inputs,
-		Today: types.PromptNow(), Model: model, Asked: state.Asked,
+		Today: types.PromptNow(), Model: model, Asked: state.Asked, KeepBlanks: state.Redo,
 	}
 	// the user's work context (profile preferences)
 	if user, _ := ctx.Value(types.UserContextKey).(*types.User); user != nil {
@@ -138,8 +154,21 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	logger.Infof(ctx, "document template %s (%s): ready=%v", tr.RequestID, tr.TemplateID, out.Ready)
 	if out.Ready && out.Data != nil {
 		out.Data["font_sizes"] = s.templateFontSizes(ctx, tenantID)
+		last := *state
+		last.DocumentID = ""
+		for _, scope := range lastTemplateScopes(req.Session) {
+			cp := last
+			tools.SaveDocumentTemplateState(ctx, scope, tools.LastDocumentTemplateRequestID(tr.TemplateID), &cp)
+		}
 	}
 	return true, emitTemplateAnswer(ctx, bus, req, agentMode, out.Answer, out.Data)
+}
+
+// lastTemplateScopes are where the last ready request of a type is kept for
+// a redo: the session, then the user, for a redo asked in another session
+// (in Word every file has its own).
+func lastTemplateScopes(session *types.Session) []string {
+	return []string{session.ID, fmt.Sprintf("user:%d:%s", session.TenantID, session.UserID)}
 }
 
 // emitTemplateAnswer ends the turn with the answer and, when there is one,

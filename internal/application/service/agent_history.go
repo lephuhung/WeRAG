@@ -826,6 +826,9 @@ func buildAgentStepMessages(step types.AgentStep) []chat.Message {
 // generated-file markers belong to that turn, so they are relabeled before
 // being replayed into a later turn's history.
 func finalAnswerHistoryMessage(m *types.Message) *chat.Message {
+	if note := choiceCardHistoryNote(m); note != "" {
+		return &chat.Message{Role: "assistant", Content: note}
+	}
 	finalContent := agentHistoryThinkTagRegex.ReplaceAllString(m.Content, "")
 	// Version clarification was written for that message's turn, not this one.
 	finalContent = strings.NewReplacer(
@@ -837,6 +840,39 @@ func finalAnswerHistoryMessage(m *types.Message) *chat.Message {
 		return nil
 	}
 	return &chat.Message{Role: "assistant", Content: finalContent}
+}
+
+// choiceCardTypes are the clickable choice cards a gate shows instead of an
+// answer: the code wrote them, the model did not.
+var choiceCardTypes = map[string]bool{
+	AbbreviationChoiceType:                 true,
+	agenttools.LegalCandidatesType:         true,
+	agenttools.BroadQueryClarificationType: true,
+}
+
+// choiceCardHistoryNote is what a turn that ended on a choice card replays,
+// "" for any other turn. The card's text is a numbered question; replayed as
+// the model's own answer, a later turn copied it word for word as plain text,
+// with no card and nothing to click (session 681b6a7a). A gate shows the card
+// again when it is needed.
+func choiceCardHistoryNote(m *types.Message) string {
+	for _, step := range m.AgentSteps {
+		for _, tc := range step.ToolCalls {
+			if !types.IsPipelineToolCallID(tc.ID) || !choiceCardTypes[tc.Name] {
+				continue
+			}
+			about := ""
+			if tc.Result != nil {
+				if subject, _ := tc.Result.Data["subject"].(string); strings.TrimSpace(subject) != "" {
+					about = " về “" + strings.TrimSpace(subject) + "”"
+				}
+			}
+			return "(Lượt này hệ thống đã hiện cho người dùng một thẻ lựa chọn" + about +
+				"; tin nhắn kế tiếp của người dùng là câu trả lời. Không chép lại câu hỏi hay danh sách lựa chọn đó: " +
+				"khi cần hỏi lại, hệ thống tự hiện thẻ.)"
+		}
+	}
+	return ""
 }
 
 // legacyFinalAnswerToolName is the name of the now-removed final_answer tool.

@@ -2594,7 +2594,7 @@ function ChatBody({ id }: { id: string }) {
       abbreviationCandidates: priorCandidates?.slice(0, 10),
       abbreviationAskWords: s.abbreviationAskWords,
       documentSelection,
-      documentTemplateRequest: selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? docTemplate.forSend() : undefined,
+      documentTemplateRequest: selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID ? docTemplate.forSend(t) : undefined,
       signal: ctrl.signal,
       onChunk: applyChunk,
     })
