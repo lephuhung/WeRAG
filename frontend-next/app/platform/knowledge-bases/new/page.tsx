@@ -12,7 +12,7 @@ export default function NewKnowledgeBase() {
   /* Only Tenant Admins (or the platform SuperAdmin) reach this page —
    * the backend enforces it. Public visibility is retired: every KB is
    * private to its workspace; cross-workspace reads use invitations. */
-  const { isTenantAdmin } = useTenantRole();
+  const { isTenantAdmin, isGuest } = useTenantRole();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +46,16 @@ export default function NewKnowledgeBase() {
       <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
         <div className="caption-uppercase mb-3 text-muted">{t("kbNew.workspace")}</div>
         <h1 className="display-xl mb-10">{t("kbNew.title")}</h1>
-        {!isTenantAdmin && (
+        {isGuest ? (
           <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
-            {t("kbNew.adminOnly")}
+            {t("kbNew.guestBlocked")}
           </p>
+        ) : (
+          !isTenantAdmin && (
+            <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
+              {t("kbNew.adminOnly")}
+            </p>
+          )
         )}
         <form className="card p-4 sm:p-8" onSubmit={submit}>
           <label className="mb-5 block">
@@ -77,7 +83,7 @@ export default function NewKnowledgeBase() {
           </div>
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <div className="flex gap-3">
-            <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
+            <button type="submit" className="btn btn-primary" disabled={busy || isGuest || !name.trim()}>
               {busy ? t("kbNew.creating") : t("kbNew.create")}
             </button>
             <button type="button" className="btn btn-outline" onClick={() => router.back()}>

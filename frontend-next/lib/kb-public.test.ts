@@ -86,7 +86,7 @@ describe("getKBViewerCapabilities matrix", () => {
     assert.equal(caps.canInvite, false);
   });
 
-  it("public explicit SuperAdmin alone manages/uploads", async () => {
+  it("public explicit SuperAdmin manages/uploads/shares", async () => {
     const caps = getKBViewerCapabilities(convertedPublicRow, {
       activeTenantId: 1, isTenantAdmin: false, isSystemAdmin: true,
     });
@@ -94,18 +94,26 @@ describe("getKBViewerCapabilities matrix", () => {
     assert.equal(caps.canManage, true);
     assert.equal(caps.canUpload, true);
     assert.equal(caps.canDownloadOriginal, true);
-    assert.equal(caps.canShare, false);
-    assert.equal(caps.canInvite, false);
+    // Phase 2: SuperAdmin holds every right on every KB (backend
+    // CanManageKBSharing admits SuperAdmin on platform rows too).
+    assert.equal(caps.canShare, true);
+    assert.equal(caps.canInvite, true);
   });
 
-  it("SuperAdmin/CanAccessAllTenants never manages foreign tenant-owned KBs", async () => {
+  it("SuperAdmin manages foreign tenant-owned KBs; the tenant admin flag alone does not", async () => {
     const caps = getKBViewerCapabilities(foreignRow, {
       activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: true,
     });
     assert.equal(caps.kind, "invited");
-    assert.equal(caps.canManage, false);
-    assert.equal(caps.canUpload, false);
-    assert.equal(caps.canDownloadOriginal, false);
+    assert.equal(caps.canManage, true);
+    assert.equal(caps.canUpload, true);
+    assert.equal(caps.canDownloadOriginal, true);
+    const admin = getKBViewerCapabilities(foreignRow, {
+      activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: false,
+    });
+    assert.equal(admin.canManage, false);
+    assert.equal(admin.canUpload, false);
+    assert.equal(admin.canDownloadOriginal, false);
   });
 
   it("converted tenant-owned row manages when owner matches active tenant", async () => {

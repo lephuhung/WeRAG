@@ -60,13 +60,32 @@ export function isPublicKBRow(row: KBViewerRow | null | undefined): boolean {
 }
 
 /* Owner-aware viewer capability projection (display gates only; the backend
- * remains authoritative). Public rows: any authenticated human views and
- * downloads originals; only an explicit SuperAdmin manages/uploads. Tenant
- * rows keep the existing role rules; foreign tenant-owned rows stay
- * read-only even for SuperAdmins (platform authority never overrides tenant
- * ownership without owning-tenant membership). Invited rows are read-only
- * with no original download, matching backend invite semantics. */
+ * remains authoritative). An explicit SuperAdmin holds every right on every
+ * row kind (own, public, published, foreign/invited) without a membership
+ * in the owning tenant; the row keeps its kind for labelling. Otherwise:
+ * public rows — any authenticated human views and downloads originals;
+ * tenant rows keep the existing role rules; invited/foreign rows are
+ * read-only with no original download, matching backend invite semantics. */
 export function getKBViewerCapabilities(
+  row: KBViewerRow | null | undefined,
+  ctx: KBViewerContext,
+): KBViewerCapabilities {
+  const caps = memberKBViewerCapabilities(row, ctx);
+  if (ctx.isSystemAdmin === true && row && row.id) {
+    return {
+      kind: caps.kind,
+      canView: true,
+      canDownloadOriginal: true,
+      canManage: true,
+      canUpload: true,
+      canShare: true,
+      canInvite: true,
+    };
+  }
+  return caps;
+}
+
+function memberKBViewerCapabilities(
   row: KBViewerRow | null | undefined,
   ctx: KBViewerContext,
 ): KBViewerCapabilities {
@@ -126,8 +145,9 @@ export function getKBViewerCapabilities(
     };
   }
   // Foreign tenant-owned rows (including accepted invites): read-only, no
-  // original download, no mutation — regardless of admin or SuperAdmin
-  // flags. UI affordances only; the backend enforces per-row access.
+  // original download, no mutation for tenant admins and members (a
+  // SuperAdmin is handled by getKBViewerCapabilities). UI affordances only;
+  // the backend enforces per-row access.
   // Labeled "invited": rows reachable outside the active tenant arrive
   // through recipient-bound invitations or tenant-wide grants.
   return {

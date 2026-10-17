@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { apiGet, clearTokens, getTokens, setTokens } from "@/lib/api-client";
 import { loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
 import { useT } from "@/lib/i18n";
+import { resolveMembershipState, type MembershipState } from "@/lib/tenant-roles";
 
 /* Mirrors frontend/src/api/auth/index.ts LoginResponse + UserInfo shapes (subset). */
 
@@ -28,6 +29,9 @@ type AuthState = {
   user: UserInfo | null;
   tenant: TenantInfo | null;
   memberships: Array<{ tenant_id: number; tenant_name?: string; role: string }>;
+  /* Account kind from /auth/me membership_state ("guest" until loaded). A
+   * SuperAdmin without a selected unit is a normal state, not an error. */
+  membershipState: MembershipState;
   isLoggedIn: boolean;
   ready: boolean;
 };
@@ -44,6 +48,7 @@ const AuthContext = createContext<
   user: null,
   tenant: null,
   memberships: [],
+  membershipState: "guest",
   isLoggedIn: false,
   ready: false,
   login: async () => null,
@@ -59,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [memberships, setMemberships] = useState<AuthState["memberships"]>([]);
+  const [membershipState, setMembershipState] = useState<MembershipState>("guest");
   const [ready, setReady] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const { setLocale } = useT();
@@ -95,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             user: UserInfo;
             tenant?: TenantInfo | null;
             memberships?: AuthState["memberships"];
+            membership_state?: string;
           };
         }>("/api/v1/auth/me", skipTenant ? { skipTenant: true } : undefined),
       tenantStored,
@@ -111,6 +118,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         setTenant(res.data.tenant ?? null);
         setMemberships(res.data.memberships ?? []);
+        setMembershipState(
+          resolveMembershipState({
+            membershipState: res.data.membership_state,
+            isSystemAdmin: res.data.user.is_system_admin === true,
+            memberships: res.data.memberships,
+          }),
+        );
         /* Seed the X-Tenant-ID override from the session tenant when nothing
          * is stored. Without this, weknora_selected_tenant_id stays empty
          * after login and the header is never sent — every request silently
@@ -210,6 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setTenant(null);
     setMemberships([]);
+    setMembershipState("guest");
     setSelectedTenantId(null);
     try {
       localStorage.removeItem(TENANT_KEY);
@@ -233,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       tenant,
       memberships,
+      membershipState,
       isLoggedIn: Boolean(user),
       ready,
       login,
@@ -241,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectedTenantId,
       setSelectedTenant,
     }),
-    [user, tenant, memberships, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
+    [user, tenant, memberships, membershipState, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -265,5 +281,16 @@ export function useTenantRole() {
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const isOwner = isSystemAdmin || role === "owner";
   const isTenantAdmin = isSystemAdmin || role === "admin" || role === "owner";
-  return { role, isSystemAdmin, isOwner, isAdminOrOwner: isOwner || role === "admin", isTenantAdmin };
+  const membershipState = auth.membershipState;
+  return {
+    role,
+    isSystemAdmin,
+    isOwner,
+    isAdminOrOwner: isOwner || role === "admin",
+    isTenantAdmin,
+    membershipState,
+    /* Only once /auth/me answered: the "guest" default must not flash a
+     * guest notice while the session is still loading. */
+    isGuest: auth.isLoggedIn && membershipState === "guest" && !isSystemAdmin,
+  };
 }

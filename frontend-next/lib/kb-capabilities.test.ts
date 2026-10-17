@@ -3,7 +3,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import type { KBCapabilities } from "./kb-capabilities.ts";
+import type { KBCapabilities, KBViewerRow } from "./kb-capabilities.ts";
+import { getKBViewerCapabilities } from "./kb-capabilities.ts";
 
 type GetKBCapabilities = (
   kbTenantId: number | string | null | undefined,
@@ -79,5 +80,53 @@ describe("getKBCapabilities (frontend permission alignment)", () => {
     assert.deepEqual(getKBCapabilities(1, undefined, true), denied);
     assert.deepEqual(getKBCapabilities(0, 1, true), denied);
     assert.deepEqual(getKBCapabilities(1, 0, false), denied);
+  });
+});
+
+describe("getKBViewerCapabilities SuperAdmin (Phase 2)", () => {
+  const rows: Array<[string, KBViewerRow]> = [
+    ["own", { id: "own", owner_tenant_id: 1, tenant_id: 1, visibility: "tenant" }],
+    ["public", { id: "pub", owner_tenant_id: 0, tenant_id: 0, visibility: "public" }],
+    ["published", { id: "pubd", owner_tenant_id: 9, tenant_id: 9, visibility: "published" }],
+    ["invited", { id: "for", owner_tenant_id: 9, tenant_id: 9, visibility: "tenant" }],
+  ];
+  const all = {
+    canView: true,
+    canDownloadOriginal: true,
+    canManage: true,
+    canUpload: true,
+    canShare: true,
+    canInvite: true,
+  };
+
+  for (const [kind, row] of rows) {
+    it(`grants every capability on a ${kind} row, with or without an active tenant`, () => {
+      const caps = getKBViewerCapabilities(row, {
+        activeTenantId: 1, isTenantAdmin: false, isSystemAdmin: true,
+      });
+      assert.deepEqual(caps, { kind, ...all });
+      // Tenantless SuperAdmin: the kind is relative to the active tenant,
+      // the rights are not.
+      const { kind: _ignored, ...tenantless } = getKBViewerCapabilities(row, {
+        activeTenantId: null, isTenantAdmin: false, isSystemAdmin: true,
+      });
+      assert.deepEqual(tenantless, all);
+    });
+  }
+
+  it("keeps member rules when not a SuperAdmin", () => {
+    const caps = getKBViewerCapabilities(rows[3][1], {
+      activeTenantId: 1, isTenantAdmin: true, isSystemAdmin: false,
+    });
+    assert.equal(caps.canManage, false);
+    assert.equal(caps.canDownloadOriginal, false);
+  });
+
+  it("grants nothing on a missing row", () => {
+    const caps = getKBViewerCapabilities(null, {
+      activeTenantId: 1, isTenantAdmin: false, isSystemAdmin: true,
+    });
+    assert.equal(caps.canView, false);
+    assert.equal(caps.canManage, false);
   });
 });

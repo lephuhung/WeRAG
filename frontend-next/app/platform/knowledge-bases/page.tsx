@@ -12,6 +12,7 @@ import {
 import { getKBViewerCapabilities, type KBViewerCapabilities } from "@/lib/kb-capabilities";
 import { groupCatalogRows, selectPublicSection } from "@/lib/kb-public";
 import { useAuth, useTenantRole } from "@/lib/auth";
+import { canCreateKnowledgeBase } from "@/lib/tenant-roles";
 import { useT } from "@/lib/i18n";
 import { Orb } from "@/components/orb";
 import { Modal } from "@/components/modal";
@@ -43,7 +44,7 @@ interface CardModel {
 }
 
 export default function KnowledgeBaseList() {
-  const { isTenantAdmin, isSystemAdmin: isExplicitSuperAdmin } = useTenantRole();
+  const { isTenantAdmin, isSystemAdmin: isExplicitSuperAdmin, membershipState, isGuest } = useTenantRole();
   const { user, selectedTenantId, tenant } = useAuth();
   const { t } = useT();
   const [kbs, setKbs] = useState<KnowledgeBaseRow[] | null>(null);
@@ -55,7 +56,8 @@ export default function KnowledgeBaseList() {
   const [invitesOpen, setInvitesOpen] = useState(false);
   const isSystemAdmin = user?.is_system_admin === true;
   const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
-  const hasTenant = activeTenantId !== "";
+  /* A Guest has no unit even if a stale selection is stored. */
+  const hasTenant = activeTenantId !== "" && !isGuest;
 
   /* Dedicated public catalog: server-side search + paging through the
    * endpoint (never assume the mixed list's first-50 window is complete).
@@ -357,7 +359,8 @@ export default function KnowledgeBaseList() {
                 {t("kbPublic.newPublic")}
               </Link>
             )}
-            {isTenantAdmin && hasTenant && (
+            {/* A Guest (no active membership) never creates KBs. */}
+            {!isGuest && canCreateKnowledgeBase(membershipState, isTenantAdmin, hasTenant) && (
               <Link href="/platform/knowledge-bases/new" className="btn btn-primary">
                 <IconPlus className="h-4 w-4" />
                 {t("kbList.newKb")}
@@ -366,9 +369,14 @@ export default function KnowledgeBaseList() {
           </div>
         </div>
 
+        {/* No unit is a normal state for a SuperAdmin (platform authority
+            does not depend on membership); for a Guest it means the account
+            belongs to no unit yet. */}
         {!hasTenant && (
           <p className="body-sm mb-6 rounded-xl border border-hairline bg-surface px-4 py-3 text-body">
-            {t("kbPublic.tenantlessNotice")}
+            {isExplicitSuperAdmin
+              ? t("kbPublic.superAdminNoUnitNotice")
+              : t("kbPublic.tenantlessNotice")}
           </p>
         )}
 
