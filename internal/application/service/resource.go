@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -133,6 +134,56 @@ func (s *resourceCatalog) ResolvePath(ctx context.Context, value string) (string
 		return "", nil, err
 	}
 	return resource.PhysicalPath, resource, nil
+}
+
+// ResolveTenantPath resolves either a stable handle or an already-known
+// physical locator for one tenant. Physical aliases are deliberately scoped
+// by tenant and only local paths are cleaned, matching localFileService's
+// filepath.Join behavior without changing object-store key semantics.
+func (s *resourceCatalog) ResolveTenantPath(
+	ctx context.Context, tenantID uint64, value string,
+) (string, *types.StoredResource, error) {
+	if _, ok := types.ParseResourcePath(value); ok {
+		return s.ResolvePath(ctx, value)
+	}
+	if tenantID == 0 || secutils.ParseTenantIDFromStoragePath(value) != tenantID {
+		return value, nil, nil
+	}
+	candidates := []string{strings.TrimSpace(value)}
+	if normalized := canonicalLocalResourcePath(value); normalized != "" && normalized != candidates[0] {
+		candidates = append(candidates, normalized)
+	}
+	for _, candidate := range candidates {
+		resource, err := s.repo.GetByTenantLocation(ctx, tenantID, resourceLocationHash(candidate))
+		if err != nil {
+			return "", nil, err
+		}
+		if resource != nil {
+			return resource.PhysicalPath, resource, nil
+		}
+	}
+	return value, nil, nil
+}
+
+func canonicalLocalResourcePath(value string) string {
+	value = strings.TrimSpace(value)
+	backendID, providerPath, scoped := types.ParseStorageBackendPath(value)
+	if !scoped {
+		providerPath = value
+	}
+	if !strings.HasPrefix(providerPath, "local://") {
+		return value
+	}
+	rel := strings.TrimPrefix(providerPath, "local://")
+	clean := path.Clean(rel)
+	if clean == "." || clean == "" || strings.HasPrefix(clean, "../") || clean == ".." {
+		return ""
+	}
+	providerPath = "local://" + clean
+	if scoped {
+		return types.BuildStorageBackendPath(backendID, providerPath)
+	}
+	return providerPath
 }
 
 func (s *resourceCatalog) Bind(ctx context.Context, reference, ownerType, ownerID, relation string) error {

@@ -204,7 +204,7 @@ func isTenantOptionalAPI(path, method string) bool {
 //
 // Deliberately excluded even under a matching prefix: the mixed tenant
 // list, cross-KB /knowledge/search + /knowledge/batch, move/batch/delete
-// bodies, activity, pin, move-targets, files serve, duplicate/copy,
+// bodies, activity, pin, move-targets, duplicate/copy,
 // progress, invites, and every write method. Trailing-slash variants fail
 // closed (gin redirects those before auth sees a routable path).
 func isTenantlessPublicReadPath(path, method string) bool {
@@ -281,9 +281,9 @@ func isTenantlessPublicReadPath(path, method string) bool {
 
 // matchTenantlessKBReadShape matches read-only per-KB shapes under
 // /api/v1/knowledge-bases/:id/… (detail, content/folder listing, tags,
-// FAQ reads + per-KB search, hybrid search, original downloads). Pin,
-// visibility, profile, duplicate, move-targets, activity, and files serve
-// shapes are absent here and stay tenant-scoped.
+// FAQ reads + per-KB search, hybrid search, original downloads, scoped files,
+// and graph views). Pin, visibility, profile, duplicate, move-targets, and
+// activity shapes are absent here and stay tenant-scoped.
 func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 	segs := strings.Split(rest, "/")
 	if len(segs) == 0 || segs[0] == "" || segs[0] == "public" || segs[0] == "copy" {
@@ -304,11 +304,11 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 			return false
 		}
 		switch segs[1] {
-		case "knowledge", "tags", "access":
+		case "knowledge", "tags", "access", "files", "entity-graph", "legal-graph":
 			return true
 		default:
-			// pin (PUT-only), visibility, activity, files,
-			// move-targets: excluded.
+			// pin (PUT-only), visibility, activity and move-targets:
+			// excluded.
 			return false
 		}
 	case 3:

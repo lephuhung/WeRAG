@@ -63,7 +63,12 @@ func resolveHandlerKBAccessFor(c *gin.Context, kbID string, kbService middleware
 		logger.ErrorWithFields(ctx, err, nil)
 		return nil, apperrors.NewInternalServerError(err.Error())
 	}
-	grant, err := access.ResolveKB(ctx, request, kb, required, grants)
+	var grant *access.KBAccess
+	if invites, ok := grants.(access.KBInviteLookup); ok && required == types.KBPermissionViewer {
+		grant, err = access.ResolveKBWithInvite(ctx, request, kb, required, grants, invites)
+	} else {
+		grant, err = access.ResolveKB(ctx, request, kb, required, grants)
+	}
 	if err == nil {
 		// Preserve authorization for body-based routes without changing the
 		// execution tenant until the handler performs its resource operation.

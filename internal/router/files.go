@@ -49,6 +49,10 @@ type (
 	messageKBGrantAuthorizer = access.MessageKBGrantAuthorizer
 )
 
+type tenantResourcePathResolver interface {
+	ResolveTenantPath(context.Context, uint64, string) (string, *types.StoredResource, error)
+}
+
 // localStorageBaseDir resolves LOCAL_STORAGE_BASE_DIR with the container
 // default.
 func localStorageBaseDir() string {
@@ -200,11 +204,33 @@ func newGatedFileServeHandler(
 		if !ok {
 			return
 		}
+		if !resourceResolved && resourceCatalog != nil {
+			if resolver, supportsPhysicalAliases := resourceCatalog.(tenantResourcePathResolver); supportsPhysicalAliases {
+				resolved, resource, err := resolver.ResolveTenantPath(c.Request.Context(), tenant.ID, reference)
+				if err != nil {
+					c.Status(http.StatusNotFound)
+					return
+				}
+				if resource != nil {
+					if resource.TenantID != tenant.ID {
+						c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: resource not accessible"})
+						return
+					}
+					filePath, resourceResolved = resolved, true
+				}
+			}
+		}
 		if resourceResolved {
-			if bound, err := kbGate.Authorize(c.Request.Context(), tenant.ID, reference); bound && err != nil {
+			if bound, err := kbGate.Authorize(c.Request.Context(), tenant.ID, filePath); bound && err != nil {
 				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
 				return
 			}
+		} else if kbGate.Active() {
+			// An active catalog/gate can distinguish registered personal or
+			// session artifacts from arbitrary raw locators. Unknown physical
+			// paths fail closed so alternate spellings cannot bypass KB ACLs.
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
+			return
 		}
 
 		// A registered resource's tenant is authoritative. Physical provider
@@ -237,7 +263,11 @@ func newGatedFileServeHandler(
 		}
 
 		contentType, inline := secutils.SafeContentTypeByFilename(filePath)
-		streamStoredFile(c, reader, contentType, inline, "public, max-age=86400", "/files", filePath)
+		cacheControl := "public, max-age=86400"
+		if kbGate.Active() {
+			cacheControl = "private, no-store"
+		}
+		streamStoredFile(c, reader, contentType, inline, cacheControl, "/files", filePath)
 	}
 }
 

@@ -164,7 +164,12 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 	}
 	var grant *access.KBAccess
 	if requiredPermission == types.KBPermissionViewer {
-		grant, err = access.ResolveKB(ctx, request, kb, requiredPermission, h.kbAccessGrantService)
+		if invites, ok := h.kbAccessGrantService.(access.KBInviteLookup); ok {
+			grant, err = access.ResolveKBWithInvite(ctx, request, kb, requiredPermission,
+				h.kbAccessGrantService, invites)
+		} else {
+			grant, err = access.ResolveKB(ctx, request, kb, requiredPermission, h.kbAccessGrantService)
+		}
 	} else {
 		grant, err = access.ResolveKBForManage(ctx, request, kb)
 	}

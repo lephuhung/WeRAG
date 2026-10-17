@@ -6,10 +6,33 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type handlerInviteGrants struct {
+	interfaces.KBAccessGrantService
+	live bool
+}
+
+func (s *handlerInviteGrants) GetKBScope(context.Context, string) (*types.KBScope, error) {
+	return nil, nil
+}
+
+func (s *handlerInviteGrants) ApprovedKBPermission(context.Context, string, uint64) (types.KBPermission, bool, error) {
+	return "", false, nil
+}
+
+func (s *handlerInviteGrants) HasAcceptedInvite(context.Context, string, string) (bool, error) {
+	return s.live, nil
+}
+
+func (s *handlerInviteGrants) HasLiveInvite(context.Context, string, string) (bool, error) {
+	return s.live, nil
+}
 
 // Task 6 integration finding: handler-level re-resolution admits tenantless
 // real humans on platform-public rows (read + original download) and keeps
@@ -45,6 +68,95 @@ func TestResolveHandlerAccess_TenantlessHumanPublicRead(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, grant)
 	require.Equal(t, uint64(9), grant.EffectiveTenantID)
+}
+
+func TestResolveHandlerAccess_RestrictedInviteIsReadOnly(t *testing.T) {
+	kb := &types.KnowledgeBase{
+		ID: "kb-restricted", TenantID: 7, OwnerTenantID: 7,
+		Visibility: types.KBVisibilityRestricted,
+	}
+	kbsvc := tenantlessKBService(kb)
+	grants := &handlerInviteGrants{live: true}
+	c, _ := tenantlessHandlerCtx("invited-user")
+	ctx := types.WithCaller(c.Request.Context(), types.Caller{
+		TenantID: 3, UserID: "invited-user", Role: types.TenantRoleMember,
+	})
+	c.Request = c.Request.WithContext(ctx)
+
+	grant, err := resolveHandlerKBAccessFor(c, kb.ID, kbsvc, grants, types.KBPermissionViewer)
+	require.NoError(t, err)
+	require.Equal(t, types.KBPermissionViewer, grant.Permission)
+
+	_, err = resolveHandlerKBAccessFor(c, kb.ID, kbsvc, grants, types.KBPermissionEditor)
+	require.Error(t, err, "an invitation must not grant write access")
+
+	_, err = resolveHandlerKBDownloadAccessFor(c, kb.ID, kbsvc)
+	require.Error(t, err, "an invitation must not grant original-file download")
+}
+
+func TestGetKnowledgeBatchRouteHonorsLiveInvite(t *testing.T) {
+	kb := &types.KnowledgeBase{
+		ID: "kb-restricted", TenantID: 7, OwnerTenantID: 7,
+		Visibility: types.KBVisibilityRestricted,
+	}
+	kg := &mutationAdmissionKnowledge{rows: []*types.Knowledge{{
+		ID: "doc", TenantID: 7, KnowledgeBaseID: kb.ID,
+	}}}
+	h := &KnowledgeHandler{
+		kgService:            kg,
+		kbService:            tenantlessKBService(kb),
+		kbAccessGrantService: &handlerInviteGrants{live: true},
+	}
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(types.WithCaller(c.Request.Context(), types.Caller{
+			TenantID: 3, UserID: "invited-user", Role: types.TenantRoleMember,
+		}))
+		c.Next()
+	})
+	r.GET("/api/v1/knowledge/batch", h.GetKnowledgeBatch)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/knowledge/batch?ids=doc&kb_id=kb-restricted", nil)
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"id":"doc"`)
+
+	h.kbAccessGrantService.(*handlerInviteGrants).live = false
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req.Clone(req.Context()))
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+}
+
+func TestResolveKnowledgeReadHonorsLiveInvite(t *testing.T) {
+	kb := &types.KnowledgeBase{
+		ID: "kb-restricted", TenantID: 7, OwnerTenantID: 7,
+		Visibility: types.KBVisibilityRestricted,
+	}
+	kg := &mutationAdmissionKnowledge{rows: []*types.Knowledge{{
+		ID: "doc", TenantID: 7, KnowledgeBaseID: kb.ID,
+	}}}
+	grants := &handlerInviteGrants{live: true}
+	h := &KnowledgeHandler{
+		kgService: kg, kbService: tenantlessKBService(kb), kbAccessGrantService: grants,
+	}
+	c, _ := tenantlessHandlerCtx("invited-user")
+	c.Request = c.Request.WithContext(types.WithCaller(c.Request.Context(), types.Caller{
+		TenantID: 3, UserID: "invited-user", Role: types.TenantRoleMember,
+	}))
+
+	knowledge, effective, err := h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.KBPermissionViewer)
+	require.NoError(t, err)
+	require.Equal(t, "doc", knowledge.ID)
+	tenantID, ok := types.TenantIDFromContext(effective)
+	require.True(t, ok)
+	require.Equal(t, uint64(7), tenantID)
+
+	grants.live = false
+	_, _, err = h.resolveKnowledgeAndValidateKBAccess(c, "doc", types.KBPermissionViewer)
+	require.Error(t, err, "revoking the invite must close document reads immediately")
 }
 
 func TestResolveHandlerDownload_TenantlessHumanPublic(t *testing.T) {

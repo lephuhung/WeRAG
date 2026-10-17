@@ -42,6 +42,38 @@ func TestResourceCatalogRegisterResolveAndDeduplicate(t *testing.T) {
 	require.Equal(t, "local", resource.Provider)
 }
 
+func TestResourceCatalogResolveTenantPathRecognizesPhysicalAliases(t *testing.T) {
+	catalog, _ := newResourceCatalogForTest(t)
+	ctx := context.Background()
+	physical := "storage://backend-a/local://7/exports/a.png"
+
+	ref, err := catalog.Register(ctx, 7, physical, interfaces.ResourceRegistration{Kind: "image"})
+	require.NoError(t, err)
+
+	tenantResolver, ok := catalog.(interface {
+		ResolveTenantPath(context.Context, uint64, string) (string, *types.StoredResource, error)
+	})
+	require.True(t, ok, "the production catalog must resolve tenant-owned physical aliases")
+
+	for _, alias := range []string{
+		physical,
+		"storage://backend-a/local://7/exports/./a.png",
+	} {
+		resolved, resource, resolveErr := tenantResolver.ResolveTenantPath(ctx, 7, alias)
+		require.NoError(t, resolveErr, alias)
+		require.NotNil(t, resource, alias)
+		require.Equal(t, physical, resolved, alias)
+		resolvedByHandle, byHandle, handleErr := tenantResolver.ResolveTenantPath(ctx, 7, ref)
+		require.NoError(t, handleErr)
+		require.Equal(t, resolved, resolvedByHandle)
+		require.Equal(t, resource.ID, byHandle.ID)
+	}
+
+	_, resource, err := tenantResolver.ResolveTenantPath(ctx, 8, physical)
+	require.NoError(t, err)
+	require.Nil(t, resource, "a physical locator must not resolve across tenants")
+}
+
 func TestResourceCatalogBindingAndAccessGrant(t *testing.T) {
 	catalog, db := newResourceCatalogForTest(t)
 	ctx := context.Background()

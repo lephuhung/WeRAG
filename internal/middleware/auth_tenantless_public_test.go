@@ -1,9 +1,26 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
+
+type tenantlessAssetUserService struct {
+	interfaces.UserService
+	user *types.User
+}
+
+func (s *tenantlessAssetUserService) ValidateToken(context.Context, string) (*types.User, uint64, error) {
+	return s.user, 0, nil
+}
 
 // Task 6 integration finding: tenantless authenticated humans must reach
 // per-KB-guarded public read/download routes (auth admits; per-KB
@@ -36,6 +53,9 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/faq/entries/e-1", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/tags", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/access", true},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/files", true},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/entity-graph", true},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages/some-slug", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/revisions/some-slug", true},
@@ -59,7 +79,6 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/activity", false},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/move-targets", false},
 		{http.MethodPut, "/api/v1/knowledge-bases/kb-1/pin", false},
-		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/files", false},
 		{http.MethodPost, "/api/v1/knowledge-bases/kb-1/duplicate", false},
 		{http.MethodPost, "/api/v1/knowledge-bases/copy", false},
 		{http.MethodGet, "/api/v1/faq/import/progress/t-1", false},
@@ -81,6 +100,60 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 	for _, tt := range tests {
 		if got := isTenantOptionalAPI(tt.path, tt.method); got != tt.want {
 			t.Errorf("isTenantOptionalAPI(%s %s) = %v, want %v", tt.method, tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestTenantlessKBAssetRoutesReachAndRemainBoundByKBGuards(t *testing.T) {
+	routes := []string{
+		"/api/v1/knowledge-bases/:id/files",
+		"/api/v1/knowledge-bases/:id/entity-graph",
+		"/api/v1/knowledge-bases/:id/legal-graph",
+	}
+	public := publicTestKB("kb", 9)
+	published := tenantTestKB("kb", 9)
+	published.Visibility = types.KBVisibilityPublished
+	private := tenantTestKB("kb", 9)
+	restricted := tenantTestKB("kb", 9)
+	restricted.Visibility = types.KBVisibilityRestricted
+
+	for _, route := range routes {
+		for _, tc := range []struct {
+			name          string
+			authenticated bool
+			kb            *types.KnowledgeBase
+			want          int
+		}{
+			{"published public", true, public, http.StatusNoContent},
+			{"tenant published", true, published, http.StatusNoContent},
+			{"private", true, private, http.StatusUnauthorized},
+			{"restricted", true, restricted, http.StatusUnauthorized},
+			{"anonymous", false, public, http.StatusUnauthorized},
+		} {
+			t.Run(route+"/"+tc.name, func(t *testing.T) {
+				gin.SetMode(gin.TestMode)
+				cfg := cfgRBAC(true)
+				members := newFakeMemberService()
+				tenants := &fakeTenantService{}
+				r := gin.New()
+				r.Use(ErrorHandler())
+				r.Use(Auth(tenants, &tenantlessAssetUserService{user: &types.User{ID: "guest"}}, members, nil, cfg))
+				r.GET(route,
+					RequireRole(types.TenantRoleMember, cfg),
+					RequireKBAccess(KBIDFromParam("id"), types.KBPermissionViewer,
+						&stubKBLookup{kbs: map[string]*types.KnowledgeBase{"kb": tc.kb}}, nil, cfg),
+					func(c *gin.Context) { c.Status(http.StatusNoContent) },
+				)
+				rec := httptest.NewRecorder()
+				path := route
+				path = strings.Replace(path, ":id", "kb", 1)
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				if tc.authenticated {
+					req.Header.Set("Authorization", "Bearer valid")
+				}
+				r.ServeHTTP(rec, req)
+				require.Equal(t, tc.want, rec.Code, rec.Body.String())
+			})
 		}
 	}
 }

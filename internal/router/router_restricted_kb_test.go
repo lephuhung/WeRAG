@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -17,6 +19,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // restrictedInviteStub is the invite ACL source for the restricted-KB
@@ -180,6 +184,16 @@ func (restrictedKBLoader) GetKnowledgeBasesByIDsOnly(context.Context, []string) 
 	return []*types.KnowledgeBase{restrictedRouteKB()}, nil
 }
 
+type toggleFileInvite struct{ live bool }
+
+func (s *toggleFileInvite) HasAcceptedInvite(context.Context, string, string) (bool, error) {
+	return s.live, nil
+}
+
+func (s *toggleFileInvite) HasLiveInvite(context.Context, string, string) (bool, error) {
+	return s.live, nil
+}
+
 // TestTenantFileProxyClosesRestrictedKBContent: the raw /files proxy no
 // longer serves a restricted KB's registered resources to an owner-tenant
 // Member just because the storage path is in their tenant.
@@ -208,4 +222,82 @@ func TestTenantFileProxyClosesRestrictedKBContent(t *testing.T) {
 		engine.ServeHTTP(rec, req.WithContext(ctx))
 		require.Equal(t, tt.want, rec.Code, "role=%s body=%s", tt.role, rec.Body.String())
 	}
+}
+
+func TestTenantFileProxyAuthorizesPhysicalAliasesAndPreservesRegisteredArtifacts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("STORAGE_TYPE", "local")
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&types.StoredResource{}, &types.ResourceBinding{}, &types.ResourceAccessGrant{},
+		&types.KnowledgeBase{}, &types.Knowledge{},
+	))
+	catalog := service.NewResourceCatalog(repository.NewResourceRepository(db))
+	ctx := context.Background()
+	const physical = "local://1/exports/restricted.png"
+	ref, err := catalog.Register(ctx, restrictedOwner, physical, interfaces.ResourceRegistration{Kind: "image"})
+	require.NoError(t, err)
+	require.NoError(t, db.Create(restrictedRouteKB()).Error)
+	require.NoError(t, db.Create(&types.Knowledge{
+		ID: "doc-r", TenantID: restrictedOwner, KnowledgeBaseID: "kb-r",
+	}).Error)
+	require.NoError(t, catalog.Bind(ctx, ref, types.ResourceOwnerKnowledge, "doc-r", types.ResourceRelationAttachment))
+
+	const artifactPhysical = "local://1/exports/session-artifact.txt"
+	artifactRef, err := catalog.Register(ctx, restrictedOwner, artifactPhysical, interfaces.ResourceRegistration{Kind: "artifact"})
+	require.NoError(t, err)
+	_ = artifactRef
+
+	const originalPhysical = "local://1/exports/original.pdf"
+	originalRef, err := catalog.Register(ctx, restrictedOwner, originalPhysical, interfaces.ResourceRegistration{Kind: "document"})
+	require.NoError(t, err)
+	require.NoError(t, catalog.Bind(ctx, originalRef, types.ResourceOwnerKnowledge, "doc-r", types.ResourceRelationSourceFile))
+
+	invites := &toggleFileInvite{}
+	bindings, ok := catalog.(interfaces.MessageFileBindingLookup)
+	require.True(t, ok)
+	gate := access.KBFileGate{
+		Bindings: bindings,
+		KBs:      restrictedKBLoader{},
+		Lookups:  access.KBLookups{Invites: invites},
+	}
+	fileService := &stubFileService{getFile: func(_ context.Context, path string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(path)), nil
+	}}
+
+	request := func(role types.TenantRole, path string) *httptest.ResponseRecorder {
+		engine := gin.New()
+		serveFilesWithKBGate(engine, fileService, nil, catalog, gate)
+		req := httptest.NewRequest(http.MethodGet, "/files?file_path="+url.QueryEscape(path), nil)
+		reqCtx := context.WithValue(req.Context(), types.TenantInfoContextKey, &types.Tenant{ID: restrictedOwner})
+		reqCtx = types.WithCaller(reqCtx, types.Caller{TenantID: restrictedOwner, UserID: "u-1", Role: role})
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req.WithContext(reqCtx))
+		return rec
+	}
+
+	for _, alias := range []string{ref, physical, "local://1/exports/./restricted.png"} {
+		require.Equal(t, http.StatusForbidden, request(types.TenantRoleMember, alias).Code, alias)
+		require.Equal(t, http.StatusOK, request(types.TenantRoleAdmin, alias).Code, alias)
+	}
+	invites.live = true
+	for _, alias := range []string{ref, physical} {
+		require.Equal(t, http.StatusOK, request(types.TenantRoleMember, alias).Code,
+			"live invite should open derived content through %s", alias)
+	}
+	for _, alias := range []string{originalRef, originalPhysical} {
+		require.Equal(t, http.StatusForbidden, request(types.TenantRoleMember, alias).Code,
+			"read invite must not open original content through %s", alias)
+	}
+	invites.live = false
+	for _, alias := range []string{ref, physical} {
+		require.Equal(t, http.StatusForbidden, request(types.TenantRoleMember, alias).Code,
+			"revoked invite must close %s immediately", alias)
+	}
+	require.Equal(t, http.StatusOK, request(types.TenantRoleMember, artifactPhysical).Code,
+		"a registered non-KB session artifact remains accessible to its tenant")
+	require.Equal(t, http.StatusForbidden, request(types.TenantRoleMember, "local://1/exports/unknown.txt").Code,
+		"an unresolved raw locator must fail closed while the KB gate is active")
+	require.Equal(t, "private, no-store", request(types.TenantRoleAdmin, physical).Header().Get("Cache-Control"))
 }
