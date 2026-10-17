@@ -36,7 +36,6 @@
 </p>
 
 <p align="center">
-| <b>English</b> | <a href="./README_CN.md"><b>简体中文</b></a> | <a href="./README_JA.md"><b>日本語</b></a> | <a href="./README_KO.md"><b>한국어</b></a> |
 </p>
 
 <p align="center">
@@ -183,11 +182,6 @@ Fully modular pipeline from document parsing, vectorization, and retrieval to LL
 [**WeKnora Chrome Extension**](https://chromewebstore.google.com/detail/jpemjbopikggjlmikmclgbmkhhopjdgd) lets you capture web content directly into your WeKnora knowledge base. Select text, images, or entire pages in the browser and save them as knowledge entries with one click — no copy-paste or file upload needed.
 
 
-## 📱 WeChat Mini Program
-
-The [WeKnora Mini Program](./miniprogram/README.md) provides a lightweight mobile client for configuring WeKnora API access, selecting knowledge bases, importing URLs, and asking knowledge chat from WeChat.
-
-
 ## 🦞 ClawHub Skill
 
 [**WeKnora ClawHub Skill**](https://clawhub.ai/lyingbug/weknora) is a WeKnora skill published on the ClawHub platform. Once installed, it enables document import (file / URL / Markdown), hybrid search (vector + keyword) across knowledge bases, and knowledge entry management — all through the WeKnora REST API.
@@ -300,8 +294,6 @@ WeKnora serves as the core technology framework for the [WeChat Dialog Open Plat
 
 
 ## 📘 API Reference
-
-**Official website and product documentation**: [`website-docs/`](./website-docs/README.md) contains the product homepage and the complete documentation set organized as Getting Started → Architecture → Features → API → Clients → Development. With Node.js 24, run `cd website-docs && npm run setup && npm run build && npm run preview` to preview both together. The unified static output serves the homepage at `/` and documentation at `/docs/`; see the directory's README for Nginx and Docker deployment.
 
 Troubleshooting FAQ: [Troubleshooting FAQ](./docs/QA.md)
 

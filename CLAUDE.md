@@ -27,7 +27,7 @@ The Vue front-end in `frontend/` is **legacy and frozen for the UI migration to 
 <!-- gitnexus:start -->
 # Database: Postgres only — SQLite is no longer maintained
 
-Deployments run `DB_DRIVER=postgres`. The SQLite path (WeKnora Lite, `cmd/desktop`) is unmaintained since 2026-10-11:
+Deployments run `DB_DRIVER=postgres`. The SQLite path (the former WeKnora Lite desktop build, removed 2026-10-17) is unmaintained since 2026-10-11; `migrations/sqlite` only remains as the schema for SQLite-backed tests:
 
 - Write new migrations in `migrations/versioned/` only; do NOT add `migrations/sqlite/` mirrors or SQLite migration tests.
 - Take the next number after the highest **committed** version; a lower number is skipped on databases already past it.

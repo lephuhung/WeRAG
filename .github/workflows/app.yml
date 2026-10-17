@@ -23,7 +23,6 @@ on:
       - "scripts/*license*.sh"
       - "scripts/git-hooks/**"
       - "scripts/test-git-hooks.sh"
-      - "cmd/desktop/build/windows/installer/project.nsi"
       - ".github/workflows/app.yml"
   pull_request:
     paths:
@@ -46,7 +45,6 @@ on:
       - "scripts/*license*.sh"
       - "scripts/git-hooks/**"
       - "scripts/test-git-hooks.sh"
-      - "cmd/desktop/build/windows/installer/project.nsi"
       - ".github/workflows/app.yml"
   workflow_dispatch:
 

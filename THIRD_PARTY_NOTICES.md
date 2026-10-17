@@ -52,13 +52,6 @@ Windows installers place them next to the installed executable.
   implementation; the upstream Go converter, `liuzl/da`, and GPL-licensed
   `cedar-go` code are not included.
 
-## Build-only component
-
-The Windows installer template in `cmd/desktop/build/windows/installer/project.nsi`
-is based on Wails v2.12.0's MIT-licensed default template, with local changes to
-install this notice/source bundle. Its license and copyright are reproduced in
-[`licenses/Wails-MIT.txt`](licenses/Wails-MIT.txt).
-
 ## Maintaining this bundle
 
 When upgrading either MPL module, update the version, license, and SHA-256 pin in
