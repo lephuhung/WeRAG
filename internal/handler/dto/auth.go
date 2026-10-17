@@ -8,10 +8,10 @@ type AuthLoginResponse struct {
 	Message           string             `json:"message,omitempty"`
 	TwoFactorRequired bool               `json:"two_factor_required,omitempty"`
 	User              *types.User        `json:"user,omitempty"`
-	ActiveTenant *TenantResponse    `json:"active_tenant,omitempty"`
-	Memberships  []types.Membership `json:"memberships"`
-	Token        string             `json:"token,omitempty"`
-	RefreshToken string             `json:"refresh_token,omitempty"`
+	ActiveTenant      *TenantResponse    `json:"active_tenant,omitempty"`
+	Memberships       []types.Membership `json:"memberships"`
+	Token             string             `json:"token,omitempty"`
+	RefreshToken      string             `json:"refresh_token,omitempty"`
 }
 
 // AuthOIDCCallbackResponse is the HTTP-safe OIDC callback payload shape.
@@ -33,7 +33,7 @@ func NewAuthLoginResponse(resp *types.LoginResponse) *AuthLoginResponse {
 	}
 	var role types.TenantRole
 	if resp.ActiveTenant != nil {
-		role = membershipRoleForTenant(resp.Memberships, resp.ActiveTenant.ID)
+		role = authResponseRole(resp.User, resp.Memberships, resp.ActiveTenant.ID)
 	}
 	return &AuthLoginResponse{
 		Success:           resp.Success,
@@ -54,7 +54,7 @@ func NewAuthOIDCCallbackResponse(resp *types.OIDCCallbackResponse) *AuthOIDCCall
 	}
 	var role types.TenantRole
 	if resp.Tenant != nil {
-		role = membershipRoleForTenant(resp.Memberships, resp.Tenant.ID)
+		role = authResponseRole(resp.User, resp.Memberships, resp.Tenant.ID)
 	}
 	return &AuthOIDCCallbackResponse{
 		Success:      resp.Success,
@@ -66,6 +66,18 @@ func NewAuthOIDCCallbackResponse(resp *types.OIDCCallbackResponse) *AuthOIDCCall
 		RefreshToken: resp.RefreshToken,
 		IsNewUser:    resp.IsNewUser,
 	}
+}
+
+// authResponseRole is the role the tenant profile is rendered for in a
+// login/OIDC response: the membership role, or Admin for an explicit
+// SuperAdmin (the login flow authenticates a human, so the user row's
+// system-admin flag is the explicit grant), matching NewTenantResponse.
+func authResponseRole(user *types.User, memberships []types.Membership, tenantID uint64) types.TenantRole {
+	role := membershipRoleForTenant(memberships, tenantID)
+	if !role.IsTenantAdmin() && user != nil && user.IsSystemAdmin {
+		return types.TenantRoleAdmin
+	}
+	return role
 }
 
 func membershipRoleForTenant(memberships []types.Membership, tenantID uint64) types.TenantRole {

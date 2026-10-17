@@ -38,9 +38,10 @@ func RoleCanViewTenantAPIKey(role types.TenantRole) bool {
 	return role.IsTenantAdmin()
 }
 
-// CanViewTenantAPIKey is true for Admin only.
+// CanViewTenantAPIKey is true for a Tenant Admin and for an explicit human
+// SuperAdmin (who holds every tenant right, with or without a membership).
 func CanViewTenantAPIKey(ctx context.Context) bool {
-	return RoleCanViewTenantAPIKey(RoleFromContext(ctx))
+	return RoleCanViewTenantAPIKey(RoleFromContext(ctx)) || isExplicitSuperAdmin(ctx)
 }
 
 // isExplicitSuperAdmin reports an explicit human SuperAdmin on ctx; API
