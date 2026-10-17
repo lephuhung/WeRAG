@@ -67,7 +67,6 @@ show_help() {
     echo "可选 Profile（用于 start 命令）:"
     echo "  --minio       启动 MinIO 对象存储"
     echo "  --qdrant      启动 Qdrant 向量数据库"
-    echo "  --neo4j       启动 Neo4j 图数据库"
     echo "  --dex         启动 Dex（OIDC 身份认证）"
     echo "  --langfuse    启动 Langfuse（默认已开启）"
     echo "  --no-langfuse 不启动 Langfuse"
@@ -208,8 +207,8 @@ start_services() {
     
     # 解析 profile Parameters 
     shift  # 移除 "start" 命令本身
-    # 默认启动基础设施（postgres / redis / docreader）+ langfuse，
-    # 其余可选服务通过 --minio / --qdrant / --neo4j / --dex / --full 按需开启。
+    # 默认启动基础设施（postgres / redis / docreader / neo4j）+ langfuse，
+    # 其余可选服务通过 --minio / --qdrant / --dex / --full 按需开启。
     PROFILES="--profile langfuse"
     ENABLED_SERVICES="langfuse"
     while [ $# -gt 0 ]; do
@@ -221,10 +220,6 @@ start_services() {
             --qdrant)
                 PROFILES="$PROFILES --profile qdrant"
                 ENABLED_SERVICES="$ENABLED_SERVICES qdrant"
-                ;;
-            --neo4j)
-                PROFILES="$PROFILES --profile neo4j"
-                ENABLED_SERVICES="$ENABLED_SERVICES neo4j"
                 ;;
             --dex)
                 PROFILES="$PROFILES --profile dex"
@@ -245,7 +240,7 @@ start_services() {
                 ;;
             --full)
                 PROFILES="--profile full"
-                ENABLED_SERVICES="minio qdrant neo4j dex"
+                ENABLED_SERVICES="minio qdrant dex"
                 break
                 ;;
             *)
@@ -276,6 +271,7 @@ start_services() {
         echo "  - PostgreSQL:    localhost:5432"
         echo "  - Redis:         localhost:6379"
         echo "  - DocReader:     localhost:50051"
+        echo "  - Neo4j:         localhost:7474 (Bolt: localhost:7687)"
         
         # 根据启用的 profile 显示额外服务
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then
@@ -283,9 +279,6 @@ start_services() {
         fi
         if [[ "$ENABLED_SERVICES" == *"qdrant"* ]]; then
             echo "  - Qdrant:        localhost:6333 (gRPC: localhost:6334)"
-        fi
-        if [[ "$ENABLED_SERVICES" == *"neo4j"* ]]; then
-            echo "  - Neo4j:         localhost:7474 (Bolt: localhost:7687)"
         fi
         if [[ "$ENABLED_SERVICES" == *"dex"* ]]; then
             echo "  - Dex:           localhost:5556"

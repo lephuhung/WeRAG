@@ -68,7 +68,6 @@ func TestSelectGraphChunks(t *testing.T) {
 }
 
 func TestKnowledgePostProcessGraphEnqueueSelection(t *testing.T) {
-	t.Setenv("NEO4J_ENABLE", "true")
 
 	const knowledgeID = "knowledge-graph-ocr"
 	const kbID = "kb-graph"

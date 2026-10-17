@@ -29,7 +29,7 @@ export interface EntityGraphResponse {
   data: GraphView;
   /** The KB's own graph switch (indexing strategy + extraction). */
   graph_enabled: boolean;
-  /** Whether the deployment runs a graph store at all (NEO4J_ENABLE). */
+  /** Whether the graph store is connected (always true on a running app). */
   graph_store: boolean;
 }
 

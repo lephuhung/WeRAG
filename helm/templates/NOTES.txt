@@ -104,13 +104,8 @@ Supported LLM backends:
 
 Neo4j is enabled for GraphRAG feature.
 
-To use GraphRAG, enable Neo4j. NEO4J_ENABLE is the sole graph switch and is
-injected automatically when neo4j.enabled=true (no need to set ENABLE_GRAPH_RAG,
-which is deprecated and no longer read by the app):
-
-  helm upgrade {{ .Release.Name }} ./helm \
-    --set neo4j.enabled=true \
-    --set neo4j.password=<your-secure-password>
+Neo4j is required by the app and deployed by default (neo4j.enabled=true).
+Set a password with --set neo4j.password=<your-secure-password>.
 
 Access Neo4j Browser:
   kubectl port-forward svc/neo4j -n {{ .Release.Namespace }} 7474:7474 7687:7687

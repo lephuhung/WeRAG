@@ -439,12 +439,11 @@ minio:
     enabled: true
     size: 20Gi
 
-# -- Neo4j configuration (Knowledge Graph)
-# Equivalent to: docker compose --profile neo4j
-# Required for GraphRAG feature (sets NEO4J_ENABLE=true automatically when enabled)
+# -- Neo4j configuration (Knowledge Graph). The app requires it; disable only
+# when NEO4J_URI points at an external Neo4j through app.env.
 neo4j:
-  # -- Enable Neo4j for GraphRAG
-  enabled: false
+  # -- Deploy Neo4j with the chart
+  enabled: true
 
   image:
     # -- Image repository

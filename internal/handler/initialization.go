@@ -740,10 +740,6 @@ func validateNodeExtractConfig(ctx context.Context, req *InitializationRequest) 
 	if !req.NodeExtract.Enabled {
 		return nil
 	}
-	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
-		logger.Error(ctx, "Node Extractor configuration incomplete")
-		return errors.NewBadRequestError("hãy cấu hình đúng biến môi trường NEO4J_ENABLE")
-	}
 	if req.NodeExtract.Text == "" || len(req.NodeExtract.Tags) == 0 {
 		logger.Error(ctx, "Node Extractor configuration incomplete")
 		return errors.NewBadRequestError("cấu hình Node Extractor chưa đầy đủ")

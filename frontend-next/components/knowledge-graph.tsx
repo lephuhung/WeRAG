@@ -229,8 +229,7 @@ function EntityGraph({ kbId }: { kbId: string }) {
   );
 
   let emptyText = t("graph.entityEmpty");
-  if (resp && !resp.graph_store) emptyText = t("graph.entityStoreOff");
-  else if (resp && !resp.graph_enabled) emptyText = t("graph.entityKbOff");
+  if (resp && !resp.graph_enabled) emptyText = t("graph.entityKbOff");
 
   return (
     <GraphCanvas

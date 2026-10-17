@@ -222,9 +222,6 @@ services:
     restart: always
     networks:
       - WeKnora-network-dev
-    profiles:
-      - neo4j
-      - full
 
   # Sandbox image: used only for build/pull, non-persistent service; local app executes docker run on-demand when running Skills, released when done
   sandbox:

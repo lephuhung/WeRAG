@@ -99,10 +99,6 @@ func NewChunkExtractTask(
 	chunkIndex int,
 	legalDoc *vietnamese_legal.LegalDocContext,
 ) (bool, error) {
-	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
-		logger.Warn(ctx, "NEO4J is not enabled, skip chunk extract task")
-		return false, nil
-	}
 	taskPayload := types.ExtractChunkPayload{
 		TenantID:    tenantID,
 		ChunkID:     chunkID,

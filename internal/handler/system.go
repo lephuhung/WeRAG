@@ -332,7 +332,7 @@ func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 	// Get vector store engine from config or RETRIEVE_DRIVER
 	vectorStoreEngine := h.getVectorStoreEngine()
 
-	// Get graph database engine from NEO4J_ENABLE
+	// Graph database engine (Neo4j, always on)
 	graphDatabaseEngine := h.getGraphDatabaseEngine()
 
 	// Get MinIO enabled status

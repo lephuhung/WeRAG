@@ -24,9 +24,6 @@ func (n *Neo4jRepository) ViewGraph(
 	ctx context.Context, namespace types.NameSpace, filter types.GraphViewFilter,
 ) (*types.GraphView, error) {
 	view := &types.GraphView{Nodes: []*types.GraphViewNode{}, Edges: []*types.GraphViewEdge{}}
-	if n.driver == nil {
-		return view, nil
-	}
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = graphViewDefaultLimit

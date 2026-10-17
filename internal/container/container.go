@@ -1834,13 +1834,15 @@ func initOllamaService() (*ollama.OllamaService, error) {
 	return ollama.GetOllamaService()
 }
 
+// initNeo4jClient connects to the graph store. Neo4j is a required service:
+// knowledge graph extraction, graph retrieval and the graph view all use it,
+// so a missing or unreachable Neo4j stops the app at startup.
 func initNeo4jClient() (neo4j.Driver, error) {
 	ctx := context.Background()
-	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
-		logger.Debugf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
-		return nil, nil
+	uri := strings.TrimSpace(os.Getenv("NEO4J_URI"))
+	if uri == "" {
+		return nil, fmt.Errorf("NEO4J_URI is not set; Neo4j is required")
 	}
-	uri := os.Getenv("NEO4J_URI")
 	username := os.Getenv("NEO4J_USERNAME")
 	password := os.Getenv("NEO4J_PASSWORD")
 

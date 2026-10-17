@@ -78,10 +78,6 @@ func (n *Neo4jRepository) entityTypeFromLabels(labels []string, kbLabel string) 
 
 // AddGraph adds a graph to the Neo4j repository
 func (n *Neo4jRepository) AddGraph(ctx context.Context, namespace types.NameSpace, graphs []*types.GraphData) error {
-	if n.driver == nil {
-		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
-		return nil
-	}
 	for _, graph := range graphs {
 		if err := n.addGraph(ctx, namespace, graph); err != nil {
 			return err
@@ -173,10 +169,6 @@ func (n *Neo4jRepository) addGraph(ctx context.Context, namespace types.NameSpac
 
 // DelGraph deletes a graph from the Neo4j repository
 func (n *Neo4jRepository) DelGraph(ctx context.Context, namespaces []types.NameSpace) error {
-	if n.driver == nil {
-		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
-		return nil
-	}
 	session := n.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
@@ -263,10 +255,6 @@ func (n *Neo4jRepository) SearchNode(
 	namespace types.NameSpace,
 	nodes []string,
 ) (*types.GraphData, error) {
-	if n.driver == nil {
-		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
-		return nil, nil
-	}
 	session := n.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
 	defer session.Close(ctx)
 

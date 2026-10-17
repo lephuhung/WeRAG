@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -55,7 +54,7 @@ func (h *KnowledgeGraphViewHandler) GetEntityGraph(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	storeOn := strings.EqualFold(os.Getenv("NEO4J_ENABLE"), "true") && h.graph != nil
+	storeOn := h.graph != nil
 	resp := gin.H{"success": true, "graph_enabled": kb.IsGraphEnabled(), "graph_store": storeOn}
 	if !storeOn {
 		resp["data"] = &types.GraphView{Nodes: []*types.GraphViewNode{}, Edges: []*types.GraphViewEdge{}}
