@@ -41,7 +41,6 @@ const (
 	QueueMultimodal     = "multimodal"
 	QueueGraph          = "graph"
 	QueueQuestion       = "question"
-	QueueSync           = "sync"
 	QueueMaintenance    = "low"
 	QueueWiki           = "wiki"
 	// QueueMemory carries debounced long-term memory distillation. It sits in
@@ -81,7 +80,6 @@ var queueDefinitions = []QueueDefinition{
 	{Name: QueueGraph, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeChunkExtract}},
 	{Name: QueueQuestion, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeQuestionGeneration}},
 	{Name: QueueMemory, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeMemoryExtract}},
-	{Name: QueueSync, Pool: WorkerPoolMaintenance, Weight: 2, TaskTypes: []string{TypeDataSourceSync}},
 	{Name: QueueMaintenance, Pool: WorkerPoolMaintenance, Weight: 1, TaskTypes: []string{
 		TypeFAQImport, TypeKBClone, TypeIndexDelete, TypeKBDelete,
 		TypeKnowledgeListDelete, TypeKnowledgeListReparse, TypeKnowledgeMove,
@@ -251,7 +249,6 @@ const (
 	TypeKnowledgeAutoTag         = "knowledge:auto_tag"         // Tự động gắn thẻ có sẵn của kho tri thức cho tài liệu
 	TypeKnowledgeBaseProfile     = "kb:profile"                 // Tác vụ sinh mô tả (hồ sơ) kho tri thức
 	TypeManualProcess            = "manual:process"             // Tác vụ cập nhật tài liệu thủ công (dọn dẹp + lập chỉ mục lại)
-	TypeDataSourceSync           = "datasource:sync"            // Tác vụ đồng bộ nguồn dữ liệu
 	TypeWikiIngest               = "wiki:ingest"                // Tác vụ đồng bộ trang Wiki
 	TypeWikiFinalize             = "wiki:finalize"              // Tác vụ hoàn tất cấp KB của Wiki (debounce: dựng lại chỉ mục / dọn liên kết hỏng / liên kết chéo)
 	TypeTemporaryDocumentProcess = "temporary_document:process" // Tác vụ phân tích tài liệu tạm của cuộc trò chuyện
@@ -444,7 +441,6 @@ type KBDeletePayload struct {
 	TracingContext
 	TenantID         uint64                  `json:"tenant_id"`
 	KnowledgeBaseID  string                  `json:"knowledge_base_id"`
-	DataSourceIDs    []string                `json:"data_source_ids,omitempty"`
 	EffectiveEngines []RetrieverEngineParams `json:"effective_engines"`
 	// VectorStoreID is the bound store snapshot taken at enqueue time (before
 	// soft-delete) so the async worker can resolve the right store. nil means

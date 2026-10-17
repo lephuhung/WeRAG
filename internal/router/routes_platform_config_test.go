@@ -41,7 +41,6 @@ func TestPlatformConfigRoutesDenyTenantAdmin(t *testing.T) {
 		&handler.WebSearchProviderCredentialsHandler{}, g)
 	RegisterVectorStoreRoutes(v1, &handler.VectorStoreHandler{}, g)
 	RegisterStorageBackendRoutes(v1, &handler.StorageBackendHandler{}, g)
-	RegisterDataSourceRoutes(v1, &handler.DataSourceHandler{}, &handler.DataSourceCredentialsHandler{}, g)
 	RegisterSystemRoutes(v1, &handler.SystemHandler{}, g)
 	RegisterMemoryRoutes(v1, &handler.MemoryHandler{}, g)
 	RegisterAbbreviationRoutes(v1, &handler.AbbreviationHandler{}, g)
@@ -64,7 +63,6 @@ func TestPlatformConfigRoutesDenyTenantAdmin(t *testing.T) {
 		{http.MethodPost, "/api/v1/web-search-providers", `{}`},
 		{http.MethodPost, "/api/v1/vector-stores", `{}`},
 		{http.MethodPost, "/api/v1/storage-backends", `{}`},
-		{http.MethodPost, "/api/v1/datasource", `{}`},
 		{http.MethodPost, "/api/v1/system/storage-engine-check", `{}`},
 		{http.MethodPut, "/api/v1/memory/settings", `{"enabled":false}`},
 		{http.MethodDelete, "/api/v1/memory/items", ""},

@@ -24,7 +24,7 @@ import { SegmentedPills } from "@/components/knowledge/segmented-pills";
 
 /* SystemAdmin editor for the platform-wide parse defaults stored under the
  * system_settings key "knowledge.parse_defaults". While `enabled` is on,
- * every ingestion path (upload, reparse, datasource import) resolves against
+ * every ingestion path (upload, reparse) resolves against
  * these values and per-upload process_config is ignored — workspace admins
  * never see the parse-settings dialog. The editor mirrors the dialog's
  * sections so the same mental model applies. Rendered full-page at

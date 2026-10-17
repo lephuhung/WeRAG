@@ -61,7 +61,6 @@ export interface APIPrincipalTestToken {
  *  - 'manage_models': read the tenant-visible model catalog (writes are platform-owned)
  *  - 'system_models_manage': platform keys only — manage model definitions, credentials, probes
  *  - 'manage_mcp_services': manage MCP services, credentials, tool policies, OAuth state
- *  - 'manage_datasources': manage data-source connectors and sync jobs
  *  - 'manage_channels': manage embed and IM channels
  *  - 'manage_vector_stores': manage vector stores and parser/storage checks
  *  - 'manage_web_search': manage web-search providers
@@ -79,7 +78,6 @@ export type TenantAPIKeyCapability =
   | "message_history"
   | "manage_models"
   | "manage_mcp_services"
-  | "manage_datasources"
   | "manage_channels"
   | "manage_vector_stores"
   | "manage_storage_backends"

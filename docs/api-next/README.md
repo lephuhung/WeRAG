@@ -100,7 +100,6 @@ Notes:
 | [Storage Backends](storage-backends.md) | `storage-backends.ts` | storage engine configs |
 | [Vector Stores](vector-stores.md) | `vector-stores.ts` | vector store configs |
 | [Web Search](web-search.md) | `web-search.ts` | web search providers |
-| [Remote Datasources](datasource.md) | `datasource.ts` | remote datasource sync |
 | [Attachments](attachments.md) | `attachments.ts` | chat attachment upload/download |
 | [Local Browser](browser.md) | `browser.ts` | browser extension pairing/status |
 | [User Favorites](user-favorites.md) | `user-favorites.ts` | pinned agents/KBs |

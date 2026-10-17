@@ -306,56 +306,6 @@ func RegisterStorageBackendRoutes(r *gin.RouterGroup, h *handler.StorageBackendH
 	}
 }
 
-// RegisterDataSourceRoutes đăng ký các route nguồn dữ liệu
-//
-// Data sources hold external service credentials (Feishu/Notion/Yuque)
-// and trigger sync jobs that mutate KB content tenant-wide. Reads are
-// Viewer+; everything else (CRUD, validation, sync control, credential
-// subresource) is SystemAdmin.
-func RegisterDataSourceRoutes(
-	r *gin.RouterGroup,
-	handler *handler.DataSourceHandler,
-	credHandler *handler.DataSourceCredentialsHandler,
-	g *rbacGuards,
-) {
-	// Data source routes
-	ds := g.apiKeyGroup(r.Group("/datasource"), apiKeyManageDataSources(apiKeyFullAccess()))
-	{
-		// Get available connector types — Owner+
-		ds.GET("/types", g.SystemAdmin(), handler.GetAvailableConnectors)
-
-		// Validate credentials without persistence (for "Test Connection" button) — SystemAdmin
-		ds.POST("/validate-credentials", g.SystemAdmin(), handler.ValidateCredentials)
-
-		// CRUD operations
-		ds.POST("", g.SystemAdmin(), handler.CreateDataSource)
-		ds.GET("", g.SystemAdmin(), handler.ListDataSources)
-		ds.GET("/:id", g.SystemAdmin(), handler.GetDataSource)
-		ds.PUT("/:id", g.SystemAdmin(), handler.UpdateDataSource)
-		ds.DELETE("/:id", g.SystemAdmin(), handler.DeleteDataSource)
-
-		// Credential subresource. Single logical field "credentials" because
-		// connector credentials are a per-connector atomic map (see
-		// internal/handler/datasource_credentials.go). — SystemAdmin
-		ds.PUT("/:id/credentials", g.SystemAdmin(), credHandler.Put)
-		ds.DELETE("/:id/credentials/:field", g.SystemAdmin(), credHandler.DeleteField)
-
-		// Connection and resource management — SystemAdmin
-		ds.POST("/:id/validate", g.SystemAdmin(), handler.ValidateConnection)
-		ds.GET("/:id/resources", g.SystemAdmin(), handler.ListAvailableResources)
-		ds.POST("/:id/resource-ancestors", g.SystemAdmin(), handler.ResolveResourceAncestors)
-
-		// Sync management — SystemAdmin
-		ds.POST("/:id/sync", g.SystemAdmin(), handler.ManualSync)
-		ds.POST("/:id/pause", g.SystemAdmin(), handler.PauseDataSource)
-		ds.POST("/:id/resume", g.SystemAdmin(), handler.ResumeDataSource)
-
-		// Sync logs — Owner+ (read-only audit trail)
-		ds.GET("/:id/logs", g.SystemAdmin(), handler.GetSyncLogs)
-		ds.GET("/logs/:log_id", g.SystemAdmin(), handler.GetSyncLog)
-	}
-}
-
 // RegisterWeKnoraCloudRoutes đăng ký các route khởi tạo WeKnoraCloud
 // RegisterWeKnoraCloudRoutes registers the WeKnoraCloud credential
 // management endpoints. SaveCredentials persists external SaaS model

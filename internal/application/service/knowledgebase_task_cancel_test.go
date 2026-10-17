@@ -16,9 +16,8 @@ import (
 )
 
 type kbTaskCancelCall struct {
-	kbID          string
-	knowledgeIDs  []string
-	dataSourceIDs []string
+	kbID         string
+	knowledgeIDs []string
 }
 
 type recordingKBTaskInspector struct {
@@ -55,12 +54,10 @@ func (r *recordingKBTaskInspector) CancelTasksForKnowledgeBase(
 	_ context.Context,
 	kbID string,
 	knowledgeIDs []string,
-	dataSourceIDs []string,
 ) (int, int, error) {
 	r.calls = append(r.calls, kbTaskCancelCall{
-		kbID:          kbID,
-		knowledgeIDs:  append([]string(nil), knowledgeIDs...),
-		dataSourceIDs: append([]string(nil), dataSourceIDs...),
+		kbID:         kbID,
+		knowledgeIDs: append([]string(nil), knowledgeIDs...),
 	})
 	if r.repo != nil && r.repo.deletedID == kbID {
 		r.sawSoftDeletedRecord = true
@@ -98,32 +95,6 @@ func (r *recordingKBDeleteEnqueuer) Enqueue(
 	r.calls++
 	r.task = task
 	return &asynq.TaskInfo{ID: "kb-delete-task"}, nil
-}
-
-func TestDeleteKnowledgeBaseForwardsDataSourceTaskScope(t *testing.T) {
-	const kbID = "kb-with-datasource"
-	kbRepo := &kbDeleteKBRepo{fakeKBRepo: *newFakeKBRepo()}
-	kbRepo.rows[kbID] = &types.KnowledgeBase{ID: kbID, TenantID: 1, Name: "test"}
-	inspector := &recordingKBTaskInspector{repo: kbRepo}
-	enqueuer := &recordingKBDeleteEnqueuer{}
-	dsRepo := newKBDeleteDSRepo(kbID, &types.DataSource{ID: "datasource-1", KnowledgeBaseID: kbID})
-	svc := &knowledgeBaseService{
-		repo:          kbRepo,
-		asynqClient:   enqueuer,
-		taskInspector: inspector,
-		dsRepo:        dsRepo,
-	}
-
-	err := svc.DeleteKnowledgeBase(ctxWithTenantStorage(1, "local"), kbID)
-
-	require.NoError(t, err)
-	require.Len(t, inspector.calls, 2)
-	assert.Empty(t, inspector.calls[0].dataSourceIDs)
-	assert.Equal(t, []string{"datasource-1"}, inspector.calls[1].dataSourceIDs)
-	require.NotNil(t, enqueuer.task)
-	var payload types.KBDeletePayload
-	require.NoError(t, json.Unmarshal(enqueuer.task.Payload(), &payload))
-	assert.Equal(t, []string{"datasource-1"}, payload.DataSourceIDs)
 }
 
 func TestDeleteKnowledgeBaseCancelsQueuedTasksBestEffort(t *testing.T) {
@@ -384,11 +355,9 @@ func TestCancelTasksForKnowledgeBaseForwardsKnowledgeIDs(t *testing.T) {
 		context.Background(),
 		"kb-1",
 		[]string{"knowledge-1", "knowledge-2"},
-		[]string{"datasource-1"},
 	)
 
 	require.Len(t, inspector.calls, 1)
 	assert.Equal(t, "kb-1", inspector.calls[0].kbID)
 	assert.Equal(t, []string{"knowledge-1", "knowledge-2"}, inspector.calls[0].knowledgeIDs)
-	assert.Equal(t, []string{"datasource-1"}, inspector.calls[0].dataSourceIDs)
 }
