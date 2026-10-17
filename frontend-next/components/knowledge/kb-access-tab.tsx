@@ -43,7 +43,10 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
   const toast = useToast();
   const { isSystemAdmin } = useTenantRole();
   const [overview, setOverview] = useState<KBAccessOverview | null>(null);
-  const [error, setError] = useState("");
+  /* null: no error; "": failed without a server message (translated at
+   * render, so `load` does not depend on `t`, which the i18n provider
+   * recreates on every render and would refetch /access). */
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmPublic, setConfirmPublic] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -52,11 +55,12 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
   const load = useCallback(async () => {
     try {
       setOverview(await getKBAccess(kbId));
-      setError("");
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("kbAccess.loadFailed"));
+      setError(e instanceof Error && e.message ? e.message : "");
     }
-  }, [kbId, t]);
+  }, [kbId]);
+  const errorText = error === null ? "" : error || t("kbAccess.loadFailed");
 
   useEffect(() => {
     void load();
@@ -82,7 +86,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
   };
 
   if (!overview) {
-    return <p className={`caption ${error ? "text-error" : "text-muted-soft"}`}>{error || "…"}</p>;
+    return <p className={`caption ${errorText ? "text-error" : "text-muted-soft"}`}>{errorText || "…"}</p>;
   }
 
   const canManage = overview.effective_permissions.manage;
@@ -100,7 +104,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
 
   return (
     <div className="mx-auto w-full max-w-[760px] space-y-6 overflow-y-auto pb-10">
-      {error && <p className="caption text-error">{error}</p>}
+      {errorText && <p className="caption text-error">{errorText}</p>}
 
       <section className="card space-y-1 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -127,7 +131,13 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
           {options.map((o) => (
             <label
               key={o.value}
-              title={o.disabled ? lockedTitle : undefined}
+              title={
+                o.reason === "tenantFirst"
+                  ? t("kbAccess.scope.publicNeedsTenant")
+                  : o.disabled
+                    ? lockedTitle
+                    : undefined
+              }
               className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 ${
                 overview.visibility === o.value ? "border-ink/40 bg-surface-strong/50" : "border-hairline"
               } ${o.disabled ? "opacity-70" : "cursor-pointer"}`}
@@ -147,6 +157,9 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
               <span>
                 <span className="block text-[13px] font-medium text-ink">{t(SCOPE_KEYS[o.value].label)}</span>
                 <span className="caption block text-muted">{t(SCOPE_KEYS[o.value].desc)}</span>
+                {o.reason === "tenantFirst" && (
+                  <span className="caption block text-muted-soft">{t("kbAccess.scope.publicNeedsTenant")}</span>
+                )}
               </span>
             </label>
           ))}

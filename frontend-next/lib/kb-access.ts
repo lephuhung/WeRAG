@@ -73,13 +73,17 @@ export function sourceLabelKey(source: string): (typeof SOURCE_LABEL_KEYS)[KBAcc
 export interface ScopeOption {
   value: KBScope;
   disabled: boolean;
+  /* Why the option is disabled: the caller cannot manage the KB, or (for
+   * public) the KB must be moved to tenant scope first. */
+  reason?: "locked" | "tenantFirst";
 }
 
 /* Scope choices for the selector. A tenant-owned KB moves among tenant,
  * restricted and published; a SuperAdmin may also promote it to platform
- * public. A platform public KB shows only "public": leaving it is an owner
- * transfer, not a scope change. Everything is disabled for a caller who
- * cannot manage the KB. */
+ * public, but only from tenant scope (the backend rejects published or
+ * restricted → public: withdraw / widen to tenant first). A platform public
+ * KB shows only "public": leaving it is an owner transfer, not a scope
+ * change. Everything is disabled for a caller who cannot manage the KB. */
 export function scopeOptions(input: {
   current: KBScope;
   ownerTenantId: number;
@@ -90,11 +94,14 @@ export function scopeOptions(input: {
   if (input.current === "public" || input.ownerTenantId === 0) {
     return [{ value: "public", disabled: true }];
   }
-  const out: ScopeOption[] = (["tenant", "restricted", "published"] as const).map((value) => ({
-    value,
-    disabled: locked,
-  }));
-  if (input.isSystemAdmin) out.push({ value: "public", disabled: locked });
+  const out: ScopeOption[] = (["tenant", "restricted", "published"] as const).map((value) =>
+    locked ? { value, disabled: true, reason: "locked" as const } : { value, disabled: false },
+  );
+  if (input.isSystemAdmin) {
+    if (locked) out.push({ value: "public", disabled: true, reason: "locked" });
+    else if (input.current !== "tenant") out.push({ value: "public", disabled: true, reason: "tenantFirst" });
+    else out.push({ value: "public", disabled: false });
+  }
   return out;
 }
 

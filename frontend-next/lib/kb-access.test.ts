@@ -19,13 +19,23 @@ describe("scopeOptions", () => {
     const admin = scopeOptions({ current: "tenant", ownerTenantId: 1, isSystemAdmin: false, canManage: true });
     assert.deepEqual(admin.map((o) => o.value), ["tenant", "restricted", "published"]);
     assert.ok(admin.every((o) => !o.disabled));
-    const sa = scopeOptions({ current: "restricted", ownerTenantId: 1, isSystemAdmin: true, canManage: true });
+    const sa = scopeOptions({ current: "tenant", ownerTenantId: 1, isSystemAdmin: true, canManage: true });
     assert.deepEqual(sa.map((o) => o.value), ["tenant", "restricted", "published", "public"]);
+    assert.ok(sa.every((o) => !o.disabled));
+  });
+
+  it("public is enabled only from tenant scope; otherwise switch to tenant first", () => {
+    for (const current of ["restricted", "published"] as const) {
+      const sa = scopeOptions({ current, ownerTenantId: 1, isSystemAdmin: true, canManage: true });
+      assert.deepEqual(sa.map((o) => o.value), ["tenant", "restricted", "published", "public"]);
+      assert.deepEqual(sa.find((o) => o.value === "public"), { value: "public", disabled: true, reason: "tenantFirst" });
+      assert.ok(sa.filter((o) => o.value !== "public").every((o) => !o.disabled), current);
+    }
   });
 
   it("disables every option for a caller who cannot manage", () => {
     const opts = scopeOptions({ current: "tenant", ownerTenantId: 1, isSystemAdmin: false, canManage: false });
-    assert.ok(opts.every((o) => o.disabled));
+    assert.ok(opts.every((o) => o.disabled && o.reason === "locked"));
   });
 
   it("a platform public KB only shows public: leaving it is an owner transfer", () => {
