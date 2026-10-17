@@ -11,15 +11,7 @@ export interface WebSearchProviderEntity {
     | "google"
     | "duckduckgo"
     | "tavily"
-    | "ollama"
-    | "baidu"
-    | "searxng"
-    | "keenable"
-    | "zhipu"
-    | "metaso"
-    | "exa"
-    | "bocha"
-    | "serply";
+    | "searxng";
   description?: string;
   parameters: {
     // api_key is never returned in this shape; it lives behind the

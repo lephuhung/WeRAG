@@ -25662,15 +25662,7 @@ const docTemplate = `{
                 "google",
                 "duckduckgo",
                 "tavily",
-                "ollama",
-                "baidu",
-                "searxng",
-                "keenable",
-                "zhipu",
-                "exa",
-                "metaso",
-                "bocha",
-                "serply"
+                "searxng"
             ],
             "x-enum-varnames": [
                 "WebSearchProviderTypeBrave",
@@ -25678,15 +25670,7 @@ const docTemplate = `{
                 "WebSearchProviderTypeGoogle",
                 "WebSearchProviderTypeDuckDuckGo",
                 "WebSearchProviderTypeTavily",
-                "WebSearchProviderTypeOllama",
-                "WebSearchProviderTypeBaidu",
-                "WebSearchProviderTypeSearxng",
-                "WebSearchProviderTypeKeenable",
-                "WebSearchProviderTypeZhipu",
-                "WebSearchProviderTypeExa",
-                "WebSearchProviderTypeMetaso",
-                "WebSearchProviderTypeBocha",
-                "WebSearchProviderTypeSerply"
+                "WebSearchProviderTypeSearxng"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.WikiConfig": {

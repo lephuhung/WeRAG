@@ -4940,15 +4940,7 @@ definitions:
     - google
     - duckduckgo
     - tavily
-    - ollama
-    - baidu
     - searxng
-    - keenable
-    - zhipu
-    - exa
-    - metaso
-    - bocha
-    - serply
     type: string
     x-enum-varnames:
     - WebSearchProviderTypeBrave
@@ -4956,15 +4948,7 @@ definitions:
     - WebSearchProviderTypeGoogle
     - WebSearchProviderTypeDuckDuckGo
     - WebSearchProviderTypeTavily
-    - WebSearchProviderTypeOllama
-    - WebSearchProviderTypeBaidu
     - WebSearchProviderTypeSearxng
-    - WebSearchProviderTypeKeenable
-    - WebSearchProviderTypeZhipu
-    - WebSearchProviderTypeExa
-    - WebSearchProviderTypeMetaso
-    - WebSearchProviderTypeBocha
-    - WebSearchProviderTypeSerply
   github_com_Tencent_WeKnora_internal_types.WikiConfig:
     properties:
       content_instructions:

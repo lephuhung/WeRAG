@@ -134,15 +134,7 @@ func isValidProviderType(provider types.WebSearchProviderType) bool {
 		types.WebSearchProviderTypeGoogle,
 		types.WebSearchProviderTypeDuckDuckGo,
 		types.WebSearchProviderTypeTavily,
-		types.WebSearchProviderTypeOllama,
-		types.WebSearchProviderTypeBaidu,
-		types.WebSearchProviderTypeSearxng,
-		types.WebSearchProviderTypeKeenable,
-		types.WebSearchProviderTypeMetaso,
-		types.WebSearchProviderTypeZhipu,
-		types.WebSearchProviderTypeExa,
-		types.WebSearchProviderTypeBocha,
-		types.WebSearchProviderTypeSerply:
+		types.WebSearchProviderTypeSearxng:
 		return true
 	default:
 		return false
@@ -155,10 +147,6 @@ func validateProviderParameters(provider types.WebSearchProviderType, params typ
 	case types.WebSearchProviderTypeBrave:
 		if strings.TrimSpace(params.APIKey) == "" {
 			return fmt.Errorf("API key is required for Brave provider")
-		}
-	case types.WebSearchProviderTypeSerply:
-		if strings.TrimSpace(params.APIKey) == "" {
-			return fmt.Errorf("API key is required for Serply provider")
 		}
 	case types.WebSearchProviderTypeBing:
 		if params.APIKey == "" {
@@ -175,34 +163,8 @@ func validateProviderParameters(provider types.WebSearchProviderType, params typ
 		if params.APIKey == "" {
 			return fmt.Errorf("API key is required for Tavily provider")
 		}
-	case types.WebSearchProviderTypeOllama:
-		if params.APIKey == "" {
-			return fmt.Errorf("API key is required for Ollama provider")
-		}
-	case types.WebSearchProviderTypeBaidu:
-		if params.APIKey == "" {
-			return fmt.Errorf("API key is required for Baidu provider")
-		}
-	case types.WebSearchProviderTypeExa:
-		if params.APIKey == "" {
-			return fmt.Errorf("API key is required for Exa provider")
-		}
-	case types.WebSearchProviderTypeZhipu:
-		if err := infra_web_search.ValidateZhipuParameters(params); err != nil {
-			return err
-		}
-	case types.WebSearchProviderTypeMetaso:
-		if err := infra_web_search.ValidateMetasoParameters(params); err != nil {
-			return err
-		}
-	case types.WebSearchProviderTypeBocha:
-		if err := infra_web_search.ValidateBochaParameters(params); err != nil {
-			return err
-		}
 	case types.WebSearchProviderTypeDuckDuckGo:
 		// No API key required
-	case types.WebSearchProviderTypeKeenable:
-		// No API key required (keyless by default; an optional key lifts the rate limit)
 	case types.WebSearchProviderTypeSearxng:
 		if err := infra_web_search.ValidateSearxngBaseURL(params.BaseURL); err != nil {
 			return err

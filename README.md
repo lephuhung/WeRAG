@@ -161,7 +161,7 @@ Fully modular pipeline from document parsing, vectorization, and retrieval to LL
 | Object Storage | Local / MinIO / AWS S3 (IAM Role / IRSA default credential chain) / Volcengine TOS / Alibaba Cloud OSS / Kingsoft Cloud KS3 / Huawei Cloud OBS; **multiple storage instances per workspace** with per-KB binding and a default instance |
 | IM Channels | WeCom / Feishu / Lark (Feishu International) / QQBot / Slack / Telegram / DingTalk / Mattermost / WeChat / Yunzhijia |
 | Website Embed | Publish agents via embed widget with domain allowlists, rate limits, and secure-mode token exchange |
-| Web Search | DuckDuckGo / Bing / Google / Tavily / Baidu / Ollama / SearXNG / Keenable / Zhipu AI / Exa / Metaso |
+| Web Search | SearXNG / DuckDuckGo / Bing / Google / Brave / Tavily |
 | API Integration | Scoped API keys (capability-level grants + per-KB restriction + throttled last-used tracking) with an API integration playground; MCP OAuth and embed sessions isolated per principal; `resource_urls=public` returns directly loadable file/image URLs, removing the second authenticated proxy call |
 | MCP Server | Built into the backend: per-endpoint Streamable HTTP at `/mcp/<endpoint_id>` with its own bearer token, KB scope and tool groups |
 
