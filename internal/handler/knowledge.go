@@ -134,7 +134,13 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
 	request.Caller = request.Caller.Normalize()
-	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+	// Tenantless callers: an explicit human SuperAdmin always proceeds; a
+	// tenantless authenticated human (Guest) proceeds only for Viewer
+	// reads, where DecideKB admits public/published KBs and denies the
+	// rest (same rule as the route's KBAccessRead guard). Tenantless
+	// mutation stays SuperAdmin-only.
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		(requiredPermission != types.KBPermissionViewer || !access.IsAuthenticatedHuman(ctx, request.Caller)) {
 		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
 	}
 	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
@@ -185,7 +191,10 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBDownload(
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
 	request.Caller = request.Caller.Normalize()
-	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) {
+	// A tenantless authenticated human (Guest) may download originals of
+	// public/published KBs; ResolveKBForDownload (DecideKB) decides.
+	if request.Caller.TenantID == 0 && !access.IsExplicitHumanSuperAdmin(ctx, request.Caller) &&
+		!access.IsAuthenticatedHuman(ctx, request.Caller) {
 		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
 	}
 	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
