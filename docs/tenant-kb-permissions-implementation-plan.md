@@ -165,7 +165,7 @@ Tổng khoảng 10 ngày công. Giai đoạn 0–2 có thể merge và deploy tr
 
 ## 7. Trạng thái thực hiện và bàn giao (2026-10-17)
 
-Nhánh `feat/tenant-kb-permissions` (worktree `/home/orca/werag-perms`, gốc `feat/document-assistant` @ `24c581d5`), 15 commit, chưa push, chưa merge. Opus 5.5 viết code, Fable 5.1 review từng giai đoạn.
+Nhánh `feat/tenant-kb-permissions` (worktree `/home/orca/werag-perms`, gốc `feat/document-assistant` @ `24c581d5`), 21 commit (HEAD sau cùng ghi ở git log), chưa push, chưa merge. Opus 5.5 viết code, Fable 5.1 review từng giai đoạn.
 
 | Giai đoạn | Commit | Trạng thái |
 | --- | --- | --- |
@@ -176,6 +176,7 @@ Nhánh `feat/tenant-kb-permissions` (worktree `/home/orca/werag-perms`, gốc `f
 | 3b List/search/chat/file/wiki/batch qua `DecideKB` | `c0c6e757` `1345182c` `3302cc0f` | Xong, đã review |
 | 4 Chuyển chủ sở hữu | `a0986934` `dbdd7aae` | Xong, đã review |
 | 5 Tab Quyền truy cập (frontend-next) | `53286e8a` `adee9ac8` | Xong code, **chưa test trình duyệt** |
+| Sửa sau review độc lập (citation web, chuyển chủ giữ restricted, 400 khi tạo KB sai, tùy chọn public) | `72ecb654` `8b4a25d7` `e22871c7` `6c4c2ae0` | Xong, hai lượt review độc lập kết luận sẵn sàng merge |
 | 6 Kiểm thử trên dev, release note | — | Chờ deploy nhánh lên dev |
 
 Kiểm chứng tự động trên nhánh: `go build ./...` sạch; `go test ./internal/... ./client/...` pass toàn bộ, trừ `TestQueryKnowledgeGraphReadsTheGraphStore` trong `internal/agent/tools` hỏng khi chạy `-count>1` **cả trên nhánh gốc** (lỗi có sẵn, không thuộc dự án này); `go vet` chỉ còn cảnh báo cũ `mcpserver/scope_test.go:213`; frontend-next 261 test pass, `tsc --noEmit` sạch.
@@ -200,7 +201,9 @@ Kiểm chứng tự động trên nhánh: `go build ./...` sạch; `go test ./in
 - SuperAdmin có mọi quyền trên mọi KB, không cần membership; danh sách KB của SuperAdmin là toàn nền tảng, nhưng chat "tất cả KB" và tìm kiếm tài liệu chỉ lấy tenant đang chọn + KB public.
 - Member tenant chủ nhận `member_default` (mặc định đóng góp) thay vì Admin ở tầng service.
 - Lời mời chỉ có hiệu lực khi do chủ hiện tại cấp và membership người nhận còn active; đổi chủ thu hồi mọi lời mời và grant trong cùng transaction.
-- `PUT /visibility` không còn chuyển chủ; dùng `POST /knowledge-bases/:id/transfer-owner` (SuperAdmin). Chuyển chủ đưa KB về `tenant`, rút công bố nếu đang `published`.
+- `PUT /visibility` không còn chuyển chủ; dùng `POST /knowledge-bases/:id/transfer-owner` (SuperAdmin). Chuyển chủ không mở rộng phạm vi: `restricted` giữ `restricted` (mọi ACL bị thu hồi, chỉ Admin chủ mới và SuperAdmin đọc cho tới khi chia sẻ lại), `published` và `public` về `tenant`.
+- Tạo KB với `member_default` sai hoặc scope `published`/lạ trả 400 thay vì âm thầm đổi.
+- Citation web search và tệp đính kèm luôn giữ trong lịch sử chat; chỉ citation gắn KB không đọc được (hoặc tài liệu đã xoá) bị ẩn.
 - KB có thể `restricted`; mời cùng tenant được phép; `GET /knowledge-bases/:id/access` trả quyền hiệu lực, nguồn, danh sách người được cấp.
 - Agent không ghi vào KB public nền tảng chỉ vì `tenant_id` trùng tenant caller.
 - Citations tới KB không còn đọc được (hoặc đã xoá) bị ẩn khi tải lịch sử chat.
@@ -231,4 +234,14 @@ Bốn tài khoản: SuperAdmin không membership; Admin tenant A; Member tenant 
 - `ListOwnedKnowledgeBases` không còn caller production.
 - Tạo KB với scope `published` ngay từ đầu chưa hỗ trợ (tạo `tenant` rồi công bố).
 - Test repository Postgres (readable list, revocation counts) chỉ chạy khi có `WEKNORA_MIGRATION_TEST_POSTGRES_DSN`.
-- Ba commit 3b và bốn commit 4–5 mang Co-Authored-By Opus 5.5 (đúng người viết); các commit trước ghi Fable 5.1.
+- Member tenant B được mời vào KB `published` của A nhưng chưa subscribe không thấy KB trong danh sách, dù mở trực tiếp được.
+- Gợi ý câu hỏi mở đầu của agent ở chế độ "tất cả KB" với SuperAdmin lấy KB của mọi tenant, khác chat và tìm kiếm.
+- Danh sách KB vẫn chạy 2 câu đếm cho mỗi KB; với SuperAdmin (toàn nền tảng) tốn theo số KB.
+- API key, MCP endpoint và kênh IM vẫn đọc KB `restricted` của chính tenant mình mà không cần ACL (đúng quy tắc đã chốt, cần ghi release note).
+- Sau chuyển chủ, dữ liệu KB vẫn ở `tenant_id` cũ: chủ mới dùng model, kho lưu và quota của tenant cũ; tenant cũ không xoá được khi KB còn. Audit chỉ ghi phía tenant mới. Subscription cũ sống lại nếu chủ mới công bố lại.
+- Chuyển chủ không khoá giữa đọc và ghi; một thay đổi xen giữa có thể bị mất.
+- Trang KB gọi `GET /access` hai lần (kb-detail và tab); cần refactor để dùng chung.
+- Thu hồi lời mời của một Admin tenant chủ trên KB `restricted` không hiện cảnh báo dù người đó vẫn đọc được.
+- Gửi `visibility` và `member_default` cùng lúc là hai lần ghi không chung transaction (UI hiện không gửi kiểu này).
+- Chú thích của `hideUnreadableReferences` trong `message.go` nằm dính trên `isWebSearchReference`.
+- Ba commit 3b, bốn commit 4–5 và bốn commit sửa mang Co-Authored-By Opus 5.5 (đúng người viết); các commit trước ghi Fable 5.1.
