@@ -116,7 +116,7 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error) {
 	var scope types.KBScope
 	err := r.db.WithContext(ctx).Model(&types.KnowledgeBase{}).
-		Select("tenant_id", "owner_tenant_id", "visibility").
+		Select("tenant_id", "owner_tenant_id", "visibility", "member_default").
 		Where("id = ?", id).
 		Take(&scope).Error
 	if err != nil {
@@ -127,6 +127,9 @@ func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string)
 	}
 	if !scope.Visibility.IsValid() {
 		scope.Visibility = types.KBVisibilityTenant
+	}
+	if !scope.MemberDefault.IsValid() {
+		scope.MemberDefault = types.KBMemberDefaultContribute
 	}
 	return &scope, nil
 }

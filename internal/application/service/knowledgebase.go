@@ -672,7 +672,7 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 
 // isTenantOwnedVisibility reports whether v keeps a nonzero owner tenant.
 func isTenantOwnedVisibility(v types.KBVisibility) bool {
-	return v == types.KBVisibilityTenant || v == types.KBVisibilityPublished
+	return v == types.KBVisibilityTenant || v == types.KBVisibilityPublished || v == types.KBVisibilityRestricted
 }
 
 // persistKBScopeChange validates and stores an owner/visibility change and
