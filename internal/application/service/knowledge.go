@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -1087,30 +1088,18 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, keyword string, 
 	// rows (stable foreign/zero data scope) and invited rows query the
 	// partition their chunks actually live in. For ordinary own-tenant KBs
 	// kb.TenantID == tenantID, so tenant-scoped behavior is unchanged.
-	ownKBs, err := s.kbService.ListKnowledgeBases(ctx)
-	if err == nil {
-		for _, kb := range ownKBs {
-			if kb != nil && kb.Type == types.KnowledgeBaseTypeDocument {
-				scopes = append(scopes, types.KnowledgeSearchScope{TenantID: kb.TenantID, KBID: kb.ID})
-			}
-		}
+	//
+	// ListKnowledgeBases is the readable set (access.DecideKB in one SQL
+	// statement): it already carries live invites and approved, unexpired
+	// tenant grants issued by the current owner, and leaves out restricted
+	// KBs the caller holds no ACL on.
+	readable, err := s.kbService.ListKnowledgeBases(ctx)
+	if err != nil {
+		return nil, false, 0, err
 	}
-
-	// Knowledge bases granted to this tenant via approved kb_access_grants.
-	// Grants are viewer-only and scoped to document search scopes keyed by
-	// the owning tenant so chunk queries hit the right partition.
-	if s.kbAccessGrantService != nil && caller.UserID != "" {
-		granted, err := s.kbAccessGrantService.ListOutgoing(ctx, caller,
-			[]types.GrantStatus{types.GrantStatusApproved})
-		if err == nil {
-			for _, g := range granted {
-				if g != nil && g.KBID != "" && g.OwnerTenantID != 0 {
-					scopes = append(scopes, types.KnowledgeSearchScope{
-						TenantID: g.OwnerTenantID,
-						KBID:     g.KBID,
-					})
-				}
-			}
+	for _, kb := range readable {
+		if kb != nil && kb.Type == types.KnowledgeBaseTypeDocument && access.InDefaultRetrievalScope(caller, kb) {
+			scopes = append(scopes, types.KnowledgeSearchScope{TenantID: kb.TenantID, KBID: kb.ID})
 		}
 	}
 

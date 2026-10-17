@@ -92,6 +92,10 @@ type fakeKBRepo struct {
 	catalogKeyword string
 	catalogPage    int
 	byIDs          map[string]*types.KnowledgeBase
+	// readable is what ListReadableKnowledgeBases returns (the SQL itself
+	// is covered by the repository tests); readers records each call.
+	readable []*types.KnowledgeBase
+	readers  []types.KBReader
 }
 
 func (r *fakeKBRepo) UpdateKnowledgeBaseGeneratedProfile(
@@ -637,8 +641,9 @@ func (r *fakeKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 	return nil, nil
 }
 
-func (r *fakeKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
-	return nil, nil
+func (r *fakeKBRepo) ListReadableKnowledgeBases(_ context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
+	r.readers = append(r.readers, reader)
+	return append([]*types.KnowledgeBase(nil), r.readable...), nil
 }
 
 func (r *fakeKBRepo) ListOwnedKnowledgeBases(_ context.Context, _ uint64) ([]*types.KnowledgeBase, error) {

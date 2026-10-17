@@ -1209,7 +1209,7 @@ func (r *realKBRepo) GetKBScopeByID(ctx context.Context, id string) (*types.KBSc
 	return nil, nil
 }
 
-func (r *realKBRepo) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+func (r *realKBRepo) ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

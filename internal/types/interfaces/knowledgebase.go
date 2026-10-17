@@ -249,10 +249,15 @@ type KnowledgeBaseRepository interface {
 	// base. Returns nil without error when the KB does not exist.
 	GetKBScopeByID(ctx context.Context, id string) (*types.KBScope, error)
 
-	// ListVisibleKnowledgeBases lists the non-temporary KBs of tenantID:
-	// 'tenant'- and 'public'-visibility rows. Cross-tenant visibility
-	// comes from kb_access_grants, resolved by the service layer.
-	ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+	// ListReadableKnowledgeBases lists, in one statement, every
+	// non-temporary KB reader may VIEW under access.DecideKB, each with
+	// AccessSource set: SuperAdmin -> all; owner-tenant Admin -> every KB
+	// of the tenant; owner-tenant Member -> tenant/published KBs of the
+	// tenant; humans -> platform public + published; live invites and
+	// approved tenant grants -> restricted/tenant KBs (acl_user /
+	// acl_tenant). Machine principals (not Human) get only their own
+	// tenant's KBs. Ordered created_at DESC, id ASC.
+	ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error)
 
 	// ListOwnedKnowledgeBases lists the non-temporary KBs authorized under
 	// ownerTenantID: rows with owner_tenant_id = ownerTenantID plus legacy

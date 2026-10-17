@@ -468,7 +468,7 @@ func (r *stubKBRepoForModelDelete) GetKBScopeByID(ctx context.Context, id string
 	return nil, nil
 }
 
-func (r *stubKBRepoForModelDelete) ListVisibleKnowledgeBases(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error) {
+func (r *stubKBRepoForModelDelete) ListReadableKnowledgeBases(ctx context.Context, reader types.KBReader) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 

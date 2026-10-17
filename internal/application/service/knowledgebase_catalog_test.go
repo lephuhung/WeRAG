@@ -93,101 +93,78 @@ func catalogRow(id string, dataTenant, owner uint64, vis types.KBVisibility, kbT
 	}
 }
 
-func TestCatalogComposition_OwnedPublicInvitesDeduped(t *testing.T) {
-	repo := newFakeKBRepo()
-	repo.owned = []*types.KnowledgeBase{
-		catalogRow("own-a", 1, 1, types.KBVisibilityTenant, ""),
-		catalogRow("own-b", 1, 1, types.KBVisibilityTenant, ""),
-	}
-	repo.catalogItems = []*types.KnowledgeBase{
-		catalogRow("pub-a", 0, 0, types.KBVisibilityPublic, ""),
-		catalogRow("own-b", 1, 1, types.KBVisibilityTenant, ""),
-	}
-	repo.catalogTotal = 2
-	invited := catalogRow("inv-fresh", 9, 9, types.KBVisibilityTenant, "")
-	invitedDup := catalogRow("own-a", 1, 1, types.KBVisibilityTenant, "")
-	repo.byIDs = map[string]*types.KnowledgeBase{"inv-fresh": invited, "own-a": invitedDup}
-	svc := newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{},
-		&catalogInviteService{ids: []string{"inv-fresh", "own-a"}})
-
-	got, err := svc.ListKnowledgeBases(catalogHumanCtx(1, "user-a"))
-	require.NoError(t, err)
-	ids := make([]string, 0, len(got))
-	for _, kb := range got {
-		ids = append(ids, kb.ID)
-	}
-	assert.ElementsMatch(t, []string{"own-a", "own-b", "pub-a", "inv-fresh"}, ids,
-		"catalog composes owned + public page + invites with no duplicates")
+func withSource(kb *types.KnowledgeBase, source access.AccessSource) *types.KnowledgeBase {
+	kb.AccessSource = string(source)
+	return kb
 }
 
-func TestCatalogComposition_TempInvitedKBExcluded(t *testing.T) {
+// The readable set (owned, public, invites, grants, dedupe, temporary rows)
+// is one repository statement now (see repository
+// TestListReadableKnowledgeBases*). The service passes the caller's
+// classification and returns the rows with their access_source.
+func TestListKnowledgeBases_ReturnsReadableRowsForHumanMember(t *testing.T) {
 	repo := newFakeKBRepo()
-	repo.owned = []*types.KnowledgeBase{
-		catalogRow("own-a", 1, 1, types.KBVisibilityTenant, ""),
+	repo.readable = []*types.KnowledgeBase{
+		withSource(catalogRow("own-a", 1, 1, types.KBVisibilityTenant, ""), access.SourceTenantScope),
+		withSource(catalogRow("pub-a", 0, 0, types.KBVisibilityPublic, ""), access.SourcePublic),
+		withSource(catalogRow("inv-fresh", 9, 9, types.KBVisibilityRestricted, ""), access.SourceACLUser),
 	}
-	repo.catalogItems = []*types.KnowledgeBase{}
-	repo.byIDs = map[string]*types.KnowledgeBase{
-		"inv-live": catalogRow("inv-live", 9, 9, types.KBVisibilityTenant, ""),
-		"inv-temp": {
-			ID: "inv-temp", Name: "inv-temp", Type: types.KnowledgeBaseTypeDocument,
-			TenantID: 9, OwnerTenantID: 9, Visibility: types.KBVisibilityTenant,
-			IsTemporary: true,
-		},
-	}
-	svc := newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{},
-		&catalogInviteService{ids: []string{"inv-live", "inv-temp"}})
+	svc := newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{}, &catalogInviteService{})
 
 	got, err := svc.ListKnowledgeBases(catalogHumanCtx(1, "user-a"))
 	require.NoError(t, err)
-	ids := make([]string, 0, len(got))
+	sources := map[string]string{}
 	for _, kb := range got {
-		ids = append(ids, kb.ID)
+		sources[kb.ID] = kb.AccessSource
 	}
-	assert.ElementsMatch(t, []string{"own-a", "inv-live"}, ids,
-		"accepted invites to temporary KBs must not surface; live invites preserved")
+	assert.Equal(t, map[string]string{
+		"own-a": "tenant_scope", "pub-a": "public", "inv-fresh": "acl_user",
+	}, sources)
+	require.Len(t, repo.readers, 1)
+	assert.Equal(t, types.KBReader{
+		TenantID: 1, UserID: "user-a", Human: true, TenantMember: true,
+	}, repo.readers[0])
 }
 
 func TestCatalogComposition_NoPublicForMachineCallers(t *testing.T) {
-	newSvc := func() (*fakeKBRepo, *knowledgeBaseService) {
-		repo := newFakeKBRepo()
-		repo.owned = []*types.KnowledgeBase{catalogRow("own-a", 1, 1, types.KBVisibilityTenant, "")}
-		repo.catalogItems = []*types.KnowledgeBase{catalogRow("pub-a", 0, 0, types.KBVisibilityPublic, "")}
-		repo.catalogTotal = 1
-		return repo, newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{}, &catalogInviteService{})
-	}
-
-	// Scoped API key: existing allowlist behavior only, never visibility.
-	_, svc := newSvc()
-	got, err := svc.ListKnowledgeBases(catalogAPIKeyCtx())
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, "own-a", got[0].ID)
-
-	// Synthetic (machine) identity without key scope: no public either.
-	_, svc = newSvc()
+	// Machine callers are classified non-human, so the repository returns
+	// only their own tenant's rows (never public, published or ACL rows).
 	synthCtx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
 	synthCtx = types.WithCaller(synthCtx, types.Caller{TenantID: 1, UserID: "system-1", Role: types.TenantRoleAdmin})
-	got, err = svc.ListKnowledgeBases(synthCtx)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, "own-a", got[0].ID)
-
-	// Non-human-proof gate sanity: the callers above are not human, so no
-	// public rows may leak even though the catalog query returned one.
 	for _, ctx := range []context.Context{catalogAPIKeyCtx(), synthCtx} {
-		caller := types.CallerFromContext(ctx)
-		assert.False(t, access.IsHumanCaller(caller))
+		repo := newFakeKBRepo()
+		svc := newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{}, &catalogInviteService{})
+		_, err := svc.ListKnowledgeBases(ctx)
+		require.NoError(t, err)
+		require.Len(t, repo.readers, 1)
+		assert.False(t, repo.readers[0].Human, "machine principals never list as humans")
+		assert.False(t, repo.readers[0].SuperAdmin)
+		assert.Equal(t, uint64(1), repo.readers[0].TenantID)
 	}
+}
+
+func TestListKnowledgeBases_SuperAdminKeepsEveryPublishedRow(t *testing.T) {
+	repo := newFakeKBRepo()
+	repo.readable = []*types.KnowledgeBase{
+		withSource(catalogRow("other-published", 5, 5, types.KBVisibilityPublished, ""), access.SourceSuperAdmin),
+		withSource(catalogRow("other-restricted", 5, 5, types.KBVisibilityRestricted, ""), access.SourceSuperAdmin),
+	}
+	svc := newCatalogService(repo, &catalogKGRepo{}, &catalogChunkRepo{}, &catalogInviteService{})
+	ctx := context.WithValue(catalogHumanCtx(1, "root"), types.SystemAdminContextKey, true)
+	got, err := svc.ListKnowledgeBases(ctx)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.True(t, repo.readers[0].SuperAdmin)
 }
 
 func TestCatalogCounts_UseDataScopeTenant(t *testing.T) {
 	repo := newFakeKBRepo()
-	repo.owned = []*types.KnowledgeBase{catalogRow("own-a", 1, 1, types.KBVisibilityTenant, "")}
-	repo.catalogItems = []*types.KnowledgeBase{}
-	invited := catalogRow("inv-foreign", 9, 9, types.KBVisibilityTenant, "")
-	repo.byIDs = map[string]*types.KnowledgeBase{"inv-foreign": invited}
+	repo.readable = []*types.KnowledgeBase{
+		withSource(catalogRow("own-a", 1, 1, types.KBVisibilityTenant, ""), access.SourceTenantScope),
+		withSource(catalogRow("inv-foreign", 9, 9, types.KBVisibilityTenant, ""), access.SourceACLUser),
+	}
 	kg, chunk := &catalogKGRepo{}, &catalogChunkRepo{}
-	svc := newCatalogService(repo, kg, chunk, &catalogInviteService{ids: []string{"inv-foreign"}})
+	svc := newCatalogService(repo, kg, chunk, &catalogInviteService{})
 
 	got, err := svc.ListKnowledgeBases(catalogHumanCtx(1, "user-a"))
 	require.NoError(t, err)

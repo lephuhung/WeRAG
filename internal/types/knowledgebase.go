@@ -140,6 +140,24 @@ type KBScope struct {
 	MemberDefault KBMemberDefault
 }
 
+// KBReader classifies the caller of a readable-KB listing. It is built by
+// access.KBReaderFor so the role/human classification stays in the access
+// package; the repository only turns it into SQL predicates.
+type KBReader struct {
+	// TenantID is the caller's active tenant (0 = tenantless).
+	TenantID uint64
+	// UserID is the human user (empty or synthetic for machines).
+	UserID string
+	// SuperAdmin is an explicit human platform administrator.
+	SuperAdmin bool
+	// Human is an authenticated human UI principal (never an API key).
+	Human bool
+	// TenantMember is an active member of TenantID (any tenant role).
+	TenantMember bool
+	// TenantAdmin is an active Tenant Admin of TenantID.
+	TenantAdmin bool
+}
+
 // KnowledgeBase represents a knowledge base entity
 type KnowledgeBase struct {
 	// Unique identifier of the knowledge base
@@ -263,6 +281,11 @@ type KnowledgeBase struct {
 	// 仅在List 场景由 handler 批量回填，不落库；为空表示Create 者无法解析（用户已Delete 、
 	// CreatorID 为空的老数据等）。前端用它在卡片来源徽章上做 mine vs workspace 的二分。
 	CreatorName string `yaml:"-"                       json:"creator_name,omitempty"  gorm:"-"`
+	// AccessSource names the access.DecideKB rule that lets the caller
+	// view this KB (superadmin, tenant_admin, tenant_scope, public,
+	// published, acl_user, acl_tenant). Filled by readable-KB listings
+	// only; never stored.
+	AccessSource string `yaml:"-" json:"access_source,omitempty" gorm:"-"`
 }
 
 // KnowledgeBaseConfig represents the knowledge base configuration

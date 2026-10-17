@@ -56,6 +56,10 @@ type kbAccessGrantService struct {
 	kbs     interfaces.KnowledgeBaseRepository
 	tenants interfaces.TenantRepository
 	audit   interfaces.AuditLogService
+	// invites makes the service a complete KB read lookup for
+	// access.KBPermissions (scope + tenant grants + live invites). nil
+	// disables the invite ACL source (fail closed).
+	invites interfaces.KBInvitationRepository
 }
 
 // NewKBAccessGrantService wires the grant service into the dig container.
@@ -64,8 +68,42 @@ func NewKBAccessGrantService(
 	kbs interfaces.KnowledgeBaseRepository,
 	tenants interfaces.TenantRepository,
 	audit interfaces.AuditLogService,
+	invites interfaces.KBInvitationRepository,
 ) interfaces.KBAccessGrantService {
-	return &kbAccessGrantService{grants: grants, kbs: kbs, tenants: tenants, audit: audit}
+	return &kbAccessGrantService{grants: grants, kbs: kbs, tenants: tenants, audit: audit, invites: invites}
+}
+
+// HasAcceptedInvite implements access.KBInviteLookup: an accepted,
+// unexpired invite issued by the KB's current owner.
+func (s *kbAccessGrantService) HasAcceptedInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	owner, ok, err := s.inviteOwner(ctx, kbID, userID)
+	if !ok || err != nil {
+		return false, err
+	}
+	return s.invites.HasAcceptedInviteForOwner(ctx, kbID, userID, owner)
+}
+
+// HasLiveInvite implements access.KBInviteLookup for DecideKB: an accepted
+// invite from the KB's current owner whose recipient is still an active
+// member of the invite's recipient tenant. This lets every service read
+// check (search, chat, agents) honour invites without its own wiring.
+func (s *kbAccessGrantService) HasLiveInvite(ctx context.Context, kbID, userID string) (bool, error) {
+	owner, ok, err := s.inviteOwner(ctx, kbID, userID)
+	if !ok || err != nil {
+		return false, err
+	}
+	return s.invites.HasLiveInviteForOwner(ctx, kbID, userID, owner)
+}
+
+func (s *kbAccessGrantService) inviteOwner(ctx context.Context, kbID, userID string) (uint64, bool, error) {
+	if s.invites == nil || s.kbs == nil || kbID == "" || userID == "" {
+		return 0, false, nil
+	}
+	scope, err := s.kbs.GetKBScopeByID(ctx, kbID)
+	if err != nil || scope == nil || scope.OwnerTenantID == 0 {
+		return 0, false, err
+	}
+	return scope.OwnerTenantID, true, nil
 }
 
 func (s *kbAccessGrantService) emitAudit(ctx context.Context, tenantID uint64, action types.AuditAction,

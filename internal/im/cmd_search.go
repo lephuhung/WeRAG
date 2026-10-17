@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -60,7 +62,11 @@ func (c *SearchCommand) Execute(ctx context.Context, cmdCtx *CommandContext, arg
 				allowed := cmdCtx.CustomAgent.Config.AllowedTools
 				filter := tools.DeriveKBFilterForAgent(agentMode, allowed)
 				skipped := 0
+				caller := types.CallerFromContext(ctx)
 				for _, kb := range allKBs {
+					if !access.InDefaultRetrievalScope(caller, kb) {
+						continue
+					}
 					if !filter.IsEmpty() &&
 						!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agentMode, allowed) {
 						skipped++

@@ -123,6 +123,16 @@ export type KBVisibility = "tenant" | "published" | "public";
 /* The only scope the UI may write when creating a KB. */
 export type KBVisibilityWrite = "tenant";
 
+/* The DecideKB rule that lets the caller view a listed KB. */
+export type KBAccessSource =
+  | "superadmin"
+  | "tenant_admin"
+  | "tenant_scope"
+  | "public"
+  | "published"
+  | "acl_user"
+  | "acl_tenant";
+
 export type KnowledgeBaseRow = {
   id: string;
   name: string;
@@ -147,6 +157,8 @@ export type KnowledgeBaseRow = {
   subscribed_by_me?: boolean;
   subscribed_by_tenant?: boolean;
   owner_tenant_name?: string;
+  /* Rule that lets the caller view this KB (GET /knowledge-bases only). */
+  access_source?: KBAccessSource;
   /* Owning workspace id — differs from the caller's tenant on KBs
    * shared from other tenants (legacy public rows or invite-shared KBs
    * that leak into the list). */

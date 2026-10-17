@@ -134,21 +134,113 @@ func (r *knowledgeBaseRepository) GetKBScopeByID(ctx context.Context, id string)
 	return &scope, nil
 }
 
-// ListVisibleKnowledgeBases returns the non-temporary KBs of tenantID:
-// tenant- and public-scoped rows. Cross-tenant visibility comes from
-// kb_access_grants, resolved by the service layer.
-func (r *knowledgeBaseRepository) ListVisibleKnowledgeBases(
-	ctx context.Context, tenantID uint64,
+// readableKBRow scans one listing row plus its computed access source.
+type readableKBRow struct {
+	types.KnowledgeBase `gorm:"embedded"`
+	RowAccessSource     string `gorm:"column:access_source"`
+}
+
+// ListReadableKnowledgeBases returns every non-temporary KB reader may
+// view, in a single statement. The access_source CASE mirrors the order of
+// access.DecideKB (superadmin, tenant_admin, tenant_scope, public,
+// published, acl_user, acl_tenant); rows whose source is empty are
+// filtered out. The ACL legs are LEFT JOINs on pre-filtered derived tables
+// so every predicate is anchored on an indexed column
+// (kb_invitations.recipient_user_id, kb_access_grants.grantee_tenant_id,
+// tenant_members (user_id, tenant_id)).
+func (r *knowledgeBaseRepository) ListReadableKnowledgeBases(
+	ctx context.Context, reader types.KBReader,
 ) ([]*types.KnowledgeBase, error) {
-	var kbs []*types.KnowledgeBase
-	q := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND is_temporary = ?", tenantID, false).
-		Where("visibility IN ?", []string{
-			string(types.KBVisibilityTenant), string(types.KBVisibilityPublic)})
-	if err := q.Order("created_at DESC").Find(&kbs).Error; err != nil {
+	const (
+		tenantScope = "tenant_scope"
+	)
+	var (
+		whens []string
+		args  []any
+		joins []string
+		jargs []any
+	)
+	now := time.Now()
+	switch {
+	case reader.SuperAdmin:
+		whens = append(whens, "WHEN 1 = 1 THEN 'superadmin'")
+	case !reader.Human:
+		// Machine principals: their own tenant's KBs only (API-key
+		// allowlists are applied by the caller); never public, published
+		// or ACL rows.
+		if reader.TenantID == 0 {
+			return []*types.KnowledgeBase{}, nil
+		}
+		whens = append(whens, "WHEN kb.owner_tenant_id = ? THEN '"+tenantScope+"'")
+		args = append(args, reader.TenantID)
+	default:
+		if reader.TenantID != 0 && reader.TenantAdmin {
+			whens = append(whens, "WHEN kb.owner_tenant_id = ? THEN 'tenant_admin'")
+			args = append(args, reader.TenantID)
+		}
+		if reader.TenantID != 0 && reader.TenantMember {
+			whens = append(whens, "WHEN kb.owner_tenant_id = ? AND kb.visibility IN (?, ?) THEN '"+tenantScope+"'")
+			args = append(args, reader.TenantID,
+				string(types.KBVisibilityTenant), string(types.KBVisibilityPublished))
+		}
+		whens = append(whens,
+			"WHEN kb.owner_tenant_id = 0 AND kb.visibility = ? THEN 'public'",
+			"WHEN kb.owner_tenant_id <> 0 AND kb.visibility = ? THEN 'published'")
+		args = append(args, string(types.KBVisibilityPublic), string(types.KBVisibilityPublished))
+		aclScopes := []any{string(types.KBVisibilityRestricted), string(types.KBVisibilityTenant)}
+		if reader.UserID != "" && !types.IsSyntheticUserID(reader.UserID) {
+			// Live invite: accepted, unexpired, issued by the KB's
+			// current owner, recipient still an active member of the
+			// invite's recipient tenant.
+			joins = append(joins, `LEFT JOIN (
+				SELECT DISTINCT i.kb_id, i.owner_tenant_id
+				FROM kb_invitations i
+				JOIN tenant_members m ON m.user_id = i.recipient_user_id
+					AND m.tenant_id = i.recipient_tenant_id
+					AND m.status = ? AND m.deleted_at IS NULL
+				WHERE i.recipient_user_id = ? AND i.status = ? AND i.deleted_at IS NULL
+					AND (i.expires_at IS NULL OR i.expires_at > ?)
+			) inv ON inv.kb_id = kb.id AND inv.owner_tenant_id = kb.owner_tenant_id`)
+			jargs = append(jargs, string(types.TenantMemberStatusActive), reader.UserID,
+				string(types.KBInvitationStatusAccepted), now)
+			whens = append(whens,
+				"WHEN inv.kb_id IS NOT NULL AND kb.owner_tenant_id <> 0 AND kb.visibility IN (?, ?) THEN 'acl_user'")
+			args = append(args, aclScopes...)
+		}
+		if reader.TenantID != 0 && reader.TenantMember {
+			// Approved, unexpired tenant grant issued by the current
+			// owner to the caller's tenant (never the owner itself).
+			joins = append(joins, `LEFT JOIN (
+				SELECT DISTINCT g.kb_id, g.owner_tenant_id
+				FROM kb_access_grants g
+				WHERE g.grantee_tenant_id = ? AND g.status = ? AND g.deleted_at IS NULL
+					AND (g.expires_at IS NULL OR g.expires_at > ?)
+			) gr ON gr.kb_id = kb.id AND gr.owner_tenant_id = kb.owner_tenant_id`)
+			jargs = append(jargs, reader.TenantID, string(types.GrantStatusApproved), now)
+			whens = append(whens,
+				"WHEN gr.kb_id IS NOT NULL AND kb.owner_tenant_id NOT IN (0, ?) AND kb.visibility IN (?, ?) THEN 'acl_tenant'")
+			args = append(args, reader.TenantID)
+			args = append(args, aclScopes...)
+		}
+	}
+	inner := "SELECT kb.*, CASE " + strings.Join(whens, " ") + " ELSE '' END AS access_source " +
+		"FROM knowledge_bases kb " + strings.Join(joins, " ") +
+		" WHERE kb.deleted_at IS NULL AND kb.is_temporary = ?"
+	query := "SELECT * FROM (" + inner + ") readable WHERE access_source <> '' ORDER BY created_at DESC, id ASC"
+	all := append(append(append([]any{}, args...), jargs...), false)
+	// Placeholders appear in SELECT (CASE) before the JOINs, so the CASE
+	// args come first.
+	var rows []readableKBRow
+	if err := r.db.WithContext(ctx).Raw(query, all...).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	return kbs, nil
+	out := make([]*types.KnowledgeBase, 0, len(rows))
+	for i := range rows {
+		kb := rows[i].KnowledgeBase
+		kb.AccessSource = rows[i].RowAccessSource
+		out = append(out, &kb)
+	}
+	return out, nil
 }
 
 // ListPublicKnowledgeBasesExcept lists public KBs owned by other

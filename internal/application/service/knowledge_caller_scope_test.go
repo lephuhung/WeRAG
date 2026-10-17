@@ -32,7 +32,11 @@ func (s *callerScopeGrants) ApprovedKBPermission(
 	return types.KBPermissionViewer, kbID == "onward" && grantee == 2, nil
 }
 
-func (s *callerScopeGrants) GetKBScope(_ context.Context, _ string) (*types.KBScope, error) {
+func (s *callerScopeGrants) GetKBScope(_ context.Context, kbID string) (*types.KBScope, error) {
+	owners := map[string]uint64{"own": 1, "granted": 2, "private": 2, "onward": 3}
+	if owner, ok := owners[kbID]; ok {
+		return tenantScope(owner), nil
+	}
 	return nil, nil
 }
 

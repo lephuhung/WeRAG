@@ -1540,6 +1540,16 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		if kb.EmbeddingModelID != sourceKB.EmbeddingModelID {
 			continue
 		}
+		// A move target must be writable by the caller: the readable
+		// list also carries ACL (view-only) and published rows, which
+		// are never move destinations.
+		if kb.TenantID != sourceKB.TenantID {
+			continue
+		}
+		if _, derr := access.DecideKB(ctx, types.CallerFromContext(ctx), kb, access.ActionContribute,
+			access.KBLookups{}); derr != nil {
+			continue
+		}
 		targets = append(targets, kb)
 	}
 

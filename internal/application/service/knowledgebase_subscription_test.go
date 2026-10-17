@@ -99,6 +99,11 @@ func TestSubscribePublishedKB(t *testing.T) {
 func TestListKnowledgeBasesIncludesOnlySubscribedPublished(t *testing.T) {
 	svc, repo, _ := publishedFixture()
 	reader := memberCtx(2, "canbo-sob", types.TenantRoleMember)
+	// The readable set holds the published KB of tenant 1 (every human may
+	// view it); the subscription only decides whether it is listed.
+	published := *repo.rows["kb-tinh"]
+	published.AccessSource = "published"
+	repo.readable = []*types.KnowledgeBase{&published}
 
 	listed, err := svc.ListKnowledgeBases(reader)
 	require.NoError(t, err)
@@ -111,25 +116,12 @@ func TestListKnowledgeBasesIncludesOnlySubscribedPublished(t *testing.T) {
 	require.Equal(t, "kb-tinh", listed[0].ID)
 	require.True(t, listed[0].SubscribedByMe)
 
-	repo.rows["kb-tinh"].Visibility = types.KBVisibilityTenant
+	// Withdrawn: the KB is no longer readable, so the subscription alone
+	// never lists it.
+	repo.readable = nil
 	listed, err = svc.ListKnowledgeBases(reader)
 	require.NoError(t, err)
 	require.Empty(t, listed, "a withdrawn KB leaves the scope even with a subscription")
-}
-
-func TestListKnowledgeBasesPagesThroughPlatformPublic(t *testing.T) {
-	repo := newFakeKBRepo()
-	for i := 0; i < types.PublicCatalogMaxPageSize; i++ {
-		repo.catalogItems = append(repo.catalogItems, &types.KnowledgeBase{
-			ID: "luat-" + itoaU(uint64(i)), OwnerTenantID: 0, Visibility: types.KBVisibilityPublic,
-		})
-	}
-	repo.catalogTotal = int64(len(repo.catalogItems))
-	svc := &knowledgeBaseService{repo: repo, kgRepo: &catalogKGRepo{}}
-	listed, err := svc.ListKnowledgeBases(memberCtx(2, "canbo-sob", types.TenantRoleMember))
-	require.NoError(t, err)
-	require.Len(t, listed, types.PublicCatalogMaxPageSize, "more than the old 50-row first page")
-	require.Equal(t, types.PublicCatalogMaxPageSize, repo.catalogLimit)
 }
 
 func TestPublishTenantKBByOwnerAdmin(t *testing.T) {

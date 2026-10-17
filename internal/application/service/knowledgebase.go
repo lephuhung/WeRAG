@@ -805,14 +805,16 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 	return kbs, nil
 }
 
-// ListKnowledgeBases returns the user-facing catalog for the caller's
-// active tenant: owner-tenant KBs, a bounded first page of the platform
-// public catalog (authenticated human callers only — never API-key or
-// machine principals), accepted recipient-bound invites, and KBs other
-// tenants granted to this tenant (human callers only). Rows are
-// deduplicated by KB ID; temporary/deleted rows are excluded at the
-// repository layer. Foreign tenant-owned rows enter only through an
-// accepted invite or a live tenant grant.
+// ListKnowledgeBases returns the user-facing catalog: every KB the caller
+// may VIEW under access.DecideKB, loaded in one repository statement
+// (ListReadableKnowledgeBases) with an access_source per row. SuperAdmins
+// see every KB; owner-tenant Admins every KB of their tenant; members the
+// tenant/published KBs of their tenant plus restricted ones they hold a
+// live invite or tenant grant on; humans the platform public catalog;
+// machine principals only their own tenant's KBs. Published KBs of other
+// tenants stay out of the default list unless the caller or the caller's
+// tenant subscribed — a subscription filters the readable set, it never
+// grants. Temporary/deleted rows are excluded in SQL.
 //
 // Count/status enrichment runs under each KB's stored data-scope
 // tenant_id (never the requesting tenant), so converted and invited rows
@@ -820,107 +822,18 @@ func (s *knowledgeBaseService) GetKnowledgeBasesByIDsOnly(ctx context.Context, i
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
 	tenantID := types.MustTenantIDFromContext(ctx)
 	caller := types.CallerFromContext(ctx)
-	// Human-only public leg: the helper rejects every machine identity
-	// (any API-key scope, API principal types), so public rows stay
-	// human-only even for allowlisted platform keys.
-	human := access.IsAuthenticatedHuman(ctx, caller)
+	reader := access.KBReaderFor(ctx, caller)
 
-	// Owner-tenant rows (plus legacy pre-backfill rows in the same data
-	// scope). Data-scope/agent listings keep their own repository
-	// methods and are untouched by this composition.
-	kbs, err := s.repo.ListOwnedKnowledgeBases(ctx, tenantID)
-	if err == nil && human {
-		// Bounded public page for human discovery. A catalog failure
-		// degrades to owned+invites (warned) rather than hiding the
-		// caller's own KBs — same best-effort convention as invites
-		// and processing counts below.
-		if pub, perr := s.listAllPlatformPublic(ctx); perr == nil {
-			seen := make(map[string]struct{}, len(kbs)+len(pub))
-			for _, kb := range kbs {
-				if kb != nil {
-					seen[kb.ID] = struct{}{}
-				}
-			}
-			for _, kb := range pub {
-				if kb == nil || kb.ID == "" {
-					continue
-				}
-				if _, dup := seen[kb.ID]; dup {
-					continue
-				}
-				seen[kb.ID] = struct{}{}
-				kbs = append(kbs, kb)
-			}
-		} else {
-			logger.Warnf(ctx, "Failed to list public catalog for tenant=%d: %v", tenantID, perr)
-		}
-	}
-	if err == nil {
-		// Recipient-bound invites: KBs this user was individually
-		// invited to read (accepted, unexpired). Lookup errors fail
-		// closed (no invites); appendInvitedKBs dedupes against rows
-		// already listed.
-		if s.kbInviteService != nil {
-			if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
-				if invited, ierr := s.kbInviteService.InvitedKBIDs(ctx, userID); ierr == nil && len(invited) > 0 {
-					seen := make(map[string]struct{}, len(kbs))
-					for _, kb := range kbs {
-						if kb != nil {
-							seen[kb.ID] = struct{}{}
-						}
-					}
-					var fresh []string
-					for _, id := range invited {
-						if _, dup := seen[id]; !dup {
-							fresh = append(fresh, id)
-						}
-					}
-					if len(fresh) > 0 {
-						// InvitedKBIDs already keeps only invites issued by
-						// each KB's current owner (one joined query).
-						if invitedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, fresh); kerr == nil {
-							kbs = appendInvitedKBs(kbs, invitedKBs)
-						}
-					}
-				}
-			}
-		}
-	}
-	if err == nil && human {
-		// Published KBs of other tenants that the caller or the caller's
-		// tenant subscribed to.
-		kbs = appendInvitedKBs(kbs, s.subscribedPublishedKBs(ctx))
-	}
-	if err == nil && human && s.kbAccessGrantService != nil {
-		// Tenant-wide grants: KBs other tenants shared with this tenant.
-		// Each row is re-checked through access.HasTenantGrant so an
-		// expired grant or an ownership change never lists a KB the caller
-		// cannot open. Errors degrade to "no granted KBs".
-		if granted, gerr := s.kbAccessGrantService.GrantedKBIDs(ctx, tenantID); gerr == nil && len(granted) > 0 {
-			if grantedKBs, kerr := s.repo.GetKnowledgeBaseByIDs(ctx, granted); kerr == nil {
-				live := make([]*types.KnowledgeBase, 0, len(grantedKBs))
-				for _, kb := range grantedKBs {
-					if kb != nil && access.HasTenantGrant(ctx, caller, kb.ID, kb.OwnerTenantID, s.kbAccessGrantService) {
-						live = append(live, kb)
-					}
-				}
-				kbs = appendInvitedKBs(kbs, live)
-			}
-		} else if gerr != nil {
-			logger.Warnf(ctx, "Failed to list granted knowledge bases for tenant=%d: %v", tenantID, gerr)
-		}
-	}
+	kbs, err := s.repo.ListReadableKnowledgeBases(ctx, reader)
 	if err != nil {
-		for _, kb := range kbs {
-			kb.EnsureDefaults()
-		}
-
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
 		})
 		return nil, err
 	}
-
+	if !reader.SuperAdmin {
+		kbs = s.keepSubscribedForeignPublished(ctx, caller, kbs)
+	}
 	// Query knowledge count and chunk count for each knowledge base,
 	// always under the KB's own stored data scope — never the requesting
 	// tenant — so converted and invited rows report their own partition.
@@ -1016,32 +929,6 @@ func (s *knowledgeBaseService) ListPublicCatalog(
 	return items, total, nil
 }
 
-// maxListedPlatformPublic bounds the platform public leg of
-// ListKnowledgeBases. Every platform KB (laws, decrees…) belongs to each
-// reader's default scope, so the listing pages through the whole catalog
-// rather than stopping at the first page.
-const maxListedPlatformPublic = 2000
-
-// listAllPlatformPublic returns the platform public catalog, up to
-// maxListedPlatformPublic rows.
-func (s *knowledgeBaseService) listAllPlatformPublic(ctx context.Context) ([]*types.KnowledgeBase, error) {
-	var all []*types.KnowledgeBase
-	for offset := 0; offset < maxListedPlatformPublic; offset += types.PublicCatalogMaxPageSize {
-		page, total, err := s.repo.ListPlatformPublicCatalog(ctx, "", types.PublicCatalogMaxPageSize, offset)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, page...)
-		if len(page) < types.PublicCatalogMaxPageSize || int64(len(all)) >= total {
-			break
-		}
-	}
-	if len(all) >= maxListedPlatformPublic {
-		logger.Warnf(ctx, "Platform public catalog truncated at %d knowledge bases", maxListedPlatformPublic)
-	}
-	return all, nil
-}
-
 // saturateCatalogOffset computes (page-1)*pageSize without wrapping: on
 // extreme pages the offset saturates at maxInt (a valid empty page) instead
 // of overflowing into a negative offset that the repository would clamp
@@ -1055,29 +942,30 @@ func saturateCatalogOffset(page, pageSize int) int {
 	return (page - 1) * pageSize
 }
 
-// appendInvitedKBs merges recipient-invited KB rows into a listing,
-// skipping nil rows and IDs already present so an invite overlapping
-// own-tenant access never duplicates a row. Temporary KBs are skipped:
-// the owned and public legs exclude them at SQL, and an accepted invite
-// to an ephemeral row must not resurface it in the catalog.
-func appendInvitedKBs(existing, invited []*types.KnowledgeBase) []*types.KnowledgeBase {
-	seen := make(map[string]struct{}, len(existing))
-	for _, kb := range existing {
-		if kb != nil {
-			seen[kb.ID] = struct{}{}
-		}
-	}
-	for _, kb := range invited {
-		if kb == nil || kb.ID == "" || kb.IsTemporary {
+// keepSubscribedForeignPublished drops published KBs of other tenants that
+// neither the caller nor the caller's tenant subscribed to, and stamps the
+// subscription flags on the ones kept. Every other row passes unchanged.
+func (s *knowledgeBaseService) keepSubscribedForeignPublished(
+	ctx context.Context, caller types.Caller, kbs []*types.KnowledgeBase,
+) []*types.KnowledgeBase {
+	var mine, tenant map[string]bool
+	out := kbs[:0]
+	for _, kb := range kbs {
+		if kb == nil {
 			continue
 		}
-		if _, dup := seen[kb.ID]; dup {
-			continue
+		if kb.AccessSource == string(access.SourcePublished) {
+			if mine == nil {
+				mine, tenant = s.readerSubscriptions(ctx)
+			}
+			if !mine[kb.ID] && !tenant[kb.ID] {
+				continue
+			}
+			kb.SubscribedByMe, kb.SubscribedByTenant = mine[kb.ID], tenant[kb.ID]
 		}
-		seen[kb.ID] = struct{}{}
-		existing = append(existing, kb)
+		out = append(out, kb)
 	}
-	return existing
+	return out
 }
 
 // ListKnowledgeBasesByTenantID returns all knowledge bases for the given tenant (e.g. for shared agent context).
