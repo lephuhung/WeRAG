@@ -13,6 +13,8 @@ func TestIsValidFileTypeHTML(t *testing.T) {
 		{name: "htm", filename: "legacy.htm", want: true},
 		{name: "xmind dropped", filename: "architecture.xmind", want: false},
 		{name: "epub dropped", filename: "book.epub", want: false},
+		{name: "image not accepted", filename: "scan.png", want: false},
+		{name: "jpeg not accepted", filename: "photo.JPG", want: false},
 		{name: "unsupported", filename: "payload.exe", want: false},
 	}
 

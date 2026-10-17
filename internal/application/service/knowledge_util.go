@@ -27,10 +27,11 @@ const unknownFileType = "unknown"
 // accepted by every knowledge import path: direct upload, file-URL download,
 // and the worker's post-download re-check. Keeping one set avoids the drift
 // that let direct upload accept xlsx while URL import rejected it (#2447).
+// Knowledge bases take documents only: images are not accepted (chat
+// attachments still are; they have their own list).
 var supportedImportFileExtensions = map[string]struct{}{
 	"pdf": {}, "txt": {}, "docx": {}, "doc": {},
 	"html": {}, "htm": {}, "mhtml": {}, "md": {}, "markdown": {},
-	"png": {}, "jpg": {}, "jpeg": {}, "gif": {},
 	"csv": {}, "xlsx": {}, "xls": {}, "pptx": {}, "ppt": {}, "json": {},
 	"mp3": {}, "wav": {}, "m4a": {}, "flac": {}, "ogg": {},
 }

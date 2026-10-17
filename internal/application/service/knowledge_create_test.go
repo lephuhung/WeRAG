@@ -219,7 +219,7 @@ func TestCreateKnowledgeFromImageFallsBackWhenLegacyStorageConfigIsIncomplete(t 
 	knowledge, err := svc.CreateKnowledgeFromFile(
 		ctx,
 		"kb-1",
-		newMultipartFileHeader(t, "image.png", "image bytes"),
+		newMultipartFileHeader(t, "report.pdf", "%PDF-1.4"),
 		nil,
 		nil,
 		"",

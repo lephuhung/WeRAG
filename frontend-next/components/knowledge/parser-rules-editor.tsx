@@ -31,7 +31,6 @@ const GROUP_DEFS: {
   { key: "csv", labelKey: "ps.fileTypeCsv", exts: ["csv"], category: "data" },
   { key: "json", labelKey: "ps.fileTypeJson", exts: ["json"], category: "data" },
   { key: "webarchive", labelKey: "ps.fileTypeWebArchive", exts: ["mhtml"], category: "data" },
-  { key: "image", labelKey: "ps.fileTypeImage", exts: ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"], category: "media" },
   { key: "audiovisual", labelKey: "ps.fileTypeAudiovisual", exts: ["mp3", "wav", "m4a", "flac", "ogg"], category: "media" },
 ];
 
@@ -55,7 +54,6 @@ const GROUP_GLYPH: Record<string, { glyph: string; cls: string }> = {
   csv: { glyph: "CSV", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
   json: { glyph: "JSON", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
   webarchive: { glyph: "MHT", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  image: { glyph: "IMG", cls: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
   audiovisual: { glyph: "AUD", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
 };
 

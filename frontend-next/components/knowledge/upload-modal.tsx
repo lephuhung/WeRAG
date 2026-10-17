@@ -5,6 +5,20 @@ import { Modal } from "@/components/modal";
 import { IconPlus, IconDoc } from "@/components/icons";
 import { useUploadTasks } from "@/lib/upload-tasks";
 import { buildUploadFileName } from "@/lib/upload-queue";
+import { useT } from "@/lib/i18n";
+
+/* Extensions a knowledge base accepts — documents only, mirroring the
+ * backend's supportedImportFileExtensions (images are refused). */
+const KB_UPLOAD_EXTS = [
+  "pdf", "doc", "docx", "txt", "md", "markdown", "html", "htm", "mhtml",
+  "csv", "xlsx", "xls", "pptx", "ppt", "json", "mp3", "wav", "m4a", "flac", "ogg",
+];
+const KB_UPLOAD_ACCEPT = KB_UPLOAD_EXTS.map((e) => `.${e}`).join(",");
+
+function isKBUploadable(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return name.includes(".") && KB_UPLOAD_EXTS.includes(ext);
+}
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -42,7 +56,9 @@ export function UploadModal({
    * matching the Vue confirm-dialog flow. */
   onProceed?: (files: File[]) => void;
 }) {
+  const { t } = useT();
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [rejected, setRejected] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { enqueue } = useUploadTasks();
@@ -55,10 +71,15 @@ export function UploadModal({
   /* Closed programmatically (e.g. handing off to the parse-settings dialog)
    * still resets the picker; reopening re-seeds via initialFiles. */
   useEffect(() => {
-    if (!open) setFiles([]);
+    if (!open) {
+      setFiles([]);
+      setRejected([]);
+    }
   }, [open]);
 
-  const addFiles = (selected: File[]) => {
+  const addFiles = (picked: File[]) => {
+    const selected = picked.filter((f) => isKBUploadable(f.name));
+    setRejected(picked.filter((f) => !isKBUploadable(f.name)).map((f) => f.name));
     const newItems: FileItem[] = selected.map((f) => ({
       id: `${f.name}-${Date.now()}-${Math.random()}`,
       file: f,
@@ -123,6 +144,7 @@ export function UploadModal({
             ref={inputRef}
             type="file"
             multiple
+            accept={KB_UPLOAD_ACCEPT}
             className="hidden"
             onChange={(e) => {
               if (e.target.files) addFiles(Array.from(e.target.files));
@@ -137,6 +159,11 @@ export function UploadModal({
             Supports PDF, DOCX, TXT, MD, XLSX, CSV, PPTX and more
           </p>
         </div>
+        {rejected.length > 0 && (
+          <p className="rounded-lg bg-error/10 px-3 py-2 text-[12px] text-error">
+            {t("kbUpload.documentsOnly", { files: rejected.join(", ") })}
+          </p>
+        )}
 
         {/* Selected files list */}
         {files.length > 0 && (
