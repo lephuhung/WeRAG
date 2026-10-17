@@ -39,7 +39,6 @@ func TestRetrieveEngineRegistryWiring(t *testing.T) {
 	}
 	provide(func() *gorm.DB { return db })
 	provide(func() *config.Config { return &config.Config{} })
-	provide(func() interfaces.AuditLogService { return &fakeAuditSvc{} })
 	provide(repository.NewVectorStoreRepository)
 	provide(NewEngineFactory)
 	provide(initRetrieveEngineRegistry)

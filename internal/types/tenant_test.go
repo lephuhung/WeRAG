@@ -6,15 +6,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRetrieverEngineMappingIncludesTencentVectorDBHybridCapabilities(t *testing.T) {
+func TestRetrieverEngineMappingOnlyPostgresAndSQLite(t *testing.T) {
 	mapping := GetRetrieverEngineMapping()
 
-	assert.Contains(t, mapping["tencent_vectordb"], RetrieverEngineParams{
-		RetrieverType:       KeywordsRetrieverType,
-		RetrieverEngineType: TencentVectorDBRetrieverEngineType,
-	})
-	assert.Contains(t, mapping["tencent_vectordb"], RetrieverEngineParams{
-		RetrieverType:       VectorRetrieverType,
-		RetrieverEngineType: TencentVectorDBRetrieverEngineType,
-	})
+	assert.Len(t, mapping, 2)
+	for driver, engine := range map[string]RetrieverEngineType{
+		"postgres": PostgresRetrieverEngineType,
+		"sqlite":   SQLiteRetrieverEngineType,
+	} {
+		assert.ElementsMatch(t, []RetrieverEngineParams{
+			{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: engine},
+			{RetrieverType: VectorRetrieverType, RetrieverEngineType: engine},
+		}, mapping[driver], "driver %s", driver)
+	}
+	assert.NotContains(t, mapping, "tencent_vectordb")
+	assert.NotContains(t, mapping, "elasticsearch_v8")
 }

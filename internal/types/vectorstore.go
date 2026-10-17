@@ -4,9 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,11 +16,6 @@ import (
 
 // EnvStoreIDPrefix is the prefix for virtual env store IDs.
 const EnvStoreIDPrefix = "__env_"
-
-const (
-	envTencentVectorDBReplicaNumber     = "TENCENT_VECTORDB_REPLICA_NUMBER"
-	defaultTencentVectorDBReplicaNumber = 1
-)
 
 // IsEnvStoreID checks if the given ID is an env store virtual ID.
 func IsEnvStoreID(id string) bool {
@@ -70,29 +63,14 @@ func (v *VectorStore) BeforeCreate(tx *gorm.DB) error {
 }
 
 // validEngineTypes defines the engine types that can be registered as a
-// DB-managed VectorStore (i.e., persisted to the vector_stores table and
-// listed in GetVectorStoreTypes for the UI dropdown).
-//
-// Excluded engines:
-//   - Infinity / ElasticFaiss — legacy/experimental, no standalone deployable instance.
-//   - Postgres / SQLite — only meaningful when bound to the app's default DB
-//     connection (UseDefaultConnection=true). The Postgres retriever's
-//     embeddings table is a single hard-coded name with no per-store
-//     partitioning, so registering a second Postgres store on the same
-//     instance has no separation effect — every KB sharing this engine
-//     ends up in the same physical table. These engines are still
-//     reachable via env stores (RETRIEVE_DRIVER=postgres/sqlite), which
-//     route through a separate code path (BuildEnvVectorStores) and do
-//     not pass through this validation.
-var validEngineTypes = map[RetrieverEngineType]bool{
-	ElasticsearchRetrieverEngineType:   true,
-	QdrantRetrieverEngineType:          true,
-	MilvusRetrieverEngineType:          true,
-	WeaviateRetrieverEngineType:        true,
-	DorisRetrieverEngineType:           true,
-	TencentVectorDBRetrieverEngineType: true,
-	OpenSearchRetrieverEngineType:      true,
-}
+// DB-managed VectorStore (persisted to the vector_stores table and listed in
+// GetVectorStoreTypes for the UI). It is empty: Postgres and SQLite are only
+// meaningful on the app's default DB connection (the Postgres retriever's
+// embeddings table has no per-store partitioning, so a second Postgres store
+// would share the same table). They are reachable as env stores
+// (RETRIEVE_DRIVER=postgres/sqlite) through BuildEnvVectorStores, which does
+// not pass through this validation.
+var validEngineTypes = map[RetrieverEngineType]bool{}
 
 // IsValidEngineType checks whether the given engine type is valid for VectorStore.
 func IsValidEngineType(t RetrieverEngineType) bool {
@@ -286,173 +264,8 @@ func (c *IndexConfig) Scan(value interface{}) error {
 
 // GetIndexNameOrDefault returns the effective index/collection name,
 // falling back to engine-specific defaults when the user has not specified one.
-func (c IndexConfig) GetIndexNameOrDefault(engineType RetrieverEngineType) string {
-	switch engineType {
-	case ElasticsearchRetrieverEngineType:
-		if c.IndexName != "" {
-			return c.IndexName
-		}
-		return "xwrag_default"
-	case QdrantRetrieverEngineType:
-		if c.CollectionPrefix != "" {
-			return c.CollectionPrefix
-		}
-		return "weknora_embeddings"
-	case MilvusRetrieverEngineType:
-		if c.CollectionName != "" {
-			return c.CollectionName
-		}
-		return "weknora_embeddings"
-	case TencentVectorDBRetrieverEngineType:
-		if c.CollectionName != "" {
-			return c.CollectionName
-		}
-		return "weknora_embeddings"
-	case WeaviateRetrieverEngineType:
-		if c.CollectionPrefix != "" {
-			return c.CollectionPrefix
-		}
-		return "Weknora_embeddings"
-	case DorisRetrieverEngineType:
-		// Doris uses the prefix as the table base name; per-dimension tables are
-		// suffixed with _<dim> at runtime by the repository layer.
-		if c.CollectionPrefix != "" {
-			return c.CollectionPrefix
-		}
-		if c.CollectionName != "" {
-			return c.CollectionName
-		}
-		return "weknora_embeddings"
-	default:
-		return c.IndexName
-	}
-}
-
-// ---------------------------------------------------------------------------
-// IndexConfig — getter helpers (pointer receiver for nil safety)
-// ---------------------------------------------------------------------------
-
-// GetNumberOfShards returns the configured number_of_shards, or def if unset/zero.
-func (c *IndexConfig) GetNumberOfShards(def int) int {
-	if c != nil && c.NumberOfShards > 0 {
-		return c.NumberOfShards
-	}
-	return def
-}
-
-// GetNumberOfReplicas returns the configured number_of_replicas, or def if unset/zero.
-// Note: 0 replicas cannot be distinguished from "not set" because the int field with
-// json:"omitempty" omits zero values. If zero-replica support is needed in the future,
-// change the field type to *int. Currently 0 is treated as "use server default".
-func (c *IndexConfig) GetNumberOfReplicas(def int) int {
-	if c != nil && c.NumberOfReplicas > 0 {
-		return c.NumberOfReplicas
-	}
-	return def
-}
-
-// GetShardNumber returns the configured shard_number (Qdrant), or def if unset/zero.
-func (c *IndexConfig) GetShardNumber(def int) int {
-	if c != nil && c.ShardNumber > 0 {
-		return c.ShardNumber
-	}
-	return def
-}
-
-// GetReplicationFactor returns the configured replication_factor (Qdrant, Weaviate), or def if unset/zero.
-func (c *IndexConfig) GetReplicationFactor(def int) int {
-	if c != nil && c.ReplicationFactor > 0 {
-		return c.ReplicationFactor
-	}
-	return def
-}
-
-// GetShardsNum returns the configured shards_num (Milvus), or def if unset/zero.
-func (c *IndexConfig) GetShardsNum(def int) int {
-	if c != nil && c.ShardsNum > 0 {
-		return c.ShardsNum
-	}
-	return def
-}
-
-// GetReplicaNumber returns the configured replica_number, or def if unset/zero.
-// Milvus applies it at LoadCollection time; Tencent VectorDB applies it at
-// CreateCollection time. It controls read HA/throughput replicas.
-func (c *IndexConfig) GetReplicaNumber(def int) int {
-	if c != nil && c.ReplicaNumber > 0 {
-		return c.ReplicaNumber
-	}
-	return def
-}
-
-// GetDesiredShardCount returns the configured desired_shard_count (Weaviate), or def if unset/zero.
-func (c *IndexConfig) GetDesiredShardCount(def int) int {
-	if c != nil && c.DesiredShardCount > 0 {
-		return c.DesiredShardCount
-	}
-	return def
-}
-
-// GetBucketsNum returns the configured buckets_num (Doris), or def if unset/zero.
-func (c *IndexConfig) GetBucketsNum(def int) int {
-	if c != nil && c.BucketsNum > 0 {
-		return c.BucketsNum
-	}
-	return def
-}
-
-// GetReplicationNum returns the configured replication_num (Doris), or def if unset/zero.
-func (c *IndexConfig) GetReplicationNum(def int) int {
-	if c != nil && c.ReplicationNum > 0 {
-		return c.ReplicationNum
-	}
-	return def
-}
-
-// ---------------------------------------------------------------------------
-// IndexConfig — resolve helpers (for Repository layer, with env var fallback)
-// ---------------------------------------------------------------------------
-
-// ResolveIndexName returns the index name from IndexConfig, falling back to env var and then default.
-// Used by Repository constructors. For service-layer duplicate checking, use GetIndexNameOrDefault instead.
-func ResolveIndexName(ic *IndexConfig, envKey, defaultVal string) string {
-	if ic != nil && ic.IndexName != "" {
-		return ic.IndexName
-	}
-	if v := os.Getenv(envKey); v != "" {
-		return v
-	}
-	return defaultVal
-}
-
-// ResolveCollectionName returns the collection name from IndexConfig, falling back to env var and then default.
-// Priority: CollectionPrefix > CollectionName > env var > defaultVal.
-// CollectionPrefix is checked first because Qdrant/Weaviate use it as the base name.
-// CollectionName (Milvus) is checked second. If both are set, CollectionPrefix wins —
-// this is safe because each VectorStore has a single engine type, so only one field is relevant.
-func ResolveCollectionName(ic *IndexConfig, envKey, defaultVal string) string {
-	if ic != nil {
-		if ic.CollectionPrefix != "" {
-			return ic.CollectionPrefix
-		}
-		if ic.CollectionName != "" {
-			return ic.CollectionName
-		}
-	}
-	if v := os.Getenv(envKey); v != "" {
-		return v
-	}
-	return defaultVal
-}
-
-// OptionalUint32 converts int to *uint32 for Qdrant SDK.
-// Returns nil for values <= 0, which tells Qdrant to use its server default.
-func OptionalUint32(v int) *uint32 {
-	if v <= 0 {
-		return nil
-	}
-	u := uint32(v)
-	return &u
+func (c IndexConfig) GetIndexNameOrDefault(_ RetrieverEngineType) string {
+	return c.IndexName
 }
 
 // ---------------------------------------------------------------------------
@@ -615,21 +428,6 @@ type VectorStoreTypeInfo struct {
 	IndexFields      []VectorStoreFieldInfo `json:"index_fields,omitempty"`
 }
 
-func resolveTencentVectorDBReplicaNumber(lookup EnvLookupFunc) int {
-	if lookup == nil {
-		lookup = os.Getenv
-	}
-	raw := strings.TrimSpace(lookup(envTencentVectorDBReplicaNumber))
-	if raw == "" {
-		return defaultTencentVectorDBReplicaNumber
-	}
-	replicas, err := strconv.Atoi(raw)
-	if err != nil || replicas < 0 {
-		return defaultTencentVectorDBReplicaNumber
-	}
-	return replicas
-}
-
 // VectorStoreFieldInfo describes a single configuration field exposed
 // by /api/v1/vector-stores/types for the registration UI. The optional
 // validation hints (`Immutable`, `Min`, `Max`, `Enum`) are used by both
@@ -662,129 +460,12 @@ type VectorStoreFieldInfo struct {
 	Enum []string `json:"enum,omitempty"`
 }
 
-// GetVectorStoreTypes returns metadata for all supported engine types.
+// GetVectorStoreTypes returns metadata for the engine types that can be added
+// as DB stores. There are none: Postgres and SQLite only use the app's default
+// DB connection and appear as env stores (RETRIEVE_DRIVER).
 func GetVectorStoreTypes() []VectorStoreTypeInfo {
-	tencentVectorDBReplicaNumber := resolveTencentVectorDBReplicaNumber(os.Getenv)
-
-	return []VectorStoreTypeInfo{
-		{
-			Type:        "elasticsearch",
-			DisplayName: "Elasticsearch",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "addr", Type: "string", Required: true, Description: "URL", Default: "http://localhost:9200"},
-				{Name: "username", Type: "string", Required: false, Description: "Username", Default: "elastic"},
-				{Name: "password", Type: "string", Required: false, Sensitive: true, Description: "Password"},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "index_name", Type: "string", Required: false, Description: "Index Name", Default: "weknora"},
-				{Name: "number_of_shards", Type: "number", Required: false, Description: "Shards", Default: 4},
-				{Name: "number_of_replicas", Type: "number", Required: false, Description: "Replicas", Default: 1},
-			},
-		},
-		// PostgreSQL and SQLite are excluded from the type list because they only support
-		// the app's default DB connection (UseDefaultConnection=true). They appear as
-		// env stores when configured via RETRIEVE_DRIVER but cannot be added as DB stores.
-		{
-			Type:        "qdrant",
-			DisplayName: "Qdrant",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "host", Type: "string", Required: true, Description: "Host", Default: "localhost"},
-				{Name: "port", Type: "number", Required: false, Description: "Port", Default: 6334},
-				{Name: "api_key", Type: "string", Required: false, Sensitive: true, Description: "API Key"},
-				{Name: "use_tls", Type: "boolean", Required: false, Description: "Use TLS", Default: false},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "collection_prefix", Type: "string", Required: false, Description: "Collection Prefix", Default: "weknora_embeddings"},
-				{Name: "shard_number", Type: "number", Required: false, Description: "Shard Number", Default: 1},
-				{Name: "replication_factor", Type: "number", Required: false, Description: "Replication Factor", Default: 1},
-			},
-		},
-		{
-			Type:        "milvus",
-			DisplayName: "Milvus",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "addr", Type: "string", Required: true, Description: "Address", Default: "localhost:19530"},
-				{Name: "database", Type: "string", Required: false, Description: "Database Name"},
-				{Name: "username", Type: "string", Required: false, Description: "Username", Default: "root"},
-				{Name: "password", Type: "string", Required: false, Sensitive: true, Description: "Password"},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "collection_name", Type: "string", Required: false, Description: "Collection Name", Default: "weknora_embeddings"},
-				{Name: "shards_num", Type: "number", Required: false, Description: "Shards (write parallelism)", Default: 1},
-				{Name: "replica_number", Type: "number", Required: false, Description: "In-memory Replicas (read HA)", Default: 1},
-			},
-		},
-		{
-			Type:        "tencent_vectordb",
-			DisplayName: "Tencent VectorDB",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "addr", Type: "string", Required: true, Description: "Address", Default: "http://localhost:8080"},
-				{Name: "username", Type: "string", Required: true, Description: "Username"},
-				{Name: "api_key", Type: "string", Required: true, Sensitive: true, Description: "API Key"},
-				{Name: "database", Type: "string", Required: false, Description: "Database", Default: "weknora"},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "collection_name", Type: "string", Required: false, Description: "Collection Name", Default: "weknora_embeddings"},
-				{Name: "shards_num", Type: "number", Required: false, Description: "Shards", Default: 1},
-				{Name: "replica_number", Type: "number", Required: false, Description: "Replicas", Default: tencentVectorDBReplicaNumber},
-			},
-		},
-		{
-			Type:        "weaviate",
-			DisplayName: "Weaviate",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "host", Type: "string", Required: true, Description: "Host", Default: "weaviate:8080"},
-				{Name: "grpc_address", Type: "string", Required: false, Description: "gRPC Address", Default: "weaviate:50051"},
-				{Name: "scheme", Type: "string", Required: false, Description: "Scheme", Default: "http"},
-				{Name: "api_key", Type: "string", Required: false, Sensitive: true, Description: "API Key"},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "collection_prefix", Type: "string", Required: false, Description: "Collection Prefix", Default: "Weknora_embeddings"},
-				{Name: "desired_shard_count", Type: "number", Required: false, Description: "Shard Count", Default: 1},
-				{Name: "replication_factor", Type: "number", Required: false, Description: "Replication Factor", Default: 1},
-			},
-		},
-		{
-			Type:        "doris",
-			DisplayName: "Apache Doris",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "addr", Type: "string", Required: true, Description: "FE MySQL Address (host:port)", Default: "doris-fe:9030"},
-				{Name: "http_port", Type: "number", Required: false, Description: "FE HTTP Port (Stream Load)", Default: 8030},
-				{Name: "database", Type: "string", Required: true, Description: "Database", Default: "weknora"},
-				{Name: "username", Type: "string", Required: false, Description: "Username", Default: "root"},
-				{Name: "password", Type: "string", Required: false, Sensitive: true, Description: "Password"},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "collection_prefix", Type: "string", Required: false, Description: "Table Prefix", Default: "weknora_embeddings"},
-				{Name: "buckets_num", Type: "number", Required: false, Description: "Buckets per table", Default: 10},
-				{Name: "replication_num", Type: "number", Required: false, Description: "Replication Num", Default: 1},
-			},
-		},
-		{
-			Type:        "opensearch",
-			DisplayName: "OpenSearch",
-			ConnectionFields: []VectorStoreFieldInfo{
-				{Name: "addr", Type: "string", Required: true, Description: "URL", Default: "https://localhost:9200"},
-				{Name: "username", Type: "string", Required: false, Description: "Username", Default: "admin"},
-				{Name: "password", Type: "string", Required: false, Sensitive: true, Description: "Password"},
-				{Name: "insecure_skip_verify", Type: "boolean", Required: false, Default: false,
-					Description: "Skip TLS certificate verification. For self-signed dev clusters only — never enable in production."},
-			},
-			IndexFields: []VectorStoreFieldInfo{
-				{Name: "index_name", Type: "string", Required: false, Description: "Index Name", Default: "weknora"},
-				{Name: "number_of_shards", Type: "number", Required: false, Description: "Shards", Default: 4, Min: floatPtr(1), Max: floatPtr(64)},
-				{Name: "number_of_replicas", Type: "number", Required: false, Description: "Replicas", Default: 1, Min: floatPtr(0), Max: floatPtr(10)},
-				{Name: "hnsw_m", Type: "number", Required: false, Description: "HNSW graph degree (M). Immutable after index creation.", Default: 16, Min: floatPtr(2), Max: floatPtr(100), Immutable: true},
-				{Name: "hnsw_ef_construction", Type: "number", Required: false, Description: "HNSW build candidate list. Higher (e.g. 200-512) improves recall at the cost of build time. Immutable after creation.", Default: 100, Min: floatPtr(2), Max: floatPtr(4096), Immutable: true},
-				{Name: "hnsw_ef_search", Type: "number", Required: false, Description: "HNSW search candidate list. Effective on the faiss engine; the lucene engine reads it at query time. Immutable (no settings-update path).", Default: 100, Min: floatPtr(1), Max: floatPtr(10000), Immutable: true},
-				{Name: "knn_engine", Type: "string", Required: false, Description: "k-NN backend.", Default: "lucene", Enum: []string{"lucene", "faiss"}, Immutable: true},
-			},
-		},
-	}
+	return []VectorStoreTypeInfo{}
 }
-
-// floatPtr returns a pointer to v, for setting VectorStoreFieldInfo Min/Max.
-func floatPtr(v float64) *float64 { return &v }
 
 // ---------------------------------------------------------------------------
 // BuildEnvVectorStores — virtual stores from RETRIEVE_DRIVER env var
@@ -848,119 +529,6 @@ func buildEnvStoreForDriver(driver string, envLookup EnvLookupFunc) *VectorStore
 			ID:         "__env_sqlite__",
 			Name:       "SQLite",
 			EngineType: SQLiteRetrieverEngineType,
-		}
-	case "elasticsearch_v8":
-		return &VectorStore{
-			ID:         "__env_elasticsearch_v8__",
-			Name:       "Elasticsearch v8",
-			EngineType: ElasticsearchRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:     envLookup("ELASTICSEARCH_ADDR"),
-				Username: envLookup("ELASTICSEARCH_USERNAME"),
-				Password: envLookup("ELASTICSEARCH_PASSWORD"),
-			},
-			IndexConfig: IndexConfig{
-				IndexName: envLookup("ELASTICSEARCH_INDEX"),
-			},
-		}
-	case "elasticsearch_v7":
-		return &VectorStore{
-			ID:         "__env_elasticsearch_v7__",
-			Name:       "Elasticsearch v7",
-			EngineType: ElasticsearchRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:     envLookup("ELASTICSEARCH_ADDR"),
-				Username: envLookup("ELASTICSEARCH_USERNAME"),
-				Password: envLookup("ELASTICSEARCH_PASSWORD"),
-			},
-			IndexConfig: IndexConfig{
-				IndexName: envLookup("ELASTICSEARCH_INDEX"),
-			},
-		}
-	case "opensearch":
-		return &VectorStore{
-			ID:         "__env_opensearch__",
-			Name:       "OpenSearch",
-			EngineType: OpenSearchRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:               envLookup("OPENSEARCH_ADDR"),
-				Username:           envLookup("OPENSEARCH_USERNAME"),
-				Password:           envLookup("OPENSEARCH_PASSWORD"),
-				InsecureSkipVerify: strings.EqualFold(envLookup("OPENSEARCH_INSECURE_SKIP_VERIFY"), "true"),
-			},
-			IndexConfig: IndexConfig{
-				IndexName: envLookup("OPENSEARCH_INDEX"),
-			},
-		}
-	case "qdrant":
-		return &VectorStore{
-			ID:         "__env_qdrant__",
-			Name:       "Qdrant",
-			EngineType: QdrantRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Host:   envLookup("QDRANT_HOST"),
-				APIKey: envLookup("QDRANT_API_KEY"),
-			},
-		}
-	case "milvus":
-		return &VectorStore{
-			ID:         "__env_milvus__",
-			Name:       "Milvus",
-			EngineType: MilvusRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:     envLookup("MILVUS_ADDRESS"),
-				Username: envLookup("MILVUS_USERNAME"),
-				Password: envLookup("MILVUS_PASSWORD"),
-			},
-		}
-	case "tencent_vectordb":
-		return &VectorStore{
-			ID:         "__env_tencent_vectordb__",
-			Name:       "Tencent VectorDB",
-			EngineType: TencentVectorDBRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:     envLookup("TENCENT_VECTORDB_ADDR"),
-				Username: envLookup("TENCENT_VECTORDB_USERNAME"),
-				APIKey:   envLookup("TENCENT_VECTORDB_API_KEY"),
-				Database: envLookup("TENCENT_VECTORDB_DATABASE"),
-			},
-			IndexConfig: IndexConfig{
-				CollectionName: envLookup("TENCENT_VECTORDB_COLLECTION"),
-			},
-		}
-	case "weaviate":
-		return &VectorStore{
-			ID:         "__env_weaviate__",
-			Name:       "Weaviate",
-			EngineType: WeaviateRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Host:        envLookup("WEAVIATE_HOST"),
-				GrpcAddress: envLookup("WEAVIATE_GRPC_ADDRESS"),
-				Scheme:      envLookup("WEAVIATE_SCHEME"),
-				APIKey:      envLookup("WEAVIATE_API_KEY"),
-			},
-		}
-	case "doris":
-		httpPort := 0
-		if v := envLookup("DORIS_HTTP_PORT"); v != "" {
-			if p, err := strconv.Atoi(v); err == nil {
-				httpPort = p
-			}
-		}
-		return &VectorStore{
-			ID:         "__env_doris__",
-			Name:       "Apache Doris",
-			EngineType: DorisRetrieverEngineType,
-			ConnectionConfig: ConnectionConfig{
-				Addr:     envLookup("DORIS_ADDR"),
-				HTTPPort: httpPort,
-				Database: envLookup("DORIS_DATABASE"),
-				Username: envLookup("DORIS_USERNAME"),
-				Password: envLookup("DORIS_PASSWORD"),
-			},
-			IndexConfig: IndexConfig{
-				CollectionPrefix: envLookup("DORIS_TABLE_PREFIX"),
-			},
 		}
 	default:
 		return nil

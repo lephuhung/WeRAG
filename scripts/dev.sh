@@ -66,7 +66,6 @@ show_help() {
     echo ""
     echo "可选 Profile（用于 start 命令）:"
     echo "  --minio       启动 MinIO 对象存储"
-    echo "  --qdrant      启动 Qdrant 向量数据库"
     echo "  --dex         启动 Dex（OIDC 身份认证）"
     echo "  --langfuse    启动 Langfuse（默认已开启）"
     echo "  --no-langfuse 不启动 Langfuse"
@@ -75,7 +74,6 @@ show_help() {
     echo ""
     echo "示例："
     echo "  $0 start                    # 启动基础服务"
-    echo "  $0 start --qdrant           # 启动基础服务 + Qdrant"
     echo "  $0 start --dex             # 启动基础服务 + Dex"
     echo "  $0 start --odl-hybrid       # 启动基础服务 + OpenDataLoader hybrid"
     echo "  $0 start --full             # 启动所有服务"
@@ -208,7 +206,7 @@ start_services() {
     # 解析 profile Parameters 
     shift  # 移除 "start" 命令本身
     # 默认启动基础设施（postgres / redis / docreader / neo4j）+ langfuse，
-    # 其余可选服务通过 --minio / --qdrant / --dex / --full 按需开启。
+    # 其余可选服务通过 --minio / --dex / --full 按需开启。
     PROFILES="--profile langfuse"
     ENABLED_SERVICES="langfuse"
     while [ $# -gt 0 ]; do
@@ -216,10 +214,6 @@ start_services() {
             --minio)
                 PROFILES="$PROFILES --profile minio"
                 ENABLED_SERVICES="$ENABLED_SERVICES minio"
-                ;;
-            --qdrant)
-                PROFILES="$PROFILES --profile qdrant"
-                ENABLED_SERVICES="$ENABLED_SERVICES qdrant"
                 ;;
             --dex)
                 PROFILES="$PROFILES --profile dex"
@@ -240,7 +234,7 @@ start_services() {
                 ;;
             --full)
                 PROFILES="--profile full"
-                ENABLED_SERVICES="minio qdrant dex"
+                ENABLED_SERVICES="minio dex"
                 break
                 ;;
             *)
@@ -276,9 +270,6 @@ start_services() {
         # 根据启用的 profile 显示额外服务
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then
             echo "  - MinIO:         localhost:9000 (Console: localhost:9001)"
-        fi
-        if [[ "$ENABLED_SERVICES" == *"qdrant"* ]]; then
-            echo "  - Qdrant:        localhost:6333 (gRPC: localhost:6334)"
         fi
         if [[ "$ENABLED_SERVICES" == *"dex"* ]]; then
             echo "  - Dex:           localhost:5556"
@@ -425,9 +416,7 @@ start_app() {
         export REDIS_ADDR="${REDIS_ADDR:-$DEV_REMOTE_HOST:6379}"
         export DOCREADER_ADDR="${DOCREADER_ADDR:-$DEV_REMOTE_HOST:50051}"
         export MINIO_ENDPOINT="${MINIO_ENDPOINT:-$DEV_REMOTE_HOST:9000}"
-        export MILVUS_ADDRESS="${MILVUS_ADDRESS:-$DEV_REMOTE_HOST:19530}"
         export NEO4J_URI="${NEO4J_URI:-bolt://$DEV_REMOTE_HOST:7687}"
-        export QDRANT_HOST="${QDRANT_HOST:-$DEV_REMOTE_HOST}"
         if [ -z "${LANGFUSE_HOST:-}" ] || [ "$LANGFUSE_HOST" = "http://langfuse-web:3000" ]; then
             export LANGFUSE_HOST="http://${DEV_REMOTE_HOST}:3000"
         fi
@@ -436,9 +425,7 @@ start_app() {
         export DOCREADER_ADDR=127.0.0.1:50051
         export MINIO_ENDPOINT=127.0.0.1:9000
         export REDIS_ADDR=127.0.0.1:6379
-        export MILVUS_ADDRESS=127.0.0.1:19530
         export NEO4J_URI=bolt://127.0.0.1:7687
-        export QDRANT_HOST=127.0.0.1
     fi
     export DOCREADER_TRANSPORT="${DOCREADER_TRANSPORT:-grpc}"
 

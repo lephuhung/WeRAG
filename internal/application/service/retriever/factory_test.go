@@ -185,12 +185,12 @@ func TestCreateRetrieveEngineForKB_UnboundMissingTenant(t *testing.T) {
 }
 
 func TestCreateRetrieveEngineForKB_StoreBound(t *testing.T) {
-	esEngine := &fakeEngine{
-		engineType: types.ElasticsearchRetrieverEngineType,
+	sqliteEngine := &fakeEngine{
+		engineType: types.SQLiteRetrieverEngineType,
 		support:    []types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
-		map[string]*fakeEngine{"store-A": esEngine},
+		map[string]*fakeEngine{"store-A": sqliteEngine},
 		nil,
 	)
 	ownership := &fakeOwnership{owned: map[string]uint64{"store-A": 1}}
@@ -201,7 +201,7 @@ func TestCreateRetrieveEngineForKB_StoreBound(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, engine)
 	require.Len(t, engine.engineInfos, 1)
-	assert.Same(t, esEngine, engine.engineInfos[0].retrieveEngine)
+	assert.Same(t, sqliteEngine, engine.engineInfos[0].retrieveEngine)
 	assert.Equal(t,
 		[]types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType},
 		engine.engineInfos[0].retrieverType,
@@ -209,12 +209,12 @@ func TestCreateRetrieveEngineForKB_StoreBound(t *testing.T) {
 }
 
 func TestCreateRetrieveEngineForKB_CrossTenant(t *testing.T) {
-	esEngine := &fakeEngine{
-		engineType: types.ElasticsearchRetrieverEngineType,
+	sqliteEngine := &fakeEngine{
+		engineType: types.SQLiteRetrieverEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
-		map[string]*fakeEngine{"store-A": esEngine},
+		map[string]*fakeEngine{"store-A": sqliteEngine},
 		nil,
 	)
 	// store-A is owned by tenant 2, not tenant 1
@@ -317,31 +317,31 @@ func TestCreateRetrieveEngineFromPayload_LegacyUnbound(t *testing.T) {
 }
 
 func TestCreateRetrieveEngineFromPayload_Bound(t *testing.T) {
-	qdrantEngine := &fakeEngine{
-		engineType: types.QdrantRetrieverEngineType,
+	sqliteEngine := &fakeEngine{
+		engineType: types.SQLiteRetrieverEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
-		map[string]*fakeEngine{"qd-1": qdrantEngine},
+		map[string]*fakeEngine{"sq-1": sqliteEngine},
 		nil,
 	)
-	ownership := &fakeOwnership{owned: map[string]uint64{"qd-1": 42}}
+	ownership := &fakeOwnership{owned: map[string]uint64{"sq-1": 42}}
 
-	storeID := "qd-1"
+	storeID := "sq-1"
 	engine, err := CreateRetrieveEngineFromPayload(
 		context.Background(), registry, ownership, 42, nil, &storeID)
 
 	require.NoError(t, err)
 	require.NotNil(t, engine)
 	require.Len(t, engine.engineInfos, 1)
-	assert.Same(t, qdrantEngine, engine.engineInfos[0].retrieveEngine)
+	assert.Same(t, sqliteEngine, engine.engineInfos[0].retrieveEngine)
 }
 
 func TestCreateRetrieveEngineFromPayload_TamperedCrossTenant(t *testing.T) {
-	esEngine := &fakeEngine{engineType: types.ElasticsearchRetrieverEngineType,
+	sqliteEngine := &fakeEngine{engineType: types.SQLiteRetrieverEngineType,
 		support: []types.RetrieverType{types.VectorRetrieverType}}
 	registry := registryWithStores(t,
-		map[string]*fakeEngine{"store-A": esEngine}, nil)
+		map[string]*fakeEngine{"store-A": sqliteEngine}, nil)
 	// Store is owned by tenant 99, but the (possibly tampered) payload
 	// claims tenant 1. Factory must reject.
 	ownership := &fakeOwnership{owned: map[string]uint64{"store-A": 99}}
@@ -361,12 +361,12 @@ func TestCreateRetrieveEngineFromPayload_TamperedCrossTenant(t *testing.T) {
 // `go test -race`. Factory functions themselves are stateless; the test
 // guards against accidental shared state being introduced later.
 func TestFactoryParallelInvocation(t *testing.T) {
-	esEngine := &fakeEngine{
-		engineType: types.ElasticsearchRetrieverEngineType,
+	sqliteEngine := &fakeEngine{
+		engineType: types.SQLiteRetrieverEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 	registry := registryWithStores(t,
-		map[string]*fakeEngine{"store-A": esEngine},
+		map[string]*fakeEngine{"store-A": sqliteEngine},
 		nil,
 	)
 	ownership := &fakeOwnership{owned: map[string]uint64{"store-A": 1}}
@@ -395,8 +395,8 @@ func TestFactoryParallelInvocation(t *testing.T) {
 
 func TestVerifyBinding(t *testing.T) {
 	ctx := context.Background()
-	esEngine := &fakeEngine{
-		engineType: types.ElasticsearchRetrieverEngineType,
+	sqliteEngine := &fakeEngine{
+		engineType: types.SQLiteRetrieverEngineType,
 		support:    []types.RetrieverType{types.VectorRetrieverType},
 	}
 
@@ -429,7 +429,7 @@ func TestVerifyBinding(t *testing.T) {
 
 	t.Run("owned and registered -> nil", func(t *testing.T) {
 		registry := registryWithStores(t,
-			map[string]*fakeEngine{"store-A": esEngine},
+			map[string]*fakeEngine{"store-A": sqliteEngine},
 			nil,
 		)
 		ownership := &fakeOwnership{owned: map[string]uint64{"store-A": 1}}
@@ -441,7 +441,7 @@ func TestVerifyBinding(t *testing.T) {
 	t.Run("cross-tenant returns Forbidden (not Found)", func(t *testing.T) {
 		// store owned by tenant 2, queried by tenant 1
 		registry := registryWithStores(t,
-			map[string]*fakeEngine{"store-A": esEngine},
+			map[string]*fakeEngine{"store-A": sqliteEngine},
 			nil,
 		)
 		ownership := &fakeOwnership{owned: map[string]uint64{"store-A": 2}}

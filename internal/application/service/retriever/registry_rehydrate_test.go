@@ -48,7 +48,7 @@ func (b *blockingFactory) build(ctx context.Context, _ types.VectorStore) (
 	b.once.Do(func() { close(b.entered) })
 	select {
 	case <-b.release:
-		return &mockEngineService{engineType: types.ElasticsearchRetrieverEngineType}, nil
+		return &mockEngineService{engineType: types.SQLiteRetrieverEngineType}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -249,7 +249,7 @@ func TestGetOrLoadByStoreID_WithoutRepoOrFactoryIsPlainLookup(t *testing.T) {
 	_, err := registry.GetOrLoadByStoreID(context.Background(), 1, rehydrateStoreID)
 	require.ErrorIs(t, err, ErrVectorStoreNotFound)
 
-	registered := &mockEngineService{engineType: types.ElasticsearchRetrieverEngineType}
+	registered := &mockEngineService{engineType: types.SQLiteRetrieverEngineType}
 	registry.RegisterWithStoreID(rehydrateStoreID, registered)
 	svc, err := registry.GetOrLoadByStoreID(context.Background(), 1, rehydrateStoreID)
 	require.NoError(t, err)

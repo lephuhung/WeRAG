@@ -230,7 +230,6 @@ These map to docker-compose profiles:
 |-----------|-------------|---------|
 | `minio.enabled` | Enable MinIO storage | `false` |
 | `neo4j.enabled` | Enable Neo4j (GraphRAG) | `false` |
-| `qdrant.enabled` | Enable Qdrant vector DB | `false` |
 
 ## Security Best Practices
 

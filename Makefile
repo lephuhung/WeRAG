@@ -235,7 +235,7 @@ deps:
 	go mod download
 
 # Build for production
-# google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn for qdrant milvus proto conflict
+# google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn guards against duplicate proto registrations
 # GO_BUILD_TAGS adds optional build tags.
 build-prod:
 	VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "$${VERSION:-unknown}"); \

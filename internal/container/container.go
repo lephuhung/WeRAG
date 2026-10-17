@@ -20,16 +20,10 @@ import (
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	_ "github.com/duckdb/duckdb-go/v2"
-	esv7 "github.com/elastic/go-elasticsearch/v7"
-	"github.com/elastic/go-elasticsearch/v8"
-	_ "github.com/go-sql-driver/mysql" // registers the MySQL protocol driver for Doris (database/sql)
-	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/panjf2000/ants/v2"
-	"github.com/qdrant/go-client/qdrant"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
-	"google.golang.org/grpc"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -37,17 +31,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/approval"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
-	dorisRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/doris"
-	elasticsearchRepoV7 "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch/v7"
-	elasticsearchRepoV8 "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch/v8"
-	milvusRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/milvus"
 	neo4jRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/neo4j"
-	openSearchRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/opensearch"
 	postgresRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/postgres"
-	qdrantRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/qdrant"
 	sqliteRetrieverRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/sqlite"
-	tencentVectorDBRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/tencentvectordb"
-	weaviateRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/weaviate"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/application/service/file"
@@ -100,10 +86,6 @@ import (
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
 	"github.com/hibiken/asynq"
-	"github.com/tencent/vectordatabase-sdk-go/tcvectordb"
-	"github.com/weaviate/weaviate-go-client/v5/weaviate"
-	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
-	wgrpc "github.com/weaviate/weaviate-go-client/v5/weaviate/grpc"
 )
 
 // BuildContainer constructs the dependency injection container
@@ -1397,7 +1379,7 @@ func initRawFileService(_ *config.Config) (interfaces.FileService, error) {
 
 // initRetrieveEngineRegistry initializes the retrieval engine registry
 // Sets up and configures various search engine backends based on configuration
-// Supports multiple retrieval engines (PostgreSQL, ElasticsearchV7, ElasticsearchV8)
+// Registers the Postgres retrieval engine (and SQLite for the Lite build)
 // Parameters:
 //   - db: Database connection
 //   - cfg: Application configuration
@@ -1406,7 +1388,7 @@ func initRawFileService(_ *config.Config) (interfaces.FileService, error) {
 //   - Configured retrieval engine registry
 //   - Error if initialization fails
 func initRetrieveEngineRegistry(
-	db *gorm.DB, cfg *config.Config, auditSvc interfaces.AuditLogService,
+	db *gorm.DB,
 	storeRepo interfaces.VectorStoreRepository, engineFactory interfaces.EngineFactory,
 ) (interfaces.RetrieveEngineRegistry, error) {
 	// storeRepo and engineFactory let the registry rebuild a store engine that
@@ -1415,10 +1397,6 @@ func initRetrieveEngineRegistry(
 	registry := retriever.NewRetrieveEngineRegistry(storeRepo, engineFactory)
 	retrieveDriver := strings.Split(os.Getenv("RETRIEVE_DRIVER"), ",")
 	log := logger.GetLogger(context.Background())
-	// Audit sink for OpenSearch driver events (index created / reindex). Driver
-	// events fire under a tenant-scoped ctx at indexing time; the env-path
-	// registration ctx below has no tenant, so those emits self-skip.
-	auditSink := newAuditSinkAdapter(auditSvc)
 
 	if slices.Contains(retrieveDriver, "postgres") {
 		postgresRepo := postgresRepo.NewPostgresRetrieveEngineRepository(db)
@@ -1440,281 +1418,9 @@ func initRetrieveEngineRegistry(
 			log.Infof("Register sqlite retrieve engine success")
 		}
 	}
-	if slices.Contains(retrieveDriver, "elasticsearch_v8") {
-		client, err := elasticsearch.NewTypedClient(elasticsearch.Config{
-			Addresses: []string{os.Getenv("ELASTICSEARCH_ADDR")},
-			Username:  os.Getenv("ELASTICSEARCH_USERNAME"),
-			Password:  os.Getenv("ELASTICSEARCH_PASSWORD"),
-		})
-		if err != nil {
-			log.Errorf("Create elasticsearch_v8 client failed: %v", err)
-		} else {
-			elasticsearchRepo := elasticsearchRepoV8.NewElasticsearchEngineRepository(client, cfg, nil)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					elasticsearchRepo, types.ElasticsearchRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register elasticsearch_v8 retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register elasticsearch_v8 retrieve engine success")
-			}
-		}
-	}
-
-	if slices.Contains(retrieveDriver, "elasticsearch_v7") {
-		client, err := esv7.NewClient(esv7.Config{
-			Addresses: []string{os.Getenv("ELASTICSEARCH_ADDR")},
-			Username:  os.Getenv("ELASTICSEARCH_USERNAME"),
-			Password:  os.Getenv("ELASTICSEARCH_PASSWORD"),
-		})
-		if err != nil {
-			log.Errorf("Create elasticsearch_v7 client failed: %v", err)
-		} else {
-			elasticsearchRepo := elasticsearchRepoV7.NewElasticsearchEngineRepository(client, cfg, nil)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					elasticsearchRepo, types.ElasticsearchRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register elasticsearch_v7 retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register elasticsearch_v7 retrieve engine success")
-			}
-		}
-	}
-
-	if slices.Contains(retrieveDriver, "opensearch") {
-		cc := &types.ConnectionConfig{
-			Addr:               os.Getenv("OPENSEARCH_ADDR"),
-			Username:           os.Getenv("OPENSEARCH_USERNAME"),
-			Password:           os.Getenv("OPENSEARCH_PASSWORD"),
-			InsecureSkipVerify: strings.EqualFold(os.Getenv("OPENSEARCH_INSECURE_SKIP_VERIFY"), "true"),
-		}
-		client, err := openSearchRepo.NewOpenSearchClient(cc)
-		if err != nil {
-			log.Errorf("Create opensearch client failed: %v", err)
-		} else if repo, err := openSearchRepo.NewRepository(
-			context.Background(), client, "", nil, openSearchRepo.WithAuditSink(auditSink),
-		); err != nil {
-			log.Errorf("Create opensearch repository failed: %v", err)
-		} else if err := registry.Register(
-			retriever.NewKVHybridRetrieveEngine(repo, types.OpenSearchRetrieverEngineType),
-		); err != nil {
-			log.Errorf("Register opensearch retrieve engine failed: %v", err)
-		} else {
-			log.Infof("Register opensearch retrieve engine success")
-		}
-	}
-
-	if slices.Contains(retrieveDriver, "qdrant") {
-		qdrantHost := os.Getenv("QDRANT_HOST")
-		if qdrantHost == "" {
-			qdrantHost = "localhost"
-		}
-
-		qdrantPort := 6334 // Default port
-		if portStr := os.Getenv("QDRANT_PORT"); portStr != "" {
-			if port, err := strconv.Atoi(portStr); err == nil {
-				qdrantPort = port
-			}
-		}
-
-		// API key for authentication (optional)
-		qdrantAPIKey := os.Getenv("QDRANT_API_KEY")
-
-		// TLS configuration (optional, defaults to false)
-		// Enable TLS unless explicitly set to "false" or "0" (case insensitive)
-		qdrantUseTLS := false
-		if useTLSStr := os.Getenv("QDRANT_USE_TLS"); useTLSStr != "" {
-			useTLSLower := strings.ToLower(strings.TrimSpace(useTLSStr))
-			qdrantUseTLS = useTLSLower != "false" && useTLSLower != "0"
-		}
-
-		log.Infof("Connecting to Qdrant at %s:%d (TLS: %v)", qdrantHost, qdrantPort, qdrantUseTLS)
-
-		client, err := qdrant.NewClient(&qdrant.Config{
-			Host:   qdrantHost,
-			Port:   qdrantPort,
-			APIKey: qdrantAPIKey,
-			UseTLS: qdrantUseTLS,
-		})
-		if err != nil {
-			log.Errorf("Create qdrant client failed: %v", err)
-		} else {
-			qdrantRepository := qdrantRepo.NewQdrantRetrieveEngineRepository(client, nil)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					qdrantRepository, types.QdrantRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register qdrant retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register qdrant retrieve engine success")
-			}
-		}
-	}
-	if slices.Contains(retrieveDriver, "weaviate") {
-		weaviateHost := os.Getenv("WEAVIATE_HOST")
-		if weaviateHost == "" {
-			// Docker compose default (service name inside network)
-			weaviateHost = "weaviate:8080"
-		}
-		weaviateGrpcAddress := os.Getenv("WEAVIATE_GRPC_ADDRESS")
-		if weaviateGrpcAddress == "" {
-			weaviateGrpcAddress = "weaviate:50051"
-		}
-		weaviateScheme := os.Getenv("WEAVIATE_SCHEME")
-		if weaviateScheme == "" {
-			weaviateScheme = "http"
-		}
-		var authConfig auth.Config
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("WEAVIATE_AUTH_ENABLED")), "true") {
-			if apiKey := strings.TrimSpace(os.Getenv("WEAVIATE_API_KEY")); apiKey != "" {
-				authConfig = auth.ApiKey{Value: apiKey}
-			}
-		}
-		weaviateClient, err := weaviate.NewClient(weaviate.Config{
-			Host: weaviateHost,
-			GrpcConfig: &wgrpc.Config{
-				Host: weaviateGrpcAddress,
-			},
-			Scheme:     weaviateScheme,
-			AuthConfig: authConfig,
-		})
-		if err != nil {
-			log.Errorf("Create weaviate client failed: %v", err)
-		} else {
-			weaviateRepository := weaviateRepo.NewWeaviateRetrieveEngineRepository(weaviateClient, nil)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					weaviateRepository, types.WeaviateRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register weaviate retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register weaviate retrieve engine success")
-			}
-		}
-	}
-	if slices.Contains(retrieveDriver, "milvus") {
-		milvusCfg := milvusclient.ClientConfig{
-			DialOptions: []grpc.DialOption{grpc.WithTimeout(5 * time.Second)},
-		}
-		milvusAddress := os.Getenv("MILVUS_ADDRESS")
-		if milvusAddress == "" {
-			milvusAddress = "localhost:19530"
-		}
-		milvusCfg.Address = milvusAddress
-		milvusUsername := os.Getenv("MILVUS_USERNAME")
-		if milvusUsername != "" {
-			milvusCfg.Username = milvusUsername
-		}
-		milvusPassword := os.Getenv("MILVUS_PASSWORD")
-		if milvusPassword != "" {
-			milvusCfg.Password = milvusPassword
-		}
-		milvusDBName := os.Getenv("MILVUS_DB_NAME")
-		if milvusDBName != "" {
-			milvusCfg.DBName = milvusDBName
-		}
-		milvusCli, err := milvusclient.New(context.Background(), &milvusCfg)
-		if err != nil {
-			log.Errorf("Create milvus client failed: %v", err)
-		} else {
-			milvusRepository := milvusRepo.NewMilvusRetrieveEngineRepository(milvusCli, nil)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					milvusRepository, types.MilvusRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register milvus retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register milvus retrieve engine success")
-			}
-		}
-	}
-	if slices.Contains(retrieveDriver, "doris") {
-		dorisAddr := os.Getenv("DORIS_ADDR")
-		if dorisAddr == "" {
-			// docker-compose default service name + Doris FE MySQL port
-			dorisAddr = "doris-fe:9030"
-		}
-		dorisDatabase := os.Getenv("DORIS_DATABASE")
-		if dorisDatabase == "" {
-			dorisDatabase = "weknora"
-		}
-		dorisUsername := os.Getenv("DORIS_USERNAME")
-		if dorisUsername == "" {
-			dorisUsername = "root"
-		}
-		dorisPassword := os.Getenv("DORIS_PASSWORD")
-		dorisHTTPPort := 8030
-		if portStr := os.Getenv("DORIS_HTTP_PORT"); portStr != "" {
-			if port, err := strconv.Atoi(portStr); err == nil {
-				dorisHTTPPort = port
-			}
-		}
-
-		dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=true&loc=Local&interpolateParams=true",
-			dorisUsername, dorisPassword, dorisAddr, dorisDatabase)
-		dorisDB, err := sql.Open("mysql", dsn)
-		if err != nil {
-			log.Errorf("Create doris client failed: %v", err)
-		} else {
-			dorisDB.SetMaxOpenConns(20)
-			dorisDB.SetMaxIdleConns(5)
-			dorisDB.SetConnMaxLifetime(time.Hour)
-
-			httpBase := "http://" + hostFromAddr(dorisAddr) + ":" + strconv.Itoa(dorisHTTPPort)
-			dorisRepository := dorisRepo.NewDorisRetrieveEngineRepository(
-				dorisDB, httpBase, dorisUsername, dorisPassword, dorisDatabase, nil,
-			)
-			if err := registry.Register(
-				retriever.NewKVHybridRetrieveEngine(
-					dorisRepository, types.DorisRetrieverEngineType,
-				),
-			); err != nil {
-				log.Errorf("Register doris retrieve engine failed: %v", err)
-			} else {
-				log.Infof("Register doris retrieve engine success: %s db=%s", dorisAddr, dorisDatabase)
-			}
-		}
-	}
-	if slices.Contains(retrieveDriver, "tencent_vectordb") {
-		addr := os.Getenv("TENCENT_VECTORDB_ADDR")
-		username := os.Getenv("TENCENT_VECTORDB_USERNAME")
-		apiKey := os.Getenv("TENCENT_VECTORDB_API_KEY")
-		if addr == "" || username == "" || apiKey == "" {
-			log.Errorf("Missing Tencent VectorDB configuration")
-		} else {
-			client, err := tcvectordb.NewRpcClient(addr, username, apiKey, &tcvectordb.ClientOption{
-				ReadConsistency: tcvectordb.EventualConsistency,
-				Timeout:         10 * time.Second,
-			})
-			if err != nil {
-				log.Errorf("Create tencent_vectordb client failed: %v", err)
-			} else {
-				tencentRepository := tencentVectorDBRepo.NewTencentVectorDBRetrieveEngineRepository(
-					client,
-					os.Getenv("TENCENT_VECTORDB_DATABASE"),
-					nil,
-				)
-				if err := registry.Register(
-					retriever.NewKVHybridRetrieveEngine(
-						tencentRepository, types.TencentVectorDBRetrieverEngineType,
-					),
-				); err != nil {
-					log.Errorf("Register tencent_vectordb retrieve engine failed: %v", err)
-				} else {
-					log.Infof("Register tencent_vectordb retrieve engine success")
-				}
-			}
-		}
-	}
 	// ─── DB store registration (byStoreID) ───
 	if storeReg, ok := registry.(*retriever.RetrieveEngineRegistry); ok {
-		loadDBStoresIntoRegistry(storeReg, db, cfg, auditSink)
+		loadDBStoresIntoRegistry(storeReg, db)
 	}
 
 	return registry, nil
@@ -1723,7 +1429,7 @@ func initRetrieveEngineRegistry(
 // loadDBStoresIntoRegistry loads VectorStore records from DB and registers them
 // in the registry's byStoreID map. Failures are logged and skipped (non-fatal).
 func loadDBStoresIntoRegistry(
-	storeRegistry interfaces.StoreRegistry, db *gorm.DB, cfg *config.Config, auditSink openSearchRepo.AuditSink,
+	storeRegistry interfaces.StoreRegistry, db *gorm.DB,
 ) {
 	ctx := context.Background()
 	log := logger.GetLogger(ctx)
@@ -1741,7 +1447,7 @@ func loadDBStoresIntoRegistry(
 
 	log.Infof("Loading %d vector store(s) from database", len(stores))
 	for _, store := range stores {
-		svc, err := createEngineServiceFromStore(ctx, store, db, cfg, auditSink)
+		svc, err := createEngineServiceFromStore(ctx, store, db)
 		if err != nil {
 			log.Errorf("Failed to create engine for store %s (%s): %v", store.ID, store.Name, err)
 			continue

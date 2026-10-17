@@ -84,7 +84,6 @@ WeKnora `docker-compose.yml` 大量服务是 **profile 限定**，本镜像只�
 | profile | 用途 |
 |---|---|
 | `minio` | 对象存储替代本地文件 |
-| `qdrant` / `milvus` / `weaviate` / `doris` | 替代 pgvector |
 | `neo4j` | GraphRAG 知识图谱 |
 | `langfuse` | 自建 Langfuse 可观测平台 |
 | `dex` | OIDC 登录 |
@@ -96,7 +95,6 @@ WeKnora `docker-compose.yml` 大量服务是 **profile 限定**，本镜像只�
 cd /opt/WeKnora
 docker compose --profile neo4j up -d                 # 启用 GraphRAG
 docker compose --profile langfuse up -d              # 启用自建 Langfuse
-docker compose --profile qdrant up -d                # 切换到 Qdrant
 docker compose --profile odl-hybrid up -d --build odl-hybrid  # Docling hybrid（按需）
 ```
 

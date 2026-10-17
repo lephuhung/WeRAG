@@ -105,9 +105,9 @@ func TestListKB_EnrichesEnvBoundAndSharedDistinctly(t *testing.T) {
 	vss := &stubVectorStoreService{
 		batch: map[string]types.StoreDisplay{
 			storeUserA: {
-				Name:       "prod-qdrant",
+				Name:       "prod-pg",
 				Source:     types.StoreSourceUser,
-				EngineType: "qdrant",
+				EngineType: "postgres",
 				Status:     "available",
 			},
 			// storeForeign is intentionally absent — shared KBs do not
@@ -154,11 +154,11 @@ func TestListKB_EnrichesEnvBoundAndSharedDistinctly(t *testing.T) {
 	if boundRow["vector_store_source"] != string(types.StoreSourceUser) {
 		t.Errorf("bound KB: expected source=user, got %v", boundRow["vector_store_source"])
 	}
-	if boundRow["vector_store_name"] != "prod-qdrant" {
-		t.Errorf("bound KB: expected name=prod-qdrant, got %v", boundRow["vector_store_name"])
+	if boundRow["vector_store_name"] != "prod-pg" {
+		t.Errorf("bound KB: expected name=prod-pg, got %v", boundRow["vector_store_name"])
 	}
-	if boundRow["vector_store_engine_type"] != "qdrant" {
-		t.Errorf("bound KB: expected engine=qdrant, got %v", boundRow["vector_store_engine_type"])
+	if boundRow["vector_store_engine_type"] != "postgres" {
+		t.Errorf("bound KB: expected engine=postgres, got %v", boundRow["vector_store_engine_type"])
 	}
 
 	// 3) cross-tenant shared KB — UUID stripped, source=shared, no name.
@@ -196,9 +196,9 @@ func TestListKB_BatchesStoreLookupsToAvoidNPlus1(t *testing.T) {
 	}
 	vss := &stubVectorStoreService{
 		batch: map[string]types.StoreDisplay{
-			s1: {Name: "s1", Source: types.StoreSourceUser, EngineType: "qdrant", Status: "available"},
+			s1: {Name: "s1", Source: types.StoreSourceUser, EngineType: "postgres", Status: "available"},
 			s2: {Name: "s2", Source: types.StoreSourceUser, EngineType: "postgres", Status: "available"},
-			s3: {Name: "s3", Source: types.StoreSourceUser, EngineType: "weaviate", Status: "available"},
+			s3: {Name: "s3", Source: types.StoreSourceUser, EngineType: "sqlite", Status: "available"},
 		},
 	}
 	w := httptest.NewRecorder()

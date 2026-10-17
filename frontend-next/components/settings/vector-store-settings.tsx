@@ -3,56 +3,29 @@
 import { useEffect, useState } from "react";
 import {
   listVectorStores,
-  listVectorStoreTypes,
-  createVectorStore,
   deleteVectorStore,
   testVectorStoreById,
   type VectorStoreEntity,
-  type VectorStoreTypeInfo,
 } from "@/lib/api/vector-stores";
-import { IconBook, IconPlus, IconPulse, IconTrash } from "@/components/icons";
-import { Select } from "@/components/select";
+import { IconBook, IconPulse, IconTrash } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
-import { Modal } from "@/components/modal";
 
 export function VectorStoreSettings() {
   const { t } = useT();
   const confirmAction = useConfirm();
   const [stores, setStores] = useState<VectorStoreEntity[]>([]);
-  const [types, setTypes] = useState<VectorStoreTypeInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; msg: string }>>({});
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    engine_type: "pgvector",
-    host: "",
-    port: "",
-    database: "",
-    user: "",
-    password: "",
-  });
-
   const loadData = async () => {
     setLoading(true);
     setError("");
     try {
-      const [sRes, tRes] = await Promise.allSettled([
-        listVectorStores(),
-        listVectorStoreTypes(),
-      ]);
-
-      if (sRes.status === "fulfilled" && sRes.value?.data) {
-        setStores(sRes.value.data);
-      }
-      if (tRes.status === "fulfilled" && tRes.value) {
-        setTypes(tRes.value);
-      }
+      const res = await listVectorStores();
+      if (res?.data) setStores(res.data);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("vstore.loadFailed"));
     } finally {
@@ -96,41 +69,6 @@ export function VectorStoreSettings() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name) return;
-    setSubmitting(true);
-    try {
-      await createVectorStore({
-        name: formData.name,
-        engine_type: formData.engine_type,
-        connection_config: {
-          host: formData.host || undefined,
-          port: formData.port ? Number(formData.port) : undefined,
-          database: formData.database || undefined,
-          user: formData.user || undefined,
-          password: formData.password || undefined,
-        },
-        index_config: {},
-      });
-      setModalOpen(false);
-      setFormData({
-        name: "",
-        engine_type: "pgvector",
-        host: "",
-        port: "",
-        database: "",
-        user: "",
-        password: "",
-      });
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("vstore.createFailed"));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div>
       <div className="flex items-center justify-between border-b border-hairline pb-4">
@@ -140,12 +78,6 @@ export function VectorStoreSettings() {
             {t("vstore.subtitle")}
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="btn btn-primary btn-sm flex items-center gap-1.5"
-        >
-          <IconPlus className="h-4 w-4" /> {t("vstore.add")}
-        </button>
       </div>
 
       {error && (
@@ -222,113 +154,6 @@ export function VectorStoreSettings() {
         </div>
       )}
 
-      {/* Add Vector Store Modal */}
-      <Modal open={modalOpen} title={t("vstore.addTitle")} onClose={() => setModalOpen(false)} width="w-[500px]">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="caption mb-1 block font-medium text-ink">{t("vstore.name")}</label>
-            <input
-              required
-              className="input h-9 w-full text-[13px]"
-              placeholder={t("vstore.namePh")}
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="caption mb-1 block font-medium text-ink">{t("vstore.engineType")}</label>
-            <Select
-              className="h-9 w-full text-[13px]"
-              value={formData.engine_type}
-              onChange={(v) => setFormData({ ...formData, engine_type: v })}
-              options={[
-                { value: "pgvector", label: "PGVector (PostgreSQL)" },
-                { value: "milvus", label: "Milvus" },
-                { value: "qdrant", label: "Qdrant" },
-                { value: "chroma", label: "Chroma" },
-                { value: "elasticsearch", label: "Elasticsearch" },
-                { value: "opensearch", label: "OpenSearch" },
-                ...types
-                  .filter(
-                    (t) =>
-                      !["pgvector", "milvus", "qdrant", "chroma", "elasticsearch", "opensearch"].includes(t.type),
-                  )
-                  .map((t) => ({ value: t.type, label: t.display_name || t.type })),
-              ]}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="caption mb-1 block font-medium text-ink">{t("vstore.host")}</label>
-              <input
-                className="input h-9 w-full text-[13px]"
-                placeholder="localhost or 127.0.0.1"
-                value={formData.host}
-                onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="caption mb-1 block font-medium text-ink">{t("vstore.port")}</label>
-              <input
-                className="input h-9 w-full text-[13px]"
-                placeholder="5432"
-                value={formData.port}
-                onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="caption mb-1 block font-medium text-ink">{t("vstore.dbName")}</label>
-            <input
-              className="input h-9 w-full text-[13px]"
-              placeholder="werag_vectors"
-              value={formData.database}
-              onChange={(e) => setFormData({ ...formData, database: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="caption mb-1 block font-medium text-ink">{t("vstore.user")}</label>
-              <input
-                className="input h-9 w-full text-[13px]"
-                placeholder="postgres"
-                value={formData.user}
-                onChange={(e) => setFormData({ ...formData, user: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="caption mb-1 block font-medium text-ink">{t("vstore.password")}</label>
-              <input
-                className="input h-9 w-full text-[13px]"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 flex justify-end gap-2 border-t border-hairline pt-4">
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="btn btn-outline btn-sm"
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="btn btn-primary btn-sm"
-            >
-              {submitting ? t("memp.saving") : t("common.save")}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

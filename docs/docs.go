@@ -20200,9 +20200,6 @@ const docTemplate = `{
                 "vector_store.created",
                 "vector_store.updated",
                 "vector_store.deleted",
-                "opensearch.index_created",
-                "opensearch.index_deleted",
-                "opensearch.reindex_executed",
                 "system.setting_changed",
                 "system.admin_promoted",
                 "system.admin_revoked",
@@ -20281,9 +20278,6 @@ const docTemplate = `{
                 "AuditActionVectorStoreCreated",
                 "AuditActionVectorStoreUpdated",
                 "AuditActionVectorStoreDeleted",
-                "AuditActionOpenSearchIndexCreated",
-                "AuditActionOpenSearchIndexDeleted",
-                "AuditActionOpenSearchReindexExecuted",
                 "AuditActionSystemSettingChanged",
                 "AuditActionSystemAdminPromoted",
                 "AuditActionSystemAdminRevoked",
@@ -23723,29 +23717,11 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "postgres",
-                "elasticsearch",
-                "infinity",
-                "elasticfaiss",
-                "qdrant",
-                "milvus",
-                "weaviate",
-                "doris",
-                "sqlite",
-                "tencent_vectordb",
-                "opensearch"
+                "sqlite"
             ],
             "x-enum-varnames": [
                 "PostgresRetrieverEngineType",
-                "ElasticsearchRetrieverEngineType",
-                "InfinityRetrieverEngineType",
-                "ElasticFaissRetrieverEngineType",
-                "QdrantRetrieverEngineType",
-                "MilvusRetrieverEngineType",
-                "WeaviateRetrieverEngineType",
-                "DorisRetrieverEngineType",
-                "SQLiteRetrieverEngineType",
-                "TencentVectorDBRetrieverEngineType",
-                "OpenSearchRetrieverEngineType"
+                "SQLiteRetrieverEngineType"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.RetrieverEngines": {

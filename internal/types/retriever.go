@@ -5,25 +5,9 @@ type RetrieverEngineType string
 
 // RetrieverEngineType constants
 const (
-	PostgresRetrieverEngineType        RetrieverEngineType = "postgres"
-	ElasticsearchRetrieverEngineType   RetrieverEngineType = "elasticsearch"
-	InfinityRetrieverEngineType        RetrieverEngineType = "infinity"
-	ElasticFaissRetrieverEngineType    RetrieverEngineType = "elasticfaiss"
-	QdrantRetrieverEngineType          RetrieverEngineType = "qdrant"
-	MilvusRetrieverEngineType          RetrieverEngineType = "milvus"
-	WeaviateRetrieverEngineType        RetrieverEngineType = "weaviate"
-	DorisRetrieverEngineType           RetrieverEngineType = "doris"
-	SQLiteRetrieverEngineType          RetrieverEngineType = "sqlite"
-	TencentVectorDBRetrieverEngineType RetrieverEngineType = "tencent_vectordb"
-	// OpenSearchRetrieverEngineType identifies the OpenSearch k-NN driver
-	// introduced in Phase 3 (see issue tracker). The driver itself ships
-	// in a subsequent PR; this constant exists so that
-	// EngineAwareNormalizer can register the OpenSearch case ahead of the
-	// driver landing and the AuditAction constants can reference it
-	// without forward dependencies. Wire value "opensearch" mirrors the
-	// official product name and matches the value used in
-	// retrieverEngineMapping / GetVectorStoreTypes once activation lands.
-	OpenSearchRetrieverEngineType RetrieverEngineType = "opensearch"
+	PostgresRetrieverEngineType RetrieverEngineType = "postgres"
+	// SQLiteRetrieverEngineType backs the unmaintained Lite build only.
+	SQLiteRetrieverEngineType RetrieverEngineType = "sqlite"
 )
 
 // RetrieverType represents the type of retriever

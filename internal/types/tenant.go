@@ -19,40 +19,9 @@ var retrieverEngineMapping = map[string][]RetrieverEngineParams{
 		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: PostgresRetrieverEngineType},
 		{RetrieverType: VectorRetrieverType, RetrieverEngineType: PostgresRetrieverEngineType},
 	},
-	"elasticsearch_v7": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: ElasticsearchRetrieverEngineType},
-	},
-	"elasticsearch_v8": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: ElasticsearchRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: ElasticsearchRetrieverEngineType},
-	},
-	"qdrant": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: QdrantRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: QdrantRetrieverEngineType},
-	},
-	"milvus": {
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: MilvusRetrieverEngineType},
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: MilvusRetrieverEngineType},
-	},
-	"weaviate": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: WeaviateRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: WeaviateRetrieverEngineType},
-	},
-	"doris": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: DorisRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: DorisRetrieverEngineType},
-	},
 	"sqlite": {
 		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
 		{RetrieverType: VectorRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
-	},
-	"tencent_vectordb": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: TencentVectorDBRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: TencentVectorDBRetrieverEngineType},
-	},
-	"opensearch": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: OpenSearchRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: OpenSearchRetrieverEngineType},
 	},
 }
 

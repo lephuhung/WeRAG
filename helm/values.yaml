@@ -93,7 +93,7 @@ app:
   # Ref: https://github.com/Tencent/WeKnora/blob/main/docker-compose.yml
   env:
     GIN_MODE: release
-    # -- Retrieval driver: postgres, elasticsearch_v7, elasticsearch_v8, qdrant
+    # -- Retrieval driver: postgres (the only vector store)
     RETRIEVE_DRIVER: postgres
     # -- Storage type: local, minio, cos, tos, s3
     STORAGE_TYPE: local
@@ -486,15 +486,3 @@ neo4j:
 
   # -- Affinity rules
   affinity: {}
-
-# -- Qdrant configuration (Vector Database)
-# Equivalent to: docker compose --profile qdrant
-qdrant:
-  # -- Enable Qdrant as alternative vector store
-  enabled: false
-  image:
-    repository: qdrant/qdrant
-    tag: latest
-  persistence:
-    enabled: true
-    size: 10Gi
