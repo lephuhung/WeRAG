@@ -6,6 +6,7 @@ import (
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,7 +118,7 @@ func TestHistoryHidesCitationsOfUnreadableKB(t *testing.T) {
 		messages := []*types.Message{{Role: "assistant", KnowledgeReferences: types.References{
 			{ID: "c-t", KnowledgeBaseID: "kb-t", Content: "tenant snippet"},
 			{ID: "c-r", KnowledgeBaseID: "kb-r", Content: "restricted snippet"},
-			{ID: "c-unknown", Content: "no KB recorded"},
+			{ID: "c-attach", Content: "chat attachment, not KB-bound"},
 		}}}
 		svc.hideUnreadableReferences(ctx, messages)
 		ids := []string{}
@@ -126,9 +127,53 @@ func TestHistoryHidesCitationsOfUnreadableKB(t *testing.T) {
 		}
 		return ids
 	}
-	require.Equal(t, []string{"c-t"}, load())
+	require.Equal(t, []string{"c-t", "c-attach"}, load())
 	grants.invites["kb-r/user-1"] = true
-	require.Equal(t, []string{"c-t", "c-r"}, load())
+	require.Equal(t, []string{"c-t", "c-r", "c-attach"}, load())
 	delete(grants.invites, "kb-r/user-1")
-	require.Equal(t, []string{"c-t"}, load())
+	require.Equal(t, []string{"c-t", "c-attach"}, load())
+}
+
+// citationKnowledgeService resolves documents to their KB for the history
+// citation filter; unknown IDs are deleted documents.
+type citationKnowledgeService struct {
+	interfaces.KnowledgeService
+	docs map[string]*types.Knowledge
+}
+
+func (s *citationKnowledgeService) GetKnowledgeByIDOnly(_ context.Context, id string) (*types.Knowledge, error) {
+	if k, ok := s.docs[id]; ok {
+		return k, nil
+	}
+	return nil, apperrors.NewNotFoundError("knowledge not found")
+}
+
+// Citations that are not KB-bound (web search results, whose KnowledgeID is
+// their URL) stay; KB-bound ones follow the read check, whether the KB is
+// recorded or resolved through the document; a document that is gone hides
+// its citation.
+func TestHistoryKeepsWebCitationsAndHidesDanglingDocuments(t *testing.T) {
+	grants, _ := restrictedReadFixture()
+	svc := &messageService{
+		kbAccessGrantService: grants,
+		knowService: &citationKnowledgeService{docs: map[string]*types.Knowledge{
+			"doc-t": {ID: "doc-t", TenantID: 1, KnowledgeBaseID: "kb-t"},
+			"doc-r": {ID: "doc-r", TenantID: 1, KnowledgeBaseID: "kb-r"},
+		}},
+	}
+	messages := []*types.Message{{Role: "assistant", KnowledgeReferences: types.References{
+		{ID: "c-web", KnowledgeID: "https://example.vn/a", MatchType: types.MatchTypeWebSearch,
+			ChunkType: string(types.ChunkTypeWebSearch), KnowledgeSource: "web_search", Content: "web"},
+		{ID: "c-web-agent", KnowledgeID: "https://example.com", ChunkType: string(types.ChunkTypeWebSearch),
+			Content: "agent web result, URL as knowledge id"},
+		{ID: "c-readable", KnowledgeID: "doc-t", Content: "readable KB via document"},
+		{ID: "c-unreadable", KnowledgeID: "doc-r", Content: "restricted KB via document"},
+		{ID: "c-dangling", KnowledgeID: "doc-gone", Content: "deleted document"},
+	}}}
+	svc.hideUnreadableReferences(restrictedMemberCtx(), messages)
+	ids := []string{}
+	for _, ref := range messages[0].KnowledgeReferences {
+		ids = append(ids, ref.ID)
+	}
+	require.Equal(t, []string{"c-web", "c-web-agent", "c-readable"}, ids)
 }

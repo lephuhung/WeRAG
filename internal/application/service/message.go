@@ -1270,31 +1270,52 @@ func searchPairKey(sessionID, requestID string) string {
 // hideUnreadableReferences drops persisted citations (knowledge references
 // with their chunk snippets) whose KB the caller can no longer read under
 // access.DecideKB: a KB switched to restricted, or a revoked invite/grant,
-// stops showing its snippets in past answers on the next load. A reference
-// without a KB ID is resolved through its document; one that cannot be
+// stops showing its snippets in past answers on the next load. Only
+// KB-bound references are checked: one with a KB ID, or with a knowledge ID
+// resolved through its document. A reference with neither (chat
+// attachments), or a web search result (whose KnowledgeID is its URL), is
+// not KB-bound and is always kept. A
+// knowledge ID whose document is gone (deleted document or KB) or cannot be
 // resolved is hidden (fail closed). The answer text itself is unchanged.
+// isWebSearchReference reports a web search result. Web results carry their
+// URL as KnowledgeID (searchutil, agent webRowsAsReferences), so they must not be resolved as documents.
+func isWebSearchReference(ref *types.SearchResult) bool {
+	return ref.MatchType == types.MatchTypeWebSearch ||
+		ref.ChunkType == string(types.ChunkTypeWebSearch) ||
+		ref.KnowledgeSource == "web_search"
+}
+
 func (s *messageService) hideUnreadableReferences(ctx context.Context, messages []*types.Message) {
 	if s.kbAccessGrantService == nil {
 		return
 	}
 	permissions := access.NewKBPermissions(ctx, s.kbAccessGrantService)
 	knowledgeKB := map[string]string{}
-	kbOf := func(ref *types.SearchResult) string {
-		if ref.KnowledgeBaseID != "" {
-			return ref.KnowledgeBaseID
+	// kbOf returns the KB a reference is bound to and whether it is
+	// KB-bound at all. kbID == "" with bound == true means the reference
+	// points at a document that no longer resolves to a KB.
+	kbOf := func(ref *types.SearchResult) (kbID string, bound bool) {
+		if isWebSearchReference(ref) {
+			return "", false
 		}
-		if ref.KnowledgeID == "" || s.knowService == nil {
-			return ""
+		if ref.KnowledgeBaseID != "" {
+			return ref.KnowledgeBaseID, true
+		}
+		if ref.KnowledgeID == "" {
+			return "", false
+		}
+		if s.knowService == nil {
+			return "", true
 		}
 		if id, ok := knowledgeKB[ref.KnowledgeID]; ok {
-			return id
+			return id, true
 		}
 		id := ""
 		if k, err := s.knowService.GetKnowledgeByIDOnly(ctx, ref.KnowledgeID); err == nil && k != nil {
 			id = k.KnowledgeBaseID
 		}
 		knowledgeKB[ref.KnowledgeID] = id
-		return id
+		return id, true
 	}
 	for _, message := range messages {
 		if message == nil || len(message.KnowledgeReferences) == 0 {
@@ -1305,10 +1326,16 @@ func (s *messageService) hideUnreadableReferences(ctx context.Context, messages 
 			if ref == nil {
 				continue
 			}
-			if kbID := kbOf(ref); kbID != "" {
-				if ok, err := permissions.Check(kbID, 0, types.KBPermissionViewer); err == nil && ok {
-					kept = append(kept, ref)
-				}
+			kbID, bound := kbOf(ref)
+			if !bound {
+				kept = append(kept, ref)
+				continue
+			}
+			if kbID == "" {
+				continue
+			}
+			if ok, err := permissions.Check(kbID, 0, types.KBPermissionViewer); err == nil && ok {
+				kept = append(kept, ref)
 			}
 		}
 		message.KnowledgeReferences = kept
