@@ -19,6 +19,79 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/abbreviations": {
+            "get": {
+                "description": "Lists dictionary entries, optionally filtered by a substring\nmatch on short_form/full_form and by active state.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Từ viết tắt"
+                ],
+                "summary": "List abbreviations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Substring filter",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by active state",
+                        "name": "is_active",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Row offset; overrides page",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rows + total",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates an inactive suggestion; an admin activates it later.",
+                "summary": "Suggest an abbreviation",
+                "responses": {}
+            }
+        },
+        "/abbreviations/{id}": {
+            "get": {
+                "summary": "Get one abbreviation",
+                "responses": {}
+            },
+            "delete": {
+                "summary": "Delete an abbreviation (admin)",
+                "responses": {}
+            },
+            "patch": {
+                "description": "Partial update; is_active flips are admin-only by route guard.",
+                "summary": "Update an abbreviation (admin)",
+                "responses": {}
+            }
+        },
         "/agent-chat/{session_id}": {
             "post": {
                 "security": [
@@ -29,7 +102,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "基于Agent的智能问答，支持多轮对话和SSE流式响应",
+                "description": "Hỏi đáp thông minh dựa trên trợ lý, hỗ trợ hội thoại nhiều lượt và phản hồi streaming SSE",
                 "consumes": [
                     "application/json"
                 ],
@@ -37,19 +110,19 @@ const docTemplate = `{
                     "text/event-stream"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "Agent问答",
+                "summary": "Hỏi đáp với trợ lý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "问答请求",
+                        "description": "Yêu cầu hỏi đáp",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -64,21 +137,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "问答结果（SSE流）",
+                        "description": "Kết quả hỏi đáp (luồng SSE)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -93,7 +166,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "用户在对话中完成 OAuth 授权后调用，校验令牌存在后恢复被暂停的 Agent 工具调用",
+                "description": "Gọi sau khi người dùng hoàn tất ủy quyền OAuth trong cuộc trò chuyện; kiểm tra token tồn tại rồi tiếp tục lượt gọi công cụ của trợ lý đang tạm dừng",
                 "consumes": [
                     "application/json"
                 ],
@@ -101,13 +174,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "完成对话内 MCP OAuth 授权",
+                "summary": "Hoàn tất ủy quyền OAuth của MCP trong cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "待授权 ID",
+                        "description": "ID chờ ủy quyền",
                         "name": "pending_id",
                         "in": "path",
                         "required": true
@@ -138,7 +211,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "用户尚未完成授权",
+                        "description": "người dùng chưa hoàn tất ủy quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -153,18 +226,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "用户主动跳过 OAuth 授权，解除 Agent 阻塞",
+                "description": "Người dùng chủ động bỏ qua ủy quyền OAuth, gỡ chặn cho trợ lý",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "跳过对话内 MCP OAuth 授权",
+                "summary": "Bỏ qua ủy quyền OAuth của MCP trong cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "待授权 ID",
+                        "description": "ID chờ ủy quyền",
                         "name": "pending_id",
                         "in": "path",
                         "required": true
@@ -197,7 +270,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "用户审批通过或驳回一次工具调用（用于 Agent 阻塞等待审批的场景）",
+                "description": "Người dùng phê duyệt hoặc từ chối một lượt gọi công cụ (dùng khi trợ lý đang chờ phê duyệt)",
                 "consumes": [
                     "application/json"
                 ],
@@ -205,13 +278,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "处理 MCP 工具调用待审批请求",
+                "summary": "Xử lý yêu cầu chờ phê duyệt gọi công cụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "待审批记录 ID",
+                        "description": "ID bản ghi chờ phê duyệt",
                         "name": "pending_id",
                         "in": "path",
                         "required": true
@@ -229,20 +302,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "审批结果",
+                        "description": "Kết quả phê duyệt",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "待审批记录不存在",
+                        "description": "Không tìm thấy bản ghi chờ phê duyệt",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -260,7 +333,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取当前空间的所有智能体（包括内置智能体）",
+                "description": "Lấy mọi trợ lý của đơn vị hiện tại (gồm cả trợ lý tích hợp sẵn)",
                 "consumes": [
                     "application/json"
                 ],
@@ -268,19 +341,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "获取智能体列表",
+                "summary": "Lấy danh sách trợ lý",
                 "responses": {
                     "200": {
-                        "description": "智能体列表",
+                        "description": "danh sách trợ lý",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -296,7 +369,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "创建新的自定义智能体",
+                "description": "Tạo trợ lý tuỳ chỉnh mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -304,12 +377,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "创建智能体",
+                "summary": "Tạo trợ lý",
                 "parameters": [
                     {
-                        "description": "智能体信息",
+                        "description": "thông tin trợ lý",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -320,14 +393,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的智能体",
+                        "description": "trợ lý vừa tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -345,7 +418,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取所有可用的提示词占位符定义，按字段类型分组",
+                "description": "Lấy mọi định nghĩa placeholder dùng được trong prompt, nhóm theo loại trường",
                 "consumes": [
                     "application/json"
                 ],
@@ -353,12 +426,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "获取占位符定义",
+                "summary": "Lấy định nghĩa placeholder",
                 "responses": {
                     "200": {
-                        "description": "占位符定义",
+                        "description": "định nghĩa placeholder",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -377,7 +450,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回所有 smart-reasoning 下可用的智能体类型预设（RAG/Wiki/Hybrid/Custom），用于编辑器自动填充系统提示词、工具和 KB 兼容性",
+                "description": "Trả về mọi preset loại trợ lý dùng được trong smart-reasoning (RAG/Wiki/Hybrid/Custom), để trình soạn tự điền system prompt, công cụ và tương thích kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -385,12 +458,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "获取智能体类型预设列表",
+                "summary": "Lấy danh sách preset loại trợ lý",
                 "responses": {
                     "200": {
-                        "description": "预设列表",
+                        "description": "danh sách preset",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -409,7 +482,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取智能体详情",
+                "description": "Lấy chi tiết trợ lý theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -417,13 +490,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "获取智能体详情",
+                "summary": "Lấy chi tiết trợ lý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "智能体ID",
+                        "description": "ID trợ lý",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -431,20 +504,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "智能体详情",
+                        "description": "chi tiết trợ lý",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "智能体不存在",
+                        "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -460,7 +533,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新智能体的名称、描述和配置",
+                "description": "Cập nhật tên, mô tả và cấu hình của trợ lý",
                 "consumes": [
                     "application/json"
                 ],
@@ -468,19 +541,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "更新智能体",
+                "summary": "Cập nhật trợ lý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "智能体ID",
+                        "description": "ID trợ lý",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求",
+                        "description": "yêu cầu cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -491,20 +564,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的智能体",
+                        "description": "trợ lý sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "无法修改内置智能体",
+                        "description": "không thể sửa trợ lý tích hợp sẵn",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -520,7 +593,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的智能体",
+                "description": "Xoá trợ lý chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -528,13 +601,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "删除智能体",
+                "summary": "Xoá trợ lý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "智能体ID",
+                        "description": "ID trợ lý",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -542,26 +615,26 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "无法删除内置智能体",
+                        "description": "không thể xoá trợ lý tích hợp sẵn",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "智能体不存在",
+                        "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -579,7 +652,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "复制指定的智能体",
+                "description": "Nhân bản trợ lý chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -587,13 +660,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "复制智能体",
+                "summary": "Nhân bản trợ lý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "智能体ID",
+                        "description": "ID trợ lý",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -601,71 +674,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "复制成功",
+                        "description": "nhân bản thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "智能体不存在",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/agents/{id}/shares/{share_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "从智能体的共享列表中移除指定共享关系",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织"
-                ],
-                "summary": "取消智能体共享",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "智能体 ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "共享记录 ID",
-                        "name": "share_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "success: true",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "无权限",
+                        "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -683,7 +705,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "基于智能体关联的知识库，返回推荐问题供用户快捷提问",
+                "description": "Dựa trên kho tri thức gắn với trợ lý, trả về câu hỏi gợi ý để người dùng hỏi nhanh",
                 "consumes": [
                     "application/json"
                 ],
@@ -691,58 +713,58 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "智能体"
+                    "Trợ lý"
                 ],
-                "summary": "获取推荐问题",
+                "summary": "Lấy câu hỏi gợi ý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "智能体ID",
+                        "description": "ID trợ lý",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "知识库ID列表（逗号分隔），覆盖智能体默认配置",
+                        "description": "danh sách ID kho tri thức (phân cách bằng dấu phẩy), ghi đè cấu hình mặc định của trợ lý",
                         "name": "knowledge_base_ids",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "知识ID列表（逗号分隔），限定到具体文档",
+                        "description": "danh sách ID tài liệu (phân cách bằng dấu phẩy), giới hạn vào tài liệu cụ thể",
                         "name": "knowledge_ids",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "带知识库归属的标签范围（JSON）",
+                        "description": "phạm vi thẻ kèm kho tri thức sở hữu (JSON)",
                         "name": "tag_scopes",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "返回数量上限（未传时使用智能体配置的开场问题数量，最大30）",
+                        "description": "số lượng tối đa (bỏ trống thì dùng số câu hỏi mở đầu trong cấu hình trợ lý, tối đa 30)",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "推荐问题列表",
+                        "description": "danh sách câu hỏi gợi ý",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "智能体不存在",
+                        "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -752,7 +774,7 @@ const docTemplate = `{
         },
         "/api/v1/knowledge/{id}/spans": {
             "get": {
-                "description": "返回该知识在解析流水线的 trace tree（root → stage → subspan）：每段状态、耗时、input/output、错误码、langfuse_trace_id。支持 ?attempt=N 查看历史尝试；不传则返回最新尝试。前端用于渲染时间线 + 多模态/embedding 子节点 + 一键跳转 Langfuse。",
+                "description": "Trả về trace tree của tài liệu trong pipeline phân tích (root → stage → subspan): trạng thái, thời gian, input/output, mã lỗi, langfuse_trace_id của từng đoạn. Hỗ trợ ?attempt=N để xem lần thử trước; không truyền thì trả về lần mới nhất. Frontend dùng để vẽ dòng thời gian + nút con đa phương thức/embedding + mở nhanh Langfuse.",
                 "consumes": [
                     "application/json"
                 ],
@@ -760,20 +782,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "获取知识文档解析的 Span 树（含历史尝试）",
+                "summary": "Lấy cây Span của quá trình phân tích tài liệu (gồm các lần thử trước)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "指定尝试号；省略=最新",
+                        "description": "Số lần thử; bỏ trống = mới nhất",
                         "name": "attempt",
                         "in": "query"
                     }
@@ -789,9 +811,69 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/auto-setup": {
+        "/artifacts": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Liệt kê các tệp do kỹ năng tạo ra trong mọi cuộc trò chuyện người dùng hiện tại nhìn thấy, mỗi tệp chỉ trả về phiên bản mới nhất (không kèm URL lưu trữ)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cuộc trò chuyện"
+                ],
+                "summary": "Liệt kê sản phẩm của tôi",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lọc theo tên tệp",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Các phần mở rộng cách nhau bằng dấu phẩy, ví dụ .pdf,.pptx",
+                        "name": "file_types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Số trang",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Số mục mỗi trang (tối đa 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/2fa/disable": {
             "post": {
-                "description": "Lite 版专用：首次启动时自动创建默认用户和空间并返回令牌，首次及后续启动均须通过桌面原生凭据认证，免除手动注册/登录流程",
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Dùng mã TOTP hiện tại (hoặc mã khôi phục chưa dùng) để tắt xác thực hai bước và xoá liên kết",
                 "consumes": [
                     "application/json"
                 ],
@@ -799,9 +881,158 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "自动初始化（Lite 桌面版）",
+                "summary": "Tắt 2FA",
+                "parameters": [
+                    {
+                        "description": "mã xác thực 6 số hoặc mã khôi phục",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "mã xác thực không hợp lệ",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/2fa/enable": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Xác nhận liên kết bằng mã 6 số hiện tại của ứng dụng xác thực; thành công sẽ tạo mã khôi phục dùng một lần (chỉ trả về lần này)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Bật 2FA",
+                "parameters": [
+                    {
+                        "description": "mã xác thực 6 số",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success / recovery_codes",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "mã xác thực không hợp lệ",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/2fa/setup": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Tạo khoá TOTP chờ xác nhận, trả về khoá Base32 và URI otpauth:// (frontend dựng mã QR)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Bắt đầu liên kết 2FA",
+                "responses": {
+                    "200": {
+                        "description": "success / secret / otpauth_url",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/2fa/status": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Trả về tài khoản hiện tại đã bật xác thực hai bước TOTP hay chưa",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Trạng thái 2FA",
+                "responses": {
+                    "200": {
+                        "description": "success / enabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/auto-setup": {
+            "post": {
+                "description": "Chỉ dành cho bản Lite: lần khởi động đầu tự tạo người dùng và đơn vị mặc định rồi trả token; mọi lần khởi động đều phải xác thực bằng thông tin xác thực gốc của desktop, bỏ qua đăng ký/đăng nhập thủ công",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Khởi tạo tự động (bản Lite desktop)",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -810,7 +1041,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "非 Lite 版本",
+                        "description": "không phải bản Lite",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -825,7 +1056,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "修改当前用户的登录密码。新密码须满足 8–32 位且同时包含字母与数字；开启复杂密码后还需包含大小写与特殊字符。成功后所有会话被撤销，需重新登录。",
+                "description": "Đổi mật khẩu đăng nhập của người dùng hiện tại. Mật khẩu mới dài 8–32 ký tự, có cả chữ và số; khi bật mật khẩu phức tạp còn cần chữ hoa, chữ thường và ký tự đặc biệt. Thành công thì mọi phiên bị thu hồi, phải đăng nhập lại.",
                 "consumes": [
                     "application/json"
                 ],
@@ -833,12 +1064,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "修改密码",
+                "summary": "Đổi mật khẩu",
                 "parameters": [
                     {
-                        "description": "密码修改请求",
+                        "description": "yêu cầu đổi mật khẩu",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -857,14 +1088,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "修改成功",
+                        "description": "đổi mật khẩu thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -874,7 +1105,7 @@ const docTemplate = `{
         },
         "/auth/config": {
             "get": {
-                "description": "返回当前部署的注册模式与密码复杂度开关，供前端决定是否展示注册入口以及密码校验规则",
+                "description": "Trả về chế độ đăng ký và cờ mật khẩu phức tạp của bản triển khai hiện tại để frontend quyết định hiện nút đăng ký và quy tắc kiểm tra mật khẩu",
                 "consumes": [
                     "application/json"
                 ],
@@ -882,12 +1113,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "获取认证配置",
+                "summary": "Lấy cấu hình xác thực",
                 "responses": {
                     "200": {
-                        "description": "认证配置",
+                        "description": "cấu hình xác thực",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -896,9 +1127,13 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/invitations/lookup": {
+        "/auth/device/approve": {
             "post": {
-                "description": "根据邀请链接中的 token 返回邀请上下文（空间名 / 角色 / 过期时间），\n供注册页展示。无认证；token 无效或被撤销返回 410。\n使用 POST + body 而非 GET + path，避免 token 落入访问日志 / 浏览器历史 / tracing。",
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -906,12 +1141,69 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "解析共享邀请链接 token",
+                "summary": "Approve or deny a pending browser sign-in",
+                "responses": {}
+            }
+        },
+        "/auth/device/lookup": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Show a pending browser sign-in to the signed-in user",
+                "responses": {}
+            }
+        },
+        "/auth/device/poll": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Poll a browser sign-in; returns the token pair once approved",
+                "responses": {}
+            }
+        },
+        "/auth/device/start": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Start a browser sign-in for a client (Word add-in)",
+                "responses": {}
+            }
+        },
+        "/auth/invitations/lookup": {
+            "post": {
+                "description": "Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên đơn vị / vai trò / thời hạn)\nđể trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.\nDùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Giải mã token của liên kết mời dùng chung",
                 "parameters": [
                     {
-                        "description": "邀请 token",
+                        "description": "token mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -928,7 +1220,7 @@ const docTemplate = `{
                         }
                     },
                     "410": {
-                        "description": "链接无效或已撤销",
+                        "description": "liên kết không hợp lệ hoặc đã thu hồi",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -938,7 +1230,7 @@ const docTemplate = `{
         },
         "/auth/login": {
             "post": {
-                "description": "用户登录并获取访问令牌",
+                "description": "Đăng nhập và nhận access token",
                 "consumes": [
                     "application/json"
                 ],
@@ -946,12 +1238,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "用户登录",
+                "summary": "Đăng nhập",
                 "parameters": [
                     {
-                        "description": "登录请求参数",
+                        "description": "tham số đăng nhập",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -968,7 +1260,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "认证失败",
+                        "description": "xác thực thất bại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -983,7 +1275,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "撤销当前访问令牌并登出",
+                "description": "Thu hồi access token hiện tại và đăng xuất",
                 "consumes": [
                     "application/json"
                 ],
@@ -991,19 +1283,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "用户登出",
+                "summary": "Đăng xuất",
                 "responses": {
                     "200": {
-                        "description": "登出成功",
+                        "description": "đăng xuất thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1018,7 +1310,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取当前登录用户的详细信息",
+                "description": "Trả về thông tin chi tiết của người dùng đang đăng nhập",
                 "consumes": [
                     "application/json"
                 ],
@@ -1026,19 +1318,125 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "获取当前用户信息",
+                "summary": "Lấy thông tin người dùng hiện tại",
                 "responses": {
                     "200": {
-                        "description": "用户信息",
+                        "description": "thông tin người dùng",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "未授权",
+                        "description": "chưa xác thực",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Đổi username (tên hiển thị toàn hệ thống) của người dùng đang đăng nhập. Tên là duy nhất, 2–50 ký tự.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Cập nhật tên hiển thị của người dùng hiện tại",
+                "parameters": [
+                    {
+                        "description": "Profile update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.updateMyProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "thông tin người dùng sau khi cập nhật",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "tham số không hợp lệ hoặc tên đã được dùng",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "chưa xác thực",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/me/avatar": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Accepts one multipart image (png/jpg/webp/gif, ≤5MB), stores it\nvia the tenant's file service and records the returned\nprovider path on the caller's profile. Clients render it back\nthrough the authenticated /files proxy.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Upload avatar for the current user",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Avatar image",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Stored avatar path",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid image",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "503": {
+                        "description": "Storage not configured",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1053,7 +1451,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "按 PATCH 语义合并用户偏好（仅覆盖请求体里出现的字段，其余字段保持不变），\n数据存放在 users.preferences (JSON)，跨设备/浏览器自动同步。",
+                "description": "Gộp tuỳ chọn theo ngữ nghĩa PATCH (chỉ ghi đè các trường có trong body, giữ nguyên phần còn lại),\ndữ liệu lưu ở users.preferences (JSON), tự đồng bộ giữa các thiết bị/trình duyệt.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1061,9 +1459,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "更新当前用户的个性化设置",
+                "summary": "Cập nhật tuỳ chọn cá nhân của người dùng hiện tại",
                 "parameters": [
                     {
                         "description": "Preferences patch",
@@ -1077,20 +1475,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的偏好",
+                        "description": "tuỳ chọn sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "401": {
-                        "description": "未授权",
+                        "description": "chưa xác thực",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1100,7 +1498,7 @@ const docTemplate = `{
         },
         "/auth/oidc/callback": {
             "get": {
-                "description": "接收OIDC provider回调并由后端完成code交换，随后重定向回前端登录页",
+                "description": "Nhận callback từ OIDC provider, backend đổi code lấy token rồi chuyển hướng về trang đăng nhập frontend",
                 "consumes": [
                     "application/json"
                 ],
@@ -1108,25 +1506,25 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "OIDC登录重定向回调",
+                "summary": "Callback chuyển hướng đăng nhập OIDC",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "OIDC授权码",
+                        "description": "mã ủy quyền OIDC",
                         "name": "code",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "OIDC状态",
+                        "description": "trạng thái OIDC",
                         "name": "state",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "OIDC错误码",
+                        "description": "mã lỗi OIDC",
                         "name": "error",
                         "in": "query"
                     }
@@ -1140,7 +1538,7 @@ const docTemplate = `{
         },
         "/auth/oidc/config": {
             "get": {
-                "description": "返回OIDC是否启用以及provider展示名称，供前端决定是否展示OIDC登录入口",
+                "description": "Trả về OIDC có bật hay không và tên hiển thị của provider để frontend quyết định có hiện nút đăng nhập OIDC",
                 "consumes": [
                     "application/json"
                 ],
@@ -1148,9 +1546,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "获取OIDC登录配置",
+                "summary": "Lấy cấu hình đăng nhập OIDC",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1163,11 +1561,11 @@ const docTemplate = `{
         },
         "/auth/oidc/start": {
             "get": {
-                "description": "与 /auth/oidc/url 不同，此端点直接 302 重定向到 OIDC Provider 的授权页，\n无需前端 JS 介入。适用于外部平台（如企业门户）直接给出一个链接即可\n触发 OIDC 授权码流程，借助 IdP 的 SSO session 实现免再次输密码。",
+                "description": "Khác với /auth/oidc/url, endpoint này chuyển hướng 302 thẳng tới trang ủy quyền của OIDC Provider,\nkhông cần JS phía frontend. Phù hợp cho nền tảng bên ngoài (cổng thông tin cơ quan) chỉ cần đưa một liên kết\nđể kích hoạt luồng authorization code, tận dụng phiên SSO của IdP để khỏi nhập lại mật khẩu.",
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "发起 OIDC 登录（直接 302）",
+                "summary": "Bắt đầu đăng nhập OIDC (302 trực tiếp)",
                 "responses": {
                     "302": {
                         "description": "Found"
@@ -1177,7 +1575,7 @@ const docTemplate = `{
         },
         "/auth/oidc/url": {
             "get": {
-                "description": "根据后端OIDC配置生成第三方登录跳转地址",
+                "description": "Tạo địa chỉ chuyển hướng đăng nhập bên thứ ba từ cấu hình OIDC của backend",
                 "consumes": [
                     "application/json"
                 ],
@@ -1185,13 +1583,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "获取OIDC授权地址",
+                "summary": "Lấy địa chỉ ủy quyền OIDC",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "OIDC回调地址",
+                        "description": "địa chỉ callback OIDC",
                         "name": "redirect_uri",
                         "in": "query",
                         "required": true
@@ -1205,13 +1603,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "OIDC未启用",
+                        "description": "OIDC chưa được bật",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1219,9 +1617,30 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/provinces": {
+            "get": {
+                "description": "The 34 provincial units in force since the 2025 merger, with\nthe former provinces each absorbed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Xác thực"
+                ],
+                "summary": "Provinces for the user profile",
+                "responses": {
+                    "200": {
+                        "description": "Provinces",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/auth/refresh": {
             "post": {
-                "description": "使用刷新令牌获取新的访问令牌",
+                "description": "Dùng refresh token để lấy access token mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -1229,12 +1648,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "刷新令牌",
+                "summary": "Làm mới token",
                 "parameters": [
                     {
-                        "description": "刷新令牌",
+                        "description": "refresh token",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1250,14 +1669,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "新令牌",
+                        "description": "token mới",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "令牌无效",
+                        "description": "token không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1267,7 +1686,7 @@ const docTemplate = `{
         },
         "/auth/register": {
             "post": {
-                "description": "注册新用户账号",
+                "description": "Đăng ký tài khoản người dùng mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -1275,12 +1694,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "用户注册",
+                "summary": "Đăng ký người dùng",
                 "parameters": [
                     {
-                        "description": "注册请求参数",
+                        "description": "tham số đăng ký",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1297,13 +1716,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "注册功能已禁用",
+                        "description": "chức năng đăng ký đã bị tắt",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1313,7 +1732,7 @@ const docTemplate = `{
         },
         "/auth/register-by-invite": {
             "post": {
-                "description": "通过 Owner 生成的共享邀请链接 token 完成注册，绕过 invite_only 模式拦截。\n注册者自填邮箱（与 token 不绑定）；注册成功后自动加入对应空间。",
+                "description": "Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.\nNgười đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào đơn vị tương ứng.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1321,12 +1740,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "使用共享链接注册",
+                "summary": "Đăng ký bằng liên kết mời dùng chung",
                 "parameters": [
                     {
-                        "description": "邀请注册请求",
+                        "description": "yêu cầu đăng ký qua lời mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1343,19 +1762,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "409": {
-                        "description": "邮箱已注册",
+                        "description": "email đã được đăng ký",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "410": {
-                        "description": "链接无效或已撤销",
+                        "description": "liên kết không hợp lệ hoặc đã thu hồi",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1370,7 +1789,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "为当前用户在目标空间重新签发访问令牌；要求该用户在目标空间存在 active 成员关系（跨租户超级用户除外）。\n成功换签会把目标空间写入「最近活跃租户」偏好，下次登录与 refresh 都落在该空间（refresh JWT 不含 tenant_id）。\n该偏好是账号级的：一次换签会改变该用户所有设备的下次登录/refresh 落点。偏好写入失败则整次换签失败，不会发出新 token。",
+                "description": "Cấp lại access token cho người dùng hiện tại trên đơn vị đích; người dùng phải là thành viên active của đơn vị đó (trừ SuperAdmin liên đơn vị).\nChuyển thành công sẽ ghi đơn vị đích vào tuỳ chọn \"đơn vị hoạt động gần nhất\"; lần đăng nhập và refresh sau đều rơi vào đơn vị này (refresh JWT không chứa tenant_id).\nTuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1378,12 +1797,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "切换激活空间",
+                "summary": "Chuyển đơn vị đang hoạt động",
                 "parameters": [
                     {
-                        "description": "切换请求",
+                        "description": "yêu cầu chuyển đơn vị",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1408,13 +1827,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "无该空间成员关系或偏好写入失败",
+                        "description": "không phải thành viên của đơn vị này hoặc ghi tuỳ chọn thất bại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1429,7 +1848,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "验证访问令牌是否有效",
+                "description": "Kiểm tra access token còn hiệu lực hay không",
                 "consumes": [
                     "application/json"
                 ],
@@ -1437,21 +1856,227 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "认证"
+                    "Xác thực"
                 ],
-                "summary": "验证令牌",
+                "summary": "Kiểm tra token",
                 "responses": {
                     "200": {
-                        "description": "令牌有效",
+                        "description": "token hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "令牌无效",
+                        "description": "token không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/info": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Payment details for the purchase page",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/orders": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "My orders and, for a workspace admin, the workspace's",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Place an order for the workspace or for oneself",
+                "parameters": [
+                    {
+                        "description": "what to buy",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/orders/{code}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "One order by its code",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "order code",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/orders/{code}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Cancel a pending order of mine / of my workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "order code",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/plans": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Plans that can be bought online",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "tenant or user",
+                        "name": "scope",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/quote": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Price a purchase (with an optional promo code)",
+                "parameters": [
+                    {
+                        "description": "what to buy",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -1467,7 +2092,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "对提交的文本运行自适应分块器并返回分块预览，不写入数据库不生成 embedding。文本最大 64k 字符",
+                "description": "Chạy bộ chia đoạn thích ứng trên văn bản gửi lên và trả về bản xem trước các đoạn; không ghi cơ sở dữ liệu, không tạo embedding. Văn bản tối đa 64k ký tự",
                 "consumes": [
                     "application/json"
                 ],
@@ -1475,9 +2100,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "预览分块结果",
+                "summary": "Xem trước kết quả chia đoạn",
                 "parameters": [
                     {
                         "description": "{text, chunking_config}",
@@ -1491,27 +2116,27 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "分块结果",
+                        "description": "Kết quả chia đoạn",
                         "schema": {
                             "$ref": "#/definitions/internal_handler.PreviewChunkingResponse"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "413": {
-                        "description": "文本超过预览限制",
+                        "description": "Văn bản vượt giới hạn xem trước",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "504": {
-                        "description": "分块超时",
+                        "description": "Chia đoạn quá hạn",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1530,7 +2155,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "仅通过分块ID获取分块详情（不需要knowledge_id）；支持共享知识库下的分块访问",
+                "description": "Lấy chi tiết đoạn chỉ bằng ID đoạn (không cần knowledge_id); hỗ trợ truy cập đoạn trong kho tri thức được chia sẻ",
                 "consumes": [
                     "application/json"
                 ],
@@ -1538,13 +2163,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "通过ID获取分块",
+                "summary": "Lấy đoạn (chunk) theo ID",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "分块ID",
+                        "description": "ID đoạn (chunk)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1552,20 +2177,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "分块详情",
+                        "description": "chi tiết đoạn (chunk)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "分块不存在",
+                        "description": "không tìm thấy đoạn (chunk)",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1583,7 +2208,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除分块中生成的问题",
+                "description": "Xoá một câu hỏi đã sinh trong đoạn (chunk)",
                 "consumes": [
                     "application/json"
                 ],
@@ -1591,19 +2216,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "删除生成的问题",
+                "summary": "Xoá câu hỏi đã sinh",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "分块ID",
+                        "description": "ID đoạn (chunk)",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "问题ID",
+                        "description": "ID câu hỏi",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1619,20 +2244,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "分块不存在",
+                        "description": "không tìm thấy đoạn (chunk)",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1650,7 +2275,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取指定知识下的所有分块列表，支持分页",
+                "description": "Lấy danh sách mọi đoạn thuộc tài liệu chỉ định, có phân trang",
                 "consumes": [
                     "application/json"
                 ],
@@ -1658,13 +2283,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "获取知识分块列表",
+                "summary": "Lấy danh sách đoạn (chunk) của tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "knowledge_id",
                         "in": "path",
                         "required": true
@@ -1672,28 +2297,44 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码",
+                        "description": "số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 10,
-                        "description": "每页数量",
+                        "description": "số mục mỗi trang",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "loại đoạn (mặc định text, có thể lặp)",
+                        "name": "chunk_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "chèn văn bản của các đoạn con image_ocr/image_caption vào chỗ giữ ảnh trong content (cần cho bản scan)",
+                        "name": "include_image_text",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "分块列表",
+                        "description": "danh sách đoạn (chunk)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1709,7 +2350,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定知识下的所有分块",
+                "description": "Xoá toàn bộ đoạn thuộc tài liệu chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -1717,13 +2358,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "删除知识下所有分块",
+                "summary": "Xoá mọi đoạn (chunk) của tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "knowledge_id",
                         "in": "path",
                         "required": true
@@ -1731,14 +2372,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1756,7 +2397,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新指定分块的内容和属性",
+                "description": "Cập nhật nội dung và thuộc tính của đoạn chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -1764,26 +2405,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "更新分块",
+                "summary": "Cập nhật đoạn (chunk)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "knowledge_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "分块ID",
+                        "description": "ID đoạn (chunk)",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求",
+                        "description": "yêu cầu cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1794,20 +2435,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的分块",
+                        "description": "đoạn (chunk) sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "分块不存在",
+                        "description": "không tìm thấy đoạn (chunk)",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1823,7 +2464,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的分块",
+                "description": "Xoá đoạn chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -1831,20 +2472,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "分块管理"
+                    "Đoạn (chunk)"
                 ],
-                "summary": "删除分块",
+                "summary": "Xoá đoạn (chunk)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "knowledge_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "分块ID",
+                        "description": "ID đoạn (chunk)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1852,20 +2493,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "分块不存在",
+                        "description": "không tìm thấy đoạn (chunk)",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1880,7 +2521,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "List data sources for a knowledge base",
                 "parameters": [
@@ -1922,7 +2563,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Create a new data source",
                 "parameters": [
@@ -1962,7 +2603,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Get specific sync log",
                 "parameters": [
@@ -2000,7 +2641,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Get available connectors",
                 "responses": {
@@ -2026,7 +2667,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Test connection with raw credentials (no persistence)",
                 "parameters": [
@@ -2069,7 +2710,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Get a data source by ID",
                 "parameters": [
@@ -2108,7 +2749,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Update a data source",
                 "parameters": [
@@ -2150,7 +2791,7 @@ const docTemplate = `{
             "delete": {
                 "description": "Delete a data source (soft delete)",
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Delete a data source",
                 "parameters": [
@@ -2185,7 +2826,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Get sync logs",
                 "parameters": [
@@ -2235,7 +2876,7 @@ const docTemplate = `{
             "post": {
                 "description": "Pause a data source's scheduled syncs",
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Pause data source",
                 "parameters": [
@@ -2279,7 +2920,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Resolve resource ancestors",
                 "parameters": [
@@ -2332,7 +2973,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "List available resources in data source",
                 "parameters": [
@@ -2376,7 +3017,7 @@ const docTemplate = `{
             "post": {
                 "description": "Resume a paused data source",
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Resume data source",
                 "parameters": [
@@ -2414,7 +3055,7 @@ const docTemplate = `{
             "post": {
                 "description": "Trigger an immediate sync for a data source",
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Trigger immediate sync",
                 "parameters": [
@@ -2449,7 +3090,7 @@ const docTemplate = `{
             "post": {
                 "description": "Validate the connection to an external data source",
                 "tags": [
-                    "DataSource"
+                    "Nguồn dữ liệu"
                 ],
                 "summary": "Test data source connection",
                 "parameters": [
@@ -2483,6 +3124,105 @@ const docTemplate = `{
                 }
             }
         },
+        "/document-format/check": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Multipart upload: file (.docx), optional document_type\n(auto by default), scope (auto | full | technical |\nattached: documents outside the 29 văn bản hành chính get\nthe technical layout checks only), segmenter (auto | heuristic) and\nevaluate=true (judge the format data against the document-type\nskills with the workspace chat model, thinking on; ~1 min).\nReturns every rule with pass/fail/warn/skip, the measured\nvalue, the offending lines, the format data and, with\nevaluate, the written evaluation.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Thể thức văn bản"
+                ],
+                "summary": "Check the thể thức of a .docx (NĐ30/2020)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": ".docx file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "rule set, e.g. cong_van",
+                        "name": "document_type",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "auto | heuristic",
+                        "name": "segmenter",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "auto | full | technical | attached (auto by default; a named document_type of a văn bản hành chính is checked in full)",
+                        "name": "scope",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "skill evaluation (thinking)",
+                        "name": "evaluate",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/document-format/types": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Thể thức văn bản"
+                ],
+                "summary": "Document types with a format rule set",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/evaluation/": {
             "get": {
                 "security": [
@@ -2493,7 +3233,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据任务ID获取评估结果",
+                "description": "Lấy kết quả đánh giá theo ID tác vụ",
                 "consumes": [
                     "application/json"
                 ],
@@ -2501,13 +3241,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "评估"
+                    "Đánh giá"
                 ],
-                "summary": "获取评估结果",
+                "summary": "Lấy kết quả đánh giá",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "评估任务ID",
+                        "description": "ID tác vụ đánh giá",
                         "name": "task_id",
                         "in": "query",
                         "required": true
@@ -2515,14 +3255,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "评估结果",
+                        "description": "Kết quả đánh giá",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -2538,7 +3278,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "对知识库进行评估测试",
+                "description": "Chạy kiểm thử đánh giá trên kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -2546,12 +3286,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "评估"
+                    "Đánh giá"
                 ],
-                "summary": "执行评估",
+                "summary": "Chạy đánh giá",
                 "parameters": [
                     {
-                        "description": "评估请求参数",
+                        "description": "Tham số yêu cầu đánh giá",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2562,14 +3302,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "评估任务",
+                        "description": "Tác vụ đánh giá",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -2587,7 +3327,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取FAQ导入任务的进度",
+                "description": "Lấy tiến độ của tác vụ nhập FAQ",
                 "consumes": [
                     "application/json"
                 ],
@@ -2595,13 +3335,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "获取FAQ导入进度",
+                "summary": "Lấy tiến độ nhập FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务ID",
+                        "description": "ID tác vụ",
                         "name": "task_id",
                         "in": "path",
                         "required": true
@@ -2609,14 +3349,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "导入进度",
+                        "description": "Tiến độ nhập",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "任务不存在",
+                        "description": "Không tìm thấy tác vụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -2634,7 +3374,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新指定 IM 渠道的名称、模式、知识库、凭证或启用状态",
+                "description": "Cập nhật tên, chế độ, kho tri thức, thông tin xác thực hoặc trạng thái bật của kênh IM chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -2642,19 +3382,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "IM 渠道"
+                    "Kênh IM"
                 ],
-                "summary": "更新 IM 渠道",
+                "summary": "Cập nhật kênh IM",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "渠道 ID",
+                        "description": "ID kênh",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新字段（name/mode/output_mode/knowledge_base_id/credentials/enabled）",
+                        "description": "Các trường cập nhật (name/mode/output_mode/knowledge_base_id/credentials/enabled)",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2666,21 +3406,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的渠道",
+                        "description": "Kênh sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "渠道不存在",
+                        "description": "kênh không tồn tại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2697,18 +3437,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定 IM 渠道",
+                "description": "Xoá kênh IM chỉ định",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "IM 渠道"
+                    "Kênh IM"
                 ],
-                "summary": "删除 IM 渠道",
+                "summary": "Xoá kênh IM",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "渠道 ID",
+                        "description": "ID kênh",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -2723,14 +3463,14 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "渠道不存在",
+                        "description": "kênh không tồn tại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2749,18 +3489,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "切换指定 IM 渠道的启用状态",
+                "description": "Chuyển trạng thái bật của kênh IM chỉ định",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "IM 渠道"
+                    "Kênh IM"
                 ],
-                "summary": "启用/停用 IM 渠道",
+                "summary": "Bật/tắt kênh IM",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "渠道 ID",
+                        "description": "ID kênh",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -2768,21 +3508,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的渠道",
+                        "description": "Kênh sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "渠道不存在",
+                        "description": "kênh không tồn tại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2793,7 +3533,7 @@ const docTemplate = `{
         },
         "/im/callback/{channel_id}": {
             "get": {
-                "description": "接收各 IM 平台的事件回调；走平台自身签名校验，不使用 API Key",
+                "description": "Nhận callback sự kiện từ các nền tảng IM; dùng kiểm tra chữ ký của chính nền tảng, không dùng API Key",
                 "consumes": [
                     "application/json"
                 ],
@@ -2801,13 +3541,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "IM 回调"
+                    "Kênh IM"
                 ],
-                "summary": "IM 平台回调",
+                "summary": "Callback từ nền tảng IM",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "渠道 ID",
+                        "description": "ID kênh",
                         "name": "channel_id",
                         "in": "path",
                         "required": true
@@ -2815,21 +3555,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "处理结果",
+                        "description": "Kết quả xử lý",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "签名校验失败",
+                        "description": "kiểm tra chữ ký thất bại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2838,7 +3578,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "接收各 IM 平台的事件回调；走平台自身签名校验，不使用 API Key",
+                "description": "Nhận callback sự kiện từ các nền tảng IM; dùng kiểm tra chữ ký của chính nền tảng, không dùng API Key",
                 "consumes": [
                     "application/json"
                 ],
@@ -2846,13 +3586,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "IM 回调"
+                    "Kênh IM"
                 ],
-                "summary": "IM 平台回调",
+                "summary": "Callback từ nền tảng IM",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "渠道 ID",
+                        "description": "ID kênh",
                         "name": "channel_id",
                         "in": "path",
                         "required": true
@@ -2860,21 +3600,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "处理结果",
+                        "description": "Kết quả xử lý",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "签名校验失败",
+                        "description": "kiểm tra chữ ký thất bại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2893,7 +3633,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "检查ASR（语音识别）模型连接是否正常，通过发送一段静默音频测试 /v1/audio/transcriptions 端点",
+                "description": "Kiểm tra kết nối mô hình ASR (nhận dạng giọng nói) bằng cách gửi một đoạn âm thanh im lặng tới endpoint /v1/audio/transcriptions",
                 "consumes": [
                     "application/json"
                 ],
@@ -2901,12 +3641,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "检查ASR模型",
+                "summary": "Kiểm tra mô hình ASR",
                 "parameters": [
                     {
-                        "description": "ASR检查请求",
+                        "description": "yêu cầu kiểm tra ASR",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2917,14 +3657,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "检查结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -2942,7 +3682,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据知识库ID获取当前配置信息",
+                "description": "Lấy cấu hình hiện tại theo ID kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -2950,13 +3690,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "获取知识库配置",
+                "summary": "Lấy cấu hình kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "kbId",
                         "in": "path",
                         "required": true
@@ -2964,14 +3704,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "配置信息",
+                        "description": "thông tin cấu hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "知识库不存在",
+                        "description": "không tìm thấy kho tri thức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -2987,7 +3727,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据知识库ID更新模型和分块配置",
+                "description": "Cập nhật mô hình và cấu hình chia đoạn theo ID kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -2995,19 +3735,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "更新知识库配置",
+                "summary": "Update Knowledge BaseConfiguration",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "kbId",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "配置请求",
+                        "description": "yêu cầu cấu hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3018,20 +3758,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识库不存在",
+                        "description": "không tìm thấy kho tri thức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3049,7 +3789,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "测试Embedding接口是否可用并返回向量维度",
+                "description": "Kiểm tra API embedding có hoạt động không và trả về số chiều vector",
                 "consumes": [
                     "application/json"
                 ],
@@ -3057,12 +3797,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "测试Embedding模型",
+                "summary": "Kiểm tra mô hình embedding",
                 "parameters": [
                     {
-                        "description": "Embedding测试请求",
+                        "description": "yêu cầu kiểm tra embedding",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3073,14 +3813,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "测试结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3090,7 +3830,7 @@ const docTemplate = `{
         },
         "/initialization/extract/fabri-tag": {
             "post": {
-                "description": "随机生成一组标签",
+                "description": "Sinh ngẫu nhiên một bộ nhãn",
                 "consumes": [
                     "application/json"
                 ],
@@ -3098,12 +3838,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "生成随机标签",
+                "summary": "Sinh nhãn ngẫu nhiên",
                 "responses": {
                     "200": {
-                        "description": "生成的标签",
+                        "description": "nhãn đã sinh",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3122,7 +3862,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据标签生成示例文本",
+                "description": "Sinh văn bản mẫu theo nhãn",
                 "consumes": [
                     "application/json"
                 ],
@@ -3130,12 +3870,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "生成示例文本",
+                "summary": "Sinh văn bản mẫu",
                 "parameters": [
                     {
-                        "description": "生成请求",
+                        "description": "yêu cầu sinh",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3146,14 +3886,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "生成的文本",
+                        "description": "văn bản đã sinh",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3171,7 +3911,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "从文本中提取实体和关系",
+                "description": "Trích xuất thực thể và quan hệ từ văn bản",
                 "consumes": [
                     "application/json"
                 ],
@@ -3179,12 +3919,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "提取文本关系",
+                "summary": "Trích xuất quan hệ từ văn bản",
                 "parameters": [
                     {
-                        "description": "提取请求",
+                        "description": "yêu cầu trích xuất",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3195,14 +3935,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "提取结果",
+                        "description": "kết quả trích xuất",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3220,7 +3960,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据知识库ID执行完整配置更新",
+                "description": "Cập nhật toàn bộ cấu hình theo ID kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -3228,19 +3968,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "初始化知识库配置",
+                "summary": "Initialization Knowledge BaseConfiguration",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "kbId",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "初始化请求",
+                        "description": "yêu cầu khởi tạo",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3251,14 +3991,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "初始化成功",
+                        "description": "khởi tạo thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3276,7 +4016,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "上传图片测试多模态处理功能",
+                "description": "Tải ảnh lên để kiểm tra xử lý đa phương thức",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -3284,20 +4024,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "测试多模态功能",
+                "summary": "Kiểm tra chức năng đa phương thức",
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "测试图片",
+                        "description": "ảnh kiểm tra",
                         "name": "image",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "VLM模型名称",
+                        "description": "tên mô hình VLM",
                         "name": "vlm_model",
                         "in": "formData",
                         "required": true
@@ -3317,13 +4057,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "VLM接口类型",
+                        "description": "loại giao diện VLM",
                         "name": "vlm_interface_type",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "存储类型(cos/minio)",
+                        "description": "loại lưu trữ (cos/minio)",
                         "name": "storage_type",
                         "in": "formData",
                         "required": true
@@ -3331,14 +4071,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "测试结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3356,7 +4096,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取Ollama模型下载任务的进度",
+                "description": "Lấy tiến độ của tác vụ tải mô hình Ollama",
                 "consumes": [
                     "application/json"
                 ],
@@ -3364,13 +4104,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "获取下载进度",
+                "summary": "Lấy tiến độ tải",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务ID",
+                        "description": "ID tác vụ",
                         "name": "taskId",
                         "in": "path",
                         "required": true
@@ -3378,14 +4118,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "下载进度",
+                        "description": "tiến độ tải",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "任务不存在",
+                        "description": "không tìm thấy tác vụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3403,7 +4143,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "列出所有Ollama模型下载任务",
+                "description": "Liệt kê mọi tác vụ tải mô hình Ollama",
                 "consumes": [
                     "application/json"
                 ],
@@ -3411,12 +4151,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "列出下载任务",
+                "summary": "Liệt kê tác vụ tải",
                 "responses": {
                     "200": {
-                        "description": "任务列表",
+                        "description": "danh sách tác vụ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3435,7 +4175,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "列出已安装的Ollama模型",
+                "description": "Liệt kê các mô hình Ollama đã cài",
                 "consumes": [
                     "application/json"
                 ],
@@ -3443,19 +4183,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "列出Ollama模型",
+                "summary": "Liệt kê mô hình Ollama",
                 "responses": {
                     "200": {
-                        "description": "模型列表",
+                        "description": "danh sách mô hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3473,7 +4213,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "检查指定的Ollama模型是否已安装",
+                "description": "Kiểm tra các mô hình Ollama chỉ định đã được cài hay chưa",
                 "consumes": [
                     "application/json"
                 ],
@@ -3481,12 +4221,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "检查Ollama模型状态",
+                "summary": "Kiểm tra trạng thái mô hình Ollama",
                 "parameters": [
                     {
-                        "description": "模型名称列表",
+                        "description": "danh sách tên mô hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3505,14 +4245,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "模型状态",
+                        "description": "trạng thái mô hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3530,7 +4270,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "异步下载指定的Ollama模型",
+                "description": "Tải bất đồng bộ mô hình Ollama chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -3538,12 +4278,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "下载Ollama模型",
+                "summary": "Tải mô hình Ollama",
                 "parameters": [
                     {
-                        "description": "模型名称",
+                        "description": "tên mô hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3559,14 +4299,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "下载任务信息",
+                        "description": "Download task information",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3576,7 +4316,7 @@ const docTemplate = `{
         },
         "/initialization/ollama/status": {
             "get": {
-                "description": "检查Ollama服务是否可用",
+                "description": "Kiểm tra dịch vụ Ollama có khả dụng hay không",
                 "consumes": [
                     "application/json"
                 ],
@@ -3584,12 +4324,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "检查Ollama服务状态",
+                "summary": "Kiểm tra trạng thái dịch vụ Ollama",
                 "responses": {
                     "200": {
-                        "description": "Ollama状态",
+                        "description": "trạng thái Ollama",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3608,7 +4348,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "检查远程API模型连接是否正常",
+                "description": "Kiểm tra kết nối tới mô hình API từ xa",
                 "consumes": [
                     "application/json"
                 ],
@@ -3616,12 +4356,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "检查远程模型",
+                "summary": "Kiểm tra mô hình từ xa",
                 "parameters": [
                     {
-                        "description": "模型检查请求",
+                        "description": "yêu cầu kiểm tra mô hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3632,14 +4372,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "检查结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3657,7 +4397,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "检查Rerank模型连接和功能是否正常",
+                "description": "Kiểm tra kết nối và chức năng của mô hình rerank",
                 "consumes": [
                     "application/json"
                 ],
@@ -3665,12 +4405,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "初始化"
+                    "Khởi tạo"
                 ],
-                "summary": "检查Rerank模型",
+                "summary": "Kiểm tra mô hình rerank",
                 "parameters": [
                     {
-                        "description": "Rerank检查请求",
+                        "description": "yêu cầu kiểm tra rerank",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3681,14 +4421,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "检查结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3706,7 +4446,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取当前空间的所有知识库；或当传入 agent_id（共享智能体）时，校验权限后返回该智能体配置的知识库范围（用于 @ 提及）",
+                "description": "Lấy mọi kho tri thức của đơn vị hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)",
                 "consumes": [
                     "application/json"
                 ],
@@ -3714,27 +4454,27 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "获取知识库列表",
+                "summary": "Lấy danh sách kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "共享智能体 ID（传入时返回该智能体可用的知识库）",
+                        "description": "ID trợ lý chia sẻ (khi truyền sẽ trả về các kho tri thức trợ lý đó dùng được)",
                         "name": "agent_id",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "知识库列表",
+                        "description": "Knowledge BaseList ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3750,7 +4490,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "创建新的知识库",
+                "description": "Tạo kho tri thức mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -3758,12 +4498,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "创建知识库",
+                "summary": "Create Knowledge Base",
                 "parameters": [
                     {
-                        "description": "知识库信息",
+                        "description": "thông tin kho tri thức",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3774,14 +4514,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的知识库",
+                        "description": "kho tri thức đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3799,7 +4539,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "将一个知识库的内容复制到另一个知识库（异步任务）",
+                "description": "Sao chép nội dung một kho tri thức sang kho khác (tác vụ bất đồng bộ)",
                 "consumes": [
                     "application/json"
                 ],
@@ -3807,12 +4547,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "复制知识库",
+                "summary": "Sao chép kho tri thức",
                 "parameters": [
                     {
-                        "description": "复制请求",
+                        "description": "yêu cầu sao chép",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3823,14 +4563,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务ID",
+                        "description": "ID tác vụ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3848,7 +4588,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取知识库复制任务的进度",
+                "description": "Lấy tiến độ tác vụ sao chép kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -3856,13 +4596,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "获取知识库复制进度",
+                "summary": "Lấy tiến độ sao chép kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务ID",
+                        "description": "ID tác vụ",
                         "name": "task_id",
                         "in": "path",
                         "required": true
@@ -3870,14 +4610,104 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "进度信息",
+                        "description": "thông tin tiến độ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "任务不存在",
+                        "description": "không tìm thấy tác vụ",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/public": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh đơn vị vẫn gọi được.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Kho tri thức"
+                ],
+                "summary": "Danh mục kho tri thức công khai của nền tảng",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "số trang (bắt đầu từ 1, mặc định 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "số mục mỗi trang (mặc định 50, tối đa 200)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "lọc theo từ khoá tên/mô tả",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "trang danh mục công khai",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Create a platform-owned public knowledge base (owner and data scope 0). Explicit human SuperAdmin only; never reachable with an API key.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Kho tri thức"
+                ],
+                "summary": "Create platform public Knowledge Base",
+                "parameters": [
+                    {
+                        "description": "thông tin kho tri thức",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBase"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "kho tri thức đã tạo",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3895,7 +4725,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取知识库详情。当使用共享智能体时，可传 agent_id 以校验该智能体是否有权访问该知识库。",
+                "description": "Lấy chi tiết kho tri thức theo ID. Khi dùng trợ lý chia sẻ, có thể truyền agent_id để kiểm tra trợ lý đó có quyền truy cập kho tri thức này không.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3903,40 +4733,40 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "获取知识库详情",
+                "summary": "Lấy chi tiết kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "共享智能体 ID（用于校验智能体是否有权访问该知识库）",
+                        "description": "ID trợ lý chia sẻ (để kiểm tra trợ lý có quyền truy cập kho tri thức này không)",
                         "name": "agent_id",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "知识库详情",
+                        "description": "Knowledge BaseDetails ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识库不存在",
+                        "description": "không tìm thấy kho tri thức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -3952,7 +4782,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新知识库的名称、描述和配置",
+                "description": "Cập nhật tên, mô tả và cấu hình kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -3960,19 +4790,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "更新知识库",
+                "summary": "Update Knowledge Base",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求",
+                        "description": "yêu cầu cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3983,14 +4813,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的知识库",
+                        "description": "kho tri thức sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4006,7 +4836,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的知识库及其所有内容",
+                "description": "Xoá kho tri thức chỉ định cùng toàn bộ nội dung",
                 "consumes": [
                     "application/json"
                 ],
@@ -4014,13 +4844,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "删除知识库",
+                "summary": "Delete Knowledge Base",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4028,16 +4858,51 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/{id}/access": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Owner, scope, member_default, the caller's effective permissions and their sources; grantees for the KB's managers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Kho tri thức"
+                ],
+                "summary": "KB access overview",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge Base ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -4050,49 +4915,49 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回知识库的重要变更与后台任务入口。仅知识库创建者或所属空间管理员可读，共享空间不可读。",
+                "description": "Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức. Chỉ người tạo kho tri thức hoặc quản trị viên đơn vị sở hữu được đọc; đơn vị được chia sẻ không đọc được.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "获取知识库活动记录",
+                "summary": "Lấy lịch sử hoạt động của kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "游标：返回 id 小于此值的记录",
+                        "description": "Con trỏ: trả về bản ghi có id nhỏ hơn giá trị này",
                         "name": "after_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "页大小，1-100，默认 50",
+                        "description": "Kích thước trang, 1-100, mặc định 50",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 action 精确过滤",
+                        "description": "Lọc chính xác theo action",
                         "name": "action",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 outcome 精确过滤",
+                        "description": "Lọc chính xác theo outcome",
                         "name": "outcome",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 actor_user_id 精确过滤",
+                        "description": "Lọc chính xác theo actor_user_id",
                         "name": "actor",
                         "in": "query"
                     }
@@ -4120,7 +4985,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "创建一个只包含设置的新知识库副本，不复制知识、FAQ 内容、分块、索引、Wiki 页面、分享或置顶状态",
+                "description": "Tạo bản sao kho tri thức chỉ gồm cài đặt, không sao chép tài liệu, FAQ, đoạn (chunk), chỉ mục, trang Wiki, chia sẻ hay trạng thái ghim",
                 "consumes": [
                     "application/json"
                 ],
@@ -4128,13 +4993,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "创建知识库副本",
+                "summary": "Tạo bản sao kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "源知识库 ID",
+                        "description": "ID kho tri thức nguồn",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4142,16 +5007,70 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建后的知识库副本",
+                        "description": "bản sao kho tri thức đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/{id}/entity-graph": {
+            "get": {
+                "description": "The best-connected entities extracted from the KB's documents\nand the relations among them. q filters by name (adding the\nmatches' neighbours), types by entity type (comma-separated:\nDocument, Article, Organization, Person, Task, Location),\nknowledge_id by document.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Đồ thị tri thức"
+                ],
+                "summary": "Entity graph of a knowledge base",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name words",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity types",
+                        "name": "types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only this document",
+                        "name": "knowledge_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Node budget (default 150, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GraphView + graph_enabled + graph_store",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -4167,7 +5086,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取知识库下的FAQ条目列表，支持分页和筛选",
+                "description": "Lấy danh sách mục FAQ trong kho tri thức, hỗ trợ phân trang và lọc",
                 "consumes": [
                     "application/json"
                 ],
@@ -4175,76 +5094,76 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "获取FAQ条目列表",
+                "summary": "Lấy danh sách mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "Số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "Số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "标签ID筛选(seq_id)，兼容旧版单标签",
+                        "description": "Lọc theo ID thẻ (seq_id), tương thích bản cũ một thẻ",
                         "name": "tag_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "标签UUID筛选，逗号分隔（OR语义）",
+                        "description": "Lọc theo UUID thẻ, phân cách bằng dấu phẩy (ngữ nghĩa OR)",
                         "name": "tag_ids",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "关键词搜索",
+                        "description": "Tìm theo từ khóa",
                         "name": "keyword",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案), 默认搜索全部",
+                        "description": "Trường tìm kiếm: standard_question (câu hỏi chuẩn), similar_questions (câu hỏi tương tự), answers (câu trả lời); mặc định tìm tất cả",
                         "name": "search_field",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "排序方式: asc(按更新时间正序), 默认按更新时间倒序",
+                        "description": "Thứ tự sắp xếp: asc (theo thời gian cập nhật tăng dần); mặc định giảm dần theo thời gian cập nhật",
                         "name": "sort_order",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "启用状态筛选；不传时返回全部",
+                        "description": "Lọc theo trạng thái bật; không truyền thì trả về tất cả",
                         "name": "is_enabled",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "FAQ列表",
+                        "description": "FAQList ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4260,7 +5179,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "异步批量更新或插入FAQ条目。支持 dry_run 模式（设置 dry_run=true），异步验证不实际导入。\ndry_run 模式是异步操作，返回 task_id，通过 /faq/import/progress/{task_id} 查询进度和结果。\n验证内容包括：1) 条目基本格式 2) 重复问题（批次内和知识库已有） 3) 内容安全检查。",
+                "description": "Cập nhật hoặc chèn hàng loạt mục FAQ bất đồng bộ. Hỗ trợ chế độ dry_run (đặt dry_run=true): chỉ kiểm tra bất đồng bộ, không nhập thật.\nChế độ dry_run là thao tác bất đồng bộ, trả về task_id; xem tiến độ và kết quả qua /faq/import/progress/{task_id}.\nNội dung kiểm tra gồm: 1) định dạng cơ bản của mục 2) câu hỏi trùng (trong lô và đã có trong kho tri thức) 3) kiểm tra an toàn nội dung.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4268,19 +5187,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "批量更新/插入FAQ条目",
+                "summary": "Cập nhật/chèn hàng loạt mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "批量操作请求",
+                        "description": "Yêu cầu thao tác hàng loạt",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4291,14 +5210,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务ID",
+                        "description": "ID tác vụ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4314,7 +5233,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "批量删除指定的FAQ条目",
+                "description": "Xóa hàng loạt các mục FAQ chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -4322,19 +5241,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "批量删除FAQ条目",
+                "summary": "Xóa hàng loạt mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "要删除的FAQ ID列表(seq_id)",
+                        "description": "Danh sách ID FAQ cần xóa (seq_id)",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4353,14 +5272,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xóa thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4378,7 +5297,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "将所有FAQ条目导出为 CSV（默认）或 JSON。?format=json 返回与 FAQEntryPayload 结构兼容的数组。",
+                "description": "Xuất toàn bộ mục FAQ ra CSV (mặc định) hoặc JSON. ?format=json trả về mảng tương thích cấu trúc FAQEntryPayload.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4387,33 +5306,33 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "导出FAQ条目",
+                "summary": "Xuất mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "导出格式：csv（默认）或 json",
+                        "description": "Định dạng xuất: csv (mặc định) hoặc json",
                         "name": "format",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "导出文件",
+                        "description": "Tệp xuất",
                         "schema": {
                             "type": "file"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4431,7 +5350,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "批量更新FAQ条目的多个字段（is_enabled, is_recommended, tag_id）",
+                "description": "Cập nhật hàng loạt nhiều trường của mục FAQ (is_enabled, is_recommended, tag_id)",
                 "consumes": [
                     "application/json"
                 ],
@@ -4439,19 +5358,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "批量更新FAQ字段",
+                "summary": "Cập nhật trường FAQ hàng loạt",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "字段更新请求",
+                        "description": "Yêu cầu cập nhật trường",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4462,14 +5381,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4487,7 +5406,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "批量更新FAQ条目的标签",
+                "description": "Cập nhật hàng loạt thẻ của các mục FAQ",
                 "consumes": [
                     "application/json"
                 ],
@@ -4495,19 +5414,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "批量更新FAQ标签",
+                "summary": "Cập nhật thẻ FAQ hàng loạt",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "标签更新请求",
+                        "description": "Yêu cầu cập nhật thẻ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4518,14 +5437,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4543,7 +5462,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取单个FAQ条目的详情",
+                "description": "Lấy chi tiết một mục FAQ theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -4551,20 +5470,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "获取FAQ条目详情",
+                "summary": "Lấy chi tiết mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "FAQ条目ID(seq_id)",
+                        "description": "ID mục FAQ (seq_id)",
                         "name": "entry_id",
                         "in": "path",
                         "required": true
@@ -4572,20 +5491,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "FAQ条目详情",
+                        "description": "Chi tiết mục FAQ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "条目不存在",
+                        "description": "Không tìm thấy mục",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4601,7 +5520,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新指定的FAQ条目",
+                "description": "Cập nhật mục FAQ chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -4609,26 +5528,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "更新FAQ条目",
+                "summary": "Cập nhật mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "FAQ条目ID(seq_id)",
+                        "description": "ID mục FAQ (seq_id)",
                         "name": "entry_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "FAQ条目",
+                        "description": "Mục FAQ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4639,14 +5558,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4664,7 +5583,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "向指定的FAQ条目添加相似问题",
+                "description": "Thêm câu hỏi tương tự vào mục FAQ chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -4672,26 +5591,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "添加相似问",
+                "summary": "Thêm câu hỏi tương tự",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "FAQ条目ID(seq_id)",
+                        "description": "ID mục FAQ (seq_id)",
                         "name": "entry_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "相似问列表",
+                        "description": "Danh sách câu hỏi tương tự",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4702,20 +5621,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的FAQ条目",
+                        "description": "Mục FAQ sau cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "条目不存在",
+                        "description": "Không tìm thấy mục",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4733,7 +5652,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "同步创建单个FAQ条目",
+                "description": "Tạo đồng bộ một mục FAQ",
                 "consumes": [
                     "application/json"
                 ],
@@ -4741,19 +5660,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "创建单个FAQ条目",
+                "summary": "Tạo một mục FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "FAQ条目",
+                        "description": "Mục FAQ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4764,14 +5683,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "创建的FAQ条目",
+                        "description": "Mục FAQ đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4789,7 +5708,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新FAQ知识库导入结果统计卡片的显示或隐藏状态",
+                "description": "Cập nhật trạng thái hiện/ẩn thẻ thống kê kết quả nhập của kho tri thức FAQ",
                 "consumes": [
                     "application/json"
                 ],
@@ -4797,19 +5716,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "更新FAQ最后一次导入结果显示状态",
+                "summary": "Cập nhật trạng thái hiển thị kết quả nhập FAQ gần nhất",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "状态更新请求",
+                        "description": "Yêu cầu cập nhật trạng thái",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4820,20 +5739,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识库不存在或无导入记录",
+                        "description": "Không tìm thấy kho tri thức hoặc chưa có lần nhập nào",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4851,7 +5770,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "使用混合搜索在FAQ中搜索，支持两级优先级标签召回：first_priority_tag_ids优先级最高，second_priority_tag_ids次之",
+                "description": "Tìm trong FAQ bằng tìm kiếm kết hợp, hỗ trợ truy hồi theo thẻ hai mức ưu tiên: first_priority_tag_ids cao nhất, second_priority_tag_ids kế tiếp",
                 "consumes": [
                     "application/json"
                 ],
@@ -4859,19 +5778,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "FAQ管理"
+                    "FAQ"
                 ],
-                "summary": "搜索FAQ",
+                "summary": "Tìm kiếm FAQ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "搜索请求",
+                        "description": "Yêu cầu tìm kiếm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4882,14 +5801,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "Kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4907,7 +5826,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "在知识库中执行向量和关键词混合搜索。推荐使用 POST；GET 携带 JSON 请求体仍受支持（兼容旧客户端）。",
+                "description": "Tìm kiếm kết hợp vector và từ khoá trong kho tri thức. Nên dùng POST; GET kèm body JSON vẫn được hỗ trợ (tương thích client cũ).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4915,19 +5834,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "混合搜索",
+                "summary": "Tìm kiếm kết hợp",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "搜索参数",
+                        "description": "tham số tìm kiếm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4942,21 +5861,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "dạng tham chiếu tệp, public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4972,7 +5891,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "在知识库中执行向量和关键词混合搜索。推荐使用 POST；GET 携带 JSON 请求体仍受支持（兼容旧客户端）。",
+                "description": "Tìm kiếm kết hợp vector và từ khoá trong kho tri thức. Nên dùng POST; GET kèm body JSON vẫn được hỗ trợ (tương thích client cũ).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4980,19 +5899,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "混合搜索",
+                "summary": "Tìm kiếm kết hợp",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "搜索参数",
+                        "description": "tham số tìm kiếm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5007,21 +5926,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "dạng tham chiếu tệp, public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5039,7 +5958,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取知识库下的知识列表，支持分页和筛选",
+                "description": "Lấy danh sách tài liệu trong kho tri thức, hỗ trợ phân trang và lọc",
                 "consumes": [
                     "application/json"
                 ],
@@ -5047,94 +5966,94 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "获取知识列表",
+                "summary": "Lấy danh sách tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "Số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "Số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "标签ID筛选，逗号分隔（OR语义）",
+                        "description": "Lọc theo ID thẻ, phân cách bằng dấu phẩy (ngữ nghĩa OR)",
                         "name": "tag_ids",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "关键词搜索",
+                        "description": "Tìm theo từ khoá",
                         "name": "keyword",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "文件类型筛选",
+                        "description": "Lọc theo loại tệp",
                         "name": "file_type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "解析状态筛选 (pending/processing/completed/failed)",
+                        "description": "Lọc theo trạng thái phân tích (pending/processing/completed/failed)",
                         "name": "parse_status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "来源/渠道筛选 (web/api/feishu/notion/yuque/wechat/...，或 manual/url 按 type 过滤)",
+                        "description": "Lọc theo nguồn/kênh (web/api/feishu/notion/yuque/wechat/..., hoặc manual/url lọc theo type)",
                         "name": "source",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "更新时间起点，RFC3339 格式",
+                        "description": "Mốc bắt đầu thời gian cập nhật, định dạng RFC3339",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "更新时间终点，RFC3339 格式",
+                        "description": "Mốc kết thúc thời gian cập nhật, định dạng RFC3339",
                         "name": "end_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "文件夹路径筛选，空字符串表示知识库根目录；不传该参数则不按文件夹过滤",
+                        "description": "Lọc theo đường dẫn thư mục, chuỗi rỗng là thư mục gốc của kho tri thức; không truyền thì không lọc theo thư mục",
                         "name": "folder_path",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "为 true 时同时返回子文件夹内的文档",
+                        "description": "Nếu true thì trả về cả tài liệu trong thư mục con",
                         "name": "folder_recursive",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "知识列表",
+                        "description": "Danh sách tài liệu",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5150,7 +6069,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除知识库下的所有知识条目（异步任务）。知识库本身保留，仅清空其中的内容",
+                "description": "Xoá mọi mục tài liệu trong kho tri thức (tác vụ bất đồng bộ). Kho tri thức vẫn được giữ, chỉ xoá nội dung bên trong",
                 "consumes": [
                     "application/json"
                 ],
@@ -5158,13 +6077,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "清空知识库内容",
+                "summary": "Xoá toàn bộ nội dung kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -5172,20 +6091,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "清空任务已提交",
+                        "description": "Tác vụ xoá toàn bộ đã được gửi",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5203,7 +6122,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "将同一知识库的最多 200 个文档打包为 ZIP，原始内容合计不超过 512 MiB。无原文件的条目会被跳过；无权访问、跨库或读取失败时不返回残缺压缩包。",
+                "description": "Đóng gói tối đa 200 tài liệu của cùng một kho tri thức thành ZIP, tổng nội dung gốc không quá 512 MiB. Mục không có tệp gốc sẽ bị bỏ qua; khi không có quyền, khác kho hoặc đọc lỗi thì không trả về gói nén dở dang.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5211,19 +6130,19 @@ const docTemplate = `{
                     "application/zip"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "批量下载知识文件",
+                "summary": "Tải về hàng loạt tệp tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "文档ID列表",
+                        "description": "Danh sách ID tài liệu",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5234,7 +6153,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "ZIP 压缩包",
+                        "description": "Gói nén ZIP",
                         "schema": {
                             "type": "file"
                         }
@@ -5288,7 +6207,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "上传文件并创建知识条目",
+                "description": "Tải tệp lên và tạo mục tài liệu",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -5296,71 +6215,71 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "从文件创建知识",
+                "summary": "Tạo tài liệu từ tệp",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "file",
-                        "description": "上传的文件",
+                        "description": "Tệp tải lên",
                         "name": "file",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "自定义文件名",
+                        "description": "Tên tệp tuỳ chỉnh",
                         "name": "fileName",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "元数据JSON",
+                        "description": "Metadata dạng JSON",
                         "name": "metadata",
                         "in": "formData"
                     },
                     {
                         "type": "boolean",
-                        "description": "启用多模态处理",
+                        "description": "Bật xử lý đa phương thức",
                         "name": "enable_multimodel",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "分类ID列表，逗号分隔",
+                        "description": "Danh sách ID thẻ, phân cách bằng dấu phẩy",
                         "name": "tag_ids",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "处理配置JSON（KnowledgeProcessOverrides）",
+                        "description": "Cấu hình xử lý dạng JSON (KnowledgeProcessOverrides)",
                         "name": "process_config",
                         "in": "formData"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "创建的知识",
+                        "description": "Tài liệu đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "409": {
-                        "description": "文件重复",
+                        "description": "tệp bị trùng",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5379,7 +6298,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回知识库内由文件夹上传形成的目录树，包含每个文件夹的直接文档数与含子目录的总数",
+                "description": "Trả về cây thư mục hình thành từ việc tải thư mục lên kho tri thức, gồm số tài liệu trực tiếp và tổng số kể cả thư mục con của mỗi thư mục",
                 "consumes": [
                     "application/json"
                 ],
@@ -5387,13 +6306,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "获取知识库文件夹目录树",
+                "summary": "Lấy cây thư mục của kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -5401,14 +6320,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "目录树",
+                        "description": "Cây thư mục",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5424,7 +6343,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "把一个文件夹及其所有子目录改到新路径。目标路径已存在时两个文件夹合并；不能移动到自身子目录下",
+                "description": "Chuyển một thư mục cùng toàn bộ thư mục con sang đường dẫn mới. Nếu đường dẫn đích đã tồn tại thì hai thư mục được gộp; không thể chuyển vào thư mục con của chính nó",
                 "consumes": [
                     "application/json"
                 ],
@@ -5432,19 +6351,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "重命名或移动文件夹",
+                "summary": "Đổi tên hoặc di chuyển thư mục",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "重命名请求",
+                        "description": "Yêu cầu đổi tên",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5455,20 +6374,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "重命名成功",
+                        "description": "Đổi tên thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5486,7 +6405,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "手工录入Markdown格式的知识内容",
+                "description": "Nhập thủ công nội dung tài liệu ở định dạng Markdown",
                 "consumes": [
                     "application/json"
                 ],
@@ -5494,19 +6413,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "手工创建知识",
+                "summary": "Tạo tài liệu thủ công",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "手工知识内容",
+                        "description": "Nội dung tài liệu thủ công",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5517,14 +6436,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "创建的知识",
+                        "description": "Tài liệu đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5542,7 +6461,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "从指定URL抓取内容并创建知识条目。当提供 file_name/file_type 或 URL 路径含已知文件扩展名时，自动切换为文件下载模式",
+                "description": "Lấy nội dung từ URL chỉ định và tạo mục tài liệu. Khi có file_name/file_type hoặc đường dẫn URL chứa phần mở rộng tệp đã biết thì tự chuyển sang chế độ tải tệp",
                 "consumes": [
                     "application/json"
                 ],
@@ -5550,19 +6469,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "从URL创建知识",
+                "summary": "Tạo tài liệu từ URL",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "URL请求",
+                        "description": "Yêu cầu theo URL",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5596,20 +6515,56 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的知识",
+                        "description": "Tài liệu đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "409": {
-                        "description": "URL重复",
+                        "description": "URL bị trùng",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/{id}/legal-graph": {
+            "get": {
+                "description": "The KB's documents linked to the legal catalogue and their\ndirect neighbours: replacement, repeal, amendment, guidance,\nconsolidation, and \"căn cứ\" between two KB documents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Đồ thị tri thức"
+                ],
+                "summary": "Legal relation graph of a knowledge base",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Node budget (default 150, max 400)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GraphView",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5628,18 +6583,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回与源知识库 Type 一致、EmbeddingModelID 一致、非临时且不是自身的目标知识库列表",
+                "description": "Trả về các kho tri thức đích cùng Type, cùng EmbeddingModelID với kho nguồn, không tạm thời và không phải chính nó",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "获取可移动目标知识库列表",
+                "summary": "Lấy danh sách kho tri thức đích có thể di chuyển tới",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "源知识库 ID",
+                        "description": "ID kho tri thức nguồn",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -5647,20 +6602,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "可移动目标列表",
+                        "description": "danh sách đích có thể di chuyển",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识库不存在",
+                        "description": "không tìm thấy kho tri thức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5678,7 +6633,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "切换知识库的置顶状态",
+                "description": "Chuyển trạng thái ghim của kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -5686,13 +6641,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识库"
+                    "Kho tri thức"
                 ],
-                "summary": "置顶/取消置顶知识库",
+                "summary": "Ghim / bỏ ghim kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -5700,14 +6655,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的知识库",
+                        "description": "kho tri thức sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "知识库不存在",
+                        "description": "không tìm thấy kho tri thức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5715,25 +6670,28 @@ const docTemplate = `{
                 }
             }
         },
-        "/knowledge-bases/{id}/shares": {
-            "get": {
+        "/knowledge-bases/{id}/profile/generate": {
+            "post": {
                 "security": [
                     {
                         "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取知识库的所有共享记录",
+                "description": "Dựa trên tổng hợp hồ sơ tài liệu, sinh lại ngay mô tả AI của kho tri thức (không ghi đè mô tả viết tay)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识库共享"
+                    "Kho tri thức"
                 ],
-                "summary": "获取知识库的共享列表",
+                "summary": "Sinh mô tả kho tri thức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -5741,106 +6699,46 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "hồ sơ kho tri thức đã sinh",
                         "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ListSharesResponse"
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "loại kho tri thức không hỗ trợ hoặc chưa cấu hình mô hình",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     }
                 }
-            },
+            }
+        },
+        "/knowledge-bases/{id}/subscription": {
             "post": {
                 "security": [
                     {
                         "Bearer": []
                     }
                 ],
-                "description": "将知识库共享到指定组织",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "description": "Adds a published KB to the default retrieval scope of the caller, or of the whole workspace with scope=tenant (Tenant Admin only).",
                 "tags": [
-                    "知识库共享"
+                    "Kho tri thức"
                 ],
-                "summary": "共享知识库到组织",
+                "summary": "Subscribe to a published knowledge base",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "共享信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ShareKnowledgeBaseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/knowledge-bases/{id}/shares/{share_id}": {
-            "put": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "更新知识库共享的权限级别",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "知识库共享"
-                ],
-                "summary": "更新共享权限",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge base ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "共享记录ID",
-                        "name": "share_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "权限信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UpdateSharePermissionRequest"
-                        }
+                        "description": "me (default) or tenant",
+                        "name": "scope",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5849,12 +6747,6 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     }
                 }
@@ -5865,25 +6757,23 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "取消知识库的共享",
                 "tags": [
-                    "知识库共享"
+                    "Kho tri thức"
                 ],
-                "summary": "取消共享",
+                "summary": "Unsubscribe from a published knowledge base",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge base ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "共享记录ID",
-                        "name": "share_id",
-                        "in": "path",
-                        "required": true
+                        "description": "me (default) or tenant",
+                        "name": "scope",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5892,12 +6782,6 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     }
                 }
@@ -5913,7 +6797,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取知识库下的所有标签及统计信息",
+                "description": "Lấy mọi thẻ trong kho tri thức kèm số liệu thống kê",
                 "consumes": [
                     "application/json"
                 ],
@@ -5921,46 +6805,46 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "标签管理"
+                    "Thẻ"
                 ],
-                "summary": "获取标签列表",
+                "summary": "Lấy danh sách thẻ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "关键词搜索",
+                        "description": "từ khoá tìm kiếm",
                         "name": "keyword",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "标签列表",
+                        "description": "danh sách thẻ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -5976,7 +6860,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "在知识库下创建新标签",
+                "description": "Tạo thẻ mới trong kho tri thức",
                 "consumes": [
                     "application/json"
                 ],
@@ -5984,19 +6868,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "标签管理"
+                    "Thẻ"
                 ],
-                "summary": "创建标签",
+                "summary": "Tạo thẻ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "标签信息",
+                        "description": "thông tin thẻ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6018,14 +6902,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "创建的标签",
+                        "description": "thẻ đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6043,7 +6927,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新标签信息",
+                "description": "Cập nhật thông tin thẻ",
                 "consumes": [
                     "application/json"
                 ],
@@ -6051,26 +6935,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "标签管理"
+                    "Thẻ"
                 ],
-                "summary": "更新标签",
+                "summary": "Cập nhật thẻ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "标签ID (UUID或seq_id)",
+                        "description": "ID thẻ (UUID hoặc seq_id)",
                         "name": "tag_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "标签更新信息",
+                        "description": "thông tin cập nhật thẻ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6081,14 +6965,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的标签",
+                        "description": "thẻ sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6104,7 +6988,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除标签，可使用force=true强制删除被引用的标签，content_only=true仅删除标签下的内容而保留标签本身",
+                "description": "Xoá thẻ; force=true để xoá cả thẻ đang được tham chiếu, content_only=true chỉ xoá nội dung thuộc thẻ và giữ lại thẻ",
                 "consumes": [
                     "application/json"
                 ],
@@ -6112,38 +6996,38 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "标签管理"
+                    "Thẻ"
                 ],
-                "summary": "删除标签",
+                "summary": "Xoá thẻ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识库ID",
+                        "description": "Knowledge BaseID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "标签ID (UUID或seq_id)",
+                        "description": "ID thẻ (UUID hoặc seq_id)",
                         "name": "tag_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "boolean",
-                        "description": "强制删除",
+                        "description": "xoá cưỡng bức",
                         "name": "force",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "仅删除内容，保留标签",
+                        "description": "chỉ xoá nội dung, giữ lại thẻ",
                         "name": "content_only",
                         "in": "query"
                     },
                     {
-                        "description": "删除选项",
+                        "description": "tuỳ chọn xoá",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -6153,14 +7037,132 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/{id}/transfer-owner": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Kho tri thức"
+                ],
+                "summary": "Transfer knowledge base owner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge Base ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target tenant",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.TransferKnowledgeBaseOwnerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledge-bases/{id}/visibility": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Chuyển phạm vi hiển thị kho tri thức tenant/restricted/published/public, member_default (view|contribute)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Kho tri thức"
+                ],
+                "summary": "Đổi phạm vi hiển thị kho tri thức",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge BaseID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "yêu cầu đổi phạm vi hiển thị",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.UpdateKnowledgeBaseVisibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "kho tri thức sau khi cập nhật",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6178,7 +7180,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "基于知识库的问答（使用LLM总结），支持SSE流式响应",
+                "description": "Hỏi đáp dựa trên kho tri thức (dùng LLM tóm tắt), hỗ trợ phản hồi streaming SSE",
                 "consumes": [
                     "application/json"
                 ],
@@ -6186,19 +7188,19 @@ const docTemplate = `{
                     "text/event-stream"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "知识问答",
+                "summary": "Hỏi đáp tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "问答请求",
+                        "description": "Yêu cầu hỏi đáp",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6213,21 +7215,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "问答结果（SSE流）",
+                        "description": "Kết quả hỏi đáp (luồng SSE)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6245,7 +7247,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "在知识库中搜索（不使用LLM总结）",
+                "description": "Tìm kiếm trong kho tri thức (không dùng LLM tóm tắt)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6253,12 +7255,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "知识搜索",
+                "summary": "Tìm kiếm tài liệu",
                 "parameters": [
                     {
-                        "description": "搜索请求",
+                        "description": "Yêu cầu tìm kiếm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6273,21 +7275,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "Kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6305,7 +7307,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID列表批量获取知识条目。可选 kb_id：指定时按该知识库校验权限并用于共享知识库的空间解析；可选 agent_id：使用共享智能体时传此参数，后端按智能体所属空间查询（用于刷新后恢复共享知识库下的文件）",
+                "description": "Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo đơn vị của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6313,9 +7315,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "批量获取知识",
+                "summary": "Lấy nhiều tài liệu",
                 "parameters": [
                     {
                         "type": "array",
@@ -6323,34 +7325,34 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
-                        "description": "知识ID列表",
+                        "description": "Danh sách ID tài liệu",
                         "name": "ids",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "可选，知识库ID（用于共享知识库时指定范围）",
+                        "description": "Tuỳ chọn, ID kho tri thức (xác định phạm vi khi dùng kho tri thức chia sẻ)",
                         "name": "kb_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "可选，共享智能体ID（用于按智能体空间批量拉取文件详情）",
+                        "description": "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo đơn vị của trợ lý)",
                         "name": "agent_id",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "知识列表",
+                        "description": "Danh sách tài liệu",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6368,7 +7370,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "按 ID 列表批量删除单个知识库下的多个知识条目",
+                "description": "Xoá nhiều mục tài liệu trong một kho tri thức theo danh sách ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -6376,12 +7378,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "批量删除知识",
+                "summary": "Xoá nhiều tài liệu",
                 "parameters": [
                     {
-                        "description": "批量删除请求",
+                        "description": "Yêu cầu xoá hàng loạt",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6392,20 +7394,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6423,7 +7425,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "按 ID 列表批量重新解析单个知识库下的多个知识条目",
+                "description": "Phân tích lại nhiều mục tài liệu trong một kho tri thức theo danh sách ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -6431,12 +7433,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "批量重新解析知识",
+                "summary": "Phân tích lại nhiều tài liệu",
                 "parameters": [
                     {
-                        "description": "批量重解析请求",
+                        "description": "Yêu cầu phân tích lại hàng loạt",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6447,20 +7449,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务已提交",
+                        "description": "Tác vụ đã được gửi",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6478,7 +7480,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "批量修改知识条目所属文件夹。文件夹由路径推导而来，因此目标路径不存在时会自动创建；空路径表示知识库顶层。仅调整归类，不会重新解析文档",
+                "description": "Đổi thư mục của nhiều mục tài liệu cùng lúc. Thư mục được suy ra từ đường dẫn nên đường dẫn đích chưa có sẽ được tạo tự động; đường dẫn rỗng là cấp cao nhất của kho tri thức. Chỉ đổi phân loại, không phân tích lại tài liệu",
                 "consumes": [
                     "application/json"
                 ],
@@ -6486,12 +7488,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "移动知识到文件夹",
+                "summary": "Chuyển tài liệu vào thư mục",
                 "parameters": [
                     {
-                        "description": "移动请求",
+                        "description": "Yêu cầu di chuyển",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6502,20 +7504,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "移动成功",
+                        "description": "Di chuyển thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6533,7 +7535,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新知识分块的图像信息",
+                "description": "Cập nhật thông tin ảnh của đoạn (chunk) tài liệu",
                 "consumes": [
                     "application/json"
                 ],
@@ -6541,26 +7543,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "更新图像信息",
+                "summary": "Cập nhật thông tin ảnh",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "分块ID",
+                        "description": "ID đoạn (chunk)",
                         "name": "chunk_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "图像信息",
+                        "description": "Thông tin ảnh",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6576,14 +7578,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6601,7 +7603,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新手工录入的Markdown知识内容",
+                "description": "Cập nhật nội dung Markdown của tài liệu nhập thủ công",
                 "consumes": [
                     "application/json"
                 ],
@@ -6609,19 +7611,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "更新手工知识",
+                "summary": "Cập nhật tài liệu thủ công",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "手工知识内容",
+                        "description": "Nội dung tài liệu thủ công",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6632,14 +7634,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的知识",
+                        "description": "Tài liệu sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6657,7 +7659,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "将一条或多条知识从源知识库移动到目标知识库（异步），返回任务 ID 用于查询进度",
+                "description": "Chuyển một hoặc nhiều tài liệu từ kho tri thức nguồn sang kho tri thức đích (bất đồng bộ), trả về ID tác vụ để theo dõi tiến độ",
                 "consumes": [
                     "application/json"
                 ],
@@ -6665,9 +7667,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识"
+                    "Tài liệu"
                 ],
-                "summary": "移动知识到其他知识库",
+                "summary": "Chuyển tài liệu sang kho tri thức khác",
                 "parameters": [
                     {
                         "description": "{source_kb_id, target_kb_id, knowledge_ids}",
@@ -6681,13 +7683,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务信息",
+                        "description": "Thông tin tác vụ",
                         "schema": {
                             "$ref": "#/definitions/internal_handler.MoveKnowledgeResponse"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6705,18 +7707,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "按任务 ID 查询移动进度",
+                "description": "Truy vấn tiến độ chuyển theo ID tác vụ",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识"
+                    "Tài liệu"
                 ],
-                "summary": "获取知识移动进度",
+                "summary": "Lấy tiến độ chuyển tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "移动任务 ID",
+                        "description": "ID tác vụ di chuyển",
                         "name": "task_id",
                         "in": "path",
                         "required": true
@@ -6724,13 +7726,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "进度信息",
+                        "description": "Thông tin tiến độ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeMoveProgress"
                         }
                     },
                     "404": {
-                        "description": "任务不存在",
+                        "description": "tác vụ không tồn tại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6756,7 +7758,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Knowledge"
+                    "Tài liệu"
                 ],
                 "summary": "Search knowledge",
                 "parameters": [
@@ -6827,7 +7829,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "批量更新知识条目的标签。可选 kb_id：指定时按该知识库校验编辑权限并用于共享知识库的空间解析",
+                "description": "Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ",
                 "consumes": [
                     "application/json"
                 ],
@@ -6835,12 +7837,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "批量更新知识标签",
+                "summary": "Cập nhật thẻ cho nhiều tài liệu",
                 "parameters": [
                     {
-                        "description": "标签更新请求（updates 必填，kb_id 可选）",
+                        "description": "Yêu cầu cập nhật thẻ (updates bắt buộc, kb_id tuỳ chọn)",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6851,14 +7853,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6876,7 +7878,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取知识条目详情",
+                "description": "Lấy chi tiết mục tài liệu theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -6884,13 +7886,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "获取知识详情",
+                "summary": "Lấy chi tiết tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6898,20 +7900,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "知识详情",
+                        "description": "Chi tiết tài liệu",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识不存在",
+                        "description": "tài liệu không tồn tại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6927,7 +7929,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "部分更新知识条目（标题/描述/自定义元数据）；未传字段保持不变，显式传空 description 可清空摘要",
+                "description": "Cập nhật một phần mục tài liệu (tiêu đề/mô tả/metadata tuỳ chỉnh); trường không truyền giữ nguyên, truyền description rỗng để xoá tóm tắt",
                 "consumes": [
                     "application/json"
                 ],
@@ -6935,19 +7937,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "更新知识",
+                "summary": "Cập nhật tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新字段（均可选）",
+                        "description": "Các trường cập nhật (đều tuỳ chọn)",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6958,14 +7960,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -6981,7 +7983,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID异步删除知识条目。请求会被入队到与批量删除相同的异步管道（asynq）；\n接口返回 200 仅表示任务已提交（响应 data.task_id 为任务 ID），实际删除由后台 worker 完成。",
+                "description": "Xoá bất đồng bộ mục tài liệu theo ID. Yêu cầu được đưa vào cùng hàng đợi bất đồng bộ (asynq) với xoá hàng loạt;\nAPI trả 200 chỉ có nghĩa là tác vụ đã được gửi (data.task_id là ID tác vụ), việc xoá thật do worker nền thực hiện.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6989,13 +7991,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "删除知识",
+                "summary": "Xoá tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7003,14 +8005,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务已提交，返回 task_id",
+                        "description": "Tác vụ đã được gửi, trả về task_id",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -7028,7 +8030,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "取消进行中的知识解析任务。当前已写入的 chunk / 索引保留，可通过 reparse 接口重新触发解析。已完成 / 已失败 / 删除中的知识不支持取消。",
+                "description": "Huỷ tác vụ phân tích tài liệu đang chạy. Các đoạn (chunk) / chỉ mục đã ghi được giữ lại, có thể phân tích lại qua API reparse. Tài liệu đã hoàn thành / thất bại / đang xoá không huỷ được.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7036,13 +8038,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "取消知识解析",
+                "summary": "Huỷ phân tích tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7050,26 +8052,26 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "取消已提交",
+                        "description": "Yêu cầu huỷ đã được gửi",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "状态不支持取消",
+                        "description": "trạng thái hiện tại không cho phép huỷ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "知识不存在",
+                        "description": "tài liệu không tồn tại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -7087,7 +8089,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "下载知识条目关联的原始文件",
+                "description": "Tải tệp gốc gắn với mục tài liệu",
                 "consumes": [
                     "application/json"
                 ],
@@ -7095,13 +8097,13 @@ const docTemplate = `{
                     "application/octet-stream"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "下载知识文件",
+                "summary": "Tải tệp tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7109,13 +8111,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "文件内容",
+                        "description": "Nội dung tệp",
                         "schema": {
                             "type": "file"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -7133,7 +8135,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回知识条目关联的原始文件，Content-Type 根据文件类型设置，用于浏览器内嵌预览",
+                "description": "Trả về tệp gốc gắn với mục tài liệu, Content-Type đặt theo loại tệp, dùng để xem trước nhúng trong trình duyệt",
                 "consumes": [
                     "application/json"
                 ],
@@ -7144,13 +8146,13 @@ const docTemplate = `{
                     "text/plain"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "预览知识文件",
+                "summary": "Xem trước tệp tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7158,13 +8160,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "文件内容",
+                        "description": "Nội dung tệp",
                         "schema": {
                             "type": "file"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -7182,7 +8184,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除知识中现有的文档内容并重新解析，使用异步任务方式处理",
+                "description": "Xoá nội dung hiện có của tài liệu và phân tích lại, xử lý bằng tác vụ bất đồng bộ",
                 "consumes": [
                     "application/json"
                 ],
@@ -7190,19 +8192,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "知识管理"
+                    "Tài liệu"
                 ],
-                "summary": "重新解析知识",
+                "summary": "Phân tích lại tài liệu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "知识ID",
+                        "description": "ID tài liệu",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "可选的处理配置覆盖：{\\",
+                        "description": "Cấu hình xử lý ghi đè tuỳ chọn: {\\",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -7212,20 +8214,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "重新解析任务已提交",
+                        "description": "Tác vụ phân tích lại đã được gửi",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -7263,6 +8265,73 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledgebase/{kb_id}/wiki/catalogue/rebuild": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Regenerates every overview page of a catalogue-mode wiki from the legal catalogue, in the background. No LLM call is made.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wiki"
+                ],
+                "summary": "Rebuild the catalogue-generated wiki",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base ID",
+                        "name": "kb_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_application_service.WikiCatalogueBuildStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/knowledgebase/{kb_id}/wiki/catalogue/status": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wiki"
+                ],
+                "summary": "Catalogue wiki rebuild status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base ID",
+                        "name": "kb_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_application_service.WikiCatalogueBuildStatus"
                         }
                     }
                 }
@@ -8333,6 +9402,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/llm/chat": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Runs one text completion on the workspace default chat model\n(or model_id). Model credentials stay server-side.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Mô hình"
+                ],
+                "summary": "Chat completion with a workspace chat model",
+                "parameters": [
+                    {
+                        "description": "messages",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.LLMChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/mcp-endpoints": {
             "get": {
                 "security": [
@@ -8347,12 +9471,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "获取 MCP 端点列表",
+                "summary": "Lấy danh sách điểm cuối MCP",
                 "responses": {
                     "200": {
-                        "description": "端点列表",
+                        "description": "Danh sách điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8369,7 +9493,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "为当前工作空间发布一个 MCP 端点，响应中的 token 只返回一次",
+                "description": "Phát hành một điểm cuối MCP cho không gian làm việc hiện tại; token trong phản hồi chỉ trả về một lần",
                 "consumes": [
                     "application/json"
                 ],
@@ -8377,12 +9501,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "创建 MCP 端点",
+                "summary": "Tạo điểm cuối MCP",
                 "parameters": [
                     {
-                        "description": "端点配置：name、description、enabled、knowledge_base_ids、tools 等",
+                        "description": "Cấu hình điểm cuối: name, description, enabled, knowledge_base_ids, tools...",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -8393,14 +9517,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的端点，含一次性 token",
+                        "description": "Điểm cuối đã tạo, kèm token dùng một lần",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8419,17 +9543,17 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回工作空间 MCP 端点可勾选的工具清单、分组和默认勾选项",
+                "description": "Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của không gian làm việc",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "获取 MCP 端点工具目录",
+                "summary": "Lấy danh mục công cụ của điểm cuối MCP",
                 "responses": {
                     "200": {
-                        "description": "工具目录",
+                        "description": "Danh mục công cụ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8452,13 +9576,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "获取 MCP 端点详情",
+                "summary": "Lấy chi tiết điểm cuối MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "端点 ID",
+                        "description": "ID điểm cuối",
                         "name": "endpoint_id",
                         "in": "path",
                         "required": true
@@ -8466,14 +9590,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "端点详情",
+                        "description": "Chi tiết điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "端点不存在",
+                        "description": "Không tìm thấy điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8497,19 +9621,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "更新 MCP 端点",
+                "summary": "Cập nhật điểm cuối MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "端点 ID",
+                        "description": "ID điểm cuối",
                         "name": "endpoint_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "要更新的字段，未提供的字段保持不变",
+                        "description": "Các trường cần cập nhật, trường không gửi giữ nguyên",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -8520,21 +9644,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的端点",
+                        "description": "Điểm cuối sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "端点不存在",
+                        "description": "Không tìm thấy điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8555,13 +9679,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "删除 MCP 端点",
+                "summary": "Xóa điểm cuối MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "端点 ID",
+                        "description": "ID điểm cuối",
                         "name": "endpoint_id",
                         "in": "path",
                         "required": true
@@ -8569,14 +9693,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xóa thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "端点不存在",
+                        "description": "Không tìm thấy điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8595,18 +9719,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "生成新令牌并立即作废旧令牌，响应中的 token 只返回一次",
+                "description": "Tạo token mới và vô hiệu token cũ ngay lập tức; token trong phản hồi chỉ trả về một lần",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP端点"
+                    "Điểm cuối MCP"
                 ],
-                "summary": "轮换 MCP 端点令牌",
+                "summary": "Xoay vòng token của điểm cuối MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "端点 ID",
+                        "description": "ID điểm cuối",
                         "name": "endpoint_id",
                         "in": "path",
                         "required": true
@@ -8614,14 +9738,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "含新 token 的端点",
+                        "description": "Điểm cuối kèm token mới",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "端点不存在",
+                        "description": "Không tìm thấy điểm cuối",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8640,7 +9764,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取当前空间的所有MCP服务（含已保存工具目录数量）",
+                "description": "Lấy tất cả dịch vụ MCP của không gian làm việc hiện tại (kèm số công cụ đã lưu trong danh mục)",
                 "consumes": [
                     "application/json"
                 ],
@@ -8648,19 +9772,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "获取MCP服务列表",
+                "summary": "Lấy danh sách dịch vụ MCP",
                 "responses": {
                     "200": {
-                        "description": "MCP服务列表",
+                        "description": "Danh sách dịch vụ MCP",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8676,7 +9800,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "创建新的MCP服务配置",
+                "description": "Tạo cấu hình dịch vụ MCP mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -8684,12 +9808,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "创建MCP服务",
+                "summary": "Tạo dịch vụ MCP",
                 "parameters": [
                     {
-                        "description": "MCP服务配置",
+                        "description": "Cấu hình dịch vụ MCP",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -8700,14 +9824,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "创建的MCP服务",
+                        "description": "Dịch vụ MCP đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8717,27 +9841,27 @@ const docTemplate = `{
         },
         "/mcp-services/oauth/callback": {
             "get": {
-                "description": "接收授权服务器回调并完成 code 交换，随后重定向回前端",
+                "description": "Nhận callback từ máy chủ ủy quyền, đổi code lấy token rồi chuyển hướng về frontend",
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "MCP OAuth 回调",
+                "summary": "Callback OAuth của MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "授权码",
+                        "description": "mã ủy quyền",
                         "name": "code",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "状态参数",
+                        "description": "tham số state",
                         "name": "state",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "授权错误码",
+                        "description": "mã lỗi ủy quyền",
                         "name": "error",
                         "in": "query"
                     }
@@ -8759,7 +9883,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取MCP服务详情",
+                "description": "Lấy chi tiết dịch vụ MCP theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -8767,13 +9891,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "获取MCP服务详情",
+                "summary": "Lấy chi tiết dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -8781,14 +9905,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "MCP服务详情",
+                        "description": "Chi tiết dịch vụ MCP",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "服务不存在",
+                        "description": "Không tìm thấy dịch vụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8804,7 +9928,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新MCP服务配置",
+                "description": "Cập nhật cấu hình dịch vụ MCP",
                 "consumes": [
                     "application/json"
                 ],
@@ -8812,19 +9936,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "更新MCP服务",
+                "summary": "Cập nhật dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新字段",
+                        "description": "Các trường cần cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -8835,14 +9959,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的MCP服务",
+                        "description": "Dịch vụ MCP sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8858,7 +9982,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的MCP服务",
+                "description": "Xoá dịch vụ MCP chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -8866,13 +9990,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "删除MCP服务",
+                "summary": "Xoá dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -8880,14 +10004,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8905,7 +10029,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "为指定字段写入新凭据；省略的字段保留原值；空字符串视为 no-op（如需删除请用 DELETE）",
+                "description": "Ghi thông tin xác thực mới cho các trường chỉ định; trường bỏ trống giữ nguyên giá trị cũ; chuỗi rỗng xem như no-op (muốn xoá hãy dùng DELETE)",
                 "consumes": [
                     "application/json"
                 ],
@@ -8913,13 +10037,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "设置 MCP 服务凭据",
+                "summary": "Đặt thông tin xác thực dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -8937,20 +10061,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "写入后的凭据状态",
+                        "description": "Trạng thái thông tin xác thực sau khi ghi",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "服务不存在",
+                        "description": "Không tìm thấy dịch vụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -8968,25 +10092,25 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定字段的存储凭据；删除已为空的字段是幂等的",
+                "description": "Xoá thông tin xác thực đã lưu của trường chỉ định; xoá trường đã trống là idempotent",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "移除 MCP 服务的单个凭据字段",
+                "summary": "Gỡ một trường thông tin xác thực của dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "字段名（api_key | token）",
+                        "description": "Tên trường (api_key | token)",
                         "name": "field",
                         "in": "path",
                         "required": true
@@ -8997,13 +10121,13 @@ const docTemplate = `{
                         "description": "No Content"
                     },
                     "400": {
-                        "description": "字段名非法",
+                        "description": "Tên trường không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "服务不存在",
+                        "description": "Không tìm thấy dịch vụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9021,7 +10145,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "只读数据库，不连接上游。未同步时 data 为 null；连接配置变更后 stale 为 true。OAuth 目录按当前授权主体隔离。",
+                "description": "Chỉ đọc cơ sở dữ liệu, không kết nối upstream. Chưa đồng bộ thì data là null; sau khi cấu hình kết nối thay đổi thì stale là true. Danh mục OAuth được tách theo chủ thể uỷ quyền hiện tại.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9029,13 +10153,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "读取已保存的 MCP 工具目录",
+                "summary": "Đọc danh mục công cụ MCP đã lưu",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9043,26 +10167,26 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "目录快照",
+                        "description": "Ảnh chụp danh mục",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "401": {
-                        "description": "OAuth 目录缺少授权主体",
+                        "description": "danh mục OAuth thiếu chủ thể uỷ quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "服务不存在",
+                        "description": "dịch vụ không tồn tại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9080,7 +10204,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "显式连接上游并原子替换完整目录。OAuth 服务写入当前用户的快照，Viewer 及以上可调用；静态认证写入租户共享快照，需要 Admin。",
+                "description": "Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của đơn vị, cần Admin.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9088,13 +10212,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "同步 MCP 工具目录",
+                "summary": "Đồng bộ danh mục công cụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9102,44 +10226,44 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "同步后的目录快照",
+                        "description": "Ảnh chụp danh mục sau khi đồng bộ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "目录不完整或校验失败",
+                        "description": "danh mục không đầy đủ hoặc kiểm tra thất bại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "401": {
-                        "description": "OAuth 目录缺少授权主体",
+                        "description": "danh mục OAuth thiếu chủ thể uỷ quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "静态认证目录需要管理员刷新",
+                        "description": "danh mục xác thực tĩnh cần quản trị viên làm mới",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "服务不存在",
+                        "description": "dịch vụ không tồn tại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "409": {
-                        "description": "刷新期间连接配置已变更",
+                        "description": "cấu hình kết nối đã thay đổi trong lúc làm mới",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "503": {
-                        "description": "元数据存储不可用",
+                        "description": "kho metadata không khả dụng",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9154,7 +10278,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "对使用 OAuth 的 MCP 服务执行发现与动态客户端注册，返回浏览器应跳转的授权地址（当前用户维度）",
+                "description": "Thực hiện discovery và đăng ký client động cho dịch vụ MCP dùng OAuth, trả về địa chỉ ủy quyền để trình duyệt chuyển tới (theo người dùng hiện tại)",
                 "consumes": [
                     "application/json"
                 ],
@@ -9162,13 +10286,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "发起 MCP OAuth 授权",
+                "summary": "Bắt đầu ủy quyền OAuth cho MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9208,25 +10332,25 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回当前用户的 OAuth Token 生命周期状态；传 authorization_attempt 时只检查本次授权流程",
+                "description": "Trả về trạng thái vòng đời OAuth token của người dùng hiện tại; truyền authorization_attempt thì chỉ kiểm tra lượt ủy quyền này",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "查询 MCP OAuth 授权状态",
+                "summary": "Tra cứu trạng thái ủy quyền OAuth của MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "本次授权尝试 ID；传入后不会接受历史 Token",
+                        "description": "ID lượt ủy quyền này; khi truyền sẽ không chấp nhận token cũ",
                         "name": "authorization_attempt",
                         "in": "query"
                     }
@@ -9249,18 +10373,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "删除当前用户对指定 MCP 服务的 OAuth 令牌",
+                "description": "Xoá OAuth token của người dùng hiện tại đối với dịch vụ MCP chỉ định",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "撤销 MCP OAuth 授权",
+                "summary": "Thu hồi ủy quyền OAuth của MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9283,7 +10407,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取MCP服务提供的资源列表",
+                "description": "Lấy danh sách tài nguyên mà dịch vụ MCP cung cấp",
                 "consumes": [
                     "application/json"
                 ],
@@ -9291,13 +10415,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "获取MCP服务资源列表",
+                "summary": "Lấy danh sách tài nguyên của dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9305,14 +10429,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "资源列表",
+                        "description": "Danh sách tài nguyên",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9330,7 +10454,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "测试MCP服务是否可以正常连接",
+                "description": "Kiểm tra dịch vụ MCP có kết nối được hay không",
                 "consumes": [
                     "application/json"
                 ],
@@ -9338,13 +10462,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "测试MCP服务连接",
+                "summary": "Kiểm tra kết nối dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9352,14 +10476,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "测试结果",
+                        "description": "Kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9377,7 +10501,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "为指定 MCP 服务下的某个工具更新启用状态和/或人工审批要求。至少提供 require_approval 或 enabled 之一；省略的字段保持原值。",
+                "description": "Cập nhật trạng thái bật và/hoặc yêu cầu phê duyệt thủ công cho một công cụ của dịch vụ MCP chỉ định. Phải cung cấp ít nhất require_approval hoặc enabled; trường bỏ trống giữ nguyên giá trị cũ.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9385,20 +10509,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "设置 MCP 工具策略",
+                "summary": "Đặt chính sách công cụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP 服务 ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "工具名",
+                        "description": "Tên công cụ",
                         "name": "tool_name",
                         "in": "path",
                         "required": true
@@ -9416,20 +10540,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新结果",
+                        "description": "Kết quả cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "MCP 服务或工具不存在",
+                        "description": "Không tìm thấy dịch vụ MCP hoặc công cụ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9447,7 +10571,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取MCP服务提供的工具列表",
+                "description": "Lấy danh sách công cụ mà dịch vụ MCP cung cấp",
                 "consumes": [
                     "application/json"
                 ],
@@ -9455,13 +10579,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "MCP服务"
+                    "Dịch vụ MCP"
                 ],
-                "summary": "获取MCP服务工具列表",
+                "summary": "Lấy danh sách công cụ của dịch vụ MCP",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "MCP服务ID",
+                        "description": "ID dịch vụ MCP",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9469,14 +10593,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "工具列表",
+                        "description": "Danh sách công cụ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9496,7 +10620,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Me"
+                    "Tài khoản của tôi"
                 ],
                 "summary": "List my environment variables",
                 "responses": {
@@ -9532,7 +10656,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Me"
+                    "Tài khoản của tôi"
                 ],
                 "summary": "Set one of my sandbox environment variables",
                 "parameters": [
@@ -9576,7 +10700,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Me"
+                    "Tài khoản của tôi"
                 ],
                 "summary": "Delete one of my sandbox environment variables",
                 "parameters": [
@@ -9622,7 +10746,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Me"
+                    "Tài khoản của tôi"
                 ],
                 "summary": "Set one of my skill credentials",
                 "parameters": [
@@ -9666,7 +10790,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Me"
+                    "Tài khoản của tôi"
                 ],
                 "summary": "Delete one of my skill credentials",
                 "parameters": [
@@ -9704,18 +10828,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回当前登录用户的待接受邀请（默认仅 pending），用于头像入口和 /invitations 收件箱页。",
+                "description": "Trả về lời mời đang chờ của người dùng đang đăng nhập (mặc định chỉ pending), dùng cho mục ở ảnh đại diện và trang hộp thư /invitations.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "我的邀请"
+                    "Lời mời của tôi"
                 ],
-                "summary": "列出我的待接受邀请",
+                "summary": "Liệt kê lời mời đang chờ của tôi",
                 "parameters": [
                     {
                         "type": "boolean",
-                        "description": "是否包含已处理 / 已过期等终止态行（默认 false）",
+                        "description": "Có gồm các dòng đã xử lý / đã hết hạn (trạng thái kết thúc) không (mặc định false)",
                         "name": "include_terminal",
                         "in": "query"
                     }
@@ -9738,7 +10862,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "已登录用户用共享邀请链接 token 加入空间，不创建新账号；对已是成员的用户幂等。",
+                "description": "Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia đơn vị, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9746,12 +10870,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "我的邀请"
+                    "Lời mời của tôi"
                 ],
-                "summary": "通过共享链接加入空间",
+                "summary": "Tham gia đơn vị qua liên kết chia sẻ",
                 "parameters": [
                     {
-                        "description": "邀请 token",
+                        "description": "Token lời mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -9769,7 +10893,7 @@ const docTemplate = `{
                         }
                     },
                     "410": {
-                        "description": "链接无效或已撤销",
+                        "description": "Liên kết không hợp lệ hoặc đã bị thu hồi",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -9784,14 +10908,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "轻量级 endpoint，返回当前登录用户的 pending 邀请数，用于头像旁的角标轮询。",
+                "description": "Endpoint nhẹ, trả về số lời mời pending của người dùng đang đăng nhập, dùng để thăm dò huy hiệu cạnh ảnh đại diện.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "我的邀请"
+                    "Lời mời của tôi"
                 ],
-                "summary": "获取我的待处理邀请数",
+                "summary": "Lấy số lời mời đang chờ xử lý của tôi",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -9810,18 +10934,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "当前登录用户接受一条 pending 邀请；服务端会同时写入 tenant_members 行。",
+                "description": "Người dùng đang đăng nhập chấp nhận một lời mời pending; máy chủ đồng thời ghi dòng tenant_members.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "我的邀请"
+                    "Lời mời của tôi"
                 ],
-                "summary": "接受邀请",
+                "summary": "Chấp nhận lời mời",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "邀请 ID",
+                        "description": "ID lời mời",
                         "name": "inv_id",
                         "in": "path",
                         "required": true
@@ -9845,23 +10969,49 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "当前登录用户拒绝一条 pending 邀请；不创建 tenant_members 行。",
+                "description": "Người dùng đang đăng nhập từ chối một lời mời pending; không tạo dòng tenant_members.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "我的邀请"
+                    "Lời mời của tôi"
                 ],
-                "summary": "拒绝邀请",
+                "summary": "Từ chối lời mời",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "邀请 ID",
+                        "description": "ID lời mời",
                         "name": "inv_id",
                         "in": "path",
                         "required": true
                     }
                 ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/me/usage": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Questions and LLM tokens used today and this month, for the\ncaller and for the caller's current workspace.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tài khoản của tôi"
+                ],
+                "summary": "My usage counters",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -9880,17 +11030,17 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "合并意思接近的条目、归档到期事项，不等待每日后台整理",
+                "description": "Gộp các mục gần nghĩa, lưu trữ các việc đã đến hạn, không chờ đợt sắp xếp nền hằng ngày",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "立刻整理我的记忆",
+                "summary": "Sắp xếp bộ nhớ của tôi ngay",
                 "responses": {
                     "200": {
-                        "description": "整理结果",
+                        "description": "Kết quả sắp xếp",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -9906,32 +11056,32 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回当前用户回答里反复引用的文档，次数未达习惯门槛的不展示",
+                "description": "Trả về các tài liệu được trích dẫn lặp lại trong câu trả lời của người dùng hiện tại, chưa đạt ngưỡng thói quen thì không hiển thị",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "列出常用资料",
+                "summary": "Liệt kê tài liệu hay dùng",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 50,
-                        "description": "每页条数",
+                        "description": "Số mục mỗi trang",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "偏移量",
+                        "description": "Độ lệch",
                         "name": "offset",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "文档列表",
+                        "description": "Danh sách tài liệu",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -9947,18 +11097,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "删除一条文档亲和度计数，之后检索不再因为这份文档而加权",
+                "description": "Xoá một bộ đếm mức độ gắn bó với tài liệu, sau đó tìm kiếm không còn ưu tiên tài liệu này nữa",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "停止用某份文档做个性化检索",
+                "summary": "Ngừng dùng một tài liệu để cá nhân hoá tìm kiếm",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "亲和度 ID",
+                        "description": "ID mức độ gắn bó",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -9966,7 +11116,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -9982,17 +11132,17 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "以 JSON 导出当前用户的全部记忆",
+                "description": "Xuất toàn bộ bộ nhớ của người dùng hiện tại dưới dạng JSON",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "导出我的记忆",
+                "summary": "Xuất bộ nhớ của tôi",
                 "responses": {
                     "200": {
-                        "description": "记忆导出",
+                        "description": "Bản xuất bộ nhớ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10008,14 +11158,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "分页返回当前用户的记忆条目，可按状态过滤",
+                "description": "Trả về theo trang các mục bộ nhớ của người dùng hiện tại, có thể lọc theo trạng thái",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "列出我的记忆",
+                "summary": "Liệt kê bộ nhớ của tôi",
                 "parameters": [
                     {
                         "enum": [
@@ -10025,27 +11175,27 @@ const docTemplate = `{
                             "pending"
                         ],
                         "type": "string",
-                        "description": "状态过滤",
+                        "description": "Lọc theo trạng thái",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 50,
-                        "description": "每页条数",
+                        "description": "Số mục mỗi trang",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "偏移量",
+                        "description": "Độ lệch",
                         "name": "offset",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "记忆列表",
+                        "description": "Danh sách bộ nhớ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10059,7 +11209,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "手动添加一条长期记忆",
+                "description": "Thêm thủ công một mục bộ nhớ dài hạn",
                 "consumes": [
                     "application/json"
                 ],
@@ -10067,12 +11217,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "新增一条记忆",
+                "summary": "Thêm một mục bộ nhớ",
                 "parameters": [
                     {
-                        "description": "记忆内容",
+                        "description": "Nội dung bộ nhớ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10083,7 +11233,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "新增的记忆",
+                        "description": "Mục bộ nhớ mới",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10097,17 +11247,17 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "永久删除当前用户的全部记忆",
+                "description": "Xoá vĩnh viễn toàn bộ bộ nhớ của người dùng hiện tại",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "清空我的记忆",
+                "summary": "Xoá toàn bộ bộ nhớ của tôi",
                 "responses": {
                     "200": {
-                        "description": "清空成功",
+                        "description": "Đã xoá toàn bộ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10123,7 +11273,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "修改记忆内容与重要度，修改后该条记忆不会被后台抽取覆盖",
+                "description": "Sửa nội dung và mức quan trọng của mục bộ nhớ; sau khi sửa, mục này sẽ không bị quá trình trích xuất nền ghi đè",
                 "consumes": [
                     "application/json"
                 ],
@@ -10131,19 +11281,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "修改一条记忆",
+                "summary": "Sửa một mục bộ nhớ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "记忆ID",
+                        "description": "ID bộ nhớ",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "记忆内容",
+                        "description": "Nội dung bộ nhớ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10154,7 +11304,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的记忆",
+                        "description": "Mục bộ nhớ sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10168,18 +11318,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "永久删除一条记忆",
+                "description": "Xoá vĩnh viễn một mục bộ nhớ",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "删除一条记忆",
+                "summary": "Xoá một mục bộ nhớ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "记忆ID",
+                        "description": "ID bộ nhớ",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10187,7 +11337,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10203,18 +11353,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "接受系统推断的记忆，使其开始生效",
+                "description": "Chấp nhận mục bộ nhớ hệ thống suy luận để bắt đầu có hiệu lực",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "确认一条推断出的记忆",
+                "summary": "Xác nhận một mục bộ nhớ được suy luận",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "记忆 ID",
+                        "description": "ID bộ nhớ",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10222,7 +11372,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "确认成功",
+                        "description": "Xác nhận thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10238,18 +11388,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "拒绝系统推断的记忆，并记住这次拒绝",
+                "description": "Từ chối mục bộ nhớ hệ thống suy luận và ghi nhớ lần từ chối này",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "否决一条推断出的记忆",
+                "summary": "Từ chối một mục bộ nhớ được suy luận",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "记忆 ID",
+                        "description": "ID bộ nhớ",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10257,7 +11407,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "否决成功",
+                        "description": "Từ chối thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10273,17 +11423,17 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回合并后的记忆开关状态（空间级 + 个人级）与记忆条数",
+                "description": "Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp đơn vị + cấp cá nhân) và số mục bộ nhớ",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "获取我的记忆设置",
+                "summary": "Lấy cài đặt bộ nhớ của tôi",
                 "responses": {
                     "200": {
-                        "description": "记忆设置",
+                        "description": "Cài đặt bộ nhớ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10297,7 +11447,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "开启或关闭当前用户自己的长期记忆",
+                "description": "Bật hoặc tắt bộ nhớ dài hạn của chính người dùng hiện tại",
                 "consumes": [
                     "application/json"
                 ],
@@ -10305,12 +11455,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "更新我的记忆设置",
+                "summary": "Cập nhật cài đặt bộ nhớ của tôi",
                 "parameters": [
                     {
-                        "description": "设置",
+                        "description": "Settings ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10321,7 +11471,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的设置",
+                        "description": "Cài đặt sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10337,32 +11487,32 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回已计数、尚未提升为长期关注的主题，以及距离阈值还差几次",
+                "description": "Trả về các chủ đề đã đếm nhưng chưa nâng thành mối quan tâm dài hạn, kèm số lần còn thiếu để đạt ngưỡng",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "列出正在观察的主题",
+                "summary": "Liệt kê các chủ đề đang theo dõi",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 50,
-                        "description": "每页条数",
+                        "description": "Số mục mỗi trang",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "偏移量",
+                        "description": "Độ lệch",
                         "name": "offset",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "主题列表",
+                        "description": "Danh sách chủ đề",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10378,18 +11528,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "删除尚未提升的主题计数，并记住这次拒绝，之后不会再自动记为长期关注",
+                "description": "Xoá bộ đếm của chủ đề chưa được nâng và ghi nhớ lần từ chối này, sau đó sẽ không tự ghi thành mối quan tâm dài hạn nữa",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "停止跟踪一个主题",
+                "summary": "Ngừng theo dõi một chủ đề",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "主题 ID",
+                        "description": "ID chủ đề",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10397,7 +11547,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10413,18 +11563,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "不等待剩余次数，把正在观察的主题提升为一条长期关注记忆",
+                "description": "Không chờ đủ số lần còn lại, nâng chủ đề đang theo dõi thành một mục bộ nhớ quan tâm dài hạn",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "长期记忆"
+                    "Bộ nhớ"
                 ],
-                "summary": "立即记为长期关注",
+                "summary": "Ghi ngay thành mối quan tâm dài hạn",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "主题 ID",
+                        "description": "ID chủ đề",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10432,7 +11582,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "新增的记忆",
+                        "description": "Mục bộ nhớ mới",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10451,7 +11601,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取聊天历史知识库的统计信息（已索引消息数、知识库大小等）",
+                "description": "Lấy thống kê của kho tri thức lịch sử trò chuyện (số tin nhắn đã lập chỉ mục, kích thước kho...)",
                 "consumes": [
                     "application/json"
                 ],
@@ -10459,12 +11609,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "消息"
+                    "Tin nhắn"
                 ],
-                "summary": "获取聊天历史知识库统计",
+                "summary": "Lấy thống kê kho tri thức lịch sử trò chuyện",
                 "responses": {
                     "200": {
-                        "description": "统计信息",
+                        "description": "Thông tin thống kê",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10483,7 +11633,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "通过关键词和/或向量相似度搜索历史对话记录，支持关键词、向量、混合三种模式",
+                "description": "Tìm lịch sử trò chuyện theo từ khóa và/hoặc độ tương đồng vector; hỗ trợ ba chế độ: từ khóa, vector, kết hợp",
                 "consumes": [
                     "application/json"
                 ],
@@ -10491,12 +11641,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "消息"
+                    "Tin nhắn"
                 ],
-                "summary": "搜索历史对话",
+                "summary": "Tìm kiếm lịch sử trò chuyện",
                 "parameters": [
                     {
-                        "description": "搜索请求",
+                        "description": "Yêu cầu tìm kiếm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10507,14 +11657,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "Kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10532,7 +11682,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "加载会话的消息历史，支持分页和时间筛选",
+                "description": "Tải lịch sử tin nhắn của cuộc trò chuyện, hỗ trợ phân trang và lọc theo thời gian",
                 "consumes": [
                     "application/json"
                 ],
@@ -10540,13 +11690,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "消息"
+                    "Tin nhắn"
                 ],
-                "summary": "加载消息历史",
+                "summary": "Tải lịch sử tin nhắn",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
@@ -10554,13 +11704,13 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "返回数量",
+                        "description": "Số lượng trả về",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "在此时间之前的消息（RFC3339Nano格式）",
+                        "description": "Tin nhắn trước thời điểm này (định dạng RFC3339Nano)",
                         "name": "before_time",
                         "in": "query"
                     },
@@ -10571,21 +11721,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "消息列表",
+                        "description": "Danh sách tin nhắn",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10603,7 +11753,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "从会话中删除指定消息",
+                "description": "Xóa tin nhắn chỉ định khỏi cuộc trò chuyện",
                 "consumes": [
                     "application/json"
                 ],
@@ -10611,20 +11761,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "消息"
+                    "Tin nhắn"
                 ],
-                "summary": "删除消息",
+                "summary": "Xóa tin nhắn",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "消息ID",
+                        "description": "ID tin nhắn",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10632,14 +11782,83 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xóa thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{session_id}/{id}/feedback": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Records thumbs up (1), thumbs down (-1) or clears (0) the vote on a completed assistant message, with an optional note",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tin nhắn"
+                ],
+                "summary": "Rate an assistant answer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID cuộc trò chuyện",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID tin nhắn",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Vote",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.messageFeedbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10657,7 +11876,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取当前空间的所有模型",
+                "description": "Lấy toàn bộ mô hình của đơn vị hiện tại",
                 "consumes": [
                     "application/json"
                 ],
@@ -10665,19 +11884,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "获取模型列表",
+                "summary": "Lấy danh sách mô hình",
                 "responses": {
                     "200": {
-                        "description": "模型列表",
+                        "description": "Danh sách mô hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10693,7 +11912,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "创建新的模型配置",
+                "description": "Tạo cấu hình mô hình mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -10701,12 +11920,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "创建模型",
+                "summary": "Tạo mô hình",
                 "parameters": [
                     {
-                        "description": "模型信息",
+                        "description": "Thông tin mô hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10717,14 +11936,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的模型",
+                        "description": "Mô hình đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số yêu cầu không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10742,7 +11961,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据模型类型获取支持的厂商列表及配置信息",
+                "description": "Lấy danh sách nhà cung cấp được hỗ trợ và thông tin cấu hình theo loại mô hình",
                 "consumes": [
                     "application/json"
                 ],
@@ -10750,20 +11969,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "获取模型厂商列表",
+                "summary": "Lấy danh sách nhà cung cấp mô hình",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "模型类型 (chat, embedding, rerank, vllm)",
+                        "description": "Loại mô hình (chat, embedding, rerank, vllm)",
                         "name": "model_type",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "厂商列表",
+                        "description": "Danh sách nhà cung cấp",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10782,24 +12001,24 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "检查当前空间的 WeKnoraCloud 凭证是否完好；needs_reinit=true 表示需要重新保存",
+                "description": "Kiểm tra thông tin xác thực WeKnoraCloud của đơn vị hiện tại còn nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "WeKnoraCloud"
                 ],
-                "summary": "检查 WeKnoraCloud 凭证状态",
+                "summary": "Kiểm tra trạng thái thông tin xác thực WeKnoraCloud",
                 "responses": {
                     "200": {
-                        "description": "凭证状态",
+                        "description": "Trạng thái thông tin xác thực",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "lỗi hệ thống",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -10818,7 +12037,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取模型详情",
+                "description": "Lấy chi tiết mô hình theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -10826,13 +12045,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "获取模型详情",
+                "summary": "Lấy chi tiết mô hình",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "模型ID",
+                        "description": "ID mô hình",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10840,14 +12059,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "模型详情",
+                        "description": "Chi tiết mô hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "模型不存在",
+                        "description": "Không tìm thấy mô hình",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10863,7 +12082,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新模型配置信息",
+                "description": "Cập nhật thông tin cấu hình mô hình",
                 "consumes": [
                     "application/json"
                 ],
@@ -10871,19 +12090,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "更新模型",
+                "summary": "Cập nhật mô hình",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "模型ID",
+                        "description": "ID mô hình",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新信息",
+                        "description": "Thông tin cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -10894,14 +12113,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的模型",
+                        "description": "Mô hình sau cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "模型不存在",
+                        "description": "Không tìm thấy mô hình",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -10917,7 +12136,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的模型",
+                "description": "Xóa mô hình chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -10925,13 +12144,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "模型管理"
+                    "Mô hình"
                 ],
-                "summary": "删除模型",
+                "summary": "Xóa mô hình",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "模型ID",
+                        "description": "ID mô hình",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -10939,1063 +12158,22 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xóa thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "模型仍被知识库、智能体或长期记忆引用",
+                        "description": "Mô hình vẫn đang được kho tri thức, trợ lý hoặc bộ nhớ dài hạn tham chiếu",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "模型不存在",
+                        "description": "Không tìm thấy mô hình",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取当前空间所属的所有组织，并附带各空间内知识库/智能体数量",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取我的组织列表",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ListOrganizationsResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "创建新的组织，创建者自动成为管理员",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "创建组织",
-                "parameters": [
-                    {
-                        "description": "组织信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.CreateOrganizationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/join": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "使用邀请码加入组织",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "通过邀请码加入组织",
-                "parameters": [
-                    {
-                        "description": "邀请码",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.JoinOrganizationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/join-by-id": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "加入已开放可被搜索的空间，无需邀请码",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "通过空间 ID 加入（可搜索空间）",
-                "parameters": [
-                    {
-                        "description": "空间 ID",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.JoinByOrganizationIDRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/join-request": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "对需要审核的组织提交加入申请",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "提交加入申请",
-                "parameters": [
-                    {
-                        "description": "申请信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SubmitJoinRequestRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/preview/{code}": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "通过邀请码获取组织基本信息（不加入）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "通过邀请码预览组织",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "邀请码",
-                        "name": "code",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/search": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "搜索已开放可被搜索的空间，用于发现并加入",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "搜索可加入的空间",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "搜索关键词（空间名称或描述）",
-                        "name": "q",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "返回数量限制",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "根据ID获取组织详情",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取组织详情",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "更新组织信息（需要管理员权限）",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "更新组织",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UpdateOrganizationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "删除组织（仅组织创建者可操作）",
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "删除组织",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/agent-shares": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "返回所有被共享到指定组织的智能体（含我的有效权限）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织"
-                ],
-                "summary": "获取共享到本组织的智能体",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织 ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "智能体共享列表 + total",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "非组织成员",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/invite": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "管理员直接添加用户为组织成员",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "邀请成员",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "邀请信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.InviteMemberRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/invite-code": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "生成新的组织邀请码（需要管理员权限）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "生成邀请码",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/join-requests": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取组织的待审核加入申请（仅管理员）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取待审核加入申请列表",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/join-requests/{request_id}/review": {
-            "put": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "通过或拒绝加入申请（仅管理员）",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "审核加入申请",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "申请ID",
-                        "name": "request_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "审核结果",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ReviewJoinRequestRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/leave": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "退出指定组织",
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "退出组织",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/members": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取组织的所有成员（按空间）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取组织成员列表",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ListMembersResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/members/{tenant_id}": {
-            "put": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "更新组织成员（空间）的角色（需要管理员权限）",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "更新成员角色",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "成员空间ID",
-                        "name": "tenant_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "角色信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UpdateMemberRoleRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "从组织中移除成员空间（需要管理员权限）",
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "移除成员",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "成员空间ID",
-                        "name": "tenant_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/request-upgrade": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "现有成员申请更高权限",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "申请权限升级",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "申请信息",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.RequestRoleUpgradeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/search-tenants": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "Resolve a workspace ID for invitation",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Exact workspace ID",
-                        "name": "q",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/search-users": {
-            "get": {
-                "deprecated": true,
-                "responses": {}
-            }
-        },
-        "/organizations/{id}/shared-agents": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取指定空间下所有共享智能体，包含他人共享的与我共享的，用于列表页空间视角",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取空间内全部智能体（含我共享的）",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/shared-knowledge-bases": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取指定空间下所有共享知识库，包含直接共享的与通过共享智能体可见的，用于列表页空间视角",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取空间内全部知识库（含我共享的、含智能体携带的）",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/organizations/{id}/shares": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取共享到指定组织的所有知识库",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织管理"
-                ],
-                "summary": "获取组织的共享知识库列表",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "组织ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ListSharesResponse"
                         }
                     }
                 }
@@ -12016,7 +12194,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "List sandbox configs",
                 "responses": {
@@ -12053,7 +12231,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Create sandbox config",
                 "parameters": [
@@ -12106,7 +12284,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Get sandbox config",
                 "parameters": [
@@ -12158,7 +12336,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Update sandbox config",
                 "parameters": [
@@ -12236,7 +12414,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Delete sandbox config",
                 "parameters": [
@@ -12294,7 +12472,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Inspect sandbox config inventory",
                 "parameters": [
@@ -12339,7 +12517,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "List installed skills",
                 "parameters": [
@@ -12392,7 +12570,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Install a skill",
                 "parameters": [
@@ -12463,7 +12641,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Get an installed skill",
                 "parameters": [
@@ -12519,7 +12697,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Remove an installed skill",
                 "parameters": [
@@ -12578,7 +12756,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Update an installed skill",
                 "parameters": [
@@ -12651,7 +12829,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "List files of an installed skill",
                 "parameters": [
@@ -12709,7 +12887,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Read one file of an installed skill",
                 "parameters": [
@@ -12780,7 +12958,7 @@ const docTemplate = `{
                     "text/event-stream"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Follow an install or removal",
                 "parameters": [
@@ -12837,7 +13015,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Retry a skill install",
                 "parameters": [
@@ -12901,7 +13079,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Stop a skill install",
                 "parameters": [
@@ -12965,7 +13143,7 @@ const docTemplate = `{
                     "text/event-stream"
                 ],
                 "tags": [
-                    "SandboxConfig"
+                    "Sandbox"
                 ],
                 "summary": "Follow an install's agent transcript",
                 "parameters": [
@@ -13023,7 +13201,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取当前空间的会话列表，支持分页、关键字搜索、按来源/Agent 筛选",
+                "description": "Lấy danh sách cuộc trò chuyện của không gian làm việc hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý",
                 "consumes": [
                     "application/json"
                 ],
@@ -13031,51 +13209,51 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "获取会话列表",
+                "summary": "Lấy danh sách cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "Số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "Số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "标题模糊搜索",
+                        "description": "Tìm gần đúng theo tiêu đề",
                         "name": "keyword",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "来源过滤：web / embed / api / feishu / wechat / slack / ...（api、embed、IM 渠道需 Admin+）",
+                        "description": "Lọc theo nguồn: web / embed / api / feishu / wechat / slack / ... (api, embed, kênh IM cần Admin+)",
                         "name": "source",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 Agent 过滤（仅对 IM 会话生效）",
+                        "description": "Lọc theo trợ lý (chỉ áp dụng cho cuộc trò chuyện IM)",
                         "name": "agent_id",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "会话列表",
+                        "description": "Danh sách cuộc trò chuyện",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13091,7 +13269,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "创建新的对话会话",
+                "description": "Tạo cuộc trò chuyện mới",
                 "consumes": [
                     "application/json"
                 ],
@@ -13099,12 +13277,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "创建会话",
+                "summary": "Tạo cuộc trò chuyện",
                 "parameters": [
                     {
-                        "description": "会话创建请求",
+                        "description": "Yêu cầu tạo cuộc trò chuyện",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -13115,14 +13293,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的会话",
+                        "description": "Cuộc trò chuyện đã tạo",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13140,7 +13318,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID列表批量删除对话会话，或设置 delete_all=true 删除当前空间的所有会话",
+                "description": "Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của không gian làm việc hiện tại",
                 "consumes": [
                     "application/json"
                 ],
@@ -13148,12 +13326,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "批量删除会话",
+                "summary": "Xoá hàng loạt cuộc trò chuyện",
                 "parameters": [
                     {
-                        "description": "批量删除请求",
+                        "description": "Yêu cầu xoá hàng loạt",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -13164,14 +13342,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除结果",
+                        "description": "Kết quả xoá",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13189,7 +13367,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "继续获取正在进行的流式响应",
+                "description": "Tiếp tục nhận phản hồi streaming đang diễn ra",
                 "consumes": [
                     "application/json"
                 ],
@@ -13197,20 +13375,20 @@ const docTemplate = `{
                     "text/event-stream"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "继续流式响应",
+                "summary": "Tiếp tục phản hồi streaming",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "消息ID",
+                        "description": "ID tin nhắn",
                         "name": "message_id",
                         "in": "query",
                         "required": true
@@ -13222,21 +13400,21 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "handle",
-                        "description": "文件引用形式，public 返回可加载直链",
+                        "description": "Dạng tham chiếu tệp; public trả về liên kết tải trực tiếp",
                         "name": "resource_urls",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "流式响应",
+                        "description": "Phản hồi streaming",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话或消息不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện hoặc tin nhắn",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13254,7 +13432,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取会话详情",
+                "description": "Lấy chi tiết cuộc trò chuyện theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -13262,13 +13440,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "获取会话详情",
+                "summary": "Lấy chi tiết cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13276,14 +13454,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "会话详情",
+                        "description": "Chi tiết cuộc trò chuyện",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13299,7 +13477,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新会话属性",
+                "description": "Cập nhật thuộc tính cuộc trò chuyện",
                 "consumes": [
                     "application/json"
                 ],
@@ -13307,19 +13485,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "更新会话",
+                "summary": "Cập nhật cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "会话信息",
+                        "description": "Thông tin cuộc trò chuyện",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -13330,14 +13508,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的会话",
+                        "description": "Cuộc trò chuyện sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13353,7 +13531,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定的会话",
+                "description": "Xoá cuộc trò chuyện chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -13361,13 +13539,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "删除会话",
+                "summary": "Xoá cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13375,14 +13553,57 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{id}/context-usage": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "How full the history of the session's next turn is, next to the plan's caps (chat UI context indicator)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cuộc trò chuyện"
+                ],
+                "summary": "Session context usage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SessionContextUsage"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13400,7 +13621,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除会话中的所有消息，同时清除 LLM 上下文和聊天历史知识库条目。会话本身保留。",
+                "description": "Xoá mọi tin nhắn trong cuộc trò chuyện, đồng thời xoá ngữ cảnh LLM và các mục lịch sử trò chuyện trong kho tri thức. Cuộc trò chuyện vẫn được giữ lại.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13408,13 +13629,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "清空会话消息",
+                "summary": "Xoá toàn bộ tin nhắn của cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13422,20 +13643,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "清空成功",
+                        "description": "Xoá toàn bộ thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13453,18 +13674,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "取消指定会话的置顶",
+                "description": "Bỏ ghim cuộc trò chuyện chỉ định",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "取消置顶会话",
+                "summary": "Bỏ ghim cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13472,14 +13693,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "取消置顶成功",
+                        "description": "Bỏ ghim thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13497,18 +13718,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "刷新页面后用来恢复输入框上方的队列。没有正在运行的 turn 时返回空列表。",
+                "description": "Dùng để khôi phục hàng đợi phía trên ô nhập sau khi tải lại trang. Không có lượt đang chạy thì trả về danh sách rỗng.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "列出当前运行中尚未消费的排队消息",
+                "summary": "Liệt kê các tin nhắn xếp hàng chưa được xử lý của lượt đang chạy",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13529,7 +13750,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "活 turn 查询失败，可重试",
+                        "description": "Truy vấn lượt đang chạy thất bại, có thể thử lại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13547,25 +13768,25 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "从当前运行的排队列表里去掉一条，不再注入也不再作为 follow-up 发出。",
+                "description": "Gỡ một tin nhắn khỏi hàng đợi của lượt đang chạy; không chèn nữa và cũng không gửi như follow-up.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "删除一条排队中的消息",
+                "summary": "Xoá một tin nhắn đang xếp hàng",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "排队消息 ID",
+                        "description": "ID tin nhắn xếp hàng",
                         "name": "steer_id",
                         "in": "path",
                         "required": true
@@ -13586,7 +13807,67 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "活 turn 查询失败，可重试",
+                        "description": "Truy vấn lượt đang chạy thất bại, có thể thử lại",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/abbreviation-clarifications/{request_id}/retry-suggestions": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Thử lại việc ghi gợi ý từ điển viết tắt đang ở trạng thái save_failed",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hỏi đáp"
+                ],
+                "summary": "Thử lại việc ghi gợi ý viết tắt",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID cuộc trò chuyện",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID yêu cầu giải nghĩa viết tắt",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Thử lại thành công",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Không tìm thấy cuộc trò chuyện hoặc yêu cầu giải nghĩa",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "409": {
+                        "description": "Trạng thái yêu cầu giải nghĩa không cho phép thử lại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13601,18 +13882,59 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回本会话中所有 assistant 消息产生的技能产物元数据（不含 URL）",
+                "description": "Trả về metadata của các sản phẩm kỹ năng do mọi tin nhắn trợ lý trong cuộc trò chuyện này tạo ra (không kèm URL)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "列出会话生成的产物文件",
+                "summary": "Liệt kê các tệp sản phẩm do cuộc trò chuyện tạo ra",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/continue": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Opens a new session seeded with the session's latest context summary\nand excerpts of its newest turns: what the \"open a new session\" button\nof a session_limit refusal calls.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cuộc trò chuyện"
+                ],
+                "summary": "Continue a session in a new one",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
                         "name": "session_id",
                         "in": "path",
                         "required": true
@@ -13645,7 +13967,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "从指定的用户或助手消息处分叉出一个新会话。用户消息：复制其之前的历史并预填该问题；助手消息：复制含该回答在内的历史，从该轮沙箱状态继续。",
+                "description": "Tạo cuộc trò chuyện mới rẽ nhánh từ một tin nhắn người dùng hoặc trợ lý. Tin nhắn người dùng: sao chép lịch sử trước đó và điền sẵn câu hỏi; tin nhắn trợ lý: sao chép lịch sử gồm cả câu trả lời đó và tiếp tục từ trạng thái sandbox của lượt đó.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13653,19 +13975,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "分叉会话",
+                "summary": "Rẽ nhánh cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "源会话 ID",
+                        "description": "ID cuộc trò chuyện nguồn",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "分叉请求",
+                        "description": "Yêu cầu rẽ nhánh",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -13676,26 +13998,26 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "新会话",
+                        "description": "Cuộc trò chuyện mới",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误 / 分叉点角色不支持",
+                        "description": "Tham số không hợp lệ / vai trò tại điểm rẽ nhánh không được hỗ trợ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "会话或消息不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện hoặc tin nhắn",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "409": {
-                        "description": "源会话正在生成中",
+                        "description": "Cuộc trò chuyện nguồn đang sinh câu trả lời",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13727,20 +14049,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "获取回答后推荐问题",
+                "summary": "Lấy câu hỏi gợi ý sau câu trả lời",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "助手消息 ID",
+                        "description": "ID tin nhắn trợ lý",
                         "name": "message_id",
                         "in": "path",
                         "required": true
@@ -13765,7 +14087,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "对已完成的助手消息异步生成或重新生成推荐问题；相同配置快照会复用持久化结果",
+                "description": "Tạo hoặc tạo lại câu hỏi gợi ý bất đồng bộ cho tin nhắn trợ lý đã hoàn tất; cùng ảnh chụp cấu hình sẽ dùng lại kết quả đã lưu",
                 "consumes": [
                     "application/json"
                 ],
@@ -13773,26 +14095,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "确保生成回答后推荐问题",
+                "summary": "Đảm bảo tạo câu hỏi gợi ý sau câu trả lời",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "助手消息 ID",
+                        "description": "ID tin nhắn trợ lý",
                         "name": "message_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "生成选项",
+                        "description": "Tùy chọn tạo",
                         "name": "request",
                         "in": "body",
                         "schema": {
@@ -13828,18 +14150,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "将指定会话置顶（用户维度）",
+                "description": "Ghim cuộc trò chuyện chỉ định (theo từng người dùng)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "置顶会话",
+                "summary": "Ghim cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
@@ -13847,14 +14169,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "置顶成功",
+                        "description": "Ghim thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13872,7 +14194,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "向运行中的 agent turn 追加用户消息（after 排队 / inject 注入）。无活 turn 时返回 new_run。",
+                "description": "Thêm tin nhắn người dùng vào lượt trợ lý đang chạy (after: xếp hàng / inject: chèn ngay). Không có lượt đang chạy thì trả về new_run.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13880,19 +14202,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "向运行中的对话追加消息",
+                "summary": "Thêm tin nhắn vào cuộc trò chuyện đang chạy",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "追加消息",
+                        "description": "Tin nhắn cần thêm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -13910,19 +14232,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "会话不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "503": {
-                        "description": "活 turn 查询失败，可重试",
+                        "description": "Truy vấn lượt đang chạy thất bại, có thể thử lại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -13940,25 +14262,25 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "把一条 delivery=after 的排队消息改为 inject，运行中的 agent 会在下一轮边界读到它。",
+                "description": "Đổi một tin nhắn xếp hàng có delivery=after thành inject; trợ lý đang chạy sẽ đọc nó ở ranh giới lượt kế tiếp.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "将排队消息改为立即注入",
+                "summary": "Chuyển tin nhắn đang xếp hàng sang chèn ngay",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "排队消息 ID",
+                        "description": "ID tin nhắn xếp hàng",
                         "name": "steer_id",
                         "in": "path",
                         "required": true
@@ -13985,7 +14307,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "活 turn 查询失败，可重试",
+                        "description": "Truy vấn lượt đang chạy thất bại, có thể thử lại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -14003,7 +14325,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "停止当前正在进行的生成任务",
+                "description": "Dừng tác vụ sinh câu trả lời đang chạy",
                 "consumes": [
                     "application/json"
                 ],
@@ -14011,19 +14333,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "问答"
+                    "Hỏi đáp"
                 ],
-                "summary": "停止生成",
+                "summary": "Dừng sinh câu trả lời",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "停止请求",
+                        "description": "Yêu cầu dừng",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -14034,14 +14356,94 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "停止成功",
+                        "description": "Dừng thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "会话或消息不存在",
+                        "description": "Không tìm thấy cuộc trò chuyện hoặc tin nhắn",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/sub-chats": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "The document-assistant chat the session belongs to and its sub-chats\n(\"chat nhỏ\"), oldest first; they all work on the root chat's documents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cuộc trò chuyện"
+                ],
+                "summary": "List the sub-chats of a document chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "A new session on the same documents as the session's document chat,\nseeded with the session's latest context summary (like /continue).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cuộc trò chuyện"
+                ],
+                "summary": "Open a new sub-chat of a document chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -14059,24 +14461,24 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "记录曝光、点击或关闭事件",
+                "description": "Ghi nhận sự kiện hiển thị, nhấp hoặc đóng",
                 "consumes": [
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "上报推荐问题事件",
+                "summary": "Báo cáo sự kiện câu hỏi gợi ý",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话 ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "事件",
+                        "description": "Sự kiện",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -14102,7 +14504,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据消息内容自动生成会话标题",
+                "description": "Tự động sinh tiêu đề cuộc trò chuyện từ nội dung tin nhắn",
                 "consumes": [
                     "application/json"
                 ],
@@ -14110,19 +14512,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "会话"
+                    "Cuộc trò chuyện"
                 ],
-                "summary": "生成会话标题",
+                "summary": "Sinh tiêu đề cuộc trò chuyện",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "会话ID",
+                        "description": "ID cuộc trò chuyện",
                         "name": "session_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "生成请求",
+                        "description": "Yêu cầu sinh tiêu đề",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -14133,77 +14535,16 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "生成的标题",
+                        "description": "Tiêu đề đã sinh",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/shared-agents": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "返回所有共享给当前用户所在组织的智能体",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "组织"
-                ],
-                "summary": "获取我可访问的共享智能体",
-                "responses": {
-                    "200": {
-                        "description": "智能体列表 + total",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/shared-knowledge-bases": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "获取通过组织共享给当前用户的所有知识库",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "知识库共享"
-                ],
-                "summary": "获取共享给我的知识库列表",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
                         }
                     }
                 }
@@ -14219,7 +14560,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回指定沙箱配置镜像内、智能体实际能调用的已安装技能（ready 且启用）。不传 sandbox_config_id 时列表为空。",
+                "description": "Trả về các skill đã cài trong image của cấu hình sandbox chỉ định mà trợ lý thực sự gọi được (ready và đang bật). Không truyền sandbox_config_id thì danh sách rỗng.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14227,9 +14568,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
-                "summary": "获取当前沙箱配置上可执行的 Skills",
+                "summary": "Lấy các Skill chạy được trên cấu hình sandbox hiện tại",
                 "parameters": [
                     {
                         "type": "string",
@@ -14240,7 +14581,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Skills列表",
+                        "description": "SkillsList ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -14264,7 +14605,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "List workspace skills",
                 "responses": {
@@ -14287,7 +14628,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "Add a skill to the workspace catalog",
                 "responses": {
@@ -14305,7 +14646,7 @@ const docTemplate = `{
             "delete": {
                 "description": "Refused while any sandbox still has an installation of this skill.",
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "Delete a catalog skill",
                 "parameters": [
@@ -14335,7 +14676,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "List files of a catalog skill",
                 "parameters": [
@@ -14364,7 +14705,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "Read one file of a catalog skill",
                 "parameters": [
@@ -14404,7 +14745,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Skills"
+                    "Kỹ năng"
                 ],
                 "summary": "Install a catalog skill onto sandboxes",
                 "parameters": [
@@ -14442,7 +14783,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "List storage backends",
                 "responses": {
@@ -14479,7 +14820,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Create storage backend",
                 "parameters": [
@@ -14541,7 +14882,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Test storage backend with raw config",
                 "parameters": [
@@ -14594,7 +14935,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "List allowed storage provider types",
                 "responses": {
@@ -14623,7 +14964,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Get storage backend",
                 "parameters": [
@@ -14675,7 +15016,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Update storage backend",
                 "parameters": [
@@ -14739,7 +15080,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Delete storage backend",
                 "parameters": [
@@ -14796,7 +15137,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Set default storage backend",
                 "parameters": [
@@ -14853,7 +15194,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "StorageBackend"
+                    "Lưu trữ"
                 ],
                 "summary": "Test storage backend by ID",
                 "parameters": [
@@ -14901,7 +15242,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "List platform API keys",
                 "responses": {
@@ -14928,7 +15269,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Create a platform API key",
                 "parameters": [
@@ -14965,7 +15306,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Revoke a platform API key",
                 "parameters": [
@@ -14998,42 +15339,42 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回 system-scope（tenant_id=0）的审计事件，覆盖 system.setting_changed / system.admin_promoted / system.admin_revoked 等 SystemAdmin 操作。按 id 倒序的游标分页。",
+                "description": "Trả về các sự kiện kiểm toán phạm vi hệ thống (tenant_id=0), gồm các thao tác SystemAdmin như system.setting_changed / system.admin_promoted / system.admin_revoked. Phân trang con trỏ theo id giảm dần.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "审计日志"
+                    "Nhật ký kiểm toán"
                 ],
-                "summary": "获取平台审计日志",
+                "summary": "Lấy nhật ký kiểm toán nền tảng",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "游标：返回 id 小于此值的记录（默认从最新开始）",
+                        "description": "Con trỏ: trả về bản ghi có id nhỏ hơn giá trị này (mặc định bắt đầu từ mới nhất)",
                         "name": "after_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "页大小，1-100，默认 50",
+                        "description": "Kích thước trang, 1-100, mặc định 50",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 action 精确过滤（如 system.setting_changed）",
+                        "description": "Lọc chính xác theo action (ví dụ system.setting_changed)",
                         "name": "action",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 outcome 精确过滤（success / denied）",
+                        "description": "Lọc chính xác theo outcome (success / denied)",
                         "name": "outcome",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 actor_user_id 精确过滤",
+                        "description": "Lọc chính xác theo actor_user_id",
                         "name": "actor",
                         "in": "query"
                     }
@@ -15061,7 +15402,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "List all system administrators",
                 "parameters": [
@@ -15107,7 +15448,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Promote a user to system administrator",
                 "parameters": [
@@ -15162,7 +15503,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Revoke system administrator privileges from a user",
                 "parameters": [
@@ -15209,14 +15550,14 @@ const docTemplate = `{
         },
         "/system/admin/runtime/queues": {
             "get": {
-                "description": "返回各 asynq 队列的实时深度（pending/active/scheduled/retry 等）与 worker 并发配置，仅系统管理员可见",
+                "description": "Trả về độ sâu thời gian thực của các hàng đợi asynq (pending/active/scheduled/retry...) và cấu hình song song của worker; chỉ quản trị viên hệ thống xem được",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "系统管理"
+                    "Quản trị hệ thống"
                 ],
-                "summary": "获取解析任务队列运行时状态",
+                "summary": "Lấy trạng thái runtime của hàng đợi tác vụ phân tích",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -15233,7 +15574,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Purge all archived tasks in a queue",
                 "parameters": [
@@ -15262,7 +15603,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "List runtime queue tasks by state",
                 "parameters": [
@@ -15318,7 +15659,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Run a safe runtime task action",
                 "parameters": [
@@ -15369,7 +15710,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Get a single system setting by key",
                 "parameters": [
@@ -15413,7 +15754,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Update a system setting value",
                 "parameters": [
@@ -15460,7 +15801,7 @@ const docTemplate = `{
             "delete": {
                 "description": "Removes the DB override for :key so the 3-tier resolver\nfalls back to the environment variable (when configured)\nor the in-code default. Idempotent — resetting a key\nthat was never persisted returns 200.",
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Reset a system setting to ENV / built-in default",
                 "parameters": [
@@ -15497,14 +15838,116 @@ const docTemplate = `{
                 }
             }
         },
-        "/system/admin/tenants/apply-default-storage-quota": {
-            "post": {
-                "description": "Reads the current value of ` + "`" + `tenant.default_storage_quota_gb` + "`" + `\n(3-tier resolver: DB \u003e ENV \u003e default) and writes that many\nGiB into storage_quota for every row in tenants. Bypasses\nthe per-workspace PUT whitelist, which forbids storage_quota\nedits by Owners. SystemAdmin only.\nIdempotent — running twice with the same setting is a no-op.",
+        "/system/admin/stats": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Account counters, documents grouped by parse status, and a\nper-day message activity series for the heatmap.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Platform usage statistics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message activity window in days (1-365, default 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/stats/processing": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Pending/processing/finalizing documents across every tenant,\noldest first, plus the number of documents failed in 24h.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Documents in the ingest pipeline",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max rows (1-200, default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/tenants": {
+            "post": {
+                "description": "SystemAdmin only. Creates the workspace and makes the named\n(or newly created) user its Tenant Admin. The calling\nSystemAdmin does not become a member.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Create a workspace with its Tenant Admin",
+                "parameters": [
+                    {
+                        "description": "Workspace and admin",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ProvisionTenantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ProvisionTenantResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/tenants/apply-default-storage-quota": {
+            "post": {
+                "description": "Reads the current value of ` + "`" + `tenant.default_storage_quota_gb` + "`" + `\n(3-tier resolver: DB \u003e ENV \u003e default) and writes that many\nGiB into storage_quota for every row in tenants. Bypasses\nthe per-workspace PUT whitelist, which forbids storage_quota\nedits by workspace Admins. SystemAdmin only.\nIdempotent — running twice with the same setting is a no-op.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Apply the default storage quota to every existing workspace",
                 "responses": {
@@ -15525,6 +15968,921 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/admin/tenants/{tenant_id}": {
+            "put": {
+                "description": "SystemAdmin only. Changes the name and/or description of a\nworkspace the caller does not need to belong to.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Rename any workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.UpdateSystemTenantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/tenants/{tenant_id}/members": {
+            "get": {
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "List the members of any workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "SystemAdmin only. Adds an existing or new user to the\nworkspace with the given role (admin or member).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Add a user to any workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User and role",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.AddSystemTenantMemberRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/tenants/{tenant_id}/members/{user_id}": {
+            "put": {
+                "description": "Change a user's role inside any tenant (SystemAdmin only).\nUnlike PUT /tenants/:id/members/:user_id this does not require\nthe caller to be Admin of the target tenant — the route group\nalready gates on SystemAdmin. The \"last admin\" invariant is\nstill enforced by the service layer.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Update a user's workspace role",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target role",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.updateMemberRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid tenant_id or role",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden: not a system admin",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Membership not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Would demote the last admin",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "Remove a user from any workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/orders": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Every order (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "pending|paid|cancelled|expired",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/orders/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Cancel a pending order (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "order id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/orders/{id}/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Mark an order paid and apply it (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "order id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/plans": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "List usage plans",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "include deactivated plans",
+                        "name": "include_inactive",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Create a usage plan",
+                "parameters": [
+                    {
+                        "description": "plan",
+                        "name": "plan",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePlan"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/plans/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Update a usage plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "plan id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "plan",
+                        "name": "plan",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePlan"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Delete an unused usage plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "plan id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/promos": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Promo codes (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "include deactivated codes",
+                        "name": "include_inactive",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Create a promo code (SuperAdmin)",
+                "parameters": [
+                    {
+                        "description": "promo",
+                        "name": "promo",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePromoCode"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/promos/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Update a promo code (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "promo id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "promo",
+                        "name": "promo",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePromoCode"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Delete a promo code (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "promo id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "List subscriptions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "tenant|user",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "scope id",
+                        "name": "scope_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "active|cancelled",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "plan id",
+                        "name": "plan_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Attach a plan to a workspace or person",
+                "parameters": [
+                    {
+                        "description": "subscription",
+                        "name": "subscription",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageSubscription"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Update a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "subscription",
+                        "name": "subscription",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageSubscription"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Delete a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions/{id}/seats": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Seats of a seat-mode subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Give a person a seat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "seat",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.usageSeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions/{id}/seats/{user_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Take a seat back",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "user id",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/tenants": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Every workspace with its subscription and usage",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/users": {
+            "get": {
+                "description": "Retrieve a paginated list of every user account — system\nadmins and regular users alike (SystemAdmin only). Supports\n` + "`" + `offset` + "`" + `/` + "`" + `limit` + "`" + ` (default 50, max 200) and an optional ` + "`" + `q` + "`" + `\nusername/email filter.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Quản trị hệ thống"
+                ],
+                "summary": "List all users",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by username or email",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Users retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ListSystemUsersResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden: not a system admin",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/users/create": {
             "post": {
                 "description": "Provision a new local user account (SystemAdmin only).\nWhen ` + "`" + `password` + "`" + ` is omitted or null, a cryptographically random\npassword is generated (OIDC-style crypto/rand + base64url)\nand returned once in the response body. Any provided value,\nincluding empty string, is policy-checked. Tenant provisioning\nfollows the shared auth.default_tenant_mode policy.",
@@ -15535,7 +16893,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Create a new user (SystemAdmin)",
                 "parameters": [
@@ -15603,7 +16961,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "System Admin"
+                    "Quản trị hệ thống"
                 ],
                 "summary": "Reset another user's password",
                 "parameters": [
@@ -15651,17 +17009,17 @@ const docTemplate = `{
         },
         "/system/capabilities": {
             "get": {
-                "description": "返回当前部署版本及实际注册的后端路由所对应的功能能力；仅 supported=false 表示入口应隐藏",
+                "description": "Trả về phiên bản triển khai hiện tại và các năng lực tương ứng với route backend đã đăng ký thật; chỉ supported=false mới có nghĩa là nên ẩn lối vào",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "获取部署能力清单",
+                "summary": "Lấy danh sách năng lực của bản triển khai",
                 "responses": {
                     "200": {
-                        "description": "标准 code/msg/data 包装，data 为 DeploymentCapabilitiesData",
+                        "description": "Gói chuẩn code/msg/data, data là DeploymentCapabilitiesData",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -15679,12 +17037,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "重连文档解析服务",
+                "summary": "Kết nối lại dịch vụ phân tích tài liệu",
                 "parameters": [
                     {
-                        "description": "DocReader 地址",
+                        "description": "Địa chỉ DocReader",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -15702,7 +17060,7 @@ const docTemplate = `{
         },
         "/system/info": {
             "get": {
-                "description": "获取系统版本、构建信息和引擎配置",
+                "description": "Lấy phiên bản hệ thống, thông tin bản dựng và cấu hình engine",
                 "consumes": [
                     "application/json"
                 ],
@@ -15710,14 +17068,216 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "获取系统信息",
+                "summary": "Lấy thông tin hệ thống",
                 "responses": {
                     "200": {
-                        "description": "系统信息",
+                        "description": "Thông tin hệ thống",
                         "schema": {
                             "$ref": "#/definitions/internal_handler.GetSystemInfoResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-catalog/search": {
+            "get": {
+                "description": "Finds catalogue documents by số hiệu or title words so a\nreviewer can link a document by hand.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Search the legal catalogue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Number or title words",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Documents",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-reviews": {
+            "get": {
+                "description": "Pages the review queue of public-KB documents. status is\npending, approved, rejected, alerts (approved documents a\nnewer one supersedes) or empty for all.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "List legal identity reviews",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Review status or alerts",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only this KB",
+                        "name": "knowledge_base_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items + total",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-reviews/scan": {
+            "post": {
+                "description": "Reads the header of every parsed public-KB document without\na review yet and stores a pending suggestion matched against\nthe legal catalogue.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Suggest legal identities for new public-KB documents",
+                "responses": {
+                    "200": {
+                        "description": "created count",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-reviews/{knowledge_id}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Approve or reject a document's legal identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge ID",
+                        "name": "knowledge_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LegalReviewDecision"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated item",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-reviews/{knowledge_id}/spellcheck": {
+            "post": {
+                "description": "Checks Vietnamese spelling of the given chunk texts (as the\nreviewer has them, saved or not) with the KB's summary\nmodel. Nothing is saved; at most 40 chunks per call.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Proofread chunks of a reviewed document",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge ID",
+                        "name": "knowledge_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "{items: [{chunk_id, content}]}",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Findings",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/parse-defaults": {
+            "get": {
+                "description": "Returns the knowledge.parse_defaults document\n({\"enabled\": bool, ...process_config fields}). Member-readable\nso upload UIs can skip the parse-settings dialog when the\nSystemAdmin has locked a default configuration; absent rows\nresolve to enabled=false.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hệ thống"
+                ],
+                "summary": "Get the platform-wide default parse settings",
+                "responses": {
+                    "200": {
+                        "description": "{ success, data: SystemParseDefaults }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -15729,12 +17289,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "列出可用的文档解析引擎",
+                "summary": "Liệt kê các engine phân tích tài liệu khả dụng",
                 "responses": {
                     "200": {
-                        "description": "解析引擎列表",
+                        "description": "Danh sách engine phân tích",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -15752,12 +17312,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "使用当前参数检测解析引擎可用性",
+                "summary": "Kiểm tra engine phân tích khả dụng với tham số hiện tại",
                 "parameters": [
                     {
-                        "description": "解析引擎配置（与保存接口同结构）",
+                        "description": "Cấu hình engine phân tích (cùng cấu trúc với API lưu)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -15775,7 +17335,7 @@ const docTemplate = `{
         },
         "/system/sandbox-check": {
             "post": {
-                "description": "使用当前填写的参数测试沙箱后端，不保存配置；deep=true 会执行临时脚本，远端后端还会创建并销毁一个沙箱",
+                "description": "Kiểm tra backend sandbox bằng tham số đang nhập, không lưu cấu hình; deep=true sẽ chạy một script tạm, backend từ xa còn tạo rồi huỷ một sandbox",
                 "consumes": [
                     "application/json"
                 ],
@@ -15783,12 +17343,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "测试沙箱连通性",
+                "summary": "Kiểm tra kết nối sandbox",
                 "parameters": [
                     {
-                        "description": "沙箱配置",
+                        "description": "cấu hình sandbox",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -15809,7 +17369,7 @@ const docTemplate = `{
         },
         "/system/storage-engine-check": {
             "post": {
-                "description": "使用当前填写的参数测试 MinIO/COS 连通性，不保存配置",
+                "description": "Dùng tham số đang điền để kiểm tra kết nối MinIO/COS, không lưu cấu hình",
                 "consumes": [
                     "application/json"
                 ],
@@ -15817,12 +17377,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "测试存储引擎连通性",
+                "summary": "Kiểm tra kết nối engine lưu trữ",
                 "parameters": [
                     {
-                        "description": "存储引擎配置",
+                        "description": "Cấu hình engine lưu trữ",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -15843,19 +17403,40 @@ const docTemplate = `{
         },
         "/system/storage-engine-status": {
             "get": {
-                "description": "返回 Local、MinIO、COS 各存储引擎的可用状态及说明，供全局设置与知识库选择使用",
+                "description": "Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO, COS để thiết lập toàn cục và kho tri thức lựa chọn",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "系统"
+                    "Hệ thống"
                 ],
-                "summary": "获取存储引擎状态",
+                "summary": "Lấy trạng thái engine lưu trữ",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_handler.GetStorageEngineStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/ui-theme": {
+            "get": {
+                "description": "Returns {\"theme\": \"elevenlabs\"|\"anthropic\"} via the 3-tier\nsystem-setting resolver. Public (no auth) so the login page\nand the Word add-in apply the same theme.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hệ thống"
+                ],
+                "summary": "Get the platform-wide UI theme",
+                "responses": {
+                    "200": {
+                        "description": "{ success, data: { theme } }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -15868,7 +17449,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取当前用户可访问的空间列表",
+                "description": "Lấy danh sách đơn vị người dùng hiện tại truy cập được",
                 "consumes": [
                     "application/json"
                 ],
@@ -15876,19 +17457,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取空间列表",
+                "summary": "Lấy danh sách đơn vị",
                 "responses": {
                     "200": {
-                        "description": "空间列表",
+                        "description": "Tenant workspaceList ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -15901,7 +17482,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "创建新的空间。任意已登录用户均可调用以建立自己的新工作区，\n调用方会被自动设为该空间的 Owner。跨空间超管仍可像以前一样\n通过本接口创建任意空间。\n当 tenant.auto_create_api_key（或 WEKNORA_TENANT_AUTO_CREATE_API_KEY）\n开启时，会自动创建一个 full_access API Key，并在响应体的 data.api_key 字段返回其明文 token。",
+                "description": "Tạo đơn vị mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập không gian làm việc mới của mình,\nngười gọi tự động trở thành Owner của đơn vị đó. Siêu quản trị liên đơn vị vẫn có thể\ntạo đơn vị bất kỳ qua endpoint này như trước.\nKhi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)\nđược bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.",
                 "consumes": [
                     "application/json"
                 ],
@@ -15909,12 +17490,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "创建空间",
+                "summary": "Create Tenant workspace",
                 "parameters": [
                     {
-                        "description": "空间信息",
+                        "description": "Thông tin đơn vị",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -15925,14 +17506,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "创建的空间（可选含 api_key）",
+                        "description": "Đơn vị đã tạo (có thể kèm api_key)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -15947,7 +17528,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取系统中所有空间（需要跨空间访问权限）",
+                "description": "Lấy tất cả đơn vị trong hệ thống (cần quyền truy cập liên đơn vị)",
                 "consumes": [
                     "application/json"
                 ],
@@ -15955,21 +17536,47 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取所有空间列表",
+                "summary": "Lấy danh sách tất cả đơn vị",
                 "responses": {
                     "200": {
-                        "description": "所有空间列表",
+                        "description": "Danh sách tất cả đơn vị",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "Không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/directory": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Every workspace's id and name, for choosing which unit to share a knowledge base with. Human callers only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Đơn vị"
+                ],
+                "summary": "List workspace names",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -15985,7 +17592,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取系统配置的提示词模板列表",
+                "description": "Lấy danh sách mẫu prompt cấu hình trong hệ thống",
                 "consumes": [
                     "application/json"
                 ],
@@ -15993,19 +17600,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取提示词模板",
+                "summary": "Lấy mẫu prompt",
                 "responses": {
                     "200": {
-                        "description": "提示词模板配置",
+                        "description": "Prompt templateConfiguration ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16023,7 +17630,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取空间的网络搜索配置",
+                "description": "Lấy cấu hình tìm kiếm web của đơn vị",
                 "consumes": [
                     "application/json"
                 ],
@@ -16031,19 +17638,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取空间网络搜索配置",
+                "summary": "Lấy cấu hình tìm kiếm web của đơn vị",
                 "responses": {
                     "200": {
-                        "description": "网络搜索配置",
+                        "description": "Cấu hình tìm kiếm web",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16061,7 +17668,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取空间级别的KV配置（支持web-search-config、prompt-templates、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）",
+                "description": "Lấy cấu hình KV cấp đơn vị (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16069,13 +17676,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取空间KV配置",
+                "summary": "Lấy cấu hình KV của đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "配置键名",
+                        "description": "Tên khoá cấu hình",
                         "name": "key",
                         "in": "path",
                         "required": true
@@ -16083,14 +17690,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "配置值",
+                        "description": "Giá trị cấu hình",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "不支持的键",
+                        "description": "Khoá không được hỗ trợ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16106,7 +17713,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新空间级别的KV配置（支持web-search-config、parser-engine-config、storage-engine-config、chat-history-config、retrieval-config）",
+                "description": "Cập nhật cấu hình KV cấp đơn vị (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16114,19 +17721,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "更新空间KV配置",
+                "summary": "Update Tenant workspaceKVConfiguration",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "配置键名",
+                        "description": "Tên khoá cấu hình",
                         "name": "key",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "配置值",
+                        "description": "Giá trị cấu hình",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16137,14 +17744,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "Cập nhật thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "不支持的键",
+                        "description": "Khoá không được hỗ trợ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16162,7 +17769,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "分页搜索空间（需要跨空间访问权限）",
+                "description": "Tìm kiếm đơn vị theo trang (cần quyền truy cập liên đơn vị)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16170,47 +17777,47 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "搜索空间",
+                "summary": "Tìm kiếm đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索关键词",
+                        "description": "Từ khoá tìm kiếm",
                         "name": "keyword",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "空间ID筛选",
+                        "description": "Lọc theo ID đơn vị",
                         "name": "tenant_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码",
+                        "description": "Số trang",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "每页数量",
+                        "description": "Số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果",
+                        "description": "Kết quả tìm kiếm",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "Không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16228,7 +17835,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据ID获取空间详情",
+                "description": "Lấy chi tiết đơn vị theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -16236,13 +17843,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取空间详情",
+                "summary": "Lấy chi tiết đơn vị",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -16250,20 +17857,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "空间详情",
+                        "description": "Tenant workspaceDetails ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "404": {
-                        "description": "空间不存在",
+                        "description": "Không tìm thấy đơn vị",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16276,7 +17883,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "更新空间信息",
+                "description": "Cập nhật thông tin đơn vị",
                 "consumes": [
                     "application/json"
                 ],
@@ -16284,19 +17891,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "更新空间",
+                "summary": "Update Tenant workspace",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "空间信息",
+                        "description": "Thông tin đơn vị",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16307,14 +17914,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的空间",
+                        "description": "Đơn vị sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16327,7 +17934,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "删除指定的空间",
+                "description": "Xoá đơn vị chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -16335,13 +17942,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "删除空间",
+                "summary": "Delete Tenant workspace",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -16349,14 +17956,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "Xoá thành công",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16371,7 +17978,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "返回 X-API-Key 请求如何映射为终端 Principal 的配置（Owner）",
+                "description": "Trả về cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16379,13 +17986,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "获取空间 API Key 用户身份配置",
+                "summary": "Lấy cấu hình định danh người dùng cho API Key của đơn vị",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -16393,20 +18000,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "API principal 配置",
+                        "description": "API principal Configuration ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "Không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16419,7 +18026,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "配置 X-API-Key 请求如何映射为终端 Principal（Owner）",
+                "description": "Cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16427,19 +18034,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "更新空间 API Key 用户身份配置",
+                "summary": "Cập nhật cấu hình định danh người dùng cho API Key của đơn vị",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "API principal 配置",
+                        "description": "API principal Configuration ",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16450,20 +18057,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的配置",
+                        "description": "Cấu hình sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "Không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16478,7 +18085,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "使用空间已保存的 HMAC 密钥签发短期外部用户 JWT（Owner）",
+                "description": "Dùng khoá HMAC đã lưu của đơn vị để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16486,19 +18093,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间管理"
+                    "Đơn vị"
                 ],
-                "summary": "生成 API Playground 测试 JWT",
+                "summary": "Sinh JWT thử nghiệm cho API Playground",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "测试 Token 参数",
+                        "description": "Tham số token thử nghiệm",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16509,20 +18116,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "短期 JWT",
+                        "description": "JWT ngắn hạn",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
                     },
                     "403": {
-                        "description": "权限不足",
+                        "description": "Không có quyền",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -16540,49 +18147,49 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回该空间最近的审计事件，按 id 倒序。游标分页：将上次响应的 next_cursor 作为下一次请求的 after_id。",
+                "description": "Trả về các sự kiện kiểm toán gần đây của đơn vị, sắp xếp id giảm dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id cho yêu cầu tiếp theo.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "审计日志"
+                    "Nhật ký kiểm toán"
                 ],
-                "summary": "获取空间审计日志",
+                "summary": "Lấy nhật ký kiểm toán của đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间ID",
+                        "description": "Tenant workspaceID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "游标：返回 id 小于此值的记录（默认从最新开始）",
+                        "description": "Con trỏ: trả về bản ghi có id nhỏ hơn giá trị này (mặc định bắt đầu từ mới nhất)",
                         "name": "after_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "页大小，1-100，默认 50",
+                        "description": "Kích thước trang, 1-100, mặc định 50",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 action 精确过滤（如 rbac.member_added / rbac.access_denied）",
+                        "description": "Lọc chính xác theo action (ví dụ rbac.member_added / rbac.access_denied)",
                         "name": "action",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 outcome 精确过滤（success / denied）",
+                        "description": "Lọc chính xác theo outcome (success / denied)",
                         "name": "outcome",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "按 actor_user_id 精确过滤",
+                        "description": "Lọc chính xác theo actor_user_id",
                         "name": "actor",
                         "in": "query"
                     }
@@ -16610,39 +18217,39 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "按空间列出待接受 / 历史邀请。query include_terminal=true 时附带 accepted/declined/revoked/expired。",
+                "description": "Liệt kê lời mời đang chờ / lịch sử theo đơn vị. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "空间邀请"
+                    "Lời mời đơn vị"
                 ],
-                "summary": "列出空间邀请",
+                "summary": "Liệt kê lời mời của đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "boolean",
-                        "description": "是否包含终止态行（默认 false）",
+                        "description": "Có gồm các dòng ở trạng thái kết thúc không (mặc định false)",
                         "name": "include_terminal",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码（从 1 起）",
+                        "description": "Số trang (bắt đầu từ 1)",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "每页数量",
+                        "description": "Số mục mỗi trang",
                         "name": "page_size",
                         "in": "query"
                     }
@@ -16663,7 +18270,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner 通过邮箱邀请已注册用户加入空间。开启 tenant.auto_accept_invitation 后被邀请人立即自动加入（响应为成员结构），否则需在 /me/invitations 接受后成为成员。",
+                "description": "Owner mời người dùng đã đăng ký vào đơn vị qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.",
                 "consumes": [
                     "application/json"
                 ],
@@ -16671,19 +18278,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间邀请"
+                    "Lời mời đơn vị"
                 ],
-                "summary": "发出空间邀请",
+                "summary": "Gửi lời mời vào đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "邀请请求",
+                        "description": "Yêu cầu mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16710,25 +18317,25 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner 取消一条还在 pending 的邀请；已 accepted/declined/revoked/expired 的行不可再撤销。",
+                "description": "Owner hủy một lời mời còn pending; dòng đã accepted/declined/revoked/expired không thu hồi được nữa.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "空间邀请"
+                    "Lời mời đơn vị"
                 ],
-                "summary": "撤销待接受邀请",
+                "summary": "Thu hồi lời mời đang chờ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "邀请 ID",
+                        "description": "ID lời mời",
                         "name": "inv_id",
                         "in": "path",
                         "required": true
@@ -16752,7 +18359,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "生成一条多次使用的共享邀请链接：谁拿到链接谁就能注册并加入当前空间。\n链接持续有效，直到过期或被撤销。",
+                "description": "Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia đơn vị hiện tại.\nLiên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.",
                 "consumes": [
                     "application/json"
                 ],
@@ -16760,19 +18367,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间邀请"
+                    "Lời mời đơn vị"
                 ],
-                "summary": "生成共享邀请链接",
+                "summary": "Tạo liên kết mời dùng chung",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "共享链接配置",
+                        "description": "cấu hình liên kết mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16799,18 +18406,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "调用方主动退出当前空间。等价于以自己的 user_id 调 RemoveMember，",
+                "description": "Người gọi chủ động rời đơn vị hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "空间成员"
+                    "Thành viên đơn vị"
                 ],
-                "summary": "退出当前空间",
+                "summary": "Rời đơn vị hiện tại",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -16834,39 +18441,39 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "分页返回当前空间内 active 成员（含每位成员的角色、邮箱、头像）；支持 q 按邮箱/用户名筛选",
+                "description": "Trả về theo trang các thành viên active của đơn vị hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "空间成员"
+                    "Thành viên đơn vị"
                 ],
-                "summary": "列出空间成员",
+                "summary": "Liệt kê thành viên đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "按邮箱/用户名模糊筛选",
+                        "description": "Lọc gần đúng theo email/tên người dùng",
                         "name": "q",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码（从 1 起）",
+                        "description": "Số trang (bắt đầu từ 1)",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "每页数量（最大 100）",
+                        "description": "Số mục mỗi trang (tối đa 100)",
                         "name": "page_size",
                         "in": "query"
                     }
@@ -16894,19 +18501,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间成员"
+                    "Thành viên đơn vị"
                 ],
-                "summary": "直接添加空间成员（直加路径）",
+                "summary": "Thêm trực tiếp thành viên đơn vị (đường thêm thẳng)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "邀请请求",
+                        "description": "Yêu cầu mời",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16933,7 +18540,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner 修改某位成员在当前空间内的角色；不能将最后一位 Owner 降级",
+                "description": "Owner đổi vai trò của một thành viên trong đơn vị hiện tại; không được hạ cấp Owner cuối cùng",
                 "consumes": [
                     "application/json"
                 ],
@@ -16941,26 +18548,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "空间成员"
+                    "Thành viên đơn vị"
                 ],
-                "summary": "修改空间成员角色",
+                "summary": "Đổi vai trò thành viên đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "用户 ID",
+                        "description": "ID người dùng",
                         "name": "user_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "目标角色",
+                        "description": "Vai trò đích",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16985,25 +18592,137 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner 将某位成员从当前空间中移除（软删除 tenant_members 行）；不能移除最后一位 Owner",
+                "description": "Owner gỡ một thành viên khỏi đơn vị hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "空间成员"
+                    "Thành viên đơn vị"
                 ],
-                "summary": "移除空间成员",
+                "summary": "Gỡ thành viên đơn vị",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "空间 ID",
+                        "description": "Tenant workspace ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "用户 ID",
+                        "description": "ID người dùng",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{id}/usage": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Đơn vị"
+                ],
+                "summary": "The workspace's usage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "workspace id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{id}/usage/seats": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Đơn vị"
+                ],
+                "summary": "Give a member a seat of the workspace package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "workspace id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "seat",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.usageSeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{id}/usage/seats/{user_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Đơn vị"
+                ],
+                "summary": "Take a member's seat back",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "workspace id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "user id",
                         "name": "user_id",
                         "in": "path",
                         "required": true
@@ -17024,7 +18743,7 @@ const docTemplate = `{
             "get": {
                 "description": "Lists this user's starred resources in the current workspace for a given type",
                 "tags": [
-                    "User"
+                    "Người dùng"
                 ],
                 "summary": "List my favorites",
                 "parameters": [
@@ -17048,7 +18767,7 @@ const docTemplate = `{
             },
             "post": {
                 "tags": [
-                    "User"
+                    "Người dùng"
                 ],
                 "summary": "Star a resource",
                 "parameters": [
@@ -17076,7 +18795,7 @@ const docTemplate = `{
         "/user/favorites/{type}/{id}": {
             "delete": {
                 "tags": [
-                    "User"
+                    "Người dùng"
                 ],
                 "summary": "Unstar a resource",
                 "parameters": [
@@ -17121,7 +18840,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "List vector stores",
                 "responses": {
@@ -17158,7 +18877,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Create vector store",
                 "parameters": [
@@ -17220,7 +18939,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Test vector store connection with raw credentials",
                 "parameters": [
@@ -17265,7 +18984,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "List vector store types",
                 "responses": {
@@ -17294,7 +19013,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Get vector store",
                 "parameters": [
@@ -17347,7 +19066,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Update vector store",
                 "parameters": [
@@ -17413,7 +19132,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Delete vector store",
                 "parameters": [
@@ -17472,7 +19191,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "VectorStore"
+                    "Kho vector"
                 ],
                 "summary": "Test vector store connection by ID",
                 "parameters": [
@@ -17519,7 +19238,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "使用前端表单中尚未保存的凭证测试连通性，用于\"测试连接\"按钮",
+                "description": "Kiểm tra kết nối bằng thông tin xác thực chưa lưu trong biểu mẫu, dùng cho nút \"Kiểm tra kết nối\"",
                 "consumes": [
                     "application/json"
                 ],
@@ -17527,9 +19246,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "使用原始凭证测试 Provider（不落库）",
+                "summary": "Kiểm tra Provider bằng thông tin xác thực thô (không lưu)",
                 "parameters": [
                     {
                         "description": "{provider, parameters}",
@@ -17543,14 +19262,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "测试结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17569,17 +19288,17 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回 UI 表单需要的 provider 类型及参数定义",
+                "description": "Trả về các loại provider và định nghĩa tham số mà biểu mẫu UI cần",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "获取网络搜索 Provider 类型元数据",
+                "summary": "Lấy metadata các loại Provider tìm kiếm web",
                 "responses": {
                     "200": {
-                        "description": "provider 类型列表",
+                        "description": "danh sách loại provider",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17598,14 +19317,14 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "根据 ID 获取指定 provider 配置",
+                "description": "Lấy cấu hình provider theo ID",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "获取网络搜索 Provider 详情",
+                "summary": "Lấy chi tiết Provider tìm kiếm web",
                 "parameters": [
                     {
                         "type": "string",
@@ -17617,13 +19336,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Provider 详情",
+                        "description": "Provider Details ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.WebSearchProviderEntity"
                         }
                     },
                     "404": {
-                        "description": "Provider 不存在",
+                        "description": "không tìm thấy Provider",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17640,7 +19359,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "更新指定 provider 的名称/描述/参数/是否默认",
+                "description": "Cập nhật tên / mô tả / tham số / mặc định của provider chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -17648,9 +19367,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "更新网络搜索 Provider",
+                "summary": "Cập nhật Provider tìm kiếm web",
                 "parameters": [
                     {
                         "type": "string",
@@ -17660,7 +19379,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "更新字段",
+                        "description": "các trường cập nhật",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -17671,20 +19390,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的 Provider",
+                        "description": "Provider sau khi cập nhật",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.WebSearchProviderEntity"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Provider 不存在",
+                        "description": "không tìm thấy Provider",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17701,14 +19420,14 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除指定 provider 配置",
+                "description": "Xoá cấu hình provider chỉ định",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "删除网络搜索 Provider",
+                "summary": "Xoá Provider tìm kiếm web",
                 "parameters": [
                     {
                         "type": "string",
@@ -17727,7 +19446,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Provider 不存在",
+                        "description": "không tìm thấy Provider",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17746,14 +19465,14 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "使用数据库中已保存的凭证测试连通性",
+                "description": "Kiểm tra kết nối bằng thông tin xác thực đã lưu trong cơ sở dữ liệu",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "测试已保存的 Provider",
+                "summary": "Kiểm tra Provider đã lưu",
                 "parameters": [
                     {
                         "type": "string",
@@ -17765,14 +19484,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "测试结果",
+                        "description": "kết quả kiểm tra",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Provider 不存在",
+                        "description": "không tìm thấy Provider",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17791,17 +19510,17 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "返回所有已注册的网络搜索 provider（含元数据）",
+                "description": "Trả về mọi provider tìm kiếm web đã đăng ký (kèm metadata)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "网络搜索"
+                    "Tìm kiếm web"
                 ],
-                "summary": "获取可用网络搜索 Provider 列表",
+                "summary": "Lấy danh sách Provider tìm kiếm web khả dụng",
                 "responses": {
                     "200": {
-                        "description": "provider 列表",
+                        "description": "provider List ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17820,24 +19539,24 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "申请一个用于扫码登录绑定的微信二维码（无请求体）",
+                "description": "Xin một mã QR WeChat dùng để quét đăng nhập/liên kết (không có body)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "IM 渠道"
+                    "Kênh IM"
                 ],
-                "summary": "获取微信扫码登录二维码",
+                "summary": "Lấy mã QR đăng nhập WeChat",
                 "responses": {
                     "200": {
-                        "description": "二维码信息（qrcode_url + qrcode 标识）",
+                        "description": "Thông tin mã QR (qrcode_url + định danh qrcode)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "二维码生成失败",
+                        "description": "Tạo mã QR thất bại",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17856,7 +19575,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "查询指定二维码是否已被扫描/确认/过期；confirmed 时返回凭证",
+                "description": "Kiểm tra mã QR chỉ định đã được quét/xác nhận/hết hạn chưa; khi confirmed trả về thông tin đăng nhập",
                 "consumes": [
                     "application/json"
                 ],
@@ -17864,9 +19583,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "IM 渠道"
+                    "Kênh IM"
                 ],
-                "summary": "轮询微信二维码状态",
+                "summary": "Thăm dò trạng thái mã QR WeChat",
                 "parameters": [
                     {
                         "description": "{qrcode: string}",
@@ -17881,21 +19600,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "扫码状态",
+                        "description": "Trạng thái quét mã",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "Tham số không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "Lỗi hệ thống",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17914,7 +19633,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "保存 APPID/APPSECRET 到当前空间配置（不自动创建模型）",
+                "description": "Lưu APPID/APPSECRET vào cấu hình đơn vị hiện tại (không tự tạo mô hình)",
                 "consumes": [
                     "application/json"
                 ],
@@ -17924,7 +19643,7 @@ const docTemplate = `{
                 "tags": [
                     "WeKnoraCloud"
                 ],
-                "summary": "保存 WeKnoraCloud 凭证",
+                "summary": "Lưu thông tin xác thực WeKnoraCloud",
                 "parameters": [
                     {
                         "description": "{app_id, app_secret}",
@@ -17946,7 +19665,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "tham số yêu cầu không hợp lệ",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17957,6 +19676,50 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_Tencent_WeKnora_internal_application_service.WikiCatalogueBuildStatus": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "integer"
+                },
+                "deleted": {
+                    "type": "integer"
+                },
+                "done": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "knowledge_base_id": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_application_service.WikiLintIssue": {
             "type": "object",
             "properties": {
@@ -18211,11 +19974,13 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_infrastructure_chunker.StrategyTier": {
             "type": "string",
             "enum": [
+                "vietnamese_legal",
                 "heading",
                 "heuristic",
                 "legacy"
             ],
             "x-enum-varnames": [
+                "TierVietnameseLegal",
                 "TierHeading",
                 "TierHeuristic",
                 "TierLegacy"
@@ -18276,6 +20041,75 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.AbbreviationPublicState": {
+            "type": "object",
+            "properties": {
+                "auto_corrections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AbbreviationTypo"
+                    }
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "root_user_message_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "terms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AbbreviationPublicTerm"
+                    }
+                },
+                "unknown_terms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.AbbreviationPublicTerm": {
+            "type": "object",
+            "properties": {
+                "full_form": {
+                    "type": "string"
+                },
+                "selected_id": {
+                    "type": "string"
+                },
+                "short_form": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "suggestion_status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.AbbreviationTypo": {
+            "type": "object",
+            "properties": {
+                "correct": {
+                    "type": "string"
+                },
+                "wrong": {
                     "type": "string"
                 }
             }
@@ -18374,6 +20208,10 @@ const docTemplate = `{
                 "system.admin_revoked",
                 "system.user_password_reset",
                 "system.user_created",
+                "system.tenant_provisioned",
+                "system.tenant_updated",
+                "system.tenant_member_added",
+                "system.tenant_member_removed",
                 "system.api_key_created",
                 "system.api_key_revoked",
                 "system.queue_task_retried",
@@ -18381,10 +20219,24 @@ const docTemplate = `{
                 "system.queue_task_run_now",
                 "system.queue_task_cancelled",
                 "system.queue_archived_purged",
+                "model.created",
+                "model.updated",
+                "model.deleted",
+                "model.credentials_updated",
+                "model.credentials_cleared",
                 "kb.created",
                 "kb.updated",
                 "kb.deleted",
+                "kb.access_requested",
+                "kb.access_approved",
+                "kb.access_rejected",
+                "kb.access_revoked",
+                "kb.invite_issued",
+                "kb.invite_accepted",
+                "kb.invite_revoked",
                 "kb.duplicated",
+                "kb.scope_changed",
+                "kb.owner_transferred",
                 "kb.clone_started",
                 "kb.clone_completed",
                 "kb.clone_failed",
@@ -18408,13 +20260,12 @@ const docTemplate = `{
                 "datasource.sync_failed",
                 "datasource.paused",
                 "datasource.resumed",
-                "kb.share_added",
-                "kb.share_permission_changed",
-                "kb.share_removed",
                 "wiki.content_changed",
                 "faq.import_started",
                 "faq.import_completed",
-                "faq.import_failed"
+                "faq.import_failed",
+                "attachment.parse_failed",
+                "chat.attachment_unavailable"
             ],
             "x-enum-varnames": [
                 "AuditActionMemberAdded",
@@ -18438,6 +20289,10 @@ const docTemplate = `{
                 "AuditActionSystemAdminRevoked",
                 "AuditActionSystemUserPasswordReset",
                 "AuditActionSystemUserCreated",
+                "AuditActionSystemTenantProvisioned",
+                "AuditActionSystemTenantUpdated",
+                "AuditActionSystemTenantMemberAdded",
+                "AuditActionSystemTenantMemberRemoved",
                 "AuditActionSystemAPIKeyCreated",
                 "AuditActionSystemAPIKeyRevoked",
                 "AuditActionSystemQueueTaskRetried",
@@ -18445,10 +20300,24 @@ const docTemplate = `{
                 "AuditActionSystemQueueTaskRunNow",
                 "AuditActionSystemQueueTaskCancelled",
                 "AuditActionSystemQueueArchivedPurged",
+                "AuditActionModelCreated",
+                "AuditActionModelUpdated",
+                "AuditActionModelDeleted",
+                "AuditActionModelCredentialsUpdated",
+                "AuditActionModelCredentialsCleared",
                 "AuditActionKBCreated",
                 "AuditActionKBUpdated",
                 "AuditActionKBDeleted",
+                "AuditActionKBAccessRequested",
+                "AuditActionKBAccessApproved",
+                "AuditActionKBAccessRejected",
+                "AuditActionKBAccessRevoked",
+                "AuditActionKBInviteIssued",
+                "AuditActionKBInviteAccepted",
+                "AuditActionKBInviteRevoked",
                 "AuditActionKBDuplicated",
+                "AuditActionKBScopeChanged",
+                "AuditActionKBOwnerTransferred",
                 "AuditActionKBCloneStarted",
                 "AuditActionKBCloneCompleted",
                 "AuditActionKBCloneFailed",
@@ -18472,13 +20341,12 @@ const docTemplate = `{
                 "AuditActionDataSourceSyncFailed",
                 "AuditActionDataSourcePaused",
                 "AuditActionDataSourceResumed",
-                "AuditActionKBShareAdded",
-                "AuditActionKBSharePermissionChanged",
-                "AuditActionKBShareRemoved",
                 "AuditActionWikiContentChanged",
                 "AuditActionFAQImportStarted",
                 "AuditActionFAQImportCompleted",
-                "AuditActionFAQImportFailed"
+                "AuditActionFAQImportFailed",
+                "AuditActionAttachmentParseFailed",
+                "AuditActionChatAttachmentUnavailable"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.AuditLog": {
@@ -18648,7 +20516,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "parser_engine_rules": {
-                    "description": "ParserEngineRules configures which parser engine to use for each file type.\nWhen empty, DefaultParserEngine is used (builtin/simple routing, except\ntypes that only a specific engine can parse: ppt/pptx fall back to\nmarkitdown). A linked anydoc binding is preferred for every type it\nconverts.",
+                    "description": "ParserEngineRules configures which parser engine to use for each file type.\nWhen empty, DefaultParserEngine is used (builtin/simple routing, except\ntypes that only a specific engine can parse: ppt/pptx fall back to\nmarkitdown).",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ParserEngineRule"
@@ -18732,6 +20600,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.ContextCompactedMarker": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "degraded": {
+                    "type": "boolean"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.ContextCompressionStrategy": {
             "type": "string",
             "enum": [
@@ -18765,36 +20647,6 @@ const docTemplate = `{
                 "summarize_threshold": {
                     "description": "Summarize threshold: number of messages before summarization",
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.CreateOrganizationRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "avatar": {
-                    "description": "optional avatar URL",
-                    "type": "string",
-                    "maxLength": 512
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 1000
-                },
-                "invite_code_validity_days": {
-                    "description": "optional: 0=never, 1, 7, 30; default 7",
-                    "type": "integer"
-                },
-                "member_limit": {
-                    "description": "optional: max members; 0=unlimited; default 50",
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "minLength": 1
                 }
             }
         },
@@ -18865,7 +20717,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "api_key": {
-                    "description": "加密",
+                    "description": "Đã mã hóa",
                     "type": "string"
                 },
                 "api_url": {
@@ -18913,6 +20765,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "ask_scope_for_long_documents": {
+                    "description": "AskScopeForLongDocuments lets a generic request about a long document\nthat names no part of it be answered with a question about the scope\n(tasks, sections) instead of running the agent. Nil (unset) and true\nmean on.",
+                    "type": "boolean"
                 },
                 "asr_model_id": {
                     "description": "ASR model ID for audio transcription (optional)",
@@ -18993,9 +20849,21 @@ const docTemplate = `{
                     "description": "FAQ score boost multiplier - FAQ results score multiplied by this factor",
                     "type": "number"
                 },
+                "format_check_model_id": {
+                    "description": "===== Document Assistant Settings =====\nFormatCheckModelID is the KnowledgeQA model that runs the NĐ30 format\nevaluation: check_document_format and the component labelling in\napply_format_fixes\nand read_document_outline. Empty uses ModelID.",
+                    "type": "string"
+                },
+                "format_check_on_open": {
+                    "description": "FormatCheckOnOpen is unused since 2026-10-11 (the format check runs\nonly when the user asks; the spelling is reviewed live instead). Kept\nso stored agent configs still load.",
+                    "type": "boolean"
+                },
                 "history_turns": {
                     "description": "Number of history turns to keep in context. Quick-answer only; smart-reasoning sizes history by context window",
                     "type": "integer"
+                },
+                "illustration_mcp_service_id": {
+                    "description": "IllustrationMCPServiceID is the MCP service generate_illustration\npaints with (its generate_image tool, e.g. Qwen-Image). Empty picks the\nfirst enabled service known to offer generate_image.",
+                    "type": "string"
                 },
                 "image_storage_provider": {
                     "description": "Storage provider for image uploads: \"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\".\nEmpty means use the global/workspace default provider.",
@@ -19066,6 +20934,10 @@ const docTemplate = `{
                     "description": "===== Multi-turn Conversation Settings =====\nWhether multi-turn conversation is enabled",
                     "type": "boolean"
                 },
+                "open_document_max_runes": {
+                    "description": "OpenDocumentMaxRunesLimit caps the \u003copen_document\u003e head given to the\nmodel; 0 uses the tools package default (see OpenDocumentMaxRunes).",
+                    "type": "integer"
+                },
                 "query_understand_model_id": {
                     "description": "Dedicated chat model ID for the query-understanding (rewrite + intent) step.\nWhen empty, the main conversation ModelID is used as a fallback.",
                     "type": "string"
@@ -19121,6 +20993,10 @@ const docTemplate = `{
                     "description": "===== Skills Settings (only for smart-reasoning mode) =====\nSkills selection mode: \"all\" = all installed skills, \"selected\" = specific skills, \"none\" = no skills",
                     "type": "string"
                 },
+                "spellcheck_model_id": {
+                    "description": "SpellcheckModelID is the KnowledgeQA model check_spelling uses. Empty\nuses ModelID.",
+                    "type": "string"
+                },
                 "supported_file_types": {
                     "description": "===== File Type Restriction Settings =====\nSupported file types for this agent (e.g., [\"csv\", \"xlsx\", \"xls\"])\nEmpty means all file types are supported\nWhen set, only files with matching extensions can be used with this agent",
                     "type": "array",
@@ -19159,6 +21035,10 @@ const docTemplate = `{
                 "web_fetch_top_n": {
                     "description": "Max number of pages to fetch after rerank (default: 3)",
                     "type": "integer"
+                },
+                "web_search_default_on": {
+                    "description": "WebSearchDefaultOn makes the chat's Web toggle start on when this agent\nis selected. Read by the frontend only.",
+                    "type": "boolean"
                 },
                 "web_search_enabled": {
                     "description": "===== Web Search Settings =====\nWhether web search is enabled",
@@ -19324,6 +21204,55 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.DocumentSelection": {
+            "type": "object",
+            "properties": {
+                "document": {
+                    "description": "Document names that workspace for the model (\"vb2 · Tờ trình.docx\");\nset by the server after it checked DocumentID, never by the client.",
+                    "type": "string"
+                },
+                "document_id": {
+                    "description": "DocumentID is the workspace (editor tab) the text was selected in;\nempty from a client that predates multi-document sessions.",
+                    "type": "string"
+                },
+                "paragraph_hint": {
+                    "description": "ParagraphHint is optional surrounding text the editor plugin could\ncapture (for example the whole paragraph), used to locate the passage\nwhen Text alone is ambiguous.",
+                    "type": "string"
+                },
+                "paragraph_occurrence": {
+                    "description": "ParagraphOccurrence is the 1-based instance of ParagraphHint (the\nparagraph the selection starts in) among the paragraphs with the same\nnormalised text, so a passage repeated elsewhere in the document is\ntold apart; 0 when the editor did not say.",
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DocumentTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string"
+                },
+                "from_conversation": {
+                    "description": "FromConversation drafts the document from the session's earlier\nconversation: the click on the agent hand-off card after the user\ndiscussed the content with another agent.",
+                    "type": "boolean"
+                },
+                "redo": {
+                    "description": "Redo starts the request from what the user said for the last ready\nrequest of this type in the session (\"tạo lại công văn\" in a new,\nempty document), so it is drafted again without asking again.",
+                    "type": "boolean"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "template_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.E2BHostRule": {
             "type": "object",
             "properties": {
@@ -19343,7 +21272,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "api_key": {
-                    "description": "加密",
+                    "description": "Đã mã hóa",
                     "type": "string"
                 },
                 "api_url": {
@@ -19422,7 +21351,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "dry_run": {
-                    "description": "仅验证，不实际导入",
+                    "description": "Chỉ kiểm tra, không nhập thật",
                     "type": "boolean"
                 },
                 "entries": {
@@ -19442,7 +21371,7 @@ const docTemplate = `{
                     ]
                 },
                 "task_id": {
-                    "description": "可选，如果不传则自动生成UUID",
+                    "description": "Tùy chọn, nếu không gửi sẽ tự sinh UUID",
                     "type": "string"
                 }
             }
@@ -19462,21 +21391,21 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "by_id": {
-                    "description": "ByID 按条目ID更新，key为条目ID (seq_id)",
+                    "description": "ByID cập nhật theo ID mục, key là ID mục (seq_id)",
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.FAQEntryFieldsUpdate"
                     }
                 },
                 "by_tag": {
-                    "description": "ByTag 按Tag批量更新，key为TagID (seq_id)",
+                    "description": "ByTag cập nhật hàng loạt theo thẻ, key là ID thẻ (seq_id)",
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.FAQEntryFieldsUpdate"
                     }
                 },
                 "exclude_ids": {
-                    "description": "ExcludeIDs 在ByTag操作中需要排除的ID列表 (seq_id)",
+                    "description": "ExcludeIDs là danh sách ID cần loại trừ trong thao tác ByTag (seq_id)",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -19514,7 +21443,7 @@ const docTemplate = `{
                     }
                 },
                 "id": {
-                    "description": "ID 可选，用于数据迁移时指定 seq_id（必须小于自增起始值 100000000）",
+                    "description": "ID tùy chọn, dùng để chỉ định seq_id khi di chuyển dữ liệu (phải nhỏ hơn giá trị tự tăng khởi đầu 100000000)",
                     "type": "integer"
                 },
                 "is_enabled": {
@@ -19575,7 +21504,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "first_priority_tag_ids": {
-                    "description": "第一优先级标签ID列表，限定命中范围，优先级最高",
+                    "description": "Danh sách ID thẻ ưu tiên 1, giới hạn phạm vi khớp, ưu tiên cao nhất",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -19585,14 +21514,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "only_recommended": {
-                    "description": "是否仅返回推荐的条目",
+                    "description": "Chỉ trả về mục được gợi ý hay không",
                     "type": "boolean"
                 },
                 "query_text": {
                     "type": "string"
                 },
                 "second_priority_tag_ids": {
-                    "description": "第二优先级标签ID列表，限定命中范围，优先级低于第一优先级",
+                    "description": "Danh sách ID thẻ ưu tiên 2, giới hạn phạm vi khớp, ưu tiên thấp hơn ưu tiên 1",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -19660,6 +21589,9 @@ const docTemplate = `{
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }
@@ -19777,71 +21709,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.InviteMemberRequest": {
-            "type": "object",
-            "required": [
-                "role"
-            ],
-            "properties": {
-                "representative_user_id": {
-                    "description": "RepresentativeUserID identifies the user attached to the OTM row for\ndisplay/audit. Optional: when unset, the handler picks a stable default\n(the user from the legacy UserID field, or the workspace's owner).",
-                    "type": "string"
-                },
-                "role": {
-                    "description": "Role to assign: admin/editor/viewer",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
-                        }
-                    ]
-                },
-                "tenant_id": {
-                    "description": "TenantID is the workspace to enrol as an org member. Preferred field.",
-                    "type": "integer"
-                },
-                "user_id": {
-                    "description": "UserID is retained for backward compatibility. When set without\nTenantID, the handler resolves the user's TenantID and uses this\nuser as the representative.",
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.JoinByOrganizationIDRequest": {
-            "type": "object",
-            "required": [
-                "organization_id"
-            ],
-            "properties": {
-                "message": {
-                    "description": "Optional message for join request",
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "organization_id": {
-                    "type": "string"
-                },
-                "role": {
-                    "description": "Optional: requested role (admin/editor/viewer); default viewer",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
-                        }
-                    ]
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.JoinOrganizationRequest": {
-            "type": "object",
-            "required": [
-                "invite_code"
-            ],
-            "properties": {
-                "invite_code": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 8
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.KBCloneTaskStatus": {
             "type": "string",
             "enum": [
@@ -19855,6 +21722,32 @@ const docTemplate = `{
                 "KBCloneStatusProcessing",
                 "KBCloneStatusCompleted",
                 "KBCloneStatusFailed"
+            ]
+        },
+        "github_com_Tencent_WeKnora_internal_types.KBMemberDefault": {
+            "type": "string",
+            "enum": [
+                "view",
+                "contribute"
+            ],
+            "x-enum-varnames": [
+                "KBMemberDefaultView",
+                "KBMemberDefaultContribute"
+            ]
+        },
+        "github_com_Tencent_WeKnora_internal_types.KBVisibility": {
+            "type": "string",
+            "enum": [
+                "tenant",
+                "public",
+                "published",
+                "restricted"
+            ],
+            "x-enum-varnames": [
+                "KBVisibilityTenant",
+                "KBVisibilityPublic",
+                "KBVisibilityPublished",
+                "KBVisibilityRestricted"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.KS3EngineConfig": {
@@ -19883,6 +21776,10 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.KnowledgeBase": {
             "type": "object",
             "properties": {
+                "access_source": {
+                    "description": "AccessSource names the access.DecideKB rule that lets the caller\nview this KB (superadmin, tenant_admin, tenant_scope, public,\npublished, acl_user, acl_tenant). Filled by readable-KB listings\nonly; never stored.",
+                    "type": "string"
+                },
                 "asr_config": {
                     "description": "ASR config (Automatic Speech Recognition)",
                     "allOf": [
@@ -19920,7 +21817,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "creator_name": {
-                    "description": "CreatorName 是 CreatorID 对应用户的展示名（username / email 等），\n仅在列表场景由 handler 批量回填，不落库；为空表示创建者无法解析（用户已删除、\nCreatorID 为空的老数据等）。前端用它在卡片来源徽章上做 mine vs workspace 的二分。",
+                    "description": "CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),\nchỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,\ndữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / workspace trên huy hiệu nguồn của thẻ.",
                     "type": "string"
                 },
                 "deleted_at": {
@@ -19952,6 +21849,14 @@ const docTemplate = `{
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.FAQConfig"
+                        }
+                    ]
+                },
+                "generated_profile": {
+                    "description": "GeneratedProfile is the machine-generated description: a gist, merged\ntopics, typical questions and the aggregate snapshot they came from. It\nnever overwrites the user-authored Description; both are shown to agents.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfile"
                         }
                     ]
                 },
@@ -19991,8 +21896,24 @@ const docTemplate = `{
                     "description": "Knowledge count (not stored in database, calculated on query)",
                     "type": "integer"
                 },
+                "member_default": {
+                    "description": "MemberDefault decides what active members of the owner tenant may do\non a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault"
+                        }
+                    ]
+                },
                 "name": {
                     "description": "Name of the knowledge base",
+                    "type": "string"
+                },
+                "owner_tenant_id": {
+                    "description": "OwnerTenantID is the authorization owner of this knowledge base:\na nonzero tenant ID means tenant-owned, 0 means platform-owned\n(no tenant owner). TenantID above stays the immutable\ndata-scope/execution partition for documents and indexes and is\nnever rewritten by a public/tenant scope transition. Rows\npredating migration 000113 backfill this column from tenant_id.\nThe owner/visibility invariant (public \u003c=\u003e owner 0, tenant \u003c=\u003e\nowner \u003e 0) is enforced by migration 000113's CHECK constraint on\nPostgreSQL and by ValidateOwnership in Go (SQLite/test path).",
+                    "type": "integer"
+                },
+                "owner_tenant_name": {
+                    "description": "OwnerTenantName is the owning workspace's display name, filled on\npublished-catalog rows so readers see which unit published them.",
                     "type": "string"
                 },
                 "pinned_at": {
@@ -20003,6 +21924,14 @@ const docTemplate = `{
                     "description": "ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)",
                     "type": "integer"
                 },
+                "profile_config": {
+                    "description": "ProfileConfig controls automatic generation of the knowledge-base\ndescription from per-document profiles (document knowledge bases only).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfileConfig"
+                        }
+                    ]
+                },
                 "question_generation_config": {
                     "description": "QuestionGenerationConfig stores question generation configuration for document knowledge bases",
                     "allOf": [
@@ -20012,7 +21941,7 @@ const docTemplate = `{
                     ]
                 },
                 "share_count": {
-                    "description": "ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database)",
+                    "description": "ShareCount indicates the number of live tenant access grants on this knowledge base (not stored in database)",
                     "type": "integer"
                 },
                 "storage_backend_id": {
@@ -20035,6 +21964,13 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "subscribed_by_me": {
+                    "description": "SubscribedByMe / SubscribedByTenant are computed per caller for\npublished KBs: whether the caller, or their whole tenant, has put\nthe KB into the default retrieval scope.",
+                    "type": "boolean"
+                },
+                "subscribed_by_tenant": {
+                    "type": "boolean"
+                },
                 "summary_model_id": {
                     "description": "Summary model ID",
                     "type": "string"
@@ -20054,6 +21990,14 @@ const docTemplate = `{
                 "vector_store_id": {
                     "description": "VectorStoreID references the VectorStore this knowledge base is bound to.\nWhen nil, the KB falls back to the workspace's effective engines derived from\nthe RETRIEVE_DRIVER environment variable (env store flow).\nThis field is set once at creation time and must not be modified afterwards;\nenforcement lives at the GORM layer (` + "`" + `\u003c-:create` + "`" + `) plus the service-layer\nKB update path, which omits this field from its update DTO.",
                     "type": "string"
+                },
+                "visibility": {
+                    "description": "Visibility controls the read/search scope of this knowledge base.\nSee KBVisibility constants. Rows predating migration 000107 read\nback as 'tenant' via the column default.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBVisibility"
+                        }
+                    ]
                 },
                 "vlm_config": {
                     "description": "VLM config",
@@ -20116,6 +22060,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "profile_config": {
+                    "description": "ProfileConfig controls optional automatic knowledge-base description\ngeneration. nil means \"no change\" when updating.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfileConfig"
+                        }
+                    ]
+                },
                 "wiki_config": {
                     "description": "Wiki configuration (only for wiki-enabled knowledge bases)",
                     "allOf": [
@@ -20126,59 +22078,125 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.KnowledgeBaseShareResponse": {
+        "github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfile": {
             "type": "object",
             "properties": {
-                "chunk_count": {
-                    "type": "integer"
-                },
-                "created_at": {
+                "aggregate_hash": {
+                    "description": "AggregateHash identifies the aggregate the gist was generated from. A\nmismatch with the live aggregate means the text is stale.",
                     "type": "string"
                 },
-                "id": {
+                "error": {
+                    "description": "Error holds the last generation error when Status is failed.",
                     "type": "string"
                 },
-                "knowledge_base_id": {
+                "generated_at": {
+                    "description": "GeneratedAt records when the text was produced.",
                     "type": "string"
                 },
-                "knowledge_base_name": {
+                "gist": {
+                    "description": "Gist is a short statement of what the knowledge base covers.",
                     "type": "string"
                 },
-                "knowledge_base_type": {
+                "model_id": {
+                    "description": "ModelID records which chat model produced the text.",
                     "type": "string"
                 },
-                "knowledge_count": {
-                    "type": "integer"
+                "stats": {
+                    "description": "Stats is the aggregate snapshot the text was generated from.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfileStats"
+                        }
+                    ]
                 },
-                "my_permission": {
-                    "description": "Effective permission for current user = min(Permission, MyRoleInOrg)",
+                "status": {
+                    "description": "Status is one of the KnowledgeBaseProfileStatus* values.",
                     "type": "string"
                 },
-                "my_role_in_org": {
-                    "description": "Current user's role in this organization (admin/editor/viewer)",
+                "topics": {
+                    "description": "Topics is the merged topic list (at most KnowledgeBaseProfileMaxTopics).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "typical_questions": {
+                    "description": "TypicalQuestions lists questions this knowledge base can answer.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfileConfig": {
+            "type": "object",
+            "properties": {
+                "custom_instructions": {
+                    "description": "CustomInstructions is appended to the stable system prompt, e.g. the\naudience the description should address or terms to keep.",
                     "type": "string"
                 },
-                "organization_id": {
-                    "type": "string"
-                },
-                "organization_name": {
-                    "type": "string"
-                },
-                "permission": {
-                    "description": "Share permission (what the space was granted: viewer/editor)",
-                    "type": "string"
-                },
-                "require_approval": {
+                "enabled": {
                     "type": "boolean"
                 },
-                "shared_by_user_id": {
+                "model_id": {
+                    "description": "ModelID overrides the chat model; empty falls back to the KB summary model.",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.KnowledgeBaseProfileStats": {
+            "type": "object",
+            "properties": {
+                "doc_types": {
+                    "description": "DocTypes counts documents per model-assigned document type.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.NamedCount"
+                    }
                 },
-                "shared_by_username": {
-                    "type": "string"
-                },
-                "source_tenant_id": {
+                "document_count": {
+                    "description": "DocumentCount is the number of eligible documents at generation time.",
                     "type": "integer"
+                },
+                "earliest_at": {
+                    "description": "EarliestAt and LatestAt bound document creation times.",
+                    "type": "string"
+                },
+                "file_types": {
+                    "description": "FileTypes counts documents per file extension.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.NamedCount"
+                    }
+                },
+                "folders": {
+                    "description": "Folders lists the top-level folder names present.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "latest_at": {
+                    "type": "string"
+                },
+                "profiled_count": {
+                    "description": "ProfiledCount is how many of them carried a document profile.",
+                    "type": "integer"
+                },
+                "raw_topics": {
+                    "description": "RawTopics counts documents per normalized topic keyword before merging.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.NamedCount"
+                    }
+                },
+                "tags": {
+                    "description": "Tags counts documents per knowledge-base tag.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.NamedCount"
+                    }
                 }
             }
         },
@@ -20186,23 +22204,23 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "created_at": {
-                    "description": "任务创建时间",
+                    "description": "Thời điểm tạo tác vụ",
                     "type": "integer"
                 },
                 "error": {
-                    "description": "错误信息",
+                    "description": "Thông tin lỗi",
                     "type": "string"
                 },
                 "failed": {
-                    "description": "失败数",
+                    "description": "Số thất bại",
                     "type": "integer"
                 },
                 "message": {
-                    "description": "状态消息",
+                    "description": "Thông điệp trạng thái",
                     "type": "string"
                 },
                 "processed": {
-                    "description": "已处理数",
+                    "description": "Số đã xử lý",
                     "type": "integer"
                 },
                 "progress": {
@@ -20222,11 +22240,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "total": {
-                    "description": "总知识数",
+                    "description": "Tổng số tài liệu",
                     "type": "integer"
                 },
                 "updated_at": {
-                    "description": "最后更新时间",
+                    "description": "Thời điểm cập nhật cuối",
                     "type": "integer"
                 }
             }
@@ -20274,53 +22292,59 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.ListMembersResponse": {
+        "github_com_Tencent_WeKnora_internal_types.LegalDocumentFields": {
             "type": "object",
             "properties": {
-                "members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrganizationMemberResponse"
-                    }
+                "doc_type": {
+                    "type": "string"
                 },
-                "total": {
-                    "type": "integer"
+                "document_number": {
+                    "type": "string"
+                },
+                "effective_on": {
+                    "type": "string"
+                },
+                "expired_on": {
+                    "type": "string"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "issued_on": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "signer": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.ListOrganizationsResponse": {
+        "github_com_Tencent_WeKnora_internal_types.LegalReviewDecision": {
             "type": "object",
             "properties": {
-                "organizations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrganizationResponse"
-                    }
+                "action": {
+                    "description": "Action is \"approve\" or \"reject\".",
+                    "type": "string"
                 },
-                "resource_counts": {
-                    "description": "各空间内知识库/智能体数量，供列表侧栏展示",
+                "document": {
+                    "description": "Document carries the reviewed fields written onto the row.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ResourceCountsByOrgResponse"
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LegalDocumentFields"
                         }
                     ]
                 },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.ListSharesResponse": {
-            "type": "object",
-            "properties": {
-                "shares": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KnowledgeBaseShareResponse"
-                    }
-                },
-                "total": {
-                    "type": "integer"
+                "legal_document_id": {
+                    "description": "LegalDocumentID picks an existing catalogue row; empty with a\nDocument creates a manual row.",
+                    "type": "string"
                 }
             }
         },
@@ -20345,6 +22369,10 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 6
+                },
+                "two_factor_code": {
+                    "description": "TwoFactorCode is the 6-digit TOTP code (or a one-time recovery code)\nrequired when the account has 2FA enabled. Empty for accounts\nwithout 2FA.",
+                    "type": "string"
                 }
             }
         },
@@ -20377,6 +22405,10 @@ const docTemplate = `{
                 },
                 "token": {
                     "type": "string"
+                },
+                "two_factor_required": {
+                    "description": "TwoFactorRequired is true when the credentials were correct but the\naccount has 2FA enabled and no/invalid code was supplied. The\nfrontend must prompt for a 6-digit code and retry with\ntwo_factor_code set. No tokens are issued in that response.",
+                    "type": "boolean"
                 },
                 "user": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.User"
@@ -20616,23 +22648,23 @@ const docTemplate = `{
                 9
             ],
             "x-enum-comments": {
-                "MatchTypeDataAnalysis": "数据分析匹配类型",
+                "MatchTypeDataAnalysis": "Loại khớp phân tích dữ liệu",
                 "MatchTypeDirectLoad": "Deprecated: reserved to preserve serialized enum values",
-                "MatchTypeParentChunk": "父Chunk匹配类型",
-                "MatchTypeRelationChunk": "关系Chunk匹配类型",
-                "MatchTypeWebSearch": "网络搜索匹配类型"
+                "MatchTypeParentChunk": "Loại khớp chunk cha",
+                "MatchTypeRelationChunk": "Loại khớp chunk quan hệ",
+                "MatchTypeWebSearch": "Loại khớp tìm kiếm web"
             },
             "x-enum-descriptions": [
                 "",
                 "",
                 "",
                 "",
-                "父Chunk匹配类型",
-                "关系Chunk匹配类型",
+                "Loại khớp chunk cha",
+                "Loại khớp chunk quan hệ",
                 "",
-                "网络搜索匹配类型",
+                "Loại khớp tìm kiếm web",
                 "Deprecated: reserved to preserve serialized enum values",
-                "数据分析匹配类型"
+                "Loại khớp phân tích dữ liệu"
             ],
             "x-enum-varnames": [
                 "MatchTypeEmbedding",
@@ -20669,7 +22701,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enabled": {
-                    "description": "Enabled defaults to false. Memory retains user statements across\nsessions, so a workspace admin has to turn it on deliberately.",
+                    "description": "Enabled is on for workspaces that never saved a config (see\nDefaultMemoryConfig); once an admin saves, the stored value wins.",
                     "type": "boolean"
                 },
                 "extract_delay_seconds": {
@@ -20701,7 +22733,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "vector_recall": {
-                    "description": "VectorRecall adds semantic similarity to memory recall. Nil means on\nwhen an embedding model is reachable.\n\nLexical matching alone cannot find a memory the user has re-worded, which\nis most of them: \"回答直接给结论\" and \"别铺垫那么多\" share no tokens. The\ncost is one embedding call per turn, bounded and degraded to lexical on\nfailure, so the feature never becomes a reason a chat is slow.",
+                    "description": "VectorRecall adds semantic similarity to memory recall. Nil means on\nwhen an embedding model is reachable.\n\nLexical matching alone cannot find a memory the user has re-worded, which\nis most of them: \"trả lời thẳng vào kết luận\" and \"đừng dạo đầu dài dòng\" share no tokens. The\ncost is one embedding call per turn, bounded and degraded to lexical on\nfailure, so the feature never becomes a reason a chat is slow.",
                     "type": "boolean"
                 },
                 "write_mode": {
@@ -20740,7 +22772,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "description": "\"kb\", \"file\", \"tag\", \"mcp\", \"skill\"",
+                    "description": "\"kb\", \"file\", \"tag\", \"mcp\", \"skill\", \"document\"",
                     "type": "string"
                 }
             }
@@ -20748,6 +22780,14 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.Message": {
             "type": "object",
             "properties": {
+                "abbreviation": {
+                    "description": "Abbreviation carries the public clarification state linked to this\nmessage by the abbreviation-resolution gate (root question, definition\nreply, clarification or answer). Hydrated by the message repository at\nread time from live turn rows — never persisted on the message itself —\nand projects only AbbreviationPublicState fields: no owner, principal,\nsnapshot or definition spans.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AbbreviationPublicState"
+                        }
+                    ]
+                },
                 "agent_duration_ms": {
                     "description": "Agent total execution duration in milliseconds (from query start to answer start)",
                     "type": "integer"
@@ -20764,7 +22804,7 @@ const docTemplate = `{
                     }
                 },
                 "artifacts": {
-                    "description": "Skill-generated files produced during this assistant turn (assistant messages only).\nPopulated by ArtifactCollector after the sandbox finishes, referenced by the\nartifact download endpoint. Empty for user messages and turns without skills.",
+                    "description": "Skill-generated files produced during this assistant turn (assistant messages only).\nPopulated by ArtifactCollector after the sandbox finishes, referenced by the\nartifact download endpoint. Empty for user messages and turns without skills.\n\nStored in the message_artifacts table, not on the message row: the message\nrepository loads it with every message it returns and writes it whenever it\nis non-nil on create or update. A nil slice leaves the stored rows alone.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.MessageArtifact"
@@ -20785,6 +22825,14 @@ const docTemplate = `{
                     "description": "Message text content",
                     "type": "string"
                 },
+                "context_compacted": {
+                    "description": "ContextCompacted is the chat UI's view of ContextCheckpoint, filled on\nread (AfterFind): it marks the turn up to which earlier conversation\nwas summarized, so the compaction marker survives a reload.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ContextCompactedMarker"
+                        }
+                    ]
+                },
                 "created_at": {
                     "description": "Message creation timestamp",
                     "type": "string"
@@ -20796,6 +22844,24 @@ const docTemplate = `{
                             "$ref": "#/definitions/gorm.DeletedAt"
                         }
                     ]
+                },
+                "document_selection": {
+                    "description": "Editor passage the user highlighted in the embedded document editor when\nsending this message (user messages only), so history shows which\npassage the question referred to.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.MessageDocumentSelection"
+                        }
+                    ]
+                },
+                "feedback": {
+                    "description": "Feedback is the session owner's judgement of an assistant answer:\nMessageFeedbackUp, MessageFeedbackDown or 0 when none was given. It is\nmirrored to Langfuse as the \"user-feedback\" score on the turn's trace.",
+                    "type": "integer"
+                },
+                "feedback_at": {
+                    "type": "string"
+                },
+                "feedback_comment": {
+                    "type": "string"
                 },
                 "id": {
                     "description": "Unique identifier for the message",
@@ -20924,7 +22990,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "content_mode": {
-                    "description": "full or selected_chunks",
+                    "description": "full, selected_chunks or selected_sections",
                     "type": "string"
                 },
                 "file_name": {
@@ -20951,6 +23017,14 @@ const docTemplate = `{
                     "description": "Total line count (for text files)",
                     "type": "integer"
                 },
+                "outline": {
+                    "description": "Outline lists the sections of a document too large for the prompt\n(content_mode selected_sections), so the model knows what the parts\nit was given belong to and what else the document holds.",
+                    "type": "string"
+                },
+                "parse_error": {
+                    "description": "ParseError is set when the attachment's content could not be made\navailable to the model (parse failure, timeout, missing/expired\ndocument, or content with no readable text). BuildPrompt renders it as\nan explicit failure block so the LLM knows not to fabricate an answer.",
+                    "type": "string"
+                },
                 "selected_chunks": {
                     "description": "Chunks included in this message prompt",
                     "type": "integer"
@@ -20962,6 +23036,30 @@ const docTemplate = `{
                 "total_chunks": {
                     "description": "Total parsed chunks",
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.MessageDocumentSelection": {
+            "type": "object",
+            "properties": {
+                "document": {
+                    "description": "Document names that workspace for the model (\"vb2 · Tờ trình.docx\");\nset by the server after it checked DocumentID, never by the client.",
+                    "type": "string"
+                },
+                "document_id": {
+                    "description": "DocumentID is the workspace (editor tab) the text was selected in;\nempty from a client that predates multi-document sessions.",
+                    "type": "string"
+                },
+                "paragraph_hint": {
+                    "description": "ParagraphHint is optional surrounding text the editor plugin could\ncapture (for example the whole paragraph), used to locate the passage\nwhen Text alone is ambiguous.",
+                    "type": "string"
+                },
+                "paragraph_occurrence": {
+                    "description": "ParagraphOccurrence is the 1-based instance of ParagraphHint (the\nparagraph the selection starts in) among the paragraphs with the same\nnormalised text, so a passage repeated elsewhere in the document is\ntold apart; 0 when the editor did not say.",
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
                 }
             }
         },
@@ -21010,11 +23108,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "app_id": {
-                    "description": "WeKnoraCloud 厂商专用凭证",
+                    "description": "Thông tin xác thực riêng cho nhà cung cấp WeKnoraCloud",
                     "type": "string"
                 },
                 "app_secret": {
-                    "description": "AES-256 加密存储，实际承载上游 API Key",
+                    "description": "Lưu mã hóa AES-256, thực chất chứa API Key upstream",
                     "type": "string"
                 },
                 "base_url": {
@@ -21025,7 +23123,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "custom_headers": {
-                    "description": "CustomHeaders 允许在调用远程模型 API 时附加自定义 HTTP 请求头，\n用途类似 Python OpenAI SDK 的 extra_headers 参数，\n常见场景包括透传企业网关鉴权信息、追踪 ID、路由标识等。\n保留字段（Authorization、api-key、Content-Type、Accept 等）会在运行期被忽略以避免破坏签名/鉴权流程。",
+                    "description": "CustomHeaders cho phép đính kèm HTTP header tùy chỉnh khi gọi API mô hình từ xa,\ntương tự tham số extra_headers của Python OpenAI SDK;\ndùng cho các trường hợp như chuyển tiếp thông tin xác thực của gateway doanh nghiệp, trace ID, định tuyến...\nCác header dành riêng (Authorization, api-key, Content-Type, Accept...) bị bỏ qua lúc chạy để không phá vỡ luồng ký/xác thực.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -21159,7 +23257,8 @@ const docTemplate = `{
                 "Rerank",
                 "KnowledgeQA",
                 "VLLM",
-                "ASR"
+                "ASR",
+                "Decision"
             ],
             "x-enum-comments": {
                 "ModelTypeASR": "ASR (Automatic Speech Recognition) model",
@@ -21173,15 +23272,28 @@ const docTemplate = `{
                 "Rerank model",
                 "KnowledgeQA model",
                 "VLLM model",
-                "ASR (Automatic Speech Recognition) model"
+                "ASR (Automatic Speech Recognition) model",
+                ""
             ],
             "x-enum-varnames": [
                 "ModelTypeEmbedding",
                 "ModelTypeRerank",
                 "ModelTypeKnowledgeQA",
                 "ModelTypeVLLM",
-                "ModelTypeASR"
+                "ModelTypeASR",
+                "ModelTypeDecision"
             ]
+        },
+        "github_com_Tencent_WeKnora_internal_types.NamedCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_Tencent_WeKnora_internal_types.OBSEngineConfig": {
             "type": "object",
@@ -21272,128 +23384,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.OrgMemberRole": {
-            "type": "string",
-            "enum": [
-                "admin",
-                "editor",
-                "viewer"
-            ],
-            "x-enum-varnames": [
-                "OrgRoleAdmin",
-                "OrgRoleEditor",
-                "OrgRoleViewer"
-            ]
-        },
-        "github_com_Tencent_WeKnora_internal_types.OrganizationMemberResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "joined_at": {
-                    "type": "string"
-                },
-                "representative_user_id": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "tenant_name": {
-                    "type": "string"
-                },
-                "user_id": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.OrganizationResponse": {
-            "type": "object",
-            "properties": {
-                "agent_share_count": {
-                    "description": "共享到该组织的智能体数量",
-                    "type": "integer"
-                },
-                "avatar": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "has_pending_upgrade": {
-                    "description": "当前用户是否有待处理的权限升级申请",
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "invite_code": {
-                    "type": "string"
-                },
-                "invite_code_expires_at": {
-                    "type": "string"
-                },
-                "invite_code_validity_days": {
-                    "type": "integer"
-                },
-                "is_owner": {
-                    "type": "boolean"
-                },
-                "member_count": {
-                    "type": "integer"
-                },
-                "member_limit": {
-                    "description": "0 = unlimited",
-                    "type": "integer"
-                },
-                "my_role": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner_id": {
-                    "type": "string"
-                },
-                "owner_tenant_id": {
-                    "description": "OwnerTenantID is the persisted owner workspace of the organization\n(Plan 3, migration 000046). Frontend uses this to identify the\n\"owner row\" in the workspace-keyed members list — comparing\nmember.tenant_id against owner_tenant_id is the post-Plan-3\nequivalent of the old member.user_id == owner_id check.",
-                    "type": "integer"
-                },
-                "pending_join_request_count": {
-                    "description": "待审批加入申请数（仅管理员可见）",
-                    "type": "integer"
-                },
-                "require_approval": {
-                    "type": "boolean"
-                },
-                "searchable": {
-                    "type": "boolean"
-                },
-                "share_count": {
-                    "description": "共享到该组织的知识库数量",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.ParserEngineConfig": {
             "type": "object",
             "properties": {
@@ -21403,54 +23393,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ParserEngineRule"
                     }
-                },
-                "mineru_api_key": {
-                    "description": "MinerU 云 API Key",
-                    "type": "string"
-                },
-                "mineru_cloud_enable_formula": {
-                    "type": "boolean"
-                },
-                "mineru_cloud_enable_ocr": {
-                    "type": "boolean"
-                },
-                "mineru_cloud_enable_table": {
-                    "type": "boolean"
-                },
-                "mineru_cloud_language": {
-                    "type": "string"
-                },
-                "mineru_cloud_model": {
-                    "description": "MinerU 云 API 解析参数",
-                    "type": "string"
-                },
-                "mineru_enable_formula": {
-                    "type": "boolean"
-                },
-                "mineru_enable_ocr": {
-                    "description": "MinerUEnableOCR is retained for compatibility with configurations saved\nbefore parse_method supported auto/ocr/txt.",
-                    "type": "boolean"
-                },
-                "mineru_enable_table": {
-                    "type": "boolean"
-                },
-                "mineru_endpoint": {
-                    "description": "MinerU 自建服务端点",
-                    "type": "string"
-                },
-                "mineru_language": {
-                    "type": "string"
-                },
-                "mineru_model": {
-                    "description": "MinerU 自建解析参数",
-                    "type": "string"
-                },
-                "mineru_parse_method": {
-                    "type": "string"
-                },
-                "mineru_vlm_server_url": {
-                    "description": "vLLM 服务器地址 (vlm-http-client / hybrid-http-client)",
-                    "type": "string"
                 },
                 "odl_hybrid": {
                     "description": "OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service.",
@@ -21470,22 +23412,28 @@ const docTemplate = `{
                 "odl_markdown_with_html": {
                     "type": "boolean"
                 },
-                "paddleocr_vl_cloud_model": {
-                    "description": "e.g. PaddleOCR-VL-1.6",
+                "paddleocr_vl_api": {
+                    "description": "auto (default), layout, openai",
                     "type": "string"
                 },
-                "paddleocr_vl_cloud_token": {
-                    "description": "PaddleOCR-VL AI Studio cloud API.",
+                "paddleocr_vl_api_key": {
+                    "description": "openai mode: optional bearer token",
                     "type": "string"
-                },
-                "paddleocr_vl_cloud_use_chart_recognition": {
-                    "type": "boolean"
-                },
-                "paddleocr_vl_cloud_use_seal_recognition": {
-                    "type": "boolean"
                 },
                 "paddleocr_vl_endpoint": {
-                    "description": "PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API).",
+                    "description": "PaddleOCR-VL self-hosted pipeline service (full /layout-parsing API),\nor an OpenAI-compatible VLM OCR endpoint (vLLM /chat/completions)\nwhen PaddleOCRVLEndpoint ends in /v1 or PaddleOCRVLAPI is \"openai\".",
+                    "type": "string"
+                },
+                "paddleocr_vl_model": {
+                    "description": "openai mode: served model name",
+                    "type": "string"
+                },
+                "paddleocr_vl_prompt": {
+                    "description": "openai mode: optional OCR prompt",
+                    "type": "string"
+                },
+                "paddleocr_vl_repetition_penalty": {
+                    "description": "openai mode: repetition_penalty for /chat/completions (vLLM extension);\ndefault 1.05 breaks degenerate loops, \"1\"/\"0\" disables.",
                     "type": "string"
                 },
                 "paddleocr_vl_use_chart_recognition": {
@@ -21493,6 +23441,10 @@ const docTemplate = `{
                 },
                 "paddleocr_vl_use_seal_recognition": {
                     "type": "boolean"
+                },
+                "paddleocr_vl_vllm_xargs": {
+                    "description": "openai mode: \"1\" sends Unlimited-OCR's ngram vllm_xargs +\nskip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.",
+                    "type": "string"
                 }
             }
         },
@@ -21663,27 +23615,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.RequestRoleUpgradeRequest": {
-            "type": "object",
-            "required": [
-                "requested_role"
-            ],
-            "properties": {
-                "message": {
-                    "description": "Optional message explaining the reason",
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "requested_role": {
-                    "description": "The role user wants to upgrade to",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
-                        }
-                    ]
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.Resource": {
             "type": "object",
             "properties": {
@@ -21723,33 +23654,6 @@ const docTemplate = `{
                 "url": {
                     "description": "URL to access in external system",
                     "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.ResourceCountsByOrgResponse": {
-            "type": "object",
-            "properties": {
-                "agents": {
-                    "type": "object",
-                    "properties": {
-                        "by_organization": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer"
-                            }
-                        }
-                    }
-                },
-                "knowledge_bases": {
-                    "type": "object",
-                    "properties": {
-                        "by_organization": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer"
-                            }
-                        }
-                    }
                 }
             }
         },
@@ -21877,26 +23781,6 @@ const docTemplate = `{
                 "VectorRetrieverType",
                 "WebSearchRetrieverType"
             ]
-        },
-        "github_com_Tencent_WeKnora_internal_types.ReviewJoinRequestRequest": {
-            "type": "object",
-            "properties": {
-                "approved": {
-                    "type": "boolean"
-                },
-                "message": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "role": {
-                    "description": "Optional: role to assign when approving; overrides applicant's requested role",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
-                        }
-                    ]
-                }
-            }
         },
         "github_com_Tencent_WeKnora_internal_types.RuntimeTaskAction": {
             "type": "string",
@@ -22181,7 +24065,7 @@ const docTemplate = `{
                     }
                 },
                 "chunk_type": {
-                    "description": "Chunk 类型",
+                    "description": "Loại chunk",
                     "type": "string"
                 },
                 "content": {
@@ -22197,7 +24081,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "image_info": {
-                    "description": "图片信息 (JSON 格式)",
+                    "description": "Thông tin hình ảnh (định dạng JSON)",
                     "type": "string"
                 },
                 "knowledge_base_id": {
@@ -22232,6 +24116,10 @@ const docTemplate = `{
                     "description": "Knowledge title",
                     "type": "string"
                 },
+                "legal_superseded": {
+                    "description": "LegalSuperseded marks a result from a reviewed legal document that a\nnewer one has replaced or ended; rerankers scale its score by\nLegalSupersededScoreFactor so in-force law ranks first.",
+                    "type": "boolean"
+                },
                 "match_type": {
                     "description": "Match type",
                     "allOf": [
@@ -22252,7 +24140,7 @@ const docTemplate = `{
                     }
                 },
                 "parent_chunk_id": {
-                    "description": "父 Chunk ID",
+                    "description": "ID chunk cha",
                     "type": "string"
                 },
                 "score": {
@@ -22279,6 +24167,10 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.Session": {
             "type": "object",
             "properties": {
+                "chat_root_id": {
+                    "description": "ChatRootID names the document-assistant chat this session is a sub-chat\n(\"chat nhỏ\") of. The root owns the documents and uploads; a sub-chat\nworks on the root's (see SessionService.DocumentSessionID) with its own\nmessages and context. Empty for ordinary sessions and for roots. Only\nroots are listed in the sidebar.",
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -22303,6 +24195,10 @@ const docTemplate = `{
                 },
                 "is_pinned": {
                     "description": "IsPinned indicates whether the session is pinned in the list.",
+                    "type": "boolean"
+                },
+                "is_temporary": {
+                    "description": "IsTemporary marks a session opened ahead of its first message (POST\n/sessions). It is not listed, the first message of the session or of a\nsub-chat clears it (messageRepository.CreateMessage), and one still\ntemporary when idle is purged (migration 000153). Written on create\nonly, so a Save of a stale copy never sets it back.",
                     "type": "boolean"
                 },
                 "last_request_state": {
@@ -22339,6 +24235,123 @@ const docTemplate = `{
                 "user_id": {
                     "description": "UserID is the owner scope for this session. WeKnora user UUIDs, API\nexternal-user principals, and embed visitor principals all use this column.",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.SessionContextLastTurn": {
+            "type": "object",
+            "properties": {
+                "completion_tokens": {
+                    "type": "integer"
+                },
+                "prompt_tokens": {
+                    "type": "integer"
+                },
+                "rounds": {
+                    "description": "Rounds is how many model rounds the turn ran.",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.SessionContextSessionStatus": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "reached": {
+                    "type": "boolean"
+                },
+                "soft": {
+                    "type": "boolean"
+                },
+                "tokens": {
+                    "type": "integer"
+                },
+                "turns": {
+                    "type": "integer"
+                },
+                "warning": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.SessionContextUsage": {
+            "type": "object",
+            "properties": {
+                "compacted": {
+                    "description": "Compacted: the history starts from a summary of earlier turns.",
+                    "type": "boolean"
+                },
+                "compacted_turns": {
+                    "description": "CompactedTurns is how many turns of this session the summary covers.",
+                    "type": "integer"
+                },
+                "denied": {
+                    "description": "Denied: enforcement is on and the caller's package would refuse the\nnext turn; DenialReason says why (UsageDenial* reasons:\nno_subscription, expired, no_seat, limit_exhausted).",
+                    "type": "boolean"
+                },
+                "enforced": {
+                    "description": "Enforced: the plan's caps apply to this caller (usage.enforce is on\nand the caller is not a SuperAdmin).",
+                    "type": "boolean"
+                },
+                "history_budget": {
+                    "description": "HistoryBudget is how much history a turn may carry before older\nturns are summarized: the plan's context.history_tokens clamped, or\nModelWindow when no cap applies.",
+                    "type": "integer"
+                },
+                "history_rounds": {
+                    "description": "HistoryRounds is how many recent rounds a quick-answer turn carries\n(fewer after a summary); 0 in agent mode, which sizes history in\ntokens.",
+                    "type": "integer"
+                },
+                "history_tokens": {
+                    "description": "HistoryTokens is the estimated history of the next turn: the summary\nplus the turns after it, priced as the history loader prices them.",
+                    "type": "integer"
+                },
+                "last_turn": {
+                    "description": "LastTurn is the newest completed turn's usage, nil before any.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SessionContextLastTurn"
+                        }
+                    ]
+                },
+                "mode": {
+                    "description": "Mode is the history shape estimated (ContextUsageMode*).",
+                    "type": "string"
+                },
+                "model_window": {
+                    "description": "ModelWindow is the context window of the session's chat model.",
+                    "type": "integer"
+                },
+                "plan_name": {
+                    "description": "PlanName is the governing package's name, \"\" when none applies.",
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "seeded": {
+                    "description": "Seeded: the summary is the one of the session this one continues\n(this session has no compaction of its own yet).",
+                    "type": "boolean"
+                },
+                "session": {
+                    "description": "Session is the session's lifetime usage against the plan's caps.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SessionContextSessionStatus"
+                        }
+                    ]
+                },
+                "summary_tokens": {
+                    "description": "SummaryTokens is the part of HistoryTokens that is a summary.",
+                    "type": "integer"
+                },
+                "turn_token_cap": {
+                    "description": "TurnTokenCap is the plan's agent.turn_token_cap, 0 for none.",
+                    "type": "integer"
                 }
             }
         },
@@ -22395,21 +24408,6 @@ const docTemplate = `{
                 },
                 "web_search_enabled": {
                     "type": "boolean"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.ShareKnowledgeBaseRequest": {
-            "type": "object",
-            "required": [
-                "organization_id",
-                "permission"
-            ],
-            "properties": {
-                "organization_id": {
-                    "type": "string"
-                },
-                "permission": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
                 }
             }
         },
@@ -22586,31 +24584,6 @@ const docTemplate = `{
                 "provider": {
                     "description": "\"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\", \"obs\"",
                     "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.SubmitJoinRequestRequest": {
-            "type": "object",
-            "required": [
-                "invite_code"
-            ],
-            "properties": {
-                "invite_code": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 8
-                },
-                "message": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "role": {
-                    "description": "Optional: role the applicant requests (admin/editor/viewer); default viewer",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
-                        }
-                    ]
                 }
             }
         },
@@ -22797,6 +24770,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "config_profile_id": {
+                    "description": "ConfigProfileID is the configuration profile a workspace inherits its\nmodels, agents, engines and settings from. Nil on profiles.",
+                    "type": "integer"
+                },
                 "context_config": {
                     "description": "Global Context configuration for this workspace (default for all sessions)",
                     "allOf": [
@@ -22817,8 +24794,15 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "default_embedding_model_id": {
+                    "description": "DefaultEmbeddingModelID / DefaultSummaryModelID are set on a profile:\nthe models a new knowledge base gets when created without them.",
+                    "type": "string"
+                },
                 "default_storage_backend_id": {
                     "description": "DefaultStorageBackendID is the workspace default concrete storage instance.",
+                    "type": "string"
+                },
+                "default_summary_model_id": {
                     "type": "string"
                 },
                 "deleted_at": {
@@ -22837,6 +24821,10 @@ const docTemplate = `{
                     "description": "ID",
                     "type": "integer"
                 },
+                "kind": {
+                    "description": "Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile\nfor a hidden configuration-only row that workspaces inherit from.",
+                    "type": "string"
+                },
                 "memory_config": {
                     "description": "Memory config: workspace switch for cross-session long-term memory",
                     "allOf": [
@@ -22850,7 +24838,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parser_engine_config": {
-                    "description": "Parser engine config overrides (MinerU endpoint, API key, etc.). Used when parsing documents; overrides env.",
+                    "description": "Parser engine config overrides (OCR endpoint, API key, etc.). Used when parsing documents; overrides env.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ParserEngineConfig"
@@ -22912,14 +24900,12 @@ const docTemplate = `{
             "enum": [
                 "owner",
                 "admin",
-                "contributor",
-                "viewer"
+                "member"
             ],
             "x-enum-varnames": [
                 "TenantRoleOwner",
                 "TenantRoleAdmin",
-                "TenantRoleContributor",
-                "TenantRoleViewer"
+                "TenantRoleMember"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.TenantSandboxConfig": {
@@ -23134,59 +25120,194 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.UpdateMemberRoleRequest": {
+        "github_com_Tencent_WeKnora_internal_types.UsageLimit": {
             "type": "object",
-            "required": [
-                "role"
-            ],
             "properties": {
-                "role": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
+                "limit": {
+                    "type": "integer"
+                },
+                "metric": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "string"
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.UpdateOrganizationRequest": {
+        "github_com_Tencent_WeKnora_internal_types.UsagePlan": {
             "type": "object",
             "properties": {
-                "avatar": {
-                    "description": "optional avatar URL",
-                    "type": "string",
-                    "maxLength": 512
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
                 },
                 "description": {
-                    "type": "string",
-                    "maxLength": 1000
+                    "type": "string"
                 },
-                "invite_code_validity_days": {
-                    "description": "0=never, 1, 7, 30",
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "limits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageLimit"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "price_label": {
+                    "type": "string"
+                },
+                "price_vnd": {
+                    "description": "PriceVND is the list price per month in Vietnamese đồng; in seat\nmode it is per seat per month. 0 = free / not sold online.",
                     "type": "integer"
                 },
-                "member_limit": {
-                    "description": "max members; 0=unlimited",
+                "scope_kind": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.UsagePromoCode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "discount_type": {
+                    "type": "string"
+                },
+                "discount_value": {
+                    "type": "integer"
+                },
+                "ends_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "max_uses": {
                     "type": "integer"
                 },
                 "name": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "minLength": 1
+                    "type": "string"
                 },
-                "require_approval": {
-                    "type": "boolean"
+                "note": {
+                    "type": "string"
                 },
-                "searchable": {
-                    "description": "open for search so others can discover and join",
-                    "type": "boolean"
+                "plan_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "starts_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_count": {
+                    "type": "integer"
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.UpdateSharePermissionRequest": {
+        "github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest": {
             "type": "object",
-            "required": [
-                "permission"
-            ],
             "properties": {
-                "permission": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
+                "months": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "promo_code": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "seats": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.UsageSubscription": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "limits_override": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageLimit"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "plan": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePlan"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "seats": {
+                    "type": "integer"
+                },
+                "starts_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -23200,6 +25321,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "kind": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status tells the client whether this is a stored memory or a pending\nguess awaiting confirmation; the announcement renders them differently.\nOmitted on older rows.",
                     "type": "string"
                 }
             }
@@ -23263,6 +25388,10 @@ const docTemplate = `{
                     "description": "Workspace ID that the user belongs to",
                     "type": "integer"
                 },
+                "two_factor_enabled": {
+                    "description": "Whether TOTP two-factor authentication is enforced at login.",
+                    "type": "boolean"
+                },
                 "updated_at": {
                     "description": "Last updated time of the user",
                     "type": "string"
@@ -23318,13 +25447,24 @@ const docTemplate = `{
                     "description": "BrowserSearchInstructions customizes browser search for this user. Nil/empty uses the platform default.",
                     "type": "string"
                 },
+                "language": {
+                    "description": "Language is the UI locale this user last picked (e.g. \"en\", \"vi\").\nPersisted so the choice follows the account across browsers and\ndevices instead of living in one browser's localStorage.",
+                    "type": "string"
+                },
                 "last_active_tenant_id": {
-                    "description": "LastActiveTenantID remembers the last workspace the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that workspace instead of always\nbouncing to their home workspace. Written by the SPA's preferences\nPUT and by service-level SwitchTenant (including when switching\nhome, which stores the home ID). Login / RefreshToken validate that\nthe workspace still exists and the user still has an active membership\n(or CanAccessAllTenants) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome. Refresh JWT claims have no tenant_id, so RefreshToken\nre-resolves from this field.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred workspace id.",
+                    "description": "LastActiveTenantID remembers the last workspace the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that workspace instead of always\nbouncing to their home workspace. Written by the SPA's preferences\nPUT and by service-level SwitchTenant (including when switching\nhome, which stores the home ID). Login / RefreshToken validate that\nthe workspace still exists and the user still has an active membership\n(or is a SuperAdmin) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome. Refresh JWT claims have no tenant_id, so RefreshToken\nre-resolves from this field.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred workspace id.",
                     "type": "integer"
                 },
                 "oidc_only_login": {
                     "description": "OidcOnlyLogin is set server-side when an account is auto-provisioned\nvia OIDC with a random password the user never received. The profile\nUI hides self-service password rotation until the user sets a known\npassword via ChangePassword (which clears this flag).",
                     "type": "boolean"
+                },
+                "province_id": {
+                    "type": "string"
+                },
+                "work_unit": {
+                    "description": "WorkUnit is the user's agency or unit (đơn vị công tác), free text.\nProvinceID is the vbpl.vn unit ID of their province (types.Provinces).\nBoth reach the assistant as user context; the province is the default\nfor local document numbers every province reuses. \"\" clears.",
+                    "type": "string"
                 }
             }
         },
@@ -23358,8 +25498,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model_name": {
-                    "description": "兼容老版本\nModel Name",
+                    "description": "Tương thích phiên bản cũ\nModel Name",
                     "type": "string"
+                },
+                "ocr_only": {
+                    "description": "OCROnly restricts image understanding to text extraction: the caption\n(visual description) call is skipped, so each image costs one VLM call\nand yields at most one ImageOCR chunk. Meant for OCR-only endpoints\nsuch as senocr-vi, where a \"describe this image\" prompt would simply\nreturn the OCR text a second time.",
+                    "type": "boolean"
                 }
             }
         },
@@ -23411,34 +25555,34 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "blacklist": {
-                    "description": "黑名单规则列表",
+                    "description": "Danh sách quy tắc chặn",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "compression_method": {
-                    "description": "压缩方法：none, summary, extract, rag",
+                    "description": "Phương pháp nén: none, summary, extract, rag",
                     "type": "string"
                 },
                 "document_fragments": {
-                    "description": "文档片段数量（用于RAG压缩）",
+                    "description": "Số đoạn tài liệu (dùng cho nén RAG)",
                     "type": "integer"
                 },
                 "embedding_dimension": {
-                    "description": "嵌入维度（用于RAG压缩）",
+                    "description": "Số chiều embedding (dùng cho nén RAG)",
                     "type": "integer"
                 },
                 "embedding_model_id": {
-                    "description": "RAG压缩相关配置",
+                    "description": "Cấu hình liên quan nén RAG",
                     "type": "string"
                 },
                 "include_date": {
-                    "description": "是否包含日期",
+                    "description": "Có kèm ngày hay không",
                     "type": "boolean"
                 },
                 "max_results": {
-                    "description": "最大搜索结果数",
+                    "description": "Số kết quả tìm kiếm tối đa",
                     "type": "integer"
                 },
                 "provider": {
@@ -23450,7 +25594,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "rerank_model_id": {
-                    "description": "重排模型ID（用于RAG压缩）",
+                    "description": "ID mô hình rerank (dùng cho nén RAG)",
                     "type": "string"
                 }
             }
@@ -23586,6 +25730,10 @@ const docTemplate = `{
                 },
                 "extraction_instructions": {
                     "description": "ExtractionInstructions tells candidate extraction which domain concepts\nto emphasize without replacing the stable JSON/citation protocol.",
+                    "type": "string"
+                },
+                "generation_mode": {
+                    "description": "GenerationMode selects who writes the wiki. Empty / \"llm\" is the\nstandard LLM pipeline (extract → map → reduce). \"catalogue\" means the\npages are generated by code from structured metadata (the legal\ncatalogue) and no wiki LLM task is ever spawned for the KB; see\nWikiGenerationModeCatalogue.",
                     "type": "string"
                 },
                 "ingest_batch_size": {
@@ -23915,7 +26063,7 @@ const docTemplate = `{
                     }
                 },
                 "category_path": {
-                    "description": "CategoryPath is the directory breadcrumb that groups this page in the\nwiki browser, e.g. [\"AI\", \"LLM 应用\", \"RAG\"]. Derived cache of the\nfolder chain identified by FolderID.",
+                    "description": "CategoryPath is the directory breadcrumb that groups this page in the\nwiki browser, e.g. [\"AI\", \"Ứng dụng LLM\", \"RAG\"]. Derived cache of the\nfolder chain identified by FolderID.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -24307,6 +26455,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.AddSystemTenantMemberRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "new_user": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AdminCreateUserRequest"
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.TenantRole"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.BatchDeleteKnowledgeRequest": {
             "type": "object",
             "required": [
@@ -24613,7 +26781,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "dimension": {
-                            "description": "添加embedding维度字段",
+                            "description": "embedding dimension",
                             "type": "integer"
                         },
                         "modelName": {
@@ -24799,7 +26967,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ASRConfig"
                 },
                 "documentSplitting": {
-                    "description": "文档分块配置",
+                    "description": "Document chunking config",
                     "type": "object",
                     "properties": {
                         "childChunkSize": {
@@ -24855,7 +27023,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "multimodal": {
-                    "description": "多模态配置（仅模型相关；存储引擎在 storageProvider 中配置）",
+                    "description": "Multimodal config (model only; the storage engine is set in storageProvider)",
                     "type": "object",
                     "properties": {
                         "enabled": {
@@ -24864,7 +27032,7 @@ const docTemplate = `{
                     }
                 },
                 "nodeExtract": {
-                    "description": "知识图谱配置",
+                    "description": "Knowledge graph config",
                     "type": "object",
                     "properties": {
                         "customInstructions": {
@@ -24897,7 +27065,7 @@ const docTemplate = `{
                     }
                 },
                 "questionGeneration": {
-                    "description": "问题生成配置",
+                    "description": "Question generation config",
                     "type": "object",
                     "properties": {
                         "customInstructions": {
@@ -24915,11 +27083,51 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "storageProvider": {
-                    "description": "存储引擎选择（\"local\" | \"minio\" | \"cos\"），影响文档上传与文档内图片存储，参数从全局设置读取",
+                    "description": "Storage engine (\"local\" | \"minio\" | \"cos\") for document uploads and in-document images; parameters come from global settings",
                     "type": "string"
                 },
                 "vlm_config": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.VLMConfig"
+                }
+            }
+        },
+        "internal_handler.LLMChatMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.LLMChatRequest": {
+            "type": "object",
+            "properties": {
+                "json": {
+                    "description": "JSON asks the model for a single JSON object.",
+                    "type": "boolean"
+                },
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.LLMChatMessage"
+                    }
+                },
+                "model_id": {
+                    "description": "ModelID selects a chat (KnowledgeQA) model of the workspace; empty or\n\"default\" uses the workspace default chat model, so integrations follow\nwhatever model the workspace is switched to.",
+                    "type": "string"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "thinking": {
+                    "description": "Thinking defaults to off: integrations want the answer, and reasoning\nmodels are several times slower with it on.",
+                    "type": "boolean"
                 }
             }
         },
@@ -24937,6 +27145,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.ListSystemUsersResponse": {
+            "type": "object",
+            "properties": {
+                "total": {
+                    "type": "integer"
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.SystemUserItem"
+                    }
+                }
+            }
+        },
         "internal_handler.ModelTestRequest": {
             "type": "object",
             "required": [
@@ -24947,7 +27169,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "appSecret": {
-                    "description": "AppSecret 用于 LKEAP / Volcengine Rerank 等需要第二段密钥的场景（对应模型 Parameters.AppSecret）。",
+                    "description": "AppSecret is for providers needing a second secret, e.g. LKEAP / Volcengine Rerank (maps to model Parameters.AppSecret).",
                     "type": "string"
                 },
                 "baseUrl": {
@@ -24982,7 +27204,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source": {
-                    "description": "为空时按需默认为 \"remote\"",
+                    "description": "defaults to \"remote\" when empty",
                     "type": "string"
                 },
                 "supportsDimensionOverride": {
@@ -25205,6 +27427,40 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.ProvisionTenantRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "admin": {
+                    "$ref": "#/definitions/internal_handler.tenantMemberTarget"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.ProvisionTenantResponse": {
+            "type": "object",
+            "properties": {
+                "admin": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UserInfo"
+                },
+                "admin_created": {
+                    "type": "boolean"
+                },
+                "generated_password": {
+                    "type": "string"
+                },
+                "tenant": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Tenant"
+                }
+            }
+        },
         "internal_handler.RemoteModelCheckRequest": {
             "type": "object",
             "required": [
@@ -25215,7 +27471,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "appSecret": {
-                    "description": "AppSecret 用于 LKEAP / Volcengine Rerank 等需要第二段密钥的场景（对应模型 Parameters.AppSecret）。",
+                    "description": "AppSecret is for providers needing a second secret, e.g. LKEAP / Volcengine Rerank (maps to model Parameters.AppSecret).",
                     "type": "string"
                 },
                 "baseUrl": {
@@ -25250,7 +27506,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source": {
-                    "description": "为空时按需默认为 \"remote\"",
+                    "description": "defaults to \"remote\" when empty",
                     "type": "string"
                 },
                 "supportsDimensionOverride": {
@@ -25339,6 +27595,9 @@ const docTemplate = `{
                 "wiki_concurrency": {
                     "description": "compatibility field",
                     "type": "integer"
+                },
+                "wiki_run_window": {
+                    "$ref": "#/definitions/internal_handler.WikiRunWindowStatus"
                 }
             }
         },
@@ -25567,6 +27826,50 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.SystemUserItem": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "can_access_all_tenants": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_system_admin": {
+                    "type": "boolean"
+                },
+                "memberships": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Membership"
+                    }
+                },
+                "preferences": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UserPreferences"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.TestProviderRequest": {
             "type": "object",
             "required": [
@@ -25618,6 +27921,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.TransferKnowledgeBaseOwnerRequest": {
+            "type": "object",
+            "required": [
+                "target_tenant_id"
+            ],
+            "properties": {
+                "target_tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handler.UpdateAgentRequest": {
             "type": "object",
             "properties": {
@@ -25664,6 +27978,30 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handler.UpdateKnowledgeBaseVisibilityRequest": {
+            "type": "object",
+            "properties": {
+                "member_default": {
+                    "description": "MemberDefault (optional): view | contribute — what owner-tenant\nmembers may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault"
+                        }
+                    ]
+                },
+                "target_tenant_id": {
+                    "type": "integer"
+                },
+                "visibility": {
+                    "description": "Visibility: tenant | restricted | published (owner Tenant Admin or\nSuperAdmin) or public (SuperAdmin). Optional when only\nmember_default changes.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBVisibility"
+                        }
+                    ]
                 }
             }
         },
@@ -25740,6 +28078,41 @@ const docTemplate = `{
             "properties": {
                 "value": {
                     "description": "Value is intentionally ` + "`" + `any` + "`" + ` (decoded as float64 / string / bool /\netc. by the JSON unmarshaller). Service.encodeForType normalises\nthese against the registry's declared type and rejects mismatches."
+                }
+            }
+        },
+        "internal_handler.UpdateSystemTenantRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.WikiRunWindowStatus": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "next_open": {
+                    "description": "RFC3339, set while closed",
+                    "type": "string"
+                },
+                "open": {
+                    "type": "boolean"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
                 }
             }
         },
@@ -25948,6 +28321,21 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.messageFeedbackRequest": {
+            "type": "object",
+            "required": [
+                "value"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "value": {
+                    "description": "Value is 1 (helpful), -1 (not helpful) or 0 (clear the vote).",
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handler.platformAPIKeyCreateRequest": {
             "type": "object",
             "properties": {
@@ -26063,6 +28451,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.tenantMemberTarget": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "new_user": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AdminCreateUserRequest"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.updateLastFAQImportResultDisplayStatusRequest": {
             "type": "object",
             "required": [
@@ -26096,9 +28498,44 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 4000
                 },
+                "language": {
+                    "description": "Language stores the user's UI locale choice so it follows the account\nacross devices. Empty string clears it back to the browser/default\nlocale.",
+                    "type": "string",
+                    "maxLength": 35
+                },
                 "last_active_tenant_id": {
                     "description": "LastActiveTenantID lets clients persist \"after a fresh login,\ndrop me back into this workspace\" across devices. The SPA sends\nthis after every tenant switch; POST /auth/switch-tenant records\nthe same preference server-side. Send a positive workspace id to\nset / replace, or 0 to clear. Membership is validated at next\nlogin, not here. Nil = field omitted from the PATCH and stays\nuntouched.",
                     "type": "integer"
+                },
+                "province_id": {
+                    "type": "string"
+                },
+                "work_unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.updateMyProfileRequest": {
+            "type": "object",
+            "required": [
+                "username"
+            ],
+            "properties": {
+                "username": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 2
+                }
+            }
+        },
+        "internal_handler.usageSeatRequest": {
+            "type": "object",
+            "required": [
+                "user_id"
+            ],
+            "properties": {
+                "user_id": {
+                    "type": "string"
                 }
             }
         },
@@ -26130,12 +28567,8 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "agent_id": {
-                    "description": "Selected custom agent ID (backend resolves shared agent and its workspace from share relation)",
+                    "description": "Selected custom agent ID",
                     "type": "string"
-                },
-                "agent_source_tenant_id": {
-                    "description": "Optional disambiguator; backend still verifies the share relation",
-                    "type": "integer"
                 },
                 "attachment_ids": {
                     "description": "Pre-uploaded session-scoped document IDs",
@@ -26155,9 +28588,33 @@ const docTemplate = `{
                     "description": "Source channel: \"web\", \"api\", \"im\", etc.",
                     "type": "string"
                 },
+                "clarification_request_id": {
+                    "description": "ClarificationRequestID resumes a waiting abbreviation clarification\nturn. It is only a pointer: the backend re-validates the stored turn,\nits owner scope and the frozen request snapshot before resuming.",
+                    "type": "string"
+                },
+                "clarification_version": {
+                    "description": "ClarificationVersion is the turn version the client saw; a stale value\nfails closed so two replies can never both resume the same turn.",
+                    "type": "integer"
+                },
                 "disable_title": {
                     "description": "Whether to disable auto title generation",
                     "type": "boolean"
+                },
+                "document_selection": {
+                    "description": "DocumentSelection is the passage the user highlighted in the embedded\ndocument editor. Trimmed and capped server-side, then appended to the\nprompt after the attachments.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DocumentSelection"
+                        }
+                    ]
+                },
+                "document_template_request": {
+                    "description": "DocumentTemplateRequest asks for a new NĐ30 document drafted into an\nempty Word document (the add-in's template flow): the turn is answered\nwith the prepare_document_template result, not by the agent.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DocumentTemplateRequest"
+                        }
+                    ]
                 },
                 "images": {
                     "description": "Attached images for multimodal chat",
@@ -26209,6 +28666,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.QuestionOrigin"
                         }
                     ]
+                },
+                "recheck_words": {
+                    "description": "RecheckWords are words the gate read on its own last time and the\nuser rejected (\"Không phải?\"): the gate asks about them instead. They\ncan only add questions, never skip one.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "skill_names": {
                     "description": "Per-request Skills selected via @mention",
@@ -26328,7 +28792,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "description": "\"kb\", \"file\", \"tag\", \"mcp\", \"skill\"",
+                    "description": "\"kb\", \"file\", \"tag\", \"mcp\", \"skill\", \"document\"",
                     "type": "string"
                 }
             }
@@ -26436,13 +28900,13 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "ApiKeyAuth": {
-            "description": "API Key 认证：空间 Key 固定访问所属空间；平台 Key 调用空间接口时需同时传 X-Tenant-ID",
+            "description": "API Key authentication: Tenant Key accesses the corresponding workspace; Platform Key requires X-Tenant-ID header when invoking workspace APIs",
             "type": "apiKey",
             "name": "X-API-Key",
             "in": "header"
         },
         "Bearer": {
-            "description": "用户登录认证：输入 Bearer {token} 格式的 JWT 令牌",
+            "description": "User login authentication: enter JWT token in Bearer {token} format",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -26457,7 +28921,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "WeKnora API",
-	Description:      "WeKnora 知识库管理系统 API 文档",
+	Description:      "WeKnora Knowledge Base Management System API Documentation",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

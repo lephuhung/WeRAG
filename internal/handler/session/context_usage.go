@@ -14,8 +14,8 @@ import (
 // @Tags         Cuộc trò chuyện
 // @Produce      json
 // @Param        id   path      string  true  "Session ID"
-// @Success      200  {object}  types.SessionContextUsage
-// @Failure      404  {object}  errors.AppError
+// @Success      200  {object}  github_com_Tencent_WeKnora_internal_types.SessionContextUsage
+// @Failure      404  {object}  github_com_Tencent_WeKnora_internal_errors.AppError
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /sessions/{id}/context-usage [get]
