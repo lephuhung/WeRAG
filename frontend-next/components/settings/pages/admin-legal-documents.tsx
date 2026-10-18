@@ -25,14 +25,28 @@ import {
   type LegalReviewItem,
 } from "@/lib/api/legal-review";
 import { LegalContentTab, LegalDisplayTab } from "@/components/settings/pages/legal-review-edit";
+import { useSearchParams } from "next/navigation";
 import LegalRequestsSection from "@/components/settings/pages/admin-legal-requests";
+import LegalDraftsSection from "@/components/settings/pages/admin-legal-drafts";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
 
 const PAGE_SIZE = 50;
 
-/* The page's two sections: the identity review queue and the users'
- * requests for documents no knowledge base holds. */
-type PageView = "review" | "requests";
+/* The page's sections: the identity review queue, the users' requests for
+ * documents no knowledge base holds, and the OCR drafts of documents
+ * vbpl.vn has only as a scanned PDF. ?view= opens one directly (the draft
+ * review page links back with view=requests / view=drafts). */
+type PageView = "review" | "requests" | "drafts";
+
+const VIEWS: { key: PageView; labelKey: LocaleKey }[] = [
+  { key: "review", labelKey: "lreq.view.review" },
+  { key: "requests", labelKey: "lreq.view.requests" },
+  { key: "drafts", labelKey: "lreq.view.drafts" },
+];
+
+function pageViewOf(v: string | null): PageView {
+  return v === "requests" || v === "drafts" ? v : "review";
+}
 
 type DialogTab = "identity" | "content" | "display";
 
@@ -174,7 +188,8 @@ export default function AdminLegalDocuments() {
   const [scanning, setScanning] = useState(false);
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<LegalReviewItem | null>(null);
-  const [view, setView] = useState<PageView>("review");
+  const searchParams = useSearchParams();
+  const [view, setView] = useState<PageView>(() => pageViewOf(searchParams.get("view")));
   const [requestCounts, setRequestCounts] = useState<LegalRequestCounts | null>(null);
   const denyRequests = useCallback(() => setAllowed(false), []);
 
@@ -262,7 +277,7 @@ export default function AdminLegalDocuments() {
   return (
     <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-5 flex items-center gap-1 border-b border-hairline">
-        {(["review", "requests"] as const).map((v) => (
+        {VIEWS.map(({ key: v, labelKey }) => (
           <button
             key={v}
             type="button"
@@ -271,7 +286,7 @@ export default function AdminLegalDocuments() {
               view === v ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            {t(v === "review" ? "lreq.view.review" : "lreq.view.requests")}
+            {t(labelKey)}
             {v === "requests" && (requestCounts?.requested ?? 0) > 0 && (
               <span className="badge-pill bg-amber-500/15 text-[10.5px] tabular-nums text-amber-700 dark:text-amber-400">
                 {requestCounts?.requested}
@@ -283,6 +298,8 @@ export default function AdminLegalDocuments() {
 
       {view === "requests" ? (
         <LegalRequestsSection onCounts={setRequestCounts} onDenied={denyRequests} />
+      ) : view === "drafts" ? (
+        <LegalDraftsSection onDenied={denyRequests} />
       ) : (
         <>
           <div className="mb-5 flex flex-wrap items-center gap-3">

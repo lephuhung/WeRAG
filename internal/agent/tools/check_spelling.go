@@ -26,29 +26,17 @@ import (
 
 var checkSpellingTool = BaseTool{
 	name: ToolCheckSpelling,
-	description: `Review Vietnamese spelling in the Word document open in this conversation's editor: misspelled words, typos, wrong or missing diacritics (dấu), punctuation and obvious grammar slips. The findings are listed and, by default, underlined in the editor; the text itself is NEVER changed.
+	description: `Review the Vietnamese spelling of a working document: misspelled words, typos, wrong or missing diacritics (dấu), punctuation, obvious grammar slips. The findings are listed as "Đoạn [12]: “sai” → “đúng” (lý do)" and underlined in the editor; the text is NEVER changed. Use it for "kiểm tra chính tả", "lỗi đánh máy", "sai dấu"; layout is check_document_format. Present the list and say the passages were underlined and nothing was rewritten; a correction is a rewrite the user asks for on a highlighted passage (rewrite_paragraphs).
 
-## When to Use
-
-The user asks to check spelling, typos or diacritics ("kiểm tra chính tả", "soát lỗi chính tả", "lỗi đánh máy", "sai dấu"). It does not judge layout (use check_document_format) and does not rewrite anything: to correct a finding the user highlights it and asks for a rewrite (rewrite_paragraphs).
-
-## Input
-
-- scope: "selection" checks only the highlighted passage, "document" the document (default: the selection when the user highlighted one, else the document).
-- from, limit: paragraph window for scope=document (default from 0, 60 paragraphs, at most 150); the result says where to continue.
-- mark: false to only list the findings without underlining them (default true).
-
-## Output
-
-A numbered list "Đoạn [12]: “sai” → “đúng” (lý do)". Present it to the user; say the passages were underlined and that nothing was rewritten.`,
+scope=document reviews a paragraph window (from, limit); the result says where to continue.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
     ` + documentParamSchema + `,
-    "scope": {"type": "string", "enum": ["document", "selection"], "description": "selection: only the highlighted passage; document: the paragraph window. Default: selection when present, else document"},
+    "scope": {"type": "string", "enum": ["document", "selection"], "description": "selection: the highlighted passage; document: a paragraph window. Default: selection when present"},
     "from": {"type": "integer", "minimum": 0, "description": "First paragraph index for scope=document (default 0)"},
-    "limit": {"type": "integer", "minimum": 1, "maximum": 150, "description": "Paragraphs to review for scope=document (default 60, max 150)"},
-    "mark": {"type": "boolean", "description": "Ignored: the findings are always underlined in the editor"}
+    "limit": {"type": "integer", "minimum": 1, "maximum": 150, "description": "Paragraphs to review (default 60)"},
+    "mark": {"type": "boolean", "description": "Ignored: findings are always underlined"}
   }
 }`),
 }

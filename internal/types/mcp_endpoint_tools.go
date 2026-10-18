@@ -49,6 +49,7 @@ const (
 	MCPEndpointToolLegalListMissing   = "legal_list_missing"
 	MCPEndpointToolLegalListRequests  = "legal_list_requests"
 	MCPEndpointToolLegalIngest        = "legal_ingest_document"
+	MCPEndpointToolLegalFetchDraft    = "legal_fetch_draft"
 	MCPEndpointToolLegalRemove        = "legal_remove_document"
 	MCPEndpointToolLegalApplyExpiry   = "legal_apply_expiry_audit"
 	MCPEndpointToolLegalReviewScan    = "legal_review_scan"
@@ -89,6 +90,7 @@ var mcpEndpointToolCatalog = []MCPEndpointToolDefinition{
 	{Name: MCPEndpointToolLegalListMissing, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalListRequests, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalIngest, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalFetchDraft, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalRemove, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalApplyExpiry, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalReviewScan, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},

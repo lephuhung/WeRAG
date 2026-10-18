@@ -29,18 +29,15 @@ const (
 
 var readDocumentTool = BaseTool{
 	name: ToolReadDocument,
-	description: "Read a document from the knowledge bases in scope: its metadata plus chunks in document order.\n" +
-		"id is a dN document handle (reads a page of chunks starting at offset) or a cN chunk handle (reads that " +
-		"chunk; set context to include neighbouring chunks on each side).\n" +
-		"query finds passages inside the document: matching chunks come back with one chunk of context on each " +
-		"side. By default query is case-insensitive and split on whitespace: a chunk matches when it contains " +
-		"every word, in any order; when none does, the chunks containing the most words (at least half) come back " +
-		"instead, marked as partial matches. Set regex=true to match query as one POSIX regular expression instead.\n" +
-		"Page through long documents with offset and limit: offset counts chunks in reading order from 0 and is " +
-		"not a chunk index, so continue with the returned next_offset, and use id=cN with context to read around " +
-		"a specific chunk. A page holds fewer than limit chunks when they would exceed the output size budget; " +
-		"next_offset always points at the first chunk not yet returned. Reading a long document end to end " +
-		"costs many calls, so prefer query or search_knowledge to locate the relevant part first.",
+	description: "Read a document from the knowledge bases in scope: metadata plus chunks in reading order. id is a dN document " +
+		"handle (a page from offset) or a cN chunk handle (that chunk; context adds neighbours on each side).\n" +
+		"query finds passages inside the document, returned with one chunk of context on each side: case-insensitive, a " +
+		"chunk matches when it contains every whitespace-separated word in any order; when none does, the chunks with the " +
+		"most words (at least half) come back marked as partial matches. regex=true matches query as one POSIX regular " +
+		"expression.\n" +
+		"offset counts chunks in reading order from 0 (not a chunk index): continue with the returned next_offset (a page " +
+		"may hold fewer than limit chunks because of the output budget). Reading a long document end to end costs many " +
+		"calls: locate the part with query or search_knowledge first.",
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {

@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useT } from "@/lib/i18n";
-import { SPLIT_DEFAULT_PCT, SPLIT_MAX_PCT, SPLIT_MIN_PCT, clampLeftPct } from "./split-pane-math";
+import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, type SplitBounds } from "./split-pane-math";
 
-const STORAGE_KEY = "werag.docWorkspace.leftPct";
+const DEFAULT_STORAGE_KEY = "werag.docWorkspace.leftPct";
 const WIDE_QUERY = "(min-width: 1024px)";
 
-function readStoredPct(): number {
+function readStoredPct(key: string, bounds: SplitBounds): number {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw === null ? SPLIT_DEFAULT_PCT : clampLeftPct(Number(raw));
+    const raw = localStorage.getItem(key);
+    return raw === null ? bounds.def : clampLeftPct(Number(raw), bounds);
   } catch {
-    return SPLIT_DEFAULT_PCT;
+    return bounds.def;
   }
 }
 
@@ -36,24 +36,38 @@ function useIsWide(): boolean {
  *
  * `left={null}` renders the right pane alone with no divider. The element
  * tree is identical in every mode (left slot / divider / right wrapper keep
- * their child positions), so toggling the editor never remounts `right`. */
-export function SplitPane({ left, right }: { left: ReactNode | null; right: ReactNode }) {
+ * their child positions), so toggling the editor never remounts `right`.
+ * Other pages pass their own `bounds` and `storageKey` (the legal draft
+ * review: PDF left, editor right). */
+export function SplitPane({
+  left,
+  right,
+  bounds = DEFAULT_SPLIT_BOUNDS,
+  storageKey = DEFAULT_STORAGE_KEY,
+}: {
+  left: ReactNode | null;
+  right: ReactNode;
+  bounds?: SplitBounds;
+  storageKey?: string;
+}) {
   const { t } = useT();
   const wide = useIsWide();
-  const [leftPct, setLeftPct] = useState(SPLIT_DEFAULT_PCT);
+  const [leftPct, setLeftPct] = useState(bounds.def);
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
   const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pctRef = useRef(leftPct);
 
   useEffect(() => {
-    const v = readStoredPct();
+    const v = readStoredPct(storageKey, boundsRef.current);
     pctRef.current = v;
     setLeftPct(v);
-  }, []);
+  }, [storageKey]);
 
   const persist = (v: number) => {
     try {
-      localStorage.setItem(STORAGE_KEY, String(Math.round(v * 10) / 10));
+      localStorage.setItem(storageKey, String(Math.round(v * 10) / 10));
     } catch {
       /* ignore */
     }
@@ -70,7 +84,7 @@ export function SplitPane({ left, right }: { left: ReactNode | null; right: Reac
     if (!box || box.width <= 0) return;
     setDragging(true);
     const onMove = (ev: PointerEvent) => {
-      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100));
+      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100, boundsRef.current));
     };
     const onUp = () => {
       setDragging(false);
@@ -82,13 +96,14 @@ export function SplitPane({ left, right }: { left: ReactNode | null; right: Reac
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 5 : 1;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const next = clampLeftPct(leftPct + (e.key === "ArrowLeft" ? -step : step));
+      const next = clampLeftPct(leftPct + (e.key === "ArrowLeft" ? -step : step), bounds);
       update(next);
       persist(next);
     }
@@ -118,8 +133,8 @@ export function SplitPane({ left, right }: { left: ReactNode | null; right: Reac
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-valuemin={SPLIT_MIN_PCT}
-          aria-valuemax={SPLIT_MAX_PCT}
+          aria-valuemin={bounds.min}
+          aria-valuemax={bounds.max}
           aria-valuenow={Math.round(leftPct)}
           aria-label={t("docws.resize")}
           title={t("docws.resize")}

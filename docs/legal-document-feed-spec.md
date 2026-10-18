@@ -231,7 +231,9 @@ Phạm vi KB của key là hàng rào cứng: key chỉ ghi được vào KB tro
 | Danh sách duyệt | `GET /system/legal-reviews?status=pending&knowledge_base_id=&page=&page_size=` | JWT SuperAdmin |
 | Quyết định duyệt | `PUT /system/legal-reviews/{knowledge_id}` body `{"action":"approve"|"reject","legal_document_id":"…","document":{document_number,title,doc_type,issuer,signer,field,issued_on,effective_on,expired_on,status}}` (`document` không có `legal_document_id` → tạo dòng `manual`) | JWT SuperAdmin |
 | Tìm trong danh mục | `GET /system/legal-catalog/search?q=30/2020` | JWT SuperAdmin |
-| Đề nghị bổ sung: quyết định | `PUT /system/legal-requests/{id}` body `{"action":"ingest"\|"reject"\|"added","knowledge_base_id","knowledge_id","note","allow_pdf"}`; `ingest` văn bản chỉ có PDF scan mà không `allow_pdf` → 400 và lưu `detail.portal` | JWT SuperAdmin |
+| Đề nghị bổ sung: quyết định | `PUT /system/legal-requests/{id}` body `{"action":"ingest"\|"reject"\|"added","knowledge_base_id","knowledge_id","note"}`; `ingest` chỉ nạp HTML; văn bản chỉ có PDF scan → 400 "dùng Kéo về bản nháp" và lưu `detail.portal` | JWT SuperAdmin |
+| Đề nghị bổ sung: kéo về bản nháp | `POST /system/legal-requests/{id}/fetch` → bản nháp (tải PDF, OCR ≤20 trang ngay, dài hơn chạy nền `status: "ocr"`); đã có bản nháp thì trả lại nguyên (bản `failed` được kéo lại) | JWT SuperAdmin |
+| Bản nháp OCR | `GET /system/legal-drafts?status=&page=&page_size=` (fetching/ocr/ready/reviewing/approved/failed/all), `GET /system/legal-drafts/{id}` (kèm `ocr_markdown`), `POST …/{id}/open` → `{draft, editor, session_id, document_id, tenant_id, pdf_url}`, `GET …/{id}/structure` → báo cáo cấu trúc, `POST …/{id}/approve` body `{"knowledge_base_id"}`, `DELETE …/{id}` (bỏ bản nháp, đề nghị về `requested`) | JWT SuperAdmin |
 | Đề nghị bổ sung: kiểm tra cổng | `POST /system/legal-requests/{id}/portal-check` → item với `detail.portal = {checked_at, status, html, pdf_file, exists}` (chỉ đọc chi tiết, không tải PDF) | JWT SuperAdmin |
 | Dựng lại wiki catalogue | `POST /knowledgebase/{kb}/wiki/catalogue/rebuild`, trạng thái `GET …/wiki/catalogue/status` | Tenant Admin + quản lý KB (API key `ingest` được) |
 
@@ -272,7 +274,7 @@ là luật công khai:
 | `legal_expiry_audit` | `knowledge_base_id?`, `limit` ≤1000 | `remove` (danh mục ghi hết hiệu lực toàn bộ) và `review` (còn hiệu lực theo portal nhưng đã bị thay thế/làm hết hiệu lực); không xoá gì |
 | `legal_catalog_sync_status` | – | Ngày snapshot, `stale` (>48 h), số văn bản theo trạng thái, số quan hệ, số tài liệu/`unlinked` từng KB công khai |
 | `legal_list_missing` | `doc_type?`, `min_year` (2010), `issued_after?`, `include_metadata_only?`, `limit` ≤500 | Văn bản trong phạm vi (loại mà một KB "VBPL – <loại>" nắm, trung ương, ≥ min_year, chưa hết hiệu lực toàn bộ, có metadata đầy đủ) **chưa có trong KB công khai**, mới nhất trước, mỗi dòng kèm `knowledge_base_id` đích suy từ tên KB |
-| `legal_list_requests` | `status` requested (mặc định)/added/rejected/all, `limit` ≤500 | Đề nghị bổ sung văn bản (bảng `legal_document_requests`, migration 000162): câu hỏi chat nêu số hiệu đầy đủ mà không KB nào có toàn văn. Mỗi dòng: `vbpl_id` (rỗng nếu danh mục không biết số hiệu), số hiệu, tên, loại, trạng thái, `request_count` (mỗi phiên chat tính một lần), `last_requested_at`, `url`, `portal` (khi SuperAdmin đã "Kiểm tra cổng" hoặc lần nạp bị từ chối vì thiếu toàn văn: `{checked_at, status, html, pdf_file, exists}`). `legal_ingest_document` (MCP hoặc SuperAdmin `/system/legal-requests`) tự chuyển các đề nghị của văn bản đó sang `added` |
+| `legal_list_requests` | `status` requested (mặc định)/fetched/reviewing/added/rejected/all, `limit` ≤500 | Đề nghị bổ sung văn bản (bảng `legal_document_requests`, migration 000162): câu hỏi chat nêu số hiệu đầy đủ mà không KB nào có toàn văn. Mỗi dòng: `vbpl_id` (rỗng nếu danh mục không biết số hiệu), số hiệu, tên, loại, trạng thái, `request_count` (mỗi phiên chat tính một lần), `last_requested_at`, `url`, `portal` (khi SuperAdmin đã "Kiểm tra cổng" hoặc lần nạp bị từ chối vì thiếu toàn văn: `{checked_at, status, html, pdf_file, exists}`), `draft` (bản nháp OCR của PDF khi đã kéo về: `{id, status, ocr_pages, error}`). Trạng thái đề nghị `fetched` = đã có bản nháp, `reviewing` = bản nháp đang mở trong trình soạn thảo; hỏi lại không mở lại trạng thái, chỉ tăng `request_count`. `legal_ingest_document` (MCP hoặc SuperAdmin `/system/legal-requests`) tự chuyển các đề nghị của văn bản đó sang `added` |
 
 **Nhóm tool `legal_write` (có từ 2026-10-17, `internal/mcpserver/tools_legal_write.go`)** —
 mọi tool đều "destructive": không nằm trong allowlist mặc định, cần
@@ -283,7 +285,8 @@ lý do, endpoint, chi tiết JSON):
 
 | Tool | Tham số | Hành vi |
 |---|---|---|
-| `legal_ingest_document` | `vbpl_id`, `knowledge_base_id` (id hoặc tên), `reason?`, `allow_pdf?` (mặc định false) | Tải chi tiết từ gateway vbpl.vn ngay lúc gọi (cùng byte và md5 với `ingest_vbpl.py`), từ chối "Hết hiệu lực toàn bộ" và văn bản không có toàn văn; không có HTML nhưng có bản gốc PDF (scan) → từ chối "chỉ có bản PDF scan; bật allow_pdf để nạp", với `allow_pdf=true` thì tải PDF (≤50 MB) và nạp nó (parser pdf mặc định của KB OCR; metadata thêm `source_format=pdf_ocr`, `source_file`); kết quả có `source_format` (`html` \| `pdf_ocr`); không có cả hai → "vbpl.vn không có toàn văn (HTML hay PDF)"; đã có cùng md5 → `unchanged`; khác md5 → xoá bản cũ rồi tải lại → `replaced`; đang ở KB khác → từ chối; metadata như mục 2.4 |
+| `legal_ingest_document` | `vbpl_id`, `knowledge_base_id` (id hoặc tên), `reason?` | Tải chi tiết từ gateway vbpl.vn ngay lúc gọi (cùng byte và md5 với `ingest_vbpl.py`) và nạp **toàn văn HTML**; từ chối "Hết hiệu lực toàn bộ" và văn bản không có toàn văn; không có HTML nhưng có bản gốc PDF (scan) → từ chối và chỉ sang `legal_fetch_draft` (bản scan không bao giờ được nạp thẳng thành OCR thô); không có cả hai → "vbpl.vn không có toàn văn (HTML hay PDF)"; đã có cùng md5 → `unchanged`; khác md5 → xoá bản cũ rồi tải lại → `replaced`; đang ở KB khác → từ chối; metadata như mục 2.4; kết quả có `source_format` (`html`) |
+| `legal_fetch_draft` | `vbpl_id` | Văn bản chỉ có PDF scan: tải PDF (≤50 MB) về tenant 10000 và OCR thành **bản nháp** (bảng `legal_document_drafts`, migration 000163) để SuperAdmin biên tập và duyệt; không ghi gì vào KB. >20 trang OCR chạy nền (`ocr` → `ready`/`failed`). Idempotent: bản nháp đã có được trả lại, bản `failed` được kéo lại. Ghi `legal_feed_log` action `fetch_draft` |
 | `legal_remove_document` | `vbpl_id` hoặc `knowledge_id`, `reason` (bắt buộc) | Xoá một tài liệu khỏi KB công khai; dòng danh mục giữ nguyên |
 | `legal_apply_expiry_audit` | `knowledge_base_id?`, `expected?`, `limit` ≤1000, `reason?` | Xoá nhóm `remove` của `legal_expiry_audit`; nếu số thực tế lớn hơn `expected` thì từ chối (danh mục đã đổi); không bao giờ đụng nhóm `review` |
 | `legal_review_scan` | – | Chạy quét duyệt tới khi hết (tối đa 10 vòng × 5.000); trả `created`, `pending` |
@@ -478,7 +481,8 @@ Chu kỳ vận hành qua MCP (thay cho mục 4 khi dùng agent ngoài):
 `legal_catalog_sync_status` (snapshot mới, không `stale`) →
 `legal_expiry_audit` → `legal_apply_expiry_audit(expected=N)` →
 `legal_list_missing` (có thể lọc `issued_after` = lần nạp trước) →
-`legal_ingest_document` từng văn bản (≤2 lần/giây vì gateway giới hạn) →
+`legal_ingest_document` từng văn bản (≤2 lần/giây vì gateway giới hạn;
+văn bản chỉ có PDF scan → `legal_fetch_draft` để SuperAdmin duyệt bản nháp) →
 chờ `parse_status = completed` (`legal_list_ingested`) → `legal_review_scan`
 → `legal_wiki_rebuild` cho KB thay đổi. `legal_list_missing` thay cho việc so
 state.sqlite với ingest.sqlite; nó không biết văn bản có toàn văn hay không
@@ -490,14 +494,46 @@ phải lỗi.
 hiệu lực bị thiếu, khoảng 1/6 không có HTML nhưng có bản gốc PDF
 (`documentContentFileName`, ví dụ `VanBanGoc_74.TT.pdf`), phần còn lại cổng
 không có gì ("Không có nội dung văn bản"); văn bản địa phương phần lớn có
-HTML. PDF là ảnh scan không có lớp chữ: nạp bằng `allow_pdf=true`, parser pdf
-mặc định của KB OCR nó (nhận ra Điều 1…, lỗi OCR điển hình "NĐ-CP"→"ND-CP",
-"BỘ"→"BQ"), chunk không có markup `prov-*` nên cấu trúc Điều/Khoản yếu hơn
-HTML. OCR của tài liệu KB không tính vào hạn mức token. Khi vbpl.vn sau này
-đăng HTML, nạp lại (không `allow_pdf`) sẽ thay bản PDF (md5 khác →
-`replaced`). Trên giao diện SuperAdmin (Đề nghị bổ sung văn bản): nút "Kiểm
-tra cổng" (`POST /system/legal-requests/{id}/portal-check`) và "Nạp bản PDF
-(OCR)" (`PUT /system/legal-requests/{id}` với `allow_pdf: true`).
+HTML. PDF là ảnh scan không có lớp chữ.
+
+**Quy tắc của SuperAdmin (2026-10-18): bản scan không bao giờ được nhúng
+thẳng thành OCR thô.** `allow_pdf` (thêm ở 2b76e58a) đã bị bỏ khỏi API và
+MCP. Đường đi của một văn bản chỉ có PDF:
+
+1. **Kéo về bản nháp** — SuperAdmin bấm "Kéo về bản nháp"
+   (`POST /system/legal-requests/{id}/fetch`) hoặc agent đêm gọi
+   `legal_fetch_draft` cho mọi đề nghị chỉ có PDF. PDF được lưu ở tenant
+   10000 và OCR bằng parser pdf của tenant nền tảng (mặc định
+   `vietnamese_legal`, có dấu `<!-- page N -->`), không tính vào hạn mức
+   token. Bản nháp: `fetching` → `ocr` → `ready` (hoặc `failed` kèm `error`;
+   đề nghị quay về `requested`). Đề nghị chuyển `fetched`.
+2. **Biên tập** — `POST /system/legal-drafts/{id}/open` dựng tệp .docx từ OCR
+   (Times New Roman 14, A4; `[Trang N]` kiểu PageMarker; Phần/Chương/Mục/Điều
+   kiểu Heading1–4; bảng thành dòng chữ " | ") trong một phiên trợ lý văn bản
+   **ẩn** (tenant 10000, chủ phiên là SuperAdmin, mô tả `legal_draft:<id>`,
+   không danh sách phiên nào hiện). Trang biên tập hiển thị ONLYOFFICE cạnh
+   bản PDF (`pdf_url`, link 2 giờ) và gọi các route tài liệu của phiên
+   (`/sessions/{session_id}/documents/{document_id}/…`: chính tả trực tiếp,
+   forcesave, tải về) với `X-Tenant-ID: 10000`. Đề nghị chuyển `reviewing`.
+3. **Kiểm tra cấu trúc** — `GET /system/legal-drafts/{id}/structure` lưu
+   trình soạn thảo rồi đọc văn bản hiện tại: cây Phần/Chương/Mục/Điều, danh
+   sách Điều, khoản/điểm nhận/loại, cảnh báo (Điều thiếu/trùng/lùi số,
+   Chương/Mục/Phần không có tên, khoản/điểm không xếp được, `[Trang N]` còn
+   lại, lỗi OCR như "ND-CP", "Ð", "BQ"). Ít hơn 3 Điều là lỗi chặn duyệt;
+   còn lại để người duyệt cân nhắc. `ready_to_approve` = không còn lỗi chặn.
+4. **Duyệt** — `POST /system/legal-drafts/{id}/approve` dựng HTML kiểu vbpl
+   (`prov-part/chapter/section/article/clause/item/content`, phần đầu và phần
+   ký là `<p>` thường, bỏ `[Trang N]`), kiểm bằng `vbpl.ConvertBytes` (phải
+   `Structured` và đúng số Điều), rồi nạp như một trang vbpl.vn
+   (`LegalFeedService.IngestHTML`: chống trùng theo `external_id`, ghi
+   `legal_feed_log`, mỗi Điều một chunk) với metadata thêm
+   `source_format=pdf_reviewed`, `source_file`, `reviewed_by`, `reviewed_at`,
+   `draft_id`. Đề nghị chuyển `added` với ghi chú "Bổ sung từ bản PDF đã biên
+   tập". Phiên ẩn được giữ để đối chiếu.
+
+Khi vbpl.vn sau này đăng HTML, `legal_ingest_document` nạp lại sẽ thay bản đã
+biên tập (md5 khác → `replaced`). Bỏ bản nháp: `DELETE
+/system/legal-drafts/{id}` (PDF vẫn lưu, đề nghị về `requested`).
 
 ---
 

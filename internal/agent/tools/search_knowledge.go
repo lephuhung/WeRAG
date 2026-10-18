@@ -51,21 +51,16 @@ const searchSnippetOnlyNote = "Results ranked %d+ show a snippet only; " +
 
 var searchKnowledgeTool = BaseTool{
 	name: ToolSearchKnowledge,
-	description: "Search the knowledge bases in scope and return the most relevant chunks with their content.\n" +
-		"mode \"hybrid\" (default) combines semantic and keyword retrieval. \"semantic\" ranks by meaning and " +
-		"tolerates paraphrase. \"keyword\" matches the literal terms and is the right choice for identifiers, " +
-		"error codes, product names and exact phrases. A base without the requested index is searched with the " +
-		"index it has; the result reports that as a mode fallback.\n" +
-		"In hybrid and semantic mode write query as one complete natural-language question or statement that " +
-		"names the subject and what you want to know (\"Why does Echo use open-weight models to cut cost?\"), " +
-		"not a keyword list (\"Echo open-weight cost\"): results are ranked by a relevance model that scores " +
-		"meaning. In keyword mode write the exact terms. Every bound knowledge base is searched in one call. " +
-		"When nothing passes the relevance check, rephrase with terms the documents " +
-		"would use; repeating the same query in another mode usually does not help. For identifiers, error " +
-		"codes or exact names retry with mode=keyword.\n" +
-		"Every chunk carries a cN handle and belongs to a dN document. Use read_document(id=dN) to read the " +
-		"surrounding context or the whole document. Retrieval matches chunk text; the relevance model also " +
-		"sees the document title. To find a document by its title or file name use list_documents(keyword=...).",
+	description: "Search every bound knowledge base in one call and return the most relevant chunks. mode \"hybrid\" (default) " +
+		"combines semantic and keyword retrieval; \"semantic\" ranks by meaning and tolerates paraphrase; \"keyword\" " +
+		"matches literal terms (identifiers, error codes, exact names). A base without the requested index is searched " +
+		"with the one it has (reported as a mode fallback).\n" +
+		"In hybrid and semantic mode write query as one complete natural-language question that names the subject and " +
+		"what you want to know (\"Why does Echo use open-weight models to cut cost?\"), not a keyword list: a relevance " +
+		"model ranks by meaning. When nothing passes the relevance check, rephrase with the documents' own terms " +
+		"(the same query in another mode rarely helps); for identifiers retry with mode=keyword.\n" +
+		"Each chunk has a cN handle in a dN document: read_document(id=dN) reads around it. Retrieval matches chunk " +
+		"text, so find a document by title or file name with list_documents(keyword=...).",
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -87,12 +82,12 @@ var searchKnowledgeTool = BaseTool{
     },
     "abbreviation_meaning_ids": {
       "type": "object",
-      "description": "Optional map of abbreviation short form to one of the active meaning IDs the resolver reported. Only valid outside a resolved QA turn; a bound turn's validated mapping always wins.",
+      "description": "Optional short form → meaning ID reported by the resolver; ignored inside a resolved QA turn",
       "additionalProperties": { "type": "string" }
     },
     "literal_abbreviations": {
       "type": "boolean",
-      "description": "Leave known multi-meaning abbreviations unexpanded instead of selecting a meaning. Never bypasses unknown abbreviations, which always block the search."
+      "description": "Leave known multi-meaning abbreviations unexpanded; unknown ones still block the search"
     }
   },
   "required": ["query"]

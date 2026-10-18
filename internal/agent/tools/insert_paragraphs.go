@@ -12,35 +12,11 @@ import (
 
 var insertParagraphsTool = BaseTool{
 	name: ToolInsertParagraphs,
-	description: `Insert new paragraphs into the Word document open in this conversation's editor. The tool plans the insertion; the editor applies it as an ordinary edit, which the user undoes with Ctrl+Z.
+	description: `Insert new paragraphs into a working document; the editor applies it at once (Ctrl+Z undoes it). Only when the user asks to add something ("chèn", "bổ sung", "thêm"): a missing Nơi nhận block, a Căn cứ line, an Điều khoản thi hành, a sentence at a given place. It only adds: existing text goes through rewrite_paragraphs; paragraphs cannot be deleted.
 
-## When to Use
+Wording the user did not dictate: write it in văn phong hành chính, lịch sự, matching the document's register and numbering — ONE version. Never offer alternative wordings or ask about style; ask back only for a fact you cannot know or find (a name, a number, a date, a document number), and then ask for that fact only.
 
-Only when the user explicitly asks in this turn to add or insert something ("chèn", "bổ sung", "thêm"):
-- A component is missing and must be added: the Nơi nhận block, a Căn cứ line, an Điều khoản thi hành article, a closing sentence, a signature line.
-- The user asks to add a sentence or paragraph at a given place.
-
-It only adds paragraphs. To change the text of an existing paragraph use rewrite_paragraphs; paragraphs cannot be deleted.
-
-## Wording
-
-When the user does not dictate the wording, write the text yourself in Vietnamese administrative, courteous register (văn phong hành chính, lịch sự), matching the document's existing register and numbering — ONE version, inserted at once. Never offer alternative wordings or ask about style; ask back only for a fact you cannot know or find (a name, a number, a date, a document number), and then ask for that fact only.
-
-## Input
-
-- inserts: up to 20 inserts, each with
-  - after: index (from read_document_outline) of the paragraph the new text goes after, or
-  - after_match: a distinctive piece of that paragraph's text (an ambiguous match fails that insert), or
-  - at_start: true to insert before the first paragraph;
-  - text: the text to insert; each line ("\n") becomes its own paragraph, in order (blank lines are skipped);
-  - like: index of a paragraph whose formatting the new paragraphs copy;
-  - alignment (left | center | right | both), bold, italic: optional formatting on top of that.
-  at_start wins over after / after_match.
-
-Formatting: a new paragraph copies the paragraph and run formatting of its ANCHOR (the paragraph it is inserted after) unless like, alignment, bold or italic say otherwise. When the anchor is a centred, bold or otherwise different line (a signature, a title), pass like pointing at a paragraph of the same component as the new text — e.g. an existing "- ...;" line of Nơi nhận, or a body paragraph for a new sentence of the body.
-- note: optional short reason, shown back in the result.
-
-Paragraph indices refer to the document as it is before this call; inserts in one call do not shift each other's anchors, and several inserts after the same paragraph keep their order.`,
+A new paragraph copies the formatting of the paragraph it follows unless like/alignment/bold/italic say otherwise: after a centred or bold line (a signature, a title) pass like = a paragraph of the same component as the new text (an existing Nơi nhận line, a body paragraph). Indices refer to the document before this call; inserts in one call do not shift each other's anchors.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -52,11 +28,11 @@ Paragraph indices refer to the document as it is before this call; inserts in on
       "items": {
         "type": "object",
         "properties": {
-          "after": {"type": "integer", "minimum": 0, "description": "Index of the paragraph to insert after (ignored when at_start is true)"},
-          "after_match": {"type": "string", "description": "Text identifying the paragraph to insert after"},
+          "after": {"type": "integer", "minimum": 0, "description": "Index (read_document_outline) of the paragraph to insert after"},
+          "after_match": {"type": "string", "description": "Distinctive text of the paragraph to insert after; ambiguous fails"},
           "at_start": {"type": "boolean", "description": "Insert before the first paragraph; wins over after and after_match"},
-          "text": {"type": "string", "description": "Text to insert; each line becomes a paragraph, blank lines are skipped"},
-          "like": {"type": "integer", "minimum": 0, "description": "Index of a paragraph whose formatting to copy; default is the anchor paragraph's formatting"},
+          "text": {"type": "string", "description": "Each line becomes a paragraph; blank lines skipped"},
+          "like": {"type": "integer", "minimum": 0, "description": "Index of a paragraph whose formatting to copy (default: the anchor)"},
           "alignment": {"type": "string", "enum": ["left", "center", "right", "both"]},
           "bold": {"type": "boolean"},
           "italic": {"type": "boolean"}
@@ -64,7 +40,7 @@ Paragraph indices refer to the document as it is before this call; inserts in on
         "required": ["text"]
       }
     },
-    "note": {"type": "string", "description": "Optional short reason for the inserts"}
+    "note": {"type": "string", "description": "Optional short reason"}
   },
   "required": ["inserts"]
 }`),

@@ -110,7 +110,7 @@ func TestLegalRequestServiceQueue(t *testing.T) {
 		"r1": {ID: "r1", DocumentNumber: "53/2022/NĐ-CP", LegalDocumentID: "155366", Status: types.LegalRequestRequested},
 		"r2": {ID: "r2", DocumentNumber: "12/2024/QĐ-UBND", DocType: "Quyết định", Status: types.LegalRequestRequested},
 	}}
-	svc := NewLegalRequestService(repo, queueCatalog{}, nil, nil)
+	svc := NewLegalRequestService(repo, queueCatalog{}, nil, nil, nil)
 	ctx := context.Background()
 
 	items, total, counts, err := svc.List(ctx, "all", 0, 50)
@@ -181,7 +181,7 @@ func TestLegalRequestCheckPortal(t *testing.T) {
 	}}
 	feed := NewLegalFeedService(nil, nil, repo)
 	feed.HTTP = &http.Client{Transport: feedGateway{base: srv.URL}}
-	svc := NewLegalRequestService(repo, queueCatalog{}, nil, feed)
+	svc := NewLegalRequestService(repo, queueCatalog{}, nil, feed, nil)
 	ctx := context.Background()
 
 	it, err := svc.CheckPortal(ctx, "r1")
