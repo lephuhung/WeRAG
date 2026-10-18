@@ -43,7 +43,7 @@ func TestTenantResponse_AdminGetsRedactedIntegrationConfigs(t *testing.T) {
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.WebSearchConfig.ProxyURL)
 	assert.Empty(t, resp.WebSearchConfig.APIKey)
 	require.NotNil(t, resp.ParserEngineConfig)
-	assert.Equal(t, types.RedactedSecretPlaceholder, resp.ParserEngineConfig.MinerUAPIKey)
+	assert.Equal(t, types.RedactedSecretPlaceholder, resp.ParserEngineConfig.PaddleOCRVLAPIKey)
 	require.NotNil(t, resp.StorageEngineConfig.MinIO)
 	assert.Equal(t, types.RedactedSecretPlaceholder, resp.StorageEngineConfig.MinIO.SecretAccessKey)
 }
@@ -80,8 +80,8 @@ func sampleSecretTenant() *types.Tenant {
 			},
 		},
 		ParserEngineConfig: &types.ParserEngineConfig{
-			MinerUAPIKey:          "parser-secret-123",
-			PaddleOCRVLCloudToken: "paddle-secret-456",
+			PaddleOCRVLEndpoint: "http://vllm-ocr:8001/v1",
+			PaddleOCRVLAPIKey:   "parser-secret-123",
 		},
 		StorageEngineConfig: &types.StorageEngineConfig{
 			DefaultProvider: "minio",

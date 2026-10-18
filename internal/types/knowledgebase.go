@@ -414,8 +414,7 @@ type ChunkingConfig struct {
 	// ParserEngineRules configures which parser engine to use for each file type.
 	// When empty, DefaultParserEngine is used (builtin/simple routing, except
 	// types that only a specific engine can parse: ppt/pptx fall back to
-	// markitdown). A linked anydoc binding is preferred for every type it
-	// converts.
+	// markitdown).
 	ParserEngineRules []ParserEngineRule `yaml:"parser_engine_rules,omitempty" json:"parser_engine_rules,omitempty"`
 	// EnableParentChild enables two-level parent-child chunking strategy.
 	// When enabled, large parent chunks provide context while small child chunks
@@ -446,8 +445,7 @@ type ChunkingConfig struct {
 
 // defaultParserEngineByType maps file types the builtin/simple engines cannot
 // parse to a docreader engine that can. Types omitted here keep empty-string
-// routing (Go simple formats, otherwise docreader builtin) unless
-// SetPreferParserEngine selects a linked in-process engine such as anydoc.
+// routing (Go simple formats, otherwise docreader builtin).
 var defaultParserEngineByType = map[string]string{
 	"ppt":  "markitdown",
 	"pptx": "markitdown",
@@ -458,30 +456,28 @@ var defaultParserEngineByType = map[string]string{
 	"pdf": "vietnamese_legal",
 }
 
-// preferParserEngine, if set, may override DefaultParserEngine. The
-// docparser package registers anydoc here so types does not import the
-// engine catalog.
-var preferParserEngine func(fileType string) string
-
-// SetPreferParserEngine registers a build-time preference used by
-// DefaultParserEngine. Pass nil to clear. Intended to be called from init().
-func SetPreferParserEngine(fn func(fileType string) string) {
-	preferParserEngine = fn
-}
-
 // DefaultParserEngine returns the engine used when no parser_engine_rules
 // match. Empty string means builtin (docreader) or Go simple-format routing.
-// When the anydoc binding is linked it is preferred for every type it
-// converts (except Go simple formats). ppt/pptx otherwise fall back to
-// markitdown.
+// ppt/pptx fall back to markitdown.
 func DefaultParserEngine(fileType string) string {
-	ft := normalizeParserFileType(fileType)
-	if preferParserEngine != nil {
-		if engine := preferParserEngine(ft); engine != "" {
-			return engine
-		}
+	return defaultParserEngineByType[normalizeParserFileType(fileType)]
+}
+
+// removedParserEngines are engines this build no longer ships. Rules saved
+// before they were removed may still name them.
+var removedParserEngines = map[string]bool{
+	"mineru": true, "mineru_cloud": true, "paddleocr_vl_cloud": true,
+	"weknoracloud": true, "anydoc": true,
+}
+
+// ParserEngineInUse returns engine, or the type-level default when engine is
+// one that was removed, so an old rule parses like no rule instead of
+// silently falling back to the docreader builtin engine.
+func ParserEngineInUse(engine, fileType string) string {
+	if removedParserEngines[strings.ToLower(strings.TrimSpace(engine))] {
+		return DefaultParserEngine(fileType)
 	}
-	return defaultParserEngineByType[ft]
+	return engine
 }
 
 // ResolveParserEngine returns the engine name for the given file type

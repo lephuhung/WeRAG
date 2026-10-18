@@ -1,8 +1,5 @@
 name: App
 
-# Anydoc (Rust archive + `anydoc` build tag) lives in anydoc.yml so a
-# migrations-only or unrelated Go PR does not compile the parser engine.
-
 on:
   push:
     branches: [main]
@@ -11,7 +8,6 @@ on:
       - "!cli/**"
       - "!client/**"
       - "!docreader/**"
-      - "!third_party/anydoc-go/**"
       - "go.mod"
       - "go.sum"
       - "Makefile"
@@ -35,7 +31,6 @@ on:
       - "!cli/**"
       - "!client/**"
       - "!docreader/**"
-      - "!third_party/anydoc-go/**"
       - "go.mod"
       - "go.sum"
       - "Makefile"

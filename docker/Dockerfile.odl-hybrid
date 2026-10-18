@@ -3,7 +3,7 @@
 #
 # Default --no-ocr: digital PDFs already have a text layer; Docling layout/table
 # still runs without EasyOCR (avoids libGL + heavy OCR stack in slim images).
-# For scanned PDFs use builtin docreader OCR, MinerU, or override with
+# For scanned PDFs use builtin docreader OCR, PaddleOCR-VL, or override with
 # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (requires extra system/Python deps).
 FROM python:3.10.18-bookworm
 

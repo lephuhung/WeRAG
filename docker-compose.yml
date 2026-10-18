@@ -40,7 +40,6 @@ services:
       dockerfile: docker/Dockerfile.app
       args:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
-        - WITH_ANYDOC=${WITH_ANYDOC:-1}
     container_name: WeKnora-app
     ports:
       - "${APP_PORT:-8080}:8080"
@@ -88,8 +87,8 @@ services:
       # gin mod
       # 可选值: debug(开发模式，有详细日志), release(生产模式，禁用Swagger文档)
       - GIN_MODE=${GIN_MODE:-release}
-      # 时区，默认为Asia/Shanghai
-      - TZ=${TZ:-Asia/Shanghai}
+      # Múi giờ, mặc định Asia/Ho_Chi_Minh (GMT+7)
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # 文档处理语言（问题/摘要生成）。优先级：此环境变量（部署级覆盖，非空即生效）
       # > Accept-Language 请求头 > 内置默认值 (zh-CN)。留空则跟随请求方 Accept-Language。
       - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-}
@@ -424,7 +423,7 @@ services:
       - docreader-tmp:/tmp/docreader
     environment:
       # ========== 基础 ==========
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - LOG_LEVEL=${LOG_LEVEL:-}
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}

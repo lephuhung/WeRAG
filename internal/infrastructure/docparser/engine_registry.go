@@ -26,19 +26,14 @@ type EngineRegistration interface {
 }
 
 // ReaderDeps carries everything an engine may need to build its reader but
-// cannot construct itself: tenant configuration, tenant credentials, and the
-// shared docreader connection.
+// cannot construct itself: tenant configuration and the shared docreader
+// connection.
 type ReaderDeps struct {
 	// Overrides holds tenant-level engine configuration (service endpoints,
 	// API keys), as produced by ParserEngineConfig.ToOverridesMap.
 	Overrides map[string]string
 	// Remote is the docreader client. Nil when the service is not connected.
 	Remote interfaces.DocReader
-	// WeKnoraCloudCredentials resolves the tenant's WeKnora Cloud
-	// credentials. It is a function rather than a value because resolving
-	// them can hit the database, which most engines never need. Nil, or a
-	// nil return, means the tenant has not configured them.
-	WeKnoraCloudCredentials func(ctx context.Context) *types.WeKnoraCloudCredentials
 }
 
 // localEngines holds all locally registered parser engines, in registration
@@ -65,10 +60,12 @@ func lookupEngine(name string) (EngineRegistration, bool) {
 // An empty engine name means "no explicit choice": simple formats are handled
 // in Go and everything else goes to the docreader service. An unknown name is
 // routed to the docreader too, so engines that only exist in the Python
-// service keep working without a Go-side registration.
+// service keep working without a Go-side registration. A removed engine
+// (see types.ParserEngineInUse) is read as the type-level default.
 func NewReader(
 	ctx context.Context, engine, fileType string, isURL bool, deps ReaderDeps,
 ) (interfaces.DocReader, error) {
+	engine = types.ParserEngineInUse(engine, fileType)
 	if registration, ok := lookupEngine(engine); ok {
 		return registration.NewReader(ctx, deps)
 	}

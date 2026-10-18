@@ -477,9 +477,9 @@ docker run -d -p 8081:80 weknora-site
 
 接口在 `/api/v1/memory/*`，只操作当前调用者自己的记忆，需要 full-access API Key 或登录会话。
 
-## 48. 文档解析能否不经过 docreader？anydoc 是什么？
+## 48. 文档解析能否不经过 docreader？
 
-0.8.0 引入进程内 **anydoc** 引擎（`third_party/anydoc-go`）。当绑定已链接时，anydoc 能转换的格式（含 doc/docx/ppt/pptx）会优先走 Go 进程，不再先打到 docreader。PPT/PPTX 在没有引擎规则时仍默认 MarkItDown。官方 app 镜像默认链接 anydoc。解析失败或格式不在 anydoc 覆盖范围时，仍回退到 docreader / MarkItDown / MinerU 等既有引擎。
+只有 Go 进程内的 simple 引擎（md/txt/csv/json、图片、音频）和自托管 OCR 引擎（paddleocr_vl）不经过 docreader；Office 文档与 PDF 一律由 docreader 解析（builtin / markitdown / opendataloader / vietnamese_legal）。PPT/PPTX 在没有引擎规则时默认 MarkItDown。此前的进程内 anydoc 引擎以及 MinerU、PaddleOCR-VL Cloud、WeKnora Cloud 解析引擎已移除；仍写着这些名字的解析规则按“未配置规则”处理，使用该文件类型的默认引擎（如 PDF → vietnamese_legal）。
 
 ## 49. OIDC 登录提示签名无效，或想跳过前端直接 302？
 

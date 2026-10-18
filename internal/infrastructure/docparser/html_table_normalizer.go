@@ -40,7 +40,7 @@ var (
 	// markdownTableSeparatorPattern matches the |---| delimiter row that a
 	// valid GFM table must contain. The repeating column group is optional so
 	// single-column tables (|---|) are accepted; requiring two or more columns
-	// discarded successful conversions of MinerU figure/TOC tables.
+	// discarded successful conversions of OCR figure/TOC tables.
 	markdownTableSeparatorPattern = regexp.MustCompile(`(?m)^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$`)
 )
 

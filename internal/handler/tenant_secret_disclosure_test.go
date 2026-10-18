@@ -143,7 +143,7 @@ func TestGetTenantKVAdminReturnsRedactedSecrets(t *testing.T) {
 		Data    types.ParserEngineConfig `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	assert.Equal(t, types.RedactedSecretPlaceholder, payload.Data.MinerUAPIKey)
+	assert.Equal(t, types.RedactedSecretPlaceholder, payload.Data.PaddleOCRVLAPIKey)
 	assert.NotContains(t, rec.Body.String(), "parser-secret-123")
 }
 
@@ -155,7 +155,7 @@ func secretTenantFixture() *types.Tenant {
 			APIKey: "legacy-search-secret-999",
 		},
 		ParserEngineConfig: &types.ParserEngineConfig{
-			MinerUAPIKey: "parser-secret-123",
+			PaddleOCRVLAPIKey: "parser-secret-123",
 		},
 		StorageEngineConfig: &types.StorageEngineConfig{
 			MinIO: &types.MinIOEngineConfig{
@@ -183,13 +183,13 @@ func TestPutTenantParserConfigAdminForbidden(t *testing.T) {
 	for _, role := range []types.TenantRole{types.TenantRoleAdmin, types.TenantRoleOwner} {
 		t.Run(string(role), func(t *testing.T) {
 			engine := newTenantHandlerTestEngine(t, role, tenant)
-			body := `{"mineru_api_key":"new-secret","mineru_endpoint":"https://example.com/mineru"}`
+			body := `{"paddleocr_vl_api_key":"new-secret","paddleocr_vl_endpoint":"https://example.com/v1"}`
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPut, "/tenants/kv/parser-engine-config", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			engine.ServeHTTP(rec, req)
 			require.Equal(t, http.StatusForbidden, rec.Code)
-			assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.MinerUAPIKey)
+			assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.PaddleOCRVLAPIKey)
 		})
 	}
 }
@@ -198,13 +198,13 @@ func TestPutTenantParserConfigSystemAdminPreservesRedactedSecrets(t *testing.T) 
 	tenant := secretTenantFixture()
 	engine := newTenantHandlerTestEngine(t, types.TenantRoleMember, tenant, true)
 
-	body := `{"mineru_api_key":"***","mineru_endpoint":"https://example.com/mineru"}`
+	body := `{"paddleocr_vl_api_key":"***","paddleocr_vl_endpoint":"https://example.com/v1"}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/tenants/kv/parser-engine-config", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	engine.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.NotNil(t, tenant.ParserEngineConfig)
-	assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.MinerUAPIKey)
-	assert.Equal(t, "https://example.com/mineru", tenant.ParserEngineConfig.MinerUEndpoint)
+	assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.PaddleOCRVLAPIKey)
+	assert.Equal(t, "https://example.com/v1", tenant.ParserEngineConfig.PaddleOCRVLEndpoint)
 }

@@ -50,7 +50,7 @@ func uploadWithEngine(t *testing.T, h *Handler, agentID string) {
 	part, err := form.CreateFormFile("file", "report.pdf")
 	require.NoError(t, err)
 	_, _ = part.Write([]byte("%PDF-1.4"))
-	require.NoError(t, form.WriteField("parser_engine", "mineru_cloud"))
+	require.NoError(t, form.WriteField("parser_engine", "vietnamese_legal"))
 	require.NoError(t, form.WriteField("agent_id", agentID))
 	require.NoError(t, form.Close())
 
@@ -76,14 +76,14 @@ func TestUploadTemporaryDocumentEngineSelection(t *testing.T) {
 		customAgentService: &engineTestAgents{agent: &types.CustomAgent{ID: "own-agent", TenantID: 7}},
 	}
 	uploadWithEngine(t, h, "own-agent")
-	require.Equal(t, "mineru_cloud", own.options.ParserEngine)
+	require.Equal(t, "vietnamese_legal", own.options.ParserEngine)
 	require.Zero(t, own.options.ResourceTenantID)
 
 	unknown := &engineTestDocuments{}
 	h.temporaryDocuments = unknown
 	h.customAgentService = &engineTestAgents{err: context.Canceled}
 	uploadWithEngine(t, h, "foreign-agent")
-	require.Equal(t, "mineru_cloud", unknown.options.ParserEngine,
+	require.Equal(t, "vietnamese_legal", unknown.options.ParserEngine,
 		"an unresolvable agent ID must not strip the caller's engine choice")
 	require.Zero(t, unknown.options.ResourceTenantID)
 }

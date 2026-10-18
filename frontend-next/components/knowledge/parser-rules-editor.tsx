@@ -133,10 +133,7 @@ export function ParserRulesEditor({
       extensions.some((ext) => (e.FileTypes || []).includes(ext)),
     );
     const available = raw.filter((e) => e.Available !== false);
-    const allSimple = extensions.length > 0 && extensions.every((x) => SIMPLE_EXTS.has(x));
-    const defaultName = !allSimple
-      ? (available.find((e) => e.Name === "anydoc")?.Name ?? available[0]?.Name ?? "")
-      : (available[0]?.Name ?? "");
+    const defaultName = available[0]?.Name ?? "";
     return { available, defaultName };
   };
 

@@ -123,7 +123,7 @@ func (p *GRPCDocumentReader) Read(ctx context.Context, req *types.ReadRequest) (
 		Title:       req.Title,
 		RequestId:   req.RequestID,
 		Config: &proto.ReadConfig{
-			ParserEngine:          req.ParserEngine,
+			ParserEngine:          types.ParserEngineInUse(req.ParserEngine, req.FileType),
 			ParserEngineOverrides: req.ParserEngineOverrides,
 		},
 	}

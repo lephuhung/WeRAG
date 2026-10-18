@@ -12,7 +12,6 @@ docreader:
   environment:
     - MINIO_ENDPOINT=minio:9000
     - MINIO_PUBLIC_ENDPOINT=http://localhost:${MINIO_PORT:-9000}
-    - MINERU_ENDPOINT=${MINERU_ENDPOINT:-}
     - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
 ```
 
@@ -46,18 +45,7 @@ docreader:
   - MINIO_PUBLIC_ENDPOINT=http://192.168.1.100:9000  # 使用实际 IP
   ```
 
-#### 3. MINERU_ENDPOINT
-
-- **说明**: MinerU 服务的访问地址（可选）
-- **默认值**: 空（不使用 MinerU）
-- **用途**: MinerU 是一个高级文档解析服务，支持更复杂的文档结构识别和处理。配置此变量后，DocReader 可以调用 MinerU 进行文档解析
-- **配置示例**:
-  ```bash
-  # .env 文件
-  MINERU_ENDPOINT=http://mineru-service:8080
-  ```
-
-#### 4. MAX_FILE_SIZE_MB
+#### 3. MAX_FILE_SIZE_MB
 
 - **说明**: 允许上传的最大文件大小（单位：MB）
 - **默认值**: `50` MB
@@ -144,17 +132,6 @@ docreader:
     - MINIO_ENDPOINT=minio:9000
     - MINIO_PUBLIC_ENDPOINT=http://localhost:9000
     - MAX_FILE_SIZE_MB=50
-```
-
-### 高级配置（启用 MinerU）
-
-```yaml
-docreader:
-  environment:
-    - MINIO_ENDPOINT=minio:9000
-    - MINIO_PUBLIC_ENDPOINT=http://192.168.1.100:9000
-    - MINERU_ENDPOINT=http://mineru:8080
-    - MAX_FILE_SIZE_MB=100
 ```
 
 ### 使用腾讯云 COS

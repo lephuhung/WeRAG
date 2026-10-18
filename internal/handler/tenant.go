@@ -1515,7 +1515,7 @@ func (h *TenantHandler) GetTenantWebSearchConfig(c *gin.Context) {
 	})
 }
 
-// GetTenantParserEngineConfig returns the tenant's parser engine config (MinerU endpoint, API key, etc.).
+// GetTenantParserEngineConfig returns the tenant's parser engine config (OCR endpoint, API key, etc.).
 func (h *TenantHandler) GetTenantParserEngineConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
@@ -2055,16 +2055,6 @@ func (h *TenantHandler) validateConfigModelID(ctx context.Context, field, id str
 func validateParserEngineOutboundURLs(cfg *types.ParserEngineConfig) error {
 	if cfg == nil {
 		return nil
-	}
-	if endpoint := strings.TrimSpace(cfg.MinerUEndpoint); endpoint != "" {
-		if err := secutils.ValidateURLForSSRF(endpoint); err != nil {
-			return fmt.Errorf("mineru_endpoint failed SSRF validation: %v", err)
-		}
-	}
-	if vlmURL := strings.TrimSpace(cfg.MinerUVLMServerURL); vlmURL != "" {
-		if err := secutils.ValidateURLForSSRF(vlmURL); err != nil {
-			return fmt.Errorf("mineru_vlm_server_url failed SSRF validation: %v", err)
-		}
 	}
 	if odlURL := strings.TrimSpace(cfg.ODLHybridURL); odlURL != "" {
 		if err := secutils.ValidateURLForSSRF(odlURL); err != nil {

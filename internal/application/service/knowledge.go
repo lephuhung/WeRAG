@@ -366,7 +366,7 @@ func (s *knowledgeService) failPostprocessSubspan(
 	s.tracker().FailSpan(ctx, span, code, msg, err)
 }
 
-// getParserEngineOverridesFromContext returns parser engine overrides from tenant in context (e.g. MinerU endpoint, API key).
+// getParserEngineOverridesFromContext returns parser engine overrides from tenant in context (e.g. the OCR endpoint, API key).
 // Used when building document ReadRequest so UI-configured values take precedence over env.
 func (s *knowledgeService) getParserEngineOverridesFromContext(ctx context.Context) map[string]string {
 	if v := ctx.Value(types.TenantInfoContextKey); v != nil {

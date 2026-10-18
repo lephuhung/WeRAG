@@ -17,9 +17,8 @@ const xlsxFirstRowAsHeaderOverride = "xlsx_first_row_as_header"
 // SystemAdmin published under system_settings key "knowledge.parse_defaults"
 // (types.SystemParseDefaults). Wired once at container build via
 // SetParseDefaultsProvider — a nil provider means the feature is off and
-// every caller keeps per-KB / per-upload behaviour. Mirrors the
-// types.SetPreferParserEngine convention: a package-level hook keeps the
-// ResolveProcessConfig signature stable for its ~15 call sites.
+// every caller keeps per-KB / per-upload behaviour. A package-level hook
+// keeps the ResolveProcessConfig signature stable for its ~15 call sites.
 var parseDefaultsProvider atomic.Value // stores func() *types.SystemParseDefaults
 
 // SetParseDefaultsProvider installs the resolver used by

@@ -134,7 +134,7 @@ func audioToResult(fileName string, data []byte) *types.ReadResult {
 // ensureOriginalImageRef checks whether the input file is an image and, if the
 // returned markdown does not already contain a markdown image reference for it,
 // prepends one and appends the raw bytes to imageRefs. This guarantees that
-// when MinerU OCRs a standalone image, the downstream chunks still carry the
+// when an OCR engine reads a standalone image, the downstream chunks still carry the
 // original image link for retrieval display.
 func ensureOriginalImageRef(req *types.ReadRequest, mdContent string, imageRefs []types.ImageRef) (string, []types.ImageRef) {
 	ft := strings.ToLower(strings.TrimPrefix(req.FileType, "."))

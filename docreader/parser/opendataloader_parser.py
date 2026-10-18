@@ -313,7 +313,7 @@ class OpenDataLoaderParser(BaseParser):
         self._engine_overrides: Dict[str, Any] = {
             k: v
             for k, v in kwargs.items()
-            if k.startswith("odl_") or k in ("mineru_endpoint", "mineru_api_key")
+            if k.startswith("odl_")
         }
         super().__init__(*args, **kwargs)
 

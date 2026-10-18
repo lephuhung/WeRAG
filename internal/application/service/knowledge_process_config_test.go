@@ -140,7 +140,7 @@ func TestEffectiveChunkingConfig_ResolveParserEngineFromOverrides(t *testing.T) 
 	}
 	overrides := &types.KnowledgeProcessOverrides{
 		ParserEngineRules: []types.ParserEngineRule{
-			{FileTypes: []string{"pdf"}, Engine: "mineru"},
+			{FileTypes: []string{"pdf"}, Engine: "vietnamese_legal"},
 			{
 				FileTypes:            []string{"xlsx", "xls"},
 				Engine:               "builtin",
@@ -149,7 +149,7 @@ func TestEffectiveChunkingConfig_ResolveParserEngineFromOverrides(t *testing.T) 
 		},
 	}
 	eff := ResolveProcessConfig(kb, overrides)
-	require.Equal(t, "mineru", eff.ChunkingConfig.ResolveParserEngine("pdf"))
+	require.Equal(t, "vietnamese_legal", eff.ChunkingConfig.ResolveParserEngine("pdf"))
 	xlsxRule := eff.ChunkingConfig.ResolveParserEngineRule("xlsx")
 	require.NotNil(t, xlsxRule)
 	require.Equal(t, "builtin", xlsxRule.Engine)

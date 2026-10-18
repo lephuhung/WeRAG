@@ -209,7 +209,7 @@ func (p *HTTPDocumentReader) Read(ctx context.Context, req *types.ReadRequest) (
 		Title:     req.Title,
 		RequestID: req.RequestID,
 		Config: &httpReadConfig{
-			ParserEngine:          req.ParserEngine,
+			ParserEngine:          types.ParserEngineInUse(req.ParserEngine, req.FileType),
 			ParserEngineOverrides: req.ParserEngineOverrides,
 		},
 	}

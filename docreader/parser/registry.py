@@ -121,7 +121,7 @@ class ParserEngineRegistry:
         """Return metadata for all registered engines, including availability.
 
         Args:
-            overrides: tenant-level config overrides (e.g. mineru_endpoint, mineru_api_key)
+            overrides: tenant-level config overrides (e.g. openai_ocr_url)
                        forwarded to each engine's check_available function.
         """
         result = []
@@ -229,7 +229,7 @@ def _build_default_registry() -> ParserEngineRegistry:
     # NOTE: Engine listing is managed by Go-side engine registry
     # (docparser.ListAllEngines). The Python list_engines method is kept for
     # backward compatibility with the gRPC ListEngines RPC but the Go app
-    # no longer calls it. MinerU engines are handled natively by Go.
+    # no longer calls it.
 
     return reg
 

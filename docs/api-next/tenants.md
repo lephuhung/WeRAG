@@ -126,7 +126,7 @@ handler: `UpdateTenant` · `tenant.go`
 | `storage_used` | number |  | Storage used (Bytes) |
 | `context_config` | ContextConfig |  | Global Context configuration for this workspace (default for all sessions) |
 | `web_search_config` | WebSearchConfig |  | Global WebSearch configuration for this workspace |
-| `parser_engine_config` | ParserEngineConfig |  | Parser engine config overrides (MinerU endpoint, API key, etc.). Used when parsing documents; overrides env. |
+| `parser_engine_config` | ParserEngineConfig |  | Parser engine config overrides (OCR endpoint, API key, etc.). Used when parsing documents; overrides env. |
 | `credentials` | CredentialsConfig |  | Credentials config: third-party provider credentials (e.g. WeKnoraCloud AppID/AppSecret) |
 | `storage_engine_config` | StorageEngineConfig |  | Storage engine config: parameters for Local, MinIO, COS. Used for document/file storage and docreader. |
 | `default_storage_backend_id` | string |  | DefaultStorageBackendID is the workspace default concrete storage instance. |
@@ -534,20 +534,6 @@ handler: `CreateInviteLink` · `tenant_org.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `chat_parser_engine_rules` | ParserEngineRule[] |  | ChatParserEngineRules selects parser engines for session-scoped chat documents. Knowledge bases keep their own rules in ChunkingConfig. |
-| `mineru_endpoint` | string | yes |  |
-| `mineru_api_key` | string | yes |  |
-| `mineru_model` | string |  | MinerU self-hosted parse parameters |
-| `mineru_vlm_server_url` | string |  |  |
-| `mineru_enable_formula` | boolean |  |  |
-| `mineru_enable_table` | boolean |  |  |
-| `mineru_parse_method` | string |  |  |
-| `mineru_enable_ocr` | boolean |  | MinerUEnableOCR is retained for compatibility with configurations saved before parse_method supported auto/ocr/txt. |
-| `mineru_language` | string |  |  |
-| `mineru_cloud_model` | string |  | MinerU cloud API parse parameters |
-| `mineru_cloud_enable_formula` | boolean |  |  |
-| `mineru_cloud_enable_table` | boolean |  |  |
-| `mineru_cloud_enable_ocr` | boolean |  |  |
-| `mineru_cloud_language` | string |  |  |
 | `odl_hybrid` | string |  | OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service. |
 | `odl_hybrid_url` | string |  |  |
 | `odl_hybrid_mode` | string |  |  |
@@ -561,10 +547,6 @@ handler: `CreateInviteLink` · `tenant_org.go`
 | `paddleocr_vl_vllm_xargs` | string |  | openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs + skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL. |
 | `paddleocr_vl_use_seal_recognition` | boolean |  |  |
 | `paddleocr_vl_use_chart_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_token` | string |  | PaddleOCR-VL AI Studio cloud API. |
-| `paddleocr_vl_cloud_model` | string |  |  |
-| `paddleocr_vl_cloud_use_seal_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_use_chart_recognition` | boolean |  |  |
 
 #### `RetrievalConfig`
 | field | type | req | notes |

@@ -8,11 +8,8 @@ import (
 )
 
 var parserOutboundURLKeys = []string{
-	"mineru_endpoint",
-	"mineru_vlm_server_url",
 	"odl_hybrid_url",
 	"paddleocr_vl_endpoint",
-	"paddleocr_vl_cloud_base_url",
 }
 
 // validateParserEngineOverrideURLs validates every parser override that can

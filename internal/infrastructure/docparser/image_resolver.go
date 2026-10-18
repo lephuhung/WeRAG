@@ -247,7 +247,7 @@ func isProviderScheme(p string) bool {
 }
 
 // isWhitelistedImageHost checks if the image URL's host is in the whitelist.
-// Whitelisted hosts are trusted (e.g. internal MinerU service) — images are
+// Whitelisted hosts are trusted (e.g. an internal OCR service) — images are
 // still downloaded for validation and OCR/caption analysis, but not uploaded
 // to object storage. The markdown keeps the original URL.
 // Configure via IMAGE_HOST_KEEP_URL env var (comma-separated hosts).

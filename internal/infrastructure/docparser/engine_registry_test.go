@@ -3,7 +3,6 @@ package docparser
 import (
 	"testing"
 
-	"github.com/Tencent/WeKnora/internal/infrastructure/docparser/anydoc"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -32,26 +31,17 @@ func TestListAllEnginesBuiltinIncludesDocumentFormats(t *testing.T) {
 	t.Fatal("builtin engine not found")
 }
 
-func TestDefaultParserEnginePrefersAnydocWhenLinked(t *testing.T) {
-	cases := []string{"pptx", "ppt", "pdf", "docx"}
-	if anydoc.Available() {
-		for _, ft := range cases {
-			if got := types.DefaultParserEngine(ft); got != AnydocEngineName {
-				t.Errorf("DefaultParserEngine(%s) = %q, want anydoc when the binding is linked", ft, got)
-			}
-		}
-		if got := types.DefaultParserEngine("csv"); got != "" {
-			t.Errorf("DefaultParserEngine(csv) = %q, want empty so the Go simple reader stays default", got)
-		}
-		return
-	}
+func TestDefaultParserEngineByType(t *testing.T) {
 	if got := types.DefaultParserEngine("pptx"); got != "markitdown" {
-		t.Fatalf("DefaultParserEngine(pptx) = %q, want markitdown when anydoc is unavailable", got)
+		t.Fatalf("DefaultParserEngine(pptx) = %q, want markitdown", got)
 	}
 	if got := types.DefaultParserEngine("pdf"); got != "vietnamese_legal" {
-		t.Fatalf("DefaultParserEngine(pdf) = %q, want vietnamese_legal when anydoc is unavailable", got)
+		t.Fatalf("DefaultParserEngine(pdf) = %q, want vietnamese_legal", got)
 	}
 	if got := types.DefaultParserEngine("docx"); got != "" {
-		t.Fatalf("DefaultParserEngine(docx) = %q, want empty when anydoc is unavailable", got)
+		t.Fatalf("DefaultParserEngine(docx) = %q, want empty (docreader builtin)", got)
+	}
+	if got := types.DefaultParserEngine("csv"); got != "" {
+		t.Fatalf("DefaultParserEngine(csv) = %q, want empty so the Go simple reader stays default", got)
 	}
 }

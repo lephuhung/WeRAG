@@ -59,12 +59,6 @@ is based on Wails v2.12.0's MIT-licensed default template, with local changes to
 install this notice/source bundle. Its license and copyright are reproduced in
 [`licenses/Wails-MIT.txt`](licenses/Wails-MIT.txt).
 
-`cbindgen` 0.29.4 (MPL-2.0) generates the AnyDoc C ABI header during the Rust
-build. Its code/tool executable is not copied into the runtime image or release
-packages by the current build recipes. Generating the header does not copy the
-tool's implementation into the product. If distributing build environments or
-the tool itself, retain its license and provide its corresponding source too.
-
 ## Maintaining this bundle
 
 When upgrading either MPL module, update the version, license, and SHA-256 pin in

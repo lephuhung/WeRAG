@@ -4,8 +4,6 @@
 FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
-# go.mod replaces anydoc with ./third_party/anydoc-go (as in docker/Dockerfile.app).
-COPY third_party/anydoc-go/go.mod third_party/anydoc-go/go.mod
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 # internal/utils dùng pg_query (cgo), nên importer build có CGO như image app;

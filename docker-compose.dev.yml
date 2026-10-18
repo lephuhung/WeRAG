@@ -250,7 +250,7 @@ services:
       - docreader-tmp-dev:/tmp/docreader
     environment:
       # ========== Basics ==========
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - LOG_LEVEL=${LOG_LEVEL:-}
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
@@ -348,7 +348,7 @@ services:
     ports:
       - "${ODL_HYBRID_PORT:-5002}:5002"
     environment:
-      # Default --no-ocr (digital PDFs). Scanned PDFs: use builtin OCR / MinerU, or
+      # Default --no-ocr (digital PDFs). Scanned PDFs: use builtin OCR / PaddleOCR-VL, or
       # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (needs EasyOCR + libGL in image).
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
     networks:

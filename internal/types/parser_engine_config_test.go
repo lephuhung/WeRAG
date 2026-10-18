@@ -4,11 +4,11 @@ import "testing"
 
 func TestParserEngineConfigResolveChatParserEngine(t *testing.T) {
 	config := &ParserEngineConfig{ChatParserEngineRules: []ParserEngineRule{
-		{FileTypes: []string{"pdf", ".docx"}, Engine: "mineru"},
+		{FileTypes: []string{"pdf", ".docx"}, Engine: "vietnamese_legal"},
 		{FileTypes: []string{"xlsx"}, Engine: "markitdown"},
 	}}
 	for input, expected := range map[string]string{
-		"PDF": "mineru", ".docx": "mineru", "xlsx": "markitdown",
+		"PDF": "vietnamese_legal", ".docx": "vietnamese_legal", "xlsx": "markitdown",
 		"txt": "", "pptx": "markitdown", ".PPT": "markitdown",
 	} {
 		if actual := config.ResolveChatParserEngine(input); actual != expected {

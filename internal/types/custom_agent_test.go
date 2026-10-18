@@ -8,11 +8,11 @@ import (
 
 func TestCustomAgentConfigResolveChatParserEngine(t *testing.T) {
 	config := &CustomAgentConfig{ChatParserEngineRules: []ParserEngineRule{
-		{FileTypes: []string{"pdf", ".pptx"}, Engine: "mineru"},
+		{FileTypes: []string{"pdf", ".pptx"}, Engine: "vietnamese_legal"},
 		{FileTypes: []string{"png", "jpg"}, Engine: "paddleocr_vl"},
 	}}
 	for input, expected := range map[string]string{
-		"PDF": "mineru", ".pptx": "mineru", "png": "paddleocr_vl",
+		"PDF": "vietnamese_legal", ".pptx": "vietnamese_legal", "png": "paddleocr_vl",
 		"txt": "", "ppt": "markitdown",
 	} {
 		if actual := config.ResolveChatParserEngine(input); actual != expected {

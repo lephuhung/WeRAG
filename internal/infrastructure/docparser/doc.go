@@ -13,9 +13,9 @@
 //     over its ListEngines RPC (ListAllEngines).
 //
 // Readers differ in where the parsing happens: in this process
-// (SimpleFormatReader, AnydocReader), in the docreader service over gRPC or
-// HTTP (GRPCDocumentReader, HTTPDocumentReader), or in a remote API (MinerU,
-// PaddleOCR-VL, WeKnora Cloud). They all return types.ReadResult, so the rest
+// (SimpleFormatReader), in the docreader service over gRPC or
+// HTTP (GRPCDocumentReader, HTTPDocumentReader), or in an OCR service
+// (PaddleOCR-VL). They all return types.ReadResult, so the rest
 // of the package — image resolution and storage, table normalization — is
 // shared regardless of which engine ran.
 package docparser

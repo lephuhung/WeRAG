@@ -8,18 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateParserEngineOutboundURLs_RejectsPrivateMinerUEndpoint(t *testing.T) {
+func TestValidateParserEngineOutboundURLs_RejectsMetadataOCREndpoint(t *testing.T) {
 	err := validateParserEngineOutboundURLs(&types.ParserEngineConfig{
-		MinerUEndpoint: "http://127.0.0.1:8080",
+		PaddleOCRVLEndpoint: "http://169.254.169.254/v1",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mineru_endpoint")
-}
-
-func TestValidateParserEngineOutboundURLs_RejectsPrivateVLMServerURL(t *testing.T) {
-	err := validateParserEngineOutboundURLs(&types.ParserEngineConfig{
-		MinerUVLMServerURL: "http://169.254.169.254",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mineru_vlm_server_url")
+	assert.Contains(t, err.Error(), "paddleocr_vl_endpoint")
 }

@@ -42,35 +42,46 @@ func TestMergeWebSearchConfigForUpdate_PreservesRedactedSecrets(t *testing.T) {
 
 func TestMergeParserEngineConfigForUpdate_PreservesRedactedSecrets(t *testing.T) {
 	existing := &ParserEngineConfig{
-		MinerUAPIKey:          "mineru-secret",
-		PaddleOCRVLCloudToken: "paddle-secret",
-		MinerUEndpoint:        "http://mineru",
+		PaddleOCRVLAPIKey:   "ocr-secret",
+		PaddleOCRVLEndpoint: "http://vllm-ocr:8001/v1",
 	}
 	incoming := &ParserEngineConfig{
-		MinerUAPIKey:          RedactedSecretPlaceholder,
-		PaddleOCRVLCloudToken: RedactedSecretPlaceholder,
-		MinerUEndpoint:        "http://mineru-new",
+		PaddleOCRVLAPIKey:   RedactedSecretPlaceholder,
+		PaddleOCRVLEndpoint: "http://vllm-ocr-new:8001/v1",
 	}
 	merged := MergeParserEngineConfigForUpdate(incoming, existing)
 	require.NotNil(t, merged)
-	assert.Equal(t, "mineru-secret", merged.MinerUAPIKey)
-	assert.Equal(t, "paddle-secret", merged.PaddleOCRVLCloudToken)
-	assert.Equal(t, "http://mineru-new", merged.MinerUEndpoint)
+	assert.Equal(t, "ocr-secret", merged.PaddleOCRVLAPIKey)
+	assert.Equal(t, "http://vllm-ocr-new:8001/v1", merged.PaddleOCRVLEndpoint)
+
+	// no stored config yet: the placeholder must not be saved as the key
+	merged = MergeParserEngineConfigForUpdate(incoming, nil)
+	require.NotNil(t, merged)
+	assert.Equal(t, "", merged.PaddleOCRVLAPIKey)
+}
+
+func TestParserEngineConfigForResponse_MasksOCRKey(t *testing.T) {
+	cfg := &ParserEngineConfig{PaddleOCRVLAPIKey: "ocr-secret", PaddleOCRVLModel: "senocr-vi"}
+	masked := ParserEngineConfigForResponse(cfg, true)
+	assert.Equal(t, RedactedSecretPlaceholder, masked.PaddleOCRVLAPIKey)
+	assert.Equal(t, "senocr-vi", masked.PaddleOCRVLModel)
+	assert.Equal(t, "ocr-secret", ParserEngineConfigForResponse(cfg, false).PaddleOCRVLAPIKey)
+	assert.Equal(t, "ocr-secret", cfg.PaddleOCRVLAPIKey, "the stored config is not modified")
 }
 
 func TestMergeParserEngineConfigForUpdate_PreservesLegacyChatParserRules(t *testing.T) {
 	existing := &ParserEngineConfig{
 		ChatParserEngineRules: []ParserEngineRule{
-			{FileTypes: []string{"pdf"}, Engine: "mineru"},
+			{FileTypes: []string{"pdf"}, Engine: "vietnamese_legal"},
 		},
 	}
 	incoming := &ParserEngineConfig{
-		MinerUEndpoint: "http://mineru-new",
+		PaddleOCRVLEndpoint: "http://vllm-ocr:8001/v1",
 	}
 	merged := MergeParserEngineConfigForUpdate(incoming, existing)
 	require.NotNil(t, merged)
 	require.Len(t, merged.ChatParserEngineRules, 1)
-	assert.Equal(t, "mineru", merged.ChatParserEngineRules[0].Engine)
+	assert.Equal(t, "vietnamese_legal", merged.ChatParserEngineRules[0].Engine)
 }
 
 func TestMergeStorageEngineConfigForUpdate_PreservesRedactedSecrets(t *testing.T) {

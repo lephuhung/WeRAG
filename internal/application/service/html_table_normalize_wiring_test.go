@@ -10,7 +10,7 @@ import (
 
 // Regression guard for the central "normalize inline HTML tables before
 // chunking" wiring. The bug this guards: normalization was only wired into the
-// paddleocr-vl converters, so tables emitted by other engines (e.g. MinerU)
+// paddleocr-vl converters, so tables emitted by other engines (e.g. docreader builtin)
 // reached the chunker as raw single-line <table> blocks and were force-cut at
 // the absolute size limit.
 func TestHTMLEmbeddedTableWiring_ProducesChunkableOutput(t *testing.T) {

@@ -43,7 +43,7 @@ func TestResolveAndStoreRelativeHTMLImages(t *testing.T) {
 }
 
 // TestResolveAndStoreDedupsSameImageRefVariants ensures that when the same
-// MinerU image is referenced under multiple path forms (e.g. "images/foo.png"
+// parsed image is referenced under multiple path forms (e.g. "images/foo.png"
 // and "./images/foo.png"), the bytes are uploaded to object storage only once.
 func TestResolveAndStoreDedupsSameImageRefVariants(t *testing.T) {
 	png := createTestPNG(200, 150)

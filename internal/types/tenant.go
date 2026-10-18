@@ -114,7 +114,7 @@ type Tenant struct {
 	ContextConfig *ContextConfig `yaml:"context_config"      json:"context_config"      gorm:"type:jsonb"`
 	// Global WebSearch configuration for this workspace
 	WebSearchConfig *WebSearchConfig `yaml:"web_search_config"   json:"web_search_config"   gorm:"type:jsonb"`
-	// Parser engine config overrides (MinerU endpoint, API key, etc.). Used when parsing documents; overrides env.
+	// Parser engine config overrides (OCR endpoint, API key, etc.). Used when parsing documents; overrides env.
 	ParserEngineConfig *ParserEngineConfig `yaml:"parser_engine_config" json:"parser_engine_config" gorm:"type:jsonb"`
 	// Credentials config: third-party provider credentials (e.g. WeKnoraCloud AppID/AppSecret)
 	Credentials *CredentialsConfig `yaml:"credentials" json:"credentials" gorm:"type:jsonb"`
@@ -336,32 +336,12 @@ func (c *CredentialsConfig) Scan(value interface{}) error {
 	return nil
 }
 
-// ParserEngineConfig holds tenant-level overrides for document parser engines (e.g. MinerU endpoint, API key).
+// ParserEngineConfig holds tenant-level overrides for document parser engines (e.g. the OCR endpoint).
 // These values take precedence over environment variables when parsing documents.
 type ParserEngineConfig struct {
 	// ChatParserEngineRules selects parser engines for session-scoped chat
 	// documents. Knowledge bases keep their own rules in ChunkingConfig.
 	ChatParserEngineRules []ParserEngineRule `json:"chat_parser_engine_rules,omitempty"`
-	MinerUEndpoint        string             `json:"mineru_endpoint"` // Điểm cuối dịch vụ MinerU tự triển khai
-	MinerUAPIKey          string             `json:"mineru_api_key"`  // API Key MinerU cloud
-
-	// Tham số phân tích MinerU tự triển khai
-	MinerUModel         string `json:"mineru_model,omitempty"`          // backend: pipeline, vlm-*, hybrid-*
-	MinerUVLMServerURL  string `json:"mineru_vlm_server_url,omitempty"` // Địa chỉ máy chủ vLLM (vlm-http-client / hybrid-http-client)
-	MinerUEnableFormula *bool  `json:"mineru_enable_formula,omitempty"`
-	MinerUEnableTable   *bool  `json:"mineru_enable_table,omitempty"`
-	MinerUParseMethod   string `json:"mineru_parse_method,omitempty"`
-	// MinerUEnableOCR is retained for compatibility with configurations saved
-	// before parse_method supported auto/ocr/txt.
-	MinerUEnableOCR *bool  `json:"mineru_enable_ocr,omitempty"`
-	MinerULanguage  string `json:"mineru_language,omitempty"`
-
-	// Tham số phân tích MinerU cloud API
-	MinerUCloudModel         string `json:"mineru_cloud_model,omitempty"` // model_version: pipeline, vlm, MinerU-HTML
-	MinerUCloudEnableFormula *bool  `json:"mineru_cloud_enable_formula,omitempty"`
-	MinerUCloudEnableTable   *bool  `json:"mineru_cloud_enable_table,omitempty"`
-	MinerUCloudEnableOCR     *bool  `json:"mineru_cloud_enable_ocr,omitempty"`
-	MinerUCloudLanguage      string `json:"mineru_cloud_language,omitempty"`
 
 	// OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service.
 	ODLHybrid           string `json:"odl_hybrid,omitempty"`      // off (default), docling-fast, hancom-ai
@@ -386,38 +366,6 @@ type ParserEngineConfig struct {
 	PaddleOCRVLRepetitionPenalty   string `json:"paddleocr_vl_repetition_penalty,omitempty"`
 	PaddleOCRVLUseSealRecognition  *bool  `json:"paddleocr_vl_use_seal_recognition,omitempty"`
 	PaddleOCRVLUseChartRecognition *bool  `json:"paddleocr_vl_use_chart_recognition,omitempty"`
-
-	// PaddleOCR-VL AI Studio cloud API.
-	PaddleOCRVLCloudToken               string `json:"paddleocr_vl_cloud_token,omitempty"`
-	PaddleOCRVLCloudModel               string `json:"paddleocr_vl_cloud_model,omitempty"` // e.g. PaddleOCR-VL-1.6
-	PaddleOCRVLCloudUseSealRecognition  *bool  `json:"paddleocr_vl_cloud_use_seal_recognition,omitempty"`
-	PaddleOCRVLCloudUseChartRecognition *bool  `json:"paddleocr_vl_cloud_use_chart_recognition,omitempty"`
-}
-
-const (
-	MinerUParseMethodAuto = "auto"
-	MinerUParseMethodOCR  = "ocr"
-	MinerUParseMethodText = "txt"
-)
-
-// ResolveMinerUParseMethod normalizes the explicit MinerU parse method and
-// maps the legacy OCR toggle to the closest safe behavior. The old enabled
-// value maps to auto instead of ocr so digital PDFs keep their native text
-// layer while scanned PDFs are still detected and OCRed by MinerU.
-func ResolveMinerUParseMethod(method string, legacyOCREnabled *bool) string {
-	switch strings.ToLower(strings.TrimSpace(method)) {
-	case MinerUParseMethodAuto:
-		return MinerUParseMethodAuto
-	case MinerUParseMethodOCR:
-		return MinerUParseMethodOCR
-	case MinerUParseMethodText:
-		return MinerUParseMethodText
-	}
-
-	if legacyOCREnabled != nil && !*legacyOCREnabled {
-		return MinerUParseMethodText
-	}
-	return MinerUParseMethodAuto
 }
 
 func (c *ParserEngineConfig) ResolveChatParserEngine(fileType string) string {
@@ -435,54 +383,12 @@ func (c *ParserEngineConfig) ResolveChatParserEngine(fileType string) string {
 }
 
 // ToOverridesMap returns a map suitable for ParserEngineOverrides in parse requests.
-// Keys are snake_case (mineru_endpoint, mineru_api_key, etc.).
+// Keys are snake_case (paddleocr_vl_endpoint, paddleocr_vl_model, etc.).
 func (c *ParserEngineConfig) ToOverridesMap() map[string]string {
 	if c == nil {
 		return nil
 	}
 	m := make(map[string]string)
-	if c.MinerUEndpoint != "" {
-		m["mineru_endpoint"] = c.MinerUEndpoint
-	}
-	if c.MinerUAPIKey != "" {
-		m["mineru_api_key"] = c.MinerUAPIKey
-	}
-	if c.MinerUModel != "" {
-		m["mineru_model"] = c.MinerUModel
-	}
-	if c.MinerUVLMServerURL != "" {
-		m["mineru_vlm_server_url"] = c.MinerUVLMServerURL
-	}
-	if c.MinerUEnableFormula != nil {
-		m["mineru_enable_formula"] = fmt.Sprintf("%v", *c.MinerUEnableFormula)
-	}
-	if c.MinerUEnableTable != nil {
-		m["mineru_enable_table"] = fmt.Sprintf("%v", *c.MinerUEnableTable)
-	}
-	if c.MinerUParseMethod != "" || c.MinerUEnableOCR != nil {
-		m["mineru_parse_method"] = ResolveMinerUParseMethod(c.MinerUParseMethod, c.MinerUEnableOCR)
-	}
-	if c.MinerUEnableOCR != nil {
-		m["mineru_enable_ocr"] = fmt.Sprintf("%v", *c.MinerUEnableOCR)
-	}
-	if c.MinerULanguage != "" {
-		m["mineru_language"] = c.MinerULanguage
-	}
-	if c.MinerUCloudModel != "" {
-		m["mineru_cloud_model"] = c.MinerUCloudModel
-	}
-	if c.MinerUCloudEnableFormula != nil {
-		m["mineru_cloud_enable_formula"] = fmt.Sprintf("%v", *c.MinerUCloudEnableFormula)
-	}
-	if c.MinerUCloudEnableTable != nil {
-		m["mineru_cloud_enable_table"] = fmt.Sprintf("%v", *c.MinerUCloudEnableTable)
-	}
-	if c.MinerUCloudEnableOCR != nil {
-		m["mineru_cloud_enable_ocr"] = fmt.Sprintf("%v", *c.MinerUCloudEnableOCR)
-	}
-	if c.MinerUCloudLanguage != "" {
-		m["mineru_cloud_language"] = c.MinerUCloudLanguage
-	}
 	if c.ODLHybrid != "" {
 		m["odl_hybrid"] = c.ODLHybrid
 	}
@@ -524,18 +430,6 @@ func (c *ParserEngineConfig) ToOverridesMap() map[string]string {
 	}
 	if c.PaddleOCRVLUseChartRecognition != nil {
 		m["paddleocr_vl_use_chart_recognition"] = fmt.Sprintf("%v", *c.PaddleOCRVLUseChartRecognition)
-	}
-	if c.PaddleOCRVLCloudToken != "" {
-		m["paddleocr_vl_cloud_token"] = c.PaddleOCRVLCloudToken
-	}
-	if c.PaddleOCRVLCloudModel != "" {
-		m["paddleocr_vl_cloud_model"] = c.PaddleOCRVLCloudModel
-	}
-	if c.PaddleOCRVLCloudUseSealRecognition != nil {
-		m["paddleocr_vl_cloud_use_seal_recognition"] = fmt.Sprintf("%v", *c.PaddleOCRVLCloudUseSealRecognition)
-	}
-	if c.PaddleOCRVLCloudUseChartRecognition != nil {
-		m["paddleocr_vl_cloud_use_chart_recognition"] = fmt.Sprintf("%v", *c.PaddleOCRVLCloudUseChartRecognition)
 	}
 	if len(m) == 0 {
 		return nil

@@ -17,7 +17,7 @@ func TestValidateParserOverrideURLsRejectsEverySupportedURLKey(t *testing.T) {
 
 func TestValidateParserOverrideURLsIgnoresNonURLKeys(t *testing.T) {
 	if err := validateParserEngineOverrideURLs(map[string]string{
-		"mineru_model_version": "pipeline",
+		"paddleocr_vl_model": "senocr-vi",
 	}); err != nil {
 		t.Fatalf("unexpected error for non-URL override: %v", err)
 	}

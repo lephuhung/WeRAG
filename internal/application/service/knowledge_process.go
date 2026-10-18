@@ -3734,7 +3734,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		convertResult.AudioData = nil
 	}
 
-	// Normalize inline HTML tables from any parser engine (MinerU, builtin,
+	// Normalize inline HTML tables from any parser engine (PaddleOCR-VL, builtin,
 	// markitdown, paddleocr-vl, ...) into GFM, or row-newline-separated HTML
 	// for merged / non-GFM tables, so the chunker can split them.
 	// Runs before image resolution so <img> inside HTML tables becomes
@@ -4081,14 +4081,13 @@ func isLikelyRateLimitError(err error) bool {
 // resolveDocReader picks the reader for one parse request. The engine catalog
 // itself lives in the docparser registry; this only supplies the dependencies
 // the service owns. Returns nil when the chosen engine cannot run — an
-// unconfigured cloud engine, a disconnected docreader — after logging why.
+// unavailable converter, a disconnected docreader — after logging why.
 func (s *knowledgeService) resolveDocReader(
 	ctx context.Context, engine, fileType string, isURL bool, overrides map[string]string,
 ) interfaces.DocReader {
 	reader, err := docparser.NewReader(ctx, engine, fileType, isURL, docparser.ReaderDeps{
-		Overrides:               overrides,
-		Remote:                  s.documentReader,
-		WeKnoraCloudCredentials: s.tenantService.GetWeKnoraCloudCredentials,
+		Overrides: overrides,
+		Remote:    s.documentReader,
 	})
 	if err != nil {
 		logger.Warnf(ctx, "[resolveDocReader] engine=%q fileType=%q unusable: %v", engine, fileType, err)

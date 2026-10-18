@@ -97,20 +97,6 @@ handler: `CheckParserEngines` · `system.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `chat_parser_engine_rules` | ParserEngineRule[] |  | ChatParserEngineRules selects parser engines for session-scoped chat documents. Knowledge bases keep their own rules in ChunkingConfig. |
-| `mineru_endpoint` | string |  |  |
-| `mineru_api_key` | string |  |  |
-| `mineru_model` | string |  | MinerU self-hosted parse parameters |
-| `mineru_vlm_server_url` | string |  |  |
-| `mineru_enable_formula` | boolean |  |  |
-| `mineru_enable_table` | boolean |  |  |
-| `mineru_parse_method` | string |  |  |
-| `mineru_enable_ocr` | boolean |  | MinerUEnableOCR is retained for compatibility with configurations saved before parse_method supported auto/ocr/txt. |
-| `mineru_language` | string |  |  |
-| `mineru_cloud_model` | string |  | MinerU cloud API parse parameters |
-| `mineru_cloud_enable_formula` | boolean |  |  |
-| `mineru_cloud_enable_table` | boolean |  |  |
-| `mineru_cloud_enable_ocr` | boolean |  |  |
-| `mineru_cloud_language` | string |  |  |
 | `odl_hybrid` | string |  | OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service. |
 | `odl_hybrid_url` | string |  |  |
 | `odl_hybrid_mode` | string |  |  |
@@ -124,10 +110,6 @@ handler: `CheckParserEngines` · `system.go`
 | `paddleocr_vl_vllm_xargs` | string |  | openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs + skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL. |
 | `paddleocr_vl_use_seal_recognition` | boolean |  |  |
 | `paddleocr_vl_use_chart_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_token` | string |  | PaddleOCR-VL AI Studio cloud API. |
-| `paddleocr_vl_cloud_model` | string |  |  |
-| `paddleocr_vl_cloud_use_seal_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_use_chart_recognition` | boolean |  |  |
 
 **Response**:
 ```json
@@ -148,20 +130,6 @@ handler: `GetTenantParserEngineConfig` · `tenant.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `chat_parser_engine_rules` | ParserEngineRule[] |  | ChatParserEngineRules selects parser engines for session-scoped chat documents. Knowledge bases keep their own rules in ChunkingConfig. |
-| `mineru_endpoint` | string | yes |  |
-| `mineru_api_key` | string | yes |  |
-| `mineru_model` | string |  | MinerU self-hosted parse parameters |
-| `mineru_vlm_server_url` | string |  |  |
-| `mineru_enable_formula` | boolean |  |  |
-| `mineru_enable_table` | boolean |  |  |
-| `mineru_parse_method` | string |  |  |
-| `mineru_enable_ocr` | boolean |  | MinerUEnableOCR is retained for compatibility with configurations saved before parse_method supported auto/ocr/txt. |
-| `mineru_language` | string |  |  |
-| `mineru_cloud_model` | string |  | MinerU cloud API parse parameters |
-| `mineru_cloud_enable_formula` | boolean |  |  |
-| `mineru_cloud_enable_table` | boolean |  |  |
-| `mineru_cloud_enable_ocr` | boolean |  |  |
-| `mineru_cloud_language` | string |  |  |
 | `odl_hybrid` | string |  | OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service. |
 | `odl_hybrid_url` | string |  |  |
 | `odl_hybrid_mode` | string |  |  |
@@ -175,10 +143,6 @@ handler: `GetTenantParserEngineConfig` · `tenant.go`
 | `paddleocr_vl_vllm_xargs` | string |  | openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs + skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL. |
 | `paddleocr_vl_use_seal_recognition` | boolean |  |  |
 | `paddleocr_vl_use_chart_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_token` | string |  | PaddleOCR-VL AI Studio cloud API. |
-| `paddleocr_vl_cloud_model` | string |  |  |
-| `paddleocr_vl_cloud_use_seal_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_use_chart_recognition` | boolean |  |  |
 
 ---
 ### `updateParserEngineConfig` — `PUT /tenants/kv/:key`
@@ -191,20 +155,6 @@ handler: `updateTenantParserEngineConfigInternal` · `tenant.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `chat_parser_engine_rules` | ParserEngineRule[] |  | ChatParserEngineRules selects parser engines for session-scoped chat documents. Knowledge bases keep their own rules in ChunkingConfig. |
-| `mineru_endpoint` | string |  |  |
-| `mineru_api_key` | string |  |  |
-| `mineru_model` | string |  | MinerU self-hosted parse parameters |
-| `mineru_vlm_server_url` | string |  |  |
-| `mineru_enable_formula` | boolean |  |  |
-| `mineru_enable_table` | boolean |  |  |
-| `mineru_parse_method` | string |  |  |
-| `mineru_enable_ocr` | boolean |  | MinerUEnableOCR is retained for compatibility with configurations saved before parse_method supported auto/ocr/txt. |
-| `mineru_language` | string |  |  |
-| `mineru_cloud_model` | string |  | MinerU cloud API parse parameters |
-| `mineru_cloud_enable_formula` | boolean |  |  |
-| `mineru_cloud_enable_table` | boolean |  |  |
-| `mineru_cloud_enable_ocr` | boolean |  |  |
-| `mineru_cloud_language` | string |  |  |
 | `odl_hybrid` | string |  | OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid service. |
 | `odl_hybrid_url` | string |  |  |
 | `odl_hybrid_mode` | string |  |  |
@@ -218,10 +168,6 @@ handler: `updateTenantParserEngineConfigInternal` · `tenant.go`
 | `paddleocr_vl_vllm_xargs` | string |  | openai mode: "1" sends Unlimited-OCR's ngram vllm_xargs + skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL. |
 | `paddleocr_vl_use_seal_recognition` | boolean |  |  |
 | `paddleocr_vl_use_chart_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_token` | string |  | PaddleOCR-VL AI Studio cloud API. |
-| `paddleocr_vl_cloud_model` | string |  |  |
-| `paddleocr_vl_cloud_use_seal_recognition` | boolean |  |  |
-| `paddleocr_vl_cloud_use_chart_recognition` | boolean |  |  |
 
 **Response**:
 ```json

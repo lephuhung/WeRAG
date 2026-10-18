@@ -248,7 +248,7 @@ handler: `RegisterByInvite` · `auth_register_by_invite.go`
 | `storage_used` | number | yes | Storage used (Bytes) |
 | `context_config` | ContextConfig | yes | Global Context configuration for this workspace (default for all sessions) |
 | `web_search_config` | WebSearchConfig | yes | Global WebSearch configuration for this workspace |
-| `parser_engine_config` | ParserEngineConfig | yes | Parser engine config overrides (MinerU endpoint, API key, etc.). Used when parsing documents; overrides env. |
+| `parser_engine_config` | ParserEngineConfig | yes | Parser engine config overrides (OCR endpoint, API key, etc.). Used when parsing documents; overrides env. |
 | `credentials` | CredentialsConfig | yes | Credentials config: third-party provider credentials (e.g. WeKnoraCloud AppID/AppSecret) |
 | `storage_engine_config` | StorageEngineConfig | yes | Storage engine config: parameters for Local, MinIO, COS. Used for document/file storage and docreader. |
 | `default_storage_backend_id` | string |  | DefaultStorageBackendID is the workspace default concrete storage instance. |

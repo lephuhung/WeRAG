@@ -29,10 +29,6 @@ func NewWeKnoraCloudService(
 	}
 }
 
-func IsWeKnoraCloudDocReaderAddr(addr string) bool {
-	return strings.TrimSuffix(strings.TrimSpace(addr), "/") == strings.TrimRight(provider.WeKnoraCloudBaseURL, "/")+"/api/v1/doc/reader"
-}
-
 // SaveCredentials chỉ lưu thông tin xác thực APPID/APPSECRET, không tự tạo mô hình
 func (s *weKnoraCloudService) SaveCredentials(ctx context.Context, appID, appSecret string) error {
 	if appID == "" {

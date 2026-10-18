@@ -411,20 +411,37 @@ func (h *SystemHandler) ListParserEngines(c *gin.Context) {
 			if tenant.ParserEngineConfig != nil {
 				overrides = tenant.ParserEngineConfig.ToOverridesMap()
 			}
-			if creds := tenant.Credentials.GetWeKnoraCloud(); creds != nil {
-				if overrides == nil {
-					overrides = make(map[string]string)
-				}
-				overrides["weknoracloud_app_id"] = creds.AppID
-			}
 		}
 	}
 
-	reader, docreaderAddr, docreaderTransport := h.resolveDocReader(c.Request.Context(), overrides)
+	reader, docreaderAddr, docreaderTransport := h.resolveDocReader()
 	connected := reader != nil && reader.IsConnected()
 	remoteEngines := h.fetchRemoteEngines(c.Request.Context(), reader, overrides)
 	engines := docparser.ListAllEngines(connected, overrides, remoteEngines)
 	c.JSON(200, gin.H{"code": 0, "msg": "success", "data": engines, "docreader_addr": docreaderAddr, "docreader_transport": docreaderTransport, "connected": connected})
+}
+
+// docReaderHost extracts the host part of a DocReader address, which may be
+// "host", "host:port" or a URL with a scheme.
+func docReaderHost(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if i := strings.Index(addr, "://"); i >= 0 {
+		addr = addr[i+3:]
+	}
+	if i := strings.IndexAny(addr, "/?#"); i >= 0 {
+		addr = addr[:i]
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		addr = host
+	}
+	return strings.ToLower(strings.Trim(addr, "[]"))
+}
+
+// sameDocReaderHost reports whether addr points at the same host as the
+// configured DocReader address.
+func sameDocReaderHost(addr, configured string) bool {
+	h := docReaderHost(addr)
+	return h != "" && h == docReaderHost(configured)
 }
 
 // ReconnectDocReader reconnects the document converter to a new (or same) DocReader address.
@@ -449,11 +466,16 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 		return
 	}
 
-	// SSRF validation for docreader address
-	if err := secutils.ValidateURLForSSRF(addr); err != nil {
-		logger.Warnf(c.Request.Context(), "SSRF validation failed for docreader addr: %v", err)
-		c.JSON(400, gin.H{"code": 1, "msg": secutils.FormatSSRFError("DocReader address", addr, err)})
-		return
+	// SSRF validation for docreader address. The host the operator already
+	// configured (DOCREADER_ADDR) is trusted as-is: it is a private compose
+	// service name ("docreader") that the public validator would reject, and
+	// "reconnect to the same address" is the common use of this button.
+	if !sameDocReaderHost(addr, os.Getenv("DOCREADER_ADDR")) {
+		if err := secutils.ValidateURLForSSRF(addr); err != nil {
+			logger.Warnf(c.Request.Context(), "SSRF validation failed for docreader addr: %v", err)
+			c.JSON(400, gin.H{"code": 1, "msg": secutils.FormatSSRFError("DocReader address", addr, err)})
+			return
+		}
 	}
 
 	if h.documentReader == nil {
@@ -472,12 +494,6 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 		if tenant, ok := v.(*types.Tenant); ok && tenant != nil {
 			if tenant.ParserEngineConfig != nil {
 				overrides = tenant.ParserEngineConfig.ToOverridesMap()
-			}
-			if creds := tenant.Credentials.GetWeKnoraCloud(); creds != nil {
-				if overrides == nil {
-					overrides = make(map[string]string)
-				}
-				overrides["weknoracloud_app_id"] = creds.AppID
 			}
 		}
 	}
@@ -504,47 +520,23 @@ func (h *SystemHandler) CheckParserEngines(c *gin.Context) {
 		return
 	}
 	var existing *types.ParserEngineConfig
-	var tenant *types.Tenant
 	if v, exists := c.Get(types.TenantInfoContextKey.String()); exists {
 		if t, ok := v.(*types.Tenant); ok && t != nil {
-			tenant = t
 			existing = t.ParserEngineConfig
 		}
 	}
 	merged := types.MergeParserEngineConfigForUpdate(&body, existing)
 	overrides := merged.ToOverridesMap()
-	if tenant != nil {
-		if creds := tenant.Credentials.GetWeKnoraCloud(); creds != nil {
-			if overrides == nil {
-				overrides = make(map[string]string)
-			}
-			overrides["weknoracloud_app_id"] = creds.AppID
-		}
-	}
-	reader, docreaderAddr, docreaderTransport := h.resolveDocReader(c.Request.Context(), overrides)
+	reader, docreaderAddr, docreaderTransport := h.resolveDocReader()
 	connected := reader != nil && reader.IsConnected()
 	remoteEngines := h.fetchRemoteEngines(c.Request.Context(), reader, overrides)
 	engines := docparser.ListAllEngines(connected, overrides, remoteEngines)
 	c.JSON(200, gin.H{"code": 0, "msg": "success", "data": engines, "docreader_addr": docreaderAddr, "docreader_transport": docreaderTransport, "connected": connected})
 }
 
-func (h *SystemHandler) resolveDocReader(ctx context.Context, overrides map[string]string) (interfaces.DocumentReader, string, string) {
-	if len(overrides) > 0 {
-		if addr := strings.TrimSpace(overrides["docreader_addr"]); addr != "" && service.IsWeKnoraCloudDocReaderAddr(addr) {
-			reader := h.ResolveDocumentReader(ctx, addr)
-			return reader, addr, transportFromDocReaderAddr(addr)
-		}
-	}
-
+func (h *SystemHandler) resolveDocReader() (interfaces.DocumentReader, string, string) {
 	addr, transport := h.getDocReaderConnInfo()
 	return h.documentReader, addr, transport
-}
-
-func transportFromDocReaderAddr(addr string) string {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(addr)), "https://") {
-		return "https"
-	}
-	return "http"
 }
 
 // fetchRemoteEngines queries the remote docreader for its engine list.
@@ -1257,30 +1249,6 @@ func (h *SystemHandler) checkOBS(c *gin.Context, ctx context.Context, cfg *types
 		return
 	}
 	c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: true, Message: fmt.Sprintf("connected, Bucket \"%s\" confirmed to exist", cfg.BucketName)}})
-}
-
-func (h *SystemHandler) ResolveDocumentReader(ctx context.Context, addr string) interfaces.DocumentReader {
-	if addr == "" {
-		return h.documentReader
-	}
-
-	if service.IsWeKnoraCloudDocReaderAddr(addr) {
-		creds := h.tenantSvc.GetWeKnoraCloudCredentials(ctx)
-		if creds == nil {
-			return nil
-		}
-		reader, err := docparser.NewWeKnoraCloudSignedDocumentReader(creds.AppID, creds.AppSecret)
-		if err != nil {
-			return nil
-		}
-		return reader
-	}
-
-	reader, err := docparser.NewHTTPDocumentReader(addr)
-	if err != nil || reader == nil {
-		return reader
-	}
-	return reader
 }
 
 // PromoteUserToSystemAdminRequest defines the request for promoting a user to system admin.

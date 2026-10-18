@@ -154,3 +154,15 @@ func TestOpenAIOCRImageDropsLoopAndReportsUsage(t *testing.T) {
 	assert.Equal(t, 1, calls)
 	assert.Equal(t, 1200, usage.Total())
 }
+
+// stubDocReader stands in for the docreader client as the fallback reader.
+type stubDocReader struct {
+	got    *types.ReadRequest
+	result *types.ReadResult
+	err    error
+}
+
+func (s *stubDocReader) Read(_ context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+	s.got = req
+	return s.result, s.err
+}

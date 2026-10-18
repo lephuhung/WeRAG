@@ -327,39 +327,6 @@ func TestDefaultParserEngine(t *testing.T) {
 	}
 }
 
-func TestDefaultParserEnginePrefersRegisteredEngineForFallbackTypes(t *testing.T) {
-	t.Cleanup(func() { SetPreferParserEngine(nil) })
-	SetPreferParserEngine(func(fileType string) string {
-		if fileType == "pptx" || fileType == "ppt" || fileType == "pdf" || fileType == "docx" {
-			return "anydoc"
-		}
-		return ""
-	})
-	if got := DefaultParserEngine("pptx"); got != "anydoc" {
-		t.Fatalf("DefaultParserEngine(pptx) = %q, want anydoc", got)
-	}
-	if got := DefaultParserEngine("ppt"); got != "anydoc" {
-		t.Fatalf("DefaultParserEngine(ppt) = %q, want anydoc", got)
-	}
-	if got := DefaultParserEngine("pdf"); got != "anydoc" {
-		t.Fatalf("DefaultParserEngine(pdf) = %q, want anydoc", got)
-	}
-	if got := DefaultParserEngine("docx"); got != "anydoc" {
-		t.Fatalf("DefaultParserEngine(docx) = %q, want anydoc", got)
-	}
-	if got := DefaultParserEngine("txt"); got != "" {
-		t.Fatalf("DefaultParserEngine(txt) = %q, want empty", got)
-	}
-}
-
-func TestDefaultParserEngineIgnoresEmptyPreference(t *testing.T) {
-	t.Cleanup(func() { SetPreferParserEngine(nil) })
-	SetPreferParserEngine(func(string) string { return "" })
-	if got := DefaultParserEngine("pptx"); got != "markitdown" {
-		t.Fatalf("DefaultParserEngine(pptx) = %q, want markitdown when preference is empty", got)
-	}
-}
-
 func TestChunkingConfigResolveParserEngineDefaults(t *testing.T) {
 	var empty ChunkingConfig
 	if got := empty.ResolveParserEngine("pptx"); got != "markitdown" {
@@ -370,10 +337,10 @@ func TestChunkingConfigResolveParserEngineDefaults(t *testing.T) {
 	}
 
 	configured := ChunkingConfig{ParserEngineRules: []ParserEngineRule{
-		{FileTypes: []string{"pptx"}, Engine: "mineru"},
+		{FileTypes: []string{"pptx"}, Engine: "vietnamese_legal"},
 	}}
-	if got := configured.ResolveParserEngine(".PPTX"); got != "mineru" {
-		t.Fatalf("configured ResolveParserEngine(pptx) = %q, want mineru", got)
+	if got := configured.ResolveParserEngine(".PPTX"); got != "vietnamese_legal" {
+		t.Fatalf("configured ResolveParserEngine(pptx) = %q, want vietnamese_legal", got)
 	}
 }
 
@@ -411,5 +378,21 @@ func TestKnowledgeBase_MarshalJSONWithholdsInlineCredentials(t *testing.T) {
 	vlmColumn, err := kb.VLMConfig.Value()
 	if err != nil || !strings.Contains(string(vlmColumn.([]byte)), "vlm-key") {
 		t.Fatalf("VLM column lost its key: %v %s", err, vlmColumn)
+	}
+}
+
+func TestParserEngineInUseReplacesRemovedEngines(t *testing.T) {
+	cases := []struct{ engine, fileType, want string }{
+		{"mineru", "pdf", "vietnamese_legal"},
+		{"MinerU_Cloud", "pptx", "markitdown"},
+		{"anydoc", "docx", ""},
+		{"paddleocr_vl", "png", "paddleocr_vl"},
+		{"builtin", "pdf", "builtin"},
+		{"", "pdf", ""},
+	}
+	for _, tc := range cases {
+		if got := ParserEngineInUse(tc.engine, tc.fileType); got != tc.want {
+			t.Errorf("ParserEngineInUse(%q, %q) = %q, want %q", tc.engine, tc.fileType, got, tc.want)
+		}
 	}
 }

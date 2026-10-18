@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Tencent/WeKnora/internal/infrastructure/docparser/anydoc"
-	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -62,51 +60,17 @@ func TestNewReaderReportsDisconnectedDocReader(t *testing.T) {
 	}
 }
 
-func TestNewReaderRequiresWeKnoraCloudCredentials(t *testing.T) {
-	_, err := NewReader(context.Background(), WeKnoraCloudEngineName, "docx", false, ReaderDeps{
-		WeKnoraCloudCredentials: func(context.Context) *types.WeKnoraCloudCredentials { return nil },
-	})
-	if err == nil {
-		t.Fatal("NewReader succeeded without credentials, want an error")
-	}
-}
-
-// The anydoc engine is only linked into builds tagged `anydoc`; everywhere
-// else it must be listed as unavailable and refuse to build a reader, so a
-// knowledge base configured for it fails loudly instead of parsing with
-// something else.
-func TestAnydocEngineFollowsBuildAvailability(t *testing.T) {
-	reader, err := NewReader(context.Background(), AnydocEngineName, "docx", false, ReaderDeps{})
-
-	if anydoc.Available() {
+// Rules saved before these engines were removed may still name them; they
+// are unknown here now and go to the docreader like any other unknown name.
+func TestRemovedEnginesFallThroughToDocReader(t *testing.T) {
+	remote := &stubRemote{}
+	for _, engine := range []string{"mineru", "mineru_cloud", "paddleocr_vl_cloud", "weknoracloud", "anydoc"} {
+		reader, err := NewReader(context.Background(), engine, "pdf", false, ReaderDeps{Remote: remote})
 		if err != nil {
-			t.Fatalf("NewReader: %v", err)
+			t.Fatalf("NewReader(%s): %v", engine, err)
 		}
-		if _, ok := reader.(*AnydocReader); !ok {
-			t.Fatalf("reader = %T, want *AnydocReader", reader)
+		if reader != remote {
+			t.Fatalf("NewReader(%s) = %T, want the docreader client", engine, reader)
 		}
-		return
 	}
-	if err == nil {
-		t.Fatal("NewReader succeeded without the converter linked in, want an error")
-	}
-}
-
-func TestListAllEnginesIncludesAnydoc(t *testing.T) {
-	for _, engine := range ListAllEngines(true, nil, nil) {
-		if engine.Name != AnydocEngineName {
-			continue
-		}
-		if engine.Available != anydoc.Available() {
-			t.Errorf("anydoc availability = %v, want %v", engine.Available, anydoc.Available())
-		}
-		if !engine.Available && engine.UnavailableReason == "" {
-			t.Error("anydoc is unavailable without a reason to show")
-		}
-		if len(engine.FileTypes) == 0 {
-			t.Error("anydoc lists no file types")
-		}
-		return
-	}
-	t.Fatal("anydoc engine not found in the engine list")
 }

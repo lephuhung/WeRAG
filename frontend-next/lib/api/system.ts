@@ -154,29 +154,11 @@ export interface ParserEngineInfo {
   UnavailableReason?: string;
 }
 
-export type MinerUParseMethod = "auto" | "ocr" | "txt";
-
 /* Parser engine config — connection params live on the workspace; chat
  * attachment parse strategy is configured on the agent. */
 export interface ParserEngineConfig {
   docreader_addr?: string;
   docreader_transport?: string;
-  mineru_endpoint?: string;
-  mineru_api_key?: string;
-  // MinerU self-hosted
-  mineru_model?: string;
-  mineru_vlm_server_url?: string;
-  mineru_enable_formula?: boolean | null;
-  mineru_enable_table?: boolean | null;
-  mineru_parse_method?: MinerUParseMethod;
-  mineru_enable_ocr?: boolean | null;
-  mineru_language?: string;
-  // MinerU cloud API
-  mineru_cloud_model?: string;
-  mineru_cloud_enable_formula?: boolean | null;
-  mineru_cloud_enable_table?: boolean | null;
-  mineru_cloud_enable_ocr?: boolean | null;
-  mineru_cloud_language?: string;
   // PaddleOCR-VL self-hosted, or an OpenAI-compatible OCR model (vLLM)
   // when the endpoint ends in /v1 or paddleocr_vl_api is "openai"
   paddleocr_vl_endpoint?: string;
@@ -188,11 +170,6 @@ export interface ParserEngineConfig {
   paddleocr_vl_repetition_penalty?: string;
   paddleocr_vl_use_seal_recognition?: boolean | null;
   paddleocr_vl_use_chart_recognition?: boolean | null;
-  // PaddleOCR-VL cloud API
-  paddleocr_vl_cloud_token?: string;
-  paddleocr_vl_cloud_model?: string;
-  paddleocr_vl_cloud_use_seal_recognition?: boolean | null;
-  paddleocr_vl_cloud_use_chart_recognition?: boolean | null;
 }
 
 export interface ParserEnginesResponse {

@@ -10,20 +10,17 @@ import (
 
 func TestParserEngineCheckOverrides_PreservesStoredSecrets(t *testing.T) {
 	body := types.ParserEngineConfig{
-		MinerUAPIKey:          types.RedactedSecretPlaceholder,
-		PaddleOCRVLCloudToken: types.RedactedSecretPlaceholder,
-		MinerUEndpoint:        "http://mineru-new",
+		PaddleOCRVLAPIKey:   types.RedactedSecretPlaceholder,
+		PaddleOCRVLEndpoint: "http://vllm-ocr-new:8001/v1",
 	}
 	existing := &types.ParserEngineConfig{
-		MinerUAPIKey:          "mineru-secret",
-		PaddleOCRVLCloudToken: "paddle-secret",
-		MinerUEndpoint:        "http://mineru-old",
+		PaddleOCRVLAPIKey:   "ocr-secret",
+		PaddleOCRVLEndpoint: "http://vllm-ocr-old:8001/v1",
 	}
 
 	merged := types.MergeParserEngineConfigForUpdate(&body, existing)
 	require.NotNil(t, merged)
 	overrides := merged.ToOverridesMap()
-	assert.Equal(t, "mineru-secret", overrides["mineru_api_key"])
-	assert.Equal(t, "paddle-secret", overrides["paddleocr_vl_cloud_token"])
-	assert.Equal(t, "http://mineru-new", overrides["mineru_endpoint"])
+	assert.Equal(t, "ocr-secret", overrides["paddleocr_vl_api_key"])
+	assert.Equal(t, "http://vllm-ocr-new:8001/v1", overrides["paddleocr_vl_endpoint"])
 }

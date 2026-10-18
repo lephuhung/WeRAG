@@ -49,7 +49,7 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 }
 
 // logResponseStructure recursively logs the structure of an API response,
-// truncating large string values. label identifies the subsystem (e.g. "MinerU").
+// truncating large string values. label identifies the subsystem (e.g. "PaddleOCR-VL").
 func logResponseStructure(label string, obj interface{}, prefix string) {
 	switch v := obj.(type) {
 	case map[string]interface{}:

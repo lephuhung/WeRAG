@@ -26,9 +26,8 @@ services:
       - gobuild-cache:/root/.cache/go-build
     networks:
       - WeKnora-network
-    # .air.toml builds without the `anydoc` tag (no Rust toolchain in this
-    # image) — parsing falls back to the docreader gRPC service, which the
-    # compose stack already runs.
+    # Parsing goes to the docreader gRPC service, which the compose stack
+    # already runs.
     # libsqlite3-dev: sqlite-vec cgo build needs sqlite3.h (prod builder
     # stage installs it; the golang base image does not).
     command: >
