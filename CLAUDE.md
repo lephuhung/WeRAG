@@ -1,6 +1,6 @@
 # Frontend: `frontend-next/` is the only UI
 
-The legacy Vue front-end (`frontend/`) was removed on 2026-10-17; its last version is in git history (`git show a8d21f3f:frontend/...`) if you need to check old behavior.
+The legacy Vue front-end (`frontend/`) was removed on 2026-10-17; its last version is in git history (`git show 03f9c8b0^:frontend/...`) if you need to check old behavior.
 
 - **ALL UI code lives in `frontend-next/`** (Next.js/React, TypeScript, Tailwind). The Docker image is `frontend-next/Dockerfile` (Next standalone behind nginx, `frontend-next/docker/`).
 - **i18n convention**: only **2 locales — `en` and `vi`** (`lib/i18n.tsx`). Add UI strings to both dictionaries; do not add other locales.
