@@ -11,7 +11,7 @@ Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa (thay Luật H�
 Ba điểm cần nhớ:
 
 1. Đây là **nhóm hẹp**, không phải mọi công ty TNHH MTV.
-2. Phần **kế toán** gần như đã có hiệu lực từ trước (Nghị định 174/2016; Thông tư 58/2026/TT-BTC từ 1/7/2026).
+2. Phần **kế toán** gần như đã có hiệu lực từ trước (theo bản gốc: Nghị định 174/2016; Thông tư 58/2026/TT-BTC, bản gốc ghi hiệu lực 1/7/2026 — xác nhận bằng `check_legal_status`).
 3. Phần **bỏ Chủ tịch công ty** là mới và **đang xung đột với Luật Doanh nghiệp 2020** — chưa thể áp dụng.
 
 ## Tiến trình
@@ -88,11 +88,13 @@ Dự thảo để Chính phủ quy định chi tiết tiêu chí (Điều 4), n�
 | Nội dung | Hiện hành | Dự thảo | Kết luận |
 |---|---|---|---|
 | Không có Chủ tịch công ty | Điều 85 Luật Doanh nghiệp 2020: **bắt buộc** có Chủ tịch; chủ sở hữu là Chủ tịch | Cho phép không có; Giám đốc có quyền, nghĩa vụ của Chủ tịch | **Mới hoàn toàn**, xung đột Luật Doanh nghiệp |
-| Không có kế toán trưởng | Nghị định 174/2016 (doanh nghiệp siêu nhỏ chỉ cần phụ trách kế toán); Thông tư 58/2026/TT-BTC (từ 1/7/2026) | Lặp lại gần nguyên văn | **Không mới** |
-| Người nhà/thủ kho/thủ quỹ làm kế toán | Thông tư 58/2026 cho phép với doanh nghiệp siêu nhỏ | Cho phép với nhóm hẹp hơn | **Không mới** |
+| Không có kế toán trưởng | Nghị định 174/2016 (doanh nghiệp siêu nhỏ chỉ cần phụ trách kế toán); Thông tư 58/2026/TT-BTC (bản gốc ghi từ 1/7/2026; xác nhận bằng `check_legal_status`) | Lặp lại gần nguyên văn | **Không mới** |
+| Người nhà/thủ kho/thủ quỹ làm kế toán | Theo bản gốc, Thông tư 58/2026 cho phép với doanh nghiệp siêu nhỏ | Cho phép với nhóm hẹp hơn | **Không mới** |
 | Chọn thuế % doanh thu hoặc kê khai | Theo pháp luật thuế | Cho phép chọn | **Mới một phần**; có thể chuyển sang luật thuế |
 
 ## Xung đột với Luật Doanh nghiệp 2020
+
+> Trích theo bản gốc (17/10/2026). Luật Doanh nghiệp có thể đã được sửa đổi: kiểm tra bằng `find_related_legal_documents` trước khi trích Điều 85.
 
 Điều 85 Luật Doanh nghiệp 2020:
 

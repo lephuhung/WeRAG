@@ -25,35 +25,25 @@ metadata:
       date: 2026-08-28
     - title: Dự án Luật sửa đổi, bổ sung Luật Kế toán và Luật Kiểm toán độc lập
       version: chưa rõ lần dự thảo
-      date: 2026-10-17
     - title: Dự án Luật sửa đổi, bổ sung Luật Thuế thu nhập doanh nghiệp, Luật Thuế thu nhập cá nhân và Luật Thuế sử dụng đất phi nông nghiệp
       version: chưa rõ lần dự thảo
-      date: 2026-10-17
 ---
 # Cẩm nang doanh nghiệp một người
-
-Giúp chủ doanh nghiệp nhỏ chọn mô hình, chuyển đổi, bộ máy tối thiểu và cách tính thuế; chuẩn bị câu hỏi, hồ sơ trước khi gặp người có chứng chỉ hành nghề.
 
 ## Căn cứ và hiệu lực
 
 - Căn cứ: `search_knowledge`; hiệu lực một số hiệu: `check_legal_status`; văn bản thay thế/hướng dẫn: `find_related_legal_documents`.
-- Tệp trong `references/` và `assets/` (đọc bằng `read_file`) là bình luận tham khảo, không phải căn cứ; không trích như điều luật.
+- `references/`, `assets/` (đọc bằng `read_file`): bình luận tham khảo, không phải căn cứ.
 - Thuế suất, tỷ lệ % doanh thu, ngưỡng siêu nhỏ, lệ phí: tra trong kho tri thức, cẩm nang không giữ các số này.
-- Dự thảo (Luật Phát triển DNNVV, Điều 20 khoản 8) được gọi là dự thảo, kèm "dự thảo Lần 2 ngày 28/8/2026" và dự kiến hiệu lực; không trình bày như quy định đang áp dụng.
+- Điều 20 khoản 8 Luật Phát triển DNNVV: gọi là "dự thảo Lần 2 ngày 28/8/2026", không trình bày như quy định đang áp dụng.
 
 ## Hỏi dữ kiện (tối đa 5 câu, chỉ khi thiếu)
 
-1. Ngành nghề chính, có điều kiện không?
-2. Doanh thu năm gần nhất, số lao động đóng BHXH?
-3. Hiện là hộ kinh doanh, doanh nghiệp tư nhân hay công ty?
-4. Mục tiêu 12 tháng: giữ nhỏ, vay vốn, đấu thầu, gọi vốn?
-5. Có nợ, hợp đồng dài hạn, giấy phép con, tài sản đứng tên cá nhân?
-
-Thiếu dữ kiện thì trả lời theo kịch bản, không đoán.
+Ngành nghề (có điều kiện?); doanh thu, lao động đóng BHXH; loại hình hiện tại; mục tiêu 12 tháng; nợ, hợp đồng dài hạn, giấy phép con, tài sản đứng tên cá nhân. Thiếu thì trả lời theo kịch bản, không đoán.
 
 ## Quy trình A — Chọn mô hình
 
-Đọc `references/01-entity-models.md`; so sánh pháp nhân, trách nhiệm tài sản, chi phí tuân thủ, thuế, vay/đấu thầu/gọi vốn. Đưa 2–3 phương án theo kịch bản "tối giản", "tăng trưởng", "an toàn pháp lý".
+Đọc `references/01-entity-models.md`; so sánh pháp nhân, trách nhiệm tài sản, chi phí tuân thủ, thuế, vay/đấu thầu/gọi vốn. Đưa 2–3 phương án: tối giản, tăng trưởng, an toàn pháp lý.
 
 ## Quy trình B — "Doanh nghiệp một người" theo dự thảo
 
@@ -65,11 +55,11 @@ Thiếu dữ kiện thì trả lời theo kịch bản, không đoán.
 
 ## Quy trình D — Điều lệ, Chủ tịch công ty
 
-Đọc `references/03-governance-tnhh-mtv.md`; tra Điều 85 Luật Doanh nghiệp 59/2020/QH14 trong kho tri thức. Tối giản hợp pháp: chủ sở hữu kiêm Chủ tịch và Giám đốc, điều lệ phân quyền rõ. Mẫu `assets/dieu-le-tnhh-mtv-toi-gian.md` chỉ để tham khảo.
+Đọc `references/03-governance-tnhh-mtv.md`; tra Điều 85 Luật Doanh nghiệp 59/2020/QH14 trong kho tri thức. Tối giản hợp pháp: chủ sở hữu kiêm Chủ tịch và Giám đốc, điều lệ phân quyền rõ. Mẫu: `assets/dieu-le-tnhh-mtv-toi-gian.md`.
 
 ## Quy trình E — Kế toán và thuế
 
-Đọc `references/04-accounting.md`, `references/05-tax.md`. Xác định siêu nhỏ theo ngưỡng tra được (Nghị định 80/2021/NĐ-CP). Không bắt buộc kế toán trưởng không có nghĩa là không cần kế toán. So sánh thuế theo % doanh thu và kê khai bằng `compare_tax_methods` (doanh thu, lợi nhuận do người dùng cho; tỷ lệ, thuế suất tra trong kho tri thức); thiếu số nào thì hỏi hoặc tra trước. Đưa khối "Giả định" vào câu trả lời, nhắc GTGT đầu vào.
+Đọc `references/04-accounting.md`, `references/05-tax.md`. Xác định siêu nhỏ theo ngưỡng tra được (Nghị định 80/2021/NĐ-CP). Không bắt buộc kế toán trưởng không có nghĩa là không cần kế toán. So sánh % doanh thu và kê khai bằng `compare_tax_methods` (doanh thu, lợi nhuận từ người dùng; tỷ lệ %, thuế suất tra trong kho tri thức); thiếu số thì hỏi hoặc tra trước. Đưa khối "Giả định" vào câu trả lời, nhắc GTGT đầu vào.
 
 ## Từ chối và chuyển chuyên gia
 

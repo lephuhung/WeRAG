@@ -6,7 +6,7 @@
 
 Việt Nam **không có loại hình "one person company" riêng**. Cụm "doanh nghiệp một người" là cách gọi trên báo chí cho:
 
-> **Công ty TNHH một thành viên do một cá nhân làm chủ sở hữu** (Luật Doanh nghiệp 2020, Điều 85).
+> **Công ty TNHH một thành viên do một cá nhân làm chủ sở hữu** (Luật Doanh nghiệp 2020, Điều 85 theo bản gốc; kiểm tra văn bản sửa đổi).
 
 Cần phân biệt với:
 
@@ -21,7 +21,7 @@ Cần phân biệt với:
 |---|---|---|---|---|---|
 | Tư cách pháp nhân | Không | Không | **Có** | Có | Có |
 | Trách nhiệm tài sản | Toàn bộ | Toàn bộ | Trong phạm vi vốn góp | Trong phạm vi vốn góp | Trong phạm vi vốn góp |
-| Số chủ sở hữu | 1 cá nhân hoặc hộ gia đình | 1 cá nhân | 1 cá nhân | 2–50 | ≥ 3 cổ đông sáng lập |
+| Số chủ sở hữu | 1 cá nhân hoặc hộ gia đình | 1 cá nhân | 1 cá nhân | Nhiều thành viên, có giới hạn (tra KB) | Nhiều cổ đông; số cổ đông sáng lập tối thiểu: tra KB |
 | Phát hành cổ phần | Không | Không | Không | Không | **Có** |
 | Gọi vốn | Khó | Khó | Hạn chế (tăng vốn, vay) | Thêm thành viên | Thuận lợi nhất |
 | Cơ cấu quản trị tối thiểu | Chủ hộ | Chủ doanh nghiệp | **Chủ tịch công ty + Giám đốc** | HĐTV + Giám đốc | ĐHĐCĐ + HĐQT + Giám đốc |
@@ -35,7 +35,7 @@ Cần phân biệt với:
 
 - Đăng ký tại UBND cấp xã/phường; không có tư cách pháp nhân.
 - Chủ hộ (hoặc các thành viên hộ gia đình) chịu trách nhiệm bằng **toàn bộ tài sản** với nợ của hộ.
-- Quy mô lao động của hộ kinh doanh có giới hạn; vượt ngưỡng thì phải chuyển sang doanh nghiệp (tra ngưỡng hiện hành trong kho tri thức).
+- Điều kiện và quy mô của hộ kinh doanh: tra quy định hiện hành trong kho tri thức.
 - Không áp dụng phương pháp khấu trừ GTGT như doanh nghiệp; thuế thường theo phương pháp khoán/trực tiếp (đang thay đổi lộ trình 2025–2026).
 - Không phù hợp khi cần đấu thầu, ký hợp đồng lớn, vay ngân hàng quy mô, hoặc gọi vốn.
 
@@ -67,13 +67,13 @@ Cần phân biệt với:
 
 ### Công ty TNHH hai thành viên trở lên
 
-- 2–50 thành viên; pháp nhân; trách nhiệm hữu hạn.
+- Nhiều thành viên trong giới hạn của Luật Doanh nghiệp (tra KB); pháp nhân; trách nhiệm hữu hạn.
 - Có Hội đồng thành viên; quyết định quan trọng cần tỷ lệ biểu quyết.
 - Phù hợp có đối tác góp vốn nhưng không muốn phát hành cổ phần.
 
 ### Công ty cổ phần
 
-- Ít nhất 3 cổ đông sáng lập; không giới hạn số cổ đông; pháp nhân; trách nhiệm hữu hạn.
+- Số cổ đông sáng lập tối thiểu theo Luật Doanh nghiệp (tra KB); không giới hạn số cổ đông; pháp nhân; trách nhiệm hữu hạn.
 - Có Đại hội đồng cổ đông, Hội đồng quản trị, Giám đốc; có thể có Ban kiểm soát.
 - Phù hợp gọi vốn, ESOP, niêm yết; chi phí tuân thủ cao nhất.
 

@@ -26,7 +26,7 @@
 
 1. Chủ sở hữu: **[HỌ TÊN]**, sinh ngày **[NGÀY]**, CCCD số **[SỐ]**, địa chỉ **[ĐỊA CHỈ]**.
 2. Vốn điều lệ: **[SỐ TIỀN] đồng** (bằng chữ: **[BẰNG CHỮ]**).
-3. Thời hạn góp vốn: trong **[90] ngày** kể từ ngày được cấp Giấy chứng nhận đăng ký doanh nghiệp.
+3. Thời hạn góp vốn: trong **[SỐ NGÀY — theo thời hạn luật định, tra KB]** kể từ ngày được cấp Giấy chứng nhận đăng ký doanh nghiệp.
 4. Chủ sở hữu chịu trách nhiệm về các khoản nợ và nghĩa vụ tài sản khác của công ty **trong phạm vi vốn điều lệ** đã góp.
 
 #### Điều 3. Cơ cấu tổ chức quản lý
@@ -40,7 +40,7 @@
 
 1. Người đại diện theo pháp luật của công ty là **[CHỨC DANH: CHỦ TỊCH CÔNG TY / GIÁM ĐỐC]**.
 2. Người đại diện theo pháp luật có quyền ký kết hợp đồng, giao dịch nhân danh công ty trong phạm vi **[HẠN MỨC]**.
-3. Trường hợp người đại diện vắng mặt tại Việt Nam quá 30 ngày, phải ủy quyền bằng văn bản cho người khác theo quy định.
+3. Trường hợp người đại diện vắng mặt tại Việt Nam quá thời hạn luật định, phải ủy quyền bằng văn bản cho người khác theo quy định.
 
 #### Điều 5. Thẩm quyền quyết định
 

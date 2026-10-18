@@ -169,6 +169,12 @@ func TestLoadRejectsBrokenPacks(t *testing.T) {
 		{"catalogue unknown field", func(t *testing.T, f fstest.MapFS) {
 			setFile(f, "catalogue.yaml", "documents:\n  - number: 01/2021/NĐ-CP\n    used_for: x\n    note: y\n")
 		}, "field note not found"},
+		{"draft without date", func(t *testing.T, f fstest.MapFS) {
+			replaceInSkill(t, f, "      date: 2026-08-28\n", "")
+		}, "needs a date unless"},
+		{"unknown draft with a date", func(t *testing.T, f fstest.MapFS) {
+			replaceInSkill(t, f, "      version: Lần 2\n", "      version: chưa rõ lần dự thảo\n")
+		}, "must not carry a date"},
 		{"bad evals line", func(t *testing.T, f fstest.MapFS) {
 			setFile(f, "evals/cases.jsonl", "{\"id\":1}\nnot json\n")
 		}, "line 2 is not a JSON object"},
@@ -195,6 +201,16 @@ func TestLoadRejectsBuiltinName(t *testing.T) {
 	_, err := Load(fsys)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is a built-in skill")
+}
+
+func TestDraftWithUnknownVersionNeedsNoDate(t *testing.T) {
+	fsys := sampleFS(t)
+	replaceInSkill(t, fsys, "      version: Lần 2\n      date: 2026-08-28\n", "      version: chưa rõ lần dự thảo\n")
+	reg, err := Load(fsys)
+	require.NoError(t, err)
+	pack, _ := reg.Get(samplePack)
+	assert.True(t, pack.Manifest.Metadata.DraftDocuments[0].VersionUnknown())
+	assert.True(t, pack.Manifest.Metadata.DraftDocuments[0].Date.IsZero())
 }
 
 func TestLintFindings(t *testing.T) {

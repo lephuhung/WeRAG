@@ -2,7 +2,7 @@
 
 # Checklist chuyển đổi hộ kinh doanh lên công ty
 
-> In ra, đánh dấu, lưu cùng hồ sơ. Mỗi mục có thể không áp dụng cho trường hợp của bạn.
+> In ra, đánh dấu, lưu cùng hồ sơ. Mỗi mục có thể không áp dụng cho trường hợp của bạn. Checklist theo bản gốc (17/10/2026): thủ tục đăng ký doanh nghiệp hiện hành phải tra trong kho tri thức.
 
 ## A. Trước khi quyết định
 
@@ -10,7 +10,7 @@
 - [ ] So sánh 3 phương án: giữ hộ kinh doanh / TNHH MTV / TNHH 2TV.
 - [ ] Tính chi phí tuân thủ hằng năm (kế toán, thuế, BHXH, phần mềm).
 - [ ] Kiểm tra ngành nghề có điều kiện.
-- [ ] Xác định vốn điều lệ dự kiến và khả năng góp đủ trong 90 ngày.
+- [ ] Xác định vốn điều lệ dự kiến và khả năng góp đủ trong thời hạn luật định (tra KB).
 - [ ] Chọn người đại diện theo pháp luật.
 
 ## B. Rà soát nghĩa vụ cũ

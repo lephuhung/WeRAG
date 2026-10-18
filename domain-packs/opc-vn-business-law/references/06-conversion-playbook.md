@@ -2,7 +2,7 @@
 
 # 06 — Chuyển đổi hộ kinh doanh lên công ty: playbook 12 bước
 
-> Đây là khung thực hiện tham khảo. Thứ tự và hồ sơ có thể khác theo địa phương, ngành nghề và loại hình đích. Luôn kiểm tra với cơ quan đăng ký kinh doanh/cơ quan thuế trước khi nộp.
+> Đây là khung thực hiện tham khảo theo bản gốc (17/10/2026). Thứ tự và hồ sơ có thể khác theo địa phương, ngành nghề và loại hình đích. Thủ tục đăng ký doanh nghiệp hiện hành (nghị định về đăng ký doanh nghiệp có thể đã được sửa đổi hoặc thay thế): tra trong kho tri thức và kiểm tra với cơ quan đăng ký kinh doanh/cơ quan thuế trước khi nộp.
 
 ## Cổng quyết định — có nên chuyển đổi?
 
@@ -45,7 +45,7 @@ Chưa nên chuyển khi:
 
 ### Bước 3 — Chuẩn bị hồ sơ đăng ký doanh nghiệp
 
-Thành phần cơ bản (kiểm tra mẫu hiện hành):
+Thành phần cơ bản theo bản gốc (thủ tục và mẫu hiện hành: tra KB):
 
 - Giấy đề nghị đăng ký doanh nghiệp.
 - Điều lệ công ty.

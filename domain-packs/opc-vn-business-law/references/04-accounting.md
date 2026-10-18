@@ -4,7 +4,7 @@
 
 ## Câu trả lời ngắn
 
-- **Doanh nghiệp siêu nhỏ không bắt buộc có kế toán trưởng** — quy định này đã có từ Nghị định 174/2016 và được làm rõ tại **Thông tư 58/2026/TT-BTC, hiệu lực 01/7/2026**.
+- **Doanh nghiệp siêu nhỏ không bắt buộc có kế toán trưởng** — theo bản gốc, quy định này đã có từ Nghị định 174/2016 và được làm rõ tại Thông tư 58/2026/TT-BTC (bản gốc ghi hiệu lực 01/7/2026; xác nhận bằng `check_legal_status`).
 - **Không bắt buộc kế toán trưởng không có nghĩa là không cần kế toán.** Vẫn phải mở sổ, ghi chép, xuất hóa đơn, kê khai thuế, lập báo cáo tài chính (theo chế độ áp dụng) và lưu trữ chứng từ.
 - Doanh nghiệp **không phải siêu nhỏ** vẫn phải bố trí hoặc thuê kế toán trưởng (trừ khi pháp luật chuyên ngành có quy định khác).
 
@@ -12,7 +12,7 @@
 
 Văn bản liên quan (hiệu lực: tra cứu, không ghi sẵn ở đây):
 
-- Luật Kế toán 88/2015/QH13 — Điều 49 (tổ chức bộ máy), Điều 50 (trách nhiệm người đại diện), Điều 52 (người không được làm kế toán), Điều 53 (kế toán trưởng), Điều 54 (tiêu chuẩn).
+- Luật Kế toán 88/2015/QH13 (số điều theo bản gốc; kiểm tra văn bản sửa đổi bằng `find_related_legal_documents`) — Điều 49 (tổ chức bộ máy), Điều 50 (trách nhiệm người đại diện), Điều 52 (người không được làm kế toán), Điều 53 (kế toán trưởng), Điều 54 (tiêu chuẩn).
 - Nghị định 174/2016/NĐ-CP — Điều 20: kế toán trưởng, phụ trách kế toán.
 - Thông tư 58/2026/TT-BTC — chế độ kế toán doanh nghiệp siêu nhỏ.
 - Thông tư 133/2016/TT-BTC — chế độ kế toán doanh nghiệp nhỏ và vừa.
@@ -20,7 +20,7 @@ Văn bản liên quan (hiệu lực: tra cứu, không ghi sẵn ở đây):
 
 ## Lưu ý khi trích dẫn (chuyển từ bảng trạng thái của bản gốc)
 
-Bản gốc ghi Thông tư 58/2026/TT-BTC có hiệu lực từ 1/7/2026 — đây là lý do nhiều người nhầm "bỏ kế toán trưởng" là quy định mới của dự thảo luật. Theo bản gốc, quy định này đã áp dụng cho mọi doanh nghiệp siêu nhỏ, không cần chờ luật. Xác nhận hiệu lực bằng tra cứu trước khi khẳng định.
+Bản gốc ghi Thông tư 58/2026/TT-BTC có hiệu lực từ 1/7/2026 — đây là lý do nhiều người nhầm "bỏ kế toán trưởng" là quy định mới của dự thảo luật. Theo bản gốc, quy định này đã áp dụng cho mọi doanh nghiệp siêu nhỏ, không cần chờ luật. Trước khi khẳng định, xác nhận bằng `check_legal_status`.
 
 ## Ai phải làm kế toán?
 
@@ -36,7 +36,7 @@ Mọi doanh nghiệp đều là "đơn vị kế toán" và phải:
 
 Doanh nghiệp siêu nhỏ theo pháp luật về hỗ trợ DNNVV được bố trí **phụ trách kế toán** mà **không bắt buộc phải bố trí kế toán trưởng**.
 
-### Thông tư 58/2026/TT-BTC (hiệu lực 01/7/2026)
+### Thông tư 58/2026/TT-BTC (theo bản gốc; hiệu lực: xác nhận bằng `check_legal_status`)
 
 - Áp dụng cho doanh nghiệp siêu nhỏ; hộ kinh doanh, cá nhân kinh doanh có thể lựa chọn áp dụng.
 - **Không bắt buộc kế toán trưởng.**
@@ -69,7 +69,7 @@ Nghĩa là: với công ty một người, việc vợ/chồng/con hoặc ngư�
 | Hóa đơn | Hóa đơn điện tử theo quy định thuế |
 | Kê khai thuế | GTGT, TNDN, TNCN, môn bài... theo lịch |
 | Báo cáo tài chính | Theo chế độ; nộp cho cơ quan thuế/cơ quan đăng ký khi có yêu cầu |
-| Lưu trữ chứng từ | Tối thiểu 10 năm với chứng từ kế toán (kiểm tra quy định cụ thể) |
+| Lưu trữ chứng từ | Thời hạn lưu trữ theo pháp luật kế toán (tra KB) |
 | BHXH | Khi có lao động thuộc đối tượng |
 
 ## Rủi ro khi để chủ/thủ quỹ/thủ kho kiêm kế toán
@@ -103,6 +103,6 @@ Pháp luật cho phép, nhưng đây là cấu hình **không có kiểm soát c
 - [ ] Xác định người làm kế toán/phụ trách kế toán/kế toán dịch vụ.
 - [ ] Đăng ký hóa đơn điện tử, chữ ký số.
 - [ ] Thiết lập lịch kê khai, nộp báo cáo.
-- [ ] Lưu hồ sơ tối thiểu 10 năm.
+- [ ] Lưu hồ sơ theo thời hạn của pháp luật kế toán (tra KB).
 
 > Nội dung tham khảo, không phải tư vấn kế toán. Chế độ kế toán áp dụng có thể thay đổi; kiểm tra Thông tư 58/2026 và văn bản sửa đổi tại thời điểm làm hồ sơ.

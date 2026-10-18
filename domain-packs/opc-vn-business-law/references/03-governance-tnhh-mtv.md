@@ -4,8 +4,8 @@
 
 ## Khung pháp lý
 
-- **Luật Doanh nghiệp 2020 (59/2020/QH14)**: Điều 74–87 (TNHH MTV), Điều 12–14 (người đại diện theo pháp luật), Điều 24 (nội dung điều lệ).
-- Văn bản hướng dẫn đăng ký doanh nghiệp (Nghị định 01/2021/NĐ-CP và các sửa đổi — kiểm tra hiệu lực).
+- **Luật Doanh nghiệp 2020 (59/2020/QH14)**, số điều theo bản gốc (kiểm tra văn bản sửa đổi bằng `find_related_legal_documents`): Điều 74–87 (TNHH MTV), Điều 12–14 (người đại diện theo pháp luật), Điều 24 (nội dung điều lệ).
+- Văn bản hướng dẫn đăng ký doanh nghiệp (bản gốc dẫn Nghị định 01/2021/NĐ-CP; có thể đã được sửa đổi hoặc thay thế — xác nhận bằng `check_legal_status`).
 
 ## Hai mô hình quản trị
 
@@ -55,8 +55,8 @@ Với TNHH MTV **do cá nhân** làm chủ: **không có yêu cầu chấp thu�
 - Doanh nghiệp phải có ít nhất một người đại diện theo pháp luật là cá nhân (Điều 12 Luật Doanh nghiệp 2020).
 - Có thể có nhiều người đại diện; điều lệ quy định số lượng, chức danh, quyền và nghĩa vụ.
 - Nếu điều lệ không quy định, Chủ tịch công ty (hoặc Chủ tịch HĐTV) là người đại diện.
-- Người đại diện phải thường trú tại Việt Nam; nếu vắng mặt quá 30 ngày phải ủy quyền bằng văn bản (kiểm tra điều kiện cụ thể).
-- Trường hợp chỉ có một người đại diện mà người đó vắng mặt tại Việt Nam quá 30 ngày mà không ủy quyền, doanh nghiệp phải đăng ký thay đổi.
+- Người đại diện phải thường trú tại Việt Nam; vắng mặt quá thời hạn luật định thì phải ủy quyền bằng văn bản (thời hạn và điều kiện: tra KB).
+- Trường hợp chỉ có một người đại diện mà người đó vắng mặt quá thời hạn luật định mà không ủy quyền, doanh nghiệp phải xử lý theo quy định (tra KB).
 
 ## Điều lệ tối thiểu nên có
 
@@ -84,7 +84,7 @@ Mẫu tham khảo: `assets/dieu-le-tnhh-mtv-toi-gian.md` (có chỗ trống, **k
 - Báo cáo tài chính, tờ khai thuế, chứng từ nộp thuế.
 - Hồ sơ BHXH, hợp đồng lao động, nội quy (nếu có lao động).
 
-Thời hạn lưu trữ: theo pháp luật kế toán (tối thiểu 10 năm với chứng từ kế toán; kiểm tra quy định cụ thể).
+Thời hạn lưu trữ: theo pháp luật kế toán (tra KB).
 
 ## Có nên bỏ Chủ tịch công ty?
 
@@ -104,6 +104,6 @@ Thời hạn lưu trữ: theo pháp luật kế toán (tối thiểu 10 năm v�
 - [ ] Hợp đồng với chủ sở hữu/người nhà có văn bản, giá thị trường.
 - [ ] Sổ sách kế toán cập nhật; hóa đơn điện tử đúng quy định.
 - [ ] Rà soát điều lệ mỗi năm hoặc khi tăng vốn/đổi người đại diện.
-- [ ] Lưu đủ hồ sơ tối thiểu 10 năm.
+- [ ] Lưu đủ hồ sơ theo thời hạn của pháp luật kế toán (tra KB).
 
 > Nội dung tham khảo, không phải tư vấn pháp lý. Kiểm tra văn bản hiện hành và hỏi luật sư trước khi sửa điều lệ.
