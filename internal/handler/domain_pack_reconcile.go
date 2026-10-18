@@ -27,7 +27,7 @@ func NewDomainPackReconcileHandler(reconciler *service.DomainPackReconciler) *Do
 // @Description  legal_documents.number_key: found (một văn bản, kèm
 // @Description  status_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),
 // @Description  missing (không có; ghi một yêu cầu bổ sung văn bản nguồn
-// @Description  pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
+// @Description  detail.origin = pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
 // @Description  (nhiều văn bản cùng số hiệu). Không sửa legal_documents.
 // @Tags         Rà soát pháp lý
 // @Produce      json
@@ -37,7 +37,8 @@ func NewDomainPackReconcileHandler(reconciler *service.DomainPackReconciler) *Do
 // @Router       /system/domain-packs/{name}/reconcile [post]
 func (h *DomainPackReconcileHandler) ReconcileDomainPack(c *gin.Context) {
 	ctx := c.Request.Context()
-	result, err := h.reconciler.Reconcile(ctx, c.Param("name"), types.CallerFromContext(ctx).UserID)
+	var result *types.DomainPackReconcileResult
+	result, err := h.reconciler.Reconcile(ctx, c.Param("name"))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

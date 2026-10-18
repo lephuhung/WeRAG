@@ -29,41 +29,68 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentRequest{}))
+	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{},
+		&types.LegalDocumentRequest{}, &types.LegalDocumentLink{}))
+	require.NoError(t, db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT,
+		file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error)
+	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (id TEXT, name TEXT, owner_tenant_id INTEGER,
+		deleted_at DATETIME)`).Error)
 	packs, err := domainpacks.Load(domainpackassets.FS)
 	require.NoError(t, err)
-	r := NewDomainPackReconciler(packs, repository.NewLegalCatalogRepository(db), repository.NewLegalRequestRepository(db))
+	r := NewDomainPackReconciler(packs, repository.NewLegalCatalogRepository(db),
+		repository.NewLegalRequestRepository(db), repository.NewLegalReviewRepository(db))
 	r.now = func() time.Time { return time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC) }
 	return r, db
 }
 
+func reconcileCallerCtx() context.Context {
+	return types.WithCaller(context.Background(), types.Caller{TenantID: 10000, UserID: "super-1"})
+}
+
 func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	r, db := newReconcileFixture(t)
-	ctx := context.Background()
+	ctx := reconcileCallerCtx()
 	catalog := repository.NewLegalCatalogRepository(db)
 	requests := repository.NewLegalRequestRepository(db)
 
 	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
 		{ID: "ldn", DocumentNumber: "59/2020/QH14", NumberKey: "59/2020/QH14", Title: "Luật Doanh nghiệp",
 			DocType: "Luật", Status: "Còn hiệu lực", EffectiveOn: testDay(t, "2021-01-01")},
+		{ID: "ldn-sua", DocumentNumber: "03/2022/QH15", NumberKey: "03/2022/QH15", EffectiveOn: testDay(t, "2022-03-01")},
 		{ID: "tt132", DocumentNumber: "132/2018/TT-BTC", NumberKey: "132/2018/TT-BTC", Title: "Chế độ kế toán DN siêu nhỏ",
-			Status: "Còn hiệu lực", EffectiveOn: testDay(t, "2019-01-01")},
+			DocType: "Thông tư", Status: "Còn hiệu lực", EffectiveOn: testDay(t, "2019-01-01")},
 		{ID: "tt58", DocumentNumber: "58/2026/TT-BTC", NumberKey: "58/2026/TT-BTC", Title: "Chế độ kế toán DN siêu nhỏ",
 			Status: "Còn hiệu lực", EffectiveOn: testDay(t, "2026-07-01")},
 		{ID: "tt133", DocumentNumber: "133/2016/TT-BTC", NumberKey: "133/2016/TT-BTC",
 			Status: "Hết hiệu lực toàn bộ", ExpiredOn: testDay(t, "2026-01-01")},
-		// số hiệu is not unique
-		{ID: "nd01a", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Đăng ký doanh nghiệp"},
-		{ID: "nd01b", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Văn bản khác cùng số"},
+		{ID: "luat67", DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15", EffectiveOn: testDay(t, "2027-01-01")},
+		{ID: "luat48", DocumentNumber: "48/2024/QH15", NumberKey: "48/2024/QH15", Status: "Ngưng hiệu lực"},
+		// số hiệu is not unique: one live row, one fully expired
+		{ID: "nd01a", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Đăng ký doanh nghiệp", Status: "Còn hiệu lực"},
+		{ID: "nd01b", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Văn bản khác cùng số", Status: "Hết hiệu lực toàn bộ"},
 		// a prefix match must not count as the document
 		{ID: "luat22x", DocumentNumber: "22/2023/QH15/X", NumberKey: "22/2023/QH15/X"},
 	}))
 	require.NoError(t, catalog.ReplaceRelations(ctx, []*types.LegalDocumentRelation{
 		{FromID: "tt58", ToID: "tt132", Relation: types.LegalRelationReplaces},
+		{FromID: "ldn-sua", ToID: "ldn", Relation: types.LegalRelationAmends},
 	}))
-	// a user already asked for 88/2015/QH13 (open), and 174/2016/NĐ-CP was rejected
+	// 59/2020/QH14 is held through an approved link, 58/2026/TT-BTC through
+	// an ingested public copy not linked yet
+	require.NoError(t, db.Exec(`INSERT INTO knowledge_bases (id, name, owner_tenant_id) VALUES ('kb-pub', 'VBPL – Luật', 0)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO knowledges (id, knowledge_base_id, title, metadata) VALUES
+		('k-ldn', 'kb-pub', 'Luật Doanh nghiệp', '{}'),
+		('k-tt58', 'kb-pub', 'Thông tư 58', '{"external_id":"tt58"}')`).Error)
+	require.NoError(t, db.Create(&types.LegalDocumentLink{KnowledgeID: "k-ldn", KnowledgeBaseID: "kb-pub",
+		LegalDocumentID: "ldn", ReviewStatus: types.LegalReviewApproved}).Error)
+
+	// a user already asked for 88/2015/QH13 (open) and for 133/2016/TT-BTC
+	// (its catalogue row); 174/2016/NĐ-CP was rejected
 	open, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: "88/2015/QH13", DocumentNumber: "88/2015/QH13",
 		LastSessionID: "s1", LastQuery: "Luật Kế toán 88/2015/QH13"})
+	require.NoError(t, err)
+	open133, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: "133/2016/TT-BTC", LegalDocumentID: "tt133",
+		Source: types.LegalRequestSourceCatalogue, LastSessionID: "s2"})
 	require.NoError(t, err)
 	rejected, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: "174/2016/ND-CP", DocumentNumber: "174/2016/NĐ-CP"})
 	require.NoError(t, err)
@@ -73,55 +100,78 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	var before []types.LegalDocument
 	require.NoError(t, db.Order("id").Find(&before).Error)
 
-	res, err := r.Reconcile(ctx, "opc-vn-business-law", "super-1")
+	res, err := r.Reconcile(ctx, "opc-vn-business-law")
 	require.NoError(t, err)
-	assert.Equal(t, "opc-vn-business-law", res.Pack)
+	assert.Empty(t, res.Errors)
 	assert.Equal(t, 13, len(res.Found)+len(res.Missing)+len(res.Ambiguous))
 
-	found := map[string]types.DomainPackReconcileFound{}
+	found := map[string]types.DomainPackReconcileDocument{}
 	for _, f := range res.Found {
-		found[f.Number] = f
+		found[f.Number] = f.Document
 	}
-	require.Contains(t, found, "59/2020/QH14")
-	assert.Equal(t, "ldn", found["59/2020/QH14"].Document.ID)
-	assert.Equal(t, "2021-01-01", found["59/2020/QH14"].Document.EffectiveOn)
-	assert.Empty(t, found["59/2020/QH14"].Document.StatusNote)
-	assert.Contains(t, found["132/2018/TT-BTC"].Document.StatusNote, "bị thay thế bởi 58/2026/TT-BTC (hiệu lực 01/07/2026)")
-	assert.Empty(t, found["58/2026/TT-BTC"].Document.StatusNote)
-	assert.Contains(t, found["133/2016/TT-BTC"].Document.StatusNote, "Hết hiệu lực toàn bộ")
-	assert.Contains(t, found["133/2016/TT-BTC"].Document.StatusNote, "01/01/2026")
-	assert.Equal(t, "2026-01-01", found["133/2016/TT-BTC"].Document.ExpiredOn)
+	ldn := found["59/2020/QH14"]
+	assert.Equal(t, "ldn", ldn.ID)
+	assert.True(t, ldn.HeldInKB)
+	assert.Nil(t, ldn.Request)
+	assert.Contains(t, ldn.StatusNote, "đã được sửa đổi bởi 03/2022/QH15")
+	assert.True(t, found["58/2026/TT-BTC"].HeldInKB, "an ingested copy counts as held")
+	assert.Nil(t, found["58/2026/TT-BTC"].Request)
+
+	tt132 := found["132/2018/TT-BTC"]
+	assert.False(t, tt132.HeldInKB)
+	assert.Contains(t, tt132.StatusNote, "bị thay thế bởi 58/2026/TT-BTC (hiệu lực 01/07/2026)")
+	require.NotNil(t, tt132.Request)
+	assert.True(t, tt132.Request.Created)
+	row, err := requests.Get(ctx, tt132.Request.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "tt132", row.LegalDocumentID, "the ingest button needs the catalogue id")
+	assert.Equal(t, types.LegalRequestSourceCatalogue, row.Source)
+	assert.Equal(t, "Thông tư", row.DocType)
+	assert.Equal(t, uint64(10000), row.LastTenantID)
+	assert.Equal(t, "super-1", row.LastUserID)
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal(row.Detail, &detail))
+	assert.Equal(t, "pack:opc-vn-business-law", detail["origin"])
+
+	tt133 := found["133/2016/TT-BTC"]
+	assert.Contains(t, tt133.StatusNote, "Hết hiệu lực toàn bộ")
+	assert.Contains(t, tt133.StatusNote, "01/01/2026")
+	require.NotNil(t, tt133.Request)
+	assert.Equal(t, open133.ID, tt133.Request.ID)
+	assert.False(t, tt133.Request.Created)
+	assert.Contains(t, found["67/2025/QH15"].StatusNote, "chưa có hiệu lực (hiệu lực từ 01/01/2027)")
+	assert.Contains(t, found["48/2024/QH15"].StatusNote, "Ngưng hiệu lực")
 
 	require.Len(t, res.Ambiguous, 1)
-	assert.Equal(t, "01/2021/NĐ-CP", res.Ambiguous[0].Number)
-	assert.Len(t, res.Ambiguous[0].Documents, 2)
+	amb := res.Ambiguous[0]
+	assert.Equal(t, "01/2021/NĐ-CP", amb.Number)
+	require.Len(t, amb.Documents, 2)
+	for _, d := range amb.Documents {
+		if d.ID == "nd01a" {
+			require.NotNil(t, d.Request, "the live row is requested")
+		} else {
+			assert.Nil(t, d.Request, "the expired row beside a live one is not")
+		}
+	}
 
 	missing := map[string]types.DomainPackReconcileMissing{}
 	for _, m := range res.Missing {
 		missing[m.Number] = m
 	}
-	assert.Len(t, missing, 13-4-1)
+	assert.Len(t, missing, 13-6-1)
 	assert.Contains(t, missing, "22/2023/QH15", "a prefix match is not the document")
-	assert.Equal(t, open.ID, missing["88/2015/QH13"].RequestID)
-	assert.False(t, missing["88/2015/QH13"].RequestCreated)
-	assert.Equal(t, types.LegalRequestRejected, missing["174/2016/NĐ-CP"].RequestStatus)
-	assert.False(t, missing["174/2016/NĐ-CP"].RequestCreated)
-	created := missing["67/2025/QH15"]
-	require.True(t, created.RequestCreated)
-	assert.Equal(t, types.LegalRequestRequested, created.RequestStatus)
-
-	row, err := requests.Get(ctx, created.RequestID)
+	assert.Equal(t, open.ID, missing["88/2015/QH13"].Request.ID)
+	assert.False(t, missing["88/2015/QH13"].Request.Created)
+	assert.Equal(t, types.LegalRequestRejected, missing["174/2016/NĐ-CP"].Request.Status)
+	created := missing["41/2024/QH15"].Request
+	require.True(t, created.Created)
+	row, err = requests.Get(ctx, created.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "pack:opc-vn-business-law", row.Source)
-	assert.Equal(t, "67/2025/QH15", row.NumberKey)
-	assert.Equal(t, "super-1", row.LastUserID)
+	assert.Empty(t, row.Source, "unknown to the catalogue, as the gate records it")
 	assert.Empty(t, row.LegalDocumentID)
-	var detail map[string]any
-	require.NoError(t, json.Unmarshal(row.Detail, &detail))
-	assert.Equal(t, "pack:opc-vn-business-law", detail["origin"])
-	assert.Equal(t, "1.0.0", detail["pack_version"])
+	assert.Equal(t, uint64(10000), row.LastTenantID)
 
-	// the existing requests were left as they were
+	// existing requests were left as they were
 	kept, err := requests.Get(ctx, open.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, kept.RequestCount)
@@ -142,22 +192,34 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	// a second run records nothing new and bumps nothing
 	var n1 int64
 	require.NoError(t, db.Model(&types.LegalDocumentRequest{}).Count(&n1).Error)
-	again, err := r.Reconcile(ctx, "opc-vn-business-law", "super-1")
+	again, err := r.Reconcile(ctx, "opc-vn-business-law")
 	require.NoError(t, err)
 	for _, m := range again.Missing {
-		assert.False(t, m.RequestCreated, m.Number)
+		assert.False(t, m.Request.Created, m.Number)
+	}
+	for _, f := range again.Found {
+		if f.Document.Request != nil {
+			assert.False(t, f.Document.Request.Created, f.Number)
+		}
 	}
 	var n2 int64
 	require.NoError(t, db.Model(&types.LegalDocumentRequest{}).Count(&n2).Error)
 	assert.Equal(t, n1, n2)
-	row, err = requests.Get(ctx, created.RequestID)
+}
+
+func TestDomainPackReconcileReportsPerNumberErrors(t *testing.T) {
+	r, db := newReconcileFixture(t)
+	// the request table is gone: every missing number fails, the run goes on
+	require.NoError(t, db.Migrator().DropTable(&types.LegalDocumentRequest{}))
+	res, err := r.Reconcile(reconcileCallerCtx(), "opc-vn-business-law")
 	require.NoError(t, err)
-	assert.Equal(t, 1, row.RequestCount)
+	assert.Len(t, res.Errors, 13)
+	assert.Equal(t, "59/2020/QH14", res.Errors[0].Number)
 }
 
 func TestDomainPackReconcileUnknownPack(t *testing.T) {
 	r, _ := newReconcileFixture(t)
-	_, err := r.Reconcile(context.Background(), "no-such-pack", "")
+	_, err := r.Reconcile(context.Background(), "no-such-pack")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no-such-pack")
 }

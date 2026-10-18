@@ -16526,7 +16526,7 @@
                         "Bearer": []
                     }
                 ],
-                "description": "Tra từng số hiệu trong catalogue.yaml của gói theo\nlegal_documents.number_key: found (một văn bản, kèm\nstatus_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),\nmissing (không có; ghi một yêu cầu bổ sung văn bản nguồn\npack:\u003ctên gói\u003e, không trùng yêu cầu đã có) hoặc ambiguous\n(nhiều văn bản cùng số hiệu). Không sửa legal_documents.",
+                "description": "Tra từng số hiệu trong catalogue.yaml của gói theo\nlegal_documents.number_key: found (một văn bản, kèm\nstatus_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),\nmissing (không có; ghi một yêu cầu bổ sung văn bản nguồn\ndetail.origin = pack:\u003ctên gói\u003e, không trùng yêu cầu đã có) hoặc ambiguous\n(nhiều văn bản cùng số hiệu). Không sửa legal_documents.",
                 "produces": [
                     "application/json"
                 ],
@@ -20968,20 +20968,43 @@
                     "description": "YYYY-MM-DD",
                     "type": "string"
                 },
+                "held_in_kb": {
+                    "description": "HeldInKB: a public knowledge base holds the full text (an approved\nlegal identity link, or an ingested copy not linked yet).",
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "string"
                 },
                 "issuer": {
                     "type": "string"
                 },
+                "request": {
+                    "description": "Request is the request to add the full text when no KB holds it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
+                        }
+                    ]
+                },
                 "status": {
                     "type": "string"
                 },
                 "status_note": {
-                    "description": "StatusNote is set when the catalogue holds the document expired or\nreplaced: the pack relies on a document that no longer applies.",
+                    "description": "StatusNote is set when the catalogue holds the document expired,\nreplaced, suspended, not yet in force or amended: what the pack says\nabout it needs checking.",
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "number": {
                     "type": "string"
                 }
             }
@@ -21009,20 +21032,28 @@
                 "number": {
                     "type": "string"
                 },
-                "request_created": {
-                    "description": "RequestCreated is true when this reconcile recorded the request,\nfalse when an existing one (any status) was found and left as is.",
-                    "type": "boolean"
-                },
-                "request_id": {
-                    "type": "string"
-                },
-                "request_status": {
-                    "type": "string"
+                "request": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
                 },
                 "title": {
                     "type": "string"
                 },
                 "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Created is true when this reconcile recorded it, false when an\nexisting one (any status) was found and left as it was.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -21035,6 +21066,13 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous"
+                    }
+                },
+                "errors": {
+                    "description": "Errors lists the numbers whose check failed; the others are still\nreported, so one bad row does not hide the rest.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError"
                     }
                 },
                 "found": {

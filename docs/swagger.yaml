@@ -1294,18 +1294,36 @@ definitions:
       expired_on:
         description: YYYY-MM-DD
         type: string
+      held_in_kb:
+        description: |-
+          HeldInKB: a public knowledge base holds the full text (an approved
+          legal identity link, or an ingested copy not linked yet).
+        type: boolean
       id:
         type: string
       issuer:
         type: string
+      request:
+        allOf:
+        - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest'
+        description: Request is the request to add the full text when no KB holds
+          it.
       status:
         type: string
       status_note:
         description: |-
-          StatusNote is set when the catalogue holds the document expired or
-          replaced: the pack relies on a document that no longer applies.
+          StatusNote is set when the catalogue holds the document expired,
+          replaced, suspended, not yet in force or amended: what the pack says
+          about it needs checking.
         type: string
       title:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError:
+    properties:
+      error:
+        type: string
+      number:
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound:
@@ -1323,18 +1341,23 @@ definitions:
     properties:
       number:
         type: string
-      request_created:
-        description: |-
-          RequestCreated is true when this reconcile recorded the request,
-          false when an existing one (any status) was found and left as is.
-        type: boolean
-      request_id:
-        type: string
-      request_status:
-        type: string
+      request:
+        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest'
       title:
         type: string
       used_for:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest:
+    properties:
+      created:
+        description: |-
+          Created is true when this reconcile recorded it, false when an
+          existing one (any status) was found and left as it was.
+        type: boolean
+      id:
+        type: string
+      status:
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult:
@@ -1345,6 +1368,13 @@ definitions:
           unique); the SuperAdmin decides which one the pack means.
         items:
           $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous'
+        type: array
+      errors:
+        description: |-
+          Errors lists the numbers whose check failed; the others are still
+          reported, so one bad row does not hide the rest.
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError'
         type: array
       found:
         description: 'Found: exactly one catalogue row has the number.'
@@ -17829,7 +17859,7 @@ paths:
         legal_documents.number_key: found (một văn bản, kèm
         status_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),
         missing (không có; ghi một yêu cầu bổ sung văn bản nguồn
-        pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
+        detail.origin = pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
         (nhiều văn bản cùng số hiệu). Không sửa legal_documents.
       parameters:
       - description: Tên gói chuyên môn
