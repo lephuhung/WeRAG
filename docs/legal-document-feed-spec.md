@@ -270,6 +270,7 @@ là luật công khai:
 | `legal_expiry_audit` | `knowledge_base_id?`, `limit` ≤1000 | `remove` (danh mục ghi hết hiệu lực toàn bộ) và `review` (còn hiệu lực theo portal nhưng đã bị thay thế/làm hết hiệu lực); không xoá gì |
 | `legal_catalog_sync_status` | – | Ngày snapshot, `stale` (>48 h), số văn bản theo trạng thái, số quan hệ, số tài liệu/`unlinked` từng KB công khai |
 | `legal_list_missing` | `doc_type?`, `min_year` (2010), `issued_after?`, `include_metadata_only?`, `limit` ≤500 | Văn bản trong phạm vi (loại mà một KB "VBPL – <loại>" nắm, trung ương, ≥ min_year, chưa hết hiệu lực toàn bộ, có metadata đầy đủ) **chưa có trong KB công khai**, mới nhất trước, mỗi dòng kèm `knowledge_base_id` đích suy từ tên KB |
+| `legal_list_requests` | `status` requested (mặc định)/added/rejected/all, `limit` ≤500 | Đề nghị bổ sung văn bản (bảng `legal_document_requests`, migration 000162): câu hỏi chat nêu số hiệu đầy đủ mà không KB nào có toàn văn. Mỗi dòng: `vbpl_id` (rỗng nếu danh mục không biết số hiệu), số hiệu, tên, loại, trạng thái, `request_count` (mỗi phiên chat tính một lần), `last_requested_at`, `url`. `legal_ingest_document` (MCP hoặc SuperAdmin `/system/legal-requests`) tự chuyển các đề nghị của văn bản đó sang `added` |
 
 **Nhóm tool `legal_write` (có từ 2026-10-17, `internal/mcpserver/tools_legal_write.go`)** —
 mọi tool đều "destructive": không nằm trong allowlist mặc định, cần

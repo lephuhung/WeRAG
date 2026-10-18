@@ -257,6 +257,14 @@ func (s *sessionService) AgentQA(
 	if asked, err := s.legalCandidatesClarification(ctx, req, eventBus); asked || err != nil {
 		return err
 	}
+	// a full số hiệu the system holds no full text of is answered with a
+	// card saying so, and a request to add it goes to the SuperAdmin; no
+	// model runs (a number the catalogue does not know is recorded and
+	// the turn runs on)
+	ctx, handled, err = s.legalMissingDocumentGate(ctx, req, eventBus, agentKnowledgeBaseIDs(agentConfig))
+	if handled || err != nil {
+		return err
+	}
 	// a short generic question spanning dozens of catalogue documents is
 	// answered with a card to narrow it (type, issuer, newest); no model runs
 	if asked, err := s.broadQueryClarification(ctx, req, eventBus, true); asked || err != nil {
@@ -987,6 +995,29 @@ func agentRequiresRerankModel(agent *types.CustomAgent) bool {
 		}
 	}
 	return false
+}
+
+// agentKnowledgeBaseIDs are the KBs a turn searches: the agent's resolved
+// KBs and those of its search targets (tag scopes).
+func agentKnowledgeBaseIDs(cfg *types.AgentConfig) []string {
+	if cfg == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range cfg.KnowledgeBases {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, t := range cfg.SearchTargets {
+		if t != nil && t.KnowledgeBaseID != "" && !seen[t.KnowledgeBaseID] {
+			seen[t.KnowledgeBaseID] = true
+			out = append(out, t.KnowledgeBaseID)
+		}
+	}
+	return out
 }
 
 // attachmentNames lists the file names of a turn's attachments.

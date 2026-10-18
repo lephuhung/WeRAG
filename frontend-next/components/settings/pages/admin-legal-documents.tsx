@@ -25,8 +25,14 @@ import {
   type LegalReviewItem,
 } from "@/lib/api/legal-review";
 import { LegalContentTab, LegalDisplayTab } from "@/components/settings/pages/legal-review-edit";
+import LegalRequestsSection from "@/components/settings/pages/admin-legal-requests";
+import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
 
 const PAGE_SIZE = 50;
+
+/* The page's two sections: the identity review queue and the users'
+ * requests for documents no knowledge base holds. */
+type PageView = "review" | "requests";
 
 type DialogTab = "identity" | "content" | "display";
 
@@ -168,6 +174,9 @@ export default function AdminLegalDocuments() {
   const [scanning, setScanning] = useState(false);
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<LegalReviewItem | null>(null);
+  const [view, setView] = useState<PageView>("review");
+  const [requestCounts, setRequestCounts] = useState<LegalRequestCounts | null>(null);
+  const denyRequests = useCallback(() => setAllowed(false), []);
 
   useEffect(() => {
     let alive = true;
@@ -200,8 +209,25 @@ export default function AdminLegalDocuments() {
   }, [filter, page, t]);
 
   useEffect(() => {
-    if (allowed) void load();
-  }, [allowed, load]);
+    if (allowed && view === "review") void load();
+  }, [allowed, view, load]);
+
+  /* the pending-request count on the tab, before the tab is opened */
+  useEffect(() => {
+    if (!allowed) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await listLegalRequests({ status: "requested", page: 1, pageSize: 1 });
+        if (alive && res.data?.counts) setRequestCounts(res.data.counts);
+      } catch {
+        /* the badge is optional */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [allowed]);
 
   const scan = async () => {
     setScanning(true);
@@ -235,107 +261,133 @@ export default function AdminLegalDocuments() {
 
   return (
     <div className="mx-auto w-full max-w-[1400px]">
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <span className="caption text-muted">{t("lrev.desc")}</span>
-        <div className="ml-auto flex items-center gap-2">
+      <div className="mb-5 flex items-center gap-1 border-b border-hairline">
+        {(["review", "requests"] as const).map((v) => (
           <button
-            className="btn btn-primary btn-sm flex items-center gap-1.5"
-            onClick={() => void scan()}
-            disabled={scanning}
-          >
-            <IconFileSearch className="h-3.5 w-3.5" />
-            {scanning ? t("lrev.scanning") : t("lrev.scan")}
-          </button>
-          <button
-            className="btn btn-outline btn-sm h-8 w-8 p-0"
-            onClick={() => void load()}
-            disabled={loading}
-            title={t("common.refresh")}
-            aria-label={t("common.refresh")}
-          >
-            <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-      </div>
-
-      {notice && <p className="caption mb-3 text-emerald-700 dark:text-emerald-400">{notice}</p>}
-      {error && <p className="caption mb-3 text-error">{error}</p>}
-
-      <div className="mb-5 inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
+            key={v}
             type="button"
-            onClick={() => {
-              setFilter(f.key);
-              setPage(1);
-            }}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              filter === f.key
-                ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                : "text-muted hover:text-ink"
+            onClick={() => setView(v)}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
+              view === v ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            {t(f.labelKey)}
+            {t(v === "review" ? "lreq.view.review" : "lreq.view.requests")}
+            {v === "requests" && (requestCounts?.requested ?? 0) > 0 && (
+              <span className="badge-pill bg-amber-500/15 text-[10.5px] tabular-nums text-amber-700 dark:text-amber-400">
+                {requestCounts?.requested}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[760px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[220px] px-5 py-3 font-medium">{t("lrev.col.document")}</th>
-              <th className="w-[170px] px-5 py-3 font-medium">{t("lrev.col.number")}</th>
-              <th className="w-[110px] px-5 py-3 font-medium">{t("lrev.col.issued")}</th>
-              <th className="w-[160px] px-5 py-3 font-medium">{t("lrev.col.validity")}</th>
-              <th className={`${alerts ? "min-w-[260px]" : "w-[120px]"} px-5 py-3 font-medium`}>
-                {alerts ? t("lrev.col.supersededBy") : t("lrev.col.review")}
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {items.map((item) => (
-              <ReviewRow key={item.link.knowledge_id} item={item} alerts={alerts} onOpen={() => setEditing(item)} />
+      {view === "requests" ? (
+        <LegalRequestsSection onCounts={setRequestCounts} onDenied={denyRequests} />
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <span className="caption text-muted">{t("lrev.desc")}</span>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                className="btn btn-primary btn-sm flex items-center gap-1.5"
+                onClick={() => void scan()}
+                disabled={scanning}
+              >
+                <IconFileSearch className="h-3.5 w-3.5" />
+                {scanning ? t("lrev.scanning") : t("lrev.scan")}
+              </button>
+              <button
+                className="btn btn-outline btn-sm h-8 w-8 p-0"
+                onClick={() => void load()}
+                disabled={loading}
+                title={t("common.refresh")}
+                aria-label={t("common.refresh")}
+              >
+                <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+          </div>
+
+          {notice && <p className="caption mb-3 text-emerald-700 dark:text-emerald-400">{notice}</p>}
+          {error && <p className="caption mb-3 text-error">{error}</p>}
+
+          <div className="mb-5 inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => {
+                  setFilter(f.key);
+                  setPage(1);
+                }}
+                className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
+                  filter === f.key
+                    ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                    : "text-muted hover:text-ink"
+                }`}
+              >
+                {t(f.labelKey)}
+              </button>
             ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {loading ? t("usrp.loading") : t("lrev.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </div>
 
-      {pages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <button className="btn btn-outline btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
-            ‹
-          </button>
-          <span className="caption text-muted tabular-nums">
-            {page} / {pages}
-          </span>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={page >= pages || loading}
-            onClick={() => setPage(page + 1)}
-          >
-            ›
-          </button>
-        </div>
-      )}
+          <div className="card overflow-x-auto shadow-sm">
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <thead>
+                <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
+                  <th className="min-w-[220px] px-5 py-3 font-medium">{t("lrev.col.document")}</th>
+                  <th className="w-[170px] px-5 py-3 font-medium">{t("lrev.col.number")}</th>
+                  <th className="w-[110px] px-5 py-3 font-medium">{t("lrev.col.issued")}</th>
+                  <th className="w-[160px] px-5 py-3 font-medium">{t("lrev.col.validity")}</th>
+                  <th className={`${alerts ? "min-w-[260px]" : "w-[120px]"} px-5 py-3 font-medium`}>
+                    {alerts ? t("lrev.col.supersededBy") : t("lrev.col.review")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-hairline">
+                {items.map((item) => (
+                  <ReviewRow key={item.link.knowledge_id} item={item} alerts={alerts} onOpen={() => setEditing(item)} />
+                ))}
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
+                      {loading ? t("usrp.loading") : t("lrev.empty")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-      {editing && (
-        <ReviewDialog
-          item={editing}
-          onClose={() => setEditing(null)}
-          onDone={() => {
-            setEditing(null);
-            void load();
-          }}
-        />
+          {pages > 1 && (
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button className="btn btn-outline btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
+                ‹
+              </button>
+              <span className="caption text-muted tabular-nums">
+                {page} / {pages}
+              </span>
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={page >= pages || loading}
+                onClick={() => setPage(page + 1)}
+              >
+                ›
+              </button>
+            </div>
+          )}
+
+          {editing && (
+            <ReviewDialog
+              item={editing}
+              onClose={() => setEditing(null)}
+              onDone={() => {
+                setEditing(null);
+                void load();
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

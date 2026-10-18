@@ -143,3 +143,48 @@ type LegalReviewService interface {
 	// KB's summary model. Nothing is saved: the reviewer applies fixes.
 	Spellcheck(ctx context.Context, knowledgeID string, items []types.LegalSpellcheckItem) ([]types.LegalSpellcheckFinding, error)
 }
+
+// LegalRequestRepository persists the requests to add legal documents the
+// system lacks (types.LegalDocumentRequest).
+type LegalRequestRepository interface {
+	// Record upserts req by (NumberKey, LegalDocumentID). A new row is
+	// inserted with count 1. An open ("requested") row is bumped — count +1
+	// and the last_* fields — only when the asking session differs from
+	// the last one, so one session asking twice counts once. A row marked
+	// "added" whose document is asked for again (it is missing after all)
+	// is reopened. A "rejected" row is left as it is. Returns the stored row.
+	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
+	// Get returns one request, or nil when absent.
+	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
+	// List pages requests of a status ("" = all), newest last request first.
+	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentRequest, int64, error)
+	// Decide sets the status of one request with the decision fields.
+	Decide(ctx context.Context, id, status, decidedBy, note, knowledgeID, kbID string) (*types.LegalDocumentRequest, error)
+	// MarkAddedByDocument marks the open requests of a catalogue document
+	// added (after any ingest of that vbpl.vn id); returns how many.
+	MarkAddedByDocument(ctx context.Context, legalDocumentID, knowledgeID, kbID, actor string) (int64, error)
+	// CountByStatus counts requests per status.
+	CountByStatus(ctx context.Context) (map[string]int64, error)
+	// KnowledgeNamed reports whether a live knowledge of the given KBs has a
+	// title or file name containing one of needles (case-insensitive).
+	KnowledgeNamed(ctx context.Context, kbIDs []string, needles []string) (bool, error)
+	// PublicKnowledgeByExternalIDs reports which of ids (catalogue / vbpl.vn
+	// ids) a live knowledge of a public KB carries as metadata.external_id:
+	// an ingested document, before the review scan has linked it.
+	PublicKnowledgeByExternalIDs(ctx context.Context, ids []string) (map[string]bool, error)
+	// PublicKnowledgeBases lists the platform public KBs (no owner
+	// organization), by name.
+	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+}
+
+// LegalRequestService drives the SuperAdmin queue of legal document requests.
+type LegalRequestService interface {
+	// List pages the queue by status ("requested", "added", "rejected",
+	// "all"/"" = every status) with the per-status counts.
+	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalRequestItem, int64, map[string]int64, error)
+	// Decide applies a SuperAdmin decision; "ingest" fetches the document
+	// from vbpl.vn into a public KB first.
+	Decide(ctx context.Context, id string, d *types.LegalRequestDecision) (*types.LegalRequestItem, error)
+	// PublicKnowledgeBases lists the KBs a request can be ingested into.
+	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+}

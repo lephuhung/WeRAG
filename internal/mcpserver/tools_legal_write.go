@@ -1,22 +1,15 @@
 package mcpserver
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
-	"net/http"
-	"net/textproto"
 	"strings"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
-	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/Tencent/WeKnora/internal/vbpl"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -120,76 +113,38 @@ func (s *Server) handleLegalIngest(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError("this endpoint is not allowed to write to knowledge base " + kb.ID), nil
 	}
 
-	detail, err := vbplFetchDetail(ctx, s.vbplClient(), vbplID)
+	res, err := s.legalFeedService().IngestFromPortal(scoped, vbplID, kb,
+		service.LegalFeedActor{EndpointID: ep.ID, TenantID: ep.TenantID, Channel: legalFeedChannel},
+		req.GetString("reason", ""))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	status := strings.TrimSpace(detail.EffStatus.Name)
-	if strings.HasPrefix(status, legalExpiredStatusPrefix) {
-		return mcp.NewToolResultErrorf("document %s (%s) is \"%s\": fully expired documents keep their catalogue "+
-			"row only and are never fed into a knowledge base", vbplID, detail.DocNum, status), nil
+	if res.Result == "unchanged" {
+		return mcp.NewToolResultStructured(map[string]any{
+			"result": "unchanged", "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
+		}, fmt.Sprintf("Document %s (%s) is already in %s and unchanged.", vbplID, res.DocumentNumber, kb.Name)), nil
 	}
-	content := []byte(detail.Content)
-	if len(content) < vbplMinHTMLBytes {
-		return mcp.NewToolResultErrorf("document %s has no published full text on vbpl.vn (%d bytes)", vbplID, len(content)), nil
-	}
-	sum := md5.Sum(content)
-	hash := hex.EncodeToString(sum[:])
-
-	// Where is this document already? Same KB + same bytes → nothing to do;
-	// same KB + other bytes → replace; another public KB → refuse (one copy).
-	var existing []struct {
-		ID              string
-		KnowledgeBaseID string
-		FileHash        string
-	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, k.file_hash FROM knowledges k
-		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
-		WHERE k.deleted_at IS NULL AND k.metadata->>'external_id' = ?`, vbplID).Scan(&existing).Error; err != nil {
-		return mcp.NewToolResultErrorFromErr("lookup failed", err), nil
-	}
-	var replaced string
-	for _, e := range existing {
-		if e.KnowledgeBaseID != kb.ID {
-			return mcp.NewToolResultErrorf("document %s is already held by knowledge base %s as %s; a document lives "+
-				"in one knowledge base only", vbplID, e.KnowledgeBaseID, e.ID), nil
-		}
-		if e.FileHash == hash {
-			return mcp.NewToolResultStructured(map[string]any{
-				"result": "unchanged", "vbpl_id": vbplID, "knowledge_id": e.ID, "knowledge_base_id": kb.ID,
-			}, fmt.Sprintf("Document %s (%s) is already in %s and unchanged.", vbplID, detail.DocNum, kb.Name)), nil
-		}
-		if err := s.knowledgeService.DeleteKnowledge(scoped, e.ID); err != nil {
-			return mcp.NewToolResultErrorFromErr("failed to delete the outdated copy "+e.ID, err), nil
-		}
-		replaced = e.ID
-	}
-
-	name := vbplFileName(detail)
-	fh, err := memoryFileHeader("file", name, content)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to stage the file", err), nil
-	}
-	created, err := s.knowledgeService.CreateKnowledgeFromFile(scoped, kb.ID, fh, vbplMetadata(detail), nil, name, nil, legalFeedChannel, nil)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to add document", err), nil
-	}
-	result := "created"
-	if replaced != "" {
-		result = "replaced"
-	}
-	s.legalFeedLog(ctx, ep, legalFeedEntry{
-		Action: "ingest_" + result, VBPLID: vbplID, KnowledgeID: created.ID, KnowledgeBaseID: kb.ID,
-		DocumentNumber: detail.DocNum, Reason: req.GetString("reason", ""),
-		Detail: map[string]any{"replaced_knowledge_id": replaced, "status": status, "md5": hash,
-			"vbpl_markup": vbpl.LooksLikeVBPL(content)},
-	})
 	return mcp.NewToolResultStructured(map[string]any{
-		"result": result, "vbpl_id": vbplID, "knowledge_id": created.ID, "knowledge_base_id": kb.ID,
-		"replaced_knowledge_id": replaced, "document": summarizeKnowledge(created), "document_number": detail.DocNum,
-		"doc_type": detail.DocType.Name, "status": status, "vbpl_markup": vbpl.LooksLikeVBPL(content),
+		"result": res.Result, "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
+		"replaced_knowledge_id": res.ReplacedKnowledgeID, "document": summarizeKnowledge(res.Knowledge),
+		"document_number": res.DocumentNumber, "doc_type": res.DocType, "status": res.Status, "vbpl_markup": res.VBPLMarkup,
 	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s; indexing runs asynchronously (parse_status).",
-		vbplID, detail.DocNum, detail.DocType.Name, result, kb.Name, created.ID)), nil
+		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID)), nil
+}
+
+// legalFeedService is the shared vbpl.vn ingest (service.LegalFeedService),
+// with this server's vbpl.vn client when a test set one.
+func (s *Server) legalFeedService() *service.LegalFeedService {
+	f := s.legalFeed
+	if f == nil {
+		f = service.NewLegalFeedService(s.db, s.knowledgeService, s.legalRequests)
+	}
+	if s.vbplHTTP != nil {
+		c := *f
+		c.HTTP = s.vbplHTTP
+		f = &c
+	}
+	return f
 }
 
 func (s *Server) handleLegalRemove(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -372,41 +327,10 @@ func (s *Server) handleLegalWikiRebuild(ctx context.Context, req mcp.CallToolReq
 
 // --- helpers ----------------------------------------------------------
 
-// vbplClient is the HTTP client for vbpl.vn; tests swap it.
-func (s *Server) vbplClient() *http.Client {
-	if s.vbplHTTP != nil {
-		return s.vbplHTTP
-	}
-	return &http.Client{Timeout: vbplTimeout}
-}
-
-// memoryFileHeader builds a *multipart.FileHeader from bytes, the type
-// KnowledgeService.CreateKnowledgeFromFile expects from an HTTP upload.
+// memoryFileHeader builds a *multipart.FileHeader from bytes (see
+// service.MemoryFileHeader).
 func memoryFileHeader(field, name string, content []byte) (*multipart.FileHeader, error) {
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	hdr := textproto.MIMEHeader{}
-	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, field, strings.ReplaceAll(name, `"`, "'")))
-	hdr.Set("Content-Type", "text/html")
-	part, err := w.CreatePart(hdr)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := part.Write(content); err != nil {
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	form, err := multipart.NewReader(&buf, w.Boundary()).ReadForm(int64(len(content)) + 1<<20)
-	if err != nil {
-		return nil, err
-	}
-	files := form.File[field]
-	if len(files) == 0 {
-		return nil, fmt.Errorf("multipart form lost the file part")
-	}
-	return files[0], nil
+	return service.MemoryFileHeader(field, name, content)
 }
 
 type legalFeedEntry struct {
@@ -422,32 +346,11 @@ type legalFeedEntry struct {
 // legalFeedLog appends one row to legal_feed_log; a failure is logged, never
 // returned, so the write that succeeded is reported as such.
 func (s *Server) legalFeedLog(ctx context.Context, ep *types.MCPEndpoint, e legalFeedEntry) {
-	if s.db == nil {
-		return
-	}
-	var detail []byte
-	if e.Detail != nil {
-		detail, _ = json.Marshal(e.Detail)
-	}
-	var tenantID uint64
-	var epID string
+	actor := service.LegalFeedActor{Channel: legalFeedChannel}
 	if ep != nil {
-		tenantID, epID = ep.TenantID, ep.ID
+		actor.TenantID, actor.EndpointID = ep.TenantID, ep.ID
 	}
-	err := s.db.WithContext(ctx).Exec(`INSERT INTO legal_feed_log
-		(action, vbpl_id, knowledge_id, knowledge_base_id, document_number, reason, actor_endpoint_id, actor_tenant_id, detail, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Action, e.VBPLID, e.KnowledgeID, e.KnowledgeBaseID, e.DocumentNumber, e.Reason, epID, tenantID, nullableJSON(detail), time.Now().UTC()).Error
-	if err != nil {
-		logger.Warnf(ctx, "[mcpserver] legal_feed_log insert failed (%s %s): %v", e.Action, e.VBPLID, err)
-	}
-}
-
-func nullableJSON(b []byte) any {
-	if len(b) == 0 {
-		return nil
-	}
-	return string(b)
+	service.WriteLegalFeedLog(ctx, s.db, actor, service.LegalFeedEntry(e))
 }
 
 func knowledgeExternalID(k *types.Knowledge) string {

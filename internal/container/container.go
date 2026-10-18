@@ -161,6 +161,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// the check_legal_status agent tool.
 	must(container.Provide(repository.NewLegalCatalogRepository))
 	must(container.Provide(repository.NewLegalReviewRepository))
+	// Requests to add legal documents users asked about that no KB holds.
+	must(container.Provide(repository.NewLegalRequestRepository))
 	must(container.Provide(repository.NewAbbreviationTurnRepository))
 
 	// MCP manager for managing MCP client connections
@@ -217,6 +219,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewAbbreviationService))
 	must(container.Provide(service.NewLegalCatalogService))
 	must(container.Provide(service.NewLegalReviewService))
+	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
+	must(container.Provide(service.NewLegalFeedService))
+	must(container.Provide(service.NewLegalRequestService))
 	// Usage metering: questions and tokens per workspace and person.
 	must(container.Provide(service.NewUsageMeter))
 	// Usage packages: plans, subscriptions, and the pre-flight guard.
@@ -591,6 +596,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewAgencyProfileHandler))
 	must(container.Provide(handler.NewTemplateStyleHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
+	must(container.Provide(handler.NewLegalRequestHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
 
@@ -653,6 +659,19 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			u.SetAgencyProfiles(profiles)
 			u.SetTemplateStyles(styles)
 		}
+	}))
+	// a question naming a số hiệu no KB holds records a legal document
+	// request; the MCP feed lists the queue and closes it when it ingests
+	must(container.Invoke(func(sessions interfaces.SessionService, requests interfaces.LegalRequestRepository,
+		reviews interfaces.LegalReviewRepository, feed *service.LegalFeedService, mcpServer *mcpserver.Server,
+	) {
+		type legalRequestUser interface {
+			SetLegalRequests(interfaces.LegalRequestRepository, interfaces.LegalReviewRepository)
+		}
+		if u, ok := sessions.(legalRequestUser); ok {
+			u.SetLegalRequests(requests, reviews)
+		}
+		mcpServer.SetLegalFeed(feed, requests)
 	}))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {

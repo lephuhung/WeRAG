@@ -51,6 +51,8 @@ import {
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
 import { ChoiceListView } from "@/components/chat/choice-list";
 import { parseChoiceList, takeChoiceList, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
+import { LegalRequestCardView } from "@/components/chat/legal-request-card";
+import { parseLegalRequestCard, takeLegalRequestCard, type LegalRequestCard } from "@/lib/legal-request-card";
 import { SavedMemoryNotice, parseSavedMemories, type SavedMemory } from "@/components/chat/saved-memory-notice";
 import {
   illustrationFromToolData,
@@ -144,6 +146,8 @@ type UiMessage = {
   scopeCard?: ScopeClarification;
   /** Document assistant: the options (which document, which meaning) this turn answered with. */
   choiceList?: ChoiceList;
+  /** A legal document the knowledge base has no full text of (requested / rejected / expired). */
+  legalRequestCard?: LegalRequestCard;
   /** Document assistant: rewrite proposals of this turn (applied with a button). */
   rewriteProposals?: UiRewriteProposal[];
   /** Document assistant: diagrams / pictures proposed this turn. */
@@ -957,6 +961,7 @@ const AssistantMessage = memo(function AssistantMessage({
         {(m.thinking || (m.steps?.length ?? 0) > 0) && shownContent && (
           <div className={`${compact ? "my-2" : "my-3"} h-px w-full bg-hairline`} aria-hidden="true" />
         )}
+        {m.legalRequestCard && <LegalRequestCardView card={m.legalRequestCard} />}
         {shownContent ? (
           <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
             <Markdown text={shownContent} streaming={m.streaming} artifacts={m.artifacts} imageContext={m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null} />
@@ -1688,12 +1693,15 @@ function ChatBody({ id }: { id: string }) {
               ...(m.role === "assistant"
                 ? (() => {
                     const scoped = takeScopeClarification(stepsFromHistory(m));
-                    const { card: choiceList, steps } = takeChoiceList(scoped.steps);
+                    const choices = takeChoiceList(scoped.steps);
+                    const { card: legalRequestCard, steps } = takeLegalRequestCard(choices.steps);
+                    const choiceList = choices.card;
                     const card = scoped.card;
                     return {
                       steps: steps?.length ? steps : undefined,
                       scopeCard: card ?? undefined,
                       choiceList: choiceList ?? undefined,
+                      legalRequestCard: legalRequestCard ?? undefined,
                       rewriteProposals: rewriteProposalsFromHistory(m, appliedProposals),
                       illustrations: illustrationsFromHistory(m, appliedProposals),
                     };
@@ -1800,6 +1808,13 @@ function ChatBody({ id }: { id: string }) {
               if (choiceList) {
                 setMessages((m) =>
                   m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, choiceList } : msg)),
+                );
+                return;
+              }
+              const legalRequestCard = parseLegalRequestCard(c.data);
+              if (legalRequestCard) {
+                setMessages((m) =>
+                  m.map((msg) => (msg.assistantMessageId === inflightId ? { ...msg, legalRequestCard } : msg)),
                 );
                 return;
               }
@@ -2433,6 +2448,18 @@ function ChatBody({ id }: { id: string }) {
             m.map((msg) =>
               matchAssistant(msg)
                 ? { ...msg, choiceList, assistantMessageId: incomingAsstId ?? msg.assistantMessageId }
+                : msg,
+            ),
+          );
+          return;
+        }
+        // a legal document the knowledge base lacks: a panel above the answer, not a step
+        const legalRequestCard = kind === "tool_result" ? parseLegalRequestCard(c.data) : null;
+        if (legalRequestCard) {
+          setMessages((m) =>
+            m.map((msg) =>
+              matchAssistant(msg)
+                ? { ...msg, legalRequestCard, assistantMessageId: incomingAsstId ?? msg.assistantMessageId }
                 : msg,
             ),
           );

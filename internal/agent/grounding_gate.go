@@ -21,8 +21,18 @@ import (
 // ungroundedAnswer is what the user gets instead of an answer from memory.
 const ungroundedAnswer = "Tôi không tìm thấy căn cứ cho câu hỏi này trong kho tri thức, " +
 	"nên không trả lời theo hiểu biết riêng của mô hình (có thể đã cũ hoặc sai). " +
-	"Bạn có thể bổ sung tài liệu liên quan vào kho tri thức, nêu rõ văn bản cần tra, " +
-	"hoặc bật tìm kiếm web rồi hỏi lại."
+	"Bạn có thể bổ sung tài liệu liên quan vào kho tri thức hoặc nêu rõ số hiệu văn bản cần tra " +
+	"để hệ thống ghi nhận đề nghị bổ sung."
+
+// ungroundedAnswerFor is ungroundedAnswer, plus a note when the turn
+// recorded a request to add the document it names
+// (types.WithLegalRequestRecorded).
+func ungroundedAnswerFor(ctx context.Context) string {
+	if number := types.LegalRequestRecordedFromContext(ctx); number != "" {
+		return ungroundedAnswer + " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
+	}
+	return ungroundedAnswer
+}
 
 // countedEvidenceTools report their hits in Data["count"].
 var countedEvidenceTools = map[string]bool{
@@ -112,7 +122,7 @@ func (e *AgentEngine) ungroundedRound(
 	}
 	logger.Warnf(ctx, "[Agent][Grounding] Round %d answered without evidence (%d chars); replaced",
 		iteration+1, len(resp.Content))
-	resp.Content = ungroundedAnswer
+	resp.Content = ungroundedAnswerFor(ctx)
 	resp.ReasoningContent = ""
 	resp.AnswerStreamed = false
 	resp.AnswerEventID = ""

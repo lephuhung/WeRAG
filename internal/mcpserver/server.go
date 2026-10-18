@@ -63,6 +63,11 @@ type Server struct {
 	// vbplHTTP fetches documents from vbpl.vn (nil = default client).
 	wikiCatalogue *service.WikiCatalogueOverviewService
 	vbplHTTP      *http.Client
+	// legalFeed ingests from vbpl.vn (shared with the SuperAdmin request
+	// queue); legalRequests lists that queue (legal_list_requests). Set by
+	// SetLegalFeed; nil builds the feed from db and knowledgeService.
+	legalFeed     *service.LegalFeedService
+	legalRequests interfaces.LegalRequestRepository
 	endpointRepo  interfaces.MCPEndpointRepository
 	db            *gorm.DB
 	cfg           *config.Config
@@ -149,9 +154,15 @@ const serverInstructions = "WeKnora knowledge server for one organization. Start
 	"validity of one Vietnamese legal document, legal_find_related for guiding/amending/replacing documents, " +
 	"legal_catalog_search to find catalogue rows, legal_list_ingested and legal_expiry_audit to compare the " +
 	"public legal knowledge bases with the catalogue, legal_list_missing for in-scope documents not yet " +
-	"ingested (with the knowledge base to feed them into), legal_catalog_sync_status for the catalogue's freshness. " +
+	"ingested (with the knowledge base to feed them into), legal_list_requests for the documents users asked for that the system lacks, legal_catalog_sync_status for the catalogue's freshness. " +
 	"Legal write tools (legal_ingest_document, legal_remove_document, legal_apply_expiry_audit, legal_review_scan, " +
 	"legal_wiki_rebuild) feed the public legal knowledge bases from vbpl.vn and exist only on endpoints that enabled them."
+
+// SetLegalFeed wires the shared vbpl.vn ingest and the legal document
+// request queue.
+func (s *Server) SetLegalFeed(feed *service.LegalFeedService, requests interfaces.LegalRequestRepository) {
+	s.legalFeed, s.legalRequests = feed, requests
+}
 
 // endpointFromContext returns the endpoint authenticated for this call.
 func endpointFromContext(ctx context.Context) (*types.MCPEndpoint, error) {
@@ -240,6 +251,7 @@ func (s *Server) toolCatalog() []server.ServerTool {
 		{Tool: legalExpiryAuditTool(), Handler: s.handleLegalExpiryAudit},
 		{Tool: legalSyncStatusTool(), Handler: s.handleLegalSyncStatus},
 		{Tool: legalListMissingTool(), Handler: s.handleLegalListMissing},
+		{Tool: legalListRequestsTool(), Handler: s.handleLegalListRequests},
 		{Tool: legalIngestTool(), Handler: s.handleLegalIngest},
 		{Tool: legalRemoveTool(), Handler: s.handleLegalRemove},
 		{Tool: legalApplyExpiryTool(), Handler: s.handleLegalApplyExpiry},
