@@ -37,7 +37,6 @@ const (
 	// platform organization nor the environment names one
 	legalOCRDefaultEndpoint = "http://hrag-vllm-ocr:8001/v1"
 	legalOCRDefaultModel    = "senocr-vi"
-	legalOCRDefaultPenalty  = "1.1"
 )
 
 var (
@@ -54,6 +53,9 @@ type LegalOCRReport struct {
 	// DegeneratePages are still degenerate after both passes: their loops
 	// were cut and the draft flags them for typing in from the PDF.
 	DegeneratePages []int `json:"ocr_degenerate_pages"`
+	// RejectedSamples keeps the start (1500 characters) of the last rejected
+	// second-pass text of each page, for diagnosis.
+	RejectedSamples map[int]string `json:"rejected_samples,omitempty"`
 }
 
 // ocrToken is one whitespace-separated token with its normalized form ("" for
@@ -63,7 +65,15 @@ type ocrToken struct {
 	norm       string
 }
 
+// ocrHTMLTagRe: HTML tags (OCR tables) are not words; "<td></td><td></td>"
+// rows would otherwise read as one word repeated.
+var ocrHTMLTagRe = regexp.MustCompile(`</?[a-zA-Z][^<>]*>`)
+
 func ocrTokens(text string) []ocrToken {
+	if strings.Contains(text, "<") {
+		// same length, so token offsets still index text
+		text = ocrHTMLTagRe.ReplaceAllStringFunc(text, func(tag string) string { return strings.Repeat(" ", len(tag)) })
+	}
 	var out []ocrToken
 	for _, loc := range ocrTokenRe.FindAllStringIndex(text, -1) {
 		raw := strings.TrimFunc(text[loc[0]:loc[1]], func(r rune) bool {
@@ -195,8 +205,9 @@ func replaceOCRPages(markdown string, texts map[int]string) string {
 // LegalDraftPageImages renders the given pages of a PDF (page number → image).
 type LegalDraftPageImages func(ctx context.Context, pdf []byte, fileName string, pages []int) (map[int][]byte, error)
 
-// LegalDraftImageOCR reads one page image.
-type LegalDraftImageOCR func(ctx context.Context, image []byte, page int) (string, error)
+// LegalDraftImageOCR reads one page image; attempt counts from 1 (the
+// second attempt uses a stronger repetition penalty).
+type LegalDraftImageOCR func(ctx context.Context, image []byte, page, attempt int) (string, error)
 
 // repairDegeneratePages reads the degenerate pages of a first OCR pass
 // again through the image OCR path and swaps in the pages that come back
@@ -226,17 +237,36 @@ func (s *LegalDraftService) repairDegeneratePages(
 	pages := splitOCRPages(markdown)
 	for _, n := range bad {
 		var second string
-		if img := images[n]; len(img) > 0 {
-			second, err = read(ctx, img, n)
+		accepted := false
+		img := images[n]
+		// attempt 1: the organization's OCR settings, as an image attachment
+		// is read; attempt 2: the same image with a stronger repetition penalty
+		for attempt := 1; attempt <= legalOCRAttempts && len(img) > 0; attempt++ {
+			second, err = read(ctx, img, n, attempt)
 			if err != nil {
-				logger.Warnf(ctx, "[LegalDraft] second OCR of page %d of %s: %v", n, fileName, err)
+				logger.Warnf(ctx, "[LegalDraft] second OCR of page %d of %s (attempt %d): %v", n, fileName, attempt, err)
 				second = ""
 			}
+			second = normalizeSecondPassText(second)
+			rejected := strings.TrimSpace(second) == "" || IsDegenerateOCRPage(second)
+			logger.Infof(ctx, "[LegalDraft] second OCR of page %d of %s (attempt %d): %d chars, image %d bytes, rejected=%v",
+				n, fileName, attempt, len([]rune(second)), len(img), rejected)
+			if !rejected {
+				accepted = true
+				logger.Infof(ctx, "[LegalDraft] page %d of %s: attempt %d won", n, fileName, attempt)
+				break
+			}
+			if second != "" {
+				token, count := longestOCRRun(second)
+				logger.Infof(ctx, "[LegalDraft] rejected OCR of page %d (attempt %d): longest run %q ×%d; starts %q",
+					n, attempt, token, count, truncateDraftRunes(second, 400))
+				if report.RejectedSamples == nil {
+					report.RejectedSamples = map[int]string{}
+				}
+				report.RejectedSamples[n] = truncateDraftRunes(second, 1500)
+			}
 		}
-		rejected := strings.TrimSpace(second) == "" || IsDegenerateOCRPage(second)
-		logger.Infof(ctx, "[LegalDraft] second OCR of page %d of %s: %d chars, image %d bytes, rejected=%v",
-			n, fileName, len([]rune(second)), len(images[n]), rejected)
-		if !rejected {
+		if accepted {
 			texts[n] = second
 			continue
 		}
@@ -250,6 +280,66 @@ func (s *LegalDraftService) repairDegeneratePages(
 	}
 	logger.Infof(ctx, "[LegalDraft] OCR repair of %s: re-read %v, still degenerate %v", fileName, bad, report.DegeneratePages)
 	return replaceOCRPages(markdown, texts), report
+}
+
+// legalOCRAttempts is how many times a degenerate page's image is read.
+const legalOCRAttempts = 2
+
+// Repetition penalties of the second pass. SenOCR-Vi loops on big table
+// pages without one and reads them with 1.1; the readers only send a
+// penalty that is set explicitly, so the second pass always sets one.
+const (
+	legalOCRPenalty      = "1.1"
+	legalOCRRetryPenalty = "1.2"
+)
+
+// secondPassPenalty is the repetition penalty of an attempt: the platform
+// organization's own value (else 1.1) first; then 1.1 when the first
+// attempt used another value, else 1.2.
+func secondPassPenalty(configured string, attempt int) string {
+	configured = strings.TrimSpace(configured)
+	first := configured
+	if first == "" {
+		first = legalOCRPenalty
+	}
+	if attempt <= 1 {
+		return first
+	}
+	if first != legalOCRPenalty {
+		return legalOCRPenalty
+	}
+	return legalOCRRetryPenalty
+}
+
+// normalizeSecondPassText puts an image OCR answer in the first pass's
+// shape: Markdown tables instead of the model's HTML tables, "\n" endings.
+func normalizeSecondPassText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.TrimSpace(docparser.NormalizeHTMLTables(text))
+}
+
+// longestOCRRun returns the word of the longest run of equal words and its length.
+func longestOCRRun(text string) (string, int) {
+	toks := ocrTokens(text)
+	best, bestN := "", 0
+	for i := 0; i < len(toks); {
+		j := i
+		for j+1 < len(toks) && toks[i].norm != "" && toks[j+1].norm == toks[i].norm {
+			j++
+		}
+		if toks[i].norm != "" && j-i+1 > bestN {
+			best, bestN = text[toks[i].start:toks[i].end], j-i+1
+		}
+		i = j + 1
+	}
+	return best, bestN
+}
+
+func truncateDraftRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 
 // legalDraftMaxPageImageBytes caps one page image fetched from storage.
@@ -388,8 +478,10 @@ func (s *LegalDraftService) fetchStorageImage(ctx context.Context, key string) (
 // ocrPageImage reads one page image with the Go paddleocr_vl reader in
 // OpenAI mode (one /chat/completions call), the path that read the pages
 // the docreader pass looped on.
-func (s *LegalDraftService) ocrPageImage(ctx context.Context, image []byte, page int) (string, error) {
-	reader := docparser.NewPaddleOCRVLReader(s.secondPassOverrides(ctx), nil)
+func (s *LegalDraftService) ocrPageImage(ctx context.Context, image []byte, page, attempt int) (string, error) {
+	overrides := s.secondPassOverrides(ctx)
+	overrides["paddleocr_vl_repetition_penalty"] = secondPassPenalty(overrides["paddleocr_vl_repetition_penalty"], attempt)
+	reader := docparser.NewPaddleOCRVLReader(overrides, nil)
 	res, err := reader.Read(ctx, &types.ReadRequest{
 		FileContent: image, FileName: fmt.Sprintf("page_%d.jpg", page), FileType: "jpg",
 	})
@@ -406,10 +498,12 @@ func (s *LegalDraftService) ocrPageImage(ctx context.Context, image []byte, page
 	return res.MarkdownContent, nil
 }
 
-// secondPassOverrides resolves the image OCR endpoint like an image
-// attachment does (the organization's paddleocr_vl_* parser settings),
-// for the platform organization; then DOCREADER_VN_OCR_URL/MODEL; then the
-// platform deployment's SenOCR-Vi. The repetition penalty defaults to 1.1.
+// secondPassOverrides resolves the image OCR settings exactly as an image
+// attachment does (the organization's ParserEngineConfig.ToOverridesMap()),
+// for the platform organization; only when it names no endpoint/model,
+// DOCREADER_VN_OCR_URL/MODEL, then the platform deployment's SenOCR-Vi. No
+// repetition penalty is added: the reader's own default applies unless the
+// organization configured one.
 func (s *LegalDraftService) secondPassOverrides(ctx context.Context) map[string]string {
 	out := map[string]string{}
 	if s.tenants != nil {
@@ -428,9 +522,6 @@ func (s *LegalDraftService) secondPassOverrides(ctx context.Context) map[string]
 	}
 	if out["paddleocr_vl_model"] == "" {
 		out["paddleocr_vl_model"] = firstNonEmpty(os.Getenv("DOCREADER_VN_OCR_MODEL"), legalOCRDefaultModel)
-	}
-	if out["paddleocr_vl_repetition_penalty"] == "" {
-		out["paddleocr_vl_repetition_penalty"] = legalOCRDefaultPenalty
 	}
 	return out
 }

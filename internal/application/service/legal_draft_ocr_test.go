@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/docformat/docxwrite"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 var loopPage = "40. Hồ sơ trình phê duyệt | Thời hạn\nTHỐ SƠ TRÀ THẢO " + strings.Repeat("TẾ ", 300)
@@ -61,7 +65,7 @@ func TestRepairDegeneratePages(t *testing.T) {
 			rendered = pages
 			return map[int][]byte{2: []byte("img2"), 3: []byte("img3")}, nil
 		},
-		ImageOCR: func(_ context.Context, img []byte, page int) (string, error) {
+		ImageOCR: func(_ context.Context, img []byte, page, _ int) (string, error) {
 			if page == 2 {
 				return "40. Hồ sơ trình phê duyệt nhiệm vụ lập quy hoạch | Vĩnh viễn", nil
 			}
@@ -169,7 +173,7 @@ func TestLegalDraftFetchRepairsLoopingPage(t *testing.T) {
 	svc.PageImages = func(context.Context, []byte, string, []int) (map[int][]byte, error) {
 		return map[int][]byte{2: []byte("img")}, nil
 	}
-	svc.ImageOCR = func(context.Context, []byte, int) (string, error) { return strings.Repeat("TẾ ", 20), nil }
+	svc.ImageOCR = func(context.Context, []byte, int, int) (string, error) { return strings.Repeat("TẾ ", 20), nil }
 	draft, err := svc.FetchDocument(ctx, "3003", "mcp:ep")
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +240,7 @@ func TestRenderPDFPagesFromStorage(t *testing.T) {
 	}
 
 	// the whole repair: page 6 is re-read from its stored image
-	svc.ImageOCR = func(_ context.Context, img []byte, page int) (string, error) {
+	svc.ImageOCR = func(_ context.Context, img []byte, page, _ int) (string, error) {
 		if string(img) != "bytes:minio://b/p6.jpg" {
 			return "", errors.New("wrong image")
 		}
@@ -246,5 +250,87 @@ func TestRenderPDFPagesFromStorage(t *testing.T) {
 	out, report := svc.repairDegeneratePages(context.Background(), md, []byte("%PDF"), "VanBanGoc_74.pdf")
 	if len(report.DegeneratePages) != 0 || !strings.Contains(out, "Vĩnh viễn") || strings.Contains(out, "TẾ") {
 		t.Fatalf("repair: %+v\n%s", report, out)
+	}
+}
+
+func TestRepairRetriesWithPenaltyAndKeepsSamples(t *testing.T) {
+	var attempts []int
+	svc := &LegalDraftService{
+		PageImages: func(context.Context, []byte, string, []int) (map[int][]byte, error) {
+			return map[int][]byte{6: []byte("img6"), 9: []byte("img9")}, nil
+		},
+		ImageOCR: func(_ context.Context, _ []byte, page, attempt int) (string, error) {
+			attempts = append(attempts, page*10+attempt)
+			if page == 6 && attempt == 2 {
+				// the model's HTML table: empty cells are no loop
+				return "<table><tr><td>40</td><td>Hồ sơ trình phê duyệt</td><td>Vĩnh viễn</td></tr>" +
+					strings.Repeat("<tr><td></td><td></td><td></td></tr>\n", 8) + "</table>", nil
+			}
+			return "THẢO " + strings.Repeat("TẾ ", 30), nil
+		},
+	}
+	md := "<!-- page 6 -->\n\n" + loopPage + "\n\n<!-- page 9 -->\n\n" + loopPage
+	out, report := svc.repairDegeneratePages(context.Background(), md, nil, "x.pdf")
+	if !reflect.DeepEqual(attempts, []int{61, 62, 91, 92}) {
+		t.Fatalf("attempts = %v", attempts)
+	}
+	if !reflect.DeepEqual(report.DegeneratePages, []int{9}) || !strings.Contains(out, "Hồ sơ trình phê duyệt") ||
+		strings.Contains(out, "<td>") {
+		t.Fatalf("report %+v\n%s", report, out)
+	}
+	if sample := report.RejectedSamples[9]; !strings.HasPrefix(sample, "THẢO TẾ TẾ") || report.RejectedSamples[6] == "" {
+		t.Fatalf("samples = %v", report.RejectedSamples)
+	}
+	raw, _ := json.Marshal(report)
+	if !strings.Contains(string(raw), `"rejected_samples":{"6":"THẢO`) {
+		t.Fatalf("report json = %s", raw)
+	}
+	if tok, n := longestOCRRun("a TẾ tế TẾ, b"); tok != "TẾ" || n != 3 {
+		t.Fatalf("longest run = %q %d", tok, n)
+	}
+}
+
+func TestSecondPassPenalty(t *testing.T) {
+	for _, tc := range []struct {
+		configured string
+		attempt    int
+		want       string
+	}{
+		{"", 1, "1.1"}, {"", 2, "1.2"}, {"1.05", 1, "1.05"}, {"1.05", 2, "1.1"}, {"1.1", 2, "1.2"},
+	} {
+		if got := secondPassPenalty(tc.configured, tc.attempt); got != tc.want {
+			t.Errorf("%q attempt %d = %q, want %q", tc.configured, tc.attempt, got, tc.want)
+		}
+	}
+}
+
+// The second pass sends a repetition penalty although no organization set
+// one: without it SenOCR-Vi loops on big table pages.
+func TestOCRPageImageSendsRepetitionPenalty(t *testing.T) {
+	utils.SetSSRFWhitelistFromRaw("127.0.0.1")
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"40. Hồ sơ trình phê duyệt | Vĩnh viễn"}}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("DOCREADER_VN_OCR_URL", srv.URL+"/v1")
+	t.Setenv("DOCREADER_VN_OCR_MODEL", "senocr-vi")
+	svc := &LegalDraftService{}
+	png := []byte("\x89PNG\r\n\x1a\nfake")
+	for attempt, want := range map[int]float64{1: 1.1, 2: 1.2} {
+		text, err := svc.ocrPageImage(context.Background(), png, 6, attempt)
+		if err != nil || !strings.Contains(text, "Vĩnh viễn") {
+			t.Fatalf("attempt %d: %q %v", attempt, text, err)
+		}
+		last := bodies[len(bodies)-1]
+		if got, ok := last["repetition_penalty"].(float64); !ok || got != want || last["model"] != "senocr-vi" {
+			t.Fatalf("attempt %d body = %v", attempt, last)
+		}
 	}
 }
