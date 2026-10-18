@@ -2869,20 +2869,6 @@ definitions:
         items:
           $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.ParserEngineRule'
         type: array
-      odl_hybrid:
-        description: OpenDataLoader PDF (docreader engine); hybrid requires opendataloader-pdf-hybrid
-          service.
-        type: string
-      odl_hybrid_fallback:
-        type: boolean
-      odl_hybrid_mode:
-        description: auto, full
-        type: string
-      odl_hybrid_url:
-        description: e.g. http://odl-hybrid:5002
-        type: string
-      odl_markdown_with_html:
-        type: boolean
       paddleocr_vl_api:
         description: auto (default), layout, openai
         type: string
