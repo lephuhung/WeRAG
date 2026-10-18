@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -113,7 +114,11 @@ func (s *LegalFeedService) IngestFromPortal(
 	}
 	detail, err := vbpl.FetchDetail(ctx, s.HTTP, vbplID)
 	if err != nil {
-		if strings.Contains(err.Error(), "is not a vbpl.vn document id") || strings.Contains(err.Error(), "has no document") {
+		var missing *vbpl.NoDocumentError
+		if stderrors.As(err, &missing) {
+			return nil, refuse("vbpl.vn không có văn bản với id %s (danh mục có thể đã cũ)", missing.ID)
+		}
+		if strings.Contains(err.Error(), "is not a vbpl.vn document id") {
 			return nil, &LegalFeedRefusal{msg: err.Error()}
 		}
 		return nil, err
