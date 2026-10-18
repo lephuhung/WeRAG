@@ -192,13 +192,14 @@ func (r *sessionRepository) QueryPaged(
 			db = db.Where("(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')", q.UserID)
 		}
 		// Skill image maintenance runs in a real session so its transcript can
-		// be read back, but it is not a conversation. Excluding it here rather
+		// be read back, but it is not a conversation; nor is the hidden
+		// session a SuperAdmin edits a legal OCR draft in. Excluding it here rather
 		// than in applySource is deliberate: a source branch only covers its
 		// own bucket, and this row must be absent from all of them, including
 		// the unfiltered listing.
 		db = db.Where(
-			"(s.description IS NULL OR s.description NOT LIKE ?)",
-			types.SkillMaintenanceSessionMarker+"%",
+			"(s.description IS NULL OR (s.description NOT LIKE ? AND s.description NOT LIKE ?))",
+			types.SkillMaintenanceSessionMarker+"%", types.LegalDraftSessionMarker+"%",
 		)
 		// Sub-chats ("chat nhỏ") are listed inside their document chat, not
 		// as rows of their own (SessionService.ListSubChats).

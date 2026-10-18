@@ -103,23 +103,22 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	ctx := context.Background()
 
 	for id, want := range map[string]string{"1001": "fully expired", "2002": "vbpl.vn không có toàn văn (HTML hay PDF) cho văn bản 2002", "404": "vbpl.vn không có văn bản với id 404", "stale": "vbpl.vn không có văn bản với id stale (danh mục có thể đã cũ)", "../x": "not a vbpl.vn document id"} {
-		_, err := feed.IngestFromPortal(ctx, id, kb, actor, "", LegalIngestOptions{AllowPDF: true})
+		_, err := feed.IngestFromPortal(ctx, id, kb, actor, "")
 		if _, ok := err.(*LegalFeedRefusal); !ok || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: err = %v, want refusal %q", id, err, want)
 		}
 	}
 	// a 400 without the not-found body stays a gateway failure (API 503)
-	if _, err := feed.IngestFromPortal(ctx, "broken", kb, actor, "", LegalIngestOptions{}); err == nil || strings.Contains(err.Error(), "không có văn bản") {
+	if _, err := feed.IngestFromPortal(ctx, "broken", kb, actor, ""); err == nil || strings.Contains(err.Error(), "không có văn bản") {
 		t.Fatalf("broken: err = %v", err)
 	} else if _, ok := err.(*LegalFeedRefusal); ok {
 		t.Fatalf("broken must not be a refusal: %v", err)
 	}
-	if _, err := feed.IngestFromPortal(ctx, "155366", &types.KnowledgeBase{ID: "own", OwnerTenantID: 7}, actor, "", LegalIngestOptions{}); err == nil {
+	if _, err := feed.IngestFromPortal(ctx, "155366", &types.KnowledgeBase{ID: "own", OwnerTenantID: 7}, actor, ""); err == nil {
 		t.Fatal("a tenant KB must be refused")
 	}
 
-	// the HTML wins even when PDF is allowed
-	res, err := feed.IngestFromPortal(ctx, "155366", kb, actor, "test", LegalIngestOptions{AllowPDF: true})
+	res, err := feed.IngestFromPortal(ctx, "155366", kb, actor, "test")
 	if err != nil || res.Result != "created" || res.KnowledgeID != "k-new" || res.DocumentNumber != "53/2022/NĐ-CP" ||
 		res.SourceFormat != LegalSourceHTML {
 		t.Fatalf("ingest: %+v %v", res, err)
@@ -139,28 +138,34 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 		t.Fatalf("feed log rows = %d", logged)
 	}
 
-	// only a scanned PDF: refused unless allowed, the refusal says what exists
-	_, err = feed.IngestFromPortal(ctx, "3003", kb, actor, "", LegalIngestOptions{})
+	// only a scanned PDF: always refused (a scan goes through a reviewed
+	// draft), the refusal says what exists
+	_, err = feed.IngestFromPortal(ctx, "3003", kb, actor, "")
 	refusal, ok := err.(*LegalFeedRefusal)
 	if !ok || !refusal.PDFOnly || refusal.Portal == nil || refusal.Portal.PDFFile != "VanBanGoc_3 TT.pdf" || refusal.Portal.HTML ||
-		!strings.Contains(err.Error(), "allow_pdf") {
-		t.Fatalf("pdf not allowed: %v %+v", err, refusal)
+		!strings.Contains(err.Error(), "Kéo về bản nháp") {
+		t.Fatalf("pdf only: %v %+v", err, refusal)
 	}
-	res, err = feed.IngestFromPortal(ctx, "3003", kb, actor, "", LegalIngestOptions{AllowPDF: true})
-	if err != nil || res.SourceFormat != LegalSourcePDFOCR || res.Result != "created" || res.VBPLMarkup {
-		t.Fatalf("pdf ingest: %+v %v", res, err)
+	if len(know.created) != 1 {
+		t.Fatalf("a scan was ingested: %v", know.created)
 	}
-	if got := know.created[len(know.created)-1]; got != "kb-nd|Thông tư 3-2021-TT-BTC.pdf|3003|web" {
-		t.Fatalf("pdf created = %s", got)
+
+	// IngestHTML: a reviewed draft's HTML with its own metadata
+	draftHTML := []byte(`<p class="prov-article">Điều 1. Phạm vi</p>`)
+	res, err = feed.IngestHTML(ctx, LegalIngestDocument{VBPLID: "3003", DocumentNumber: "3/2021/TT-BTC",
+		FileName: "Thông tư 3-2021-TT-BTC.html", SourceFormat: LegalSourcePDFReviewed,
+		Metadata:  map[string]string{"external_id": "3003", "source_format": LegalSourcePDFReviewed},
+		LogDetail: map[string]any{"draft_id": "d1"}}, draftHTML, kb, actor, "draft")
+	if err != nil || res.Result != "created" || res.SourceFormat != LegalSourcePDFReviewed || !res.VBPLMarkup {
+		t.Fatalf("ingest html: %+v %v", res, err)
 	}
-	if know.lastType != "application/pdf" || know.lastMeta["source_format"] != "pdf_ocr" ||
-		know.lastMeta["source_file"] != "VanBanGoc_3 TT.pdf" || know.lastMeta["external_id"] != "3003" {
-		t.Fatalf("pdf upload: type %q meta %v", know.lastType, know.lastMeta)
+	if know.lastType != "text/html" || know.lastMeta["source_format"] != "pdf_reviewed" {
+		t.Fatalf("reviewed upload: type %q meta %v", know.lastType, know.lastMeta)
 	}
 	var detail string
 	db.Raw(`SELECT detail FROM legal_feed_log WHERE vbpl_id = '3003'`).Scan(&detail)
-	if !strings.Contains(detail, `"source_format":"pdf_ocr"`) || !strings.Contains(detail, `"source_file":"VanBanGoc_3 TT.pdf"`) {
-		t.Fatalf("pdf log detail = %s", detail)
+	if !strings.Contains(detail, `"source_format":"pdf_reviewed"`) || !strings.Contains(detail, `"draft_id":"d1"`) {
+		t.Fatalf("draft log detail = %s", detail)
 	}
 
 	portal, err := feed.CheckPortal(ctx, "3003")

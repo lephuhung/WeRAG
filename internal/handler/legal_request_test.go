@@ -48,6 +48,10 @@ func (f *fakeLegalRequestService) CheckPortal(_ context.Context, id string) (*ty
 		Detail: types.JSON(`{"portal":{"html":false,"pdf_file":"VanBanGoc_74.TT.pdf","exists":true}}`)}}, nil
 }
 
+func (f *fakeLegalRequestService) Get(_ context.Context, id string) (*types.LegalRequestItem, error) {
+	return &types.LegalRequestItem{LegalDocumentRequest: &types.LegalDocumentRequest{ID: id}}, nil
+}
+
 func (f *fakeLegalRequestService) PublicKnowledgeBases(context.Context) ([]types.LegalPublicKB, error) {
 	return []types.LegalPublicKB{{ID: "kb-nd", Name: "VBPL – Nghị định"}}, nil
 }
@@ -115,10 +119,10 @@ func TestLegalRequestHandlerDecide(t *testing.T) {
 	svc.decideErr = apperrors.NewBadRequestError(`document 1 (27/2015/NĐ-CP) is "Hết hiệu lực toàn bộ"`)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPut, "/system/legal-requests/r1",
-		strings.NewReader(`{"action":"ingest","knowledge_base_id":"kb-nd","allow_pdf":true}`))
+		strings.NewReader(`{"action":"ingest","knowledge_base_id":"kb-nd"}`))
 	req.Header.Set("Content-Type", "application/json")
 	newLegalRequestRouter(svc).ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest || svc.decision.KnowledgeBaseID != "kb-nd" || !svc.decision.AllowPDF || !strings.Contains(w.Body.String(), "Hết hiệu lực") {
+	if w.Code != http.StatusBadRequest || svc.decision.KnowledgeBaseID != "kb-nd" || !strings.Contains(w.Body.String(), "Hết hiệu lực") {
 		t.Fatalf("refused ingest: %d %s", w.Code, w.Body.String())
 	}
 

@@ -42,13 +42,15 @@ type legalRequestService struct {
 	catalog  interfaces.LegalCatalogRepository
 	kbs      interfaces.KnowledgeBaseService
 	feed     *LegalFeedService
+	// drafts adds the OCR draft summary to request rows (nil: none shown)
+	drafts interfaces.LegalDraftRepository
 }
 
 // NewLegalRequestService creates the SuperAdmin legal request queue.
 func NewLegalRequestService(requests interfaces.LegalRequestRepository, catalog interfaces.LegalCatalogRepository,
-	kbs interfaces.KnowledgeBaseService, feed *LegalFeedService,
+	kbs interfaces.KnowledgeBaseService, feed *LegalFeedService, drafts interfaces.LegalDraftRepository,
 ) interfaces.LegalRequestService {
-	return &legalRequestService{requests: requests, catalog: catalog, kbs: kbs, feed: feed}
+	return &legalRequestService{requests: requests, catalog: catalog, kbs: kbs, feed: feed, drafts: drafts}
 }
 
 func (s *legalRequestService) List(
@@ -57,9 +59,10 @@ func (s *legalRequestService) List(
 	switch status = strings.ToLower(strings.TrimSpace(status)); status {
 	case "all":
 		status = ""
-	case "", types.LegalRequestRequested, types.LegalRequestAdded, types.LegalRequestRejected:
+	case "", types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing,
+		types.LegalRequestAdded, types.LegalRequestRejected:
 	default:
-		return nil, 0, nil, apperrors.NewBadRequestError("status must be requested, added, rejected or all")
+		return nil, 0, nil, apperrors.NewBadRequestError("status must be requested, fetched, reviewing, added, rejected or all")
 	}
 	rows, total, err := s.requests.List(ctx, status, offset, limit)
 	if err != nil {
@@ -111,9 +114,22 @@ func (s *legalRequestService) items(ctx context.Context, rows []*types.LegalDocu
 			parse = st
 		}
 	}
+	drafts := map[string]*types.LegalDraftSummary{}
+	if len(ids) > 0 && s.drafts != nil {
+		if found, err := s.drafts.ListByDocumentIDs(ctx, ids); err != nil {
+			logger.Warnf(ctx, "[LegalRequests] drafts: %v", err)
+		} else {
+			for _, d := range found {
+				drafts[d.LegalDocumentID] = d.Summary()
+			}
+		}
+	}
 	items := make([]*types.LegalRequestItem, 0, len(rows))
 	for _, r := range rows {
 		item := &types.LegalRequestItem{LegalDocumentRequest: r, KnowledgeParseStatus: parse[r.KnowledgeID]}
+		if r.LegalDocumentID != "" {
+			item.Draft = drafts[r.LegalDocumentID]
+		}
 		docType := r.DocType
 		if d := docs[r.LegalDocumentID]; d != nil {
 			item.Document = &types.LegalRequestDocument{
@@ -166,7 +182,7 @@ func (s *legalRequestService) Decide(
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestAdded, caller.UserID, note,
 			strings.TrimSpace(d.KnowledgeID), strings.TrimSpace(d.KnowledgeBaseID))
 	case types.LegalRequestActionIngest:
-		res, ierr := s.ingest(ctx, row, strings.TrimSpace(d.KnowledgeBaseID), caller, d.AllowPDF)
+		res, ierr := s.ingest(ctx, row, strings.TrimSpace(d.KnowledgeBaseID), caller)
 		if ierr != nil {
 			return nil, ierr
 		}
@@ -189,7 +205,7 @@ func (s *legalRequestService) Decide(
 // ingest fetches the request's document from vbpl.vn into a public KB with
 // the same code as the MCP tool legal_ingest_document.
 func (s *legalRequestService) ingest(
-	ctx context.Context, row *types.LegalDocumentRequest, kbID string, caller types.Caller, allowPDF bool,
+	ctx context.Context, row *types.LegalDocumentRequest, kbID string, caller types.Caller,
 ) (*LegalIngestResult, error) {
 	if row.LegalDocumentID == "" {
 		return nil, apperrors.NewBadRequestError("the catalogue does not know this document: add it by hand and mark the request added")
@@ -200,20 +216,13 @@ func (s *legalRequestService) ingest(
 	if s.feed == nil || s.kbs == nil {
 		return nil, apperrors.NewServiceUnavailableError("the vbpl.vn feed is not available")
 	}
-	kb, err := s.kbs.GetKnowledgeBaseByIDOnly(ctx, kbID)
-	if err != nil || kb == nil {
-		return nil, apperrors.NewNotFoundError("knowledge base not found")
-	}
-	if kb.OwnerTenantID != 0 {
-		return nil, apperrors.NewBadRequestError("knowledge base " + kb.ID + " is not a public legal knowledge base")
-	}
-	grant, err := access.ResolveKBForManage(ctx, access.KBRequest{Caller: caller}, kb)
+	kb, grantCtx, err := publicKBWriteContext(ctx, s.kbs, kbID, caller)
 	if err != nil {
-		return nil, apperrors.NewForbiddenError("not allowed to write to knowledge base " + kb.ID)
+		return nil, err
 	}
-	res, err := s.feed.IngestFromPortal(grant.Context(ctx), row.LegalDocumentID, kb,
+	res, err := s.feed.IngestFromPortal(grantCtx, row.LegalDocumentID, kb,
 		LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelWeb},
-		"Đề nghị bổ sung "+row.ID+" ("+row.DocumentNumber+")", LegalIngestOptions{AllowPDF: allowPDF})
+		"Đề nghị bổ sung "+row.ID+" ("+row.DocumentNumber+")")
 	if err != nil {
 		var refusal *LegalFeedRefusal
 		var appErr *apperrors.AppError
@@ -239,8 +248,40 @@ func (s *legalRequestService) ingest(
 }
 
 // LegalRequestPDFOnlyMessage answers an ingest of a document vbpl.vn has
-// only as a scanned PDF when the SuperAdmin did not choose the PDF.
-const LegalRequestPDFOnlyMessage = "vbpl.vn chỉ có bản PDF scan của văn bản này; chọn \"Nạp bản PDF (OCR)\" để nạp"
+// only as a scanned PDF: the scan goes through a reviewed OCR draft.
+const LegalRequestPDFOnlyMessage = "vbpl.vn chỉ có bản PDF scan của văn bản này; dùng \"Kéo về bản nháp\" để OCR thành " +
+	"bản nháp, biên tập rồi duyệt trước khi nạp"
+
+// publicKBWriteContext loads the public KB kbID and returns a context
+// carrying the caller's write grant on it (a SuperAdmin manages every KB).
+func publicKBWriteContext(
+	ctx context.Context, kbs interfaces.KnowledgeBaseService, kbID string, caller types.Caller,
+) (*types.KnowledgeBase, context.Context, error) {
+	if kbs == nil {
+		return nil, nil, apperrors.NewServiceUnavailableError("knowledge bases are not available")
+	}
+	kb, err := kbs.GetKnowledgeBaseByIDOnly(ctx, kbID)
+	if err != nil || kb == nil {
+		return nil, nil, apperrors.NewNotFoundError("knowledge base not found")
+	}
+	if kb.OwnerTenantID != 0 {
+		return nil, nil, apperrors.NewBadRequestError("knowledge base " + kb.ID + " is not a public legal knowledge base")
+	}
+	grant, err := access.ResolveKBForManage(ctx, access.KBRequest{Caller: caller}, kb)
+	if err != nil {
+		return nil, nil, apperrors.NewForbiddenError("not allowed to write to knowledge base " + kb.ID)
+	}
+	return kb, grant.Context(ctx), nil
+}
+
+// Get returns one request as a queue item, nil when absent.
+func (s *legalRequestService) Get(ctx context.Context, id string) (*types.LegalRequestItem, error) {
+	row, err := s.requests.Get(ctx, id)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	return s.item(ctx, row)
+}
 
 // CheckPortal reads what vbpl.vn offers for the request's document and
 // stores it as detail.portal.

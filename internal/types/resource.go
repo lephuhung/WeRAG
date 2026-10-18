@@ -29,6 +29,8 @@ const (
 	ResourceOwnerMessage           = "message"
 	ResourceOwnerTemporaryDocument = "temporary_document"
 	ResourceOwnerDocumentWorkspace = "document_workspace"
+	// ResourceOwnerLegalDraft: the original PDF scan of a legal draft.
+	ResourceOwnerLegalDraft = "legal_draft"
 )
 
 // Resource binding relations describe why an owner claims a resource.

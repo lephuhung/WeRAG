@@ -83,10 +83,11 @@ func (r *legalRequestRepository) Record(
 		bump["doc_type"] = row.DocType
 	}
 	switch existing.Status {
-	case types.LegalRequestRequested:
-		// the same session asking again does not count twice
+	case types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing:
+		// still open (a draft of its PDF may be under review): the same
+		// session asking again does not count twice, the state is kept
 		err = db.Model(&types.LegalDocumentRequest{}).
-			Where("id = ? AND status = ? AND last_session_id <> ?", existing.ID, types.LegalRequestRequested, row.LastSessionID).
+			Where("id = ? AND status = ? AND last_session_id <> ?", existing.ID, existing.Status, row.LastSessionID).
 			Updates(bump).Error
 	case types.LegalRequestAdded:
 		// asked for again: the added copy is not where this user looks
@@ -213,11 +214,23 @@ func (r *legalRequestRepository) MarkAddedByDocument(
 	}
 	now := time.Now()
 	res := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-		Where("legal_document_id = ? AND status = ?", legalDocumentID, types.LegalRequestRequested).
+		Where("legal_document_id = ? AND status IN ?", legalDocumentID, types.LegalRequestOpenStatuses).
 		Updates(map[string]any{
 			"status": types.LegalRequestAdded, "decided_by": actor, "decided_at": now,
 			"knowledge_id": knowledgeID, "knowledge_base_id": kbID, "updated_at": now,
 		})
+	return res.RowsAffected, res.Error
+}
+
+func (r *legalRequestRepository) SetStatusByDocument(
+	ctx context.Context, legalDocumentID string, from []string, to string,
+) (int64, error) {
+	if strings.TrimSpace(legalDocumentID) == "" || len(from) == 0 {
+		return 0, nil
+	}
+	res := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
+		Where("legal_document_id = ? AND status IN ?", legalDocumentID, from).
+		Updates(map[string]any{"status": to, "updated_at": time.Now()})
 	return res.RowsAffected, res.Error
 }
 
@@ -229,7 +242,8 @@ func (r *legalRequestRepository) CountByStatus(ctx context.Context) (map[string]
 	err := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
 		Select("status, COUNT(*) AS n").Group("status").Scan(&rows).Error
 	out := map[string]int64{
-		types.LegalRequestRequested: 0, types.LegalRequestAdded: 0, types.LegalRequestRejected: 0,
+		types.LegalRequestRequested: 0, types.LegalRequestFetched: 0, types.LegalRequestReviewing: 0,
+		types.LegalRequestAdded: 0, types.LegalRequestRejected: 0,
 	}
 	for _, row := range rows {
 		out[row.Status] = row.N

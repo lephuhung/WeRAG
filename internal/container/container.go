@@ -163,6 +163,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewLegalReviewRepository))
 	// Requests to add legal documents users asked about that no KB holds.
 	must(container.Provide(repository.NewLegalRequestRepository))
+	// OCR drafts of documents vbpl.vn has only as a scanned PDF
+	must(container.Provide(repository.NewLegalDraftRepository))
 	must(container.Provide(repository.NewAbbreviationTurnRepository))
 
 	// MCP manager for managing MCP client connections
@@ -222,6 +224,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
 	must(container.Provide(service.NewLegalFeedService))
 	must(container.Provide(service.NewLegalRequestService))
+	// a scanned PDF is OCRed into a draft the SuperAdmin reviews before ingest
+	must(container.Provide(service.NewLegalDraftService))
+	must(container.Provide(service.NewLegalDraftServiceInterface))
 	// Usage metering: questions and tokens per workspace and person.
 	must(container.Provide(service.NewUsageMeter))
 	// Usage packages: plans, subscriptions, and the pre-flight guard.
@@ -597,6 +602,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTemplateStyleHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
 	must(container.Provide(handler.NewLegalRequestHandler))
+	must(container.Provide(handler.NewLegalDraftHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
 
@@ -664,6 +670,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// request; the MCP feed lists the queue and closes it when it ingests
 	must(container.Invoke(func(sessions interfaces.SessionService, requests interfaces.LegalRequestRepository,
 		reviews interfaces.LegalReviewRepository, feed *service.LegalFeedService, mcpServer *mcpserver.Server,
+		drafts interfaces.LegalDraftService,
 	) {
 		type legalRequestUser interface {
 			SetLegalRequests(interfaces.LegalRequestRepository, interfaces.LegalReviewRepository)
@@ -672,6 +679,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			u.SetLegalRequests(requests, reviews)
 		}
 		mcpServer.SetLegalFeed(feed, requests)
+		mcpServer.SetLegalDrafts(drafts)
 	}))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {

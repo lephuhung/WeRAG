@@ -457,6 +457,10 @@ type SubdivisionParseStats struct {
 type SubdivisionParseResult struct {
 	Subdivisions []Subdivision
 	Stats        SubdivisionParseStats
+	// Rejected are the candidates counted in Stats.AmbiguousRejected, in
+	// text order (ArticleNo is "" outside a Điều): where a reviewer looks
+	// for a khoản/điểm the parser could not place.
+	Rejected []Subdivision
 }
 
 // subdivisionEvent is a structural event at a byte position: kind 0 =
@@ -534,7 +538,7 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 	hasK := false
 	lastDIdx := -1
 	hasD := false
-	var subs []Subdivision
+	var subs, rejected []Subdivision
 	var st SubdivisionParseStats
 
 	for _, ev := range subdivisionEvents(text) {
@@ -569,6 +573,7 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 				})
 			} else {
 				st.AmbiguousRejected++
+				rejected = append(rejected, rejectedSubdivision("khoan", ev, text, article))
 			}
 		default:
 			st.DiemCandidates++
@@ -586,10 +591,19 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 				})
 			} else {
 				st.AmbiguousRejected++
+				rejected = append(rejected, rejectedSubdivision("diem", ev, text, article))
 			}
 		}
 	}
-	return SubdivisionParseResult{Subdivisions: subs, Stats: st}
+	return SubdivisionParseResult{Subdivisions: subs, Stats: st, Rejected: rejected}
+}
+
+func rejectedSubdivision(kind string, ev subdivisionEvent, text string, article *string) Subdivision {
+	sub := Subdivision{Kind: kind, Label: ev.label, Start: utf8.RuneCountInString(text[:ev.start])}
+	if article != nil {
+		sub.ArticleNo = *article
+	}
+	return sub
 }
 
 // FindSubdivisions is the convenience form returning only accepted markers.

@@ -51,9 +51,28 @@ func (LegalDocumentRequest) TableName() string { return "legal_document_requests
 // Legal document request states.
 const (
 	LegalRequestRequested = "requested"
+	// LegalRequestFetched: vbpl.vn has only a scanned PDF, which was fetched
+	// into a draft (LegalDocumentDraft) waiting for the SuperAdmin's review.
+	LegalRequestFetched = "fetched"
+	// LegalRequestReviewing: the draft is open in the editor.
+	LegalRequestReviewing = "reviewing"
 	LegalRequestAdded     = "added"
 	LegalRequestRejected  = "rejected"
 )
+
+// LegalRequestOpenStatuses are the states a request is still waiting in:
+// asking again bumps it, any ingest of its document closes it.
+var LegalRequestOpenStatuses = []string{LegalRequestRequested, LegalRequestFetched, LegalRequestReviewing}
+
+// IsLegalRequestOpen reports whether status is one of LegalRequestOpenStatuses.
+func IsLegalRequestOpen(status string) bool {
+	for _, s := range LegalRequestOpenStatuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
 
 // Legal document request sources.
 const (
@@ -77,6 +96,9 @@ type LegalRequestItem struct {
 	// ("pending", "processing", "completed", "failed"), "" when no document
 	// is linked: an ingested PDF scan is OCRed asynchronously.
 	KnowledgeParseStatus string `json:"knowledge_parse_status"`
+	// Draft is the OCR draft of the document's scanned PDF, nil when none
+	// was fetched.
+	Draft *LegalDraftSummary `json:"draft"`
 }
 
 // LegalRequestDocument is the catalogue view of a requested document.
@@ -99,9 +121,6 @@ type LegalRequestDecision struct {
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	KnowledgeID     string `json:"knowledge_id"`
 	Note            string `json:"note"`
-	// AllowPDF lets "ingest" use the portal's original PDF (a scan, OCRed by
-	// the KB's pdf parser) when vbpl.vn has no HTML full text.
-	AllowPDF bool `json:"allow_pdf"`
 }
 
 // LegalRequestDetailPortal is the Detail key holding what vbpl.vn offers

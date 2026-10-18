@@ -194,8 +194,8 @@ func (r *messageRepository) ListArtifactLibrary(
 		where = append(where, "(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')")
 		args = append(args, q.UserID)
 	}
-	where = append(where, "(s.description IS NULL OR s.description NOT LIKE ?)", webSessionPredicate)
-	args = append(args, types.SkillMaintenanceSessionMarker+"%")
+	where = append(where, "(s.description IS NULL OR (s.description NOT LIKE ? AND s.description NOT LIKE ?))", webSessionPredicate)
+	args = append(args, types.SkillMaintenanceSessionMarker+"%", types.LegalDraftSessionMarker+"%")
 	args = append(args, webSessionPredicateArgs()...)
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		where = append(where, "LOWER(ma.file_name) LIKE LOWER(?) ESCAPE ?")

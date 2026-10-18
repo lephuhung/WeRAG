@@ -107,6 +107,7 @@ type RouterParams struct {
 	TemplateStyleHandler        *handler.TemplateStyleHandler
 	LegalReviewHandler          *handler.LegalReviewHandler
 	LegalRequestHandler         *handler.LegalRequestHandler
+	LegalDraftHandler           *handler.LegalDraftHandler
 	KnowledgeGraphViewHandler   *handler.KnowledgeGraphViewHandler
 }
 
@@ -354,6 +355,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterTemplateStyleRoutes(v1, params.TemplateStyleHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
 		RegisterLegalRequestRoutes(v1, params.LegalRequestHandler, rbacGuards)
+		RegisterLegalDraftRoutes(v1, params.LegalDraftHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
