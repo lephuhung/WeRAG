@@ -3348,7 +3348,9 @@ type ChannelWithAgent struct {
 // language). Channels whose custom agent was soft-deleted are excluded so
 // overview lists stay consistent after agent removal.
 func (s *Service) ListChannelsByTenant(ctx context.Context, tenantID uint64) ([]ChannelWithAgent, error) {
-	builtinIDs := types.GetBuiltinAgentIDs()
+	// Every user-facing builtin, switched off or not: a channel bound to an
+	// agent that was switched off later must stay listed so it can be re-pointed.
+	builtinIDs := types.GetAllBuiltinAgentIDs()
 	var rows []ChannelWithAgent
 	q := s.db.Table("im_channels AS c").
 		Select(`c.id, c.tenant_id, c.agent_id,

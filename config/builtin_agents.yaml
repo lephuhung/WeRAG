@@ -1,6 +1,9 @@
 # Built-in Agent Configuration with i18n support
 # Each agent has localized name, description, avatar, and config overrides per language.
 # The "default" locale is used as fallback when the user's language is not found.
+# `enabled: false` hides an agent from the agent picker (web and Word add-in)
+# while keeping it resolvable by ID for existing sessions and API callers.
+# Absent means enabled.
 
 builtin_agents:
   - id: "builtin-quick-answer"
@@ -80,6 +83,7 @@ builtin_agents:
       rerank_threshold: 0.3
 
   - id: "builtin-data-analyst"
+    enabled: false
     avatar: "📊"
     is_builtin: true
     i18n:
@@ -115,6 +119,7 @@ builtin_agents:
       rerank_threshold: 0.3
 
   - id: "builtin-wiki-researcher"
+    enabled: false
     avatar: "📚"
     is_builtin: true
     i18n:

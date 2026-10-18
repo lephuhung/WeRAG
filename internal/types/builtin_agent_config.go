@@ -28,6 +28,11 @@ type BuiltinAgentEntry struct {
 	IsBuiltin bool                        `yaml:"is_builtin"`
 	I18n      map[string]BuiltinAgentI18n `yaml:"i18n"`
 	Config    CustomAgentConfig           `yaml:"config"`
+	// Enabled switches the agent on or off for the agent picker. Absent means
+	// on. A switched-off agent stays resolvable by ID so sessions, embed
+	// channels and API callers that already name it keep working; it is only
+	// left out of ListAgents.
+	Enabled *bool `yaml:"enabled"`
 }
 
 // builtinAgentsFile is the top-level YAML structure.
@@ -103,6 +108,19 @@ func rebuildRegistryFromConfig() {
 // ---------------------------------------------------------------------------
 // Public API — context-aware, i18n-capable
 // ---------------------------------------------------------------------------
+
+// IsBuiltinAgentEnabled reports whether builtin_agents.yaml leaves the agent
+// switched on (`enabled` absent or true). Unknown IDs count as enabled so the
+// hard-coded registry keeps its previous behaviour.
+func IsBuiltinAgentEnabled(id string) bool {
+	builtinAgentEntriesMu.RLock()
+	entry, ok := builtinAgentEntries[id]
+	builtinAgentEntriesMu.RUnlock()
+	if !ok || entry == nil || entry.Enabled == nil {
+		return true
+	}
+	return *entry.Enabled
+}
 
 // GetBuiltinAgentWithContext returns a built-in agent whose Name and
 // Description are localised according to the language in ctx.

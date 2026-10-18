@@ -604,3 +604,25 @@ func TestValidateConfigMaxIterationsUnlimited(t *testing.T) {
 	tooHigh := &types.AgentConfig{MaxIterations: MAX_ITERATIONS + 1}
 	require.Error(t, s.ValidateConfig(tooHigh))
 }
+
+func TestDisabledBuiltinAgentsAreHiddenFromThePicker(t *testing.T) {
+	require.NoError(t, types.LoadBuiltinAgentsConfig(filepath.Join("..", "..", "..", "config")))
+
+	for _, id := range []string{types.BuiltinWikiResearcherID, types.BuiltinDataAnalystID} {
+		require.False(t, types.IsBuiltinAgentEnabled(id), "%s is switched off in builtin_agents.yaml", id)
+		require.True(t, types.IsBuiltinAgentID(id), "%s must still resolve by ID for old sessions", id)
+	}
+	for _, id := range []string{types.BuiltinQuickAnswerID, types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID} {
+		require.True(t, types.IsBuiltinAgentEnabled(id), "%s stays on", id)
+	}
+	require.True(t, types.IsBuiltinAgentEnabled("not-in-yaml"), "unknown ids default to enabled")
+
+	ids := types.GetBuiltinAgentIDs()
+	require.NotContains(t, ids, types.BuiltinWikiResearcherID, "the picker list leaves a switched-off agent out")
+	require.NotContains(t, ids, types.BuiltinDataAnalystID)
+	require.Contains(t, ids, types.BuiltinDocumentAssistantID)
+	require.Contains(t, types.GetAllBuiltinAgentIDs(), types.BuiltinWikiResearcherID,
+		"rows that already name it (IM channels) still resolve")
+	require.False(t, types.MCPEndpointAgentAllowed(&types.CustomAgent{ID: types.BuiltinWikiResearcherID, IsBuiltin: true}, 1),
+		"an MCP endpoint cannot ask a switched-off agent")
+}

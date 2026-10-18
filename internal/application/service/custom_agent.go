@@ -222,7 +222,8 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 	builtinIDs := types.GetBuiltinAgentIDs()
 	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 
-	// Add built-in agents in order
+	// Add built-in agents in order; GetBuiltinAgentIDs leaves out one
+	// switched off in builtin_agents.yaml even when a tenant row exists for it.
 	for _, builtinID := range builtinIDs {
 		if builtinInDB[builtinID] {
 			// Use customized config from database

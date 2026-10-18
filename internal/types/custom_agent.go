@@ -704,8 +704,24 @@ var builtinAgentIDsOrdered = []string{
 	BuiltinDocumentAssistantID,
 }
 
-// GetBuiltinAgentIDs returns all built-in agent IDs in fixed order
+// GetBuiltinAgentIDs returns the user-facing built-in agent IDs in fixed
+// order, leaving out those switched off in builtin_agents.yaml
+// (`enabled: false`). Every list a user or an endpoint picks an agent from
+// goes through here, so a switched-off agent is offered nowhere.
 func GetBuiltinAgentIDs() []string {
+	out := make([]string, 0, len(builtinAgentIDsOrdered))
+	for _, id := range builtinAgentIDsOrdered {
+		if IsBuiltinAgentEnabled(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// GetAllBuiltinAgentIDs returns the user-facing built-in agent IDs whether
+// or not they are switched on, for rows that already name one (an IM
+// channel bound before the agent was switched off must stay listed).
+func GetAllBuiltinAgentIDs() []string {
 	return builtinAgentIDsOrdered
 }
 
