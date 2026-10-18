@@ -42,6 +42,11 @@ export function setSidebarHidden(next: boolean): void {
   listeners.forEach((fn) => fn());
 }
 
+/** The current value outside React (a page restoring it when it closes). */
+export function sidebarHiddenNow(): boolean {
+  return get();
+}
+
 /** True when the desktop rail is hidden; false during server rendering. */
 export function useSidebarHidden(): boolean {
   return useSyncExternalStore(subscribe, get, () => false);

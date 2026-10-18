@@ -17,7 +17,7 @@ import { Modal } from "@/components/modal";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useToast } from "@/components/toast";
 import { IconChevronLeft, IconExternal, IconRefresh, IconSidebarToggle } from "@/components/icons";
-import { setSidebarHidden, useSidebarHidden } from "@/lib/sidebar-state";
+import { setSidebarHidden, sidebarHiddenNow, useSidebarHidden } from "@/lib/sidebar-state";
 import { DocumentPane } from "@/components/doc-workspace/document-pane";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import type { EditorActions } from "@/components/doc-workspace/use-live-spelling";
@@ -66,6 +66,13 @@ export const queueHref = (view: "requests" | "drafts" = "drafts") =>
 export function LegalDraftReview({ id }: { id: string }) {
   const { t, locale } = useT();
   const sidebarHidden = useSidebarHidden();
+  // the page opens with the left rail hidden (PDF + editor need the width)
+  // and puts it back the way it was when the reviewer leaves
+  useEffect(() => {
+    const before = sidebarHiddenNow();
+    setSidebarHidden(true);
+    return () => setSidebarHidden(before);
+  }, []);
   const router = useRouter();
   const searchParams = useSearchParams();
   const preferredKb = searchParams.get("kb");
