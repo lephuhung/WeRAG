@@ -1,6 +1,6 @@
-"""OpenAI-compatible adapter for AIRAG's embed-rerank service.
+"""OpenAI-compatible adapter for WeRAG's embed-rerank service.
 
-AIRAG's embed-rerank (:8090) exposes a custom API:
+The embed-rerank service (:8090) exposes a custom API:
     POST /embed  {texts: [...]}            -> {embeddings: [[f32]]}
     POST /rerank {query, documents, top_k} -> {results: [{index, score, text}]}
 
@@ -9,9 +9,9 @@ WeRAG (WeKnora) model config expects OpenAI-style endpoints:
     POST /v1/rerank      {model, query, docs}   -> {results: [{index,
                        document: {text}, relevance_score}]}   (vLLM/Jina shape)
 
-This single-file service bridges the two. Run it on the same docker network
-as hrag-embed-rerank; WeRAG then points its embedding + rerank model base
-URLs at this adapter.
+This single-file service bridges the two. Run it on the same Docker network
+as hrag-embed-rerank; configure WeRAG's embedding and rerank model base URLs
+to point at this adapter.
 
 Env:
     UPSTREAM_URL   — default http://hrag-embed-rerank:8090
@@ -21,6 +21,7 @@ Env:
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -30,21 +31,26 @@ UPSTREAM = os.environ.get("UPSTREAM_URL", "http://hrag-embed-rerank:8090").rstri
 ADAPTER_API_KEY = os.environ.get("ADAPTER_API_KEY", "").strip()
 TIMEOUT = float(os.environ.get("ADAPTER_TIMEOUT", "120"))
 
-app = FastAPI(title="embed-rerank OpenAI adapter")
+
+def _make_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(base_url=UPSTREAM, timeout=TIMEOUT)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global _client
+    _client = _make_client()
+    try:
+        yield
+    finally:
+        if _client:
+            await _client.aclose()
+            _client = None
+
+
+app = FastAPI(title="embed-rerank OpenAI adapter", lifespan=lifespan)
 _bearer = HTTPBearer(auto_error=False)
 _client: httpx.AsyncClient | None = None
-
-
-@app.on_event("startup")
-async def _startup():
-    global _client
-    _client = httpx.AsyncClient(base_url=UPSTREAM, timeout=TIMEOUT)
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    if _client:
-        await _client.aclose()
 
 
 def _auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)):

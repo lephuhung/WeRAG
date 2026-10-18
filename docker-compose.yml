@@ -1282,15 +1282,16 @@ services:
     profiles:
       - full
 
-  # Embedding + rerank service (BGE/vietlegal-harrier) moved in from the
-  # retired AIRAG repo. The image ships the code at /app/backend, so only
-  # the HF model cache needs mounting. GPU-only — profile `airag-models`.
+  # Local embedding + rerank service built from this repository.
+  # GPU-only — profile `airag-models`.
   # Not port-published: only the OpenAI adapter below calls it, via
   # docker DNS on WeKnora-network.
   embed-rerank:
-    image: ${AIRAG_BACKEND_IMAGE:-airag-backend:v2phase2}
+    image: ${WERAG_EMBED_RERANK_IMAGE:-werag-embed-rerank:local}
+    build:
+      context: .
+      dockerfile: services/embed-rerank/Dockerfile
     container_name: hrag-embed-rerank
-    command: ["uvicorn", "embed_rerank_service.main:app", "--host", "0.0.0.0", "--port", "8090"]
     expose:
       - "8090"
     environment:
@@ -1322,11 +1323,9 @@ services:
   # `--profile airag-models`; tenant model configs point base_url at
   # http://hrag-openai-adapter:8090[/v1].
   airag-model-adapter:
-    image: ${AIRAG_BACKEND_IMAGE:-airag-backend:v2phase2}
+    image: ${WERAG_EMBED_RERANK_IMAGE:-werag-embed-rerank:local}
     container_name: hrag-openai-adapter
-    command: ["uvicorn", "openai_adapter:app", "--host", "0.0.0.0", "--port", "8090", "--app-dir", "/adapter"]
-    volumes:
-      - ./docker/adapters/openai_embed_rerank.py:/adapter/openai_adapter.py:ro
+    command: ["openai_adapter:app", "--host", "0.0.0.0", "--port", "8090", "--app-dir", "/adapter"]
     environment:
       - UPSTREAM_URL=${AIRAG_EMBED_RERANK_URL:-http://hrag-embed-rerank:8090}
       - ADAPTER_API_KEY=${AIRAG_ADAPTER_API_KEY:-}
