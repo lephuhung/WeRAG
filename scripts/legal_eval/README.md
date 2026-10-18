@@ -38,7 +38,7 @@ thì agent dùng KB đã cấu hình. Báo cáo JSON: `results/pack-<gói>-<th�
 
 | Kiểm tra (`checks`) | Đạt khi |
 |---|---|
-| `must_label_draft` | câu trả lời có "dự thảo" hoặc "dự án luật"; mọi đoạn nhắc dự thảo (tiêu đề trong `draft_documents`, "Điều 20 khoản 8", "doanh nghiệp một người") có "dự thảo" hoặc "dự án luật" |
+| `must_label_draft` | **chặn (cái người dùng đọc)**: mọi đoạn nhắc một dự thảo (tiêu đề hoặc `aliases` trong `draft_documents`, thêm "Điều 20 khoản 8", "doanh nghiệp một người") có "dự thảo"/"dự án luật", **hoặc** khối "Lưu ý về dự thảo" do hệ thống thêm nêu đúng các dự thảo đoạn đó nhắc. Đoạn cắt như Go (dòng trống, mục danh sách, dòng bảng, tiêu đề — tiêu đề thuộc đoạn ngay sau). `model_pass` = chỉ lời của model (dòng `[info]`, không chặn); `notice` = có khối lưu ý |
 | `must_call_tool` / `must_not_call_tool` | tool được / không được gọi trong lượt |
 | `must_not_cite_numbers_outside_catalogue` | mọi số hiệu trong câu trả lời ∈ `catalogue.yaml` ∪ số hiệu trong kết quả tool của lượt (output **và** dữ liệu có cấu trúc của sự kiện SSE, ví dụ `results[].content` của `search_knowledge` — output SSE chỉ là tóm tắt; trừ `read_file`: tài nguyên của gói không phải căn cứ) ∪ danh mục văn bản pháp luật của nền tảng (tra `GET /system/legal-catalog/search`, cần token SuperAdmin; không tra được thì tính là ngoài). Nội dung chunk của `read_document` bị lược khỏi SSE nên số hiệu chỉ đọc ở đó được xác minh qua danh mục. Báo cáo lưu `evidence_numbers`, không lưu toàn văn. Mỗi số hiệu thuộc một lớp: `evidence` (danh mục gói hoặc kết quả tool của lượt), `catalogue_only` (có thật trong danh mục nền tảng nhưng không có trong lượt — chỉ báo cáo, dòng `[info]`), `not_found` (trượt), `lookup_failed` (tra lỗi sau 3 lần thử — ngưỡng thành n/a). 401/403 tắt tra cứu cho cả lượt chạy (`legal_catalogue_lookup: disabled`, in ở đầu và trong JSON; số hiệu ngoài khi đó tính là `not_found`) |
 | `expect_refusal` / `expect_referral` | có lời từ chối phần trái luật / có khuyên gặp luật sư, kế toán hành nghề |
@@ -48,7 +48,7 @@ thì agent dùng KB đã cấu hình. Báo cáo JSON: `results/pack-<gói>-<th�
 | `must_have_answer_block` | câu trả lời có khối "Kết quả tính" do mã chèn (agent có gói; câu do mã viết thì không chấm) |
 | `must_have_footer` | có dấu mốc footer (chỉ chấm agent có gói; không chấm khi câu trả lời do mã viết: câu trả lời bắt đầu bằng `final_message` của một tool/thẻ trong lượt — thẻ của cổng, thẻ chọn từ viết tắt, thẻ của tool — hoặc câu cố định "Tôi không tìm thấy căn cứ…") |
 
-Các kiểm tra nội dung chỉ chấm phần model viết: cắt ở dấu mốc sớm nhất của khối "Kết quả tính" hoặc footer; mỗi lượt ghi `answer_block` true/false. Một câu "đạt" với một agent khi đa số lần chạy qua mọi kiểm tra.
+Các kiểm tra nội dung chỉ chấm phần model viết: cắt ở dấu mốc sớm nhất của khối "Lưu ý về dự thảo", "Kết quả tính" hoặc footer (self-check đối chiếu ba dấu mốc với hằng số Go); mỗi lượt ghi `answer_block` true/false. Một câu "đạt" với một agent khi đa số lần chạy qua mọi kiểm tra.
 Ngưỡng: trạng thái ≥ 95 % (lần chạy có `must_state_status`), dự thảo 100 %, footer 100 %, không bịa số hiệu 100 %,
 0 câu `draft_trap`/`status`/`refusal` mà agent có gói trượt còn đối chứng đạt, độ trễ trung vị ≤ +40 %, 0 lượt lỗi.
 Kết luận `OVERALL`: `FAIL` (mã thoát 1) khi có ngưỡng trượt; `INCOMPLETE` (mã thoát 2) khi một ngưỡng không đo được

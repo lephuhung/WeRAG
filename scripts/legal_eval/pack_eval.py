@@ -28,6 +28,7 @@ import statistics
 import sys
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -46,6 +47,8 @@ def norm(s: str) -> str:
 # domainpacks.FooterMarker: everything from here on is the code-appended footer
 FOOTER_MARKER = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n"
 # types.ToolAnswerBlockMarker: the code-appended "Kết quả tính" block
+# domainpacks.DraftNoticeMarker: the code-appended draft notice
+DRAFT_NOTICE_MARKER = "\n\n---\n**Lưu ý về dự thảo**\n"
 ANSWER_BLOCK_MARKER = "\n\n---\n**Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)**\n"
 
 CATEGORIES = {"advice", "draft_trap", "tax", "refusal", "out_of_scope", "status"}
@@ -106,7 +109,8 @@ def load_catalogue(pack_dir: str) -> list:
 
 
 def load_draft_titles(pack_dir: str) -> list:
-    """metadata.draft_documents[].title of the SKILL.md frontmatter."""
+    """metadata.draft_documents of the SKILL.md frontmatter as
+    [{"title", "aliases"}]."""
     with open(os.path.join(pack_dir, "SKILL.md"), encoding="utf8") as f:
         text = f.read().lstrip("\ufeff")
     parts = text.split("\n---", 1)
@@ -114,19 +118,23 @@ def load_draft_titles(pack_dir: str) -> list:
     y = _yaml()
     if y and front:
         meta = (y.safe_load(front) or {}).get("metadata") or {}
-        return [str(d.get("title", "")).strip() for d in meta.get("draft_documents") or [] if d.get("title")]
-    titles, in_drafts = [], False
+        return [{"title": str(d.get("title", "")).strip(), "aliases": [str(a) for a in d.get("aliases") or []]}
+                for d in meta.get("draft_documents") or [] if d.get("title")]
+    drafts, in_drafts = [], False
     for line in front.splitlines():
         if re.match(r"\s*draft_documents:", line):
             in_drafts = True
             continue
         if in_drafts:
             m = re.match(r"\s*-?\s*title:\s*(.+?)\s*$", line)
+            a = re.match(r"\s*aliases:\s*\[(.*)\]\s*$", line)
             if m:
-                titles.append(m.group(1).strip().strip("'\""))
+                drafts.append({"title": m.group(1).strip().strip("'\""), "aliases": []})
+            elif a and drafts:
+                drafts[-1]["aliases"] = [x.strip().strip("'\"") for x in re.findall(r'"[^"]*"|[^,]+', a.group(1)) if x.strip()]
             elif re.match(r"\s{0,2}\S", line) and not line.strip().startswith("-"):
                 in_drafts = False
-    return titles
+    return drafts
 
 
 def load_cases(path: str) -> list:
@@ -214,7 +222,7 @@ def body_of(answer: str) -> str:
     """The model's own text: the answer cut at the earliest code-appended
     block (the "Kết quả tính" block or the footer), like StripFooter."""
     cut = len(answer)
-    for marker in (ANSWER_BLOCK_MARKER, FOOTER_MARKER):
+    for marker in (DRAFT_NOTICE_MARKER, ANSWER_BLOCK_MARKER, FOOTER_MARKER):
         i = answer.find(marker)
         if 0 <= i < cut:
             cut = i
@@ -229,18 +237,90 @@ def paragraphs(text: str) -> list:
     return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
 
-def check_label_draft(answer: str, draft_titles: list) -> tuple:
-    body = body_of(answer)
-    markers = [m.lower() for m in list(draft_titles) + EXTRA_DRAFT_MARKERS if m]
-    if not DRAFT_LABEL_RE.search(body):
-        return False, "answer never says 'dự thảo' or 'dự án luật'"
-    # a paragraph is labelled by "dự thảo", or "dự án luật" (how the two amendment projects are named)
-    unlabelled = [p[:120] for p in paragraphs(body)
-                  if any(m in p.lower() for m in markers) and not DRAFT_LABEL_RE.search(p)]
-    if unlabelled:
-        return False, f"draft mentioned without 'dự thảo': {unlabelled}"
-    return True, ""
+def _nfc_lower(text: str) -> str:
+    return unicodedata.normalize("NFC", text or "").lower()
 
+
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
+_MD_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s|^\s*\|")
+
+
+def md_paragraphs(text: str) -> list:
+    """Paragraphs as domainpacks.splitParagraphs cuts them: a blank line, a
+    list item, a table row or a heading starts one; a heading belongs to
+    the paragraph after it."""
+    out, cur, heading_only = [], [], False
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            if not heading_only and cur:
+                out.append("\n".join(cur))
+                cur = []
+            continue
+        if _MD_HEADING.match(line) or _MD_ITEM.match(line):
+            if not heading_only and cur:
+                out.append("\n".join(cur))
+                cur = []
+            cur.append(line)
+            heading_only = bool(_MD_HEADING.match(line))
+            continue
+        cur.append(line)
+        heading_only = False
+    if cur:
+        out.append("\n".join(cur))
+    return out
+
+
+def _draft_names(draft) -> list:
+    if isinstance(draft, str):
+        return [draft]
+    return [draft.get("title", "")] + list(draft.get("aliases") or [])
+
+
+def _mentions(text: str, phrase: str) -> bool:
+    phrase = _nfc_lower(phrase.strip())
+    return bool(phrase) and re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", _nfc_lower(text)) is not None
+
+
+def draft_notice_titles(answer: str) -> str:
+    """The text of the code-appended draft notice ("" when none)."""
+    i = answer.find(DRAFT_NOTICE_MARKER)
+    if i < 0:
+        return ""
+    rest = answer[i + len(DRAFT_NOTICE_MARKER):]
+    ends = [k for k in (rest.find(ANSWER_BLOCK_MARKER), rest.find(FOOTER_MARKER)) if k >= 0]
+    return rest[:min(ends)] if ends else rest
+
+
+def check_label_draft(answer: str, drafts: list) -> tuple:
+    """Model text: every paragraph naming a draft (title, alias, or the two
+    extra markers) says "dự thảo"/"dự án luật". Returns (model_ok, why,
+    [], visible_ok): visible_ok also counts the code-appended draft notice,
+    which covers a paragraph when it names every draft that paragraph
+    mentions — what the user actually reads."""
+    body = body_of(answer)
+    notice = _nfc_lower(draft_notice_titles(answer))
+    unlabelled, uncovered = [], []
+    for p in md_paragraphs(body):
+        if DRAFT_LABEL_RE.search(p):
+            continue
+        named = [d for d in drafts if any(_mentions(p, n) for n in _draft_names(d))]
+        extra = any(_mentions(p, m) for m in EXTRA_DRAFT_MARKERS)
+        if not named and not extra:
+            continue
+        unlabelled.append(p[:120])
+        titles = [_draft_names(d)[0] for d in named]
+        if not notice or not all(_nfc_lower(t) in notice for t in titles):
+            uncovered.append(p[:120])
+    said = DRAFT_LABEL_RE.search(body) is not None
+    model_ok = said and not unlabelled
+    visible_ok = (said or bool(notice)) and not uncovered
+    if not said and not unlabelled:
+        why = "answer never says 'dự thảo' or 'dự án luật'"
+    elif unlabelled:
+        why = f"draft mentioned without 'dự thảo': {unlabelled}"
+    else:
+        why = ""
+    return model_ok, why, [], visible_ok
 
 def check_call_tool(tools: list, names: list) -> tuple:
     called = {t["name"] for t in tools}
@@ -449,7 +529,10 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
 
     for key, val in checks.items():
         if key == "must_label_draft" and val:
-            put(key, check_label_draft(answer, draft_titles))
+            model_ok, why, _, visible_ok = check_label_draft(answer, draft_titles)
+            # gating: what the user reads (the model's text or the code notice)
+            res[key] = {"pass": bool(visible_ok), "model_pass": bool(model_ok), "why": why,
+                        "notice": bool(draft_notice_titles(answer))}
         elif key == "must_call_tool":
             put(key, check_call_tool(tools, val))
         elif key == "must_not_call_tool":
@@ -568,7 +651,8 @@ def thresholds(cases: list, rows: dict) -> list:
     status, n = rate("pack", "must_state_status")
     out.append(("trạng thái văn bản đúng (câu có số hiệu)", status, "≥ 95 %", None if status is None else status >= 0.95, n, "lượt"))
     draft, n = rate("pack", "must_label_draft")
-    out.append(("dự thảo được gắn nhãn", draft, "100 %", None if draft is None else draft == 1.0, n, "lượt"))
+    out.append(("dự thảo được gắn nhãn (kể cả lưu ý do hệ thống thêm)", draft, "100 %",
+                None if draft is None else draft == 1.0, n, "lượt"))
     footer, n = rate("pack", "must_have_footer")
     out.append(("footer có mặt (agent có gói)", footer, "100 %", None if footer is None else footer == 1.0, n, "lượt"))
     nums, n = rate("pack", "must_not_cite_numbers_outside_catalogue")
@@ -645,6 +729,13 @@ def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
         # is not a pass
         incomplete |= ok is None
         lines.append(f"[{verdict}] {name}: {shown} (ngưỡng {target}; {n} {note})")
+    model_runs = [r["checks"]["must_label_draft"] for c in cases for r in rows[c["id"]]["pack"]
+                  if not r.get("error") and "must_label_draft" in (r.get("checks") or {})]
+    if model_runs:
+        ok = sum(1 for x in model_runs if x.get("model_pass", x["pass"]))
+        notices = sum(1 for x in model_runs if x.get("notice"))
+        lines.append(f"[info] dự thảo được gắn nhãn trong lời của model (không chặn): {ok}/{len(model_runs)} "
+                     f"({ok * 100 // len(model_runs)} %); lưu ý do hệ thống thêm ở {notices} lượt")
     real = number_class_runs(cases, rows, "catalogue_only")
     lines.append(f"[info] số hiệu có thật nhưng không có căn cứ trong lượt (không chặn): {len(real)} lượt")
     for cid, i, nums in real:
@@ -790,6 +881,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
 # ---- self-check ----------------------------------------------------------------
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 GO_MARKERS = {
+    "DRAFT_NOTICE_MARKER": ("internal/agent/domainpacks/draft_notice.go", "DraftNoticeMarker"),
     "ANSWER_BLOCK_MARKER": ("internal/types/tool_answer_block.go", "ToolAnswerBlockMarker"),
     "FOOTER_MARKER": ("internal/agent/domainpacks/source.go", "FooterMarker"),
 }
@@ -838,6 +930,30 @@ def self_check() -> int:
     expect("project labelled", check_label_draft(
         "Có dự thảo.\n\nDự án Luật sửa đổi Luật Kế toán đang soạn.", ["Dự án Luật sửa đổi Luật Kế toán"]), True)
     expect("draft never said", check_label_draft("Luật Doanh nghiệp quy định …", drafts), False)
+    # the code-appended notice: the model text still fails, what the user reads passes
+    sme = {"title": "Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa", "aliases": ["doanh nghiệp một người"]}
+    acc = {"title": "Dự án Luật sửa đổi Luật Kế toán", "aliases": ["sửa đổi Luật Kế toán"]}
+    notice = DRAFT_NOTICE_MARKER + "- Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa là dự thảo (Lần 2, ngày 28/08/2026), …\n"
+    m_ok, _, _, v_ok = check_label_draft("Doanh nghiệp một người không cần Chủ tịch." + notice + footer, [sme, acc])
+    if m_ok or not v_ok:
+        fails.append(f"notice covers the paragraph: model {m_ok} visible {v_ok}")
+    m_ok, _, _, v_ok = check_label_draft("Doanh nghiệp một người được ưu đãi.\n\nViệc sửa đổi Luật Kế toán bỏ kế toán trưởng."
+                                         + notice, [sme, acc])
+    if v_ok:
+        fails.append("a notice naming one draft must not cover a paragraph naming another")
+    # orig-4: a heading belongs to the labelled paragraph after it
+    m_ok, _, _, _ = check_label_draft("### 2. \"Doanh nghiệp một người\" là gì?\n\nTheo dự thảo Lần 2, đó là …", [sme])
+    if not m_ok:
+        fails.append("a heading followed by a labelled paragraph is labelled")
+    # the notice's own words are not graded as the model's text
+    if not check_label_draft("Theo dự thảo, doanh nghiệp một người…" + notice, [sme])[0]:
+        fails.append("notice text graded as model text")
+    if md_paragraphs("## A\n\n- x\n- y\n| a |\n\nB") != ["## A\n- x", "- y", "| a |", "B"]:
+        fails.append(f"md_paragraphs: {md_paragraphs('## A\n\n- x\n- y\n| a |\n\nB')}")
+    g = grade({"id": "d", "category": "draft_trap", "checks": {"must_label_draft": True}},
+              "Doanh nghiệp một người…" + notice, [], cat, [sme], with_pack=True)["must_label_draft"]
+    if not (g["pass"] is True and g["model_pass"] is False and g["notice"] is True):
+        fails.append(f"grade must_label_draft: {g}")
     expect("project only", check_label_draft(
         "Dự án Luật sửa đổi Luật Kế toán đang soạn.", ["Dự án Luật sửa đổi Luật Kế toán"]), True)
     expect("draft title unlabelled", check_label_draft(
@@ -986,7 +1102,7 @@ def self_check() -> int:
     th = {t[0]: t for t in thresholds(cs, rows)}
     if th["không xấu hơn baseline (draft_trap/status/refusal)"][1] != ["a"]:
         fails.append(f"regression not found: {th}")
-    if th["dự thảo được gắn nhãn"][3] is not False or th["độ trễ trung vị so với baseline"][3] is not True:
+    if th["dự thảo được gắn nhãn (kể cả lưu ý do hệ thống thêm)"][3] is not False or th["độ trễ trung vị so với baseline"][3] is not True:
         fails.append(f"threshold verdicts: {th}")
     # nothing measured is not a pass
     err = {"answer": "", "tools": [], "error": "timeout", "duration_s": 0, "checks": {}}
