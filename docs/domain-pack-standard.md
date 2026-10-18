@@ -122,8 +122,23 @@ Mọi gói trong `domain-packs/` phải qua test:
 | a) `SKILL.md` | quy trình, câu hỏi khai thác dữ kiện, cấu trúc trả lời, phạm vi/ngoài phạm vi, bản đồ tài nguyên, tên tool WeRAG | "luôn/bắt buộc" về hành vi; bảng trạng thái; thuế suất/ngưỡng; script; hướng dẫn cài; web | review tay + test 3.4 |
 | b) `catalogue.yaml` | số hiệu + "dùng cho" | tự khai IN FORCE/REPLACED | lệnh đối chiếu (giai đoạn 2) tra `legal_documents.number_key`; thiếu → `legal_document_requests` (nguồn `pack:<name>`); lệch → báo SuperAdmin |
 | c) `references/`, `assets/` | bình luận, so sánh, checklist, mẫu; đầu mỗi tệp ghi "Bình luận tham khảo — không phải căn cứ" | trích nguyên văn điều luật không có số hiệu + ngày; số liệu thay đổi theo văn bản | chỉ đọc qua `read_file(skill://…)`, không phải bằng chứng. **Không** nạp vào KB cho tới khi có cờ KB `evidence_role=reference` (giai đoạn 3) |
-| d) mã | tool Go cho mọi phép tính; footer; cảnh báo hết hạn rà soát; nhãn dự thảo | script trong sandbox | tool đăng ký trong `AvailableToolDefinitions`, bật theo agent |
+| d) mã | tool Go cho phép tính có công thức cố định; footer; cảnh báo hết hạn rà soát; nhãn dự thảo | script trong sandbox cho loại phép tính này | tool đăng ký trong `AvailableToolDefinitions`, bật theo agent — xem 4.1 |
 | e) `evals/` | ≥ 20 câu, rubric nhị phân | kỳ vọng tự do | chạy 2 cấu hình (có/không gói) — mục 7 |
+
+### 4.1 Tính toán: backend hay sandbox
+
+Hai loại mã, hai nơi chạy:
+
+| | Tool Go trong backend | Script trong sandbox |
+| --- | --- | --- |
+| Dùng cho | phép tính có công thức cố định, đầu vào có schema (so sánh thuế, tính hạn, lệ phí, quy đổi) | xử lý dữ liệu / tạo tệp không đoán trước được (Excel, Word, biểu đồ từ dữ liệu người dùng, đối chiếu bảng kê), cần thư viện (pandas, openpyxl, OCR) |
+| Ai viết | đội WeRAG viết lại từ script gốc, review như mọi mã backend | mã của gói, có thể từ bên thứ ba |
+| Ràng buộc | hàm thuần: không I/O, không mạng, không DB, không đọc tệp; đầu vào có giới hạn (số dương, khoảng hợp lệ), không có giá trị mặc định cho tham số pháp lý (thuế suất, tỷ lệ); output có khối "Giả định"; unit test | manifest khai `requires_sandbox: true`; cài qua đường skill Tổ chức (snapshot image), SuperAdmin duyệt; kết quả chỉ là sản phẩm phụ — căn cứ, footer, nhãn dự thảo vẫn do mã ngoài sandbox |
+| Vị trí | `internal/agent/domaintools/<pack>/` (mỗi gói một package, không import service/repository), đăng ký qua `required_tools` | snapshot image của sandbox config |
+
+Lý do tool Go chạy trong backend mà không cần sandbox: sandbox tồn tại để cách ly **mã không tin cậy hoặc tuỳ ý** (mã bên thứ ba, lệnh do model ghép). Tool Go là mã đã review, hàm thuần, chi phí micro-giây — cách ly nó không thêm an toàn, chỉ thêm độ trễ và điểm hỏng. Cái giá thật là **gắn kết**: mỗi gói có tool thì thêm mã vào binary lõi và đổi công thức phải build lại backend. Giữ cái giá đó nhỏ bằng ranh giới package ở trên; nếu sau này nhiều gói chỉ cần công thức đơn giản, cân nhắc tool công thức khai báo (công thức trong manifest, bộ đánh giá biểu thức an toàn) thay vì viết Go cho từng gói.
+
+Gói `requires_sandbox` chưa được hỗ trợ ở giai đoạn 1–2 (gói nhúng không chạy script); làm khi có gói đầu tiên cần nó (ví dụ Excel add-in).
 
 ## 5. Checklist nhập skill của bên thứ ba
 
