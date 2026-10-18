@@ -1020,35 +1020,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/auto-setup": {
-            "post": {
-                "description": "Chỉ dành cho bản Lite: lần khởi động đầu tự tạo người dùng và đơn vị mặc định rồi trả token; mọi lần khởi động đều phải xác thực bằng thông tin xác thực gốc của desktop, bỏ qua đăng ký/đăng nhập thủ công",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Xác thực"
-                ],
-                "summary": "Khởi tạo tự động (bản Lite desktop)",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LoginResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "không phải bản Lite",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
         "/auth/change-password": {
             "post": {
                 "security": [
@@ -2514,616 +2485,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/datasource": {
-            "get": {
-                "description": "List all data sources for a specific knowledge base",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "List data sources for a knowledge base",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base ID",
-                        "name": "kb_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a new data source configuration for a knowledge base",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Create a new data source",
-                "parameters": [
-                    {
-                        "description": "Data source configuration",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/logs/{log_id}": {
-            "get": {
-                "description": "Retrieve a specific sync log entry",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Get specific sync log",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Sync log ID",
-                        "name": "log_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/types": {
-            "get": {
-                "description": "Get list of available data source connectors",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Get available connectors",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_datasource.ConnectorMetadata"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/validate-credentials": {
-            "post": {
-                "description": "Validate connectivity to an external data source using type + credentials",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Test connection with raw credentials (no persistence)",
-                "parameters": [
-                    {
-                        "description": "type and credentials",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "object"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}": {
-            "get": {
-                "description": "Retrieve a data source configuration by ID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Get a data source by ID",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "put": {
-                "description": "Update an existing data source configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Update a data source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Updated configuration",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a data source (soft delete)",
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Delete a data source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/logs": {
-            "get": {
-                "description": "Retrieve sync history for a data source",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Get sync logs",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit (default: 10)",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Offset (default: 0)",
-                        "name": "offset",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/pause": {
-            "post": {
-                "description": "Pause a data source's scheduled syncs",
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Pause data source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/resource-ancestors": {
-            "post": {
-                "description": "Resolve the ancestor ExternalIDs that must be expanded to reveal the given (possibly deeply nested) resources in a lazily-loaded picker. Used to restore an existing selection when editing a data source.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Resolve resource ancestors",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Resource IDs to resolve",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_handler.resolveAncestorsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/resources": {
-            "get": {
-                "description": "List resources available for sync in the external system. Pass parent_id to lazily load the direct children of a resource (used for large hierarchical sources such as Feishu wiki).",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "List available resources in data source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Parent resource ExternalID; empty lists the top level",
-                        "name": "parent_id",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Resource"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/resume": {
-            "post": {
-                "description": "Resume a paused data source",
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Resume data source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/sync": {
-            "post": {
-                "description": "Trigger an immediate sync for a data source",
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Trigger immediate sync",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/datasource/{id}/validate": {
-            "post": {
-                "description": "Validate the connection to an external data source",
-                "tags": [
-                    "Nguồn dữ liệu"
-                ],
-                "summary": "Test data source connection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Data source ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/document-format/check": {
             "post": {
                 "security": [
@@ -4063,7 +3424,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "loại lưu trữ (cos/minio)",
+                        "description": "loại lưu trữ (minio)",
                         "name": "storage_type",
                         "in": "formData",
                         "required": true
@@ -17369,7 +16730,7 @@ const docTemplate = `{
         },
         "/system/storage-engine-check": {
             "post": {
-                "description": "Dùng tham số đang điền để kiểm tra kết nối MinIO/COS, không lưu cấu hình",
+                "description": "Dùng tham số đang điền để kiểm tra kết nối MinIO, không lưu cấu hình",
                 "consumes": [
                     "application/json"
                 ],
@@ -17403,7 +16764,7 @@ const docTemplate = `{
         },
         "/system/storage-engine-status": {
             "get": {
-                "description": "Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO, COS để thiết lập toàn cục và kho tri thức lựa chọn",
+                "description": "Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local, MinIO để thiết lập toàn cục và kho tri thức lựa chọn",
                 "produces": [
                     "application/json"
                 ],
@@ -19800,38 +19161,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_datasource.ConnectorMetadata": {
-            "type": "object",
-            "properties": {
-                "auth_type": {
-                    "description": "\"oauth2\", \"api_key\", \"token\", etc.",
-                    "type": "string"
-                },
-                "capabilities": {
-                    "description": "\"incremental\", \"webhook\", \"deletion_sync\", etc.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "description": {
-                    "type": "string"
-                },
-                "icon": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "priority": {
-                    "description": "Priority order for UI display (lower = higher priority)",
-                    "type": "integer"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_errors.AppError": {
             "type": "object",
             "properties": {
@@ -20249,14 +19578,6 @@ const docTemplate = `{
                 "tag.created",
                 "tag.updated",
                 "tag.deleted",
-                "datasource.created",
-                "datasource.updated",
-                "datasource.deleted",
-                "datasource.sync_started",
-                "datasource.sync_completed",
-                "datasource.sync_failed",
-                "datasource.paused",
-                "datasource.resumed",
                 "wiki.content_changed",
                 "faq.import_started",
                 "faq.import_completed",
@@ -20327,14 +19648,6 @@ const docTemplate = `{
                 "AuditActionTagCreated",
                 "AuditActionTagUpdated",
                 "AuditActionTagDeleted",
-                "AuditActionDataSourceCreated",
-                "AuditActionDataSourceUpdated",
-                "AuditActionDataSourceDeleted",
-                "AuditActionDataSourceSyncStarted",
-                "AuditActionDataSourceSyncCompleted",
-                "AuditActionDataSourceSyncFailed",
-                "AuditActionDataSourcePaused",
-                "AuditActionDataSourceResumed",
                 "AuditActionWikiContentChanged",
                 "AuditActionFAQImportStarted",
                 "AuditActionFAQImportCompleted",
@@ -20430,35 +19743,6 @@ const docTemplate = `{
                 "skip_if_tagged": {
                     "description": "SkipIfTagged leaves documents that already carry tags untouched, so a\ndeliberate manual classification is not diluted by model guesses. It is\na pointer because the default is true: rows written before this field\nexisted decode to nil and must not silently flip to \"always append\".",
                     "type": "boolean"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.COSEngineConfig": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_id": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                },
-                "temp_bucket_name": {
-                    "type": "string"
-                },
-                "temp_region": {
-                    "type": "string"
                 }
             }
         },
@@ -21044,112 +20328,6 @@ const docTemplate = `{
                 },
                 "web_search_provider_id": {
                     "description": "WebSearchProviderID references a specific WebSearchProviderEntity.\nIf empty, the workspace's default provider (is_default=true) is used.",
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.DataSource": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "description": "Encrypted configuration (API credentials, tokens, etc.)\nStored as JSON with AES-256-GCM encryption",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "conflict_strategy": {
-                    "description": "Conflict resolution strategy: overwrite or skip",
-                    "type": "string"
-                },
-                "created_at": {
-                    "description": "Creation timestamp",
-                    "type": "string"
-                },
-                "deleted_at": {
-                    "description": "Soft delete timestamp",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/gorm.DeletedAt"
-                        }
-                    ]
-                },
-                "error_message": {
-                    "description": "Error message if status is \"error\"",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "Unique identifier",
-                    "type": "string"
-                },
-                "knowledge_base_id": {
-                    "description": "Target knowledge base ID",
-                    "type": "string"
-                },
-                "last_sync_at": {
-                    "description": "Last successful sync timestamp",
-                    "type": "string"
-                },
-                "last_sync_cursor": {
-                    "description": "Cursor or state for incremental sync (connector-specific)",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "last_sync_result": {
-                    "description": "Summary of last sync result",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "latest_sync_log": {
-                    "description": "Latest sync log (not stored in DB, populated on query)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog"
-                        }
-                    ]
-                },
-                "name": {
-                    "description": "User-friendly name",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "Current status: active, paused, error",
-                    "type": "string"
-                },
-                "sync_deletions": {
-                    "description": "Whether to sync deletions from source",
-                    "type": "boolean"
-                },
-                "sync_log_retention_days": {
-                    "description": "Number of days to keep sync logs (default: 30)",
-                    "type": "integer"
-                },
-                "sync_mode": {
-                    "description": "Sync mode: \"incremental\" (recommended) or \"full\"",
-                    "type": "string"
-                },
-                "sync_schedule": {
-                    "description": "Cron expression for scheduled syncs (e.g., \"0 */6 * * *\" = every 6 hours)",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "description": "Workspace ID for multi-workspace isolation",
-                    "type": "integer"
-                },
-                "total_items_synced": {
-                    "description": "Total items synced (not stored in DB, calculated on query)",
-                    "type": "integer"
-                },
-                "type": {
-                    "description": "Connector type (feishu, notion, confluence, etc.)",
-                    "type": "string"
-                },
-                "updated_at": {
-                    "description": "Last update timestamp",
                     "type": "string"
                 }
             }
@@ -21743,29 +20921,6 @@ const docTemplate = `{
                 "KBVisibilityPublished",
                 "KBVisibilityRestricted"
             ]
-        },
-        "github_com_Tencent_WeKnora_internal_types.KS3EngineConfig": {
-            "type": "object",
-            "properties": {
-                "access_key": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                }
-            }
         },
         "github_com_Tencent_WeKnora_internal_types.KnowledgeBase": {
             "type": "object",
@@ -23225,32 +22380,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.OBSEngineConfig": {
-            "type": "object",
-            "properties": {
-                "access_key": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                },
-                "use_ssl": {
-                    "type": "boolean"
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.OIDCAuthURLResponse": {
             "type": "object",
             "properties": {
@@ -23278,38 +22407,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.OSSEngineConfig": {
-            "type": "object",
-            "properties": {
-                "access_key": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                },
-                "temp_bucket_name": {
-                    "type": "string"
-                },
-                "temp_region": {
-                    "type": "string"
-                },
-                "use_temp_bucket": {
                     "type": "boolean"
                 }
             }
@@ -23545,48 +22642,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_Tencent_WeKnora_internal_types.Resource": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "description": "Optional description",
-                    "type": "string"
-                },
-                "external_id": {
-                    "description": "Unique identifier in the external system",
-                    "type": "string"
-                },
-                "has_children": {
-                    "description": "Whether this resource has children that can be expanded",
-                    "type": "boolean"
-                },
-                "metadata": {
-                    "description": "Additional metadata",
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "modified_at": {
-                    "description": "Last modified time in external system",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Display name",
-                    "type": "string"
-                },
-                "parent_id": {
-                    "description": "For hierarchical resources (parent ID if applicable)",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "Resource type (document, folder, space, page, etc.)",
-                    "type": "string"
-                },
-                "url": {
-                    "description": "URL to access in external system",
-                    "type": "string"
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.RetrievalConfig": {
             "type": "object",
             "properties": {
@@ -23652,12 +22707,10 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.RetrieverEngineType": {
             "type": "string",
             "enum": [
-                "postgres",
-                "sqlite"
+                "postgres"
             ],
             "x-enum-varnames": [
-                "PostgresRetrieverEngineType",
-                "SQLiteRetrieverEngineType"
+                "PostgresRetrieverEngineType"
             ]
         },
         "github_com_Tencent_WeKnora_internal_types.RetrieverEngines": {
@@ -23719,9 +22772,6 @@ const docTemplate = `{
                 "completed_at": {
                     "type": "string"
                 },
-                "data_source_id": {
-                    "type": "string"
-                },
                 "deadline": {
                     "type": "string"
                 },
@@ -23773,9 +22823,6 @@ const docTemplate = `{
                 "state": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.RuntimeTaskState"
                 },
-                "sync_log_id": {
-                    "type": "string"
-                },
                 "target_id": {
                     "type": "string"
                 },
@@ -23814,35 +22861,6 @@ const docTemplate = `{
                 "RuntimeTaskArchived",
                 "RuntimeTaskCompleted"
             ]
-        },
-        "github_com_Tencent_WeKnora_internal_types.S3EngineConfig": {
-            "type": "object",
-            "properties": {
-                "access_key": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "force_path_style": {
-                    "type": "boolean"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                },
-                "use_ssl": {
-                    "type": "boolean"
-                }
-            }
         },
         "github_com_Tencent_WeKnora_internal_types.SandboxCheckpoint": {
             "type": "object",
@@ -24460,33 +23478,15 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.StorageEngineConfig": {
             "type": "object",
             "properties": {
-                "cos": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.COSEngineConfig"
-                },
                 "default_provider": {
-                    "description": "\"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\", \"obs\"",
+                    "description": "\"local\" or \"minio\"",
                     "type": "string"
-                },
-                "ks3": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KS3EngineConfig"
                 },
                 "local": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LocalEngineConfig"
                 },
                 "minio": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.MinIOEngineConfig"
-                },
-                "obs": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OBSEngineConfig"
-                },
-                "oss": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OSSEngineConfig"
-                },
-                "s3": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.S3EngineConfig"
-                },
-                "tos": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.TOSEngineConfig"
                 }
             }
         },
@@ -24506,78 +23506,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "suggestion_set_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.SyncLog": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "description": "Creation timestamp (usually same as StartedAt)",
-                    "type": "string"
-                },
-                "data_source_id": {
-                    "description": "Reference to the data source",
-                    "type": "string"
-                },
-                "error_message": {
-                    "description": "Error details if status is \"failed\"",
-                    "type": "string"
-                },
-                "finished_at": {
-                    "description": "Sync completion time",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "Unique identifier",
-                    "type": "string"
-                },
-                "items_created": {
-                    "description": "New items created in knowledge base",
-                    "type": "integer"
-                },
-                "items_deleted": {
-                    "description": "Items deleted from knowledge base",
-                    "type": "integer"
-                },
-                "items_failed": {
-                    "description": "Items that failed to sync",
-                    "type": "integer"
-                },
-                "items_skipped": {
-                    "description": "Items skipped (no changes detected)",
-                    "type": "integer"
-                },
-                "items_total": {
-                    "description": "Total items fetched from source",
-                    "type": "integer"
-                },
-                "items_updated": {
-                    "description": "Existing items updated",
-                    "type": "integer"
-                },
-                "result": {
-                    "description": "Detailed sync result (JSON-encoded)",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "started_at": {
-                    "description": "Sync start time",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "Sync status: running, success, partial, failed, canceled",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "description": "Workspace ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "description": "Last update timestamp",
                     "type": "string"
                 }
             }
@@ -24634,35 +23562,6 @@ const docTemplate = `{
                 },
                 "value_type": {
                     "description": "ValueType is one of \"int\", \"string\", \"bool\". Service layer rejects\nupdates whose payload type does not match; UI uses it to pick\nInputNumber vs Input vs Switch.",
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.TOSEngineConfig": {
-            "type": "object",
-            "properties": {
-                "access_key": {
-                    "type": "string"
-                },
-                "bucket_name": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "path_prefix": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "secret_key": {
-                    "type": "string"
-                },
-                "temp_bucket_name": {
-                    "type": "string"
-                },
-                "temp_region": {
                     "type": "string"
                 }
             }
@@ -24778,7 +23677,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "storage_engine_config": {
-                    "description": "Storage engine config: parameters for Local, MinIO, COS. Used for document/file storage and docreader.",
+                    "description": "Storage engine config: parameters for Local and MinIO. Used for document/file storage and docreader.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.StorageEngineConfig"
@@ -26712,29 +25611,6 @@ const docTemplate = `{
                 "multimodal": {
                     "type": "object",
                     "properties": {
-                        "cos": {
-                            "type": "object",
-                            "properties": {
-                                "appId": {
-                                    "type": "string"
-                                },
-                                "bucketName": {
-                                    "type": "string"
-                                },
-                                "pathPrefix": {
-                                    "type": "string"
-                                },
-                                "region": {
-                                    "type": "string"
-                                },
-                                "secretId": {
-                                    "type": "string"
-                                },
-                                "secretKey": {
-                                    "type": "string"
-                                }
-                            }
-                        },
                         "enabled": {
                             "type": "boolean"
                         },
@@ -26979,7 +25855,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "storageProvider": {
-                    "description": "Storage engine (\"local\" | \"minio\" | \"cos\") for document uploads and in-document images; parameters come from global settings",
+                    "description": "Storage engine (\"local\" | \"minio\") for document uploads and in-document images; parameters come from global settings",
                     "type": "string"
                 },
                 "vlm_config": {
@@ -27643,30 +26519,12 @@ const docTemplate = `{
         "internal_handler.StorageCheckRequest": {
             "type": "object",
             "properties": {
-                "cos": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.COSEngineConfig"
-                },
-                "ks3": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KS3EngineConfig"
-                },
                 "minio": {
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.MinIOEngineConfig"
                 },
-                "obs": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OBSEngineConfig"
-                },
-                "oss": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OSSEngineConfig"
-                },
                 "provider": {
-                    "description": "\"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\", \"obs\"",
+                    "description": "\"minio\"",
                     "type": "string"
-                },
-                "s3": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.S3EngineConfig"
-                },
-                "tos": {
-                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.TOSEngineConfig"
                 }
             }
         },
@@ -27699,7 +26557,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
-                    "description": "\"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\", \"obs\"",
+                    "description": "\"local\" or \"minio\"",
                     "type": "string"
                 }
             }
@@ -28270,17 +27128,6 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_handler.resolveAncestorsRequest": {
-            "type": "object",
-            "properties": {
-                "resource_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

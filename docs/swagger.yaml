@@ -90,28 +90,6 @@ definitions:
       summary:
         type: string
     type: object
-  github_com_Tencent_WeKnora_internal_datasource.ConnectorMetadata:
-    properties:
-      auth_type:
-        description: '"oauth2", "api_key", "token", etc.'
-        type: string
-      capabilities:
-        description: '"incremental", "webhook", "deletion_sync", etc.'
-        items:
-          type: string
-        type: array
-      description:
-        type: string
-      icon:
-        type: string
-      name:
-        type: string
-      priority:
-        description: Priority order for UI display (lower = higher priority)
-        type: integer
-      type:
-        type: string
-    type: object
   github_com_Tencent_WeKnora_internal_errors.AppError:
     properties:
       code:
@@ -440,14 +418,6 @@ definitions:
     - tag.created
     - tag.updated
     - tag.deleted
-    - datasource.created
-    - datasource.updated
-    - datasource.deleted
-    - datasource.sync_started
-    - datasource.sync_completed
-    - datasource.sync_failed
-    - datasource.paused
-    - datasource.resumed
     - wiki.content_changed
     - faq.import_started
     - faq.import_completed
@@ -518,14 +488,6 @@ definitions:
     - AuditActionTagCreated
     - AuditActionTagUpdated
     - AuditActionTagDeleted
-    - AuditActionDataSourceCreated
-    - AuditActionDataSourceUpdated
-    - AuditActionDataSourceDeleted
-    - AuditActionDataSourceSyncStarted
-    - AuditActionDataSourceSyncCompleted
-    - AuditActionDataSourceSyncFailed
-    - AuditActionDataSourcePaused
-    - AuditActionDataSourceResumed
     - AuditActionWikiContentChanged
     - AuditActionFAQImportStarted
     - AuditActionFAQImportCompleted
@@ -598,25 +560,6 @@ definitions:
           a pointer because the default is true: rows written before this field
           existed decode to nil and must not silently flip to "always append".
         type: boolean
-    type: object
-  github_com_Tencent_WeKnora_internal_types.COSEngineConfig:
-    properties:
-      app_id:
-        type: string
-      bucket_name:
-        type: string
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_id:
-        type: string
-      secret_key:
-        type: string
-      temp_bucket_name:
-        type: string
-      temp_region:
-        type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.ChatHistoryConfig:
     properties:
@@ -1212,83 +1155,6 @@ definitions:
           If empty, the workspace's default provider (is_default=true) is used.
         type: string
     type: object
-  github_com_Tencent_WeKnora_internal_types.DataSource:
-    properties:
-      config:
-        description: |-
-          Encrypted configuration (API credentials, tokens, etc.)
-          Stored as JSON with AES-256-GCM encryption
-        items:
-          type: integer
-        type: array
-      conflict_strategy:
-        description: 'Conflict resolution strategy: overwrite or skip'
-        type: string
-      created_at:
-        description: Creation timestamp
-        type: string
-      deleted_at:
-        allOf:
-        - $ref: '#/definitions/gorm.DeletedAt'
-        description: Soft delete timestamp
-      error_message:
-        description: Error message if status is "error"
-        type: string
-      id:
-        description: Unique identifier
-        type: string
-      knowledge_base_id:
-        description: Target knowledge base ID
-        type: string
-      last_sync_at:
-        description: Last successful sync timestamp
-        type: string
-      last_sync_cursor:
-        description: Cursor or state for incremental sync (connector-specific)
-        items:
-          type: integer
-        type: array
-      last_sync_result:
-        description: Summary of last sync result
-        items:
-          type: integer
-        type: array
-      latest_sync_log:
-        allOf:
-        - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog'
-        description: Latest sync log (not stored in DB, populated on query)
-      name:
-        description: User-friendly name
-        type: string
-      status:
-        description: 'Current status: active, paused, error'
-        type: string
-      sync_deletions:
-        description: Whether to sync deletions from source
-        type: boolean
-      sync_log_retention_days:
-        description: 'Number of days to keep sync logs (default: 30)'
-        type: integer
-      sync_mode:
-        description: 'Sync mode: "incremental" (recommended) or "full"'
-        type: string
-      sync_schedule:
-        description: Cron expression for scheduled syncs (e.g., "0 */6 * * *" = every
-          6 hours)
-        type: string
-      tenant_id:
-        description: Workspace ID for multi-workspace isolation
-        type: integer
-      total_items_synced:
-        description: Total items synced (not stored in DB, calculated on query)
-        type: integer
-      type:
-        description: Connector type (feishu, notion, confluence, etc.)
-        type: string
-      updated_at:
-        description: Last update timestamp
-        type: string
-    type: object
   github_com_Tencent_WeKnora_internal_types.DockerSandboxConfig:
     properties:
       cpu_limit:
@@ -1759,21 +1625,6 @@ definitions:
     - KBVisibilityPublic
     - KBVisibilityPublished
     - KBVisibilityRestricted
-  github_com_Tencent_WeKnora_internal_types.KS3EngineConfig:
-    properties:
-      access_key:
-        type: string
-      bucket_name:
-        type: string
-      endpoint:
-        type: string
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_key:
-        type: string
-    type: object
   github_com_Tencent_WeKnora_internal_types.KnowledgeBase:
     properties:
       access_source:
@@ -2989,23 +2840,6 @@ definitions:
       name:
         type: string
     type: object
-  github_com_Tencent_WeKnora_internal_types.OBSEngineConfig:
-    properties:
-      access_key:
-        type: string
-      bucket_name:
-        type: string
-      endpoint:
-        type: string
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_key:
-        type: string
-      use_ssl:
-        type: boolean
-    type: object
   github_com_Tencent_WeKnora_internal_types.OIDCAuthURLResponse:
     properties:
       authorization_url:
@@ -3024,27 +2858,6 @@ definitions:
       provider_display_name:
         type: string
       success:
-        type: boolean
-    type: object
-  github_com_Tencent_WeKnora_internal_types.OSSEngineConfig:
-    properties:
-      access_key:
-        type: string
-      bucket_name:
-        type: string
-      endpoint:
-        type: string
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_key:
-        type: string
-      temp_bucket_name:
-        type: string
-      temp_region:
-        type: string
-      use_temp_bucket:
         type: boolean
     type: object
   github_com_Tencent_WeKnora_internal_types.ParserEngineConfig:
@@ -3226,37 +3039,6 @@ definitions:
       user:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.User'
     type: object
-  github_com_Tencent_WeKnora_internal_types.Resource:
-    properties:
-      description:
-        description: Optional description
-        type: string
-      external_id:
-        description: Unique identifier in the external system
-        type: string
-      has_children:
-        description: Whether this resource has children that can be expanded
-        type: boolean
-      metadata:
-        additionalProperties: true
-        description: Additional metadata
-        type: object
-      modified_at:
-        description: Last modified time in external system
-        type: string
-      name:
-        description: Display name
-        type: string
-      parent_id:
-        description: For hierarchical resources (parent ID if applicable)
-        type: string
-      type:
-        description: Resource type (document, folder, space, page, etc.)
-        type: string
-      url:
-        description: URL to access in external system
-        type: string
-    type: object
   github_com_Tencent_WeKnora_internal_types.RetrievalConfig:
     properties:
       embedding_top_k:
@@ -3313,11 +3095,9 @@ definitions:
   github_com_Tencent_WeKnora_internal_types.RetrieverEngineType:
     enum:
     - postgres
-    - sqlite
     type: string
     x-enum-varnames:
     - PostgresRetrieverEngineType
-    - SQLiteRetrieverEngineType
   github_com_Tencent_WeKnora_internal_types.RetrieverEngines:
     properties:
       engines:
@@ -3361,8 +3141,6 @@ definitions:
         type: array
       completed_at:
         type: string
-      data_source_id:
-        type: string
       deadline:
         type: string
       enqueued_at:
@@ -3397,8 +3175,6 @@ definitions:
         type: string
       state:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.RuntimeTaskState'
-      sync_log_id:
-        type: string
       target_id:
         type: string
       target_kb_id:
@@ -3428,25 +3204,6 @@ definitions:
     - RuntimeTaskRetry
     - RuntimeTaskArchived
     - RuntimeTaskCompleted
-  github_com_Tencent_WeKnora_internal_types.S3EngineConfig:
-    properties:
-      access_key:
-        type: string
-      bucket_name:
-        type: string
-      endpoint:
-        type: string
-      force_path_style:
-        type: boolean
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_key:
-        type: string
-      use_ssl:
-        type: boolean
-    type: object
   github_com_Tencent_WeKnora_internal_types.SandboxCheckpoint:
     properties:
       commit_sha:
@@ -3969,25 +3726,13 @@ definitions:
     type: object
   github_com_Tencent_WeKnora_internal_types.StorageEngineConfig:
     properties:
-      cos:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.COSEngineConfig'
       default_provider:
-        description: '"local", "minio", "cos", "tos", "s3", "oss", "ks3", "obs"'
+        description: '"local" or "minio"'
         type: string
-      ks3:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.KS3EngineConfig'
       local:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.LocalEngineConfig'
       minio:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.MinIOEngineConfig'
-      obs:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OBSEngineConfig'
-      oss:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OSSEngineConfig'
-      s3:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.S3EngineConfig'
-      tos:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.TOSEngineConfig'
     type: object
   github_com_Tencent_WeKnora_internal_types.StorageProviderConfig:
     properties:
@@ -4000,59 +3745,6 @@ definitions:
       question_id:
         type: string
       suggestion_set_id:
-        type: string
-    type: object
-  github_com_Tencent_WeKnora_internal_types.SyncLog:
-    properties:
-      created_at:
-        description: Creation timestamp (usually same as StartedAt)
-        type: string
-      data_source_id:
-        description: Reference to the data source
-        type: string
-      error_message:
-        description: Error details if status is "failed"
-        type: string
-      finished_at:
-        description: Sync completion time
-        type: string
-      id:
-        description: Unique identifier
-        type: string
-      items_created:
-        description: New items created in knowledge base
-        type: integer
-      items_deleted:
-        description: Items deleted from knowledge base
-        type: integer
-      items_failed:
-        description: Items that failed to sync
-        type: integer
-      items_skipped:
-        description: Items skipped (no changes detected)
-        type: integer
-      items_total:
-        description: Total items fetched from source
-        type: integer
-      items_updated:
-        description: Existing items updated
-        type: integer
-      result:
-        description: Detailed sync result (JSON-encoded)
-        items:
-          type: integer
-        type: array
-      started_at:
-        description: Sync start time
-        type: string
-      status:
-        description: 'Sync status: running, success, partial, failed, canceled'
-        type: string
-      tenant_id:
-        description: Workspace ID
-        type: integer
-      updated_at:
-        description: Last update timestamp
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.SystemSetting:
@@ -4113,25 +3805,6 @@ definitions:
           ValueType is one of "int", "string", "bool". Service layer rejects
           updates whose payload type does not match; UI uses it to pick
           InputNumber vs Input vs Switch.
-        type: string
-    type: object
-  github_com_Tencent_WeKnora_internal_types.TOSEngineConfig:
-    properties:
-      access_key:
-        type: string
-      bucket_name:
-        type: string
-      endpoint:
-        type: string
-      path_prefix:
-        type: string
-      region:
-        type: string
-      secret_key:
-        type: string
-      temp_bucket_name:
-        type: string
-      temp_region:
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.Tenant:
@@ -4216,7 +3889,7 @@ definitions:
       storage_engine_config:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.StorageEngineConfig'
-        description: 'Storage engine config: parameters for Local, MinIO, COS. Used
+        description: 'Storage engine config: parameters for Local and MinIO. Used
           for document/file storage and docreader.'
       storage_quota:
         description: Storage quota (Bytes), default is 10GB, including vector, original
@@ -5715,21 +5388,6 @@ definitions:
         type: object
       multimodal:
         properties:
-          cos:
-            properties:
-              appId:
-                type: string
-              bucketName:
-                type: string
-              pathPrefix:
-                type: string
-              region:
-                type: string
-              secretId:
-                type: string
-              secretKey:
-                type: string
-            type: object
           enabled:
             type: boolean
           minio:
@@ -5898,8 +5556,8 @@ definitions:
       storageBackendId:
         type: string
       storageProvider:
-        description: Storage engine ("local" | "minio" | "cos") for document uploads
-          and in-document images; parameters come from global settings
+        description: Storage engine ("local" | "minio") for document uploads and in-document
+          images; parameters come from global settings
         type: string
       vlm_config:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.VLMConfig'
@@ -6384,23 +6042,11 @@ definitions:
     type: object
   internal_handler.StorageCheckRequest:
     properties:
-      cos:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.COSEngineConfig'
-      ks3:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.KS3EngineConfig'
       minio:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.MinIOEngineConfig'
-      obs:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OBSEngineConfig'
-      oss:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OSSEngineConfig'
       provider:
-        description: '"minio", "cos", "tos", "s3", "oss", "ks3", "obs"'
+        description: '"minio"'
         type: string
-      s3:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.S3EngineConfig'
-      tos:
-        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.TOSEngineConfig'
     type: object
   internal_handler.StorageCheckResponse:
     properties:
@@ -6422,7 +6068,7 @@ definitions:
         description: short description for UI
         type: string
       name:
-        description: '"local", "minio", "cos", "tos", "s3", "oss", "ks3", "obs"'
+        description: '"local" or "minio"'
         type: string
     type: object
   internal_handler.SuggestionEventRequest:
@@ -6811,13 +6457,6 @@ definitions:
     - password
     - token
     - username
-    type: object
-  internal_handler.resolveAncestorsRequest:
-    properties:
-      resource_ids:
-        items:
-          type: string
-        type: array
     type: object
   internal_handler.sandboxConfigRequest:
     properties:
@@ -7871,27 +7510,6 @@ paths:
       summary: Trạng thái 2FA
       tags:
       - Xác thực
-  /auth/auto-setup:
-    post:
-      consumes:
-      - application/json
-      description: 'Chỉ dành cho bản Lite: lần khởi động đầu tự tạo người dùng và
-        đơn vị mặc định rồi trả token; mọi lần khởi động đều phải xác thực bằng thông
-        tin xác thực gốc của desktop, bỏ qua đăng ký/đăng nhập thủ công'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.LoginResponse'
-        "403":
-          description: không phải bản Lite
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-      summary: Khởi tạo tự động (bản Lite desktop)
-      tags:
-      - Xác thực
   /auth/change-password:
     post:
       consumes:
@@ -8854,412 +8472,6 @@ paths:
       summary: Xoá câu hỏi đã sinh
       tags:
       - Đoạn (chunk)
-  /datasource:
-    get:
-      description: List all data sources for a specific knowledge base
-      parameters:
-      - description: Knowledge base ID
-        in: query
-        name: kb_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: List data sources for a knowledge base
-      tags:
-      - Nguồn dữ liệu
-    post:
-      consumes:
-      - application/json
-      description: Create a new data source configuration for a knowledge base
-      parameters:
-      - description: Data source configuration
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Create a new data source
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}:
-    delete:
-      description: Delete a data source (soft delete)
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Delete a data source
-      tags:
-      - Nguồn dữ liệu
-    get:
-      description: Retrieve a data source configuration by ID
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get a data source by ID
-      tags:
-      - Nguồn dữ liệu
-    put:
-      consumes:
-      - application/json
-      description: Update an existing data source configuration
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Updated configuration
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DataSource'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Update a data source
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/logs:
-    get:
-      description: Retrieve sync history for a data source
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 'Limit (default: 10)'
-        in: query
-        name: limit
-        type: integer
-      - description: 'Offset (default: 0)'
-        in: query
-        name: offset
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get sync logs
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/pause:
-    post:
-      description: Pause a data source's scheduled syncs
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Pause data source
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/resource-ancestors:
-    post:
-      consumes:
-      - application/json
-      description: Resolve the ancestor ExternalIDs that must be expanded to reveal
-        the given (possibly deeply nested) resources in a lazily-loaded picker. Used
-        to restore an existing selection when editing a data source.
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Resource IDs to resolve
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handler.resolveAncestorsRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              items:
-                type: string
-              type: array
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Resolve resource ancestors
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/resources:
-    get:
-      description: List resources available for sync in the external system. Pass
-        parent_id to lazily load the direct children of a resource (used for large
-        hierarchical sources such as Feishu wiki).
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Parent resource ExternalID; empty lists the top level
-        in: query
-        name: parent_id
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.Resource'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: List available resources in data source
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/resume:
-    post:
-      description: Resume a paused data source
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Resume data source
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/sync:
-    post:
-      description: Trigger an immediate sync for a data source
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Trigger immediate sync
-      tags:
-      - Nguồn dữ liệu
-  /datasource/{id}/validate:
-    post:
-      description: Validate the connection to an external data source
-      parameters:
-      - description: Data source ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Test data source connection
-      tags:
-      - Nguồn dữ liệu
-  /datasource/logs/{log_id}:
-    get:
-      description: Retrieve a specific sync log entry
-      parameters:
-      - description: Sync log ID
-        in: path
-        name: log_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.SyncLog'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get specific sync log
-      tags:
-      - Nguồn dữ liệu
-  /datasource/types:
-    get:
-      description: Get list of available data source connectors
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_Tencent_WeKnora_internal_datasource.ConnectorMetadata'
-            type: array
-      summary: Get available connectors
-      tags:
-      - Nguồn dữ liệu
-  /datasource/validate-credentials:
-    post:
-      consumes:
-      - application/json
-      description: Validate connectivity to an external data source using type + credentials
-      parameters:
-      - description: type and credentials
-        in: body
-        name: request
-        required: true
-        schema:
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Test connection with raw credentials (no persistence)
-      tags:
-      - Nguồn dữ liệu
   /document-format/check:
     post:
       consumes:
@@ -9859,7 +9071,7 @@ paths:
         in: formData
         name: vlm_interface_type
         type: string
-      - description: loại lưu trữ (cos/minio)
+      - description: loại lưu trữ (minio)
         in: formData
         name: storage_type
         required: true
@@ -18618,8 +17830,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Dùng tham số đang điền để kiểm tra kết nối MinIO/COS, không lưu
-        cấu hình
+      description: Dùng tham số đang điền để kiểm tra kết nối MinIO, không lưu cấu
+        hình
       parameters:
       - description: Cấu hình engine lưu trữ
         in: body
@@ -18640,7 +17852,7 @@ paths:
   /system/storage-engine-status:
     get:
       description: Trả về trạng thái khả dụng và mô tả của các engine lưu trữ Local,
-        MinIO, COS để thiết lập toàn cục và kho tri thức lựa chọn
+        MinIO để thiết lập toàn cục và kho tri thức lựa chọn
       produces:
       - application/json
       responses:
