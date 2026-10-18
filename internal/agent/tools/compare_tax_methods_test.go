@@ -39,7 +39,7 @@ func TestCompareTaxMethodsToolComputes(t *testing.T) {
 }
 
 func TestCompareTaxMethodsToolAcceptsQuotedNumbers(t *testing.T) {
-	ok, out, _ := runCompareTax(t, `{"doanh_thu":"8000000000","loi_nhuan":"1.2e9","ty_le_doanh_thu":"0.015","thue_suat":"0.2"}`)
+	ok, out, _ := runCompareTax(t, `{"doanh_thu":"8000000000","loi_nhuan":"1.2e9","ty_le_doanh_thu":"1.5","thue_suat":"0.2"}`)
 	if !ok {
 		t.Fatal(out)
 	}
@@ -65,6 +65,7 @@ func TestCompareTaxMethodsToolRejectsBadValues(t *testing.T) {
 		`{"doanh_thu":"1.200.000","loi_nhuan":1,"ty_le_doanh_thu":1.5,"thue_suat":0.2}`,
 		`{"doanh_thu":100,"loi_nhuan":200,"ty_le_doanh_thu":1.5,"thue_suat":0.2}`,
 		`{"doanh_thu":100,"loi_nhuan":10,"ty_le_doanh_thu":1.5,"thue_suat":20}`,
+		`{"doanh_thu":100,"loi_nhuan":10,"ty_le_doanh_thu":100,"thue_suat":0.2}`,
 		`not json`,
 	} {
 		if ok, _, _ := runCompareTax(t, args); ok {

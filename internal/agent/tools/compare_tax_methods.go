@@ -33,7 +33,7 @@ var compareTaxMethodsTool = BaseTool{
     },
     "ty_le_doanh_thu": {
       "type": "number",
-      "description": "Tỷ lệ thuế TNDN tính trên doanh thu: 1.5 nghĩa là 1,5%, 0.015 cũng là 1,5%; phải nhỏ hơn 100%"
+      "description": "Tỷ lệ thuế TNDN tính trên doanh thu, ghi theo PHẦN TRĂM, lớn hơn 0 và nhỏ hơn 100: 1.5 nghĩa là 1,5%; 0.5 nghĩa là 0,5%"
     },
     "thue_suat": {
       "type": "number",

@@ -38,8 +38,8 @@ type TaxInput struct {
 	Revenue float64
 	// Profit is the profit before tax in đồng (loi_nhuan); 0 for a loss.
 	Profit float64
-	// RevenueRatio is the tax ratio on revenue (ty_le_doanh_thu): 1.5 means
-	// 1.5 %, 0.015 means the same.
+	// RevenueRatio is the tax ratio on revenue in PERCENT (ty_le_doanh_thu):
+	// 1.5 means 1.5 %, 0.5 means 0.5 %.
 	RevenueRatio float64
 	// TaxRate is the corporate income tax rate as a fraction (thue_suat),
 	// e.g. 0.2 for 20 %.
@@ -61,21 +61,17 @@ type TaxComparison struct {
 	Assumptions    []string
 }
 
-// NormalizeRatio accepts 1.5 (meaning 1.5 %) or 0.015 and returns the
-// fraction, as chuan_hoa_ty_le does — with one deliberate difference: the
-// script refuses exactly 1 (it reads it as 100 %), here 1 means 1 %, since
-// a 100 % ratio is invalid either way.
-func NormalizeRatio(value float64) (float64, error) {
-	if !finite(value) || value <= 0 {
+// NormalizeRatio turns the revenue ratio, given in percent (0 < x < 100),
+// into a fraction. The source script also took fractions (0.015 = 1.5 %),
+// which made 0.5 mean 50 % there; a percent-only input has one reading.
+func NormalizeRatio(percent float64) (float64, error) {
+	if !finite(percent) || percent <= 0 {
 		return 0, errors.New("Tỷ lệ phải lớn hơn 0")
 	}
-	if value >= 1 {
-		value /= 100
+	if percent >= 100 {
+		return 0, errors.New("Tỷ lệ không hợp lệ: ghi theo phần trăm, phải < 100 (ví dụ 1.5 cho 1,5%)")
 	}
-	if value >= 1 {
-		return 0, errors.New("Tỷ lệ không hợp lệ (phải < 100%)")
-	}
-	return value, nil
+	return percent / 100, nil
 }
 
 // CompareTaxMethods compares corporate income tax paid as a ratio of

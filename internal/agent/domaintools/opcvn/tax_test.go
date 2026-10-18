@@ -7,9 +7,10 @@ import (
 )
 
 // The first three cases are self_test() of scripts/so_sanh_thue.py
-// (source skill opc-vn-business-law, Diginno, MIT).
+// (source skill opc-vn-business-law, Diginno, MIT), with the ratio written
+// in percent (the script's 0.015 is 1.5 here, its 0.05 is 5).
 func TestCompareTaxMethodsReproducesScriptSelfTest(t *testing.T) {
-	k, err := CompareTaxMethods(TaxInput{Revenue: 8_000_000_000, Profit: 1_200_000_000, RevenueRatio: 0.015, TaxRate: 0.20})
+	k, err := CompareTaxMethods(TaxInput{Revenue: 8_000_000_000, Profit: 1_200_000_000, RevenueRatio: 1.5, TaxRate: 0.20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +37,16 @@ func TestCompareTaxMethodsReproducesScriptSelfTest(t *testing.T) {
 	if math.Abs(k2.RevenueRatio-0.015) >= 1e-12 {
 		t.Errorf("percent form: ty_le = %v", k2.RevenueRatio)
 	}
+	// 0.5 is half a percent, never 50 %
+	k4, err := CompareTaxMethods(TaxInput{Revenue: 1_000_000_000, Profit: 100_000_000, RevenueRatio: 0.5, TaxRate: 0.20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(k4.TaxOnRevenue-5_000_000) >= 1 {
+		t.Errorf("0.5 must mean 0,5 %%: thue_theo_doanh_thu = %v", k4.TaxOnRevenue)
+	}
 
-	k3, err := CompareTaxMethods(TaxInput{Revenue: 1_000_000_000, Profit: 100_000_000, RevenueRatio: 0.05, TaxRate: 0.20})
+	k3, err := CompareTaxMethods(TaxInput{Revenue: 1_000_000_000, Profit: 100_000_000, RevenueRatio: 5, TaxRate: 0.20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +76,7 @@ func TestCompareTaxMethodsRejectsBadInput(t *testing.T) {
 		{Revenue: 100, Profit: 10, RevenueRatio: 0.01, TaxRate: 0},
 		// ratio of 100 % or more, rate above 1, non-finite, absurd amounts
 		{Revenue: 100, Profit: 10, RevenueRatio: 100, TaxRate: 0.2},
+		{Revenue: 100, Profit: 10, RevenueRatio: 250, TaxRate: 0.2},
 		{Revenue: 100, Profit: 10, RevenueRatio: 0.01, TaxRate: 20},
 		{Revenue: math.NaN(), Profit: 10, RevenueRatio: 0.01, TaxRate: 0.2},
 		{Revenue: 100, Profit: 10, RevenueRatio: math.Inf(1), TaxRate: 0.2},
