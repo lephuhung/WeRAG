@@ -11,6 +11,8 @@ export interface Abbreviation {
   full_form: string;
   description: string;
   is_active: boolean;
+  /** A proper name (unit code such as PV01): kept as typed, never asked about or expanded. */
+  is_proper_name?: boolean;
   suggested_by: string;
   created_at: string;
   updated_at: string;
@@ -45,6 +47,7 @@ export function createAbbreviation(body: {
   short_form: string;
   full_form: string;
   description?: string;
+  is_proper_name?: boolean;
 }): Promise<{ success: boolean; data: Abbreviation }> {
   return apiPost("/api/v1/abbreviations", body);
 }
@@ -56,6 +59,7 @@ export function updateAbbreviation(
     full_form?: string;
     description?: string;
     is_active?: boolean;
+    is_proper_name?: boolean;
   },
 ): Promise<{ success: boolean; data: Abbreviation }> {
   return apiPatch(`/api/v1/abbreviations/${id}`, body);

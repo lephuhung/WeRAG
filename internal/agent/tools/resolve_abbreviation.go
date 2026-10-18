@@ -192,6 +192,10 @@ func (t *ResolveAbbreviationTool) lookup(
 		if r.IsActive {
 			state = "active"
 		}
+		if r.IsProperName {
+			// a name kept as typed, not a meaning
+			state += ", proper name: keep as written, do not expand"
+		}
 		fmt.Fprintf(&b, "- %s → %s [%s]", r.ShortForm, r.FullForm, state)
 		if r.Description != "" {
 			fmt.Fprintf(&b, " — %s", r.Description)

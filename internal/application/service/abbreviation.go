@@ -153,6 +153,7 @@ func (s *abbreviationService) Suggest(
 	userID, _ := types.UserIDFromContext(ctx)
 	return s.repo.SuggestUnique(ctx, &types.Abbreviation{
 		ShortForm: short, FullForm: full, Description: req.Description, SuggestedBy: userID,
+		IsProperName: req.IsProperName,
 	})
 }
 
@@ -164,7 +165,7 @@ func (s *abbreviationService) Create(
 	if err != nil {
 		return nil, err
 	}
-	return s.create(ctx, short, full, req.Description, active)
+	return s.create(ctx, short, full, req.Description, active, req.IsProperName)
 }
 
 func normalizeAbbreviationCreate(req *types.AbbreviationCreateRequest) (string, string, error) {
@@ -173,6 +174,10 @@ func normalizeAbbreviationCreate(req *types.AbbreviationCreateRequest) (string, 
 	}
 	short := strings.TrimSpace(req.ShortForm)
 	full := strings.TrimSpace(req.FullForm)
+	// a proper name is kept as typed: it has no other full form
+	if req.IsProperName {
+		full = short
+	}
 	if short == "" {
 		return "", "", werrors.NewBadRequestError("short_form is required")
 	}
@@ -189,15 +194,16 @@ func normalizeAbbreviationCreate(req *types.AbbreviationCreateRequest) (string, 
 }
 
 func (s *abbreviationService) create(
-	ctx context.Context, short, full, description string, active bool,
+	ctx context.Context, short, full, description string, active, properName bool,
 ) (*types.Abbreviation, error) {
 	userID, _ := types.UserIDFromContext(ctx)
 	abbr := &types.Abbreviation{
-		ShortForm:   short,
-		FullForm:    full,
-		Description: description,
-		IsActive:    active,
-		SuggestedBy: userID,
+		ShortForm:    short,
+		FullForm:     full,
+		Description:  description,
+		IsActive:     active,
+		IsProperName: properName,
+		SuggestedBy:  userID,
 	}
 	if err := s.repo.Create(ctx, abbr); err != nil {
 		return nil, err
@@ -243,10 +249,62 @@ func (s *abbreviationService) Update(
 	if req.IsActive != nil {
 		abbr.IsActive = *req.IsActive
 	}
+	if req.IsProperName != nil {
+		abbr.IsProperName = *req.IsProperName
+	}
+	if abbr.IsProperName {
+		abbr.FullForm = abbr.ShortForm
+	}
 	if err := s.repo.Update(ctx, abbr); err != nil {
 		return nil, err
 	}
 	return abbr, nil
+}
+
+// properNameDescription marks the rows the chat gate added from a "Giữ
+// nguyên" answer.
+const properNameDescription = "Tên riêng — người dùng chọn giữ nguyên khi được hỏi"
+
+// RememberProperName keeps a word the user told the chat gate to keep as
+// typed (a unit code such as PV01) as an active proper name, so it is not
+// asked about again by anyone. An active row of the word (a meaning or a
+// proper name) already settles it; an inactive proper name is activated.
+func (s *abbreviationService) RememberProperName(ctx context.Context, word string) (*types.Abbreviation, error) {
+	word = strings.TrimSpace(word)
+	if word == "" || utf8.RuneCountInString(word) > 50 {
+		return nil, werrors.NewBadRequestError("invalid proper name")
+	}
+	rows, err := s.repo.ListByShortForm(ctx, word)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		if r.IsActive {
+			return r, nil
+		}
+	}
+	for _, r := range rows {
+		if r.IsProperName {
+			r.IsActive = true
+			if err := s.repo.Update(ctx, r); err != nil {
+				return nil, err
+			}
+			return r, nil
+		}
+	}
+	row, err := s.create(ctx, word, word, properNameDescription, true, true)
+	if err != nil {
+		// another keep of the same word won the unique index
+		if rows, lerr := s.repo.ListByShortForm(ctx, word); lerr == nil {
+			for _, r := range rows {
+				if r.IsActive && r.IsProperName {
+					return r, nil
+				}
+			}
+		}
+		return nil, err
+	}
+	return row, nil
 }
 
 func (s *abbreviationService) Delete(ctx context.Context, id string) error {

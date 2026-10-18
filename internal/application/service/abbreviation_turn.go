@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -71,7 +74,8 @@ func (c *AbbreviationTurnCoordinator) Prepare(ctx context.Context, in Abbreviati
 		return zero, err
 	}
 	if awaiting != nil {
-		parsed, err := abbreviation.ParseUserDefinitions(b.RawQuery, b.UserMessageID, awaiting.Payload.Resolution.UnknownTerms, len(awaiting.Payload.Resolution.UnknownTerms) == 1)
+		reply := abbreviationOptionReply(awaiting.Payload.Resolution, b.RawQuery)
+		parsed, err := abbreviation.ParseUserDefinitions(reply, b.UserMessageID, awaiting.Payload.Resolution.UnknownTerms, len(awaiting.Payload.Resolution.UnknownTerms) == 1)
 		if err != nil {
 			return zero, err
 		}
@@ -146,6 +150,8 @@ func (c *AbbreviationTurnCoordinator) beginTurn(ctx context.Context, in Abbrevia
 		listActive()
 		if listErr == nil {
 			detection = abbreviation.DropSettled(text, detection, shortFormSet(active))
+			// proper names the user kept as typed (PV01) are settled too
+			detection = abbreviation.DropProperNames(text, detection, active)
 		}
 	}
 	if sources != nil {
@@ -238,7 +244,8 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 	}
 	b := in.Binding
 	resolution := row.Payload.Resolution
-	parsed, err := abbreviation.ParseUserDefinitions(b.RawQuery, b.UserMessageID, resolution.UnknownTerms, len(resolution.UnknownTerms) == 1)
+	reply := abbreviationOptionReply(resolution, b.RawQuery)
+	parsed, err := abbreviation.ParseUserDefinitions(reply, b.UserMessageID, resolution.UnknownTerms, len(resolution.UnknownTerms) == 1)
 	if err != nil {
 		return zero, err
 	}
@@ -252,6 +259,7 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 		return zero, err
 	}
 	c.recordAnswers(ctx, b, row.ID, asked, parsed)
+	c.rememberProperNames(ctx, asked, parsed.Typos)
 	resolution.CurrentUserMessageID = b.UserMessageID
 	if len(parsed.Definitions) != 0 || len(parsed.Typos) != 0 {
 		if err := c.store.LinkMessages(ctx, b.Owner, row.ID, []types.AbbreviationMessageLink{{MessageID: b.UserMessageID, RequestID: row.ID, Role: types.AbbreviationMessageRoleDefinition}}); err != nil {
@@ -567,7 +575,8 @@ func mergeTypoDetection(det types.AbbreviationDetection, text string, add, drop 
 func expandShortForms(typos []types.AbbreviationTypo, active []*types.Abbreviation) []types.AbbreviationTypo {
 	meanings := map[string][]*types.Abbreviation{}
 	for _, a := range active {
-		if a != nil && a.IsActive {
+		// a proper name has no meaning to read the word as (PV01 stays PV01)
+		if a != nil && a.IsActive && !a.IsProperName {
 			k := strings.ToLower(strings.TrimSpace(a.ShortForm))
 			meanings[k] = append(meanings[k], a)
 		}
@@ -628,6 +637,72 @@ func firstUnclearWord(r types.AbbreviationResolution) string {
 		}
 	}
 	return ""
+}
+
+// abbreviationOptionReply reads a bare option number typed under the card
+// ("3") as what clicking that option sends ("PV01 → PV01", a meaning, the
+// rewritten question); an option the user fills in has nothing to send and
+// needs text of its own. Anything else is returned as typed.
+func abbreviationOptionReply(r types.AbbreviationResolution, raw string) string {
+	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+	if err != nil || n < 1 {
+		return raw
+	}
+	_, data := abbreviationChoice(r, false)
+	opts, _ := data["options"].([]map[string]interface{})
+	if n > len(opts) {
+		return raw
+	}
+	if resend, _ := opts[n-1]["resend"].(string); strings.TrimSpace(resend) != "" {
+		return resend
+	}
+	return raw
+}
+
+// properNameKeeper is the dictionary's "keep as typed" store
+// (abbreviationService.RememberProperName).
+type properNameKeeper interface {
+	RememberProperName(ctx context.Context, word string) (*types.Abbreviation, error)
+}
+
+// rememberProperNames adds to the dictionary, active, the words the user
+// kept as typed that have the shape of a unit code (PV01, PA05): asked once,
+// never again. Any other word kept as typed ("cascc", "UBND") stays a
+// feedback label only. Never fails the turn.
+func (c *AbbreviationTurnCoordinator) rememberProperNames(ctx context.Context, asked types.AbbreviationResolution, typos []types.AbbreviationTypo) {
+	keeper, ok := c.dictionary.(properNameKeeper)
+	if !ok {
+		return
+	}
+	for _, t := range typos {
+		if !strings.EqualFold(strings.TrimSpace(t.Correct), t.Wrong) || !looksLikeProperName(asked.OriginalQuery, t.Wrong) {
+			continue
+		}
+		if _, err := keeper.RememberProperName(ctx, surfaceForm(asked.OriginalQuery, t.Wrong)); err != nil {
+			logger.Warnf(ctx, "abbreviation gate: proper name %q not kept: %v", t.Wrong, err)
+		}
+	}
+}
+
+// surfaceForm is word as the user wrote it in text (the case kept).
+func surfaceForm(text, word string) string {
+	for _, f := range strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' }) {
+		if strings.EqualFold(f, word) {
+			return f
+		}
+	}
+	return word
+}
+
+// unitCodeRe is the shape of a unit code as written: capitals then digits,
+// optionally a suffix ("PV01", "PA05", "PA05-Đ4", "CSGT01"). An all-caps
+// word without digits (UBND, BHXH) may be a real abbreviation still without
+// a meaning: it is not made a proper name for everyone.
+var unitCodeRe = regexp.MustCompile(`^\p{Lu}{1,6}[-_.]?\d{1,4}(?:[-_.][\p{L}\d]{1,6})*$`)
+
+// looksLikeProperName: the word as written has the shape of a unit code.
+func looksLikeProperName(text, word string) bool {
+	return unitCodeRe.MatchString(surfaceForm(text, word))
 }
 
 // recordAnswers keeps each answer to the question as a training row: the

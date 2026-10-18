@@ -23,6 +23,22 @@ var definitionClause = regexp.MustCompile(`^([\pL\pN][\pL\pN_-]*)\s*(?:=|là)\s*
 
 var typoClause = regexp.MustCompile(`^([\pL\pN][\pL\pN_-]*)\s*(?:→|->)\s*(.+)$`)
 
+// keepNameRe: what a "PV01 là …" answer says when the word is a name to
+// keep as typed, not an abbreviation with a meaning.
+var keepNameRe = regexp.MustCompile(`^(?:một\s+)?(?:tên riêng|tên đơn vị|tên phòng|tên cơ quan|tên bộ phận|mã đơn vị|mã phòng|ký hiệu đơn vị)(?:[^\pL]|$)|giữ nguyên`)
+
+// keepReplyRe: a whole reply to the card that keeps the asked word as
+// typed ("giữ nguyên", "là tên riêng, giữ nguyên", "Đây là tên đơn vị nhé",
+// "không phải viết tắt"); anchored, so a question that merely contains such
+// words ("quy định về giữ nguyên hiện trạng…") is not one.
+var keepReplyRe = regexp.MustCompile(`^(?:(?:đây|nó|đó|từ này|cái này)\s+)?(?:là\s+)?(?:một\s+)?` +
+	`(?:tên riêng|tên đơn vị|tên phòng|tên cơ quan|mã đơn vị|ký hiệu đơn vị|giữ nguyên|không phải (?:là )?(?:từ )?viết tắt|không viết tắt)` +
+	`(?:\s*[,.;]?\s*(?:là\s+)?(?:tên riêng|tên đơn vị|giữ nguyên|giữ nguyên nhé))*` +
+	`(?:\s+(?:nhé|nha|ạ|nhá))?\s*[.!]*$`)
+
+// keepReplyMaxRunes bounds a keep reply: a longer message is a new question.
+const keepReplyMaxRunes = 60
+
 func ParseUserDefinitions(text, messageID string, candidates []string, soleReply bool) (DefinitionParseResult, error) {
 	var result DefinitionParseResult
 	if strings.TrimSpace(text) == "" || len(candidates) == 0 {
@@ -35,6 +51,17 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 	allowed := make(map[string]string, len(candidates))
 	for _, candidate := range candidates {
 		allowed[termKey(candidate)] = candidate
+	}
+	// a short reply to the card about its one word that keeps it as typed
+	// ("giữ nguyên", "là tên riêng", "Đây là tên đơn vị"); a clause naming
+	// the word itself ("PV01 là tên phòng") is read below
+	if soleReply && len(allowed) == 1 && utf8.RuneCountInString(strings.TrimSpace(text)) <= keepReplyMaxRunes &&
+		keepReplyRe.MatchString(strings.TrimSpace(strings.ToLower(norm.NFC.String(text)))) && !namesAllowedWord(strings.TrimSpace(text), allowed) {
+		for _, short := range allowed {
+			result.Typos = append(result.Typos, types.AbbreviationTypo{Wrong: short, Correct: short})
+		}
+		result.IsDefinitionReply = true
+		return result, nil
 	}
 	seen := make(map[string]bool, len(candidates))
 	for start := 0; start < len(text); {
@@ -91,6 +118,16 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 		}
 		start = end + 1
 	}
+	// "PV01 là tên đơn vị" keeps the word as typed: a name, not a meaning
+	defs := result.Definitions[:0]
+	for _, d := range result.Definitions {
+		if keepNameRe.MatchString(strings.ToLower(norm.NFC.String(d.FullForm))) {
+			result.Typos = append(result.Typos, types.AbbreviationTypo{Wrong: d.ShortForm, Correct: d.ShortForm})
+			continue
+		}
+		defs = append(defs, d)
+	}
+	result.Definitions = defs
 	if len(result.Definitions) == 0 && len(result.Typos) == 0 && soleReply && len(allowed) == 1 {
 		phrase := strings.TrimSpace(text)
 		if validBareDefinitionPhrase(phrase) && utf8.RuneCountInString(phrase) > types.MaxAbbreviationFullFormRunes {
@@ -115,6 +152,17 @@ func ParseUserDefinitions(text, messageID string, candidates []string, soleReply
 	result.IsDefinitionReply = len(result.Definitions) != 0 || len(result.Typos) != 0
 	result.NeedsExplicitMapping = !result.IsDefinitionReply
 	return result, nil
+}
+
+// namesAllowedWord: the reply is a clause about one of the asked words
+// ("PV01 = …", "PV01 là …", "PV01 → …").
+func namesAllowedWord(text string, allowed map[string]string) bool {
+	for _, re := range []*regexp.Regexp{definitionClause, typoClause} {
+		if m := re.FindStringSubmatch(text); m != nil && allowed[termKey(m[1])] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func validDefinitionLength(short, full string) bool {

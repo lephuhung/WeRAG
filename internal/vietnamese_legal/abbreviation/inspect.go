@@ -40,8 +40,11 @@ func Inspect(text string, active []*types.Abbreviation) types.AbbreviationResolu
 
 // InspectDetected is Inspect with the candidate set chosen by a detection
 // (see Detect) instead of the heuristic. The detection is recorded on the
-// resolution so later coverage checks re-derive the same candidates.
+// resolution so later coverage checks re-derive the same candidates. The
+// dictionary's active proper names are dropped from it first.
 func InspectDetected(text string, active []*types.Abbreviation, det types.AbbreviationDetection) types.AbbreviationResolution {
+	// proper names (PV01) are kept as typed: not terms, not unknown
+	det = DropProperNames(text, det, active)
 	r := types.AbbreviationResolution{
 		OriginalQuery:   text,
 		Detector:        det.Detector,
@@ -83,7 +86,9 @@ func InspectDetected(text string, active []*types.Abbreviation, det types.Abbrev
 
 	byShort := map[string][]*types.Abbreviation{}
 	for _, a := range active {
-		if a == nil || !a.IsActive {
+		// a proper name is no meaning (DropProperNames kept the word as typed
+		// unless a real meaning exists)
+		if a == nil || !a.IsActive || a.IsProperName {
 			continue
 		}
 		k := termKey(a.ShortForm)

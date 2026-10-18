@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/abbreviations";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { formatDate } from "@/lib/datetime";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
@@ -29,7 +30,7 @@ function notifyAbbreviationsChanged() {
 function fmtDate(v?: string): string {
   if (!v) return "-";
   try {
-    return new Date(v).toLocaleDateString();
+    return formatDate(v) || v;
   } catch {
     return v;
   }
@@ -74,6 +75,7 @@ export function AbbreviationsSettings() {
   const [formFull, setFormFull] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formActive, setFormActive] = useState(false);
+  const [formProper, setFormProper] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
 
   const [deleting, setDeleting] = useState<Abbreviation | null>(null);
@@ -169,6 +171,7 @@ export function AbbreviationsSettings() {
     setFormFull("");
     setFormDesc("");
     setFormActive(false);
+    setFormProper(false);
     setFormOpen(true);
   };
 
@@ -178,13 +181,15 @@ export function AbbreviationsSettings() {
     setFormFull(row.full_form);
     setFormDesc(row.description);
     setFormActive(row.is_active);
+    setFormProper(!!row.is_proper_name);
     setFormOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const short = formShort.trim();
-    const full = formFull.trim();
+    // a proper name is kept as typed: its full form defaults to itself
+    const full = formFull.trim() || (formProper ? short : "");
     if (!short || !full) return;
     setFormBusy(true);
     setError("");
@@ -196,11 +201,12 @@ export function AbbreviationsSettings() {
           full_form: full,
           description: formDesc.trim(),
           is_active: formActive,
+          is_proper_name: formProper,
         });
         if (res.success) {
           setFormOpen(false);
           // Replace the row in place — reloading would reorder the page.
-          const saved = res.data ?? { ...editing, short_form: short, full_form: full, description: formDesc.trim(), is_active: formActive };
+          const saved = res.data ?? { ...editing, short_form: short, full_form: full, description: formDesc.trim(), is_active: formActive, is_proper_name: formProper };
           setRows((rs) => rs.map((r) => (r.id === editing.id ? saved : r)));
           notifyAbbreviationsChanged();
         } else {
@@ -213,6 +219,7 @@ export function AbbreviationsSettings() {
           short_form: short,
           full_form: full,
           description: formDesc.trim(),
+          is_proper_name: formProper,
         });
         if (res.success) {
           setSuccess(t("abbrev.suggestSaved"));
@@ -537,6 +544,11 @@ export function AbbreviationsSettings() {
                     <code className="rounded bg-surface-strong px-1.5 py-0.5 text-[12.5px] font-semibold text-ink">
                       {r.short_form}
                     </code>
+                    {r.is_proper_name && (
+                      <span className="ml-1.5 rounded border border-hairline-strong px-1 py-0.5 text-[11px] text-muted" title={t("abbrev.properNameHint")}>
+                        {t("abbrev.properName")}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-ink">{r.full_form}</td>
                   <td className="py-3 px-4 text-muted text-xs">{r.description || "—"}</td>
@@ -677,13 +689,26 @@ export function AbbreviationsSettings() {
             <input
               type="text"
               className="input text-sm"
-              value={formFull}
+              value={formProper ? formShort : formFull}
               onChange={(e) => setFormFull(e.target.value)}
               maxLength={255}
-              required
-              placeholder={t("abbrev.fullForm")}
+              disabled={formProper}
+              required={!formProper}
+              placeholder={formProper ? t("abbrev.properNameFullPlaceholder") : t("abbrev.fullForm")}
             />
           </div>
+          <label className="flex items-start gap-2.5 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary"
+              checked={formProper}
+              onChange={(e) => setFormProper(e.target.checked)}
+            />
+            <span>
+              {t("abbrev.properName")}
+              <span className="caption block text-muted">{t("abbrev.properNameHint")}</span>
+            </span>
+          </label>
           <div>
             <label className="caption mb-1.5 block text-muted">{t("abbrev.description")}</label>
             <textarea

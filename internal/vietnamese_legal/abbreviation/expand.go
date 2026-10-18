@@ -54,11 +54,13 @@ func ExpandDetected(text string, actives []*types.Abbreviation, det types.Abbrev
 	// Note: an empty dictionary must NOT return early — candidates are still
 	// detected and reported under Potential (AIRAG surfaces them the same way).
 
+	// proper names (PV01) are kept as typed: neither expanded nor reported
+	det = DropProperNames(text, det, actives)
 	byShort := map[string][]*types.Abbreviation{}
 	for _, a := range actives {
 		// A nil row carries no short form; skip it instead of panicking.
-		// Inactive-row handling is unchanged.
-		if a == nil {
+		// Inactive-row handling is unchanged. A proper name is no meaning.
+		if a == nil || a.IsProperName {
 			continue
 		}
 		key := strings.ToLower(a.ShortForm)

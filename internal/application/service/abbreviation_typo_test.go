@@ -211,3 +211,13 @@ func TestGateGoesOnWithOrdinaryLookingWord(t *testing.T) {
 	require.Equal(t, q, r.EffectiveQuery)
 	require.Empty(t, r.AutoCorrections)
 }
+
+func TestTypedOptionNumberSendsTheRewrite(t *testing.T) {
+	r := types.AbbreviationResolution{
+		UnknownTerms:    []string{"cascc"},
+		TypoSuggestions: []types.AbbreviationTypo{{Wrong: "cascc", Correct: "các"}},
+		Rewrite:         "số lượng hồ sơ các loại ưu tiên",
+	}
+	require.Equal(t, "số lượng hồ sơ các loại ưu tiên", abbreviationOptionReply(r, "3"))
+	require.Equal(t, "1", abbreviationOptionReply(r, "1"), "an option with an input needs its text")
+}

@@ -14,15 +14,18 @@ import (
 // active rows may share a short_form — the expander treats that case as
 // ambiguous and reports the candidates instead of picking one silently.
 type Abbreviation struct {
-	ID          string         `json:"id"           gorm:"type:varchar(36);primaryKey"`
-	ShortForm   string         `json:"short_form"   gorm:"type:varchar(50);not null"`
-	FullForm    string         `json:"full_form"    gorm:"type:varchar(255);not null"`
-	Description string         `json:"description"  gorm:"type:text;not null;default:''"`
-	IsActive    bool           `json:"is_active"    gorm:"not null;default:false;index"`
-	SuggestedBy string         `json:"suggested_by" gorm:"type:varchar(36);not null;default:''"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `json:"-"            gorm:"index"`
+	ID          string `json:"id"           gorm:"type:varchar(36);primaryKey"`
+	ShortForm   string `json:"short_form"   gorm:"type:varchar(50);not null"`
+	FullForm    string `json:"full_form"    gorm:"type:varchar(255);not null"`
+	Description string `json:"description"  gorm:"type:text;not null;default:''"`
+	IsActive    bool   `json:"is_active"    gorm:"not null;default:false;index"`
+	// IsProperName: a proper name (a unit code or name, "PV01") kept as
+	// typed: the gate neither asks about it nor expands it.
+	IsProperName bool           `json:"is_proper_name" gorm:"not null;default:false"`
+	SuggestedBy  string         `json:"suggested_by" gorm:"type:varchar(36);not null;default:''"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-"            gorm:"index"`
 }
 
 // TableName returns the table name for Abbreviation.
@@ -38,9 +41,11 @@ func (m *Abbreviation) BeforeCreate(tx *gorm.DB) error {
 
 // AbbreviationCreateRequest is the payload for POST /abbreviations.
 type AbbreviationCreateRequest struct {
-	ShortForm   string `json:"short_form"  binding:"required,max=50"`
-	FullForm    string `json:"full_form"   binding:"required,max=255"`
-	Description string `json:"description"`
+	ShortForm string `json:"short_form"  binding:"required,max=50"`
+	// FullForm may be left out for a proper name (it is then the short form).
+	FullForm     string `json:"full_form"   binding:"max=255"`
+	Description  string `json:"description"`
+	IsProperName bool   `json:"is_proper_name"`
 }
 
 // AbbreviationUpdateRequest is the payload for PATCH /abbreviations/:id.
@@ -51,4 +56,6 @@ type AbbreviationUpdateRequest struct {
 	FullForm    *string `json:"full_form"   binding:"omitempty,max=255"`
 	Description *string `json:"description"`
 	IsActive    *bool   `json:"is_active"`
+	// IsProperName marks the row a proper name (kept as typed).
+	IsProperName *bool `json:"is_proper_name"`
 }
