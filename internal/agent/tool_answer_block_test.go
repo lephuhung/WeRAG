@@ -78,3 +78,33 @@ func TestToolAnswerBlockSkips(t *testing.T) {
 	}
 	assert.Empty(t, *content)
 }
+
+func TestToolAnswerBlocksKeepDistinctCalculations(t *testing.T) {
+	call := func(args map[string]interface{}, block string) types.ToolCall {
+		c := taxCall(true, block)
+		c.Args = args
+		return c
+	}
+	a := map[string]interface{}{"doanh_thu": 8e9, "thue_suat": 0.2}
+	b := map[string]interface{}{"thue_suat": 0.17, "doanh_thu": 8e9}
+	steps := []types.AgentStep{
+		{ToolCalls: []types.ToolCall{call(a, "A cũ")}},
+		{ToolCalls: []types.ToolCall{call(b, "B")}},
+		// same arguments as the first (key order differs): counts once, the last
+		{ToolCalls: []types.ToolCall{call(map[string]interface{}{"thue_suat": 0.2, "doanh_thu": 8e9}, "A")}},
+	}
+	got := toolAnswerBlocks(steps)
+	assert.Equal(t, "**Lần tính 1/2**\nB\n\n**Lần tính 2/2**\nA", got)
+}
+
+func TestToolAnswerBlockOnSynthesisFallbackBringsTheFooter(t *testing.T) {
+	model := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "length"},
+	}}}}
+	engine := newTestEngine(t, model)
+	withDomainFooter(engine)
+	state := &types.AgentState{RoundSteps: taxSteps()}
+	require.NoError(t, engine.streamFinalAnswerToEventBus(context.Background(), "q", state, "sess", emptyMessages()))
+	assert.Contains(t, state.FinalAnswer, wantTaxBlock)
+	assert.True(t, strings.HasSuffix(state.FinalAnswer, testDomainFooter), state.FinalAnswer)
+}
