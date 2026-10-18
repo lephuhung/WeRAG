@@ -963,6 +963,7 @@ func (e *AgentEngine) runReActIteration(
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
+		e.appendToolAnswerBlocks(ctx, state, sessionID, verdict.answerID)
 		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil

@@ -139,6 +139,8 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	e.appendLegalHistory(ctx, state, sessionID, answerID)
 	e.appendWikiCaveat(ctx, state, sessionID, answerID)
 	e.appendSourceEditNote(ctx, state, sessionID, answerID, query)
+	// computed results reach the user even on the fallback answer
+	e.appendToolAnswerBlocks(ctx, state, sessionID, answerID)
 	if synthesized {
 		// the code-built fallback is not advice from a pack
 		e.appendDomainFooter(ctx, state, sessionID, answerID)

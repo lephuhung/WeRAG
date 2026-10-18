@@ -112,21 +112,28 @@ func (t *CompareTaxMethodsTool) Execute(_ context.Context, args json.RawMessage)
 	if t.formulaBlock != "" {
 		output += "\n" + t.formulaBlock + "\n"
 	}
+	// appended to the final answer by code (types.ToolDataAnswerBlock), so
+	// the figures, recommendation and assumptions reach the user as computed
+	answerBlock := strings.TrimSpace(result.Render())
+	if t.formulaBlock != "" {
+		answerBlock += "\n\n" + t.formulaBlock
+	}
 	return &types.ToolResult{
 		Success: true,
 		Output:  output,
 		Data: map[string]interface{}{
-			"doanh_thu":           result.Revenue,
-			"loi_nhuan":           result.Profit,
-			"ty_le_doanh_thu":     result.RevenueRatio,
-			"thue_suat":           result.TaxRate,
-			"thue_theo_doanh_thu": result.TaxOnRevenue,
-			"thue_theo_loi_nhuan": result.TaxOnProfit,
-			"bien_loi_nhuan":      result.Margin,
-			"bien_hoa_von":        result.BreakEven,
-			"chenh_lech":          result.Difference,
-			"khuyen_nghi":         result.Recommendation,
-			"gia_dinh":            result.Assumptions,
+			"doanh_thu":               result.Revenue,
+			"loi_nhuan":               result.Profit,
+			"ty_le_doanh_thu":         result.RevenueRatio,
+			"thue_suat":               result.TaxRate,
+			"thue_theo_doanh_thu":     result.TaxOnRevenue,
+			"thue_theo_loi_nhuan":     result.TaxOnProfit,
+			"bien_loi_nhuan":          result.Margin,
+			"bien_hoa_von":            result.BreakEven,
+			"chenh_lech":              result.Difference,
+			"khuyen_nghi":             result.Recommendation,
+			"gia_dinh":                result.Assumptions,
+			types.ToolDataAnswerBlock: answerBlock,
 		},
 	}, nil
 }
