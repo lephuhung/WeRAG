@@ -240,11 +240,15 @@ export async function deleteTenantAPIKey(
 export async function updateTenant(
   tenantId: number,
   payload: { name?: string; description?: string },
-): Promise<{ success: boolean; data?: TenantInfo; message?: string }> {
+): Promise<{ success: boolean; data?: TenantInfo; message?: string; status?: number }> {
   try {
     return await apiPut(`/api/v1/tenants/${tenantId}`, payload);
   } catch (error) {
-    return { success: false, message: errMsg(error, "Failed to update organization") };
+    return {
+      success: false,
+      message: errMsg(error, "Failed to update organization"),
+      status: error instanceof ApiError ? error.status : undefined,
+    };
   }
 }
 

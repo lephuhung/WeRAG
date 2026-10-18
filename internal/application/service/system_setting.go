@@ -167,15 +167,6 @@ var registry = map[string]settingSpec{
 		Description: "Chế độ tự đăng ký. self_serve = ai cũng có thể đăng ký; invite_only = tắt đăng ký công khai, " +
 			"chỉ Owner/Admin mới mời được. Có hiệu lực ngay sau khi thay đổi, nhưng cân nhắc kỹ với self_serve (Internet công khai sẽ nhận spam).",
 	},
-	"auth.default_tenant_mode": {
-		Type:     "string",
-		EnvName:  "WEKNORA_AUTH_DEFAULT_TENANT_MODE",
-		Default:  "create_personal",
-		Enum:     []string{"create_personal", "tenantless"},
-		Category: "auth",
-		Description: "Chính sách tổ chức mặc định sau khi đăng ký công khai thành công. create_personal = tự tạo tổ chức cá nhân và đặt làm Owner; " +
-			"tenantless = chỉ tạo người dùng, chờ nhận lời mời hoặc tự tạo tổ chức. Thay đổi chỉ ảnh hưởng người dùng đăng ký mới.",
-	},
 	"auth.complex_password_enabled": {
 		Type:     "bool",
 		EnvName:  "WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED",
@@ -978,6 +969,13 @@ func (s *systemSettingService) GetJSON(ctx context.Context, key string) (raw typ
 // override are returned as virtual rows using the effective fallback
 // value (ENV/config/default), so merely migrating the schema never
 // changes runtime behaviour.
+// retiredSettingKeys are former settings whose leftover DB rows are ignored
+// and hidden from the management UI:
+//   - asynq.concurrency: the old fixed-ratio aggregate.
+//   - auth.default_tenant_mode: sign-up no longer creates a personal
+//     organization; new accounts are always tenantless.
+var retiredSettingKeys = []string{"asynq.concurrency", "auth.default_tenant_mode"}
+
 func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting, error) {
 	rows, err := s.repo.List(ctx)
 	if err != nil {
@@ -988,10 +986,12 @@ func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting
 	for _, row := range rows {
 		byKey[row.Key] = row
 	}
-	// asynq.concurrency was the old fixed-ratio aggregate. Keeping an old DB
-	// row visible would suggest it still controls runtime capacity, so retire it
-	// explicitly while preserving all genuinely unknown rows for diagnostics.
-	delete(byKey, "asynq.concurrency")
+	// Retired keys: keeping an old DB row visible would suggest it still
+	// controls something, so hide them explicitly while preserving all
+	// genuinely unknown rows for diagnostics.
+	for _, key := range retiredSettingKeys {
+		delete(byKey, key)
+	}
 
 	keys := make([]string, 0, len(registry))
 	for key := range registry {

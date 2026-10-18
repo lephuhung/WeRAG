@@ -156,32 +156,12 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to process password")
 	}
 
-	provisioning := req.TenantProvisioning
-	if provisioning == "" {
-		provisioning = types.TenantProvisioningCreatePersonal
-	}
-	if !provisioning.IsValid() {
-		return nil, fmt.Errorf("invalid tenant provisioning mode %q", provisioning)
-	}
-
-	var createdTenant *types.Tenant
-	if provisioning == types.TenantProvisioningCreatePersonal {
-		// Note: RetrieverEngines is left empty - system will use defaults
-		// from RETRIEVE_DRIVER env.
-		tenant := &types.Tenant{
-			Name:        fmt.Sprintf("%s's Organization", secutils.SanitizeForLog(req.Username)),
-			Description: "Default organization",
-			Status:      "active",
-		}
-
-		createdTenant, err = s.tenantService.CreateTenant(ctx, tenant)
-		if err != nil {
-			logger.Errorf(ctx, "Failed to create organization")
-			return nil, errors.New("failed to create organization")
-		}
-	}
-
-	// Create user
+	// An account is just an account: it is created without a tenant and
+	// joins an organization only when it is added to one (invitation,
+	// SystemAdmin membership grant). Organizations are created by the
+	// SuperAdmin (or by the user through POST /tenants when
+	// tenant.self_service_creation_enabled is on), never as a side effect
+	// of sign-up.
 	user := &types.User{
 		ID:           uuid.New().String(),
 		Username:     req.Username,
@@ -192,33 +172,11 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-	if createdTenant != nil {
-		user.TenantID = createdTenant.ID
-	}
 
 	err = s.userRepo.CreateUser(ctx, user)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
-		if createdTenant != nil {
-			if rollbackErr := s.tenantService.DeleteTenant(ctx, createdTenant.ID); rollbackErr != nil {
-				logger.Errorf(ctx, "Failed to roll back tenant %d after user creation failure: %v", createdTenant.ID, rollbackErr)
-			}
-		}
 		return nil, errors.New("failed to create user")
-	}
-
-	// Bootstrap an Admin membership so the registrant can administer
-	// the tenant their account just created. Failure here only logs — the
-	// user record exists and the auth middleware's orphan-tenant recovery
-	// path will recreate the membership on next login.
-	if createdTenant != nil && s.memberService != nil {
-		if _, err := s.memberService.EnsureAdmin(ctx, user.ID, createdTenant.ID); err != nil {
-			logger.Errorf(ctx, "Failed to create admin membership for user %s tenant %d: %v",
-				user.ID, createdTenant.ID, err)
-			_ = s.userRepo.DeleteUser(ctx, user.ID)
-			_ = s.tenantService.DeleteTenant(ctx, createdTenant.ID)
-			return nil, errors.New("failed to finalise organization administration")
-		}
 	}
 
 	logger.Info(ctx, "User registered successfully")
@@ -493,13 +451,11 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 }
 
 // LoginWithOIDC exchanges code for tokens, loads user info, provisions user if
-// needed, and returns local login tokens. provisioning is the default tenant
-// mode applied only when a brand-new local user is auto-created; it is resolved
-// by the caller from the shared auth.default_tenant_mode policy.
+// needed, and returns local login tokens. A brand-new auto-created user has no
+// organization until one adds them.
 func (s *userService) LoginWithOIDC(
 	ctx context.Context,
 	code, redirectURI string,
-	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
 	if strings.TrimSpace(code) == "" {
 		return nil, errors.New("code is required")
@@ -532,7 +488,7 @@ func (s *userService) LoginWithOIDC(
 	}
 	isNewUser := false
 	if isUserLookupNotFound(err) || user == nil {
-		user, err = s.provisionOIDCUser(ctx, userInfo, provisioning)
+		user, err = s.provisionOIDCUser(ctx, userInfo)
 		if err != nil {
 			return nil, err
 		}
@@ -810,12 +766,11 @@ func (s *userService) AdminResetPassword(ctx context.Context, userID, newPasswor
 // An absent password generates a random one, returned exactly once.
 // Any provided password, must satisfy ValidatePasswordPolicy.
 //
-// Delegates to Register, so duplicate checks, tenant provisioning and Owner
-// membership bootstrapping match public registration.
+// Delegates to Register, so duplicate checks match public registration; the
+// new account has no organization until it is added to one.
 func (s *userService) AdminCreateUser(
 	ctx context.Context,
 	req *types.AdminCreateUserRequest,
-	provisioning types.TenantProvisioningMode,
 ) (*types.User, string, error) {
 	if req == nil || strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Email) == "" {
 		return nil, "", errors.New("username and email are required")
@@ -843,10 +798,9 @@ func (s *userService) AdminCreateUser(
 	}
 
 	user, err := s.Register(ctx, &types.RegisterRequest{
-		Username:           strings.TrimSpace(req.Username),
-		Email:              strings.TrimSpace(req.Email),
-		Password:           password,
-		TenantProvisioning: provisioning,
+		Username: strings.TrimSpace(req.Username),
+		Email:    strings.TrimSpace(req.Email),
+		Password: password,
 	})
 	// WARN: idempotency is sequential only. Two concurrent creates of the
 	// same identity can race past Register's check; the loser gets a 500,
@@ -1791,16 +1745,11 @@ func (s *userService) fetchOIDCUserInfo(ctx context.Context, endpoint, accessTok
 	return claims, nil
 }
 
-// provisionOIDCUser auto-creates a local account for a first-time OIDC
-// login. The provisioning mode is decided by the caller (the OIDC callback
-// handler resolves it from the same auth.default_tenant_mode system-setting
-// that governs public password registration) so both entry points share a
-// single deployment policy. An empty mode falls back to create_personal via
-// Register's own defaulting.
+// provisionOIDCUser auto-creates a local account (no organization) for a
+// first-time OIDC login.
 func (s *userService) provisionOIDCUser(
 	ctx context.Context,
 	info *types.OIDCUserInfo,
-	provisioning types.TenantProvisioningMode,
 ) (*types.User, error) {
 	username := s.generateOIDCUsername(ctx, info)
 	randomPassword, err := generateRandomString(32)
@@ -1809,10 +1758,9 @@ func (s *userService) provisionOIDCUser(
 	}
 
 	user, err := s.Register(ctx, &types.RegisterRequest{
-		Username:           username,
-		Email:              info.Email,
-		Password:           randomPassword,
-		TenantProvisioning: provisioning,
+		Username: username,
+		Email:    info.Email,
+		Password: randomPassword,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto-provision OIDC user: %w", err)

@@ -217,12 +217,6 @@ type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=2,max=50"`
 	Email    string `json:"email"    binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
-
-	// TenantProvisioning is server-controlled registration context. It is
-	// deliberately excluded from JSON so a public caller cannot choose its
-	// own tenancy semantics. Empty preserves the historical behaviour and is
-	// treated as create_personal by UserService.Register.
-	TenantProvisioning TenantProvisioningMode `json:"-"`
 }
 
 // AdminCreateUserRequest is the payload for a SystemAdmin provisioning a
@@ -235,21 +229,6 @@ type AdminCreateUserRequest struct {
 	Username string  `json:"username" binding:"required,min=2,max=50"`
 	Email    string  `json:"email"    binding:"required,email"`
 	Password *string `json:"password"`
-}
-
-// TenantProvisioningMode controls what UserService.Register does after it
-// has validated the identity fields. Joining an existing tenant is
-// orchestrated by the invitation handler because the invitation token is the
-// authority for the target tenant and role.
-type TenantProvisioningMode string
-
-const (
-	TenantProvisioningCreatePersonal TenantProvisioningMode = "create_personal"
-	TenantProvisioningTenantless     TenantProvisioningMode = "tenantless"
-)
-
-func (m TenantProvisioningMode) IsValid() bool {
-	return m == TenantProvisioningCreatePersonal || m == TenantProvisioningTenantless
 }
 
 // LoginResponse represents a login response

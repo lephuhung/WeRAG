@@ -336,27 +336,24 @@ type AuditConfig struct {
 // AuthConfig governs the user authentication entry points.
 type AuthConfig struct {
 	// RegistrationMode controls who may call POST /auth/register.
-	//   "self_serve" (default) — anyone may register; a new tenant is
-	//                            auto-created and the registrant becomes
-	//                            its Admin. Preserves existing behaviour.
+	//   "self_serve" (default) — anyone may register; the new account
+	//                            belongs to no organization until it is
+	//                            added to one.
 	//   "invite_only"          — public registration is rejected; new
 	//                            users only enter through the invitation
 	//                            flow added in PR 3.
 	RegistrationMode string `yaml:"registration_mode" json:"registration_mode"`
-	// DefaultTenantMode controls public password-registration provisioning.
-	// create_personal preserves the historical one-user-one-workspace default;
-	// tenantless creates only the identity and waits for an invitation or an
-	// explicit self-service tenant creation.
-	DefaultTenantMode      string `yaml:"default_tenant_mode" json:"default_tenant_mode"`
-	ComplexPasswordEnabled bool   `yaml:"complex_password_enabled" json:"complex_password_enabled"`
+	// A new account never gets an organization of its own: it joins one only
+	// when it is added (invitation or SuperAdmin). The former
+	// default_tenant_mode key is gone; a leftover YAML key is ignored because
+	// the decoder is not strict, and a leftover env var only logs a warning.
+	ComplexPasswordEnabled bool `yaml:"complex_password_enabled" json:"complex_password_enabled"`
 }
 
 // AuthRegistrationMode constants used by handlers and middleware.
 const (
-	AuthRegistrationModeSelfServe       = "self_serve"
-	AuthRegistrationModeInviteOnly      = "invite_only"
-	AuthDefaultTenantModeCreatePersonal = "create_personal"
-	AuthDefaultTenantModeTenantless     = "tenantless"
+	AuthRegistrationModeSelfServe  = "self_serve"
+	AuthRegistrationModeInviteOnly = "invite_only"
 )
 
 // IsInviteOnly returns true when registration is gated behind invitations.
@@ -712,12 +709,6 @@ func ValidateConfig(cfg *Config) error {
 			errs = append(errs, fmt.Sprintf("auth.registration_mode must be %q or %q, got %q",
 				AuthRegistrationModeSelfServe, AuthRegistrationModeInviteOnly, mode))
 		}
-
-		tenantMode := strings.TrimSpace(cfg.Auth.DefaultTenantMode)
-		if tenantMode != "" && tenantMode != AuthDefaultTenantModeCreatePersonal && tenantMode != AuthDefaultTenantModeTenantless {
-			errs = append(errs, fmt.Sprintf("auth.default_tenant_mode must be %q or %q, got %q",
-				AuthDefaultTenantModeCreatePersonal, AuthDefaultTenantModeTenantless, tenantMode))
-		}
 	}
 
 	if cfg.Audit != nil && cfg.Audit.RetentionDays < 0 {
@@ -880,8 +871,6 @@ func applyAgentEnvOverrides(cfg *Config) {
 //
 // Defaults:
 //   - auth.registration_mode  -> "self_serve" (preserves pre-RBAC behaviour)
-//   - auth.default_tenant_mode -> "tenantless" (a new account joins a
-//     workspace only when a SuperAdmin or Tenant Admin adds it)
 //   - tenant.enable_rbac      -> true (enforce role checks unless an
 //     operator explicitly opts into the logging-only rollout window via
 //     config.yaml `enable_rbac: false` or `WEKNORA_TENANT_ENABLE_RBAC=false`).
@@ -889,7 +878,6 @@ func applyAgentEnvOverrides(cfg *Config) {
 //     provisioned by SuperAdmins).
 //
 // Env overrides (when set and non-empty):
-//   - WEKNORA_AUTH_DEFAULT_TENANT_MODE ("create_personal"/"tenantless")
 //   - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED (boolean)
 //   - WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED (boolean)
 //   - WEKNORA_TENANT_ENABLE_RBAC      ("true"/"false", case-insensitive)
@@ -937,10 +925,11 @@ func applyAuthAndTenantDefaults(cfg *Config) {
 	}
 
 	if value := strings.TrimSpace(os.Getenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE")); value != "" {
-		cfg.Auth.DefaultTenantMode = value
-	}
-	if strings.TrimSpace(cfg.Auth.DefaultTenantMode) == "" {
-		cfg.Auth.DefaultTenantMode = AuthDefaultTenantModeTenantless
+		fmt.Printf(
+			"[config] WEKNORA_AUTH_DEFAULT_TENANT_MODE=%q is no longer supported and is ignored: "+
+				"new accounts have no organization until they are added to one\n",
+			value,
+		)
 	}
 
 	if value := strings.TrimSpace(os.Getenv("WEKNORA_TENANT_ENABLE_RBAC")); value != "" {

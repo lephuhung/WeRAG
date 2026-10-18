@@ -14,10 +14,9 @@ type UserService interface {
 	Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error)
 	// GetOIDCAuthorizationURL builds the third-party OIDC authorization URL
 	GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
-	// LoginWithOIDC exchanges the callback code, auto-provisions users if needed, and completes login.
-	// provisioning is the default tenant mode for a newly auto-created user
-	// (resolved by the caller from auth.default_tenant_mode).
-	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// LoginWithOIDC exchanges the callback code, auto-provisions users if needed
+	// (a new account has no organization), and completes login.
+	LoginWithOIDC(ctx context.Context, code, redirectURI string) (*types.OIDCCallbackResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by
@@ -106,11 +105,9 @@ type UserService interface {
 	ListUsers(ctx context.Context, offset, limit int, query string) ([]*types.User, int64, error)
 	// AdminCreateUser provisions a new local user on behalf of a
 	// SystemAdmin. When req.Password is nil, a random password is generated
-	// and returned exactly once as the second result. provisioning is
-	// resolved by the caller from the shared auth.default_tenant_mode policy.
-	AdminCreateUser(
-		ctx context.Context, req *types.AdminCreateUserRequest, provisioning types.TenantProvisioningMode,
-	) (*types.User, string, error)
+	// and returned exactly once as the second result. The new account has no
+	// organization until it is added to one.
+	AdminCreateUser(ctx context.Context, req *types.AdminCreateUserRequest) (*types.User, string, error)
 	// RevokeSystemAdmin removes system-admin privileges with the
 	// last-admin/self-revoke checks performed atomically.
 	RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error)

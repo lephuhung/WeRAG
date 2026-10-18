@@ -313,6 +313,10 @@ type stubTenantServiceForModelDelete struct {
 func (s *stubTenantServiceForModelDelete) CreateTenant(context.Context, *types.Tenant) (*types.Tenant, error) {
 	return nil, nil
 }
+
+func (s *stubTenantServiceForModelDelete) ValidateTenantName(_ context.Context, name string, _ uint64) (string, error) {
+	return name, nil
+}
 func (s *stubTenantServiceForModelDelete) GetTenantByID(context.Context, uint64) (*types.Tenant, error) {
 	return s.tenant, nil
 }

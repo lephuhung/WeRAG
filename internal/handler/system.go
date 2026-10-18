@@ -1364,8 +1364,8 @@ type CreateSystemUserResponse struct {
 // @Description  When `password` is omitted or null, a cryptographically random
 // @Description  password is generated (OIDC-style crypto/rand + base64url)
 // @Description  and returned once in the response body. Any provided value,
-// @Description  including empty string, is policy-checked. Organization provisioning
-// @Description  follows the shared auth.default_tenant_mode policy.
+// @Description  including empty string, is policy-checked. The new account
+// @Description  belongs to no organization until it is added to one.
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
@@ -1398,7 +1398,7 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 		return
 	}
 
-	user, generatedPassword, err := h.userSvc.AdminCreateUser(ctx, &req, h.resolveDefaultTenantMode(ctx))
+	user, generatedPassword, err := h.userSvc.AdminCreateUser(ctx, &req)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrUserEmailExists) || errors.Is(err, service.ErrUserUsernameExists):

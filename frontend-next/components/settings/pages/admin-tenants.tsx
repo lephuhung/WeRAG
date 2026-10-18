@@ -20,6 +20,12 @@ import {
   type TenantMemberTarget,
 } from "@/lib/api/system";
 import { listTenantDirectory, type TenantDirectoryEntry } from "@/lib/api/tenants";
+import {
+  TENANT_NAME_MAX_LENGTH,
+  normalizeTenantName,
+  tenantNameErrorKey,
+  validateTenantName,
+} from "@/lib/tenant-name";
 
 type PersonMode = "existing" | "new";
 
@@ -119,6 +125,9 @@ export default function AdminTenants() {
 
   /* Inline rename of the selected unit: null = not editing. */
   const [renameTo, setRenameTo] = useState<string | null>(null);
+  /* Name problem (missing, too long, already used) shown next to the name
+   * input of the create form or the rename form. */
+  const [nameError, setNameError] = useState("");
 
   const [oneTime, setOneTime] = useState<{ user: string; password: string } | null>(null);
 
@@ -157,6 +166,7 @@ export default function AdminTenants() {
 
   useEffect(() => {
     setRenameTo(null);
+    setNameError("");
     if (selected) void loadMembers(selected);
   }, [selected, loadMembers]);
 
@@ -167,7 +177,9 @@ export default function AdminTenants() {
       await fn();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tnp.opFailed"));
+      const nameKey = tenantNameErrorKey(e);
+      if (nameKey) setNameError(t(nameKey));
+      else setError(e instanceof Error ? e.message : t("tnp.opFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -177,10 +189,16 @@ export default function AdminTenants() {
   const submitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = toTarget(admin);
-    if (!unitName.trim() || !target) return;
+    const nameKey = validateTenantName(unitName);
+    if (nameKey) {
+      setNameError(t(nameKey));
+      return;
+    }
+    if (!target) return;
+    setNameError("");
     await run(async () => {
       const res = await provisionTenant({
-        name: unitName.trim(),
+        name: normalizeTenantName(unitName),
         description: unitDesc.trim() || undefined,
         admin: target,
       });
@@ -214,8 +232,14 @@ export default function AdminTenants() {
 
   const submitRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    const name = renameTo?.trim() ?? "";
-    if (!selected || !name) return;
+    if (!selected || renameTo === null) return;
+    const nameKey = validateTenantName(renameTo);
+    if (nameKey) {
+      setNameError(t(nameKey));
+      return;
+    }
+    const name = normalizeTenantName(renameTo);
+    setNameError("");
     if (name === selected.name) {
       setRenameTo(null);
       return;
@@ -255,7 +279,10 @@ export default function AdminTenants() {
     <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">{t("tnp.summary", { n: units.length })}</span>
-        <button className="btn btn-primary btn-sm ml-auto" onClick={() => setCreateOpen(true)}>
+        <button className="btn btn-primary btn-sm ml-auto" onClick={() => {
+            setNameError("");
+            setCreateOpen(true);
+          }}>
           <IconPlus className="h-3.5 w-3.5" /> {t("tnp.new")}
         </button>
       </div>
@@ -307,7 +334,10 @@ export default function AdminTenants() {
                     <h3 className="title-sm truncate">{selected.name}</h3>
                     <button
                       type="button"
-                      onClick={() => setRenameTo(selected.name)}
+                      onClick={() => {
+                        setNameError("");
+                        setRenameTo(selected.name);
+                      }}
                       title={t("tnp.rename")}
                       aria-label={t("tnp.rename")}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink"
@@ -322,8 +352,15 @@ export default function AdminTenants() {
                       autoFocus
                       className="input h-8 min-w-0 flex-1"
                       aria-label={t("tnp.name")}
+                      aria-invalid={nameError ? true : undefined}
+                      required
+                      maxLength={TENANT_NAME_MAX_LENGTH}
+                      placeholder={t("tnp.namePh")}
                       value={renameTo}
-                      onChange={(e) => setRenameTo(e.target.value)}
+                      onChange={(e) => {
+                        setRenameTo(e.target.value);
+                        setNameError("");
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") {
                           e.stopPropagation();
@@ -334,7 +371,14 @@ export default function AdminTenants() {
                     <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !renameTo.trim()}>
                       {t("common.save")}
                     </button>
-                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setRenameTo(null)}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        setRenameTo(null);
+                        setNameError("");
+                      }}
+                    >
                       {t("common.cancel")}
                     </button>
                   </form>
@@ -343,6 +387,11 @@ export default function AdminTenants() {
                   <IconPlus className="h-3.5 w-3.5" /> {t("tnp.addMember")}
                 </button>
               </div>
+              {renameTo !== null && nameError && (
+                <p role="alert" className="caption -mt-2 mb-3 text-error">
+                  {nameError}
+                </p>
+              )}
               {members.length === 0 ? (
                 <p className="caption text-muted-soft">{t("tnp.noMembers")}</p>
               ) : (
@@ -373,11 +422,30 @@ export default function AdminTenants() {
         </div>
       </div>
 
-      <Modal open={createOpen} title={t("tnp.new")} onClose={() => setCreateOpen(false)}>
+      <Modal
+        open={createOpen}
+        title={t("tnp.new")}
+        onClose={() => {
+          setCreateOpen(false);
+          setNameError("");
+        }}
+      >
         <form className="space-y-4" onSubmit={submitCreate}>
           <label className="block">
             <span className="caption mb-1 block text-muted">{t("tnp.name")}</span>
-            <input className="input" required value={unitName} onChange={(e) => setUnitName(e.target.value)} />
+            <input
+              className="input"
+              required
+              maxLength={TENANT_NAME_MAX_LENGTH}
+              placeholder={t("tnp.namePh")}
+              aria-invalid={nameError ? true : undefined}
+              value={unitName}
+              onChange={(e) => {
+                setUnitName(e.target.value);
+                setNameError("");
+              }}
+            />
+            {nameError && <span className="caption mt-1 block text-error">{nameError}</span>}
           </label>
           <label className="block">
             <span className="caption mb-1 block text-muted">{t("tnp.desc")}</span>
@@ -387,6 +455,7 @@ export default function AdminTenants() {
             <span className="caption mb-3 block font-medium text-ink">{t("tnp.adminSection")}</span>
             <PersonFields value={admin} onChange={setAdmin} />
           </div>
+          {error && <p className="caption text-error">{error}</p>}
           <div className="flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={busy || !unitName.trim() || !toTarget(admin)}>
               {t("tnp.create")}

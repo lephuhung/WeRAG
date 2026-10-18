@@ -627,9 +627,10 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	}
 
 	if req.Name != nil {
+		// Uniqueness and length are enforced by TenantService.UpdateTenant.
 		trimmed := strings.TrimSpace(*req.Name)
 		if trimmed == "" {
-			c.Error(errors.NewValidationError("name cannot be blank"))
+			c.Error(errors.NewValidationError("organization name is required"))
 			return
 		}
 		existing.Name = trimmed

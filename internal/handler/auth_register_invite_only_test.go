@@ -110,9 +110,6 @@ func TestRegister_SelfServeAllowsRegistration(t *testing.T) {
 	us := &stubRegisterUserService{
 		register: func(_ context.Context, req *types.RegisterRequest) (*types.User, error) {
 			called = true
-			if req.TenantProvisioning != types.TenantProvisioningTenantless {
-				t.Fatalf("default provisioning = %q, want tenantless", req.TenantProvisioning)
-			}
 			return &types.User{ID: "u1", Email: "alice@example.com"}, nil
 		},
 	}
@@ -126,28 +123,6 @@ func TestRegister_SelfServeAllowsRegistration(t *testing.T) {
 	}
 	if !called {
 		t.Fatalf("UserService.Register should have been invoked")
-	}
-}
-
-func TestRegister_TenantlessProvisioningFromConfig(t *testing.T) {
-	us := &stubRegisterUserService{
-		register: func(_ context.Context, req *types.RegisterRequest) (*types.User, error) {
-			if req.TenantProvisioning != types.TenantProvisioningTenantless {
-				t.Fatalf("provisioning = %q, want tenantless", req.TenantProvisioning)
-			}
-			return &types.User{ID: "u1", Email: "alice@example.com"}, nil
-		},
-	}
-	h := NewAuthHandler(&config.Config{
-		Auth: &config.AuthConfig{
-			RegistrationMode:  config.AuthRegistrationModeSelfServe,
-			DefaultTenantMode: config.AuthDefaultTenantModeTenantless,
-		},
-	}, us, nil, nil, nil)
-
-	w := doRegister(t, newRegisterTestRouter(h), validRegisterBody())
-	if w.Code != http.StatusCreated {
-		t.Fatalf("tenantless self-serve registration got %d body=%s", w.Code, w.Body.String())
 	}
 }
 

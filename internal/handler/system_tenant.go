@@ -91,7 +91,7 @@ func (h *SystemHandler) resolveTenantMemberTarget(
 		if n := utf8.RuneCountInString(req.Username); n < 2 || n > 50 {
 			return nil, false, "", apperrors.NewValidationError("Username must be 2-50 characters")
 		}
-		user, generatedPassword, err = h.userSvc.AdminCreateUser(ctx, &req, types.TenantProvisioningTenantless)
+		user, generatedPassword, err = h.userSvc.AdminCreateUser(ctx, &req)
 		switch {
 		case err == nil:
 			return user, true, generatedPassword, nil
@@ -145,9 +145,16 @@ func (h *SystemHandler) ProvisionTenant(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("invalid request").WithDetails(err.Error()))
 		return
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		c.Error(apperrors.NewValidationError("name is required"))
+	// Check the name before resolving the admin, which may create a new
+	// account: a duplicate name must not leave that account behind.
+	name, err := h.tenantSvc.ValidateTenantName(ctx, req.Name, 0)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.Errorf(ctx, "ProvisionTenant: validate name: %v", err)
+		c.Error(apperrors.NewInternalServerError("failed to validate organization name"))
 		return
 	}
 	if h.memberSvc == nil {
@@ -248,9 +255,11 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 	}
 	oldName := tenant.Name
 	if req.Name != nil {
+		// Uniqueness and length are enforced by TenantService.UpdateTenant
+		// (409 on a duplicate; keeping its own name is fine).
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			c.Error(apperrors.NewValidationError("name cannot be blank"))
+			c.Error(apperrors.NewValidationError("organization name is required"))
 			return
 		}
 		tenant.Name = name

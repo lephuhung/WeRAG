@@ -16,6 +16,12 @@ import { useT } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useRouter } from "next/navigation";
+import {
+  TENANT_NAME_MAX_LENGTH,
+  normalizeTenantName,
+  tenantNameErrorKey,
+  validateTenantName,
+} from "@/lib/tenant-name";
 
 const ownerCount = (members: { role: string }[]) => members.filter((m) => m.role === "owner").length;
 
@@ -107,8 +113,14 @@ export function TenantInfo() {
   const [deleting, setDeleting] = useState(false);
 
   const saveName = async () => {
-    const name = nameDraft.trim();
-    if (!info || !name || name === info.name) {
+    if (!info) return;
+    const nameKey = validateTenantName(nameDraft);
+    if (nameKey) {
+      setError(t(nameKey));
+      return;
+    }
+    const name = normalizeTenantName(nameDraft);
+    if (name === info.name) {
       setEditingName(false);
       return;
     }
@@ -116,10 +128,11 @@ export function TenantInfo() {
     const res = await updateTenant(Number(info.id), { name });
     setSavingName(false);
     if (res.success) {
-      setInfo({ ...info, name });
+      setInfo({ ...info, name: res.data?.name ?? name });
       setEditingName(false);
     } else {
-      setError(res.message || t("tenant.saveNameFailed"));
+      const serverKey = tenantNameErrorKey({ status: res.status, message: res.message });
+      setError(serverKey ? t(serverKey) : res.message || t("tenant.saveNameFailed"));
     }
   };
 
@@ -200,6 +213,8 @@ export function TenantInfo() {
             <div className="flex items-center gap-2">
               <input
                 className="input h-9 w-[240px]"
+                maxLength={TENANT_NAME_MAX_LENGTH}
+                placeholder={t("tnp.namePh")}
                 value={nameDraft}
                 autoFocus
                 onChange={(e) => setNameDraft(e.target.value)}

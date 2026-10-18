@@ -112,51 +112,6 @@ func (h *AuthHandler) resolveRegistrationMode(ctx context.Context) string {
 	return h.systemSettingSvc.GetString(ctx, "auth.registration_mode", "", def)
 }
 
-// resolveDefaultTenantMode returns the provisioning policy for a new
-// local user account.
-// Priority: DB system_settings > cfg.Auth > hard default (tenantless).
-// Shared by public registration and the SystemAdmin create-user endpoint.
-//
-// Invitation registration never uses this value: the invitation itself
-// supplies the target tenant.
-func resolveDefaultTenantMode(
-	ctx context.Context,
-	configInfo *config.Config,
-	systemSettingSvc interfaces.SystemSettingService,
-) types.TenantProvisioningMode {
-	def := config.AuthDefaultTenantModeTenantless
-	if configInfo != nil && configInfo.Auth != nil {
-		if mode := strings.TrimSpace(configInfo.Auth.DefaultTenantMode); mode != "" {
-			def = mode
-		}
-	}
-	mode := def
-	if systemSettingSvc != nil {
-		mode = systemSettingSvc.GetString(
-			ctx,
-			"auth.default_tenant_mode",
-			"WEKNORA_AUTH_DEFAULT_TENANT_MODE",
-			def,
-		)
-	}
-	if mode == config.AuthDefaultTenantModeCreatePersonal {
-		return types.TenantProvisioningCreatePersonal
-	}
-	return types.TenantProvisioningTenantless
-}
-
-// resolveDefaultTenantMode returns the provisioning policy for ordinary
-// public password registrations.
-func (h *AuthHandler) resolveDefaultTenantMode(ctx context.Context) types.TenantProvisioningMode {
-	return resolveDefaultTenantMode(ctx, h.configInfo, h.systemSettingSvc)
-}
-
-// resolveDefaultTenantMode resolves the same policy for users provisioned
-// by a SystemAdmin via POST /api/v1/system/admin/users/create.
-func (h *SystemHandler) resolveDefaultTenantMode(ctx context.Context) types.TenantProvisioningMode {
-	return resolveDefaultTenantMode(ctx, h.cfg, h.systemSettingSvc)
-}
-
 func (h *AuthHandler) complexPasswordEnabled(ctx context.Context) bool {
 	return service.ResolveComplexPasswordEnabled(ctx, h.configInfo, h.systemSettingSvc)
 }
@@ -230,7 +185,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	req.Username = secutils.SanitizeForLog(req.Username)
 	req.Email = secutils.SanitizeForLog(req.Email)
-	req.TenantProvisioning = h.resolveDefaultTenantMode(ctx)
 	// Call service to register user
 	user, err := h.userService.Register(ctx, &req)
 	if err != nil {
@@ -448,7 +402,7 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx))
+	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))

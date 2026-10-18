@@ -34,10 +34,13 @@ func NewTenantService(repo interfaces.TenantRepository, storageRepo interfaces.S
 func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) (*types.Tenant, error) {
 	logger.Info(ctx, "Start creating tenant")
 
-	if tenant.Name == "" {
-		logger.Error(ctx, "Organization name cannot be empty")
-		return nil, errors.New("organization name cannot be empty")
+	// Every organization is created by name (the agency's official name),
+	// unique among live organizations.
+	name, err := s.ValidateTenantName(ctx, tenant.Name, 0)
+	if err != nil {
+		return nil, err
 	}
+	tenant.Name = name
 
 	logger.Infof(ctx, "Creating tenant, name: %s", tenant.Name)
 
@@ -70,7 +73,7 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_name": tenant.Name,
 		})
-		return nil, err
+		return nil, mapTenantWriteError(err)
 	}
 	if err := s.createDefaultStorageBackend(ctx, tenant); err != nil {
 		// No related rows exist yet, so rolling the tenant back is safe and
@@ -159,6 +162,10 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 
 	logger.Infof(ctx, "Updating tenant, ID: %d, name: %s", tenant.ID, tenant.Name)
 
+	if err := s.checkRename(ctx, tenant); err != nil {
+		return nil, err
+	}
+
 	if err := s.validateStorageBucketUniqueness(ctx, tenant); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenant.ID,
@@ -173,7 +180,7 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenant.ID,
 		})
-		return nil, err
+		return nil, mapTenantWriteError(err)
 	}
 
 	// A configuration profile's settings reach its workspaces by being
@@ -189,6 +196,29 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 
 	logger.Infof(ctx, "Tenant updated successfully, ID: %d", tenant.ID)
 	return tenant, nil
+}
+
+// checkRename validates an organization's new name when an update changes it.
+// An empty Name leaves the column untouched (GORM Updates skips zero fields)
+// and an unchanged name is not re-checked, so configuration saves on an
+// organization never fail on its name. Configuration profiles are exempt.
+func (s *tenantService) checkRename(ctx context.Context, tenant *types.Tenant) error {
+	if tenant.Name == "" || tenant.IsConfigProfile() {
+		return nil
+	}
+	current, err := s.repo.GetTenantByID(ctx, tenant.ID)
+	if err != nil {
+		return err
+	}
+	if current != nil && (current.Name == tenant.Name || current.IsConfigProfile()) {
+		return nil
+	}
+	name, err := s.ValidateTenantName(ctx, tenant.Name, tenant.ID)
+	if err != nil {
+		return err
+	}
+	tenant.Name = name
+	return nil
 }
 
 // DeleteTenant removes a tenant by their ID

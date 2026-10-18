@@ -16246,7 +16246,7 @@ const docTemplate = `{
         },
         "/system/admin/users/create": {
             "post": {
-                "description": "Provision a new local user account (SystemAdmin only).\nWhen ` + "`" + `password` + "`" + ` is omitted or null, a cryptographically random\npassword is generated (OIDC-style crypto/rand + base64url)\nand returned once in the response body. Any provided value,\nincluding empty string, is policy-checked. Organization provisioning\nfollows the shared auth.default_tenant_mode policy.",
+                "description": "Provision a new local user account (SystemAdmin only).\nWhen ` + "`" + `password` + "`" + ` is omitted or null, a cryptographically random\npassword is generated (OIDC-style crypto/rand + base64url)\nand returned once in the response body. Any provided value,\nincluding empty string, is policy-checked. The new account\nbelongs to no organization until it is added to one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -19193,6 +19193,7 @@ const docTemplate = `{
                 2003,
                 2004,
                 2005,
+                2006,
                 2100,
                 2101,
                 2102,
@@ -19219,6 +19220,7 @@ const docTemplate = `{
                 "ErrTenantNameRequired",
                 "ErrTenantInvalidStatus",
                 "ErrTenantCreationDisabled",
+                "ErrTenantNameTooLong",
                 "ErrAgentMissingThinkingModel",
                 "ErrAgentMissingAllowedTools",
                 "ErrAgentInvalidMaxIterations",

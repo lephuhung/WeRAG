@@ -49,16 +49,17 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 1009 | 504 | — | | Hết thời gian chờ dịch vụ phụ thuộc |
 | 1010 | 400 | `NewValidationError(msg)` | theo ngữ cảnh | Dữ liệu đúng cú pháp nhưng sai ràng buộc nghiệp vụ |
 
-### 2.2 Tổ chức (2000–2005)
+### 2.2 Tổ chức (2000–2006)
 
 | Code | HTTP | Hàm tạo | Thông báo |
 |---|---|---|---|
 | 2000 | 404 | `NewTenantNotFoundError()` | không tìm thấy tổ chức |
-| 2001 | 409 | `NewTenantAlreadyExistsError()` | tổ chức đã tồn tại |
+| 2001 | 409 | `NewTenantAlreadyExistsError()`; `ValidateTenantName` | tổ chức đã tồn tại; an organization with this name already exists |
 | 2002 | 403 | `NewTenantInactiveError()` | tổ chức đã bị vô hiệu hóa |
-| 2003 | 400 | — | tên tổ chức là bắt buộc |
+| 2003 | 400 | `ValidateTenantName` | organization name is required |
 | 2004 | 400 | — | trạng thái tổ chức không hợp lệ |
 | 2005 | 403 | `NewTenantCreationDisabledError()` | đã tắt tự tạo tổ chức; hãy tham gia tổ chức qua lời mời |
+| 2006 | 400 | `ValidateTenantName` | organization name must be at most 255 characters |
 
 ### 2.3 Cấu hình trợ lý (2100–2103)
 

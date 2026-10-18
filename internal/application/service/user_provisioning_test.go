@@ -56,16 +56,15 @@ func (s *provisioningMemberService) ListByUser(context.Context, string) ([]*type
 	return s.members, nil
 }
 
-func TestUserServiceRegisterTenantlessSkipsTenantCreation(t *testing.T) {
+func TestUserServiceRegisterCreatesTenantlessAccount(t *testing.T) {
 	repo := &provisioningUserRepo{}
 	tenantSvc := &provisioningTenantService{}
 	svc := &userService{userRepo: repo, tenantService: tenantSvc}
 
 	user, err := svc.Register(context.Background(), &types.RegisterRequest{
-		Username:           "alice",
-		Email:              "alice@example.com",
-		Password:           "supersecret",
-		TenantProvisioning: types.TenantProvisioningTenantless,
+		Username: "alice",
+		Email:    "alice@example.com",
+		Password: "supersecret",
 	})
 	if err != nil {
 		t.Fatalf("Register: %v", err)

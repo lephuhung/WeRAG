@@ -17,25 +17,21 @@ import (
 )
 
 // createUserService records the request handed to AdminCreateUser so
-// tests can pin byte-for-byte password pass-through and the resolved
-// tenant provisioning mode.
+// tests can pin byte-for-byte password pass-through.
 type createUserService struct {
 	interfaces.UserService
-	createdUser     *types.User
-	generated       string
-	err             error
-	gotReq          *types.AdminCreateUserRequest
-	gotProvisioning types.TenantProvisioningMode
+	createdUser *types.User
+	generated   string
+	err         error
+	gotReq      *types.AdminCreateUserRequest
 }
 
 func (s *createUserService) AdminCreateUser(
 	_ context.Context,
 	req *types.AdminCreateUserRequest,
-	provisioning types.TenantProvisioningMode,
 ) (*types.User, string, error) {
 	record := *req
 	s.gotReq = &record
-	s.gotProvisioning = provisioning
 	return s.createdUser, s.generated, s.err
 }
 
@@ -199,22 +195,6 @@ func TestCreateSystemUserMapsIdentityConflictTo409(t *testing.T) {
 	}
 	if len(audits.entries) != 0 {
 		t.Fatalf("conflict emitted audit entries: %+v", audits.entries)
-	}
-}
-
-func TestCreateSystemUserResolvesDefaultTenantMode(t *testing.T) {
-	users := &createUserService{createdUser: &types.User{ID: "u4", Username: "dave", Email: "dave@example.com"}}
-	h := &SystemHandler{userSvc: users}
-	r := createSystemUserRouter(h, "admin-user")
-
-	w := performCreateSystemUser(t, r, map[string]string{
-		"username": "dave", "email": "dave@example.com",
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
-	}
-	if users.gotProvisioning != types.TenantProvisioningTenantless {
-		t.Fatalf("provisioning=%v, want tenantless default", users.gotProvisioning)
 	}
 }
 

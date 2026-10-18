@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/go-viper/mapstructure/v2"
+)
 
 // TestApplyAuthAndTenantDefaults_DisableRegistrationDrivesRegistrationMode
 // pins down the env-vs-YAML contract for DISABLE_REGISTRATION. Without this,
@@ -68,39 +73,33 @@ func TestApplyAuthAndTenantDefaults_SelfServiceTenantCreation(t *testing.T) {
 	})
 }
 
-func TestApplyAuthAndTenantDefaults_DefaultTenantMode(t *testing.T) {
-	t.Run("default leaves new accounts tenantless", func(t *testing.T) {
-		t.Setenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE", "")
-		cfg := &Config{Auth: &AuthConfig{}}
+// TestRemovedDefaultTenantModeIsHarmless pins down that a deployment still
+// carrying the removed auth.default_tenant_mode key (YAML) or its env var
+// keeps starting: the YAML key is ignored by the non-strict decoder and the
+// env var only logs a warning.
+func TestRemovedDefaultTenantModeIsHarmless(t *testing.T) {
+	t.Setenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE", "create_personal")
 
-		applyAuthAndTenantDefaults(cfg)
+	var cfg Config
+	raw := map[string]interface{}{
+		"auth": map[string]interface{}{
+			"registration_mode":   "self_serve",
+			"default_tenant_mode": "create_personal",
+		},
+	}
+	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "yaml", Result: &cfg})
+	if err != nil {
+		t.Fatalf("decoder: %v", err)
+	}
+	if err := dec.Decode(raw); err != nil {
+		t.Fatalf("decoding a leftover default_tenant_mode key failed: %v", err)
+	}
 
-		if cfg.Auth.DefaultTenantMode != AuthDefaultTenantModeTenantless {
-			t.Fatalf("default_tenant_mode = %q, want %q", cfg.Auth.DefaultTenantMode, AuthDefaultTenantModeTenantless)
-		}
-	})
+	applyAuthAndTenantDefaults(&cfg)
 
-	t.Run("environment overrides yaml", func(t *testing.T) {
-		t.Setenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE", AuthDefaultTenantModeTenantless)
-		cfg := &Config{Auth: &AuthConfig{DefaultTenantMode: AuthDefaultTenantModeCreatePersonal}}
-
-		applyAuthAndTenantDefaults(cfg)
-
-		if cfg.Auth.DefaultTenantMode != AuthDefaultTenantModeTenantless {
-			t.Fatalf("default_tenant_mode = %q, want %q", cfg.Auth.DefaultTenantMode, AuthDefaultTenantModeTenantless)
-		}
-	})
-
-	t.Run("invalid environment value fails validation", func(t *testing.T) {
-		t.Setenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE", "create_magic")
-		cfg := &Config{Auth: &AuthConfig{}}
-
-		applyAuthAndTenantDefaults(cfg)
-
-		if err := ValidateConfig(cfg); err == nil {
-			t.Fatal("ValidateConfig unexpectedly accepted an invalid default tenant mode")
-		}
-	})
+	if err := ValidateConfig(&cfg); err != nil && strings.Contains(err.Error(), "default_tenant_mode") {
+		t.Fatalf("ValidateConfig still checks the removed key: %v", err)
+	}
 }
 
 // TestApplyAuthAndTenantDefaults_CrossTenantAccess is a regression test for the

@@ -107,8 +107,6 @@ services:
       - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
       # 开启后密码必须包含大小写字母、数字和特殊字符，特殊字符包含：!@#$%^&*()_+-=[]{}|;:,.<>?
       - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED=${WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED:-false}
-      # 公开注册后的默认Tenant workspace策略：create_personal（默认，自动Create 个人Tenant workspace）/ tenantless
-      - WEKNORA_AUTH_DEFAULT_TENANT_MODE=${WEKNORA_AUTH_DEFAULT_TENANT_MODE:-create_personal}
       # 是否允许普通用户登录后主动Create Tenant workspace（默认 true；false 仅能邀请加入，超管不受影响）
       - WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED=${WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED:-true}
       # 启用跨Tenant workspace访问（需配合用户的 CanAccessAllTenants 权限；默认 false

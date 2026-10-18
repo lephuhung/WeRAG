@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,14 @@ type provisionTenantService struct {
 	interfaces.TenantService
 	created []*types.Tenant
 	deleted []uint64
+	nameErr error
+}
+
+func (s *provisionTenantService) ValidateTenantName(_ context.Context, name string, _ uint64) (string, error) {
+	if s.nameErr != nil {
+		return "", s.nameErr
+	}
+	return service.NormalizeTenantName(name), nil
 }
 
 func (s *provisionTenantService) CreateTenant(_ context.Context, tenant *types.Tenant) (*types.Tenant, error) {
@@ -164,8 +173,8 @@ func TestProvisionTenantCreatesTenantlessAdminAccount(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if users.gotProvisioning != types.TenantProvisioningTenantless {
-		t.Fatalf("new admin provisioned as %q, want tenantless", users.gotProvisioning)
+	if users.gotReq == nil || users.gotReq.Email != "admin@sob.gov.vn" {
+		t.Fatalf("new admin not created through AdminCreateUser: %+v", users.gotReq)
 	}
 	var resp ProvisionTenantResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -176,6 +185,37 @@ func TestProvisionTenantCreatesTenantlessAdminAccount(t *testing.T) {
 	}
 	if len(members.added) != 1 || members.added[0].UserID != "u-new" {
 		t.Fatalf("unexpected memberships %+v", members.added)
+	}
+}
+
+// A duplicate organization name is refused with 409 before the admin is
+// resolved, so no new account is created for a provision that fails.
+func TestProvisionTenantDuplicateNameCreatesNothing(t *testing.T) {
+	h, users, tenants, members := newProvisionFixture()
+	tenants.nameErr = apperrors.NewConflictError("an organization with this name already exists")
+	w := doSystemTenantJSON(t, systemTenantRouter(h), http.MethodPost, "/system/admin/tenants", map[string]any{
+		"name":  "Sở Tài chính",
+		"admin": map[string]any{"new_user": map[string]any{"username": "admin-stc", "email": "admin@stc.gov.vn"}},
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s, want 409", w.Code, w.Body.String())
+	}
+	if users.gotReq != nil || len(tenants.created) != 0 || len(members.added) != 0 {
+		t.Fatalf("duplicate name still created state: user=%+v tenants=%+v members=%+v",
+			users.gotReq, tenants.created, members.added)
+	}
+}
+
+func TestProvisionTenantNormalizesName(t *testing.T) {
+	h, _, tenants, _ := newProvisionFixture()
+	w := doSystemTenantJSON(t, systemTenantRouter(h), http.MethodPost, "/system/admin/tenants", map[string]any{
+		"name": "  UBND   xã  Phú Vang ", "admin": map[string]any{"email": "canbo@hue.gov.vn"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(tenants.created) != 1 || tenants.created[0].Name != "UBND xã Phú Vang" {
+		t.Fatalf("name not normalized: %+v", tenants.created)
 	}
 }
 

@@ -15,9 +15,9 @@ import (
 
 type invitedRegistrationUserService struct {
 	interfaces.UserService
-	registeredMode types.TenantProvisioningMode
-	updatedTenant  uint64
-	updateCalls    []uint64
+	registered    bool
+	updatedTenant uint64
+	updateCalls   []uint64
 }
 
 func (s *invitedRegistrationUserService) GetUserByEmail(context.Context, string) (*types.User, error) {
@@ -25,7 +25,7 @@ func (s *invitedRegistrationUserService) GetUserByEmail(context.Context, string)
 }
 
 func (s *invitedRegistrationUserService) Register(_ context.Context, req *types.RegisterRequest) (*types.User, error) {
-	s.registeredMode = req.TenantProvisioning
+	s.registered = true
 	return &types.User{ID: "new-user", Username: req.Username, Email: req.Email, IsActive: true}, nil
 }
 
@@ -113,8 +113,8 @@ func TestRegisterByInviteUsesInvitedTenantWithoutPersonalTenant(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if users.registeredMode != types.TenantProvisioningTenantless {
-		t.Fatalf("register mode=%q, want tenantless", users.registeredMode)
+	if !users.registered {
+		t.Fatal("Register was not called")
 	}
 	if users.updatedTenant != 42 {
 		t.Fatalf("updated tenant=%d, want 42", users.updatedTenant)
@@ -143,7 +143,7 @@ func TestRegisterByInviteRejectsSimplePasswordWhenComplexEnabled(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s, want 400", w.Code, w.Body.String())
 	}
-	if users.registeredMode != "" {
-		t.Fatalf("Register was called with mode=%q", users.registeredMode)
+	if users.registered {
+		t.Fatal("Register was called")
 	}
 }

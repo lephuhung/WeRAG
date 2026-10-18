@@ -30,6 +30,7 @@ const (
 	ErrTenantNameRequired     ErrorCode = 2003
 	ErrTenantInvalidStatus    ErrorCode = 2004
 	ErrTenantCreationDisabled ErrorCode = 2005
+	ErrTenantNameTooLong      ErrorCode = 2006
 
 	// Agent related error codes (2100-2199)
 	ErrAgentMissingThinkingModel ErrorCode = 2100

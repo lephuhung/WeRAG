@@ -117,6 +117,7 @@ definitions:
     - 2003
     - 2004
     - 2005
+    - 2006
     - 2100
     - 2101
     - 2102
@@ -143,6 +144,7 @@ definitions:
     - ErrTenantNameRequired
     - ErrTenantInvalidStatus
     - ErrTenantCreationDisabled
+    - ErrTenantNameTooLong
     - ErrAgentMissingThinkingModel
     - ErrAgentMissingAllowedTools
     - ErrAgentInvalidMaxIterations
@@ -17477,8 +17479,8 @@ paths:
         When `password` is omitted or null, a cryptographically random
         password is generated (OIDC-style crypto/rand + base64url)
         and returned once in the response body. Any provided value,
-        including empty string, is policy-checked. Organization provisioning
-        follows the shared auth.default_tenant_mode policy.
+        including empty string, is policy-checked. The new account
+        belongs to no organization until it is added to one.
       parameters:
       - description: User creation request
         in: body

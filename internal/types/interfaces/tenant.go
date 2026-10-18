@@ -11,6 +11,12 @@ import (
 type TenantService interface {
 	// CreateTenant creates a tenant
 	CreateTenant(ctx context.Context, tenant *types.Tenant) (*types.Tenant, error)
+	// ValidateTenantName normalizes an organization name (trim, collapse
+	// inner whitespace) and checks it is present, at most 255 characters and
+	// not used by another live organization (case-insensitive). excludeID is
+	// the organization being renamed (0 on create). Returns the normalized
+	// name or an AppError (400 missing/too long, 409 duplicate).
+	ValidateTenantName(ctx context.Context, name string, excludeID uint64) (string, error)
 	// GetTenantByID gets a tenant by ID
 	GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error)
 	// GetTenantsByIDs batches GetTenantByID for multiple IDs in a single
