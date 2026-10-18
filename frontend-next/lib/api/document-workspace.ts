@@ -33,6 +33,7 @@ import {
   apiPut,
   authHeaders,
   refreshAccessToken,
+  setPathTenant,
   type ApiRequestOptions,
 } from "../api-client.ts";
 import { parseDocumentScope, type DocumentScope, type DocumentScopeSection, type DocumentScopeTask } from "../document-scope.ts";
@@ -195,19 +196,24 @@ const base = (sessionId: string, documentId?: string) =>
 
 /* Sessions that live in another organization than the selected one: the
  * hidden session a SuperAdmin edits a legal OCR draft in belongs to the
- * platform organization (10000). Its document routes are sent with that
- * X-Tenant-ID; every other session keeps the selected organization. */
+ * platform organization (10000). Every request under /api/v1/sessions/<id>
+ * (any module, raw fetches through authHeaders(url) included) is sent with
+ * that X-Tenant-ID by the api client (setPathTenant); every other session
+ * keeps the selected organization. Call it before anything requests the
+ * session (before the editor pane renders). */
 const sessionTenants = new Map<string, string>();
 
-/** Sends this session's document requests with X-Tenant-ID = tenantId
- * (null removes the override). */
+/** Sends every request on this session with X-Tenant-ID = tenantId (null
+ * removes the override). */
 export function setDocumentSessionTenant(sessionId: string, tenantId: string | number | null): void {
   if (!sessionId) return;
   if (tenantId === null || tenantId === "" || tenantId === 0) sessionTenants.delete(sessionId);
   else sessionTenants.set(sessionId, String(tenantId));
+  setPathTenant(sessionBase(sessionId), sessionTenants.get(sessionId) ?? null);
 }
 
-/** The request options of a call on this session's documents. */
+/** The request options of a call on this session's documents (explicit
+ * header; the api client also applies the override by path). */
 export function sessionRequestOptions(sessionId: string, opts?: ApiRequestOptions): ApiRequestOptions | undefined {
   const tenant = sessionTenants.get(sessionId);
   if (!tenant) return opts;
@@ -438,7 +444,7 @@ export async function uploadDocumentContent(
   const send = () =>
     fetch(url, {
       method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      headers: { ...authHeaders(url), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
       body: docx as BodyInit,
     });
   let res = await send();
@@ -477,7 +483,7 @@ export async function storeDocumentTemplate(
   const send = () =>
     fetch(url, {
       method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      headers: { ...authHeaders(url), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
       body: docx as BodyInit,
     });
   let res = await send();
@@ -505,10 +511,11 @@ export function downloadDocumentWorkspace(sessionId: string, documentId?: string
  * request outlive the page; no refresh/replay is possible at that point. */
 export function forceSaveDocumentWorkspaceKeepalive(sessionId: string, documentId?: string): Promise<boolean> {
   try {
-    return fetch(`${base(sessionId, documentId)}/forcesave`, {
+    const url = `${base(sessionId, documentId)}/forcesave`;
+    return fetch(url, {
       method: "POST",
       keepalive: true,
-      headers: { "Content-Type": "application/json", ...authHeaders(), ...(sessionRequestOptions(sessionId)?.headers ?? {}) },
+      headers: { "Content-Type": "application/json", ...authHeaders(url) },
       body: "{}",
     })
       .then((res) => res.ok)

@@ -99,9 +99,10 @@ export function LegalDraftReview({ id }: { id: string }) {
     try {
       const res = await openLegalDraft(id);
       const data = res.data;
+      // synchronously, before the pane renders: every request on the hidden
+      // session (any module, raw fetches too) goes to the platform organization
+      if (data) setDocumentSessionTenant(data.session_id, data.tenant_id);
       if (!aliveRef.current || !data) return null;
-      // before the pane mounts: its requests go to the platform organization
-      setDocumentSessionTenant(data.session_id, data.tenant_id);
       setOpened(data);
       setDraft(data.draft);
       if (data.draft.structure) setStructure(data.draft.structure);
@@ -172,6 +173,7 @@ export function LegalDraftReview({ id }: { id: string }) {
     // a fresh 2-hour link (the open call returns the same session)
     try {
       const res = await openLegalDraft(id);
+      if (res.data) setDocumentSessionTenant(res.data.session_id, res.data.tenant_id);
       if (aliveRef.current && res.data) setOpened((cur) => (cur ? { ...cur, pdf_url: res.data.pdf_url } : res.data));
     } catch {
       /* keep the old link */
@@ -506,7 +508,14 @@ function PdfPane({
         )}
       </div>
       {url ? (
-        <iframe key={reloadKey} src={url} title={t("ldraft.pdf.title")} className="min-h-0 w-full flex-1 border-0 bg-surface-strong" />
+        // the browser's PDF viewer: no thumbnail sidebar (it took half the
+        // pane), no toolbar, page fitted to the width
+        <iframe
+          key={reloadKey}
+          src={`${url}#navpanes=0&toolbar=0&view=FitH`}
+          title={t("ldraft.pdf.title")}
+          className="min-h-0 w-full flex-1 border-0 bg-surface-strong"
+        />
       ) : (
         <Centered>
           <p className="body-sm text-muted">{t("ldraft.pdf.missing")}</p>

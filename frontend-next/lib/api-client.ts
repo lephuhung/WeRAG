@@ -109,12 +109,48 @@ function storedTenantId(): string | null {
   }
 }
 
+/* Paths that belong to another organization than the selected one: the
+ * hidden session a SuperAdmin edits a legal OCR draft in lives in the
+ * platform organization. Every request under a registered prefix (apiGet &
+ * co, downloads, uploads, and raw fetches through authHeaders(path)) sends
+ * that X-Tenant-ID instead of the stored one; an explicit X-Tenant-ID in
+ * opts.headers still wins. */
+const pathTenants = new Map<string, string>();
+
+/** Sends every request under `prefix` (e.g. "/api/v1/sessions/<id>") with
+ * X-Tenant-ID = tenantId; null removes the override. */
+export function setPathTenant(prefix: string, tenantId: string | number | null): void {
+  const key = prefix.replace(/\/+$/, "");
+  if (!key) return;
+  if (tenantId === null || tenantId === "" || tenantId === 0) pathTenants.delete(key);
+  else pathTenants.set(key, String(tenantId).trim());
+}
+
+/** The organization registered for `path` (absolute URLs and query strings
+ * allowed), null when none. */
+export function pathTenantFor(path: string): string | null {
+  if (pathTenants.size === 0 || !path) return null;
+  let p = path;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
+    try {
+      p = new URL(p).pathname;
+    } catch {
+      return null;
+    }
+  }
+  p = p.split(/[?#]/, 1)[0];
+  for (const [prefix, tenant] of pathTenants) {
+    if (p === prefix || p.startsWith(prefix + "/")) return tenant;
+  }
+  return null;
+}
+
 /* Auth/tenant/locale headers for callers that must issue a raw fetch()
  * (e.g. `keepalive` requests fired from beforeunload/pagehide, which cannot
  * go through the async refresh-and-replay path of request()). */
-export function authHeaders(): Record<string, string> {
+export function authHeaders(path?: string): Record<string, string> {
   const { token } = getTokens();
-  const tenant = storedTenantId();
+  const tenant = (path ? pathTenantFor(path) : null) ?? storedTenantId();
   return {
     ...acceptLanguageHeader(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -369,7 +405,7 @@ async function request<T>(path: string, init: RequestInit, opts?: ApiRequestOpti
   const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
   const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
   const tenantHeader =
-    customTenant ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
+    customTenant ?? (!isEmbed ? pathTenantFor(path) : null) ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
   const controller = new AbortController();
   const res = await fetch(path, {
     ...init,
@@ -447,7 +483,7 @@ async function downloadRequest(path: string, init: RequestInit, opts?: ApiReques
   const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
   const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
   const tenantHeader =
-    customTenant ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
+    customTenant ?? (!isEmbed ? pathTenantFor(path) : null) ?? (!isEmbed && !opts?.skipTenant ? storedTenantId() : null);
   const controller = new AbortController();
   const res = await fetch(path, {
     ...init,
@@ -557,7 +593,7 @@ export function apiUpload<T>(
   const customTenant = lookupCustomHeader(customHeaders, "X-Tenant-ID");
   const storedTenant = tenantId !== null && isValidTenantId(tenantId) ? tenantId.trim() : null;
   const authHeader = customAuth ?? (!isEmbed && token ? `Bearer ${token}` : null);
-  const tenantHeader = customTenant ?? (!isEmbed ? storedTenant : null);
+  const tenantHeader = customTenant ?? (!isEmbed ? (pathTenantFor(path) ?? storedTenant) : null);
   const requestId =
     lookupCustomHeader(customHeaders, "X-Request-ID") ??
     Math.random().toString(36).slice(2, 14);
