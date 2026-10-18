@@ -71,6 +71,15 @@ func FetchDetail(ctx context.Context, client *http.Client, id string) (*Detail, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		// the portal answers an unknown id with 400 (or 404) and
+		// {"success":"false","messageCode":"invalid.document.entity.not.found"}:
+		// a stale catalogue id, not a gateway failure
+		if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound {
+			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+			if gatewayNotFound(raw) {
+				return nil, &NoDocumentError{ID: id}
+			}
+		}
 		return nil, fmt.Errorf("vbpl.vn gateway answered HTTP %d for document %s", resp.StatusCode, id)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
@@ -85,7 +94,7 @@ func FetchDetail(ctx context.Context, client *http.Client, id string) (*Detail, 
 		return nil, fmt.Errorf("vbpl.vn gateway: bad JSON: %w", err)
 	}
 	if !envelope.Success || len(envelope.Data) == 0 || string(envelope.Data) == "null" {
-		return nil, fmt.Errorf("vbpl.vn gateway has no document %s", id)
+		return nil, &NoDocumentError{ID: id}
 	}
 	var d Detail
 	if err := json.Unmarshal(envelope.Data, &d); err != nil {
@@ -99,6 +108,37 @@ func FetchDetail(ctx context.Context, client *http.Client, id string) (*Detail, 
 	}
 	d.RawContent = nil
 	return &d, nil
+}
+
+// NoDocumentError reports that vbpl.vn holds no document with the id (the
+// catalogue row is stale): the caller's input, not a gateway failure.
+type NoDocumentError struct{ ID string }
+
+func (e *NoDocumentError) Error() string {
+	return fmt.Sprintf("vbpl.vn gateway has no document %s: vbpl.vn không có văn bản với id %s (danh mục có thể đã cũ)", e.ID, e.ID)
+}
+
+// gatewayNotFound reports whether an error body of the gateway says the
+// document does not exist: messageCode invalid.document.entity.not.found,
+// or success false (a string or a boolean, the portal sends both).
+func gatewayNotFound(body []byte) bool {
+	var env struct {
+		Success     any    `json:"success"`
+		MessageCode string `json:"messageCode"`
+	}
+	if json.Unmarshal(body, &env) != nil {
+		return false
+	}
+	if strings.Contains(env.MessageCode, "not.found") {
+		return true
+	}
+	switch v := env.Success.(type) {
+	case bool:
+		return !v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "false")
+	}
+	return false
 }
 
 // idPattern: old documents have integer ids, new ones UUIDs.

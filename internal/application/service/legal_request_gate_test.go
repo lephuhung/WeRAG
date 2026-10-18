@@ -128,6 +128,10 @@ func TestLegalMissingDocumentGate(t *testing.T) {
 		"53/2022/ND-CP":  {{Document: nd53}},
 		"27/2015/ND-CP":  {{Document: old, Links: []types.LegalRelationLink{{Relation: types.LegalRelationReplaces, Incoming: true, Other: newer}}}},
 		"01/2024/TT-BCA": {{Document: tt}},
+		"243/2025/ND-CP": {
+			{Document: &types.LegalDocument{ID: "187374", DocumentNumber: "243/2025/NĐ-CP", DocType: "Nghị định", Title: "Nghị định mới", Status: "Còn hiệu lực"}},
+			{Document: &types.LegalDocument{ID: "9b8adda0", DocumentNumber: "243/2025/NĐ-CP", DocType: "Nghị định", Title: "Bản trùng", Status: "Hết hiệu lực toàn bộ"}},
+		},
 	}}
 	newSvc := func() (*sessionService, *gateRequests, *gateReviews) {
 		req, rev := &gateRequests{}, &gateReviews{approved: map[string]bool{}}
@@ -164,6 +168,18 @@ func TestLegalMissingDocumentGate(t *testing.T) {
 		out = runGate(t, s, "số 53/2022/NĐ-CP nói gì", "s2")
 		if !out.handled || out.data["request_count"] != 2 || !strings.Contains(out.answer, "(lần thứ 2)") {
 			t.Fatalf("second = %+v", out)
+		}
+	})
+
+	t.Run("in-force and expired rows of one number: only the in-force one", func(t *testing.T) {
+		s, reqs, _ := newSvc()
+		out := runGate(t, s, "Nghị định 243/2025/NĐ-CP quy định gì?", "s1")
+		docs, _ := out.data["documents"].([]map[string]interface{})
+		if !out.handled || out.data["mode"] != tools.LegalRequestModeRequested || len(docs) != 1 || docs[0]["id"] != "187374" {
+			t.Fatalf("outcome = %+v", out)
+		}
+		if len(reqs.recorded) != 1 || reqs.recorded[0].LegalDocumentID != "187374" {
+			t.Fatalf("recorded = %+v", reqs.recorded)
 		}
 	})
 

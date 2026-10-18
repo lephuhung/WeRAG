@@ -60,6 +60,12 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 				"documentContent":{"content":"`+strings.ReplaceAll(body, `"`, `\"`)+`"}}}`)
 		case strings.HasSuffix(r.URL.Path, "/2002"):
 			_, _ = io.WriteString(w, `{"success":true,"data":{"id":"2002","docNum":"1/2020/TT-X","effStatus":{"name":"Còn hiệu lực"},"documentContent":{"content":"<p></p>"}}}`)
+		case strings.HasSuffix(r.URL.Path, "/stale"):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"success":"false","httpStatus":"400","messageCode":"invalid.document.entity.not.found","message":"Văn bản pháp luật bạn chọn không tồn tại."}`)
+		case strings.HasSuffix(r.URL.Path, "/broken"):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `<html>bad request</html>`)
 		default:
 			_, _ = io.WriteString(w, `{"success":true,"data":null}`)
 		}
@@ -87,11 +93,17 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	actor := LegalFeedActor{TenantID: 10000, UserID: "u-super", Channel: types.ChannelWeb}
 	ctx := context.Background()
 
-	for id, want := range map[string]string{"1001": "fully expired", "2002": "no published full text", "404": "has no document", "../x": "not a vbpl.vn document id"} {
+	for id, want := range map[string]string{"1001": "fully expired", "2002": "no published full text", "404": "vbpl.vn không có văn bản với id 404", "stale": "vbpl.vn không có văn bản với id stale (danh mục có thể đã cũ)", "../x": "not a vbpl.vn document id"} {
 		_, err := feed.IngestFromPortal(ctx, id, kb, actor, "")
 		if _, ok := err.(*LegalFeedRefusal); !ok || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: err = %v, want refusal %q", id, err, want)
 		}
+	}
+	// a 400 without the not-found body stays a gateway failure (API 503)
+	if _, err := feed.IngestFromPortal(ctx, "broken", kb, actor, ""); err == nil || strings.Contains(err.Error(), "không có văn bản") {
+		t.Fatalf("broken: err = %v", err)
+	} else if _, ok := err.(*LegalFeedRefusal); ok {
+		t.Fatalf("broken must not be a refusal: %v", err)
 	}
 	if _, err := feed.IngestFromPortal(ctx, "155366", &types.KnowledgeBase{ID: "own", OwnerTenantID: 7}, actor, ""); err == nil {
 		t.Fatal("a tenant KB must be refused")

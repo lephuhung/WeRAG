@@ -83,7 +83,7 @@ func (s *sessionService) legalMissingDocumentGate(
 		logger.Warnf(ctx, "legal request gate: catalogue lookup of %s: %v", number, err)
 		return ctx, false, nil
 	}
-	reports = legalExactReports(reports, key, docType)
+	reports = legalDropExpiredBesideLive(legalExactReports(reports, key, docType))
 
 	needles := legalNumberNeedles(number, reports)
 	held, err := s.legalRequests.KnowledgeNamed(ctx, kbIDs, needles)
@@ -249,6 +249,23 @@ func legalNumberNeedles(number string, reports []*types.LegalStatusReport) []str
 		add(r.Document.DocumentNumber)
 	}
 	return out
+}
+
+// legalDropExpiredBesideLive drops the fully expired rows of a number
+// that also has a row not fully expired (a catalogue duplicate or an older
+// document reusing the number): they belong neither in the card nor in
+// the requests. All rows expired are kept for the "expired" card.
+func legalDropExpiredBesideLive(reports []*types.LegalStatusReport) []*types.LegalStatusReport {
+	var live []*types.LegalStatusReport
+	for _, r := range reports {
+		if !strings.HasPrefix(strings.TrimSpace(r.Document.Status), LegalExpiredStatusPrefix) {
+			live = append(live, r)
+		}
+	}
+	if len(live) == 0 {
+		return reports
+	}
+	return live
 }
 
 func legalAllExpired(reports []*types.LegalStatusReport) bool {
