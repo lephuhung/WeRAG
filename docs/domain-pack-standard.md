@@ -99,7 +99,8 @@ metadata:
   draft_documents:                 # dự thảo mà gói nhắc tới — phải luôn gắn nhãn
     - title: Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa
       version: Lần 2
-      date: 2026-08-28
+      date: 2026-08-28              # bỏ khi version là "chưa rõ lần dự thảo"
+      aliases: [doanh nghiệp một người, Điều 20 khoản 8]   # tuỳ chọn; cụm từ chỉ đúng dự thảo này
 ---
 ```
 
