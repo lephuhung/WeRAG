@@ -194,7 +194,7 @@ var drawDiagramTool = BaseTool{
 
 Draw ONLY what the passage or document states — never invent steps, units or relations. When it has nothing to draw (a single statement, a citation, general opinion, too little detail), do not call it: tell the user why and ask what to show. Fewer than two elements is refused.
 
-Mermaid: start with flowchart TD | flowchart LR | sequenceDiagram | stateDiagram-v2 | timeline | mindmap | gantt | pie (org charts, procedures: flowchart TD; long linear process: flowchart LR). EVERY label in double quotes: A["Tiếp nhận hồ sơ"] --> B{"Hồ sơ hợp lệ?"}; B -->|"Có"| C["Thẩm định"]. No " inside a label (use '), no HTML, Markdown or emoji; labels ≤ ~8 words, ASCII node ids, ≤ ~25 nodes; no %%{init}%%, click, href, call or styles hiding text.
+Mermaid: start with flowchart TD | flowchart LR | sequenceDiagram | stateDiagram-v2 | timeline | mindmap | gantt | pie (org charts, procedures: flowchart TD; long linear process: flowchart LR). EVERY label in double quotes: A["Tiếp nhận hồ sơ"] --> B{"Hồ sơ hợp lệ?"}; B -->|"Có"| C["Thẩm định"]. No " inside a label (use '), no HTML, Markdown or emoji; labels ≤ ~8 words, ASCII node ids, ≤ ~25 nodes; no %%{init}%%, click, href, call or styles hiding text. Declare each node on its own line, then the edges one per line (a 5-step process is at least 5 node lines plus 4 edge lines).
 
 ` + illustrationAnchorDoc,
 	schema: json.RawMessage(`{

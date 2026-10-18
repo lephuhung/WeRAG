@@ -463,10 +463,15 @@ def mermaid_has_nodes(minimum: int, needles: Sequence[str] = (), status: str = F
         for c in calls:
             mm = c.arguments.get("mermaid") or (c.data.get("illustration") or {}).get("mermaid") or ""
             best = mm if best is None or len(mm) > len(best) else best
-        lines = [l for l in (best or "").splitlines()[1:] if l.strip()]
-        miss = [n for n in needles if fold(n) not in fold(best or "")]
-        ok = len(lines) >= minimum and not miss
-        return Result(PASS if ok else status, label, f"{len(lines)} lines; missing {miss}")
+        # elements = distinct node ids (A["…"], B{"…"}, C("…")) plus edges;
+        # a 5-step chain written as 4 "A --> B" lines still has 5 nodes
+        src = best or ""
+        nodes = set(re.findall(r'(?m)(?:^|[\s>|;])([A-Za-z_][\w-]*)\s*[\[\{\(]', src))
+        edges = len(re.findall(r'-->|---|-\.->|==>', src))
+        count = len(nodes) + edges
+        miss = [n for n in needles if fold(n) not in fold(src)]
+        ok = count >= minimum and not miss
+        return Result(PASS if ok else status, label, f"{len(nodes)} nodes + {edges} edges; missing {miss}")
     return run
 
 

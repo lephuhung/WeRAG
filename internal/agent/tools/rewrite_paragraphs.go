@@ -17,7 +17,7 @@ var rewriteParagraphsTool = BaseTool{
 
 Prefer old/new (an exact substring) over replacing the whole paragraph. An edit never spans a paragraph break: one edit per paragraph of the selection (a summary goes into the first, the others get a shortened text). An ambiguous match fails and lists the candidates: retry with the paragraph index.
 
-One version is the default (edits[0].new). options_requested=true only when the user explicitly asked for several options ("vài phương án", "2 cách viết", "cho tôi lựa chọn"); variants then holds other wordings of the single edit's new text.`,
+One version is the default (edits[0].new). options_requested=true only when the user explicitly asked for several options ("vài phương án", "2 cách viết", "cho tôi lựa chọn"). Options are ONE edit plus variants: edits has exactly one entry (its new is version 1) and variants holds the other wordings of that same passage, as many as asked (at most 3 versions in all); never send a second edit as another option — two edits mean two different passages, not two versions.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
