@@ -155,4 +155,27 @@ func (s *agentService) setDomainFooter(
 	engine.SetDomainFooter(func(_ context.Context, answer string) string {
 		return source.Footer(domainPackNow(), answer)
 	})
+	engine.SetDomainPackPrompts(domainPackPrompts(ctx, packs))
+}
+
+// domainPackPrompts is the SKILL.md body of each pack for the system
+// prompt, at most agent.MaxDomainPackPrompts of them.
+func domainPackPrompts(ctx context.Context, packs []*domainpacks.Pack) []agent.DomainPackPrompt {
+	if len(packs) > agent.MaxDomainPackPrompts {
+		dropped := make([]string, 0, len(packs)-agent.MaxDomainPackPrompts)
+		for _, p := range packs[agent.MaxDomainPackPrompts:] {
+			dropped = append(dropped, p.Name())
+		}
+		logger.Warnf(ctx, "Only %d domain pack bodies fit the system prompt; listed but not inlined: %v",
+			agent.MaxDomainPackPrompts, dropped)
+		common.PipelineWarn(ctx, "Agent", "domain_pack_prompt_cap", map[string]interface{}{"packs": dropped})
+		packs = packs[:agent.MaxDomainPackPrompts]
+	}
+	out := make([]agent.DomainPackPrompt, 0, len(packs))
+	for _, p := range packs {
+		out = append(out, agent.DomainPackPrompt{
+			Name: p.Name(), Version: p.Manifest.Metadata.Version, Body: p.Skill.Instructions,
+		})
+	}
+	return out
 }

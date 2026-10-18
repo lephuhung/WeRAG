@@ -49,6 +49,7 @@ type AgentEngine struct {
 	systemPromptTemplate      string                // System prompt template (optional, uses default if empty)
 	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
 	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
+	domainPackPrompts         []DomainPackPrompt    // domain pack bodies rendered in the system prompt
 	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
 	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
 	legalHistory              LegalHistoryFunc      // appends the amendment history of cited legal provisions (optional)
@@ -174,6 +175,7 @@ func (e *AgentEngine) systemPromptOptions(ctx context.Context) *BuildSystemPromp
 		MemoryPrompt:     e.memoryPrompt,
 		ProtocolPrompt:   e.modelContext.ProtocolPrompt(),
 		UserContext:      types.UserContextPrompt(ctx),
+		DomainPacks:      e.domainPackPrompts,
 	}
 	if e.skillsManager != nil && e.skillsManager.IsEnabled() {
 		opts.SkillsMetadata = e.skillsManager.GetAllMetadata()
