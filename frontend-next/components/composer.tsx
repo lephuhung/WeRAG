@@ -9,6 +9,7 @@ import { AgentLockNotice, AgentModeButton, AgentSelector, useAgentModelSync } fr
 import { formatFileSize, type PendingAttachment } from "@/components/use-attachments";
 import { isWordAttachment } from "@/lib/api/document-workspace";
 import { useT } from "@/lib/i18n";
+import { DictationButton } from "@/components/dictation-button";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { DOC_MENTION_COLOR, DocMentionIcon } from "@/components/doc-mention";
 import { documentsNamedIn, splitDocumentMentions } from "@/lib/document-mentions";
@@ -235,6 +236,14 @@ export function Composer({
 
   const [sendBlockMsg, setSendBlockMsg] = useState("");
   useEffect(() => setSendBlockMsg(""), [attachments, value]);
+  const [dictating, setDictating] = useState(false);
+  const [dictationMsg, setDictationMsg] = useState("");
+  const stopDictation = useRef<(() => void) | null>(null);
+  // Keep the newest dictated words in view.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (dictating && el) el.scrollTop = el.scrollHeight;
+  }, [dictating, value]);
 
   const submit = (text = value) => {
     if (!text.trim() || isReplying) return;
@@ -248,6 +257,7 @@ export function Composer({
       return;
     }
     setSendBlockMsg("");
+    stopDictation.current?.();
     onSend({
       query: text.trim(),
       modelId: settings.selectedChatModelId || "",
@@ -333,6 +343,8 @@ export function Composer({
       )}
 
       {sendBlockMsg && <p className="caption text-error">{sendBlockMsg}</p>}
+      {dictationMsg && <p className="caption text-error">{dictationMsg}</p>}
+      {dictating && <p className="caption text-muted">{t("dictation.listening")}</p>}
 
       <MentionChips />
 
@@ -367,6 +379,7 @@ export function Composer({
           autoFocus={autoFocus}
           onChange={handleInput}
           onKeyDown={onKeyDown}
+          readOnly={dictating}
           onScroll={(e) => {
             if (highlightRef.current) highlightRef.current.scrollTop = e.currentTarget.scrollTop;
           }}
@@ -472,6 +485,15 @@ export function Composer({
               </>
             )}
           </div>
+
+          <DictationButton
+            value={value}
+            onChange={onChange}
+            onListeningChange={setDictating}
+            onError={setDictationMsg}
+            stopRef={stopDictation}
+            disabled={isReplying && !dictating}
+          />
         </div>
 
         <div className="relative ml-auto flex shrink-0 items-center gap-2">

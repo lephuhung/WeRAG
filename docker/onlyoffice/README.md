@@ -18,6 +18,11 @@ same variable to both). The feature is off unless `ONLYOFFICE_PUBLIC_URL` and
 docker compose --profile onlyoffice up -d documentserver
 ```
 
+Put `onlyoffice` in `COMPOSE_PROFILES` (`.env`) so a plain `docker compose up -d`
+starts it with the rest of the stack; `restart: unless-stopped` brings it back
+after a reboot. DS's own data (open editing sessions, its database, logs) lives
+in the `onlyoffice_*` volumes. `ONLYOFFICE_PORT` sets the host port (default 8090).
+
 ## Fonts (Times New Roman for NĐ30 documents)
 
 Administrative documents (Nghị định 30/2020/NĐ-CP) use Times New Roman. DS
@@ -31,6 +36,10 @@ font is installed. Put `.ttf` files in `docker/onlyoffice/fonts/` (mounted at
 - **Tinos** (free, Apache-2.0, metric-compatible with Times New Roman) —
   download from Google Fonts / the ChromeOS core fonts and copy
   `Tinos-*.ttf` here.
+
+Or point `ONLYOFFICE_FONTS_DIR` at a host font directory instead, e.g.
+`/usr/share/fonts/truetype/liberation` (Liberation Serif is metric-compatible
+with Times New Roman).
 
 Then rebuild the DS font cache (needed after every font change):
 

@@ -23,6 +23,8 @@ services:
       # IP/CIDR của load balancer đứng trước container này (phân tách bằng
       # dấu phẩy); để trống khi nginx này là điểm vào đầu tiên.
       - REAL_IP_FROM=${REAL_IP_FROM:-}
+      # Speech service behind /asr/ (profile "asr").
+      - ASR_URL=${ASR_URL:-http://sherpa-asr:8110}
     # NOTE: If using a remote App backend, comment out or remove the depends_on
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
     depends_on:
@@ -438,10 +440,44 @@ services:
       # DS downloads from / calls back to the app on the private Docker network.
       - ALLOW_PRIVATE_IP_ADDRESS=true
     volumes:
-      - ./docker/onlyoffice/fonts:/usr/share/fonts/truetype/custom
-      - ./docker/onlyoffice/plugins/werag-assistant:/var/www/onlyoffice/documentserver/sdkjs-plugins/werag-assistant
+      # Times New Roman substitutes (e.g. the host's Liberation fonts); see the README.
+      - ${ONLYOFFICE_FONTS_DIR:-./docker/onlyoffice/fonts}:/usr/share/fonts/truetype/custom:ro
+      - ./docker/onlyoffice/plugins/werag-assistant:/var/www/onlyoffice/documentserver/sdkjs-plugins/werag-assistant:ro
+      # Open editing sessions survive a restart only with DS's own database kept.
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_lib:/var/lib/onlyoffice
+      - onlyoffice_db:/var/lib/postgresql
+      - onlyoffice_logs:/var/log/onlyoffice
     networks:
       - WeKnora-network
+    restart: unless-stopped
+
+  # Vietnamese speech-to-text for browser dictation (sherpa-onnx, CPU only):
+  # WS /ws for the composer microphone (the frontend proxies /asr/), and an
+  # OpenAI-compatible POST /v1/audio/transcriptions for audio files. Models:
+  # run docker/sherpa-asr/download-models.sh once; see docker/sherpa-asr/README.md.
+  sherpa-asr:
+    build:
+      context: ./docker/sherpa-asr
+    image: werag-sherpa-asr:latest
+    container_name: WeKnora-sherpa-asr
+    profiles:
+      - asr
+    ports:
+      # Loopback only: browsers come through the frontend's /asr/ proxy.
+      - "127.0.0.1:${ASR_PORT:-8110}:8110"
+    environment:
+      - WERAG_BACKEND_URL=${ASR_BACKEND_URL:-http://app:8080}
+      - ASR_API_KEY=${ASR_API_KEY:-}
+      - ASR_THREADS=${ASR_THREADS:-4}
+      - ASR_MAX_PARALLEL=${ASR_MAX_PARALLEL:-4}
+      - ASR_PUNCTUATE=${ASR_PUNCTUATE:-1}
+    volumes:
+      - ${ASR_MODELS_DIR:-./docker/sherpa-asr/models}:/models:ro
+    networks:
+      - WeKnora-network
+    cpus: ${ASR_CPUS:-8}
+    mem_limit: 2g
     restart: unless-stopped
 
   # vLLM server hosting the SenOCR-Vi PaddleOCR-VL model used by the
@@ -1074,3 +1110,7 @@ volumes:
   langfuse_clickhouse_logs:
   langfuse_minio_data:
   searxng_config:
+  onlyoffice_data:
+  onlyoffice_lib:
+  onlyoffice_db:
+  onlyoffice_logs:

@@ -66,3 +66,6 @@ miniprogram/project.private.config.json
 docformat/dist/
 # docformat evaluation corpora (synthetic output, real documents)
 docformat/evaluation/samples/
+
+# sherpa-asr models (docker/sherpa-asr/download-models.sh)
+docker/sherpa-asr/models/

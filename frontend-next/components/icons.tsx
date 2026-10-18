@@ -69,6 +69,13 @@ export const IconPaperclip = ({ className }: P) => (
   </svg>
 );
 
+export const IconMic = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
+  </svg>
+);
+
 export const IconSend = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" />

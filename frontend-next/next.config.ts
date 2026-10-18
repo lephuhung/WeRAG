@@ -12,6 +12,8 @@ if (!backendEnv && process.env.NODE_ENV === "production") {
   );
 }
 const backend = backendEnv || "http://127.0.0.1:8080";
+// sherpa-onnx speech service (browser dictation, WS /asr/ws).
+const asr = process.env.WERAG_ASR_URL?.trim() || "http://127.0.0.1:8110";
 
 // Hosts allowed to load dev assets (next dev); comma-separated.
 const devOrigins = (process.env.WERAG_DEV_ORIGINS ?? "")
@@ -36,6 +38,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/api/:path*", destination: `${backend}/api/:path*` },
       { source: "/files/:path*", destination: `${backend}/files/:path*` },
+      { source: "/asr/:path*", destination: `${asr}/:path*` },
     ];
   },
 };

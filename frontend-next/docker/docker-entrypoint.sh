@@ -20,7 +20,10 @@ export APP_HOST=${APP_HOST:-app}
 export APP_PORT=${APP_PORT:-8080}
 export APP_SCHEME=${APP_SCHEME:-http}
 export NEXT_PORT=${NEXT_PORT:-3000}
-envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${NEXT_PORT}' \
+export ASR_URL=${ASR_URL:-http://sherpa-asr:8110}
+# Docker's embedded DNS; the /asr/ location resolves its upstream per request.
+export DNS_RESOLVER=${DNS_RESOLVER:-127.0.0.11}
+envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${NEXT_PORT} ${ASR_URL} ${DNS_RESOLVER}' \
   < /etc/nginx/templates/default.conf.template > /etc/nginx/http.d/default.conf
 
 # REAL_IP_FROM: comma-separated IPs/CIDRs of a load balancer in front of
