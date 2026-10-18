@@ -136,9 +136,14 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		state.FinalAnswer = e.synthesisFallback(state)
 		emitChunk(state.FinalAnswer)
 	}
+	modelText := state.FinalAnswer
 	e.appendLegalHistory(ctx, state, sessionID, answerID)
 	e.appendWikiCaveat(ctx, state, sessionID, answerID)
 	e.appendSourceEditNote(ctx, state, sessionID, answerID, query)
+	if synthesized {
+		// the code-built fallback names no draft of its own
+		e.appendDraftNotice(ctx, state, sessionID, answerID, modelText)
+	}
 	// computed results reach the user even on the fallback answer, and
 	// then the pack's footer goes with them
 	withResult := e.appendToolAnswerBlocks(ctx, state, sessionID, answerID)

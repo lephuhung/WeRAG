@@ -83,6 +83,10 @@ type DraftDocument struct {
 	Title   string `yaml:"title"`
 	Version string `yaml:"version"`
 	Date    Date   `yaml:"date"`
+	// Aliases are phrases that refer to this draft ("doanh nghiệp một
+	// người"); the title always counts. A mention in a paragraph that does
+	// not say "dự thảo" gets the code-appended draft notice.
+	Aliases []string `yaml:"aliases"`
 }
 
 // VersionUnknown reports whether the source does not say which draft it is.

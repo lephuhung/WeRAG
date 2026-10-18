@@ -49,6 +49,7 @@ type AgentEngine struct {
 	systemPromptTemplate      string                // System prompt template (optional, uses default if empty)
 	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
 	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
+	draftNotice               DraftNoticeFunc       // domain-pack draft labels (optional)
 	domainPackPrompts         []DomainPackPrompt    // domain pack bodies rendered in the system prompt
 	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
 	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
@@ -960,9 +961,11 @@ func (e *AgentEngine) runReActIteration(
 		state.FinalAnswer = verdict.finalAnswer
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
+		modelText := state.FinalAnswer
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
+		e.appendDraftNotice(ctx, state, sessionID, verdict.answerID, modelText)
 		e.appendToolAnswerBlocks(ctx, state, sessionID, verdict.answerID)
 		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
