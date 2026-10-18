@@ -61,6 +61,9 @@ var (
 // send the model to the web.
 var bannedSkillText = []string{"shell_exec", "scripts/", "$WEKNORA_SKILL_DIR", "WEKNORA_SKILL_DIR"}
 
+// reservedPromptTags may not appear in SKILL.md (matched case-insensitively).
+var reservedPromptTags = []string{"<domain_pack", "</domain_pack>", "<steer_message", "</steer_message>"}
+
 // injectionPhrases are lint, not a safety gate: review by hand stays
 // mandatory. Matched case-insensitively.
 var injectionPhrases = []string{
@@ -334,6 +337,14 @@ func checkSkill(pack *Pack, dir string, data []byte) []error {
 	for _, banned := range bannedSkillText {
 		if strings.Contains(string(data), banned) {
 			fail("contains %q", banned)
+		}
+	}
+	// the body is inlined in the system prompt inside <domain_pack>; a tag
+	// of the prompt's own structure would close it or forge a steer message
+	lower := strings.ToLower(string(data))
+	for _, tag := range reservedPromptTags {
+		if strings.Contains(lower, tag) {
+			fail("contains the reserved prompt tag %q", tag)
 		}
 	}
 
