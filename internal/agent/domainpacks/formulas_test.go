@@ -91,9 +91,9 @@ func TestLoadFormulas(t *testing.T) {
 
 func TestLoadRejectsBrokenFormulas(t *testing.T) {
 	cases := []struct {
-		name  string
+		name   string
 		break_ func(f fstest.MapFS)
-		want  string
+		want   string
 	}{
 		{"domain tool without formulas", func(f fstest.MapFS) { delete(f, samplePack+"/formulas.yaml") },
 			`"compare_tax_methods" runs domain formulas but no formula describes it`},

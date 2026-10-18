@@ -18,18 +18,33 @@ func TestDomainPackReconcileRouteNeedsPlatformSuperAdmin(t *testing.T) {
 	g := &rbacGuards{cfg: &config.Config{}}
 	RegisterDomainPackReconcileRoutes(engine.Group("/api/v1"), handler.NewDomainPackReconcileHandler(nil), g)
 
-	registered := false
+	want := map[string]bool{
+		"POST /api/v1/system/domain-packs/:name/reconcile": false,
+		"GET /api/v1/system/domain-packs":                  false,
+		"GET /api/v1/system/domain-packs/:name":            false,
+	}
 	for _, r := range engine.Routes() {
-		if r.Method == http.MethodPost && r.Path == "/api/v1/system/domain-packs/:name/reconcile" {
-			registered = true
+		if _, ok := want[r.Method+" "+r.Path]; ok {
+			want[r.Method+" "+r.Path] = true
 		}
 	}
-	if !registered {
-		t.Fatal("reconcile route is not registered")
+	for route, ok := range want {
+		if !ok {
+			t.Fatalf("%s is not registered", route)
+		}
 	}
 
-	for _, role := range []types.TenantRole{types.TenantRoleMember, types.TenantRoleOwner} {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/system/domain-packs/opc-vn-business-law/reconcile", nil)
+	for _, probe := range []struct {
+		role         types.TenantRole
+		method, path string
+	}{
+		{types.TenantRoleMember, http.MethodPost, "/api/v1/system/domain-packs/opc-vn-business-law/reconcile"},
+		{types.TenantRoleOwner, http.MethodPost, "/api/v1/system/domain-packs/opc-vn-business-law/reconcile"},
+		{types.TenantRoleOwner, http.MethodGet, "/api/v1/system/domain-packs"},
+		{types.TenantRoleOwner, http.MethodGet, "/api/v1/system/domain-packs/opc-vn-business-law"},
+	} {
+		role := probe.role
+		req := httptest.NewRequest(probe.method, probe.path, nil)
 		ctx := types.WithCaller(req.Context(), types.Caller{TenantID: 1, UserID: "u", Role: role})
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req.WithContext(ctx))

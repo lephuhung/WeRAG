@@ -30,7 +30,8 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{},
-		&types.LegalDocumentRequest{}, &types.LegalDocumentLink{}))
+		&types.LegalDocumentRequest{}, &types.LegalDocumentLink{}, &types.CustomAgent{}))
+	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT,
 		file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (id TEXT, name TEXT, owner_tenant_id INTEGER,
@@ -38,7 +39,7 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 	packs, err := domainpacks.Load(domainpackassets.FS)
 	require.NoError(t, err)
 	r := NewDomainPackReconciler(packs, repository.NewLegalCatalogRepository(db),
-		repository.NewLegalRequestRepository(db), repository.NewLegalReviewRepository(db))
+		repository.NewLegalRequestRepository(db), repository.NewLegalReviewRepository(db), repository.NewDomainPackAgentRepository(db))
 	r.now = func() time.Time { return time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC) }
 	return r, db
 }
@@ -136,9 +137,10 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	tt133 := found["133/2016/TT-BTC"]
 	assert.Contains(t, tt133.StatusNote, "Hết hiệu lực toàn bộ")
 	assert.Contains(t, tt133.StatusNote, "01/01/2026")
-	require.NotNil(t, tt133.Request)
-	assert.Equal(t, open133.ID, tt133.Request.ID)
-	assert.False(t, tt133.Request.Created)
+	assert.Nil(t, tt133.Request, "every row fully expired: no request, the status note is the signal")
+	still133, err := requests.Get(ctx, open133.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, still133.RequestCount)
 	assert.Contains(t, found["67/2025/QH15"].StatusNote, "chưa có hiệu lực (hiệu lực từ 01/01/2027)")
 	assert.Contains(t, found["48/2024/QH15"].StatusNote, "Ngưng hiệu lực")
 
@@ -222,4 +224,68 @@ func TestDomainPackReconcileUnknownPack(t *testing.T) {
 	_, err := r.Reconcile(context.Background(), "no-such-pack")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no-such-pack")
+}
+
+func TestDomainPackDetailIsReadOnly(t *testing.T) {
+	r, db := newReconcileFixture(t)
+	ctx := reconcileCallerCtx()
+	catalog := repository.NewLegalCatalogRepository(db)
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		{ID: "luat67", DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15", Title: "Luật Thuế TNDN",
+			Status: "Hết hiệu lực một phần", EffectiveOn: testDay(t, "2025-10-01")},
+		{ID: "ldn", DocumentNumber: "59/2020/QH14", NumberKey: "59/2020/QH14", Status: "Còn hiệu lực"},
+	}))
+	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name) VALUES (10003, 'Công an tỉnh'), (10004, 'Sở Tư pháp')`).Error)
+	for _, a := range []*types.CustomAgent{
+		{ID: "a1", Name: "Tư vấn DN", TenantID: 10003, Config: types.CustomAgentConfig{DomainPacks: []string{"opc-vn-business-law"}}},
+		{ID: "a2", Name: "Khác", TenantID: 10003, Config: types.CustomAgentConfig{DomainPacks: []string{"other-pack"}}},
+		{ID: "a3", Name: "Hỗ trợ", TenantID: 10004, Config: types.CustomAgentConfig{DomainPacks: []string{"x", "opc-vn-business-law"}}},
+	} {
+		require.NoError(t, db.Create(a).Error)
+	}
+
+	detail, err := r.Detail(ctx, "opc-vn-business-law")
+	require.NoError(t, err)
+	var n int64
+	require.NoError(t, db.Model(&types.LegalDocumentRequest{}).Count(&n).Error)
+	assert.Zero(t, n, "the detail view never records a request")
+
+	assert.Equal(t, 13, detail.DocumentCount)
+	assert.Equal(t, 4, detail.FormulaCount)
+	require.Len(t, detail.Agents, 2)
+	assert.Equal(t, "a1", detail.Agents[0].ID)
+	assert.Equal(t, "Công an tỉnh", detail.Agents[0].TenantName)
+	assert.Equal(t, "Sở Tư pháp", detail.Agents[1].TenantName)
+
+	docs := map[string]types.DomainPackDocumentView{}
+	for _, d := range detail.Documents {
+		docs[d.Number] = d
+	}
+	tndn := docs["67/2025/QH15"]
+	assert.Equal(t, types.DomainPackLookupFound, tndn.Lookup)
+	assert.True(t, tndn.Warning)
+	assert.Contains(t, tndn.Formulas, "so_sanh_thue_tndn")
+	assert.NotEmpty(t, tndn.CitedIn)
+	assert.Equal(t, types.DomainPackLookupMissing, docs["88/2015/QH13"].Lookup)
+	assert.True(t, docs["88/2015/QH13"].Warning)
+	assert.Contains(t, docs["59/2020/QH14"].Articles, "Điều 85")
+	assert.True(t, docs["59/2020/QH14"].Warning, "no public KB holds it")
+
+	require.Len(t, detail.Formulas, 4)
+	for _, f := range detail.Formulas {
+		assert.True(t, f.Warning, f.ID)
+		require.NotEmpty(t, f.Basis)
+		assert.Equal(t, types.DomainPackBasisWarning, f.Basis[0].Status)
+		assert.Contains(t, f.Basis[0].Note, "Hết hiệu lực một phần")
+		assert.NotEmpty(t, f.Examples)
+	}
+
+	list, err := r.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, 2, list[0].AgentCount)
+	assert.Equal(t, 13, list[0].DocumentCount)
+
+	_, err = r.Detail(ctx, "nope")
+	assert.Error(t, err)
 }

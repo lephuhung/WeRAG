@@ -16526,6 +16526,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/domain-packs": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Các gói chuyên môn có trong bản build: phiên bản, mốc dữ\nliệu, hạn rà soát, số văn bản trích dẫn, số công thức, số\nagent đang dùng (mọi Tổ chức).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Danh sách gói chuyên môn (SuperAdmin)",
+                "responses": {
+                    "200": {
+                        "description": "Danh sách gói",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackSummary"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/system/domain-packs/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Văn bản trích dẫn (tra danh mục chỉ đọc: trạng thái, có\ntrong KB, ghi chú hiệu lực, tệp trích, công thức dùng),\ncông thức (căn cứ ok/warning), agent đang dùng. Không ghi\nyêu cầu nào; POST …/reconcile mới ghi.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Chi tiết gói chuyên môn (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tên gói chuyên môn",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chi tiết gói",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDetail"
+                        }
+                    }
+                }
+            }
+        },
         "/system/domain-packs/{name}/reconcile": {
             "post": {
                 "security": [
@@ -20938,6 +21000,266 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackAgent": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "tenant_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDetail": {
+            "type": "object",
+            "properties": {
+                "agent_count": {
+                    "type": "integer"
+                },
+                "agents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackAgent"
+                    }
+                },
+                "answer_footer": {
+                    "type": "string"
+                },
+                "as_of": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "attribution": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_count": {
+                    "type": "integer"
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDocumentView"
+                    }
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "draft_documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDraft"
+                    }
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError"
+                    }
+                },
+                "formula_count": {
+                    "type": "integer"
+                },
+                "formulas": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaView"
+                    }
+                },
+                "licence": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "overdue": {
+                    "type": "boolean"
+                },
+                "required_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "review_by": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDocumentView": {
+            "type": "object",
+            "properties": {
+                "articles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cited_in": {
+                    "description": "CitedIn lists the pack files citing the number (computed at load).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "documents": {
+                    "description": "Documents are the catalogue rows holding the number (0, 1 or more).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                    }
+                },
+                "formulas": {
+                    "description": "Formulas are the ids of the formulas whose basis names the number.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lookup": {
+                    "description": "Lookup is found, missing or ambiguous; \"\" when the lookup failed.",
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                },
+                "warning": {
+                    "description": "Warning: what the pack says about this document needs checking\n(missing, ambiguous, a status note, no KB holds the text).",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDraft": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaBasis": {
+            "type": "object",
+            "properties": {
+                "article": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "ok | warning",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaSample": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaVar": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "input | kb",
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaView": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaBasis"
+                    }
+                },
+                "examples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaSample"
+                    }
+                },
+                "expression": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tool": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaVar"
+                    }
+                },
+                "warning": {
+                    "description": "Warning: one of its basis documents has a warning.",
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous": {
             "type": "object",
             "properties": {
@@ -21097,6 +21419,58 @@ const docTemplate = `{
                     }
                 },
                 "pack": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackSummary": {
+            "type": "object",
+            "properties": {
+                "agent_count": {
+                    "type": "integer"
+                },
+                "as_of": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "attribution": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_count": {
+                    "type": "integer"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "formula_count": {
+                    "type": "integer"
+                },
+                "licence": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "overdue": {
+                    "type": "boolean"
+                },
+                "required_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "review_by": {
+                    "description": "YYYY-MM-DD",
                     "type": "string"
                 },
                 "version": {

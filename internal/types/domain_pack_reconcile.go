@@ -92,3 +92,118 @@ type DomainPackReconcileMissing struct {
 	DomainPackCatalogueRef
 	Request *DomainPackReconcileRequest `json:"request,omitempty"`
 }
+
+// DomainPackSummary is one shipped pack in the SuperAdmin list
+// (GET /system/domain-packs).
+type DomainPackSummary struct {
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Version       string   `json:"version"`
+	AsOf          string   `json:"as_of"`     // YYYY-MM-DD
+	ReviewBy      string   `json:"review_by"` // YYYY-MM-DD
+	Overdue       bool     `json:"overdue"`
+	Domain        string   `json:"domain"`
+	Licence       string   `json:"licence"`
+	Attribution   string   `json:"attribution"`
+	Origin        string   `json:"origin"`
+	RequiredTools []string `json:"required_tools"`
+	DocumentCount int      `json:"document_count"`
+	FormulaCount  int      `json:"formula_count"`
+	AgentCount    int      `json:"agent_count"`
+}
+
+// DomainPackDraft is a draft the pack mentions; Date is "" when the source
+// does not know which draft it is.
+type DomainPackDraft struct {
+	Title   string `json:"title"`
+	Version string `json:"version"`
+	Date    string `json:"date,omitempty"` // YYYY-MM-DD
+}
+
+// DomainPackDetail is GET /system/domain-packs/:name: the pack's cited
+// documents with a read-only inspection against the legal catalogue, its
+// formulas with the state of their basis, and the agents using it. Nothing
+// is written; POST …/reconcile is the call that records requests.
+type DomainPackDetail struct {
+	DomainPackSummary
+	AnswerFooter   string                     `json:"answer_footer"`
+	DraftDocuments []DomainPackDraft          `json:"draft_documents"`
+	Documents      []DomainPackDocumentView   `json:"documents"`
+	Formulas       []DomainPackFormulaView    `json:"formulas"`
+	Agents         []DomainPackAgent          `json:"agents"`
+	Errors         []DomainPackReconcileError `json:"errors"`
+}
+
+// Lookup results of a catalogue number.
+const (
+	DomainPackLookupFound     = "found"
+	DomainPackLookupMissing   = "missing"
+	DomainPackLookupAmbiguous = "ambiguous"
+)
+
+// DomainPackDocumentView is one catalogue.yaml entry with its inspection.
+type DomainPackDocumentView struct {
+	DomainPackCatalogueRef
+	Articles []string `json:"articles"`
+	// CitedIn lists the pack files citing the number (computed at load).
+	CitedIn []string `json:"cited_in"`
+	// Formulas are the ids of the formulas whose basis names the number.
+	Formulas []string `json:"formulas"`
+	// Lookup is found, missing or ambiguous; "" when the lookup failed.
+	Lookup string `json:"lookup"`
+	// Documents are the catalogue rows holding the number (0, 1 or more).
+	Documents []DomainPackReconcileDocument `json:"documents"`
+	// Warning: what the pack says about this document needs checking
+	// (missing, ambiguous, a status note, no KB holds the text).
+	Warning bool `json:"warning"`
+}
+
+// DomainPackFormulaView is one formulas.yaml entry.
+type DomainPackFormulaView struct {
+	ID         string                    `json:"id"`
+	Name       string                    `json:"name"`
+	Expression string                    `json:"expression"`
+	Tool       string                    `json:"tool"`
+	Variables  []DomainPackFormulaVar    `json:"variables"`
+	Basis      []DomainPackFormulaBasis  `json:"basis"`
+	Examples   []DomainPackFormulaSample `json:"examples"`
+	// Warning: one of its basis documents has a warning.
+	Warning bool `json:"warning"`
+}
+
+// DomainPackFormulaVar is one variable of a formula.
+type DomainPackFormulaVar struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Unit        string `json:"unit"`
+	Source      string `json:"source"` // input | kb
+}
+
+// Basis states of a formula.
+const (
+	DomainPackBasisOK      = "ok"
+	DomainPackBasisWarning = "warning"
+)
+
+// DomainPackFormulaBasis is one basis provision and the state of its
+// document in the catalogue.
+type DomainPackFormulaBasis struct {
+	Number  string `json:"number"`
+	Article string `json:"article,omitempty"`
+	Status  string `json:"status"` // ok | warning
+	Note    string `json:"note,omitempty"`
+}
+
+// DomainPackFormulaSample is a worked example.
+type DomainPackFormulaSample struct {
+	Inputs   map[string]float64 `json:"inputs"`
+	Expected map[string]float64 `json:"expected"`
+}
+
+// DomainPackAgent is a custom agent whose config names the pack.
+type DomainPackAgent struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TenantID   uint64 `json:"tenant_id"`
+	TenantName string `json:"tenant_name"`
+}
